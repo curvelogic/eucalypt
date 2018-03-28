@@ -1,0 +1,48 @@
+name:                eucalypt-hs
+version:             0.1.0.0
+github:              "curvelogic/eucalypt-hs"
+license:             BSD3
+author:              "Greg Hawkins"
+maintainer:          "greg@curvelogic.co.uk"
+copyright:           "2018 Greg Hawkins"
+
+extra-source-files:
+- README.md
+
+synopsis:            Haskell implementation of Eucalypt ontography language
+description:         Please see the README on Github at <https://github.com/curvelogic/eucalypt-hs#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+
+library:
+  source-dirs: src
+  dependencies:
+    - regex-compat
+    - regex-posix
+    - parsec
+    - parsec-numbers
+
+executables:
+  eu:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - eucalypt-hs
+
+tests:
+  eucalypt-hs-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - eucalypt-hs
+    - hspec
+    - QuickCheck
