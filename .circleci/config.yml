@@ -1,0 +1,19 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: arekczarnik/docker-circleci-haskell
+    steps:
+      - checkout
+
+      - restore_cache:
+          key: cache
+
+      - run: stack build --fast
+
+      - save_cache:
+          paths:
+            - ~/.stack
+          key: cache
+
+      - run: stack test --no-terminal --coverage
