@@ -23,6 +23,10 @@ library:
     - parsec
     - parsec-numbers
     - pretty
+    - optparse-applicative
+    - directory
+    - filepath
+    - path
 
 executables:
   eu:
@@ -34,6 +38,10 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - eucalypt-hs
+    - optparse-applicative
+    - directory
+    - filepath
+    - path
 
 tests:
   eucalypt-hs-test:
