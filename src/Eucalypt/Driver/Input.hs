@@ -57,7 +57,7 @@ locatorFromString :: String -> Maybe Locator
 locatorFromString s =
   case s of
     "-" -> Just StdInput
-    _ -> URLInput <$> (parseURI s <|> (parseRelativeReference s))
+    _ -> URLInput <$> (parseURI s <|> parseRelativeReference s)
 
 -- | Parse an input specifier, e.g. simple.eu, +yaml@data.txt
 parseInput :: Parser Input
@@ -82,10 +82,10 @@ parseInput = do
 
   case locator of
     Nothing -> fail "Invalid input"
-    Just loc -> return $ Input { inputMode = inferredMode
-                               , inputLocator =  loc
-                               , inputFormat = inferredFormat
-                               , inputName = name }
+    Just loc -> return Input { inputMode = inferredMode
+                             , inputLocator =  loc
+                             , inputFormat = inferredFormat
+                             , inputName = name }
 
 -- | Parse from string
 parseInputFromString :: String -> Maybe Input

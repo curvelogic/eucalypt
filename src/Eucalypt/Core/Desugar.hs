@@ -12,7 +12,7 @@ where
 
 import Eucalypt.Core.Syn
 import Eucalypt.Syntax.Ast
-import Data.Maybe (catMaybes)
+import Data.Maybe ( mapMaybe )
 
 -- | Transform a SimpleIdentifier into a Name
 toName :: AtomicName -> Name
@@ -38,7 +38,7 @@ desugarDeclarationForm decl =
 
 -- | Ignore splices for now
 declarations :: Block -> [DeclarationForm]
-declarations (Block elements) = catMaybes $ map toDecl elements
+declarations (Block elements) = mapMaybe toDecl elements
   where toDecl (Splice _) = Nothing
         toDecl (Declaration d) = Just $ declaration d
 

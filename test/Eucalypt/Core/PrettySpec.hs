@@ -10,9 +10,9 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = do
+spec =
 
-  describe "PPrint" $ do
+  describe "PPrint" $
 
     it "prints applications" $
 

@@ -273,7 +273,7 @@ parseProperty :: Parser BlockElement
 parseProperty = do
   annotation <- optionMaybe parseAnnotation
   decl <- parseDecl
-  return $ Declaration (Annotated { annotation = annotation, declaration = decl })
+  return $ Declaration Annotated { annotation = annotation, declaration = decl }
 
 -- |
 -- Parse top level declarations as block but allow any amount of preceding whitespace

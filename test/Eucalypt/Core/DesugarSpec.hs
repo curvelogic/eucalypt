@@ -10,7 +10,8 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = do
+spec =
+
   describe "Core" $ do
 
     it "represents literals" $
@@ -22,4 +23,4 @@ spec = do
 
        `shouldBe`
 
-      (fromStr "x", (App (App (Var $ fromStr "+") (Prim (Int 2))) (Prim (Int 5))))
+      (fromStr "x", App (App (Var $ fromStr "+") (Prim (Int 2))) (Prim (Int 5)))

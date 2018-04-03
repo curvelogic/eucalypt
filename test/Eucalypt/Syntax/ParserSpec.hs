@@ -14,19 +14,19 @@ main :: IO ()
 main = hspec spec
 
 checkNumber :: Integer -> Bool
-checkNumber x = either (const False) (== (VInt x)) result
+checkNumber x = either (const False) (== VInt x) result
   where result = parseString parseNumber (show x)
 
 checkFloat :: Double -> Bool
-checkFloat x = either (const False) (== (VFloat x)) result
+checkFloat x = either (const False) (== VFloat x) result
   where result = parseString parseNumber (show x)
 
 checkSymbol :: String -> Bool
-checkSymbol x = either (const False) (== (VSym x)) result
+checkSymbol x = either (const False) (== VSym x) result
   where result = parseString parseSymbol (":" ++ x)
 
 checkString :: String -> Bool
-checkString x = either (const False) (== (VStr x)) result
+checkString x = either (const False) (== VStr x) result
   where result = parseString parseDQString ("\"" ++ x ++ "\"")
 
 {- Generators for property testing -}
@@ -43,18 +43,18 @@ identifierCont = lower ++ upper ++ digits ++ idContPunc
 
 validIdentifierNames :: Gen String
 validIdentifierNames = (:) <$> oneof (map return identifierStart)
-  <*> (listOf1 $ oneof (map return identifierCont))
+  <*> listOf1 (oneof (map return identifierCont))
 
 validSQStrings :: Gen String
-validSQStrings = fmap (\x -> "'" ++ filter (\c -> c /= '\'') x ++ "'") arbitrary
+validSQStrings = fmap (\x -> "'" ++ filter (/= '\'') x ++ "'") arbitrary
 
 validOperatorNames :: Gen String
 validOperatorNames = gen `suchThat` (/= "//")
-  where gen = (:) <$> oneof (map return operatorStart) <*> (listOf $ oneof (map return operatorCont))
+  where gen = (:) <$> oneof (map return operatorStart) <*> listOf (oneof (map return operatorCont))
 
 -- | Check for Right value which parses to simple name
 checkNormalName :: String -> Bool
-checkNormalName x = either (const False) (== (NormalName x)) result
+checkNormalName x = either (const False) (== NormalName x) result
   where result = parseString parseNormalName x
 
 
@@ -72,13 +72,13 @@ spec :: Spec
 spec = do
 
   describe "SimpleIdentifier" $ do
-    it "parses xyz" $ do
+    it "parses xyz" $
       parseString parseNormalName "xyz" `shouldBe` Right (NormalName "xyz")
 
-    it "rejects {{{" $ do
+    it "rejects {{{" $
       parseString parseNormalName "{{{" `shouldSatisfy` isLeft
 
-    it "parses 'singlequoted'" $ do
+    it "parses 'singlequoted'" $
       parseString parseNormalName "'singlequoted'" `shouldBe` Right (NormalName "singlequoted")
 
     it "accepts legal identifiers" $
@@ -88,22 +88,22 @@ spec = do
       forAll validSQStrings $ \qs -> parseString parseNormalName qs == Right (NormalName (take (length qs - 2) (tail qs)))
 
   describe "Identifier" $ do
-    it "parses x.y.z" $ do
+    it "parses x.y.z" $
       parseString parseIdentifier "x.y.z" `shouldBe` Right (ident "x.y.z")
 
-    it "parses 'x'.'y'.'z'" $ do
+    it "parses 'x'.'y'.'z'" $
       parseString parseIdentifier "'x'.'y'.'z'" `shouldBe` Right (ident "'x'.'y'.'z'")
 
-    it "parses '~'" $ do
+    it "parses '~'" $
       parseString parseIdentifier "'~'" `shouldBe` Right (ident "'~'")
 
-  describe "Number" $ do
-    it "accepts integers" $ property $ checkNumber
+  describe "Number" $
+    it "accepts integers" $ property checkNumber
 
-  describe "Float" $ do
-    it "accepts floats" $ property $ checkFloat
+  describe "Float" $
+    it "accepts floats" $ property checkFloat
 
-  describe "Symbol" $ do
+  describe "Symbol" $
     it "accepts legal symbol names" $
       forAll validIdentifierNames checkSymbol
 
@@ -122,36 +122,35 @@ spec = do
     it "accepts any valid op names" $
       forAll validOperatorNames $ \o -> parseAll parseOperation (" x " ++ o ++ " y ") == Right (op o (ident "x") (ident "y"))
 
-  describe "Catenations" $ do
+  describe "Catenations" $
     it "accepts x y" $
       parseAll parseOperand "x y" `shouldBe` Right (cat (ident "x") (ident "y"))
 
   describe "Invocations" $ do
     it "parses f(x, y)" $
-      parseAll parseInvocation " f(x, y) " `shouldBe` Right (invoke (ident "f") [(ident "x"), (ident "y")])
+      parseAll parseInvocation " f(x, y) " `shouldBe` Right (invoke (ident "f") [ident "x", ident "y"])
 
     it "parses f(zz)" $
-      parseAll parseInvocation " f(zz) " `shouldBe` Right (invoke (ident "f") [(ident "zz")])
+      parseAll parseInvocation " f(zz) " `shouldBe` Right (invoke (ident "f") [ident "zz"])
 
     it "parses foo.bar.baz(quux)" $
-      parseAll parseInvocation " foo.bar.baz(quux) " `shouldBe` Right (invoke (ident "foo.bar.baz") [(ident "quux")])
+      parseAll parseInvocation " foo.bar.baz(quux) " `shouldBe` Right (invoke (ident "foo.bar.baz") [ident "quux"])
 
     it "parses foo.bar.'baz'(quux)" $
-      parseAll parseInvocation " foo.bar.'baz'(quux) " `shouldBe` Right (invoke (ident "foo.bar.baz") [(ident "quux")])
+      parseAll parseInvocation " foo.bar.'baz'(quux) " `shouldBe` Right (invoke (ident "foo.bar.baz") [ident "quux"])
 
     it "parses if(foo(bar),baz,quux) " $
       parseAll parseInvocation " if(foo(bar),baz,quux)  " `shouldBe` Right (invoke (ident "if")
-                                                                             [(invoke (ident "foo") [(ident  "bar")]),
-                                                                              (ident "baz"),
-                                                                              (ident "quux")])
+                                                                             [invoke (ident "foo") [ident  "bar"],
+                                                                              ident "baz",
+                                                                              ident "quux"])
 
     it "parses if(car(xs), concat(reverse(xs),[car(xs)]), nil)" $
       parseAll parseInvocation " if(car(xs), concat(reverse(xs),[car(xs)]), nil)"
-        `shouldBe` Right (invoke (ident "if") [(invoke (ident "car") [(ident "xs")]),
-                                               (invoke (ident "concat") [(invoke (ident "reverse") [(ident "xs")]),
-                                                                         (list
-                                                                          [(invoke (ident "car") [(ident "xs")])])]),
-                                               (ident "nil")])
+        `shouldBe` Right (invoke (ident "if") [invoke (ident "car") [ident "xs"],
+                                               invoke (ident "concat") [invoke (ident "reverse") [ident "xs"],
+                                                                         list [invoke (ident "car") [ident "xs"]]],
+                                               ident "nil"])
 
   describe "Expressions" $ do
     it "accepts x y" $
@@ -167,7 +166,7 @@ spec = do
       parseAll parseExpression " 987 " `shouldBe` Right (ELiteral $ VInt 987)
 
     it "parses f(x, y)" $
-      parseAll parseExpression " f(x, y) " `shouldBe` Right (invoke (ident "f") [(ident "x"), (ident "y")])
+      parseAll parseExpression " f(x, y) " `shouldBe` Right (invoke (ident "f") [ident "x", ident "y"])
 
     it "parses x y z" $
       parseAll parseExpression " x y z " `shouldBe` Right (cat (cat (ident "x") (ident "y")) (ident "z"))
@@ -176,10 +175,10 @@ spec = do
       parseAll parseExpression " y (x f) " `shouldBe` Right (cat (ident "y") (cat (ident "x") (ident "f")))
 
     it "parses y f(x)" $
-      parseAll parseExpression " y f(x) " `shouldBe` Right (cat (ident "y") (invoke (ident "f") [(ident "x")]))
+      parseAll parseExpression " y f(x) " `shouldBe` Right (cat (ident "y") (invoke (ident "f") [ident "x"]))
 
     it "parses y (f(x))" $
-      parseAll parseExpression " y (f(x)) " `shouldBe` Right (cat (ident "y") (invoke (ident "f") [(ident "x")]))
+      parseAll parseExpression " y (f(x)) " `shouldBe` Right (cat (ident "y") (invoke (ident "f") [ident "x"]))
 
     it "takes some of x y :" $
       parseString parseExpression " x y : " `shouldBe` Right (ident "x")
@@ -194,7 +193,7 @@ spec = do
     it "fails (gg++yy) :" $
       parseAll parseSimpleExpression " (gg++yy) : " `shouldSatisfy` isLeft
 
-  describe "Lists" $ do
+  describe "Lists" $
     it "parses [a, b, c]" $
       parseAll parseList " [a, b, c] " `shouldBe` Right (list [ident "a", ident "b", ident "c"])
 
@@ -209,7 +208,7 @@ spec = do
       parseAll parseOperatorDecl " (foo *^^* bar) : bar foo(344) " `shouldBe` Right (oper "*^^*" "foo" "bar"
                                                                                       (cat
                                                                                         (ident "bar")
-                                                                                        (invoke (ident "foo") [(int 344)])))
+                                                                                        (invoke (ident "foo") [int 344])))
 
   describe "Properties" $ do
     it "parses ` a x : y " $
@@ -229,12 +228,12 @@ spec = do
 
     it "parses items: [\"one\", \"two\", \"three\"]" $
       parseAll parseProperty " items: [\"one\", \"two\", \"three\"] " `shouldBe`
-      (Right $ (bare (prop "items" (list [(str "one"), (str "two"), (str "three")]))))
+      Right (bare (prop "items" (list [str "one", str "two", str "three"])))
 
-  describe "Unit" $ do
+  describe "Unit" $
     it "parses foo : bar baz : quux " $
-      parseAll parseUnit " foo : bar baz : quux " `shouldBe` (Right $ Block $ map bare [(prop "foo" (ident "bar")),
-                                                                                        (prop "baz" (ident "quux"))])
+      parseAll parseUnit " foo : bar baz : quux " `shouldBe` (Right $ Block $ map bare [prop "foo" (ident "bar"),
+                                                                                        prop "baz" (ident "quux")])
       
   describe "Block literal" $ do
     it "parses { `a x : y }" $
@@ -262,11 +261,11 @@ spec = do
 
                        -- body 
                        (invoke (ident "if")
-                        [(op "="
-                          (invoke (ident "car") [(invoke (ident "car") [(ident "alist")])])
-                          (ident "sym")),
-                         (invoke (ident "cdr") [(invoke (ident "car") [(ident "alist")])]),
-                         (invoke (ident "lookup") [(invoke (ident "cdr") [(ident "alist")]), (ident "sym")])]))])
+                        [op "="
+                          (invoke (ident "car") [invoke (ident "car") [ident "alist"]])
+                          (ident "sym"),
+                         invoke (ident "cdr") [invoke (ident "car") [ident "alist"]],
+                         invoke (ident "lookup") [invoke (ident "cdr") [ident "alist"], ident "sym"]]))])
 
     it "parses sample B" $
       parseAll parseUnit sampleB
@@ -275,14 +274,14 @@ spec = do
                              "reverse"
                              ["list"]
                              (invoke (ident "if")
-                              [(invoke (ident "car") [(ident "list")]),
-                               (invoke (ident "concat")
-                                        [(invoke (ident "reverse") [(ident "list")]),
-                                         (list [(invoke (ident "car") [(ident "list")])])]),
-                               (ident "nil")]))])
+                              [invoke (ident "car") [ident "list"],
+                               invoke (ident "concat")
+                                        [invoke (ident "reverse") [ident "list"],
+                                         list [invoke (ident "car") [ident "list"]]],
+                               ident "nil"]))])
 
 
-  describe "Nested metadata" $ do
+  describe "Nested metadata" $
     it "parses nested metadata" $
       parseAll parseBlock " { `{`{c:d}a:b} x : y } "
       `shouldBe`

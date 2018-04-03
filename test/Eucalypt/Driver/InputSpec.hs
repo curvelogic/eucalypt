@@ -9,49 +9,49 @@ import Eucalypt.Driver.Input
 spec :: Spec
 spec = do
 
-  describe "inferFormat" $ do
+  describe "inferFormat" $
     it "respects extension" $
       (inferFormat . URLInput . fromJust . parseRelativeReference) "data.json" `shouldBe` Just "json"
 
   describe "parseInput" $ do
     it "parses simple.eu" $
-      parseInputFromString "simple.eu" `shouldBe` (Just $ Input { inputMode = Active
-                                                                 , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.eu"
-                                                                 , inputName = Nothing
-                                                                 , inputFormat = "eu" })
+      parseInputFromString "simple.eu" `shouldBe` Just Input { inputMode = Active
+                                                             , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.eu"
+                                                             , inputName = Nothing
+                                                             , inputFormat = "eu" }
 
     it "parses simple.json" $
-      parseInputFromString "simple.json" `shouldBe` (Just $ Input { inputMode = Inert
-                                                                   , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.json"
-                                                                   , inputName = Nothing
-                                                                   , inputFormat = "json" })
+      parseInputFromString "simple.json" `shouldBe` Just Input { inputMode = Inert
+                                                               , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.json"
+                                                               , inputName = Nothing
+                                                               , inputFormat = "json" }
 
     it "parses json@simple.txt" $
-      parseInputFromString "json@simple.txt" `shouldBe` (Just $ Input { inputMode = Inert
-                                                                       , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.txt"
-                                                                       , inputName = Nothing
-                                                                       , inputFormat = "json" })
+      parseInputFromString "json@simple.txt" `shouldBe` Just Input { inputMode = Inert
+                                                                   , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.txt"
+                                                                   , inputName = Nothing
+                                                                   , inputFormat = "json" }
 
     it "parses +data=yaml@data.txt" $
-      parseInputFromString "+data=yaml@data.txt" `shouldBe` (Just $ Input { inputMode = Active
-                                                                           , inputLocator = (URLInput . fromJust . parseRelativeReference) "data.txt"
-                                                                           , inputName = Just "data"
-                                                                           , inputFormat = "yaml" })
+      parseInputFromString "+data=yaml@data.txt" `shouldBe` Just Input { inputMode = Active
+                                                                       , inputLocator = (URLInput . fromJust . parseRelativeReference) "data.txt"
+                                                                       , inputName = Just "data"
+                                                                       , inputFormat = "yaml" }
     it "fails to parse null" $
       parseInputFromString "\0" `shouldSatisfy` isNothing
 
 
     it "parses http(s) URIs" $
-      parseInputFromString "https://blah.com/blah.eu" `shouldBe` (Just $ Input { inputMode = Active
-                                                                                , inputLocator = (URLInput . fromJust . parseURI ) "https://blah.com/blah.eu"
-                                                                                , inputName = Nothing
-                                                                                , inputFormat = "eu" })
+      parseInputFromString "https://blah.com/blah.eu" `shouldBe` Just Input { inputMode = Active
+                                                                            , inputLocator = (URLInput . fromJust . parseURI ) "https://blah.com/blah.eu"
+                                                                            , inputName = Nothing
+                                                                            , inputFormat = "eu" }
 
     it "parses http(s) URIs with other specifiers" $
-      parseInputFromString "+k=yaml@https://blah.com/blah.txt" `shouldBe` (Just $ Input { inputMode = Active
-                                                                                         , inputLocator = (URLInput . fromJust . parseURI ) "https://blah.com/blah.txt"
-                                                                                         , inputName = Just "k"
-                                                                                         , inputFormat = "yaml" })
+      parseInputFromString "+k=yaml@https://blah.com/blah.txt" `shouldBe` Just Input { inputMode = Active
+                                                                                     , inputLocator = (URLInput . fromJust . parseURI ) "https://blah.com/blah.txt"
+                                                                                     , inputName = Just "k"
+                                                                                     , inputFormat = "yaml" }
 
 main :: IO ()
 main = hspec spec

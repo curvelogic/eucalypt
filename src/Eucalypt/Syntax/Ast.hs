@@ -173,11 +173,11 @@ oper o l r = OperatorDecl (OperatorName o)
 
 -- | Create an annotated block element
 ann :: Expression -> DeclarationForm -> BlockElement
-ann a decl = Declaration $ Annotated { annotation = Just a, declaration = decl }
+ann a decl = Declaration Annotated { annotation = Just a, declaration = decl }
 
 -- | Create an unannotated block element
 bare :: DeclarationForm -> BlockElement
-bare decl = Declaration $ Annotated { annotation = Nothing, declaration = decl }
+bare decl = Declaration Annotated { annotation = Nothing, declaration = decl }
 
 -- | Create a block expression
 block :: [BlockElement] -> Expression

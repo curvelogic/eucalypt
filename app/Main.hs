@@ -94,7 +94,7 @@ pwd = getCurrentDirectory >>= parseAbsDir
 
 -- | Absolute path from rel path and filename
 toAbs:: Path Abs Dir -> String -> IO (Path Abs File)
-toAbs dir s = parseRelFile s >>= (return . (dir </>))
+toAbs dir s = (dir </>) <$> parseRelFile s
 
 -- | If the directory contains Eufile, return it
 hasEufile :: Path Abs Dir -> IO (Maybe (Path Abs File))
@@ -142,7 +142,7 @@ processErgonomics opts =
 inferOutputFormat :: EucalyptOptions -> IO EucalyptOptions
 inferOutputFormat opts = return $
   case exportFormat opts of
-    Nothing -> opts { exportFormat = (takeExtension <$> (output opts) >>= extToFormat) <|> Just "yaml" }
+    Nothing -> opts { exportFormat = (takeExtension <$> output opts >>= extToFormat) <|> Just "yaml" }
     Just _ -> opts
   where extToFormat ext = case ext of
           ".json" -> Just "json"
@@ -156,7 +156,7 @@ inferOutputFormat opts = return $
 defaultStdInput :: EucalyptOptions -> IO EucalyptOptions
 defaultStdInput opts = do
   istty <- queryTerminal stdInput
-  putStrLn ("terminal?" ++ (show istty))
+  putStrLn ("terminal?" ++ show istty)
   if istty
     then return opts
     else return $ appendInputs opts [ (fromJust . parseInputFromString) "-" ]
@@ -169,8 +169,8 @@ preprocessOptions opts =
 -- | For now, just explain
 main :: IO ()
 main = do
-  options <- (execParser opts) >>= preprocessOptions
-  (putStrLn . show) options
+  options <- execParser opts >>= preprocessOptions
+  print options
   where opts = info (options <**> helper) ( fullDesc
                                             <> progDesc "Run eucalypt transformations"
                                             <> header "eu - command line interface to Eucalypt" )
