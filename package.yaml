@@ -27,6 +27,7 @@ library:
     - directory
     - filepath
     - path
+    - network-uri
 
 executables:
   eu:
@@ -42,6 +43,8 @@ executables:
     - directory
     - filepath
     - path
+    - network-uri
+    - unix
 
 tests:
   eucalypt-hs-test:
@@ -56,3 +59,4 @@ tests:
     - hspec
     - QuickCheck
     - pretty
+    - network-uri
