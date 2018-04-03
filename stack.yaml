@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-8.9
+resolver: lts-11.3
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -41,7 +41,9 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
   - parsec-numbers-0.1.0
-
+  - stylish-haskell-0.8.1.0
+  - haskell-src-exts-1.20.2
+  
 # Override default flag values for local packages and extra-deps
 flags: {}
 
