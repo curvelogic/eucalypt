@@ -18,19 +18,24 @@ dependencies:
 library:
   source-dirs: src
   dependencies:
-    - regex-compat
-    - regex-posix
-    - parsec
-    - parsec-numbers
-    - pretty
-    - optparse-applicative
+    - bound
+    - bytestring
+    - deriving-compat
     - directory
     - filepath
-    - path
-    - network-uri
-    - bound
-    - deriving-compat
     - monad-supply
+    - network-uri
+    - optparse-applicative
+    - parsec
+    - parsec-numbers
+    - path
+    - pretty
+    - regex-compat
+    - regex-posix
+    - scientific
+    - text
+    - unix
+    - yaml
 
 executables:
   eu:
@@ -47,7 +52,6 @@ executables:
     - filepath
     - path
     - network-uri
-    - unix
 
 tests:
   eucalypt-hs-test:

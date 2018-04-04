@@ -25,3 +25,4 @@ whnf (CoreApp f x) = case whnf f of
 whnf (CoreLet bs b) = whnf (inst b)
   where es = map inst bs
         inst = instantiate (es !!)
+-- TODO: lookup
