@@ -19,8 +19,8 @@ spec =
 
     it "transforms simple declarations" $
 
-      desugarDeclarationForm (prop "x" (op "+" (int 2) (int 5)))
+      desugarDeclarationFormExp (prop "x" (op "+" (int 2) (int 5)))
 
        `shouldBe`
 
-      (fromStr "x", App (App (Var $ fromStr "+") (Prim (Int 2))) (Prim (Int 5)))
+      ("x", CoreApp (CoreApp (CoreVar "+") (CorePrim (Int 2))) (CorePrim (Int 5)))

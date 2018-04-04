@@ -28,6 +28,9 @@ library:
     - filepath
     - path
     - network-uri
+    - bound
+    - deriving-compat
+    - monad-supply
 
 executables:
   eu:
@@ -60,3 +63,4 @@ tests:
     - QuickCheck
     - pretty
     - network-uri
+    - monad-supply

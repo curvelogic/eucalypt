@@ -1,9 +1,9 @@
 module Eucalypt.Core.PrettySpec (main, spec)
 where
 
+import Control.Monad.Supply
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Pretty
-import Text.PrettyPrint (render)
 import Test.Hspec
 
 main :: IO ()
@@ -15,5 +15,5 @@ spec =
   describe "PPrint" $
 
     it "prints applications" $
-
-      (render . prepare) (App (App (Var $ fromStr "+") (Prim (Int 2))) (Prim (Int 5))) `shouldBe` "(($+ i:2) i:5)"
+      pprint expr  `shouldBe` "(($+ i:2) i:5)"
+        where expr = (CoreApp (CoreApp (CoreVar  "+") (CorePrim (Int 2))) (CorePrim (Int 5)))

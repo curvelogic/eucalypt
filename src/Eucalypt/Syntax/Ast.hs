@@ -23,6 +23,7 @@ module Eucalypt.Syntax.Ast
   , block
   , PrimitiveLiteral(..)
   , AtomicName(..)
+  , ParameterName
   , BlockElement(..)
   , Annotated(..)
   , DeclarationForm(..)
@@ -47,6 +48,9 @@ data AtomicName
   | OperatorName String  -- ^ an operator name
   deriving (Eq, Show)
 
+-- | A parameter name is lexically a normal name but just an alias to
+-- a string
+type ParameterName = String
 
 -- | An Expression is anything that can appear to the right of a colon
 -- in a declaration.
@@ -100,10 +104,10 @@ data DeclarationForm
   = PropertyDecl AtomicName Expression |
     -- ^ A simple property declaration: @key: value-expression@
 
-    FunctionDecl AtomicName [AtomicName] Expression |
+    FunctionDecl AtomicName [ParameterName] Expression |
     -- ^ A function declaration @f(x, y, z): value-expression@
 
-    OperatorDecl AtomicName AtomicName AtomicName Expression
+    OperatorDecl AtomicName ParameterName ParameterName Expression
     -- ^ A binary operator declaration @(x ** y): value-expression@
 
   deriving (Eq, Show)
@@ -163,13 +167,11 @@ prop k = PropertyDecl (NormalName k)
 
 -- | Create a function declaration
 func :: String -> [String] -> Expression -> DeclarationForm
-func f as = FunctionDecl (NormalName f) (map NormalName as)
+func f as = FunctionDecl (NormalName f) as
 
 -- | Create an operator declaration
 oper :: String -> String -> String -> Expression -> DeclarationForm
-oper o l r = OperatorDecl (OperatorName o)
-                          (NormalName l)
-                          (NormalName r)
+oper o l r = OperatorDecl (OperatorName o) l r
 
 -- | Create an annotated block element
 ann :: Expression -> DeclarationForm -> BlockElement

@@ -112,6 +112,10 @@ parseSQString = lexeme $ parseQuoted '\'' NormalName
 parseNormalName :: Parser AtomicName
 parseNormalName = parseSQString <|> NormalName <$> identifier
 
+-- | Parameters are more restricted
+parseParameterName :: Parser ParameterName
+parseParameterName = identifier
+
 -- | Parse just a simple name with no special characters
 parseNormalNameNoWS :: Parser AtomicName
 parseNormalNameNoWS = do
@@ -246,7 +250,7 @@ parsePropertyDecl = PropertyDecl <$> parseNormalName  <* colon <*> parseExpressi
 parseFunctionDecl :: Parser DeclarationForm
 parseFunctionDecl = do
   fn <- parseNormalNameNoWS
-  args <- parens $ parseNormalName `sepBy1` comma
+  args <- parens $ parseParameterName `sepBy1` comma
   colon
   expr <- parseExpression
   return $ FunctionDecl fn args expr
@@ -258,9 +262,9 @@ parseOperatorDecl = do
   expr <- parseExpression
   return $ op expr
   where parseItems = do
-          lhs <- parseNormalName
+          lhs <- parseParameterName
           op <- operator
-          rhs <- parseNormalName
+          rhs <- parseParameterName
           return $ OperatorDecl (OperatorName op) lhs rhs
 
 parseDecl :: Parser DeclarationForm

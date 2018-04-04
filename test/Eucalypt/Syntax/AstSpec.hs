@@ -55,13 +55,13 @@ spec = do
   describe "function declaration" $
     it "represents function declarations" $
       func "x" ["a", "b", "c"] (ident "body") `shouldBe` FunctionDecl (NormalName "x")
-                                                                      (map NormalName ["a", "b", "c"])
+                                                                      ["a", "b", "c"]
                                                                       (ident "body")
 
   describe "oper smart constructor" $
     it "represents operator declarations" $
       oper "<<&&>>" "lhs" "rhs" (ident "body") `shouldBe` OperatorDecl
                                                            (OperatorName "<<&&>>")
-                                                           (NormalName "lhs")
-                                                           (NormalName "rhs")
+                                                           "lhs"
+                                                           "rhs"
                                                            (ident "body")

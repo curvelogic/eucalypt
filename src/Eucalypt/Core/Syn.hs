@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
+{-# OPTIONS_GHC -fno-warn-missing-methods #-}
 {-|
 Module      : Eucalypt.Core.Syn
 Description : Core expression forms for the Eucalypt language
@@ -10,53 +12,78 @@ Stability   : experimental
 module Eucalypt.Core.Syn
 where
 
+import Bound
+import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
+import Data.Functor.Classes
+import Data.List (elemIndex)
+import Control.Monad
+
 -- | Primitive types (literals are available in the eucalypt syntax)
 data Primitive
   = Int Integer
   | Float Double
   | String String
   | Symbol String
-  deriving (Eq, Show)
+  deriving (Eq, Show, Read, Ord)
 
-newtype Name
-  = Local String -- TODO: -> de bruijn
-  deriving (Eq, Show)
+-- | A name in a block namespace, used in lookups
+type CoreRelativeName = String
 
-localName :: Name -> String
-localName (Local n) = n
+-- | A name used for a (free) binding
+type CoreBindingName = String
 
-class FromString a where
-  fromStr :: String -> a
+-- | A new bound-based implementation, with multi-arity to allow STG
+-- later.
+--
+data CoreExp a
+  = CoreVar a
+  | CoreLam (Scope () CoreExp a)
+  | CoreLet [Scope Int CoreExp a] (Scope Int CoreExp a)
+  | CoreApp (CoreExp a) (CoreExp a)
+  | CorePrim Primitive
+  | CoreLookup (CoreExp a) CoreRelativeName
+  | CoreList [CoreExp a]
+  | CoreBlock (CoreExp a)
+  deriving (Functor,Foldable,Traversable)
 
-instance FromString Name where
-  fromStr = Local
+deriveEq1   ''CoreExp
+deriveOrd1  ''CoreExp
+deriveRead1 ''CoreExp
+deriveShow1 ''CoreExp
+instance Eq a => Eq (CoreExp a) where (==) = eq1
+instance Ord a => Ord (CoreExp a) where compare = compare1
+instance Show a => Show (CoreExp a) where showsPrec = showsPrec1
+instance Read a => Read (CoreExp a) where readsPrec = readsPrec1
 
--- | Expression in the core syntax. ` is binder type
-data CoreExpr a
-  = Lam a (CoreExpr a)
-  | App (CoreExpr a) (CoreExpr a)
-  | Var a
-  | Prim Primitive
-  | Let Bool [(a, CoreExpr a)] (CoreExpr a)
-  | Lookup (CoreExpr a) Name
-  | BlockValue [(CoreExpr a, CoreExpr a)]
-  | ListValue [CoreExpr a]
-  deriving (Eq, Show)
+instance Applicative CoreExp where
+  pure = CoreVar
+  (<*>) = ap
 
--- | Construct a (possibly multi-arg) lambda
-lam :: [a] -> CoreExpr a -> CoreExpr a
-lam args expr = foldr Lam expr args
+instance Monad CoreExp where
+  return = CoreVar
+  CoreVar a >>= f = f a
+  CoreLam e >>= f = CoreLam (e >>>= f)
+  CoreLet bs b >>= f = CoreLet (map (>>>= f) bs) (b >>>= f)
+  CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
+  CorePrim p >>= f = CorePrim p
+  CoreLookup e n >>= f = CoreLookup (e >>= f) n
+  CoreList es >>= f = CoreList (map (>>= f) es)
+  CoreBlock e >>= f = CoreBlock (e >>= f)
+
+-- | Abstract a lambda into a scope
+lamexp :: Eq a => a -> CoreExp a -> CoreExp a
+lamexp x b = CoreLam (abstract1 x b)
+
+-- | Abstract lambda of several args
+lamexpr :: Eq a => [a] -> CoreExp a -> CoreExp a
+lamexpr args expr = foldr lamexp expr args
 
 -- | Construct a function application
-app :: CoreExpr a -> [CoreExpr a] -> CoreExpr a
-app = foldl App
+appexp :: CoreExp a -> [CoreExp a] -> CoreExp a
+appexp f xs = foldl CoreApp f xs
 
--- | Construct recursive let
-letrec :: [(a, CoreExpr a)] -> CoreExpr a -> CoreExpr a
-letrec = Let True
-
--- Transformation from AST to Core
-
--- | InitialCoreExpr is type of the initial Core representation when
--- | first transformed from the AST.
-type InitialCoreExpr = CoreExpr Name
+-- | Construct recursive let of several bindings
+letexp :: Eq a => [(a, CoreExp a)] -> CoreExp a -> CoreExp a
+letexp [] b = b
+letexp bs b = CoreLet (map (abstr . snd) bs) (abstr b)
+  where abstr = abstract (`elemIndex` map fst bs)
