@@ -42,13 +42,14 @@ buildValueYaml e = case whnf e of
 -- | Build object contents from the list of pairs inside a block wrapper
 buildBlockYaml :: Show a => CoreExp a -> Either RenderError Y.Value
 buildBlockYaml list = case whnf list of
-  CoreList items@[CoreList _] -> (mapM (pair . whnf) items) >>= (return . Y.object)
-  _ -> err "Unexpected block contents"
+  CoreList items -> (mapM (pair . whnf) items) >>= (return . Y.object)
+  e@_ -> err ("Unexpected block contents: " ++ show e)
 
-  where pair (CoreList (k:v:[])) = do
-          key <- (expectText k)
-          value <- buildValueYaml v
-          return (key, value)
+  where pair item = case item of
+          (CoreList (k:v:[])) -> do key <- (expectText k)
+                                    value <- buildValueYaml v
+                                    return (key, value)
+          e@_ -> err ("Unexpected block item: " ++ show e)
 
 expectText :: Show a => CoreExp a -> Either RenderError Text
 expectText e = case whnf e of

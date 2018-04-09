@@ -16,25 +16,25 @@ spec = do
   describe "parseInput" $ do
     it "parses simple.eu" $
       parseInputFromString "simple.eu" `shouldBe` Just Input { inputMode = Active
-                                                             , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.eu"
+                                                             , inputLocator = (URLInput . fromJust . parseURI) "file:simple.eu"
                                                              , inputName = Nothing
                                                              , inputFormat = "eu" }
 
     it "parses simple.json" $
       parseInputFromString "simple.json" `shouldBe` Just Input { inputMode = Inert
-                                                               , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.json"
+                                                               , inputLocator = (URLInput . fromJust . parseURI) "file:simple.json"
                                                                , inputName = Nothing
                                                                , inputFormat = "json" }
 
     it "parses json@simple.txt" $
       parseInputFromString "json@simple.txt" `shouldBe` Just Input { inputMode = Inert
-                                                                   , inputLocator = (URLInput . fromJust . parseRelativeReference) "simple.txt"
+                                                                   , inputLocator = (URLInput . fromJust . parseURI) "file:simple.txt"
                                                                    , inputName = Nothing
                                                                    , inputFormat = "json" }
 
     it "parses +data=yaml@data.txt" $
       parseInputFromString "+data=yaml@data.txt" `shouldBe` Just Input { inputMode = Active
-                                                                       , inputLocator = (URLInput . fromJust . parseRelativeReference) "data.txt"
+                                                                       , inputLocator = (URLInput . fromJust . parseURI) "file:data.txt"
                                                                        , inputName = Just "data"
                                                                        , inputFormat = "yaml" }
     it "fails to parse null" $

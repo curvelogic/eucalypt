@@ -284,6 +284,9 @@ parseProperty = do
 parseUnit :: Parser Block
 parseUnit = whiteSpace >> (Block <$> many parseProperty)
 
+parseTopLevel :: Parser Expression
+parseTopLevel = EBlock <$> parseUnit
+
 parseBlock :: Parser Block
 parseBlock = braces parseUnit
 

@@ -57,7 +57,7 @@ locatorFromString :: String -> Maybe Locator
 locatorFromString s =
   case s of
     "-" -> Just StdInput
-    _ -> URLInput <$> (parseURI s <|> parseRelativeReference s)
+    _ -> URLInput <$> (parseURI s <|> parseURI ("file:" ++ s))
 
 -- | Parse an input specifier, e.g. simple.eu, +yaml@data.txt
 parseInput :: Parser Input

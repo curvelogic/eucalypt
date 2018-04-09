@@ -36,6 +36,8 @@ library:
     - text
     - unix
     - yaml
+    - strict
+    - aeson
 
 executables:
   eu:

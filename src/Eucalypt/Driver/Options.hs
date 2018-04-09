@@ -19,7 +19,7 @@ data CommandLineMode = Ergonomic | Batch
   deriving (Show, Eq)
 
 -- | What we're doing: e.g. explain and exit or evaluate and render
-data Command = Explain | Evaluate
+data Command = Explain | Evaluate | Parse
   deriving (Show, Eq)
 
 -- | Eucalypt command line options
@@ -48,6 +48,15 @@ exportOption = optional $ strOption ( long "exportType"
 parseInputArgument :: ReadM Input
 parseInputArgument = maybeReader $ \s -> parseInputFromString s
 
+commandOption :: Parser Command
+commandOption = flag' Explain ( long "explain"
+                                <> short 'n'
+                                <> help "Explain command line interpretation and exit" )
+                <|>
+                flag Evaluate Parse ( long "parse"
+                                    <> short 'p'
+                                    <> help "Parse program text and output AST - do not evaluate" )
+
 -- | Parse the command line options
 options :: Parser EucalyptOptions
 options = EucalyptOptions
@@ -70,9 +79,7 @@ options = EucalyptOptions
   <*> switch ( long "no-prelude"
              <> short 'Q'
              <> help "Don't include standard prelude" )
-  <*> flag Evaluate Explain ( long "explain"
-                            <> short 'n'
-                            <> help "Explain command line interpretation and exit" )
+  <*> commandOption
   <*> many (argument parseInputArgument (metavar "INPUTS..."))
 
 
@@ -157,7 +164,6 @@ inferOutputFormat opts = return $
 defaultStdInput :: EucalyptOptions -> IO EucalyptOptions
 defaultStdInput opts = do
   istty <- queryTerminal stdInput
-  putStrLn ("terminal?" ++ show istty)
   if istty
     then return opts
     else return $ appendInputs opts [ (fromJust . parseInputFromString) "-" ]

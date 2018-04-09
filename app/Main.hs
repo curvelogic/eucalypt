@@ -11,3 +11,4 @@ main = do
   case command options of
     Explain -> print options
     Evaluate -> evaluate options
+    Parse -> evaluate options -- handles the parse case

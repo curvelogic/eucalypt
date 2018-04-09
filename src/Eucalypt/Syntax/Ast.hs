@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 {-|
 Module      : Eucalypt.Syntax.Ast
 Description : Abstract syntax for the Eucalypt language
@@ -33,20 +34,23 @@ module Eucalypt.Syntax.Ast
 where
 
 import Text.Regex
+import GHC.Generics
+import Data.Aeson
 
 -- | Eucalypt literals: numbers, strings or symbols.
 data PrimitiveLiteral = VInt Integer   -- ^ integer (decimal representation)
                       | VFloat Double  -- ^ floating point (TODO: inf, nan?)
                       | VStr String    -- ^ double quoted string
                       | VSym String    -- ^ symbol (colon prefixed)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON)
 
 
 -- | Basic unqualified identifier components, name or operator.
 data AtomicName
   = NormalName String    -- ^ a name component, simple or single quoted
   | OperatorName String  -- ^ an operator name
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON)
+
 
 -- | A parameter name is lexically a normal name but just an alias to
 -- a string
@@ -80,7 +84,7 @@ data Expression
   | EList [Expression]
     -- ^ a list literal: [x, y, z]
 
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON)
 
 
 -- | A syntax element could be annotated with another expression
@@ -90,7 +94,7 @@ data Annotated a
                 declaration :: a
                 -- ^ the declaration itself
               }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON)
 
 
 -- | Declaration forms permissible within a block.
@@ -110,19 +114,19 @@ data DeclarationForm
     OperatorDecl AtomicName ParameterName ParameterName Expression
     -- ^ A binary operator declaration @(x ** y): value-expression@
 
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON)
 
 -- | Block elements may be annotated declarations or splice forms
 -- which will evaluate to alists mapping symbols to values and be
 -- merged into the block at evaluation time.
 data BlockElement = Declaration (Annotated DeclarationForm)
                   | Splice Expression
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON)
 
 -- | A block is a sequence of block elements, with later keys
 -- overriding earlier.
 newtype Block = Block [BlockElement]
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, ToJSON)
 
 -- | Strip single quotes from single-quoted string
 unquote :: String -> String
