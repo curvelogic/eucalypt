@@ -9,18 +9,20 @@ Stability   : experimental
 module Eucalypt.Render.Yaml
   where
 
+import Debug.Trace
 import qualified Data.ByteString as BS
 import Data.Text ( Text, pack )
 import qualified Data.Yaml as Y
 import Data.Scientific
 import Eucalypt.Core.Syn
-import Eucalypt.Core.EvalByName
+import Eucalypt.Core.Error
+import Eucalypt.Core.Interpreter
 import Eucalypt.Render.Classes
 import Bound
+import Control.Monad ( (>=>) )
 
-err :: String -> Either RenderError a
-err = Left . RenderError
 
+-- | Create primitive Yaml value from 'Primitive'
 fromPrimitive :: Primitive -> Y.Value
 fromPrimitive p = case p of
   Int i -> Y.Number $ fromInteger i
@@ -28,38 +30,50 @@ fromPrimitive p = case p of
   String s -> Y.String $ pack s
   Symbol s -> Y.String $ pack s
 
-buildValueYaml :: Show a => CoreExp a -> Either RenderError Y.Value
-buildValueYaml e = case whnf e of
-  CorePrim p -> Right $ fromPrimitive p
-  CoreBlock l -> buildBlockYaml l
-  CoreList items -> (mapM (buildValueYaml . whnf) items) >>= (return . Y.array)
-  CoreVar{} -> err "Unexpected Variable (Non-WHNF)"
-  CoreLam{} -> err "Unexpected Lambda (Non-WHNF)"
-  CoreLet{} -> err "Unexpected Let (Non-WHNF)"
-  CoreApp{} -> err "Unexpected Application (Non-WHNF)"
-  CoreLookup{} -> err "Unexpected Lookup (Non-WHNF)"
+
+
+-- | Build Yaml output from expression in a non-block context
+buildValueYaml :: WhnfEvaluator -> CoreExpr -> Interpreter Y.Value
+buildValueYaml whnfM e = do
+  expr <- whnfM e
+  case expr of
+    CorePrim p -> return $ fromPrimitive p
+    CoreBlock l -> buildBlockYaml whnfM l
+    CoreList items -> (mapM (whnfM >=> (buildValueYaml whnfM)) items) >>= (return . Y.array)
+    CoreLam{} -> return Y.Null
+    CoreVar{} -> err "Unexpected Variable (Non-WHNF)" expr
+    CoreLet{} -> err "Unexpected Let (Non-WHNF)" expr
+    CoreApp{} -> err "Unexpected Application (Non-WHNF)" expr
+    CoreLookup{} -> err "Unexpected Lookup (Non-WHNF)" expr
+
+
 
 -- | Build object contents from the list of pairs inside a block wrapper
-buildBlockYaml :: Show a => CoreExp a -> Either RenderError Y.Value
-buildBlockYaml list = case whnf list of
-  CoreList items -> (mapM (pair . whnf) items) >>= (return . Y.object)
-  e@_ -> err ("Unexpected block contents: " ++ show e)
+buildBlockYaml :: WhnfEvaluator -> CoreExpr -> Interpreter Y.Value
+buildBlockYaml whnfM list = do
+  l <- whnfM list
+  case l of
+    CoreList items -> (mapM (whnfM >=> pair) items) >>= (return . Y.object)
+    e@_ -> err "Unexpected block contents" e
 
   where pair item = case item of
-          (CoreList (k:v:[])) -> do key <- (expectText k)
-                                    value <- buildValueYaml v
+          (CoreList (k:v:[])) -> do key <- (whnfM >=> expectText) k
+                                    value <- buildValueYaml whnfM v
                                     return (key, value)
-          e@_ -> err ("Unexpected block item: " ++ show e)
+          e@_ -> err "Unexpected block item: " e
 
-expectText :: Show a => CoreExp a -> Either RenderError Text
-expectText e = case whnf e of
+
+
+-- | Return text if the expressio is string-like otherwise runtime error
+expectText :: CoreExpr -> Interpreter Text
+expectText e = case e of
   CorePrim (String s) -> Right $ pack s
   CorePrim (Symbol s) -> Right $ pack s
-  e -> err ("Non-string-like key" ++ show e)
+  x -> err "Non-string-like key" x
 
 
-renderYamlBytes :: Show a => CoreExp a -> Either RenderError BS.ByteString
-renderYamlBytes e = buildValueYaml e >>= (return . Y.encode)
+renderYamlBytes :: WhnfEvaluator -> CoreExpr -> Interpreter BS.ByteString
+renderYamlBytes whnfM e = buildValueYaml whnfM e >>= (return . Y.encode)
 
 -- | Yaml rendering configuration
 data YamlConfig = YamlConfig {}

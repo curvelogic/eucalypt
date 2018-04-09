@@ -3,9 +3,8 @@ where
 
 import qualified Data.ByteString as BS
 import Eucalypt.Core.Syn
+import Eucalypt.Core.Interpreter
+import Eucalypt.Core.Error
 
-data RenderError = RenderError String
-  deriving (Show)
-
-class Renderer a where
-  renderBytes :: Show b => a -> CoreExp b -> Either RenderError BS.ByteString
+class Renderer r where
+  renderBytes :: r -> WhnfEvaluator -> CoreExpr -> Interpreter BS.ByteString

@@ -15,5 +15,5 @@ spec =
   describe "PPrint" $
 
     it "prints applications" $
-      pprint expr  `shouldBe` "(($+ i:2) i:5)"
+      pprint expr  `shouldBe` "(($+ 2) 5)"
         where expr = (CoreApp (CoreApp (CoreVar  "+") (CorePrim (Int 2))) (CorePrim (Int 5)))

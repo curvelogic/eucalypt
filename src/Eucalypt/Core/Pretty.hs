@@ -35,18 +35,18 @@ import Text.PrettyPrint
   )
 
 renderLiteral :: Primitive -> String
-renderLiteral (Int i) = "i:" ++ show i
-renderLiteral (Float f) = "f:" ++ show f
+renderLiteral (Int i) = show i
+renderLiteral (Float f) = show f
 renderLiteral (String s) = s
-renderLiteral (Symbol s) = ":'" ++ s ++ "'"
+renderLiteral (Symbol s) = ":" ++ s
 
 -- | Generate the format document for rendering
-prepare :: CoreExp String -> Supply String Doc
+prepare :: CoreExpr -> Supply String Doc
 
 prepare (CoreLam e) = do
-  name <- supply
-  body <- prepare (instantiate1 (CoreVar name) e)
-  return $ parens $ text "\\" <+> text name <> char '.' <+> body
+  n <- supply
+  body <- prepare (instantiate1 (CoreVar n) e)
+  return $ parens $ text "\\" <+> (text n) <> (char '.') <+> body
 
 prepare (CoreApp f x) = ((<+>) <$> prepare f <*> prepare x) >>= (return . parens)
 
@@ -76,9 +76,9 @@ prepare (CoreList xs) = do
   return $ brackets $ hsep $ punctuate comma items
 
 -- HACK: Proper name supply needed until we use Bound.Name
-names :: [String]
+names :: [CoreBindingName]
 names = [ [i] | i <- ['a'..'z']] ++ [i : show j | j <- [1 :: Int ..], i <- ['a'..'z'] ]
 
 -- | Pretty Print a CoreExp to String
-pprint :: CoreExp String -> String
+pprint :: CoreExpr -> String
 pprint = render . (\ doc -> evalSupply doc names) . prepare

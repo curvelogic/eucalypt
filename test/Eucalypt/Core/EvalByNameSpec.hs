@@ -19,15 +19,15 @@ spec =
                                        (CoreApp (CoreVar "g") (CoreVar "x"))))
 
     it "evals I" $
-      whnf (CoreApp i (CorePrim (Symbol "z"))) `shouldBe` CorePrim (Symbol "z")
+      whnfM (CoreApp i (CorePrim (Symbol "z"))) `shouldBe` (return $ CorePrim (Symbol "z"))
 
     it "evals K" $
-      whnf (appexp k [CorePrim (Symbol "a"), CorePrim (String "b")])
+      whnfM (appexp k [CorePrim (Symbol "a"), CorePrim (String "b")])
       `shouldBe`
-      CorePrim (Symbol "a")
+      (return $ CorePrim (Symbol "a"))
 
     it "evals S" $
-      whnf (CoreApp (CoreApp (CoreApp s k) k) (CoreVar "x"))
+      whnfM (CoreApp (CoreApp (CoreApp s k) k) (CoreVar "x"))
       `shouldBe`
-      whnf (CoreApp i (CoreVar "x"))
+      whnfM (CoreApp i (CoreVar "x"))
 
