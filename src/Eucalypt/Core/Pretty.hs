@@ -46,9 +46,9 @@ prepare :: CoreExpr -> Supply String Doc
 prepare (CoreLam e) = do
   n <- supply
   body <- prepare (instantiate1 (CoreVar n) e)
-  return $ parens $ text "\\" <+> (text n) <> (char '.') <+> body
+  return $ parens $ text "\\" <+> text n <> char '.' <+> body
 
-prepare (CoreApp f x) = ((<+>) <$> prepare f <*> prepare x) >>= (return . parens)
+prepare (CoreApp f x) = parens <$> ((<+>) <$> prepare f <*> prepare x)
 
 prepare (CoreVar x) = return $ char '$' <> text x
 
@@ -67,13 +67,11 @@ prepare (CoreLet bs b) = do
   let binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
   return $ text "let" <+> (vcat binds $$ hang (text "in") 2 body)
 
-prepare (CoreLookup x y) = fmap (<> text y) $ prepare x
+prepare (CoreLookup x y) = (<> text y) <$> prepare x
 
-prepare (CoreBlock e) = fmap braces $ prepare e
+prepare (CoreBlock e) = braces <$> prepare e
 
-prepare (CoreList xs) = do
-  items <- mapM prepare xs
-  return $ brackets $ hsep $ punctuate comma items
+prepare (CoreList xs) = brackets . hsep . punctuate comma <$> mapM prepare xs
 
 -- HACK: Proper name supply needed until we use Bound.Name
 names :: [CoreBindingName]
@@ -81,4 +79,4 @@ names = [ [i] | i <- ['a'..'z']] ++ [i : show j | j <- [1 :: Int ..], i <- ['a'.
 
 -- | Pretty Print a CoreExp to String
 pprint :: CoreExpr -> String
-pprint = render . (\ doc -> evalSupply doc names) . prepare
+pprint = render . (`evalSupply` names) . prepare

@@ -171,11 +171,11 @@ prop k = PropertyDecl (NormalName k)
 
 -- | Create a function declaration
 func :: String -> [String] -> Expression -> DeclarationForm
-func f as = FunctionDecl (NormalName f) as
+func f = FunctionDecl (NormalName f)
 
 -- | Create an operator declaration
 oper :: String -> String -> String -> Expression -> DeclarationForm
-oper o l r = OperatorDecl (OperatorName o) l r
+oper o = OperatorDecl (OperatorName o)
 
 -- | Create an annotated block element
 ann :: Expression -> DeclarationForm -> BlockElement

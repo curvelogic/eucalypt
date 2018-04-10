@@ -15,9 +15,9 @@ concatResults :: [Interpreter a] -> Interpreter [a]
 concatResults results = let (errs, oks) = partitionEithers results in
   if null errs
   then
-    Right $ oks
+    Right oks
   else
-    Left (RuntimeError $ foldl (++) "" (map errorMessage errs))
+    Left (RuntimeError $ concatMap errorMessage errs)
 
 
 
@@ -28,7 +28,7 @@ euConcat :: WhnfEvaluator -> CoreExpr -> CoreExpr -> Interpreter CoreExpr
 euConcat whnfM l r = do
   l' <- whnfM l
   r' <- whnfM r
-  let items = (++) <$> (extract l) <*> (extract r)
+  let items = (++) <$> extract l <*> extract r
   either (uncurry err) (Right . CoreList) items
 
   where extract e = case e of
@@ -42,7 +42,7 @@ euConcat whnfM l r = do
 -- | Block merge. The default action for block catentation (or
 -- applying a block as a function). Also available as `merge`.
 euMerge :: WhnfEvaluator -> CoreExpr -> CoreExpr -> Interpreter CoreExpr
-euMerge whnfM l r = euConcat whnfM l r >>= (return . CoreBlock)
+euMerge whnfM l r = CoreBlock <$> euConcat whnfM l r
 
 
 
@@ -71,7 +71,7 @@ euLookup whnfM e name = do
                                  eval item = do
                                    item' <- whnfM item
                                    case item' of
-                                     CoreList (k:v:[]) -> whnfM k >>= \k -> return (k, v)
+                                     CoreList [k, v] -> whnfM k >>= \k -> return (k, v)
                                      i@_ -> err "Bad key in block element " i
 
     _ -> err "Lookup in non-block" e

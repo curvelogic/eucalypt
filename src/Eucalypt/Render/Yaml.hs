@@ -39,7 +39,7 @@ buildValueYaml whnfM e = do
   case expr of
     CorePrim p -> return $ fromPrimitive p
     CoreBlock l -> buildBlockYaml whnfM l
-    CoreList items -> (mapM (whnfM >=> (buildValueYaml whnfM)) items) >>= (return . Y.array)
+    CoreList items -> Y.array <$> mapM (whnfM >=> buildValueYaml whnfM) items
     CoreLam{} -> return Y.Null
     CoreVar{} -> err "Unexpected Variable (Non-WHNF)" expr
     CoreLet{} -> err "Unexpected Let (Non-WHNF)" expr
@@ -53,13 +53,13 @@ buildBlockYaml :: WhnfEvaluator -> CoreExpr -> Interpreter Y.Value
 buildBlockYaml whnfM list = do
   l <- whnfM list
   case l of
-    CoreList items -> (mapM (whnfM >=> pair) items) >>= (return . Y.object)
+    CoreList items -> Y.object <$> mapM (whnfM >=> pair) items
     e@_ -> err "Unexpected block contents" e
 
   where pair item = case item of
-          (CoreList (k:v:[])) -> do key <- (whnfM >=> expectText) k
-                                    value <- buildValueYaml whnfM v
-                                    return (key, value)
+          (CoreList [k, v]) -> do key <- (whnfM >=> expectText) k
+                                  value <- buildValueYaml whnfM v
+                                  return (key, value)
           e@_ -> err "Unexpected block item: " e
 
 
@@ -73,7 +73,7 @@ expectText e = case e of
 
 
 renderYamlBytes :: WhnfEvaluator -> CoreExpr -> Interpreter BS.ByteString
-renderYamlBytes whnfM e = buildValueYaml whnfM e >>= (return . Y.encode)
+renderYamlBytes whnfM e = Y.encode <$> buildValueYaml whnfM e
 
 -- | Yaml rendering configuration
 data YamlConfig = YamlConfig {}

@@ -13,7 +13,7 @@ module Eucalypt.Core.Error
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Pretty
 
-data RuntimeError e = RuntimeError { errorMessage :: e }
+newtype RuntimeError e = RuntimeError { errorMessage :: e }
   deriving (Show, Eq)
 
 type Result e a = Either (RuntimeError e) a
@@ -22,4 +22,4 @@ runtimeError :: e -> Result e a
 runtimeError s = Left $ RuntimeError s
 
 presentExpressionInError :: CoreExp CoreBindingName -> String
-presentExpressionInError exp = pprint exp
+presentExpressionInError = pprint

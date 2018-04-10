@@ -23,7 +23,7 @@ data DispatchRenderer = YamlRenderer Yaml.YamlConfig | JsonRenderer
 
 instance Renderer DispatchRenderer where
   renderBytes (YamlRenderer config) expr = renderBytes config expr
-  renderBytes (JsonRenderer) expr = undefined
+  renderBytes JsonRenderer expr = undefined
 
 -- | Select and configure an appropriate renderer from options
 configureRenderer :: EucalyptOptions -> DispatchRenderer

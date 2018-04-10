@@ -50,18 +50,16 @@ readURLInput :: URI -> IO String
 readURLInput u =
   case uriScheme u of
     "file:" -> readFileInput (uriPath u)
-    _ -> print ("scheme: " ++ (uriScheme u)) >> return ""
+    _ -> print ("scheme: " ++ uriScheme u) >> return ""
 
 
 
 -- | Resolve a unit, source and parse the content
 readInput :: Input -> IO (Either ParseError Expression)
-readInput i = do
-  text <- source
-  return $ parseAll parseTopLevel text -- TODO: eof & stdin?
+readInput i = parseAll parseTopLevel <$> source
   where source = case inputLocator i of
           URLInput u -> readURLInput u
-          ResourceInput n -> error("Resources not implemented")
+          ResourceInput n -> error "Resources not implemented"
           StdInput -> readStdInput
 
 
@@ -70,7 +68,7 @@ readInput i = do
 mergeUnits :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 mergeUnits whnfM es = case es of
   [] -> runtimeError "No units to merge"
-  x:[] -> return x
+  [x] -> return x
   x:xs -> foldM (euMerge whnfM) x xs -- TODO: builtins in core syn
 
 
@@ -107,13 +105,13 @@ evaluate opts whnfM = do
       else
 
         -- Desugar and merge
-        case ((mergeUnits whnfM) . (map desugarExp)) rights of
+        case (mergeUnits whnfM . map desugarExp) rights of
 
           Left s ->
             reportErrors [s]
 
           Right core ->
-            case (renderBytes renderer whnfM core) of
+            case renderBytes renderer whnfM core of
               Left s ->
                 reportErrors [s]
 

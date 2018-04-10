@@ -100,7 +100,7 @@ lamexpr args expr = foldr lamexp expr args
 
 -- | Construct a function application
 appexp :: CoreExp a -> [CoreExp a] -> CoreExp a
-appexp f xs = foldl CoreApp f xs
+appexp = foldl CoreApp
 
 
 
