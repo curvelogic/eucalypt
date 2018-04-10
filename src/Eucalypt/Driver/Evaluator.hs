@@ -23,7 +23,7 @@ import Control.Monad (foldM, forM_)
 import qualified Data.ByteString as BS
 import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as T
-import Debug.Trace
+import System.Exit
 
 
 -- $source
@@ -81,7 +81,7 @@ dumpASTs opts exprs = forM_ exprs $ \e ->
 
 
 -- | Implement the Evaluate command, read files and render
-evaluate :: EucalyptOptions -> WhnfEvaluator -> IO ()
+evaluate :: EucalyptOptions -> WhnfEvaluator -> IO ExitCode
 evaluate opts whnfM = do
 
   -- Prepare renderer
@@ -94,13 +94,13 @@ evaluate opts whnfM = do
     then
 
     -- Report any parse errors
-    reportErrors lefts
+    reportErrors lefts >> return (ExitFailure 1)
 
     else
 
       if command opts == Parse then
         -- Dump ASTs
-        dumpASTs opts rights
+        dumpASTs opts rights >> return ExitSuccess
 
       else
 
@@ -108,15 +108,15 @@ evaluate opts whnfM = do
         case (mergeUnits whnfM . map desugarExp) rights of
 
           Left s ->
-            reportErrors [s]
+            reportErrors [s] >> return (ExitFailure 1)
 
           Right core ->
             case renderBytes renderer whnfM core of
               Left s ->
-                reportErrors [s]
+                reportErrors [s] >> return (ExitFailure 1)
 
               Right bytes ->
-                outputBytes opts bytes
+                outputBytes opts bytes >> return (ExitSuccess)
 
 
 
