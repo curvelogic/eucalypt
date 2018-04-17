@@ -52,7 +52,7 @@ readStdInput = BS.hGetContents stdin
 
 -- | Read from FileSystem
 readFileInput :: FilePath -> IO BS.ByteString
-readFileInput path = BS.readFile path
+readFileInput = BS.readFile
 
 
 
@@ -75,8 +75,7 @@ readInput StdInput = readStdInput
 
 -- | Parse a byteString as eucalypt
 parseEucalypt :: BS.ByteString -> Either SyntaxError Expression
-parseEucalypt source = do
-   parseAll parseTopLevel $ (T.unpack . T.decodeUtf8) source
+parseEucalypt source = parseAll parseTopLevel $ (T.unpack . T.decodeUtf8) source
 
 
 
@@ -91,7 +90,7 @@ parseInput i@(Input mode locator name format) = do
     (Active, "eu") -> eucalyptToCore source
     _ -> (return . Left . Command . InvalidInputMode) i
   where
-    eucalyptToCore text = do
+    eucalyptToCore text =
       case parseEucalypt text of
         Left e -> (return . Left . Syntax) e
         Right expr -> (return . Right . desugarExp) expr
@@ -106,7 +105,7 @@ parseInput i@(Input mode locator name format) = do
 -- | Merge core units together
 mergeUnits :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 mergeUnits whnfM es = case es of
-  [] -> Left $ NoSource
+  [] -> Left NoSource
   [x] -> return x
   x:xs -> foldM (euMerge whnfM) x xs -- TODO: builtins in core syn
 
@@ -122,14 +121,14 @@ dumpASTs opts exprs = forM_ exprs $ \e ->
 -- | Parse and dump ASTs
 parseEucalyptInputs :: EucalyptOptions -> IO ExitCode
 parseEucalyptInputs opts = do
-  texts <- mapM readInput $ euLocators
+  texts <- mapM readInput euLocators
   let (errs, exprs) = partitionEithers (map parseEucalypt texts)
   if null errs
     then dumpASTs opts exprs >> return ExitSuccess
-    else reportErrors (errs) >> return (ExitFailure 1)
+    else reportErrors errs >> return (ExitFailure 1)
   where
     euLocators =
-      ((map inputLocator) . filter (\i -> (inputFormat i) == "eu") . inputs)
+      (map inputLocator . filter (\i -> inputFormat i == "eu") . inputs)
         opts
 
 
@@ -137,7 +136,7 @@ parseEucalyptInputs opts = do
 -- | Implement the Evaluate command, read files and render
 evaluate :: EucalyptOptions -> WhnfEvaluator -> IO ExitCode
 evaluate opts whnfM =
-  if (command opts) == Parse
+  if command opts == Parse
     then parseEucalyptInputs opts
     else do
       let renderer = configureRenderer opts

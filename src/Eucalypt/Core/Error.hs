@@ -12,7 +12,6 @@ module Eucalypt.Core.Error
 
 import Control.Exception.Safe
 import Eucalypt.Core.Pretty
-import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
 import Text.Parsec.Error (ParseError)
 
@@ -40,6 +39,6 @@ instance Show EvaluationError where
   show (BadBlockContent expr) = "Bad block content: " ++ pprint expr
   show (NotWeakHeadNormalForm expr) = "Expected weak head normal form: " ++ pprint expr
   show (UncallableExpression expr) = "Uncallable expression: " ++ pprint expr
-  show (NoSource) = "No source"
+  show NoSource = "No source"
 
 instance Exception EvaluationError

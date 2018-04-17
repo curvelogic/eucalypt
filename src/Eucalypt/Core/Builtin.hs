@@ -58,8 +58,8 @@ unwrapBlockElement _ expr = Left $ BadBlockElement expr
 
 -- | From a block, expose an association list for lookup
 buildSearchList :: WhnfEvaluator -> CoreExpr -> Interpreter [(String, CoreExpr)]
-buildSearchList whnfM (CoreBlock (CoreList items)) = do
-  concatResults $ map  eval (reverse items)
+buildSearchList whnfM (CoreBlock (CoreList items)) =
+  concatResults $ map eval (reverse items)
   where
     eval item = whnfM item >>= unwrapBlockElement whnfM
 buildSearchList _ e = Left $ LookupTargetNotList e
@@ -72,8 +72,8 @@ buildSearchList _ e = Left $ LookupTargetNotList e
 -- TODO: should we allow lookup of integers in lists here? not yet
 euLookup :: WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
 euLookup whnfM e name = do
-    obj <- whnfM e
-    alist <- buildSearchList whnfM obj
-    case (lookup name alist) of
-      Just val -> return val
-      Nothing -> Left $ KeyNotFound name
+  obj <- whnfM e
+  alist <- buildSearchList whnfM obj
+  case lookup name alist of
+    Just val -> return val
+    Nothing -> Left $ KeyNotFound name

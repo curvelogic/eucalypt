@@ -7,7 +7,6 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 Description : This is currently heavily based on Snoyman's Data.Yaml
 -}
-{-# LANGUAGE OverloadedStrings #-}
 module Eucalypt.Source.YamlSource where
 
 import Conduit
