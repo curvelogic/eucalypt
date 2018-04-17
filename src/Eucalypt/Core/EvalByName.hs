@@ -24,14 +24,13 @@ whnfM (CoreApp f x) = do
   f' <- whnfM f
   case f' of
     CoreLam e -> whnfM $ instantiate1 x e
-    e@_ -> err "Uncallable expression" e
+    e@_ -> Left $ UncallableExpression e
 
 whnfM (CoreLet bs b) = whnfM (inst b)
-  where es = map inst bs
-        inst = instantiate (es !!)
+  where
+    es = map inst bs
+    inst = instantiate (es !!)
 
-whnfM (CoreLookup e n) = case euLookup whnfM e n of
-  Right exp -> return exp
-  Left _ -> undefined -- TODO: Runtime errors in evaluation
+whnfM (CoreLookup e n) = euLookup whnfM e n
 
 whnfM e = return e

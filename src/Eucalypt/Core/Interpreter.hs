@@ -11,10 +11,10 @@ module Eucalypt.Core.Interpreter
 
 import Eucalypt.Core.Error
 import Eucalypt.Core.Syn
-
+import Data.Either
 
 -- | The interpreter monad
-type Interpreter a = Either (RuntimeError String) a
+type Interpreter a = Either EvaluationError a
 
 
 
@@ -23,6 +23,12 @@ type WhnfEvaluator = CoreExpr -> Interpreter CoreExpr
 
 
 
--- | Throw error
-err :: String -> CoreExpr -> Interpreter b
-err s e = (Left . RuntimeError) (s ++ ": " ++ presentExpressionInError e)
+-- | Aggregate a list of interpreter results, concatenating any error
+-- messages.
+concatResults :: [Interpreter a] -> Interpreter [a]
+concatResults results = let (errs, oks) = partitionEithers results in
+  if null errs
+  then
+    Right oks
+  else
+    Left (MultipleErrors errs)

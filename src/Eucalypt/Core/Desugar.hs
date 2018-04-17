@@ -35,7 +35,7 @@ relativeName n = case n of
   NormalName name -> name
   OperatorName name -> name
 
-desugarDeclarationFormExp :: DeclarationForm -> (CoreBindingName, CoreExp CoreBindingName)
+desugarDeclarationFormExp :: DeclarationForm -> (CoreBindingName, CoreExpr)
 desugarDeclarationFormExp decl =
   case decl of
     PropertyDecl id expr -> (bindingName id, desugarExp expr)
@@ -48,12 +48,12 @@ declarations (Block elements) = mapMaybe toDecl elements
   where toDecl (Splice _) = Nothing
         toDecl (Declaration d) = Just $ declaration d
 
-desugarBlockExp :: Block -> CoreExp CoreBindingName
+desugarBlockExp :: Block -> CoreExpr
 desugarBlockExp block = letexp bindings value
   where bindings = map desugarDeclarationFormExp $ declarations block
         value = CoreBlock $ CoreList [CoreList [CorePrim (Symbol name), CoreVar name] | (name, _) <- bindings]
 
-desugarExp :: Expression -> CoreExp CoreBindingName
+desugarExp :: Expression -> CoreExpr
 desugarExp expr = case expr of
     EOperation id l r -> CoreApp (CoreApp (CoreVar (bindingName id)) (desugarExp l)) (desugarExp r)
     EInvocation f args -> appexp (desugarExp f) (map desugarExp args)

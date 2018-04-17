@@ -18,8 +18,11 @@ dependencies:
 library:
   source-dirs: src
   dependencies:
+    - aeson
     - bound
     - bytestring
+    - conduit
+    - containers
     - deriving-compat
     - directory
     - filepath
@@ -32,12 +35,14 @@ library:
     - pretty
     - regex-compat
     - regex-posix
+    - resourcet
+    - safe-exceptions
     - scientific
+    - strict
     - text
+    - transformers
     - unix
     - yaml
-    - strict
-    - aeson
 
 executables:
   eu:

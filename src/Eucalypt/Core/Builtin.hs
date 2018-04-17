@@ -1,24 +1,21 @@
-module Eucalypt.Core.Builtin where
+{-|
+Module      : Eucalypt.Core.Builtin
+Description : Implementations of built in functions
+Copyright   : (c) Greg Hawkins, 2018
+License     :
+Maintainer  : greg@curvelogic.co.uk
+Stability   : experimental
+-}
+module Eucalypt.Core.Builtin
+  ( euConcat, euMerge, euLookup )
+where
 
-import Eucalypt.Core.Syn
+import Control.Exception.Safe (throw)
+import Data.Either (partitionEithers)
+import Data.List
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
-import Data.Either
-import Data.List
-import Debug.Trace
-
-
-
--- | Aggregate a list of interpreter results, concatenating any error
--- messages.
-concatResults :: [Interpreter a] -> Interpreter [a]
-concatResults results = let (errs, oks) = partitionEithers results in
-  if null errs
-  then
-    Right oks
-  else
-    Left (RuntimeError $ concatMap errorMessage errs)
-
+import Eucalypt.Core.Syn
 
 
 
@@ -28,14 +25,15 @@ euConcat :: WhnfEvaluator -> CoreExpr -> CoreExpr -> Interpreter CoreExpr
 euConcat whnfM l r = do
   l' <- whnfM l
   r' <- whnfM r
-  let items = (++) <$> extract l <*> extract r
-  either (uncurry err) (Right . CoreList) items
-
-  where extract e = case e of
-          CoreList items -> Right items
-          CoreBlock (CoreList items) -> Right items
-          _ -> Left ("Concat argument not a list", e)
-
+  items <- (++) <$> extract l' <*> extract r'
+  return $ CoreList items
+  where
+    extract :: CoreExpr -> Interpreter [CoreExpr]
+    extract e =
+      case e of
+        CoreList items -> return items
+        CoreBlock (CoreList items) -> return items
+        _ -> Left $ ConcatArgumentNotList e
 
 
 
@@ -46,32 +44,36 @@ euMerge whnfM l r = CoreBlock <$> euConcat whnfM l r
 
 
 
+-- | Unwrap a single block element into name and expr, evaluating the
+-- key if necessary to get there.
+unwrapBlockElement :: WhnfEvaluator -> CoreExpr -> Interpreter (String, CoreExpr)
+unwrapBlockElement whnfM expr@(CoreList [k, v]) = do
+  key <- whnfM k
+  case key of
+    CorePrim (Symbol n) -> return (n, v)
+    _ -> Left $ BadBlockElement expr
+unwrapBlockElement _ expr = Left $ BadBlockElement expr
+
+
+
+-- | From a block, expose an association list for lookup
+buildSearchList :: WhnfEvaluator -> CoreExpr -> Interpreter [(String, CoreExpr)]
+buildSearchList whnfM (CoreBlock (CoreList items)) = do
+  concatResults $ map  eval (reverse items)
+  where
+    eval item = whnfM item >>= unwrapBlockElement whnfM
+buildSearchList _ e = Left $ LookupTargetNotList e
+
+
 
 -- | Lookup in a block requires realising all keys as later keys
--- override earlier. Missing key is a RuntimeError.
+-- override earlier. Missing key is a EvaluationError.
 --
 -- TODO: should we allow lookup of integers in lists here? not yet
 euLookup :: WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
 euLookup whnfM e name = do
-  obj <- whnfM e
-
-  case obj of
-
-    CoreBlock (CoreList items) ->
-
-                           do
-                             alist <- buildSearchList items
-
-                             case lookup (CorePrim (Symbol name)) alist of
-                               Just val -> return val
-                               Nothing -> runtimeError ("Key " ++ name ++ " not found")
-
-                           where buildSearchList items = concatResults (map eval (reverse items))
-
-                                 eval item = do
-                                   item' <- whnfM item
-                                   case item' of
-                                     CoreList [k, v] -> whnfM k >>= \k -> return (k, v)
-                                     i@_ -> err "Bad key in block element " i
-
-    _ -> err "Lookup in non-block" e
+    obj <- whnfM e
+    alist <- buildSearchList whnfM obj
+    case (lookup name alist) of
+      Just val -> return val
+      Nothing -> Left $ KeyNotFound name

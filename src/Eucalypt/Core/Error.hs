@@ -1,6 +1,6 @@
 {-|
 Module      : Eucalypt.Core.Error
-Description : RuntimeError implementation
+Description : EvaluationError implementation
 Copyright   : (c) Greg Hawkins, 2018
 License     :
 Maintainer  : greg@curvelogic.co.uk
@@ -10,16 +10,36 @@ Stability   : experimental
 module Eucalypt.Core.Error
   where
 
-import Eucalypt.Core.Syn
+import Control.Exception.Safe
 import Eucalypt.Core.Pretty
+import Eucalypt.Core.Pretty
+import Eucalypt.Core.Syn
+import Text.Parsec.Error (ParseError)
 
-newtype RuntimeError e = RuntimeError { errorMessage :: e }
-  deriving (Show, Eq)
+-- | All the errors that may occur during evaluation
+data EvaluationError
+  = MultipleErrors [EvaluationError]
+  | ConcatArgumentNotList CoreExpr
+  | LookupTargetNotList CoreExpr
+  | LookupKeyNotStringLike CoreExpr
+  | KeyNotFound String
+  | BadBlockElement CoreExpr
+  | BadBlockContent CoreExpr
+  | NotWeakHeadNormalForm CoreExpr
+  | UncallableExpression CoreExpr
+  | NoSource
+  deriving (Eq, Typeable)
 
-type Result e a = Either (RuntimeError e) a
+instance Show EvaluationError where
+  show (MultipleErrors es) = undefined
+  show (ConcatArgumentNotList expr) = "Argument to concat not a list: " ++ pprint expr
+  show (LookupTargetNotList expr) = "Lookup target not a list: " ++ pprint expr
+  show (LookupKeyNotStringLike expr) = "Lookup key not string-like: " ++ pprint expr
+  show (KeyNotFound key) = "Key not found: " ++ key
+  show (BadBlockElement expr) = "Bad block element: " ++ pprint expr
+  show (BadBlockContent expr) = "Bad block content: " ++ pprint expr
+  show (NotWeakHeadNormalForm expr) = "Expected weak head normal form: " ++ pprint expr
+  show (UncallableExpression expr) = "Uncallable expression: " ++ pprint expr
+  show (NoSource) = "No source"
 
-runtimeError :: e -> Result e a
-runtimeError s = Left $ RuntimeError s
-
-presentExpressionInError :: CoreExp CoreBindingName -> String
-presentExpressionInError = pprint
+instance Exception EvaluationError

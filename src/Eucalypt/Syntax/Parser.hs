@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Syntax.Parser where
 
 import Eucalypt.Syntax.Ast
+import Eucalypt.Syntax.Error
 import Text.Parsec (try, ParseError, parse)
 import Text.Parsec.String (Parser)
 import Text.Parsec.Char
@@ -297,11 +298,21 @@ parseBlockLiteral = EBlock <$> parseBlock
 --
 --
 
+
+
+-- | Allow leading whitespace
 parseSource :: Parser a -> Parser a
 parseSource p = whiteSpace >> p
 
-parseString :: Parser a -> String -> Either ParseError a
-parseString p = parse (parseSource p) ""
 
-parseAll :: Parser a -> String -> Either ParseError a
-parseAll p = parse (parseSource p <* eof) ""
+
+-- | Parse a Eucalypt toplevel unit from string potentially leaving
+-- residue
+parseString :: Parser a -> String -> Either SyntaxError a
+parseString p s = first SyntaxError $ parse (parseSource p) "" s
+
+
+
+-- | Parse the entirety of a string as a Eucalypt toplevel unit
+parseAll :: Parser a -> String -> Either SyntaxError a
+parseAll p s = first SyntaxError $ parse (parseSource p <* eof) "" s
