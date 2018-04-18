@@ -75,3 +75,4 @@ tests:
     - pretty
     - network-uri
     - monad-supply
+    - text
