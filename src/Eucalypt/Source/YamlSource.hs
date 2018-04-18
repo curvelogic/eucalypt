@@ -10,14 +10,12 @@ Description : This is currently heavily based on Snoyman's Data.Yaml
 module Eucalypt.Source.YamlSource where
 
 import Conduit
-import Control.Exception
-import Control.Monad (MonadPlus(..), ap, liftM)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (MonadThrow, throwM)
 import Control.Monad.Trans.Writer.Strict (WriterT, tell)
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Eucalypt.Core.Syn as S
 import Eucalypt.Source.Error
@@ -39,7 +37,7 @@ data RawExpr = RawExpr CoreExpr AnchorMap
 --
 -- TODO: preserve style as metadata
 coreScalar :: BS.ByteString -> Tag -> Style -> Anchor -> CoreExpr
-coreScalar text tag style anchor =
+coreScalar text tag _ _ =
   let s = (unpack . decodeUtf8) text
    in CorePrim $
       case tag of
@@ -82,8 +80,8 @@ sinkInertExpr = start
       return val
     go EventStreamStart = start
     go EventDocumentStart = start
-    go event@(EventAlias a) = return $ coreAlias a
-    go event@(EventScalar text tag style anchor) =
+    go (EventAlias a) = return $ coreAlias a
+    go (EventScalar text tag style anchor) =
       let scalar = coreScalar text tag style anchor
        in case anchor of
             Nothing -> return scalar

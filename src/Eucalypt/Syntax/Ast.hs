@@ -75,9 +75,6 @@ data Expression
   | ECatenation Expression Expression
     -- ^ invocation by catenation: @x f@
 
-  | EMeta Expression Expression
-    -- ^ application of expression metadata TODO: needed?
-
   | EBlock Block
     -- ^ a block literal { decls }
 

@@ -10,9 +10,6 @@ module Eucalypt.Core.Builtin
   ( euConcat, euMerge, euLookup )
 where
 
-import Control.Exception.Safe (throw)
-import Data.Either (partitionEithers)
-import Data.List
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -33,7 +30,7 @@ euConcat whnfM l r = do
       case e of
         CoreList items -> return items
         CoreBlock (CoreList items) -> return items
-        _ -> Left $ ConcatArgumentNotList e
+        _ -> throwEvalError $ ConcatArgumentNotList e
 
 
 
@@ -51,8 +48,8 @@ unwrapBlockElement whnfM expr@(CoreList [k, v]) = do
   key <- whnfM k
   case key of
     CorePrim (Symbol n) -> return (n, v)
-    _ -> Left $ BadBlockElement expr
-unwrapBlockElement _ expr = Left $ BadBlockElement expr
+    _ -> throwEvalError $ BadBlockElement expr
+unwrapBlockElement _ expr = throwEvalError $ BadBlockElement expr
 
 
 
@@ -62,7 +59,7 @@ buildSearchList whnfM (CoreBlock (CoreList items)) =
   concatResults $ map eval (reverse items)
   where
     eval item = whnfM item >>= unwrapBlockElement whnfM
-buildSearchList _ e = Left $ LookupTargetNotList e
+buildSearchList _ e = throwEvalError $ LookupTargetNotList e
 
 
 
@@ -76,4 +73,4 @@ euLookup whnfM e name = do
   alist <- buildSearchList whnfM obj
   case lookup name alist of
     Just val -> return val
-    Nothing -> Left $ KeyNotFound name
+    Nothing -> throwEvalError $ KeyNotFound name

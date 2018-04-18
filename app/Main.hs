@@ -10,7 +10,7 @@ import System.Exit
 -- | Parse options and explain, evaluate or parse as appropriate
 main :: IO ()
 main = do
-  options <- getOptions
-  case command options of
-    Explain -> print options >> exitSuccess
-    _ -> evaluate options whnfM >>= exitWith
+  opts <- getOptions
+  case optionCommand opts of
+    Explain -> print opts >> exitSuccess
+    _ -> evaluate opts whnfM >>= exitWith

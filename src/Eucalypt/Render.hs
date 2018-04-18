@@ -15,19 +15,17 @@ module Eucalypt.Render (configureRenderer)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import Eucalypt.Render.Classes
 import qualified Eucalypt.Render.Yaml as Yaml
-import qualified Data.ByteString as BS
-import Eucalypt.Core.Syn
 
 -- | Tagged renderer for dispatch to the correct implementation
 data DispatchRenderer = YamlRenderer Yaml.YamlConfig | JsonRenderer
 
 instance Renderer DispatchRenderer where
   renderBytes (YamlRenderer config) expr = renderBytes config expr
-  renderBytes JsonRenderer expr = undefined
+  renderBytes JsonRenderer _ = undefined
 
 -- | Select and configure an appropriate renderer from options
 configureRenderer :: EucalyptOptions -> DispatchRenderer
-configureRenderer opts = case exportFormat opts of
+configureRenderer opts = case optionExportFormat opts of
   Just "yaml" -> YamlRenderer Yaml.YamlConfig {}
   Just "json" -> JsonRenderer
   _ -> YamlRenderer Yaml.YamlConfig {}

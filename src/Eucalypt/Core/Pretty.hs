@@ -15,7 +15,7 @@ import Eucalypt.Core.Syn
 import Bound
 import Control.Monad.Supply
 import Text.PrettyPrint
-  ( Doc(..),
+  ( Doc,
     text,
     char,
     brackets,
@@ -23,11 +23,9 @@ import Text.PrettyPrint
     punctuate,
     comma,
     hang,
-    hcat,
     hsep,
     vcat,
     braces,
-    empty,
     render,
     (<+>),
     (<>),
@@ -54,18 +52,18 @@ prepare (CoreVar x) = return $ char '$' <> text x
 
 prepare (CorePrim x) = return $ (text . renderLiteral) x
 
-prepare (CoreLet bs b) = do
+prepare (CoreLet bindings body) = do
   -- get the names we need and a fn to instantiate vars from them
-  names <- supplies (length bs)
-  let inst = instantiate (\n -> CoreVar (names !! n))
+  freshNames <- supplies (length bindings)
+  let inst = instantiate (\n -> CoreVar (freshNames !! n))
 
   -- instantiate to fill in names
-  body <- prepare (inst b)
-  bindExprs <- mapM (prepare . inst) bs
+  prettyBody <- prepare (inst body)
+  bindExprs <- mapM (prepare . inst) bindings
 
   -- format
-  let binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
-  return $ text "let" <+> (vcat binds $$ hang (text "in") 2 body)
+  let binds = zipWith (\n b -> text n <+> char '=' <+> b) freshNames bindExprs
+  return $ text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
 
 prepare (CoreLookup x y) = (<> text y) <$> prepare x
 

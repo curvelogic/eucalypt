@@ -6,19 +6,18 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
-
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Eucalypt.Syntax.Parser where
 
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.Error
-import Text.Parsec (try, ParseError, parse)
+import Text.Parsec (try, parse)
 import Text.Parsec.String (Parser)
 import Text.Parsec.Char
 import Text.Parsec.Prim (many)
 import Text.Parsec.Combinator
 import qualified Text.Parsec.Token as Tok
 
-import Data.Either (either)
 import Data.Bifunctor
 import Control.Applicative hiding (many)
 
@@ -252,21 +251,21 @@ parseFunctionDecl :: Parser DeclarationForm
 parseFunctionDecl = do
   fn <- parseNormalNameNoWS
   args <- parens $ parseParameterName `sepBy1` comma
-  colon
+  _ <- colon
   expr <- parseExpression
   return $ FunctionDecl fn args expr
 
 parseOperatorDecl :: Parser DeclarationForm
 parseOperatorDecl = do
-  op <- parens parseItems
-  colon
+  operation <- parens parseItems
+  _ <- colon
   expr <- parseExpression
-  return $ op expr
+  return $ operation expr
   where parseItems = do
           lhs <- parseParameterName
-          op <- operator
+          opName <- operator
           rhs <- parseParameterName
-          return $ OperatorDecl (OperatorName op) lhs rhs
+          return $ OperatorDecl (OperatorName opName) lhs rhs
 
 parseDecl :: Parser DeclarationForm
 parseDecl = try parseOperatorDecl <|> try parsePropertyDecl <|> parseFunctionDecl
@@ -276,9 +275,9 @@ parseAnnotation = lexeme (char '`') >> parseExpression
 
 parseProperty :: Parser BlockElement
 parseProperty = do
-  annotation <- optionMaybe parseAnnotation
-  decl <- parseDecl
-  return $ Declaration Annotated { annotation = annotation, declaration = decl }
+  a <- optionMaybe parseAnnotation
+  d <- parseDecl
+  return $ Declaration Annotated { annotation = a, declaration = d }
 
 -- |
 -- Parse top level declarations as block but allow any amount of preceding whitespace

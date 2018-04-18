@@ -10,7 +10,6 @@ module Eucalypt.Core.EvalByName
   where
 
 import Bound
-import Debug.Trace
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Error
 import Eucalypt.Core.Builtin
@@ -24,7 +23,7 @@ whnfM (CoreApp f x) = do
   f' <- whnfM f
   case f' of
     CoreLam e -> whnfM $ instantiate1 x e
-    e@_ -> Left $ UncallableExpression e
+    e@_ -> throwEvalError $ UncallableExpression e
 
 whnfM (CoreLet bs b) = whnfM (inst b)
   where

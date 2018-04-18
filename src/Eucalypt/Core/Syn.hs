@@ -79,7 +79,7 @@ instance Monad CoreExp where
   CoreLam e >>= f = CoreLam (e >>>= f)
   CoreLet bs b >>= f = CoreLet (map (>>>= f) bs) (b >>>= f)
   CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
-  CorePrim p >>= f = CorePrim p
+  CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
   CoreList es >>= f = CoreList (map (>>= f) es)
   CoreBlock e >>= f = CoreBlock (e >>= f)

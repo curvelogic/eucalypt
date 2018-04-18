@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Eucalypt.Syntax.ParserSpec (main, spec)
 where
 
@@ -5,9 +6,6 @@ import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.Parser
 import Test.Hspec
 import Test.QuickCheck
-import Test.QuickCheck.Gen
-import Test.QuickCheck.Modifiers
-import Control.Monad
 import Data.Either
 
 main :: IO ()
@@ -24,12 +22,6 @@ checkFloat x = either (const False) (== VFloat x) result
 checkSymbol :: String -> Bool
 checkSymbol x = either (const False) (== VSym x) result
   where result = parseString parseSymbol (":" ++ x)
-
-checkString :: String -> Bool
-checkString x = either (const False) (== VStr x) result
-  where result = parseString parseDQString ("\"" ++ x ++ "\"")
-
-{- Generators for property testing -}
 
 lower = ['a'..'z']
 upper = ['A'..'Z']

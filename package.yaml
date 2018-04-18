@@ -25,6 +25,7 @@ library:
     - containers
     - deriving-compat
     - directory
+    - exceptions
     - filepath
     - monad-supply
     - network-uri

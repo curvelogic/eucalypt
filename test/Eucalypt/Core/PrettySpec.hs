@@ -1,7 +1,6 @@
 module Eucalypt.Core.PrettySpec (main, spec)
 where
 
-import Control.Monad.Supply
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Pretty
 import Test.Hspec

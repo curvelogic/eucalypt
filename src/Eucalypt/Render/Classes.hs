@@ -7,4 +7,4 @@ import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Error
 
 class Renderer r where
-  renderBytes :: r -> WhnfEvaluator -> CoreExpr -> Interpreter BS.ByteString
+  renderBytes :: r -> WhnfEvaluator -> CoreExpr -> IO (Either EvaluationError BS.ByteString)

@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-|
 Module      : Eucalypt.Core.Interpreter
 Description : The Intepreter monad and related types
@@ -13,8 +15,17 @@ import Eucalypt.Core.Error
 import Eucalypt.Core.Syn
 import Data.Either
 
+
+
 -- | The interpreter monad
-type Interpreter a = Either EvaluationError a
+newtype Interpreter a = Interpreter { runInterpreter :: Either EvaluationError a }
+  deriving (Show, Eq, Functor, Applicative, Monad)
+
+
+
+-- | Abort interpreter with 'EvaluationError'
+throwEvalError :: EvaluationError -> Interpreter a
+throwEvalError = Interpreter . Left
 
 
 
@@ -26,9 +37,9 @@ type WhnfEvaluator = CoreExpr -> Interpreter CoreExpr
 -- | Aggregate a list of interpreter results, concatenating any error
 -- messages.
 concatResults :: [Interpreter a] -> Interpreter [a]
-concatResults results = let (errs, oks) = partitionEithers results in
+concatResults results = let (errs, oks) = partitionEithers (map runInterpreter results) in
   if null errs
   then
-    Right oks
+    return oks
   else
-    Left (MultipleErrors errs)
+    throwEvalError $ MultipleErrors errs

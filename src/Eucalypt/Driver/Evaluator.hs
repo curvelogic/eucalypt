@@ -2,38 +2,34 @@
 module Eucalypt.Driver.Evaluator
 where
 
-import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
-import Eucalypt.Driver.Input (InputMode(..), Input(..), Locator(..))
-import Eucalypt.Syntax.Ast (Expression)
-import Eucalypt.Syntax.Parser (parseAll, parseTopLevel)
-import Eucalypt.Source.YamlSource
-import Eucalypt.Core.Syn
-import Eucalypt.Core.Desugar (desugarExp)
+import Control.Exception.Safe (try)
+import Control.Monad (foldM, forM_)
+import qualified Data.ByteString as BS
+import Data.Either (partitionEithers)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.IO as T
+import Data.Yaml as Y
 import Eucalypt.Core.Builtin (euMerge)
-import Eucalypt.Core.Interpreter
+import Eucalypt.Core.Desugar (desugarExp)
 import Eucalypt.Core.Error
+import Eucalypt.Core.Interpreter
+import Eucalypt.Core.Syn
 import Eucalypt.Driver.Error (CommandError(..))
-import Eucalypt.Render.Classes
+import Eucalypt.Driver.Input (Input(..), InputMode(..), Locator(..))
+import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
 import Eucalypt.Render (configureRenderer)
+import Eucalypt.Render.Classes
 import Eucalypt.Reporting.Error (EucalyptError(..))
 import Eucalypt.Reporting.Report (reportErrors)
 import Eucalypt.Source.Error (DataParseException(..))
+import Eucalypt.Source.YamlSource
+import Eucalypt.Syntax.Ast (Expression)
 import Eucalypt.Syntax.Error (SyntaxError(..))
+import Eucalypt.Syntax.Parser (parseAll, parseTopLevel)
 import Network.URI
-import System.IO
-import qualified System.IO.Strict as Strict
-import Text.Parsec.Error (ParseError)
-import Data.Either (partitionEithers)
-import Data.Maybe
-import Data.Typeable
-import Data.Yaml as Y
-import Control.Monad (foldM, forM_)
-import Control.Exception.Safe (tryJust, throw, catch, try, Exception)
-import qualified Data.ByteString as BS
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import qualified Data.Text.Encoding as T
 import System.Exit
+import System.IO
 
 
 -- $source
@@ -68,7 +64,7 @@ readURLInput u =
 -- | Read any locator into a bytestring
 readInput :: Locator -> IO BS.ByteString
 readInput (URLInput u) = readURLInput u
-readInput (ResourceInput n) = error "Resources not implemented"
+readInput (ResourceInput _) = error "Resources not implemented"
 readInput StdInput = readStdInput
 
 
@@ -82,7 +78,7 @@ parseEucalypt source = parseAll parseTopLevel $ (T.unpack . T.decodeUtf8) source
 -- | Resolve a unit, read source and parse and desugar the content
 -- into CoreExpr, converting all error types into EucalyptErrors.
 parseInput :: Input -> IO (Either EucalyptError CoreExpr)
-parseInput i@(Input mode locator name format) = do
+parseInput i@(Input mode locator _name format) = do
   source <- readInput locator
   case (mode, format) of
     (Inert, "yaml") -> dataToCore source
@@ -104,16 +100,17 @@ parseInput i@(Input mode locator name format) = do
 
 -- | Merge core units together
 mergeUnits :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
-mergeUnits whnfM es = case es of
-  [] -> Left NoSource
-  [x] -> return x
-  x:xs -> foldM (euMerge whnfM) x xs -- TODO: builtins in core syn
+mergeUnits whnfM es =
+  case es of
+    [] -> throwEvalError NoSource
+    [x] -> return x
+    x:xs -> foldM (euMerge whnfM) x xs -- TODO: builtins in core syn
 
 
 
 -- | Dump ASTs
 dumpASTs :: EucalyptOptions -> [Expression] -> IO ()
-dumpASTs opts exprs = forM_ exprs $ \e ->
+dumpASTs _ exprs = forM_ exprs $ \e ->
   putStrLn "---" >>  (T.putStrLn . T.decodeUtf8 . Y.encode) e
 
 
@@ -128,7 +125,7 @@ parseEucalyptInputs opts = do
     else reportErrors errs >> return (ExitFailure 1)
   where
     euLocators =
-      (map inputLocator . filter (\i -> inputFormat i == "eu") . inputs)
+      (map inputLocator . filter (\i -> inputFormat i == "eu") . optionInputs)
         opts
 
 
@@ -136,18 +133,19 @@ parseEucalyptInputs opts = do
 -- | Implement the Evaluate command, read files and render
 evaluate :: EucalyptOptions -> WhnfEvaluator -> IO ExitCode
 evaluate opts whnfM =
-  if command opts == Parse
+  if optionCommand opts == Parse
     then parseEucalyptInputs opts
     else do
       let renderer = configureRenderer opts
-      trees <- mapM parseInput (inputs opts)
+      trees <- mapM parseInput (optionInputs opts)
       let (lefts, rights) = partitionEithers trees
       if (not . null) lefts
         then reportErrors lefts >> return (ExitFailure 1)
-        else case mergeUnits whnfM rights of
+        else case runInterpreter (mergeUnits whnfM rights) of
                Left s -> reportErrors [s] >> return (ExitFailure 1)
-               Right core ->
-                 case renderBytes renderer whnfM core of
+               Right core -> do
+                 renderResult <- renderBytes renderer whnfM core  -- now in IO
+                 case renderResult of
                    Left s -> reportErrors [s] >> return (ExitFailure 1)
                    Right bytes -> outputBytes opts bytes >> return ExitSuccess
 
@@ -156,6 +154,6 @@ evaluate opts whnfM =
 -- | Output the rendered bytes to the specified output
 outputBytes :: EucalyptOptions -> BS.ByteString -> IO ()
 outputBytes opts str =
-  case output opts of
+  case optionOutput opts of
     Just file -> T.writeFile file (T.decodeUtf8 str)
     Nothing -> T.putStrLn (T.decodeUtf8 str)

@@ -13,7 +13,6 @@ module Eucalypt.Core.Error
 import Control.Exception.Safe
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
-import Text.Parsec.Error (ParseError)
 
 -- | All the errors that may occur during evaluation
 data EvaluationError
@@ -30,7 +29,7 @@ data EvaluationError
   deriving (Eq, Typeable)
 
 instance Show EvaluationError where
-  show (MultipleErrors es) = undefined
+  show (MultipleErrors es) = foldl1 (++) (map ((++ "\n") . show) es)
   show (ConcatArgumentNotList expr) = "Argument to concat not a list: " ++ pprint expr
   show (LookupTargetNotList expr) = "Lookup target not a list: " ++ pprint expr
   show (LookupKeyNotStringLike expr) = "Lookup key not string-like: " ++ pprint expr

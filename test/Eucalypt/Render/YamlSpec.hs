@@ -63,12 +63,16 @@ spec :: Spec
 spec =
   describe "Yaml rendering" $ do
     xit "Renders simple NF core block to Yaml" $
-      (renderYamlBytes return coreNF1) `shouldBe`
-      ((Right . encodeUtf8) "a: 1234\nb:\n  - x\n  y\n  z\n")
+      renderYamlBytes return coreNF1 `shouldReturn`
+      (return . encodeUtf8) "a: 1234\nb:\n  - x\n  y\n  z\n"
+    --        expected: Right "a: 1234\nb:\n  - x\n  y\n  z\n"
+    --         but got: Right "a: 1234\nb:\n- x\n- 'y'\n- z\n"
+    -- TODO: mysterious...
+
     it "Renders NF core list" $
-      (renderYamlBytes return coreNF2) `shouldBe`
-      ((Right . encodeUtf8) "- 1\n- 2\n- 3\n- 4\n- 5\n- 6\n- 7\n")
-    xit "Maintains key order" $
-      (renderYamlBytes return coreNF3) `shouldBe`
-      ((Right . encodeUtf8) "a: 1\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\n")
-    it "Forces to WHNF to render" $ pending
+      renderYamlBytes return coreNF2 `shouldReturn`
+      (return . encodeUtf8) "- 1\n- 2\n- 3\n- 4\n- 5\n- 6\n- 7\n"
+    it "Maintains key order" $
+      renderYamlBytes return coreNF3 `shouldReturn`
+      (return . encodeUtf8) "a: 1\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\n"
+    it "Forces to WHNF to render" pending
