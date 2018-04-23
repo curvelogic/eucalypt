@@ -10,7 +10,7 @@ jobs:
 
       - restore_cache:
           keys:
-            - cache-{{ checksum package.yaml }}
+            - cache-{{ checksum "package.yaml" }}
             - cache
 
       - run:
@@ -32,7 +32,7 @@ jobs:
       - save_cache:
           paths:
             - ~/.stack
-          key: cache-{{ checksum package.yaml }}
+          key: cache-{{ checksum "package.yaml" }}
 
       - run:
           name: Run unit tests & coverage
