@@ -9,7 +9,9 @@ jobs:
       - checkout
 
       - restore_cache:
-          key: cache
+          key:
+            - cache-{{ checksum package.yaml }}
+            - cache
 
       - run:
           name: Update PATH to allow stack-built tools
@@ -30,7 +32,7 @@ jobs:
       - save_cache:
           paths:
             - ~/.stack
-          key: cache
+          key: cache-{{ checksum package.yaml }}
 
       - run:
           name: Run unit tests & coverage
@@ -49,6 +51,16 @@ jobs:
           paths:
             - dist
 
+      - run:
+          name: Prepare artifacts
+          command: |
+            mkdir -p /tmp/artifacts
+            copy $STACK_DIST_DIR /tmp/artifacts/dist
+            copy $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
+
+      - store_artifacts:
+          path: /tmp/artifacts
+
   # Test against the eucalypt test suite
   acceptance:
 
@@ -59,3 +71,14 @@ jobs:
           at: .stack-work
       - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
       - run: docker run -v .stack-work:/tmp/workspace -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/eu curvelogic/eucalypt-test-harness:latest
+
+workflows:
+  version: 2
+  build-workflow:
+    jobs:
+      - build:
+          context: curvelogic-docker-hub
+      - acceptance:
+          context: curvelogic-docker-hub
+          requires:
+            - build
