@@ -16,7 +16,7 @@ jobs:
       - run: stack setup
 
       - run:
-          name: Update PATH to allow stack-built tools
+          name: Create script for setting environment
           command: |
             echo "export PATH=$(stack path --local-bin):$PATH" >> /tmp/env.sh
             echo "export STACK_DIST_DIR=$(stack path --dist-dir)" >> /tmp/env.sh
