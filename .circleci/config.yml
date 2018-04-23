@@ -9,7 +9,7 @@ jobs:
       - checkout
 
       - restore_cache:
-          key:
+          keys:
             - cache-{{ checksum package.yaml }}
             - cache
 
