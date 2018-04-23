@@ -16,7 +16,7 @@ jobs:
           command: |
             echo 'export PATH=.local/bin:$PATH' >> $BASH_ENV
             echo 'export STACK_DIST_DIR=$(stack path --dist-dir)' >> $BASH_ENV
-            echo 'export STACK_LOCAL_HPC_DIR=$(stack path --local-hpc-dir)' >> $BASH_ENV
+            echo 'export STACK_LOCAL_HPC_ROOT=$(stack path --local-hpc-root)' >> $BASH_ENV
             source $BASH_ENV
 
       - run:
