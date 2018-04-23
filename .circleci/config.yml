@@ -11,20 +11,36 @@ jobs:
       - restore_cache:
           key: cache
 
-      - run: stack install hlint
+      - run:
+          name: Update PATH to allow stack-built tools
+          command: |
+            echo 'export PATH=.local/bin:$PATH' >> $BASH_ENV
+            source $BASH_ENV
 
-      - run: stack build --pedantic
+      - run:
+          name: Install HLint
+          command: stack install hlint
+
+      - run:
+          name: Build
+          command: stack build --pedantic
 
       - save_cache:
           paths:
             - ~/.stack
           key: cache
 
-      - run: stack test --no-terminal --coverage
+      - run:
+          name: Run unit tests & coverage
+          command: stack test --no-terminal --coverage
 
-      - run: hlint .
+      - run:
+          name: Run HLint
+          command: hlint .
 
-      - run: stack path --dist-dir
+      - run:
+          name: Echo stack path configuration
+          command: stack path --dist-dir
 
       - persist_to_workspace:
           root: .stack-work
