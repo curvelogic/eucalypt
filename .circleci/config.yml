@@ -18,9 +18,10 @@ jobs:
       - run:
           name: Update PATH to allow stack-built tools
           command: |
-            echo 'export PATH=$(stack path --local-bin):$PATH' >> /tmp/env.sh
-            echo 'export STACK_DIST_DIR=$(stack path --dist-dir)' >> /tmp/env.sh
-            echo 'export STACK_LOCAL_HPC_ROOT=$(stack path --local-hpc-root)' >> /tmp/env.sh
+            echo "export PATH=$(stack path --local-bin):$PATH" >> /tmp/env.sh
+            echo "export STACK_DIST_DIR=$(stack path --dist-dir)" >> /tmp/env.sh
+            echo "export STACK_LOCAL_HPC_ROOT=$(stack path --local-hpc-root)" >> /tmp/env.sh
+            cat /tmp/env.sh
 
       - run:
           name: Install HLint
@@ -58,7 +59,7 @@ jobs:
           name: Prepare artifacts
           command: |
             mkdir -p /tmp/artifacts
-            source /tmp.env.sh
+            source /tmp/env.sh
             cp -R $STACK_DIST_DIR /tmp/artifacts/dist
             cp -R $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
 
