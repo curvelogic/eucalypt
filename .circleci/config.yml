@@ -12,6 +12,8 @@ jobs:
           keys:
             - cache-{{ checksum "package.yaml" }}
 
+      - run: stack setup
+
       - run:
           name: Update PATH to allow stack-built tools
           command: |
