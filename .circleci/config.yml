@@ -24,12 +24,12 @@ jobs:
             cat /tmp/env.sh
 
       - run:
-          name: Install HLint
-          command: stack install hlint
+          name: Pull dependencies and build
+          command: stack build --fast --pedantic --no-terminal --test --coverage --no-run-tests
 
       - run:
-          name: Pull dependencies and build
-          command: stack build --fast --pedantic --no-terminal --test --no-run-tests
+          name: Install HLint
+          command: stack install --no-terminal hlint
 
       - save_cache:
           paths:
@@ -38,7 +38,7 @@ jobs:
 
       - run:
           name: Build, run unit tests with coverage
-          command: stack build --fast --test --no-terminal --coverage
+          command: stack build --fast --pedantic --no-terminal --test --coverage
 
       - run:
           name: Run HLint
@@ -48,7 +48,7 @@ jobs:
 
       - run:
           name: Build with no coverage instrumentation
-          command: stack build --no-terminal --ghc-options="-O2"
+          command: stack build --pedantic --no-terminal --ghc-options="-O2"
 
       - persist_to_workspace:
           root: .stack-work
@@ -73,9 +73,9 @@ jobs:
 
     steps:
       - attach_workspace:
-          at: .stack-work
+          at: /tmp/workspace
       - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
-      - run: docker run -v .stack-work:/tmp/workspace -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/eu curvelogic/eucalypt-test-harness:latest
+      - run: docker run -v /tmp/workspace:/tmp/workspace -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/eu curvelogic/eucalypt-test-harness:latest
 
 workflows:
   version: 2
