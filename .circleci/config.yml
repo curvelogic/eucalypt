@@ -1,5 +1,7 @@
 version: 2
 jobs:
+
+  # Build and unit test the eu executable
   build:
     docker:
       - image: curvelogic/docker-circleci-haskell
@@ -21,3 +23,20 @@ jobs:
       - run: stack test --no-terminal --coverage
 
       - run: hlint .
+
+      - run: stack path --dist-dir
+
+      - persist_to_workspace:
+          root: .stack-work
+          paths:
+            - dist
+
+  # Test against the eucalypt test suite
+  acceptance:
+
+    machine: true
+
+    steps:
+      - attach_workspace:
+          at: .stack-work
+      - run: docker run -v .stack-work:/tmp/workspace -e EXECUTABLE=/tmp/workspace curvelogic/eucalypt-test-harness:latest
