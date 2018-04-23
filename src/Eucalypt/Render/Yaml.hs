@@ -59,7 +59,7 @@ instance ToMYaml Interpreter CoreExpr where
   toMYaml whnfM (CoreBlock list) = do
     content <- whnfM list
     case content of
-      CoreList items -> (B.mapping . catMaybes) <$> mapM (whnfM >=> pair) items
+      CoreList items -> B.mapping . catMaybes <$> mapM (whnfM >=> pair) items
       e -> throwEvalError $ BadBlockContent e
     where
       pair item =

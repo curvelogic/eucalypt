@@ -19,3 +19,5 @@ jobs:
           key: cache
 
       - run: stack test --no-terminal --coverage
+
+      - run: hlint .
