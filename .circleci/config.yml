@@ -10,7 +10,8 @@ jobs:
 
       - restore_cache:
           keys:
-            - cache-{{ checksum "package.yaml" }}
+            - cache-{{ checksum "package.yaml" }}-{{ checksum "stack.yaml" }}
+            - cache-{{ checksum "package.yaml" }}-
 
       - run: stack setup
 
@@ -20,7 +21,6 @@ jobs:
             echo 'export PATH=$(stack path --local-bin):$PATH' >> /tmp/env.sh
             echo 'export STACK_DIST_DIR=$(stack path --dist-dir)' >> /tmp/env.sh
             echo 'export STACK_LOCAL_HPC_ROOT=$(stack path --local-hpc-root)' >> /tmp/env.sh
-            source /tmp/env.sh
 
       - run:
           name: Install HLint
@@ -28,24 +28,26 @@ jobs:
 
       - run:
           name: Pull dependencies and build
-          command: stack build --pedantic --test --no-run-tests
+          command: stack build --fast --pedantic --no-terminal --test --no-run-tests
 
       - save_cache:
           paths:
             - ~/.stack
-          key: cache-{{ checksum "package.yaml" }}
+          key: cache-{{ checksum "package.yaml" }}-{{ checksum "stack.yaml" }}
 
       - run:
-          name: Build, run unit tests & coverage
-          command: stack build --test --no-terminal --coverage
+          name: Build, run unit tests with coverage
+          command: stack build --fast --test --no-terminal --coverage
 
       - run:
           name: Run HLint
-          command: hlint .
+          command: |
+            source /tmp/env.sh
+            hlint .
 
       - run:
-          name: Echo stack path configuration
-          command: stack path --dist-dir
+          name: Build with no coverage instrumentation
+          command: stack build --no-terminal --ghc-options="-O2"
 
       - persist_to_workspace:
           root: .stack-work
@@ -56,8 +58,9 @@ jobs:
           name: Prepare artifacts
           command: |
             mkdir -p /tmp/artifacts
-            copy $STACK_DIST_DIR /tmp/artifacts/dist
-            copy $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
+            source /tmp.env.sh
+            cp -R $STACK_DIST_DIR /tmp/artifacts/dist
+            cp -R $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
 
       - store_artifacts:
           path: /tmp/artifacts
