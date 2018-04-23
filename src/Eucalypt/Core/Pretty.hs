@@ -33,10 +33,12 @@ import Text.PrettyPrint
   )
 
 renderLiteral :: Primitive -> String
-renderLiteral (Int i) = show i
-renderLiteral (Float f) = show f
-renderLiteral (String s) = s
-renderLiteral (Symbol s) = ":" ++ s
+renderLiteral (CoreInt i) = show i
+renderLiteral (CoreFloat f) = show f
+renderLiteral (CoreString s) = s
+renderLiteral (CoreSymbol s) = ":" ++ s
+renderLiteral (CoreBoolean b) = show b
+renderLiteral CoreNull = "null"
 
 -- | Generate the format document for rendering
 prepare :: CoreExpr -> Supply String Doc

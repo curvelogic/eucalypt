@@ -26,9 +26,9 @@ checkSymbol x = either (const False) (== VSym x) result
 lower = ['a'..'z']
 upper = ['A'..'Z']
 digits = ['0'..'9']
-idStartPunc = "$?!_"
+idStartPunc = "$?_"
 idContPunc = "$?!_-*"
-operatorStart = "@£%^&*|></+=-~"
+operatorStart = "!@£%^&*|></+=-~"
 operatorCont = "!@£$%^&*|></?+=-~"
 identifierStart = lower ++ upper ++ digits ++ idStartPunc
 identifierCont = lower ++ upper ++ digits ++ idContPunc

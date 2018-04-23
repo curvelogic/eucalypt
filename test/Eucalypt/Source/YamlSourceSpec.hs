@@ -5,7 +5,7 @@ module Eucalypt.Source.YamlSourceSpec
   ) where
 
 import Eucalypt.Source.YamlSource
-import Eucalypt.Core.Syn as S
+import Eucalypt.Core.Syn
 import Test.Hspec
 
 
@@ -21,27 +21,26 @@ spec =
     it "Parses key value" $
       parseYamlData "a: !!int 1234" `shouldReturn`
       CoreBlock
-        (CoreList [CoreList [CorePrim $ S.Symbol "a", CorePrim $ S.Int 1234]])
+        (CoreList
+           [CoreList [CorePrim $ CoreSymbol "a", CorePrim $ CoreInt 1234]])
     it "Parses JSON data" $
       parseYamlData " { a: [1, 2, 3], b: {x: \"y\"} } " `shouldReturn`
       CoreBlock
         (CoreList
            [ CoreList
-               [ CorePrim $ S.Symbol "a"
+               [ CorePrim $ CoreSymbol "a"
                , CoreList
-                   [ CorePrim $ S.String "1"
-                   , CorePrim $ S.String "2"
-                   , CorePrim $ S.String "3"
+                   [ CorePrim $ CoreString "1"
+                   , CorePrim $ CoreString "2"
+                   , CorePrim $ CoreString "3"
                    ]
                ]
            , CoreList
-               [ CorePrim $ S.Symbol "b"
+               [ CorePrim $ CoreSymbol "b"
                , CoreBlock
                    (CoreList
                       [ CoreList
-                           [ CorePrim $ S.Symbol "x"
-                           , CorePrim $ S.String "y"
-                           ]
+                          [CorePrim $ CoreSymbol "x", CorePrim $ CoreString "y"]
                       ])
                ]
            ])

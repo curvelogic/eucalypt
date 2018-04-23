@@ -5,7 +5,7 @@ module Eucalypt.Render.YamlSpec
   ) where
 
 import Eucalypt.Render.Yaml
-import Eucalypt.Core.Syn as Syn
+import Eucalypt.Core.Syn
 import Test.Hspec
 import Data.Text.Encoding (encodeUtf8)
 
@@ -18,13 +18,13 @@ coreNF1 :: CoreExp a
 coreNF1 =
   CoreBlock
     (CoreList
-       [ CoreList [CorePrim $ Symbol "a", CorePrim $ Syn.Int 1234]
+       [ CoreList [CorePrim $ CoreSymbol "a", CorePrim $ CoreInt 1234]
        , CoreList
-           [ CorePrim $ Symbol "b"
+           [ CorePrim $ CoreSymbol "b"
            , CoreList
-               [ CorePrim $ String "x"
-               , CorePrim $ String "y"
-               , CorePrim $ String "z"
+               [ CorePrim $ CoreString "x"
+               , CorePrim $ CoreString "y"
+               , CorePrim $ CoreString "z"
                ]
            ]
        ])
@@ -33,13 +33,13 @@ coreNF1 =
 
 coreNF2 :: CoreExp a
 coreNF2 = CoreList
-               [ CorePrim $ Int 1
-               , CorePrim $ Int 2
-               , CorePrim $ Int 3
-               , CorePrim $ Int 4
-               , CorePrim $ Int 5
-               , CorePrim $ Int 6
-               , CorePrim $ Int 7
+               [ CorePrim $ CoreInt 1
+               , CorePrim $ CoreInt 2
+               , CorePrim $ CoreInt 3
+               , CorePrim $ CoreInt 4
+               , CorePrim $ CoreInt 5
+               , CorePrim $ CoreInt 6
+               , CorePrim $ CoreInt 7
                ]
 
 
@@ -48,13 +48,13 @@ coreNF3 :: CoreExp a
 coreNF3 =
   CoreBlock
     (CoreList
-       [ CoreList [CorePrim $ Symbol "a", CorePrim $ Syn.Int 1]
-       , CoreList [CorePrim $ Symbol "b", CorePrim $ Syn.Int 2]
-       , CoreList [CorePrim $ Symbol "c", CorePrim $ Syn.Int 3]
-       , CoreList [CorePrim $ Symbol "d", CorePrim $ Syn.Int 4]
-       , CoreList [CorePrim $ Symbol "e", CorePrim $ Syn.Int 5]
-       , CoreList [CorePrim $ Symbol "f", CorePrim $ Syn.Int 6]
-       , CoreList [CorePrim $ Symbol "g", CorePrim $ Syn.Int 7]
+       [ CoreList [CorePrim $ CoreSymbol "a", CorePrim $ CoreInt 1]
+       , CoreList [CorePrim $ CoreSymbol "b", CorePrim $ CoreInt 2]
+       , CoreList [CorePrim $ CoreSymbol "c", CorePrim $ CoreInt 3]
+       , CoreList [CorePrim $ CoreSymbol "d", CorePrim $ CoreInt 4]
+       , CoreList [CorePrim $ CoreSymbol "e", CorePrim $ CoreInt 5]
+       , CoreList [CorePrim $ CoreSymbol "f", CorePrim $ CoreInt 6]
+       , CoreList [CorePrim $ CoreSymbol "g", CorePrim $ CoreInt 7]
        ])
 
 

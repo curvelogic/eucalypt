@@ -18,47 +18,79 @@ import Data.Maybe ( mapMaybe )
 desugarLiteral :: PrimitiveLiteral -> Primitive
 desugarLiteral lit =
   case lit of
-    VInt i -> Int i
-    VFloat f -> Float f
-    VStr s -> String s
-    VSym s -> Symbol s
+    VInt i -> CoreInt i
+    VFloat f -> CoreFloat f
+    VStr s -> CoreString s
+    VSym s -> CoreSymbol s
+
+
 
 -- | Convert an atomic name (op or normal) to a binding name
 bindingName :: AtomicName -> CoreBindingName
-bindingName n = case n of
-  NormalName name -> name
-  OperatorName name -> name
+bindingName n =
+  case n of
+    NormalName name -> name
+    OperatorName name -> name
+
+
 
 -- | Convert an atomic name (op or normal) to a relative name
 relativeName :: AtomicName -> CoreRelativeName
-relativeName n = case n of
-  NormalName name -> name
-  OperatorName name -> name
+relativeName n =
+  case n of
+    NormalName name -> name
+    OperatorName name -> name
 
-desugarDeclarationFormExp :: DeclarationForm -> (CoreBindingName, CoreExpr)
-desugarDeclarationFormExp decl =
+
+
+-- | Desugar a declaration form
+desugarDeclarationForm :: DeclarationForm -> (CoreBindingName, CoreExpr)
+desugarDeclarationForm decl =
   case decl of
-    PropertyDecl k expr -> (bindingName k, desugarExp expr)
-    FunctionDecl k args expr -> (bindingName k, lamexpr args (desugarExp expr))
-    OperatorDecl k l r expr -> (bindingName k, lamexpr [l, r] (desugarExp expr))
+    PropertyDecl k expr -> (bindingName k, desugar expr)
+    FunctionDecl k args expr -> (bindingName k, lamexpr args (desugar expr))
+    OperatorDecl k l r expr -> (bindingName k, lamexpr [l, r] (desugar expr))
+
+
 
 -- | Ignore splices for now TODO: splice expressions
 declarations :: Block -> [DeclarationForm]
 declarations (Block elements) = mapMaybe toDecl elements
-  where toDecl (Splice _) = Nothing
-        toDecl (Declaration d) = Just $ declaration d
+  where
+    toDecl (Splice _) = Nothing
+    toDecl (Declaration d) = Just $ declaration d
 
-desugarBlockExp :: Block -> CoreExpr
-desugarBlockExp blk = letexp bindings value
-  where bindings = map desugarDeclarationFormExp $ declarations blk
-        value = CoreBlock $ CoreList [CoreList [CorePrim (Symbol name), CoreVar name] | (name, _) <- bindings]
 
-desugarExp :: Expression -> CoreExpr
-desugarExp expr = case expr of
-    EOperation opName l r -> CoreApp (CoreApp (CoreVar (bindingName opName)) (desugarExp l)) (desugarExp r)
-    EInvocation f args -> appexp (desugarExp f) (map desugarExp args)
-    ECatenation obj verb -> CoreApp (desugarExp verb) (desugarExp obj)
-    EIdentifier components -> foldl CoreLookup (CoreVar (bindingName (head components))) $ map relativeName (tail components)
+
+-- | Desugar a block expression.
+--
+-- TODO: anaphora, splice
+desugarBlock :: Block -> CoreExpr
+desugarBlock blk = letexp bindings value
+  where
+    bindings = map desugarDeclarationForm $ declarations blk
+    value =
+      CoreBlock $
+      CoreList
+        [ CoreList [CorePrim (CoreSymbol name), CoreVar name]
+        | (name, _) <- bindings
+        ]
+
+
+
+-- | Desugar an expression into core syntax
+desugar :: Expression -> CoreExpr
+desugar expr =
+  case expr of
+    EOperation opName l r ->
+      CoreApp
+        (CoreApp (CoreVar (bindingName opName)) (desugar l))
+        (desugar r)
+    EInvocation f args -> appexp (desugar f) (map desugar args)
+    ECatenation obj verb -> CoreApp (desugar verb) (desugar obj)
+    EIdentifier components ->
+      foldl CoreLookup (CoreVar (bindingName (head components))) $
+      map relativeName (tail components)
     ELiteral lit -> CorePrim $ desugarLiteral lit
-    EBlock blk -> desugarBlockExp blk
-    EList components -> CoreList $ map desugarExp components
+    EBlock blk -> desugarBlock blk
+    EList components -> CoreList $ map desugar components

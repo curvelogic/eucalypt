@@ -15,12 +15,12 @@ spec =
   describe "Core" $ do
 
     it "represents literals" $
-      desugarLiteral (VInt 8) `shouldBe` Int 8
+      desugarLiteral (VInt 8) `shouldBe` CoreInt 8
 
     it "transforms simple declarations" $
 
-      desugarDeclarationFormExp (prop "x" (op "+" (int 2) (int 5)))
+      desugarDeclarationForm (prop "x" (op "+" (int 2) (int 5)))
 
        `shouldBe`
 
-      ("x", CoreApp (CoreApp (CoreVar "+") (CorePrim (Int 2))) (CorePrim (Int 5)))
+      ("x", CoreApp (CoreApp (CoreVar "+") (CorePrim (CoreInt 2))) (CorePrim (CoreInt 5)))

@@ -22,10 +22,12 @@ import Control.Monad
 
 -- | Primitive types (literals are available in the eucalypt syntax)
 data Primitive
-  = Int Integer
-  | Float Double
-  | String String
-  | Symbol String
+  = CoreInt Integer
+  | CoreFloat Double
+  | CoreString String
+  | CoreSymbol String
+  | CoreBoolean Bool
+  | CoreNull
   deriving (Eq, Show, Read, Ord)
 
 

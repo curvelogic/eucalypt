@@ -12,27 +12,18 @@ Stability   : experimental
 module Eucalypt.Render.Yaml
   where
 
+import Conduit
 import Control.Monad ((>=>))
 import qualified Data.ByteString as BS
+import Data.Maybe (catMaybes)
 import Data.Scientific
 import Data.Text (Text, pack)
-import qualified Text.Libyaml as L
-import qualified Data.Yaml as Y
 import qualified Data.Yaml.Builder as B
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
 import Eucalypt.Render.Classes
-import Data.Conduit
-import Conduit
-
--- | Create primitive Yaml value from 'Primitive'
-fromPrimitive :: Primitive -> Y.Value
-fromPrimitive p = case p of
-  Int i -> Y.Number $ fromInteger i
-  Float f -> Y.Number $ fromFloatDigits f
-  String s -> Y.String $ pack s
-  Symbol s -> Y.String $ pack s
+import qualified Text.Libyaml as L
 
 
 
@@ -40,8 +31,8 @@ fromPrimitive p = case p of
 expectText :: CoreExpr -> Interpreter Text
 expectText e =
   case e of
-    CorePrim (String s) -> return $ pack s
-    CorePrim (Symbol s) -> return $ pack s
+    CorePrim (CoreString s) -> return $ pack s
+    CorePrim (CoreSymbol s) -> return $ pack s
     _ -> throwEvalError $ LookupKeyNotStringLike e
 
 
@@ -58,23 +49,27 @@ instance ToMYaml Interpreter CoreExpr where
   toMYaml _ (CorePrim p) =
     return $
     case p of
-      String s -> B.string $ pack s
-      Symbol s -> B.string $ pack s
-      Int i -> B.scientific $ fromInteger i
-      Float f -> B.scientific $ fromFloatDigits f
+      CoreString s -> B.string $ pack s
+      CoreSymbol s -> B.string $ pack s
+      CoreInt i -> B.scientific $ fromInteger i
+      CoreFloat f -> B.scientific $ fromFloatDigits f
+      CoreBoolean b -> B.bool b
+      CoreNull -> B.null
   toMYaml whnfM (CoreList items) = B.array <$> mapM (toMYaml whnfM) items
   toMYaml whnfM (CoreBlock list) = do
     content <- whnfM list
     case content of
-      CoreList items -> B.mapping <$> mapM (whnfM >=> pair) items
+      CoreList items -> (B.mapping . catMaybes) <$> mapM (whnfM >=> pair) items
       e -> throwEvalError $ BadBlockContent e
     where
       pair item =
         case item of
           (CoreList [k, v]) -> do
             key <- (whnfM >=> expectText) k
-            value <- toMYaml whnfM v
-            return (key, value)
+            value <- whnfM v
+            case value of
+              CoreLam _ -> return Nothing
+              _ ->  toMYaml whnfM value >>= \rendered -> return (Just (key, rendered))
           expr -> throwEvalError $ BadBlockElement expr
   toMYaml _ (CoreLam _) = return B.null
   toMYaml _ expr = throwEvalError $ NotWeakHeadNormalForm expr
@@ -96,7 +91,7 @@ toEvents (B.YamlBuilder front) =
 -- accumalate them and encode in 'IO'
 exprToEventsPipeline :: WhnfEvaluator -> CoreExpr -> ConduitT () Void Interpreter [L.Event]
 exprToEventsPipeline whnfM expr =
-  yield expr .| mapMC (toMYaml whnfM) .| mapC toEvents .| concatC .| sinkList
+  yield expr .| mapMC (whnfM >=> toMYaml whnfM) .| mapC toEvents .| concatC .| sinkList
 
 
 

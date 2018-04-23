@@ -11,7 +11,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
 import Eucalypt.Core.Builtin (euMerge)
-import Eucalypt.Core.Desugar (desugarExp)
+import Eucalypt.Core.Desugar (desugar)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -89,7 +89,7 @@ parseInput i@(Input mode locator _name format) = do
     eucalyptToCore text =
       case parseEucalypt text of
         Left e -> (return . Left . Syntax) e
-        Right expr -> (return . Right . desugarExp) expr
+        Right expr -> (return . Right . desugar) expr
     dataToCore text = do
       r <- try (parseYamlData text) :: IO (Either DataParseException CoreExpr)
       case r of

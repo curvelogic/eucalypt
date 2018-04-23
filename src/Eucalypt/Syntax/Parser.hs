@@ -31,9 +31,9 @@ langDef = Tok.LanguageDef
   , Tok.commentEnd      = ""
   , Tok.commentLine     = "#"
   , Tok.nestedComments  = False
-  , Tok.identStart      = alphaNum <|> oneOf "$?!_"
+  , Tok.identStart      = alphaNum <|> oneOf "$?_"
   , Tok.identLetter     = alphaNum <|> oneOf "$?!_-*"
-  , Tok.opStart         = oneOf "@£%^&*|></+=-~"
+  , Tok.opStart         = oneOf "!@£%^&*|></+=-~"
   , Tok.opLetter        = oneOf "!@£$%^&*|></?+=-~"
   , Tok.reservedNames   = []
   , Tok.reservedOpNames = ["`"]

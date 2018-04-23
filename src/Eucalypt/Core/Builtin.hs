@@ -7,8 +7,12 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 module Eucalypt.Core.Builtin
-  ( euConcat, euMerge, euLookup )
-where
+  ( euConcat
+  , euMerge
+  , euLookup
+  ) where
+
+
 
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -47,7 +51,7 @@ unwrapBlockElement :: WhnfEvaluator -> CoreExpr -> Interpreter (String, CoreExpr
 unwrapBlockElement whnfM expr@(CoreList [k, v]) = do
   key <- whnfM k
   case key of
-    CorePrim (Symbol n) -> return (n, v)
+    CorePrim (CoreSymbol n) -> return (n, v)
     _ -> throwEvalError $ BadBlockElement expr
 unwrapBlockElement _ expr = throwEvalError $ BadBlockElement expr
 
@@ -55,8 +59,7 @@ unwrapBlockElement _ expr = throwEvalError $ BadBlockElement expr
 
 -- | From a block, expose an association list for lookup
 buildSearchList :: WhnfEvaluator -> CoreExpr -> Interpreter [(String, CoreExpr)]
-buildSearchList whnfM (CoreBlock (CoreList items)) =
-  concatResults $ map eval (reverse items)
+buildSearchList whnfM (CoreBlock (CoreList items)) = concatResults $ map eval (reverse items)
   where
     eval item = whnfM item >>= unwrapBlockElement whnfM
 buildSearchList _ e = throwEvalError $ LookupTargetNotList e

@@ -15,4 +15,4 @@ spec =
 
     it "prints applications" $
       pprint expr  `shouldBe` "(($+ 2) 5)"
-        where expr = CoreApp (CoreApp (CoreVar  "+") (CorePrim (Int 2))) (CorePrim (Int 5))
+        where expr = CoreApp (CoreApp (CoreVar  "+") (CorePrim (CoreInt 2))) (CorePrim (CoreInt 5))

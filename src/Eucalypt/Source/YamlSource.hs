@@ -41,10 +41,12 @@ coreScalar text tag _ _ =
   let s = (unpack . decodeUtf8) text
    in CorePrim $
       case tag of
-        StrTag -> S.String s
-        IntTag -> S.Int (read s)
-        FloatTag -> S.Float (read s)
-        _ -> S.String s
+        StrTag -> S.CoreString s
+        IntTag -> S.CoreInt (read s)
+        FloatTag -> S.CoreFloat (read s)
+        BoolTag -> S.CoreBoolean (read s)
+        NullTag -> S.CoreNull
+        _ -> S.CoreString s
 
 
 
@@ -64,7 +66,7 @@ coreList = CoreList
 coreMapping :: [(Text,CoreExpr)] -> CoreExpr
 coreMapping pairs = CoreBlock $ CoreList (map kv pairs)
   where
-    kv (t, e) = CoreList [CorePrim (S.Symbol (unpack t)), e]
+    kv (t, e) = CoreList [CorePrim (S.CoreSymbol (unpack t)), e]
 
 
 

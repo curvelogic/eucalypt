@@ -9,7 +9,9 @@ jobs:
       - restore_cache:
           key: cache
 
-      - run: stack build --fast
+      - run: stack install hlint
+
+      - run: stack build --pedantic
 
       - save_cache:
           paths:
