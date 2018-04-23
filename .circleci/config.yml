@@ -17,7 +17,7 @@ jobs:
       - run:
           name: Update PATH to allow stack-built tools
           command: |
-            echo 'export PATH=~/.local/bin:$PATH' >> /tmp/env.sh
+            echo 'export PATH=$(stack path --local-bin):$PATH' >> /tmp/env.sh
             echo 'export STACK_DIST_DIR=$(stack path --dist-dir)' >> /tmp/env.sh
             echo 'export STACK_LOCAL_HPC_ROOT=$(stack path --local-hpc-root)' >> /tmp/env.sh
             source /tmp/env.sh
