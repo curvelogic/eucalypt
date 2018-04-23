@@ -17,7 +17,7 @@ jobs:
       - run:
           name: Update PATH to allow stack-built tools
           command: |
-            echo 'export PATH=.local/bin:$PATH' >> /tmp/env.sh
+            echo 'export PATH=~/.local/bin:$PATH' >> /tmp/env.sh
             echo 'export STACK_DIST_DIR=$(stack path --dist-dir)' >> /tmp/env.sh
             echo 'export STACK_LOCAL_HPC_ROOT=$(stack path --local-hpc-root)' >> /tmp/env.sh
             source /tmp/env.sh
@@ -27,8 +27,8 @@ jobs:
           command: stack install hlint
 
       - run:
-          name: Build
-          command: stack build --pedantic
+          name: Pull dependencies and build
+          command: stack build --pedantic --test --no-run-tests
 
       - save_cache:
           paths:
@@ -36,8 +36,8 @@ jobs:
           key: cache-{{ checksum "package.yaml" }}
 
       - run:
-          name: Run unit tests & coverage
-          command: stack test --no-terminal --coverage
+          name: Build, run unit tests & coverage
+          command: stack build --test --no-terminal --coverage
 
       - run:
           name: Run HLint
