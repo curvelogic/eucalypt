@@ -42,6 +42,8 @@ type CoreBindingName = String
 
 
 
+type CoreBuiltinName = String
+
 -- | A new bound-based implementation, with multi-arity to allow STG
 -- later.
 --
@@ -50,6 +52,7 @@ data CoreExp a
   | CoreLam (Scope () CoreExp a)
   | CoreLet [Scope Int CoreExp a] (Scope Int CoreExp a)
   | CoreApp (CoreExp a) (CoreExp a)
+  | CoreBuiltin CoreBuiltinName
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
   | CoreList [CoreExp a]
@@ -80,6 +83,7 @@ instance Monad CoreExp where
   CoreVar a >>= f = f a
   CoreLam e >>= f = CoreLam (e >>>= f)
   CoreLet bs b >>= f = CoreLet (map (>>>= f) bs) (b >>>= f)
+  CoreBuiltin n >>= _ = CoreBuiltin n
   CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
   CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n

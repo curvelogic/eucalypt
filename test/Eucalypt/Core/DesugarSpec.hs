@@ -24,3 +24,11 @@ spec =
        `shouldBe`
 
       ("x", CoreApp (CoreApp (CoreVar "+") (CorePrim (CoreInt 2))) (CorePrim (CoreInt 5)))
+
+    it "takes leading underscores to indicate built-ins" $
+
+      desugar (EIdentifier [NormalName "__NULL"]) `shouldBe` CoreBuiltin "NULL"
+
+    it "translates lookups against builtins" $
+
+      desugar (EIdentifier [NormalName "__X", NormalName "id"]) `shouldBe` CoreLookup (CoreBuiltin "X") "id"

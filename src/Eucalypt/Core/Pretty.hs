@@ -48,6 +48,8 @@ prepare (CoreLam e) = do
   body <- prepare (instantiate1 (CoreVar n) e)
   return $ parens $ text "\\" <+> text n <> char '.' <+> body
 
+prepare (CoreBuiltin n) = return . text $ "__" ++ n
+
 prepare (CoreApp f x) = parens <$> ((<+>) <$> prepare f <*> prepare x)
 
 prepare (CoreVar x) = return $ char '$' <> text x
