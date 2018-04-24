@@ -1,5 +1,7 @@
 version: 2
 jobs:
+
+  # Build and unit test the eu executable
   build:
     docker:
       - image: curvelogic/docker-circleci-haskell
@@ -7,17 +9,85 @@ jobs:
       - checkout
 
       - restore_cache:
-          key: cache
+          keys:
+            - cache-{{ checksum "package.yaml" }}-{{ checksum "stack.yaml" }}
+            - cache-{{ checksum "package.yaml" }}-
 
-      - run: stack install hlint
+      - run: stack setup
 
-      - run: stack build --pedantic
+      - run:
+          name: Create script for setting environment
+          command: |
+            echo "export PATH=$(stack path --local-bin):$PATH" >> /tmp/env.sh
+            echo "export STACK_DIST_DIR=$(stack path --dist-dir)" >> /tmp/env.sh
+            echo "export STACK_LOCAL_HPC_ROOT=$(stack path --local-hpc-root)" >> /tmp/env.sh
+            cat /tmp/env.sh
+
+      - run:
+          name: Pull dependencies and build
+          command: stack build --fast --pedantic --no-terminal --test --coverage --no-run-tests
+
+      - run:
+          name: Install HLint
+          command: stack install --no-terminal hlint
 
       - save_cache:
           paths:
             - ~/.stack
-          key: cache
+          key: cache-{{ checksum "package.yaml" }}-{{ checksum "stack.yaml" }}
 
-      - run: stack test --no-terminal --coverage
+      - run:
+          name: Build, run unit tests with coverage
+          command: stack build --fast --pedantic --no-terminal --test --coverage
 
-      - run: hlint .
+      - run:
+          name: Run HLint
+          command: |
+            source /tmp/env.sh
+            hlint .
+
+      - run:
+          name: Build with no coverage instrumentation
+          command: stack build --pedantic --no-terminal --ghc-options="-O2"
+
+      - persist_to_workspace:
+          root: .stack-work
+          paths:
+            - dist
+
+      - run:
+          name: Prepare artifacts
+          command: |
+            mkdir -p /tmp/artifacts
+            source /tmp/env.sh
+            cp -R $STACK_DIST_DIR /tmp/artifacts/dist
+            cp -R $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
+
+      - store_artifacts:
+          path: /tmp/artifacts
+
+  # Test against the eucalypt test suite
+  acceptance:
+
+    machine: true
+
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
+      - run:
+          command: "docker run -v /tmp/workspace:/tmp/workspace
+                               -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/build/eu/eu
+                               curvelogic/eucalypt-test-harness:latest
+                               ./eut.py "
+
+workflows:
+  version: 2
+  build-workflow:
+    jobs:
+      - build:
+          context: curvelogic-docker-hub
+      - acceptance:
+          context: curvelogic-docker-hub
+          requires:
+            - build
