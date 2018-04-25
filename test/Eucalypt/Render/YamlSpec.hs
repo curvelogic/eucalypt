@@ -81,5 +81,5 @@ spec =
         whnfM
         (CoreBlock
            (CoreList
-              [(CoreList [CorePrim $ CoreSymbol "a", CoreBuiltin "NULL"])])) `shouldReturn`
+              [CoreList [CorePrim $ CoreSymbol "a", CoreBuiltin "NULL"]])) `shouldReturn`
       (return . encodeUtf8) "a: null\n"
