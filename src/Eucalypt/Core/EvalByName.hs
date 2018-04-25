@@ -32,4 +32,6 @@ whnfM (CoreLet bs b) = whnfM (inst b)
 
 whnfM (CoreLookup e n) = euLookup whnfM e n
 
+whnfM (CoreBuiltin _) = undefined
+
 whnfM e = return e

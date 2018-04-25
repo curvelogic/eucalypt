@@ -7,9 +7,11 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 module Eucalypt.Core.Builtin
-  ( euConcat
+  ( euNull,
+    euConcat
   , euMerge
   , euLookup
+  , lookupBuiltin
   ) where
 
 
@@ -18,6 +20,27 @@ import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
 
+
+
+type Builtin = WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+
+
+
+-- | __NULL builtin - evaluates to null primitive. Arity 0.
+euNull :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euNull _ _ = return $ CorePrim CoreNull
+
+
+
+-- | __FALSE builtin - evaluates to false boolean primitive. Arity 0.
+euFalse :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euFalse _ _ = return $ CorePrim $ CoreBoolean False
+
+
+
+-- | __TRUE builtin - evaluates to false boolean primitive. Arity 0.
+euTrue :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euTrue _ _ = return $ CorePrim $ CoreBoolean True
 
 
 -- | Concatenate two lists or blocks into a list. The default action
@@ -77,3 +100,17 @@ euLookup whnfM e name = do
   case lookup name alist of
     Just val -> return val
     Nothing -> throwEvalError $ KeyNotFound name
+
+
+
+-- | The builtins exposed to the language.
+builtInIndex :: [(CoreBuiltinName, (Integer, Builtin))]
+builtInIndex = [("NULL", (0, euNull)),
+            ("FALSE", (0, euFalse)),
+            ("TRUE", (0, euTrue))]
+
+
+
+-- | Look up a built in by name, returns tuple of arity and implementation.
+lookupBuiltin :: CoreBuiltinName -> Maybe (Integer, Builtin)
+lookupBuiltin n = lookup n builtInIndex >>= return

@@ -25,6 +25,7 @@ data EvaluationError
   | BadBlockContent CoreExpr
   | NotWeakHeadNormalForm CoreExpr
   | UncallableExpression CoreExpr
+  | BuiltinNotFound CoreBuiltinName CoreExpr
   | NoSource
   deriving (Eq, Typeable)
 
@@ -38,6 +39,7 @@ instance Show EvaluationError where
   show (BadBlockContent expr) = "Bad block content: " ++ pprint expr
   show (NotWeakHeadNormalForm expr) = "Expected weak head normal form: " ++ pprint expr
   show (UncallableExpression expr) = "Uncallable expression: " ++ pprint expr
+  show (BuiltinNotFound name expr) = "No builtin \"" ++ name ++ "\": " ++ pprint expr
   show NoSource = "No source"
 
 instance Exception EvaluationError
