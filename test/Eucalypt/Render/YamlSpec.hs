@@ -7,6 +7,7 @@ module Eucalypt.Render.YamlSpec
 import Eucalypt.Render.Yaml
 import Eucalypt.Core.Syn
 import Test.Hspec
+import Eucalypt.Core.EvalByName
 import Data.Text.Encoding (encodeUtf8)
 
 main :: IO ()
@@ -68,7 +69,6 @@ spec =
     --        expected: Right "a: 1234\nb:\n  - x\n  y\n  z\n"
     --         but got: Right "a: 1234\nb:\n- x\n- 'y'\n- z\n"
     -- TODO: mysterious...
-
     it "Renders NF core list" $
       renderYamlBytes return coreNF2 `shouldReturn`
       (return . encodeUtf8) "- 1\n- 2\n- 3\n- 4\n- 5\n- 6\n- 7\n"
@@ -76,3 +76,10 @@ spec =
       renderYamlBytes return coreNF3 `shouldReturn`
       (return . encodeUtf8) "a: 1\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\n"
     it "Forces to WHNF to render" pending
+    it "renders and evals { a: __NULL }" $
+      renderYamlBytes
+        whnfM
+        (CoreBlock
+           (CoreList
+              [(CoreList [CorePrim $ CoreSymbol "a", CoreBuiltin "NULL"])])) `shouldReturn`
+      (return . encodeUtf8) "a: null\n"

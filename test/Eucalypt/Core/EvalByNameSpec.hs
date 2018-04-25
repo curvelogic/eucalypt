@@ -4,6 +4,7 @@ module Eucalypt.Core.EvalByNameSpec (main, spec)
 import Test.Hspec
 import Eucalypt.Core.Syn
 import Eucalypt.Core.EvalByName
+import Eucalypt.Core.Interpreter
 
 main :: IO ()
 main = hspec spec
@@ -31,3 +32,17 @@ spec =
       `shouldBe`
       whnfM (CoreApp i (CoreVar "x"))
 
+    it "evals __NULL" $
+      runInterpreter (whnfM (CoreBuiltin "NULL"))
+      `shouldBe`
+      Right (CorePrim CoreNull)
+
+    it "evals __TRUE" $
+      runInterpreter (whnfM (CoreBuiltin "TRUE"))
+      `shouldBe`
+      Right (CorePrim $ CoreBoolean True)
+
+    it "evals __FALSE" $
+      runInterpreter (whnfM (CoreBuiltin "FALSE"))
+      `shouldBe`
+      Right (CorePrim $ CoreBoolean False)
