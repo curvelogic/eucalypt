@@ -26,6 +26,8 @@ data EvaluationError
   | NotWeakHeadNormalForm CoreExpr
   | UncallableExpression CoreExpr
   | BuiltinNotFound CoreBuiltinName CoreExpr
+  | NotSupported String CoreExpr
+  | Bug String CoreExpr
   | NoSource
   deriving (Eq, Typeable)
 
@@ -40,6 +42,8 @@ instance Show EvaluationError where
   show (NotWeakHeadNormalForm expr) = "Expected weak head normal form: " ++ pprint expr
   show (UncallableExpression expr) = "Uncallable expression: " ++ pprint expr
   show (BuiltinNotFound name expr) = "No builtin \"" ++ name ++ "\": " ++ pprint expr
+  show (NotSupported message expr) = "Not supported (yet) - " ++ message ++ pprint expr
+  show (Bug message expr) = "BUG! " ++ message ++ " - " ++ pprint expr
   show NoSource = "No source"
 
 instance Exception EvaluationError

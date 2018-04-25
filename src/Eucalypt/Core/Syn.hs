@@ -53,6 +53,7 @@ data CoreExp a
   | CoreLet [Scope Int CoreExp a] (Scope Int CoreExp a)
   | CoreApp (CoreExp a) (CoreExp a)
   | CoreBuiltin CoreBuiltinName
+  | CorePAp Int (CoreExp a) [CoreExp a]
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
   | CoreList [CoreExp a]
@@ -85,6 +86,7 @@ instance Monad CoreExp where
   CoreLet bs b >>= f = CoreLet (map (>>>= f) bs) (b >>>= f)
   CoreBuiltin n >>= _ = CoreBuiltin n
   CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
+  CorePAp a e args >>= f = CorePAp a (e >>= f) (map (>>= f) args)
   CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
   CoreList es >>= f = CoreList (map (>>= f) es)

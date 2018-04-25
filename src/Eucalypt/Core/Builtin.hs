@@ -104,7 +104,7 @@ euLookup whnfM e name = do
 
 
 -- | The builtins exposed to the language.
-builtInIndex :: [(CoreBuiltinName, (Integer, Builtin))]
+builtInIndex :: [(CoreBuiltinName, (Int, Builtin))]
 builtInIndex = [("NULL", (0, euNull)),
             ("FALSE", (0, euFalse)),
             ("TRUE", (0, euTrue))]
@@ -112,5 +112,5 @@ builtInIndex = [("NULL", (0, euNull)),
 
 
 -- | Look up a built in by name, returns tuple of arity and implementation.
-lookupBuiltin :: CoreBuiltinName -> Maybe (Integer, Builtin)
+lookupBuiltin :: CoreBuiltinName -> Maybe (Int, Builtin)
 lookupBuiltin n = lookup n builtInIndex

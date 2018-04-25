@@ -11,25 +11,26 @@ module Eucalypt.Core.Pretty
   (pprint)
 where
 
-import Eucalypt.Core.Syn
 import Bound
+import Control.Monad ( liftM2 )
 import Control.Monad.Supply
+import Eucalypt.Core.Syn
 import Text.PrettyPrint
-  ( Doc,
-    text,
-    char,
-    brackets,
-    parens,
-    punctuate,
-    comma,
-    hang,
-    hsep,
-    vcat,
-    braces,
-    render,
-    (<+>),
-    (<>),
-    ($$)
+  ( Doc
+  , ($$)
+  , (<+>)
+  , (<>)
+  , braces
+  , brackets
+  , char
+  , comma
+  , hang
+  , hsep
+  , parens
+  , punctuate
+  , render
+  , text
+  , vcat
   )
 
 renderLiteral :: Primitive -> String
@@ -51,6 +52,9 @@ prepare (CoreLam e) = do
 prepare (CoreBuiltin n) = return . text $ "__" ++ n
 
 prepare (CoreApp f x) = parens <$> ((<+>) <$> prepare f <*> prepare x)
+
+prepare (CorePAp _ f xs) =
+  parens <$> foldr (liftM2 (<+>) . prepare) (prepare f) xs
 
 prepare (CoreVar x) = return $ char '$' <> text x
 
