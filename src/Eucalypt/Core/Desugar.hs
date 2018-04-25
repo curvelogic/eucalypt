@@ -10,9 +10,10 @@ Stability   : experimental
 module Eucalypt.Core.Desugar
 where
 
+import Data.List (isPrefixOf)
+import Data.Maybe (mapMaybe)
 import Eucalypt.Core.Syn
 import Eucalypt.Syntax.Ast
-import Data.Maybe ( mapMaybe )
 
 -- | Transform a literal into its value
 desugarLiteral :: PrimitiveLiteral -> Primitive
@@ -78,19 +79,31 @@ desugarBlock blk = letexp bindings value
 
 
 
+-- | Desugar a general identifier 'a.b.c' into a nested lookup against
+-- the item identified by the initial component. The initial component
+-- is transformed into a 'CoreVar' unless it has a @__@ prefix, in
+-- which case it is assumed to be a builtin.
+desugarIdentifier :: [AtomicName] -> CoreExpr
+desugarIdentifier components =
+  foldl CoreLookup h $ map relativeName (tail components)
+  where
+    headName = bindingName (head components)
+    h =
+      if "__" `isPrefixOf` headName
+        then CoreBuiltin (drop 2 headName)
+        else CoreVar headName
+
+
+
 -- | Desugar an expression into core syntax
 desugar :: Expression -> CoreExpr
 desugar expr =
   case expr of
     EOperation opName l r ->
-      CoreApp
-        (CoreApp (CoreVar (bindingName opName)) (desugar l))
-        (desugar r)
+      CoreApp (CoreApp (CoreVar (bindingName opName)) (desugar l)) (desugar r)
     EInvocation f args -> appexp (desugar f) (map desugar args)
     ECatenation obj verb -> CoreApp (desugar verb) (desugar obj)
-    EIdentifier components ->
-      foldl CoreLookup (CoreVar (bindingName (head components))) $
-      map relativeName (tail components)
+    EIdentifier components -> desugarIdentifier components
     ELiteral lit -> CorePrim $ desugarLiteral lit
     EBlock blk -> desugarBlock blk
     EList components -> CoreList $ map desugar components

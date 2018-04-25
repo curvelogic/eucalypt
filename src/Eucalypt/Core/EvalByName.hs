@@ -16,14 +16,33 @@ import Eucalypt.Core.Builtin
 import Eucalypt.Core.Interpreter
 
 
+-- | Apply a builting once it is saturated, precondition is that
+-- length of args == arity.
+applyBuiltin ::
+  WhnfEvaluator
+  -> CoreExpr
+  -> CoreBuiltinName
+  -> [CoreExpr]
+  -> Interpreter CoreExpr
+applyBuiltin w expr name args = case lookupBuiltin name of
+  Just (_, f) -> f w args
+  Nothing -> throwEvalError $ BuiltinNotFound name expr
+
+
 -- | Monadic WHNF to support abort and runtime error.
 whnfM :: CoreExpr -> Interpreter CoreExpr
 
-whnfM (CoreApp f x) = do
+whnfM e@(CoreApp f x) = do
   f' <- whnfM f
   case f' of
-    CoreLam e -> whnfM $ instantiate1 x e
-    e@_ -> throwEvalError $ UncallableExpression e
+    CoreLam body -> whnfM $ instantiate1 x body
+    CorePAp arity expr args -> let args' = (args ++ [x]) in
+      if length args' < arity
+        then return (CorePAp arity expr args')
+        else (case expr of
+                (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
+                _ -> throwEvalError $ NotSupported "multiapply lambdas" e)
+    expr -> throwEvalError $ UncallableExpression expr
 
 whnfM (CoreLet bs b) = whnfM (inst b)
   where
@@ -31,5 +50,12 @@ whnfM (CoreLet bs b) = whnfM (inst b)
     inst = instantiate (es !!)
 
 whnfM (CoreLookup e n) = euLookup whnfM e n
+
+whnfM e@(CoreBuiltin n) = case lookupBuiltin n of
+  Just (0, f) -> f whnfM []
+  Just (arity, _) -> return (CorePAp arity e [])
+  Nothing -> throwEvalError $ BuiltinNotFound n e
+
+whnfM e@CorePAp{} = throwEvalError $ Bug "Found unevaluated saturated partial application." e
 
 whnfM e = return e

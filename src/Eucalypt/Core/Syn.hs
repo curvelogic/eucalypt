@@ -42,6 +42,8 @@ type CoreBindingName = String
 
 
 
+type CoreBuiltinName = String
+
 -- | A new bound-based implementation, with multi-arity to allow STG
 -- later.
 --
@@ -50,6 +52,8 @@ data CoreExp a
   | CoreLam (Scope () CoreExp a)
   | CoreLet [Scope Int CoreExp a] (Scope Int CoreExp a)
   | CoreApp (CoreExp a) (CoreExp a)
+  | CoreBuiltin CoreBuiltinName
+  | CorePAp Int (CoreExp a) [CoreExp a]
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
   | CoreList [CoreExp a]
@@ -80,7 +84,9 @@ instance Monad CoreExp where
   CoreVar a >>= f = f a
   CoreLam e >>= f = CoreLam (e >>>= f)
   CoreLet bs b >>= f = CoreLet (map (>>>= f) bs) (b >>>= f)
+  CoreBuiltin n >>= _ = CoreBuiltin n
   CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
+  CorePAp a e args >>= f = CorePAp a (e >>= f) (map (>>= f) args)
   CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
   CoreList es >>= f = CoreList (map (>>= f) es)
@@ -111,6 +117,42 @@ letexp :: Eq a => [(a, CoreExp a)] -> CoreExp a -> CoreExp a
 letexp [] b = b
 letexp bs b = CoreLet (map (abstr . snd) bs) (abstr b)
   where abstr = abstract (`elemIndex` map fst bs)
+
+
+
+-- | Construct boolean expression
+corebool :: Bool -> CoreExp a
+corebool = CorePrim . CoreBoolean
+
+
+
+-- | Construct null expression
+corenull :: CoreExp a
+corenull = CorePrim CoreNull
+
+
+
+-- | Construct symbol expression
+sym :: String -> CoreExp a
+sym = CorePrim . CoreSymbol
+
+
+
+-- | Construct builtin expression
+bif :: String -> CoreExp a
+bif = CoreBuiltin
+
+
+
+-- | Construct an integer expression
+int :: Integer -> CoreExp a
+int = CorePrim . CoreInt
+
+
+
+-- | Construct a string expression
+str :: String -> CoreExp a
+str = CorePrim . CoreString
 
 
 

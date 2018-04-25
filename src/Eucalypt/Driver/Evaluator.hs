@@ -153,7 +153,7 @@ evaluate opts whnfM =
 
 -- | Output the rendered bytes to the specified output
 outputBytes :: EucalyptOptions -> BS.ByteString -> IO ()
-outputBytes opts str =
+outputBytes opts s =
   case optionOutput opts of
-    Just file -> T.writeFile file (T.decodeUtf8 str)
-    Nothing -> T.putStrLn (T.decodeUtf8 str)
+    Just file -> T.writeFile file (T.decodeUtf8 s)
+    Nothing -> T.putStrLn (T.decodeUtf8 s)
