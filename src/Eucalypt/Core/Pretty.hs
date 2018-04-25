@@ -54,7 +54,7 @@ prepare (CoreBuiltin n) = return . text $ "__" ++ n
 prepare (CoreApp f x) = parens <$> ((<+>) <$> prepare f <*> prepare x)
 
 prepare (CorePAp _ f xs) =
-  parens <$> foldr (liftM2 (<+>) . prepare) (prepare f) xs
+  parens <$> foldr (liftM2 (<+>) . prepare) ((text "partial:" <+>) <$> prepare f) xs
 
 prepare (CoreVar x) = return $ char '$' <> text x
 

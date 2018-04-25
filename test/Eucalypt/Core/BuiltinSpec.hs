@@ -26,16 +26,15 @@ shallowEvalBuiltin name =
 spec :: Spec
 spec = do
   describe "Builtin lookup" $ do
-    it "has null" $
-      shallowEvalBuiltin "NULL" `shouldBe` Right corenull
-    it "has true" $
-      shallowEvalBuiltin "TRUE" `shouldBe` Right (corebool True)
+    it "has null" $ shallowEvalBuiltin "NULL" `shouldBe` Right corenull
+    it "has true" $ shallowEvalBuiltin "TRUE" `shouldBe` Right (corebool True)
     it "has false" $
       shallowEvalBuiltin "FALSE" `shouldBe` Right (corebool False)
     it "fails sensibly" $
       shallowEvalBuiltin "NONESUCH" `shouldBe`
       Left (BuiltinNotFound "NONESUCH" (bif "__NONESUCH"))
-  describe "Boolean operators" $ do -- TODO: quickcheck properties
+  describe "Boolean operators" $ -- TODO: quickcheck properties
+   do
     it "calculates and" $
       runInterpreter (euAnd return [corebool True, corebool False]) `shouldBe`
       Right (corebool False)
@@ -57,17 +56,19 @@ spec = do
       Right (bif "FALSE")
   describe "List builtins" $ do
     it "extracts head" $
-      runInterpreter (euHead whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
-        Right (bif "TRUE")
+      runInterpreter
+        (euHead whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
+      Right (bif "TRUE")
     it "extracts tail" $
-      runInterpreter (euTail whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
-        Right (CoreList [bif "FALSE", bif "FALSE"])
+      runInterpreter
+        (euTail whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
+      Right (CoreList [bif "FALSE", bif "FALSE"])
     it "throws when head-ing []" $
       runInterpreter (euHead whnfM [CoreList []]) `shouldBe`
-        Left (EmptyList (CoreList []))
+      Left (EmptyList (CoreList []))
     it "throws when tail-ing []" $
       runInterpreter (euTail whnfM [CoreList []]) `shouldBe`
-        Left (EmptyList (CoreList []))
+      Left (EmptyList (CoreList []))
     it "conses" $
       runInterpreter (euCons whnfM [int 0, CoreList [int 1, int 2, int 3]]) `shouldBe`
       Right (CoreList [int 0, int 1, int 2, int 3])
@@ -78,5 +79,61 @@ spec = do
       runInterpreter (euCons whnfM [int 0, int 1]) `shouldBe`
       Left (NotList (int 1))
     it "conses with list-valued call" $
-      runInterpreter (euCons whnfM [int 0, CoreApp (bif "TAIL") (CoreList [int 1, int 2, int 3])]) `shouldBe`
+      runInterpreter
+        (euCons
+           whnfM
+           [int 0, CoreApp (bif "TAIL") (CoreList [int 1, int 2, int 3])]) `shouldBe`
       Right (CoreList [int 0, int 2, int 3])
+    it "judges head([1,2,3])=1" $
+      runInterpreter
+        (whnfM
+           (appexp
+             (bif "HEAD")
+             [CoreList [int 1, int 2, int 3]]))
+      `shouldBe`
+      Right (int 1)
+    it "judges head(cons(h,t))=h" $
+      runInterpreter
+        (whnfM
+           (appexp
+              (bif "EQ")
+              [ appexp
+                  (bif "HEAD")
+                  [appexp (bif "CONS") [int 1, CoreList [int 2, int 3]]]
+              , int 1
+              ])) `shouldBe`
+      Right (corebool True)
+    it "judges head(cons(head(l), tail(l)))=head(l)" $
+      runInterpreter
+        (whnfM
+           (appexp
+              (bif "HEAD")
+              [ appexp
+                  (bif "CONS")
+                  [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+                  , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+                  ]
+              ])) `shouldBe`
+      Right (int 1)
+    it "judges cons(head(l), tail(l))=l" $
+      runInterpreter
+        (forceDataStructures whnfM
+           (appexp
+              (bif "CONS")
+              [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+              , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+              ])) `shouldBe`
+      Right (CoreList [int 1, int 2, int 3])
+    it "judges eq(l,(cons(head(l), tail(l))))=true" $
+      runInterpreter
+        (whnfM
+           (appexp
+              (bif "EQ")
+              [ CoreList [int 1, int 2, int 3]
+              , appexp
+                  (bif "CONS")
+                  [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+                  , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+                  ]
+              ])) `shouldBe`
+      Right (corebool True)

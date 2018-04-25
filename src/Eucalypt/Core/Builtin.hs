@@ -22,6 +22,7 @@ module Eucalypt.Core.Builtin
   , euMerge
   , euLookup
   , lookupBuiltin
+  , forceDataStructures
   ) where
 
 import Eucalypt.Core.Error
@@ -45,17 +46,34 @@ euFalse _ _ = return $ CorePrim $ CoreBoolean False
 euTrue :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euTrue _ _ = return $ CorePrim $ CoreBoolean True
 
+-- | For comparisons of data structures, if we want to rely on core
+-- syntaxes Eq implementation for equality, we need to evaluate a bit
+-- more deeply than whnf, otherwise @[1,2,3] !=
+-- [head([1,2,3]),tail([1,2,3])]@
+forceDataStructures :: WhnfEvaluator -> CoreExpr -> Interpreter CoreExpr
+forceDataStructures w (CoreList l) = CoreList <$> mapM (forceDataStructures w) l
+forceDataStructures w (CoreBlock e) = CoreBlock <$> forceDataStructures w e
+forceDataStructures w e = w e >>= \expr -> case expr of
+  (CoreList _) -> forceDataStructures w expr
+  (CoreBlock _) -> forceDataStructures w expr
+  _ -> return expr
+
 -- | __EQ(l,r) - true iff l = r. Arity 2. Strict in both arguments.
 --
 euEq :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
-euEq whnfM [l, r] = CorePrim . CoreBoolean <$> ((==) <$> whnfM l <*> whnfM r)
+euEq whnfM [l, r] = do
+  l' <- forceDataStructures whnfM l
+  r' <- forceDataStructures whnfM r
+  return $ (CorePrim . CoreBoolean) (l' == r')
 euEq _ args = throwEvalError $ Bug "__EQ called with bad args" (CoreList args)
 
+-- | Evaluate an expression and ensure it's a boolean value.
 evalBoolean :: WhnfEvaluator -> CoreExpr -> Interpreter Bool
 evalBoolean whnfM expr =
   whnfM expr >>= \case
       (CorePrim (CoreBoolean b)) -> return b
       _ -> throwEvalError $ NotBoolean expr
+
 
 -- | __IF(c,t,f) - 't' if 'c' is boolean true, 'f' otherwise. Strict
 -- in 'c'. Arity 3. Runtime type error if 'c' is not a boolean
