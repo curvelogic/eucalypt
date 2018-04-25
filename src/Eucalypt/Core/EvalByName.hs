@@ -36,11 +36,11 @@ whnfM e@(CoreApp f x) = do
   f' <- whnfM f
   case f' of
     CoreLam body -> whnfM $ instantiate1 x body
-    CorePAp arity expr args ->
-      if length args < arity - 1
-        then return (CorePAp arity expr (args ++ [x]))
+    CorePAp arity expr args -> let args' = (args ++ [x]) in
+      if length args' < arity
+        then return (CorePAp arity expr args')
         else (case expr of
-                (CoreBuiltin name) -> applyBuiltin whnfM expr name args
+                (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
                 _ -> throwEvalError $ NotSupported "multiapply lambdas" e)
     expr -> throwEvalError $ UncallableExpression expr
 

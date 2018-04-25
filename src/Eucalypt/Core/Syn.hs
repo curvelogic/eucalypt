@@ -120,5 +120,41 @@ letexp bs b = CoreLet (map (abstr . snd) bs) (abstr b)
 
 
 
+-- | Construct boolean expression
+corebool :: Bool -> CoreExp a
+corebool = CorePrim . CoreBoolean
+
+
+
+-- | Construct null expression
+corenull :: CoreExp a
+corenull = CorePrim CoreNull
+
+
+
+-- | Construct symbol expression
+sym :: String -> CoreExp a
+sym = CorePrim . CoreSymbol
+
+
+
+-- | Construct builtin expression
+bif :: String -> CoreExp a
+bif = CoreBuiltin
+
+
+
+-- | Construct an integer expression
+int :: Integer -> CoreExp a
+int = CorePrim . CoreInt
+
+
+
+-- | Construct a string expression
+str :: String -> CoreExp a
+str = CorePrim . CoreString
+
+
+
 -- | Core expression using a simple string binding name
 type CoreExpr = CoreExp CoreBindingName

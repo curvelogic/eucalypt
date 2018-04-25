@@ -69,6 +69,8 @@ instance ToMYaml Interpreter CoreExpr where
             value <- whnfM v
             case value of
               CoreLam _ -> return Nothing
+              CoreBuiltin _ -> return Nothing
+              CorePAp{} -> return Nothing
               _ ->  toMYaml whnfM value >>= \rendered -> return (Just (key, rendered))
           expr -> throwEvalError $ BadBlockElement expr
   toMYaml _ (CoreLam _) = return B.null
