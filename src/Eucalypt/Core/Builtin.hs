@@ -113,4 +113,4 @@ builtInIndex = [("NULL", (0, euNull)),
 
 -- | Look up a built in by name, returns tuple of arity and implementation.
 lookupBuiltin :: CoreBuiltinName -> Maybe (Integer, Builtin)
-lookupBuiltin n = lookup n builtInIndex >>= return
+lookupBuiltin n = lookup n builtInIndex
