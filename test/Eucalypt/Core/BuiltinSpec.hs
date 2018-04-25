@@ -20,38 +20,120 @@ shallowEvalBuiltin name =
   runInterpreter
     (case lookupBuiltin name of
        Just (_, f) -> f return []
-       Nothing -> throwEvalError (BuiltinNotFound name (CoreBuiltin ("__" ++ name))))
+       Nothing -> throwEvalError (BuiltinNotFound name (bif ("__" ++ name))))
 
 
 spec :: Spec
 spec = do
   describe "Builtin lookup" $ do
-    it "has null" $
-      shallowEvalBuiltin "NULL" `shouldBe` Right (CorePrim CoreNull)
-    it "has true" $
-      shallowEvalBuiltin "TRUE" `shouldBe` Right (CorePrim (CoreBoolean True))
+    it "has null" $ shallowEvalBuiltin "NULL" `shouldBe` Right corenull
+    it "has true" $ shallowEvalBuiltin "TRUE" `shouldBe` Right (corebool True)
     it "has false" $
-      shallowEvalBuiltin "FALSE" `shouldBe` Right (CorePrim (CoreBoolean False))
+      shallowEvalBuiltin "FALSE" `shouldBe` Right (corebool False)
     it "fails sensibly" $
       shallowEvalBuiltin "NONESUCH" `shouldBe`
-      Left (BuiltinNotFound "NONESUCH" (CoreBuiltin "__NONESUCH"))
-  describe "Boolean operators" $ do -- TODO: quickcheck properties
+      Left (BuiltinNotFound "NONESUCH" (bif "__NONESUCH"))
+  describe "Boolean operators" $ -- TODO: quickcheck properties
+   do
     it "calculates and" $
-      runInterpreter (euAnd return [CorePrim $ CoreBoolean True, CorePrim $ CoreBoolean False]) `shouldBe`
-      Right (CorePrim $ CoreBoolean False)
+      runInterpreter (euAnd return [corebool True, corebool False]) `shouldBe`
+      Right (corebool False)
     it "calculates or" $
-      runInterpreter (euOr return [CorePrim $ CoreBoolean True, CorePrim $ CoreBoolean False]) `shouldBe`
-      Right (CorePrim $ CoreBoolean True)
+      runInterpreter (euOr return [corebool True, corebool False]) `shouldBe`
+      Right (corebool True)
     it "calculates not(true)" $
-      runInterpreter (euNot return [CorePrim $ CoreBoolean True]) `shouldBe`
-      Right (CorePrim $ CoreBoolean False)
+      runInterpreter (euNot return [corebool True]) `shouldBe`
+      Right (corebool False)
     it "calculates not(false)" $
-      runInterpreter (euNot return [CorePrim $ CoreBoolean False]) `shouldBe`
-      Right (CorePrim $ CoreBoolean True)
+      runInterpreter (euNot return [corebool False]) `shouldBe`
+      Right (corebool True)
   describe "If builtin" $ do
     it "evaluates false branch lazily" $
-      runInterpreter (euIf whnfM [CorePrim $ CoreBoolean True, CoreBuiltin "TRUE", CoreBuiltin "FALSE"]) `shouldBe`
-      Right (CoreBuiltin "TRUE")
+      runInterpreter (euIf whnfM [corebool True, bif "TRUE", bif "FALSE"]) `shouldBe`
+      Right (bif "TRUE")
     it "evaluates true branch lazily" $
-      runInterpreter (euIf whnfM [CorePrim $ CoreBoolean False, CoreBuiltin "TRUE", CoreBuiltin "FALSE"]) `shouldBe`
-      Right (CoreBuiltin "FALSE")
+      runInterpreter (euIf whnfM [corebool False, bif "TRUE", bif "FALSE"]) `shouldBe`
+      Right (bif "FALSE")
+  describe "List builtins" $ do
+    it "extracts head" $
+      runInterpreter
+        (euHead whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
+      Right (bif "TRUE")
+    it "extracts tail" $
+      runInterpreter
+        (euTail whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
+      Right (CoreList [bif "FALSE", bif "FALSE"])
+    it "throws when head-ing []" $
+      runInterpreter (euHead whnfM [CoreList []]) `shouldBe`
+      Left (EmptyList (CoreList []))
+    it "throws when tail-ing []" $
+      runInterpreter (euTail whnfM [CoreList []]) `shouldBe`
+      Left (EmptyList (CoreList []))
+    it "conses" $
+      runInterpreter (euCons whnfM [int 0, CoreList [int 1, int 2, int 3]]) `shouldBe`
+      Right (CoreList [int 0, int 1, int 2, int 3])
+    it "conses with empty" $
+      runInterpreter (euCons whnfM [int 0, CoreList []]) `shouldBe`
+      Right (CoreList [int 0])
+    it "throws consing a non-list tail" $
+      runInterpreter (euCons whnfM [int 0, int 1]) `shouldBe`
+      Left (NotList (int 1))
+    it "conses with list-valued call" $
+      runInterpreter
+        (euCons
+           whnfM
+           [int 0, CoreApp (bif "TAIL") (CoreList [int 1, int 2, int 3])]) `shouldBe`
+      Right (CoreList [int 0, int 2, int 3])
+    it "judges head([1,2,3])=1" $
+      runInterpreter
+        (whnfM
+           (appexp
+             (bif "HEAD")
+             [CoreList [int 1, int 2, int 3]]))
+      `shouldBe`
+      Right (int 1)
+    it "judges head(cons(h,t))=h" $
+      runInterpreter
+        (whnfM
+           (appexp
+              (bif "EQ")
+              [ appexp
+                  (bif "HEAD")
+                  [appexp (bif "CONS") [int 1, CoreList [int 2, int 3]]]
+              , int 1
+              ])) `shouldBe`
+      Right (corebool True)
+    it "judges head(cons(head(l), tail(l)))=head(l)" $
+      runInterpreter
+        (whnfM
+           (appexp
+              (bif "HEAD")
+              [ appexp
+                  (bif "CONS")
+                  [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+                  , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+                  ]
+              ])) `shouldBe`
+      Right (int 1)
+    it "judges cons(head(l), tail(l))=l" $
+      runInterpreter
+        (forceDataStructures whnfM
+           (appexp
+              (bif "CONS")
+              [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+              , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+              ])) `shouldBe`
+      Right (CoreList [int 1, int 2, int 3])
+    it "judges eq(l,(cons(head(l), tail(l))))=true" $
+      runInterpreter
+        (whnfM
+           (appexp
+              (bif "EQ")
+              [ CoreList [int 1, int 2, int 3]
+              , appexp
+                  (bif "CONS")
+                  [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+                  , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+                  ]
+              ])) `shouldBe`
+      Right (corebool True)

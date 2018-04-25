@@ -55,7 +55,7 @@ instance ToMYaml Interpreter CoreExpr where
       CoreFloat f -> B.scientific $ fromFloatDigits f
       CoreBoolean b -> B.bool b
       CoreNull -> B.null
-  toMYaml whnfM (CoreList items) = B.array <$> mapM (toMYaml whnfM) items
+  toMYaml whnfM (CoreList items) = B.array <$> mapM (whnfM >=> toMYaml whnfM) items
   toMYaml whnfM (CoreBlock list) = do
     content <- whnfM list
     case content of

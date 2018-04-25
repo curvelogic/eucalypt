@@ -28,7 +28,9 @@ data EvaluationError
   | BuiltinNotFound CoreBuiltinName CoreExpr
   | NotSupported String CoreExpr
   | NotBoolean CoreExpr
+  | NotList CoreExpr
   | Bug String CoreExpr
+  | EmptyList CoreExpr
   | NoSource
   deriving (Eq, Typeable)
 
@@ -45,6 +47,8 @@ instance Show EvaluationError where
   show (BuiltinNotFound name expr) = "Unknown builtin \"" ++ name ++ "\" referenced in " ++ pprint expr
   show (NotSupported message expr) = "Not supported (yet) - " ++ message ++ pprint expr
   show (NotBoolean expr) = "Expected boolean value, got " ++ pprint expr
+  show (NotList expr) = "Expected list value, got " ++ pprint expr
+  show (EmptyList expr) = "List was empty in " ++ pprint expr
   show (Bug message expr) = "BUG! " ++ message ++ " - " ++ pprint expr
   show NoSource = "No source"
 

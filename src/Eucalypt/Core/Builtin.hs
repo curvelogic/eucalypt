@@ -15,10 +15,14 @@ module Eucalypt.Core.Builtin
   , euOr
   , euNot
   , euIf
+  , euHead
+  , euTail
+  , euCons
   , euConcat
   , euMerge
   , euLookup
   , lookupBuiltin
+  , forceDataStructures
   ) where
 
 import Eucalypt.Core.Error
@@ -42,17 +46,34 @@ euFalse _ _ = return $ CorePrim $ CoreBoolean False
 euTrue :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euTrue _ _ = return $ CorePrim $ CoreBoolean True
 
+-- | For comparisons of data structures, if we want to rely on core
+-- syntaxes Eq implementation for equality, we need to evaluate a bit
+-- more deeply than whnf, otherwise @[1,2,3] !=
+-- [head([1,2,3]),tail([1,2,3])]@
+forceDataStructures :: WhnfEvaluator -> CoreExpr -> Interpreter CoreExpr
+forceDataStructures w (CoreList l) = CoreList <$> mapM (forceDataStructures w) l
+forceDataStructures w (CoreBlock e) = CoreBlock <$> forceDataStructures w e
+forceDataStructures w e = w e >>= \expr -> case expr of
+  (CoreList _) -> forceDataStructures w expr
+  (CoreBlock _) -> forceDataStructures w expr
+  _ -> return expr
+
 -- | __EQ(l,r) - true iff l = r. Arity 2. Strict in both arguments.
 --
 euEq :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
-euEq whnfM [l, r] = CorePrim . CoreBoolean <$> ((==) <$> whnfM l <*> whnfM r)
+euEq whnfM [l, r] = do
+  l' <- forceDataStructures whnfM l
+  r' <- forceDataStructures whnfM r
+  return $ (CorePrim . CoreBoolean) (l' == r')
 euEq _ args = throwEvalError $ Bug "__EQ called with bad args" (CoreList args)
 
+-- | Evaluate an expression and ensure it's a boolean value.
 evalBoolean :: WhnfEvaluator -> CoreExpr -> Interpreter Bool
 evalBoolean whnfM expr =
   whnfM expr >>= \case
       (CorePrim (CoreBoolean b)) -> return b
       _ -> throwEvalError $ NotBoolean expr
+
 
 -- | __IF(c,t,f) - 't' if 'c' is boolean true, 'f' otherwise. Strict
 -- in 'c'. Arity 3. Runtime type error if 'c' is not a boolean
@@ -82,7 +103,7 @@ euAnd whnfM [l, r] = do
   return $ CorePrim (CoreBoolean (lbool && rbool))
 euAnd _ args = throwEvalError $ Bug "__AND called with bad args" (CoreList args)
 
--- | __AND(l,r) - 'l' and 'r' must be boolean. Arity 2. Strict in 'l'
+-- | __OR(l,r) - 'l' and 'r' must be boolean. Arity 2. Strict in 'l'
 -- and 'r'.
 --
 euOr :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
@@ -91,6 +112,36 @@ euOr whnfM [l, r] = do
   rbool <- evalBoolean whnfM r
   return $ CorePrim (CoreBoolean (lbool || rbool))
 euOr _ args = throwEvalError $ Bug "__OR called with bad args" (CoreList args)
+
+-- | __HEAD(l) - 'l' must be list. Arity 1. Strict in 'l'.
+--
+euHead :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euHead whnfM [l] =
+  whnfM l >>= \case
+    (CoreList (h:_)) -> return h
+    (CoreList []) -> throwEvalError $ EmptyList (CoreList [])
+    e -> throwEvalError $ NotList e
+euHead _ args = throwEvalError $ Bug "__HEAD called with bad args" (CoreList args)
+
+-- | __TAIL(l) - 'l' must be list. Arity 1. Strict in 'l'.
+--
+euTail :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euTail whnfM [l] =
+  whnfM l >>= \case
+    (CoreList (_:t)) -> return (CoreList t)
+    (CoreList []) -> throwEvalError $ EmptyList (CoreList [])
+    e -> throwEvalError $ NotList e
+euTail _ args = throwEvalError $ Bug "__TAIL called with bad args" (CoreList args)
+
+-- | __CONS(h, t) - 't' must be list. Arity 2. Strict in 't'.
+--
+euCons :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euCons whnfM [h, t] =
+  whnfM t >>= \case
+    (CoreList t') -> return (CoreList (h : t'))
+    e -> throwEvalError $ NotList e
+euCons _ args = throwEvalError $ Bug "__TAIL called with bad args" (CoreList args)
+
 
 -- | Concatenate two lists or blocks into a list. The default action
 -- for list concatenation and also available as `concat`.
@@ -152,8 +203,8 @@ euLookup whnfM e name = do
 
 -- | The builtins exposed to the language.
 --
-builtInIndex :: [(CoreBuiltinName, (Int, Builtin))]
-builtInIndex =
+builtinIndex :: [(CoreBuiltinName, (Int, Builtin))]
+builtinIndex =
   [ ("NULL", (0, euNull))
   , ("FALSE", (0, euFalse))
   , ("TRUE", (0, euTrue))
@@ -162,9 +213,12 @@ builtInIndex =
   , ("NOT", (1, euNot))
   , ("AND", (2, euAnd))
   , ("OR", (2, euOr))
+  , ("HEAD", (1, euHead))
+  , ("TAIL", (1, euTail))
+  , ("CONS", (2, euCons))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.
 --
 lookupBuiltin :: CoreBuiltinName -> Maybe (Int, Builtin)
-lookupBuiltin n = lookup n builtInIndex
+lookupBuiltin n = lookup n builtinIndex
