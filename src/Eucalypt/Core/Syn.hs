@@ -61,6 +61,17 @@ data CoreExp a
   deriving (Functor,Foldable,Traversable)
 
 
+-- | True if expression is a block
+isBlock :: CoreExp a -> Bool
+isBlock (CoreBlock _) = True
+isBlock _ = False
+
+
+-- | True if expression is a list
+isList :: CoreExp a -> Bool
+isList (CoreList _) = True
+isList _ = False
+
 
 deriveEq1   ''CoreExp
 deriveOrd1  ''CoreExp
@@ -91,6 +102,12 @@ instance Monad CoreExp where
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
   CoreList es >>= f = CoreList (map (>>= f) es)
   CoreBlock e >>= f = CoreBlock (e >>= f)
+
+
+
+-- | Construct a var
+var :: a -> CoreExp a
+var = CoreVar
 
 
 
@@ -154,6 +171,17 @@ int = CorePrim . CoreInt
 str :: String -> CoreExp a
 str = CorePrim . CoreString
 
+
+
+-- | A block element from string key and expr value
+element :: String -> CoreExp a -> CoreExp a
+element k v = CoreList [str k, v]
+
+
+
+-- | A block from its items
+block :: [CoreExpr] -> CoreExpr
+block items = CoreBlock $ CoreList items
 
 
 -- | Core expression using a simple string binding name

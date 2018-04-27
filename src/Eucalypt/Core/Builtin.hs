@@ -31,6 +31,12 @@ import Eucalypt.Core.Syn
 
 type Builtin = WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 
+-- | A panic from user code
+--
+euPanic :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euPanic _ [e@(CorePrim (CoreString s))] = throwEvalError $ Panic s e
+euPanic _ args = throwEvalError $ Bug "Bad arguments for panic" (CoreList args)
+
 -- | __NULL builtin - evaluates to null primitive. Arity 0.
 --
 euNull :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
@@ -205,7 +211,8 @@ euLookup whnfM e name = do
 --
 builtinIndex :: [(CoreBuiltinName, (Int, Builtin))]
 builtinIndex =
-  [ ("NULL", (0, euNull))
+  [ ("PANIC", (1, euPanic))
+  , ("NULL", (0, euNull))
   , ("FALSE", (0, euFalse))
   , ("TRUE", (0, euTrue))
   , ("EQ", (2, euEq))

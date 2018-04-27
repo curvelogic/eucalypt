@@ -23,6 +23,11 @@ shallowEvalBuiltin name =
        Nothing -> throwEvalError (BuiltinNotFound name (bif ("__" ++ name))))
 
 
+-- | A panic to use in contexts which should not be evaluated
+abort :: CoreExpr
+abort = CoreApp (bif "PANIC") (str "Should not have been evaluated")
+
+
 spec :: Spec
 spec = do
   describe "Builtin lookup" $ do
@@ -49,11 +54,20 @@ spec = do
       Right (corebool True)
   describe "If builtin" $ do
     it "evaluates false branch lazily" $
-      runInterpreter (euIf whnfM [corebool True, bif "TRUE", bif "FALSE"]) `shouldBe`
+      runInterpreter (euIf whnfM [corebool True, bif "TRUE", abort]) `shouldBe`
       Right (bif "TRUE")
     it "evaluates true branch lazily" $
-      runInterpreter (euIf whnfM [corebool False, bif "TRUE", bif "FALSE"]) `shouldBe`
+      runInterpreter (euIf whnfM [corebool False, abort, bif "FALSE"]) `shouldBe`
       Right (bif "FALSE")
+    -- it "ingnores recursion traps in unevaluated branch" $
+    --   runInterpreter
+    --     (whnfM
+    --        (letexp
+    --           [ ( "a"
+    --             , (appexp (bif "IF") [corebool False, var "a", bif "FALSE"]))
+    --           ]
+    --           (block [element "a" (var "a")]))) `shouldBe`
+    --   Right (bif "FALSE")
   describe "List builtins" $ do
     it "extracts head" $
       runInterpreter
@@ -86,11 +100,7 @@ spec = do
       Right (CoreList [int 0, int 2, int 3])
     it "judges head([1,2,3])=1" $
       runInterpreter
-        (whnfM
-           (appexp
-             (bif "HEAD")
-             [CoreList [int 1, int 2, int 3]]))
-      `shouldBe`
+        (whnfM (appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]])) `shouldBe`
       Right (int 1)
     it "judges head(cons(h,t))=h" $
       runInterpreter
@@ -117,7 +127,8 @@ spec = do
       Right (int 1)
     it "judges cons(head(l), tail(l))=l" $
       runInterpreter
-        (forceDataStructures whnfM
+        (forceDataStructures
+           whnfM
            (appexp
               (bif "CONS")
               [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]

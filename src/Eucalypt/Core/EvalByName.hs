@@ -28,6 +28,15 @@ applyBuiltin w expr name args =
     Just (_, f) -> f w args >>= w
     Nothing -> throwEvalError $ BuiltinNotFound name expr
 
+-- | Use bound to wire the bindings into the appropriate places in the
+-- expressions (lazily...)
+instantiateLet :: CoreExpr -> CoreExpr
+instantiateLet (CoreLet bs b) = inst b
+  where
+    es = map inst bs
+    inst = instantiate (es !!)
+instantiateLet _ = undefined
+
 -- | Monadic WHNF to support abort and runtime error.
 --
 whnfM :: CoreExpr -> Interpreter CoreExpr
@@ -43,10 +52,7 @@ whnfM e@(CoreApp f x) = do
                     (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
                     _ -> throwEvalError $ NotSupported "multiapply lambdas" e)
     expr -> throwEvalError $ UncallableExpression expr
-whnfM (CoreLet bs b) = whnfM (inst b)
-  where
-    es = map inst bs
-    inst = instantiate (es !!)
+whnfM e@CoreLet {} = whnfM $ instantiateLet e
 whnfM (CoreLookup e n) = euLookup whnfM e n -- TODO: is this right?
 whnfM e@(CoreBuiltin n) =
   case lookupBuiltin n of
