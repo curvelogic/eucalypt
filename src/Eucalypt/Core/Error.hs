@@ -29,6 +29,7 @@ data EvaluationError
   | NotSupported String CoreExpr
   | NotBoolean CoreExpr
   | NotList CoreExpr
+  | Panic String CoreExpr
   | Bug String CoreExpr
   | EmptyList CoreExpr
   | NoSource
@@ -49,6 +50,7 @@ instance Show EvaluationError where
   show (NotBoolean expr) = "Expected boolean value, got " ++ pprint expr
   show (NotList expr) = "Expected list value, got " ++ pprint expr
   show (EmptyList expr) = "List was empty in " ++ pprint expr
+  show (Panic message expr) = "Panic - " ++ message ++ " in " ++ pprint expr
   show (Bug message expr) = "BUG! " ++ message ++ " - " ++ pprint expr
   show NoSource = "No source"
 
