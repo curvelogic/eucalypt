@@ -25,17 +25,23 @@ module Eucalypt.Syntax.Ast
   , PrimitiveLiteral(..)
   , AtomicName(..)
   , ParameterName
-  , BlockElement(..)
+  , BlockElement
+  , BlockElement_(..)
   , Annotated(..)
-  , DeclarationForm(..)
-  , Expression(..)
-  , Block(..)
+  , DeclarationForm
+  , DeclarationForm_(..)
+  , Expression
+  , Expression_(..)
+  , Block
+  , Block_(..)
   )
 where
 
 import Text.Regex
 import GHC.Generics
 import Data.Aeson
+import Eucalypt.Reporting.Location
+
 
 -- | Eucalypt literals: numbers, strings or symbols.
 data PrimitiveLiteral = VInt Integer   -- ^ integer (decimal representation)
@@ -56,9 +62,12 @@ data AtomicName
 -- a string
 type ParameterName = String
 
+
+type Expression = Located Expression_
+
 -- | An Expression is anything that can appear to the right of a colon
 -- in a declaration.
-data Expression
+data Expression_
 
   = EIdentifier [AtomicName]
     -- ^ a (possibly complex) identifier
@@ -84,6 +93,20 @@ data Expression
   deriving (Eq, Show, Generic, ToJSON)
 
 
+-- | Strip location from a located expression; useful for testing.
+-- TODO: generalise
+instance HasLocation Expression_ where
+  stripLocation (EOperation n l r) =
+    EOperation n (stripLocation l) (stripLocation r)
+  stripLocation (EInvocation f xs) =
+    EInvocation (stripLocation f) (map stripLocation xs)
+  stripLocation (ECatenation a b) =
+    ECatenation (stripLocation a) (stripLocation b)
+  stripLocation (EBlock b) = EBlock (stripLocation b)
+  stripLocation (EList es) = EList (map stripLocation es)
+  stripLocation e = e
+
+
 -- | A syntax element could be annotated with another expression
 data Annotated a
   = Annotated { annotation :: Maybe Expression,
@@ -93,6 +116,8 @@ data Annotated a
               }
   deriving (Eq, Show, Generic, ToJSON)
 
+-- | A declaration form has source location metadata
+type DeclarationForm = Located DeclarationForm_
 
 -- | Declaration forms permissible within a block.
 --
@@ -100,7 +125,7 @@ data Annotated a
 -- * a property declaration
 -- * a function declaration
 -- * an operator declaration
-data DeclarationForm
+data DeclarationForm_
 
   = PropertyDecl AtomicName Expression |
     -- ^ A simple property declaration: @key: value-expression@
@@ -113,17 +138,37 @@ data DeclarationForm
 
   deriving (Eq, Show, Generic, ToJSON)
 
+
+instance HasLocation DeclarationForm_ where
+  stripLocation (PropertyDecl n e) = PropertyDecl n (stripLocation e)
+  stripLocation (FunctionDecl f ps e) = FunctionDecl f ps (stripLocation e)
+  stripLocation (OperatorDecl n l r e) = OperatorDecl n l r (stripLocation e)
+
+type BlockElement = Located BlockElement_
+
 -- | Block elements may be annotated declarations or splice forms
 -- which will evaluate to alists mapping symbols to values and be
 -- merged into the block at evaluation time.
-data BlockElement = Declaration (Annotated DeclarationForm)
-                  | Splice Expression
+data BlockElement_ = Declaration (Annotated DeclarationForm)
+                   | Splice Expression
   deriving (Eq, Show, Generic, ToJSON)
+
+instance HasLocation BlockElement_ where
+  stripLocation (Declaration Annotated {annotation = a, declaration = d}) =
+    Declaration Annotated{annotation = stripLocation <$> a, declaration = stripLocation d}
+  stripLocation (Splice e) = Splice $ stripLocation e
+
+-- | A Block is a block with location metadata
+type Block = Located Block_
 
 -- | A block is a sequence of block elements, with later keys
 -- overriding earlier.
-newtype Block = Block [BlockElement]
+newtype Block_ = Block [BlockElement]
   deriving (Eq, Show, Generic, ToJSON)
+
+
+instance HasLocation Block_ where
+  stripLocation (Block elts) = Block (map stripLocation elts)
 
 -- | Strip single quotes from single-quoted string
 unquote :: String -> String
@@ -132,56 +177,56 @@ unquote xs = xs
 
 -- | Turn dotted string into complex identifier
 ident :: String -> Expression
-ident = EIdentifier . map (NormalName . unquote) . splitRegex (mkRegex "\\.")
+ident = at nowhere . EIdentifier . map (NormalName . unquote) . splitRegex (mkRegex "\\.")
 
 -- | Form an operation from name and operands
 op :: String -> Expression -> Expression -> Expression
-op = EOperation . OperatorName
+op o l r = at nowhere $ EOperation (OperatorName o) l r
 
 -- | Form a catenation of two expressions
 cat :: Expression -> Expression -> Expression
-cat = ECatenation
+cat l r = at nowhere $ ECatenation l r
 
 -- | Form a multi-argument invocation
 invoke :: Expression -> [Expression] -> Expression
-invoke = EInvocation
+invoke f params = at nowhere $ EInvocation f params
 
 -- | Form a literal int
 int :: Integer -> Expression
-int = ELiteral . VInt
+int = at nowhere . ELiteral . VInt
 
 -- | Form a literal string
 str :: String -> Expression
-str = ELiteral . VStr
+str = at nowhere . ELiteral . VStr
 
 -- | Form a literal symbol
 sym :: String -> Expression
-sym = ELiteral . VSym
+sym = at nowhere . ELiteral . VSym
 
 -- | Form a list literal from a list of expressions
 list :: [Expression] -> Expression
-list = EList
+list = at nowhere . EList
 
 -- | Create a property declaration
 prop :: String -> Expression -> DeclarationForm
-prop k = PropertyDecl (NormalName k)
+prop k = at nowhere . PropertyDecl (NormalName k)
 
 -- | Create a function declaration
 func :: String -> [String] -> Expression -> DeclarationForm
-func f = FunctionDecl (NormalName f)
+func f params e = at nowhere $ FunctionDecl (NormalName f) params e
 
 -- | Create an operator declaration
 oper :: String -> String -> String -> Expression -> DeclarationForm
-oper o = OperatorDecl (OperatorName o)
+oper o l r e = at nowhere $ OperatorDecl (OperatorName o) l r e
 
 -- | Create an annotated block element
 ann :: Expression -> DeclarationForm -> BlockElement
-ann a decl = Declaration Annotated { annotation = Just a, declaration = decl }
+ann a decl = at nowhere $ Declaration Annotated { annotation = Just a, declaration = decl }
 
 -- | Create an unannotated block element
 bare :: DeclarationForm -> BlockElement
-bare decl = Declaration Annotated { annotation = Nothing, declaration = decl }
+bare decl = at nowhere $ Declaration Annotated { annotation = Nothing, declaration = decl }
 
 -- | Create a block expression
 block :: [BlockElement] -> Expression
-block = EBlock . Block
+block = at nowhere . EBlock . at nowhere . Block

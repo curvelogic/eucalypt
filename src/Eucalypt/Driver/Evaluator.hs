@@ -26,7 +26,7 @@ import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Expression)
 import Eucalypt.Syntax.Error (SyntaxError(..))
-import Eucalypt.Syntax.Parser (parseAll, parseTopLevel)
+import Eucalypt.Syntax.Parser (parseNamedInput, parseTopLevel)
 import Network.URI
 import System.Exit
 import System.IO
@@ -70,15 +70,15 @@ readInput StdInput = readStdInput
 
 
 -- | Parse a byteString as eucalypt
-parseEucalypt :: BS.ByteString -> Either SyntaxError Expression
-parseEucalypt source = parseAll parseTopLevel $ (T.unpack . T.decodeUtf8) source
+parseEucalypt :: BS.ByteString -> String -> Either SyntaxError Expression
+parseEucalypt source name = parseNamedInput parseTopLevel name $ (T.unpack . T.decodeUtf8) source
 
 
 
 -- | Resolve a unit, read source and parse and desugar the content
 -- into CoreExpr, converting all error types into EucalyptErrors.
 parseInput :: Input -> IO (Either EucalyptError CoreExpr)
-parseInput i@(Input mode locator _name format) = do
+parseInput i@(Input mode locator _ format) = do
   source <- readInput locator
   case (mode, format) of
     (Inert, "yaml") -> dataToCore source
@@ -87,7 +87,7 @@ parseInput i@(Input mode locator _name format) = do
     _ -> (return . Left . Command . InvalidInputMode) i
   where
     eucalyptToCore text =
-      case parseEucalypt text of
+      case parseEucalypt text (show locator) of
         Left e -> (return . Left . Syntax) e
         Right expr -> (return . Right . desugar) expr
     dataToCore text = do
@@ -119,7 +119,8 @@ dumpASTs _ exprs = forM_ exprs $ \e ->
 parseEucalyptInputs :: EucalyptOptions -> IO ExitCode
 parseEucalyptInputs opts = do
   texts <- mapM readInput euLocators
-  let (errs, exprs) = partitionEithers (map parseEucalypt texts)
+  let filenames = map show euLocators
+  let (errs, exprs) = partitionEithers (zipWith parseEucalypt texts filenames)
   if null errs
     then dumpASTs opts exprs >> return ExitSuccess
     else reportErrors errs >> return (ExitFailure 1)
