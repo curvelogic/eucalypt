@@ -34,7 +34,6 @@ module Eucalypt.Syntax.Ast
   , Expression_(..)
   , Block
   , Block_(..)
-  , stripLocation
   )
 where
 
@@ -94,25 +93,18 @@ data Expression_
   deriving (Eq, Show, Generic, ToJSON)
 
 
-class HasLocation a where
-  stripLocation_ :: a -> a
-
-stripLocation :: HasLocation a => Located a -> Located a
-stripLocation Located {locatee = expr} =
-  Located {location = nowhere, locatee = stripLocation_ expr}
-
 -- | Strip location from a located expression; useful for testing.
 -- TODO: generalise
 instance HasLocation Expression_ where
-  stripLocation_ (EOperation n l r) =
+  stripLocation (EOperation n l r) =
     EOperation n (stripLocation l) (stripLocation r)
-  stripLocation_ (EInvocation f xs) =
+  stripLocation (EInvocation f xs) =
     EInvocation (stripLocation f) (map stripLocation xs)
-  stripLocation_ (ECatenation a b) =
+  stripLocation (ECatenation a b) =
     ECatenation (stripLocation a) (stripLocation b)
-  stripLocation_ (EBlock b) = EBlock (stripLocation b)
-  stripLocation_ (EList es) = EList (map stripLocation es)
-  stripLocation_ e = e
+  stripLocation (EBlock b) = EBlock (stripLocation b)
+  stripLocation (EList es) = EList (map stripLocation es)
+  stripLocation e = e
 
 
 -- | A syntax element could be annotated with another expression
@@ -148,9 +140,9 @@ data DeclarationForm_
 
 
 instance HasLocation DeclarationForm_ where
-  stripLocation_ (PropertyDecl n e) = PropertyDecl n (stripLocation e)
-  stripLocation_ (FunctionDecl f ps e) = FunctionDecl f ps (stripLocation e)
-  stripLocation_ (OperatorDecl n l r e) = OperatorDecl n l r (stripLocation e)
+  stripLocation (PropertyDecl n e) = PropertyDecl n (stripLocation e)
+  stripLocation (FunctionDecl f ps e) = FunctionDecl f ps (stripLocation e)
+  stripLocation (OperatorDecl n l r e) = OperatorDecl n l r (stripLocation e)
 
 type BlockElement = Located BlockElement_
 
@@ -162,9 +154,9 @@ data BlockElement_ = Declaration (Annotated DeclarationForm)
   deriving (Eq, Show, Generic, ToJSON)
 
 instance HasLocation BlockElement_ where
-  stripLocation_ (Declaration Annotated {annotation = a, declaration = d}) =
+  stripLocation (Declaration Annotated {annotation = a, declaration = d}) =
     Declaration Annotated{annotation = stripLocation <$> a, declaration = stripLocation d}
-  stripLocation_ (Splice e) = Splice $ stripLocation e
+  stripLocation (Splice e) = Splice $ stripLocation e
 
 -- | A Block is a block with location metadata
 type Block = Located Block_
@@ -176,7 +168,7 @@ newtype Block_ = Block [BlockElement]
 
 
 instance HasLocation Block_ where
-  stripLocation_ (Block elts) = Block (map stripLocation elts)
+  stripLocation (Block elts) = Block (map stripLocation elts)
 
 -- | Strip single quotes from single-quoted string
 unquote :: String -> String

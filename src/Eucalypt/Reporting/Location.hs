@@ -44,6 +44,16 @@ data Located a = Located
   , locatee :: a
   } deriving (Eq, Show, Generic, ToJSON)
 
+-- | Simple typeclass for expression that we can strip location
+-- information from (mainly for testing).
+class HasLocation a where
+  stripLocation :: a -> a
+
+-- | Anything we can strip location from, we can also strip location
+-- from a located variation of it...
+instance HasLocation a => HasLocation (Located a) where
+  stripLocation Located{locatee=x} = Located{location=nowhere, locatee=stripLocation x}
+
 -- | Construct a new position
 pos :: SourceName -> Line -> Column -> SourcePosition
 pos n l c = spos $ newPos n l c
