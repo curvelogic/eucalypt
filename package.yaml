@@ -31,7 +31,7 @@ library:
     - network-uri
     - optparse-applicative
     - parsec
-    - parsec-numbers
+    - parsec-numeric
     - path
     - pretty
     - regex-compat
