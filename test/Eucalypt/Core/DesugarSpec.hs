@@ -1,6 +1,7 @@
 module Eucalypt.Core.DesugarSpec (main, spec)
   where
 
+import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import qualified Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.Desugar
@@ -27,8 +28,8 @@ spec =
 
     it "takes leading underscores to indicate built-ins" $
 
-      desugar (EIdentifier [NormalName "__NULL"]) `shouldBe` Syn.bif "NULL"
+      desugar (at nowhere (EIdentifier [NormalName "__NULL"])) `shouldBe` Syn.bif "NULL"
 
     it "translates lookups against builtins" $
 
-      desugar (EIdentifier [NormalName "__X", NormalName "id"]) `shouldBe` Syn.CoreLookup (Syn.bif "X") "id"
+      desugar (at nowhere (EIdentifier [NormalName "__X", NormalName "id"])) `shouldBe` Syn.CoreLookup (Syn.bif "X") "id"

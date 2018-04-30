@@ -26,14 +26,14 @@ import Text.Parsec.Pos
 -- | Wrapper for parsec SourcePos so we can cleanly JSONify
 newtype SourcePosition =
   SourcePosition SourcePos
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Show, Generic, Ord)
 
 instance ToJSON SourcePosition where
   toJSON (SourcePosition p) =
     String $
     pack
       (sourceName p ++
-       ":" ++ (show $ sourceLine p) ++ (show $ sourceColumn p))
+       ":" ++ show (sourceLine p) ++ show (sourceColumn p))
 
 -- | Text span from start to end
 type SourceSpan = (SourcePosition, SourcePosition)
@@ -45,8 +45,12 @@ data Located a = Located
   } deriving (Eq, Show, Generic, ToJSON)
 
 -- | Construct a new position
-pos :: SourceName -> Line -> Column -> SourcePos
-pos n l c = newPos n l c
+pos :: SourceName -> Line -> Column -> SourcePosition
+pos n l c = spos $ newPos n l c
+
+-- | Conver from parsec position
+spos :: SourcePos -> SourcePosition
+spos = SourcePosition
 
 -- | Add location data to primary expression
 at :: SourceSpan -> a -> Located a
@@ -55,3 +59,16 @@ at sp expr = Located {location = sp, locatee = expr}
 -- | Update the location information for an expression
 move :: SourceSpan -> Located a -> Located a
 move sp expr = expr {location = sp}
+
+-- | Merge to spans into a larger one (assumes source file is the
+-- same)
+merge :: SourceSpan -> SourceSpan -> SourceSpan
+merge a b = (min (fst a) (fst b), max (snd a) (snd b))
+
+-- | When expressions don't come from source
+nowherePos :: SourcePosition
+nowherePos = pos "<<nowhere>>" 0 0
+
+-- | Fake span
+nowhere :: SourceSpan
+nowhere = (nowherePos, nowherePos)

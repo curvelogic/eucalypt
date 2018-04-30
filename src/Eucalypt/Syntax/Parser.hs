@@ -9,9 +9,10 @@ Stability   : experimental
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Eucalypt.Syntax.Parser where
 
+import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.Error
-import Text.Parsec (try, parse)
+import Text.Parsec (try, parse, getPosition)
 import Text.Parsec.String (Parser)
 import Text.Parsec.Char
 import Text.Parsec.Prim (many)
@@ -60,6 +61,21 @@ squares = Tok.squares lexer
 operator = Tok.operator lexer
 whiteSpace = Tok.whiteSpace lexer
 braces = Tok.braces lexer
+
+-- $locations
+--
+-- Most elements of the expression tree are annotated with source
+-- location, these combinators record or alter the locations.
+
+-- | Takes a parser and records source locations to parse a located
+-- version
+located :: Parser a -> Parser (Located a)
+located p = (\s x e -> at (spos s, spos e) x) <$> getPosition <*> p <*> getPosition
+
+-- | Takes a parser which already records location and updates the
+-- location
+relocated :: Parser (Located a) -> Parser (Located a)
+relocated p =  (\s x e -> move (spos s, spos e) x) <$> getPosition <*> p <*> getPosition
 
 -- $identifiers
 --
@@ -144,25 +160,25 @@ parseAtomicNameNoWS = parseNormalNameNoWS <|> parseOperatorNameNoWS
 
 -- | Parse a qualified normal identifier
 parseNormalIdentifier :: Parser Expression
-parseNormalIdentifier = EIdentifier <$> parseNormalName `sepBy1` dot
+parseNormalIdentifier = located $ EIdentifier <$> parseNormalName `sepBy1` dot
 
 -- | Parse a normal identifier (not operator) with no trailing
 -- whitespace. Operator names are not used in function call syntax so
 -- we don't need to parse that case.
 parseNormalIdentifierNoWS :: Parser Expression
-parseNormalIdentifierNoWS = do
+parseNormalIdentifierNoWS = located $ do
   prefixes <- many (try (parseNormalName <* dot))
   base <- try parseSQStringNoWS <|> parseNormalNameNoWS
   return $ EIdentifier $ prefixes ++ [base]
 
 -- | Parse a general identifer, qualified or simple, normal or operator
 parseIdentifier :: Parser Expression
-parseIdentifier = EIdentifier <$> parseAtomicName `sepBy1` dot
+parseIdentifier = located $ EIdentifier <$> parseAtomicName `sepBy1` dot
 
 -- | Parse a general normal or operator identifer, qualified or
 -- simple, with no whitespace
 parseIdentifierNoWS :: Parser Expression
-parseIdentifierNoWS = do
+parseIdentifierNoWS = located $ do
   prefixes <- many (try (parseNormalName <* dot))
   base <- try parseSQStringNoWS <|> parseAtomicNameNoWS
   return $ EIdentifier $ prefixes ++ [base]
@@ -195,7 +211,7 @@ parseDQString = lexeme $ parseQuoted '"' VStr
 
 -- | Parse a literal
 parseLiteral :: Parser Expression
-parseLiteral = ELiteral <$> (try parseNumber <|> try parseSymbol <|> try parseDQString)
+parseLiteral = located $ ELiteral <$> (try parseNumber <|> try parseSymbol <|> try parseDQString)
 
 -- $expressions
 --
@@ -206,11 +222,19 @@ parseLiteral = ELiteral <$> (try parseNumber <|> try parseSymbol <|> try parseDQ
 -- post-processed prior to translation to core.
 --
 
-parseOperand :: Parser Expression
-parseOperand = foldl1 ECatenation <$> many1 parseSimpleExpression
+catenate :: Expression -> Expression -> Expression
+catenate l@Located {location = locl} r@Located {location = locr} =
+  at (merge locl locr) $ ECatenation l r
 
-parseOperator :: Parser (Expression -> Expression ->  Expression)
-parseOperator = EOperation . OperatorName <$> operator
+parseOperand :: Parser Expression
+parseOperand = foldl1 catenate <$> many1 parseSimpleExpression
+
+operation :: AtomicName -> Expression -> Expression -> Expression
+operation n l@Located {location = locl} r@Located {location = locr} =
+  at (merge locl locr) $ EOperation n l r
+
+parseOperator :: Parser (Expression -> Expression -> Expression)
+parseOperator = operation . OperatorName <$> operator
 
 parseOperation :: Parser Expression
 parseOperation = parseOperand `chainl1` parseOperator
@@ -221,7 +245,7 @@ parseExpression = try parseOperation <|> parseOperand
 -- | Parse a direct invocation e.g. `f(x, y)` with no whitespace
 -- between the function and argument list
 parseInvocation :: Parser Expression
-parseInvocation = do
+parseInvocation = located $ do
   fn <- try parseIdentifierNoWS
   exprs <- parens $ parseExpression `sepBy1` comma
   return $ EInvocation fn exprs
@@ -232,7 +256,7 @@ parseParenExpression = parens parseExpression
 
 -- | Parse a list literal
 parseList :: Parser Expression
-parseList = EList <$> squares ( parseExpression `sepBy` comma)
+parseList = located $ EList <$> squares ( parseExpression `sepBy` comma)
 
 -- | A simple expression is not an operation or a catenation.
 parseSimpleExpression :: Parser Expression
@@ -245,10 +269,10 @@ parseSimpleExpression = try $ do
 --
 
 parsePropertyDecl :: Parser DeclarationForm
-parsePropertyDecl = PropertyDecl <$> parseNormalName  <* colon <*> parseExpression
+parsePropertyDecl = located $ PropertyDecl <$> parseNormalName  <* colon <*> parseExpression
 
 parseFunctionDecl :: Parser DeclarationForm
-parseFunctionDecl = do
+parseFunctionDecl = located $ do
   fn <- parseNormalNameNoWS
   args <- parens $ parseParameterName `sepBy1` comma
   _ <- colon
@@ -256,11 +280,11 @@ parseFunctionDecl = do
   return $ FunctionDecl fn args expr
 
 parseOperatorDecl :: Parser DeclarationForm
-parseOperatorDecl = do
-  operation <- parens parseItems
+parseOperatorDecl = located $ do
+  signature <- parens parseItems
   _ <- colon
   expr <- parseExpression
-  return $ operation expr
+  return $ signature expr
   where parseItems = do
           lhs <- parseParameterName
           opName <- operator
@@ -274,7 +298,7 @@ parseAnnotation :: Parser Expression
 parseAnnotation = lexeme (char '`') >> parseExpression
 
 parseProperty :: Parser BlockElement
-parseProperty = do
+parseProperty = located $ do
   a <- optionMaybe parseAnnotation
   d <- parseDecl
   return $ Declaration Annotated { annotation = a, declaration = d }
@@ -282,16 +306,16 @@ parseProperty = do
 -- |
 -- Parse top level declarations as block but allow any amount of preceding whitespace
 parseUnit :: Parser Block
-parseUnit = whiteSpace >> (Block <$> many parseProperty)
+parseUnit = whiteSpace >> located (Block <$> many parseProperty)
 
 parseTopLevel :: Parser Expression
-parseTopLevel = EBlock <$> parseUnit
+parseTopLevel = located $ EBlock <$> parseUnit
 
 parseBlock :: Parser Block
-parseBlock = braces parseUnit
+parseBlock = relocated $ braces parseUnit
 
 parseBlockLiteral :: Parser Expression
-parseBlockLiteral = EBlock <$> parseBlock
+parseBlockLiteral = located $ EBlock <$> parseBlock
 
 -- $utilities
 --
@@ -311,7 +335,12 @@ parseString :: Parser a -> String -> Either SyntaxError a
 parseString p s = first SyntaxError $ parse (parseSource p) "" s
 
 
+-- | Parse the entirety of a named input as a Eucalypt toplevel unit
+--
+parseNamedInput :: Parser a -> String -> String -> Either SyntaxError a
+parseNamedInput p n s = first SyntaxError $ parse (parseSource p <* eof) n s
 
--- | Parse the entirety of a string as a Eucalypt toplevel unit
+
+-- | Parse unnamed text
 parseAll :: Parser a -> String -> Either SyntaxError a
-parseAll p s = first SyntaxError $ parse (parseSource p <* eof) "" s
+parseAll p = parseNamedInput p ""

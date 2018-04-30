@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Core.Desugar
 where
 
+import Eucalypt.Reporting.Location
 import Data.List (isPrefixOf)
 import Data.Maybe (mapMaybe)
 import Eucalypt.Core.Syn
@@ -46,7 +47,7 @@ relativeName n =
 
 -- | Desugar a declaration form
 desugarDeclarationForm :: DeclarationForm -> (CoreBindingName, CoreExpr)
-desugarDeclarationForm decl =
+desugarDeclarationForm Located{locatee=decl} =
   case decl of
     PropertyDecl k expr -> (bindingName k, desugar expr)
     FunctionDecl k args expr -> (bindingName k, lamexpr args (desugar expr))
@@ -56,10 +57,10 @@ desugarDeclarationForm decl =
 
 -- | Ignore splices for now TODO: splice expressions
 declarations :: Block -> [DeclarationForm]
-declarations (Block elements) = mapMaybe toDecl elements
+declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
   where
-    toDecl (Splice _) = Nothing
-    toDecl (Declaration d) = Just $ declaration d
+    toDecl Located{locatee=(Splice _)} = Nothing
+    toDecl Located{locatee=(Declaration d)} = Just $ declaration d
 
 
 
@@ -97,7 +98,7 @@ desugarIdentifier components =
 
 -- | Desugar an expression into core syntax
 desugar :: Expression -> CoreExpr
-desugar expr =
+desugar Located{locatee=expr} =
   case expr of
     EOperation opName l r ->
       CoreApp (CoreApp (CoreVar (bindingName opName)) (desugar l)) (desugar r)
