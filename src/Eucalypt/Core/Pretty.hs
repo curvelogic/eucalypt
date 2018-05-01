@@ -11,9 +11,10 @@ module Eucalypt.Core.Pretty
   (pprint)
 where
 
-import Bound
-import Control.Monad ( liftM2 )
-import Control.Monad.Supply
+import Bound.Scope (foldMapBound, bindings)
+import Bound.Name
+import Control.Comonad (extract)
+import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn
 import Text.PrettyPrint
   ( Doc
@@ -42,47 +43,31 @@ renderLiteral (CoreBoolean b) = show b
 renderLiteral CoreNull = "null"
 
 -- | Generate the format document for rendering
-prepare :: CoreExpr -> Supply String Doc
-
-prepare (CoreLam e) = do
-  n <- supply
-  body <- prepare (instantiate1 (CoreVar n) e)
-  return $ parens $ text "\\" <+> text n <> char '.' <+> body
-
-prepare (CoreBuiltin n) = return . text $ "__" ++ n
-
-prepare (CoreApp f x) = parens <$> ((<+>) <$> prepare f <*> prepare x)
-
+prepare :: CoreExpr -> Doc
+prepare (CoreLam scope) = parens $ text "\\" <+> text n <> char '.' <+> body
+  where
+    n = foldMapBound name scope
+    body = prepare (instantiate1Name (CoreVar n) scope)
+prepare (CoreBuiltin n) = text $ "__" ++ n
+prepare (CoreApp f x) = parens $ prepare f <+> prepare x
 prepare (CorePAp _ f xs) =
-  parens <$> foldr (liftM2 (<+>) . prepare) ((text "partial:" <+>) <$> prepare f) xs
-
-prepare (CoreVar x) = return $ char '$' <> text x
-
-prepare (CorePrim x) = return $ (text . renderLiteral) x
-
-prepare (CoreLet bindings body) = do
-  -- get the names we need and a fn to instantiate vars from them
-  freshNames <- supplies (length bindings)
-  let inst = instantiate (\n -> CoreVar (freshNames !! n))
-
-  -- instantiate to fill in names
-  prettyBody <- prepare (inst body)
-  bindExprs <- mapM (prepare . inst) bindings
-
-  -- format
-  let binds = zipWith (\n b -> text n <+> char '=' <+> b) freshNames bindExprs
-  return $ text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
-
-prepare (CoreLookup x y) = (<> text y) <$> prepare x
-
-prepare (CoreBlock e) = braces <$> prepare e
-
-prepare (CoreList xs) = brackets . hsep . punctuate comma <$> mapM prepare xs
-
--- HACK: Proper name supply needed until we use Bound.Name
-names :: [CoreBindingName]
-names = [ [i] | i <- ['a'..'z']] ++ [i : show j | j <- [1 :: Int ..], i <- ['a'..'z'] ]
+  parens $ foldr ((<+>) . prepare) (text "partial:" <+> prepare f) xs
+prepare (CoreVar x) = char '$' <> text x
+prepare (CorePrim x) = (text . renderLiteral) x
+prepare (CoreLet bs body) =
+  text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
+  where
+    nameAlist = map (\n -> (extract n, name n)) allBindings
+    allBindings = bindings body ++ concatMap bindings bs
+    names = map (fromMaybe "_?" . (`lookup` nameAlist)) [0 .. length bs]
+    prettyBody = prepare (inst body)
+    bindExprs = map (prepare . inst) bs
+    inst = instantiateName (\n -> CoreVar (names !! n))
+    binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
+prepare (CoreLookup x y) = prepare x <+> char '.' <> text y
+prepare (CoreBlock e) = braces $ prepare e
+prepare (CoreList xs) = brackets . hsep . punctuate comma $ map prepare xs
 
 -- | Pretty Print a CoreExp to String
 pprint :: CoreExpr -> String
-pprint = render . (`evalSupply` names) . prepare
+pprint = render . prepare

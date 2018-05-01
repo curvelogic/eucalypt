@@ -8,7 +8,7 @@ Stability   : experimental
 -}
 module Eucalypt.Core.EvalByName where
 
-import Bound
+import Bound.Name (instantiate1Name, instantiateName)
 import Eucalypt.Core.Builtin
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -34,7 +34,7 @@ instantiateLet :: CoreExpr -> CoreExpr
 instantiateLet (CoreLet bs b) = inst b
   where
     es = map inst bs
-    inst = instantiate (es !!)
+    inst = instantiateName (es !!)
 instantiateLet _ = undefined
 
 -- | Monadic WHNF to support abort and runtime error.
@@ -43,7 +43,7 @@ whnfM :: CoreExpr -> Interpreter CoreExpr
 whnfM e@(CoreApp f x) = do
   f' <- whnfM f
   case f' of
-    CoreLam body -> whnfM $ instantiate1 x body
+    CoreLam body -> whnfM $ instantiate1Name x body
     CorePAp arity expr args ->
       let args' = (args ++ [x])
        in if length args' < arity
