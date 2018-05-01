@@ -18,7 +18,7 @@ import Text.Parsec.Char
 import Text.Parsec.Prim (many)
 import Text.Parsec.Combinator
 import qualified Text.Parsec.Token as Tok
-
+import Data.Char (isAscii, isSymbol)
 import Data.Bifunctor
 import Control.Applicative hiding (many)
 
@@ -34,10 +34,10 @@ langDef = Tok.LanguageDef
   , Tok.nestedComments  = False
   , Tok.identStart      = alphaNum <|> oneOf "$?_"
   , Tok.identLetter     = alphaNum <|> oneOf "$?!_-*"
-  , Tok.opStart         = oneOf "!@£%^&*|></+=-~"
-  , Tok.opLetter        = oneOf "!@£$%^&*|></?+=-~"
+  , Tok.opStart         = oneOf "!@£%^&*|></+=-~" <|> satisfy (\c -> (not . isAscii) c && isSymbol c)
+  , Tok.opLetter        = oneOf "!@£$%^&*|></?+=-~" <|> satisfy (\c -> (not . isAscii) c && isSymbol c)
   , Tok.reservedNames   = []
-  , Tok.reservedOpNames = ["`"]
+  , Tok.reservedOpNames = ["`", "."]
   , Tok.caseSensitive   = True
   }
 
