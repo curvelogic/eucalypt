@@ -311,3 +311,20 @@ spec = do
              (block [ann (block [bare (prop "c" (ident "d"))]) (prop "a" (ident "b"))])
              (prop "x" (ident "y"))
          ])
+
+
+  describe "Unicode support" $ do
+    it "accepts unicode operators" $
+      stripLocation <$> parseAll parseUnit " (f ∘ g): compose(f, g) "
+      `shouldBe`
+      (Right $
+      at nowhere $
+      Block [bare (oper "∘" "f" "g" (invoke (ident "compose") [ident "f", ident "g"]))])
+
+    it "accepts unicode names" $
+      stripLocation <$> parseAll parseUnit " β(ॵ): כֿ(ॵ) "
+      `shouldBe`
+      (Right $
+      at nowhere $
+      Block [bare (func "β" ["ॵ"] (invoke (ident "כֿ") [ident "ॵ"]))])
+      
