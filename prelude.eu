@@ -1,0 +1,367 @@
+# -*- mode: conf -*-
+
+# Eucalypt standard prelude
+#
+# WARNING: this is merely a sketch at present.
+
+# Prelude versioning and run metadata
+` { export: :suppress }
+eu: {
+  prelude: {
+    version: "0.0.1"
+  }
+
+  # TODO: timestamps
+  meta: {
+    # timestamp: __TIME!
+    # implementation: __IMPL
+  }
+}
+  
+
+#
+#
+# Built-ins
+#
+#
+
+TODO(x): ""
+
+## Error / debug support
+
+` { doc: "`panic(s)` - raise runtime error with message string `s`."
+    export: :suppress }
+panic: __PANIC
+
+` { doc: "`trace(v)` - equivalent to `v` but trace execution"
+    export: :suppress }
+trace: TODO(__TRACE)
+
+## Essentials
+
+` { doc: "A null value. To export as `null` in JSON or ~ in YAML."
+    export: :suppress }
+null: __NULL
+
+` { doc: "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
+    example: cons(0,[1,2]) //=> [0,1,2]
+    export: :suppress }
+cons: __CONS
+
+` { doc: "`head(l)` - return the head item of list `l`, error if empty."
+    export: :suppress }
+head: __HEAD
+
+` { doc: "`head-or(l, d)` - return the head item of list `l` or default `d` if empty."
+    export: :suppress }
+head: __HEADOR
+
+` { doc: "`tail(l)` - return list `l` without the head item. [] causes error."
+    export: :suppress }
+tail: __TAIL
+
+` { doc: "`nil` - identical to `[]`, the empty list."
+    export: :suppress }
+nil: []
+
+` { doc: "`if(c, t, f)` - if `c` is `true`, return `t` else `f`."
+    export: :suppress }
+if: __IF
+
+` { doc: "`cat(a, b)` - explicit catenation, cat(a, b) = a b. Useful in folds etc."
+    export: :suppress }
+cat: TODO(__CAT)
+
+` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
+    export: :suppress }
+merge: TODO(__MERGE)
+
+` { doc: "`elements(b)` - expose list of elements of block `b`."
+    export: :suppress }
+elements: TODO(__ELEMENTS)
+
+` { doc: "`block(l)` - (re)construct block from list `l` of elements."
+    export: :suppress }
+block: TODO(__BLOCK)
+
+` { doc: "`has(s, b)` - true if and only if block `b` has key (symbol) `s`."
+    export: :suppress }
+has(s, b): TODO(__HAS(b, s))
+
+` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
+    export: :suppress }
+lookup(s, b): TODO(__LOOKUP(s, b))
+
+` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
+    export: :suppress }
+lookup-or(s, d, b): TODO(__LOOKUPOR(s, d, b))
+
+## Boolean
+
+` { doc: "`not(b) - toggle boolean.`"
+    export: :suppress }
+not: __NOT
+
+## Equality
+
+` { doc: "`l = r` - `true` if and only if value `l` equals value `r`."
+    export: :suppress }
+(l = r): __EQ(l, r)
+
+` { doc: "`l != r` - `true` if and only if value `l` is not equal to value `r`."
+    export: :suppress }
+(l != r): not(__EQ(l, r))
+
+## Arithmetic
+
+` { doc: "`l < r` - `true` if and only if number `l` is less than number `r`."
+    export: :suppress }
+(l < r): TODO(__LT(l, r))
+
+` { doc: "`l > r` - `true` if and only if number `l` is greater than number `r`."
+    export: :suppress }
+(l > r): TODO(__GT(l, r))
+
+` { doc: "`l <= r` - `true` if and only if number `l` is less than or equal to number `r`."
+    export: :suppress }
+(l <= r): TODO(__LTE(l, r))
+
+` { doc: "`l >= r` - `true` if and only if number `l` is breater than or equal to number `r`."
+    export: :suppress }
+(l >= r): TODO(__GTE(l, r))
+
+## Text and regexes
+
+` { doc: "`grok(r, s)` - use regex `r` with named groups to match string `s` and return block of captures."
+    example: grok("(?<name>\\w+) (?<value>\\d+)", "foo 123") //=> { name: "foo" value: 123 }
+    export: :suppress }
+grok(r, s): TODO(__GROK(r, s))
+
+## Hashes & Random
+
+## Builtins for optimsation
+
+` { doc: "`concat(l1, l2)` - concatenate lists `l1` and `l2`."
+    export: :suppress }
+concat: TODO(__CONCAT)
+
+
+#
+#
+# Prelude implementations
+#
+#
+
+## Errors / debug support
+
+` { doc: "`assert(c, s, v)` - if `c` is true then value `v` otherwise error with message `s`."
+    example: { foo: bar assert(bar >= 0, "negative foo") }
+    export: :suppress }
+assert(c, s, v): if(c, v, panic(s))
+
+## Combinators
+
+` { doc: "`identity(v)` - identity function, return value `v`."
+    export: :suppress }
+identity(v): v
+
+` { doc: "`compose(f,g,x)` - apply function `f` to `g(x)`."
+    export: :suppress }
+compose(f, g, x): x g f
+
+` { doc: "`(f ∘ g)` - return composition of `f` and `g`"
+    example: (head ∘ tail)([1,2]) //=> 2
+    export: :suppress }
+(f ∘ g): compose(f,g)
+ 
+` { doc: "`apply(f, l)` - apply function `f` to arguments in list `l`."
+    export: :suppress }
+apply(f, l): foldl(cat, f, l)
+
+` { doc: "`flip(f)` - flip arguments of function `f`, flip(f)(x, y) == f(y, x)"
+    export: :suppress }
+flip(f, x, y): f(y, x)
+
+` { doc: "`complement(p?)` - invert truth value of predicate function."
+    export: :suppress }
+complement(p?): compose(not, p?)
+
+` { doc: "`first(l)` - return first item of list - error if the list is empty."
+    export: :suppress }
+first: head
+
+` { doc: "`second(l)` - return second item of list - error if there is none."
+    export: :suppress }
+second(l): l tail head
+
+` { doc: "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
+    export: :suppress }
+uncurry(f, x, y): f([x, y])
+
+` { doc: "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
+    export: :suppress }
+curry(f, l): f(first(l), second(l))
+
+` { doc: "`cond(l)` - in list `l` of [condition, value] select first true condition and return coresponding vaue. Default `d` if none."
+    export: :suppress }
+cond(l, d): foldr(l, curry(if), d)
+
+# Arithmetic
+
+` { doc: "`inc(x)` - increment number `x` by 1."
+    export: :suppress }
+inc(x): x + 1
+
+` { doc: "`inc(x)` - decrement number `x` by 1."
+    export: :suppress }
+dec(x): x - 1
+
+# Metadata
+
+` { doc: "`meta e` - retrieve expression metadata for e"
+    export: :suppress }
+meta(expr): TODO(__META(expr))
+
+` { doc: "`expr //=> value` - add metadata to expression to assert its value."
+    export: :suppress }
+(expr //=> value): TODO(__WITHMETA(expr, meta(expr) { assert: value }))
+
+# List, maps and folds
+
+` { doc: "`nil?(l)` - `true` if list `l` is empty, `false` otherwise."
+    example: nil?([1]) //=> false
+    export: :suppress }
+nil?(l): l = []
+
+# TODO: sections
+` { doc: "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i` "
+    # example: foldl((+), i, [1,2,3]) //=> (((i + 1) + 2) + 3)
+    export: :suppress }
+foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
+
+` { doc: "`foldr(op, l, i)` - right fold operator `op` over list `l` ending with value `i` "
+    # example: foldr((+), [1,2,3], i) //=> (1 + (2 + (3 + i)))
+    export: :suppress }
+foldr(op, i, l): if(l nil?, i, op(head(l), foldr(op, tail(l), i)))
+
+# TODO: lambdas
+` { doc: "`map(f, l)` - map function `f` over list `l`"
+    # example: map(|x|(x+2),[1,2,3]) //=> [3,4,5]
+    export: :suppress }
+map(f, l): if(l nil?, l, cons(f(head(l)), map(f(tail(l)))))
+
+` { doc: "`f <$> l` - map function `f` over list `l`"
+    # example: |x|(x+1) <$> [1,2,3] //=> [2,3,4]
+    export: :suppress }
+(f <$> l): map(f, l)
+
+` { doc: "`map(f, l1, l2)` - map function `f` over lists `l1` and `l2`, stopping when the shorter list is exhausted."
+    # example: map2(|x, y|(x+y),[1,2,3],[1,2]) //=> [2,4]
+    export: :suppress }
+map2(f, l1, l2): if(l nil?, l, cons(f(head(l)), map(f(tail(l)))))
+
+` { doc: "`cons-if(p?, x, l)` - cons `x` onto beginning of list `l` if it satisfies predicate `p?`."
+    export: :suppress }
+cons-if(p?, x, l): if(x p?, l cons(x), l)
+
+` { doc: "`filter(p?, l)` - return list of elements of list `l` that satisfy predicate `p?`."
+    export: :suppress }
+filter(p?, l): foldr(cons-if(p?), [], l)
+
+` { doc: "`remove(p?, l)` - return list of elements of list `l` that do not satisfy predicate `p?`."
+    export: :suppress }
+remove(p?, l): filter(p? complement)
+
+` { doc: "`l1 ++ l2` - concatenate lists `l1` and `l2`."
+    export: :suppress }
+(l1 ++ l2): concat(l1, l2)
+
+` :alias
+zip-with: map2
+
+` { doc: "`zip-apply(fs, vs)` - apply functions in list `fs` to corresponding values in list `vs`, stopping when shorter list is exhausted."
+    export: :suppress }
+zip-apply(fs, vs): zip-with(apply1, fs, vs)
+
+` { doc: "`reverse(l) - reverse list `l`"
+    example: reverse([1,2,3]) //=> [3,2,1]
+    export: :suppress }
+reverse(l): if(l nil?, l, concat(reverse(l), [h(l)]))
+
+# Blocks
+
+` { doc: "`merge-all(bs)` - merge all blocks in list `bs` together, later overriding earlier."
+    example: merge-all([{a: 1}, {b: 2}, {a: 3}]) //=> { b: 2 a: 3 } }
+merge-all(bs): foldl(merge, {}, bs)
+
+# Text and strings
+
+` { doc: "`s %% r` - grok string `s` using regex `r`. See `grok`."
+    example: "foo 123" %% "(?<name>\\w+) (?<value>\\d+)" //=> { name: "foo" value: 123 }
+    export: :suppress } 
+(s %% r): grok(r, s)
+
+# Blocks
+
+` { doc: "`key(el)` - return key in a block element."
+    export: :suppress }
+key: head
+
+` { doc: "`value(el)` - return key in a block element."
+    export: :suppress }
+value: second
+
+` { doc: "`biapply(f, g, pr)` - apply f to first item of pair and g to second, return pair."
+    export: :suppress }
+biapply(f, g, pr): [f(first(pr)), g(second(pr))]
+
+` { doc: "`bimap(f, g, l)` - apply biapply(f, g) to list of pairs `l`."
+    export: :suppress }
+bimap(f, g, l): map(biapply(f, g), l)
+
+` { doc: "`map-first(f, le)` - apply f to first elements of all pairs in list of pairs `l`."
+    export: :suppress }
+map-first(f, le): map(biapply(f, identity), le)
+
+` { doc: "`map-second(f, le)` - apply f to second elements of all pairs in list of pairs `l`."
+    export: :suppress }
+map-second(f, le): map(biapply(identity, f), le)
+
+on-elements(f, b): b elements f block
+
+` { doc: "`map-kv(f, b)` - apply `f(k, v)` to each element in block `b`."
+    export: :suppress }
+map-kv(f, b): b elements map(uncurry(f)) block
+
+` { doc: "`zip-kv(ks, ,vs)` - create a block by zipping together keys `ks` and values `vs`."
+    export: :suppress }
+zip-kv(ks, vs): zip-with(pair, ks, vs) block
+
+` { doc: "`map-keys(f, b)` - apply `f(v)` to each value in block `b`."
+    export: :suppress }
+map-values(f, b): b elements map-second(f) block
+
+` { doc: "`map-keys(f, b)` - apply `f(k)` to each key in block `b`."
+    export: :suppress }
+map-keys(f, b): b elements map-first(f) block
+
+` { doc: "Namespace `merge`, various block merges." 
+    export: :suppress }
+merge: {
+
+  # TODO: direct block access
+  # ` { doc: "`merge.with(f, b1, b2)` - merge blocks b1, b2 as normal but using value f(b1, b2) where both blocks have a value." }
+  # with(f, b1, b2): {
+  #   m: b1 b2
+  #   presence(k): [b1 b2] map(has(k))
+  #   val(k, v): { p: presence(k)
+  #                v: cond([[p = [true, false], b1 lookup(k)],
+  #                         [p = [false, true], b2 lookup(k)],
+  #                         [p = [true, true], f(b1, b2)]],
+  #                         error("spurious key {{k}} in merge-with")) }.v
+  #   ret: m map-kv(val)
+  # }.ret
+
+  # ` { doc: "`merge.deep(b1, b2)` - deep merge blocks `b1`, `b2`" }
+  # deep(b1, b2): with(deep, b1, b2)
+}
