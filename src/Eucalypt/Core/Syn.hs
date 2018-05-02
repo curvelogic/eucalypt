@@ -18,7 +18,7 @@ import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
 import Data.List (elemIndex)
 import Control.Monad
-
+import Data.Bifunctor (second)
 
 
 -- | Primitive types (literals are available in the eucalypt syntax)
@@ -51,7 +51,7 @@ type CoreBuiltinName = String
 data CoreExp a
   = CoreVar a
   | CoreLam (Scope (Name String ()) CoreExp a)
-  | CoreLet [Scope (Name String Int) CoreExp a] (Scope (Name String Int) CoreExp a)
+  | CoreLet [(CoreBindingName, Scope (Name String Int) CoreExp a)] (Scope (Name String Int) CoreExp a)
   | CoreApp (CoreExp a) (CoreExp a)
   | CoreBuiltin CoreBuiltinName
   | CorePAp Int (CoreExp a) [CoreExp a]
@@ -98,7 +98,7 @@ instance Monad CoreExp where
   return = CoreVar
   CoreVar a >>= f = f a
   CoreLam e >>= f = CoreLam (e >>>= f)
-  CoreLet bs b >>= f = CoreLet (map (>>>= f) bs) (b >>>= f)
+  CoreLet bs b >>= f = CoreLet (map (second (>>>= f)) bs) (b >>>= f)
   CoreBuiltin n >>= _ = CoreBuiltin n
   CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
   CorePAp a e args >>= f = CorePAp a (e >>= f) (map (>>= f) args)
@@ -136,7 +136,7 @@ appexp = foldl CoreApp
 -- | Construct recursive let of several bindings
 letexp :: [(CoreBindingName, CoreExpr)] -> CoreExpr -> CoreExpr
 letexp [] b = b
-letexp bs b = CoreLet (map (abstr . snd) bs) (abstr b)
+letexp bs b = CoreLet (map (second abstr) bs) (abstr b)
   where abstr = abstractName (`elemIndex` map fst bs)
 
 

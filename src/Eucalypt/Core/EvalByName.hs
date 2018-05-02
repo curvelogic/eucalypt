@@ -33,7 +33,7 @@ applyBuiltin w expr name args =
 instantiateLet :: CoreExpr -> CoreExpr
 instantiateLet (CoreLet bs b) = inst b
   where
-    es = map inst bs
+    es = map (inst . snd) bs
     inst = instantiateName (es !!)
 instantiateLet _ = undefined
 
