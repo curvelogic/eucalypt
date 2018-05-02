@@ -13,6 +13,7 @@ module Eucalypt.Core.Syn
 where
 
 import Bound
+import Bound.Name
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
 import Data.List (elemIndex)
@@ -49,8 +50,8 @@ type CoreBuiltinName = String
 --
 data CoreExp a
   = CoreVar a
-  | CoreLam (Scope () CoreExp a)
-  | CoreLet [Scope Int CoreExp a] (Scope Int CoreExp a)
+  | CoreLam (Scope (Name String ()) CoreExp a)
+  | CoreLet [Scope (Name String Int) CoreExp a] (Scope (Name String Int) CoreExp a)
   | CoreApp (CoreExp a) (CoreExp a)
   | CoreBuiltin CoreBuiltinName
   | CorePAp Int (CoreExp a) [CoreExp a]
@@ -60,6 +61,9 @@ data CoreExp a
   | CoreBlock (CoreExp a)
   deriving (Functor,Foldable,Traversable)
 
+
+-- | Core expression using a simple string binding name
+type CoreExpr = CoreExp CoreBindingName
 
 -- | True if expression is a block
 isBlock :: CoreExp a -> Bool
@@ -112,13 +116,13 @@ var = CoreVar
 
 
 -- | Abstract a lambda into a scope
-lamexp :: Eq a => a -> CoreExp a -> CoreExp a
-lamexp x b = CoreLam (abstract1 x b)
+lamexp :: CoreBindingName -> CoreExpr -> CoreExpr
+lamexp x b = CoreLam (abstract1Name x b)
 
 
 
 -- | Abstract lambda of several args
-lamexpr :: Eq a => [a] -> CoreExp a -> CoreExp a
+lamexpr :: [CoreBindingName] -> CoreExpr -> CoreExpr
 lamexpr args expr = foldr lamexp expr args
 
 
@@ -130,10 +134,10 @@ appexp = foldl CoreApp
 
 
 -- | Construct recursive let of several bindings
-letexp :: Eq a => [(a, CoreExp a)] -> CoreExp a -> CoreExp a
+letexp :: [(CoreBindingName, CoreExpr)] -> CoreExpr -> CoreExpr
 letexp [] b = b
 letexp bs b = CoreLet (map (abstr . snd) bs) (abstr b)
-  where abstr = abstract (`elemIndex` map fst bs)
+  where abstr = abstractName (`elemIndex` map fst bs)
 
 
 
@@ -182,7 +186,3 @@ element k v = CoreList [str k, v]
 -- | A block from its items
 block :: [CoreExpr] -> CoreExpr
 block items = CoreBlock $ CoreList items
-
-
--- | Core expression using a simple string binding name
-type CoreExpr = CoreExp CoreBindingName

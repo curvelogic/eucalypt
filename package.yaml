@@ -21,13 +21,13 @@ library:
     - aeson
     - bound
     - bytestring
+    - comonad
     - conduit
     - containers
     - deriving-compat
     - directory
     - exceptions
     - filepath
-    - monad-supply
     - network-uri
     - optparse-applicative
     - parsec
@@ -75,5 +75,4 @@ tests:
     - QuickCheck
     - pretty
     - network-uri
-    - monad-supply
     - text
