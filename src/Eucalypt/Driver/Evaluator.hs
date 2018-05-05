@@ -106,7 +106,7 @@ parseInput i@(Input mode locator name format) = do
 
 -- | Merge core units together
 mergeUnits :: [CoreExpr] -> CoreExpr
-mergeUnits lets = foldl1 CoreApp newLets
+mergeUnits lets = foldl1 (flip CoreApp) newLets
   where bindLists = map (\(CoreLet bs _) -> bs) lets
         bodies = map (\(CoreLet _ b) -> b) lets
         bindLists' = scanl1 rebindBindings bindLists
