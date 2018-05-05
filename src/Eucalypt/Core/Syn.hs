@@ -13,7 +13,9 @@ module Eucalypt.Core.Syn
 where
 
 import Bound
+-- import Bound.Scope
 import Bound.Name
+-- import Bound.Var
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
 import Data.List (elemIndex)
@@ -186,3 +188,16 @@ element k v = CoreList [str k, v]
 -- | A block from its items
 block :: [CoreExpr] -> CoreExpr
 block items = CoreBlock $ CoreList items
+
+
+
+-- | For binding further free variables in an expression that has
+-- already been abstracted once and is therefore a Scope.
+abstractNameScope :: Monad f => (a -> Maybe b) -> Scope (Name a b) f a -> Scope (Name a b) f a
+abstractNameScope k = toScope . bindFree . fromScope
+  where bindFree e = e >>= \v -> return $ case v of
+          F a -> bind a
+          B b -> B b
+        bind a = case k a of
+          Just z -> B (Name a z)
+          Nothing -> F a

@@ -23,6 +23,7 @@ data EvaluationError
   | KeyNotFound String
   | BadBlockElement CoreExpr
   | BadBlockContent CoreExpr
+  | BadBlockMerge CoreExpr
   | NotWeakHeadNormalForm CoreExpr
   | UncallableExpression CoreExpr
   | BuiltinNotFound CoreBuiltinName CoreExpr
@@ -43,6 +44,7 @@ instance Show EvaluationError where
   show (KeyNotFound key) = "Key not found: " ++ key
   show (BadBlockElement expr) = "Bad block element in " ++ pprint expr
   show (BadBlockContent expr) = "Bad block content in " ++ pprint expr
+  show (BadBlockMerge expr) = "Block merge must take one block as argument. " ++ pprint expr
   show (NotWeakHeadNormalForm expr) = "Expected weak head normal form in " ++ pprint expr
   show (UncallableExpression expr) = "Uncallable expression in " ++ pprint expr
   show (BuiltinNotFound name expr) = "Unknown builtin \"" ++ name ++ "\" referenced in " ++ pprint expr

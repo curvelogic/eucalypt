@@ -1,17 +1,18 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase #-}
 module Eucalypt.Driver.Evaluator
 where
 
 import Control.Exception.Safe (try)
-import Control.Monad (foldM, forM_)
+import Control.Monad (forM_)
+import Data.Bifunctor (second)
 import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
+import Data.List (elemIndex)
 import Data.Maybe (fromJust)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
-import Eucalypt.Core.Builtin (euMerge)
 import Eucalypt.Core.Desugar (desugar)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -104,12 +105,20 @@ parseInput i@(Input mode locator name format) = do
 
 
 -- | Merge core units together
-mergeUnits :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
-mergeUnits whnfM es =
-  case es of
-    [] -> throwEvalError NoSource
-    [x] -> return x
-    x:xs -> foldM (euMerge whnfM) x xs -- TODO: builtins in core syn
+mergeUnits :: [CoreExpr] -> CoreExpr
+mergeUnits lets = foldl1 CoreApp newLets
+  where bindLists = map (\(CoreLet bs _) -> bs) lets
+        bodies = map (\(CoreLet _ b) -> b) lets
+        bindLists' = scanl1 rebindBindings bindLists
+        bodies' = zipWith rebindBody bodies bindLists'
+        rebindBindings establishedBindings nextBindings =
+          let abstr = abstractNameScope (\n -> (length nextBindings +) <$> (n `elemIndex` map fst establishedBindings)) in
+            let reboundNextBindings = map (second abstr) nextBindings in
+              reboundNextBindings ++ establishedBindings
+        rebindBody oldBody newBindList =
+          let abstr = abstractNameScope (`elemIndex` map fst newBindList) in
+             abstr oldBody
+        newLets = zipWith CoreLet bindLists' bodies'
 
 
 
@@ -142,19 +151,17 @@ evaluate opts whnfM =
   if optionCommand opts == Parse
     then parseAndDumpASTs opts
     else do
-      let renderer = configureRenderer opts
-
       asts <- mapM parseInput (optionInputs opts)
-      let (lefts, rights) = partitionEithers asts
-      if (not . null) lefts
-        then reportErrors lefts >> return (ExitFailure 1)
-        else case runInterpreter (mergeUnits whnfM rights) of
-               Left s -> reportErrors [s] >> return (ExitFailure 1)
-               Right core -> do
-                 renderResult <- renderBytes renderer whnfM core  -- now in IO
-                 case renderResult of
-                   Left s -> reportErrors [s] >> return (ExitFailure 1)
-                   Right bytes -> outputBytes opts bytes >> return ExitSuccess
+      case partitionEithers asts of
+        ([], []) -> reportErrors [NoSource] >> return (ExitFailure 1)
+        ([], units) ->
+          render (mergeUnits units) >>= \case
+              Left s -> reportErrors [s] >> return (ExitFailure 1)
+              Right bytes -> outputBytes opts bytes >> return ExitSuccess
+        (errs, _) -> reportErrors errs >> return (ExitFailure 1)
+  where
+    render = renderBytes (configureRenderer opts) whnfM
+
 
 
 

@@ -43,6 +43,9 @@ whnfM :: CoreExpr -> Interpreter CoreExpr
 whnfM e@(CoreApp f x) = do
   f' <- whnfM f
   case f' of
+    CoreBlock{} -> whnfM x >>= \a -> case a of
+                     CoreBlock{} -> euMerge whnfM a f
+                     _ -> throwEvalError $ BadBlockMerge e
     CoreLam body -> whnfM $ instantiate1Name x body
     CorePAp arity expr args ->
       let args' = (args ++ [x])
