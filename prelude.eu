@@ -114,21 +114,37 @@ not: __NOT
 
 ## Arithmetic
 
+` { doc: "`l + r` - adds `l` and `r`; both must be numbers."
+    export: :suppress }
+(l + r): __ADD(l, r)
+
+` { doc: "`l - r` - subtracts `r` from `l`; both must be numbers."
+    export: :suppress }
+(l - r): __SUB(l, r)
+
+` { doc: "`l * r` - multiplies `l` and `r`; both must be numbers."
+    export: :suppress }
+(l * r): __MUL(l, r)
+
+` { doc: "`l / r` - divides `l` by `r`; both must be numbers; error `r` is zero."
+    export: :suppress }
+(l / r): __DIV(l, r)
+
 ` { doc: "`l < r` - `true` if and only if number `l` is less than number `r`."
     export: :suppress }
-(l < r): TODO(__LT(l, r))
+(l < r): __LT(l, r)
 
 ` { doc: "`l > r` - `true` if and only if number `l` is greater than number `r`."
     export: :suppress }
-(l > r): TODO(__GT(l, r))
+(l > r): __GT(l, r)
 
 ` { doc: "`l <= r` - `true` if and only if number `l` is less than or equal to number `r`."
     export: :suppress }
-(l <= r): TODO(__LTE(l, r))
+(l <= r): __LTE(l, r)
 
 ` { doc: "`l >= r` - `true` if and only if number `l` is breater than or equal to number `r`."
     export: :suppress }
-(l >= r): TODO(__GTE(l, r))
+(l >= r): __GTE(l, r)
 
 ## Text and regexes
 
@@ -216,6 +232,10 @@ inc(x): x + 1
     export: :suppress }
 dec(x): x - 1
 
+` { doc: "`zero?(n)` - return true if and only if integer `n` is 0."
+    export: :suppress }
+zero?(n): n = 0
+
 # Metadata
 
 ` { doc: "`meta e` - retrieve expression metadata for e"
@@ -232,6 +252,20 @@ meta(expr): TODO(__META(expr))
     example: nil?([1]) //=> false
     export: :suppress }
 nil?(l): l = []
+
+` { doc: "`take(n, l)` - return as list the initial segment of integer `n` elements from list `l`."
+    export: :suppress }
+take(n, l): __IF((n zero?), [], cons(l head, take(n dec, l tail)))
+
+` { doc: "`drop(n, l)` - return as list the result of dropping the initial segment of integer `n` elements from list `l`."
+    export: :suppress }
+drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
+
+# TODO: Can't use this until lists are exposed to eu as cons is not
+# currently lazy enough
+` { doc: "`repeat(i)` - return infinite list of instances of item `i`."
+    export: :suppress }
+repeat(i): __CONS(i, repeat(i))
 
 # TODO: sections
 ` { doc: "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i` "
@@ -311,21 +345,17 @@ key: head
     export: :suppress }
 value: second
 
-` { doc: "`biapply(f, g, pr)` - apply f to first item of pair and g to second, return pair."
+` { doc: "`bimap(f, g, pr)` - apply f to first item of pair and g to second, return pair."
     export: :suppress }
-biapply(f, g, pr): [f(first(pr)), g(second(pr))]
-
-` { doc: "`bimap(f, g, l)` - apply biapply(f, g) to list of pairs `l`."
-    export: :suppress }
-bimap(f, g, l): map(biapply(f, g), l)
+bimap(f, g, pr): [f(first(pr)), g(second(pr))]
 
 ` { doc: "`map-first(f, le)` - apply f to first elements of all pairs in list of pairs `l`."
     export: :suppress }
-map-first(f, le): map(biapply(f, identity), le)
+map-first(f, le): map(bimap(f, identity), le)
 
 ` { doc: "`map-second(f, le)` - apply f to second elements of all pairs in list of pairs `l`."
     export: :suppress }
-map-second(f, le): map(biapply(identity, f), le)
+map-second(f, le): map(bimap(identity, f), le)
 
 on-elements(f, b): b elements f block
 

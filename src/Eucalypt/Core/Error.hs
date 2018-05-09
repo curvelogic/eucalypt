@@ -29,6 +29,8 @@ data EvaluationError
   | BuiltinNotFound CoreBuiltinName CoreExpr
   | NotSupported String CoreExpr
   | NotBoolean CoreExpr
+  | NotNumber CoreExpr
+  | DivideByZero CoreExpr
   | NotList CoreExpr
   | Panic String CoreExpr
   | Bug String CoreExpr
@@ -50,6 +52,8 @@ instance Show EvaluationError where
   show (BuiltinNotFound name expr) = "Unknown builtin \"" ++ name ++ "\" referenced in " ++ pprint expr
   show (NotSupported message expr) = "Not supported (yet) - " ++ message ++ pprint expr
   show (NotBoolean expr) = "Expected boolean value, got " ++ pprint expr
+  show (NotNumber expr) = "Expected numeric values, got " ++ pprint expr
+  show (DivideByZero expr) = "Division by zero, denominator " ++ pprint expr
   show (NotList expr) = "Expected list value, got " ++ pprint expr
   show (EmptyList expr) = "List was empty in " ++ pprint expr
   show (Panic message expr) = "Panic - " ++ message ++ " in " ++ pprint expr

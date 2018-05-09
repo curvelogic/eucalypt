@@ -4,11 +4,12 @@ module Eucalypt.Core.BuiltinSpec
   ) where
 
 import Eucalypt.Core.Builtin
-import Eucalypt.Core.Syn
 import Eucalypt.Core.Error
-import Eucalypt.Core.Interpreter
 import Eucalypt.Core.EvalByName
+import Eucalypt.Core.Interpreter
+import Eucalypt.Core.Syn
 import Test.Hspec
+import Test.QuickCheck
 
 main :: IO ()
 main = hspec spec
@@ -148,3 +149,70 @@ spec = do
                   ]
               ])) `shouldBe`
       Right (corebool True)
+  arithSpec
+
+
+addsIntegers :: Integer -> Integer -> Bool
+addsIntegers l r = runInterpreter (euAdd whnfM [int l, int r]) == (Right $ int (l + r))
+
+addsFloats :: Double -> Double -> Bool
+addsFloats l r = runInterpreter (euAdd whnfM [float l, float r]) == (Right $ float (l + r))
+
+subtractsIntegers :: Integer -> Integer -> Bool
+subtractsIntegers l r = runInterpreter (euSub whnfM [int l, int r]) == (Right $ int (l - r))
+
+subtractsFloats :: Double -> Double -> Bool
+subtractsFloats l r = runInterpreter (euSub whnfM [float l, float r]) == (Right $ float (l - r))
+
+multipliesIntegers :: Integer -> Integer -> Bool
+multipliesIntegers l r = runInterpreter (euMul whnfM [int l, int r]) == (Right $ int (l * r))
+
+multipliesFloats :: Double -> Double -> Bool
+multipliesFloats l r = runInterpreter (euMul whnfM [float l, float r]) == (Right $ float (l * r))
+
+dividesIntegers :: Integer -> NonZero Integer -> Bool
+dividesIntegers l (NonZero r) = runInterpreter (euDiv whnfM [int l, int r]) == (Right $ float (fromInteger l / fromInteger r))
+
+dividesFloats :: Double -> NonZero Double -> Bool
+dividesFloats l (NonZero r) = runInterpreter (euDiv whnfM [float l, float r]) == (Right $ float (l / r))
+
+ordersIntegersWithLt :: Integer -> Integer -> Bool
+ordersIntegersWithLt l r = runInterpreter (euLt whnfM [int l, int r]) == (Right $ corebool True)
+  || runInterpreter (euGte whnfM [int l, int r]) == (Right $ corebool True)
+
+ordersIntegersWithGt :: Integer -> Integer -> Bool
+ordersIntegersWithGt l r = runInterpreter (euLte whnfM [int l, int r]) == (Right $ corebool True)
+  || runInterpreter (euGt whnfM [int l, int r]) == (Right $ corebool True)
+
+ordersFloatsWithLt :: Double -> Double -> Bool
+ordersFloatsWithLt l r = runInterpreter (euLt whnfM [float l, float r]) == (Right $ corebool True)
+  || runInterpreter (euGte whnfM [float l, float r]) == (Right $ corebool True)
+
+ordersFloatsWithGt :: Double -> Double -> Bool
+ordersFloatsWithGt l r = runInterpreter (euLte whnfM [float l, float r]) == (Right $ corebool True)
+  || runInterpreter (euGt whnfM [float l, float r]) == (Right $ corebool True)
+
+equatesEqualInts :: Integer -> Bool
+equatesEqualInts n = runInterpreter (euEq whnfM [int n, int n]) == (Right $ corebool True)
+
+equatesEqualFloats :: Double -> Bool
+equatesEqualFloats n = runInterpreter (euEq whnfM [float n, float n]) == (Right $ corebool True)
+
+
+arithSpec :: Spec
+arithSpec =
+  describe "Arithmetic operations" $ do
+    it "adds ints" $ property addsIntegers
+    it "subtracts ints" $ property subtractsIntegers
+    it "multiplies ints" $ property multipliesIntegers
+    it "adds floats" $ property addsFloats
+    it "subtracts floats" $ property subtractsFloats
+    it "multiplies floats" $ property multipliesFloats
+    it "divides integers" $ property dividesIntegers
+    it "divides floats" $ property dividesFloats
+    it "orders ints with < / >=" $ property ordersIntegersWithLt
+    it "orders ints with <= / >" $ property ordersIntegersWithGt
+    it "orders floats with < / >=" $ property ordersFloatsWithLt
+    it "orders floats with <= / >" $ property ordersFloatsWithGt
+    it "equates equal ints" $ property equatesEqualInts
+    it "equates equal floats" $ property equatesEqualFloats

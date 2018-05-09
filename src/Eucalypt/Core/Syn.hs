@@ -175,6 +175,12 @@ int = CorePrim . CoreInt
 
 
 
+-- | Construct an integer expression
+float :: Double -> CoreExp a
+float = CorePrim . CoreFloat
+
+
+
 -- | Construct a string expression
 str :: String -> CoreExp a
 str = CorePrim . CoreString
