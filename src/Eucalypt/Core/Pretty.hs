@@ -6,15 +6,12 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
-
 module Eucalypt.Core.Pretty
-  (pprint)
-where
+  ( pprint
+  ) where
 
-import Bound.Scope (foldMapBound, bindings)
+import Bound.Scope (foldMapBound)
 import Bound.Name
-import Control.Comonad (extract)
-import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn
 import Text.PrettyPrint
   ( Doc
@@ -57,16 +54,15 @@ prepare (CorePrim x) = (text . renderLiteral) x
 prepare (CoreLet bs body) =
   text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
   where
-    nameAlist = map (\n -> (extract n, name n)) allBindings
-    allBindings = bindings body ++ concatMap bindings bs
-    names = map (fromMaybe "_?" . (`lookup` nameAlist)) [0 .. length bs]
+    names = map fst bs
     prettyBody = prepare (inst body)
-    bindExprs = map (prepare . inst) bs
+    bindExprs = map (prepare . inst . snd) bs
     inst = instantiateName (\n -> CoreVar (names !! n))
     binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
 prepare (CoreLookup x y) = prepare x <+> char '.' <> text y
 prepare (CoreBlock e) = braces $ prepare e
 prepare (CoreList xs) = brackets . hsep . punctuate comma $ map prepare xs
+prepare (CoreMeta m e) = vcat [text "` " <+> prepare m, prepare e]
 
 -- | Pretty Print a CoreExp to String
 pprint :: CoreExpr -> String

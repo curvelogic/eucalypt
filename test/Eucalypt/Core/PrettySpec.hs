@@ -23,6 +23,6 @@ spec =
       pprint (letexp [("foo", int 2), ("bar", int 3)] (appexp (var "+") [var "foo", var "bar"]))
       `shouldBe` "let foo = 2\n    bar = 3\n    in (($+ $foo) $bar)"
 
-    it "uses placeholders for unused bindings in lets" $
+    it "reconstructs bound names even for unused bindings in lets" $
       pprint (letexp [("foo", int 2), ("bar", int 3)] (var "foo"))
-      `shouldBe` "let foo = 2\n    _? = 3\n    in $foo"
+      `shouldBe` "let foo = 2\n    bar = 3\n    in $foo"

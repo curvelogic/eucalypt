@@ -28,6 +28,7 @@ library:
     - directory
     - exceptions
     - filepath
+    - file-embed
     - network-uri
     - optparse-applicative
     - parsec
@@ -76,3 +77,4 @@ tests:
     - pretty
     - network-uri
     - text
+    - bound

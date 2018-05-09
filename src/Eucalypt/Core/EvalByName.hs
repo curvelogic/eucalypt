@@ -1,6 +1,6 @@
 {-|
 Module      : Eucalypt.Core.EvalByName
-Description : A simple call-by-name evaluator to get going with...
+Description : A crude call-by-name substitutional evaluator to get going with...
 Copyright   : (c) Greg Hawkins, 2018
 License     :
 Maintainer  : greg@curvelogic.co.uk
@@ -8,7 +8,6 @@ Stability   : experimental
 -}
 module Eucalypt.Core.EvalByName where
 
-import Bound.Name (instantiate1Name, instantiateName)
 import Eucalypt.Core.Builtin
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -28,14 +27,6 @@ applyBuiltin w expr name args =
     Just (_, f) -> f w args >>= w
     Nothing -> throwEvalError $ BuiltinNotFound name expr
 
--- | Use bound to wire the bindings into the appropriate places in the
--- expressions (lazily...)
-instantiateLet :: CoreExpr -> CoreExpr
-instantiateLet (CoreLet bs b) = inst b
-  where
-    es = map inst bs
-    inst = instantiateName (es !!)
-instantiateLet _ = undefined
 
 -- | Monadic WHNF to support abort and runtime error.
 --
@@ -43,7 +34,10 @@ whnfM :: CoreExpr -> Interpreter CoreExpr
 whnfM e@(CoreApp f x) = do
   f' <- whnfM f
   case f' of
-    CoreLam body -> whnfM $ instantiate1Name x body
+    CoreBlock{} -> whnfM x >>= \a -> case a of
+                     CoreBlock{} -> euMerge whnfM a f
+                     _ -> throwEvalError $ BadBlockMerge e
+    l@CoreLam{} -> whnfM $ instantiateLambda x l
     CorePAp arity expr args ->
       let args' = (args ++ [x])
        in if length args' < arity

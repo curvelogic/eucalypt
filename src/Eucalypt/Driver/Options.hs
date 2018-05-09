@@ -1,18 +1,17 @@
 module Eucalypt.Driver.Options
   where
 
-import Control.Monad (filterM)
+import Control.Monad (filterM, (>=>))
 import Control.Monad.IO.Class
 import Data.Maybe (fromJust)
 import Data.Semigroup ((<>))
-import Eucalypt.Driver.Input (Input(..), parseInputFromString)
+import Eucalypt.Driver.Input (Input(..), InputMode(..), Locator(..), parseInputFromString)
 import Options.Applicative
 import Path
 import System.Directory (doesFileExist, getCurrentDirectory, getHomeDirectory)
 import System.FilePath (takeExtension)
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal (queryTerminal)
-
 
 -- | Command line can be used in ergonomic mode for interactive use or
 -- batch mode for repeatable builds and batch output
@@ -22,7 +21,7 @@ data CommandLineMode = Ergonomic | Batch
 
 
 -- | What we're doing: e.g. explain and exit or evaluate and render
-data Command = Explain | Evaluate | Parse
+data Command = Explain | Evaluate | Parse | ShowVersion
   deriving (Show, Eq)
 
 
@@ -65,6 +64,10 @@ commandOption =
     Explain
     (long "explain" <> short 'n' <>
      help "Explain command line interpretation and exit") <|>
+  flag'
+    ShowVersion
+    (long "version" <> short 'v' <>
+     help "Show version information and exit") <|>
   flag
     Evaluate
     Parse
@@ -151,6 +154,21 @@ appendInputs opts is = opts { optionInputs = optionInputs opts ++ is }
 
 
 
+-- | Add prelude input
+insertPrelude :: EucalyptOptions -> EucalyptOptions
+insertPrelude opts =
+  prependInputs
+    opts
+    [ Input
+        { inputMode = Active
+        , inputLocator = ResourceInput "prelude"
+        , inputName = Nothing
+        , inputFormat = "eu"
+        }
+    ]
+
+
+
 -- | Insert Eufile into the inputs lits
 insertEufile :: EucalyptOptions -> IO EucalyptOptions
 insertEufile opts = do
@@ -184,6 +202,12 @@ processErgonomics opts =
   case optionMode opts of
     Ergonomic -> insertEufile opts >>= insertHomeFile
     Batch -> return opts
+
+
+-- | Add prelude if not inhibited
+processPrelude :: EucalyptOptions -> EucalyptOptions
+processPrelude opts =
+  if optionInhibitPrelude opts then opts else insertPrelude opts
 
 
 
@@ -221,8 +245,9 @@ defaultStdInput opts = do
 
 -- | Preprocess options in ergonomic mode
 preprocessOptions :: EucalyptOptions -> IO EucalyptOptions
-preprocessOptions opts =
-  inferOutputFormat opts >>= defaultStdInput >>= processErgonomics
+preprocessOptions =
+  inferOutputFormat >=>
+  defaultStdInput >=> processErgonomics >=> return . processPrelude
 
 
 

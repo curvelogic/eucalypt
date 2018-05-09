@@ -13,8 +13,8 @@ where
 import Eucalypt.Reporting.Location
 import Data.List (isPrefixOf)
 import Data.Maybe (mapMaybe)
-import Eucalypt.Core.Syn
-import Eucalypt.Syntax.Ast
+import Eucalypt.Core.Syn as Syn
+import Eucalypt.Syntax.Ast as Ast
 
 -- | Transform a literal into its value
 desugarLiteral :: PrimitiveLiteral -> Primitive
@@ -45,22 +45,41 @@ relativeName n =
 
 
 
--- | Desugar a declaration form
-desugarDeclarationForm :: DeclarationForm -> (CoreBindingName, CoreExpr)
-desugarDeclarationForm Located{locatee=decl} =
-  case decl of
-    PropertyDecl k expr -> (bindingName k, desugar expr)
-    FunctionDecl k args expr -> (bindingName k, lamexpr args (desugar expr))
-    OperatorDecl k l r expr -> (bindingName k, lamexpr [l, r] (desugar expr))
+-- | Core metadata must be blocks, we apply conventional rules here to
+-- massage other shorthands into blocks.
+processAnnotation :: CoreExpr -> CoreExpr
+processAnnotation s@(CorePrim (CoreString _)) = Syn.block [element "doc" s]
+processAnnotation e@(CorePrim (CoreSymbol s))
+  | s == "alias" = Syn.block [element "ref" e]
+  | s == "suppress" = Syn.block [element "export" e]
+  | otherwise = Syn.block []
+processAnnotation e = e
+
+
+
+-- | Flatten and desugar a declaration form into annotation, name,
+-- expression
+desugarDeclarationForm ::
+     Annotated DeclarationForm -> (Maybe CoreExpr, CoreBindingName, CoreExpr)
+desugarDeclarationForm Annotated { annotation = a
+                                 , declaration = Located {locatee = decl}
+                                 } =
+  let annot = processAnnotation . desugar <$> a
+   in case decl of
+        PropertyDecl k expr -> (annot, bindingName k, desugar expr)
+        FunctionDecl k args expr ->
+          (annot, bindingName k, lamexpr args (desugar expr))
+        OperatorDecl k l r expr ->
+          (annot, bindingName k, lamexpr [l, r] (desugar expr))
 
 
 
 -- | Ignore splices for now TODO: splice expressions
-declarations :: Block -> [DeclarationForm]
+declarations :: Block -> [Annotated DeclarationForm]
 declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
   where
     toDecl Located{locatee=(Splice _)} = Nothing
-    toDecl Located{locatee=(Declaration d)} = Just $ declaration d
+    toDecl Located{locatee=(Declaration d)} = Just d
 
 
 
@@ -70,13 +89,15 @@ declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
 desugarBlock :: Block -> CoreExpr
 desugarBlock blk = letexp bindings value
   where
-    bindings = map desugarDeclarationForm $ declarations blk
-    value =
-      CoreBlock $
-      CoreList
-        [ CoreList [CorePrim (CoreSymbol name), CoreVar name]
-        | (name, _) <- bindings
-        ]
+    bindings = map (\(_, n, b) -> (n, b)) decls
+    decls = map desugarDeclarationForm $ declarations blk
+    value = CoreBlock $ CoreList [ref annot name | (annot, name, _) <- decls]
+    ref annot name =
+      case annot of
+        Just a ->
+          CoreMeta a (CoreList [CorePrim (CoreSymbol name), CoreVar name])
+        Nothing -> CoreList [CorePrim (CoreSymbol name), CoreVar name]
+
 
 
 
