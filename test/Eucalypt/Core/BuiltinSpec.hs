@@ -39,20 +39,6 @@ spec = do
     it "fails sensibly" $
       shallowEvalBuiltin "NONESUCH" `shouldBe`
       Left (BuiltinNotFound "NONESUCH" (bif "__NONESUCH"))
-  describe "Boolean operators" $ -- TODO: quickcheck properties
-   do
-    it "calculates and" $
-      runInterpreter (euAnd return [corebool True, corebool False]) `shouldBe`
-      Right (corebool False)
-    it "calculates or" $
-      runInterpreter (euOr return [corebool True, corebool False]) `shouldBe`
-      Right (corebool True)
-    it "calculates not(true)" $
-      runInterpreter (euNot return [corebool True]) `shouldBe`
-      Right (corebool False)
-    it "calculates not(false)" $
-      runInterpreter (euNot return [corebool False]) `shouldBe`
-      Right (corebool True)
   describe "If builtin" $ do
     it "evaluates false branch lazily" $
       runInterpreter (euIf whnfM [corebool True, bif "TRUE", abort]) `shouldBe`
@@ -150,6 +136,7 @@ spec = do
               ])) `shouldBe`
       Right (corebool True)
   arithSpec
+  booleanSpec
 
 
 addsIntegers :: Integer -> Integer -> Bool
@@ -216,3 +203,20 @@ arithSpec =
     it "orders floats with <= / >" $ property ordersFloatsWithGt
     it "equates equal ints" $ property equatesEqualInts
     it "equates equal floats" $ property equatesEqualFloats
+
+
+calculatesAnd :: Bool -> Bool -> Bool
+calculatesAnd l r = runInterpreter (euAnd return [corebool l, corebool r]) == (Right $ corebool (l && r))
+
+calculatesOr :: Bool -> Bool -> Bool
+calculatesOr l r = runInterpreter (euOr return [corebool l, corebool r]) == (Right $ corebool (l || r))
+
+calculatesNot :: Bool -> Bool
+calculatesNot b = runInterpreter (euNot return [corebool b]) == (Right $ corebool (not b))
+
+booleanSpec :: Spec
+booleanSpec =
+  describe "Boolean operators" $ do
+    it "calculates and" $ property calculatesAnd
+    it "calculates or" $ property calculatesOr
+    it "calculates not" $ property calculatesNot
