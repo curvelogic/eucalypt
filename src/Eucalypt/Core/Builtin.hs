@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, RankNTypes #-}
 {-|
 Module      : Eucalypt.Core.Builtin
 Description : Implementations of built in functions
@@ -7,24 +7,7 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
-module Eucalypt.Core.Builtin
-  ( euNull
-  , euTrue
-  , euFalse
-  , euAnd
-  , euOr
-  , euNot
-  , euIf
-  , euHead
-  , euTail
-  , euCons
-  , euConcat
-  , euMerge
-  , euLookup
-  , euLookupOr
-  , lookupBuiltin
-  , forceDataStructures
-  ) where
+module Eucalypt.Core.Builtin where
 
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -120,6 +103,92 @@ euOr whnfM [l, r] = do
   return $ CorePrim (CoreBoolean (lbool || rbool))
 euOr _ args = throwEvalError $ Bug "__OR called with bad args" (CoreList args)
 
+-- | General binary arithmetic implementation, takes care of
+-- destructuring and type casting
+arith :: WhnfEvaluator -> (forall a. Num a => a -> a -> a) -> [CoreExpr] -> Interpreter CoreExpr
+arith whnfM op [l, r] = do
+  l' <- whnfM l
+  r' <- whnfM r
+  case (l', r') of
+    (CorePrim (CoreInt i), CorePrim (CoreInt j)) ->
+      return $ CorePrim (CoreInt $ i `op` j)
+    (CorePrim (CoreFloat i), CorePrim (CoreFloat j)) ->
+      return $ CorePrim (CoreFloat $ i `op` j)
+    (CorePrim (CoreInt i), CorePrim (CoreFloat j)) ->
+      return $ CorePrim (CoreFloat $ fromInteger i `op` j)
+    (CorePrim (CoreFloat i), CorePrim (CoreInt j)) ->
+      return $ CorePrim (CoreFloat $ i `op` fromInteger j)
+    (i, j) -> throwEvalError $ NotNumber (CoreList [i, j])
+arith _ _ args = throwEvalError $ Bug "Arith op called with bad args" (CoreList args)
+
+
+-- | __ADD(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
+euAdd :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euAdd whnfM = arith whnfM (+)
+
+-- | __SUB(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
+euSub :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euSub whnfM = arith whnfM (-)
+
+-- | __MUL(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
+euMul :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euMul whnfM = arith whnfM (*)
+
+-- | __DIV(l, r) - 'l' and 'r' must be numbers. Arity 2. String in
+-- both. Panics on divide by zero.
+euDiv :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euDiv whnfM [l, r] = do
+  l' <- whnfM l
+  r' <- whnfM r
+  case (l', r') of
+    (CorePrim (CoreInt i), CorePrim (CoreInt j)) ->
+      check $ fromInteger i / fromInteger j
+    (CorePrim (CoreFloat i), CorePrim (CoreFloat j)) -> check $ i / j
+    (CorePrim (CoreInt i), CorePrim (CoreFloat j)) -> check $ fromInteger i / j
+    (CorePrim (CoreFloat i), CorePrim (CoreInt j)) -> check $ i / fromInteger j
+    _ -> throwEvalError $ NotNumber (CoreList [l', r'])
+  where
+    check val =
+      if isInfinite val
+        then throwEvalError $ DivideByZero r
+        else return $ CorePrim (CoreFloat val)
+
+euDiv _ args = throwEvalError $ Bug "Division with bad args" (CoreList args)
+
+-- | General binary arithmetic comparison implementation, takes care
+-- of destructuring and type casting
+arithComp :: WhnfEvaluator -> (forall a. Ord a => a -> a -> Bool) -> [CoreExpr] -> Interpreter CoreExpr
+arithComp whnfM op [l, r] = do
+  l' <- whnfM l
+  r' <- whnfM r
+  case (l', r') of
+    (CorePrim (CoreInt i), CorePrim (CoreInt j)) ->
+      return $ CorePrim (CoreBoolean $ i `op` j)
+    (CorePrim (CoreFloat i), CorePrim (CoreFloat j)) ->
+      return $ CorePrim (CoreBoolean $ i `op` j)
+    (CorePrim (CoreInt i), CorePrim (CoreFloat j)) ->
+      return $ CorePrim (CoreBoolean $ fromInteger i `op` j)
+    (CorePrim (CoreFloat i), CorePrim (CoreInt j)) ->
+      return $ CorePrim (CoreBoolean $ i `op` fromInteger j)
+    (i, j) -> throwEvalError $ NotNumber (CoreList [i, j])
+arithComp _ _ args = throwEvalError $ Bug "Comparison op called with bad args" (CoreList args)
+
+-- | __LT(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
+euLt :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euLt whnfM = arithComp whnfM (<)
+
+-- | __GT(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
+euGt :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euGt whnfM = arithComp whnfM (>)
+
+-- | __LTE(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
+euLte :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euLte whnfM = arithComp whnfM (<=)
+
+-- | __GTE(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
+euGte :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euGte whnfM = arithComp whnfM (>=)
+
 -- | __HEAD(l) - 'l' must be list. Arity 1. Strict in 'l'.
 --
 euHead :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
@@ -140,8 +209,11 @@ euTail whnfM [l] =
     e -> throwEvalError $ NotList e
 euTail _ args = throwEvalError $ Bug "__TAIL called with bad args" (CoreList args)
 
--- | __CONS(h, t) - 't' must be list. Arity 2. Strict in 't'.
+-- | __CONS(h, t) - 't' must be list. Arity 2.
 --
+-- TODO: to be lazier than this we need to expose the list to
+-- Eucalypt, i.e. move from native haskell list to cons/nil
+-- constructors in Eucalypt space.
 euCons :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euCons whnfM [h, t] =
   whnfM t >>= \case
@@ -239,6 +311,14 @@ builtinIndex =
   , ("HEAD", (1, euHead))
   , ("TAIL", (1, euTail))
   , ("CONS", (2, euCons))
+  , ("MUL", (2, euMul))
+  , ("SUB", (2, euSub))
+  , ("ADD", (2, euAdd))
+  , ("DIV", (2, euDiv))
+  , ("LT", (2, euLt))
+  , ("GT", (2, euGt))
+  , ("LTE", (2, euLte))
+  , ("GTE", (2, euGte))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.

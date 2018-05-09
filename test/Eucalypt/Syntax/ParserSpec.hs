@@ -77,7 +77,7 @@ spec = do
     it "accepts legal identifiers" $
       forAll validIdentifierNames checkNormalName
 
-    it "accepts almost anything singlequoted" $ property $
+    it "accepts almost anything singlequoted" $ 
       forAll validSQStrings $ \qs -> parseString parseNormalName qs == Right (NormalName (take (length qs - 2) (tail qs)))
 
   describe "Identifier" $ do
