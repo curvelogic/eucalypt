@@ -4,10 +4,8 @@ where
 
 import Control.Exception.Safe (try)
 import Control.Monad (forM_)
-import Data.Bifunctor (second)
 import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
-import Data.List (elemIndex)
 import Data.Maybe (fromJust)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -101,24 +99,6 @@ parseInput i@(Input mode locator name format) = do
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . applyName) core
-
-
-
--- | Merge core units together
-mergeUnits :: [CoreExpr] -> CoreExpr
-mergeUnits lets = foldl1 (flip CoreApp) newLets
-  where bindLists = map (\(CoreLet bs _) -> bs) lets
-        bodies = map (\(CoreLet _ b) -> b) lets
-        bindLists' = scanl1 rebindBindings bindLists
-        bodies' = zipWith rebindBody bodies bindLists'
-        rebindBindings establishedBindings nextBindings =
-          let abstr = abstractNameScope (\n -> (length nextBindings +) <$> (n `elemIndex` map fst establishedBindings)) in
-            let reboundNextBindings = map (second abstr) nextBindings in
-              reboundNextBindings ++ establishedBindings
-        rebindBody oldBody newBindList =
-          let abstr = abstractNameScope (`elemIndex` map fst newBindList) in
-             abstr oldBody
-        newLets = zipWith CoreLet bindLists' bodies'
 
 
 

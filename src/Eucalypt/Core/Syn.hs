@@ -13,7 +13,7 @@ module Eucalypt.Core.Syn
 where
 
 import Bound
--- import Bound.Scope
+import Bound.Scope
 import Bound.Name
 -- import Bound.Var
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
@@ -193,13 +193,86 @@ block items = CoreBlock $ CoreList items
 
 
 
+-- $ substitutions
+--
+-- The crude bootstrap interpreter just manipulates core expressions.
+-- We keep the abstraction and instantiation workings (using the Bound
+-- library) in here.
+--
+
+
+-- | Use Bound to wire a value into a lambda body
+--
+instantiateLambda :: CoreExpr -> CoreExpr -> CoreExpr
+instantiateLambda val (CoreLam body) = instantiate1Name val body
+instantiateLambda _ _ = undefined
+
+
+
+-- | Use Bound to wire the bindings into the appropriate places in the
+-- expressions (lazily...)
+instantiateLet :: CoreExpr -> CoreExpr
+instantiateLet (CoreLet bs b) = inst b
+  where
+    es = map (inst . snd) bs
+    inst = instantiateName (es !!)
+instantiateLet _ = undefined
+
+
+
 -- | For binding further free variables in an expression that has
 -- already been abstracted once and is therefore a Scope.
-abstractNameScope :: Monad f => (a -> Maybe b) -> Scope (Name a b) f a -> Scope (Name a b) f a
-abstractNameScope k = toScope . bindFree . fromScope
-  where bindFree e = e >>= \v -> return $ case v of
+bindMore ::
+     Monad f => (a -> Maybe b) -> Scope (Name a b) f a -> Scope (Name a b) f a
+bindMore k = toScope . bindFree . fromScope
+  where
+    bindFree e =
+      e >>= \v ->
+        return $
+        case v of
           F a -> bind a
           B b -> B b
-        bind a = case k a of
-          Just z -> B (Name a z)
-          Nothing -> F a
+    bind a =
+      case k a of
+        Just z -> B (Name a z)
+        Nothing -> F a
+
+
+
+-- | Replace bound variables in let and lambda bodies with
+-- appropriately named free variables. Handy for inspecting
+-- expression in tests.
+unbind :: CoreExpr -> CoreExpr
+unbind (CoreLam e) = instantiate1Name (CoreVar n) e
+  where
+    n = foldMapBound name e
+unbind (CoreLet bs body) = inst body
+  where
+    names = map fst bs
+    inst = instantiateName (\n -> CoreVar (names !! n))
+unbind e = e
+
+
+
+-- | Merge core units together, binding free variables in later units
+-- to values supplied by earlier units.
+--
+mergeUnits :: [CoreExpr] -> CoreExpr
+mergeUnits lets = foldl1 (flip CoreApp) newLets
+  where
+    bindLists = map (\(CoreLet bs _) -> bs) lets
+    bodies = map (\(CoreLet _ b) -> b) lets
+    bindLists' = scanl1 rebindBindings bindLists
+    bodies' = zipWith rebindBody bodies bindLists'
+    rebindBindings establishedBindings nextBindings =
+      let abstr =
+            bindMore
+              (\n ->
+                 (length nextBindings +) <$>
+                 (n `elemIndex` map fst establishedBindings))
+       in let reboundNextBindings = map (second abstr) nextBindings
+           in reboundNextBindings ++ establishedBindings
+    rebindBody oldBody newBindList =
+      let abstr = bindMore (`elemIndex` map fst newBindList)
+       in abstr oldBody
+    newLets = zipWith CoreLet bindLists' bodies'

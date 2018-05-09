@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Eucalypt.Core.DesugarSpec (main, spec)
   where
 
@@ -33,3 +34,22 @@ spec =
     it "translates lookups against builtins" $
 
       desugar (at nowhere (EIdentifier [NormalName "__X", NormalName "id"])) `shouldBe` Syn.CoreLookup (Syn.bif "X") "id"
+
+    it "processes annotation shortcuts" $
+
+      processAnnotation (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
+        Syn.CoreBlock
+          (Syn.CoreList
+             [ Syn.CoreList
+                 [ Syn.CorePrim (Syn.CoreSymbol "doc")
+                 , Syn.CorePrim (Syn.CoreString "blah")
+                 ]
+             ])
+
+    it "preserves declaration metadata" $
+
+      Syn.unbind (desugarBlock (at nowhere $ Block [ann (str "docs") (prop "x" (int 5))]))
+      `shouldSatisfy`
+      \case
+        Syn.CoreBlock (Syn.CoreList [Syn.CoreMeta _ _]) -> True
+        _ -> False

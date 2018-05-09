@@ -32,6 +32,6 @@ spec =
 
   describe "abstracting incrementally" $
     it "is equivalent to abstracting all at once" $
-      abstractNameScope (\a -> if a == "b" then Just 1 else Nothing) (fromJust $ letBody let1)
+      bindMore (\a -> if a == "b" then Just 1 else Nothing) (fromJust $ letBody let1)
       `shouldBe`
       fromJust (letBody let2)
