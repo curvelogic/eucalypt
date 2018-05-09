@@ -13,7 +13,6 @@ import System.FilePath (takeExtension)
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal (queryTerminal)
 
-
 -- | Command line can be used in ergonomic mode for interactive use or
 -- batch mode for repeatable builds and batch output
 data CommandLineMode = Ergonomic | Batch
@@ -22,7 +21,7 @@ data CommandLineMode = Ergonomic | Batch
 
 
 -- | What we're doing: e.g. explain and exit or evaluate and render
-data Command = Explain | Evaluate | Parse
+data Command = Explain | Evaluate | Parse | ShowVersion
   deriving (Show, Eq)
 
 
@@ -65,6 +64,10 @@ commandOption =
     Explain
     (long "explain" <> short 'n' <>
      help "Explain command line interpretation and exit") <|>
+  flag'
+    ShowVersion
+    (long "version" <> short 'v' <>
+     help "Show version information and exit") <|>
   flag
     Evaluate
     Parse

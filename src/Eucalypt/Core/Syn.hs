@@ -12,10 +12,10 @@ Stability   : experimental
 module Eucalypt.Core.Syn
 where
 
+import Debug.Trace
 import Bound
 import Bound.Scope
 import Bound.Name
--- import Bound.Var
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
 import Data.List (elemIndex)
@@ -253,6 +253,15 @@ unbind (CoreLet bs body) = inst body
 unbind e = e
 
 
+-- | Pull a unit (let or block) apart into bindings and body
+unitBindingsAndBody ::
+  CoreExpr
+  -> ([(CoreBindingName, Scope (Name String Int) CoreExp CoreBindingName)],
+      Scope (Name String Int) CoreExp CoreBindingName)
+unitBindingsAndBody (CoreLet bs b) = (bs, b)
+unitBindingsAndBody e@CoreBlock{} = ([], abstractName (const Nothing) e)
+unitBindingsAndBody e = trace (show e) $ error "not a let"
+
 
 -- | Merge core units together, binding free variables in later units
 -- to values supplied by earlier units.
@@ -260,8 +269,7 @@ unbind e = e
 mergeUnits :: [CoreExpr] -> CoreExpr
 mergeUnits lets = foldl1 (flip CoreApp) newLets
   where
-    bindLists = map (\(CoreLet bs _) -> bs) lets
-    bodies = map (\(CoreLet _ b) -> b) lets
+    (bindLists, bodies) = unzip (map unitBindingsAndBody lets)
     bindLists' = scanl1 rebindBindings bindLists
     bodies' = zipWith rebindBody bodies bindLists'
     rebindBindings establishedBindings nextBindings =
