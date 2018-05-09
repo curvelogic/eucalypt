@@ -19,6 +19,7 @@ import Data.Maybe (catMaybes)
 import Data.Scientific
 import Data.Text (Text, pack)
 import qualified Data.Yaml.Builder as B
+import Eucalypt.Core.Builtin
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -45,6 +46,32 @@ class Monad m => ToMYaml m a where
 
 
 
+-- | Get rid of any metadata returning just the expression for the
+-- list item or Nothing if the metadata indicated that export should
+-- be suppressed.
+boilAwayMetadata :: WhnfEvaluator -> CoreExpr -> Interpreter (Maybe CoreExpr)
+boilAwayMetadata whnfM (CoreMeta m e) = do
+  meta <- whnfM m
+  export <- euLookupOr whnfM (return (CorePrim (CoreSymbol "copy"))) meta "export"
+  if export == CorePrim (CoreSymbol "suppress")
+    then return Nothing
+    else return $ Just e
+boilAwayMetadata _ e = return $ Just e
+
+
+
+-- | Render key and value to YAML
+renderKeyValue :: WhnfEvaluator -> CoreExpr -> CoreExpr -> Interpreter (Maybe (Text, B.YamlBuilder))
+renderKeyValue whnfM k v = do
+  key <- (whnfM >=> expectText) k
+  value <- whnfM v
+  case value of
+    CoreLam _ -> return Nothing
+    CoreBuiltin _ -> return Nothing
+    CorePAp {} -> return Nothing
+    _ -> toMYaml whnfM value >>= \rendered -> return (Just (key, rendered))
+
+
 instance ToMYaml Interpreter CoreExpr where
   toMYaml _ (CorePrim p) =
     return $
@@ -62,17 +89,12 @@ instance ToMYaml Interpreter CoreExpr where
       CoreList items -> B.mapping . catMaybes <$> mapM (whnfM >=> pair) items
       e -> throwEvalError $ BadBlockContent e
     where
-      pair item =
-        case item of
-          (CoreList [k, v]) -> do
-            key <- (whnfM >=> expectText) k
-            value <- whnfM v
-            case value of
-              CoreLam _ -> return Nothing
-              CoreBuiltin _ -> return Nothing
-              CorePAp{} -> return Nothing
-              _ ->  toMYaml whnfM value >>= \rendered -> return (Just (key, rendered))
-          expr -> throwEvalError $ BadBlockElement expr
+      pair item = do
+        i <- boilAwayMetadata whnfM item
+        case i of
+          Just (CoreList [k, v]) -> renderKeyValue whnfM k v
+          Just expr -> throwEvalError $ BadBlockElement expr
+          Nothing -> return Nothing
   toMYaml _ (CoreLam _) = return B.null
   toMYaml _ expr = throwEvalError $ NotWeakHeadNormalForm expr
 

@@ -20,11 +20,11 @@ spec =
 
     it "transforms simple declarations" $
 
-      desugarDeclarationForm (prop "x" (op "+" (int 2) (int 5)))
+      desugarDeclarationForm Annotated{annotation=Nothing,declaration=prop "x" (op "+" (int 2) (int 5))}
 
        `shouldBe`
 
-      ("x", Syn.CoreApp (Syn.CoreApp (Syn.CoreVar "+") (Syn.int 2)) (Syn.int 5))
+      (Nothing, "x", Syn.CoreApp (Syn.CoreApp (Syn.CoreVar "+") (Syn.int 2)) (Syn.int 5))
 
     it "takes leading underscores to indicate built-ins" $
 

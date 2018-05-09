@@ -61,6 +61,7 @@ data CoreExp a
   | CoreLookup (CoreExp a) CoreRelativeName
   | CoreList [CoreExp a]
   | CoreBlock (CoreExp a)
+  | CoreMeta (CoreExp a) (CoreExp a)
   deriving (Functor,Foldable,Traversable)
 
 
@@ -108,6 +109,7 @@ instance Monad CoreExp where
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
   CoreList es >>= f = CoreList (map (>>= f) es)
   CoreBlock e >>= f = CoreBlock (e >>= f)
+  CoreMeta m e >>= f = CoreMeta (m >>= f) (e >>= f)
 
 
 
@@ -181,7 +183,7 @@ str = CorePrim . CoreString
 
 -- | A block element from string key and expr value
 element :: String -> CoreExp a -> CoreExp a
-element k v = CoreList [str k, v]
+element k v = CoreList [sym k, v]
 
 
 

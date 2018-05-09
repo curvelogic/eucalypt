@@ -21,6 +21,7 @@ module Eucalypt.Core.Builtin
   , euConcat
   , euMerge
   , euLookup
+  , euLookupOr
   , lookupBuiltin
   , forceDataStructures
   ) where
@@ -172,6 +173,16 @@ euConcat whnfM l r = do
 euMerge :: WhnfEvaluator -> CoreExpr -> CoreExpr -> Interpreter CoreExpr
 euMerge whnfM l r = CoreBlock <$> euConcat whnfM l r
 
+
+
+-- | Navigate down through metadata evaluating until we get a
+-- non-metadata expression.
+skipMeta :: WhnfEvaluator -> CoreExpr -> Interpreter CoreExpr
+skipMeta whnfM (CoreMeta _ e) = whnfM e >>= skipMeta whnfM
+skipMeta _ e = return e
+
+
+
 -- | Unwrap a single block element into name and expr, evaluating the
 -- key if necessary to get there.
 --
@@ -190,22 +201,27 @@ buildSearchList :: WhnfEvaluator -> CoreExpr -> Interpreter [(String, CoreExpr)]
 buildSearchList whnfM (CoreBlock (CoreList items)) =
   concatResults $ map eval (reverse items)
   where
-    eval item = whnfM item >>= unwrapBlockElement whnfM
+    eval item = whnfM item >>= skipMeta whnfM >>= unwrapBlockElement whnfM
 buildSearchList _ e = throwEvalError $ LookupTargetNotList e
 
 -- | Lookup in a block requires realising all keys as later keys
--- override earlier. Missing key is a EvaluationError.
+-- override earlier. Return default if key does not exist.
 --
--- TODO: should we allow lookup of integers in lists here? not yet
---
-euLookup ::
-     WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
-euLookup whnfM e name = do
+euLookupOr ::
+     WhnfEvaluator -> Interpreter CoreExpr -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
+euLookupOr whnfM d e name = do
   obj <- whnfM e
   alist <- buildSearchList whnfM obj
   case lookup name alist of
     Just val -> return val
-    Nothing -> throwEvalError $ KeyNotFound name
+    Nothing -> d
+
+-- | Lookup in a block, throwing if key absent.
+--
+euLookup ::
+     WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
+euLookup whnfM e n = euLookupOr whnfM (throwEvalError $ KeyNotFound n) e n
+
 
 -- | The builtins exposed to the language.
 --
