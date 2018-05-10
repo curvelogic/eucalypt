@@ -35,7 +35,7 @@ whnfM e@(CoreApp f x) = do
   f' <- whnfM f
   case f' of
     CoreBlock{} -> whnfM x >>= \a -> case a of
-                     CoreBlock{} -> euMerge whnfM a f
+                     CoreBlock{} -> euMerge whnfM [a, f]
                      _ -> throwEvalError $ BadBlockMerge e
     l@CoreLam{} -> whnfM $ instantiateLambda x l
     CorePAp arity expr args ->

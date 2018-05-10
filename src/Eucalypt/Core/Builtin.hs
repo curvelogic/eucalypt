@@ -9,6 +9,8 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Builtin where
 
+import qualified Data.Map.Lazy as M
+import Control.Monad ((>=>))
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -260,11 +262,37 @@ euElements _ args = throwEvalError $ Bug "__ELEMENTS called with bad args" (Core
 
 
 
+-- | Merge together the block elements, maintaining original block
+-- ordering where possible but accepting overriddewn values from the
+-- latter block. Preserves metadata of the overriding element.
+mergeElements :: WhnfEvaluator -> [CoreExpr] -> [CoreExpr] -> Interpreter [CoreExpr]
+mergeElements  whnfM l r =
+  map listify . M.toList . M.fromListWith const <$> pairs
+  where pairs = mapM (whnfM >=> pair) (l ++ r)
+        pair (CoreList [CorePrim (CoreSymbol k), v]) = return (k, (Nothing, v))
+        pair (CoreMeta m (CoreList [CorePrim (CoreSymbol k), v])) = return (k, (Just m, v))
+        pair el = throwEvalError $ BadBlockElement el
+        listify (k, (Just m, v)) = CoreMeta m (CoreList [CorePrim (CoreSymbol k), v])
+        listify (k, (Nothing, v)) = CoreList [CorePrim (CoreSymbol k), v]
+
+
+
 -- | Block merge. The default action for block catentation (or
 -- applying a block as a function). Also available as `merge`.
 --
-euMerge :: WhnfEvaluator -> CoreExpr -> CoreExpr -> Interpreter CoreExpr
-euMerge whnfM l r = CoreBlock <$> euConcat whnfM l r
+euMerge :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euMerge whnfM [l, r] = do
+  l' <- whnfM l
+  r' <- whnfM r
+  case (l', r') of
+    (CoreBlock l'', CoreBlock r'') -> do
+      l''' <- whnfM l''
+      r''' <- whnfM r''
+      case (l''', r''') of
+        (CoreList ll, CoreList rr) -> CoreBlock . CoreList <$> mergeElements whnfM ll rr
+        _ -> throwEvalError $ BadBlockMerge (CoreList [l, r])
+    _ -> throwEvalError $ BadBlockMerge (CoreList [l, r])
+euMerge _ args = throwEvalError $ BadBlockMerge (CoreList args)
 
 
 
@@ -342,6 +370,7 @@ builtinIndex =
   , ("GTE", (2, euGte))
   , ("BLOCK", (1, euBlock))
   , ("ELEMENTS", (1, euElements))
+  , ("MERGE", (2, euMerge))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.
