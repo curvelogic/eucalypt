@@ -284,8 +284,10 @@ mergeUnits lets = foldl1 (flip CoreApp) newLets
               (\n ->
                  (length nextBindings +) <$>
                  (n `elemIndex` map fst establishedBindings))
-       in let reboundNextBindings = map (second abstr) nextBindings
-           in reboundNextBindings ++ establishedBindings
+          shift = mapBound (\(Name n i) -> (Name n (i + length nextBindings)))
+          reboundNextBindings = map (second abstr) nextBindings
+          shiftedEstablishedBindings = map (second shift) establishedBindings
+      in reboundNextBindings ++ shiftedEstablishedBindings
     rebindBody oldBody newBindList =
       let abstr = bindMore (`elemIndex` map fst newBindList)
        in abstr oldBody

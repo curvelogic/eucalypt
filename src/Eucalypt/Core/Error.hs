@@ -18,6 +18,7 @@ import Eucalypt.Core.Syn
 data EvaluationError
   = MultipleErrors [EvaluationError]
   | ConcatArgumentNotList CoreExpr
+  | ElementsArgumentNotBlock CoreExpr
   | LookupTargetNotList CoreExpr
   | LookupKeyNotStringLike CoreExpr
   | KeyNotFound String
@@ -41,6 +42,7 @@ data EvaluationError
 instance Show EvaluationError where
   show (MultipleErrors es) = foldl1 (++) (map ((++ "\n") . show) es)
   show (ConcatArgumentNotList expr) = "Argument to concat not a list in " ++ pprint expr
+  show (ElementsArgumentNotBlock expr) = "Argument to elements not a block in " ++ pprint expr
   show (LookupTargetNotList expr) = "Lookup target not a list in " ++ pprint expr
   show (LookupKeyNotStringLike expr) = "Lookup key not string-like in " ++ pprint expr
   show (KeyNotFound key) = "Key not found: " ++ key

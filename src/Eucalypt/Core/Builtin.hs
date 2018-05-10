@@ -239,6 +239,27 @@ euConcat whnfM l r = do
         CoreBlock (CoreList items) -> return items
         _ -> throwEvalError $ ConcatArgumentNotList e
 
+
+
+-- | __BLOCK(l) builtin. Arity 1. Non-strict. Wrap up a list of elements as a block.
+--
+euBlock :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euBlock _ [l] = return $ CoreBlock l
+euBlock _ args = throwEvalError $ Bug "__BLOCK called with bad args" (CoreList args)
+
+
+
+-- | __ELEMENTS(b) builtin. Arity 1. Strict in b. Unwrap a block to expose the elements.
+--
+euElements :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euElements whnfM [e] =
+  whnfM e >>= \case
+    CoreBlock l -> return l
+    _ -> throwEvalError $ ElementsArgumentNotBlock e
+euElements _ args = throwEvalError $ Bug "__ELEMENTS called with bad args" (CoreList args)
+
+
+
 -- | Block merge. The default action for block catentation (or
 -- applying a block as a function). Also available as `merge`.
 --
@@ -319,6 +340,8 @@ builtinIndex =
   , ("GT", (2, euGt))
   , ("LTE", (2, euLte))
   , ("GTE", (2, euGte))
+  , ("BLOCK", (1, euBlock))
+  , ("ELEMENTS", (1, euElements))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.

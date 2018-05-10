@@ -54,7 +54,7 @@ head: __HEAD
 
 ` { doc: "`head-or(l, d)` - return the head item of list `l` or default `d` if empty."
     export: :suppress }
-head: __HEADOR
+head-or: __HEADOR
 
 ` { doc: "`tail(l)` - return list `l` without the head item. [] causes error."
     export: :suppress }
@@ -78,11 +78,11 @@ merge: TODO(__MERGE)
 
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
     export: :suppress }
-elements: TODO(__ELEMENTS)
+elements: __ELEMENTS
 
 ` { doc: "`block(l)` - (re)construct block from list `l` of elements."
     export: :suppress }
-block: TODO(__BLOCK)
+block: __BLOCK
 
 ` { doc: "`has(s, b)` - true if and only if block `b` has key (symbol) `s`."
     export: :suppress }
@@ -228,7 +228,7 @@ cond(l, d): foldr(l, curry(if), d)
     export: :suppress }
 inc(x): x + 1
 
-` { doc: "`inc(x)` - decrement number `x` by 1."
+` { doc: "`dec(x)` - decrement number `x` by 1."
     export: :suppress }
 dec(x): x - 1
 
@@ -282,7 +282,7 @@ foldr(op, i, l): if(l nil?, i, op(head(l), foldr(op, tail(l), i)))
 ` { doc: "`map(f, l)` - map function `f` over list `l`"
     # example: map(|x|(x+2),[1,2,3]) //=> [3,4,5]
     export: :suppress }
-map(f, l): if(l nil?, l, cons(f(head(l)), map(f(tail(l)))))
+map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
 ` { doc: "`f <$> l` - map function `f` over list `l`"
     # example: |x|(x+1) <$> [1,2,3] //=> [2,3,4]
