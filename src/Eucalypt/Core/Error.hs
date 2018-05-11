@@ -21,6 +21,7 @@ data EvaluationError
   | ElementsArgumentNotBlock CoreExpr
   | LookupTargetNotList CoreExpr
   | LookupKeyNotStringLike CoreExpr
+  | BadSplitArgs CoreExpr CoreExpr
   | KeyNotFound String
   | BadBlockElement CoreExpr
   | BadBlockContent CoreExpr
@@ -45,6 +46,7 @@ instance Show EvaluationError where
   show (ElementsArgumentNotBlock expr) = "Argument to elements not a block in " ++ pprint expr
   show (LookupTargetNotList expr) = "Lookup target not a list in " ++ pprint expr
   show (LookupKeyNotStringLike expr) = "Lookup key not string-like in " ++ pprint expr
+  show (BadSplitArgs s re) = "Bad arguments to regex split - string:  " ++ pprint s ++ " regex: " ++ pprint re
   show (KeyNotFound key) = "Key not found: " ++ key
   show (BadBlockElement expr) = "Bad block element in " ++ pprint expr
   show (BadBlockContent expr) = "Bad block content in " ++ pprint expr

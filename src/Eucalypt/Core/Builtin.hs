@@ -14,6 +14,7 @@ import Control.Monad ((>=>))
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
+import Text.Regex.PCRE ((=~), AllMatches, MatchOffset, MatchLength, getAllMatches)
 
 type Builtin = WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 
@@ -372,6 +373,29 @@ lookupName ::
      WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
 lookupName whnfM e n = lookupOr whnfM (throwEvalError $ KeyNotFound n) e n
 
+-- | Tedious and shonky... could get this from regex-compat instead
+splitRegex :: String -> String -> [String]
+splitRegex s re =
+  let matches = getAllMatches (s =~ re :: AllMatches [] (MatchOffset, MatchLength))
+      spans = map (\(o, l) -> (o, o + l)) matches
+      spans' = [(0,0)] ++ spans ++ [(length s, 0)]
+      misses = zip (map snd spans') (map fst (tail spans'))
+      segments = map (\(b, e) -> take (e - b) (drop b s)) misses
+  in filter (not . null) segments
+
+-- | __SPLIT(s, re) - split s on re, string in both.
+--
+euSplit :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euSplit whnfM [s, re] = do
+  s' <- whnfM s
+  re' <- whnfM re
+  case (s', re') of
+    (CorePrim (CoreString target), CorePrim (CoreString regex)) ->
+      return $ CoreList $ map (CorePrim . CoreString) $ splitRegex target regex
+    _ -> throwEvalError $ BadSplitArgs s re
+euSplit _ args = throwEvalError $ Bug "__SPLIT called with bad arguments" (CoreList args)
+
+
 -- | The builtins exposed to the language.
 --
 builtinIndex :: [(CoreBuiltinName, (Int, Builtin))]
@@ -401,6 +425,7 @@ builtinIndex =
   , ("MERGE", (2, euMerge))
   , ("LOOKUP", (2, euLookup))
   , ("LOOKUPOR", (3, euLookupOr))
+  , ("SPLIT", (2, euSplit))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.

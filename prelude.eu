@@ -142,11 +142,31 @@ not: __NOT
     export: :suppress }
 (l <= r): __LTE(l, r)
 
-` { doc: "`l >= r` - `true` if and only if number `l` is breater than or equal to number `r`."
+` { doc: "`l >= r` - `true` if and only if number `l` is greater than or equal to number `r`."
     export: :suppress }
 (l >= r): __GTE(l, r)
 
 ## Text and regexes
+
+` { doc: "split(s, re) - split string `s` on separators matching regex `re`."
+    see-also: [:split-on]
+    export: :suppress }
+split: __SPLIT
+
+` { doc: "split-on(re, s) - split string `s` on separators matching regex `re`."
+    see-also: [:split]
+    export: :suppress }
+split-on: split flip
+
+` { doc: "join(l, s) - join list of strings `l` by interposing string s."
+    see-also: [:join-on]
+    export: :suppress }
+join: __JOIN
+
+` { doc: "join-on(s, l) - join list of strings `l` by interposing string s."
+    see-also: [:join]
+    export: :suppress }
+join-on: join flip
 
 ` { doc: "`grok(r, s)` - use regex `r` with named groups to match string `s` and return block of captures."
     example: grok("(?<name>\\w+) (?<value>\\d+)", "foo 123") //=> { name: "foo" value: 123 }

@@ -138,6 +138,7 @@ spec = do
   arithSpec
   booleanSpec
   blockSpec
+  stringSpec
 
 
 addsIntegers :: Integer -> Integer -> Bool
@@ -232,3 +233,28 @@ blockSpec =
           b3 = block [element "b" $ int (-1), element "a" $ int 5]
           merged = runInterpreter $ euMerge return [b1, b2]
       in (merged `shouldBe` Right b3)
+
+
+stringSpec :: Spec
+stringSpec =
+  describe "euSplit" $ do
+    it "splits on regex" $
+      runInterpreter (euSplit return [str "1.2.3.4", str "\\."])
+      `shouldBe`
+      Right (CoreList [str "1", str "2", str "3", str "4"])
+    it "filters out empty strings" $
+      runInterpreter (euSplit return [str "1..2", str "\\."])
+      `shouldBe`
+      Right (CoreList [str "1", str "2"])
+    it "handles empty regex" $
+      runInterpreter (euSplit return [str "foo..bar", str ""])
+      `shouldBe`
+      Right (CoreList [str "foo..bar"])
+    it "handles dot regex" $
+      runInterpreter (euSplit return [str "foo", str "."])
+      `shouldBe`
+      Right (CoreList [])
+    it "handles .* regex" $
+      runInterpreter (euSplit return [str "foo", str ".*"])
+      `shouldBe`
+      Right (CoreList [])
