@@ -137,6 +137,7 @@ spec = do
       Right (corebool True)
   arithSpec
   booleanSpec
+  blockSpec
 
 
 addsIntegers :: Integer -> Integer -> Bool
@@ -220,3 +221,14 @@ booleanSpec =
     it "calculates and" $ property calculatesAnd
     it "calculates or" $ property calculatesOr
     it "calculates not" $ property calculatesNot
+
+
+blockSpec :: Spec
+blockSpec =
+  describe "Block merges" $
+    it "overrides preserving original order" $
+      let b1 = block [element "b" $ int 1, element "a" $ int 5]
+          b2 = block [element "b" $ int (-1)]
+          b3 = block [element "b" $ int (-1), element "a" $ int 5]
+          merged = runInterpreter $ euMerge return [b1, b2]
+      in (merged `shouldBe` Right b3)

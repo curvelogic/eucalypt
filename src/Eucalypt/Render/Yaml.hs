@@ -27,7 +27,6 @@ import Eucalypt.Render.Classes
 import qualified Text.Libyaml as L
 
 
-
 -- | Return text if the expressio is string-like otherwise runtime error
 expectText :: CoreExpr -> Interpreter Text
 expectText e =
@@ -52,7 +51,7 @@ class Monad m => ToMYaml m a where
 boilAwayMetadata :: WhnfEvaluator -> CoreExpr -> Interpreter (Maybe CoreExpr)
 boilAwayMetadata whnfM (CoreMeta m e) = do
   meta <- whnfM m
-  export <- euLookupOr whnfM (return (CorePrim (CoreSymbol "copy"))) meta "export"
+  export <- lookupOr whnfM (return (CorePrim (CoreSymbol "copy"))) meta "export"
   if export == CorePrim (CoreSymbol "suppress")
     then return Nothing
     else return $ Just e

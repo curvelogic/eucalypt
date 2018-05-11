@@ -47,7 +47,7 @@ whnfM e@(CoreApp f x) = do
                     _ -> throwEvalError $ NotSupported "multiapply lambdas" e)
     expr -> throwEvalError $ UncallableExpression expr
 whnfM e@CoreLet {} = whnfM $ instantiateLet e
-whnfM (CoreLookup e n) = euLookup whnfM e n -- TODO: is this right?
+whnfM (CoreLookup e n) = lookupName whnfM e n -- TODO: generalised lookup
 whnfM e@(CoreBuiltin n) =
   case lookupBuiltin n of
     Just (0, f) -> f whnfM []

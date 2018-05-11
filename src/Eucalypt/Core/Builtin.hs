@@ -9,7 +9,7 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Builtin where
 
-import qualified Data.Map.Lazy as M
+import qualified Data.HashMap.Strict.InsOrd as OM
 import Control.Monad ((>=>))
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -267,13 +267,14 @@ euElements _ args = throwEvalError $ Bug "__ELEMENTS called with bad args" (Core
 -- latter block. Preserves metadata of the overriding element.
 mergeElements :: WhnfEvaluator -> [CoreExpr] -> [CoreExpr] -> Interpreter [CoreExpr]
 mergeElements  whnfM l r =
-  map listify . M.toList . M.fromListWith const <$> pairs
+  map listify . OM.toList . fromPairs <$> pairs
   where pairs = mapM (whnfM >=> pair) (l ++ r)
         pair (CoreList [CorePrim (CoreSymbol k), v]) = return (k, (Nothing, v))
         pair (CoreMeta m (CoreList [CorePrim (CoreSymbol k), v])) = return (k, (Just m, v))
         pair el = throwEvalError $ BadBlockElement el
         listify (k, (Just m, v)) = CoreMeta m (CoreList [CorePrim (CoreSymbol k), v])
         listify (k, (Nothing, v)) = CoreList [CorePrim (CoreSymbol k), v]
+        fromPairs = foldl (\m (k, v) -> OM.insertWith const k v m) OM.empty
 
 
 
@@ -328,21 +329,48 @@ buildSearchList _ e = throwEvalError $ LookupTargetNotList e
 -- | Lookup in a block requires realising all keys as later keys
 -- override earlier. Return default if key does not exist.
 --
-euLookupOr ::
+lookupOr ::
      WhnfEvaluator -> Interpreter CoreExpr -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
-euLookupOr whnfM d e name = do
+lookupOr whnfM d e name = do
   obj <- whnfM e
   alist <- buildSearchList whnfM obj
   case lookup name alist of
     Just val -> return val
     Nothing -> d
 
--- | Lookup in a block, throwing if key absent.
+-- | __LOOKUPOR(n, d, b) - look up name `n` (string or symbol) in
+-- block `b`, returning `d` if it isn't there. Strict in `b` and `r`.
+--
+euLookupOr ::
+     WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euLookupOr whnfM [n, d, b] = do
+  b' <- whnfM b
+  n' <- whnfM n
+  case n' of
+    (CorePrim (CoreSymbol s)) -> lookupOr whnfM (return d) b' s
+    (CorePrim (CoreString s)) -> lookupOr whnfM (return d) b' s
+    _ -> throwEvalError $ LookupKeyNotStringLike n'
+euLookupOr _ args = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList args)
+
+-- | __LOOKUP(n, d, b) - look up name `n` (string or symbol) in
+-- block `b`, returning `d` if it isn't there. Strict in `b` and `r`.
 --
 euLookup ::
-     WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
-euLookup whnfM e n = euLookupOr whnfM (throwEvalError $ KeyNotFound n) e n
+     WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euLookup whnfM [n, b] = do
+  b' <- whnfM b
+  n' <- whnfM n
+  case n' of
+    (CorePrim (CoreSymbol s)) -> lookupName whnfM b' s
+    (CorePrim (CoreString s)) -> lookupName whnfM b' s
+    _ -> throwEvalError $ LookupKeyNotStringLike n'
+euLookup _ args = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList args)
 
+-- | Lookup in a block, throwing if key absent.
+--
+lookupName ::
+     WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
+lookupName whnfM e n = lookupOr whnfM (throwEvalError $ KeyNotFound n) e n
 
 -- | The builtins exposed to the language.
 --
@@ -371,6 +399,8 @@ builtinIndex =
   , ("BLOCK", (1, euBlock))
   , ("ELEMENTS", (1, euElements))
   , ("MERGE", (2, euMerge))
+  , ("LOOKUP", (2, euLookup))
+  , ("LOOKUPOR", (3, euLookupOr))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.
