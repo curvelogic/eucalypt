@@ -24,6 +24,7 @@ library:
     - comonad
     - conduit
     - containers
+    - insert-ordered-containers
     - deriving-compat
     - directory
     - exceptions
