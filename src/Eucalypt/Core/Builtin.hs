@@ -9,12 +9,19 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Builtin where
 
-import qualified Data.HashMap.Strict.InsOrd as OM
 import Control.Monad ((>=>))
+import qualified Data.HashMap.Strict.InsOrd as OM
+import Data.List (intercalate)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
-import Text.Regex.PCRE ((=~), AllMatches, MatchOffset, MatchLength, getAllMatches)
+import Text.Regex.PCRE
+  ( AllMatches
+  , MatchLength
+  , MatchOffset
+  , (=~)
+  , getAllMatches
+  )
 
 type Builtin = WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 
@@ -395,6 +402,21 @@ euSplit whnfM [s, re] = do
     _ -> throwEvalError $ BadSplitArgs s re
 euSplit _ args = throwEvalError $ Bug "__SPLIT called with bad arguments" (CoreList args)
 
+-- | __JOIN(l, sep) - join (string) items of l with sep.
+--
+euJoin :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euJoin whnfM [l, sep] = do
+  l' <- whnfM l
+  sep' <- whnfM sep
+  case (l', sep') of
+    (CoreList xs, CorePrim (CoreString s)) ->
+      CorePrim . CoreString . intercalate s <$> mapM stringItem xs
+    _ -> throwEvalError $ BadJoinArgs l' sep'
+  where
+    stringItem x = whnfM x >>= extractString
+    extractString (CorePrim (CoreString x)) = return x
+    extractString x = throwEvalError $ NotString x
+euJoin _ args = throwEvalError $ Bug "__JOIN called with bad arguments" (CoreList args)
 
 -- | The builtins exposed to the language.
 --
@@ -426,6 +448,7 @@ builtinIndex =
   , ("LOOKUP", (2, euLookup))
   , ("LOOKUPOR", (3, euLookupOr))
   , ("SPLIT", (2, euSplit))
+  , ("JOIN", (2, euJoin))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.

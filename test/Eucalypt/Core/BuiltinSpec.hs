@@ -234,9 +234,8 @@ blockSpec =
           merged = runInterpreter $ euMerge return [b1, b2]
       in (merged `shouldBe` Right b3)
 
-
 stringSpec :: Spec
-stringSpec =
+stringSpec = do
   describe "euSplit" $ do
     it "splits on regex" $
       runInterpreter (euSplit return [str "1.2.3.4", str "\\."])
@@ -258,3 +257,8 @@ stringSpec =
       runInterpreter (euSplit return [str "foo", str ".*"])
       `shouldBe`
       Right (CoreList [])
+  describe "euJoin" $
+    it "join on separator" $
+      runInterpreter (euJoin return [CoreList [str "1", str "2", str "3"], str "-"])
+      `shouldBe`
+      (Right $ str "1-2-3")
