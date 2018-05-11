@@ -74,7 +74,7 @@ cat: TODO(__CAT)
 
 ` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
     export: :suppress }
-merge: TODO(__MERGE)
+merge: __MERGE
 
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
     export: :suppress }
