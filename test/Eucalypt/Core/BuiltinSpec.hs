@@ -262,3 +262,8 @@ stringSpec = do
       runInterpreter (euJoin return [CoreList [str "1", str "2", str "3"], str "-"])
       `shouldBe`
       (Right $ str "1-2-3")
+  describe "euMatch" $
+    it "matches regex" $
+      runInterpreter (euMatch return [str "192.168.0.2", str "(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)"])
+      `shouldBe`
+      (Right $ CoreList [str "192.168.0.2", str "192", str "168", str "0", str "2"])

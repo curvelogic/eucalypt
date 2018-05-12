@@ -22,6 +22,7 @@ data EvaluationError
   | LookupTargetNotList CoreExpr
   | LookupKeyNotStringLike CoreExpr
   | BadSplitArgs CoreExpr CoreExpr
+  | BadMatchArgs CoreExpr CoreExpr
   | BadJoinArgs CoreExpr CoreExpr
   | KeyNotFound String
   | BadBlockElement CoreExpr
@@ -49,6 +50,7 @@ instance Show EvaluationError where
   show (LookupTargetNotList expr) = "Lookup target not a list in " ++ pprint expr
   show (LookupKeyNotStringLike expr) = "Lookup key not string-like in " ++ pprint expr
   show (BadSplitArgs s re) = "Bad arguments to regex split - string:  " ++ pprint s ++ " regex: " ++ pprint re
+  show (BadMatchArgs s re) = "Bad arguments to regex match - string:  " ++ pprint s ++ " regex: " ++ pprint re
   show (BadJoinArgs s re) = "Bad arguments to join - strings:  " ++ pprint s ++ " separator: " ++ pprint re
   show (KeyNotFound key) = "Key not found: " ++ key
   show (BadBlockElement expr) = "Bad block element in " ++ pprint expr
