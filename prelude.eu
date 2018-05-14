@@ -168,10 +168,25 @@ join: __JOIN
     export: :suppress }
 join-on: join flip
 
-` { doc: "`grok(r, s)` - use regex `r` with named groups to match string `s` and return block of captures."
-    example: grok("(?<name>\\w+) (?<value>\\d+)", "foo 123") //=> { name: "foo" value: 123 }
+` { doc: "match(s, re) - match string `s` using regex `re`, return list of full match then capture groups."
+    see-also: [:match-with]
     export: :suppress }
-grok(r, s): TODO(__GROK(r, s))
+match: __MATCH
+
+` { doc: "match-with(re, s) - match string `s` using regex `re`, return list of full match then capture groups."
+    see-also: [:match]
+    export: :suppress }
+match-with: match flip
+
+` { doc: "matches(s, re) - return list of all matches in string `s` of regex `re`."
+    see-also: [:matches-of]
+    export: :suppress }
+matches: __MATCHES
+
+` { doc: "matches-of(re, s) - return list of all matches in string `s` of regex `re`."
+    see-also: [:matches]
+    export: :suppress }
+matches-of: matches flip
 
 ## Hashes & Random
 

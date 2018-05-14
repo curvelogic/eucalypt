@@ -17,11 +17,13 @@ import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
 import Text.Regex.PCRE
   ( AllMatches
+  , AllTextMatches
   , AllTextSubmatches
   , MatchLength
   , MatchOffset
   , (=~)
   , getAllMatches
+  , getAllTextMatches
   , getAllTextSubmatches
   )
 
@@ -434,6 +436,20 @@ euMatch whnfM [s, re] = do
     _ -> throwEvalError $ BadMatchArgs s re
 euMatch _ args = throwEvalError $ Bug "__MATCH called with bad arguments" (CoreList args)
 
+-- | __MATCHES(s, re) - find all matches of @re@ in @s@, returning list of
+-- string matches.
+--
+euMatches :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euMatches whnfM [s, re] = do
+  s' <- whnfM s
+  re' <- whnfM re
+  case (s', re') of
+    (CorePrim (CoreString target), CorePrim (CoreString regex)) ->
+      return . CoreList . map (CorePrim . CoreString) $
+      getAllTextMatches (target =~ regex :: AllTextMatches [] String)
+    _ -> throwEvalError $ BadMatchArgs s re
+euMatches _ args = throwEvalError $ Bug "__MATCHES called with bad arguments" (CoreList args)
+
 
 -- | The builtins exposed to the language.
 --
@@ -467,6 +483,7 @@ builtinIndex =
   , ("SPLIT", (2, euSplit))
   , ("JOIN", (2, euJoin))
   , ("MATCH", (2, euMatch))
+  , ("MATCHES", (2, euMatches))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.
