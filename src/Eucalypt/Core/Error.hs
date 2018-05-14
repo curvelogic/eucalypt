@@ -21,6 +21,9 @@ data EvaluationError
   | ElementsArgumentNotBlock CoreExpr
   | LookupTargetNotList CoreExpr
   | LookupKeyNotStringLike CoreExpr
+  | BadSplitArgs CoreExpr CoreExpr
+  | BadMatchArgs CoreExpr CoreExpr
+  | BadJoinArgs CoreExpr CoreExpr
   | KeyNotFound String
   | BadBlockElement CoreExpr
   | BadBlockContent CoreExpr
@@ -31,6 +34,7 @@ data EvaluationError
   | NotSupported String CoreExpr
   | NotBoolean CoreExpr
   | NotNumber CoreExpr
+  | NotString CoreExpr
   | DivideByZero CoreExpr
   | NotList CoreExpr
   | Panic String CoreExpr
@@ -45,6 +49,9 @@ instance Show EvaluationError where
   show (ElementsArgumentNotBlock expr) = "Argument to elements not a block in " ++ pprint expr
   show (LookupTargetNotList expr) = "Lookup target not a list in " ++ pprint expr
   show (LookupKeyNotStringLike expr) = "Lookup key not string-like in " ++ pprint expr
+  show (BadSplitArgs s re) = "Bad arguments to regex split - string:  " ++ pprint s ++ " regex: " ++ pprint re
+  show (BadMatchArgs s re) = "Bad arguments to regex match - string:  " ++ pprint s ++ " regex: " ++ pprint re
+  show (BadJoinArgs s re) = "Bad arguments to join - strings:  " ++ pprint s ++ " separator: " ++ pprint re
   show (KeyNotFound key) = "Key not found: " ++ key
   show (BadBlockElement expr) = "Bad block element in " ++ pprint expr
   show (BadBlockContent expr) = "Bad block content in " ++ pprint expr
@@ -55,6 +62,7 @@ instance Show EvaluationError where
   show (NotSupported message expr) = "Not supported (yet) - " ++ message ++ pprint expr
   show (NotBoolean expr) = "Expected boolean value, got " ++ pprint expr
   show (NotNumber expr) = "Expected numeric values, got " ++ pprint expr
+  show (NotString expr) = "Expected string values got " ++ pprint expr
   show (DivideByZero expr) = "Division by zero, denominator " ++ pprint expr
   show (NotList expr) = "Expected list value, got " ++ pprint expr
   show (EmptyList expr) = "List was empty in " ++ pprint expr

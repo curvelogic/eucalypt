@@ -36,11 +36,11 @@ library:
     - parsec-numeric
     - path
     - pretty
-    - regex-compat
-    - regex-posix
+    - regex-pcre-builtin
     - resourcet
     - safe-exceptions
     - scientific
+    - split
     - strict
     - text
     - transformers

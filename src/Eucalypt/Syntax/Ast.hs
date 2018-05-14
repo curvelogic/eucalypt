@@ -37,9 +37,9 @@ module Eucalypt.Syntax.Ast
   )
 where
 
-import Text.Regex
 import GHC.Generics
 import Data.Aeson
+import Data.List.Split (splitOn)
 import Eucalypt.Reporting.Location
 
 
@@ -177,7 +177,7 @@ unquote xs = xs
 
 -- | Turn dotted string into complex identifier
 ident :: String -> Expression
-ident = at nowhere . EIdentifier . map (NormalName . unquote) . splitRegex (mkRegex "\\.")
+ident = at nowhere . EIdentifier . map (NormalName . unquote) . splitOn "."
 
 -- | Form an operation from name and operands
 op :: String -> Expression -> Expression -> Expression

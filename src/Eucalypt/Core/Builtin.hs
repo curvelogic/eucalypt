@@ -9,11 +9,23 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Builtin where
 
-import qualified Data.HashMap.Strict.InsOrd as OM
 import Control.Monad ((>=>))
+import qualified Data.HashMap.Strict.InsOrd as OM
+import Data.List (intercalate)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
+import Text.Regex.PCRE
+  ( AllMatches
+  , AllTextMatches
+  , AllTextSubmatches
+  , MatchLength
+  , MatchOffset
+  , (=~)
+  , getAllMatches
+  , getAllTextMatches
+  , getAllTextSubmatches
+  )
 
 type Builtin = WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 
@@ -372,6 +384,73 @@ lookupName ::
      WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
 lookupName whnfM e n = lookupOr whnfM (throwEvalError $ KeyNotFound n) e n
 
+-- | Tedious and shonky... could get this from regex-compat instead
+splitRegex :: String -> String -> [String]
+splitRegex s re =
+  let matches = getAllMatches (s =~ re :: AllMatches [] (MatchOffset, MatchLength))
+      spans = map (\(o, l) -> (o, o + l)) matches
+      spans' = [(0,0)] ++ spans ++ [(length s, 0)]
+      misses = zip (map snd spans') (map fst (tail spans'))
+      segments = map (\(b, e) -> take (e - b) (drop b s)) misses
+  in filter (not . null) segments
+
+-- | __SPLIT(s, re) - split s on re, string in both.
+--
+euSplit :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euSplit whnfM [s, re] = do
+  s' <- whnfM s
+  re' <- whnfM re
+  case (s', re') of
+    (CorePrim (CoreString target), CorePrim (CoreString regex)) ->
+      return $ CoreList $ map (CorePrim . CoreString) $ splitRegex target regex
+    _ -> throwEvalError $ BadSplitArgs s re
+euSplit _ args = throwEvalError $ Bug "__SPLIT called with bad arguments" (CoreList args)
+
+-- | __JOIN(l, sep) - join (string) items of l with sep.
+--
+euJoin :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euJoin whnfM [l, sep] = do
+  l' <- whnfM l
+  sep' <- whnfM sep
+  case (l', sep') of
+    (CoreList xs, CorePrim (CoreString s)) ->
+      CorePrim . CoreString . intercalate s <$> mapM stringItem xs
+    _ -> throwEvalError $ BadJoinArgs l' sep'
+  where
+    stringItem x = whnfM x >>= extractString
+    extractString (CorePrim (CoreString x)) = return x
+    extractString x = throwEvalError $ NotString x
+euJoin _ args = throwEvalError $ Bug "__JOIN called with bad arguments" (CoreList args)
+
+-- | __MATCH(s, re) - match s with re, returning list of full match t
+-- index 0 then groups.
+--
+euMatch :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euMatch whnfM [s, re] = do
+  s' <- whnfM s
+  re' <- whnfM re
+  case (s', re') of
+    (CorePrim (CoreString target), CorePrim (CoreString regex)) ->
+      return . CoreList . map (CorePrim . CoreString) $
+      getAllTextSubmatches (target =~ regex :: AllTextSubmatches [] String)
+    _ -> throwEvalError $ BadMatchArgs s re
+euMatch _ args = throwEvalError $ Bug "__MATCH called with bad arguments" (CoreList args)
+
+-- | __MATCHES(s, re) - find all matches of @re@ in @s@, returning list of
+-- string matches.
+--
+euMatches :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euMatches whnfM [s, re] = do
+  s' <- whnfM s
+  re' <- whnfM re
+  case (s', re') of
+    (CorePrim (CoreString target), CorePrim (CoreString regex)) ->
+      return . CoreList . map (CorePrim . CoreString) $
+      getAllTextMatches (target =~ regex :: AllTextMatches [] String)
+    _ -> throwEvalError $ BadMatchArgs s re
+euMatches _ args = throwEvalError $ Bug "__MATCHES called with bad arguments" (CoreList args)
+
+
 -- | The builtins exposed to the language.
 --
 builtinIndex :: [(CoreBuiltinName, (Int, Builtin))]
@@ -401,6 +480,10 @@ builtinIndex =
   , ("MERGE", (2, euMerge))
   , ("LOOKUP", (2, euLookup))
   , ("LOOKUPOR", (3, euLookupOr))
+  , ("SPLIT", (2, euSplit))
+  , ("JOIN", (2, euJoin))
+  , ("MATCH", (2, euMatch))
+  , ("MATCHES", (2, euMatches))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.
