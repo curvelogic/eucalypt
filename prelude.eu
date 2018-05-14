@@ -100,17 +100,35 @@ has(s, b): TODO(__HAS(b, s))
 
 ` { doc: "`lookup(s, b)` - look up symbol `s` in block `b`, error if not found."
     export: :suppress }
-lookup(s, b): TODO(__LOOKUP(s, b))
+lookup(s, b): __LOOKUP(s, b)
 
 ` { doc: "`lookup-or(s, d, b)` - look up symbol `s` in block `b`, default `d` if not found."
     export: :suppress }
-lookup-or(s, d, b): TODO(__LOOKUPOR(s, d, b))
+lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 
+##
 ## Boolean
+##
 
 ` { doc: "`not(b) - toggle boolean.`"
     export: :suppress }
 not: __NOT
+
+` { doc: "`l && r`` - true if and only if `l` and `r`"
+    export: :suppress }
+(l && r): __AND(l, r)
+
+` { doc: "`l ∧ r`` - true if and only if `l` and `r`"
+    export: :suppress }
+(l ∧ r): l && r
+
+` { doc: "`l || r`` - true if and only if `l` or `r`"
+    export: :suppress }
+(l || r): __OR(l, r)
+
+` { doc: "`l ∨ r`` - true if and only if `l` or `r`"
+    export: :suppress }
+(l ∨ r): l || r
 
 ##
 ## Polymorphic equality
@@ -212,7 +230,9 @@ matches-of: matches flip
     export: :suppress }
 matches?(re): match(s, re) (not ∘ nil?)
 
+##
 ## Combinators
+##
 
 ` { doc: "`identity(v)` - identity function, return value `v`."
     export: :suppress }
