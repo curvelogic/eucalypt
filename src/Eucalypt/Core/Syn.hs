@@ -56,12 +56,14 @@ data CoreExp a
   | CoreLet [(CoreBindingName, Scope (Name String Int) CoreExp a)] (Scope (Name String Int) CoreExp a)
   | CoreApp (CoreExp a) (CoreExp a)
   | CoreBuiltin CoreBuiltinName
-  | CorePAp Int (CoreExp a) [CoreExp a]
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
   | CoreList [CoreExp a]
   | CoreBlock (CoreExp a)
   | CoreMeta (CoreExp a) (CoreExp a)
+  | CorePAp Int (CoreExp a) [CoreExp a] -- ^ during evaluation only
+  | CoreTraced (CoreExp a) -- ^ during evaluation only
+  | CoreChecked (CoreExp a) (CoreExp a) -- ^ during evaluation only
   deriving (Functor,Foldable,Traversable)
 
 
@@ -110,7 +112,8 @@ instance Monad CoreExp where
   CoreList es >>= f = CoreList (map (>>= f) es)
   CoreBlock e >>= f = CoreBlock (e >>= f)
   CoreMeta m e >>= f = CoreMeta (m >>= f) (e >>= f)
-
+  CoreTraced e >>= f = CoreTraced (e >>= f)
+  CoreChecked check e >>= f = CoreChecked (check >>= f) (e >>= f)
 
 
 -- | Construct a var

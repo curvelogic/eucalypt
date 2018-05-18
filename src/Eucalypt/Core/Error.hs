@@ -19,8 +19,10 @@ data EvaluationError
   = MultipleErrors [EvaluationError]
   | ConcatArgumentNotList CoreExpr
   | ElementsArgumentNotBlock CoreExpr
+  | RemoveArgumentNotBlock CoreExpr
   | LookupTargetNotList CoreExpr
   | LookupKeyNotStringLike CoreExpr
+  | SymbolNamesMustBeStrings CoreExpr
   | BadSplitArgs CoreExpr CoreExpr
   | BadMatchArgs CoreExpr CoreExpr
   | BadJoinArgs CoreExpr CoreExpr
@@ -41,14 +43,17 @@ data EvaluationError
   | Bug String CoreExpr
   | EmptyList CoreExpr
   | NoSource
+  | AssertionFailed CoreExpr
   deriving (Eq, Typeable)
 
 instance Show EvaluationError where
   show (MultipleErrors es) = foldl1 (++) (map ((++ "\n") . show) es)
   show (ConcatArgumentNotList expr) = "Argument to concat not a list in " ++ pprint expr
   show (ElementsArgumentNotBlock expr) = "Argument to elements not a block in " ++ pprint expr
+  show (RemoveArgumentNotBlock expr) = "Argument to remove not a block in " ++ pprint expr
   show (LookupTargetNotList expr) = "Lookup target not a list in " ++ pprint expr
   show (LookupKeyNotStringLike expr) = "Lookup key not string-like in " ++ pprint expr
+  show (SymbolNamesMustBeStrings expr) = "Symbol name not string in " ++ pprint expr
   show (BadSplitArgs s re) = "Bad arguments to regex split - string:  " ++ pprint s ++ " regex: " ++ pprint re
   show (BadMatchArgs s re) = "Bad arguments to regex match - string:  " ++ pprint s ++ " regex: " ++ pprint re
   show (BadJoinArgs s re) = "Bad arguments to join - strings:  " ++ pprint s ++ " separator: " ++ pprint re
@@ -68,6 +73,7 @@ instance Show EvaluationError where
   show (EmptyList expr) = "List was empty in " ++ pprint expr
   show (Panic message expr) = "Panic - " ++ message ++ " in " ++ pprint expr
   show (Bug message expr) = "BUG! " ++ message ++ " - " ++ pprint expr
+  show (AssertionFailed expr) = "Assertion Failed. " ++ pprint expr
   show NoSource = "No source"
 
 instance Exception EvaluationError

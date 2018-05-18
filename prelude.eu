@@ -82,6 +82,10 @@ nil: []
 ## Blocks / merge
 ##
 
+` { doc: "`sym(s)` - create symbol with name given by string `s`."
+    export: :suppress }
+sym: __SYM
+
 ` { doc: "`merge(b1, b2)` - shallow merge block `b2` on top of `b1`."
     export: :suppress }
 merge: __MERGE
@@ -194,41 +198,53 @@ zero?(n): n = 0
 ## Text and regexes
 ##
 
-` { doc: "split(s, re) - split string `s` on separators matching regex `re`."
-    export: :suppress }
-split: __SPLIT
+` :suppress
+str: {
 
-` { doc: "split-on(re, s) - split string `s` on separators matching regex `re`."
-    export: :suppress }
-split-on: split flip
+  ` { doc: "split(s, re) - split string `s` on separators matching regex `re`."
+      export: :suppress }
+  split: __SPLIT
 
-` { doc: "join(l, s) - join list of strings `l` by interposing string s."
-    export: :suppress }
-join: __JOIN
+  ` { doc: "split-on(re, s) - split string `s` on separators matching regex `re`."
+      export: :suppress }
+  split-on: split flip
 
-` { doc: "join-on(s, l) - join list of strings `l` by interposing string s."
-    export: :suppress }
-join-on: join flip
+  ` { doc: "join(l, s) - join list of strings `l` by interposing string s."
+      export: :suppress }
+  join: __JOIN
 
-` { doc: "match(s, re) - match string `s` using regex `re`, return list of full match then capture groups."
-    export: :suppress }
-match: __MATCH
+  ` { doc: "join-on(s, l) - join list of strings `l` by interposing string s."
+      export: :suppress }
+  join-on: join flip
 
-` { doc: "match-with(re, s) - match string `s` using regex `re`, return list of full match then capture groups."
-    export: :suppress }
-match-with: match flip
+  ` { doc: "match(s, re) - match string `s` using regex `re`, return list of full match then capture groups."
+      export: :suppress }
+  match: __MATCH
 
-` { doc: "matches(s, re) - return list of all matches in string `s` of regex `re`."
-    export: :suppress }
-matches: __MATCHES
+  ` { doc: "match-with(re, s) - match string `s` using regex `re`, return list of full match then capture groups."
+      export: :suppress }
+  match-with: match flip
 
-` { doc: "matches-of(re, s) - return list of all matches in string `s` of regex `re`."
-    export: :suppress }
-matches-of: matches flip
+  ` { doc: "matches(s, re) - return list of all matches in string `s` of regex `re`."
+      export: :suppress }
+  matches: __MATCHES
 
-` { doc: "match(s, re) - match string `s` using regex `re`, return list of full match then capture groups."
-    export: :suppress }
-matches?(re): match(s, re) (not ∘ nil?)
+  ` { doc: "matches-of(re, s) - return list of all matches in string `s` of regex `re`."
+      export: :suppress }
+  matches-of: matches flip
+
+  ` { doc: "match(s, re) - match string `s` using regex `re`, return list of full match then capture groups."
+      export: :suppress }
+  matches?(re): match(s, re) (not ∘ nil?)
+
+  ` { doc: "append(b, a) - return string `b` appended to `a`."
+      export: :suppress }
+  append(b, a): [a, b] join-on("")
+
+  ` { doc: "append(b, a) - return string `b` prepended to `a`."
+      export: :suppress }
+  prepend(b, a): [b, a] join-on("")
+}
 
 ##
 ## Combinators
@@ -269,11 +285,11 @@ second(l): l tail head
 
 ` { doc: "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
     export: :suppress }
-uncurry(f, x, y): f([x, y])
+curry(f, x, y): f([x, y])
 
 ` { doc: "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
     export: :suppress }
-curry(f, l): f(first(l), second(l))
+uncurry(f, l): f(first(l), second(l))
 
 ` { doc: "`cond(l)` - in list `l` of [condition, value] select first true condition and return coresponding vaue. Default `d` if none."
     export: :suppress }
@@ -339,7 +355,7 @@ map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 ` { doc: "`map(f, l1, l2)` - map function `f` over lists `l1` and `l2`, stopping when the shorter list is exhausted."
     # example: map2(|x, y|(x+y),[1,2,3],[1,2]) //=> [2,4]
     export: :suppress }
-map2(f, l1, l2): if(l nil?, l, cons(f(head(l)), map(f(tail(l)))))
+map2(f, l1, l2): if(nil?(l1) || nil?(l2), [], cons(f(l1 head, l2 head), map2(f, l1 tail, l2 tail)))
 
 ` { doc: "`cons-if(p?, x, l)` - cons `x` onto beginning of list `l` if it satisfies predicate `p?`."
     export: :suppress }
@@ -404,6 +420,10 @@ on-elements(f, b): b elements f block
 ` { doc: "`map-kv(f, b)` - apply `f(k, v)` to each element in block `b`."
     export: :suppress }
 map-kv(f, b): b elements map(uncurry(f)) block
+
+` { doc: "`pair(k, v)` - form a block element from key (symbol) `k` and value `v`."
+    export: :suppress }
+pair(k, v): [k, v]
 
 ` { doc: "`zip-kv(ks, ,vs)` - create a block by zipping together keys `ks` and values `vs`."
     export: :suppress }

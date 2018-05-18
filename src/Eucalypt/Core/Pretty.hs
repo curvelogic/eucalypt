@@ -63,6 +63,8 @@ prepare (CoreLookup x y) = prepare x <+> char '.' <> text y
 prepare (CoreBlock e) = braces $ prepare e
 prepare (CoreList xs) = brackets . hsep . punctuate comma $ map prepare xs
 prepare (CoreMeta m e) = vcat [text "` " <+> prepare m, prepare e]
+prepare (CoreTraced v) = prepare v
+prepare (CoreChecked _ v) = prepare v
 
 -- | Pretty Print a CoreExp to String
 pprint :: CoreExpr -> String
