@@ -71,6 +71,7 @@ renderKeyValue whnfM k v = do
     _ -> toMYaml whnfM value >>= \rendered -> return (Just (key, rendered))
 
 
+
 instance ToMYaml Interpreter CoreExpr where
   toMYaml _ (CorePrim p) =
     return $
@@ -95,6 +96,7 @@ instance ToMYaml Interpreter CoreExpr where
           Just expr -> throwEvalError $ BadBlockElement expr
           Nothing -> return Nothing
   toMYaml _ (CoreLam _) = return B.null
+  toMYaml whnfM (CoreMeta _ v) = toMYaml whnfM v
   toMYaml _ expr = throwEvalError $ NotWeakHeadNormalForm expr
 
 

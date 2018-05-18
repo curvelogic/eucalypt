@@ -9,7 +9,7 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Builtin where
 
-import Control.Monad ((>=>))
+import Control.Monad ((>=>), filterM )
 import qualified Data.HashMap.Strict.InsOrd as OM
 import Data.List (intercalate)
 import Eucalypt.Core.Error
@@ -54,6 +54,8 @@ euTrue _ _ = return $ CorePrim $ CoreBoolean True
 -- syntaxes Eq implementation for equality, we need to evaluate a bit
 -- more deeply than whnf, otherwise @[1,2,3] !=
 -- [head([1,2,3]),tail([1,2,3])]@
+--
+-- TODO: metadata transparency!
 forceDataStructures :: WhnfEvaluator -> CoreExpr -> Interpreter CoreExpr
 forceDataStructures w (CoreList l) = CoreList <$> mapM (forceDataStructures w) l
 forceDataStructures w (CoreBlock e) = CoreBlock <$> forceDataStructures w e
@@ -254,6 +256,14 @@ euConcat whnfM l r = do
         _ -> throwEvalError $ ConcatArgumentNotList e
 
 
+-- | __SYM(s) - create symbol from string s. Strict in s.
+--
+euSym :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euSym whnfM [s] = whnfM s >>= \case
+  (CorePrim (CoreString v)) -> return (CorePrim (CoreSymbol v))
+  e -> throwEvalError $ SymbolNamesMustBeStrings e
+euSym _ args = throwEvalError $ Bug "__SYM called with bad args" (CoreList args)
+
 
 -- | __BLOCK(l) builtin. Arity 1. Non-strict. Wrap up a list of elements as a block.
 --
@@ -338,6 +348,15 @@ buildSearchList whnfM (CoreBlock (CoreList items)) =
     eval item = whnfM item >>= skipMeta whnfM >>= unwrapBlockElement whnfM
 buildSearchList _ e = throwEvalError $ LookupTargetNotList e
 
+
+-- | Lookup in a block returning Maybe of result.
+lookupMaybe :: WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter (Maybe CoreExpr)
+lookupMaybe whnfM e name = do
+  obj <- whnfM e
+  alist <- buildSearchList whnfM obj
+  return $ lookup name alist
+
+
 -- | Lookup in a block requires realising all keys as later keys
 -- override earlier. Return default if key does not exist.
 --
@@ -377,6 +396,34 @@ euLookup whnfM [n, b] = do
     (CorePrim (CoreString s)) -> lookupName whnfM b' s
     _ -> throwEvalError $ LookupKeyNotStringLike n'
 euLookup _ args = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList args)
+
+-- | Remove item from block with the specified key
+removeItem :: WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
+removeItem whnfM b name = do
+  b' <- whnfM b
+  case b' of
+    (CoreBlock l) -> do
+      items <- whnfM l
+      case items of
+        (CoreList els) -> CoreBlock . CoreList <$> filterM mismatch els
+        _ -> throwEvalError $ BadBlockContent l
+    _ -> throwEvalError $ RemoveArgumentNotBlock b
+  where mismatch item = whnfM item >>= \case
+          (CoreList (CorePrim (CoreSymbol k):_)) -> return $ k == name
+          (CoreList (CorePrim (CoreString k):_)) -> return $ k == name
+          _ -> throwEvalError $ LookupKeyNotStringLike item
+
+-- | __REMOVE(k, b) remove item with key @k@ from block @b@
+euRemove ::
+     WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euRemove whnfM [n, b] = do
+  b' <- whnfM b
+  n' <- whnfM n
+  case n' of
+    (CorePrim (CoreSymbol s)) -> removeItem whnfM b' s
+    (CorePrim (CoreString s)) -> removeItem whnfM b' s
+    _ -> throwEvalError $ LookupKeyNotStringLike n'
+euRemove _ args = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList args)
 
 -- | Lookup in a block, throwing if key absent.
 --
@@ -450,6 +497,26 @@ euMatches whnfM [s, re] = do
     _ -> throwEvalError $ BadMatchArgs s re
 euMatches _ args = throwEvalError $ Bug "__MATCHES called with bad arguments" (CoreList args)
 
+-- | __WITHMETA(m, e) - tag metadata `m` onto expression `e`.
+-- Lazy in both args.
+--
+euWithMeta :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euWithMeta _ [m, e] = return $ CoreMeta m e
+euWithMeta _ args =
+  throwEvalError $ Bug "__WITHMETA called with bad arguments" (CoreList args)
+
+-- | __META(e) - retrieve metadata from value - which must be a
+-- metadata annotated value (not the value contained
+-- within).
+euMeta :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euMeta whnfM [e] = do
+  e' <- whnfM e
+  case e' of
+    (CoreMeta m _) -> return m
+    _ -> return $ block []
+euMeta _ args =
+  throwEvalError $ Bug "__WITHMETA called with bad arguments" (CoreList args)
+
 
 -- | The builtins exposed to the language.
 --
@@ -475,15 +542,19 @@ builtinIndex =
   , ("GT", (2, euGt))
   , ("LTE", (2, euLte))
   , ("GTE", (2, euGte))
+  , ("SYM", (1, euSym))
   , ("BLOCK", (1, euBlock))
   , ("ELEMENTS", (1, euElements))
   , ("MERGE", (2, euMerge))
   , ("LOOKUP", (2, euLookup))
   , ("LOOKUPOR", (3, euLookupOr))
+  , ("REMOVE", (2, euRemove))
   , ("SPLIT", (2, euSplit))
   , ("JOIN", (2, euJoin))
   , ("MATCH", (2, euMatch))
   , ("MATCHES", (2, euMatches))
+  , ("WITHMETA", (2, euWithMeta))
+  , ("META", (1, euMeta))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.

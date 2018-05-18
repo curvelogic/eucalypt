@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-|
 Module      : Eucalypt.Core.EvalByName
 Description : A crude call-by-name substitutional evaluator to get going with...
@@ -8,6 +9,8 @@ Stability   : experimental
 -}
 module Eucalypt.Core.EvalByName where
 
+import Control.Monad ((>=>))
+import Debug.Trace
 import Eucalypt.Core.Builtin
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -27,6 +30,46 @@ applyBuiltin w expr name args =
     Just (_, f) -> f w args >>= w
     Nothing -> throwEvalError $ BuiltinNotFound name expr
 
+-- $ metadata
+--
+-- The evaluator respects the following metadata controls:
+--
+-- - "trace" (boolean)
+-- - "assert" (function / pap) to be passed value
+
+-- | Peel trace metadata out of 'CoreMeta' and into 'CoreTraced'
+separateTraceMeta :: WhnfEvaluator -> CoreExpr -> Interpreter CoreExpr
+separateTraceMeta w e@(CoreMeta m v) =
+  lookupMaybe w m "trace" >>= \case
+    Just (CorePrim (CoreBoolean b)) ->
+      stripTrace m >>= \meta -> return $ applyMeta meta $ traceIf b v
+    _ -> return e
+  where
+    stripTrace meta = removeItem w meta "trace"
+    applyMeta meta value =
+      if meta == block []
+        then value
+        else CoreMeta meta v
+    traceIf b value =
+      if b
+        then CoreTraced value
+        else value
+separateTraceMeta _ e = throwEvalError $ Bug "Bad call to separateTraceMeta" e
+
+-- | Peel assert metadata out of 'CoreMeta' and into 'CoreTraced'
+separateAssertMeta :: WhnfEvaluator -> CoreExpr -> Interpreter CoreExpr
+separateAssertMeta w e@(CoreMeta m v) =
+  lookupMaybe w m "assert" >>= \case
+    Just fn ->
+      stripAssert m >>= \meta -> return $ applyMeta meta (CoreChecked fn v)
+    Nothing -> return e
+  where
+    stripAssert meta = removeItem w meta "assert"
+    applyMeta meta value =
+      if meta == block []
+        then value
+        else CoreMeta meta value
+separateAssertMeta _ e = throwEvalError $ Bug "Bad call to separateAssertMeta" e
 
 -- | Monadic WHNF to support abort and runtime error.
 --
@@ -47,7 +90,7 @@ whnfM e@(CoreApp f x) = do
                     _ -> throwEvalError $ NotSupported "multiapply lambdas" e)
     expr -> throwEvalError $ UncallableExpression expr
 whnfM e@CoreLet {} = whnfM $ instantiateLet e
-whnfM (CoreLookup e n) = lookupName whnfM e n -- TODO: generalised lookup
+whnfM (CoreLookup e n) = lookupName whnfM e n >>= whnfM
 whnfM e@(CoreBuiltin n) =
   case lookupBuiltin n of
     Just (0, f) -> f whnfM []
@@ -55,4 +98,15 @@ whnfM e@(CoreBuiltin n) =
     Nothing -> throwEvalError $ BuiltinNotFound n e
 whnfM e@CorePAp {} =
   throwEvalError $ Bug "Found unevaluated saturated partial application." e
+whnfM (CoreMeta m e) = do
+  metadata <- whnfM m -- should be in isolated metadata binding env
+  separated <- (separateTraceMeta whnfM >=> separateAssertMeta whnfM) (CoreMeta metadata e)
+  case separated of
+    (CoreMeta m' v) -> CoreMeta m' <$> whnfM v
+    expr -> whnfM expr
+whnfM (CoreTraced e) = trace ("TRACE: " ++ show e) whnfM e
+whnfM (CoreChecked fn e) =
+  whnfM (CoreApp fn e) >>= \val -> case val of
+    (CorePrim (CoreBoolean True)) -> return val
+    _ -> throwEvalError $ AssertionFailed e
 whnfM e = return e
