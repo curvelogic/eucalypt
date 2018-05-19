@@ -18,6 +18,17 @@ eu: {
   }
 }
 
+` { doc: "IO related declarations"
+    export: :suppress }
+io: {
+  ` "Read access to environent variables at time of launch"
+  env: __io.ENV
+
+  epoch-time: __io.EPOCHTIME
+}
+
+
+
 TODO(x): ""
 
 ##
@@ -201,6 +212,10 @@ zero?(n): n = 0
 ` :suppress
 str: {
 
+  ` { doc: "of(e) - convert `e` to string."
+      export: :suppress }
+  of: __STR
+
   ` { doc: "split(s, re) - split string `s` on separators matching regex `re`."
       export: :suppress }
   split: __SPLIT
@@ -299,13 +314,26 @@ cond(l, d): foldr(l, curry(if), d)
 # Metadata basic
 #
 
+` { doc: "`with-meta m e` - add metadata block `m` to expression `e`."
+    export: :suppress }
+with-meta: __WITHMETA
+
+` { doc: "`e // m` - add metadata block `m` to expression `e`."
+    export: :suppress }
+(e // m): v with-meta(m)
+
 ` { doc: "`meta e` - retrieve expression metadata for e"
     export: :suppress }
-meta(expr): TODO(__META(expr))
+meta: __META
 
-` { doc: "`expr //=> value` - add metadata to expression to assert its value."
+` { doc: "`e //=> v` - add metadata to assert expression `e` evaluates to `v` and return value of `e`."
     export: :suppress }
-(expr //=> value): TODO(__WITHMETA(expr, meta(expr) { assert: value }))
+(e //=> v): e with-meta({ assert: __EQ(v)})
+
+` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies function `f` and return value of `e`."
+    export: :suppress }
+(e //=? f): e with-meta({ assert: f})
+
 
 #
 # List library functions, maps and folds
@@ -381,7 +409,7 @@ zip-with: map2
 zip-apply(fs, vs): zip-with(apply1, fs, vs)
 
 ` { doc: "`reverse(l) - reverse list `l`"
-    example: reverse([1,2,3]) //=> [3,2,1]
+    # example: reverse([1,2,3]) //=> [3,2,1]
     export: :suppress }
 reverse(l): if(l nil?, l, concat(reverse(l), [h(l)]))
 
@@ -390,7 +418,8 @@ reverse(l): if(l nil?, l, concat(reverse(l), [h(l)]))
 #
 
 ` { doc: "`merge-all(bs)` - merge all blocks in list `bs` together, later overriding earlier."
-    example: merge-all([{a: 1}, {b: 2}, {a: 3}]) //=> { b: 2 a: 3 } }
+    # example: merge-all([{a: 1}, {b: 2}, {a: 3}]) //=> { b: 2 a: 3 }
+    }
 merge-all(bs): foldl(merge, {}, bs)
 
 ` { doc: "`key(el)` - return key in a block element."
@@ -429,6 +458,9 @@ pair(k, v): [k, v]
     export: :suppress }
 zip-kv(ks, vs): zip-with(pair, ks, vs) block
 
+` :alias
+with-keys: zip-kv
+
 ` { doc: "`map-keys(f, b)` - apply `f(v)` to each value in block `b`."
     export: :suppress }
 map-values(f, b): b elements map-second(f) block
@@ -436,4 +468,3 @@ map-values(f, b): b elements map-second(f) block
 ` { doc: "`map-keys(f, b)` - apply `f(k)` to each key in block `b`."
     export: :suppress }
 map-keys(f, b): b elements map-first(f) block
-

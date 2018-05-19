@@ -106,7 +106,7 @@ whnfM (CoreMeta m e) = do
     expr -> whnfM expr
 whnfM (CoreTraced e) = trace ("TRACE: " ++ show e) whnfM e
 whnfM (CoreChecked fn e) =
-  whnfM (CoreApp fn e) >>= \val -> case val of
-    (CorePrim (CoreBoolean True)) -> return val
+  whnfM (CoreApp fn e) >>= \case
+    (CorePrim (CoreBoolean True)) -> whnfM e
     _ -> throwEvalError $ AssertionFailed e
 whnfM e = return e

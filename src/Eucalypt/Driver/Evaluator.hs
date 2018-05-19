@@ -16,6 +16,7 @@ import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
 import Eucalypt.Driver.Error (CommandError(..))
+import Eucalypt.Driver.IOSource (prepareIOUnit)
 import Eucalypt.Driver.Input (Input(..), InputMode(..), Locator(..))
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
 import Eucalypt.Driver.Lib (getResource)
@@ -134,8 +135,9 @@ evaluate opts whnfM =
       asts <- mapM parseInput (optionInputs opts)
       case partitionEithers asts of
         ([], []) -> reportErrors [NoSource] >> return (ExitFailure 1)
-        ([], units) ->
-          render (mergeUnits units) >>= \case
+        ([], units) -> do
+          io <- prepareIOUnit
+          render (mergeUnits (io : units)) >>= \case
               Left s -> reportErrors [s] >> return (ExitFailure 1)
               Right bytes -> outputBytes opts bytes >> return ExitSuccess
         (errs, _) -> reportErrors errs >> return (ExitFailure 1)

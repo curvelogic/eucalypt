@@ -51,7 +51,7 @@ instance Show EvaluationError where
   show (ConcatArgumentNotList expr) = "Argument to concat not a list in " ++ pprint expr
   show (ElementsArgumentNotBlock expr) = "Argument to elements not a block in " ++ pprint expr
   show (RemoveArgumentNotBlock expr) = "Argument to remove not a block in " ++ pprint expr
-  show (LookupTargetNotList expr) = "Lookup target not a list in " ++ pprint expr
+  show (LookupTargetNotList expr) = "Lookup target not a list in " ++ show expr
   show (LookupKeyNotStringLike expr) = "Lookup key not string-like in " ++ pprint expr
   show (SymbolNamesMustBeStrings expr) = "Symbol name not string in " ++ pprint expr
   show (BadSplitArgs s re) = "Bad arguments to regex split - string:  " ++ pprint s ++ " regex: " ++ pprint re
