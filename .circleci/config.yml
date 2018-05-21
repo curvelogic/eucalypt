@@ -89,10 +89,10 @@ jobs:
       - image: circleci/python:3.6.5
 
     steps:
+      - checkout
       - attach_workspace:
           at: /tmp/workspace
       - run: |
-          cd /tmp/workspace
           release.py /tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/build/eu/eu
 
 workflows:

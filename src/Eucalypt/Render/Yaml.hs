@@ -113,7 +113,7 @@ toEvents (B.YamlBuilder front) =
 -- 'encode' needs a 'MonadResource' which needs 'MonadIO' so
 -- 'Interpreter' needs a bit of work to be able to take the pipeline
 -- all the way to ByteString. For now, we'll stream to events then
--- accumalate them and encode in 'IO'
+-- accumulate them and encode in 'IO'
 exprToEventsPipeline :: WhnfEvaluator -> CoreExpr -> ConduitT () Void Interpreter [L.Event]
 exprToEventsPipeline whnfM expr =
   yield expr .| mapMC (whnfM >=> toMYaml whnfM) .| mapC toEvents .| concatC .| sinkList
