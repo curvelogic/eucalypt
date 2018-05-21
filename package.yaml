@@ -38,6 +38,7 @@ library:
     - pretty
     - regex-pcre-builtin
     - resourcet
+    - safe
     - safe-exceptions
     - scientific
     - split

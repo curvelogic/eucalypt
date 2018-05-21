@@ -27,7 +27,7 @@ build: {
 
 new-version: [version.major, version.minor, build.number, str.of(io.epoch-time)] str.join-on(".")
 
-` :main
+` { target: :main }
 new: package {
   version: new-version
 }

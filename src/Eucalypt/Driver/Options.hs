@@ -21,7 +21,14 @@ data CommandLineMode = Ergonomic | Batch
 
 
 -- | What we're doing: e.g. explain and exit or evaluate and render
-data Command = Explain | Evaluate | Parse | ShowVersion
+data Command
+  = Explain
+  | Evaluate
+  | Parse
+  | ShowVersion
+  | ListTargets
+  | DumpDesugared
+  | DumpMetadataProbed
   deriving (Show, Eq)
 
 
@@ -68,6 +75,18 @@ commandOption =
     ShowVersion
     (long "version" <> short 'v' <>
      help "Show version information and exit") <|>
+  flag'
+    ListTargets
+    (long "list-targets" <> short 'l' <>
+     help "List declared targets") <|>
+  flag'
+    DumpDesugared
+    (long "dump-desugared" <>
+     help "Dump core syntax after desugar and merge") <|>
+  flag'
+    DumpMetadataProbed
+    (long "dump-metadata-probed" <>
+     help "Dump core syntax after metadata probe for targets / imports") <|>
   flag
     Evaluate
     Parse

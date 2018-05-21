@@ -19,22 +19,48 @@ data InputMode
   | Inert
   deriving (Eq, Show)
 
+
+
 -- | Identifiers the format used to interpret into core
 type Format = String
+
+
 
 -- | Location of the input source, may be local or remote
 data Locator
   = URLInput URI
   | ResourceInput String
   | StdInput
-  deriving (Eq, Show)
+  deriving (Eq)
 
+
+
+-- | Format input location for console or debug
+instance Show Locator where
+  show l = case l of
+    URLInput uri -> show uri
+    ResourceInput n -> "resource:" ++ n
+    StdInput -> "[stdin]"
+
+
+
+-- | Description of soure that can be fed to eu
 data Input = Input
   { inputMode :: InputMode -- ^ active or inert
   , inputLocator :: Locator -- ^ location (file or url)
   , inputName :: Maybe String -- ^ name (for a block to contain the data)
   , inputFormat :: Format -- ^ data format
-  } deriving (Eq, Show)
+  } deriving (Eq)
+
+
+
+-- | Format input for console or debug
+instance Show Input where
+  show i = modeString ++ nameString ++ formatString ++ locatorString
+    where modeString = if inputMode i == Active then "+" else ""
+          locatorString = show (inputLocator i)
+          nameString = maybe "" (++ "=") $ inputName i
+          formatString = inputFormat i ++ "@"
 
 
 
@@ -69,6 +95,7 @@ validateLocator loc =
 
 
 
+-- | Read an input locator from string
 locatorFromString :: String -> Maybe Locator
 locatorFromString s =
   case s of

@@ -107,7 +107,11 @@ spec = do
       bindMore (\a -> if a == "b" then Just 1 else Nothing) (fromJust $ letBody let1)
       `shouldBe`
       fromJust (letBody let2)
+  mergeUnitsSpec
+  abstractBlockSpec
 
+mergeUnitsSpec :: Spec
+mergeUnitsSpec =
   describe "merging units" $ do
     it "merges and binds correctly with no cross unit bindings" $
       mergeUnits [unitA, unitB, unitC] `shouldBe`
@@ -132,3 +136,44 @@ spec = do
         (CoreApp
          (letexp [("b1", int 5), ("b2", var "b1"),("a1", int 5), ("a2", var "a1")] bodyB3)
          (letexp [("a1", int 5), ("a2", var "a1")] bodyA3))
+
+
+
+staticBlock :: CoreExpr
+staticBlock = block [element "five" $ int 5, element "four" $ int 4]
+
+staticBlockWithMetadata :: CoreExpr
+staticBlockWithMetadata = block [(CoreMeta (sym "meta") (element "five" $ int 5)), element "four" $ int 4]
+
+newBody :: CoreExpr
+newBody = block [element "number" $ var "five"]
+
+resultingLet :: CoreExpr
+resultingLet =
+  CoreLet
+    [("five", Scope $ int 5), ("four", Scope $ int 4)]
+    (Scope
+       (CoreBlock
+          (CoreList
+             [ CoreList
+                 [CorePrim (CoreSymbol "number"), CoreVar (B (Name "five" 0))]
+             ])))
+
+resultingLetWithMetadata :: CoreExpr
+resultingLetWithMetadata =
+  CoreLet
+    [("five", Scope (CoreMeta (sym "meta") $ int 5)), ("four", Scope $ int 4)]
+    (Scope
+       (CoreBlock
+          (CoreList
+             [ CoreList
+                 [CorePrim (CoreSymbol "number"), CoreVar (B (Name "five" 0))]
+             ])))
+
+abstractBlockSpec :: Spec
+abstractBlockSpec =
+  describe "abstracting block over body" $ do
+    it "binds variables in body" $
+      abstractStaticBlock staticBlock newBody `shouldBe` resultingLet
+    it "preserves metadata" $
+      abstractStaticBlock staticBlockWithMetadata newBody `shouldBe` resultingLet

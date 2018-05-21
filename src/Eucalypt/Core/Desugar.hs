@@ -53,6 +53,7 @@ processAnnotation s@(CorePrim (CoreString _)) = Syn.block [element "doc" s]
 processAnnotation e@(CorePrim (CoreSymbol s))
   | s == "alias" = Syn.block [element "ref" e]
   | s == "suppress" = Syn.block [element "export" e]
+  | s == "main" = Syn.block [element "target" e]
   | s == "trace" = Syn.block [element "trace" (CorePrim (CoreBoolean True))]
   | otherwise = Syn.block []
 processAnnotation e = e

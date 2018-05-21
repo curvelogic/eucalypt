@@ -82,6 +82,20 @@ isList (CoreList _) = True
 isList _ = False
 
 
+-- | Return the name of a symbol if the expression is a symbol.
+symbolName :: CoreExpr -> Maybe String
+symbolName (CorePrim (CoreSymbol s)) = Just s
+symbolName _ = Nothing
+
+
+
+-- | String content of string literal if the expression is a string.
+stringContent :: CoreExpr -> Maybe String
+stringContent (CorePrim (CoreString s)) = Just s
+stringContent _ = Nothing
+
+
+
 deriveEq1   ''CoreExp
 deriveOrd1  ''CoreExp
 deriveRead1 ''CoreExp
@@ -225,7 +239,23 @@ instantiateLet (CoreLet bs b) = inst b
   where
     es = map (inst . snd) bs
     inst = instantiateName (es !!)
-instantiateLet _ = undefined
+instantiateLet _ = error "instantiateLet called on non-let"
+
+
+
+-- | Turn a block into let bindings, allowing the values to be bound
+-- to by variables in body. Metadata from the block annotations is
+-- rebound to the bound values as value metadata.
+abstractStaticBlock :: CoreExpr -> CoreExpr -> CoreExpr
+abstractStaticBlock (CoreBlock (CoreList l)) body =
+  CoreLet (map (second abstr) bs) (abstr body)
+  where
+    bs = map binding l
+    binding (CoreMeta m (CoreList [CorePrim (CoreSymbol k), v])) = (k, CoreMeta m v)
+    binding (CoreList [CorePrim (CoreSymbol k), v]) = (k, v)
+    binding _ = error "Unexpected binding item in abstractStaticBlock"
+    abstr = abstractName (`elemIndex` map fst bs)
+abstractStaticBlock _ _ = error "abstractStaticBlock called on non-block"
 
 
 
