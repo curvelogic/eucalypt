@@ -90,6 +90,8 @@ jobs:
 
     steps:
       - checkout
+      - run: |
+          pip3 install -r ci/requirements.txt
       - attach_workspace:
           at: /tmp/workspace
       - run: |
