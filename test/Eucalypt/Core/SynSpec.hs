@@ -143,7 +143,7 @@ staticBlock :: CoreExpr
 staticBlock = block [element "five" $ int 5, element "four" $ int 4]
 
 staticBlockWithMetadata :: CoreExpr
-staticBlockWithMetadata = block [(CoreMeta (sym "meta") (element "five" $ int 5)), element "four" $ int 4]
+staticBlockWithMetadata = block [CoreMeta (sym "meta") (element "five" $ int 5), element "four" $ int 4]
 
 newBody :: CoreExpr
 newBody = block [element "number" $ var "five"]
@@ -176,4 +176,4 @@ abstractBlockSpec =
     it "binds variables in body" $
       abstractStaticBlock staticBlock newBody `shouldBe` resultingLet
     it "preserves metadata" $
-      abstractStaticBlock staticBlockWithMetadata newBody `shouldBe` resultingLet
+      abstractStaticBlock staticBlockWithMetadata newBody `shouldBe` resultingLetWithMetadata
