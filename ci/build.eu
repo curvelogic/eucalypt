@@ -34,7 +34,7 @@ new-version: [version.major,
 	      str.of(io.epoch-time)] str.join-on(".")
 
 ` :main
-new: package {
+main: package {
   version: new-version
   eu-build: {
     commit: build.commit

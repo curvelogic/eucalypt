@@ -7,14 +7,16 @@
 # Prelude versioning and run metadata
 ` { export: :suppress }
 eu: {
+  ` "Metadata about this version of the standard prelude"
   prelude: {
     version: "0.0.1"
   }
 
-  # TODO: timestamps
-  meta: {
-    # timestamp: __TIME!
-    # implementation: __IMPL
+  ` "Metadata about this version of the eucalypt executable"
+  build: {
+    version: __build.version
+    commit: __build.eu-build.commit
+    url: __build.eu-build.url
   }
 }
 
