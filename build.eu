@@ -23,11 +23,21 @@ build: {
   ` "SHA1 of the repo commit we're building"
   commit: io.env lookup-or(:CIRCLE_SHA1, "working-copy")
 
+  ` "URL of build"
+  url: io.env lookup-or(:CIRCLE_BUILD_URL, "(none)")
+
 }
 
-new-version: [version.major, version.minor, build.number, str.of(io.epoch-time)] str.join-on(".")
+new-version: [version.major,
+	      version.minor,
+	      build.number,
+	      str.of(io.epoch-time)] str.join-on(".")
 
-` { target: :main }
+` :main
 new: package {
   version: new-version
+  eu-build: {
+    commit: build.commit
+    url: build.url
+  }
 }
