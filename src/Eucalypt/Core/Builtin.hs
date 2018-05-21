@@ -342,8 +342,10 @@ unwrapBlockElement _ expr = throwEvalError $ BadBlockElement expr
 -- | From a block, expose an association list for lookup
 --
 buildSearchList :: WhnfEvaluator -> CoreExpr -> Interpreter [(String, CoreExpr)]
-buildSearchList whnfM (CoreBlock (CoreList items)) =
-  concatResults $ map eval (reverse items)
+buildSearchList whnfM (CoreBlock list) =
+  whnfM list >>= skipMeta whnfM >>= \case
+    (CoreList items) -> concatResults $ map eval (reverse items)
+    e -> throwEvalError $ LookupTargetNotList e
   where
     eval item = whnfM item >>= skipMeta whnfM >>= unwrapBlockElement whnfM
 buildSearchList _ e = throwEvalError $ LookupTargetNotList e
@@ -363,7 +365,7 @@ lookupMaybe whnfM e name = do
 lookupOr ::
      WhnfEvaluator -> Interpreter CoreExpr -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
 lookupOr whnfM d e name = do
-  obj <- whnfM e
+  obj <- whnfM e >>= skipMeta whnfM
   alist <- buildSearchList whnfM obj
   case lookup name alist of
     Just val -> return val
@@ -518,6 +520,19 @@ euMeta _ args =
   throwEvalError $ Bug "__WITHMETA called with bad arguments" (CoreList args)
 
 
+-- | __STR(e) - convert to string.
+euStr :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euStr whnfM [e] =  whnfM e >>= skipMeta whnfM >>= \case
+  (CorePrim (CoreInt n)) -> (return . CorePrim . CoreString . show) n
+  (CorePrim (CoreFloat f)) -> (return . CorePrim . CoreString . show) f
+  s@(CorePrim (CoreString _)) -> return s
+  (CorePrim (CoreSymbol s)) -> (return . CorePrim . CoreString) s
+  (CorePrim (CoreBoolean b)) -> (return . CorePrim . CoreString . show) b
+  x -> (return . CorePrim . CoreString . show) x
+euStr _ args =
+  throwEvalError $ Bug "__STR called with bad arguments" (CoreList args)
+
+
 -- | The builtins exposed to the language.
 --
 builtinIndex :: [(CoreBuiltinName, (Int, Builtin))]
@@ -555,6 +570,7 @@ builtinIndex =
   , ("MATCHES", (2, euMatches))
   , ("WITHMETA", (2, euWithMeta))
   , ("META", (1, euMeta))
+  , ("STR", (1, euStr))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.

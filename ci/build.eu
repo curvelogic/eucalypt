@@ -1,0 +1,43 @@
+# -*- mode: conf -*-
+
+# An eu file to process various build resources in CI
+
+# Assumes that the package.yaml has been passed as input:
+# eu package=package.yaml
+
+# TODO: Once this is working we'll move to a simpler embedded eu tag
+# approach but we don't have active Yaml import yet.
+
+
+` "Version components from package.yaml"
+version: package.version
+	   str.match-with("(\d+)\.(\d+)\.([^.]+)\.([^.]+)")
+	   drop(1)
+	   with-keys([:major, :minor, :revision, :build])
+
+build: {
+
+  ` "Circle build number"
+  number: io.env lookup-or(:CIRCLE_BUILD_NUM, version.revision)
+
+  ` "SHA1 of the repo commit we're building"
+  commit: io.env lookup-or(:CIRCLE_SHA1, "working-copy")
+
+  ` "URL of build"
+  url: io.env lookup-or(:CIRCLE_BUILD_URL, "(none)")
+
+}
+
+new-version: [version.major,
+	      version.minor,
+	      build.number,
+	      str.of(io.epoch-time)] str.join-on(".")
+
+` :main
+main: package {
+  version: new-version
+  eu-build: {
+    commit: build.commit
+    url: build.url
+  }
+}

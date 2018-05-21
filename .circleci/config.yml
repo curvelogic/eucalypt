@@ -10,8 +10,8 @@ jobs:
 
       - restore_cache:
           keys:
-            - cache-{{ checksum "package.yaml" }}-{{ checksum "stack.yaml" }}
-            - cache-{{ checksum "package.yaml" }}-
+            - cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
+            - cache-{{ checksum "stack.yaml" }}-
 
       - run: stack setup
 
@@ -29,12 +29,14 @@ jobs:
 
       - run:
           name: Install HLint
-          command: stack install --no-terminal hlint
+          command: |
+            source /tmp/env.sh
+            stack install --no-terminal hlint
 
       - save_cache:
           paths:
             - ~/.stack
-          key: cache-{{ checksum "package.yaml" }}-{{ checksum "stack.yaml" }}
+          key: cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
 
       - run:
           name: Build, run unit tests with coverage
@@ -81,6 +83,18 @@ jobs:
                                curvelogic/eucalypt-test-harness:latest
                                ./eut.py "
 
+  release:
+
+    docker:
+      - image: circleci/python:3.6.5
+
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run: |
+          cd /tmp/workspace
+          release.py /tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/build/eu/eu
+
 workflows:
   version: 2
   build-workflow:
@@ -91,3 +105,10 @@ workflows:
           context: curvelogic-docker-hub
           requires:
             - build
+      - release:
+          context: curvelogic-docker-hub
+          requires:
+            - acceptance
+          filters:
+            branches:
+              only: master

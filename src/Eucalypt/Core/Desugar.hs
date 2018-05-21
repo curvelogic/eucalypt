@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Core.Desugar
 where
 
+import Data.Char (isUpper)
 import Eucalypt.Reporting.Location
 import Data.List (isPrefixOf)
 import Data.Maybe (mapMaybe)
@@ -52,6 +53,7 @@ processAnnotation s@(CorePrim (CoreString _)) = Syn.block [element "doc" s]
 processAnnotation e@(CorePrim (CoreSymbol s))
   | s == "alias" = Syn.block [element "ref" e]
   | s == "suppress" = Syn.block [element "export" e]
+  | s == "main" = Syn.block [element "target" e]
   | s == "trace" = Syn.block [element "trace" (CorePrim (CoreBoolean True))]
   | otherwise = Syn.block []
 processAnnotation e = e
@@ -104,15 +106,15 @@ desugarBlock blk = letexp bindings value
 
 -- | Desugar a general identifier 'a.b.c' into a nested lookup against
 -- the item identified by the initial component. The initial component
--- is transformed into a 'CoreVar' unless it has a @__@ prefix, in
--- which case it is assumed to be a builtin.
+-- is transformed into a 'CoreVar' unless it has a @__@ prefix and is
+-- all caps in which case it is assumed to be a builtin.
 desugarIdentifier :: [AtomicName] -> CoreExpr
 desugarIdentifier components =
   foldl CoreLookup h $ map relativeName (tail components)
   where
     headName = bindingName (head components)
     h =
-      if "__" `isPrefixOf` headName
+      if "__" `isPrefixOf` headName && (length headName > 2 && isUpper (headName !! 2))
         then CoreBuiltin (drop 2 headName)
         else CoreVar headName
 
