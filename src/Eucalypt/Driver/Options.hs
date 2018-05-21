@@ -186,7 +186,18 @@ insertPrelude opts =
         }
     ]
 
-
+-- | Add unit of build metadata
+insertBuildMetadata :: EucalyptOptions -> EucalyptOptions
+insertBuildMetadata opts =
+  prependInputs
+    opts
+    [ Input
+        { inputMode = Inert
+        , inputLocator = ResourceInput "build-meta"
+        , inputName = Just "__build"
+        , inputFormat = "yaml"
+        }
+    ]
 
 -- | Insert Eufile into the inputs lits
 insertEufile :: EucalyptOptions -> IO EucalyptOptions
@@ -229,6 +240,10 @@ processPrelude opts =
   if optionInhibitPrelude opts then opts else insertPrelude opts
 
 
+-- | Add build metadata
+processStatics :: EucalyptOptions -> EucalyptOptions
+processStatics = insertBuildMetadata
+
 
 -- | Fill in missing output format, taking output into account
 inferOutputFormat :: EucalyptOptions -> IO EucalyptOptions
@@ -266,7 +281,8 @@ defaultStdInput opts = do
 preprocessOptions :: EucalyptOptions -> IO EucalyptOptions
 preprocessOptions =
   inferOutputFormat >=>
-  defaultStdInput >=> processErgonomics >=> return . processPrelude
+  defaultStdInput >=>
+  processErgonomics >=> return . processStatics . processPrelude
 
 
 
