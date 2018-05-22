@@ -8,15 +8,15 @@ jobs:
     steps:
       - checkout
 
-      - run:
-          name: Make a recent eu binary available to the build
-          command: |
-            export LC_ALL=C.UTF-8
-            export LANG=C.UTF-8
-            cd ci
-            pipenv install
-            pipenv run python fetch.py
-            eu --version
+      # - run:
+      #     name: Make a recent eu binary available to the build
+      #     command: |
+      #       export LC_ALL=C.UTF-8
+      #       export LANG=C.UTF-8
+      #       cd ci
+      #       pipenv install
+      #       pipenv run python fetch.py
+      #       eu --version
 
       - restore_cache:
           keys:
@@ -59,8 +59,8 @@ jobs:
             hlint .
 
       - run:
-          name: Build with no coverage instrumentation
-          command: stack build --pedantic --no-terminal --ghc-options="-O2"
+          name: Build without coverage and use static linking
+          command: stack build --pedantic --no-terminal --ghc-options="-O2" --ghc-options='-optl-static -optl-pthread'
 
       - persist_to_workspace:
           root: .stack-work
