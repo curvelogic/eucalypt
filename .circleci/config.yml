@@ -50,7 +50,7 @@ jobs:
           name: Update build / release details in package.yaml
           command: |
             export OSTYPE=$(uname)
-            export HOSTTYPE=$(uname-m)
+            export HOSTTYPE=$(uname -m)
             eu package=package.yaml ci/build.eu > new-package.yaml
             mv -f new-package.yaml package.yaml
             echo --- replaced package.yaml ---
