@@ -49,7 +49,7 @@ jobs:
       - run:
           name: Update build / release details in package.yaml
           command: |
-            eu package=package.yaml build.eu > new-package.yaml
+            eu package=package.yaml ci/build.eu > new-package.yaml
             cat new-package.yaml
 
       - run:
