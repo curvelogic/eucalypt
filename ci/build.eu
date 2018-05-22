@@ -32,7 +32,7 @@ build: {
   ` "Architecture of build environment"
   os: io.env lookup-alts([:OSTYPE, :_system_name], "unkown")
 
-  ` "Seconds since epoch at eu build time"`
+  ` "Seconds since epoch at eu build time"
   epoch-time: io.epoch-time
 }
 
