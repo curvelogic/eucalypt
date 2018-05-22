@@ -8,9 +8,9 @@ import subprocess
 import tarfile
 from github3 import login
 
-def fetch():
+def fetch(bindir):
 
-    """ Create or update a github release for this version / commit, uploading package. """
+    """ Download the latest binary release for this platform to `bindir`. """
 
     token = os.environ['GITHUB_API_TOKEN']
     if not token:
@@ -32,11 +32,16 @@ def fetch():
         tar.extractall(members = files)
         print(" - moving to ~/local/bin")
         for f in files:
-            os.rename(f.name, Path.home() / "bin" / Path(f.name).name)
+            os.rename(f.name,  bindir / Path(f.name).name)
     
 def main(args):
 
-    fetch()
+    if len(args) > 1:
+        bindir = Path(args[1])
+    else:
+        bindir = Path.home() / "bin"
+
+    fetch(bindir)
 
 if __name__ == '__main__':
     main(sys.argv)
