@@ -8,7 +8,7 @@ jobs:
     steps:
       - checkout
 
-      - fetch-eu:
+      - run:
           name: Make a recent eu binary available to the build
           command: |
             cd ci
