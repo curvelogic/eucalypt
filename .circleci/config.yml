@@ -8,6 +8,14 @@ jobs:
     steps:
       - checkout
 
+      - fetch-eu:
+          name: Make a recent eu binary available to the build
+          command: |
+            cd ci
+            pipenv install
+            pipenv run python fetch.py
+            eu --version
+
       - restore_cache:
           keys:
             - cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
