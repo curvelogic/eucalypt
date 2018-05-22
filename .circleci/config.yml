@@ -110,7 +110,7 @@ workflows:
           requires:
             - build
       - release:
-          context: curvelogic-docker-hub
+          context: curvelogic-github-api
           requires:
             - acceptance
           filters:
