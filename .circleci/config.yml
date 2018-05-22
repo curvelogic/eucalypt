@@ -70,6 +70,10 @@ jobs:
           name: Build without coverage and use static linking
           command: stack build --pedantic --no-terminal --ghc-options="-O2"
 
+      - run:
+          name: Check build metadata for generated executable
+          command stack exec eu -- -e 'eu.build'
+
       - persist_to_workspace:
           root: .stack-work
           paths:
