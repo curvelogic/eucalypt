@@ -8,6 +8,14 @@ jobs:
     steps:
       - checkout
 
+      - run:
+          name: Make a recent eu binary available to the build
+          command: |
+            cd ci
+            pipenv install
+            pipenv run python fetch.py /usr/local/bin
+            eu --version
+
       - restore_cache:
           keys:
             - cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
@@ -39,6 +47,16 @@ jobs:
           key: cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
 
       - run:
+          name: Update build / release details in package.yaml
+          command: |
+            export OSTYPE=$(uname)
+            export HOSTTYPE=$(uname -m)
+            eu package=package.yaml ci/build.eu > new-package.yaml
+            mv -f new-package.yaml package.yaml
+            echo --- replaced package.yaml ---
+            cat package.yaml
+
+      - run:
           name: Build, run unit tests with coverage
           command: stack build --fast --pedantic --no-terminal --test --coverage
 
@@ -49,8 +67,12 @@ jobs:
             hlint .
 
       - run:
-          name: Build with no coverage instrumentation
+          name: Build without coverage
           command: stack build --pedantic --no-terminal --ghc-options="-O2"
+
+      - run:
+          name: Check build metadata for generated executable
+          command: stack exec eu -- -e 'eu.build'
 
       - persist_to_workspace:
           root: .stack-work
