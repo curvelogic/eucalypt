@@ -77,6 +77,7 @@ whnfM :: CoreExpr -> Interpreter CoreExpr
 whnfM e@(CoreApp f x) = do
   f' <- whnfM f
   case f' of
+    CoreMeta _m f'' -> whnfM f'' >>= \f''' -> whnfM $ CoreApp f''' x
     CoreBlock{} -> whnfM x >>= \a -> case a of
                      CoreBlock{} -> euMerge whnfM [a, f]
                      _ -> throwEvalError $ BadBlockMerge e

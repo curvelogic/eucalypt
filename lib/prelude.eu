@@ -123,6 +123,14 @@ lookup(s, b): __LOOKUP(s, b)
     export: :suppress }
 lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 
+` { doc: "`lookup-or-in(b, s, d)` - look up symbol `s` in block `b`, default `d` if not found."
+    export: :suppress }
+lookup-or-in(b, s, d): lookup-or(s, d, b)
+
+` { doc: "`lookup-alts(syms, d)` - look up symbols `syms` in turn in block `b` until a value is found, default `d` if none."
+    export: :suppress }
+lookup-alts(syms, d, b): foldr(lookup-or-in(b), syms, d)
+
 ##
 ## Boolean
 ##
@@ -369,7 +377,7 @@ foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 ` { doc: "`foldr(op, l, i)` - right fold operator `op` over list `l` ending with value `i` "
     # example: foldr((+), [1,2,3], i) //=> (1 + (2 + (3 + i)))
     export: :suppress }
-foldr(op, i, l): if(l nil?, i, op(head(l), foldr(op, tail(l), i)))
+foldr(op, l, i): if(l nil?, i, op(head(l), foldr(op, tail(l), i)))
 
 # TODO: lambdas
 ` { doc: "`map(f, l)` - map function `f` over list `l`"
