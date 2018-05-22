@@ -86,7 +86,7 @@ jobs:
   release:
 
     docker:
-      - image: circleci/python:3.6.5
+      - image: circleci/python:3.6.5-stretch
 
     steps:
       - checkout
