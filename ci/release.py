@@ -22,7 +22,9 @@ def release(package, commit, version):
 
     try:
         release = r.release_from_tag(version)
+        print("Found existing release for {}".format(version))
     except:
+        print("Creating release for {}".format(version))
         release = r.create_release(tag_name = version,
                                    name = version,
                                    body = "Prototype eu binary.",
@@ -30,9 +32,11 @@ def release(package, commit, version):
                                    draft = True,
                                    prerelease = True)
 
-    release.upload_asset(content_type = "application/binary",
-                         name = package,
-                         asset = open(package, 'rb'))
+    if release:
+        print("Uploading binary {}".format(package))
+        release.upload_asset(content_type = "application/binary",
+                             name = package,
+                             asset = open(package, 'rb'))
 
 def main(args):
 
