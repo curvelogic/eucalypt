@@ -72,7 +72,7 @@ jobs:
 
       - run:
           name: Check build metadata for generated executable
-          command stack exec eu -- -e 'eu.build'
+          command: stack exec eu -- -e 'eu.build'
 
       - persist_to_workspace:
           root: .stack-work
