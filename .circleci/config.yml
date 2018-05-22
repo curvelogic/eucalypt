@@ -67,7 +67,7 @@ jobs:
             hlint .
 
       - run:
-          name: Build without coverage and use static linking
+          name: Build without coverage
           command: stack build --pedantic --no-terminal --ghc-options="-O2"
 
       - run:
