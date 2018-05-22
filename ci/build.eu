@@ -26,6 +26,11 @@ build: {
   ` "URL of build"
   url: io.env lookup-or(:CIRCLE_BUILD_URL, "(none)")
 
+  ` "Architecture of build environment"
+  arch: io.env lookup-alts([:HOSTTYPE, :_system_arch], "unknown")
+
+  ` "Architecture of build environment"
+  os: io.env lookup-alts([:OSTYPE, :_system_name], "unkown")
 }
 
 new-version: [version.major,
@@ -36,8 +41,5 @@ new-version: [version.major,
 ` :main
 main: package {
   version: new-version
-  eu-build: {
-    commit: build.commit
-    url: build.url
-  }
+  eu-build: build
 }

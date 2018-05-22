@@ -47,6 +47,12 @@ jobs:
           key: cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
 
       - run:
+          name: Update build / release details in package.yaml
+          command: |
+            eu package=package.yaml build.eu > new-package.yaml
+            cat new-package.yaml
+
+      - run:
           name: Build, run unit tests with coverage
           command: stack build --fast --pedantic --no-terminal --test --coverage
 
@@ -58,7 +64,7 @@ jobs:
 
       - run:
           name: Build without coverage and use static linking
-          command: stack build --pedantic --no-terminal --ghc-options="-O2" --ghc-options='-optl-static -optl-pthread'
+          command: stack build --pedantic --no-terminal --ghc-options="-O2"
 
       - persist_to_workspace:
           root: .stack-work
