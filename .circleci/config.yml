@@ -11,6 +11,8 @@ jobs:
       - run:
           name: Make a recent eu binary available to the build
           command: |
+            export LC_ALL=C.UTF-8
+            export LANG=C.UTF-8
             cd ci
             pipenv install
             pipenv run python fetch.py
