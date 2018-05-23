@@ -8,33 +8,6 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 module Eucalypt.Syntax.Ast
-  ( ident
-  , op
-  , cat
-  , invoke
-  , int
-  , prop
-  , func
-  , oper
-  , list
-  , str
-  , sym
-  , ann
-  , bare
-  , block
-  , PrimitiveLiteral(..)
-  , AtomicName(..)
-  , ParameterName
-  , BlockElement
-  , BlockElement_(..)
-  , Annotated(..)
-  , DeclarationForm
-  , DeclarationForm_(..)
-  , Expression
-  , Expression_(..)
-  , Block
-  , Block_(..)
-  )
 where
 
 import GHC.Generics
@@ -61,6 +34,24 @@ data AtomicName
 -- | A parameter name is lexically a normal name but just an alias to
 -- a string
 type ParameterName = String
+
+
+-- | In a while we may allow configurable bracket types ("idiot
+-- brackets") which will affect the interpretation of catenation
+-- within them, so we record the bracket set with the op soup.
+data BracketSet = Explicit Char Char | Implicit
+  deriving (Eq, Show, Generic, ToJSON)
+
+
+-- | For now though it's just parentheses.
+parentheses :: BracketSet
+parentheses = Explicit '(' ')'
+
+
+
+implicit :: BracketSet
+implicit = Implicit
+
 
 
 type Expression = Located Expression_
@@ -90,6 +81,12 @@ data Expression_
   | EList [Expression]
     -- ^ a list literal: [x, y, z]
 
+  | EOpSoup BracketSet [Expression]
+    -- ^ a sequence of expressions and operators
+
+  | EName AtomicName
+    -- ^ simple identifier
+
   deriving (Eq, Show, Generic, ToJSON)
 
 
@@ -104,6 +101,7 @@ instance HasLocation Expression_ where
     ECatenation (stripLocation a) (stripLocation b)
   stripLocation (EBlock b) = EBlock (stripLocation b)
   stripLocation (EList es) = EList (map stripLocation es)
+  stripLocation (EOpSoup bs es) = EOpSoup bs (map stripLocation es)
   stripLocation e = e
 
 
@@ -230,3 +228,19 @@ bare decl = at nowhere $ Declaration Annotated { annotation = Nothing, declarati
 -- | Create a block expression
 block :: [BlockElement] -> Expression
 block = at nowhere . EBlock . at nowhere . Block
+
+-- | Create an op soup expression with implicit bracketset
+opsoup :: [Expression] -> Expression
+opsoup = at nowhere . EOpSoup implicit
+
+-- | Create an op soup expression with bracket set parentheses
+opsoupParens :: [Expression] -> Expression
+opsoupParens = at nowhere . EOpSoup parentheses
+
+-- | A normal name as expression
+normalName :: String -> Expression
+normalName = at nowhere . EName . NormalName
+
+-- | An operator name as expression
+operatorName :: String -> Expression
+operatorName = at nowhere . EName . OperatorName

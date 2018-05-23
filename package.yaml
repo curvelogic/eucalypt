@@ -32,6 +32,7 @@ library:
     - file-embed
     - network-uri
     - optparse-applicative
+    - megaparsec
     - parsec
     - parsec-numeric
     - path
@@ -76,6 +77,8 @@ tests:
     - eucalypt-hs
     - hspec
     - QuickCheck
+    - megaparsec
+    - hspec-megaparsec
     - pretty
     - network-uri
     - text

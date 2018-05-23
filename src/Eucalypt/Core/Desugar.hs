@@ -132,3 +132,5 @@ desugar Located{locatee=expr} =
     ELiteral lit -> CorePrim $ desugarLiteral lit
     EBlock blk -> desugarBlock blk
     EList components -> CoreList $ map desugar components
+    EOpSoup _bs _es -> CorePrim CoreNull -- TODO: new parser
+    EName _ -> CorePrim CoreNull -- TODO: new parser

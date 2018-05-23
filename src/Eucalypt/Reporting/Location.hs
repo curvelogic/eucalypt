@@ -22,6 +22,7 @@ import Text.Parsec.Pos
   , sourceLine
   , sourceName
   )
+import qualified Text.Megaparsec.Pos as M
 
 -- | Wrapper for parsec SourcePos so we can cleanly JSONify
 newtype SourcePosition =
@@ -58,9 +59,17 @@ instance HasLocation a => HasLocation (Located a) where
 pos :: SourceName -> Line -> Column -> SourcePosition
 pos n l c = spos $ newPos n l c
 
--- | Conver from parsec position
+-- | Convert from parsec position
 spos :: SourcePos -> SourcePosition
 spos = SourcePosition
+
+-- | Convert from megaparsec position
+mpos :: M.SourcePos -> SourcePosition
+mpos m
+  = SourcePosition (newPos
+                    (M.sourceName m)
+                    ((M.unPos . M.sourceLine) m)
+                    ((M.unPos . M.sourceColumn) m))
 
 -- | Add location data to primary expression
 at :: SourceSpan -> a -> Located a
