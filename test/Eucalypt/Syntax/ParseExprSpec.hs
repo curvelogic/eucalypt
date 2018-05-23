@@ -181,3 +181,15 @@ expressionSpec =
       testParse expression `shouldFailOn` "a,a"
       testParse expression `shouldFailOn` ",a"
       testParse expression `shouldFailOn` "a,"
+    it "accepts list literals" $ do
+      testParse expression "[1, 2, 3] [a, b, c] f([a,b])" `shouldParse`
+        opsoup
+          [ list [int 1, int 2, int 3]
+          , list [normalName "a", normalName "b", normalName "c"]
+          , invoke (normalName "f") [list [normalName "a", normalName "b"]]
+          ]
+      testParse expression "[l t, l h]" `shouldParse`
+        list
+          [ opsoup [normalName "l", normalName "t"]
+          , opsoup [normalName "l", normalName "h"]
+          ]

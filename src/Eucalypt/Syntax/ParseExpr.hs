@@ -176,6 +176,7 @@ tuple :: Parser [Expression]
 tuple = parens $ expression `sepBy1` comma
 
 -- ? calls
+--
         
 rootCall :: Parser Expression
 rootCall = located ((EInvocation <$> atomOrParenExp <*> tuple) <?> "function call")
@@ -190,21 +191,33 @@ call = foldl invocation <$> rootCall <*> many tuple
 atomOrParenExp :: Parser Expression
 atomOrParenExp = try atom <|> parenExpression
 
-atomOrCallOrParenExp :: Parser Expression
-atomOrCallOrParenExp =
-  (try call <|> atom <|> parenExpression) <?>
-  "atom or call or parenthesised expression"
+element :: Parser Expression
+element =
+  (try call <|> atom <|> listLiteral <|> parenExpression) <?>
+  "element"
+
+-- ? lists
+--
+
+squares :: Parser a -> Parser a         
+squares = between (symbol "[") (char ']')
+
+listLiteral :: Parser Expression
+listLiteral =
+  located (EList <$> squares (expression `sepBy1` comma) <?> "list literal")
+
+-- ? expressions
 
 unparenExpression :: Parser Expression
 unparenExpression = located $ do
-  exprs <- atomOrCallOrParenExp `sepBy1` space1
+  exprs <- element `sepBy1` space1
   return $ case exprs of
     [e] -> locatee e
     es -> EOpSoup implicit es
     
 parenExpression :: Parser Expression
 parenExpression = located $ do
-  exprs <- parens (atomOrCallOrParenExp `sepBy1` space1)
+  exprs <- parens (element `sepBy1` space1)
   return $ case exprs of
     [e] -> locatee e
     es -> EOpSoup parentheses es
