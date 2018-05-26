@@ -134,3 +134,4 @@ desugar Located{locatee=expr} =
     EList components -> CoreList $ map desugar components
     EOpSoup _bs _es -> CorePrim CoreNull -- TODO: new parser
     EName _ -> CorePrim CoreNull -- TODO: new parser
+    EApplyTuple _ -> CorePrim CoreNull -- TODO: new parser

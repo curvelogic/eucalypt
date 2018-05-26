@@ -87,6 +87,9 @@ data Expression_
   | EName AtomicName
     -- ^ simple identifier
 
+  | EApplyTuple [Expression]
+    -- ^ a tuple in apply-to-params context, e.g. @_(a,b,c)@
+
   deriving (Eq, Show, Generic, ToJSON)
 
 
@@ -102,6 +105,7 @@ instance HasLocation Expression_ where
   stripLocation (EBlock b) = EBlock (stripLocation b)
   stripLocation (EList es) = EList (map stripLocation es)
   stripLocation (EOpSoup bs es) = EOpSoup bs (map stripLocation es)
+  stripLocation (EApplyTuple es) = EApplyTuple (map stripLocation es)
   stripLocation e = e
 
 
@@ -244,3 +248,8 @@ normalName = at nowhere . EName . NormalName
 -- | An operator name as expression
 operatorName :: String -> Expression
 operatorName = at nowhere . EName . OperatorName
+
+
+-- | A tuple of args for a fn call (appears in op soup and binds left)
+applyTuple :: [Expression] -> Expression
+applyTuple = at nowhere . EApplyTuple

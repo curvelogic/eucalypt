@@ -13,13 +13,11 @@ import Test.Hspec.Megaparsec
 import Test.QuickCheck
 import Text.Megaparsec
 
-delocated :: Parser Expression -> Parser Expression
+delocated :: HasLocation a => Parser a -> Parser a
 delocated = fmap stripLocation
 
-testParse :: Parser Expression -> String -> Either (ParseError Char Void) Expression
+testParse :: HasLocation a => Parser a -> String -> Either (ParseError Char Void) a
 testParse p = parse (delocated p <* eof) ""
-
-
 
 main :: IO ()
 main = hspec spec
@@ -66,6 +64,7 @@ spec = do
   identifierSpec
   primitiveSpec
   expressionSpec
+  blockSpec
 
 identifierSpec :: Spec
 identifierSpec = do
@@ -84,11 +83,17 @@ identifierSpec = do
     it "accepts legal operator names" $
       forAll validOperatorNames (\s -> parseMaybe operatorIdentifier s == Just s)
   describe "parsing single quoted identifiers" $ do
+    it "accepts \"'~'\"" $
+      parseMaybe quotedIdentifier "'~'" `shouldBe` Just "~"
     it "accepts single quoted identifiers" $
       parseMaybe quotedIdentifier "'(*&^(*&jhgijhg&*&~~~))'" `shouldBe` Just "(*&^(*&jhgijhg&*&~~~))"
     it "accepts legal single quoted names" $
       forAll validSQNames (\s -> parseMaybe quotedIdentifier s == Just (unquote s))
-
+  describe "parsing names" $ do
+    it "rejects qualified names (these are now operators)" $
+      testParse name `shouldFailOn` "x.y.z"
+    it "rejects qualified quoted names (these are now operators)" $
+      testParse name `shouldFailOn` "'x'.'y'.'z'"
 
 parsesAnyInteger :: Integer -> Bool
 parsesAnyInteger i = parseMaybe integer (show i) == (Just . VInt) i
@@ -143,7 +148,8 @@ expressionSpec =
       testParse expression "(33 f(1,2,3) //=> 5)" `shouldParse`
       opsoupParens
         [ int 33
-        , invoke (normalName "f") [int 1, int 2, int 3]
+        , normalName "f"
+        , applyTuple [int 1, int 2, int 3]
         , operatorName "//=>"
         , int 5
         ]
@@ -153,26 +159,28 @@ expressionSpec =
         [ int 1
         , int 3
         , operatorName "**"
-        , invoke (invoke (normalName "f") [normalName "a"]) [normalName "b"]
+        , normalName "f"
+        , applyTuple [normalName "a"]
+        , applyTuple [normalName "b"]
         ]
     it "accepts iterated calls" $
       testParse expression "f(a)(b)(c)" `shouldParse`
-      invoke
-        (invoke (invoke (normalName "f") [normalName "a"]) [normalName "b"])
-        [normalName "c"]
+      opsoup
+        [ normalName "f"
+        , applyTuple [normalName "a"]
+        , applyTuple [normalName "b"]
+        , applyTuple [normalName "c"]
+        ]
     it "accepts calls on paren exprs" $
       testParse expression "(x op)(b)(c)" `shouldParse`
-      invoke
-        (invoke
-           (opsoupParens [normalName "x", normalName "op"])
-           [normalName "b"])
-        [normalName "c"]
+      opsoup
+        [ opsoupParens [normalName "x", normalName "op"]
+        , applyTuple [normalName "b"]
+        , applyTuple [normalName "c"]
+        ]
     it "rejects lonely colons" $ do
       testParse expression `shouldFailOn` "a : a"
-      testParse expression `shouldFailOn` "a : a"
-      testParse expression `shouldFailOn` "a : a"
       testParse expression `shouldFailOn` "a:"
-      testParse expression `shouldFailOn` "a:a"
       testParse expression `shouldSucceedOn` ":a"
     it "rejects commas outside arg lists" $ do
       testParse expression `shouldFailOn` "a , a"
@@ -186,10 +194,294 @@ expressionSpec =
         opsoup
           [ list [int 1, int 2, int 3]
           , list [normalName "a", normalName "b", normalName "c"]
-          , invoke (normalName "f") [list [normalName "a", normalName "b"]]
+          , normalName "f"
+          , applyTuple [list [normalName "a", normalName "b"]]
           ]
       testParse expression "[l t, l h]" `shouldParse`
         list
           [ opsoup [normalName "l", normalName "t"]
           , opsoup [normalName "l", normalName "h"]
           ]
+    it "accepts qualified names" $ do
+      testParse expression "x.y.z" `shouldParse`
+        opsoup
+          [ normalName "x"
+          , operatorName "."
+          , normalName "y"
+          , operatorName "."
+          , normalName "z"
+          ]
+      testParse expression "'x'.'y'.'z'" `shouldParse`
+        opsoup
+          [ normalName "x"
+          , operatorName "."
+          , normalName "y"
+          , operatorName "."
+          , normalName "z"
+          ]
+    it "accepts 'foo + bar'" $
+      testParse expression "foo + bar" `shouldParse`
+      opsoup [normalName "foo", operatorName "+", normalName "bar"]
+    it "accepts 'foo & bar & baz'" $
+      testParse expression "foo & bar & baz" `shouldParse`
+      opsoup
+        [ normalName "foo"
+        , operatorName "&"
+        , normalName "bar"
+        , operatorName "&"
+        , normalName "baz"
+        ]
+    it "accepts x.y.z *^&%^ x.y.y" $
+      testParse expression "x.y.z *^&%^ x.y.y" `shouldParse`
+      opsoup
+        [ normalName "x"
+        , operatorName "."
+        , normalName "y"
+        , operatorName "."
+        , normalName "z"
+        , operatorName "*^&%^"
+        , normalName "x"
+        , operatorName "."
+        , normalName "y"
+        , operatorName "."
+        , normalName "y"
+        ]
+    it "accepts x y" $
+      testParse expression "x y" `shouldParse`
+      opsoup [normalName "x", normalName "y"]
+    it "parses f(x, y)" $
+      testParse expression "f(x, y)" `shouldParse`
+      opsoup [normalName "f", applyTuple [normalName "x", normalName "y"]]
+    it "parses f(zz)" $
+      testParse expression "f(zz)" `shouldParse`
+      opsoup [normalName "f", applyTuple [normalName "zz"]]
+    it "parses foo.bar.baz(quux)" $
+      testParse expression "foo.bar.baz(quux)" `shouldParse`
+      opsoup
+        [ normalName "foo"
+        , operatorName "."
+        , normalName "bar"
+        , operatorName "."
+        , normalName "baz"
+        , applyTuple [normalName "quux"]
+        ]
+    it "parses foo.bar.'baz'(quux)" $
+      testParse expression "foo.bar.'baz'(quux)" `shouldParse`
+      opsoup
+        [ normalName "foo"
+        , operatorName "."
+        , normalName "bar"
+        , operatorName "."
+        , normalName "baz"
+        , applyTuple [normalName "quux"]
+        ]
+    it "parses if(foo(bar),baz,quux) " $
+      testParse expression "if(foo(bar),baz,quux)" `shouldParse`
+      opsoup
+        [ normalName "if"
+        , applyTuple
+            [ opsoup [normalName "foo", applyTuple [normalName "bar"]]
+            , normalName "baz"
+            , normalName "quux"
+            ]
+        ]
+    it "parses if(car(xs), concat(reverse(xs),[car(xs)]), nil)" $
+      testParse expression "if(car(xs), concat(reverse(xs),[car(xs)]), nil)" `shouldParse`
+      opsoup
+        [ normalName "if"
+        , applyTuple
+            [ opsoup [normalName "car", applyTuple [normalName "xs"]]
+            , opsoup
+                [ normalName "concat"
+                , applyTuple
+                    [ opsoup
+                        [normalName "reverse", applyTuple [normalName "xs"]]
+                    , list
+                        [ opsoup
+                            [normalName "car", applyTuple [normalName "xs"]]
+                        ]
+                    ]
+                ]
+            , normalName "nil"
+            ]
+        ]
+    it "parses x y |<| z" $
+      testParse expression "x y |<| z" `shouldParse`
+      opsoup
+        [normalName "x", normalName "y", operatorName "|<|", normalName "z"]
+    it "parses g. h .'i'" $
+      testParse expression "g. h .'i'" `shouldParse`
+      opsoup
+        [ normalName "g"
+        , operatorName "."
+        , normalName "h"
+        , operatorName "."
+        , normalName "i"
+        ]
+    it "parses 987" $ testParse expression "987" `shouldParse` int 987
+    it "parses x y z" $
+      testParse expression "x y z" `shouldParse`
+      opsoup [normalName "x", normalName "y", normalName "z"]
+    it "parses y (x f)" $
+      testParse expression "y (x f)" `shouldParse`
+      opsoup [normalName "y", opsoupParens [normalName "x", normalName "f"]]
+    it "parses y f(x)" $
+      testParse expression "y f(x)" `shouldParse`
+      opsoup [normalName "y", normalName "f", applyTuple [normalName "x"]]
+    it "parses y (f(x))" $
+      testParse expression "y (f(x))" `shouldParse`
+      opsoup
+        [ normalName "y"
+        , opsoupParens [normalName "f", applyTuple [normalName "x"]]
+        ]
+    it "fails x :" $
+      testParse expression `shouldFailOn` "x :"
+    it "fails h(y) :" $
+      testParse expression `shouldFailOn` "h(y) :"
+    it "fails (gg++yy) :" $
+      testParse expression `shouldFailOn` "(gg++yy) :"
+
+
+blockSpec :: Spec
+blockSpec = do
+  describe "parsing property declarations" $ do
+    it "accepts 'a: b'" $
+      testParse propertyDeclaration "a: b" `shouldParse`
+      prop "a" (normalName "b")
+    it "accepts 'a : b'" $
+      testParse propertyDeclaration "a : b" `shouldParse`
+      prop "a" (normalName "b")
+  describe "parsing function declarations" $ do
+    it "accepts 'f(x): y'" $
+      testParse functionDeclaration "f(x): y" `shouldParse`
+      func "f" ["x"] (normalName "y")
+    it "accepts 'f(x) : y'" $
+      testParse functionDeclaration "f(x) : y" `shouldParse`
+      func "f" ["x"] (normalName "y")
+    it "accepts 'f(x, y): z'" $
+      testParse functionDeclaration "f(x, y): z" `shouldParse`
+      func "f" ["x", "y"] (normalName "z")
+    it "accepts 'f(x,y): z z z'" $
+      testParse functionDeclaration "f(x,y): z z z" `shouldParse`
+      func
+        "f"
+        ["x", "y"]
+        (opsoup [normalName "z", normalName "z", normalName "z"])
+  describe "parsing operator declarations" $ do
+    it "accepts '(a + b): z(a, b)'" $
+      testParse operatorDeclaration "(a + b): z(a, b)" `shouldParse`
+      oper
+        "+"
+        "a"
+        "b"
+        (opsoup [normalName "z", applyTuple [normalName "a", normalName "b"]])
+    it "accepts '(a+b): z(a,b) '" $
+      testParse operatorDeclaration "(a+b): z(a,b)" `shouldParse`
+      oper
+        "+"
+        "a"
+        "b"
+        (opsoup [normalName "z", applyTuple [normalName "a", normalName "b"]])
+    it "parses (foo *^^* bar) : bar foo(344)" $
+      testParse operatorDeclaration "(foo *^^* bar) : bar foo(344)" `shouldParse`
+      oper
+        "*^^*"
+        "foo"
+        "bar"
+        (opsoup [normalName "bar", normalName "foo", applyTuple [int 344]])
+  describe "parsing declarations" $ do
+    it "accepts '` :k a : b'" $
+      testParse anyDeclaration "` :k a : b" `shouldParse`
+      ann (sym "k") (prop "a" (normalName "b"))
+    it "accepts '` \"s\" a : b'" $
+      testParse anyDeclaration "` \"s\" a : b" `shouldParse`
+      ann (str "s") (prop "a" (normalName "b"))
+    it "accepts '` {x: y} a : b'" $
+      testParse anyDeclaration "` {x: y} a : b" `shouldParse`
+      ann (block [bare $ prop "x" $ normalName "y"]) (prop "a" (normalName "b"))
+    it "accepts 'a: b  '" $
+      testParse anyDeclaration "a: b  " `shouldParse`
+      bare (prop "a" (normalName "b"))
+    it "parses ` a x : y " $
+      testParse anyDeclaration "` a x : y " `shouldParse`
+      ann (normalName "a") (prop "x" (normalName "y"))
+    it "parses ` a b c zz(yy,gg) : y " $
+      testParse anyDeclaration "` a b c zz(yy,gg) : y " `shouldParse`
+      ann
+        (opsoup [normalName "a", normalName "b", normalName "c"])
+        (func "zz" ["yy", "gg"] (normalName "y"))
+    it "parses ` a (foo + bar) : baz " $
+      testParse anyDeclaration "` a (foo + bar) : baz" `shouldParse`
+      ann (normalName "a") (oper "+" "foo" "bar" (normalName "baz"))
+    it "parses ` { if: :listfn } lists: { } " $
+      testParse anyDeclaration "` { if: :listfn } lists: { }" `shouldParse`
+      ann (block [bare (prop "if" (sym "listfn"))]) (prop "lists" (block []))
+    it "parses items: [\"one\", \"two\", \"three\"]" $
+      testParse anyDeclaration "items: [\"one\", \"two\", \"three\"]" `shouldParse`
+      bare (prop "items" (list [str "one", str "two", str "three"]))
+  describe "blockParsing" $ do
+    it "accepts '{a: x}'" $
+      testParse blockLiteral "{a: x}" `shouldParse`
+      block [bare $ prop "a" $ normalName "x"]
+    it "accepts '{a: x }'" $
+      testParse blockLiteral "{a: x }" `shouldParse`
+      block [bare $ prop "a" $ normalName "x"]
+    it "accepts '{ a: 1 b: 2 }'" $
+      testParse blockLiteral "{ a: 1 b: 2 }" `shouldParse`
+      block [bare $ prop "a" (int 1), bare $ prop "b" (int 2)]
+    it "accepts empty blocks" $
+      testParse blockLiteral "{}" `shouldParse` block []
+    it "accepts metadata" $
+      testParse blockLiteral "{` :m a: d}" `shouldParse`
+      block [ann (sym "m") (prop "a" (normalName "d"))]
+    it "parses { `a x : y }" $
+      testParse blockLiteral "{ `a x : y }" `shouldParse`
+      block [ann (normalName "a") (prop "x" (normalName "y"))]
+    it "parses { `{ z:g } x : y }" $
+      testParse blockLiteral "{ `{ z:g } x : y }" `shouldParse`
+      block
+        [ ann
+            (block [bare $ prop "z" $ normalName "g"])
+            (prop "x" (normalName "y"))
+        ]
+    it "parses nested metadata" $
+      testParse blockLiteral "{ `{`{c:d} a: b} x : y }" `shouldParse`
+      block
+        [ ann
+            (block
+               [ ann
+                   (block [bare $ prop "c" (normalName "d")])
+                   (prop "a" (normalName "b"))
+               ])
+            (prop "x" $ normalName "y")
+        ]
+  describe "unit parsing" $
+    it "parses foo : bar baz : quux " $
+      testParse unit "foo : bar baz : quux" `shouldParse`
+      block
+        [ bare $ prop "foo" $ normalName "bar"
+        , bare $ prop "baz" $ normalName "quux"
+        ]
+  describe "unicode support" $ do
+    it "parses unicode operators" $
+      testParse unit " (f ∘ g): compose(f, g) " `shouldParse`
+      block
+        [ bare
+            (oper
+               "∘"
+               "f"
+               "g"
+               (opsoup
+                  [ normalName "compose"
+                  , applyTuple [normalName "f", normalName "g"]
+                  ]))
+        ]
+    it "accepts unicode names" $
+      testParse unit " β(ॵ): כֿ(ॵ) " `shouldParse`
+      block
+        [ bare
+            (func
+               "β"
+               ["ॵ"]
+               (opsoup [normalName "כֿ", applyTuple [normalName "ॵ"]]))
+        ]

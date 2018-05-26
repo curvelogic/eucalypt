@@ -88,6 +88,14 @@ quotedIdentifier =
   (char '\'' >> manyTill anyChar (char '\'')) <?> "single quoted identifier"
 
 
+
+-- | An identifier that can be used as the name of a property of
+-- function declaration
+propertyIdentifier :: Parser AtomicName
+propertyIdentifier = NormalName <$> lexeme (try normalIdentifier <|> quotedIdentifier) <?> "property identifier"
+
+
+
 -- | Any type of identifier
 identifier :: Parser String
 identifier =
@@ -177,29 +185,45 @@ tuple = parens $ expression `sepBy1` comma
 
 -- ? calls
 --
-        
-rootCall :: Parser Expression
-rootCall = located ((EInvocation <$> atomOrParenExp <*> tuple) <?> "function call")
+-- Function calls (that are not achieved by catenation) are identified
+-- by placing the argument tuple directly against an 'anchor'
+-- expression. e.g. @f.g.h("z")@. As qualified names are parsed as
+-- expressions, the anchor expression ("h") may not be ultimately the
+-- function called, depending on operator precedence, however, the
+-- call parser identifies both the anchor and the arg tuple and
+-- returns both to the expression parser for inclusion in opsoup. This
+-- is why 'element' returns more than one expression.
+-- 
+rootCall :: Parser [Expression]
+rootCall = label "function call" $
+           (\x y -> [x, y]) <$> callAnchorExpression <*> located (EApplyTuple <$> tuple)
 
-invocation :: Expression -> [Expression] -> Expression
-invocation f xs = at s $ EInvocation f xs
+invocation :: [Expression] -> [Expression] -> [Expression]
+invocation es xs = es ++ [at s $ EApplyTuple xs]
   where s = foldl1 merge (map location xs)
         
-call :: Parser Expression
+call :: Parser [Expression]
 call = foldl invocation <$> rootCall <*> many tuple
        
-atomOrParenExp :: Parser Expression
-atomOrParenExp = try atom <|> parenExpression
+callAnchorExpression :: Parser Expression
+callAnchorExpression = try atom <|> parenExpression
 
-element :: Parser Expression
+listify :: Parser a -> Parser [a]
+listify = fmap (: [])
+
+element :: Parser [Expression]
 element =
-  (try call <|> atom <|> listLiteral <|> parenExpression) <?>
-  "element"
+  label
+    "element"
+    (try call <|> listify atom <|> listify listLiteral <|>
+     listify parenExpression <|>
+     listify blockLiteral)
+
 
 -- ? lists
 --
 
-squares :: Parser a -> Parser a         
+squares :: Parser a -> Parser a
 squares = between (symbol "[") (char ']')
 
 listLiteral :: Parser Expression
@@ -210,18 +234,81 @@ listLiteral =
 
 unparenExpression :: Parser Expression
 unparenExpression = located $ do
-  exprs <- element `sepBy1` space1
+  exprs <- concat <$> freeElement `sepEndBy1` sc
   return $ case exprs of
     [e] -> locatee e
     es -> EOpSoup implicit es
+  where freeElement = try (element <* notFollowedBy (sc >> char ':' >> space1))
     
 parenExpression :: Parser Expression
 parenExpression = located $ do
-  exprs <- parens (element `sepBy1` space1)
+  exprs <- concat <$> parens (element `sepEndBy1` sc)
   return $ case exprs of
     [e] -> locatee e
     es -> EOpSoup parentheses es
 
 expression :: Parser Expression
-expression = try unparenExpression <|> parenExpression
+expression = (try unparenExpression <|> parenExpression) <?> "expression"
 
+-- ? blocks
+--
+-- Most of the block related parsers are lexeme parsers as whitespace
+-- is not significant. Block itself is an exception as it is callable
+-- and a block literal could therefore be used in invocation syntax.
+
+colon :: Parser String
+colon = symbol ":"
+
+propertyDeclaration :: Parser DeclarationForm
+propertyDeclaration =
+  label "property declaration" $ lexeme $ located
+    (PropertyDecl <$> propertyIdentifier <* colon <*>
+     lexeme expression <?> "property declaration")
+  
+parenTuple :: Parser [String]
+parenTuple = parens $ normalIdentifier `sepBy1` comma
+
+functionDeclaration :: Parser DeclarationForm
+functionDeclaration =
+  label "function declaration" $ lexeme $ located $
+  FunctionDecl <$> propertyIdentifier <*> lexeme parenTuple <*> (colon >> expression)
+
+operatorSignature :: Parser (String, AtomicName, String)
+operatorSignature = do
+  l <- symbol "(" >> lexeme normalIdentifier
+  o <- OperatorName <$> lexeme operatorIdentifier
+  r <- lexeme normalIdentifier <* symbol ")"
+  return (l, o, r)
+
+operatorDeclaration :: Parser DeclarationForm
+operatorDeclaration = label "operator declaration" $ lexeme $ located $ do
+  (l, o, r) <- operatorSignature
+  expr <- colon >> expression
+  return $ OperatorDecl o l r expr
+
+declarationForm :: Parser DeclarationForm
+declarationForm =
+  lexeme $
+  try propertyDeclaration <|> functionDeclaration <|> operatorDeclaration
+  
+declarationAnnotation :: Parser Expression
+declarationAnnotation =
+  (symbol "`" >> lexeme expression) <?> "declaration annotation"
+
+anyDeclaration :: Parser BlockElement
+anyDeclaration = label "declaration" $ lexeme $ located $ do
+  a <- optional declarationAnnotation
+  d <- declarationForm
+  return $ Declaration Annotated { annotation = a, declaration = d }
+
+blockContent :: Parser Block
+blockContent = sc >> located (Block <$> many anyDeclaration)
+
+braces :: Parser a -> Parser a         
+braces = between (symbol "{") (char '}')
+
+blockLiteral :: Parser Expression
+blockLiteral = located $ EBlock <$> braces blockContent
+
+unit :: Parser Expression
+unit = located $ EBlock <$> blockContent
