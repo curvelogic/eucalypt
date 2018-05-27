@@ -80,19 +80,23 @@ relocated p =  (\s x e -> move (spos s, spos e) x) <$> getPosition <*> p <*> get
 -- $identifiers
 --
 -- Broadly speaking there are two types of identifiers, normal names
--- and operator names. All names may be qualified. The final name
--- component determines whether the name is normal or an operator
--- name. For normal names, all name components are simple names. For
--- operator names, all leading components are simple names but the
--- final component is an operator name, distinguished by the set of
--- characters used.
+-- and operator names which are distinguished by the types of
+-- character they can contain. We do not (any longer) use a concept of
+-- qualified names, qualified names (a.b.c) are treated as the use of
+-- a high precedence, left associative dot operator and just handled as
+-- lookups.
+--
+-- This leads to a few complicated cases we rule out after the parse:
+-- * a.+.b (operator names can only be the last )
+-- * a.b.(c+d) ("generalised lookup" which may be handled by late
+--   binding later on but isn't handled for now
 --
 -- Single quotes may be used to allow the use of special characters
 -- within a normal name.
 --
 -- Normal names:
 -- * x (atomic name)
--- * x.y.z (qualified name)
+-- * x.y.z (qualified name, i.e. lookup of z in y in x)
 -- * _x.$y.?z (qualified name)
 -- * '<>' (atomic name)
 -- * x.y.z.'~' (qualified name)
@@ -104,9 +108,9 @@ relocated p =  (\s x e -> move (spos s, spos e) x) <$> getPosition <*> p <*> get
 -- * x.y.<$$> (qualified operator name)
 -- * '*'.'*'.< (qualified operator name)
 --
--- Normal names may appear directly next to open parens with __no
--- intervening whitespace__ to indicate a function call, e.g.
--- @x.y.z(a)@.
+-- Open parens appearing directly after a lexical element with __no
+-- intervening whitespace__ indicate a function call, e.g.
+-- @x.y.z(a)@ or @f(a)(b)(c)@ or @(flip f)(c)@
 --
 -- This means we need versions of the identifier parsers that don't
 -- consume trailing whitespace. Parsec doesn't seem to make this easy.
