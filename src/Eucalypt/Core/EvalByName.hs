@@ -25,9 +25,9 @@ applyBuiltin ::
   -> CoreBuiltinName
   -> [CoreExpr]
   -> Interpreter CoreExpr
-applyBuiltin w expr name args =
+applyBuiltin w expr name as =
   case lookupBuiltin name of
-    Just (_, f) -> f w args >>= w
+    Just (_, f) -> f w as >>= w
     Nothing -> throwEvalError $ BuiltinNotFound name expr
 
 -- $ metadata
@@ -82,8 +82,8 @@ whnfM e@(CoreApp f x) = do
                      CoreBlock{} -> euMerge whnfM [a, f]
                      _ -> throwEvalError $ BadBlockMerge e
     l@CoreLam{} -> whnfM $ instantiateLambda x l
-    CorePAp arity expr args ->
-      let args' = (args ++ [x])
+    CorePAp arity expr as ->
+      let args' = (as ++ [x])
        in if length args' < arity
             then return (CorePAp arity expr args')
             else (case expr of

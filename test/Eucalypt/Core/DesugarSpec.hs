@@ -12,7 +12,12 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec =
+spec = do
+  coreSpec
+  soupSpec
+
+coreSpec :: Spec
+coreSpec =
 
   describe "Core" $ do
 
@@ -53,3 +58,41 @@ spec =
       \case
         Syn.CoreBlock (Syn.CoreList [Syn.CoreMeta _ _]) -> True
         _ -> False
+
+
+soupSpec :: Spec
+soupSpec =
+  describe "soup desugaring" $ do
+    it "inserts call operators" $
+      desugarSoup
+        [int 5, normalName "x", normalName "f", applyTuple [int 4, int 7]] `shouldBe`
+      Syn.soup
+         [ Syn.int 5
+         , Syn.var "x"
+         , Syn.var "f"
+         , callOp
+         , Syn.args [Syn.int 4, Syn.int 7]
+         ]
+    it "handles iterated calls" $
+      desugarSoup
+        [ normalName "f"
+        , applyTuple [normalName "x"]
+        , applyTuple [normalName "y"]
+        ] `shouldBe`
+      Syn.soup
+         [ Syn.var "f"
+         , callOp
+         , Syn.args [Syn.corename "x"]
+         , callOp
+         , Syn.args [Syn.corename "y"]
+         ]
+    it "handles relative names" $
+      desugarSoup
+        [ normalName "x"
+        , operatorName "."
+        , normalName "y"
+        , operatorName "."
+        , normalName "z"
+        ] `shouldBe`
+      Syn.soup
+         [Syn.var "x", lookupOp, Syn.corename "y", lookupOp, Syn.corename "z"]

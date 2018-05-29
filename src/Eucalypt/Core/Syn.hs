@@ -44,23 +44,37 @@ type CoreRelativeName = String
 type CoreBindingName = String
 
 
-
+-- | Type used to name intrinsics
 type CoreBuiltinName = String
+
+
+-- | Fixity of operator
+data Fixity = UnaryPrefix | UnaryPostfix | InfixLeft | InfixRight
+  deriving (Eq, Show, Read, Ord)
+
+-- | Precedence of operator
+type Precedence = Int
 
 -- | A new bound-based implementation, with multi-arity to allow STG
 -- later.
 --
 data CoreExp a
   = CoreVar a
-  | CoreLam (Scope (Name String ()) CoreExp a)
+  | CoreLam (Scope (Name String ()) CoreExp a) -- ^ deprecate
   | CoreLet [(CoreBindingName, Scope (Name String Int) CoreExp a)] (Scope (Name String Int) CoreExp a)
-  | CoreApp (CoreExp a) (CoreExp a)
+  | CoreApp (CoreExp a) (CoreExp a) -- ^ deprecate
   | CoreBuiltin CoreBuiltinName
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
   | CoreList [CoreExp a]
   | CoreBlock (CoreExp a)
   | CoreMeta (CoreExp a) (CoreExp a)
+  | CoreName CoreRelativeName -- ^ new parser - relative lookup name
+  | CoreArgTuple [CoreExp a] -- ^ new parser
+  | CoreLambda Int (Scope (Name String Int) CoreExp a) -- ^ new parser
+  | CoreApply (CoreExp a) [CoreExp a] -- ^ new parser
+  | CoreOpSoup [CoreExp a] -- ^ new parser
+  | CoreOperator Fixity Precedence (CoreExp a) -- ^ new parser
   | CorePAp Int (CoreExp a) [CoreExp a] -- ^ during evaluation only
   | CoreTraced (CoreExp a) -- ^ during evaluation only
   | CoreChecked (CoreExp a) (CoreExp a) -- ^ during evaluation only
@@ -120,19 +134,30 @@ instance Monad CoreExp where
   CoreLet bs b >>= f = CoreLet (map (second (>>>= f)) bs) (b >>>= f)
   CoreBuiltin n >>= _ = CoreBuiltin n
   CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
-  CorePAp a e args >>= f = CorePAp a (e >>= f) (map (>>= f) args)
+  CorePAp a e as >>= f = CorePAp a (e >>= f) (map (>>= f) as)
   CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
   CoreList es >>= f = CoreList (map (>>= f) es)
   CoreBlock e >>= f = CoreBlock (e >>= f)
-  CoreMeta m e >>= f = CoreMeta (m >>= f) (e >>= f)
+  CoreMeta m e >>= f = CoreMeta (m >>= f) (e >>= f) -- TODO: separate meta?
   CoreTraced e >>= f = CoreTraced (e >>= f)
   CoreChecked check e >>= f = CoreChecked (check >>= f) (e >>= f)
-
+  CoreOpSoup es >>= f = CoreOpSoup (map (>>= f) es)
+  CoreLambda n e >>= f = CoreLambda n (e >>>= f)
+  CoreOperator x p e >>= f = CoreOperator x p (e >>= f)
+  CoreArgTuple es >>= f = CoreArgTuple (map (>>= f) es)
+  CoreApply g es >>= f = CoreApply (g >>= f) (map (>>= f) es)
+  CoreName n >>= _ = CoreName n
 
 -- | Construct a var
 var :: a -> CoreExp a
 var = CoreVar
+
+
+
+-- | Construct a name (maybe be a relative name, not a var)
+corename :: CoreRelativeName -> CoreExpr
+corename = CoreName
 
 
 
@@ -144,13 +169,26 @@ lamexp x b = CoreLam (abstract1Name x b)
 
 -- | Abstract lambda of several args
 lamexpr :: [CoreBindingName] -> CoreExpr -> CoreExpr
-lamexpr args expr = foldr lamexp expr args
+lamexpr as expr = foldr lamexp expr as
+
+
+
+-- | Abstract lambda of several args
+lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
+lam as expr = CoreLambda (length as) scope
+  where scope = abstractName (`elemIndex` as) expr
 
 
 
 -- | Construct a function application
 appexp :: CoreExp a -> [CoreExp a] -> CoreExp a
 appexp = foldl CoreApp
+
+
+
+--- | Construct a function application
+app :: CoreExp a -> [CoreExp a] -> CoreExp a
+app = CoreApply
 
 
 
@@ -213,6 +251,30 @@ element k v = CoreList [sym k, v]
 -- | A block from its items
 block :: [CoreExpr] -> CoreExpr
 block items = CoreBlock $ CoreList items
+
+
+
+-- | A left-associative infix operation
+infixl_ :: Precedence -> CoreExpr -> CoreExpr
+infixl_ = CoreOperator InfixLeft
+
+
+
+-- | A right-associative infix operation
+infixr_ :: Precedence -> CoreExpr -> CoreExpr
+infixr_ = CoreOperator InfixRight
+
+
+
+-- | Operator soup without explicit brackets
+soup :: [CoreExpr] -> CoreExpr
+soup = CoreOpSoup
+
+
+
+-- | Arg tuple constructor
+args :: [CoreExpr] -> CoreExpr
+args = CoreArgTuple
 
 
 
