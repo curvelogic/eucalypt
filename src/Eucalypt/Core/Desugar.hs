@@ -167,7 +167,7 @@ desugar Located{locatee=expr} =
   case expr of
     EOperation opName l r ->
       CoreApp (CoreApp (CoreVar (bindingName opName)) (desugar l)) (desugar r)
-    EInvocation f as -> appexp (desugar f) (map desugar as)
+    EInvocation f as -> app (desugar f) (map desugar as)
     ECatenation obj verb -> CoreApp (desugar verb) (desugar obj)
     EIdentifier components -> desugarIdentifier components
     ELiteral lit -> CorePrim $ desugarLiteral lit

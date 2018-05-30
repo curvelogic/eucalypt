@@ -22,7 +22,7 @@ spec =
                (CoreApp (CoreVar "g") (CoreVar "x")))
     it "evals I" $ whnfM (CoreApp i (sym "z")) `shouldBe` return (sym "z")
     it "evals K" $
-      whnfM (appexp k [sym "a", str "b"]) `shouldBe` return (sym "a")
+      whnfM (app k [sym "a", str "b"]) `shouldBe` return (sym "a")
     it "evals S" $
       whnfM (CoreApp (CoreApp (CoreApp s k) k) (CoreVar "x")) `shouldBe`
       whnfM (CoreApp i (CoreVar "x"))

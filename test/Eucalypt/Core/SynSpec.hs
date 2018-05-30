@@ -14,7 +14,7 @@ main = hspec spec
 
 
 body :: CoreExpr
-body = appexp (var "+") [var "a", var "b"]
+body = app (var "+") [var "a", var "b"]
 
 let1 :: CoreExpr
 let1 = letexp [("a", int 5)] body

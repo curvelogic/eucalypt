@@ -68,7 +68,7 @@ prepare (CoreLambda _ e) = parens $ text "\\" <+> hsep (map text ns) <> char '.'
     ns = map name $ bindings e
     body = prepare $ inst e
     inst = instantiateName (\n -> CoreVar (ns !! n))
-prepare (CoreApply f es) = prepare f <+> parens ( hsep . punctuate comma $ map prepare es)
+prepare (CoreApply f es) = prepare f <> parens ( hsep . punctuate comma $ map prepare es)
 prepare (CoreName n) = text n
 prepare (CoreOperator _x _p e) = prepare e
 

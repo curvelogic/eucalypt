@@ -51,7 +51,7 @@ spec = do
     --     (whnfM
     --        (letexp
     --           [ ( "a"
-    --             , (appexp (bif "IF") [corebool False, var "a", bif "FALSE"]))
+    --             , (app (bif "IF") [corebool False, var "a", bif "FALSE"]))
     --           ]
     --           (block [element "a" (var "a")]))) `shouldBe`
     --   Right (bif "FALSE")
@@ -87,28 +87,28 @@ spec = do
       Right (CoreList [int 0, int 2, int 3])
     it "judges head([1,2,3])=1" $
       runInterpreter
-        (whnfM (appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]])) `shouldBe`
+        (whnfM (app (bif "HEAD") [CoreList [int 1, int 2, int 3]])) `shouldBe`
       Right (int 1)
     it "judges head(cons(h,t))=h" $
       runInterpreter
         (whnfM
-           (appexp
+           (app
               (bif "EQ")
-              [ appexp
+              [ app
                   (bif "HEAD")
-                  [appexp (bif "CONS") [int 1, CoreList [int 2, int 3]]]
+                  [app (bif "CONS") [int 1, CoreList [int 2, int 3]]]
               , int 1
               ])) `shouldBe`
       Right (corebool True)
     it "judges head(cons(head(l), tail(l)))=head(l)" $
       runInterpreter
         (whnfM
-           (appexp
+           (app
               (bif "HEAD")
-              [ appexp
+              [ app
                   (bif "CONS")
-                  [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
-                  , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+                  [ app (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+                  , app (bif "TAIL") [CoreList [int 1, int 2, int 3]]
                   ]
               ])) `shouldBe`
       Right (int 1)
@@ -116,22 +116,22 @@ spec = do
       runInterpreter
         (forceDataStructures
            whnfM
-           (appexp
+           (app
               (bif "CONS")
-              [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
-              , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+              [ app (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+              , app (bif "TAIL") [CoreList [int 1, int 2, int 3]]
               ])) `shouldBe`
       Right (CoreList [int 1, int 2, int 3])
     it "judges eq(l,(cons(head(l), tail(l))))=true" $
       runInterpreter
         (whnfM
-           (appexp
+           (app
               (bif "EQ")
               [ CoreList [int 1, int 2, int 3]
-              , appexp
+              , app
                   (bif "CONS")
-                  [ appexp (bif "HEAD") [CoreList [int 1, int 2, int 3]]
-                  , appexp (bif "TAIL") [CoreList [int 1, int 2, int 3]]
+                  [ app (bif "HEAD") [CoreList [int 1, int 2, int 3]]
+                  , app (bif "TAIL") [CoreList [int 1, int 2, int 3]]
                   ]
               ])) `shouldBe`
       Right (corebool True)

@@ -166,12 +166,6 @@ lam as expr = CoreLambda (length as) scope
 
 
 
--- | Construct a function application
-appexp :: CoreExp a -> [CoreExp a] -> CoreExp a
-appexp = foldl CoreApp
-
-
-
 --- | Construct a function application
 app :: CoreExp a -> [CoreExp a] -> CoreExp a
 app = CoreApply
