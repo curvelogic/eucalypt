@@ -266,6 +266,18 @@ infixr_ = CoreOperator InfixRight
 
 
 
+-- | A unary prefix operator
+prefix_ :: Precedence -> CoreExpr -> CoreExpr
+prefix_ = CoreOperator UnaryPrefix
+
+
+
+-- | A unary postfix operat
+postfix_ :: Precedence -> CoreExpr -> CoreExpr
+postfix_ = CoreOperator UnaryPostfix
+
+
+
 -- | Operator soup without explicit brackets
 soup :: [CoreExpr] -> CoreExpr
 soup = CoreOpSoup

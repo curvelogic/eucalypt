@@ -50,7 +50,7 @@ data ShuntState = ShuntState
   , shuntOps :: [CoreExpr]
   , shuntSource :: [CoreExpr]
   , shuntError :: Maybe EvaluationError
-  }
+  } deriving (Show)
 
 initState :: [CoreExpr] -> ShuntState
 initState es =
@@ -76,6 +76,10 @@ popNext =
 -- | Return the operator at the top of the operator stack
 peekOp :: State ShuntState (Maybe CoreExpr)
 peekOp = headMay . shuntOps <$> get
+
+-- | Return the next expression
+peekSource :: State ShuntState (Maybe CoreExpr)
+peekSource = headMay . shuntSource <$> get
 
 -- | Pop two expressions off the output stack
 popTwo :: State ShuntState (Maybe (CoreExpr, CoreExpr))
@@ -131,15 +135,30 @@ pushOp e =
 -- | Push operator onto stack, making way by applying any operators of
 -- a lower precedence first
 seatOp :: CoreExpr -> State ShuntState ()
-seatOp op@(CoreOperator _ p _) = do
-  ops <- gets shuntOps
-  case ops of
-    o@(CoreOperator x' p' _):os ->
-      if (p < p') || (p' == p && (x' == InfixLeft))
-        then dropOp >> applyOp o >> seatOp op
-        else modify $ \s -> s {shuntOps = op : o : os}
+seatOp op@(CoreOperator x p _) =
+  peekOp >>= \case
+    Just op'@(CoreOperator x' p' _)
+      | x' == InfixLeft ->
+        if p <= p'
+          then dealWith op'
+          else pushOp op
+      | x' == InfixRight ->
+        if p < p'
+          then dealWith op'
+          else pushOp op
+      | x' == UnaryPostfix -> dealWith op'
+      | x == UnaryPostfix ->
+        if p < p'
+          then dealWith op'
+          else applyOp op -- don't put it on stack
+      | x' == UnaryPrefix ->
+        if p < p'
+          then dealWith op'
+          else pushOp op
     _ -> pushOp op
-seatOp e = setError $ Bug "seatOps called with non-operator" e
+  where
+    dealWith o = dropOp >> applyOp o >> seatOp op
+seatOp e = setError $ Bug "seatOp called with non-operator" e
 
 -- | Apply all operators remaining on the operator stack to the output
 clearOps :: State ShuntState ()
@@ -160,11 +179,29 @@ opsExhausted = null <$> gets shuntOps
 outputPending :: State ShuntState Bool
 outputPending = not . null <$> gets shuntOutput
 
+-- | Assert valid op based on what's following
+assertValidOp :: CoreExpr -> State ShuntState ()
+assertValidOp expr = case expr of
+ (CoreOperator UnaryPrefix _ _) -> peekSource >>= \case
+    Just r@(CoreOperator InfixLeft _ _) -> setError $ InvalidOperatorSequence expr r
+    Just r@(CoreOperator InfixRight _ _) -> setError $ InvalidOperatorSequence expr r
+    Nothing -> setError $ UnexpectedEndOfExpression expr
+    _ -> return ()
+ (CoreOperator InfixLeft _ _) -> peekSource >>= \case
+    Just r@(CoreOperator UnaryPostfix _ _) -> setError $ InvalidOperatorSequence expr r
+    Nothing -> setError $ UnexpectedEndOfExpression expr
+    _ -> return ()
+ (CoreOperator InfixRight _ _) -> peekSource >>= \case
+    Just r@(CoreOperator UnaryPostfix _ _) -> setError $ InvalidOperatorSequence expr r
+    Nothing -> setError $ UnexpectedEndOfExpression expr
+    _ -> return ()
+ _ -> return ()
+
 -- | A step of the shunting yard algorithm
 shunt1 :: State ShuntState ()
 shunt1 =
   popNext >>= \case
-    Just expr@CoreOperator{} -> seatOp expr
+    Just expr@CoreOperator{} -> assertValidOp expr >> seatOp expr
     Just expr -> do
       noOps <- opsExhausted
       outputExists <- outputPending
