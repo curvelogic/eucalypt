@@ -72,3 +72,11 @@ cookSpec =
              [app (CoreBuiltin "R60") [int 1, int 2], int 3]
          , int 4
          ])
+    it "handles unary prefix (!)" pending
+    it "handles unary postfix (₌)" pending
+    it "rejects ...!+..." pending
+    it "rejects ...+?..." pending
+    it "rejects empty" pending
+    it "cooks recursively?" pending
+    it "handles anaphora" pending
+    it "symbolises names?" pending
