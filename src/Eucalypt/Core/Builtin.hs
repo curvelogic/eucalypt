@@ -33,7 +33,7 @@ type Builtin = WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 --
 euPanic :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euPanic _ [e@(CorePrim (CoreString s))] = throwEvalError $ Panic s e
-euPanic _ args = throwEvalError $ Bug "Bad arguments for panic" (CoreList args)
+euPanic _ as = throwEvalError $ Bug "Bad arguments for panic" (CoreList as)
 
 -- | __NULL builtin - evaluates to null primitive. Arity 0.
 --
@@ -71,7 +71,7 @@ euEq whnfM [l, r] = do
   l' <- forceDataStructures whnfM l
   r' <- forceDataStructures whnfM r
   return $ (CorePrim . CoreBoolean) (l' == r')
-euEq _ args = throwEvalError $ Bug "__EQ called with bad args" (CoreList args)
+euEq _ as = throwEvalError $ Bug "__EQ called with bad as" (CoreList as)
 
 -- | Evaluate an expression and ensure it's a boolean value.
 evalBoolean :: WhnfEvaluator -> CoreExpr -> Interpreter Bool
@@ -90,14 +90,14 @@ euIf whnfM [c, t, f] = do
     if cbool
       then t
       else f
-euIf _ args = throwEvalError $ Bug "__IF called with bad args" (CoreList args)
+euIf _ as = throwEvalError $ Bug "__IF called with bad as" (CoreList as)
 
 -- | __NOT(b) - 'b' must be boolean. Arity 1. Strict in 'b'. Runtime
 -- error if 'b' is not a boolean.
 --
 euNot :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euNot whnfM [e] = CorePrim . CoreBoolean . not <$> evalBoolean whnfM e
-euNot _ args = throwEvalError $ Bug "__NOT called with bad args" (CoreList args)
+euNot _ as = throwEvalError $ Bug "__NOT called with bad as" (CoreList as)
 
 -- | __AND(l,r) - 'l' and 'r' must be boolean. Arity 2. Strict in 'l'
 -- and 'r'.
@@ -107,7 +107,7 @@ euAnd whnfM [l, r] = do
   lbool <- evalBoolean whnfM l
   rbool <- evalBoolean whnfM r
   return $ CorePrim (CoreBoolean (lbool && rbool))
-euAnd _ args = throwEvalError $ Bug "__AND called with bad args" (CoreList args)
+euAnd _ as = throwEvalError $ Bug "__AND called with bad as" (CoreList as)
 
 -- | __OR(l,r) - 'l' and 'r' must be boolean. Arity 2. Strict in 'l'
 -- and 'r'.
@@ -117,7 +117,7 @@ euOr whnfM [l, r] = do
   lbool <- evalBoolean whnfM l
   rbool <- evalBoolean whnfM r
   return $ CorePrim (CoreBoolean (lbool || rbool))
-euOr _ args = throwEvalError $ Bug "__OR called with bad args" (CoreList args)
+euOr _ as = throwEvalError $ Bug "__OR called with bad as" (CoreList as)
 
 -- | General binary arithmetic implementation, takes care of
 -- destructuring and type casting
@@ -135,7 +135,7 @@ arith whnfM op [l, r] = do
     (CorePrim (CoreFloat i), CorePrim (CoreInt j)) ->
       return $ CorePrim (CoreFloat $ i `op` fromInteger j)
     (i, j) -> throwEvalError $ NotNumber (CoreList [i, j])
-arith _ _ args = throwEvalError $ Bug "Arith op called with bad args" (CoreList args)
+arith _ _ as = throwEvalError $ Bug "Arith op called with bad as" (CoreList as)
 
 
 -- | __ADD(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
@@ -169,7 +169,7 @@ euDiv whnfM [l, r] = do
         then throwEvalError $ DivideByZero r
         else return $ CorePrim (CoreFloat val)
 
-euDiv _ args = throwEvalError $ Bug "Division with bad args" (CoreList args)
+euDiv _ as = throwEvalError $ Bug "Division with bad as" (CoreList as)
 
 -- | General binary arithmetic comparison implementation, takes care
 -- of destructuring and type casting
@@ -187,7 +187,7 @@ arithComp whnfM op [l, r] = do
     (CorePrim (CoreFloat i), CorePrim (CoreInt j)) ->
       return $ CorePrim (CoreBoolean $ i `op` fromInteger j)
     (i, j) -> throwEvalError $ NotNumber (CoreList [i, j])
-arithComp _ _ args = throwEvalError $ Bug "Comparison op called with bad args" (CoreList args)
+arithComp _ _ as = throwEvalError $ Bug "Comparison op called with bad as" (CoreList as)
 
 -- | __LT(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
 euLt :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
@@ -213,7 +213,7 @@ euHead whnfM [l] =
     (CoreList (h:_)) -> return h
     (CoreList []) -> throwEvalError $ EmptyList (CoreList [])
     e -> throwEvalError $ NotList e
-euHead _ args = throwEvalError $ Bug "__HEAD called with bad args" (CoreList args)
+euHead _ as = throwEvalError $ Bug "__HEAD called with bad as" (CoreList as)
 
 -- | __TAIL(l) - 'l' must be list. Arity 1. Strict in 'l'.
 --
@@ -223,7 +223,7 @@ euTail whnfM [l] =
     (CoreList (_:t)) -> return (CoreList t)
     (CoreList []) -> throwEvalError $ EmptyList (CoreList [])
     e -> throwEvalError $ NotList e
-euTail _ args = throwEvalError $ Bug "__TAIL called with bad args" (CoreList args)
+euTail _ as = throwEvalError $ Bug "__TAIL called with bad as" (CoreList as)
 
 -- | __CONS(h, t) - 't' must be list. Arity 2.
 --
@@ -235,7 +235,7 @@ euCons whnfM [h, t] =
   whnfM t >>= \case
     (CoreList t') -> return (CoreList (h : t'))
     e -> throwEvalError $ NotList e
-euCons _ args = throwEvalError $ Bug "__TAIL called with bad args" (CoreList args)
+euCons _ as = throwEvalError $ Bug "__TAIL called with bad as" (CoreList as)
 
 
 -- | Concatenate two lists or blocks into a list. The default action
@@ -262,14 +262,14 @@ euSym :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euSym whnfM [s] = whnfM s >>= \case
   (CorePrim (CoreString v)) -> return (CorePrim (CoreSymbol v))
   e -> throwEvalError $ SymbolNamesMustBeStrings e
-euSym _ args = throwEvalError $ Bug "__SYM called with bad args" (CoreList args)
+euSym _ as = throwEvalError $ Bug "__SYM called with bad as" (CoreList as)
 
 
 -- | __BLOCK(l) builtin. Arity 1. Non-strict. Wrap up a list of elements as a block.
 --
 euBlock :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euBlock _ [l] = return $ CoreBlock l
-euBlock _ args = throwEvalError $ Bug "__BLOCK called with bad args" (CoreList args)
+euBlock _ as = throwEvalError $ Bug "__BLOCK called with bad as" (CoreList as)
 
 
 
@@ -280,7 +280,7 @@ euElements whnfM [e] =
   whnfM e >>= \case
     CoreBlock l -> return l
     _ -> throwEvalError $ ElementsArgumentNotBlock e
-euElements _ args = throwEvalError $ Bug "__ELEMENTS called with bad args" (CoreList args)
+euElements _ as = throwEvalError $ Bug "__ELEMENTS called with bad as" (CoreList as)
 
 
 
@@ -315,7 +315,7 @@ euMerge whnfM [l, r] = do
         (CoreList ll, CoreList rr) -> CoreBlock . CoreList <$> mergeElements whnfM ll rr
         _ -> throwEvalError $ BadBlockMerge (CoreList [l, r])
     _ -> throwEvalError $ BadBlockMerge (CoreList [l, r])
-euMerge _ args = throwEvalError $ BadBlockMerge (CoreList args)
+euMerge _ as = throwEvalError $ BadBlockMerge (CoreList as)
 
 
 
@@ -383,7 +383,7 @@ euLookupOr whnfM [n, d, b] = do
     (CorePrim (CoreSymbol s)) -> lookupOr whnfM (return d) b' s
     (CorePrim (CoreString s)) -> lookupOr whnfM (return d) b' s
     _ -> throwEvalError $ LookupKeyNotStringLike n'
-euLookupOr _ args = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList args)
+euLookupOr _ as = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList as)
 
 -- | __LOOKUP(n, d, b) - look up name `n` (string or symbol) in
 -- block `b`, returning `d` if it isn't there. Strict in `b` and `r`.
@@ -397,7 +397,7 @@ euLookup whnfM [n, b] = do
     (CorePrim (CoreSymbol s)) -> lookupName whnfM b' s
     (CorePrim (CoreString s)) -> lookupName whnfM b' s
     _ -> throwEvalError $ LookupKeyNotStringLike n'
-euLookup _ args = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList args)
+euLookup _ as = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList as)
 
 -- | Remove item from block with the specified key
 removeItem :: WhnfEvaluator -> CoreExpr -> CoreRelativeName -> Interpreter CoreExpr
@@ -425,7 +425,7 @@ euRemove whnfM [n, b] = do
     (CorePrim (CoreSymbol s)) -> removeItem whnfM b' s
     (CorePrim (CoreString s)) -> removeItem whnfM b' s
     _ -> throwEvalError $ LookupKeyNotStringLike n'
-euRemove _ args = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList args)
+euRemove _ as = throwEvalError $ Bug "__LOOKUP called with bad arguments" (CoreList as)
 
 -- | Lookup in a block, throwing if key absent.
 --
@@ -453,7 +453,7 @@ euSplit whnfM [s, re] = do
     (CorePrim (CoreString target), CorePrim (CoreString regex)) ->
       return $ CoreList $ map (CorePrim . CoreString) $ splitRegex target regex
     _ -> throwEvalError $ BadSplitArgs s re
-euSplit _ args = throwEvalError $ Bug "__SPLIT called with bad arguments" (CoreList args)
+euSplit _ as = throwEvalError $ Bug "__SPLIT called with bad arguments" (CoreList as)
 
 -- | __JOIN(l, sep) - join (string) items of l with sep.
 --
@@ -469,7 +469,7 @@ euJoin whnfM [l, sep] = do
     stringItem x = whnfM x >>= extractString
     extractString (CorePrim (CoreString x)) = return x
     extractString x = throwEvalError $ NotString x
-euJoin _ args = throwEvalError $ Bug "__JOIN called with bad arguments" (CoreList args)
+euJoin _ as = throwEvalError $ Bug "__JOIN called with bad arguments" (CoreList as)
 
 -- | __MATCH(s, re) - match s with re, returning list of full match t
 -- index 0 then groups.
@@ -483,7 +483,7 @@ euMatch whnfM [s, re] = do
       return . CoreList . map (CorePrim . CoreString) $
       getAllTextSubmatches (target =~ regex :: AllTextSubmatches [] String)
     _ -> throwEvalError $ BadMatchArgs s re
-euMatch _ args = throwEvalError $ Bug "__MATCH called with bad arguments" (CoreList args)
+euMatch _ as = throwEvalError $ Bug "__MATCH called with bad arguments" (CoreList as)
 
 -- | __MATCHES(s, re) - find all matches of @re@ in @s@, returning list of
 -- string matches.
@@ -497,15 +497,15 @@ euMatches whnfM [s, re] = do
       return . CoreList . map (CorePrim . CoreString) $
       getAllTextMatches (target =~ regex :: AllTextMatches [] String)
     _ -> throwEvalError $ BadMatchArgs s re
-euMatches _ args = throwEvalError $ Bug "__MATCHES called with bad arguments" (CoreList args)
+euMatches _ as = throwEvalError $ Bug "__MATCHES called with bad arguments" (CoreList as)
 
 -- | __WITHMETA(m, e) - tag metadata `m` onto expression `e`.
--- Lazy in both args.
+-- Lazy in both as.
 --
 euWithMeta :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euWithMeta _ [m, e] = return $ CoreMeta m e
-euWithMeta _ args =
-  throwEvalError $ Bug "__WITHMETA called with bad arguments" (CoreList args)
+euWithMeta _ as =
+  throwEvalError $ Bug "__WITHMETA called with bad arguments" (CoreList as)
 
 -- | __META(e) - retrieve metadata from value - which must be a
 -- metadata annotated value (not the value contained
@@ -516,8 +516,8 @@ euMeta whnfM [e] = do
   case e' of
     (CoreMeta m _) -> return m
     _ -> return $ block []
-euMeta _ args =
-  throwEvalError $ Bug "__WITHMETA called with bad arguments" (CoreList args)
+euMeta _ as =
+  throwEvalError $ Bug "__WITHMETA called with bad arguments" (CoreList as)
 
 
 -- | __STR(e) - convert to string.
@@ -529,8 +529,8 @@ euStr whnfM [e] =  whnfM e >>= skipMeta whnfM >>= \case
   (CorePrim (CoreSymbol s)) -> (return . CorePrim . CoreString) s
   (CorePrim (CoreBoolean b)) -> (return . CorePrim . CoreString . show) b
   x -> (return . CorePrim . CoreString . show) x
-euStr _ args =
-  throwEvalError $ Bug "__STR called with bad arguments" (CoreList args)
+euStr _ as =
+  throwEvalError $ Bug "__STR called with bad arguments" (CoreList as)
 
 
 -- | The builtins exposed to the language.

@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Core.Error
   where
 
+import Data.List (intercalate)
 import Control.Exception.Safe
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
@@ -40,6 +41,10 @@ data EvaluationError
   | NotString CoreExpr
   | DivideByZero CoreExpr
   | NotList CoreExpr
+  | TooFewOperands CoreExpr
+  | InvalidOperatorOutputStack [CoreExpr]
+  | InvalidOperatorSequence CoreExpr CoreExpr
+  | UnexpectedEndOfExpression CoreExpr
   | Panic String CoreExpr
   | Bug String CoreExpr
   | EmptyList CoreExpr
@@ -72,6 +77,10 @@ instance Show EvaluationError where
   show (NotString expr) = "Expected string values got " ++ pprint expr
   show (DivideByZero expr) = "Division by zero, denominator " ++ pprint expr
   show (NotList expr) = "Expected list value, got " ++ pprint expr
+  show (TooFewOperands op) = "Too few operands available for operator " ++ pprint op
+  show (InvalidOperatorOutputStack exprs) = "Invalid output stack while cooking operator soup: [" ++ intercalate ","(map pprint exprs) ++ "]"
+  show (InvalidOperatorSequence l r) = "Invalid sequence of operators:" ++ pprint l ++ " " ++ pprint r
+  show (UnexpectedEndOfExpression expr) = "UnexpectedEndOfExpression after " ++ pprint expr
   show (EmptyList expr) = "List was empty in " ++ pprint expr
   show (Panic message expr) = "Panic - " ++ message ++ " in " ++ pprint expr
   show (Bug message expr) = "BUG! " ++ message ++ " - " ++ pprint expr

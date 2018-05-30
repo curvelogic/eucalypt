@@ -70,8 +70,8 @@ desugarDeclarationForm Annotated { annotation = a
   let annot = processAnnotation . desugar <$> a
    in case decl of
         PropertyDecl k expr -> (annot, bindingName k, desugar expr)
-        FunctionDecl k args expr ->
-          (annot, bindingName k, lamexpr args (desugar expr))
+        FunctionDecl k as expr ->
+          (annot, bindingName k, lamexpr as (desugar expr))
         OperatorDecl k l r expr ->
           (annot, bindingName k, lamexpr [l, r] (desugar expr))
 
@@ -119,6 +119,39 @@ desugarIdentifier components =
         else CoreVar headName
 
 
+callOp :: CoreExpr
+callOp = infixl_ 90 (CoreBuiltin "CALL")
+
+lookupOp :: CoreExpr
+lookupOp = infixl_ 95 (CoreBuiltin "LOOKUP")
+
+
+-- | Desugar Ast op soup into core op soup (to be cooked into better
+-- tree later, once fixity and precedence of all ops is resolved).
+--
+-- We can insert call and subtitute lookup operators at this stage but
+-- we can't identify catenation until we have the fixit of all ops.
+--
+-- HACK: This assumes that the dot operator is the highest precedence
+-- of all operators. We need this to break the circle - we can't
+-- handle all the operator fixities until operators are resoloved but we
+-- can't resolve without identifying which names are vars to be
+-- resolved and which are just lookup keys.
+desugarSoup :: [Expression] -> CoreExpr
+desugarSoup = CoreOpSoup . makeVars . insertCalls
+  where
+    insertCalls = concatMap translate
+    translate :: Expression -> [CoreExpr]
+    translate t@Located{locatee=EApplyTuple _} = [callOp, desugar t]
+    translate Located{locatee=EName (OperatorName ".")} = [lookupOp]
+    translate e = [desugar e]
+    makeVars :: [CoreExpr] -> [CoreExpr]
+    makeVars exprs = zipWith f exprs (corenull:exprs)
+    f :: CoreExpr -> CoreExpr -> CoreExpr
+    f n@(CoreName _) (CoreOperator InfixLeft _ (CoreBuiltin "LOOKUP")) = n
+    f (CoreName v) _ = CoreVar v
+    f e _ = e
+
 
 -- | Desugar an expression into core syntax
 desugar :: Expression -> CoreExpr
@@ -126,12 +159,12 @@ desugar Located{locatee=expr} =
   case expr of
     EOperation opName l r ->
       CoreApp (CoreApp (CoreVar (bindingName opName)) (desugar l)) (desugar r)
-    EInvocation f args -> appexp (desugar f) (map desugar args)
+    EInvocation f as -> appexp (desugar f) (map desugar as)
     ECatenation obj verb -> CoreApp (desugar verb) (desugar obj)
     EIdentifier components -> desugarIdentifier components
     ELiteral lit -> CorePrim $ desugarLiteral lit
     EBlock blk -> desugarBlock blk
     EList components -> CoreList $ map desugar components
+    EName n -> CoreName $ bindingName n
     EOpSoup _bs _es -> CorePrim CoreNull -- TODO: new parser
-    EName _ -> CorePrim CoreNull -- TODO: new parser
-    EApplyTuple _ -> CorePrim CoreNull -- TODO: new parser
+    EApplyTuple as -> CoreArgTuple (map desugar as)

@@ -30,9 +30,11 @@ library:
     - exceptions
     - filepath
     - file-embed
+    - mtl
     - network-uri
     - optparse-applicative
     - megaparsec
+    - monad-loops
     - parsec
     - parsec-numeric
     - path

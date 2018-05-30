@@ -10,7 +10,7 @@ module Eucalypt.Core.Pretty
   ( pprint
   ) where
 
-import Bound.Scope (foldMapBound)
+import Bound.Scope (foldMapBound, bindings)
 import Bound.Name
 import Eucalypt.Core.Syn
 import Text.PrettyPrint
@@ -65,6 +65,16 @@ prepare (CoreList xs) = brackets . hsep . punctuate comma $ map prepare xs
 prepare (CoreMeta m e) = vcat [text "` " <+> prepare m, prepare e]
 prepare (CoreTraced v) = prepare v
 prepare (CoreChecked _ v) = prepare v
+prepare (CoreOpSoup es) = parens $ hsep $ map prepare es
+prepare (CoreArgTuple xs) = parens . hsep . punctuate comma $ map prepare xs
+prepare (CoreLambda _ e) = parens $ text "\\" <+> hsep (map text ns) <> char '.' <+> body
+  where
+    ns = map name $ bindings e
+    body = prepare $ inst e
+    inst = instantiateName (\n -> CoreVar (ns !! n))
+prepare (CoreApply f es) = prepare f <+> parens ( hsep . punctuate comma $ map prepare es)
+prepare (CoreName n) = text n
+prepare (CoreOperator _x _p e) = prepare e
 
 -- | Pretty Print a CoreExp to String
 pprint :: CoreExpr -> String
