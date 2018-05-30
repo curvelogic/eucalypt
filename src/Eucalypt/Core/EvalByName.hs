@@ -77,7 +77,6 @@ separateAssertMeta _ e = throwEvalError $ Bug "Bad call to separateAssertMeta" e
 -- passed a single argument but can tunnel through more with argtuple
 --
 handleApp :: CoreExpr -> CoreExpr -> Interpreter CoreExpr
-handleApp (CoreLam b) x = whnfM $ instantiate1Body x b
 handleApp (CorePAp arity expr as) x =
   let args' = (as ++ [x])
    in if length args' < arity
@@ -101,7 +100,6 @@ handleApp expr _ = throwEvalError $ UncallableExpression expr
 --
 handleApply :: CoreExpr -> [CoreExpr] -> Interpreter CoreExpr
 handleApply expr [] = return expr
-handleApply (CoreLam b) (a:as) = whnfM (instantiate1Body a b) >>= (`handleApply` as)
 handleApply (CorePAp arity expr as) newArgs =
   let args' = (as ++ newArgs)
    in if length args' < arity

@@ -60,7 +60,6 @@ type Precedence = Int
 --
 data CoreExp a
   = CoreVar a
-  | CoreLam (Scope (Name String ()) CoreExp a) -- ^ deprecate
   | CoreLet [(CoreBindingName, Scope (Name String Int) CoreExp a)] (Scope (Name String Int) CoreExp a)
   | CoreApp (CoreExp a) (CoreExp a) -- ^ deprecate
   | CoreBuiltin CoreBuiltinName
@@ -130,7 +129,6 @@ instance Applicative CoreExp where
 instance Monad CoreExp where
   return = CoreVar
   CoreVar a >>= f = f a
-  CoreLam e >>= f = CoreLam (e >>>= f)
   CoreLet bs b >>= f = CoreLet (map (second (>>>= f)) bs) (b >>>= f)
   CoreBuiltin n >>= _ = CoreBuiltin n
   CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
@@ -285,13 +283,6 @@ args = CoreArgTuple
 -- library) in here.
 --
 
-
--- | Use Bound to wire a value into a lambda body
---
-instantiateLambda :: CoreExpr -> CoreExpr -> CoreExpr
-instantiateLambda val (CoreLam body) = instantiate1Name val body
-instantiateLambda _ _ = undefined
-
 -- | Instantiate single argument into lambda body (old lambda)
 --
 instantiate1Body :: CoreExpr -> Scope (Name String ()) CoreExp CoreBindingName -> CoreExpr
@@ -352,9 +343,7 @@ bindMore k = toScope . bindFree . fromScope
 -- appropriately named free variables. Handy for inspecting
 -- expression in tests.
 unbind :: CoreExpr -> CoreExpr
-unbind (CoreLam e) = instantiate1Name (CoreVar n) e
-  where
-    n = foldMapBound name e
+unbind (CoreLambda _ e) = instantiateName (CoreVar . show) e
 unbind (CoreLet bs body) = inst body
   where
     names = map fst bs

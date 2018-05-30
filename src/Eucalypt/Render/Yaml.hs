@@ -65,7 +65,6 @@ renderKeyValue whnfM k v = do
   key <- (whnfM >=> expectText) k
   value <- whnfM v
   case value of
-    CoreLam _ -> return Nothing
     CoreLambda{} -> return Nothing
     CoreOperator{} -> return Nothing
     CoreBuiltin _ -> return Nothing

@@ -10,7 +10,7 @@ module Eucalypt.Core.Pretty
   ( pprint
   ) where
 
-import Bound.Scope (foldMapBound, bindings)
+import Bound.Scope (bindings)
 import Bound.Name
 import Eucalypt.Core.Syn
 import Text.PrettyPrint
@@ -41,10 +41,6 @@ renderLiteral CoreNull = "null"
 
 -- | Generate the format document for rendering
 prepare :: CoreExpr -> Doc
-prepare (CoreLam scope) = parens $ text "\\" <+> text n <> char '.' <+> body
-  where
-    n = foldMapBound name scope
-    body = prepare (instantiate1Name (CoreVar n) scope)
 prepare (CoreBuiltin n) = text $ "__" ++ n
 prepare (CoreApp f x) = parens $ prepare f <+> prepare x
 prepare (CorePAp _ f xs) =
