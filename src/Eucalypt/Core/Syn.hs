@@ -161,18 +161,6 @@ corename = CoreName
 
 
 
--- | Abstract a lambda into a scope
-lamexp :: CoreBindingName -> CoreExpr -> CoreExpr
-lamexp x b = CoreLam (abstract1Name x b)
-
-
-
--- | Abstract lambda of several args
-lamexpr :: [CoreBindingName] -> CoreExpr -> CoreExpr
-lamexpr as expr = foldr lamexp expr as
-
-
-
 -- | Abstract lambda of several args
 lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
 lam as expr = CoreLambda (length as) scope
@@ -304,7 +292,15 @@ instantiateLambda :: CoreExpr -> CoreExpr -> CoreExpr
 instantiateLambda val (CoreLam body) = instantiate1Name val body
 instantiateLambda _ _ = undefined
 
+-- | Instantiate single argument into lambda body (old lambda)
+--
+instantiate1Body :: CoreExpr -> Scope (Name String ()) CoreExp CoreBindingName -> CoreExpr
+instantiate1Body = instantiate1Name
 
+-- | Instantiate arguments into lambda body (new multi-arg lambda)
+--
+instantiateBody :: [CoreExpr] -> Scope (Name String Int) CoreExp CoreBindingName -> CoreExpr
+instantiateBody vals = instantiateName (vals !!)
 
 -- | Use Bound to wire the bindings into the appropriate places in the
 -- expressions (lazily...)

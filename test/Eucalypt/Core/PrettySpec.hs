@@ -17,7 +17,7 @@ spec =
       pprint (appexp (var "+") [int 2, int 5]) `shouldBe` "(($+ 2) 5)"
 
     it "reconstructs bound names in lambdas" $
-      pprint (lamexp "foo" (var "foo")) `shouldBe` "(\\ foo. $foo)"
+      pprint (lam ["foo"] (var "foo")) `shouldBe` "(\\ foo. $foo)"
 
     it "reconstructs bound names in lets" $
       pprint (letexp [("foo", int 2), ("bar", int 3)] (appexp (var "+") [var "foo", var "bar"]))

@@ -12,6 +12,7 @@ module Eucalypt.Core.EvalByName where
 import Control.Monad ((>=>))
 import Debug.Trace
 import Eucalypt.Core.Builtin
+import Eucalypt.Core.Cook
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -71,26 +72,64 @@ separateAssertMeta w e@(CoreMeta m v) =
         else CoreMeta meta value
 separateAssertMeta _ e = throwEvalError $ Bug "Bad call to separateAssertMeta" e
 
+
+-- | Lambda or operator application using CoreApp - assume to be
+-- passed a single argument but can tunnel through more with argtuple
+--
+handleApp :: CoreExpr -> CoreExpr -> Interpreter CoreExpr
+handleApp (CoreLam b) x = whnfM $ instantiate1Body x b
+handleApp (CorePAp arity expr as) x =
+  let args' = (as ++ [x])
+   in if length args' < arity
+        then return (CorePAp arity expr args')
+        else (case expr of
+                (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
+                f -> handleApp f (CoreArgTuple args'))
+handleApp (CoreMeta _m f) x = whnfM f >>= whnfM . (`CoreApp` x)
+handleApp (f@CoreBlock{}) x = whnfM x >>= \b -> case b of
+                                                  CoreBlock{} -> euMerge whnfM [b, f]
+                                                  _ -> throwEvalError $ BadBlockMerge b
+handleApp (CoreLambda _ b) (CoreArgTuple as) = whnfM $ instantiateBody as b
+handleApp expr@(CoreLambda n b) a
+  | n > 1 = return (CorePAp n expr [a])
+  | n == 1 = whnfM $ instantiateBody [a] b
+  | n < 1 = whnfM (instantiateBody [] b) >>= (`handleApp` a)
+handleApp expr _ = throwEvalError $ UncallableExpression expr
+
+-- | New style multi-arg application
+--
+--
+handleApply :: CoreExpr -> [CoreExpr] -> Interpreter CoreExpr
+handleApply expr [] = return expr
+handleApply (CoreLam b) (a:as) = whnfM (instantiate1Body a b) >>= (`handleApply` as)
+handleApply (CorePAp arity expr as) newArgs =
+  let args' = (as ++ newArgs)
+   in if length args' < arity
+        then return (CorePAp arity expr args')
+        else (case expr of
+                (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
+                f -> return (CoreApply f args'))
+handleApply (CoreMeta _m f) as = whnfM f >>= (`handleApply` as)
+handleApply (f@CoreBlock {}) (x:xs) =
+  whnfM x >>= \b ->
+    case b of
+      CoreBlock {} -> euMerge whnfM [b, f] >>= (`handleApply` xs)
+      _ -> throwEvalError $ BadBlockMerge b
+handleApply f@(CoreLambda n b) as
+  | length as > n = whnfM (instantiateBody (take n as) b) >>= (`handleApply` drop n as)
+  | length as == n = whnfM $ instantiateBody as b
+  | length as < n = return (CorePAp n f as)
+handleApply (CoreOperator _ _ expr) as = whnfM expr >>= (`handleApply` as)
+handleApply expr _ = throwEvalError $ UncallableExpression expr
+
+
 -- | Monadic WHNF to support abort and runtime error.
 --
 whnfM :: CoreExpr -> Interpreter CoreExpr
-whnfM e@(CoreApp f x) = do
-  f' <- whnfM f
-  case f' of
-    CoreMeta _m f'' -> whnfM f'' >>= \f''' -> whnfM $ CoreApp f''' x
-    CoreBlock{} -> whnfM x >>= \a -> case a of
-                     CoreBlock{} -> euMerge whnfM [a, f]
-                     _ -> throwEvalError $ BadBlockMerge e
-    l@CoreLam{} -> whnfM $ instantiateLambda x l
-    CorePAp arity expr as ->
-      let args' = (as ++ [x])
-       in if length args' < arity
-            then return (CorePAp arity expr args')
-            else (case expr of
-                    (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
-                    _ -> throwEvalError $ NotSupported "multiapply lambdas" e)
-    expr -> throwEvalError $ UncallableExpression expr
+whnfM (CoreApp f x) = whnfM f >>= (`handleApp` x)
+whnfM (CoreApply f as) = whnfM f >>= (`handleApply` as)
 whnfM e@CoreLet {} = whnfM $ instantiateLet e
+whnfM (CoreOpSoup exprs) = cook exprs >>= whnfM
 whnfM (CoreLookup e n) = lookupName whnfM e n >>= whnfM
 whnfM e@(CoreBuiltin n) =
   case lookupBuiltin n of

@@ -71,9 +71,9 @@ desugarDeclarationForm Annotated { annotation = a
    in case decl of
         PropertyDecl k expr -> (annot, bindingName k, desugar expr)
         FunctionDecl k as expr ->
-          (annot, bindingName k, lamexpr as (desugar expr))
+          (annot, bindingName k, lam as (desugar expr))
         OperatorDecl k l r expr ->
-          (annot, bindingName k, lamexpr [l, r] (desugar expr))
+          (annot, bindingName k, lam [l, r] (desugar expr))
 
 
 
@@ -119,11 +119,19 @@ desugarIdentifier components =
         else CoreVar headName
 
 
+-- | Function calls using arg tuple are treated as operator during the
+-- fixity / precedence resolution phases but formed into core syntax
+-- after that.
 callOp :: CoreExpr
-callOp = infixl_ 90 (CoreBuiltin "CALL")
+callOp = infixl_ 90 (CoreBuiltin "*CALL*")
 
+
+
+-- | Name lookup is treated as operator during the fixity / precedence
+-- resolution phases but formed into core syntax after that.
 lookupOp :: CoreExpr
-lookupOp = infixl_ 95 (CoreBuiltin "LOOKUP")
+lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
+
 
 
 -- | Desugar Ast op soup into core op soup (to be cooked into better
@@ -148,7 +156,7 @@ desugarSoup = CoreOpSoup . makeVars . insertCalls
     makeVars :: [CoreExpr] -> [CoreExpr]
     makeVars exprs = zipWith f exprs (corenull:exprs)
     f :: CoreExpr -> CoreExpr -> CoreExpr
-    f n@(CoreName _) (CoreOperator InfixLeft _ (CoreBuiltin "LOOKUP")) = n
+    f n@(CoreName _) (CoreOperator InfixLeft _ (CoreBuiltin "*DOT*")) = n
     f (CoreName v) _ = CoreVar v
     f e _ = e
 
@@ -166,5 +174,5 @@ desugar Located{locatee=expr} =
     EBlock blk -> desugarBlock blk
     EList components -> CoreList $ map desugar components
     EName n -> CoreName $ bindingName n
-    EOpSoup _bs _es -> CorePrim CoreNull -- TODO: new parser
+    EOpSoup _ es -> desugarSoup es
     EApplyTuple as -> CoreArgTuple (map desugar as)

@@ -12,10 +12,10 @@ main = hspec spec
 spec :: Spec
 spec =
   describe "WHNF evaluation" $ do
-    let i = lamexp "x" (CoreVar "x")
-    let k = lamexpr ["x", "y"] (CoreVar "x")
+    let i = lam ["x"] (CoreVar "x")
+    let k = lam ["x", "y"] (CoreVar "x")
     let s =
-          lamexpr
+          lam
             ["f", "g", "x"]
             (CoreApp
                (CoreApp (CoreVar "f") (CoreVar "x"))

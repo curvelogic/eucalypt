@@ -97,6 +97,16 @@ popOne =
       e:es -> (Just e, s {shuntOutput = es})
       _ -> (Nothing, s)
 
+
+-- | Lookups and calls desugar as operators but need special handling
+-- so once precedence is resolved we'll transform the syntax. This
+-- happens when we apply to the output stack.
+formApply :: CoreExpr -> [CoreExpr] -> CoreExpr
+formApply (CoreBuiltin "*CALL*") [f, CoreArgTuple as] =
+  CoreApply f as
+formApply (CoreBuiltin "*DOT*") [o, CoreName n] = CoreLookup o n
+formApply f as = CoreApply f as
+
 -- | Apply the given operator to the argument(s) at the top of the
 -- output stack
 applyOp :: CoreExpr -> State ShuntState ()
@@ -109,11 +119,11 @@ applyOp op@(CoreOperator x _ e) =
   where
     applyTwo =
       popTwo >>= \case
-        Just (l, r) -> pushOutput (CoreApply e [l, r])
+        Just (l, r) -> pushOutput (formApply e [l, r])
         Nothing -> setError (TooFewOperands op)
     applyOne =
       popOne >>= \case
-        Just l -> pushOutput (CoreApply e [l])
+        Just l -> pushOutput (formApply e [l])
         Nothing -> setError (TooFewOperands op)
 applyOp e = setError $ Bug "applyOp called on non-operator" e
 

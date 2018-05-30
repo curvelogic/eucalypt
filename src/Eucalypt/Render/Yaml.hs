@@ -66,6 +66,8 @@ renderKeyValue whnfM k v = do
   value <- whnfM v
   case value of
     CoreLam _ -> return Nothing
+    CoreLambda{} -> return Nothing
+    CoreOperator{} -> return Nothing
     CoreBuiltin _ -> return Nothing
     CorePAp {} -> return Nothing
     _ -> toMYaml whnfM value >>= \rendered -> return (Just (key, rendered))
@@ -95,7 +97,6 @@ instance ToMYaml Interpreter CoreExpr where
           Just (CoreList [k, v]) -> renderKeyValue whnfM k v
           Just expr -> throwEvalError $ BadBlockElement expr
           Nothing -> return Nothing
-  toMYaml _ (CoreLam _) = return B.null
   toMYaml whnfM (CoreMeta _ v) = toMYaml whnfM v
   toMYaml _ expr = throwEvalError $ NotWeakHeadNormalForm expr
 
