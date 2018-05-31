@@ -40,9 +40,6 @@ shunt = (shunt1 `untilM_` finished) >> result
             [o] -> return $ Right o
             es -> return $ Left $ InvalidOperatorOutputStack es
 
--- | Catenation operator
-catOp :: CoreExpr
-catOp = infixl_ 20 (CoreBuiltin "CAT")
 
 -- | State of the shunting yard algorithm
 data ShuntState = ShuntState

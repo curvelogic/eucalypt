@@ -115,27 +115,27 @@ mergeUnitsSpec =
   describe "merging units" $ do
     it "merges and binds correctly with no cross unit bindings" $
       mergeUnits [unitA, unitB, unitC] `shouldBe`
-      CoreApp
+      app
         (letexp [("c1", int 5), ("c2", int 6),("b1", int 5), ("b2", int 6),("a1", int 5), ("a2", int 6)] bodyC)
-        (CoreApp
+        [app
          (letexp [("b1", int 5), ("b2", int 6),("a1", int 5), ("a2", int 6)] bodyB)
-         (letexp [("a1", int 5), ("a2", int 6)] bodyA))
+         [letexp [("a1", int 5), ("a2", int 6)] bodyA]]
 
     it "merges and binds correctly with cross unit bindings" $
       mergeUnits [unitA2, unitB2, unitC2] `shouldBe`
-      CoreApp
+      app
         (letexp [("c1", int 5), ("c2", int 6),("b1", int 5), ("b2", int 6),("a1", int 5), ("a2", int 6)] bodyC2)
-        (CoreApp
+        [app
          (letexp [("b1", int 5), ("b2", int 6),("a1", int 5), ("a2", int 6)] bodyB2)
-         (letexp [("a1", int 5), ("a2", int 6)] bodyA2))
+         [letexp [("a1", int 5), ("a2", int 6)] bodyA2]]
 
     it "merges and binds correctly with cross unit bindings and internal references" $
       mergeUnits [unitA3, unitB3, unitC3] `shouldBe`
-      CoreApp
+      app
         (letexp [("c1", int 5), ("c2", var "c1"), ("b1", int 5), ("b2", var "b1"), ("a1", int 5), ("a2", var "a1")] bodyC3)
-        (CoreApp
+        [app
          (letexp [("b1", int 5), ("b2", var "b1"),("a1", int 5), ("a2", var "a1")] bodyB3)
-         (letexp [("a1", int 5), ("a2", var "a1")] bodyA3))
+         [letexp [("a1", int 5), ("a2", var "a1")] bodyA3]]
 
 
 

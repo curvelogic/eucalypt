@@ -268,6 +268,13 @@ soup = CoreOpSoup
 args :: [CoreExpr] -> CoreExpr
 args = CoreArgTuple
 
+-- $ special operators
+--
+
+
+-- | Catenation operator
+catOp :: CoreExpr
+catOp = infixl_ 20 (CoreBuiltin "CAT")
 
 
 -- $ substitutions
@@ -359,8 +366,9 @@ unitBindingsAndBody e = trace (show e) $ error "not a let"
 -- to values supplied by earlier units.
 --
 mergeUnits :: [CoreExpr] -> CoreExpr
-mergeUnits lets = foldl1 (flip CoreApp) newLets
+mergeUnits lets = foldl1 merge newLets
   where
+    merge a b = CoreApply b [a]
     (bindLists, bodies) = unzip (map unitBindingsAndBody lets)
     bindLists' = scanl1 rebindBindings bindLists
     bodies' = zipWith rebindBody bodies bindLists'

@@ -106,7 +106,7 @@ handleApply (CorePAp arity expr as) newArgs =
         then return (CorePAp arity expr args')
         else (case expr of
                 (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
-                f -> return (CoreApply f args'))
+                f -> handleApply f args')
 handleApply (CoreMeta _m f) as = whnfM f >>= (`handleApply` as)
 handleApply (f@CoreBlock {}) (x:xs) =
   whnfM x >>= \b ->
@@ -134,8 +134,6 @@ whnfM e@(CoreBuiltin n) =
     Just (0, f) -> f whnfM []
     Just (arity, _) -> return (CorePAp arity e [])
     Nothing -> throwEvalError $ BuiltinNotFound n e
-whnfM e@CorePAp {} =
-  throwEvalError $ Bug "Found unevaluated saturated partial application." e
 whnfM (CoreMeta m e) = do
   metadata <- whnfM m -- should be in isolated metadata binding env
   separated <- (separateTraceMeta whnfM >=> separateAssertMeta whnfM) (CoreMeta metadata e)

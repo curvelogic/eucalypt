@@ -26,7 +26,7 @@ shallowEvalBuiltin name =
 
 -- | A panic to use in contexts which should not be evaluated
 abort :: CoreExpr
-abort = CoreApp (bif "PANIC") (str "Should not have been evaluated")
+abort = app (bif "PANIC") [str "Should not have been evaluated"]
 
 
 spec :: Spec
@@ -83,7 +83,7 @@ spec = do
       runInterpreter
         (euCons
            whnfM
-           [int 0, CoreApp (bif "TAIL") (CoreList [int 1, int 2, int 3])]) `shouldBe`
+           [int 0, app (bif "TAIL") [CoreList [int 1, int 2, int 3]]]) `shouldBe`
       Right (CoreList [int 0, int 2, int 3])
     it "judges head([1,2,3])=1" $
       runInterpreter
