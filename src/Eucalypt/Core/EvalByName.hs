@@ -73,27 +73,6 @@ separateAssertMeta w e@(CoreMeta m v) =
 separateAssertMeta _ e = throwEvalError $ Bug "Bad call to separateAssertMeta" e
 
 
--- | Lambda or operator application using CoreApp - assume to be
--- passed a single argument but can tunnel through more with argtuple
---
-handleApp :: CoreExpr -> CoreExpr -> Interpreter CoreExpr
-handleApp (CorePAp arity expr as) x =
-  let args' = (as ++ [x])
-   in if length args' < arity
-        then return (CorePAp arity expr args')
-        else (case expr of
-                (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
-                f -> handleApp f (CoreArgTuple args'))
-handleApp (CoreMeta _m f) x = whnfM f >>= whnfM . (`CoreApp` x)
-handleApp (f@CoreBlock{}) x = whnfM x >>= \b -> case b of
-                                                  CoreBlock{} -> euMerge whnfM [b, f]
-                                                  _ -> throwEvalError $ BadBlockMerge b
-handleApp (CoreLambda _ b) (CoreArgTuple as) = whnfM $ instantiateBody as b
-handleApp expr@(CoreLambda n b) a
-  | n > 1 = return (CorePAp n expr [a])
-  | n == 1 = whnfM $ instantiateBody [a] b
-  | n < 1 = whnfM (instantiateBody [] b) >>= (`handleApp` a)
-handleApp expr _ = throwEvalError $ UncallableExpression expr
 
 -- | New style multi-arg application
 --
@@ -124,7 +103,6 @@ handleApply expr _ = throwEvalError $ UncallableExpression expr
 -- | Monadic WHNF to support abort and runtime error.
 --
 whnfM :: CoreExpr -> Interpreter CoreExpr
-whnfM (CoreApp f x) = whnfM f >>= (`handleApp` x)
 whnfM (CoreApply f as) = whnfM f >>= (`handleApply` as)
 whnfM e@CoreLet {} = whnfM $ instantiateLet e
 whnfM (CoreOpSoup exprs) = cook exprs >>= whnfM
@@ -142,7 +120,7 @@ whnfM (CoreMeta m e) = do
     expr -> whnfM expr
 whnfM (CoreTraced e) = trace ("TRACE: " ++ show e) whnfM e
 whnfM (CoreChecked fn e) =
-  whnfM (CoreApp fn e) >>= \case
+  whnfM (CoreApply fn [e]) >>= \case
     (CorePrim (CoreBoolean True)) -> whnfM e
     _ -> throwEvalError $ AssertionFailed e
 whnfM e = return e

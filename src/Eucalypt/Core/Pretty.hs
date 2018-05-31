@@ -42,7 +42,6 @@ renderLiteral CoreNull = "null"
 -- | Generate the format document for rendering
 prepare :: CoreExpr -> Doc
 prepare (CoreBuiltin n) = text $ "__" ++ n
-prepare (CoreApp f x) = parens $ prepare f <+> prepare x
 prepare (CorePAp _ f xs) =
   parens $ foldr ((<+>) . prepare) (text "partial:" <+> prepare f) xs
 prepare (CoreVar x) = char '$' <> text x

@@ -61,7 +61,6 @@ type Precedence = Int
 data CoreExp a
   = CoreVar a
   | CoreLet [(CoreBindingName, Scope (Name String Int) CoreExp a)] (Scope (Name String Int) CoreExp a)
-  | CoreApp (CoreExp a) (CoreExp a) -- ^ deprecate
   | CoreBuiltin CoreBuiltinName
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
@@ -131,7 +130,6 @@ instance Monad CoreExp where
   CoreVar a >>= f = f a
   CoreLet bs b >>= f = CoreLet (map (second (>>>= f)) bs) (b >>>= f)
   CoreBuiltin n >>= _ = CoreBuiltin n
-  CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
   CorePAp a e as >>= f = CorePAp a (e >>= f) (map (>>= f) as)
   CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
