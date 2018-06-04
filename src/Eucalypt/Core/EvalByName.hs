@@ -87,7 +87,7 @@ handleApply (CorePAp arity expr as) newArgs =
                 (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
                 f -> handleApply f args')
 handleApply (CoreMeta _m f) as = whnfM f >>= (`handleApply` as)
-handleApply (f@CoreBlock {}) (x:xs) =
+handleApply f@CoreBlock {} (x:xs) =
   whnfM x >>= \b ->
     case b of
       CoreBlock {} -> euMerge whnfM [b, f] >>= (`handleApply` xs)
