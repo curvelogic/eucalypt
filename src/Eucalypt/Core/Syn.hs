@@ -275,6 +275,21 @@ catOp :: CoreExpr
 catOp = infixl_ 20 (CoreBuiltin "CAT")
 
 
+-- | Function calls using arg tuple are treated as operator during the
+-- fixity / precedence resolution phases but formed into core syntax
+-- after that.
+callOp :: CoreExpr
+callOp = infixl_ 90 (CoreBuiltin "*CALL*")
+
+
+
+-- | Name lookup is treated as operator during the fixity / precedence
+-- resolution phases but formed into core syntax after that.
+lookupOp :: CoreExpr
+lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
+
+
+
 -- $ substitutions
 --
 -- The crude bootstrap interpreter just manipulates core expressions.

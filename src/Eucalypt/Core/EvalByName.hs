@@ -97,7 +97,7 @@ handleApply f@(CoreLambda n b) as
   | length as == n = whnfM $ instantiateBody as b
   | length as < n = return (CorePAp n f as)
 handleApply (CoreOperator _ _ expr) as = whnfM expr >>= (`handleApply` as)
-handleApply expr _ = throwEvalError $ UncallableExpression expr
+handleApply expr as = throwEvalError $ UncallableExpression (CoreApply expr as)
 
 
 -- | Monadic WHNF to support abort and runtime error.

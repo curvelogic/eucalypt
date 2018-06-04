@@ -34,7 +34,7 @@ import Text.PrettyPrint
 renderLiteral :: Primitive -> String
 renderLiteral (CoreInt i) = show i
 renderLiteral (CoreFloat f) = show f
-renderLiteral (CoreString s) = s
+renderLiteral (CoreString s) = "\"" ++ s ++ "\""
 renderLiteral (CoreSymbol s) = ":" ++ s
 renderLiteral (CoreBoolean b) = show b
 renderLiteral CoreNull = "null"
@@ -60,7 +60,7 @@ prepare (CoreList xs) = brackets . hsep . punctuate comma $ map prepare xs
 prepare (CoreMeta m e) = vcat [text "` " <+> prepare m, prepare e]
 prepare (CoreTraced v) = prepare v
 prepare (CoreChecked _ v) = prepare v
-prepare (CoreOpSoup es) = parens $ hsep $ map prepare es
+prepare (CoreOpSoup es) = text "±±" <> parens ( hsep $ map prepare es)
 prepare (CoreArgTuple xs) = parens . hsep . punctuate comma $ map prepare xs
 prepare (CoreLambda _ e) = parens $ text "\\" <+> hsep (map text ns) <> char '.' <+> body
   where

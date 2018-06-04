@@ -32,7 +32,7 @@ import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Expression)
 import Eucalypt.Syntax.Error (SyntaxError(..))
-import Eucalypt.Syntax.Parser (parseExpression, parseNamedInput, parseTopLevel)
+import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
 import Safe (headMay)
 import System.Exit
@@ -78,7 +78,8 @@ readInput StdInput = readStdInput
 
 -- | Parse a byteString as eucalypt
 parseEucalypt :: BS.ByteString -> String -> Either SyntaxError Expression
-parseEucalypt source name = parseNamedInput parseTopLevel name $ (T.unpack . T.decodeUtf8) source
+parseEucalypt source = PE.parseUnit text
+  where text = (T.unpack . T.decodeUtf8) source
 
 
 
@@ -165,7 +166,7 @@ runMetadataPass e = case runInterpreter (runMetaPass e) of
 
 -- | Parse text from -e option as expression
 parseEvaluand :: String -> Either SyntaxError Expression
-parseEvaluand = parseNamedInput parseExpression "[cli evaluand]"
+parseEvaluand = flip PE.parseExpression "[cli evaluand]"
 
 
 -- | Parse, desugar, and create unit for evaluand

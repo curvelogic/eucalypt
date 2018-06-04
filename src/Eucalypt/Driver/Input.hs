@@ -3,14 +3,12 @@ module Eucalypt.Driver.Input
 
 import Control.Applicative ((<|>))
 import Data.Maybe (fromMaybe)
-import Eucalypt.Syntax.Parser
+import Data.Void
+import Eucalypt.Syntax.ParseExpr (normalIdentifier)
 import Network.URI
 import System.FilePath
-import Text.Parsec (try)
-import Text.Parsec.Char (anyChar, char)
-import Text.Parsec.Combinator (optionMaybe)
-import Text.Parsec.Prim (many)
-import Text.Parsec.String (Parser)
+import Text.Megaparsec
+import Text.Megaparsec.Char
 
 -- | All inputs are active (evaluated) or inert (data-only), Eucalypt
 -- format is always active; yaml and json and be inert or active.
@@ -103,15 +101,17 @@ locatorFromString s =
     _ -> URLInput <$> (parseURI s <|> parseURI ("file:" ++ s))
 
 
+-- | Parser for parsing input strings
+type Parser = Parsec Void String
 
 -- | Parse an input specifier, e.g. simple.eu, +yaml@data.txt
 parseInput :: Parser Input
 parseInput = do
 
   -- Pull the various components apart
-  maybePlus <- optionMaybe $ try (char '+')
-  name <- optionMaybe $ try (identifier <* char '=')
-  format <- optionMaybe $ try (identifier <* char '@')
+  maybePlus <- optional $ try (char '+')
+  name <- optional $ try (normalIdentifier <* char '=')
+  format <- optional $ try (normalIdentifier <* char '@')
   locatorStr <- many anyChar
 
   -- Try and interpret the URL portion of the input
@@ -136,4 +136,4 @@ parseInput = do
 
 -- | Parse from string
 parseInputFromString :: String -> Maybe Input
-parseInputFromString s = either (const Nothing) Just (parseString parseInput s)
+parseInputFromString = parseMaybe parseInput

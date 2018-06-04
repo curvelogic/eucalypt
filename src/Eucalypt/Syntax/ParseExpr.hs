@@ -8,10 +8,12 @@ Stability   : experimental
 -}
 module Eucalypt.Syntax.ParseExpr where
 
+import Data.Bifunctor (first)
 import Data.Char (isAscii, isSymbol)
 import Data.Void (Void)
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
+import Eucalypt.Syntax.Error
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -145,7 +147,7 @@ number = try float <|> integer
 
 
 stringLiteral :: Parser PrimitiveLiteral
-stringLiteral = VStr <$> (char '"' >> manyTill L.charLiteral (char '"'))
+stringLiteral = VStr <$> (char '"' >> manyTill anyChar (char '"'))
 
 
 
@@ -228,7 +230,7 @@ squares = between (symbol "[") (char ']')
 
 listLiteral :: Parser Expression
 listLiteral =
-  located (EList <$> squares (expression `sepBy1` comma) <?> "list literal")
+  located (EList <$> squares (expression `sepBy` comma) <?> "list literal")
 
 -- ? expressions
 
@@ -238,7 +240,7 @@ unparenExpression = located $ do
   return $ case exprs of
     [e] -> locatee e
     es -> EOpSoup implicit es
-  where freeElement = try (element <* notFollowedBy (sc >> char ':' >> space1))
+  where freeElement = try (element <* notFollowedBy (sc >> char ':'))
     
 parenExpression :: Parser Expression
 parenExpression = located $ do
@@ -312,3 +314,12 @@ blockLiteral = located $ EBlock <$> braces blockContent
 
 unit :: Parser Expression
 unit = located $ EBlock <$> blockContent
+
+-- ? driver functions
+--
+
+parseUnit :: String -> String -> Either SyntaxError Expression
+parseUnit text n  = first MegaparsecError $ parse unit n text
+
+parseExpression :: String -> String -> Either SyntaxError Expression
+parseExpression text n = first MegaparsecError $ parse expression n text
