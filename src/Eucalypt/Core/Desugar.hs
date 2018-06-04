@@ -67,8 +67,11 @@ name2Var n
   | "__" `isPrefixOf` n && isUpper (n !! 2) = CoreBuiltin (drop 2 n)
   | otherwise = CoreVar n
 
--- | Read from unevaluated metadata
+-- | Read from unevaluated metadata (expanding out only an outer let
+-- to prepare a block for lookup).
 readUnevaluatedMetadata :: String -> CoreExpr -> (CoreExpr -> a) -> Maybe a
+readUnevaluatedMetadata key expr@(Syn.CoreLet _ _) readVal =
+  readUnevaluatedMetadata key (instantiateLet expr) readVal
 readUnevaluatedMetadata key (Syn.CoreBlock (Syn.CoreList items)) readVal =
   readVal <$> lookup key buildSearchList
   where
@@ -104,7 +107,7 @@ determineFixity :: Maybe CoreExpr -> (Fixity, Precedence)
 determineFixity (Just meta) = (fixity, fromMaybe 50 prec)
   where
     fixity =
-      case readUnevaluatedMetadata "associates" meta stringContent of
+      case readUnevaluatedMetadata "associates" meta symbolName of
         (Just (Just "right")) -> InfixRight
         _ -> InfixLeft
     prec =
