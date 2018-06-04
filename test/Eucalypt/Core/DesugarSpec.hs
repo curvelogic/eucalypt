@@ -1,11 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
-module Eucalypt.Core.DesugarSpec (main, spec)
-  where
 
+module Eucalypt.Core.DesugarSpec
+  ( main
+  , spec
+  ) where
+
+import Eucalypt.Core.Desugar
+import qualified Eucalypt.Core.Syn as Syn
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
-import qualified Eucalypt.Core.Syn as Syn
-import Eucalypt.Core.Desugar
 import Eucalypt.Syntax.ParseExpr
 import Test.Hspec
 
@@ -21,47 +24,29 @@ spec = do
 
 coreSpec :: Spec
 coreSpec =
-
   describe "Core" $ do
-
-    it "represents literals" $
-      desugarLiteral (VInt 8) `shouldBe` Syn.CoreInt 8
-
+    it "represents literals" $ desugarLiteral (VInt 8) `shouldBe` Syn.CoreInt 8
     it "transforms simple declarations" $
-
-      desugarDeclarationForm Annotated{annotation=Nothing,declaration=prop "x" (op "+" (int 2) (int 5))}
-
-       `shouldBe`
-
-      (Nothing, "x", Syn.CoreApply (Syn.CoreVar "+") [Syn.int 2, Syn.int 5])
-
-    it "takes leading underscores to indicate built-ins" $
-
-      desugar (at nowhere (EIdentifier [NormalName "__NULL"])) `shouldBe` Syn.bif "NULL"
-
-    it "translates lookups against builtins" $
-
-      desugar (at nowhere (EIdentifier [NormalName "__X", NormalName "id"])) `shouldBe` Syn.CoreLookup (Syn.bif "X") "id"
-
+      desugarDeclarationForm
+        Annotated
+          { annotation = Nothing
+          , declaration = prop "x" (opsoup [int 2, operatorName "+", int 5])
+          } `shouldBe`
+      (Nothing, "x", Syn.soup [Syn.int 2, Syn.var "+", Syn.int 5])
     it "processes annotation shortcuts" $
-
       processAnnotation (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
-        Syn.CoreBlock
-          (Syn.CoreList
-             [ Syn.CoreList
-                 [ Syn.CorePrim (Syn.CoreSymbol "doc")
-                 , Syn.CorePrim (Syn.CoreString "blah")
-                 ]
-             ])
-
+      Syn.CoreBlock
+        (Syn.CoreList
+           [ Syn.CoreList
+               [ Syn.CorePrim (Syn.CoreSymbol "doc")
+               , Syn.CorePrim (Syn.CoreString "blah")
+               ]
+           ])
     it "preserves declaration metadata" $
-
-      Syn.unbind (desugarBlock (at nowhere $ Block [ann (str "docs") (prop "x" (int 5))]))
-      `shouldSatisfy`
-      \case
+      Syn.unbind
+        (desugarBlock (at nowhere $ Block [ann (str "docs") (prop "x" (int 5))])) `shouldSatisfy` \case
         Syn.CoreBlock (Syn.CoreList [Syn.CoreMeta _ _]) -> True
         _ -> False
-
 
 soupSpec :: Spec
 soupSpec =
@@ -98,8 +83,12 @@ soupSpec =
         , normalName "z"
         ] `shouldBe`
       Syn.soup
-        [Syn.var "x", Syn.lookupOp, Syn.corename "y", Syn.lookupOp, Syn.corename "z"]
-
+        [ Syn.var "x"
+        , Syn.lookupOp
+        , Syn.corename "y"
+        , Syn.lookupOp
+        , Syn.corename "z"
+        ]
 
 blockSpec :: Spec
 blockSpec =
@@ -120,7 +109,6 @@ blockSpec =
         [("null", Syn.bif "NULL"), ("a", Syn.var "null")]
         (Syn.block
            [Syn.element "null" $ Syn.var "null", Syn.element "a" $ Syn.var "a"])
-
 
 sampleSpec :: Spec
 sampleSpec =

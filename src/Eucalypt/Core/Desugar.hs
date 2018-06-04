@@ -211,11 +211,6 @@ desugarSoup = CoreOpSoup . makeVars . insertCalls
 desugar :: Expression -> CoreExpr
 desugar Located {locatee = expr} =
   case expr of
-    EOperation opName l r ->
-      CoreApply (CoreVar (bindingName opName)) [desugar l, desugar r]
-    EInvocation f as -> app (desugar f) (map desugar as)
-    ECatenation obj verb -> app catOp [desugar obj, desugar verb]
-    EIdentifier components -> desugarIdentifier components
     ELiteral lit -> CorePrim $ desugarLiteral lit
     EBlock blk -> desugarBlock blk
     EList components -> CoreList $ map (varify .desugar) components
