@@ -45,6 +45,9 @@ data Located a = Located
   , locatee :: a
   } deriving (Eq, Show, Generic, ToJSON)
 
+instance Functor Located where
+  fmap f l@Located {locatee = x} = l {locatee = f x}
+
 -- | Simple typeclass for expression that we can strip location
 -- information from (mainly for testing).
 class HasLocation a where

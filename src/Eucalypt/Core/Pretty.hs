@@ -10,7 +10,7 @@ module Eucalypt.Core.Pretty
   ( pprint
   ) where
 
-import Bound.Scope (foldMapBound, bindings)
+import Bound.Scope (bindings)
 import Bound.Name
 import Eucalypt.Core.Syn
 import Text.PrettyPrint
@@ -34,19 +34,14 @@ import Text.PrettyPrint
 renderLiteral :: Primitive -> String
 renderLiteral (CoreInt i) = show i
 renderLiteral (CoreFloat f) = show f
-renderLiteral (CoreString s) = s
+renderLiteral (CoreString s) = "\"" ++ s ++ "\""
 renderLiteral (CoreSymbol s) = ":" ++ s
 renderLiteral (CoreBoolean b) = show b
 renderLiteral CoreNull = "null"
 
 -- | Generate the format document for rendering
 prepare :: CoreExpr -> Doc
-prepare (CoreLam scope) = parens $ text "\\" <+> text n <> char '.' <+> body
-  where
-    n = foldMapBound name scope
-    body = prepare (instantiate1Name (CoreVar n) scope)
 prepare (CoreBuiltin n) = text $ "__" ++ n
-prepare (CoreApp f x) = parens $ prepare f <+> prepare x
 prepare (CorePAp _ f xs) =
   parens $ foldr ((<+>) . prepare) (text "partial:" <+> prepare f) xs
 prepare (CoreVar x) = char '$' <> text x
@@ -65,14 +60,14 @@ prepare (CoreList xs) = brackets . hsep . punctuate comma $ map prepare xs
 prepare (CoreMeta m e) = vcat [text "` " <+> prepare m, prepare e]
 prepare (CoreTraced v) = prepare v
 prepare (CoreChecked _ v) = prepare v
-prepare (CoreOpSoup es) = parens $ hsep $ map prepare es
+prepare (CoreOpSoup es) = text "±±" <> parens ( hsep $ map prepare es)
 prepare (CoreArgTuple xs) = parens . hsep . punctuate comma $ map prepare xs
 prepare (CoreLambda _ e) = parens $ text "\\" <+> hsep (map text ns) <> char '.' <+> body
   where
     ns = map name $ bindings e
     body = prepare $ inst e
     inst = instantiateName (\n -> CoreVar (ns !! n))
-prepare (CoreApply f es) = prepare f <+> parens ( hsep . punctuate comma $ map prepare es)
+prepare (CoreApply f es) = prepare f <> parens ( hsep . punctuate comma $ map prepare es)
 prepare (CoreName n) = text n
 prepare (CoreOperator _x _p e) = prepare e
 

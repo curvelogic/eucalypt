@@ -12,6 +12,7 @@ module Eucalypt.Core.EvalByName where
 import Control.Monad ((>=>))
 import Debug.Trace
 import Eucalypt.Core.Builtin
+import Eucalypt.Core.Cook
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -71,34 +72,46 @@ separateAssertMeta w e@(CoreMeta m v) =
         else CoreMeta meta value
 separateAssertMeta _ e = throwEvalError $ Bug "Bad call to separateAssertMeta" e
 
+
+
+-- | New style multi-arg application
+--
+--
+handleApply :: CoreExpr -> [CoreExpr] -> Interpreter CoreExpr
+handleApply expr [] = return expr
+handleApply (CorePAp arity expr as) newArgs =
+  let args' = (as ++ newArgs)
+   in if length args' < arity
+        then return (CorePAp arity expr args')
+        else (case expr of
+                (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
+                f -> handleApply f args')
+handleApply (CoreMeta _m f) as = whnfM f >>= (`handleApply` as)
+handleApply f@CoreBlock {} (x:xs) =
+  whnfM x >>= \b ->
+    case b of
+      CoreBlock {} -> euMerge whnfM [b, f] >>= (`handleApply` xs)
+      _ -> throwEvalError $ BadBlockMerge b
+handleApply f@(CoreLambda n b) as
+  | length as > n = whnfM (instantiateBody (take n as) b) >>= (`handleApply` drop n as)
+  | length as == n = whnfM $ instantiateBody as b
+  | length as < n = return (CorePAp n f as)
+handleApply (CoreOperator _ _ expr) as = whnfM expr >>= (`handleApply` as)
+handleApply expr as = throwEvalError $ UncallableExpression (CoreApply expr as)
+
+
 -- | Monadic WHNF to support abort and runtime error.
 --
 whnfM :: CoreExpr -> Interpreter CoreExpr
-whnfM e@(CoreApp f x) = do
-  f' <- whnfM f
-  case f' of
-    CoreMeta _m f'' -> whnfM f'' >>= \f''' -> whnfM $ CoreApp f''' x
-    CoreBlock{} -> whnfM x >>= \a -> case a of
-                     CoreBlock{} -> euMerge whnfM [a, f]
-                     _ -> throwEvalError $ BadBlockMerge e
-    l@CoreLam{} -> whnfM $ instantiateLambda x l
-    CorePAp arity expr as ->
-      let args' = (as ++ [x])
-       in if length args' < arity
-            then return (CorePAp arity expr args')
-            else (case expr of
-                    (CoreBuiltin name) -> applyBuiltin whnfM expr name args'
-                    _ -> throwEvalError $ NotSupported "multiapply lambdas" e)
-    expr -> throwEvalError $ UncallableExpression expr
+whnfM (CoreApply f as) = whnfM f >>= (`handleApply` as)
 whnfM e@CoreLet {} = whnfM $ instantiateLet e
+whnfM (CoreOpSoup exprs) = cook exprs >>= whnfM
 whnfM (CoreLookup e n) = lookupName whnfM e n >>= whnfM
 whnfM e@(CoreBuiltin n) =
   case lookupBuiltin n of
     Just (0, f) -> f whnfM []
     Just (arity, _) -> return (CorePAp arity e [])
     Nothing -> throwEvalError $ BuiltinNotFound n e
-whnfM e@CorePAp {} =
-  throwEvalError $ Bug "Found unevaluated saturated partial application." e
 whnfM (CoreMeta m e) = do
   metadata <- whnfM m -- should be in isolated metadata binding env
   separated <- (separateTraceMeta whnfM >=> separateAssertMeta whnfM) (CoreMeta metadata e)
@@ -107,7 +120,7 @@ whnfM (CoreMeta m e) = do
     expr -> whnfM expr
 whnfM (CoreTraced e) = trace ("TRACE: " ++ show e) whnfM e
 whnfM (CoreChecked fn e) =
-  whnfM (CoreApp fn e) >>= \case
+  whnfM (CoreApply fn [e]) >>= \case
     (CorePrim (CoreBoolean True)) -> whnfM e
     _ -> throwEvalError $ AssertionFailed e
 whnfM e = return e

@@ -533,6 +533,14 @@ euStr _ as =
   throwEvalError $ Bug "__STR called with bad arguments" (CoreList as)
 
 
+-- | __CAT(a, b) - the default implementation of catenation
+--
+euCat :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
+euCat whnfM [a, b] = (`app` [a]) <$> whnfM b
+euCat _ as = throwEvalError $ Bug "__CAT called with bad arguments" (CoreList as)
+
+
+
 -- | The builtins exposed to the language.
 --
 builtinIndex :: [(CoreBuiltinName, (Int, Builtin))]
@@ -571,6 +579,7 @@ builtinIndex =
   , ("WITHMETA", (2, euWithMeta))
   , ("META", (1, euMeta))
   , ("STR", (1, euStr))
+  , ("CAT", (2, euCat))
   ]
 
 -- | Look up a built in by name, returns tuple of arity and implementation.

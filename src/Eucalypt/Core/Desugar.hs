@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-|
 Module      : Eucalypt.Core.Syn
 Description : Desugar from surface syntax to core syntax
@@ -11,10 +12,10 @@ module Eucalypt.Core.Desugar
 where
 
 import Data.Char (isUpper)
-import Eucalypt.Reporting.Location
 import Data.List (isPrefixOf)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Eucalypt.Core.Syn as Syn
+import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast as Ast
 
 -- | Transform a literal into its value
@@ -59,6 +60,63 @@ processAnnotation e@(CorePrim (CoreSymbol s))
 processAnnotation e = e
 
 
+-- | Names that aren't in lookup positions need to become variables or
+-- builtins as appropriate
+name2Var :: String -> CoreExpr
+name2Var n
+  | "__" `isPrefixOf` n && isUpper (n !! 2) = CoreBuiltin (drop 2 n)
+  | otherwise = CoreVar n
+
+-- | Read from unevaluated metadata (expanding out only an outer let
+-- to prepare a block for lookup).
+readUnevaluatedMetadata :: String -> CoreExpr -> (CoreExpr -> a) -> Maybe a
+readUnevaluatedMetadata key expr@(Syn.CoreLet _ _) readVal =
+  readUnevaluatedMetadata key (instantiateLet expr) readVal
+readUnevaluatedMetadata key (Syn.CoreBlock (Syn.CoreList items)) readVal =
+  readVal <$> lookup key buildSearchList
+  where
+    buildSearchList = mapMaybe kv items
+    kv (Syn.CoreList [Syn.CorePrim (Syn.CoreSymbol k), v]) = Just (k, v)
+    kv (Syn.CoreMeta _ i) = kv i
+    kv _ = Nothing
+readUnevaluatedMetadata _ _ _ = Nothing
+
+-- | Precedence classes
+precedenceClasses :: [(String, Precedence)]
+precedenceClasses =
+  [ ("lookup", 100)
+  , ("call", 90)
+  , ("exp", 85)
+  , ("prod", 80)
+  , ("sum", 75)
+  , ("shift", 60)
+  , ("bitwise", 55)
+  , ("cmp", 50)
+  , ("append", 45)
+  , ("eq", 40)
+  , ("map", 38)
+  , ("bool-prod", 35)
+  , ("bool-sum", 30)
+  , ("cat", 20)
+  , ("meta", 5)
+  ]
+
+-- | Use (unevaluated) metadata and default rules to infer fixity and
+-- precedence for an operator
+determineFixity :: Maybe CoreExpr -> (Fixity, Precedence)
+determineFixity (Just meta) = (fixity, fromMaybe 50 prec)
+  where
+    fixity =
+      case readUnevaluatedMetadata "associates" meta symbolName of
+        (Just (Just "right")) -> InfixRight
+        _ -> InfixLeft
+    prec =
+      readUnevaluatedMetadata "precedence" meta $ \case
+        (CorePrim (CoreInt n)) -> fromInteger n
+        (CorePrim (CoreSymbol cls)) -> (fromMaybe 50 (lookup cls precedenceClasses))
+        _ -> 50
+determineFixity Nothing = (InfixLeft, 50)
+
 
 -- | Flatten and desugar a declaration form into annotation, name,
 -- expression
@@ -69,13 +127,20 @@ desugarDeclarationForm Annotated { annotation = a
                                  } =
   let annot = processAnnotation . desugar <$> a
    in case decl of
-        PropertyDecl k expr -> (annot, bindingName k, desugar expr)
+        PropertyDecl k expr -> (annot, bindingName k, desugarDeclExpr expr)
         FunctionDecl k as expr ->
-          (annot, bindingName k, lamexpr as (desugar expr))
+          (annot, bindingName k, lam as (desugarDeclExpr expr))
         OperatorDecl k l r expr ->
-          (annot, bindingName k, lamexpr [l, r] (desugar expr))
-
-
+          ( annot
+          , bindingName k
+          , newOp annot (lam [l, r] (desugarDeclExpr expr)))
+  where
+    varify (CoreName n) = name2Var n
+    varify e = e
+    desugarDeclExpr = varify . desugar
+    newOp annot expr =
+      let (fixity, precedence) = determineFixity annot in
+        CoreOperator fixity precedence expr
 
 -- | Ignore splices for now TODO: splice expressions
 declarations :: Block -> [Annotated DeclarationForm]
@@ -83,8 +148,6 @@ declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
   where
     toDecl Located{locatee=(Splice _)} = Nothing
     toDecl Located{locatee=(Declaration d)} = Just d
-
-
 
 -- | Desugar a block expression.
 --
@@ -119,12 +182,6 @@ desugarIdentifier components =
         else CoreVar headName
 
 
-callOp :: CoreExpr
-callOp = infixl_ 90 (CoreBuiltin "CALL")
-
-lookupOp :: CoreExpr
-lookupOp = infixl_ 95 (CoreBuiltin "LOOKUP")
-
 
 -- | Desugar Ast op soup into core op soup (to be cooked into better
 -- tree later, once fixity and precedence of all ops is resolved).
@@ -142,29 +199,27 @@ desugarSoup = CoreOpSoup . makeVars . insertCalls
   where
     insertCalls = concatMap translate
     translate :: Expression -> [CoreExpr]
-    translate t@Located{locatee=EApplyTuple _} = [callOp, desugar t]
-    translate Located{locatee=EName (OperatorName ".")} = [lookupOp]
+    translate t@Located {locatee = EApplyTuple _} = [Syn.callOp, desugar t]
+    translate Located {locatee = EName (OperatorName ".")} = [lookupOp]
     translate e = [desugar e]
     makeVars :: [CoreExpr] -> [CoreExpr]
-    makeVars exprs = zipWith f exprs (corenull:exprs)
+    makeVars exprs = zipWith f exprs (corenull : exprs)
     f :: CoreExpr -> CoreExpr -> CoreExpr
-    f n@(CoreName _) (CoreOperator InfixLeft _ (CoreBuiltin "LOOKUP")) = n
-    f (CoreName v) _ = CoreVar v
+    f n@(CoreName _) (CoreOperator InfixLeft _ (CoreBuiltin "*DOT*")) = n
+    f (CoreName v) _ = name2Var v
     f e _ = e
 
 
 -- | Desugar an expression into core syntax
 desugar :: Expression -> CoreExpr
-desugar Located{locatee=expr} =
+desugar Located {locatee = expr} =
   case expr of
-    EOperation opName l r ->
-      CoreApp (CoreApp (CoreVar (bindingName opName)) (desugar l)) (desugar r)
-    EInvocation f as -> appexp (desugar f) (map desugar as)
-    ECatenation obj verb -> CoreApp (desugar verb) (desugar obj)
-    EIdentifier components -> desugarIdentifier components
     ELiteral lit -> CorePrim $ desugarLiteral lit
     EBlock blk -> desugarBlock blk
-    EList components -> CoreList $ map desugar components
+    EList components -> CoreList $ map (varify .desugar) components
     EName n -> CoreName $ bindingName n
-    EOpSoup _bs _es -> CorePrim CoreNull -- TODO: new parser
-    EApplyTuple as -> CoreArgTuple (map desugar as)
+    EOpSoup _ es -> desugarSoup es
+    EApplyTuple as -> CoreArgTuple (map (varify . desugar) as)
+  where
+    varify (CoreName n) = name2Var n
+    varify e = e

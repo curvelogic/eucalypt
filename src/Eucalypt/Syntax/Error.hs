@@ -1,7 +1,11 @@
 module Eucalypt.Syntax.Error where
 
+import Data.Void
 import Data.Typeable
-import Text.Parsec.Error (ParseError)
+import qualified Text.Parsec.Error as P
+import qualified Text.Megaparsec as M
 
-newtype SyntaxError = SyntaxError ParseError
+data SyntaxError
+  = SyntaxError P.ParseError
+  | MegaparsecError (M.ParseError (M.Token String) Void)
   deriving (Show, Eq, Typeable)

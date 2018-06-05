@@ -140,19 +140,27 @@ lookup-alts(syms, d, b): foldr(lookup-or-in(b), syms, d)
 not: __NOT
 
 ` { doc: "`l && r`` - true if and only if `l` and `r`"
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :bool-prod }
 (l && r): __AND(l, r)
 
 ` { doc: "`l ∧ r`` - true if and only if `l` and `r`"
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :bool-prod }
 (l ∧ r): l && r
 
 ` { doc: "`l || r`` - true if and only if `l` or `r`"
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :bool-sum }
 (l || r): __OR(l, r)
 
 ` { doc: "`l ∨ r`` - true if and only if `l` or `r`"
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :bool-sum }
 (l ∨ r): l || r
 
 ##
@@ -160,11 +168,15 @@ not: __NOT
 ##
 
 ` { doc: "`l = r` - `true` if and only if value `l` equals value `r`."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :eq }
 (l = r): __EQ(l, r)
 
 ` { doc: "`l != r` - `true` if and only if value `l` is not equal to value `r`."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :eq }
 (l != r): not(__EQ(l, r))
 
 ##
@@ -172,35 +184,51 @@ not: __NOT
 ##
 
 ` { doc: "`l + r` - adds `l` and `r`; both must be numbers."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :sum }
 (l + r): __ADD(l, r)
 
 ` { doc: "`l - r` - subtracts `r` from `l`; both must be numbers."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :sum }
 (l - r): __SUB(l, r)
 
 ` { doc: "`l * r` - multiplies `l` and `r`; both must be numbers."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :prod }
 (l * r): __MUL(l, r)
 
 ` { doc: "`l / r` - divides `l` by `r`; both must be numbers; error `r` is zero."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :prod }
 (l / r): __DIV(l, r)
 
 ` { doc: "`l < r` - `true` if and only if number `l` is less than number `r`."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :cmp }
 (l < r): __LT(l, r)
 
 ` { doc: "`l > r` - `true` if and only if number `l` is greater than number `r`."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :cmp }
 (l > r): __GT(l, r)
 
 ` { doc: "`l <= r` - `true` if and only if number `l` is less than or equal to number `r`."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :cmp }
 (l <= r): __LTE(l, r)
 
 ` { doc: "`l >= r` - `true` if and only if number `l` is greater than or equal to number `r`."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :cmp }
 (l >= r): __GTE(l, r)
 
 ` { doc: "`inc(x)` - increment number `x` by 1."
@@ -285,7 +313,9 @@ compose(f, g, x): x g f
 
 ` { doc: "`(f ∘ g)` - return composition of `f` and `g`"
     example: (head ∘ tail)([1,2]) //=> 2
-    export: :suppress }
+    export: :suppress
+    associates: :right
+    precedence: 88 }
 (f ∘ g): compose(f,g)
  
 ` { doc: "`apply(f, l)` - apply function `f` to arguments in list `l`."
@@ -329,7 +359,9 @@ cond(l, d): foldr(l, curry(if), d)
 with-meta: __WITHMETA
 
 ` { doc: "`e // m` - add metadata block `m` to expression `e`."
-    export: :suppress }
+    export: :suppress 
+    associates: :left
+    precedence: :meta }
 (e // m): v with-meta(m)
 
 ` { doc: "`meta e` - retrieve expression metadata for e"
@@ -337,11 +369,15 @@ with-meta: __WITHMETA
 meta: __META
 
 ` { doc: "`e //=> v` - add metadata to assert expression `e` evaluates to `v` and return value of `e`."
-    export: :suppress }
+    export: :suppress 
+    associates: :left
+    precedence: :meta }
 (e //=> v): e with-meta({ assert: __EQ(v)})
 
 ` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies function `f` and return value of `e`."
-    export: :suppress }
+    export: :suppress 
+    associates: :left
+    precedence: :meta }
 (e //=? f): e with-meta({ assert: f})
 
 
@@ -387,7 +423,9 @@ map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
 ` { doc: "`f <$> l` - map function `f` over list `l`"
     # example: |x|(x+1) <$> [1,2,3] //=> [2,3,4]
-    export: :suppress }
+    export: :suppress 
+    associates: :left 
+    precedence: :map }
 (f <$> l): map(f, l)
 
 ` { doc: "`map(f, l1, l2)` - map function `f` over lists `l1` and `l2`, stopping when the shorter list is exhausted."
@@ -408,7 +446,9 @@ filter(p?, l): foldr(cons-if(p?), [], l)
 remove(p?, l): filter(p? complement)
 
 ` { doc: "`l1 ++ l2` - concatenate lists `l1` and `l2`."
-    export: :suppress }
+    export: :suppress
+    associates: :left
+    precedence: :append }
 (l1 ++ l2): concat(l1, l2)
 
 ` :alias

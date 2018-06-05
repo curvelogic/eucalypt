@@ -14,7 +14,9 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = cookSpec
+spec = do
+  cookSpec
+  sampleSpec
 
 l50 :: CoreExpr
 l50 = infixl_ 50 (CoreBuiltin "L50")
@@ -124,3 +126,61 @@ cookSpec =
       cookUp [pre10, pre10, pre10, pre10] `shouldSatisfy` isLeft
     it "rejects pre10 l50 pre10" $
       cookUp [pre10, l50, pre10] `shouldSatisfy` isLeft
+
+sampleA :: [CoreExpr]
+sampleA =
+  [ bif "HEAD"
+  , callOp
+  , args
+      [ soup
+          [ bif "CONS"
+          , callOp
+          , args
+              [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
+              , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
+              ]
+          ]
+      ]
+  ]
+
+sampleB :: [CoreExpr]
+sampleB =
+  [ bif "CONS"
+  , callOp
+  , args
+      [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
+      , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
+      ]
+  ]
+
+
+sampleSpec :: Spec
+sampleSpec =
+  describe "samples" $ do
+    it " cooks __HEAD(__CONS([1, 2, 3] __HEAD, [1, 2, 3] __TAIL))" $
+      cookUp sampleA `shouldBe`
+      (Right $
+       app
+         (bif "HEAD")
+         [ soup
+             [ bif "CONS"
+             , callOp
+             , args
+                 [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
+                 , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
+                 ]
+             ]
+         ])
+    it "cooks " $
+      cookUp sampleB `shouldBe`
+      (Right $ app
+        (bif "CONS")
+        [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
+        , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
+        ])
+    it "cooks cons(h, t) head" $
+      cookUp [bif "CONS", callOp, args [var "h", var "t"], bif "HEAD"] `shouldBe`
+      (Right $ app (bif "CAT") [app (bif "CONS") [var "h", var "t"], bif "HEAD"])
+    it "cooks x - 1" $
+      cookUp [var "x", infixl_ 10 (bif "SUB"), int 1] `shouldBe`
+      (Right $ app (bif "SUB") [var "x", int 1])

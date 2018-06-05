@@ -44,6 +44,7 @@ data EvaluationError
   | TooFewOperands CoreExpr
   | InvalidOperatorOutputStack [CoreExpr]
   | InvalidOperatorSequence CoreExpr CoreExpr
+  | InvalidArgConvention CoreExpr
   | UnexpectedEndOfExpression CoreExpr
   | Panic String CoreExpr
   | Bug String CoreExpr
@@ -80,6 +81,7 @@ instance Show EvaluationError where
   show (TooFewOperands op) = "Too few operands available for operator " ++ pprint op
   show (InvalidOperatorOutputStack exprs) = "Invalid output stack while cooking operator soup: [" ++ intercalate ","(map pprint exprs) ++ "]"
   show (InvalidOperatorSequence l r) = "Invalid sequence of operators:" ++ pprint l ++ " " ++ pprint r
+  show (InvalidArgConvention exprs) = "Args passed incorrectly. " ++ pprint exprs
   show (UnexpectedEndOfExpression expr) = "UnexpectedEndOfExpression after " ++ pprint expr
   show (EmptyList expr) = "List was empty in " ++ pprint expr
   show (Panic message expr) = "Panic - " ++ message ++ " in " ++ pprint expr

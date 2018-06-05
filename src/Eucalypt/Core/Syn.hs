@@ -60,9 +60,7 @@ type Precedence = Int
 --
 data CoreExp a
   = CoreVar a
-  | CoreLam (Scope (Name String ()) CoreExp a) -- ^ deprecate
   | CoreLet [(CoreBindingName, Scope (Name String Int) CoreExp a)] (Scope (Name String Int) CoreExp a)
-  | CoreApp (CoreExp a) (CoreExp a) -- ^ deprecate
   | CoreBuiltin CoreBuiltinName
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
@@ -130,10 +128,8 @@ instance Applicative CoreExp where
 instance Monad CoreExp where
   return = CoreVar
   CoreVar a >>= f = f a
-  CoreLam e >>= f = CoreLam (e >>>= f)
   CoreLet bs b >>= f = CoreLet (map (second (>>>= f)) bs) (b >>>= f)
   CoreBuiltin n >>= _ = CoreBuiltin n
-  CoreApp g a >>= f = CoreApp (g >>= f) (a >>= f)
   CorePAp a e as >>= f = CorePAp a (e >>= f) (map (>>= f) as)
   CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
@@ -161,28 +157,10 @@ corename = CoreName
 
 
 
--- | Abstract a lambda into a scope
-lamexp :: CoreBindingName -> CoreExpr -> CoreExpr
-lamexp x b = CoreLam (abstract1Name x b)
-
-
-
--- | Abstract lambda of several args
-lamexpr :: [CoreBindingName] -> CoreExpr -> CoreExpr
-lamexpr as expr = foldr lamexp expr as
-
-
-
 -- | Abstract lambda of several args
 lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
 lam as expr = CoreLambda (length as) scope
   where scope = abstractName (`elemIndex` as) expr
-
-
-
--- | Construct a function application
-appexp :: CoreExp a -> [CoreExp a] -> CoreExp a
-appexp = foldl CoreApp
 
 
 
@@ -288,6 +266,28 @@ soup = CoreOpSoup
 args :: [CoreExpr] -> CoreExpr
 args = CoreArgTuple
 
+-- $ special operators
+--
+
+
+-- | Catenation operator
+catOp :: CoreExpr
+catOp = infixl_ 20 (CoreBuiltin "CAT")
+
+
+-- | Function calls using arg tuple are treated as operator during the
+-- fixity / precedence resolution phases but formed into core syntax
+-- after that.
+callOp :: CoreExpr
+callOp = infixl_ 90 (CoreBuiltin "*CALL*")
+
+
+
+-- | Name lookup is treated as operator during the fixity / precedence
+-- resolution phases but formed into core syntax after that.
+lookupOp :: CoreExpr
+lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
+
 
 
 -- $ substitutions
@@ -297,14 +297,15 @@ args = CoreArgTuple
 -- library) in here.
 --
 
-
--- | Use Bound to wire a value into a lambda body
+-- | Instantiate single argument into lambda body (old lambda)
 --
-instantiateLambda :: CoreExpr -> CoreExpr -> CoreExpr
-instantiateLambda val (CoreLam body) = instantiate1Name val body
-instantiateLambda _ _ = undefined
+instantiate1Body :: CoreExpr -> Scope (Name String ()) CoreExp CoreBindingName -> CoreExpr
+instantiate1Body = instantiate1Name
 
-
+-- | Instantiate arguments into lambda body (new multi-arg lambda)
+--
+instantiateBody :: [CoreExpr] -> Scope (Name String Int) CoreExp CoreBindingName -> CoreExpr
+instantiateBody vals = instantiateName (vals !!)
 
 -- | Use Bound to wire the bindings into the appropriate places in the
 -- expressions (lazily...)
@@ -356,9 +357,7 @@ bindMore k = toScope . bindFree . fromScope
 -- appropriately named free variables. Handy for inspecting
 -- expression in tests.
 unbind :: CoreExpr -> CoreExpr
-unbind (CoreLam e) = instantiate1Name (CoreVar n) e
-  where
-    n = foldMapBound name e
+unbind (CoreLambda _ e) = instantiateName (CoreVar . show) e
 unbind (CoreLet bs body) = inst body
   where
     names = map fst bs
@@ -380,8 +379,9 @@ unitBindingsAndBody e = trace (show e) $ error "not a let"
 -- to values supplied by earlier units.
 --
 mergeUnits :: [CoreExpr] -> CoreExpr
-mergeUnits lets = foldl1 (flip CoreApp) newLets
+mergeUnits lets = foldl1 merge newLets
   where
+    merge a b = CoreApply b [a]
     (bindLists, bodies) = unzip (map unitBindingsAndBody lets)
     bindLists' = scanl1 rebindBindings bindLists
     bodies' = zipWith rebindBody bodies bindLists'

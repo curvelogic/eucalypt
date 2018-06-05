@@ -12,7 +12,6 @@ where
 
 import GHC.Generics
 import Data.Aeson
-import Data.List.Split (splitOn)
 import Eucalypt.Reporting.Location
 
 
@@ -60,20 +59,8 @@ type Expression = Located Expression_
 -- in a declaration.
 data Expression_
 
-  = EIdentifier [AtomicName]
-    -- ^ a (possibly complex) identifier
-
-  | EOperation AtomicName Expression Expression
-    -- ^ a binary operator
-
-  | ELiteral PrimitiveLiteral
+  = ELiteral PrimitiveLiteral
     -- ^ a primitive literal value
-
-  | EInvocation Expression [Expression]
-    -- ^ a function-style invocation @f(a,b,c)@
-
-  | ECatenation Expression Expression
-    -- ^ invocation by catenation: @x f@
 
   | EBlock Block
     -- ^ a block literal { decls }
@@ -96,12 +83,6 @@ data Expression_
 -- | Strip location from a located expression; useful for testing.
 -- TODO: generalise
 instance HasLocation Expression_ where
-  stripLocation (EOperation n l r) =
-    EOperation n (stripLocation l) (stripLocation r)
-  stripLocation (EInvocation f xs) =
-    EInvocation (stripLocation f) (map stripLocation xs)
-  stripLocation (ECatenation a b) =
-    ECatenation (stripLocation a) (stripLocation b)
   stripLocation (EBlock b) = EBlock (stripLocation b)
   stripLocation (EList es) = EList (map stripLocation es)
   stripLocation (EOpSoup bs es) = EOpSoup bs (map stripLocation es)
@@ -176,22 +157,6 @@ instance HasLocation Block_ where
 unquote :: String -> String
 unquote ('\'' : xs) = (reverse . unquote . reverse) xs
 unquote xs = xs
-
--- | Turn dotted string into complex identifier
-ident :: String -> Expression
-ident = at nowhere . EIdentifier . map (NormalName . unquote) . splitOn "."
-
--- | Form an operation from name and operands
-op :: String -> Expression -> Expression -> Expression
-op o l r = at nowhere $ EOperation (OperatorName o) l r
-
--- | Form a catenation of two expressions
-cat :: Expression -> Expression -> Expression
-cat l r = at nowhere $ ECatenation l r
-
--- | Form a multi-argument invocation
-invoke :: Expression -> [Expression] -> Expression
-invoke f params = at nowhere $ EInvocation f params
 
 -- | Form a literal int
 int :: Integer -> Expression

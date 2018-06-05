@@ -40,9 +40,6 @@ shunt = (shunt1 `untilM_` finished) >> result
             [o] -> return $ Right o
             es -> return $ Left $ InvalidOperatorOutputStack es
 
--- | Catenation operator
-catOp :: CoreExpr
-catOp = infixl_ 20 (CoreBuiltin "CAT")
 
 -- | State of the shunting yard algorithm
 data ShuntState = ShuntState
@@ -97,6 +94,16 @@ popOne =
       e:es -> (Just e, s {shuntOutput = es})
       _ -> (Nothing, s)
 
+
+-- | Lookups and calls desugar as operators but need special handling
+-- so once precedence is resolved we'll transform the syntax. This
+-- happens when we apply to the output stack.
+formApply :: CoreExpr -> [CoreExpr] -> CoreExpr
+formApply (CoreBuiltin "*CALL*") [f, CoreArgTuple as] =
+  CoreApply f as
+formApply (CoreBuiltin "*DOT*") [o, CoreName n] = CoreLookup o n
+formApply f as = CoreApply f as
+
 -- | Apply the given operator to the argument(s) at the top of the
 -- output stack
 applyOp :: CoreExpr -> State ShuntState ()
@@ -109,11 +116,11 @@ applyOp op@(CoreOperator x _ e) =
   where
     applyTwo =
       popTwo >>= \case
-        Just (l, r) -> pushOutput (CoreApply e [l, r])
+        Just (l, r) -> pushOutput (formApply e [l, r])
         Nothing -> setError (TooFewOperands op)
     applyOne =
       popOne >>= \case
-        Just l -> pushOutput (CoreApply e [l])
+        Just l -> pushOutput (formApply e [l])
         Nothing -> setError (TooFewOperands op)
 applyOp e = setError $ Bug "applyOp called on non-operator" e
 
@@ -171,40 +178,55 @@ clearOps =
 pushOutput :: CoreExpr -> State ShuntState ()
 pushOutput e = state $ \s -> ((), s {shuntOutput = e : shuntOutput s})
 
--- | True if the operator stack is empty
-opsExhausted :: State ShuntState Bool
-opsExhausted = null <$> gets shuntOps
+-- | Push an item onto the input stack
+pushback :: CoreExpr -> State ShuntState ()
+pushback e = state $ \s -> ((), s {shuntSource = e : shuntSource s})
 
--- | True if the output stack is non-empty
-outputPending :: State ShuntState Bool
-outputPending = not . null <$> gets shuntOutput
-
--- | Assert valid op based on what's following
-assertValidOp :: CoreExpr -> State ShuntState ()
-assertValidOp expr = case expr of
- (CoreOperator UnaryPrefix _ _) -> peekSource >>= \case
-    Just r@(CoreOperator InfixLeft _ _) -> setError $ InvalidOperatorSequence expr r
-    Just r@(CoreOperator InfixRight _ _) -> setError $ InvalidOperatorSequence expr r
-    Nothing -> setError $ UnexpectedEndOfExpression expr
-    _ -> return ()
- (CoreOperator InfixLeft _ _) -> peekSource >>= \case
-    Just r@(CoreOperator UnaryPostfix _ _) -> setError $ InvalidOperatorSequence expr r
-    Nothing -> setError $ UnexpectedEndOfExpression expr
-    _ -> return ()
- (CoreOperator InfixRight _ _) -> peekSource >>= \case
-    Just r@(CoreOperator UnaryPostfix _ _) -> setError $ InvalidOperatorSequence expr r
-    Nothing -> setError $ UnexpectedEndOfExpression expr
-    _ -> return ()
- _ -> return ()
+-- | Check the expression can be safely followed by what's coming up
+-- in next in the source and insert catenation operator or implicit
+-- parameter otherwise (giving us haskell style "sections" @(+)@ etc.)
+ensureValidSequence :: CoreExpr -> State ShuntState ()
+ensureValidSequence lhs =
+  peekSource >>= \rhs ->
+  case validExprSeq (Just lhs) rhs of
+    -- TODO: leave sections for separate enhancement
+    Just e@(CoreVar _) -> setError $ InvalidOperatorSequence lhs e
+    Just e -> pushback e
+    Nothing -> return ()
 
 -- | A step of the shunting yard algorithm
 shunt1 :: State ShuntState ()
 shunt1 =
   popNext >>= \case
-    Just expr@CoreOperator{} -> assertValidOp expr >> seatOp expr
-    Just expr -> do
-      noOps <- opsExhausted
-      outputExists <- outputPending
-      when (outputExists && noOps) $ seatOp catOp -- recognise catenations at last
-      pushOutput expr
+    Just expr@CoreOperator {} -> ensureValidSequence expr >> seatOp expr
+    Just expr -> ensureValidSequence expr >> pushOutput expr
     Nothing -> clearOps
+
+-- ? operator affinities
+--
+-- Determine whether sequences of
+
+data BindSide = OpLike | ValueLike
+  deriving Eq
+
+-- | Classify each 'CoreExpr' with respect to what can appear on
+-- either side
+bindSides :: Maybe CoreExpr -> (BindSide, BindSide)
+bindSides (Just (CoreOperator InfixLeft _ _)) = (OpLike, OpLike)
+bindSides (Just (CoreOperator InfixRight _ _)) = (OpLike, OpLike)
+bindSides (Just (CoreOperator UnaryPostfix _ _)) = (OpLike, ValueLike)
+bindSides (Just (CoreOperator UnaryPrefix _ _)) = (ValueLike, OpLike)
+bindSides (Just _) = (ValueLike, ValueLike)
+bindSides Nothing = (OpLike, OpLike)
+
+-- | Two exprs are valid together if one is OpLike and one is
+-- ValueLike on the sides that touch
+validExprSeq :: Maybe CoreExpr -> Maybe CoreExpr -> Maybe CoreExpr
+validExprSeq l r = filler ((snd . bindSides) l) ((fst . bindSides) r)
+
+-- | We can make an invalid sequence valid by inserting a catenation
+-- op or an anaphoric parameter
+filler :: BindSide -> BindSide -> Maybe CoreExpr
+filler ValueLike ValueLike = Just catOp
+filler OpLike OpLike = Just $ var "_"
+filler _ _ = Nothing
