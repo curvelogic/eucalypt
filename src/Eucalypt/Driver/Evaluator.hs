@@ -13,7 +13,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
-import Eucalypt.Core.Desugar (desugar)
+import Eucalypt.Core.Desugar (desugar, varify)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.MetadataProbe
@@ -172,7 +172,7 @@ parseEvaluand = flip PE.parseExpression "[cli evaluand]"
 -- | Parse, desugar, and create unit for evaluand
 readEvaluand :: String -> Either EucalyptError CoreExpr
 readEvaluand src =
-  first Syntax $ desugar <$> parseEvaluand src
+  first Syntax $ varify . desugar <$> parseEvaluand src
 
 
 
@@ -190,8 +190,8 @@ formEvaluand :: EucalyptOptions -> TargetSpecs -> CoreExpr -> IO CoreExpr
 formEvaluand opts targets source =
   case evalSource of
     Nothing -> return source
-    Just src ->
-      case readEvaluand src of
+    Just p ->
+      case readEvaluand p of
         Left err -> reportErrors [err] >> exitFailure
         Right expr -> return $ abstractStaticBlock source expr
   where
