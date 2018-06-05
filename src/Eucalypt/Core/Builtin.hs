@@ -71,7 +71,7 @@ euEq whnfM [l, r] = do
   l' <- forceDataStructures whnfM l
   r' <- forceDataStructures whnfM r
   return $ (CorePrim . CoreBoolean) (l' == r')
-euEq _ as = throwEvalError $ Bug "__EQ called with bad as" (CoreList as)
+euEq _ as = throwEvalError $ Bug "__EQ called with bad args" (CoreList as)
 
 -- | Evaluate an expression and ensure it's a boolean value.
 evalBoolean :: WhnfEvaluator -> CoreExpr -> Interpreter Bool
@@ -90,14 +90,14 @@ euIf whnfM [c, t, f] = do
     if cbool
       then t
       else f
-euIf _ as = throwEvalError $ Bug "__IF called with bad as" (CoreList as)
+euIf _ as = throwEvalError $ Bug "__IF called with bad args" (CoreList as)
 
 -- | __NOT(b) - 'b' must be boolean. Arity 1. Strict in 'b'. Runtime
 -- error if 'b' is not a boolean.
 --
 euNot :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euNot whnfM [e] = CorePrim . CoreBoolean . not <$> evalBoolean whnfM e
-euNot _ as = throwEvalError $ Bug "__NOT called with bad as" (CoreList as)
+euNot _ as = throwEvalError $ Bug "__NOT called with bad args" (CoreList as)
 
 -- | __AND(l,r) - 'l' and 'r' must be boolean. Arity 2. Strict in 'l'
 -- and 'r'.
@@ -107,7 +107,7 @@ euAnd whnfM [l, r] = do
   lbool <- evalBoolean whnfM l
   rbool <- evalBoolean whnfM r
   return $ CorePrim (CoreBoolean (lbool && rbool))
-euAnd _ as = throwEvalError $ Bug "__AND called with bad as" (CoreList as)
+euAnd _ as = throwEvalError $ Bug "__AND called with bad args" (CoreList as)
 
 -- | __OR(l,r) - 'l' and 'r' must be boolean. Arity 2. Strict in 'l'
 -- and 'r'.
@@ -117,7 +117,7 @@ euOr whnfM [l, r] = do
   lbool <- evalBoolean whnfM l
   rbool <- evalBoolean whnfM r
   return $ CorePrim (CoreBoolean (lbool || rbool))
-euOr _ as = throwEvalError $ Bug "__OR called with bad as" (CoreList as)
+euOr _ as = throwEvalError $ Bug "__OR called with bad args" (CoreList as)
 
 -- | General binary arithmetic implementation, takes care of
 -- destructuring and type casting
@@ -135,7 +135,7 @@ arith whnfM op [l, r] = do
     (CorePrim (CoreFloat i), CorePrim (CoreInt j)) ->
       return $ CorePrim (CoreFloat $ i `op` fromInteger j)
     (i, j) -> throwEvalError $ NotNumber (CoreList [i, j])
-arith _ _ as = throwEvalError $ Bug "Arith op called with bad as" (CoreList as)
+arith _ _ as = throwEvalError $ Bug "Arith op called with bad args" (CoreList as)
 
 
 -- | __ADD(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
@@ -169,7 +169,7 @@ euDiv whnfM [l, r] = do
         then throwEvalError $ DivideByZero r
         else return $ CorePrim (CoreFloat val)
 
-euDiv _ as = throwEvalError $ Bug "Division with bad as" (CoreList as)
+euDiv _ as = throwEvalError $ Bug "Division with bad args" (CoreList as)
 
 -- | General binary arithmetic comparison implementation, takes care
 -- of destructuring and type casting
@@ -187,7 +187,7 @@ arithComp whnfM op [l, r] = do
     (CorePrim (CoreFloat i), CorePrim (CoreInt j)) ->
       return $ CorePrim (CoreBoolean $ i `op` fromInteger j)
     (i, j) -> throwEvalError $ NotNumber (CoreList [i, j])
-arithComp _ _ as = throwEvalError $ Bug "Comparison op called with bad as" (CoreList as)
+arithComp _ _ as = throwEvalError $ Bug "Comparison op called with bad args" (CoreList as)
 
 -- | __LT(l, r) - 'l' and 'r' must be numbers. Arity 2. String in both.
 euLt :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
@@ -213,7 +213,7 @@ euHead whnfM [l] =
     (CoreList (h:_)) -> return h
     (CoreList []) -> throwEvalError $ EmptyList (CoreList [])
     e -> throwEvalError $ NotList e
-euHead _ as = throwEvalError $ Bug "__HEAD called with bad as" (CoreList as)
+euHead _ as = throwEvalError $ Bug "__HEAD called with bad args" (CoreList as)
 
 -- | __TAIL(l) - 'l' must be list. Arity 1. Strict in 'l'.
 --
@@ -223,7 +223,7 @@ euTail whnfM [l] =
     (CoreList (_:t)) -> return (CoreList t)
     (CoreList []) -> throwEvalError $ EmptyList (CoreList [])
     e -> throwEvalError $ NotList e
-euTail _ as = throwEvalError $ Bug "__TAIL called with bad as" (CoreList as)
+euTail _ as = throwEvalError $ Bug "__TAIL called with bad args" (CoreList as)
 
 -- | __CONS(h, t) - 't' must be list. Arity 2.
 --
@@ -235,26 +235,7 @@ euCons whnfM [h, t] =
   whnfM t >>= \case
     (CoreList t') -> return (CoreList (h : t'))
     e -> throwEvalError $ NotList e
-euCons _ as = throwEvalError $ Bug "__TAIL called with bad as" (CoreList as)
-
-
--- | Concatenate two lists or blocks into a list. The default action
--- for list concatenation and also available as `concat`.
---
-euConcat :: WhnfEvaluator -> CoreExpr -> CoreExpr -> Interpreter CoreExpr
-euConcat whnfM l r = do
-  l' <- whnfM l
-  r' <- whnfM r
-  items <- (++) <$> extract l' <*> extract r'
-  return $ CoreList items
-  where
-    extract :: CoreExpr -> Interpreter [CoreExpr]
-    extract e =
-      case e of
-        CoreList items -> return items
-        CoreBlock (CoreList items) -> return items
-        _ -> throwEvalError $ ConcatArgumentNotList e
-
+euCons _ as = throwEvalError $ Bug "__TAIL called with bad args" (CoreList as)
 
 -- | __SYM(s) - create symbol from string s. Strict in s.
 --
@@ -262,14 +243,14 @@ euSym :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euSym whnfM [s] = whnfM s >>= \case
   (CorePrim (CoreString v)) -> return (CorePrim (CoreSymbol v))
   e -> throwEvalError $ SymbolNamesMustBeStrings e
-euSym _ as = throwEvalError $ Bug "__SYM called with bad as" (CoreList as)
+euSym _ as = throwEvalError $ Bug "__SYM called with bad args" (CoreList as)
 
 
 -- | __BLOCK(l) builtin. Arity 1. Non-strict. Wrap up a list of elements as a block.
 --
 euBlock :: WhnfEvaluator -> [CoreExpr] -> Interpreter CoreExpr
 euBlock _ [l] = return $ CoreBlock l
-euBlock _ as = throwEvalError $ Bug "__BLOCK called with bad as" (CoreList as)
+euBlock _ as = throwEvalError $ Bug "__BLOCK called with bad args" (CoreList as)
 
 
 
@@ -280,7 +261,7 @@ euElements whnfM [e] =
   whnfM e >>= \case
     CoreBlock l -> return l
     _ -> throwEvalError $ ElementsArgumentNotBlock e
-euElements _ as = throwEvalError $ Bug "__ELEMENTS called with bad as" (CoreList as)
+euElements _ as = throwEvalError $ Bug "__ELEMENTS called with bad args" (CoreList as)
 
 
 
