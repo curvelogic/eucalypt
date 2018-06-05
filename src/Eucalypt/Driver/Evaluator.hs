@@ -85,6 +85,9 @@ parseEucalypt source = PE.parseUnit text
 
 -- | Resolve a unit, read source and parse and desugar the content
 -- into CoreExpr, converting all error types into EucalyptErrors.
+--
+-- Named inputs are automatically set to suppress export as it is
+-- assumed that they will be referenced by name in subsequent source.
 parseInput :: Input -> IO (Either EucalyptError CoreExpr)
 parseInput i@(Input mode locator name format) = do
   source <- readInput locator
@@ -94,9 +97,16 @@ parseInput i@(Input mode locator name format) = do
     (Active, "eu") -> eucalyptToCore source
     _ -> (return . Left . Command . InvalidInputMode) i
   where
-    applyName core = case name of
-      Just n -> letexp [(n, core)] (block [element n (var n)])
-      Nothing -> core
+    applyName core =
+      case name of
+        Just n ->
+          letexp
+            [(n, core)]
+            (block
+               [ withMeta (block [element "export" (sym "suppress")]) $
+                 element n (var n)
+               ])
+        Nothing -> core
     eucalyptToCore text =
       case parseEucalypt text (show locator) of
         Left e -> (return . Left . Syntax) e
