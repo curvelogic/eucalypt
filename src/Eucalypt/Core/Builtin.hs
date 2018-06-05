@@ -315,8 +315,7 @@ euMerge whnfM [l, r] = do
         (CoreList ll, CoreList rr) -> CoreBlock . CoreList <$> mergeElements whnfM ll rr
         _ -> throwEvalError $ BadBlockMerge (CoreList [l, r])
     _ -> throwEvalError $ BadBlockMerge (CoreList [l, r])
-euMerge _ as = throwEvalError $ BadBlockMerge (CoreList as)
-
+euMerge _ as = throwEvalError $ Bug "Bad arguments for __MERGE" (CoreList as)
 
 
 -- | Navigate down through metadata evaluating until we get a

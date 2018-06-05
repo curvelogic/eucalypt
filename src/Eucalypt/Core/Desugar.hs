@@ -135,8 +135,6 @@ desugarDeclarationForm Annotated { annotation = a
           , bindingName k
           , newOp annot (lam [l, r] (desugarDeclExpr expr)))
   where
-    varify (CoreName n) = name2Var n
-    varify e = e
     desugarDeclExpr = varify . desugar
     newOp annot expr =
       let (fixity, precedence) = determineFixity annot in
@@ -209,6 +207,12 @@ desugarSoup = CoreOpSoup . makeVars . insertCalls
     f (CoreName v) _ = name2Var v
     f e _ = e
 
+-- | In contexts where single names should become variables (evaluand
+-- rather than individual lookup elements for instance), this converts
+-- to vars.
+varify :: CoreExpr -> CoreExpr
+varify (CoreName n) = name2Var n
+varify e = e
 
 -- | Desugar an expression into core syntax
 desugar :: Expression -> CoreExpr
@@ -220,6 +224,3 @@ desugar Located {locatee = expr} =
     EName n -> CoreName $ bindingName n
     EOpSoup _ es -> desugarSoup es
     EApplyTuple as -> CoreArgTuple (map (varify . desugar) as)
-  where
-    varify (CoreName n) = name2Var n
-    varify e = e
