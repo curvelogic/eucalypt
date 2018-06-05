@@ -58,6 +58,14 @@ assert(c, s, v): if(c, v, panic(s))
     export: :suppress }
 null: __NULL
 
+` { doc: "True"
+    export: :suppress }
+true: __TRUE
+
+` { doc: "False"
+    export: :suppress }
+false: __FALSE
+
 ` { doc: "`cat(a, b)` - explicit catenation, cat(a, b) = a b. Useful in folds etc."
     export: :suppress }
 cat: TODO(__CAT)
@@ -445,11 +453,15 @@ filter(p?, l): foldr(cons-if(p?), [], l)
     export: :suppress }
 remove(p?, l): filter(p? complement)
 
+` { doc: "`append(l1, l2)` - concatenate two lists `l1` and `l2`."
+    export: :suppress }
+append(l1, l2): foldr(cons, l1, l2)
+
 ` { doc: "`l1 ++ l2` - concatenate lists `l1` and `l2`."
     export: :suppress
     associates: :left
     precedence: :append }
-(l1 ++ l2): concat(l1, l2)
+(l1 ++ l2): append(l1, l2)
 
 ` :alias
 zip-with: map2
@@ -461,7 +473,24 @@ zip-apply(fs, vs): zip-with(apply1, fs, vs)
 ` { doc: "`reverse(l) - reverse list `l`"
     # example: reverse([1,2,3]) //=> [3,2,1]
     export: :suppress }
-reverse(l): if(l nil?, l, concat(reverse(l), [h(l)]))
+reverse(l): if(l nil?, l, append(reverse(l), [h(l)]))
+
+` { doc: "`all-true?(l)` - true if and only if all items in list `l` are true."
+    export: :suppress }
+all-true?(l): foldr(and, l, true)
+
+` { doc: "`all-true?(l)` - true if and only if all items in list `l` satisfy predicate `pred`."
+    export: :suppress }
+all(pred, l): l map(pred) all-true?
+
+` { doc: "`any-true?(l)` - true if and only if any items in list `l` are true."
+    export: :suppress }
+any-true?(l): foldr(or, l, false)
+
+` { doc: "`any-true?(l)` - true if and only if any items in list `l` satisfy predicate `pred`."
+    export: :suppress }
+any(pred, l): l map(pred) any-true?
+
 
 #
 # Block library functions
