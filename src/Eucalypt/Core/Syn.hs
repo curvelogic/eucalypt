@@ -232,6 +232,12 @@ block items = CoreBlock $ CoreList items
 
 
 
+-- | Apply metadata to another expression
+withMeta :: CoreExpr -> CoreExpr -> CoreExpr
+withMeta = CoreMeta
+
+
+
 -- | A left-associative infix operation
 infixl_ :: Precedence -> CoreExpr -> CoreExpr
 infixl_ = CoreOperator InfixLeft
