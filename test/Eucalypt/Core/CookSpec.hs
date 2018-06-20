@@ -143,41 +143,20 @@ sampleA =
       ]
   ]
 
-sampleB :: [CoreExpr]
-sampleB =
-  [ bif "CONS"
-  , callOp
-  , args
-      [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
-      , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
-      ]
-  ]
-
-
 sampleSpec :: Spec
 sampleSpec =
   describe "samples" $ do
-    it " cooks __HEAD(__CONS([1, 2, 3] __HEAD, [1, 2, 3] __TAIL))" $
+    it "cooks __HEAD(__CONS([1, 2, 3] __HEAD, [1, 2, 3] __TAIL))" $
       cookUp sampleA `shouldBe`
       (Right $
        app
          (bif "HEAD")
-         [ soup
-             [ bif "CONS"
-             , callOp
-             , args
-                 [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
-                 , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
-                 ]
+         [ app
+             (bif "CONS")
+             [ app (bif "CAT") [CoreList [int 1, int 2, int 3], bif "HEAD"]
+             , app (bif "CAT") [CoreList [int 1, int 2, int 3], bif "TAIL"]
              ]
          ])
-    it "cooks " $
-      cookUp sampleB `shouldBe`
-      (Right $ app
-        (bif "CONS")
-        [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
-        , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
-        ])
     it "cooks cons(h, t) head" $
       cookUp [bif "CONS", callOp, args [var "h", var "t"], bif "HEAD"] `shouldBe`
       (Right $ app (bif "CAT") [app (bif "CONS") [var "h", var "t"], bif "HEAD"])

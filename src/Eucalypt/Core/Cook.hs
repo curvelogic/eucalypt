@@ -10,6 +10,7 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Cook where
 
+-- import Debug.Trace
 import Control.Monad.Loops (untilM_)
 import Control.Monad.State.Lazy
 import Eucalypt.Core.Error
@@ -17,13 +18,30 @@ import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
 import Safe (headMay)
 
+
 -- | Once all operator names have been resolved to 'CoreOperator's we
 -- know fixity and precedence so can restructure and identify
 -- catenations amongst them.
 cook :: [CoreExpr] -> Interpreter CoreExpr
-cook es = case evalState shunt (initState es) of
+cook es = case cookSoup es of
   Right expr -> return expr
   Left err -> throwEvalError err
+
+
+-- | Cook expressions recursively but don't go under binders or into
+-- metadata.
+cookAll :: CoreExpr -> Either EvaluationError CoreExpr
+cookAll (CoreOpSoup exprs) = cookSoup exprs
+cookAll (CoreArgTuple exprs) = CoreArgTuple <$> traverse cookAll exprs
+cookAll (CoreList exprs) = CoreList <$> traverse cookAll exprs
+cookAll (CoreBlock l) = CoreBlock <$> cookAll l
+cookAll (CoreMeta m e) = CoreMeta m <$> cookAll e
+cookAll (CoreApply f exprs) = CoreApply f <$> traverse cookAll exprs
+cookAll e = Right e
+
+cookSoup :: [CoreExpr] -> Either EvaluationError CoreExpr
+cookSoup = evalState shunt . initState
+
 
 -- | Run the shunting algorithm until finished or errored
 shunt :: State ShuntState (Either EvaluationError CoreExpr)
@@ -70,6 +88,19 @@ popNext =
       e:es -> (Just e, s {shuntSource = es})
       [] -> (Nothing, s)
 
+-- | Pop next but cook any subsoup in the process
+popNextRecur :: State ShuntState (Maybe CoreExpr)
+popNextRecur = do
+  next <- popNext
+  case next of
+    Just expr ->
+      either
+        (\e -> setError e >> return Nothing)
+        (return . Just)
+        (cookAll expr)
+    Nothing -> return Nothing
+
+
 -- | Return the operator at the top of the operator stack
 peekOp :: State ShuntState (Maybe CoreExpr)
 peekOp = headMay . shuntOps <$> get
@@ -86,7 +117,7 @@ popTwo =
       r:l:es -> (Just (l, r), s {shuntOutput = es})
       _ -> (Nothing, s)
 
--- | Pop one expressino of the output stack
+-- | Pop one expression of the output stack
 popOne :: State ShuntState (Maybe CoreExpr)
 popOne =
   state $ \s ->
@@ -174,7 +205,7 @@ clearOps =
     Just op -> dropOp >> applyOp op >> clearOps
     Nothing -> return ()
 
--- | Push an expression onto the output stack
+-- | Push an expression onto the output stack.
 pushOutput :: CoreExpr -> State ShuntState ()
 pushOutput e = state $ \s -> ((), s {shuntOutput = e : shuntOutput s})
 
@@ -197,7 +228,7 @@ ensureValidSequence lhs =
 -- | A step of the shunting yard algorithm
 shunt1 :: State ShuntState ()
 shunt1 =
-  popNext >>= \case
+  popNextRecur >>= \case
     Just expr@CoreOperator {} -> ensureValidSequence expr >> seatOp expr
     Just expr -> ensureValidSequence expr >> pushOutput expr
     Nothing -> clearOps
