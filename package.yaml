@@ -39,6 +39,7 @@ library:
     - mtl
     - path
     - pretty
+    - primitive
     - regex-pcre-builtin
     - resourcet
     - safe
