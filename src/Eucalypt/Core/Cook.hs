@@ -10,7 +10,7 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Cook where
 
--- import Debug.Trace
+import Debug.Trace
 import Control.Monad.Loops (untilM_)
 import Control.Monad.State.Lazy
 import Eucalypt.Core.Error
@@ -40,7 +40,7 @@ cookAll (CoreApply f exprs) = CoreApply f <$> traverse cookAll exprs
 cookAll e = Right e
 
 cookSoup :: [CoreExpr] -> Either EvaluationError CoreExpr
-cookSoup = evalState shunt . initState
+cookSoup es = evalState (ensureValidSequence Nothing >> shunt) (initState es)
 
 
 -- | Run the shunting algorithm until finished or errored
@@ -216,12 +216,11 @@ pushback e = state $ \s -> ((), s {shuntSource = e : shuntSource s})
 -- | Check the expression can be safely followed by what's coming up
 -- in next in the source and insert catenation operator or implicit
 -- parameter otherwise (giving us haskell style "sections" @(+)@ etc.)
-ensureValidSequence :: CoreExpr -> State ShuntState ()
+ensureValidSequence :: Maybe CoreExpr -> State ShuntState ()
 ensureValidSequence lhs =
   peekSource >>= \rhs ->
-  case validExprSeq (Just lhs) rhs of
-    -- TODO: leave sections for separate enhancement
-    Just e@(CoreVar _) -> setError $ InvalidOperatorSequence lhs e
+  case validExprSeq lhs rhs of
+    Just e@(CoreVar _) -> pushback (traceShowId e) -- push an anaphoric var to input
     Just e -> pushback e
     Nothing -> return ()
 
@@ -229,8 +228,8 @@ ensureValidSequence lhs =
 shunt1 :: State ShuntState ()
 shunt1 =
   popNextRecur >>= \case
-    Just expr@CoreOperator {} -> ensureValidSequence expr >> seatOp expr
-    Just expr -> ensureValidSequence expr >> pushOutput expr
+    Just expr@CoreOperator {} -> ensureValidSequence (Just expr) >> seatOp expr
+    Just expr -> ensureValidSequence (Just expr) >> pushOutput expr
     Nothing -> clearOps
 
 -- ? operator affinities

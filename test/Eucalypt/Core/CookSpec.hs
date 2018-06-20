@@ -3,7 +3,6 @@ module Eucalypt.Core.CookSpec
   , spec
   ) where
 
-import Data.Either (isLeft)
 import Eucalypt.Core.Cook
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -116,16 +115,41 @@ cookSpec =
        app
          (CoreBuiltin "PRE10")
          [app (CoreBuiltin "POST10") [app (CoreBuiltin "L50") [int 20, int 30]]])
+    it "fills section (`l50` 20) with anaphoric var" $
+      cookUp [l50, int 20] `shouldBe`
+      (Right $ app (CoreBuiltin "L50") [var "_", int 20])
+    it "fills section (20 `l50`) with anaphoric var" $
+      cookUp [int 20, l50] `shouldBe`
+      (Right $ app (CoreBuiltin "L50") [int 20, var "_"])
     it "rejects ... (unary pre) (binary)..." $
-      cookUp [int 20, pre10, l50, int 30, post10] `shouldSatisfy` isLeft
-    it "rejects ... (binary) (unary post) ..." $
-      cookUp [int 30, l50, post100, pre100, int 20] `shouldSatisfy` isLeft
-    it "rejects empty" $
-      cookUp [] `shouldSatisfy` isLeft
-    it "rejects pre10 pre10 pre10 pre10" $
-      cookUp [pre10, pre10, pre10, pre10] `shouldSatisfy` isLeft
-    it "rejects pre10 l50 pre10" $
-      cookUp [pre10, l50, pre10] `shouldSatisfy` isLeft
+      cookUp [pre10, l50, int 30, post10] `shouldBe`
+      (Right $
+       app
+         (bif "PRE10")
+         [app (bif "POST10") [app (bif "L50") [var "_", CorePrim (CoreInt 30)]]])
+    it "fills ... (binary) (unary post) ... with anaphor" $
+      cookUp [int 30, l50, post100, pre100, int 20] `shouldBe`
+      (Right $
+       app
+         (bif "CAT")
+         [ app (bif "L50") [int 30, app (bif "POST100") [var "_"]]
+         , app (bif "PRE100") [int 20]
+         ])
+    it "substitutes anaphoric param for  empty" $
+      cookUp [] `shouldBe` (Right $ var "_")
+    it "corrects pre10 pre10 pre10 pre10 with anaphor" $
+      cookUp [pre10, pre10, pre10, pre10] `shouldBe`
+      (Right $
+       app
+         (bif "PRE10")
+         [app (bif "PRE10") [app (bif "PRE10") [app (bif "PRE10") [var "_"]]]])
+    it "rejects pre10 l50 post10" $
+      cookUp [pre10, l50, post10] `shouldBe`
+      (Right $
+       app
+         (bif "PRE10")
+         [app (bif "POST10") [app (bif "L50") [var "_", var "_"]]])
+
 
 sampleA :: [CoreExpr]
 sampleA =
