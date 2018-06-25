@@ -13,6 +13,8 @@ module Eucalypt.Core.Cook where
 import Debug.Trace
 import Control.Monad.Loops (untilM_)
 import Control.Monad.State.Lazy
+import Data.List (foldl')
+import Data.Monoid
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -23,25 +25,49 @@ import Safe (headMay)
 -- know fixity and precedence so can restructure and identify
 -- catenations amongst them.
 cook :: [CoreExpr] -> Interpreter CoreExpr
-cook es = case cookSoup es of
+cook es = case cookSoup False es of
   Right expr -> return expr
   Left err -> throwEvalError err
+
+-- | Precook...
+--
+-- Go through each filling first so and determine whether there are
+-- anaphora at this level
+precook :: [CoreExpr] -> ([CoreExpr], Bool)
+precook = fillGaps
+
+
+
+-- | Recurse down cooking any operator soups from the bottom upwards
+cookSubsoups :: Bool -> [CoreExpr] -> Either EvaluationError [CoreExpr]
+cookSubsoups anaphoric = mapM (cookBottomUp anaphoric)
 
 
 -- | Cook expressions recursively but don't go under binders or into
 -- metadata.
-cookAll :: CoreExpr -> Either EvaluationError CoreExpr
-cookAll (CoreOpSoup exprs) = cookSoup exprs
-cookAll (CoreArgTuple exprs) = CoreArgTuple <$> traverse cookAll exprs
-cookAll (CoreList exprs) = CoreList <$> traverse cookAll exprs
-cookAll (CoreBlock l) = CoreBlock <$> cookAll l
-cookAll (CoreMeta m e) = CoreMeta m <$> cookAll e
-cookAll (CoreApply f exprs) = CoreApply f <$> traverse cookAll exprs
-cookAll e = Right e
+cookBottomUp :: Bool -> CoreExpr -> Either EvaluationError CoreExpr
+cookBottomUp anaphoric (CoreOpSoup exprs) = cookSoup anaphoric exprs
+cookBottomUp anaphoric (CoreArgTuple exprs) = CoreArgTuple <$> traverse (cookBottomUp anaphoric) exprs
+cookBottomUp anaphoric (CoreList exprs) = CoreList <$> traverse (cookBottomUp anaphoric) exprs
+cookBottomUp anaphoric (CoreBlock l) = CoreBlock <$> cookBottomUp anaphoric l
+cookBottomUp anaphoric (CoreMeta m e) = CoreMeta m <$> cookBottomUp anaphoric e
+cookBottomUp anaphoric (CoreApply f exprs) = CoreApply f <$> traverse (cookBottomUp anaphoric) exprs
+cookBottomUp _ e = Right e
 
-cookSoup :: [CoreExpr] -> Either EvaluationError CoreExpr
-cookSoup es = evalState (ensureValidSequence Nothing >> shunt) (initState es)
 
+-- | Take sequence of expression in operator soup and rearrange into
+-- non-soup expression using operator fixity.
+cookSoup :: Bool -> [CoreExpr] -> Either EvaluationError CoreExpr
+cookSoup parentAnaphoric es = do
+  subcooked <- cookSubsoups inAnaphoricLambda filled
+  expr <- evalState shunt (initState subcooked inAnaphoricLambda)
+  if wrap
+    then return $ (bindAnaphora . numberAnaphora) expr
+    else return expr
+  where
+    (filled, imAnaphoric) = precook es
+    wrap = imAnaphoric && not parentAnaphoric
+    inAnaphoricLambda = parentAnaphoric || imAnaphoric
 
 -- | Run the shunting algorithm until finished or errored
 shunt :: State ShuntState (Either EvaluationError CoreExpr)
@@ -65,12 +91,18 @@ data ShuntState = ShuntState
   , shuntOps :: [CoreExpr]
   , shuntSource :: [CoreExpr]
   , shuntError :: Maybe EvaluationError
+  , shuntInsideAnaphoricLambda :: Bool
   } deriving (Show)
 
-initState :: [CoreExpr] -> ShuntState
-initState es =
+initState :: [CoreExpr] -> Bool -> ShuntState
+initState es anaphoric =
   ShuntState
-    {shuntOutput = [], shuntOps = [], shuntSource = es, shuntError = Nothing}
+    { shuntOutput = []
+    , shuntOps = []
+    , shuntSource = es
+    , shuntError = Nothing
+    , shuntInsideAnaphoricLambda = anaphoric
+    }
 
 complete :: ShuntState -> Bool
 complete ShuntState {shuntOps = ops, shuntSource = source} =
@@ -87,19 +119,6 @@ popNext =
     case shuntSource s of
       e:es -> (Just e, s {shuntSource = es})
       [] -> (Nothing, s)
-
--- | Pop next but cook any subsoup in the process
-popNextRecur :: State ShuntState (Maybe CoreExpr)
-popNextRecur = do
-  next <- popNext
-  case next of
-    Just expr ->
-      either
-        (\e -> setError e >> return Nothing)
-        (return . Just)
-        (cookAll expr)
-    Nothing -> return Nothing
-
 
 -- | Return the operator at the top of the operator stack
 peekOp :: State ShuntState (Maybe CoreExpr)
@@ -227,7 +246,7 @@ ensureValidSequence lhs =
 -- | A step of the shunting yard algorithm
 shunt1 :: State ShuntState ()
 shunt1 =
-  popNextRecur >>= \case
+  popNext >>= \case
     Just expr@CoreOperator {} -> ensureValidSequence (Just expr) >> seatOp expr
     Just expr -> ensureValidSequence (Just expr) >> pushOutput expr
     Nothing -> clearOps
@@ -260,3 +279,23 @@ filler :: BindSide -> BindSide -> Maybe CoreExpr
 filler ValueLike ValueLike = Just catOp
 filler OpLike OpLike = Just $ var "_"
 filler _ _ = Nothing
+
+-- | Make a given expression valid by inserting catenation and
+-- anaphora as required and track whether the sequence contains any
+-- anaphora.
+fillGaps :: [CoreExpr] -> ([CoreExpr], Bool)
+fillGaps exprs =
+  let (es, anaphoric) = foldl' accum ([], False) sides
+  in (reverse es, anaphoric)
+  where
+    sides = map Just exprs ++ [Nothing]
+    anaphoricMaybe = getAny . foldMap Any . fmap isAnaphoricVar
+    accum (l, b) e =
+      let (l', b') = case validExprSeq (headMay l) e of
+                       Just v
+                         | isAnaphoricVar v -> (v : l, True)
+                         | otherwise -> (v : l, b || anaphoricMaybe e)
+                       Nothing -> (l, b || anaphoricMaybe e)
+      in case e of
+        Just x -> (x: l', b')
+        Nothing -> (l', b')

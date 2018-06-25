@@ -16,10 +16,13 @@ import Debug.Trace
 import Bound
 import Bound.Scope
 import Bound.Name
+import Control.Monad.State.Strict
+import Data.Char (isDigit)
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
 import Data.List (elemIndex)
-import Control.Monad
+import Data.Maybe
+import Data.Traversable (for)
 import Data.Bifunctor (second)
 
 
@@ -190,6 +193,12 @@ corenull = CorePrim CoreNull
 
 
 
+-- | CoreList
+corelist :: [CoreExp a] -> CoreExp a
+corelist = CoreList
+
+
+
 -- | Construct symbol expression
 sym :: String -> CoreExp a
 sym = CorePrim . CoreSymbol
@@ -281,6 +290,7 @@ catOp :: CoreExpr
 catOp = infixl_ 20 (CoreBuiltin "CAT")
 
 
+
 -- | Function calls using arg tuple are treated as operator during the
 -- fixity / precedence resolution phases but formed into core syntax
 -- after that.
@@ -293,6 +303,50 @@ callOp = infixl_ 90 (CoreBuiltin "*CALL*")
 -- resolution phases but formed into core syntax after that.
 lookupOp :: CoreExpr
 lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
+
+
+-- | Is it the name of an anahoric parameter? @_@ doesn't count as it
+-- should have been substituted for a numbered version by cooking.
+isAnaphoricName :: String -> Maybe Int
+isAnaphoricName ('_':s:_) | isDigit s  = Just (read [s] :: Int)
+isAnaphoricName _ = Nothing
+
+
+
+-- | True if the expression is an anaphoric var (i.e. begins with "_"
+-- and has single digit) or is "_".
+isAnaphoricVar :: CoreExpr -> Bool
+isAnaphoricVar (CoreVar s)
+  | s == "_" = True
+  | (isJust . isAnaphoricName) s = True
+isAnaphoricVar _ = False
+
+
+
+-- | Add numbers to numberless anaphora
+numberAnaphora :: CoreExpr -> CoreExpr
+numberAnaphora expr = flip evalState (0 :: Int) $ for expr number
+  where
+    number "_" = do
+      n <- get
+      put (n + 1)
+      return ("_" ++ show n)
+    number x = return x
+
+
+
+-- -- | Bind anaphora
+-- --
+-- -- Wrap a lambda around the expression, binding all anaphoric
+-- -- parameters
+bindAnaphora :: CoreExpr -> CoreExpr
+bindAnaphora expr =
+  lam impliedArgs expr
+  where
+    freeVars = foldr (:) [] expr
+    freeAnaphora = mapMaybe isAnaphoricName freeVars
+    maxAnaphorus = maximum freeAnaphora
+    impliedArgs = ['_':show n | n <- [0..maxAnaphorus]]
 
 
 
