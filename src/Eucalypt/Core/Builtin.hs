@@ -11,6 +11,7 @@ module Eucalypt.Core.Builtin where
 
 import Control.Monad ((>=>), filterM )
 import qualified Data.HashMap.Strict.InsOrd as OM
+import qualified Data.HashMap.Strict as HM
 import Data.List (intercalate)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -523,8 +524,8 @@ euCat _ as = throwEvalError $ Bug "__CAT called with bad arguments" (CoreList as
 
 -- | The builtins exposed to the language.
 --
-builtinIndex :: [(CoreBuiltinName, (Int, Builtin))]
-builtinIndex =
+builtinIndex :: HM.HashMap CoreBuiltinName (Int, Builtin)
+builtinIndex = HM.fromList
   [ ("PANIC", (1, euPanic))
   , ("NULL", (0, euNull))
   , ("FALSE", (0, euFalse))
@@ -565,4 +566,4 @@ builtinIndex =
 -- | Look up a built in by name, returns tuple of arity and implementation.
 --
 lookupBuiltin :: CoreBuiltinName -> Maybe (Int, Builtin)
-lookupBuiltin n = lookup n builtinIndex
+lookupBuiltin n = HM.lookup n builtinIndex

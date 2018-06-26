@@ -49,6 +49,7 @@ library:
     - text
     - transformers
     - unix
+    - unordered-containers
     - yaml
 
 executables:
