@@ -33,7 +33,7 @@ expectText e =
   case e of
     CorePrim (CoreString s) -> return $ pack s
     CorePrim (CoreSymbol s) -> return $ pack s
-    _ -> throwEvalError $ LookupKeyNotStringLike e
+    _ -> throwEvalError $ LookupKeyNotStringLike (CoreExpShow e)
 
 
 
@@ -88,16 +88,16 @@ instance ToMYaml Interpreter CoreExpr where
     content <- whnfM list
     case content of
       CoreList items -> B.mapping . catMaybes <$> mapM (whnfM >=> pair) items
-      e -> throwEvalError $ BadBlockContent e
+      e -> throwEvalError $ BadBlockContent (CoreExpShow e)
     where
       pair item = do
         i <- boilAwayMetadata whnfM item
         case i of
           Just (CoreList [k, v]) -> renderKeyValue whnfM k v
-          Just expr -> throwEvalError $ BadBlockElement expr
+          Just expr -> throwEvalError $ BadBlockElement (CoreExpShow expr)
           Nothing -> return Nothing
   toMYaml whnfM (CoreMeta _ v) = toMYaml whnfM v
-  toMYaml _ expr = throwEvalError $ NotWeakHeadNormalForm expr
+  toMYaml _ expr = throwEvalError $ NotWeakHeadNormalForm (CoreExpShow expr)
 
 
 

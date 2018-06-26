@@ -3,6 +3,7 @@ module Eucalypt.Core.BuiltinSpec
   , spec
   ) where
 
+import Data.Either (fromRight, isLeft)
 import Eucalypt.Core.Builtin
 import Eucalypt.Core.Error
 import Eucalypt.Core.EvalByName
@@ -14,6 +15,12 @@ import Test.QuickCheck
 main :: IO ()
 main = hspec spec
 
+right :: Either l r -> r
+right = fromRight undefined
+
+runRightInterpreter :: Interpreter a -> a
+runRightInterpreter = right . runInterpreter
+
 
 -- | Evaluate a zero arity builtin
 shallowEvalBuiltin :: CoreBuiltinName -> Either EvaluationError CoreExpr
@@ -21,7 +28,7 @@ shallowEvalBuiltin name =
   runInterpreter
     (case lookupBuiltin name of
        Just (_, f) -> f return []
-       Nothing -> throwEvalError (BuiltinNotFound name (bif ("__" ++ name))))
+       Nothing -> throwEvalError (BuiltinNotFound name (CoreExpShow (bif ("__" ++ name) :: CoreExpr))))
 
 
 -- | A panic to use in contexts which should not be evaluated
@@ -32,22 +39,21 @@ abort = app (bif "PANIC") [str "Should not have been evaluated"]
 spec :: Spec
 spec = do
   describe "Builtin lookup" $ do
-    it "has null" $ shallowEvalBuiltin "NULL" `shouldBe` Right corenull
-    it "has true" $ shallowEvalBuiltin "TRUE" `shouldBe` Right (corebool True)
+    it "has null" $ (right . shallowEvalBuiltin) "NULL" `shouldBe` corenull
+    it "has true" $ (right . shallowEvalBuiltin) "TRUE" `shouldBe` corebool True
     it "has false" $
-      shallowEvalBuiltin "FALSE" `shouldBe` Right (corebool False)
+      (right . shallowEvalBuiltin) "FALSE" `shouldBe` corebool False
     it "fails sensibly" $
-      shallowEvalBuiltin "NONESUCH" `shouldBe`
-      Left (BuiltinNotFound "NONESUCH" (bif "__NONESUCH"))
+      shallowEvalBuiltin "NONESUCH" `shouldSatisfy` isLeft
   describe "If builtin" $ do
     it "evaluates false branch lazily" $
-      runInterpreter (euIf whnfM [corebool True, bif "TRUE", abort]) `shouldBe`
-      Right (bif "TRUE")
+      runRightInterpreter (euIf whnfM [corebool True, bif "TRUE", abort]) `shouldBe`
+      bif "TRUE"
     it "evaluates true branch lazily" $
-      runInterpreter (euIf whnfM [corebool False, abort, bif "FALSE"]) `shouldBe`
-      Right (bif "FALSE")
+      runRightInterpreter (euIf whnfM [corebool False, abort, bif "FALSE"]) `shouldBe`
+      bif "FALSE"
     -- it "ingnores recursion traps in unevaluated branch" $
-    --   runInterpreter
+    --   runRightInterpreter
     --     (whnfM
     --        (letexp
     --           [ ( "a"
@@ -57,40 +63,37 @@ spec = do
     --   Right (bif "FALSE")
   describe "List builtins" $ do
     it "extracts head" $
-      runInterpreter
+      runRightInterpreter
         (euHead whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
-      Right (bif "TRUE")
+      bif "TRUE"
     it "extracts tail" $
-      runInterpreter
+      runRightInterpreter
         (euTail whnfM [CoreList [bif "TRUE", bif "FALSE", bif "FALSE"]]) `shouldBe`
-      Right (CoreList [bif "FALSE", bif "FALSE"])
+      CoreList [bif "FALSE", bif "FALSE"]
     it "throws when head-ing []" $
-      runInterpreter (euHead whnfM [CoreList []]) `shouldBe`
-      Left (EmptyList (CoreList []))
+      runInterpreter (euHead whnfM [CoreList []]) `shouldSatisfy` isLeft
     it "throws when tail-ing []" $
-      runInterpreter (euTail whnfM [CoreList []]) `shouldBe`
-      Left (EmptyList (CoreList []))
+      runInterpreter (euTail whnfM [CoreList []]) `shouldSatisfy` isLeft
     it "conses" $
-      runInterpreter (euCons whnfM [int 0, CoreList [int 1, int 2, int 3]]) `shouldBe`
-      Right (CoreList [int 0, int 1, int 2, int 3])
+      runRightInterpreter (euCons whnfM [int 0, CoreList [int 1, int 2, int 3]]) `shouldBe`
+      CoreList [int 0, int 1, int 2, int 3]
     it "conses with empty" $
-      runInterpreter (euCons whnfM [int 0, CoreList []]) `shouldBe`
-      Right (CoreList [int 0])
+      runRightInterpreter (euCons whnfM [int 0, CoreList []]) `shouldBe`
+      CoreList [int 0]
     it "throws consing a non-list tail" $
-      runInterpreter (euCons whnfM [int 0, int 1]) `shouldBe`
-      Left (NotList (int 1))
+      runInterpreter (euCons whnfM [int 0, int 1]) `shouldSatisfy` isLeft
     it "conses with list-valued call" $
-      runInterpreter
+      runRightInterpreter
         (euCons
            whnfM
            [int 0, app (bif "TAIL") [CoreList [int 1, int 2, int 3]]]) `shouldBe`
-      Right (CoreList [int 0, int 2, int 3])
+      CoreList [int 0, int 2, int 3]
     it "judges head([1,2,3])=1" $
-      runInterpreter
+      runRightInterpreter
         (whnfM (app (bif "HEAD") [CoreList [int 1, int 2, int 3]])) `shouldBe`
-      Right (int 1)
+      int 1
     it "judges head(cons(h,t))=h" $
-      runInterpreter
+      runRightInterpreter
         (whnfM
            (app
               (bif "EQ")
@@ -99,9 +102,9 @@ spec = do
                   [app (bif "CONS") [int 1, CoreList [int 2, int 3]]]
               , int 1
               ])) `shouldBe`
-      Right (corebool True)
+      corebool True
     it "judges head(cons(head(l), tail(l)))=head(l)" $
-      runInterpreter
+      runRightInterpreter
         (whnfM
            (app
               (bif "HEAD")
@@ -111,9 +114,9 @@ spec = do
                   , app (bif "TAIL") [CoreList [int 1, int 2, int 3]]
                   ]
               ])) `shouldBe`
-      Right (int 1)
+      int 1
     it "judges cons(head(l), tail(l))=l" $
-      runInterpreter
+      runRightInterpreter
         (forceDataStructures
            whnfM
            (app
@@ -121,9 +124,9 @@ spec = do
               [ app (bif "HEAD") [CoreList [int 1, int 2, int 3]]
               , app (bif "TAIL") [CoreList [int 1, int 2, int 3]]
               ])) `shouldBe`
-      Right (CoreList [int 1, int 2, int 3])
+      CoreList [int 1, int 2, int 3]
     it "judges eq(l,(cons(head(l), tail(l))))=true" $
-      runInterpreter
+      runRightInterpreter
         (whnfM
            (app
               (bif "EQ")
@@ -134,7 +137,7 @@ spec = do
                   , app (bif "TAIL") [CoreList [int 1, int 2, int 3]]
                   ]
               ])) `shouldBe`
-      Right (corebool True)
+      corebool True
   arithSpec
   booleanSpec
   blockSpec
@@ -142,50 +145,50 @@ spec = do
 
 
 addsIntegers :: Integer -> Integer -> Bool
-addsIntegers l r = runInterpreter (euAdd whnfM [int l, int r]) == (Right $ int (l + r))
+addsIntegers l r = runRightInterpreter (euAdd whnfM [int l, int r]) == int (l + r)
 
 addsFloats :: Double -> Double -> Bool
-addsFloats l r = runInterpreter (euAdd whnfM [float l, float r]) == (Right $ float (l + r))
+addsFloats l r = runRightInterpreter (euAdd whnfM [float l, float r]) == float (l + r)
 
 subtractsIntegers :: Integer -> Integer -> Bool
-subtractsIntegers l r = runInterpreter (euSub whnfM [int l, int r]) == (Right $ int (l - r))
+subtractsIntegers l r = runRightInterpreter (euSub whnfM [int l, int r]) == int (l - r)
 
 subtractsFloats :: Double -> Double -> Bool
-subtractsFloats l r = runInterpreter (euSub whnfM [float l, float r]) == (Right $ float (l - r))
+subtractsFloats l r = runRightInterpreter (euSub whnfM [float l, float r]) == float (l - r)
 
 multipliesIntegers :: Integer -> Integer -> Bool
-multipliesIntegers l r = runInterpreter (euMul whnfM [int l, int r]) == (Right $ int (l * r))
+multipliesIntegers l r = runRightInterpreter (euMul whnfM [int l, int r]) == int (l * r)
 
 multipliesFloats :: Double -> Double -> Bool
-multipliesFloats l r = runInterpreter (euMul whnfM [float l, float r]) == (Right $ float (l * r))
+multipliesFloats l r = runRightInterpreter (euMul whnfM [float l, float r]) == float (l * r)
 
 dividesIntegers :: Integer -> NonZero Integer -> Bool
-dividesIntegers l (NonZero r) = runInterpreter (euDiv whnfM [int l, int r]) == (Right $ float (fromInteger l / fromInteger r))
+dividesIntegers l (NonZero r) = runRightInterpreter (euDiv whnfM [int l, int r]) == float (fromInteger l / fromInteger r)
 
 dividesFloats :: Double -> NonZero Double -> Bool
-dividesFloats l (NonZero r) = runInterpreter (euDiv whnfM [float l, float r]) == (Right $ float (l / r))
+dividesFloats l (NonZero r) = runRightInterpreter (euDiv whnfM [float l, float r]) == float (l / r)
 
 ordersIntegersWithLt :: Integer -> Integer -> Bool
-ordersIntegersWithLt l r = runInterpreter (euLt whnfM [int l, int r]) == (Right $ corebool True)
-  || runInterpreter (euGte whnfM [int l, int r]) == (Right $ corebool True)
+ordersIntegersWithLt l r = runRightInterpreter (euLt whnfM [int l, int r]) == corebool True
+  || runRightInterpreter (euGte whnfM [int l, int r]) == corebool True
 
 ordersIntegersWithGt :: Integer -> Integer -> Bool
-ordersIntegersWithGt l r = runInterpreter (euLte whnfM [int l, int r]) == (Right $ corebool True)
-  || runInterpreter (euGt whnfM [int l, int r]) == (Right $ corebool True)
+ordersIntegersWithGt l r = runRightInterpreter (euLte whnfM [int l, int r]) == corebool True
+  || runRightInterpreter (euGt whnfM [int l, int r]) == corebool True
 
 ordersFloatsWithLt :: Double -> Double -> Bool
-ordersFloatsWithLt l r = runInterpreter (euLt whnfM [float l, float r]) == (Right $ corebool True)
-  || runInterpreter (euGte whnfM [float l, float r]) == (Right $ corebool True)
+ordersFloatsWithLt l r = runRightInterpreter (euLt whnfM [float l, float r]) == corebool True
+  || runRightInterpreter (euGte whnfM [float l, float r]) == corebool True
 
 ordersFloatsWithGt :: Double -> Double -> Bool
-ordersFloatsWithGt l r = runInterpreter (euLte whnfM [float l, float r]) == (Right $ corebool True)
-  || runInterpreter (euGt whnfM [float l, float r]) == (Right $ corebool True)
+ordersFloatsWithGt l r = runRightInterpreter (euLte whnfM [float l, float r]) == corebool True
+  || runRightInterpreter (euGt whnfM [float l, float r]) == corebool True
 
 equatesEqualInts :: Integer -> Bool
-equatesEqualInts n = runInterpreter (euEq whnfM [int n, int n]) == (Right $ corebool True)
+equatesEqualInts n = runRightInterpreter (euEq whnfM [int n, int n]) == corebool True
 
 equatesEqualFloats :: Double -> Bool
-equatesEqualFloats n = runInterpreter (euEq whnfM [float n, float n]) == (Right $ corebool True)
+equatesEqualFloats n = runRightInterpreter (euEq whnfM [float n, float n]) == corebool True
 
 
 arithSpec :: Spec
@@ -208,13 +211,18 @@ arithSpec =
 
 
 calculatesAnd :: Bool -> Bool -> Bool
-calculatesAnd l r = runInterpreter (euAnd return [corebool l, corebool r]) == (Right $ corebool (l && r))
+calculatesAnd l r =
+  runRightInterpreter (euAnd return [corebool l, corebool r]) ==
+  corebool (l && r)
 
 calculatesOr :: Bool -> Bool -> Bool
-calculatesOr l r = runInterpreter (euOr return [corebool l, corebool r]) == (Right $ corebool (l || r))
+calculatesOr l r =
+  runRightInterpreter (euOr return [corebool l, corebool r]) ==
+  corebool (l || r)
 
 calculatesNot :: Bool -> Bool
-calculatesNot b = runInterpreter (euNot return [corebool b]) == (Right $ corebool (not b))
+calculatesNot b =
+  runRightInterpreter (euNot return [corebool b]) == corebool (not b)
 
 booleanSpec :: Spec
 booleanSpec =
@@ -231,44 +239,45 @@ blockSpec =
       let b1 = block [element "b" $ int 1, element "a" $ int 5]
           b2 = block [element "b" $ int (-1)]
           b3 = block [element "b" $ int (-1), element "a" $ int 5]
-          merged = runInterpreter $ euMerge return [b1, b2]
-      in (merged `shouldBe` Right b3)
+          merged = runRightInterpreter $ euMerge return [b1, b2]
+      in (merged `shouldBe` b3)
+
 
 stringSpec :: Spec
 stringSpec = do
   describe "euSplit" $ do
     it "splits on regex" $
-      runInterpreter (euSplit return [str "1.2.3.4", str "\\."])
+      runRightInterpreter (euSplit return [str "1.2.3.4", str "\\."])
       `shouldBe`
-      Right (CoreList [str "1", str "2", str "3", str "4"])
+      CoreList [str "1", str "2", str "3", str "4"]
     it "filters out empty strings" $
-      runInterpreter (euSplit return [str "1..2", str "\\."])
+      runRightInterpreter (euSplit return [str "1..2", str "\\."])
       `shouldBe`
-      Right (CoreList [str "1", str "2"])
+      CoreList [str "1", str "2"]
     it "handles empty regex" $
-      runInterpreter (euSplit return [str "foo..bar", str ""])
+      runRightInterpreter (euSplit return [str "foo..bar", str ""])
       `shouldBe`
-      Right (CoreList [str "foo..bar"])
+      CoreList [str "foo..bar"]
     it "handles dot regex" $
-      runInterpreter (euSplit return [str "foo", str "."])
+      runRightInterpreter (euSplit return [str "foo", str "."])
       `shouldBe`
-      Right (CoreList [])
+      CoreList []
     it "handles .* regex" $
-      runInterpreter (euSplit return [str "foo", str ".*"])
+      runRightInterpreter (euSplit return [str "foo", str ".*"])
       `shouldBe`
-      Right (CoreList [])
+      CoreList []
   describe "euJoin" $
     it "join on separator" $
-      runInterpreter (euJoin return [CoreList [str "1", str "2", str "3"], str "-"])
+      runRightInterpreter (euJoin return [CoreList [str "1", str "2", str "3"], str "-"])
       `shouldBe`
-      (Right $ str "1-2-3")
+      str "1-2-3"
   describe "euMatch" $
     it "matches regex" $
-      runInterpreter (euMatch return [str "192.168.0.2", str "(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)"])
+      runRightInterpreter (euMatch return [str "192.168.0.2", str "(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)"])
       `shouldBe`
-      (Right $ CoreList [str "192.168.0.2", str "192", str "168", str "0", str "2"])
+      CoreList [str "192.168.0.2", str "192", str "168", str "0", str "2"]
   describe "euMatches" $
     it "searches with regex" $
-      runInterpreter (euMatches return [str "192.168.0.2", str "(\\d+)"])
+      runRightInterpreter (euMatches return [str "192.168.0.2", str "(\\d+)"])
       `shouldBe`
-      (Right $ CoreList [str "192", str "168", str "0", str "2"])
+      CoreList [str "192", str "168", str "0", str "2"]

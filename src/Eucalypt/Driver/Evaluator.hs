@@ -13,6 +13,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
+import Eucalypt.Core.Cook (cookAllSoup)
 import Eucalypt.Core.Desugar (desugar, varify)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -174,6 +175,14 @@ runMetadataPass e = case runInterpreter (runMetaPass e) of
 
 
 
+-- | Run a pass to use known fixities to rearrange all operator
+-- expression
+runFixityPass :: CoreExpr -> IO CoreExpr
+runFixityPass expr = case runInterpreter (cookAllSoup expr) of
+  Right result -> return result
+  Left err -> reportErrors [err] >> exitFailure
+
+
 -- | Parse text from -e option as expression
 parseEvaluand :: String -> Either SyntaxError Expression
 parseEvaluand = flip PE.parseExpression "[cli evaluand]"
@@ -222,16 +231,36 @@ formEvaluand opts targets source =
 evaluate :: EucalyptOptions -> WhnfEvaluator -> IO ExitCode
 evaluate opts whnfM = do
   when (cmd == Parse) (parseAndDumpASTs opts >> exitSuccess)
+
+  -- Stage 1: parse all units specified on command line (or inferred)
+  -- to core syntax - cross unit references will be dangling at this
+  -- stage
   units <- parseUnits opts
+
+  -- Stage 2: prepare an IO unit to contain launch environment data
   io <- prepareIOUnit
+
+  -- Stage 3: merge all units and bind any cross unit refs
   let merged = mergeUnits (io : units)
   when (cmd == DumpDesugared) (putStrLn (pprint merged) >> exitSuccess)
+
+  -- Stage 4: pass to interpret target metadata and identify targets
   (source, annotations) <- runMetadataPass merged
   let targets = readTargets annotations
   when (cmd == ListTargets) (listTargets opts targets >> exitSuccess)
   when (cmd == DumpMetadataProbed) (putStrLn (pprint source) >> exitSuccess)
+
+  -- Stage 5: form an expression to evaluate from the source or
+  -- command line and embed it in the core tree
   evaluand <- formEvaluand opts targets source
-  render evaluand >>= \case
+
+  -- Stage 6: cook operator soups to resolve all fixities and prepare
+  -- a final tree for evaluation
+  cookedEvaluand <- runFixityPass evaluand
+
+
+  -- Stage 7: drive the evaluation by rendering it
+  render cookedEvaluand >>= \case
     Left s -> reportErrors [s] >> return (ExitFailure 1)
     Right bytes -> outputBytes opts bytes >> return ExitSuccess
   where

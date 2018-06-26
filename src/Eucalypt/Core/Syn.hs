@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
+{-# LANGUAGE TemplateHaskell, DeriveFunctor, DeriveFoldable, DeriveTraversable, FlexibleContexts, FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-missing-methods #-}
 {-|
 Module      : Eucalypt.Core.Syn
@@ -98,14 +98,14 @@ isList _ = False
 
 
 -- | Return the name of a symbol if the expression is a symbol.
-symbolName :: CoreExpr -> Maybe String
+symbolName :: CoreExp a -> Maybe String
 symbolName (CorePrim (CoreSymbol s)) = Just s
 symbolName _ = Nothing
 
 
 
 -- | String content of string literal if the expression is a string.
-stringContent :: CoreExpr -> Maybe String
+stringContent :: CoreExp a -> Maybe String
 stringContent (CorePrim (CoreString s)) = Just s
 stringContent _ = Nothing
 
@@ -155,7 +155,7 @@ var = CoreVar
 
 
 -- | Construct a name (maybe be a relative name, not a var)
-corename :: CoreRelativeName -> CoreExpr
+corename :: CoreRelativeName -> CoreExp a
 corename = CoreName
 
 
@@ -163,7 +163,8 @@ corename = CoreName
 -- | Abstract lambda of several args
 lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
 lam as expr = CoreLambda (length as) scope
-  where scope = abstractName (`elemIndex` as) expr
+  where
+    scope = abstractName (`elemIndex` as) expr
 
 
 
@@ -236,25 +237,25 @@ element k v = CoreList [sym k, v]
 
 
 -- | A block from its items
-block :: [CoreExpr] -> CoreExpr
+block :: [CoreExp a] -> CoreExp a
 block items = CoreBlock $ CoreList items
 
 
 
 -- | Apply metadata to another expression
-withMeta :: CoreExpr -> CoreExpr -> CoreExpr
+withMeta :: CoreExp a -> CoreExp a -> CoreExp a
 withMeta = CoreMeta
 
 
 
 -- | A left-associative infix operation
-infixl_ :: Precedence -> CoreExpr -> CoreExpr
+infixl_ :: Precedence -> CoreExp a -> CoreExp a
 infixl_ = CoreOperator InfixLeft
 
 
 
 -- | A right-associative infix operation
-infixr_ :: Precedence -> CoreExpr -> CoreExpr
+infixr_ :: Precedence -> CoreExp a -> CoreExp a
 infixr_ = CoreOperator InfixRight
 
 
@@ -286,7 +287,7 @@ args = CoreArgTuple
 
 
 -- | Catenation operator
-catOp :: CoreExpr
+catOp :: CoreExp a
 catOp = infixl_ 20 (CoreBuiltin "CAT")
 
 
@@ -294,7 +295,7 @@ catOp = infixl_ 20 (CoreBuiltin "CAT")
 -- | Function calls using arg tuple are treated as operator during the
 -- fixity / precedence resolution phases but formed into core syntax
 -- after that.
-callOp :: CoreExpr
+callOp :: CoreExp a
 callOp = infixl_ 90 (CoreBuiltin "*CALL*")
 
 
@@ -304,51 +305,118 @@ callOp = infixl_ 90 (CoreBuiltin "*CALL*")
 lookupOp :: CoreExpr
 lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
 
+-- ? anaphora
+--
+
+class Show a => Anaphora a where
+
+  -- | The blank expression anaphorus (@_@) for this binding type
+  expressionAnaphorus :: CoreExp a
+
+  -- | True if the expression is an anaphoric var (i.e. begins with "_"
+  -- and has single digit) or is "_".
+  isAnaphoricVar :: CoreExp a -> Bool
+
+  -- | Number anaphoric variable names
+  applyNumber :: a -> State Int a
+
+  isAnaphorus :: a -> Bool
+
+  toIndex :: a -> Maybe Int
+
+  toName :: a -> String
+
+instance Anaphora String where
+  expressionAnaphorus = var "_"
+
+  isAnaphorus s
+    | s == "_" = True
+    | (isJust . anaphorusIndex) s = True
+  isAnaphorus _ = False
+
+
+  isAnaphoricVar (CoreVar s) = isAnaphorus s
+  isAnaphoricVar _ = False
+
+  toIndex = anaphorusIndex
+
+  applyNumber "_" = do
+    n <- get
+    put (n + 1)
+    return ("_" ++ show n)
+  applyNumber x = return x
+
+  toName = id
+
+
+instance (Anaphora a, Show b) => Anaphora (Var b a) where
+  expressionAnaphorus = F <$> expressionAnaphorus
+
+  isAnaphorus (F s)
+    | isAnaphorus s = True
+    | (isJust . anaphorusIndex . toName) s = True
+  isAnaphorus _ = False
+
+  isAnaphoricVar (CoreVar a) = isAnaphorus a
+  isAnaphoricVar _ = False
+
+  toIndex (F s) = anaphorusIndex (toName s)
+  toIndex _ = Nothing
+
+  applyNumber (F s) = F <$> applyNumber s
+  applyNumber x = return x
+
+  toName (F s) = toName s
+  toName (B _) = ""
 
 -- | Is it the name of an anahoric parameter? @_@ doesn't count as it
 -- should have been substituted for a numbered version by cooking.
-isAnaphoricName :: String -> Maybe Int
-isAnaphoricName ('_':s:_) | isDigit s  = Just (read [s] :: Int)
-isAnaphoricName _ = Nothing
-
-
-
--- | True if the expression is an anaphoric var (i.e. begins with "_"
--- and has single digit) or is "_".
-isAnaphoricVar :: CoreExpr -> Bool
-isAnaphoricVar (CoreVar s)
-  | s == "_" = True
-  | (isJust . isAnaphoricName) s = True
-isAnaphoricVar _ = False
+anaphorusIndex :: String -> Maybe Int
+anaphorusIndex ('_':s:_) | isDigit s  = Just (read [s] :: Int)
+anaphorusIndex _ = Nothing
 
 
 
 -- | Add numbers to numberless anaphora
-numberAnaphora :: CoreExpr -> CoreExpr
-numberAnaphora expr = flip evalState (0 :: Int) $ for expr number
-  where
-    number "_" = do
-      n <- get
-      put (n + 1)
-      return ("_" ++ show n)
-    number x = return x
+numberAnaphora :: Anaphora a => CoreExp a -> CoreExp a
+numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
 
 
 
--- -- | Bind anaphora
--- --
--- -- Wrap a lambda around the expression, binding all anaphoric
--- -- parameters
-bindAnaphora :: CoreExpr -> CoreExpr
+-- | Bind anaphora
+--
+-- Wrap a lambda around the expression, binding all anaphoric
+-- parameters
+-- bindAnaphora ::
+--   (Anaphora (Var (Name String Int) a), Anaphora a) =>
+--   CoreExp (Var (Name String Int) a) -> CoreExp a
+bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
 bindAnaphora expr =
-  lam impliedArgs expr
+  CoreLambda (maxAnaphorus + 1) $ abstractName' toIndex expr
   where
     freeVars = foldr (:) [] expr
-    freeAnaphora = mapMaybe isAnaphoricName freeVars
+    freeAnaphora = mapMaybe toIndex freeVars
     maxAnaphorus = maximum freeAnaphora
-    impliedArgs = ['_':show n | n <- [0..maxAnaphorus]]
+    -- bindFree :: (Anaphora a, Monad m) => m (Var (Name String Int) a) -> m (Var (Name String Int) a)
+    -- bindFree e =
+    --   e >>= \v ->
+    --     return $
+    --     case v of
+    --       F a -> bind a
+    --       B b -> B b
+    -- bind :: Anaphora a => a -> Var (Name String Int) a
+    -- bind a =
+    --   case toIndex a of
+    --     Just z -> B (Name (toName a) z)
+    --     Nothing -> F a
 
-
+abstractName' :: (Monad f, Anaphora a) => (a -> Maybe b) -> f a -> Scope (Name String b) f a
+abstractName' f t = Scope (fmap k t)
+  where
+    k a =
+      case f a of
+        Just b -> B (Name (toName a) b)
+        Nothing -> F (return a)
 
 -- $ substitutions
 --

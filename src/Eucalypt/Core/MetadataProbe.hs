@@ -50,7 +50,7 @@ metapass item _ = return item
 exposeBlock :: CoreExpr -> Interpreter CoreExpr
 exposeBlock e = whnfM e >>= \case
   b@CoreBlock{} -> return b
-  v -> throwEvalError $ TopLevelNotBlock v
+  v -> throwEvalError $ TopLevelNotBlock (CoreExpShow v)
 
 
 
