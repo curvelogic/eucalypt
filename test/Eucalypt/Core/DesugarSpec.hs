@@ -9,6 +9,7 @@ import Control.Monad.State.Strict
 import Eucalypt.Core.Desugar
 import Eucalypt.Core.Target
 import qualified Eucalypt.Core.Syn as Syn
+import Eucalypt.Core.Unit
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.ParseExpr

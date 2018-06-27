@@ -17,6 +17,7 @@ import Data.List (isPrefixOf)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.Target
+import Eucalypt.Core.Unit
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast as Ast
 
@@ -278,12 +279,8 @@ desugar :: Expression -> Syn.CoreExpr
 desugar = (`evalState` initTranslateState) . unTranslate . translate
 
 
--- | The results of translation
-data TranslationUnit = TranslationUnit
-  { truCore :: CoreExpr
-  , truTargets :: [TargetSpec]
-  }
-
+-- | Translate AST into core syntax and generate target metadata on
+-- the way
 translateToCore :: Expression -> TranslationUnit
 translateToCore ast =
   TranslationUnit {truCore = e, truTargets = (reverse . trTargets) s}

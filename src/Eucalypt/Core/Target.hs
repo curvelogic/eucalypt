@@ -18,3 +18,7 @@ data TargetSpec = TargetSpec
   , tgtPath :: [CoreBindingName]
   }
   deriving (Show, Eq)
+
+-- | Prefix an extra component at the start of path
+prefixPath :: CoreBindingName -> TargetSpec -> TargetSpec
+prefixPath n t = t {tgtPath = n : tgtPath t}

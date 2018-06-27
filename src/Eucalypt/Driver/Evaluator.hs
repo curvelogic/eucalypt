@@ -8,18 +8,22 @@ import Control.Monad (forM_, when)
 import Data.Bifunctor
 import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
-import Data.Maybe (fromJust, mapMaybe)
+import Data.Foldable (traverse_)
+import Data.List (intercalate)
+import Data.Maybe (fromJust)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
 import Eucalypt.Core.Cook (cookAllSoup)
-import Eucalypt.Core.Desugar (desugar, varify)
+import Eucalypt.Core.Desugar (varify, translateToCore)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.MetadataProbe
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
+import Eucalypt.Core.Target
+import Eucalypt.Core.Unit
 import Eucalypt.Driver.Error (CommandError(..))
 import Eucalypt.Driver.IOSource (prepareIOUnit)
 import Eucalypt.Driver.Input (Input(..), InputMode(..), Locator(..))
@@ -89,7 +93,7 @@ parseEucalypt source = PE.parseUnit text
 --
 -- Named inputs are automatically set to suppress export as it is
 -- assumed that they will be referenced by name in subsequent source.
-parseInputToCore :: Input -> IO (Either EucalyptError CoreExpr)
+parseInputToCore :: Input -> IO (Either EucalyptError TranslationUnit)
 parseInputToCore i@(Input mode locator name format) = do
   source <- readInput locator
   case (mode, format) of
@@ -98,25 +102,16 @@ parseInputToCore i@(Input mode locator name format) = do
     (Active, "eu") -> eucalyptToCore source
     _ -> (return . Left . Command . InvalidInputMode) i
   where
-    applyName core =
-      case name of
-        Just n ->
-          letexp
-            [(n, core)]
-            (block
-               [ withMeta (block [element "export" (sym "suppress")]) $
-                 element n (var n)
-               ])
-        Nothing -> core
+    maybeApplyName = maybe id applyName name
     eucalyptToCore text =
       case parseEucalypt text (show locator) of
         Left e -> (return . Left . Syntax) e
-        Right expr -> (return . Right . applyName . desugar) expr
+        Right expr -> (return . Right . maybeApplyName . translateToCore) expr
     dataToCore text = do
       r <- try (parseYamlData text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
-        Right core -> (return . Right . applyName) core
+        Right core -> (return . Right . maybeApplyName . dataUnit) core
 
 
 
@@ -130,7 +125,7 @@ dumpASTs _ exprs = forM_ exprs $ \e ->
 -- | Parse and dump ASTs
 parseAndDumpASTs :: EucalyptOptions -> IO ExitCode
 parseAndDumpASTs opts = do
-  texts <- mapM readInput euLocators
+  texts <- traverse readInput euLocators
   let filenames = map show euLocators
   let (errs, exprs) = partitionEithers (zipWith parseEucalypt texts filenames)
   if null errs
@@ -144,20 +139,25 @@ parseAndDumpASTs opts = do
 
 
 -- | List the available targets and documentation to standard out
-listTargets :: EucalyptOptions -> [(String, String, String)] -> IO ExitCode
-listTargets opts annotations = do
+listTargets :: EucalyptOptions -> [TargetSpec] -> IO ExitCode
+listTargets opts targets = do
   putStrLn "Available targets\n"
-  mapM_ outputTarget annotations
+  traverse_ outputTarget targets
   putStrLn "\nFrom inputs\n"
-  mapM_ outputInput (optionInputs opts)
+  traverse_ outputInput (optionInputs opts)
   return ExitSuccess
-  where outputTarget (t, p, d) = putStrLn $ "  - " ++ t ++ " [ path: " ++ p ++ " ]\t" ++ d
-        outputInput i = putStrLn $ "  - " ++ show i
+  where
+    outputTarget t =
+      putStrLn $
+      "  - " ++
+      tgtName t ++ " [ path: " ++ fmtPath t ++ " ]\t" ++ tgtDoc t
+    outputInput i = putStrLn $ "  - " ++ show i
+    fmtPath t = intercalate "." $ tgtPath t
 
 
 
 -- | Parse units, reporting and exiting on error
-parseUnits :: EucalyptOptions -> IO [CoreExpr]
+parseUnits :: EucalyptOptions -> IO [TranslationUnit]
 parseUnits opts = do
   asts <- traverse parseInputToCore (optionInputs opts)
   case partitionEithers asts of
@@ -191,7 +191,7 @@ parseEvaluand = flip PE.parseExpression "[cli evaluand]"
 -- | Parse, desugar, and create unit for evaluand
 readEvaluand :: String -> Either EucalyptError CoreExpr
 readEvaluand src =
-  first Syntax $ varify . desugar <$> parseEvaluand src
+  first Syntax $ varify . truCore . translateToCore <$> parseEvaluand src
 
 
 
@@ -205,7 +205,7 @@ readEvaluand src =
 --
 -- If an evaluand is found, it is applied by creating a new unit and
 -- merging it into that supplied
-formEvaluand :: EucalyptOptions -> TargetSpecs -> CoreExpr -> IO CoreExpr
+formEvaluand :: EucalyptOptions -> [TargetSpec] -> CoreExpr -> IO CoreExpr
 formEvaluand opts targets source =
   case evalSource of
     Nothing -> return source
@@ -215,16 +215,10 @@ formEvaluand opts targets source =
         Right expr -> return $ abstractStaticBlock source expr
   where
     findTarget tgt =
-      headMay $
-      mapMaybe
-        (\(t, p, _) ->
-           if t == tgt
-             then Just p
-             else Nothing)
-        targets
+      headMay $ map (fmtPath . tgtPath) $ filter ((== tgt) . tgtName) targets
     evalSource =
       optionEvaluand opts <|> (optionTarget opts >>= findTarget) <|> findTarget "main"
-
+    fmtPath = intercalate "."
 
 
 -- | Implement the Evaluate command, read files and render
@@ -241,18 +235,18 @@ evaluate opts whnfM = do
   io <- prepareIOUnit
 
   -- Stage 3: merge all units and bind any cross unit refs
-  let merged = mergeUnits (io : units)
-  when (cmd == DumpDesugared) (putStrLn (pprint merged) >> exitSuccess)
+  let merged = mergeTranslationUnits (io : units)
+  let targets = truTargets merged
+  let core = truCore merged
 
-  -- Stage 4: pass to interpret target metadata and identify targets
-  (source, annotations) <- runMetadataPass merged
-  let targets = readTargets annotations
-  when (cmd == ListTargets) (listTargets opts targets >> exitSuccess)
-  when (cmd == DumpMetadataProbed) (putStrLn (pprint source) >> exitSuccess)
+  when (cmd == DumpDesugared)
+    (putStrLn (pprint core) >> exitSuccess)
+  when (cmd == ListTargets)
+    (listTargets opts targets >> exitSuccess)
 
   -- Stage 5: form an expression to evaluate from the source or
   -- command line and embed it in the core tree
-  evaluand <- formEvaluand opts targets source
+  evaluand <- formEvaluand opts targets core
 
   -- Stage 6: cook operator soups to resolve all fixities and prepare
   -- a final tree for evaluation
