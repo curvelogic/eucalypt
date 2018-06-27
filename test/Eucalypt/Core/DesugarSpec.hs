@@ -5,6 +5,7 @@ module Eucalypt.Core.DesugarSpec
   , spec
   ) where
 
+import Control.Monad.State.Strict
 import Eucalypt.Core.Desugar
 import qualified Eucalypt.Core.Syn as Syn
 import Eucalypt.Reporting.Location
@@ -22,17 +23,21 @@ spec = do
   blockSpec
   sampleSpec
 
+-- ? shims
+testDesugarSoup :: [Expression] -> Syn.CoreExpr
+testDesugarSoup = (`evalState` initTranslateState) . unTranslate . translateSoup
+
+testDesugarBlock :: Block -> Syn.CoreExpr
+testDesugarBlock = (`evalState` initTranslateState) . unTranslate . translateBlock
+
+testDesugar :: Expression -> Syn.CoreExpr
+testDesugar = (`evalState` initTranslateState) . unTranslate . translate
+
+
 coreSpec :: Spec
 coreSpec =
   describe "Core" $ do
     it "represents literals" $ desugarLiteral (VInt 8) `shouldBe` Syn.CoreInt 8
-    it "transforms simple declarations" $
-      desugarDeclarationForm
-        Annotated
-          { annotation = Nothing
-          , declaration = prop "x" (opsoup [int 2, operatorName "+", int 5])
-          } `shouldBe`
-      (Nothing, "x", Syn.soup [Syn.int 2, Syn.var "+", Syn.int 5])
     it "processes annotation shortcuts" $
       processAnnotation (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
       Syn.CoreBlock
@@ -44,15 +49,16 @@ coreSpec =
            ])
     it "preserves declaration metadata" $
       Syn.unbind
-        (desugarBlock (at nowhere $ Block [ann (str "docs") (prop "x" (int 5))])) `shouldSatisfy` \case
+        (testDesugarBlock (at nowhere $ Block [ann (str "docs") (prop "x" (int 5))])) `shouldSatisfy` \case
         Syn.CoreBlock (Syn.CoreList [Syn.CoreMeta _ _]) -> True
         _ -> False
+
 
 soupSpec :: Spec
 soupSpec =
   describe "soup desugaring" $ do
     it "inserts call operators" $
-      desugarSoup
+      testDesugarSoup
         [int 5, normalName "x", normalName "f", applyTuple [int 4, int 7]] `shouldBe`
       Syn.soup
         [ Syn.int 5
@@ -62,7 +68,7 @@ soupSpec =
         , Syn.args [Syn.int 4, Syn.int 7]
         ]
     it "handles iterated calls" $
-      desugarSoup
+      testDesugarSoup
         [ normalName "f"
         , applyTuple [normalName "x"]
         , applyTuple [normalName "y"]
@@ -75,7 +81,7 @@ soupSpec =
         , Syn.args [Syn.var "y"]
         ]
     it "handles relative names" $
-      desugarSoup
+      testDesugarSoup
         [ normalName "x"
         , operatorName "."
         , normalName "y"
@@ -94,12 +100,12 @@ blockSpec :: Spec
 blockSpec =
   describe "block desugaring" $ do
     it "creates vars for lonely names" $
-      desugarBlock (at nowhere $ Block [bare (prop "x" (normalName "y"))]) `shouldBe`
+      testDesugarBlock (at nowhere $ Block [bare (prop "x" (normalName "y"))]) `shouldBe`
       Syn.letexp
         [("x", Syn.var "y")]
         (Syn.block [Syn.element "x" $ Syn.var "x"])
     it "handles built-ins" $
-      desugarBlock
+      testDesugarBlock
         (at nowhere $
          Block
            [ bare (prop "null" (normalName "__NULL"))
@@ -114,7 +120,7 @@ sampleSpec :: Spec
 sampleSpec =
   describe "samples" $ do
     it "desugars eq(or(f, and(t, t)), t)" $
-      desugar <$>
+      testDesugar <$>
       parseExpression "eq(or(f, and(t, t)), t)" "test" `shouldBe`
       Right
         (Syn.soup
@@ -137,7 +143,7 @@ sampleSpec =
                ]
            ])
     it "desugars __HEAD(__CONS([1, 2, 3] __HEAD, [1, 2, 3] __TAIL))" $
-      desugar <$>
+      testDesugar <$>
       parseExpression
         "__HEAD(__CONS([1, 2, 3] __HEAD, [1, 2, 3] __TAIL))"
         "test" `shouldBe`
@@ -163,6 +169,6 @@ sampleSpec =
                ]
            ])
     it "desugars x - 1" $
-      desugar <$>
+      testDesugar <$>
       parseExpression "x - 1" "test" `shouldBe`
       Right (Syn.soup [Syn.var "x", Syn.var "-", Syn.int 1])
