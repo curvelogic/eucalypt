@@ -7,6 +7,7 @@ module Eucalypt.Core.DesugarSpec
 
 import Control.Monad.State.Strict
 import Eucalypt.Core.Desugar
+import Eucalypt.Core.Target
 import qualified Eucalypt.Core.Syn as Syn
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
@@ -22,6 +23,7 @@ spec = do
   soupSpec
   blockSpec
   sampleSpec
+  targetsSpec
 
 -- ? shims
 testDesugarSoup :: [Expression] -> Syn.CoreExpr
@@ -172,3 +174,38 @@ sampleSpec =
       testDesugar <$>
       parseExpression "x - 1" "test" `shouldBe`
       Right (Syn.soup [Syn.var "x", Syn.var "-", Syn.int 1])
+
+
+targetAnnotation :: String -> String -> Expression
+targetAnnotation n d = block [bare $ prop "target" $ sym n , bare $ prop "doc" $ str d]
+
+targetSampleA :: Expression
+targetSampleA =
+  block
+    [ bare $
+      prop "a" $ block [ann (targetAnnotation "T" "x") (prop "b" $ int 1)]
+    ]
+
+targetSampleB :: Expression
+targetSampleB =
+  block
+    [ bare $
+      prop "a" $
+      block
+        [ ann (targetAnnotation "T" "x") (prop "b" $ int 1)
+        , ann (targetAnnotation "U" "y") (prop "c" $ int 1)
+        ]
+    ]
+
+targetsSpec :: Spec
+targetsSpec =
+  describe "target detection" $ do
+    it "reads annotation ` {target: :T doc: \"x\"}" $
+      (determineTarget . Just . testDesugar) (targetAnnotation "T" "x") `shouldBe`
+      Just ("T", "x")
+    it "finds T in { a: { ` {target: :T doc: \"x\"} b: _ } }" $
+      (truTargets . translateToCore) targetSampleA `shouldBe`
+      [TargetSpec "T" "x" ["a", "b"]]
+    it "finds T and U in larger sample " $
+      (truTargets . translateToCore) targetSampleB `shouldBe`
+      [TargetSpec "T" "x" ["a", "b"], TargetSpec "U" "y" ["a", "c"]]

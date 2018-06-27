@@ -89,8 +89,8 @@ parseEucalypt source = PE.parseUnit text
 --
 -- Named inputs are automatically set to suppress export as it is
 -- assumed that they will be referenced by name in subsequent source.
-parseInput :: Input -> IO (Either EucalyptError CoreExpr)
-parseInput i@(Input mode locator name format) = do
+parseInputToCore :: Input -> IO (Either EucalyptError CoreExpr)
+parseInputToCore i@(Input mode locator name format) = do
   source <- readInput locator
   case (mode, format) of
     (Inert, "yaml") -> dataToCore source
@@ -159,7 +159,7 @@ listTargets opts annotations = do
 -- | Parse units, reporting and exiting on error
 parseUnits :: EucalyptOptions -> IO [CoreExpr]
 parseUnits opts = do
-  asts <- mapM parseInput (optionInputs opts)
+  asts <- traverse parseInputToCore (optionInputs opts)
   case partitionEithers asts of
     (errs@(_:_), _) -> reportErrors errs >> exitFailure
     ([], []) -> reportErrors [NoSource] >> exitFailure

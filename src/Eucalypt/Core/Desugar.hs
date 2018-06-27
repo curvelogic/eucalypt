@@ -16,6 +16,7 @@ import Data.Char (isUpper)
 import Data.List (isPrefixOf)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Eucalypt.Core.Syn as Syn
+import Eucalypt.Core.Target
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast as Ast
 
@@ -135,15 +136,6 @@ declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
 varify :: CoreExpr -> CoreExpr
 varify (CoreName n) = name2Var n
 varify e = e
-
-
--- | Representation of an evaluation target, containing name,
--- documentation and path
-data TargetSpec = TargetSpec
-  { tgtName :: String
-  , tgtDoc :: String
-  , tgtPath :: [CoreBindingName]
-  }
 
 
 -- | A desugar pass in a state monad to capture paths of targets and
@@ -284,3 +276,16 @@ translate Located {locatee = expr} =
 -- | Shim for old API
 desugar :: Expression -> Syn.CoreExpr
 desugar = (`evalState` initTranslateState) . unTranslate . translate
+
+
+-- | The results of translation
+data TranslationUnit = TranslationUnit
+  { truCore :: CoreExpr
+  , truTargets :: [TargetSpec]
+  }
+
+translateToCore :: Expression -> TranslationUnit
+translateToCore ast =
+  TranslationUnit {truCore = e, truTargets = (reverse . trTargets) s}
+  where
+    (e, s) = runState (unTranslate $ translate ast) initTranslateState
