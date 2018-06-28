@@ -1,4 +1,6 @@
-{-# LANGUAGE TemplateHaskell, DeriveFunctor, DeriveFoldable, DeriveTraversable, FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE LambdaCase, TemplateHaskell, DeriveFunctor,
+  DeriveFoldable, DeriveTraversable, FlexibleContexts,
+  FlexibleInstances, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-missing-methods #-}
 {-|
 Module      : Eucalypt.Core.Syn
@@ -445,20 +447,61 @@ instantiateLet (CoreLet bs b) = inst b
 instantiateLet _ = error "instantiateLet called on non-let"
 
 
+-- ? rebodying
 
--- | Turn a block into let bindings, allowing the values to be bound
--- to by variables in body. Metadata from the block annotations is
--- rebound to the bound values as value metadata.
-abstractStaticBlock :: CoreExpr -> CoreExpr -> CoreExpr
-abstractStaticBlock (CoreBlock (CoreList l)) body =
-  CoreLet (map (second abstr) bs) (abstr body)
+-- | Allows us to retrieve the CoreBindingName of a variable even when
+-- it is wrapped in several layers of 'Var'
+class ToCoreBindingName c where
+  toCoreBindingName :: c -> Maybe CoreBindingName
+
+instance ToCoreBindingName String where
+  toCoreBindingName = Just
+
+instance ToCoreBindingName a => ToCoreBindingName (Var b a) where
+  toCoreBindingName v = case v of
+    F a -> toCoreBindingName a
+    B _ -> Nothing
+
+
+-- | Navigates down through lets and transparent expressions (like
+-- metadata and traces) and replaces the innermost body, binding free
+-- expressions in that body according to the bindings of the
+-- containing lets.
+rebody :: (ToCoreBindingName a, Show a) => CoreExp a -> CoreExp a -> CoreExp a
+rebody (CoreLet bs body) payload =
+  let payload' = rebody (fromScope body) (fmap return payload)
+   in CoreLet bs (bindMore'' toNameAndBinding (toScope payload'))
   where
-    bs = map binding l
-    binding (CoreMeta m (CoreList [CorePrim (CoreSymbol k), v])) = (k, CoreMeta m v)
-    binding (CoreList [CorePrim (CoreSymbol k), v]) = (k, v)
-    binding _ = error "Unexpected binding item in abstractStaticBlock"
-    abstr = abstractName (`elemIndex` map fst bs)
-abstractStaticBlock _ _ = error "abstractStaticBlock called on non-block"
+    toNameAndBinding :: ToCoreBindingName a => a -> Maybe (CoreBindingName, Int)
+    toNameAndBinding nm =
+      case toCoreBindingName nm of
+        (Just b) -> (b, ) <$> (b `elemIndex` map fst bs)
+        Nothing -> Nothing
+rebody (CoreMeta m e) payload = CoreMeta m (rebody e payload)
+rebody (CoreTraced e) payload = CoreTraced (rebody e payload)
+rebody (CoreChecked _ e) payload = rebody e payload
+rebody _ payload = payload
+
+
+-- | For binding further free variables in an expression that has
+-- already been abstracted once and is therefore a Scope.
+bindMore'' ::
+     Monad f
+  => (a -> Maybe (CoreBindingName, b))
+  -> Scope (Name CoreBindingName b) f a
+  -> Scope (Name CoreBindingName b) f a
+bindMore'' k = toScope . bindFree . fromScope
+  where
+    bindFree e =
+      e >>= \v ->
+        return $
+        case v of
+          F a -> bind a
+          B b -> B b
+    bind a =
+      case k a of
+        (Just (nm, z)) -> B (Name nm z)
+        Nothing -> F a
 
 
 
@@ -507,9 +550,9 @@ unitBindingsAndBody e = trace (show e) $ error "not a let"
 -- to values supplied by earlier units.
 --
 mergeUnits :: [CoreExpr] -> CoreExpr
-mergeUnits lets = foldl1 merge newLets
+mergeUnits lets = last newLets
   where
-    merge a b = CoreApply b [a]
+    -- merge a b = CoreApply b [a]
     (bindLists, bodies) = unzip (map unitBindingsAndBody lets)
     bindLists' = scanl1 rebindBindings bindLists
     bodies' = zipWith rebindBody bodies bindLists'

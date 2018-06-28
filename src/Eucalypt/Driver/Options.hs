@@ -28,7 +28,7 @@ data Command
   | ShowVersion
   | ListTargets
   | DumpDesugared
-  | DumpMetadataProbed
+  | DumpEvaluand
   deriving (Show, Eq)
 
 
@@ -84,9 +84,9 @@ commandOption =
     (long "dump-desugared" <>
      help "Dump core syntax after desugar and merge") <|>
   flag'
-    DumpMetadataProbed
-    (long "dump-metadata-probed" <>
-     help "Dump core syntax after metadata probe for targets / imports") <|>
+    DumpEvaluand
+    (long "dump-evaluand" <>
+     help "Dump complete core syntax that will be evaluated") <|>
   flag
     Evaluate
     Parse

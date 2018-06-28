@@ -212,7 +212,7 @@ formEvaluand opts targets source =
     Just p ->
       case readEvaluand p of
         Left err -> reportErrors [err] >> exitFailure
-        Right expr -> return $ abstractStaticBlock source expr
+        Right expr -> return $ rebody source expr
   where
     findTarget tgt =
       headMay $ map (fmtPath . tgtPath) $ filter ((== tgt) . tgtName) targets
@@ -247,6 +247,8 @@ evaluate opts whnfM = do
   -- Stage 5: form an expression to evaluate from the source or
   -- command line and embed it in the core tree
   evaluand <- formEvaluand opts targets core
+  when (cmd == DumpEvaluand)
+    (putStrLn (pprint evaluand) >> exitSuccess)
 
   -- Stage 6: cook operator soups to resolve all fixities and prepare
   -- a final tree for evaluation
