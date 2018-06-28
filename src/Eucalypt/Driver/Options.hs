@@ -28,7 +28,9 @@ data Command
   | ShowVersion
   | ListTargets
   | DumpDesugared
-  | DumpEvaluand
+  | DumpEvalSubstituted
+  | DumpCooked
+  | DumpFinalCore
   deriving (Show, Eq)
 
 
@@ -84,9 +86,17 @@ commandOption =
     (long "dump-desugared" <>
      help "Dump core syntax after desugar and merge") <|>
   flag'
-    DumpEvaluand
-    (long "dump-evaluand" <>
-     help "Dump complete core syntax that will be evaluated") <|>
+    DumpEvalSubstituted
+    (long "dump-eval-subbed" <>
+     help "Dump core syntax after evaluand substituted in") <|>
+  flag'
+    DumpCooked
+    (long "dump-cooked" <>
+     help "Dump core syntax after operator fixities have been resolved") <|>
+  flag'
+    DumpFinalCore
+    (long "dump-core" <>
+     help "Dump final core syntax prior to evaluation") <|>
   flag
     Evaluate
     Parse

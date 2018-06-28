@@ -247,13 +247,16 @@ evaluate opts whnfM = do
   -- Stage 5: form an expression to evaluate from the source or
   -- command line and embed it in the core tree
   evaluand <- formEvaluand opts targets core
-  when (cmd == DumpEvaluand)
+  when (cmd == DumpEvalSubstituted)
     (putStrLn (pprint evaluand) >> exitSuccess)
 
   -- Stage 6: cook operator soups to resolve all fixities and prepare
   -- a final tree for evaluation
   cookedEvaluand <- runFixityPass evaluand
-
+  when (cmd == DumpCooked)
+    (putStrLn (pprint cookedEvaluand) >> exitSuccess)
+  when (cmd == DumpFinalCore)
+    (putStrLn (pprint cookedEvaluand) >> exitSuccess)
 
   -- Stage 7: drive the evaluation by rendering it
   render cookedEvaluand >>= \case

@@ -546,13 +546,12 @@ unitBindingsAndBody e@CoreBlock{} = ([], abstractName (const Nothing) e)
 unitBindingsAndBody e = trace (show e) $ error "not a let"
 
 
--- | Merge core units together, binding free variables in later units
--- to values supplied by earlier units.
+-- | Merge bindings from core units, using body of final unit as
+-- default body.
 --
 mergeUnits :: [CoreExpr] -> CoreExpr
 mergeUnits lets = last newLets
   where
-    -- merge a b = CoreApply b [a]
     (bindLists, bodies) = unzip (map unitBindingsAndBody lets)
     bindLists' = scanl1 rebindBindings bindLists
     bodies' = zipWith rebindBody bodies bindLists'
