@@ -17,6 +17,7 @@ right = fromRight undefined
 
 spec :: Spec
 spec = do
+  distributeFixitySpec
   cookSpec
   sampleSpec
 
@@ -174,3 +175,48 @@ sampleSpec =
     it "cooks x - 1" $
       cookUp [var "x", infixl_ 10 (bif "SUB"), int 1] `shouldBe`
       app (bif "SUB") [var "x", int 1]
+
+
+distributeSample1 :: CoreExpr
+distributeSample1 =
+  letexp [("+", infixl_ 50 (bif "FOO")), ("-", infixl_ 50 (bif "BAR"))] $
+  soup [int 1, var "+", int 2]
+
+distributeResult1 :: CoreExpr
+distributeResult1 =
+  letexp [("+", bif "FOO"), ("-", bif "BAR")] $
+  soup [int 1, infixl_ 50 $ var "+", int 2]
+
+distributeSample2 :: CoreExpr
+distributeSample2 =
+  letexp [("+", infixl_ 50 (bif "FOO"))] $
+  letexp [("-", infixl_ 50 (bif "BAR"))] $
+  soup [int 1, var "+", int 2]
+
+distributeResult2 :: CoreExpr
+distributeResult2 =
+  letexp [("+", bif "FOO")] $
+  letexp [("-", bif "BAR")] $
+  soup [int 1, infixl_ 50 $ var "+", int 2]
+
+distributeSample3 :: CoreExpr
+distributeSample3 =
+  letexp [("+", infixl_ 50 (bif "FOO"))] $
+  letexp [("-", infixr_ 90 (bif "BAR"))] $
+  soup [int 1, var "-", int 2]
+
+distributeResult3 :: CoreExpr
+distributeResult3 =
+  letexp [("+", bif "FOO")] $
+  letexp [("-", bif "BAR")] $
+  soup [int 1, infixr_ 90 $ var "-", int 2]
+
+distributeFixitySpec :: Spec
+distributeFixitySpec =
+  describe "fixity distribution" $ do
+    it "distributes with single level of let" $
+      distributeFixities distributeSample1 `shouldBe` distributeResult1
+    it "distributes through intermediate lets" $
+      distributeFixities distributeSample2 `shouldBe` distributeResult2
+    it "distributes within intermediate lets" $
+      distributeFixities distributeSample3 `shouldBe` distributeResult3
