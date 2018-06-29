@@ -18,6 +18,7 @@ import Debug.Trace
 import Bound
 import Bound.Scope
 import Bound.Name
+import Control.Comonad
 import Control.Monad.State.Strict
 import Data.Char (isDigit)
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
@@ -56,6 +57,11 @@ type CoreBuiltinName = String
 -- | Fixity of operator
 data Fixity = UnaryPrefix | UnaryPostfix | InfixLeft | InfixRight
   deriving (Eq, Show, Read, Ord)
+
+fixityArity :: Fixity -> Int
+fixityArity UnaryPostfix = 1
+fixityArity UnaryPrefix = 1
+fixityArity _ = 2
 
 -- | Precedence of operator
 type Precedence = Int
@@ -522,6 +528,33 @@ bindMore k = toScope . bindFree . fromScope
         Just z -> B (Name a z)
         Nothing -> F a
 
+-- | Instantiate some of the bound variables in the scope, returning a
+-- scope of the same type.
+instantiateSome ::
+     (Monad f, Comonad n)
+  => (b -> Maybe (f a))
+  -> Scope (n b) f a
+  -> Scope (n b) f a
+instantiateSome k e = Scope $ unscope e >>= \case
+  B b -> case k (extract b) of
+    (Just r) -> F <$> return r
+    Nothing -> return $ B b
+  F a -> return $ F a
+
+-- | Modify (e.g. wrap) bound variables as specified by the
+-- transformation function 'k'.
+modifyBoundVars ::
+     (Monad f, Comonad n)
+  => (b -> f (Var (n b) (f a)) -> f (Var (n b) (f a)))
+  -> Scope (n b) f a
+  -> Scope (n b) f a
+modifyBoundVars k e =
+  Scope $
+  unscope e >>= \case
+      B b ->
+        let f = k (extract b)
+         in f (pure (B b))
+      F a -> pure $ F a
 
 
 -- | Replace bound variables in let and lambda bodies with

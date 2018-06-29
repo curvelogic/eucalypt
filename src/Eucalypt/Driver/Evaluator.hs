@@ -15,11 +15,10 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
-import Eucalypt.Core.Cook (cookAllSoup)
+import Eucalypt.Core.Cook (distributeFixities, cookAllSoup)
 import Eucalypt.Core.Desugar (varify, translateToCore)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
-import Eucalypt.Core.MetadataProbe
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Target
@@ -167,20 +166,14 @@ parseUnits opts = do
 
 
 
--- | Extract relevant metadata annotations, reporting and exiting on error
-runMetadataPass :: CoreExpr -> IO (CoreExpr, [(String, CoreExpr)])
-runMetadataPass e = case runInterpreter (runMetaPass e) of
-  Right (source, annotations) -> return (source, annotations)
-  Left err -> reportErrors [err] >> exitFailure
-
-
-
 -- | Run a pass to use known fixities to rearrange all operator
 -- expression
 runFixityPass :: CoreExpr -> IO CoreExpr
-runFixityPass expr = case runInterpreter (cookAllSoup expr) of
-  Right result -> return result
-  Left err -> reportErrors [err] >> exitFailure
+runFixityPass expr =
+  let distributed = distributeFixities expr
+   in case runInterpreter (cookAllSoup distributed) of
+        Right result -> return result
+        Left err -> reportErrors [err] >> exitFailure
 
 
 -- | Parse text from -e option as expression

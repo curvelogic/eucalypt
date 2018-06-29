@@ -84,7 +84,8 @@ prepare (CoreLambda arity e) =
         (\(Name nm _) -> CoreVar $ unquote $ show nm)
 prepare (CoreApply f es) = prepare f <> parens ( hsep . punctuate comma $ map prepare es)
 prepare (CoreName n) = text n
-prepare (CoreOperator _x _p e) = prepare e
+prepare (CoreOperator x p e) =
+  char '^' <> text (show x) <> parens (text (show p)) <> char '^' <> prepare e
 
 -- | Pretty Print a CoreExp to String
 pprint :: Show a => CoreExp a -> String

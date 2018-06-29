@@ -221,7 +221,7 @@ translateDeclarationForm a _k Located {locatee = form} =
   where
     newOp l r expr =
       let (fixity, precedence) = determineFixity a
-       in lam [l, r] $ CoreOperator fixity precedence expr
+       in CoreOperator fixity precedence $ lam [l, r] expr
     varifyTranslate = translate >=> return . varify
 
 

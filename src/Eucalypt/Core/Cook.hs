@@ -14,6 +14,7 @@ import Bound.Name
 import Bound.Scope
 import Control.Monad.Loops (untilM_)
 import Control.Monad.State.Lazy
+import Data.Bifunctor
 import Data.List (foldl')
 import Data.Monoid
 import Eucalypt.Core.Error
@@ -22,35 +23,68 @@ import Eucalypt.Core.Syn
 import Safe (headMay)
 
 
+
+-- | Distribute fixities to call sites
+--
+-- for each let binding (*) = (CoreOperator fixity prec body)
+--
+-- subtitute (CoreOperator fixity prev (var "(*)")) and alter the
+-- binding to (*) = (Lambda body)
+--
+distributeFixities :: CoreExp a -> CoreExp a
+distributeFixities (CoreLet bs b) = CoreLet prunedBindings newBody
+  where
+    newBody = modifyBoundVars bindSiteReplace $ distributeScopeFixities b
+    distBindings =
+      map
+        (second (modifyBoundVars bindSiteReplace . distributeScopeFixities))
+        bs
+    prunedBindings =
+      map (second $ Scope . exposeCallable . unscope) distBindings
+    bindSiteReplace z =
+      case unscope $ snd $ bs !! z of
+        (CoreOperator f p _) -> CoreOperator f p
+        _ -> id
+    exposeCallable (CoreOperator _ _ lambda) = lambda
+    exposeCallable e = e
+    distributeScopeFixities = Scope . distributeFixities . unscope
+distributeFixities (CoreMeta m e) = CoreMeta m $ distributeFixities e
+distributeFixities (CoreChecked f e) = CoreChecked f $ distributeFixities e
+distributeFixities (CoreTraced e) = CoreTraced $ distributeFixities e
+distributeFixities e = e
+
 -- | A core pass prior to evaluation to cook all soup that can be
 -- cooked.
 cookAllSoup :: Anaphora a => CoreExp a -> Interpreter (CoreExp a)
 cookAllSoup = Interpreter . cookBottomUp False
 
-cookScope :: (Anaphora a, Show b) => Bool -> Scope (Name String b) CoreExp a -> Interpreter (Scope (Name String b) CoreExp a)
-cookScope anaphoric scope = toScope <$> (cookThis anaphoric . fromScope) scope
-  where
-    cookThis :: Anaphora a => Bool -> CoreExp a -> Interpreter (CoreExp a)
-    cookThis underAnaphoricBinder (CoreList l) =
-      CoreList <$> traverse (cookThis underAnaphoricBinder) l
-    cookThis underAnaphoricBinder (CoreBlock l) =
-      CoreBlock <$> cookThis underAnaphoricBinder l
-    cookThis underAnaphoricBinder (CoreOpSoup exprs) =
-      Interpreter $ cookSoup underAnaphoricBinder exprs
-    cookThis underAnaphoricBinder (CoreMeta m e) =
-      CoreMeta m <$> cookThis underAnaphoricBinder e
-    cookThis underAnaphoricBinder (CoreApply f xs) =
-      CoreApply <$> cookThis underAnaphoricBinder f <*>
-      traverse (cookThis underAnaphoricBinder) xs
-    cookThis _ e = return e
-
--- | Once all operator names have been resolved to 'CoreOperator's we
--- know fixity and precedence so can restructure and identify
--- catenations amongst them.
+-- | Entrypoint for evaluator if soup is discovered at runtime
 cook :: Anaphora a => [CoreExp a] -> Interpreter (CoreExp a)
 cook es = case cookSoup False es of
   Right expr -> return expr
   Left err -> throwEvalError err
+
+-- | Take sequence of expression in operator soup and rearrange into
+-- non-soup expression using operator fixity.
+cookSoup :: Anaphora a => Bool -> [CoreExp a] -> Either EvaluationError (CoreExp a)
+cookSoup parentAnaphoric es = do
+  subcooked <- cookSubsoups inAnaphoricLambda filled
+  expr <- evalState shunt (initState subcooked inAnaphoricLambda)
+  if wrap
+    then return $ (bindAnaphora . numberAnaphora) expr
+    else return expr
+  where
+    (filled, imAnaphoric) = precook es
+    wrap = imAnaphoric && not parentAnaphoric
+    inAnaphoricLambda = parentAnaphoric || imAnaphoric
+
+cookScope ::
+     (Anaphora a, Show b)
+  => Bool
+  -> Scope (Name String b) CoreExp a
+  -> Interpreter (Scope (Name String b) CoreExp a)
+cookScope anaphoric scope =
+  Interpreter $ toScope <$> (cookBottomUp anaphoric . fromScope) scope
 
 -- | Precook...
 --
@@ -66,32 +100,28 @@ cookSubsoups :: Anaphora a => Bool -> [CoreExp a] -> Either EvaluationError [Cor
 cookSubsoups anaphoric = mapM (cookBottomUp anaphoric)
 
 
--- | Cook expressions recursively but don't go under binders or into
--- metadata.
-cookBottomUp :: Anaphora a => Bool -> CoreExp a -> Either EvaluationError (CoreExp a)
+cookBottomUp ::
+     Anaphora a => Bool -> CoreExp a -> Either EvaluationError (CoreExp a)
 cookBottomUp anaphoric (CoreOpSoup exprs) = cookSoup anaphoric exprs
-cookBottomUp anaphoric (CoreArgTuple exprs) = CoreArgTuple <$> traverse (cookBottomUp anaphoric) exprs
-cookBottomUp anaphoric (CoreList exprs) = CoreList <$> traverse (cookBottomUp anaphoric) exprs
+cookBottomUp anaphoric (CoreArgTuple exprs) =
+  CoreArgTuple <$> traverse (cookBottomUp anaphoric) exprs
+cookBottomUp anaphoric (CoreList exprs) =
+  CoreList <$> traverse (cookBottomUp anaphoric) exprs
 cookBottomUp anaphoric (CoreBlock l) = CoreBlock <$> cookBottomUp anaphoric l
 cookBottomUp anaphoric (CoreMeta m e) = CoreMeta m <$> cookBottomUp anaphoric e
-cookBottomUp anaphoric (CoreApply f exprs) = CoreApply <$> cookBottomUp anaphoric f <*> traverse (cookBottomUp anaphoric) exprs
-cookBottomUp anaphoric (CoreLambda n body) = CoreLambda n <$> runInterpreter (cookScope anaphoric body)
+cookBottomUp anaphoric (CoreApply f exprs) =
+  CoreApply <$> cookBottomUp anaphoric f <*>
+  traverse (cookBottomUp anaphoric) exprs
+cookBottomUp anaphoric (CoreLambda n body) =
+  CoreLambda n <$> runInterpreter (cookScope anaphoric body)
+cookBottomUp anaphoric (CoreLet bs body) = CoreLet <$> newBindings <*> newBody
+  where
+    newBody = runInterpreter (cookScope anaphoric body)
+    newBindings =
+      zip (map fst bs) <$>
+      traverse (runInterpreter . cookScope anaphoric) (map snd bs)
 cookBottomUp _ e = Right e
 
-
--- | Take sequence of expression in operator soup and rearrange into
--- non-soup expression using operator fixity.
-cookSoup :: Anaphora a => Bool -> [CoreExp a] -> Either EvaluationError (CoreExp a)
-cookSoup parentAnaphoric es = do
-  subcooked <- cookSubsoups inAnaphoricLambda filled
-  expr <- evalState shunt (initState subcooked inAnaphoricLambda)
-  if wrap
-    then return $ (bindAnaphora . numberAnaphora) expr
-    else return expr
-  where
-    (filled, imAnaphoric) = precook es
-    wrap = imAnaphoric && not parentAnaphoric
-    inAnaphoricLambda = parentAnaphoric || imAnaphoric
 
 -- | Run the shunting algorithm until finished or errored
 shunt :: Anaphora a => State (ShuntState a) (Either EvaluationError (CoreExp a))

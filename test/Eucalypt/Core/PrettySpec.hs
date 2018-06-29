@@ -60,4 +60,4 @@ spec =
       "let foo = 2\n    bar = 3\n    in foo"
     it "prints sample" $
       pprint sample `shouldBe`
-      "let take = (\\ n l -> (__IF __*CALL* ((n zero?), [], (cons __*CALL* ((l head), (take __*CALL* ((n dec), (l tail))))))))\n    in {[[:take,take]]}"
+      "let take = (\\ n l -> (__IF ^InfixLeft(90)^__*CALL* ((n zero?), [], (cons ^InfixLeft(90)^__*CALL* ((l head), (take ^InfixLeft(90)^__*CALL* ((n dec), (l tail))))))))\n    in {[[:take,take]]}"
