@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, GeneralizedNewtypeDeriving, TupleSections #-}
 {-|
 Module      : Eucalypt.Core.Syn
 Description : Desugar from surface syntax to core syntax
@@ -11,10 +11,13 @@ Stability   : experimental
 module Eucalypt.Core.Desugar
 where
 
+import Control.Monad.State.Strict
 import Data.Char (isUpper)
 import Data.List (isPrefixOf)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Eucalypt.Core.Syn as Syn
+import Eucalypt.Core.Target
+import Eucalypt.Core.Unit
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast as Ast
 
@@ -26,15 +29,6 @@ desugarLiteral lit =
     VFloat f -> CoreFloat f
     VStr s -> CoreString s
     VSym s -> CoreSymbol s
-
-
-
--- | Convert an atomic name (op or normal) to a binding name
-bindingName :: AtomicName -> CoreBindingName
-bindingName n =
-  case n of
-    NormalName name -> name
-    OperatorName name -> name
 
 
 
@@ -118,27 +112,15 @@ determineFixity (Just meta) = (fixity, fromMaybe 50 prec)
 determineFixity Nothing = (InfixLeft, 50)
 
 
--- | Flatten and desugar a declaration form into annotation, name,
--- expression
-desugarDeclarationForm ::
-     Annotated DeclarationForm -> (Maybe CoreExpr, CoreBindingName, CoreExpr)
-desugarDeclarationForm Annotated { annotation = a
-                                 , declaration = Located {locatee = decl}
-                                 } =
-  let annot = processAnnotation . desugar <$> a
-   in case decl of
-        PropertyDecl k expr -> (annot, bindingName k, desugarDeclExpr expr)
-        FunctionDecl k as expr ->
-          (annot, bindingName k, lam as (desugarDeclExpr expr))
-        OperatorDecl k l r expr ->
-          ( annot
-          , bindingName k
-          , newOp annot (lam [l, r] (desugarDeclExpr expr)))
+-- | Check (unevaluated) metadata for target annotations and their
+-- documentation
+determineTarget :: Maybe CoreExpr -> Maybe (String, String)
+determineTarget (Just meta) = (, doc) <$> target
   where
-    desugarDeclExpr = varify . desugar
-    newOp annot expr =
-      let (fixity, precedence) = determineFixity annot in
-        CoreOperator fixity precedence expr
+    target = join $ readUnevaluatedMetadata "target" meta symbolName
+    doc = fromMaybe "" $ join $ readUnevaluatedMetadata "doc" meta stringContent
+determineTarget _ = Nothing
+
 
 -- | Ignore splices for now TODO: splice expressions
 declarations :: Block -> [Annotated DeclarationForm]
@@ -147,39 +129,47 @@ declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
     toDecl Located{locatee=(Splice _)} = Nothing
     toDecl Located{locatee=(Declaration d)} = Just d
 
--- | Desugar a block expression.
---
--- TODO: anaphora, splice
-desugarBlock :: Block -> CoreExpr
-desugarBlock blk = letexp bindings value
-  where
-    bindings = map (\(_, n, b) -> (n, b)) decls
-    decls = map desugarDeclarationForm $ declarations blk
-    value = CoreBlock $ CoreList [ref annot name | (annot, name, _) <- decls]
-    ref annot name =
-      case annot of
-        Just a ->
-          CoreMeta a (CoreList [CorePrim (CoreSymbol name), CoreVar name])
-        Nothing -> CoreList [CorePrim (CoreSymbol name), CoreVar name]
 
 
+-- | In contexts where single names should become variables (evaluand
+-- rather than individual lookup elements for instance), this converts
+-- to vars.
+varify :: CoreExpr -> CoreExpr
+varify (CoreName n) = name2Var n
+varify e = e
 
 
--- | Desugar a general identifier 'a.b.c' into a nested lookup against
--- the item identified by the initial component. The initial component
--- is transformed into a 'CoreVar' unless it has a @__@ prefix and is
--- all caps in which case it is assumed to be a builtin.
-desugarIdentifier :: [AtomicName] -> CoreExpr
-desugarIdentifier components =
-  foldl CoreLookup h $ map relativeName (tail components)
-  where
-    headName = bindingName (head components)
-    h =
-      if "__" `isPrefixOf` headName && (length headName > 2 && isUpper (headName !! 2))
-        then CoreBuiltin (drop 2 headName)
-        else CoreVar headName
+-- | A desugar pass in a state monad to capture paths of targets and
+-- other data during translation
+data TranslateState = TranslateState
+  { trTargets :: [TargetSpec]
+  , trStack :: [CoreBindingName]
+  }
 
+newtype Translate a = Translate { unTranslate :: State TranslateState a }
+  deriving (Functor, Applicative, Monad, MonadState TranslateState)
 
+-- | Initial state
+initTranslateState :: TranslateState
+initTranslateState = TranslateState [] []
+
+-- | Push a key onto the stack to track where we are, considering
+-- statically declared blocks as namespaces
+pushKey :: CoreBindingName -> Translate ()
+pushKey k = modify $ \s -> s {trStack = k : trStack s}
+
+-- | Pop a key off the stack
+popKey :: Translate ()
+popKey = modify $ \s -> s {trStack = tail $ trStack s}
+
+-- | Record the current stack as a path into the namespaces with name
+-- of target and any associated documentation
+recordTarget :: String -> String -> Translate ()
+recordTarget targetName targetDoc = do
+  stack <- gets trStack
+  let target = TargetSpec targetName targetDoc (reverse stack)
+  targets <- gets trTargets
+  put TranslateState {trTargets = target : targets, trStack = stack}
 
 -- | Desugar Ast op soup into core op soup (to be cooked into better
 -- tree later, once fixity and precedence of all ops is resolved).
@@ -192,35 +182,107 @@ desugarIdentifier components =
 -- handle all the operator fixities until operators are resoloved but we
 -- can't resolve without identifying which names are vars to be
 -- resolved and which are just lookup keys.
-desugarSoup :: [Expression] -> CoreExpr
-desugarSoup = CoreOpSoup . makeVars . insertCalls
+translateSoup :: [Expression] -> Translate CoreExpr
+translateSoup items =
+  CoreOpSoup . makeVars . concat <$> traverse trans items
   where
-    insertCalls = concatMap translate
-    translate :: Expression -> [CoreExpr]
-    translate t@Located {locatee = EApplyTuple _} = [Syn.callOp, desugar t]
-    translate Located {locatee = EName (OperatorName ".")} = [lookupOp]
-    translate e = [desugar e]
+    trans :: Expression -> Translate [CoreExpr]
+    trans t@Located {locatee = EApplyTuple _} = translate t >>= \expr -> return [Syn.callOp, expr]
+    trans Located {locatee = EName (OperatorName ".")} = return [lookupOp]
+    trans e = (:[]) <$> translate e
     makeVars :: [CoreExpr] -> [CoreExpr]
-    makeVars exprs = zipWith f exprs (corenull : exprs)
-    f :: CoreExpr -> CoreExpr -> CoreExpr
-    f n@(CoreName _) (CoreOperator InfixLeft _ (CoreBuiltin "*DOT*")) = n
-    f (CoreName v) _ = name2Var v
-    f e _ = e
+    makeVars exprs = zipWith toVar exprs (corenull : exprs)
+    toVar :: CoreExpr -> CoreExpr -> CoreExpr
+    toVar n@(CoreName _) (CoreOperator InfixLeft _ (CoreBuiltin "*DOT*")) = n
+    toVar (CoreName v) _ = name2Var v
+    toVar e _ = e
 
--- | In contexts where single names should become variables (evaluand
--- rather than individual lookup elements for instance), this converts
--- to vars.
-varify :: CoreExpr -> CoreExpr
-varify (CoreName n) = name2Var n
-varify e = e
 
--- | Desugar an expression into core syntax
-desugar :: Expression -> CoreExpr
-desugar Located {locatee = expr} =
+-- | Extract and translate the metadata annotation from the declaration
+translateAnnotation :: Annotated DeclarationForm -> Maybe CoreExpr
+translateAnnotation Annotated {annotation = Just a} =
+  flip evalState initTranslateState $
+  unTranslate $ Just . processAnnotation <$> translate a
+translateAnnotation _ = Nothing
+
+
+-- | Translate a declaration form into the expression that will be
+-- bound
+translateDeclarationForm ::
+     Maybe CoreExpr
+  -> CoreBindingName
+  -> DeclarationForm
+  -> Translate CoreExpr
+translateDeclarationForm a _k Located {locatee = form} =
+  case form of
+    (PropertyDecl _ expr) -> varifyTranslate expr
+    (FunctionDecl _ as expr) -> lam as <$> varifyTranslate expr
+    (OperatorDecl _ l r expr) -> newOp l r <$> varifyTranslate expr
+  where
+    newOp l r expr =
+      let (fixity, precedence) = determineFixity a
+       in CoreOperator fixity precedence $ lam [l, r] expr
+    varifyTranslate = translate >=> return . varify
+
+
+-- | Translate an AST block to CoreExpr
+translateBlock :: Block -> Translate CoreExpr
+translateBlock blk = do
+  dforms <-
+    forM (declarations blk) $ \d -> do
+      let a = translateAnnotation d
+      let k = extractKey d
+      pushKey k
+      checkTarget a
+      expr <- translateDeclarationForm a k (declaration d)
+      popKey
+      return (a, k, expr)
+  return $ letexp (bindings dforms) (body dforms)
+  where
+    extractKey Annotated {declaration = Located {locatee = decl}} =
+      let name =
+            case decl of
+              (PropertyDecl k _) -> k
+              (FunctionDecl k _ _) -> k
+              (OperatorDecl k _ _ _) -> k
+       in atomicName name
+    bindings = map (\(_, n, b) -> (n, b))
+    body decls = Syn.block [ref annot name | (annot, name, _) <- decls]
+    ref annot name =
+      case annot of
+        Just a -> withMeta a $ element name (var name)
+        Nothing -> element name (var name)
+    checkTarget annot =
+      case determineTarget annot of
+        Just (tgt, doc) -> recordTarget tgt doc
+        Nothing -> return ()
+
+
+
+-- | Descend through the AST, translating to CoreExpr and recording
+-- targets and other metadata in a @TargetState@ record as we go
+translate :: Expression -> Translate CoreExpr
+translate Located {locatee = expr} =
   case expr of
-    ELiteral lit -> CorePrim $ desugarLiteral lit
-    EBlock blk -> desugarBlock blk
-    EList components -> CoreList $ map (varify .desugar) components
-    EName n -> CoreName $ bindingName n
-    EOpSoup _ es -> desugarSoup es
-    EApplyTuple as -> CoreArgTuple (map (varify . desugar) as)
+    ELiteral lit -> return $ CorePrim $ desugarLiteral lit
+    EBlock blk -> translateBlock blk
+    EList components -> CoreList <$> traverse varifyTranslate components
+    EName n -> return $ CoreName $ atomicName n
+    EOpSoup _ es -> translateSoup es
+    EApplyTuple as -> CoreArgTuple <$> traverse varifyTranslate as
+  where
+    varifyTranslate = translate >=> return . varify
+
+
+-- | Shim for old API
+desugar :: Expression -> Syn.CoreExpr
+desugar = (`evalState` initTranslateState) . unTranslate . translate
+
+
+-- | Translate AST into core syntax and generate target metadata on
+-- the way
+translateToCore :: Expression -> TranslationUnit
+translateToCore ast =
+  TranslationUnit {truCore = e, truTargets = (reverse . trTargets) s}
+  where
+    (e, s) = runState (unTranslate $ translate ast) initTranslateState

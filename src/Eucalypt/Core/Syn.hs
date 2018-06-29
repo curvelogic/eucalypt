@@ -1,4 +1,6 @@
-{-# LANGUAGE TemplateHaskell, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
+{-# LANGUAGE LambdaCase, TemplateHaskell, DeriveFunctor,
+  DeriveFoldable, DeriveTraversable, FlexibleContexts,
+  FlexibleInstances, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-missing-methods #-}
 {-|
 Module      : Eucalypt.Core.Syn
@@ -16,10 +18,14 @@ import Debug.Trace
 import Bound
 import Bound.Scope
 import Bound.Name
+import Control.Comonad
+import Control.Monad.State.Strict
+import Data.Char (isDigit)
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
 import Data.List (elemIndex)
-import Control.Monad
+import Data.Maybe
+import Data.Traversable (for)
 import Data.Bifunctor (second)
 
 
@@ -51,6 +57,11 @@ type CoreBuiltinName = String
 -- | Fixity of operator
 data Fixity = UnaryPrefix | UnaryPostfix | InfixLeft | InfixRight
   deriving (Eq, Show, Read, Ord)
+
+fixityArity :: Fixity -> Int
+fixityArity UnaryPostfix = 1
+fixityArity UnaryPrefix = 1
+fixityArity _ = 2
 
 -- | Precedence of operator
 type Precedence = Int
@@ -95,14 +106,14 @@ isList _ = False
 
 
 -- | Return the name of a symbol if the expression is a symbol.
-symbolName :: CoreExpr -> Maybe String
+symbolName :: CoreExp a -> Maybe String
 symbolName (CorePrim (CoreSymbol s)) = Just s
 symbolName _ = Nothing
 
 
 
 -- | String content of string literal if the expression is a string.
-stringContent :: CoreExpr -> Maybe String
+stringContent :: CoreExp a -> Maybe String
 stringContent (CorePrim (CoreString s)) = Just s
 stringContent _ = Nothing
 
@@ -152,7 +163,7 @@ var = CoreVar
 
 
 -- | Construct a name (maybe be a relative name, not a var)
-corename :: CoreRelativeName -> CoreExpr
+corename :: CoreRelativeName -> CoreExp a
 corename = CoreName
 
 
@@ -160,7 +171,8 @@ corename = CoreName
 -- | Abstract lambda of several args
 lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
 lam as expr = CoreLambda (length as) scope
-  where scope = abstractName (`elemIndex` as) expr
+  where
+    scope = abstractName (`elemIndex` as) expr
 
 
 
@@ -187,6 +199,12 @@ corebool = CorePrim . CoreBoolean
 -- | Construct null expression
 corenull :: CoreExp a
 corenull = CorePrim CoreNull
+
+
+
+-- | CoreList
+corelist :: [CoreExp a] -> CoreExp a
+corelist = CoreList
 
 
 
@@ -227,25 +245,25 @@ element k v = CoreList [sym k, v]
 
 
 -- | A block from its items
-block :: [CoreExpr] -> CoreExpr
+block :: [CoreExp a] -> CoreExp a
 block items = CoreBlock $ CoreList items
 
 
 
 -- | Apply metadata to another expression
-withMeta :: CoreExpr -> CoreExpr -> CoreExpr
+withMeta :: CoreExp a -> CoreExp a -> CoreExp a
 withMeta = CoreMeta
 
 
 
 -- | A left-associative infix operation
-infixl_ :: Precedence -> CoreExpr -> CoreExpr
+infixl_ :: Precedence -> CoreExp a -> CoreExp a
 infixl_ = CoreOperator InfixLeft
 
 
 
 -- | A right-associative infix operation
-infixr_ :: Precedence -> CoreExpr -> CoreExpr
+infixr_ :: Precedence -> CoreExp a -> CoreExp a
 infixr_ = CoreOperator InfixRight
 
 
@@ -277,14 +295,15 @@ args = CoreArgTuple
 
 
 -- | Catenation operator
-catOp :: CoreExpr
+catOp :: CoreExp a
 catOp = infixl_ 20 (CoreBuiltin "CAT")
+
 
 
 -- | Function calls using arg tuple are treated as operator during the
 -- fixity / precedence resolution phases but formed into core syntax
 -- after that.
-callOp :: CoreExpr
+callOp :: CoreExp a
 callOp = infixl_ 90 (CoreBuiltin "*CALL*")
 
 
@@ -294,7 +313,118 @@ callOp = infixl_ 90 (CoreBuiltin "*CALL*")
 lookupOp :: CoreExpr
 lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
 
+-- ? anaphora
+--
 
+class Show a => Anaphora a where
+
+  -- | The blank expression anaphorus (@_@) for this binding type
+  expressionAnaphorus :: CoreExp a
+
+  -- | True if the expression is an anaphoric var (i.e. begins with "_"
+  -- and has single digit) or is "_".
+  isAnaphoricVar :: CoreExp a -> Bool
+
+  -- | Number anaphoric variable names
+  applyNumber :: a -> State Int a
+
+  isAnaphorus :: a -> Bool
+
+  toIndex :: a -> Maybe Int
+
+  toName :: a -> String
+
+instance Anaphora String where
+  expressionAnaphorus = var "_"
+
+  isAnaphorus s
+    | s == "_" = True
+    | (isJust . anaphorusIndex) s = True
+  isAnaphorus _ = False
+
+
+  isAnaphoricVar (CoreVar s) = isAnaphorus s
+  isAnaphoricVar _ = False
+
+  toIndex = anaphorusIndex
+
+  applyNumber "_" = do
+    n <- get
+    put (n + 1)
+    return ("_" ++ show n)
+  applyNumber x = return x
+
+  toName = id
+
+
+instance (Anaphora a, Show b) => Anaphora (Var b a) where
+  expressionAnaphorus = F <$> expressionAnaphorus
+
+  isAnaphorus (F s)
+    | isAnaphorus s = True
+    | (isJust . anaphorusIndex . toName) s = True
+  isAnaphorus _ = False
+
+  isAnaphoricVar (CoreVar a) = isAnaphorus a
+  isAnaphoricVar _ = False
+
+  toIndex (F s) = anaphorusIndex (toName s)
+  toIndex _ = Nothing
+
+  applyNumber (F s) = F <$> applyNumber s
+  applyNumber x = return x
+
+  toName (F s) = toName s
+  toName (B _) = ""
+
+-- | Is it the name of an anahoric parameter? @_@ doesn't count as it
+-- should have been substituted for a numbered version by cooking.
+anaphorusIndex :: String -> Maybe Int
+anaphorusIndex ('_':s:_) | isDigit s  = Just (read [s] :: Int)
+anaphorusIndex _ = Nothing
+
+
+
+-- | Add numbers to numberless anaphora
+numberAnaphora :: Anaphora a => CoreExp a -> CoreExp a
+numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
+
+
+
+-- | Bind anaphora
+--
+-- Wrap a lambda around the expression, binding all anaphoric
+-- parameters
+-- bindAnaphora ::
+--   (Anaphora (Var (Name String Int) a), Anaphora a) =>
+--   CoreExp (Var (Name String Int) a) -> CoreExp a
+bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
+bindAnaphora expr =
+  CoreLambda (maxAnaphorus + 1) $ abstractName' toIndex expr
+  where
+    freeVars = foldr (:) [] expr
+    freeAnaphora = mapMaybe toIndex freeVars
+    maxAnaphorus = maximum freeAnaphora
+    -- bindFree :: (Anaphora a, Monad m) => m (Var (Name String Int) a) -> m (Var (Name String Int) a)
+    -- bindFree e =
+    --   e >>= \v ->
+    --     return $
+    --     case v of
+    --       F a -> bind a
+    --       B b -> B b
+    -- bind :: Anaphora a => a -> Var (Name String Int) a
+    -- bind a =
+    --   case toIndex a of
+    --     Just z -> B (Name (toName a) z)
+    --     Nothing -> F a
+
+abstractName' :: (Monad f, Anaphora a) => (a -> Maybe b) -> f a -> Scope (Name String b) f a
+abstractName' f t = Scope (fmap k t)
+  where
+    k a =
+      case f a of
+        Just b -> B (Name (toName a) b)
+        Nothing -> F (return a)
 
 -- $ substitutions
 --
@@ -323,20 +453,61 @@ instantiateLet (CoreLet bs b) = inst b
 instantiateLet _ = error "instantiateLet called on non-let"
 
 
+-- ? rebodying
 
--- | Turn a block into let bindings, allowing the values to be bound
--- to by variables in body. Metadata from the block annotations is
--- rebound to the bound values as value metadata.
-abstractStaticBlock :: CoreExpr -> CoreExpr -> CoreExpr
-abstractStaticBlock (CoreBlock (CoreList l)) body =
-  CoreLet (map (second abstr) bs) (abstr body)
+-- | Allows us to retrieve the CoreBindingName of a variable even when
+-- it is wrapped in several layers of 'Var'
+class ToCoreBindingName c where
+  toCoreBindingName :: c -> Maybe CoreBindingName
+
+instance ToCoreBindingName String where
+  toCoreBindingName = Just
+
+instance ToCoreBindingName a => ToCoreBindingName (Var b a) where
+  toCoreBindingName v = case v of
+    F a -> toCoreBindingName a
+    B _ -> Nothing
+
+
+-- | Navigates down through lets and transparent expressions (like
+-- metadata and traces) and replaces the innermost body, binding free
+-- expressions in that body according to the bindings of the
+-- containing lets.
+rebody :: (ToCoreBindingName a, Show a) => CoreExp a -> CoreExp a -> CoreExp a
+rebody (CoreLet bs body) payload =
+  let payload' = rebody (fromScope body) (fmap return payload)
+   in CoreLet bs (bindMore'' toNameAndBinding (toScope payload'))
   where
-    bs = map binding l
-    binding (CoreMeta m (CoreList [CorePrim (CoreSymbol k), v])) = (k, CoreMeta m v)
-    binding (CoreList [CorePrim (CoreSymbol k), v]) = (k, v)
-    binding _ = error "Unexpected binding item in abstractStaticBlock"
-    abstr = abstractName (`elemIndex` map fst bs)
-abstractStaticBlock _ _ = error "abstractStaticBlock called on non-block"
+    toNameAndBinding :: ToCoreBindingName a => a -> Maybe (CoreBindingName, Int)
+    toNameAndBinding nm =
+      case toCoreBindingName nm of
+        (Just b) -> (b, ) <$> (b `elemIndex` map fst bs)
+        Nothing -> Nothing
+rebody (CoreMeta m e) payload = CoreMeta m (rebody e payload)
+rebody (CoreTraced e) payload = CoreTraced (rebody e payload)
+rebody (CoreChecked _ e) payload = rebody e payload
+rebody _ payload = payload
+
+
+-- | For binding further free variables in an expression that has
+-- already been abstracted once and is therefore a Scope.
+bindMore'' ::
+     Monad f
+  => (a -> Maybe (CoreBindingName, b))
+  -> Scope (Name CoreBindingName b) f a
+  -> Scope (Name CoreBindingName b) f a
+bindMore'' k = toScope . bindFree . fromScope
+  where
+    bindFree e =
+      e >>= \v ->
+        return $
+        case v of
+          F a -> bind a
+          B b -> B b
+    bind a =
+      case k a of
+        (Just (nm, z)) -> B (Name nm z)
+        Nothing -> F a
 
 
 
@@ -357,6 +528,33 @@ bindMore k = toScope . bindFree . fromScope
         Just z -> B (Name a z)
         Nothing -> F a
 
+-- | Instantiate some of the bound variables in the scope, returning a
+-- scope of the same type.
+instantiateSome ::
+     (Monad f, Comonad n)
+  => (b -> Maybe (f a))
+  -> Scope (n b) f a
+  -> Scope (n b) f a
+instantiateSome k e = Scope $ unscope e >>= \case
+  B b -> case k (extract b) of
+    (Just r) -> F <$> return r
+    Nothing -> return $ B b
+  F a -> return $ F a
+
+-- | Modify (e.g. wrap) bound variables as specified by the
+-- transformation function 'k'.
+modifyBoundVars ::
+     (Monad f, Comonad n)
+  => (b -> f (Var (n b) (f a)) -> f (Var (n b) (f a)))
+  -> Scope (n b) f a
+  -> Scope (n b) f a
+modifyBoundVars k e =
+  Scope $
+  unscope e >>= \case
+      B b ->
+        let f = k (extract b)
+         in f (pure (B b))
+      F a -> pure $ F a
 
 
 -- | Replace bound variables in let and lambda bodies with
@@ -381,13 +579,12 @@ unitBindingsAndBody e@CoreBlock{} = ([], abstractName (const Nothing) e)
 unitBindingsAndBody e = trace (show e) $ error "not a let"
 
 
--- | Merge core units together, binding free variables in later units
--- to values supplied by earlier units.
+-- | Merge bindings from core units, using body of final unit as
+-- default body.
 --
 mergeUnits :: [CoreExpr] -> CoreExpr
-mergeUnits lets = foldl1 merge newLets
+mergeUnits lets = last newLets
   where
-    merge a b = CoreApply b [a]
     (bindLists, bodies) = unzip (map unitBindingsAndBody lets)
     bindLists' = scanl1 rebindBindings bindLists
     bodies' = zipWith rebindBody bodies bindLists'

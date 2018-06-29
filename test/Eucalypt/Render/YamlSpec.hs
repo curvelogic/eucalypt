@@ -4,11 +4,16 @@ module Eucalypt.Render.YamlSpec
   , spec
   ) where
 
+import Data.Either (fromRight)
 import Eucalypt.Render.Yaml
 import Eucalypt.Core.Syn
 import Test.Hspec
 import Eucalypt.Core.EvalByName
 import Data.Text.Encoding (encodeUtf8)
+
+right :: Either l r -> r
+right = fromRight undefined
+
 
 main :: IO ()
 main = hspec spec
@@ -57,25 +62,29 @@ spec :: Spec
 spec =
   describe "Yaml rendering" $ do
     xit "Renders simple NF core block to Yaml" $
-      renderYamlBytes return coreNF1 `shouldReturn`
-      (return . encodeUtf8) "a: 1234\nb:\n  - x\n  y\n  z\n"
-    --        expected: Right "a: 1234\nb:\n  - x\n  y\n  z\n"
-    --         but got: Right "a: 1234\nb:\n- x\n- 'y'\n- z\n"
-    -- TODO: mysterious...
+      right <$> renderYamlBytes return coreNF1 `shouldReturn`
+      encodeUtf8 "a: 1234\nb:\n  - x\n  y\n  z\n"
+      -- expected: Right "a: 1234\nb:\n  - x\n  y\n  z\n"
+      --  but got: Right "a: 1234\nb:\n- x\n- 'y'\n- z\n"
+      -- TODO: mysterious...
     it "Renders NF core list" $
+      right <$>
       renderYamlBytes return coreNF2 `shouldReturn`
-      (return . encodeUtf8) "- 1\n- 2\n- 3\n- 4\n- 5\n- 6\n- 7\n"
+      encodeUtf8 "- 1\n- 2\n- 3\n- 4\n- 5\n- 6\n- 7\n"
     it "Maintains key order" $
+      right <$>
       renderYamlBytes return coreNF3 `shouldReturn`
-      (return . encodeUtf8) "a: 1\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\n"
+      encodeUtf8 "a: 1\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\n"
     it "Forces to WHNF to render" pending
     it "renders and evals { a: __NULL }" $
+      right <$>
       renderYamlBytes
         whnfM
         (CoreBlock (CoreList [CoreList [sym "a", bif "NULL"]])) `shouldReturn`
-      (return . encodeUtf8) "a: null\n"
+      encodeUtf8 "a: null\n"
     it "omits builtin declarations from render" $
+      right <$>
       renderYamlBytes
         whnfM
         (CoreBlock (CoreList [CoreList [sym "a", bif "OR"]])) `shouldReturn`
-      (return . encodeUtf8) "{}\n"
+      encodeUtf8 "{}\n"

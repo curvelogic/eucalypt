@@ -30,6 +30,14 @@ data AtomicName
   deriving (Eq, Show, Generic, ToJSON)
 
 
+
+-- | Extract name as string
+atomicName :: AtomicName -> String
+atomicName (NormalName s) = s
+atomicName (OperatorName s) = s
+
+
+
 -- | A parameter name is lexically a normal name but just an alias to
 -- a string
 type ParameterName = String

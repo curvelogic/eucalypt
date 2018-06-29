@@ -35,6 +35,7 @@ library:
     - optparse-applicative
     - megaparsec
     - monad-loops
+    - mtl
     - parsec
     - parsec-numeric
     - path
@@ -49,6 +50,8 @@ library:
     - text
     - transformers
     - unix
+    - unordered-containers
+    - vector
     - yaml
 
 executables:
@@ -82,6 +85,7 @@ tests:
     - megaparsec
     - hspec-megaparsec
     - pretty
+    - mtl
     - network-uri
     - text
     - bound

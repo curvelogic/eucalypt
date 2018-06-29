@@ -13,14 +13,11 @@ module Eucalypt.Core.Interpreter
 
 import Eucalypt.Core.Error
 import Eucalypt.Core.Syn
-import Data.Either
-
 
 
 -- | The interpreter monad
 newtype Interpreter a = Interpreter { runInterpreter :: Either EvaluationError a }
-  deriving (Show, Eq, Functor, Applicative, Monad)
-
+  deriving (Show, Functor, Applicative, Monad)
 
 
 -- | Abort interpreter with 'EvaluationError'
@@ -31,15 +28,3 @@ throwEvalError = Interpreter . Left
 
 -- | A monadic evaluation function
 type WhnfEvaluator = CoreExpr -> Interpreter CoreExpr
-
-
-
--- | Aggregate a list of interpreter results, concatenating any error
--- messages.
-concatResults :: [Interpreter a] -> Interpreter [a]
-concatResults results = let (errs, oks) = partitionEithers (map runInterpreter results) in
-  if null errs
-  then
-    return oks
-  else
-    throwEvalError $ MultipleErrors errs

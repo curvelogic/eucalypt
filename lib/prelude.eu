@@ -46,7 +46,7 @@ panic: __PANIC
 trace: TODO(__TRACE)
 
 ` { doc: "`assert(c, s, v)` - if `c` is true then value `v` otherwise error with message `s`."
-    example: { foo: bar assert(bar >= 0, "negative foo") }
+    # example: { foo: bar assert(bar >= 0, "negative foo") }
     export: :suppress }
 assert(c, s, v): if(c, v, panic(s))
 
@@ -79,7 +79,7 @@ if: __IF
 ##
 
 ` { doc: "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
-    example: cons(0,[1,2]) //=> [0,1,2]
+    # example: cons(0,[1,2]) //=> [0,1,2]
     export: :suppress }
 cons: __CONS
 
@@ -422,8 +422,8 @@ nil?(l): l = []
 
 ` { doc: "`take(n, l)` - return as list the initial segment of integer `n` elements from list `l`."
     export: :suppress }
-take(n, l): __IF((n zero?), [], cons(l head, take(n dec, l tail)))
-
+take(n, l): __IF(n zero?, [], cons(l head, take(n dec, l tail)))
+ 
 ` { doc: "`drop(n, l)` - return as list the result of dropping the initial segment of integer `n` elements from list `l`."
     export: :suppress }
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))

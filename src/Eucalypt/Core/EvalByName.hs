@@ -29,7 +29,7 @@ applyBuiltin ::
 applyBuiltin w expr name as =
   case lookupBuiltin name of
     Just (_, f) -> f w as >>= w
-    Nothing -> throwEvalError $ BuiltinNotFound name expr
+    Nothing -> throwEvalError $ BuiltinNotFound name (CoreExpShow expr)
 
 -- $ metadata
 --
@@ -55,7 +55,7 @@ separateTraceMeta w e@(CoreMeta m v) =
       if b
         then CoreTraced value
         else value
-separateTraceMeta _ e = throwEvalError $ Bug "Bad call to separateTraceMeta" e
+separateTraceMeta _ e = throwEvalError $ Bug "Bad call to separateTraceMeta" (CoreExpShow e)
 
 -- | Peel assert metadata out of 'CoreMeta' and into 'CoreTraced'
 separateAssertMeta :: WhnfEvaluator -> CoreExpr -> Interpreter CoreExpr
@@ -70,7 +70,7 @@ separateAssertMeta w e@(CoreMeta m v) =
       if meta == block []
         then value
         else CoreMeta meta value
-separateAssertMeta _ e = throwEvalError $ Bug "Bad call to separateAssertMeta" e
+separateAssertMeta _ e = throwEvalError $ Bug "Bad call to separateAssertMeta" (CoreExpShow e)
 
 
 
@@ -91,13 +91,13 @@ handleApply f@CoreBlock {} (x:xs) =
   whnfM x >>= \b ->
     case b of
       CoreBlock {} -> euMerge whnfM [b, f] >>= (`handleApply` xs)
-      _ -> throwEvalError $ BadBlockMerge (CoreList [b, f])
+      _ -> throwEvalError $ BadBlockMerge (CoreExpShow (CoreList [b, f]))
 handleApply f@(CoreLambda n b) as
   | length as > n = whnfM (instantiateBody (take n as) b) >>= (`handleApply` drop n as)
   | length as == n = whnfM $ instantiateBody as b
   | length as < n = return (CorePAp n f as)
 handleApply (CoreOperator _ _ expr) as = whnfM expr >>= (`handleApply` as)
-handleApply expr as = throwEvalError $ UncallableExpression (CoreApply expr as)
+handleApply expr as = throwEvalError $ UncallableExpression (CoreExpShow (CoreApply expr as))
 
 
 -- | Monadic WHNF to support abort and runtime error.
@@ -111,7 +111,7 @@ whnfM e@(CoreBuiltin n) =
   case lookupBuiltin n of
     Just (0, f) -> f whnfM []
     Just (arity, _) -> return (CorePAp arity e [])
-    Nothing -> throwEvalError $ BuiltinNotFound n e
+    Nothing -> throwEvalError $ BuiltinNotFound n (CoreExpShow e)
 whnfM (CoreMeta m e) = do
   metadata <- whnfM m -- should be in isolated metadata binding env
   separated <- (separateTraceMeta whnfM >=> separateAssertMeta whnfM) (CoreMeta metadata e)
@@ -122,5 +122,5 @@ whnfM (CoreTraced e) = trace ("TRACE: " ++ show e) whnfM e
 whnfM (CoreChecked fn e) =
   whnfM (CoreApply fn [e]) >>= \case
     (CorePrim (CoreBoolean True)) -> whnfM e
-    _ -> throwEvalError $ AssertionFailed e
+    _ -> throwEvalError $ AssertionFailed (CoreExpShow e)
 whnfM e = return e
