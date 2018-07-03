@@ -19,6 +19,7 @@ library:
   source-dirs: src
   dependencies:
     - aeson
+    - aeson-pretty
     - bound
     - bytestring
     - comonad
