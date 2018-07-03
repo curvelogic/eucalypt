@@ -392,7 +392,7 @@ with-meta: __WITHMETA
     export: :suppress 
     associates: :left
     precedence: :meta }
-(e // m): v with-meta(m)
+(e // m): e with-meta(m)
 
 ` { doc: "`meta e` - retrieve expression metadata for e"
     export: :suppress }
@@ -514,7 +514,7 @@ zip-with: map2
 
 ` { doc: "`zip-apply(fs, vs)` - apply functions in list `fs` to corresponding values in list `vs`, stopping when shorter list is exhausted."
     export: :suppress }
-zip-apply(fs, vs): zip-with(apply1, fs, vs)
+zip-apply(fs, vs): zip-with(cat, vs, fs)
 
 ` { doc: "`reverse(l) - reverse list `l`"
     example: reverse([1,2,3]) //=> [3,2,1]
@@ -614,7 +614,7 @@ by-value(p?): p? ∘ value
 select-items(f, b): b elements filter(f) 
 
 ` "`match-select-values` - return list of values from block `b` with keys matching regex `re`."
-match-select-values(re, b): b select(by-key-match(re)) map(value)
+match-select-values(re, b): b select-items(by-key-match(re)) map(value)
 
 ` "`select-values(p?, b)` - return items from block `b` where values match predicate `p?`"
 select-values(p?, b): b map(value) filter(p?)
