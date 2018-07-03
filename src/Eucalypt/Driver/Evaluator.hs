@@ -4,7 +4,7 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Exception.Safe (try)
-import Control.Monad (forM_, when)
+import Control.Monad (forM_, when, unless)
 import Data.Bifunctor
 import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
@@ -23,6 +23,7 @@ import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Target
 import Eucalypt.Core.Unit
+import Eucalypt.Core.Verify
 import Eucalypt.Driver.Error (CommandError(..))
 import Eucalypt.Driver.IOSource (prepareIOUnit)
 import Eucalypt.Driver.Input (Input(..), InputMode(..), Locator(..))
@@ -237,19 +238,23 @@ evaluate opts whnfM = do
   when (cmd == ListTargets)
     (listTargets opts targets >> exitSuccess)
 
-  -- Stage 5: form an expression to evaluate from the source or
+  -- Stage 4: form an expression to evaluate from the source or
   -- command line and embed it in the core tree
   evaluand <- formEvaluand opts targets core
   when (cmd == DumpEvalSubstituted)
     (putStrLn (pprint evaluand) >> exitSuccess)
 
-  -- Stage 6: cook operator soups to resolve all fixities and prepare
+  -- Stage 5: cook operator soups to resolve all fixities and prepare
   -- a final tree for evaluation
   cookedEvaluand <- runFixityPass evaluand
   when (cmd == DumpCooked)
     (putStrLn (pprint cookedEvaluand) >> exitSuccess)
   when (cmd == DumpFinalCore)
     (putStrLn (pprint cookedEvaluand) >> exitSuccess)
+
+  -- Stage 6: run final checks
+  let failures = runChecks cookedEvaluand
+  unless (null failures) $ reportErrors failures >> exitFailure
 
   -- Stage 7: drive the evaluation by rendering it
   render cookedEvaluand >>= \case

@@ -52,6 +52,8 @@ data EvaluationError
   | Panic String CoreExpShow
   | Bug String CoreExpShow
   | EmptyList CoreExpShow
+  | VerifyOperatorsFailed CoreExpShow
+  | VerifyUnresolvedVar CoreBindingName
   | NoSource
   | AssertionFailed CoreExpShow
 
@@ -86,6 +88,8 @@ instance Show EvaluationError where
   show (InvalidArgConvention (CoreExpShow exprs)) = "Args passed incorrectly. " ++ pprint exprs
   show (UnexpectedEndOfExpression (CoreExpShow expr)) = "UnexpectedEndOfExpression after " ++ pprint expr
   show (EmptyList (CoreExpShow expr)) = "List was empty in " ++ pprint expr
+  show (VerifyOperatorsFailed (CoreExpShow expr)) = "Unresolved operator in " ++ pprint expr
+  show (VerifyUnresolvedVar name) = "Unresolved variable in " ++ name
   show (Panic message (CoreExpShow expr)) = "Panic - " ++ message ++ " in " ++ pprint expr
   show (Bug message (CoreExpShow expr)) = "BUG! " ++ message ++ " - " ++ pprint expr
   show (AssertionFailed (CoreExpShow expr)) = "Assertion Failed. " ++ pprint expr
