@@ -100,7 +100,7 @@ jobs:
           at: /tmp/workspace
       - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
       - run:
-          command: "docker run -v /tmp/workspace:/tmp/workspace
+          command: "docker run -t -v /tmp/workspace:/tmp/workspace
                                -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/build/eu/eu
                                curvelogic/eucalypt-test-harness:latest
                                ./eut.py "
@@ -115,7 +115,7 @@ jobs:
           at: /tmp/workspace
       - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
       - run:
-          command: "docker run -v /tmp/workspace:/tmp/workspace
+          command: "docker run -t -v /tmp/workspace:/tmp/workspace
                                -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.0.1.0/build/eu/eu
                                curvelogic/eucalypt-test-harness:latest
                                ./eut.py -b -n 25 "
