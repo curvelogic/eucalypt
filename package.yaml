@@ -19,6 +19,7 @@ library:
   source-dirs: src
   dependencies:
     - aeson
+    - aeson-pretty
     - bound
     - bytestring
     - comonad
@@ -79,6 +80,9 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - aeson
+    - aeson-pretty
+    - bytestring
     - eucalypt-hs
     - hspec
     - QuickCheck
