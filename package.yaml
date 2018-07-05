@@ -80,19 +80,20 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - aeson
-    - aeson-pretty
-    - bytestring
-    - eucalypt-hs
-    - hspec
-    - QuickCheck
-    - megaparsec
-    - hspec-megaparsec
-    - pretty
-    - mtl
-    - network-uri
-    - text
-    - bound
+      - QuickCheck
+      - aeson
+      - aeson-pretty
+      - bound
+      - bytestring
+      - eucalypt-hs
+      - hspec
+      - hspec-megaparsec
+      - megaparsec
+      - mtl
+      - network-uri
+      - pretty
+      - text
+      - yaml
 
 eu-build:
   commit: working-copy

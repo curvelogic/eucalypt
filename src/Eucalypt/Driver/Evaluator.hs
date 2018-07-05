@@ -98,6 +98,7 @@ parseInputToCore i@(Input mode locator name format) = do
   source <- readInput locator
   case (mode, format) of
     (Inert, "yaml") -> dataToCore source
+    (Active, "yaml") -> activeYamlToCore source
     (Inert, "json") -> dataToCore source
     (Active, "eu") -> eucalyptToCore source
     _ -> (return . Left . Command . InvalidInputMode) i
@@ -112,7 +113,11 @@ parseInputToCore i@(Input mode locator name format) = do
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit) core
-
+    activeYamlToCore text = do
+      r <- try (parseYamlExpr text) :: IO (Either DataParseException CoreExpr)
+      case r of
+        Left e -> (return . Left . Source) e
+        Right core -> (return . Right . maybeApplyName . dataUnit) core
 
 
 -- | Dump ASTs
