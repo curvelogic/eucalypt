@@ -29,14 +29,7 @@ applyName :: CoreBindingName -> TranslationUnit -> TranslationUnit
 applyName n TranslationUnit {..} =
   TranslationUnit {truCore = newCore, truTargets = newTargets}
   where
-    newCore =
-      letexp
-        [(n, truCore)]
-        (block
-           [ withMeta
-               (block [element "export" (sym "suppress")])
-               (element n (var n))
-           ])
+    newCore = letexp [(n, truCore)] (block [element n (var n)])
     newTargets = map (prefixPath n) truTargets
 
 mergeTranslationUnits :: [TranslationUnit] -> TranslationUnit

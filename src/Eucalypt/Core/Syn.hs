@@ -14,7 +14,6 @@ Stability   : experimental
 module Eucalypt.Core.Syn
 where
 
-import Debug.Trace
 import Bound
 import Bound.Scope
 import Bound.Name
@@ -405,18 +404,6 @@ bindAnaphora expr =
     freeVars = foldr (:) [] expr
     freeAnaphora = mapMaybe toIndex freeVars
     maxAnaphorus = maximum freeAnaphora
-    -- bindFree :: (Anaphora a, Monad m) => m (Var (Name String Int) a) -> m (Var (Name String Int) a)
-    -- bindFree e =
-    --   e >>= \v ->
-    --     return $
-    --     case v of
-    --       F a -> bind a
-    --       B b -> B b
-    -- bind :: Anaphora a => a -> Var (Name String Int) a
-    -- bind a =
-    --   case toIndex a of
-    --     Just z -> B (Name (toName a) z)
-    --     Nothing -> F a
 
 abstractName' :: (Monad f, Anaphora a) => (a -> Maybe b) -> f a -> Scope (Name String b) f a
 abstractName' f t = Scope (fmap k t)
@@ -576,7 +563,8 @@ unitBindingsAndBody ::
       Scope (Name String Int) CoreExp CoreBindingName)
 unitBindingsAndBody (CoreLet bs b) = (bs, b)
 unitBindingsAndBody e@CoreBlock{} = ([], abstractName (const Nothing) e)
-unitBindingsAndBody e = trace (show e) $ error "not a let"
+unitBindingsAndBody CoreList{} = error "Input is a sequence and must be named."
+unitBindingsAndBody _ = error "Unsupported unit type (not block or sequence)"
 
 
 -- | Merge bindings from core units, using body of final unit as
