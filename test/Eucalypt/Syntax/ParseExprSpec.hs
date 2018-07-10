@@ -141,8 +141,7 @@ primitiveSpec = do
 expressionSpec :: Spec
 expressionSpec =
   describe "expression parsing" $ do
-    it "accepts primitives" $
-      testParse expression "1234" `shouldParse` int 1234
+    it "accepts primitives" $ testParse expression "1234" `shouldParse` int 1234
     it "accepts parenthesised sequences" $
       testParse expression "(33 f(1,2,3) //=> 5)" `shouldParse`
       opsoupParens
@@ -337,6 +336,36 @@ expressionSpec =
     it "fails x :" $ testParse expression `shouldFailOn` "x :"
     it "fails h(y) :" $ testParse expression `shouldFailOn` "h(y) :"
     it "fails (gg++yy) :" $ testParse expression `shouldFailOn` "(gg++yy) :"
+    it "parses xs f(_.z = 1) correctly" $
+      testParse expression "xs f(_.z = 1)" `shouldParse`
+      opsoup
+        [ normalName "xs"
+        , normalName "f"
+        , applyTuple
+            [ opsoup
+                [ normalName "_"
+                , operatorName "."
+                , normalName "z"
+                , operatorName "="
+                , int 1
+                ]
+            ]
+        ]
+    it "parses xs f(_.z = :k) correctly" $
+      testParse expression "xs f(_.z = :k)" `shouldParse`
+      opsoup
+        [ normalName "xs"
+        , normalName "f"
+        , applyTuple
+            [ opsoup
+                [ normalName "_"
+                , operatorName "."
+                , normalName "z"
+                , operatorName "="
+                , sym "k"
+                ]
+            ]
+        ]
 
 
 blockSpec :: Spec

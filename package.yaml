@@ -37,8 +37,6 @@ library:
     - megaparsec
     - monad-loops
     - mtl
-    - parsec
-    - parsec-numeric
     - path
     - pretty
     - regex-pcre-builtin
