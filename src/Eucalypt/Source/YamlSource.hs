@@ -21,6 +21,7 @@ import Data.Text.Encoding (decodeUtf8)
 import Eucalypt.Core.Desugar (desugar)
 import Eucalypt.Core.Syn as S
 import Eucalypt.Source.Error
+import Eucalypt.Syntax.Error()
 import Eucalypt.Syntax.ParseExpr (parseExpression)
 import Text.Libyaml
 import Text.Regex.PCRE
@@ -35,9 +36,9 @@ data RawExpr =
 
 -- | A scheme for translating YAML into Eucalypt core syntax
 class YamlTranslator a where
-  handleScalar :: a -> BS.ByteString -> Tag -> Style -> Anchor -> CoreExpr
-  handleList :: a -> [CoreExpr] -> CoreExpr
-  handleMapping :: a -> [(Text, CoreExpr)] -> CoreExpr
+  handleScalar :: (Monad m, MonadThrow m) => a -> BS.ByteString -> Tag -> Style -> Anchor -> m CoreExpr
+  handleList :: (Monad m, MonadThrow m) => a -> [CoreExpr] -> m CoreExpr
+  handleMapping :: (Monad m, MonadThrow m) => a -> [(Text, CoreExpr)] -> m CoreExpr
 
 -- | When types are untagged, use rules to resolve
 newtype TagResolver =
@@ -72,6 +73,7 @@ coreTagResolve _ = StrTag
 -- | Translate as inert data - ignore eucalypt tags
 instance YamlTranslator InertTranslator where
   handleScalar (InertTranslator (TagResolver resolve)) text tag _ _ =
+    return $
     case tag' of
       StrTag -> S.str s
       IntTag -> S.int (read s)
@@ -85,17 +87,17 @@ instance YamlTranslator InertTranslator where
         if tag == NoTag
           then resolve s
           else tag
-  handleList _ = CoreList
-  handleMapping _ pairs = CoreBlock $ CoreList (map kv pairs)
+  handleList _ = return . CoreList
+  handleMapping _ pairs = return $ CoreBlock $ CoreList (map kv pairs)
     where
       kv (t, e) = CoreList [CorePrim (S.CoreSymbol (unpack t)), e]
 
 -- | Parse and desugar a eucalypt expression from string
-expressionFromString :: String -> CoreExpr
+expressionFromString :: (Monad m, MonadThrow m) => String -> m CoreExpr
 expressionFromString s =
   case parseExpression s "YAML embedding" of
-    Left _ -> error $ "Cannot translate expression " ++ s -- TODO
-    Right expr -> desugar expr
+    Left err -> throwM err
+    Right expr -> return $ desugar expr
 
 -- | Active translation scheme
 --
@@ -103,24 +105,24 @@ expressionFromString s =
 instance YamlTranslator ActiveTranslator where
   handleScalar (ActiveTranslator (TagResolver resolve)) text tag _ _ =
     case tag' of
-      StrTag -> S.str s
-      IntTag -> S.int (read s)
-      FloatTag -> S.float (read s)
-      BoolTag -> S.corebool (read s)
-      NullTag -> S.corenull
+      StrTag -> return $ S.str s
+      IntTag -> return $ S.int (read s)
+      FloatTag -> return $ S.float (read s)
+      BoolTag -> return $ S.corebool (read s)
+      NullTag -> return S.corenull
       UriTag u ->
         if u == "!eu"
           then expressionFromString s
-          else S.str s
-      _ -> S.str s
+          else return $ S.str s
+      _ -> return $ S.str s
     where
       s = (unpack . decodeUtf8) text
       tag' =
         if tag == NoTag
           then resolve s
           else tag
-  handleList _ = CoreList
-  handleMapping _ pairs = letexp bindings body
+  handleList _ = return . CoreList
+  handleMapping _ pairs = return $ letexp bindings body
     where
       bindings = map (first unpack) pairs
       body = block [element n (var n) | n <- map (unpack . fst) pairs]
@@ -145,18 +147,18 @@ sinkExpr t = start
     go EventStreamStart = start
     go EventDocumentStart = start
     go (EventAlias a) = return $ coreAlias a
-    go (EventScalar text tag style anchor) =
-      let scalar = handleScalar t text tag style anchor
-       in case anchor of
-            Nothing -> return scalar
-            Just alias -> tell' anchor scalar >> return (coreAlias alias)
+    go (EventScalar text tag style anchor) = do
+      scalar <- handleScalar t text tag style anchor
+      case anchor of
+        Nothing -> return scalar
+        Just alias -> tell' anchor scalar >> return (coreAlias alias)
     go (EventSequenceStart anchor) = do
       vals <- goS id
-      let val = handleList t vals
+      val <- handleList t vals
       tell' anchor val
     go (EventMappingStart anchor) = do
       pairs <- goM id
-      let val = handleMapping t pairs
+      val <- handleMapping t pairs
       tell' anchor val
     go e = throwM $ UnexpectedEvent e
     goS front = do
@@ -173,7 +175,8 @@ sinkExpr t = start
         Nothing -> throwM UnexpectedEndOfEvents
         Just EventMappingEnd -> return $ front []
         Just (EventScalar text tag style anchor) -> do
-          _ <- tell' anchor $ handleScalar t text tag style anchor
+          expr <- handleScalar t text tag style anchor
+          _ <- tell' anchor expr
           let k = decodeUtf8 text
           v <- start
           goM (front . ((k, v) :))
