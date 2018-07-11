@@ -14,29 +14,11 @@ import Data.Void (Void)
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.Error
+import Eucalypt.Syntax.ParseCommon
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
-
-type Parser = Parsec Void String
-
--- | Whitespace parser also discards line comments for now
-sc :: Parser ()
-sc = L.space space1 lineComment empty
-  where
-    lineComment = L.skipLineComment "#"
-
-
--- | In some areas, we don't consume whitespace
-nosc :: Parser ()
-nosc = L.space empty empty empty
-
-
--- | A lexeme parser cannot be interpreted as a function to be applied
--- and so consumes trailing whitespace
-lexeme :: Parser a -> Parser a
-lexeme = L.lexeme sc
 
 -- $locations
 --
@@ -52,17 +34,6 @@ located p = (\s x e -> at (mpos s, mpos e) x) <$> getPosition <*> p <*> getPosit
 -- location
 relocated :: Parser (Located a) -> Parser (Located a)
 relocated p =  (\s x e -> move (mpos s, mpos e) x) <$> getPosition <*> p <*> getPosition
-
-
--- | A normal (non-operator) identifier, n.b. leading digits are legal
--- in Eucalypt: @5v@ is an identifier.
-normalIdentifier :: Parser String
-normalIdentifier =
-  ((:) <$> normalIdentStartChar <*> many normalIdentContinuationChar) <?>
-  "normal identifier"
-  where
-    normalIdentStartChar = alphaNumChar <|> oneOf "$?_"
-    normalIdentContinuationChar = alphaNumChar <|> oneOf "$?!_-*"
 
 
 
@@ -173,9 +144,6 @@ atom = try primitive <|> name
 -- ? calls
 -- 
 
-symbol :: String -> Parser String
-symbol = L.symbol sc
-
 comma :: Parser String
 comma = symbol ","
          
@@ -257,9 +225,6 @@ expression = (try unparenExpression <|> parenExpression) <?> "expression"
 -- Most of the block related parsers are lexeme parsers as whitespace
 -- is not significant. Block itself is an exception as it is callable
 -- and a block literal could therefore be used in invocation syntax.
-
-colon :: Parser String
-colon = symbol ":"
 
 propertyDeclaration :: Parser DeclarationForm
 propertyDeclaration =
