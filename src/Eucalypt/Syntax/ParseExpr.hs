@@ -10,7 +10,6 @@ module Eucalypt.Syntax.ParseExpr where
 
 import Data.Bifunctor (first)
 import Data.Char (isAscii, isSymbol)
-import Data.Void (Void)
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.Error
@@ -144,12 +143,6 @@ atom = try primitive <|> name
 -- ? calls
 -- 
 
-comma :: Parser String
-comma = symbol ","
-         
-parens :: Parser a -> Parser a         
-parens = between (symbol "(") (char ')')
-
 tuple :: Parser [Expression]
 tuple = parens $ expression `sepBy1` comma
 
@@ -270,9 +263,6 @@ anyDeclaration = label "declaration" $ lexeme $ located $ do
 
 blockContent :: Parser Block
 blockContent = sc >> located (Block <$> many anyDeclaration)
-
-braces :: Parser a -> Parser a         
-braces = between (symbol "{") (char '}')
 
 blockLiteral :: Parser Expression
 blockLiteral = located $ EBlock <$> braces blockContent

@@ -6,7 +6,7 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
-module Eucalypt.Syntax.ParseExpr where
+module Eucalypt.Syntax.ParseCommon where
 
 import Data.Void (Void)
 import Text.Megaparsec
@@ -39,6 +39,15 @@ symbol = L.symbol sc
 colon :: Parser String
 colon = symbol ":"
 
+comma :: Parser String
+comma = symbol ","
+
+parens :: Parser a -> Parser a
+parens = between (symbol "(") (char ')')
+
+braces :: Parser a -> Parser a
+braces = between (symbol "{") (char '}')
+
 -- | A normal (non-operator) identifier, n.b. leading digits are legal
 -- in Eucalypt: @5v@ is an identifier.
 normalIdentifier :: Parser String
@@ -46,5 +55,5 @@ normalIdentifier =
   ((:) <$> normalIdentStartChar <*> many normalIdentContinuationChar) <?>
   "normal identifier"
   where
-    normalIdentStartChar = alphaNumChar <|> oneOf "$?_"
+    normalIdentStartChar = letterChar <|> oneOf "$?_"
     normalIdentContinuationChar = alphaNumChar <|> oneOf "$?!_-*"

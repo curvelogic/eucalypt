@@ -7,6 +7,7 @@ module Eucalypt.Syntax.ParseExprSpec
 import Data.Void
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
+import Eucalypt.Syntax.ParseCommon
 import Eucalypt.Syntax.ParseExpr
 import Test.Hspec
 import Test.Hspec.Megaparsec
@@ -40,7 +41,7 @@ operatorStart = "!@£%^&*|></+=-~"
 
 operatorCont = "!@£$%^&*|></?+=-~"
 
-identifierStart = lower ++ upper ++ digits ++ idStartPunc
+identifierStart = lower ++ upper ++ idStartPunc
 
 identifierCont = lower ++ upper ++ digits ++ idContPunc
 
