@@ -10,7 +10,6 @@ Stability   : experimental
 module Eucalypt.Reporting.Location where
 
 import Data.Aeson
-import Data.Monoid
 import Data.Text (pack)
 import GHC.Generics
 import qualified Text.Megaparsec.Pos as M
