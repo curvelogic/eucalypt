@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric, OverloadedLists, OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Reporting.Location
 Description : Sorce code location references
@@ -10,31 +10,21 @@ Stability   : experimental
 module Eucalypt.Reporting.Location where
 
 import Data.Aeson
+import Data.Monoid
 import Data.Text (pack)
 import GHC.Generics
-import Text.Parsec.Pos
-  ( Column
-  , Line
-  , SourceName
-  , SourcePos
-  , newPos
-  , sourceColumn
-  , sourceLine
-  , sourceName
-  )
 import qualified Text.Megaparsec.Pos as M
 
 -- | Wrapper for parsec SourcePos so we can cleanly JSONify
 newtype SourcePosition =
-  SourcePosition SourcePos
+  SourcePosition M.SourcePos
   deriving (Eq, Show, Generic, Ord)
 
 instance ToJSON SourcePosition where
   toJSON (SourcePosition p) =
     String $
     pack
-      (sourceName p ++
-       ":" ++ show (sourceLine p) ++ show (sourceColumn p))
+      (M.sourceName p ++ ":" ++ show (M.sourceLine p) ++ "," ++ show (M.sourceColumn p))
 
 -- | Text span from start to end
 type SourceSpan = (SourcePosition, SourcePosition)
@@ -43,7 +33,25 @@ type SourceSpan = (SourcePosition, SourcePosition)
 data Located a = Located
   { location :: SourceSpan
   , locatee :: a
-  } deriving (Eq, Show, Generic, ToJSON)
+  } deriving (Eq, Show, Generic)
+
+instance ToJSON a => ToJSON (Located a) where
+  toJSON Located {location = loc, locatee = a} =
+    case toJSON a of
+      Object o -> Object $ ["_at" .= str loc] <> o
+      v -> object ["_at" .= str loc, "_value" .= v]
+    where
+      strPos p = show $ M.unPos p
+      str (SourcePosition M.SourcePos { M.sourceName = n
+                                      , M.sourceLine = lb
+                                      , M.sourceColumn = cb
+                                      }, SourcePosition M.SourcePos { M.sourceLine = le
+                                                                    , M.sourceColumn = ce
+                                                                    }) =
+        pack
+          (n ++
+           ":" ++
+           strPos lb ++ "," ++ strPos cb ++ "-" ++ strPos le ++ "," ++ strPos ce)
 
 instance Functor Located where
   fmap f l@Located {locatee = x} = l {locatee = f x}
@@ -59,20 +67,12 @@ instance HasLocation a => HasLocation (Located a) where
   stripLocation Located{locatee=x} = Located{location=nowhere, locatee=stripLocation x}
 
 -- | Construct a new position
-pos :: SourceName -> Line -> Column -> SourcePosition
-pos n l c = spos $ newPos n l c
-
--- | Convert from parsec position
-spos :: SourcePos -> SourcePosition
-spos = SourcePosition
+pos :: FilePath -> Int -> Int -> SourcePosition
+pos n l c = SourcePosition $ M.SourcePos n (M.mkPos l) (M.mkPos c)
 
 -- | Convert from megaparsec position
 mpos :: M.SourcePos -> SourcePosition
-mpos m
-  = SourcePosition (newPos
-                    (M.sourceName m)
-                    ((M.unPos . M.sourceLine) m)
-                    ((M.unPos . M.sourceColumn) m))
+mpos = SourcePosition
 
 -- | Add location data to primary expression
 at :: SourceSpan -> a -> Located a
@@ -89,7 +89,7 @@ merge a b = (min (fst a) (fst b), max (snd a) (snd b))
 
 -- | When expressions don't come from source
 nowherePos :: SourcePosition
-nowherePos = pos "<<nowhere>>" 0 0
+nowherePos = SourcePosition $ M.SourcePos "<<nowhere>>" M.pos1 M.pos1
 
 -- | Fake span
 nowhere :: SourceSpan

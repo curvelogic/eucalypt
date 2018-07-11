@@ -240,7 +240,7 @@ unparenExpression = located $ do
   return $ case exprs of
     [e] -> locatee e
     es -> EOpSoup implicit es
-  where freeElement = try (element <* notFollowedBy (sc >> char ':'))
+  where freeElement = try (element <* notFollowedBy (sc >> char ':' >> space1))
     
 parenExpression :: Parser Expression
 parenExpression = located $ do

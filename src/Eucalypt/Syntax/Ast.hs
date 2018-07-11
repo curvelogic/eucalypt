@@ -222,7 +222,6 @@ normalName = at nowhere . EName . NormalName
 operatorName :: String -> Expression
 operatorName = at nowhere . EName . OperatorName
 
-
 -- | A tuple of args for a fn call (appears in op soup and binds left)
 applyTuple :: [Expression] -> Expression
 applyTuple = at nowhere . EApplyTuple
