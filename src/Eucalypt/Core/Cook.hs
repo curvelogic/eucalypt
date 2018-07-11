@@ -119,7 +119,7 @@ cookBottomUp anaphoric (CoreLet bs body) = CoreLet <$> newBindings <*> newBody
     newBody = runInterpreter (cookScope anaphoric body)
     newBindings =
       zip (map fst bs) <$>
-      traverse (runInterpreter . cookScope anaphoric) (map snd bs)
+      traverse ((runInterpreter . cookScope anaphoric) . snd) bs
 cookBottomUp _ e = Right e
 
 

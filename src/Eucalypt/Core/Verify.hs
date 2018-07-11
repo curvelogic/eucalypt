@@ -28,7 +28,7 @@ verify ::
   -> [EvaluationError]
 verify f e@(CoreLet bs b) =
   let shallow = f e
-      deep = foldMap id (verify f (unscope b) : map (verify f . unscope . snd) bs)
+      deep = fold (verify f (unscope b) : map (verify f . unscope . snd) bs)
   in shallow ++ deep
 verify f e@(CoreLambda _ b) =
   let shallow = f e
