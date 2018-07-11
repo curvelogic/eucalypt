@@ -15,6 +15,7 @@ import qualified Data.Vector as V
 import Bound.Scope
 import Bound.Name
 import Eucalypt.Core.Syn
+import Prelude hiding ((<>))
 import Text.PrettyPrint
   ( Doc
   , ($$)
