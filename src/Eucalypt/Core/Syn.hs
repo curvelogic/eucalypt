@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase, TemplateHaskell, DeriveFunctor,
   DeriveFoldable, DeriveTraversable, FlexibleContexts,
   FlexibleInstances, TupleSections #-}
@@ -26,7 +28,8 @@ import Data.List (elemIndex)
 import Data.Maybe
 import Data.Traversable (for)
 import Data.Bifunctor (second)
-
+import Eucalypt.Core.Anaphora
+import Safe (maximumMay)
 
 -- | Primitive types (literals are available in the eucalypt syntax)
 data Primitive
@@ -65,6 +68,7 @@ fixityArity _ = 2
 -- | Precedence of operator
 type Precedence = Int
 
+
 -- | A new bound-based implementation, with multi-arity to allow STG
 -- later.
 --
@@ -74,14 +78,14 @@ data CoreExp a
   | CoreBuiltin CoreBuiltinName
   | CorePrim Primitive
   | CoreLookup (CoreExp a) CoreRelativeName
+  | CoreName CoreRelativeName -- ^ new parser - relative lookup name
   | CoreList [CoreExp a]
   | CoreBlock (CoreExp a)
   | CoreMeta (CoreExp a) (CoreExp a)
-  | CoreName CoreRelativeName -- ^ new parser - relative lookup name
   | CoreArgTuple [CoreExp a] -- ^ new parser
-  | CoreLambda Int (Scope (Name String Int) CoreExp a) -- ^ new parser
-  | CoreApply (CoreExp a) [CoreExp a] -- ^ new parser
-  | CoreOpSoup [CoreExp a] -- ^ new parser
+  | CoreLambda Int (Scope (Name String Int) CoreExp a)
+  | CoreApply (CoreExp a) [CoreExp a]
+  | CoreOpSoup [CoreExp a]
   | CoreOperator Fixity Precedence (CoreExp a) -- ^ new parser
   | CorePAp Int (CoreExp a) [CoreExp a] -- ^ during evaluation only
   | CoreTraced (CoreExp a) -- ^ during evaluation only
@@ -314,74 +318,61 @@ lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
 
 -- ? anaphora
 --
-
-class Show a => Anaphora a where
-
-  -- | The blank expression anaphorus (@_@) for this binding type
-  expressionAnaphorus :: CoreExp a
-
-  -- | True if the expression is an anaphoric var (i.e. begins with "_"
-  -- and has single digit) or is "_".
-  isAnaphoricVar :: CoreExp a -> Bool
-
-  -- | Number anaphoric variable names
-  applyNumber :: a -> State Int a
-
-  isAnaphorus :: a -> Bool
-
-  toIndex :: a -> Maybe Int
-
-  toName :: a -> String
+-- These are instances and functions for handling expression anaphora
+-- (e.g '_', '_0', '_1',...) which implicitly define lambdas by
+-- referring to automatic parameters
 
 instance Anaphora String where
-  expressionAnaphorus = var "_"
+  unnumberedAnaphor = "_"
 
-  isAnaphorus s
+  isAnaphor s
     | s == "_" = True
-    | (isJust . anaphorusIndex) s = True
-  isAnaphorus _ = False
+    | (isJust . anaphorIndex) s = True
+  isAnaphor _ = False
 
+  toNumber = anaphorIndex
 
-  isAnaphoricVar (CoreVar s) = isAnaphorus s
-  isAnaphoricVar _ = False
-
-  toIndex = anaphorusIndex
-
-  applyNumber "_" = do
-    n <- get
-    put (n + 1)
-    return ("_" ++ show n)
-  applyNumber x = return x
+  fromNumber n = "_" ++ show n
 
   toName = id
 
+instance (Anaphora a, Eq b, Show b) => Anaphora (Var b a) where
+  unnumberedAnaphor = F unnumberedAnaphor
 
-instance (Anaphora a, Show b) => Anaphora (Var b a) where
-  expressionAnaphorus = F <$> expressionAnaphorus
+  isAnaphor (F s)
+    | isAnaphor s = True
+    | (isJust . anaphorIndex . toName) s = True
+  isAnaphor _ = False
 
-  isAnaphorus (F s)
-    | isAnaphorus s = True
-    | (isJust . anaphorusIndex . toName) s = True
-  isAnaphorus _ = False
+  toNumber (F s) = anaphorIndex (toName s)
+  toNumber _ = Nothing
 
-  isAnaphoricVar (CoreVar a) = isAnaphorus a
-  isAnaphoricVar _ = False
-
-  toIndex (F s) = anaphorusIndex (toName s)
-  toIndex _ = Nothing
-
-  applyNumber (F s) = F <$> applyNumber s
-  applyNumber x = return x
+  fromNumber n = F $ fromNumber n
 
   toName (F s) = toName s
   toName (B _) = ""
 
+
+expressionAnaphor :: (Anaphora a) => CoreExp a
+expressionAnaphor = var unnumberedAnaphor
+
+isAnaphoricVar :: (Anaphora a) => CoreExp a -> Bool
+isAnaphoricVar (CoreVar s) = isAnaphor s
+isAnaphoricVar _ = False
+
+applyNumber :: (Anaphora a, Eq a) => a -> State Int a
+applyNumber s | s == unnumberedAnaphor = do
+  n <- get
+  put (n + 1)
+  return $ fromNumber n
+applyNumber x = return x
+
+
 -- | Is it the name of an anahoric parameter? @_@ doesn't count as it
 -- should have been substituted for a numbered version by cooking.
-anaphorusIndex :: String -> Maybe Int
-anaphorusIndex ('_':s:_) | isDigit s  = Just (read [s] :: Int)
-anaphorusIndex _ = Nothing
-
+anaphorIndex :: String -> Maybe Int
+anaphorIndex ('_':s:_) | isDigit s  = Just (read [s] :: Int)
+anaphorIndex _ = Nothing
 
 
 -- | Add numbers to numberless anaphora
@@ -393,17 +384,17 @@ numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
 -- | Bind anaphora
 --
 -- Wrap a lambda around the expression, binding all anaphoric
--- parameters
--- bindAnaphora ::
---   (Anaphora (Var (Name String Int) a), Anaphora a) =>
---   CoreExp (Var (Name String Int) a) -> CoreExp a
+-- parameters unless there are none in which case return the
+-- expression unchanged
 bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
 bindAnaphora expr =
-  CoreLambda (maxAnaphorus + 1) $ abstractName' toIndex expr
+  case maxAnaphor of
+    Just n -> CoreLambda (n + 1) $ abstractName' toNumber expr
+    Nothing -> expr
   where
     freeVars = foldr (:) [] expr
-    freeAnaphora = mapMaybe toIndex freeVars
-    maxAnaphorus = maximum freeAnaphora
+    freeAnaphora = mapMaybe toNumber freeVars
+    maxAnaphor = maximumMay freeAnaphora
 
 abstractName' :: (Monad f, Anaphora a) => (a -> Maybe b) -> f a -> Scope (Name String b) f a
 abstractName' f t = Scope (fmap k t)

@@ -14,6 +14,7 @@ import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.Error
 import Eucalypt.Syntax.ParseCommon
+import Eucalypt.Syntax.ParseString
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -115,22 +116,26 @@ number :: Parser PrimitiveLiteral
 number = try float <|> integer
 
 
-
-stringLiteral :: Parser PrimitiveLiteral
-stringLiteral = VStr <$> (char '"' >> manyTill anyChar (char '"'))
-
-
-
 symbolLiteral :: Parser PrimitiveLiteral
 symbolLiteral = VSym <$> (char ':' >> identifier)
 
 
-primitiveLiteral :: Parser PrimitiveLiteral
-primitiveLiteral = try stringLiteral <|> symbolLiteral <|> number                 
+primitiveLiteral :: Parser Expression
+primitiveLiteral = located $ ELiteral <$> (try symbolLiteral <|> number)
+
+
+stringLiteral :: Parser Expression
+stringLiteral = located $ do
+  chunks <- char '"' *> quotedStringContent <* char '"'
+  return $ case chunks of
+    [LiteralContent s] -> ELiteral $ VStr s
+    xs -> EStringPattern xs
 
 
 primitive :: Parser Expression                   
-primitive = located (ELiteral <$> primitiveLiteral <?> "primitive")
+primitive =
+  try (stringLiteral <?> "string literal") <|>
+  (primitiveLiteral <?> "primitive")
 
             
 -- ? expression

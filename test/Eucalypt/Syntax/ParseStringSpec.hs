@@ -4,6 +4,7 @@ module Eucalypt.Syntax.ParseStringSpec
   ) where
 
 import Data.Void
+import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.ParseString
 import Test.Hspec
 import Test.Hspec.Megaparsec
@@ -12,23 +13,35 @@ import Text.Megaparsec
 main :: IO ()
 main = hspec spec
 
-anaphor :: StringElement
+anaphor :: StringChunk
 anaphor =
   Interpolation $
-  InterpolationRequest {refTarget = Anaphor Nothing, refFormat = Nothing}
+  InterpolationRequest
+    { refTarget = Anaphor Nothing
+    , refParseOrFormat = Nothing
+    , refConversion = Nothing
+    }
 
-anaphor1 :: StringElement
+anaphor1 :: StringChunk
 anaphor1 =
   Interpolation $
-  InterpolationRequest {refTarget = Anaphor (Just 1), refFormat = Nothing}
+  InterpolationRequest
+    { refTarget = Anaphor (Just 1)
+    , refParseOrFormat = Nothing
+    , refConversion = Nothing
+    }
 
-refer :: String -> StringElement
+refer :: String -> StringChunk
 refer v =
   Interpolation $
-  InterpolationRequest {refTarget = Reference v, refFormat = Nothing}
+  InterpolationRequest
+    { refTarget = Reference v
+    , refParseOrFormat = Nothing
+    , refConversion = Nothing
+    }
 
-testParse :: String -> Either (ParseError Char Void) [StringElement]
-testParse = parse stringContent "<<test>>"
+testParse :: String -> Either (ParseError Char Void) [StringChunk]
+testParse = parse quotedStringContent "<<test>>"
 
 
 spec :: Spec

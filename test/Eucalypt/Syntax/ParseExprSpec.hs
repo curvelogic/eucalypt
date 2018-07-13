@@ -115,7 +115,7 @@ primitiveSpec = do
     it "parses shown haskell float" $ property parsesDoubles
   describe "parsing strings" $
     it "parses simple strings" $
-    parseMaybe stringLiteral "\"abc\"" == Just (VStr "abc")
+    testParse stringLiteral "\"abc\"" `shouldParse` str "abc"
   describe "parsing symbols" $ do
     it "parses normal symbols" $ forAll validNormalNames parsesSymbols
     it "parses operator symbols" $ forAll validOperatorNames parsesSymbols

@@ -12,6 +12,7 @@ where
 
 import GHC.Generics
 import Data.Aeson
+import Eucalypt.Core.Anaphora
 import Eucalypt.Reporting.Location
 
 
@@ -59,6 +60,38 @@ parentheses = Explicit '(' ')'
 implicit :: BracketSet
 implicit = Implicit
 
+-- | The target of an interpolation request, either an implicit
+-- parameter ("anaphor"), numbered or otherwise or a name referring to
+-- value in appropriate block.
+data Target
+  = Anaphor (Maybe Int) -- empty anaphor or indexed anaphor
+  | Reference String -- reference to value from block (or environment)
+  deriving (Eq, Show, Generic, ToJSON)
+
+instance Anaphora Target where
+  unnumberedAnaphor = Anaphor Nothing
+  isAnaphor (Anaphor _) = True
+  isAnaphor _ = False
+  toNumber (Anaphor n) = n
+  toNumber _ = Nothing
+  fromNumber = Anaphor . Just
+  toName = show
+
+-- | The interpolation request
+--
+-- A target and string governing how to format it
+data InterpolationRequest = InterpolationRequest
+  { refTarget :: Target
+  , refParseOrFormat :: Maybe String
+  , refConversion :: Maybe String
+  } deriving (Eq, Show, Generic, ToJSON)
+
+-- | A string element is either literal content or an interpolation
+-- request
+data StringChunk
+  = LiteralContent String
+  | Interpolation InterpolationRequest
+  deriving (Eq, Show, Generic, ToJSON)
 
 
 type Expression = Located Expression_
@@ -81,6 +114,9 @@ data Expression_
 
   | EName AtomicName
     -- ^ simple identifier
+
+  | EStringPattern [StringChunk]
+    -- ^ a string with interpolation / parse elements - e.g. "foo{x}bar"
 
   | EApplyTuple [Expression]
     -- ^ a tuple in apply-to-params context, e.g. @_(a,b,c)@
