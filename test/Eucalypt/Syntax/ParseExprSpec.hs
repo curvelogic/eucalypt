@@ -113,9 +113,11 @@ primitiveSpec = do
   describe "parsing numbers" $ do
     it "parses shown haskell integers" $ property parsesAnyInteger
     it "parses shown haskell float" $ property parsesDoubles
-  describe "parsing strings" $
+  describe "parsing strings" $ do
     it "parses simple strings" $
-    testParse stringLiteral "\"abc\"" `shouldParse` str "abc"
+      testParse stringLiteral "\"abc\"" `shouldParse` str "abc"
+    it "parses empty string" $
+      testParse stringLiteral "\"\"" `shouldParse` str ""
   describe "parsing symbols" $ do
     it "parses normal symbols" $ forAll validNormalNames parsesSymbols
     it "parses operator symbols" $ forAll validOperatorNames parsesSymbols

@@ -128,6 +128,7 @@ stringLiteral :: Parser Expression
 stringLiteral = located $ do
   chunks <- char '"' *> quotedStringContent <* char '"'
   return $ case chunks of
+    [] -> ELiteral $ VStr ""
     [LiteralContent s] -> ELiteral $ VStr s
     xs -> EStringPattern xs
 
