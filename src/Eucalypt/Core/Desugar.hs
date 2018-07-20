@@ -265,11 +265,12 @@ translateBlock blk = do
 translateStringPattern :: [StringChunk] -> CoreExpr
 translateStringPattern cs =
   let exprs = map sub cs
-      conc = Syn.app (Syn.bif "JOIN") [Syn.str "", CoreList exprs]
-  in bindAnaphora $ numberAnaphora conc >>= \(Reference v) -> Syn.var v
+      conc = Syn.app (Syn.bif "JOIN") [CoreList exprs, Syn.str ""]
+   in bindAnaphora (numberAnaphora conc) >>= \(Reference v) -> Syn.var v
   where
     sub :: StringChunk -> CoreExp Target
-    sub (Interpolation InterpolationRequest{refTarget=t}) = Syn.var t
+    sub (Interpolation InterpolationRequest {refTarget = t}) =
+      Syn.app (Syn.bif "STR") [Syn.var t]
     sub (LiteralContent s) = Syn.str s
 
 
