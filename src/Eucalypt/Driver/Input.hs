@@ -4,7 +4,7 @@ module Eucalypt.Driver.Input
 import Control.Applicative ((<|>))
 import Data.Maybe (fromMaybe)
 import Data.Void
-import Eucalypt.Syntax.ParseExpr (normalIdentifier)
+import Eucalypt.Syntax.ParseCommon (normalIdentifier)
 import Network.URI
 import System.FilePath
 import Text.Megaparsec

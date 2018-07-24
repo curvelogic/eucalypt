@@ -15,15 +15,17 @@ import Control.Monad.State.Strict
 import Data.Char (isUpper)
 import Data.List (isPrefixOf)
 import Data.Maybe (fromMaybe, mapMaybe)
+import Eucalypt.Core.Anaphora ()
 import Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.Target
 import Eucalypt.Core.Unit
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast as Ast
 
+
 -- | Transform a literal into its value
-desugarLiteral :: PrimitiveLiteral -> Primitive
-desugarLiteral lit =
+desugarLiteral :: PrimitiveLiteral -> CoreExpr
+desugarLiteral lit = CorePrim $
   case lit of
     VInt i -> CoreInt i
     VFloat f -> CoreFloat f
@@ -257,6 +259,19 @@ translateBlock blk = do
         Just (tgt, doc) -> recordTarget tgt doc
         Nothing -> return ()
 
+-- | Translates a string literal pattern expression into core
+-- representation - currently a concatenation of vars and literals,
+-- possibly as a lambda.
+translateStringPattern :: [StringChunk] -> CoreExpr
+translateStringPattern cs =
+  let exprs = map sub cs
+      conc = Syn.app (Syn.bif "JOIN") [CoreList exprs, Syn.str ""]
+   in bindAnaphora (numberAnaphora conc) >>= \(Reference v) -> Syn.var v
+  where
+    sub :: StringChunk -> CoreExp Target
+    sub (Interpolation InterpolationRequest {refTarget = t}) =
+      Syn.app (Syn.bif "STR") [Syn.var t]
+    sub (LiteralContent s) = Syn.str s
 
 
 -- | Descend through the AST, translating to CoreExpr and recording
@@ -264,12 +279,13 @@ translateBlock blk = do
 translate :: Expression -> Translate CoreExpr
 translate Located {locatee = expr} =
   case expr of
-    ELiteral lit -> return $ CorePrim $ desugarLiteral lit
+    ELiteral lit -> return $ desugarLiteral lit
     EBlock blk -> translateBlock blk
     EList components -> CoreList <$> traverse varifyTranslate components
     EName n -> return $ CoreName $ atomicName n
     EOpSoup _ es -> translateSoup es
     EApplyTuple as -> CoreArgTuple <$> traverse varifyTranslate as
+    EStringPattern chunks -> return $ translateStringPattern chunks
   where
     varifyTranslate = translate >=> return . varify
 

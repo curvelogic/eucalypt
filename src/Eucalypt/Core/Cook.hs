@@ -17,6 +17,7 @@ import Control.Monad.State.Lazy
 import Data.Bifunctor
 import Data.List (foldl')
 import Data.Monoid
+import Eucalypt.Core.Anaphora
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
@@ -79,7 +80,7 @@ cookSoup parentAnaphoric es = do
     inAnaphoricLambda = parentAnaphoric || imAnaphoric
 
 cookScope ::
-     (Anaphora a, Show b)
+     (Anaphora a, Eq b, Show b)
   => Bool
   -> Scope (Name String b) CoreExp a
   -> Interpreter (Scope (Name String b) CoreExp a)
@@ -331,7 +332,7 @@ validExprSeq l r = filler ((snd . bindSides) l) ((fst . bindSides) r)
 -- op or an anaphoric parameter
 filler :: Anaphora a => BindSide -> BindSide -> Maybe (CoreExp a)
 filler ValueLike ValueLike = Just catOp
-filler OpLike OpLike = Just expressionAnaphorus
+filler OpLike OpLike = Just $ return unnumberedAnaphor
 filler _ _ = Nothing
 
 -- | Make a given expression valid by inserting catenation and

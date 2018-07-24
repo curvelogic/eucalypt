@@ -25,6 +25,7 @@ spec = do
   blockSpec
   sampleSpec
   targetsSpec
+  interpolationSpec
 
 -- ? shims
 testDesugarSoup :: [Expression] -> Syn.CoreExpr
@@ -40,7 +41,7 @@ testDesugar = (`evalState` initTranslateState) . unTranslate . translate
 coreSpec :: Spec
 coreSpec =
   describe "Core" $ do
-    it "represents literals" $ desugarLiteral (VInt 8) `shouldBe` Syn.CoreInt 8
+    it "represents literals" $ desugarLiteral (VInt 8) `shouldBe` Syn.int 8
     it "processes annotation shortcuts" $
       processAnnotation (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
       Syn.CoreBlock
@@ -210,3 +211,100 @@ targetsSpec =
     it "finds T and U in larger sample " $
       (truTargets . translateToCore) targetSampleB `shouldBe`
       [TargetSpec "T" "x" ["a", "b"], TargetSpec "U" "y" ["a", "c"]]
+
+
+interpolationSpec:: Spec
+interpolationSpec =
+  describe "string interpolation" $ do
+    it "decomposes pattern \"{foo}bar\"" $
+      testDesugar <$>
+      parseExpression "\"{foo}bar\"" "test" `shouldBe`
+      Right
+        (Syn.app
+           (Syn.bif "JOIN")
+           [ Syn.CoreList
+               [Syn.app (Syn.bif "STR") [Syn.var "foo"], Syn.str "bar"]
+           , Syn.str ""
+           ])
+    it "decomposes pattern \"{foo}bar\"" $
+      testDesugar <$>
+      parseExpression "\"foo{bar}\"" "test" `shouldBe`
+      Right
+        (Syn.app
+           (Syn.bif "JOIN")
+           [ Syn.CoreList
+               [Syn.str "foo", Syn.app (Syn.bif "STR") [Syn.var "bar"]]
+           , Syn.str ""
+           ])
+    it "decomposes pattern \"{foo}{bar}\"" $
+      testDesugar <$>
+      parseExpression "\"{foo}{bar}\"" "test" `shouldBe`
+      Right
+        (Syn.app
+           (Syn.bif "JOIN")
+           [ Syn.CoreList
+               [ Syn.app (Syn.bif "STR") [Syn.var "foo"]
+               , Syn.app (Syn.bif "STR") [Syn.var "bar"]
+               ]
+           , Syn.str ""
+           ])
+    it "handles empty string \"\"" $
+      testDesugar <$>
+      parseExpression "\"\"" "test" `shouldBe` Right (Syn.str "")
+    it "desugars numbered anaphora" $
+      testDesugar <$>
+      parseExpression "\"{0}{1}\"" "test" `shouldBe`
+      Right
+        (Syn.lam
+           ["x", "y"]
+           (Syn.app
+              (Syn.bif "JOIN")
+              [ Syn.CoreList
+                  [ Syn.app (Syn.bif "STR") [Syn.var "x"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
+                  ]
+              , Syn.str ""
+              ]))
+    it "desugars unnumbered anaphora" $
+      testDesugar <$>
+      parseExpression "\"{}{}\"" "test" `shouldBe`
+      Right
+        (Syn.lam
+           ["x", "y"]
+           (Syn.app
+              (Syn.bif "JOIN")
+              [ Syn.CoreList
+                  [ Syn.app (Syn.bif "STR") [Syn.var "x"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
+                  ]
+              , Syn.str ""
+              ]))
+    it "desugars unnumbered anaphora with free vars" $
+      testDesugar <$>
+      parseExpression "\"{foo}{}\"" "test" `shouldBe`
+      Right
+        (Syn.lam
+           ["y"]
+           (Syn.app
+              (Syn.bif "JOIN")
+              [ Syn.CoreList
+                  [ Syn.app (Syn.bif "STR") [Syn.var "foo"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
+                  ]
+              , Syn.str ""
+              ]))
+    it "desugars both anaphora with free vars" $
+      testDesugar <$>
+      parseExpression "\"{foo}{1}{}\"" "test" `shouldBe`
+      Right
+        (Syn.lam
+           ["x", "y"]
+           (Syn.app
+              (Syn.bif "JOIN")
+              [ Syn.CoreList
+                  [ Syn.app (Syn.bif "STR") [Syn.var "foo"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "x"]
+                  ]
+              , Syn.str ""
+              ]))

@@ -30,7 +30,6 @@ io: {
 }
 
 
-
 TODO(x): ""
 
 ##
@@ -618,3 +617,65 @@ match-select-values(re, b): b select-items(by-key-match(re)) map(value)
 
 ` "`select-values(p?, b)` - return items from block `b` where values match predicate `p?`"
 select-values(p?, b): b map(value) filter(p?)
+
+` :suppress
+_block: {
+  ` { doc: "If `k` satisfies `k?` then `v!` else `v`" export: :suppress }
+  alter?(k?, v!, k, v): [k, if(k k?, v!, v)]
+
+  ` { doc: "If `k` satisfies `k?` then `v!` else `v`" export: :suppress }
+  update?(k?, f, k, v): [k, if(k k?, v f, v)]
+}
+
+# By property alteration of blocks
+
+` { doc: "Alter block `b` so any value with key `k` has value `v``"
+    export: :suppress }
+alter-value(k, v, b): b map-kv(_block.alter?(= k, v))
+
+` { doc: "Alter block `b` so any value with key `k` has value `f(v)`
+where v is the existing value"
+    export: :suppress }
+update-value(k, f, b): b map-kv(_block.update?(= k, f))
+
+` { doc: "Alter block `b` by setting to value `v` at path-of-keys `ks`"
+    export: :suppress }
+alter(ks, v, b): b foldr(update-value, const(v), ks)
+
+` { doc: "Alter block `b` by applying `f` to value at path-of-keys `ks`"
+    export: :suppress}
+update(ks, f, b): b foldr(update-value, f, ks)
+
+` { doc: "update-value-or(k, f, d, b) - Set `k` in block `b` to `f(v)` where
+v is existing value, otherwise add with default value `d`."
+    export: :suppress }
+update-value-or(k, f, d, b): {
+  acc(st, el): if(k = (el key),
+                  [cons([k, f(el value)], st first), []],
+		  [cons(el, st first), st second])
+  final-state: foldl(acc,
+                     [[], [[k, d]]],
+		     b elements)
+  final-block: final-state (append flip uncurry) reverse block
+}.final-block
+
+` { doc: "set(k, v, b) - Set `k` in block `b` to `v`, adding if absent."
+    export: :suppress}
+set-value(k, v): update-value-or(k, const(v), v)
+
+
+` { doc: "tongue(ks, v) - Create a block with a single nested
+path-of-keys `ks` down to value `v`"
+    export: :suppress}
+tongue(ks, v): {
+  t(k, e): [[k, e]] block
+  ret: foldr(t, v, ks) 
+}.ret
+
+` { doc: "merge-at(ks, v, b) - merge block `v` into value at path-of-keys `ks`"
+    export: :suppress }
+merge-at(ks, v, b): if(ks nil?,
+                       b v,
+		       b update-value-or(ks head,
+		                         merge-at(ks tail, v),
+					 tongue(ks tail, v)))

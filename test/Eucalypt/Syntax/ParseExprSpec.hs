@@ -7,6 +7,7 @@ module Eucalypt.Syntax.ParseExprSpec
 import Data.Void
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
+import Eucalypt.Syntax.ParseCommon
 import Eucalypt.Syntax.ParseExpr
 import Test.Hspec
 import Test.Hspec.Megaparsec
@@ -40,7 +41,7 @@ operatorStart = "!@£%^&*|></+=-~"
 
 operatorCont = "!@£$%^&*|></?+=-~"
 
-identifierStart = lower ++ upper ++ digits ++ idStartPunc
+identifierStart = lower ++ upper ++ idStartPunc
 
 identifierCont = lower ++ upper ++ digits ++ idContPunc
 
@@ -112,9 +113,11 @@ primitiveSpec = do
   describe "parsing numbers" $ do
     it "parses shown haskell integers" $ property parsesAnyInteger
     it "parses shown haskell float" $ property parsesDoubles
-  describe "parsing strings" $
+  describe "parsing strings" $ do
     it "parses simple strings" $
-    parseMaybe stringLiteral "\"abc\"" == Just (VStr "abc")
+      testParse stringLiteral "\"abc\"" `shouldParse` str "abc"
+    it "parses empty string" $
+      testParse stringLiteral "\"\"" `shouldParse` str ""
   describe "parsing symbols" $ do
     it "parses normal symbols" $ forAll validNormalNames parsesSymbols
     it "parses operator symbols" $ forAll validOperatorNames parsesSymbols
