@@ -5,7 +5,7 @@ import Control.Monad (filterM, (>=>))
 import Control.Monad.IO.Class
 import Data.Maybe (fromJust)
 import Data.Semigroup ((<>))
-import Eucalypt.Driver.Input (Input(..), InputMode(..), Locator(..), parseInputFromString)
+import Eucalypt.Driver.Input (Input(..), Locator(..), parseInputFromString)
 import Options.Applicative
 import Path
 import System.Directory (doesFileExist, getCurrentDirectory, getHomeDirectory)
@@ -189,8 +189,7 @@ insertPrelude opts =
   prependInputs
     opts
     [ Input
-        { inputMode = Active
-        , inputLocator = ResourceInput "prelude"
+        { inputLocator = ResourceInput "prelude"
         , inputName = Nothing
         , inputFormat = "eu"
         }
@@ -202,8 +201,7 @@ insertBuildMetadata opts =
   prependInputs
     opts
     [ Input
-        { inputMode = Inert
-        , inputLocator = ResourceInput "build-meta"
+        { inputLocator = ResourceInput "build-meta"
         , inputName = Just "__build"
         , inputFormat = "yaml"
         }
