@@ -343,7 +343,7 @@ const(k, _): k
 compose(f, g, x): x g f
 
 ` { doc: "`(f ∘ g)` - return composition of `f` and `g`"
-    example: (head ∘ tail)([1,2]) //=> 2
+    # example: (head ∘ tail)([1,2]) //=> 2
     export: :suppress
     associates: :right
     precedence: 88 }
@@ -415,7 +415,7 @@ meta: __META
 #
 
 ` { doc: "`nil?(l)` - `true` if list `l` is empty, `false` otherwise."
-    example: nil?([1]) //=> false
+    # example: nil?([1]) //=> false
     export: :suppress }
 nil?(l): l = []
 
@@ -516,7 +516,7 @@ zip-with: map2
 zip-apply(fs, vs): zip-with(cat, vs, fs)
 
 ` { doc: "`reverse(l) - reverse list `l`"
-    example: reverse([1,2,3]) //=> [3,2,1]
+    # example: reverse([1,2,3]) //=> [3,2,1]
     export: :suppress }
 reverse(l): foldl(cons flip, [], l)
 
