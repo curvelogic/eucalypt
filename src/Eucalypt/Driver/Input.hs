@@ -10,13 +10,6 @@ import System.FilePath
 import Text.Megaparsec
 import Text.Megaparsec.Char
 
--- | All inputs are active (evaluated) or inert (data-only), Eucalypt
--- format is always active; yaml and json and be inert or active.
-data InputMode
-  = Active
-  | Inert
-  deriving (Eq, Show)
-
 
 
 -- | Identifiers the format used to interpret into core
@@ -44,8 +37,7 @@ instance Show Locator where
 
 -- | Description of soure that can be fed to eu
 data Input = Input
-  { inputMode :: InputMode -- ^ active or inert
-  , inputLocator :: Locator -- ^ location (file or url)
+  { inputLocator :: Locator -- ^ location (file or url)
   , inputName :: Maybe String -- ^ name (for a block to contain the data)
   , inputFormat :: Format -- ^ data format
   } deriving (Eq)
@@ -54,9 +46,8 @@ data Input = Input
 
 -- | Format input for console or debug
 instance Show Input where
-  show i = modeString ++ nameString ++ formatString ++ locatorString
-    where modeString = if inputMode i == Active then "+" else ""
-          locatorString = show (inputLocator i)
+  show i = nameString ++ formatString ++ locatorString
+    where locatorString = show (inputLocator i)
           nameString = maybe "" (++ "=") $ inputName i
           formatString = inputFormat i ++ "@"
 
@@ -109,7 +100,6 @@ parseInput :: Parser Input
 parseInput = do
 
   -- Pull the various components apart
-  maybePlus <- optional $ try (char '+')
   name <- optional $ try (normalIdentifier <* char '=')
   format <- optional $ try (normalIdentifier <* char '@')
   locatorStr <- many anyChar
@@ -121,14 +111,9 @@ parseInput = do
   let extensionFormat = fromMaybe "eu" (locator >>= inferFormat)
   let inferredFormat = fromMaybe extensionFormat format
 
-  -- ...and mode
-  let defaultMode = if inferredFormat == "eu" then Active else Inert
-  let inferredMode = maybe defaultMode (const Active) maybePlus
-
   case locator of
     Nothing -> fail "Invalid input"
-    Just loc -> return Input { inputMode = inferredMode
-                             , inputLocator =  loc
+    Just loc -> return Input { inputLocator =  loc
                              , inputFormat = inferredFormat
                              , inputName = name }
 

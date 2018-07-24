@@ -26,7 +26,7 @@ import Eucalypt.Core.Unit
 import Eucalypt.Core.Verify
 import Eucalypt.Driver.Error (CommandError(..))
 import Eucalypt.Driver.IOSource (prepareIOUnit)
-import Eucalypt.Driver.Input (Input(..), InputMode(..), Locator(..))
+import Eucalypt.Driver.Input (Input(..), Locator(..))
 import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
 import Eucalypt.Render (configureRenderer)
@@ -94,14 +94,13 @@ parseEucalypt source = PE.parseUnit text
 -- Named inputs are automatically set to suppress export as it is
 -- assumed that they will be referenced by name in subsequent source.
 parseInputToCore :: Input -> IO (Either EucalyptError TranslationUnit)
-parseInputToCore i@(Input mode locator name format) = do
+parseInputToCore i@(Input locator name format) = do
   source <- readInput locator
-  case (mode, format) of
-    (Inert, "yaml") -> dataToCore source
-    (Active, "yaml") -> activeYamlToCore source
-    (Inert, "json") -> dataToCore source
-    (Active, "eu") -> eucalyptToCore source
-    _ -> (return . Left . Command . InvalidInputMode) i
+  case format of
+    "yaml" -> activeYamlToCore source
+    "json" -> dataToCore source
+    "eu" -> eucalyptToCore source
+    _ -> (return . Left . Command . InvalidInput) i
   where
     maybeApplyName = maybe id applyName name
     eucalyptToCore text =

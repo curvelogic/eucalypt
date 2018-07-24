@@ -3,5 +3,5 @@ module Eucalypt.Driver.Error where
 import Data.Typeable
 import Eucalypt.Driver.Input (Input)
 
-newtype CommandError = InvalidInputMode Input
+newtype CommandError = InvalidInput Input
   deriving (Show, Typeable)

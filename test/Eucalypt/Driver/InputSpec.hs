@@ -17,8 +17,7 @@ spec = do
       parseInputFromString "simple.eu" `shouldBe`
       Just
         Input
-          { inputMode = Active
-          , inputLocator = (URLInput . fromJust . parseURI) "file:simple.eu"
+          { inputLocator = (URLInput . fromJust . parseURI) "file:simple.eu"
           , inputName = Nothing
           , inputFormat = "eu"
           }
@@ -26,8 +25,7 @@ spec = do
       parseInputFromString "simple.json" `shouldBe`
       Just
         Input
-          { inputMode = Inert
-          , inputLocator = (URLInput . fromJust . parseURI) "file:simple.json"
+          { inputLocator = (URLInput . fromJust . parseURI) "file:simple.json"
           , inputName = Nothing
           , inputFormat = "json"
           }
@@ -35,26 +33,23 @@ spec = do
       parseInputFromString "json@simple.txt" `shouldBe`
       Just
         Input
-          { inputMode = Inert
-          , inputLocator = (URLInput . fromJust . parseURI) "file:simple.txt"
+          { inputLocator = (URLInput . fromJust . parseURI) "file:simple.txt"
           , inputName = Nothing
           , inputFormat = "json"
           }
-    it "parses +data=yaml@data.txt" $
-      parseInputFromString "+data=yaml@data.txt" `shouldBe`
+    it "parses data=yaml@data.txt" $
+      parseInputFromString "data=yaml@data.txt" `shouldBe`
       Just
         Input
-          { inputMode = Active
-          , inputLocator = (URLInput . fromJust . parseURI) "file:data.txt"
+          { inputLocator = (URLInput . fromJust . parseURI) "file:data.txt"
           , inputName = Just "data"
           , inputFormat = "yaml"
           }
-    it "parses +test.yaml" $
-      parseInputFromString "+test.yaml" `shouldBe`
+    it "parses test.yaml" $
+      parseInputFromString "test.yaml" `shouldBe`
       Just
         Input
-          { inputMode = Active
-          , inputLocator = (URLInput . fromJust . parseURI) "file:test.yaml"
+          { inputLocator = (URLInput . fromJust . parseURI) "file:test.yaml"
           , inputName = Nothing
           , inputFormat = "yaml"
           }
@@ -64,18 +59,16 @@ spec = do
       parseInputFromString "https://blah.com/blah.eu" `shouldBe`
       Just
         Input
-          { inputMode = Active
-          , inputLocator =
+          { inputLocator =
               (URLInput . fromJust . parseURI) "https://blah.com/blah.eu"
           , inputName = Nothing
           , inputFormat = "eu"
           }
     it "parses http(s) URIs with other specifiers" $
-      parseInputFromString "+k=yaml@https://blah.com/blah.txt" `shouldBe`
+      parseInputFromString "k=yaml@https://blah.com/blah.txt" `shouldBe`
       Just
         Input
-          { inputMode = Active
-          , inputLocator =
+          { inputLocator =
               (URLInput . fromJust . parseURI) "https://blah.com/blah.txt"
           , inputName = Just "k"
           , inputFormat = "yaml"
