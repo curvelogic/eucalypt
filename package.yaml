@@ -1,7 +1,7 @@
 name:                eucalypt-hs
 version:             0.1.0.0
 github:              "curvelogic/eucalypt-hs"
-license:             BSD3
+license:             MIT
 author:              "Greg Hawkins"
 maintainer:          "greg@curvelogic.co.uk"
 copyright:           "2018 Greg Hawkins"
