@@ -5,3 +5,10 @@
 This is a prototype Haskell implementation of the Eucalypt language
 for generating, templating, rendering and processing structured data
 formats like YAML and JSON.
+
+**Health warning**
+
+This implementation is currently a very crude substitutional
+interpreter for experimenting with the shape of the Eucalypt language.
+It has many shortcuts and shortcomings. It's not complete, nor
+necessarily even ready for casual use.
