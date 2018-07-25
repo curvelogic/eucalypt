@@ -281,7 +281,7 @@ defaultStdInput opts = do
   istty <- queryTerminal stdInput
   if istty
     then return opts
-    else return $ appendInputs opts [ (fromJust . parseInputFromString) "-" ]
+    else return $ appendInputs opts [ (fromJust . parseInputFromString) "yaml@-" ]
 
 
 
