@@ -10,7 +10,6 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Cook where
 
-import Bound.Name
 import Bound.Scope
 import Control.Monad.Loops (untilM_)
 import Control.Monad.State.Lazy
@@ -82,8 +81,8 @@ cookSoup parentAnaphoric es = do
 cookScope ::
      (Anaphora a, Eq b, Show b)
   => Bool
-  -> Scope (Name String b) CoreExp a
-  -> Interpreter (Scope (Name String b) CoreExp a)
+  -> Scope b CoreExp a
+  -> Interpreter (Scope b CoreExp a)
 cookScope anaphoric scope =
   Interpreter $ toScope <$> (cookBottomUp anaphoric . fromScope) scope
 

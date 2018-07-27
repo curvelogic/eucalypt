@@ -18,8 +18,6 @@ where
 
 import Bound
 import Bound.Scope
-import Bound.Name
-import Control.Comonad
 import Control.Monad.State.Strict
 import Data.Char (isDigit)
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
@@ -74,23 +72,42 @@ type Precedence = Int
 --
 data CoreExp a
   = CoreVar a
-  | CoreLet [(CoreBindingName, Scope (Name String Int) CoreExp a)] (Scope (Name String Int) CoreExp a)
+    -- ^ variable
+  | CoreLet [(CoreBindingName, Scope Int CoreExp a)]
+            (Scope Int CoreExp a)
+    -- ^ names only for pretty-printing, not binding
   | CoreBuiltin CoreBuiltinName
   | CorePrim Primitive
-  | CoreLookup (CoreExp a) CoreRelativeName
-  | CoreName CoreRelativeName -- ^ new parser - relative lookup name
+    -- ^ literal
+  | CoreLookup (CoreExp a)
+               CoreRelativeName
+  | CoreName CoreRelativeName
+    -- ^ new parser - relative lookup name
   | CoreList [CoreExp a]
   | CoreBlock (CoreExp a)
-  | CoreMeta (CoreExp a) (CoreExp a)
-  | CoreArgTuple [CoreExp a] -- ^ new parser
-  | CoreLambda Int (Scope (Name String Int) CoreExp a)
-  | CoreApply (CoreExp a) [CoreExp a]
+  | CoreMeta (CoreExp a)
+             (CoreExp a)
+  | CoreArgTuple [CoreExp a]
+    -- ^ RHS of call operator
+  | CoreLambda [CoreBindingName]
+               (Scope Int CoreExp a)
+    -- ^ names for pretty-printing, not binding
+  | CoreApply (CoreExp a)
+              [CoreExp a]
   | CoreOpSoup [CoreExp a]
-  | CoreOperator Fixity Precedence (CoreExp a) -- ^ new parser
-  | CorePAp Int (CoreExp a) [CoreExp a] -- ^ during evaluation only
-  | CoreTraced (CoreExp a) -- ^ during evaluation only
-  | CoreChecked (CoreExp a) (CoreExp a) -- ^ during evaluation only
-  deriving (Functor,Foldable,Traversable)
+  | CoreOperator Fixity
+                 Precedence
+                 (CoreExp a)
+  | CorePAp Int
+            (CoreExp a)
+            [CoreExp a]
+    -- ^ during evaluation only
+  | CoreTraced (CoreExp a)
+    -- ^ during evaluation only
+  | CoreChecked (CoreExp a)
+                (CoreExp a)
+    -- ^ during evaluation only
+  deriving (Functor, Foldable, Traversable)
 
 
 -- | Core expression using a simple string binding name
@@ -173,9 +190,9 @@ corename = CoreName
 
 -- | Abstract lambda of several args
 lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
-lam as expr = CoreLambda (length as) scope
+lam as expr = CoreLambda as scope
   where
-    scope = abstractName (`elemIndex` as) expr
+    scope = abstract (`elemIndex` as) expr
 
 
 
@@ -189,7 +206,7 @@ app = CoreApply
 letexp :: [(CoreBindingName, CoreExpr)] -> CoreExpr -> CoreExpr
 letexp [] b = b
 letexp bs b = CoreLet (map (second abstr) bs) (abstr b)
-  where abstr = abstractName (`elemIndex` map fst bs)
+  where abstr = abstract (`elemIndex` map fst bs)
 
 
 
@@ -389,20 +406,15 @@ numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
 bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
 bindAnaphora expr =
   case maxAnaphor of
-    Just n -> CoreLambda (n + 1) $ abstractName' toNumber expr
+    Just n -> CoreLambda (anaphora n) $ abstract toNumber expr
     Nothing -> expr
   where
     freeVars = foldr (:) [] expr
     freeAnaphora = mapMaybe toNumber freeVars
     maxAnaphor = maximumMay freeAnaphora
+    anaphora upTo = map fromNumber [0..upTo]
 
-abstractName' :: (Monad f, Anaphora a) => (a -> Maybe b) -> f a -> Scope (Name String b) f a
-abstractName' f t = Scope (fmap k t)
-  where
-    k a =
-      case f a of
-        Just b -> B (Name (toName a) b)
-        Nothing -> F (return a)
+
 
 -- $ substitutions
 --
@@ -411,15 +423,10 @@ abstractName' f t = Scope (fmap k t)
 -- library) in here.
 --
 
--- | Instantiate single argument into lambda body (old lambda)
---
-instantiate1Body :: CoreExpr -> Scope (Name String ()) CoreExp CoreBindingName -> CoreExpr
-instantiate1Body = instantiate1Name
-
 -- | Instantiate arguments into lambda body (new multi-arg lambda)
 --
-instantiateBody :: [CoreExpr] -> Scope (Name String Int) CoreExp CoreBindingName -> CoreExpr
-instantiateBody vals = instantiateName (vals !!)
+instantiateBody :: [CoreExpr] -> Scope Int CoreExp CoreBindingName -> CoreExpr
+instantiateBody vals = instantiate (vals !!)
 
 -- | Use Bound to wire the bindings into the appropriate places in the
 -- expressions (lazily...)
@@ -427,7 +434,7 @@ instantiateLet :: CoreExpr -> CoreExpr
 instantiateLet (CoreLet bs b) = inst b
   where
     es = map (inst . snd) bs
-    inst = instantiateName (es !!)
+    inst = instantiate (es !!)
 instantiateLet _ = error "instantiateLet called on non-let"
 
 
@@ -472,8 +479,8 @@ rebody _ payload = payload
 bindMore'' ::
      Monad f
   => (a -> Maybe (CoreBindingName, b))
-  -> Scope (Name CoreBindingName b) f a
-  -> Scope (Name CoreBindingName b) f a
+  -> Scope b f a
+  -> Scope b f a
 bindMore'' k = toScope . bindFree . fromScope
   where
     bindFree e =
@@ -484,7 +491,7 @@ bindMore'' k = toScope . bindFree . fromScope
           B b -> B b
     bind a =
       case k a of
-        (Just (nm, z)) -> B (Name nm z)
+        (Just (_, z)) -> B z
         Nothing -> F a
 
 
@@ -492,7 +499,7 @@ bindMore'' k = toScope . bindFree . fromScope
 -- | For binding further free variables in an expression that has
 -- already been abstracted once and is therefore a Scope.
 bindMore ::
-     Monad f => (a -> Maybe b) -> Scope (Name a b) f a -> Scope (Name a b) f a
+     Monad f => (a -> Maybe b) -> Scope b f a -> Scope b f a
 bindMore k = toScope . bindFree . fromScope
   where
     bindFree e =
@@ -503,34 +510,23 @@ bindMore k = toScope . bindFree . fromScope
           B b -> B b
     bind a =
       case k a of
-        Just z -> B (Name a z)
+        Just z -> B  z
         Nothing -> F a
 
--- | Instantiate some of the bound variables in the scope, returning a
--- scope of the same type.
-instantiateSome ::
-     (Monad f, Comonad n)
-  => (b -> Maybe (f a))
-  -> Scope (n b) f a
-  -> Scope (n b) f a
-instantiateSome k e = Scope $ unscope e >>= \case
-  B b -> case k (extract b) of
-    (Just r) -> F <$> return r
-    Nothing -> return $ B b
-  F a -> return $ F a
+
 
 -- | Modify (e.g. wrap) bound variables as specified by the
 -- transformation function 'k'.
 modifyBoundVars ::
-     (Monad f, Comonad n)
-  => (b -> f (Var (n b) (f a)) -> f (Var (n b) (f a)))
-  -> Scope (n b) f a
-  -> Scope (n b) f a
+     Monad f
+  => (b -> f (Var b (f a)) -> f (Var b (f a)))
+  -> Scope b f a
+  -> Scope b f a
 modifyBoundVars k e =
   Scope $
   unscope e >>= \case
       B b ->
-        let f = k (extract b)
+        let f = k b
          in f (pure (B b))
       F a -> pure $ F a
 
@@ -539,21 +535,21 @@ modifyBoundVars k e =
 -- appropriately named free variables. Handy for inspecting
 -- expression in tests.
 unbind :: CoreExpr -> CoreExpr
-unbind (CoreLambda _ e) = instantiateName (CoreVar . show) e
+unbind (CoreLambda _ e) = instantiate (CoreVar . show) e
 unbind (CoreLet bs body) = inst body
   where
     names = map fst bs
-    inst = instantiateName (\n -> CoreVar (names !! n))
+    inst = instantiate (\n -> CoreVar (names !! n))
 unbind e = e
 
 
 -- | Pull a unit (let or block) apart into bindings and body
 unitBindingsAndBody ::
   CoreExpr
-  -> ([(CoreBindingName, Scope (Name String Int) CoreExp CoreBindingName)],
-      Scope (Name String Int) CoreExp CoreBindingName)
+  -> ([(CoreBindingName, Scope Int CoreExp CoreBindingName)],
+      Scope Int CoreExp CoreBindingName)
 unitBindingsAndBody (CoreLet bs b) = (bs, b)
-unitBindingsAndBody e@CoreBlock{} = ([], abstractName (const Nothing) e)
+unitBindingsAndBody e@CoreBlock{} = ([], abstract (const Nothing) e)
 unitBindingsAndBody CoreList{} = error "Input is a sequence and must be named."
 unitBindingsAndBody _ = error "Unsupported unit type (not block or sequence)"
 
@@ -573,7 +569,7 @@ mergeUnits lets = last newLets
               (\n ->
                  (length nextBindings +) <$>
                  (n `elemIndex` map fst establishedBindings))
-          shift = mapBound (\(Name n i) -> (Name n (i + length nextBindings)))
+          shift = mapBound (\i -> i + length nextBindings)
           reboundNextBindings = map (second abstr) nextBindings
           shiftedEstablishedBindings = map (second shift) establishedBindings
       in reboundNextBindings ++ shiftedEstablishedBindings

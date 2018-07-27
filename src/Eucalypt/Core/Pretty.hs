@@ -10,10 +10,8 @@ module Eucalypt.Core.Pretty
   ( pprint
   ) where
 
-import Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import Bound.Scope
-import Bound.Name
 import Eucalypt.Core.Syn
 import Prelude hiding ((<>))
 import Text.PrettyPrint
@@ -58,7 +56,7 @@ prepare (CoreLet bs body) =
   text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
   where
     names = map fst bs
-    inst = splat (CoreVar . unquote . show) (\(Name _ i) -> CoreVar (names !! i))
+    inst = splat (CoreVar . unquote . show) (\i -> CoreVar (names !! i))
     prettyBody = (prepare . inst) body
     bindExprs = map (prepare . inst . snd) bs
     binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
@@ -71,18 +69,15 @@ prepare (CoreTraced v) = prepare v
 prepare (CoreChecked _ v) = prepare v
 prepare (CoreOpSoup es) = parens ( hsep $ map prepare es)
 prepare (CoreArgTuple xs) = parens . hsep . punctuate comma $ map prepare xs
-prepare (CoreLambda arity e) =
+prepare (CoreLambda names e) =
   parens $ text "\\" <+> hsep (V.toList (V.map text argNames)) <+> text "->" <+> body
   where
-    pairs = map pair $ bindings e
-    pair (Name n b) = (b, n)
-    toBindingName = fromMaybe "?" . (`lookup` pairs)
-    argNames = V.generate arity toBindingName
+    argNames = V.fromList names
     body = prepare $ inst e
     inst =
       splat
         (CoreVar . unquote . show)
-        (\(Name nm _) -> CoreVar $ unquote $ show nm)
+        (CoreVar . (names !!))
 prepare (CoreApply f es) = prepare f <> parens ( hsep . punctuate comma $ map prepare es)
 prepare (CoreName n) = text n
 prepare (CoreOperator x p e) =
