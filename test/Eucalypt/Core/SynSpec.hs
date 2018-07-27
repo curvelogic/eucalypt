@@ -4,7 +4,6 @@ module Eucalypt.Core.SynSpec
   ) where
 
 import Bound
-import Bound.Name
 import Eucalypt.Core.Syn
 import Test.Hspec
 import Data.Maybe (fromJust)
@@ -23,7 +22,7 @@ let2 :: CoreExpr
 let2 = letexp [("a", int 5), ("b", int 2)] body
 
 
-letBody :: CoreExpr -> Maybe (Scope (Name String Int) CoreExp CoreBindingName)
+letBody :: CoreExpr -> Maybe (Scope Int CoreExp CoreBindingName)
 letBody (CoreLet _ b) = Just b
 letBody _ = Nothing
 
