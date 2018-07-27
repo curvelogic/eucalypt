@@ -256,12 +256,12 @@ interpolationSpec =
       parseExpression "\"{0}{1}\"" "test" `shouldBe`
       Right
         (Syn.lam
-           ["x", "y"]
+           ["_0", "_1"]
            (Syn.app
               (Syn.bif "JOIN")
               [ Syn.CoreList
-                  [ Syn.app (Syn.bif "STR") [Syn.var "x"]
-                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
+                  [ Syn.app (Syn.bif "STR") [Syn.var "_0"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "_1"]
                   ]
               , Syn.str ""
               ]))
@@ -270,12 +270,12 @@ interpolationSpec =
       parseExpression "\"{}{}\"" "test" `shouldBe`
       Right
         (Syn.lam
-           ["x", "y"]
+           ["_0", "_1"]
            (Syn.app
               (Syn.bif "JOIN")
               [ Syn.CoreList
-                  [ Syn.app (Syn.bif "STR") [Syn.var "x"]
-                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
+                  [ Syn.app (Syn.bif "STR") [Syn.var "_0"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "_1"]
                   ]
               , Syn.str ""
               ]))
@@ -284,12 +284,12 @@ interpolationSpec =
       parseExpression "\"{foo}{}\"" "test" `shouldBe`
       Right
         (Syn.lam
-           ["y"]
+           ["_0"]
            (Syn.app
               (Syn.bif "JOIN")
               [ Syn.CoreList
                   [ Syn.app (Syn.bif "STR") [Syn.var "foo"]
-                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "_0"]
                   ]
               , Syn.str ""
               ]))
@@ -298,13 +298,13 @@ interpolationSpec =
       parseExpression "\"{foo}{1}{}\"" "test" `shouldBe`
       Right
         (Syn.lam
-           ["x", "y"]
+           ["_0", "_1"]
            (Syn.app
               (Syn.bif "JOIN")
               [ Syn.CoreList
                   [ Syn.app (Syn.bif "STR") [Syn.var "foo"]
-                  , Syn.app (Syn.bif "STR") [Syn.var "y"]
-                  , Syn.app (Syn.bif "STR") [Syn.var "x"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "_1"]
+                  , Syn.app (Syn.bif "STR") [Syn.var "_0"]
                   ]
               , Syn.str ""
               ]))

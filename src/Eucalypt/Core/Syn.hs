@@ -72,23 +72,42 @@ type Precedence = Int
 --
 data CoreExp a
   = CoreVar a
-  | CoreLet [(CoreBindingName, Scope Int CoreExp a)] (Scope Int CoreExp a)
+    -- ^ variable
+  | CoreLet [(CoreBindingName, Scope Int CoreExp a)]
+            (Scope Int CoreExp a)
+    -- ^ names only for pretty-printing, not binding
   | CoreBuiltin CoreBuiltinName
   | CorePrim Primitive
-  | CoreLookup (CoreExp a) CoreRelativeName
-  | CoreName CoreRelativeName -- ^ new parser - relative lookup name
+    -- ^ literal
+  | CoreLookup (CoreExp a)
+               CoreRelativeName
+  | CoreName CoreRelativeName
+    -- ^ new parser - relative lookup name
   | CoreList [CoreExp a]
   | CoreBlock (CoreExp a)
-  | CoreMeta (CoreExp a) (CoreExp a)
-  | CoreArgTuple [CoreExp a] -- ^ new parser
-  | CoreLambda Int (Scope Int CoreExp a)
-  | CoreApply (CoreExp a) [CoreExp a]
+  | CoreMeta (CoreExp a)
+             (CoreExp a)
+  | CoreArgTuple [CoreExp a]
+    -- ^ RHS of call operator
+  | CoreLambda [CoreBindingName]
+               (Scope Int CoreExp a)
+    -- ^ names for pretty-printing, not binding
+  | CoreApply (CoreExp a)
+              [CoreExp a]
   | CoreOpSoup [CoreExp a]
-  | CoreOperator Fixity Precedence (CoreExp a) -- ^ new parser
-  | CorePAp Int (CoreExp a) [CoreExp a] -- ^ during evaluation only
-  | CoreTraced (CoreExp a) -- ^ during evaluation only
-  | CoreChecked (CoreExp a) (CoreExp a) -- ^ during evaluation only
-  deriving (Functor,Foldable,Traversable)
+  | CoreOperator Fixity
+                 Precedence
+                 (CoreExp a)
+  | CorePAp Int
+            (CoreExp a)
+            [CoreExp a]
+    -- ^ during evaluation only
+  | CoreTraced (CoreExp a)
+    -- ^ during evaluation only
+  | CoreChecked (CoreExp a)
+                (CoreExp a)
+    -- ^ during evaluation only
+  deriving (Functor, Foldable, Traversable)
 
 
 -- | Core expression using a simple string binding name
@@ -171,7 +190,7 @@ corename = CoreName
 
 -- | Abstract lambda of several args
 lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
-lam as expr = CoreLambda (length as) scope
+lam as expr = CoreLambda as scope
   where
     scope = abstract (`elemIndex` as) expr
 
@@ -387,12 +406,14 @@ numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
 bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
 bindAnaphora expr =
   case maxAnaphor of
-    Just n -> CoreLambda (n + 1) $ abstract toNumber expr
+    Just n -> CoreLambda (anaphora n) $ abstract toNumber expr
     Nothing -> expr
   where
     freeVars = foldr (:) [] expr
     freeAnaphora = mapMaybe toNumber freeVars
     maxAnaphor = maximumMay freeAnaphora
+    anaphora upTo = map fromNumber [0..upTo]
+
 
 
 -- $ substitutions

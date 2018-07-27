@@ -92,10 +92,11 @@ handleApply f@CoreBlock {} (x:xs) =
     case b of
       CoreBlock {} -> euMerge whnfM [b, f] >>= (`handleApply` xs)
       _ -> throwEvalError $ BadBlockMerge (CoreExpShow (CoreList [b, f]))
-handleApply f@(CoreLambda n b) as
+handleApply f@(CoreLambda ns b) as
   | length as > n = whnfM (instantiateBody (take n as) b) >>= (`handleApply` drop n as)
   | length as == n = whnfM $ instantiateBody as b
   | length as < n = return (CorePAp n f as)
+  where n = length ns
 handleApply (CoreOperator _ _ expr) as = whnfM expr >>= (`handleApply` as)
 handleApply expr as = throwEvalError $ UncallableExpression (CoreExpShow (CoreApply expr as))
 

@@ -47,7 +47,7 @@ spec =
   describe "PPrint" $ do
     it "prints applications" $
       pprint (app (var "+") [int 2, int 5]) `shouldBe` "+(2, 5)"
-    xit "reconstructs bound names in lambdas" $
+    it "reconstructs bound names in lambdas" $
       pprint (lam ["foo"] (var "foo")) `shouldBe` "(\\ foo -> foo)"
     it "reconstructs bound names in lets" $
       pprint
@@ -58,6 +58,6 @@ spec =
     it "reconstructs bound names even for unused bindings in lets" $
       pprint (letexp [("foo", int 2), ("bar", int 3)] (var "foo")) `shouldBe`
       "let foo = 2\n    bar = 3\n    in foo"
-    xit "prints sample" $
+    it "prints sample" $
       pprint sample `shouldBe`
       "let take = (\\ n l -> (__IF ^InfixLeft(90)^__*CALL* ((n zero?), [], (cons ^InfixLeft(90)^__*CALL* ((l head), (take ^InfixLeft(90)^__*CALL* ((n dec), (l tail))))))))\n    in {[[:take,take]]}"
