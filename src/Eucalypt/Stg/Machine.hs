@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts, LambdaCase #-}
+
 {-|
 Module      : Eucalypt.Stg.Machine
 Description : Spineless tagless G-machine
@@ -6,168 +8,345 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 
-Heavily based on
-https://github.com/ermine-language/ermine/blob/master/src/Ermine/Interpreter.hs
-(-- Copyright :  (c) Edward Kmett and Dan Doel 2014)
 -}
 module Eucalypt.Stg.Machine where
 
 import Control.Applicative
-import Control.Monad.Primitive
+import Control.Exception.Safe
+import Control.Monad (zipWithM_)
+import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State
+import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
-import Data.Primitive.MutVar
-import Data.Vector (Vector)
-import qualified Data.Vector as B
-import Data.Vector.Generic ((!))
-import qualified Data.Vector.Generic as G
-import qualified Data.Vector.Generic.Mutable as GM
-import qualified Data.Vector.Mutable as BM
+import Data.IORef
+import qualified Data.Map as Map
+import Data.Vector (Vector, (!?))
+import qualified Data.Vector as Vector
 import Data.Word
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
+import qualified Text.PrettyPrint as P
 
-newtype Address m =
-  Address (MutVar (PrimState m) (Closure m))
+data StgException
+  = NonArgStackEntry
+  | NonAddressStackValue
+  | NonNativeStackValue
+  | LiteralUpdate
+  | NativeContinuationForCon
+  | ConContinuationForNative
+  | NoBranchFound
+  | PopEmptyStack
+  | EnteredBlackHole
+  | ArgInsteadOfContinuation
+  | ArgInsteadOfNativeContinuation
+  | StackIndexOutOfRange
+  | EnvironmentIndexOutOfRange
+  | IntrinsicIndexOutOfRange
+  | SteppingTerminated
+  deriving (Typeable, Show, Eq)
+
+instance Exception StgException
+
+-- | A (possibly updateable) closure using real mutability.
+newtype Address =
+  Address (IORef HeapObject)
   deriving (Eq)
 
-data Closure m
-  = Closure { _closureCode :: !LambdaForm
-            , _closureEnv :: !(Env m) }
-  | PartialApplication { _closureCode :: !LambdaForm
-                       , _closureEnv :: !(Env m)
-                       , _papArity :: !Int -- remaining args
+instance Show Address where
+  show _ = "0x?"
+
+allocate :: HeapObject -> IO Address
+allocate obj = Address <$> newIORef obj
+
+poke :: Address -> HeapObject -> IO ()
+poke (Address r) = writeIORef r
+
+peek :: Address -> IO HeapObject
+peek (Address r) = readIORef r
+
+-- | Values on the stack or in environments can be addresses or
+-- primitives.
+data StackValue
+  = StackAddr Address
+  | StackNat Native
+  deriving (Eq, Show)
+
+instance StgPretty StackValue where
+  prettify (StackAddr _) = P.text "<addr>"
+  prettify (StackNat n) = prettify n
+
+-- | Anything storable in an 'Address'.
+data HeapObject
+  = Closure { closureCode :: !LambdaForm
+            , closureEnv :: !Env }
+  | PartialApplication { papCode :: !LambdaForm
+                       , pap :: !Env
+                       , papArity :: !Int -- remaining args
                         }
   | BlackHole
-  | PrimClosure (MachineState m -> m ())
+  deriving (Eq, Show)
 
-newtype Env m =
-  Env (Vector (Address m))
+-- | Locals
+--
+-- Itself is not mutable but it is a vector of Addresses with
+-- interior mutability
+newtype Env =
+  Env (Vector StackValue)
+  deriving (Eq, Show)
 
-data Frame m
+toEnv :: [StackValue] -> Env
+toEnv = Env . Vector.fromList
+
+envSize :: Env -> Word64
+envSize (Env v) = fromIntegral $ Vector.length v
+
+instance Semigroup Env where
+  (<>) (Env l) (Env r) = Env $ l Vector.++ r
+
+instance Monoid Env where
+  mempty = Env mempty
+  mappend = (<>)
+
+instance StgPretty Env where
+  prettify (Env vs) =
+    P.braces $ P.hcat $ P.punctuate P.comma (map prettify (toList vs))
+
+-- | Entry on the frame stack, encoding processing to be done later
+-- when a value is available
+data StackEntry
   = Branch !Continuation
-           !(Env m)
-  | Update !(Address m)
+           !Env
+  | NativeBranch !NativeContinuation
+  | Update !Address
+  | Arg !StackValue
+  deriving (Eq, Show)
 
-data MachineState m = MachineState
-  { _sp :: !Int
-  , _fp :: !Int
-  , _stackF :: [(Int, Frame m)]
-  , _genv :: HashMap Word64 (Address m)
-  , _trace :: String -> m ()
-  , _stack :: BM.MVector (PrimState m) (Address m)
+-- | Currently executing code
+data Code
+  = Eval !StgSyn
+         !Env
+  | Enter !Address
+  | ReturnCon !Tag
+              !Env
+  | ReturnLit !Native
+  | Terminate
+  deriving (Eq, Show)
+
+instance StgPretty Code where
+  prettify (Eval e le) =
+    P.text "EVAL" <> P.space <> prettify le <> P.space <> prettify e
+  prettify (Enter _) = P.text "ENTER" <> P.space <> P.text "<addr>"
+  prettify (ReturnCon t le) =
+    P.text "RETURNCON" <> P.space <> prettify le <> P.space <>
+    P.int (fromIntegral t)
+  prettify (ReturnLit n) = P.text "RETURNLIT" <> P.space <> prettify n
+  prettify Terminate = P.text "TERMINATE"
+
+-- | Machine state.
+--
+data MachineState = MachineState
+  { machineCode :: Code
+  , machineGlobals :: HashMap String StackValue
+  , machineStack :: Vector StackEntry
+  , machineCounter :: Int
   }
 
-defaultMachineState ::
-     (Applicative m, PrimMonad m)
-  => Int
-  -> HashMap Word64 (Address m)
-  -> m (MachineState m)
-defaultMachineState stackSize ge =
-  MachineState stackSize stackSize [] ge (const $ return ()) <$>
-  GM.replicate stackSize sentinel
+-- | Initialise machine state.
+initMachineState :: StgSyn -> HashMap String StackValue -> MachineState
+initMachineState stg ge = MachineState (Eval stg (Env mempty)) ge mempty 0
 
-log :: MachineState m -> String -> m ()
-log MachineState {_trace = trace} = trace
+-- | Dump machine state for debugging.
+instance Show MachineState where
+  show MachineState { machineCode = code
+                    , machineGlobals = globals
+                    , machineStack = stack
+                    } =
+    "Code:\n\n" ++
+    show code ++
+    "\n\nGlobals:\n\n" ++ show globals ++ "\n\nStack:\n\n" ++ show stack
 
-note :: (Monad m, Show a) => MachineState m -> String -> a -> m ()
-note ms n a = log ms (n ++ ": " ++ show a)
-
-sentinel :: a
-sentinel = error "PANIC: access past end of stack"
-
+-- | Build a closure from a STG PreClosure
 buildClosure ::
-     (PrimMonad m, Applicative m)
-  => Env m
-  -> PreClosure
-  -> MachineState m
-  -> m (Closure m)
-buildClosure le (PreClosure captures code) ms =
-  Closure code <$> resolveEnv le captures ms
+     MonadThrow m => Env -> MachineState -> PreClosure -> m HeapObject
+buildClosure le ms (PreClosure captures code) =
+  Closure code <$> vals le ms captures
 
-allocClosure ::
-     (Applicative m, PrimMonad m)
-  => Env m
-  -> PreClosure
-  -> MachineState m
-  -> m (Address m)
-allocClosure le cc ms = Address <$> (buildClosure le cc ms >>= newMutVar)
+-- -- | Allocate new closure.
+allocClosure :: Env -> MachineState -> PreClosure -> IO Address
+allocClosure le ms cc = buildClosure le ms cc >>= allocate
 
--- | Resolve a ref against env and machine to get address
-resolveClosure ::
-     (PrimMonad m) => Env m -> MachineState m -> Ref -> m (Address m)
-resolveClosure (Env le) _ (Local l) = return $ le ! fromIntegral l
-resolveClosure _ MachineState {_stack = st, _sp = sp} (Stack l) =
-  GM.read st (fromIntegral l + sp)
-resolveClosure _ MachineState {_genv = genv} (Global g) =
-  return $ genv HM.! fromIntegral g
+-- | Resolve a ref against env and machine to get address of
+-- HeapObject
+resolveHeapObject :: MonadThrow m => Env -> MachineState -> Ref -> m Address
+resolveHeapObject env st ref =
+  val env st ref >>= \case
+    StackAddr r -> return r
+    StackNat _ -> throwM NonAddressStackValue
+
+resolveNative :: MonadThrow m => Env -> MachineState -> Ref -> m Native
+resolveNative env st ref =
+  val env st ref >>= \case
+    StackAddr _ -> throwM NonNativeStackValue
+    StackNat n -> return n
+
+val :: MonadThrow m => Env -> MachineState -> Ref -> m StackValue
+val (Env le) _ (LocalEnv l) =
+  case le !? fromIntegral l of
+    Just v -> return v
+    _ -> throwM EnvironmentIndexOutOfRange
+val _ (MachineState _c _g st _) (StackArg l) =
+  case st !? (Vector.length st - fromIntegral l - 1) of
+    Just (Arg r) -> return r
+    Just _ -> throwM NonArgStackEntry
+    Nothing -> throwM StackIndexOutOfRange
+val _ (MachineState _c g _st _) (Global nm) = return $ g HM.! nm
+val _ _ (Literal n) = return $ StackNat n
 
 -- | Resolve a vector of refs against an environment to create
 -- environment
-resolveEnv ::
-     (Applicative m, PrimMonad m)
-  => Env m
-  -> Vector Ref
-  -> MachineState m
-  -> m (Env m)
-resolveEnv le refs ms = Env <$> G.mapM (resolveClosure le ms) refs
+vals :: MonadThrow m => Env -> MachineState -> Vector Ref -> m Env
+vals le ms refs = Env <$> traverse (val le ms) refs
 
--- | Move stack pointer to make space and fill with the argument
--- addresses.
-pushArgs ::
-     (Applicative m, PrimMonad m)
-  => Env m
-  -> Vector Ref
-  -> MachineState m
-  -> m (MachineState m)
-pushArgs le refs ms@MachineState {_sp = sp, _stack = stack} = do
-  let len = B.length refs
-  note ms "pushArgs" len
-  let sp' = sp - len
-  let ms' = ms {_sp = sp'}
-  forM_ (B.zip (B.fromList [sp' ..]) refs) $ \(i, r) ->
-    resolveClosure le ms r >>= GM.write stack (sp' + i)
-  return ms'
+-- | Push an entry onto the stack
+push :: MachineState -> StackEntry -> MachineState
+push ms@MachineState {machineStack = st} v =
+  ms {machineStack = Vector.snoc st v}
 
-copyArgs :: (PrimMonad m, GM.MVector v a) => v (PrimState m) a -> Int -> Int -> Int -> m ()
-copyArgs stk frm off len =
-  GM.move (GM.slice (frm + off - len) len stk) (GM.slice frm len stk)
+pop :: MonadThrow m => MachineState -> m (Maybe StackEntry, MachineState)
+pop ms@MachineState {machineStack = st} =
+  if Vector.null st
+    then return (Nothing, ms)
+    else return (Just $ Vector.head st, ms {machineStack = Vector.tail st})
 
--- | Squash up the stack.
-squash ::
-     PrimMonad m
-  => Int
-  -> Int
-  -> MachineState m
-  -> m (MachineState m)
-squash sz args ms@MachineState {_stack = stack, _sp = sp} = do
-  note ms "squash" (sz, args)
-  copyArgs stack sp sz args
-  when (sz > args) $ GM.set (GM.slice sp (sz - args) stack) sentinel
-  return $ ms {_sp = sp + (sz - args)}
+-- | Set the next instruction
+setCode :: MachineState -> Code -> MachineState
+setCode ms@MachineState {} c = ms {machineCode = c}
 
-eval ::
-     (Applicative m, PrimMonad m) => StgSyn -> Env m -> MachineState m -> m ()
-eval (App sz f xs) le ms =
+-- | Args are reversed on the stack
+pushArgs :: MonadThrow m => Env -> Vector Ref -> MachineState -> m MachineState
+pushArgs le xs ms@MachineState {machineStack = stack} = do
+  args <- traverse (val le ms) xs
+  return $ ms {machineStack = stack Vector.++ Vector.map Arg args}
+
+selectBranch :: MonadThrow m => Continuation -> Tag -> m StgSyn
+selectBranch (Continuation bs df) t =
+  let syn = (snd <$> Map.lookup t bs) <|> df
+   in case syn of
+        Just e -> return e
+        Nothing -> throwM NoBranchFound
+
+selectNativeBranch :: MonadThrow m => NativeContinuation -> Native -> m StgSyn
+selectNativeBranch (NativeContinuation bs df) t =
+  let syn = HM.lookup t bs <|> df
+   in case syn of
+        Just e -> return e
+        Nothing -> throwM NoBranchFound
+
+dump :: MachineState -> IO ()
+dump MachineState {machineCode = code, machineCounter = i} =
+  putStrLn $ P.render $ P.int i <> P.colon <> P.space <> prettify code
+
+tick :: MachineState -> MachineState
+tick ms@MachineState {machineCounter = n} = ms {machineCounter = n + 1}
+
+step :: MachineState -> IO MachineState
+step ms@MachineState {machineCode = (Eval (App f xs) env)} = do
+  dump ms
   case f of
     Ref r -> do
-      addr <- resolveClosure le ms r
-      ms' <- pushArgs le xs ms
-      let lxs = G.length xs
-      let lsz = fromIntegral sz
-      ms'' <- squash (lsz + lxs) lxs ms'
-      enter addr ms''
-    Con t -> pushArgs le xs ms >>= returnCon t (G.length xs)
+      addr <- resolveHeapObject env ms r
+      ms' <- pushArgs env xs ms
+      return $ tick $ setCode ms' (Enter addr)
+    Con t -> do
+      env' <- vals env ms xs
+      return $ tick $ setCode ms (ReturnCon t env')
+    Intrinsic i ->
+      case intrinsics !? i of
+        Just mf -> do
+          ms' <- pushArgs env xs ms
+          tick <$> mf ms'
+        Nothing -> throwM IntrinsicIndexOutOfRange
+step ms@MachineState {machineCode = (Eval (Let pcs body) env)} = do
+  dump ms
+  addrs <- traverse (allocClosure env ms) pcs
+  let env' = env <> (Env . Vector.map StackAddr) addrs
+  return $ tick $ setCode ms (Eval body env')
+step ms@MachineState {machineCode = (Eval (LetRec pcs body) env)} = do
+  dump ms
+  addrs <- sequenceA $ replicate (length pcs) (allocate BlackHole)
+  let env' = env <> (toEnv . map StackAddr) addrs
+  closures <- traverse (buildClosure env' ms) pcs
+  zipWithM_ poke addrs (toList closures)
+  return $ tick $ setCode ms (Eval body env')
+step ms@MachineState {machineCode = (Eval (Case syn k) env)} = do
+  dump ms
+  return $ tick $ setCode (push ms (Branch k env)) (Eval syn env)
+step ms@MachineState {machineCode = (Eval (CaseLit syn k) env)} = do
+  dump ms
+  return $ tick $ setCode (push ms (NativeBranch k)) (Eval syn env)
+step ms@MachineState {machineCode = (Eval (Lit n) _)} = do
+  dump ms
+  return $ tick $ setCode ms (ReturnLit n)
+step ms@MachineState {machineCode = (Enter a)} = do
+  dump ms
+  obj <- peek a
+  case obj of
+    (Closure (LambdaForm _f _b False body) env) ->
+      return $ tick $ setCode ms (Eval body env) -- args left on stack where
+      -- code expects them
+    (Closure (LambdaForm _f _b True body) env) ->
+      return $ tick $ setCode (push ms (Update a)) (Eval body env)
+    PartialApplication {} -> undefined
+    BlackHole -> throwM EnteredBlackHole
+step ms@MachineState {machineCode = (ReturnCon t xs)} = do
+  dump ms
+  (entry, ms') <- pop ms
+  case entry of
+    (Just (Branch k le)) ->
+      selectBranch k t >>= \c -> return $ tick $ setCode ms' (Eval c (le <> xs))
+    (Just (NativeBranch _)) -> throwM NativeContinuationForCon
+    (Just (Update a)) -> do
+      poke a (Closure (standardConstructor (envSize xs) t) xs)
+      return $ tick ms'
+    (Just (Arg _)) -> throwM ArgInsteadOfContinuation
+    Nothing -> return $ tick $ setCode ms' Terminate
+step ms@MachineState {machineCode = (ReturnLit nat)} = do
+  dump ms
+  (entry, ms') <- pop ms
+  case entry of
+    (Just (Branch _ _)) -> throwM ConContinuationForNative
+    (Just (NativeBranch k)) ->
+      selectNativeBranch k nat >>= \c ->
+        return $ tick $ setCode ms' (Eval c mempty)
+    (Just (Update _)) -> throwM LiteralUpdate
+    (Just (Arg _)) -> throwM ArgInsteadOfNativeContinuation
+    Nothing -> return $ tick $ setCode ms' Terminate
+step ms@MachineState {machineCode = Terminate} = do
+  dump ms
+  throwM SteppingTerminated
 
--- eval (Let bs e) le MachineState{_stack = stack} = do
---   let len = G.length bs
-eval _ _ _= undefined
+-- | Step repeatedly
+run :: MachineState -> IO MachineState
+run = iterateUntilM terminated step
+  where
+    terminated MachineState {machineCode = Terminate} = True
+    terminated _ = False
 
+-- ======================================================================
+-- Intrinsics
+-- ======================================================================
+-- a builtin to yield yaml events
+--
+-- arity 1
+yield :: MachineState -> IO MachineState
+yield ms = do
+  (arg, ms') <- pop ms
+  case arg of
+    Just (Arg (StackAddr a)) -> peek a >>= print
+    Just (Arg (StackNat n)) -> print n
+    _ -> throwM StackIndexOutOfRange
+  return $ setCode ms' Terminate
 
-enter :: (Applicative m, PrimMonad m) => Address m -> MachineState m -> m ()
-enter = undefined
-
-returnCon ::
-     (Applicative m, PrimMonad m) => Tag -> Int -> MachineState m -> m ()
-returnCon = undefined
+intrinsics :: Vector (MachineState -> IO MachineState)
+intrinsics = Vector.fromList [yield]

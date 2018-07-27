@@ -31,6 +31,7 @@ library:
     - exceptions
     - filepath
     - file-embed
+    - hashable
     - mtl
     - network-uri
     - optparse-applicative
@@ -84,14 +85,17 @@ tests:
       - aeson-pretty
       - bound
       - bytestring
+      - containers
       - eucalypt-hs
       - hspec
       - hspec-megaparsec
       - megaparsec
+      - monad-loops
       - mtl
       - network-uri
       - pretty
       - text
+      - vector
       - yaml
 
 eu-build:
