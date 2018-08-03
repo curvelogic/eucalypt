@@ -87,6 +87,12 @@ data HeapObject
   | BlackHole
   deriving (Eq, Show)
 
+instance StgPretty HeapObject where
+  prettify (Closure lf env) = prettify env <> P.space <> prettify lf
+  prettify (PartialApplication lf env arity) =
+    prettify env <> P.space <> P.parens (P.int arity) <> prettify lf
+  prettify BlackHole = P.text "•"
+
 -- | Locals
 --
 -- Itself is not mutable but it is a vector of Addresses with
@@ -343,7 +349,7 @@ yield :: MachineState -> IO MachineState
 yield ms = do
   (arg, ms') <- pop ms
   case arg of
-    Just (Arg (StackAddr a)) -> peek a >>= print
+    Just (Arg (StackAddr a)) -> peek a >>= putStrLn . P.render . prettify
     Just (Arg (StackNat n)) -> print n
     _ -> throwM StackIndexOutOfRange
   return $ setCode ms' Terminate

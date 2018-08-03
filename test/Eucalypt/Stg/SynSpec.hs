@@ -1,3 +1,11 @@
+{-|
+Module      : Eucalypt.Stg.Syn
+Description : Tests for STG syntax helpers
+Copyright   : (c) Greg Hawkins, 2018
+License     :
+Maintainer  : greg@curvelogic.co.uk
+Stability   : experimental
+-}
 module Eucalypt.Stg.SynSpec (main, spec)
 where
 

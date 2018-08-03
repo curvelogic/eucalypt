@@ -1,10 +1,18 @@
+{-|
+Module      : Eucalypt.Stg.Machine
+Description : Tests for STG machine operation
+Copyright   : (c) Greg Hawkins, 2018
+License     :
+Maintainer  : greg@curvelogic.co.uk
+Stability   : experimental
+-}
 module Eucalypt.Stg.MachineSpec (main, spec)
 where
 
 import Control.Monad.Loops (concatM)
-import qualified Data.Map as Map
 import Data.Vector (singleton, fromList)
 import qualified Data.Vector as Vector
+import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Test.Hspec
@@ -45,23 +53,6 @@ addressSpec = do
       dummyClosure
 
 
-nilTag :: Tag
-nilTag = 0
-
-nilConstructor :: LambdaForm
-nilConstructor = standardConstructor 0 nilTag
-
-consTag :: Tag
-consTag = 1
-
-consConstructor :: LambdaForm
-consConstructor = standardConstructor 2 consTag
-
-blockTag :: Tag
-blockTag = 2
-
-blockConstructor :: LambdaForm
-blockConstructor = standardConstructor 1 blockTag
 
 kv :: String -> Integer -> StgSyn
 kv k v =
@@ -92,12 +83,19 @@ stepped n =
     (initMachineState (block [kv "a" 1, kv "b" 2]) mempty)
 
 exposeList :: StgSyn
-exposeList =
-  Case
-    (block [kv "a" 1, kv "b" 2])
-    (Continuation (Map.fromList [(blockTag, (1, app))]) Nothing)
-    where
-      app = App (Intrinsic 0) $ Vector.singleton (LocalEnv 0)
+exposeList = case_ (block [kv "a" 1, kv "b" 2]) [(stgBlock, (1, app))]
+  where
+    app = App (Intrinsic 0) $ Vector.singleton (LocalEnv 0)
+
+headOfList :: StgSyn
+headOfList =
+  letrec_
+    [ (PreClosure mempty head_)
+    , (PreClosure
+         mempty
+         (LambdaForm 0 0 True (litList_ [NativeInt 1, NativeInt 2])))
+    ]
+    (App (Ref (LocalEnv 0)) mempty)
 
 isEval :: Code -> Bool
 isEval (Eval _ _) = True
@@ -149,4 +147,9 @@ blockSpec = do
   describe "expose list withing block" $ do
     let s0 = initMachineState exposeList mempty
     it "runs to completion" $
+      (machineCounter <$> run s0) `shouldReturn` 7
+
+  describe "calculate head of list" $ do
+    let s0 = initMachineState headOfList mempty
+    xit "runs to completion" $
       (machineCounter <$> run s0) `shouldReturn` 7
