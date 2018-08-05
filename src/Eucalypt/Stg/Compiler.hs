@@ -11,9 +11,7 @@ Heavily based on Ermine STG implementation
 -}
 module Eucalypt.Stg.Compiler where
 
-import qualified  Data.Map as Map
 import qualified Data.Vector as Vector
-import Data.Word
 import Eucalypt.Stg.Syn
 
 -- $ Building Blocks
@@ -39,15 +37,6 @@ stgBlock = 2
 blockConstructor :: LambdaForm
 blockConstructor = standardConstructor 1 stgBlock
 
-case_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn
-case_ scrutinee cases = Case scrutinee (Continuation (Map.fromList cases) Nothing)
-
-letrec_ :: [PreClosure] -> StgSyn -> StgSyn
-letrec_ pcs = LetRec (Vector.fromList pcs)
-
-thunk_ :: StgSyn -> LambdaForm
-thunk_ = LambdaForm 0 0 True
-
 head_ :: LambdaForm
 head_ =
   LambdaForm
@@ -55,17 +44,18 @@ head_ =
     1
     False
     (case_
-       (App (Ref (StackArg 0)) mempty)
-       [(stgCons, (2, App (Ref (LocalEnv 0)) mempty))])
+       (Atom (BoundArg 0))
+       [(stgCons, (2, Atom (Local 1)))]) -- binds after
+    -- stack binds
 
 litList_ :: [Native] -> StgSyn
-litList_ nats = letrec_ (pc0 : pcs) (App (Ref (LocalEnv pcn)) mempty)
+litList_ nats = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
   where
     pc0 = PreClosure mempty nilConstructor
     preclose (i, n) =
-      PreClosure (Vector.fromList [Literal n, LocalEnv i]) consConstructor
+      PreClosure (Vector.fromList [Literal n, Local i]) consConstructor
     pcs = zipWith (curry preclose) [0 ..] $ reverse nats
-    pcn = fromIntegral $ (length pcs) - 1
+    pcn = fromIntegral $ length pcs - 1
 
 -- | Compile an expression (which may appear in argument position in
 -- core) into a binding for an STG let.

@@ -18,9 +18,9 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = do
+spec =
   describe "litList_" $
-    it "creates list of natives" $ do
-      let l = litList_ (map NativeInt [0, 1, 2])
-      (P.render . prettify) l `shouldBe`
-        "letrec {} \\ 0 0 -> C|0 \n       {2, E[0]} \\ 2 0 -> C|1 E[0] E[1]\n       {1, E[1]} \\ 2 0 -> C|1 E[0] E[1]\n       {0, E[2]} \\ 2 0 -> C|1 E[0] E[1]\n in E[2] "
+  it "creates list of natives" $ do
+    let l = litList_ (map NativeInt [0, 1, 2])
+    (P.render . prettify) l `shouldBe`
+      "letrec {} \\ 0 0 -> C|0 \n       {2, E[0]} \\ 2 0 -> C|1 E[0] E[1]\n       {1, E[1]} \\ 2 0 -> C|1 E[0] E[1]\n       {0, E[2]} \\ 2 0 -> C|1 E[0] E[1]\n in E[2] "

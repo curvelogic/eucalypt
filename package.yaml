@@ -95,6 +95,7 @@ tests:
       - network-uri
       - pretty
       - text
+      - unordered-containers
       - vector
       - yaml
 
