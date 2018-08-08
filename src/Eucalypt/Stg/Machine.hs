@@ -20,6 +20,7 @@ import Data.IORef
 import Data.Vector (Vector, (!?))
 import qualified Data.Vector as Vector
 import Data.Word
+import Eucalypt.Stg.Event
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
@@ -159,6 +160,10 @@ data MachineState = MachineState
     -- ^ whether the machine has terminated
   , machineTrace :: MachineState -> IO ()
     -- ^ debug action to run prior to each step
+  , machineEmit :: MachineState -> Event -> IO MachineState
+    -- ^ emit function to send out events
+  , machineDebugEmitLog :: [Event]
+    -- ^ log of emitted events for debug / testing
   }
 
 -- | Initialise machine state.
@@ -171,17 +176,26 @@ initMachineState stg ge =
     , machineCounter = 0
     , machineTerminated = False
     , machineTrace = \_ -> return ()
+    , machineEmit = \s _ -> return s
+    , machineDebugEmitLog = []
     }
 
 -- | A debug dump to use as machine's trace function
 dump :: MachineState -> IO ()
 dump ms = putStrLn $ P.render $ prettify ms
 
+-- | An emit function to use for debugging
+dumpEmission :: MachineState -> Event -> IO MachineState
+dumpEmission ms@MachineState {machineDebugEmitLog = es} e =
+  return ms {machineDebugEmitLog = es ++ [e]}
+
 -- | Initialise machine state with a trace function that dumps state
 -- every step
 initDebugMachineState :: StgSyn -> HashMap String StgValue -> MachineState
-initDebugMachineState stg ge = ms { machineTrace = dump }
-  where ms = initMachineState stg ge
+initDebugMachineState stg ge =
+  ms {machineTrace = dump, machineEmit = dumpEmission}
+  where
+    ms = initMachineState stg ge
 
 -- | Dump machine state for debugging.
 instance StgPretty MachineState where
@@ -189,11 +203,18 @@ instance StgPretty MachineState where
                         , machineGlobals = _globals
                         , machineStack = stack
                         , machineCounter = counter
+                        , machineDebugEmitLog = events
                         } =
-    P.int counter <> P.colon <> P.space <>
-    P.parens (P.hcat (P.punctuate P.colon (map prettify (toList stack)))) <>
-    P.space <>
-    prettify code
+    P.nest 10 $
+    P.vcat
+      [ P.int counter <> P.colon <> P.space <>
+        P.parens (P.hcat (P.punctuate P.colon (map prettify (toList stack)))) <>
+        P.space <>
+        prettify code
+      , if null events
+          then P.empty
+          else P.nest 2 ((P.text ">>> ") <> (P.text (show events)))
+      ]
 
 -- | Resolve environment references against local and global
 -- environments. If a ref is still a BoundArg at the point it is

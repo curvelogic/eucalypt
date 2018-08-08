@@ -13,6 +13,8 @@ import Data.Vector (fromList)
 import qualified Data.Vector as Vector
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval
+import Eucalypt.Stg.Event
+import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Test.Hspec
@@ -44,6 +46,7 @@ block kvs =
       pcs' = pcs `Vector.snoc` bl
    in LetRec pcs' (App (Ref (Local (fromIntegral itemCount))) mempty)
 
+-- A test which finds the head of a list
 headOfList :: StgSyn
 headOfList =
   letrec_
@@ -54,14 +57,7 @@ headOfList =
     ]
     (App (Ref (Local 0)) $ Vector.singleton (Local 1))
 
-returnsConstructor :: Tag -> MachineState -> Bool
-returnsConstructor t MachineState {machineCode = (ReturnCon tag _)} = t == tag
-returnsConstructor _ _ = False
-
-returnsNative :: Native -> MachineState -> Bool
-returnsNative n MachineState {machineCode = (ReturnLit ret)} = ret == n
-returnsNative _ _ = False
-
+-- A test which adds 1 and 2...
 addTest :: StgSyn
 addTest =
   letrec_
@@ -71,11 +67,74 @@ addTest =
       thunk_ $
       caselit_ (Atom (Local 0)) mempty $
       Just
-        (caselit_ (Atom (Local 1)) mempty $ Just (appbif_ 0 [Local 2, Local 3]))
+        (caselit_ (Atom (Local 1)) mempty $ Just (add [Local 2, Local 3]))
     ] $
   caselit_ (Atom (Local 2)) [(NativeInt 3, Atom (Literal (NativeBool True)))] $
   Just (Atom (Literal (NativeBool False)))
+  where
+    add = appbif_ $ intrinsicIndex "ADD"
 
+-- | Test sequencing emit actions
+renderEmptyMap :: StgSyn
+renderEmptyMap = seq_ emitMS emitME
+  where
+    emitMS = (appbif_ (intrinsicIndex "EMIT{") [])
+    emitME = (appbif_ (intrinsicIndex "EMIT}") [])
+    
+-- | A crude rendering function to resolve to NF and pass data
+-- structures to emit
+_render :: StgSyn
+_render =
+  letrec_
+      -- emptyList
+    [ PreClosure mempty $ LambdaForm 0 0 False $ seq_ emitSS emitSE
+      -- continueList
+    , PreClosure (fromList [continueList]) $
+      LambdaForm 1 1 False $
+      case_
+        (Atom (BoundArg 0))
+        [(stgCons, (2, (appfn_ (Local 0) [Local 2]))), (stgNil, (0, emitSE))]
+      -- startList
+    , PreClosure (fromList [continueList]) $
+      LambdaForm 0 2 False $ seq_ emitSS (appfn_ (Local 0) [BoundArg 1])
+      -- wrapBlock
+    , PreClosure (fromList [typeSwitch]) $
+      LambdaForm 1 1 False $
+      seqall_ [emitMS, (appfn_ (Local 0) [BoundArg 0]), emitME]
+      -- typeSwitch
+    , PreClosure (fromList [emptyList, continueList, startList, wrapBlock]) $
+      LambdaForm 4 1 True $
+      case_
+        (Atom (BoundArg 0))
+        [ (stgBlock, (1, appfn_ (Local 3) [Local 5]))
+        , (stgCons, (2, appfn_ (Local 2) [Local 5, Local 6]))
+        , (stgNil, (0, appfn_ (Local 0) []))
+        ]
+    ]
+    (Atom (Local 4))
+  where
+    emptyList = (Local 0)
+    continueList = (Local 1)
+    startList = (Local 2)
+    wrapBlock = (Local 3)
+    typeSwitch = (Local 4)
+    emitMS = (appbif_ (intrinsicIndex "EMIT{") [])
+    emitME = (appbif_ (intrinsicIndex "EMIT}") [])
+    emitSS = (appbif_ (intrinsicIndex "EMIT[") [])
+    emitSE = (appbif_ (intrinsicIndex "EMIT]") [])
+    
+
+
+returnsConstructor :: Tag -> MachineState -> Bool
+returnsConstructor t MachineState {machineCode = (ReturnCon tag _)} = t == tag
+returnsConstructor _ _ = False
+
+returnsNative :: Native -> MachineState -> Bool
+returnsNative n MachineState {machineCode = (ReturnLit ret)} = ret == n
+returnsNative _ _ = False
+
+emits :: [Event] -> MachineState -> Bool
+emits events MachineState {machineDebugEmitLog = logged} = events == logged
 
 blockSpec :: Spec
 blockSpec =
@@ -91,3 +150,7 @@ blockSpec =
     let s3 = initDebugMachineState addTest mempty
     it "returns true" $
       (returnsNative (NativeBool True) <$> run s3) `shouldReturn` True
+
+    let s4 = initDebugMachineState renderEmptyMap mempty
+    it "emits empty map" $
+      (emits [OutputMappingStart, OutputMappingEnd] <$> run s4) `shouldReturn` True

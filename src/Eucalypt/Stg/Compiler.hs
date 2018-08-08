@@ -37,6 +37,12 @@ stgBlock = 2
 blockConstructor :: LambdaForm
 blockConstructor = standardConstructor 1 stgBlock
 
+stgUnit :: Tag
+stgUnit = 3
+
+unitConstructor :: LambdaForm
+unitConstructor = standardConstructor 0 stgUnit
+
 head_ :: LambdaForm
 head_ =
   LambdaForm

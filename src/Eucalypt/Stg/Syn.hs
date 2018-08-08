@@ -256,11 +256,20 @@ caselit_ scrutinee cases df =
 letrec_ :: [PreClosure] -> StgSyn -> StgSyn
 letrec_ pcs = LetRec (V.fromList pcs)
 
+appfn_ :: Ref -> [Ref] -> StgSyn
+appfn_ f xs = App (Ref f) $ V.fromList xs
+
 appbif_ :: Int -> [Ref] -> StgSyn
 appbif_ f xs = App (Intrinsic f) $ V.fromList xs
 
 thunk_ :: StgSyn -> LambdaForm
 thunk_ = LambdaForm 0 0 True
+
+seq_ :: StgSyn -> StgSyn -> StgSyn
+seq_ a b = Case a $ BranchTable mempty (Just b)
+
+seqall_ :: [StgSyn] -> StgSyn
+seqall_ = foldl1 seq_
 
 -- | Standard constructor - applies saturated data constructor of tag
 -- @t@ to refs on stack.
