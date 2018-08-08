@@ -92,12 +92,18 @@ isContextualRef _ = True
 -- | Constructor tag
 type Tag = Word64
 
+class HasDefaultBranch a where
+  defaultBranch :: a -> Maybe StgSyn
+
 -- | Branches of a case expression matching constructors and binding
 -- arguments
 data BranchTable =
   BranchTable (Map.Map Tag (Word64, StgSyn))
                (Maybe StgSyn)
   deriving (Eq, Show)
+
+instance HasDefaultBranch BranchTable where
+  defaultBranch (BranchTable _ df) = df
 
 instance HasArgRefs BranchTable where
   argsAt n (BranchTable branches df) = BranchTable branches' df'
@@ -123,6 +129,9 @@ data NativeBranchTable =
   NativeBranchTable (HM.HashMap Native StgSyn)
                      (Maybe StgSyn)
   deriving (Eq, Show)
+
+instance HasDefaultBranch NativeBranchTable where
+  defaultBranch (NativeBranchTable _ df) = df
 
 instance HasArgRefs NativeBranchTable where
   argsAt n (NativeBranchTable branches df) = NativeBranchTable branches' df'
@@ -237,10 +246,18 @@ instance StgPretty StgSyn where
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
 
 case_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn
-case_ scrutinee cases = Case scrutinee (BranchTable (Map.fromList cases) Nothing)
+case_ scrutinee cases =
+  Case scrutinee (BranchTable (Map.fromList cases) Nothing)
+
+caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
+caselit_ scrutinee cases df =
+  CaseLit scrutinee (NativeBranchTable (HM.fromList cases) df)
 
 letrec_ :: [PreClosure] -> StgSyn -> StgSyn
 letrec_ pcs = LetRec (V.fromList pcs)
+
+appbif_ :: Int -> [Ref] -> StgSyn
+appbif_ f xs = App (Intrinsic f) $ V.fromList xs
 
 thunk_ :: StgSyn -> LambdaForm
 thunk_ = LambdaForm 0 0 True

@@ -20,6 +20,7 @@ library:
   dependencies:
     - aeson
     - aeson-pretty
+    - array
     - bound
     - bytestring
     - comonad
