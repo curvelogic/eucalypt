@@ -145,7 +145,7 @@ instance StgPretty NativeBranchTable where
       Just d -> branchesDoc P.$$ (P.text "_ -> " <> prettify d)
       Nothing -> branchesDoc
     where
-      branchesDoc = HM.foldrWithKey f (P.text "") bs
+      branchesDoc = HM.foldrWithKey f P.empty bs
       f n syn doc =
         doc P.$$
         (prettify n <> P.space <> P.text "->" <> P.space <> prettify syn)
@@ -232,10 +232,10 @@ instance StgPretty StgSyn where
   prettify (Atom r) = P.char '*' <> prettify r
   prettify (Case s k) =
     (P.text "case" <> P.space <> prettify s <> P.space <> P.text "of") P.$$
-    prettify k
+    P.nest 2 (prettify k)
   prettify (CaseLit s k) =
     (P.text "case" <> P.space <> prettify s <> P.space <> P.text "of") P.$$
-    prettify k
+    P.nest 2 (prettify k)
   prettify (App f xs) =
     prettify f <> P.space <> P.hcat (P.punctuate P.space (map prettify (toList xs)))
   prettify (Let pcs e) =

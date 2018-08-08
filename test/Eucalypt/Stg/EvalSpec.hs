@@ -78,8 +78,8 @@ addTest =
 renderEmptyMap :: StgSyn
 renderEmptyMap = seq_ emitMS emitME
   where
-    emitMS = (appbif_ (intrinsicIndex "EMIT{") [])
-    emitME = (appbif_ (intrinsicIndex "EMIT}") [])
+    emitMS = appbif_ (intrinsicIndex "EMIT{") []
+    emitME = appbif_ (intrinsicIndex "EMIT}") []
     
 -- | A crude rendering function to resolve to NF and pass data
 -- structures to emit
@@ -93,14 +93,14 @@ _render =
       LambdaForm 1 1 False $
       case_
         (Atom (BoundArg 0))
-        [(stgCons, (2, (appfn_ (Local 0) [Local 2]))), (stgNil, (0, emitSE))]
+        [(stgCons, (2, appfn_ (Local 0) [Local 2])), (stgNil, (0, emitSE))]
       -- startList
     , PreClosure (fromList [continueList]) $
       LambdaForm 0 2 False $ seq_ emitSS (appfn_ (Local 0) [BoundArg 1])
       -- wrapBlock
     , PreClosure (fromList [typeSwitch]) $
       LambdaForm 1 1 False $
-      seqall_ [emitMS, (appfn_ (Local 0) [BoundArg 0]), emitME]
+      seqall_ [emitMS, appfn_ (Local 0) [BoundArg 0], emitME]
       -- typeSwitch
     , PreClosure (fromList [emptyList, continueList, startList, wrapBlock]) $
       LambdaForm 4 1 True $
@@ -113,15 +113,15 @@ _render =
     ]
     (Atom (Local 4))
   where
-    emptyList = (Local 0)
-    continueList = (Local 1)
-    startList = (Local 2)
-    wrapBlock = (Local 3)
-    typeSwitch = (Local 4)
-    emitMS = (appbif_ (intrinsicIndex "EMIT{") [])
-    emitME = (appbif_ (intrinsicIndex "EMIT}") [])
-    emitSS = (appbif_ (intrinsicIndex "EMIT[") [])
-    emitSE = (appbif_ (intrinsicIndex "EMIT]") [])
+    emptyList = Local 0
+    continueList = Local 1
+    startList = Local 2
+    wrapBlock = Local 3
+    typeSwitch = Local 4
+    emitMS = appbif_ (intrinsicIndex "EMIT{") []
+    emitME = appbif_ (intrinsicIndex "EMIT}") []
+    emitSS = appbif_ (intrinsicIndex "EMIT[") []
+    emitSE = appbif_ (intrinsicIndex "EMIT]") []
     
 
 

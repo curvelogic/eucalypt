@@ -213,7 +213,7 @@ instance StgPretty MachineState where
         prettify code
       , if null events
           then P.empty
-          else P.nest 2 ((P.text ">>> ") <> (P.text (show events)))
+          else P.nest 2 (P.text ">>> " <> P.text (show events))
       ]
 
 -- | Resolve environment references against local and global

@@ -21,7 +21,7 @@ import Eucalypt.Stg.Event
 import Eucalypt.Stg.Machine
 
 emit :: MachineState -> Event -> IO MachineState
-emit s e = send e >>= \s' -> (return $ setCode s' (ReturnCon stgUnit mempty))
+emit s e = send e >>= \s' -> return $ setCode s' (ReturnCon stgUnit mempty)
   where
     send = machineEmit s s
 
@@ -40,4 +40,4 @@ emitSequenceEnd s _ = emit s OutputSequenceEnd
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do
   let (StgNat n) = xs ! 0
-  emit s (OutputScalar n) >> (return $ setCode s (ReturnLit n))
+  emit s (OutputScalar n) >> return (setCode s (ReturnLit n))
