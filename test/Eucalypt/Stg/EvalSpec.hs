@@ -16,6 +16,7 @@ import Eucalypt.Stg.Eval
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 import Test.Hspec
 

@@ -16,9 +16,9 @@ module Eucalypt.Stg.Intrinsics.Emit
   ) where
 
 import Data.Vector ((!))
-import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Tags
 
 emit :: MachineState -> Event -> IO MachineState
 emit s e = send e >>= \s' -> return $ setCode s' (ReturnCon stgUnit mempty)

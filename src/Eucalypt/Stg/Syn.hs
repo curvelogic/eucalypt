@@ -253,6 +253,9 @@ caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
 caselit_ scrutinee cases df =
   CaseLit scrutinee (NativeBranchTable (HM.fromList cases) df)
 
+let_ :: [PreClosure] -> StgSyn -> StgSyn
+let_ pcs = Let (V.fromList pcs)
+
 letrec_ :: [PreClosure] -> StgSyn -> StgSyn
 letrec_ pcs = LetRec (V.fromList pcs)
 
@@ -262,8 +265,20 @@ appfn_ f xs = App (Ref f) $ V.fromList xs
 appbif_ :: Int -> [Ref] -> StgSyn
 appbif_ f xs = App (Intrinsic f) $ V.fromList xs
 
+appcon_ :: Tag -> [Ref] -> StgSyn
+appcon_ t xs = App (Con t) $ V.fromList xs
+
+lam_ :: Int -> Int -> StgSyn -> LambdaForm
+lam_ f b = LambdaForm (fromIntegral f) (fromIntegral b) False
+
+thunkn_ :: Int -> StgSyn -> LambdaForm
+thunkn_ n = LambdaForm (fromIntegral n) 0 True
+
 thunk_ :: StgSyn -> LambdaForm
-thunk_ = LambdaForm 0 0 True
+thunk_ = thunkn_ 0
+
+box_ :: Native -> LambdaForm
+box_ n = LambdaForm 0 0 False (Atom (Literal n))
 
 seq_ :: StgSyn -> StgSyn -> StgSyn
 seq_ a b = Case a $ BranchTable mempty (Just b)
