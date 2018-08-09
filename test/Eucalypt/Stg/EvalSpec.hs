@@ -50,11 +50,11 @@ block kvs =
 -- A test which finds the head of a list
 headOfList :: StgSyn
 headOfList =
-  letrec_
+  let_
     [ PreClosure mempty head_
     , PreClosure
         mempty
-        (LambdaForm 0 0 True (litList_ [NativeInt 1, NativeInt 2]))
+        (LambdaForm 0 0 True (litList_ 0 [NativeInt 1, NativeInt 2]))
     ]
     (App (Ref (Local 0)) $ Vector.singleton (Local 1))
 
@@ -125,7 +125,6 @@ _render =
     emitSE = appbif_ (intrinsicIndex "EMIT]") []
     
 
-
 returnsConstructor :: Tag -> MachineState -> Bool
 returnsConstructor t MachineState {machineCode = (ReturnCon tag _)} = t == tag
 returnsConstructor _ _ = False
@@ -145,8 +144,8 @@ blockSpec =
       (returnsConstructor stgBlock <$> run s0) `shouldReturn` True
 
     let s1 = initDebugMachineState headOfList mempty
-    it "returns lit 2" $
-      (returnsNative (NativeInt 2) <$> run s1) `shouldReturn` True
+    it "returns lit 1" $
+      (returnsNative (NativeInt 1) <$> run s1) `shouldReturn` True
 
     let s3 = initDebugMachineState addTest mempty
     it "returns true" $

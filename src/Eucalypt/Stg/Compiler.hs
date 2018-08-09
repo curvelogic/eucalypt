@@ -17,7 +17,6 @@ import qualified Data.Array as A
 import Data.Foldable (toList)
 import Data.List (nub)
 import Data.Maybe (fromMaybe)
-import qualified Data.Vector as V
 import Eucalypt.Core.Syn as C
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Syn
@@ -51,59 +50,25 @@ head_ =
        [(stgCons, (2, Atom (Local 1)))]) -- binds after
     -- stack binds
 
-litList_ :: [Native] -> StgSyn
-litList_ nats = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
+-- | Construct a list asa STG LetRec
+list_ :: Int -> [Ref] -> StgSyn
+list_ _ [] = appcon_ stgNil mempty
+list_ envSize refs = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
   where
-    pc0 = PreClosure mempty nilConstructor
-    preclose (i, n) =
-      PreClosure (V.fromList [Literal n, Local i]) consConstructor
-    pcs = zipWith (curry preclose) [0 ..] $ reverse nats
-    pcn = fromIntegral $ length pcs - 1
+    pc0 = pc0_ nilConstructor
+    preclose (i, r) = pc_ [r, Local $ fromIntegral i] consConstructor
+    pcs = zipWith (curry preclose) [envSize ..] $ reverse refs
+    pcn = fromIntegral $ envSize + length pcs
 
--- | Compile an expression (which may appear in argument position in
--- core) into a binding for an STG let.
--- compileBinding :: Eq v => (v -> Ref) -> (C.CoreExp v) -> PreClosure
--- compileBinding context code =
---   case code
---     -- | Bound vars become stack refs, existing free vars that are
---     -- stack refs are shifted to after the args (?) and the closure
---     -- will not be updateable
---         of
---     (C.CoreLambda names scope) ->
---       PreClosure fvv $
---       noUpdate fvn arityW (compile arity context' $ fromScope scope)
---       where context' (Var.F v) =
---               case context v of
---                 (Stack n) -> Stack (n + arityW)
---                 r -> r
---             context' (Var.B n) = (Stack $ fromIntegral n)
---             arity = length names
---             arityW = fromIntegral arity
---     -- | Any other expression does not impact stack arrangement (?)
---     -- and generates a thunk
---     _ -> PreClosure fvv $ doUpdate fvn (compile 0 context code)
---   where
---     fvs =
---       filter (isContextualRef . snd) .
---       map (\v -> (v, context v)) . nub . toList $
---       code
---     fvn = fromIntegral $ length fvs
---     fvv = V.V.fromList (map snd fvs)
-
--- compileArgs :: Eq v => (v -> Ref) -> [C.CoreExp v] -> ([Ref], Int, [PreClosure])
--- compileArgs context xs = undefined
-
--- -- | Compile a Core application into STG. All args must be simple refs
--- -- so we generate bindings for them.
--- compileApp :: Eq v => Int -> (C.CoreExp v) -> [C.CoreExp v] -> StgSyn
--- compileApp n f xs = undefined -- App n (compile)
+litList_ :: Int -> [Native] -> StgSyn
+litList_ envSize nats = list_ envSize $ map Literal nats
 
 -- | Compile a let / letrec binding
 compileBinding :: Eq v => Int -> (v -> Ref) -> C.CoreExp v -> PreClosure
-compileBinding _ context expr = PreClosure free $ compileLambdaForm expr
+compileBinding _ context expr = pc_ free $ compileLambdaForm expr
   where
     fvs = [(v, context v) | v <- nub . toList $ expr]
-    free = V.fromList $ map snd fvs
+    free = map snd fvs
     context' v = fromMaybe (context v) (lookup v fvs)
     contextL' (Var.F v) = context' v
     contextL' (Var.B i) = BoundArg $ fromIntegral i
@@ -112,6 +77,8 @@ compileBinding _ context expr = PreClosure free $ compileLambdaForm expr
         (CoreLambda ns body) ->
           lam_ (length free) (length ns) $
           compile (length free) contextL' $ fromScope body
+        (CoreList []) -> nilConstructor -- TODO: id all std cons?
+        CorePrim{} -> value_ $ compile (length free) context' e
         _ -> thunkn_ (length free) $ compile (length free) context' e
 
 
@@ -141,6 +108,7 @@ compile _ _ (C.CoreBuiltin n) = App (Intrinsic $ intrinsicIndex n) mempty
 compile _ _ (C.CorePrim n) = case n of
   CoreInt i -> Atom (Literal (NativeInt i))
   CoreString s -> Atom (Literal (NativeString s))
+  CoreSymbol s -> Atom (Literal (NativeSymbol s))
   CoreBoolean b -> Atom (Literal (NativeBool b))
   _ -> error "TODO: Unsupported native type"
 
@@ -148,17 +116,19 @@ compile _ _ (C.CorePrim n) = case n of
 compile envSize context (C.CoreBlock content) = let_ [c] b
   where
     c = compileBinding envSize context content
-    cref = Local $ fromIntegral (envSize + 1)
+    cref = Local $ fromIntegral envSize
     b = appcon_ stgBlock [cref]
 
+-- | Empty list
+compile _ _ (C.CoreList []) = appcon_ stgNil mempty
+
 -- | List literals
--- compile envSize context (C.CoreList els) =
---   let_ elbinds body
---   where
---     elBinds = map (compileBinding envSize context) els
---     elCount = length elBinds
---     body = letrec_ map (compileBinding (envSize + elCount) context' )
---     context' = extendContextForScope envSize context elCount
+compile envSize context (C.CoreList els) = let_ elBinds buildList
+  where
+    elBinds = map (compileBinding envSize context) els
+    elCount = length elBinds
+    buildList =
+      list_ (envSize + elCount) $ localsList envSize (envSize + elCount)
 
 compile _ _ _ = undefined
 
@@ -173,4 +143,4 @@ extendContextForScope envSize context count = context'
     newEnvRefs =
       A.array
         (envSize, envSize + count - 1)
-        [(i, Local $ fromIntegral i) | i <- [envSize .. envSize + count]]
+        [(i, Local $ fromIntegral i) | i <- [envSize .. envSize + count - 1]]

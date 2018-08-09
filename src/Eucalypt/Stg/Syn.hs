@@ -35,6 +35,7 @@ class StgPretty a where
 data Native
   = NativeInt !Integer
   | NativeString !String
+  | NativeSymbol !String
   | NativeBool !Bool
   deriving (Eq, Show, Generic)
 
@@ -44,6 +45,7 @@ instance Hashable Native
 instance StgPretty Native where
   prettify (NativeInt i) = P.int (fromIntegral i)
   prettify (NativeString s) = P.text s
+  prettify (NativeSymbol s) = P.colon <> P.text s
   prettify (NativeBool b) =
     if b
       then P.text "#t"
@@ -66,6 +68,9 @@ type RefVec = Vector Ref
 locals :: Word64 -> Word64 -> RefVec
 locals from to =
   V.generate (fromIntegral (to - from)) $ Local . (from +) . fromIntegral
+
+localsList :: Int -> Int -> [Ref]
+localsList from to = [Local $ fromIntegral i | i <- [from .. to - 1]]
 
 -- | Something which has reference to (bound arguments); once these
 -- are located in an environment they can become environment refs
@@ -280,11 +285,20 @@ thunk_ = thunkn_ 0
 box_ :: Native -> LambdaForm
 box_ n = LambdaForm 0 0 False (Atom (Literal n))
 
+value_ :: StgSyn -> LambdaForm
+value_ = LambdaForm 0 0 False
+
 seq_ :: StgSyn -> StgSyn -> StgSyn
 seq_ a b = Case a $ BranchTable mempty (Just b)
 
 seqall_ :: [StgSyn] -> StgSyn
 seqall_ = foldl1 seq_
+
+pc0_ :: LambdaForm -> PreClosure
+pc0_ = PreClosure mempty
+
+pc_ :: [Ref] -> LambdaForm -> PreClosure
+pc_ = PreClosure . V.fromList
 
 -- | Standard constructor - applies saturated data constructor of tag
 -- @t@ to refs on stack.
