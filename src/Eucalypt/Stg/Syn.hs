@@ -23,6 +23,7 @@ import qualified Data.Vector as V
 import Data.Word
 import GHC.Generics (Generic)
 import qualified Text.PrettyPrint as P
+import Test.QuickCheck (Arbitrary(..), oneof)
 
 -- | Pretty printable syntax element
 class StgPretty a where
@@ -50,6 +51,15 @@ instance StgPretty Native where
     if b
       then P.text "#t"
       else P.text "#f"
+
+instance Arbitrary Native where
+  arbitrary =
+    oneof
+      [ NativeInt <$> arbitrary
+      , NativeString <$> arbitrary
+      , NativeSymbol <$> arbitrary
+      , NativeBool <$> arbitrary
+      ]
 
 -- | The various types of reference from STG code to other closures
 -- and values.
@@ -250,6 +260,9 @@ instance StgPretty StgSyn where
     P.hang (P.text "letrec") 7 (P.vcat (map prettify (toList pcs))) P.$$
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
 
+force_ :: StgSyn -> StgSyn -> StgSyn
+force_ scrutinee df = Case scrutinee (BranchTable mempty (Just df))
+
 case_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn
 case_ scrutinee cases =
   Case scrutinee (BranchTable (Map.fromList cases) Nothing)
@@ -257,6 +270,9 @@ case_ scrutinee cases =
 caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
 caselit_ scrutinee cases df =
   CaseLit scrutinee (NativeBranchTable (HM.fromList cases) df)
+
+forcelit_ :: StgSyn -> StgSyn -> StgSyn
+forcelit_ scrutinee df = CaseLit scrutinee (NativeBranchTable mempty (Just df))
 
 let_ :: [PreClosure] -> StgSyn -> StgSyn
 let_ pcs = Let (V.fromList pcs)

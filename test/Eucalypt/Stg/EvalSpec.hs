@@ -18,6 +18,7 @@ import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.StgTestUtil
 import Test.Hspec
 
 main :: IO ()
@@ -123,34 +124,23 @@ _render =
     emitME = appbif_ (intrinsicIndex "EMIT}") []
     emitSS = appbif_ (intrinsicIndex "EMIT[") []
     emitSE = appbif_ (intrinsicIndex "EMIT]") []
-    
 
-returnsConstructor :: Tag -> MachineState -> Bool
-returnsConstructor t MachineState {machineCode = (ReturnCon tag _)} = t == tag
-returnsConstructor _ _ = False
+machine :: StgSyn -> IO MachineState
+machine = initDebugMachineState
 
-returnsNative :: Native -> MachineState -> Bool
-returnsNative n MachineState {machineCode = (ReturnLit ret)} = ret == n
-returnsNative _ _ = False
-
-emits :: [Event] -> MachineState -> Bool
-emits events MachineState {machineDebugEmitLog = logged} = events == logged
+test :: StgSyn -> IO MachineState
+test s = machine s >>= run
 
 blockSpec :: Spec
 blockSpec =
   describe "STG Evaluation" $ do
-    let s0 = initMachineState (block [kv "a" 1, kv "b" 2]) mempty
     it "evals block letrec to ReturnCon" $
-      (returnsConstructor stgBlock <$> run s0) `shouldReturn` True
-
-    let s1 = initDebugMachineState headOfList mempty
+      (returnsConstructor stgBlock <$> test (block [kv "a" 1, kv "b" 2])) `shouldReturn`
+      True
     it "returns lit 1" $
-      (returnsNative (NativeInt 1) <$> run s1) `shouldReturn` True
-
-    let s3 = initDebugMachineState addTest mempty
+      (returnsNative (NativeInt 1) <$> test headOfList) `shouldReturn` True
     it "returns true" $
-      (returnsNative (NativeBool True) <$> run s3) `shouldReturn` True
-
-    let s4 = initDebugMachineState renderEmptyMap mempty
+      (returnsNative (NativeBool True) <$> test addTest) `shouldReturn` True
     it "emits empty map" $
-      (emits [OutputMappingStart, OutputMappingEnd] <$> run s4) `shouldReturn` True
+      (emits [OutputMappingStart, OutputMappingEnd] <$> test renderEmptyMap) `shouldReturn`
+      True

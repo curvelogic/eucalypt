@@ -28,6 +28,9 @@ data StgException
   | IntrinsicIndexOutOfRange
   | SteppingTerminated
   | AttemptToResolveBoundArg
+  | IntrinsicExpectedNativeList
+  | IntrinsicExpectedStringList
+  | InvalidRegex !String
   deriving (Typeable, Show, Eq)
 
 instance Exception StgException

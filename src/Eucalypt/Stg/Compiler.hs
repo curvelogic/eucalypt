@@ -17,6 +17,7 @@ import qualified Data.Array as A
 import Data.Foldable (toList)
 import Data.List (nub)
 import Data.Maybe (fromMaybe)
+import qualified Data.Vector as V
 import Eucalypt.Core.Syn as C
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Syn
@@ -26,18 +27,6 @@ import Eucalypt.Stg.Tags
 --
 -- Basic building blocks for compilation include constructor tags,
 -- standard constructors, smart constructors and recipes.
-
-nilConstructor :: LambdaForm
-nilConstructor = standardConstructor 0 stgNil
-
-consConstructor :: LambdaForm
-consConstructor = standardConstructor 2 stgCons
-
-blockConstructor :: LambdaForm
-blockConstructor = standardConstructor 1 stgBlock
-
-unitConstructor :: LambdaForm
-unitConstructor = standardConstructor 0 stgUnit
 
 head_ :: LambdaForm
 head_ =
@@ -62,6 +51,15 @@ list_ envSize refs = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
 
 litList_ :: Int -> [Native] -> StgSyn
 litList_ envSize nats = list_ envSize $ map Literal nats
+
+convert :: C.Primitive -> Native
+convert (CoreInt n) = NativeInt n
+convert (CoreFloat _) = error "No native double"
+convert (CoreSymbol s) = NativeSymbol s
+convert (CoreString s) = NativeString s
+convert (CoreBoolean b) = NativeBool b
+convert CoreNull = error "No native null"
+
 
 -- | Compile a let / letrec binding
 compileBinding :: Eq v => Int -> (v -> Ref) -> C.CoreExp v -> PreClosure
@@ -105,12 +103,7 @@ compile _ _ (C.CoreBuiltin n) = App (Intrinsic $ intrinsicIndex n) mempty
 -- | Compile primitive to STG native.
 --
 -- TODO: unify native handling
-compile _ _ (C.CorePrim n) = case n of
-  CoreInt i -> Atom (Literal (NativeInt i))
-  CoreString s -> Atom (Literal (NativeString s))
-  CoreSymbol s -> Atom (Literal (NativeSymbol s))
-  CoreBoolean b -> Atom (Literal (NativeBool b))
-  _ -> error "TODO: Unsupported native type"
+compile _ _ (C.CorePrim n) = Atom (Literal (convert n))
 
 -- | Block literals
 compile envSize context (C.CoreBlock content) = let_ [c] b
@@ -129,6 +122,34 @@ compile envSize context (C.CoreList els) = let_ elBinds buildList
     elCount = length elBinds
     buildList =
       list_ (envSize + elCount) $ localsList envSize (envSize + elCount)
+
+
+-- | Compile application, ensuring all args are atoms, allocating as
+-- necessary to achieve this.
+compile envSize context (C.CoreApply f xs) =
+  if null pcs
+    then App func $ V.fromList xrefs
+    else let_ pcs (App func $ V.fromList xrefs)
+  where
+    (pcs0, func) =
+      case op f of
+        (CoreBuiltin n) -> ([], Intrinsic $ intrinsicIndex n)
+        (CoreVar a) -> ([], Ref $ context a)
+        _ ->
+          ( [compileBinding envSize context f]
+          , Ref (Local $ fromIntegral envSize))
+    acc (ps, xrs) x =
+      case x of
+        (CoreVar a) -> (ps, xrs ++ [context a])
+        (CorePrim n) -> (ps, xrs ++ [Literal $ convert n])
+        _ ->
+          ( ps ++ [compileBinding envSize context x]
+          , [Local $ fromIntegral $ envSize + length ps])
+    (pcs, xrefs) = foldl acc (pcs0, []) xs
+    op fn =
+      case fn of
+        (CoreOperator _x _p e) -> e
+        _ -> fn
 
 compile _ _ _ = undefined
 

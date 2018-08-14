@@ -24,16 +24,6 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 
--- | Build a closure from a STG PreClosure
-buildClosure ::
-     MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
-buildClosure le ms (PreClosure captures code) =
-  Closure code <$> vals le ms captures
-
--- | Allocate new closure.
-allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
-allocClosure le ms cc = buildClosure le ms cc >>= allocate
-
 -- | Allocate a PAP to record args provided so far and the function
 -- info already discovered
 allocPartial :: ValVec -> MachineState -> LambdaForm -> ValVec -> IO Address

@@ -35,13 +35,11 @@ addressSpec = do
     dummyClosure
   describe "MachineState" $ do
     it "initialises with blank stack" $
-      machineStack (initMachineState (App (Con 99) mempty) mempty) `shouldBe` mempty
+      machineStack <$>
+      initStandardMachineState (App (Con 99) mempty) `shouldReturn` mempty
     it "resolves env refs" $
       (do r <- allocate dummyClosure
-          s <-
-            resolveHeapObject
-              (singleton (StgAddr r))
-              (initMachineState (App (Con 99) mempty) mempty)
-              (Local 0)
+          ms <- initStandardMachineState (App (Con 99) mempty)
+          s <- resolveHeapObject (singleton (StgAddr r)) ms (Local 0)
           peek s) `shouldReturn`
       dummyClosure

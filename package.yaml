@@ -42,7 +42,9 @@ library:
     - path
     - pretty
     - primitive
+    - QuickCheck
     - regex-pcre-builtin
+    - pcre-heavy
     - resourcet
     - safe
     - safe-exceptions

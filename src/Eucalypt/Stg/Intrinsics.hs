@@ -14,6 +14,7 @@ import Data.List (findIndex)
 import Data.Maybe (fromJust)
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
+import qualified Eucalypt.Stg.Intrinsics.Str as Str
 import Eucalypt.Stg.Machine
 
 data IntrinsicInfo = IntrinsicInfo
@@ -32,6 +33,10 @@ intrinsics =
   , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart
   , IntrinsicInfo "EMIT]" 0 Emit.emitSequenceEnd
   , IntrinsicInfo "EMITx" 1 Emit.emitScalar
+  , IntrinsicInfo "SPLIT" 2 Str.split
+  , IntrinsicInfo "MATCH" 2 Str.match
+  , IntrinsicInfo "MATCHES" 2 Str.matches
+  , IntrinsicInfo "JOIN" 2 Str.join
   ]
 
 -- | Used during compilation to find the index at which an intrinsic

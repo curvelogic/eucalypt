@@ -9,7 +9,7 @@ Stability   : experimental
 
 module Eucalypt.Stg.Tags where
 
-import Eucalypt.Stg.Syn (Tag)
+import Eucalypt.Stg.Syn (LambdaForm, Tag, standardConstructor)
 
 stgNil :: Tag
 stgNil = 0
@@ -22,3 +22,15 @@ stgBlock = 2
 
 stgUnit :: Tag
 stgUnit = 3
+
+nilConstructor :: LambdaForm
+nilConstructor = standardConstructor 0 stgNil
+
+consConstructor :: LambdaForm
+consConstructor = standardConstructor 2 stgCons
+
+blockConstructor :: LambdaForm
+blockConstructor = standardConstructor 1 stgBlock
+
+unitConstructor :: LambdaForm
+unitConstructor = standardConstructor 0 stgUnit

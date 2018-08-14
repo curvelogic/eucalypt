@@ -21,7 +21,7 @@ binop :: (Integer -> Integer -> Integer) -> MachineState -> ValVec -> IO Machine
 binop op ms (ValVec args) = do
   let (StgNat (NativeInt lhs)) = args ! 0
   let (StgNat (NativeInt rhs)) = args ! 1
-  return $ tick $ setCode ms (ReturnLit (NativeInt (op lhs rhs)))
+  return $ setCode ms (ReturnLit (NativeInt (op lhs rhs)))
 
 add :: MachineState -> ValVec -> IO MachineState
 add = binop (+)

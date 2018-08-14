@@ -22,6 +22,7 @@ import qualified Data.Vector as Vector
 import Data.Word
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 import qualified Text.PrettyPrint as P
@@ -166,19 +167,29 @@ data MachineState = MachineState
     -- ^ log of emitted events for debug / testing
   }
 
+allocGlobal :: String -> LambdaForm -> IO StgValue
+allocGlobal _name impl =
+  StgAddr <$> allocate (Closure {closureCode = impl, closureEnv = mempty})
+
 -- | Initialise machine state.
-initMachineState :: StgSyn -> HashMap String StgValue -> MachineState
-initMachineState stg ge =
-  MachineState
-    { machineCode = Eval stg mempty
-    , machineGlobals = ge
-    , machineStack = mempty
-    , machineCounter = 0
-    , machineTerminated = False
-    , machineTrace = \_ -> return ()
-    , machineEmit = \s _ -> return s
-    , machineDebugEmitLog = []
-    }
+initMachineState :: StgSyn -> HashMap String LambdaForm -> IO MachineState
+initMachineState stg ge = do
+  genv <- HM.traverseWithKey allocGlobal ge
+  return $
+    MachineState
+      { machineCode = Eval stg mempty
+      , machineGlobals = genv
+      , machineStack = mempty
+      , machineCounter = 0
+      , machineTerminated = False
+      , machineTrace = \_ -> return ()
+      , machineEmit = \s _ -> return s
+      , machineDebugEmitLog = []
+      }
+
+-- | Initialise machine state with the standard global defs.
+initStandardMachineState :: StgSyn -> IO MachineState
+initStandardMachineState s = initMachineState s standardGlobals
 
 -- | A debug dump to use as machine's trace function
 dump :: MachineState -> IO ()
@@ -191,11 +202,10 @@ dumpEmission ms@MachineState {machineDebugEmitLog = es} e =
 
 -- | Initialise machine state with a trace function that dumps state
 -- every step
-initDebugMachineState :: StgSyn -> HashMap String StgValue -> MachineState
-initDebugMachineState stg ge =
-  ms {machineTrace = dump, machineEmit = dumpEmission}
-  where
-    ms = initMachineState stg ge
+initDebugMachineState :: StgSyn -> IO MachineState
+initDebugMachineState stg = do
+  ms <- initStandardMachineState stg
+  return $ ms {machineTrace = dump, machineEmit = dumpEmission}
 
 -- | Dump machine state for debugging.
 instance StgPretty MachineState where
@@ -256,3 +266,13 @@ tick ms@MachineState {machineCounter = n} = ms {machineCounter = n + 1}
 -- | Set the next instruction
 setCode :: MachineState -> Code -> MachineState
 setCode ms@MachineState {} c = ms {machineCode = c}
+
+-- | Build a closure from a STG PreClosure
+buildClosure ::
+     MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
+buildClosure le ms (PreClosure captures code) =
+  Closure code <$> vals le ms captures
+
+-- | Allocate new closure.
+allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
+allocClosure le ms cc = buildClosure le ms cc >>= allocate
