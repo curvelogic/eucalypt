@@ -29,6 +29,7 @@ import Eucalypt.Driver.IOSource (prepareIOUnit)
 import Eucalypt.Driver.Input (Input(..), Locator(..))
 import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
+import qualified Eucalypt.Driver.Stg as STG
 import Eucalypt.Render (configureRenderer)
 import Eucalypt.Render.Classes
 import Eucalypt.Reporting.Error (EucalyptError(..))
@@ -261,9 +262,12 @@ evaluate opts whnfM = do
   unless (null failures) $ reportErrors failures >> exitFailure
 
   -- Stage 7: drive the evaluation by rendering it
-  render cookedEvaluand >>= \case
-    Left s -> reportErrors [s] >> return (ExitFailure 1)
-    Right bytes -> outputBytes opts bytes >> return ExitSuccess
+  if optionXStg opts
+    then STG.dumpStg opts cookedEvaluand >> return ExitSuccess
+    else render cookedEvaluand >>= \case
+           Left s -> reportErrors [s] >> return (ExitFailure 1)
+           Right bytes -> outputBytes opts bytes >> return ExitSuccess
+
   where
     render = renderBytes (configureRenderer opts) whnfM
     cmd = optionCommand opts

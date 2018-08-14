@@ -11,7 +11,7 @@ module Eucalypt.Stg.Intrinsics where
 
 import qualified Data.Array as A
 import Data.List (findIndex)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromMaybe)
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
@@ -42,7 +42,10 @@ intrinsics =
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available
 intrinsicIndex :: String -> Int
-intrinsicIndex n = fromJust $ findIndex ((n ==) . name) intrinsics
+intrinsicIndex n =
+  fromMaybe
+    (error $ "No such intrinsic: " ++ n)
+    (findIndex ((n ==) . name) intrinsics)
 
 -- | Intrinsics packed into an array for faster access
 intrinsicArray :: A.Array Int (MachineState -> ValVec -> IO MachineState)

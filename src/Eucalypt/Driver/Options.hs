@@ -31,6 +31,7 @@ data Command
   | DumpEvalSubstituted
   | DumpCooked
   | DumpFinalCore
+  | DumpStg
   deriving (Show, Eq)
 
 
@@ -45,6 +46,7 @@ data EucalyptOptions = EucalyptOptions
   , optionInhibitPrelude :: Bool
   , optionCommand :: Command
   , optionInputs :: [Input]
+  , optionXStg :: Bool
   } deriving (Show)
 
 
@@ -97,6 +99,10 @@ commandOption =
     DumpFinalCore
     (long "dump-core" <>
      help "Dump final core syntax prior to evaluation") <|>
+  flag'
+    DumpStg
+    (long "dump-stg" <>
+     help "Dump STG syntax prior to evaluation") <|>
   flag
     Evaluate
     Parse
@@ -129,7 +135,9 @@ options = EucalyptOptions
              <> help "Don't include standard prelude" )
   <*> commandOption
   <*> many (argument parseInputArgument (metavar "INPUTS..."))
-
+  <*> switch ( long "XSTG"
+             <> short 'G'
+             <> help "Turn on experimental STG implementation")
 
 
 -- | @findInParents f path@ applies @f@ to @path@ and its 'parent's until

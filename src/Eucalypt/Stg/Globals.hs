@@ -18,6 +18,10 @@ import qualified Data.HashMap.Strict as HM
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
+-- | __CAT
+cat :: LambdaForm
+cat = lam_ 0 2 $ appfn_ (BoundArg 1) [BoundArg 0]
+
 -- | Strictly evaluate a list of natives to NF
 seqNatList :: LambdaForm
 seqNatList =
@@ -35,4 +39,4 @@ seqNatList =
     ]
 
 standardGlobals :: HM.HashMap String LambdaForm
-standardGlobals = HM.fromList [("seqNatList", seqNatList)]
+standardGlobals = HM.fromList [("CAT", cat), ("seqNatList", seqNatList)]

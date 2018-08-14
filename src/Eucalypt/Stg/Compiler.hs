@@ -19,7 +19,6 @@ import Data.List (nub)
 import Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import Eucalypt.Core.Syn as C
-import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
@@ -98,7 +97,7 @@ compile _ context (C.CoreVar v) = Atom $ context v
 -- | Compile a builtin on its own, NB this creates a partial
 -- application, we can do better by compiling the builting in the
 -- context of a call to it
-compile _ _ (C.CoreBuiltin n) = App (Intrinsic $ intrinsicIndex n) mempty
+compile _ _ (C.CoreBuiltin n) = App (Ref (Global n)) mempty
 
 -- | Compile primitive to STG native.
 --
@@ -133,7 +132,7 @@ compile envSize context (C.CoreApply f xs) =
   where
     (pcs0, func) =
       case op f of
-        (CoreBuiltin n) -> ([], Intrinsic $ intrinsicIndex n)
+        (CoreBuiltin n) -> ([], Ref $ Global n)
         (CoreVar a) -> ([], Ref $ context a)
         _ ->
           ( [compileBinding envSize context f]
@@ -151,7 +150,16 @@ compile envSize context (C.CoreApply f xs) =
         (CoreOperator _x _p e) -> e
         _ -> fn
 
-compile _ _ _ = undefined
+compile _ _ (CoreLookup _ _) = error "Cannot compile lookup"
+compile _ _ (CoreName _) = error "Cannot compile name"
+compile _ _ (CoreMeta _ _) = error "Cannot compile meta"
+compile _ _ (CoreArgTuple _) = error "Cannot compile arg tuple"
+compile _ _ (CoreOpSoup _) = error "Cannot compile op soup"
+compile _ _ CoreOperator{} = error "Cannot compile op"
+compile _ _ (CoreLambda _ _) = error "Cannot compile lambda"
+compile _ _ CorePAp{} = error "Cannot compile PAp"
+compile _ _ (CoreTraced _) = error "Cannot compile traced"
+compile _ _ (CoreChecked _ _) = error "Cannot compile checked"
 
 emptyContext :: Eq v => v -> Ref
 emptyContext _  = error "Missing from context during compilation"
