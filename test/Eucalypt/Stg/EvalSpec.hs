@@ -14,6 +14,7 @@ import qualified Data.Vector as Vector
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval
 import Eucalypt.Stg.Event
+import Eucalypt.Stg.Globals (euHead)
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -52,7 +53,7 @@ block kvs =
 headOfList :: StgSyn
 headOfList =
   let_
-    [ PreClosure mempty head_
+    [ PreClosure mempty euHead
     , PreClosure
         mempty
         (LambdaForm 0 0 True (litList_ 0 [NativeInt 1, NativeInt 2]))

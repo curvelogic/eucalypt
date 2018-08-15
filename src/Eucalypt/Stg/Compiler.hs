@@ -27,16 +27,6 @@ import Eucalypt.Stg.Tags
 -- Basic building blocks for compilation include constructor tags,
 -- standard constructors, smart constructors and recipes.
 
-head_ :: LambdaForm
-head_ =
-  LambdaForm
-    0
-    1
-    False
-    (case_
-       (Atom (BoundArg 0))
-       [(stgCons, (2, Atom (Local 1)))]) -- binds after
-    -- stack binds
 
 -- | Construct a list asa STG LetRec
 list_ :: Int -> [Ref] -> StgSyn
@@ -150,9 +140,17 @@ compile envSize context (C.CoreApply f xs) =
         (CoreOperator _x _p e) -> e
         _ -> fn
 
-compile _ _ (CoreLookup _ _) = error "Cannot compile lookup"
+
+compile envSize context (CoreLookup obj nm) =
+  let_
+    [compileBinding envSize context obj]
+    (appfn_ (Global "LOOKUP") [Literal (NativeSymbol nm)])
+
+
+-- | TODO: implement metadata in STG
+compile envSize context (CoreMeta _meta obj) = compile envSize context obj
+
 compile _ _ (CoreName _) = error "Cannot compile name"
-compile _ _ (CoreMeta _ _) = error "Cannot compile meta"
 compile _ _ (CoreArgTuple _) = error "Cannot compile arg tuple"
 compile _ _ (CoreOpSoup _) = error "Cannot compile op soup"
 compile _ _ CoreOperator{} = error "Cannot compile op"
