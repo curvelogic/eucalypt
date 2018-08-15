@@ -28,10 +28,13 @@ main = hspec spec
 spec :: Spec
 spec = blockSpec
 
+nat :: Integer -> Native
+nat n = NativeNumber $ fromInteger n
+
 kv :: String -> Integer -> StgSyn
 kv k v =
   let kn = NativeString k
-      vn = NativeInt v
+      vn = nat v
       pcs =
         [ PreClosure mempty nilConstructor
         , PreClosure (fromList [Literal vn, Local 0]) consConstructor
@@ -56,7 +59,7 @@ headOfList =
     [ PreClosure mempty euHead
     , PreClosure
         mempty
-        (LambdaForm 0 0 True (litList_ 0 [NativeInt 1, NativeInt 2]))
+        (LambdaForm 0 0 True (litList_ 0 [nat 1, nat 2]))
     ]
     (App (Ref (Local 0)) $ Vector.singleton (Local 1))
 
@@ -64,15 +67,14 @@ headOfList =
 addTest :: StgSyn
 addTest =
   letrec_
-    [ PreClosure mempty $ LambdaForm 0 0 False (Atom (Literal (NativeInt 1)))
-    , PreClosure mempty $ LambdaForm 0 0 False (Atom (Literal (NativeInt 2)))
+    [ PreClosure mempty $ LambdaForm 0 0 False (Atom (Literal $ nat 1))
+    , PreClosure mempty $ LambdaForm 0 0 False (Atom (Literal $ nat 2))
     , PreClosure (fromList [Local 0, Local 1]) $
       thunk_ $
       caselit_ (Atom (Local 0)) mempty $
-      Just
-        (caselit_ (Atom (Local 1)) mempty $ Just (add [Local 2, Local 3]))
+      Just (caselit_ (Atom (Local 1)) mempty $ Just (add [Local 2, Local 3]))
     ] $
-  caselit_ (Atom (Local 2)) [(NativeInt 3, Atom (Literal (NativeBool True)))] $
+  caselit_ (Atom (Local 2)) [(nat 3, Atom (Literal (NativeBool True)))] $
   Just (Atom (Literal (NativeBool False)))
   where
     add = appbif_ $ intrinsicIndex "ADD"
@@ -139,7 +141,7 @@ blockSpec =
       (returnsConstructor stgBlock <$> test (block [kv "a" 1, kv "b" 2])) `shouldReturn`
       True
     it "returns lit 1" $
-      (returnsNative (NativeInt 1) <$> test headOfList) `shouldReturn` True
+      (returnsNative (nat 1) <$> test headOfList) `shouldReturn` True
     it "returns true" $
       (returnsNative (NativeBool True) <$> test addTest) `shouldReturn` True
     it "emits empty map" $

@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DeriveGeneric  #-}
 {-|
 Module      : Eucalypt.Stg.Syn
@@ -18,12 +19,13 @@ import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
 import qualified Data.Map as Map
+import Data.Scientific
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Word
 import GHC.Generics (Generic)
 import qualified Text.PrettyPrint as P
-import Test.QuickCheck (Arbitrary(..), oneof)
+import Test.QuickCheck (Arbitrary(..), oneof, Gen)
 
 -- | Pretty printable syntax element
 class StgPretty a where
@@ -34,7 +36,7 @@ class StgPretty a where
 --
 -- Not worried about efficiency of representation for now.
 data Native
-  = NativeInt !Integer
+  = NativeNumber !Scientific
   | NativeString !String
   | NativeSymbol !String
   | NativeBool !Bool
@@ -44,7 +46,7 @@ data Native
 instance Hashable Native
 
 instance StgPretty Native where
-  prettify (NativeInt i) = P.int (fromIntegral i)
+  prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
   prettify (NativeString s) = P.text s
   prettify (NativeSymbol s) = P.colon <> P.text s
   prettify (NativeBool b) =
@@ -52,10 +54,15 @@ instance StgPretty Native where
       then P.text "#t"
       else P.text "#f"
 
+instance Arbitrary Scientific where
+  arbitrary =
+    oneof
+      [fromInteger <$> arbitrary, fromFloatDigits <$> (arbitrary :: Gen Float)]
+
 instance Arbitrary Native where
   arbitrary =
     oneof
-      [ NativeInt <$> arbitrary
+      [ NativeNumber <$> arbitrary
       , NativeString <$> arbitrary
       , NativeSymbol <$> arbitrary
       , NativeBool <$> arbitrary

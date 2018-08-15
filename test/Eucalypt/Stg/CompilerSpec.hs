@@ -26,13 +26,13 @@ spec :: Spec
 spec = do
   describe "litList_" $
     it "creates list of natives" $ do
-      let l = litList_ 0 (map NativeInt [0, 1, 2])
+      let l = litList_ 0 (map (NativeNumber . fromInteger) [0, 1, 2])
       (P.render . prettify) l `shouldBe`
         "letrec {} \\ 0 0 -> C|0 \n       {2, E[0]} \\ 2 0 -> C|1 E[0] E[1]\n       {1, E[1]} \\ 2 0 -> C|1 E[0] E[1]\n       {0, E[2]} \\ 2 0 -> C|1 E[0] E[1]\n in E[3] "
   describe "compilation" $ do
     context "compiles primitives" $ do
       it "compiles ints" $
-        comp (C.int 2) `shouldBe` Atom (Literal (NativeInt 2))
+        comp (C.int 2) `shouldBe` Atom (Literal (NativeNumber 2))
       it "compiles strings" $
         comp (C.str "foo") `shouldBe` Atom (Literal (NativeString "foo"))
       it "compiles strings" $
@@ -43,7 +43,7 @@ spec = do
       it "compiles an singleton list" $
         comp (C.CoreList [C.int 2]) `shouldBe`
         let_
-          [pc0_ $ box_ (NativeInt 2)]
+          [pc0_ $ box_ (NativeNumber 2)]
           (letrec_
              [pc0_ nilConstructor, pc_ [Local 0, Local 1] consConstructor]
              (appfn_ (Local 2) mempty))

@@ -17,6 +17,7 @@ import qualified Data.Array as A
 import Data.Foldable (toList)
 import Data.List (nub)
 import Data.Maybe (fromMaybe)
+import Data.Scientific
 import qualified Data.Vector as V
 import Eucalypt.Core.Syn as C
 import Eucalypt.Stg.Syn
@@ -42,8 +43,8 @@ litList_ :: Int -> [Native] -> StgSyn
 litList_ envSize nats = list_ envSize $ map Literal nats
 
 convert :: C.Primitive -> Native
-convert (CoreInt n) = NativeInt n
-convert (CoreFloat _) = error "No native double"
+convert (CoreInt n) = NativeNumber $ fromIntegral n
+convert (CoreFloat d) = NativeNumber $ fromFloatDigits d
 convert (CoreSymbol s) = NativeSymbol s
 convert (CoreString s) = NativeString s
 convert (CoreBoolean b) = NativeBool b
@@ -150,10 +151,12 @@ compile envSize context (CoreLookup obj nm) =
 -- | TODO: implement metadata in STG
 compile envSize context (CoreMeta _meta obj) = compile envSize context obj
 
+-- | Operator metadata no longer required by the time we hit STG, pass through
+compile envSize context (CoreOperator _x _p expr) = compile envSize context expr
+
 compile _ _ (CoreName _) = error "Cannot compile name"
 compile _ _ (CoreArgTuple _) = error "Cannot compile arg tuple"
 compile _ _ (CoreOpSoup _) = error "Cannot compile op soup"
-compile _ _ CoreOperator{} = error "Cannot compile op"
 compile _ _ (CoreLambda _ _) = error "Cannot compile lambda"
 compile _ _ CorePAp{} = error "Cannot compile PAp"
 compile _ _ (CoreTraced _) = error "Cannot compile traced"

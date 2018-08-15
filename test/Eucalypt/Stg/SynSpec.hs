@@ -53,13 +53,15 @@ argRefSpec =
         9
         (NativeBranchTable
            (HM.fromList
-              [ (NativeInt 0, Atom (BoundArg 0))
-              , (NativeInt 1, Atom (BoundArg 1))
+              [ (NativeNumber 0, Atom (BoundArg 0))
+              , (NativeNumber 1, Atom (BoundArg 1))
               ])
            (Just (Atom (BoundArg 2)))) `shouldBe`
       NativeBranchTable
         (HM.fromList
-           [(NativeInt 0, Atom (Local 9)), (NativeInt 1, Atom (Local 10))])
+           [ (NativeNumber 0, Atom (Local 9))
+           , (NativeNumber 1, Atom (Local 10))
+           ])
         (Just (Atom (Local 11)))
     it "adjusts func refs" $
       argsAt 9 (Ref (BoundArg 0)) `shouldBe` Ref (Local 9)
@@ -85,11 +87,11 @@ argRefSpec =
            ]
            (Atom (BoundArg 0))) `shouldBe`
       letrec_
-         [ PreClosure
-             (fromList [Local 9])
-             (LambdaForm 1 0 False (Atom (Local 0)))
-         , PreClosure
-             (fromList [Local 1])
-             (LambdaForm 0 1 False (Atom (BoundArg 0)))
-         ]
-         (Atom (Local 9))
+        [ PreClosure
+            (fromList [Local 9])
+            (LambdaForm 1 0 False (Atom (Local 0)))
+        , PreClosure
+            (fromList [Local 1])
+            (LambdaForm 0 1 False (Atom (BoundArg 0)))
+        ]
+        (Atom (Local 9))

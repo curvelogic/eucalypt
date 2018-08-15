@@ -29,7 +29,7 @@ main = hspec spec
 readsReturns :: [Native] -> Property
 readsReturns ns =
   monadicIO $ do
-    ms <- run $ initStandardMachineState (Atom (Literal (NativeInt 99)))
+    ms <- run $ initStandardMachineState (Atom (Literal (NativeSymbol "foo")))
     ms' <- run $ returnNatList ms ns
     case ms' of
       MachineState {machineCode = (ReturnCon c (ValVec xs))}
