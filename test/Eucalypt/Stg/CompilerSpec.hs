@@ -10,11 +10,12 @@ module Eucalypt.Stg.CompilerSpec (main, spec)
 where
 
 import Eucalypt.Core.Syn as C
+import Eucalypt.Stg.Compiler
+import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
-import Eucalypt.Stg.Compiler
-import Text.PrettyPrint as P
 import Test.Hspec
+import Text.PrettyPrint as P
 
 main :: IO ()
 main = hspec spec

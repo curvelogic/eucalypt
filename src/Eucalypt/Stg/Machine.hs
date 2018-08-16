@@ -22,7 +22,6 @@ import qualified Data.Vector as Vector
 import Data.Word
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Error
-import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 import qualified Text.PrettyPrint as P
@@ -184,26 +183,6 @@ initMachineState stg ge = do
       , machineDebugEmitLog = []
       }
 
--- | Initialise machine state with the standard global defs.
-initStandardMachineState :: StgSyn -> IO MachineState
-initStandardMachineState s = initMachineState s standardGlobals
-
--- | A debug dump to use as machine's trace function
-dump :: MachineState -> IO ()
-dump ms = putStrLn $ P.render $ prettify ms
-
--- | An emit function to use for debugging
-dumpEmission :: MachineState -> Event -> IO MachineState
-dumpEmission ms@MachineState {machineDebugEmitLog = es} e =
-  return ms {machineDebugEmitLog = es ++ [e]}
-
--- | Initialise machine state with a trace function that dumps state
--- every step
-initDebugMachineState :: StgSyn -> IO MachineState
-initDebugMachineState stg = do
-  ms <- initStandardMachineState stg
-  return $ ms {machineTrace = dump, machineEmit = dumpEmission}
-
 -- | Dump machine state for debugging.
 instance StgPretty MachineState where
   prettify MachineState { machineCode = code
@@ -233,7 +212,9 @@ val (ValVec le) _ (Local l) =
     Just v -> return v
     _ -> throwM EnvironmentIndexOutOfRange
 val _ _ (BoundArg _) = throwM AttemptToResolveBoundArg
-val _ MachineState {machineGlobals = g} (Global nm) = return $ g HM.! nm
+val _ MachineState {machineGlobals = g} (Global nm) = case HM.lookup nm g of
+  Just v -> return v
+  _ -> throwM $ UnknownGlobal nm
 val _ _ (Literal n) = return $ StgNat n
 
 -- | Resolve a vector of refs against an environment to create

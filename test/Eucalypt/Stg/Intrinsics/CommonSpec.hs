@@ -16,6 +16,7 @@ import qualified Data.Vector as V
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.StandardMachine
 import Eucalypt.Stg.Intrinsics.Common
 import Test.QuickCheck
 import Test.QuickCheck.Monadic (run, assert, monadicIO)

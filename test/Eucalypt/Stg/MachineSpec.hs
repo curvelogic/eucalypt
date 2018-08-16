@@ -11,6 +11,7 @@ where
 
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.StandardMachine
 import Test.Hspec
 
 main :: IO ()

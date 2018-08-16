@@ -259,6 +259,10 @@ case_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn
 case_ scrutinee cases =
   Case scrutinee (BranchTable (Map.fromList cases) mempty Nothing)
 
+casedef_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn -> StgSyn
+casedef_ scrutinee cases df =
+  Case scrutinee (BranchTable (Map.fromList cases) mempty $ Just df)
+
 caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
 caselit_ scrutinee cases df =
   Case scrutinee (BranchTable mempty (HM.fromList cases) df)

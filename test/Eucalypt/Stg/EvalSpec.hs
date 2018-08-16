@@ -11,14 +11,11 @@ where
 
 import Data.Vector (fromList)
 import qualified Data.Vector as Vector
-import Eucalypt.Stg.Compiler
-import Eucalypt.Stg.Eval
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Globals (euHead)
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
-import Eucalypt.Stg.Machine
 import Eucalypt.Stg.StgTestUtil
 import Test.Hspec
 
@@ -128,12 +125,6 @@ _render =
     emitSS = appbif_ (intrinsicIndex "EMIT[") []
     emitSE = appbif_ (intrinsicIndex "EMIT]") []
 
-machine :: StgSyn -> IO MachineState
-machine = initDebugMachineState
-
-test :: StgSyn -> IO MachineState
-test s = machine s >>= run
-
 blockSpec :: Spec
 blockSpec =
   describe "STG Evaluation" $ do
@@ -145,5 +136,5 @@ blockSpec =
     it "returns true" $
       (returnsNative (NativeBool True) <$> test addTest) `shouldReturn` True
     it "emits empty map" $
-      (emits [OutputMappingStart, OutputMappingEnd] <$> test renderEmptyMap) `shouldReturn`
+      (emits [OutputMappingStart, OutputMappingEnd] <$> testD renderEmptyMap) `shouldReturn`
       True

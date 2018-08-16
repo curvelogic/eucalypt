@@ -29,6 +29,8 @@ data StgException
   | IntrinsicExpectedNativeList
   | IntrinsicExpectedStringList
   | InvalidRegex !String
+  | UnknownGlobal !String
+  | Panic !String
   deriving (Typeable, Show, Eq)
 
 instance Exception StgException

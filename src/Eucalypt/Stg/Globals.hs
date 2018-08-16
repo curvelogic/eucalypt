@@ -1,20 +1,24 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 {-|
-Module      : Eucalypt.Stg.Globas
+Module      : Eucalypt.Stg.Globals
 Description : Standard globals for the STG implementation
 Copyright   : (c) Greg Hawkins, 2018
 License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 
-These are STG snippets, mainly for marshalling values between haskel
-world and the machine world, and for forcing strict evaluation etc.
+These are STG snippets, mainly for marshalling values between haskell
+world and the machine world, and for forcing strict evaluation before
+forwarding on to intrinsics.
 
 -}
 module Eucalypt.Stg.Globals where
 
 import qualified Data.HashMap.Strict as HM
+import Eucalypt.Stg.Globals.Bool as Bool
+import Eucalypt.Stg.Globals.Eq as Eq
+import Eucalypt.Stg.Globals.Panic as Panic
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
@@ -86,7 +90,16 @@ seqNatList =
 standardGlobals :: HM.HashMap String LambdaForm
 standardGlobals =
   HM.fromList
-    [ ("CAT", euCat)
+    [ ("EQ", Eq.euEq)
+    , ("TRUE", Bool.euTrue)
+    , ("FALSE", Bool.euFalse)
+    , ("NOT", Bool.euNot)
+    , ("AND", Bool.euAnd)
+    , ("OR", Bool.euOr)
+    , ("IF", Bool.euIf)
+    , ("PANIC", Panic.euPanic)
+    , ("BOMB", Panic.euBomb)
+    , ("CAT", euCat)
     , ("HEAD", euHead)
     , ("LOOKUP", euLookup)
     , ("LOOKUP_LIST", euLookupList)

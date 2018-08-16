@@ -39,9 +39,6 @@ list_ envSize refs = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
     pcs = zipWith (curry preclose) [envSize ..] $ reverse refs
     pcn = fromIntegral $ envSize + length pcs
 
-litList_ :: Int -> [Native] -> StgSyn
-litList_ envSize nats = list_ envSize $ map Literal nats
-
 convert :: C.Primitive -> Native
 convert (CoreInt n) = NativeNumber $ fromIntegral n
 convert (CoreFloat d) = NativeNumber $ fromFloatDigits d

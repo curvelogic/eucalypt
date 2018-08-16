@@ -18,9 +18,9 @@ import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Stg.Compiler as C
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event (Event(..))
-import Eucalypt.Stg.Machine
-  ( MachineState(..)
-  , dump
+import Eucalypt.Stg.Machine (MachineState(..))
+import Eucalypt.Stg.StandardMachine
+  ( dump
   , dumpEmission
   , initStandardMachineState
   , initDebugMachineState
