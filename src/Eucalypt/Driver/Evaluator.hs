@@ -263,7 +263,11 @@ evaluate opts whnfM = do
 
   -- Stage 7: drive the evaluation by rendering it
   if optionXStg opts
-    then STG.dumpStg opts cookedEvaluand >> return ExitSuccess
+    then do
+      -- Compile to STG and execute in machine
+      when (cmd == DumpStg)
+        (STG.dumpStg opts cookedEvaluand >> exitSuccess)
+      STG.render opts cookedEvaluand >> exitSuccess
     else render cookedEvaluand >>= \case
            Left s -> reportErrors [s] >> return (ExitFailure 1)
            Right bytes -> outputBytes opts bytes >> return ExitSuccess

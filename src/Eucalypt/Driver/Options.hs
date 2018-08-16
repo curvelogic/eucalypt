@@ -47,6 +47,7 @@ data EucalyptOptions = EucalyptOptions
   , optionCommand :: Command
   , optionInputs :: [Input]
   , optionXStg :: Bool
+  , optionDebug :: Bool
   } deriving (Show)
 
 
@@ -138,6 +139,10 @@ options = EucalyptOptions
   <*> switch ( long "XSTG"
              <> short 'G'
              <> help "Turn on experimental STG implementation")
+  <*> switch ( long "debug"
+             <> short 'd'
+             <> help "Switch on debugging features")
+
 
 
 -- | @findInParents f path@ applies @f@ to @path@ and its 'parent's until

@@ -76,7 +76,7 @@ seqNatList =
     [ (stgNil, (0, appcon_ stgNil mempty))
     , ( stgCons
       , ( 2
-        , forcelit_
+        , force_
             (Atom (Local 1)) -- boundarg becomes 0... :(
             (force_
                (appfn_ (Global "seqNatList") [Local 2])

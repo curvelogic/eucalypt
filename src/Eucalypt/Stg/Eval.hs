@@ -54,12 +54,12 @@ pushApplyToArgs ms@MachineState {machineStack = stack} xs =
 -- in the environment (and right now the compiler needs to work out
 -- where...)
 selectBranch :: BranchTable -> Tag -> Maybe StgSyn
-selectBranch (BranchTable bs _) t = snd <$> Map.lookup t bs
+selectBranch (BranchTable bs _ _) t = snd <$> Map.lookup t bs
 
 -- | Match a native branch table alternative, return the next
 -- expression to eval
-selectNativeBranch :: NativeBranchTable -> Native -> Maybe StgSyn
-selectNativeBranch (NativeBranchTable bs _) n = HM.lookup n bs
+selectNativeBranch :: BranchTable -> Native -> Maybe StgSyn
+selectNativeBranch (BranchTable _ bs _) n = HM.lookup n bs
 
 -- | Call the machine's trace function
 traceOut :: MachineState -> IO ()
@@ -149,10 +149,6 @@ step ms@MachineState {machineCode = (Eval (LetRec pcs body) env)} = do
 step ms@MachineState {machineCode = (Eval (Case syn k) env)} = do
   traceOut ms
   return $ tick $ setCode (push ms (Branch k env)) (Eval syn env)
--- | CASE (lit)
-step ms@MachineState {machineCode = (Eval (CaseLit syn k) env)} = do
-  traceOut ms
-  return $ tick $ setCode (push ms (NativeBranch k env)) (Eval syn env)
 
 -- | ReturnCon - returns a data structure into a BranchTable branch
 step ms@MachineState {machineCode = (ReturnCon t xs)} = do
@@ -175,7 +171,6 @@ step ms@MachineState {machineCode = (ReturnCon t xs)} = do
               return $
               tick $ setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
             Nothing -> throwM NoBranchFound
-    (Just NativeBranch{}) -> throwM NativeBranchTableForCon
     (Just (Update a)) -> do
       poke a (Closure (standardConstructor (envSize xs) t) xs)
       return $ tick ms'
@@ -188,7 +183,7 @@ step ms@MachineState {machineCode = (ReturnLit nat)} = do
   traceOut ms
   (entry, ms') <- pop ms
   case entry of
-    (Just (NativeBranch k le)) ->
+    (Just (Branch k le)) ->
       case selectNativeBranch k nat of
         -- CASECON
         (Just expr) -> return $ tick $ setCode ms' (Eval expr le)
@@ -198,7 +193,6 @@ step ms@MachineState {machineCode = (ReturnLit nat)} = do
             (Just expr) ->
               return $ tick $ setCode ms' (Eval expr (le <> singleton (StgNat nat)))
             Nothing -> throwM NoBranchFound
-    (Just (Branch _ _)) -> throwM ConBranchTableForNative
     (Just (Update _)) -> throwM LiteralUpdate
     (Just (ApplyToArgs _)) -> throwM ArgInsteadOfNativeBranchTable
     Nothing -> return $ tick $ terminate ms'

@@ -16,8 +16,6 @@ data StgException
   | NonAddressStgValue
   | NonNativeStgValue
   | LiteralUpdate
-  | NativeBranchTableForCon
-  | ConBranchTableForNative
   | NoBranchFound
   | PopEmptyStack
   | EnteredBlackHole

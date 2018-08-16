@@ -117,58 +117,49 @@ type Tag = Word64
 class HasDefaultBranch a where
   defaultBranch :: a -> Maybe StgSyn
 
--- | Branches of a case expression matching constructors and binding
--- arguments
+-- | Branches of a case expression.
+--
+-- Matching data structures via constructor and native scalars via
+-- equality are both handled within the same case statement, enabling
+-- deep tree walking of a data structure down to and including the
+-- leaf scalars without having to worry about boxing the the natives
+-- to signal a need for a caselit expression instead of a case.
+--
+-- (The scalars are after all "boxed" with the 'Native' type, there is
+-- not much sense boxing them again in STG.)
 data BranchTable =
   BranchTable (Map.Map Tag (Word64, StgSyn))
-               (Maybe StgSyn)
+              (HM.HashMap Native StgSyn)
+              (Maybe StgSyn)
   deriving (Eq, Show)
 
 instance HasDefaultBranch BranchTable where
-  defaultBranch (BranchTable _ df) = df
+  defaultBranch (BranchTable _ _ df) = df
 
 instance HasArgRefs BranchTable where
-  argsAt n (BranchTable branches df) = BranchTable branches' df'
+  argsAt n (BranchTable branches nativeBranches df) =
+    BranchTable branches' nativeBranches' df'
     where
       branches' = Map.map (second (argsAt n)) branches
+      nativeBranches' = HM.map (argsAt n) nativeBranches
       df' = argsAt n <$> df
 
 instance StgPretty BranchTable where
-  prettify (BranchTable bs df) =
+  prettify (BranchTable bs nbs df) =
     case df of
-      Just d -> branchesDoc P.$$ (P.text "_ -> " <> prettify d)
+      Just d ->
+        branchesDoc P.$$ nativeBranchesDoc P.$$ (P.text "_ -> " <> prettify d)
       Nothing -> branchesDoc
     where
-      branchesDoc = Map.foldrWithKey f (P.text "") bs
-      f k (binds, syn) doc =
-        doc P.$$ P.int (fromIntegral k) <> P.space <> P.text "->" <> P.space <>
+      branchesDoc = Map.foldrWithKey accBr (P.text "") bs
+      accBr k (binds, syn) doc =
+        doc P.$$ P.text "C|" <> P.int (fromIntegral k) <> P.space <> P.text "->" <>
+        P.space <>
         P.parens (P.int $ fromIntegral binds) <>
         P.space <>
         prettify syn
-
--- | Branches of a caselit expression matching native values
-data NativeBranchTable =
-  NativeBranchTable (HM.HashMap Native StgSyn)
-                     (Maybe StgSyn)
-  deriving (Eq, Show)
-
-instance HasDefaultBranch NativeBranchTable where
-  defaultBranch (NativeBranchTable _ df) = df
-
-instance HasArgRefs NativeBranchTable where
-  argsAt n (NativeBranchTable branches df) = NativeBranchTable branches' df'
-    where
-      branches' = HM.map (argsAt n) branches
-      df' = argsAt n <$> df
-
-instance StgPretty NativeBranchTable where
-  prettify (NativeBranchTable bs df) =
-    case df of
-      Just d -> branchesDoc P.$$ (P.text "_ -> " <> prettify d)
-      Nothing -> branchesDoc
-    where
-      branchesDoc = HM.foldrWithKey f P.empty bs
-      f n syn doc =
+      nativeBranchesDoc = HM.foldrWithKey accNBr P.empty nbs
+      accNBr n syn doc =
         doc P.$$
         (prettify n <> P.space <> P.text "->" <> P.space <> prettify syn)
 
@@ -231,8 +222,6 @@ data StgSyn
   = Atom !Ref
   | Case !StgSyn
          !BranchTable
-  | CaseLit !StgSyn
-            !NativeBranchTable
   | App !Func
         !RefVec
   | Let (Vector PreClosure)
@@ -248,14 +237,10 @@ instance HasArgRefs StgSyn where
   argsAt n (LetRec pcs syn) = LetRec (V.map (argsAt n) pcs) (argsAt n syn)
   argsAt n (App f refs) = App (argsAt n f) (V.map (argsAt n) refs)
   argsAt n (Case expr k) = Case (argsAt n expr) (argsAt n k)
-  argsAt n (CaseLit expr k) = CaseLit (argsAt n expr) (argsAt n k)
 
 instance StgPretty StgSyn where
   prettify (Atom r) = P.char '*' <> prettify r
   prettify (Case s k) =
-    (P.text "case" <> P.space <> prettify s <> P.space <> P.text "of") P.$$
-    P.nest 2 (prettify k)
-  prettify (CaseLit s k) =
     (P.text "case" <> P.space <> prettify s <> P.space <> P.text "of") P.$$
     P.nest 2 (prettify k)
   prettify (App f xs) =
@@ -268,18 +253,15 @@ instance StgPretty StgSyn where
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
 
 force_ :: StgSyn -> StgSyn -> StgSyn
-force_ scrutinee df = Case scrutinee (BranchTable mempty (Just df))
+force_ scrutinee df = Case scrutinee (BranchTable mempty mempty (Just df))
 
 case_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn
 case_ scrutinee cases =
-  Case scrutinee (BranchTable (Map.fromList cases) Nothing)
+  Case scrutinee (BranchTable (Map.fromList cases) mempty Nothing)
 
 caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
 caselit_ scrutinee cases df =
-  CaseLit scrutinee (NativeBranchTable (HM.fromList cases) df)
-
-forcelit_ :: StgSyn -> StgSyn -> StgSyn
-forcelit_ scrutinee df = CaseLit scrutinee (NativeBranchTable mempty (Just df))
+  Case scrutinee (BranchTable mempty (HM.fromList cases) df)
 
 let_ :: [PreClosure] -> StgSyn -> StgSyn
 let_ pcs = Let (V.fromList pcs)
@@ -312,7 +294,7 @@ value_ :: StgSyn -> LambdaForm
 value_ = LambdaForm 0 0 False
 
 seq_ :: StgSyn -> StgSyn -> StgSyn
-seq_ a b = Case a $ BranchTable mempty (Just b)
+seq_ a b = Case a $ BranchTable mempty mempty (Just b)
 
 seqall_ :: [StgSyn] -> StgSyn
 seqall_ = foldl1 seq_

@@ -44,24 +44,26 @@ argRefSpec =
         (BranchTable
            (Map.fromList
               [(1, (1, Atom (BoundArg 0))), (2, (1, Atom (BoundArg 1)))])
+           mempty
            (Just (Atom (BoundArg 2)))) `shouldBe`
       BranchTable
         (Map.fromList [(1, (1, Atom (Local 9))), (2, (1, Atom (Local 10)))])
+        mempty
         (Just (Atom (Local 11)))
     it "adjusts native case branches" $
       argsAt
         9
-        (NativeBranchTable
+        (BranchTable
+           mempty
            (HM.fromList
               [ (NativeNumber 0, Atom (BoundArg 0))
               , (NativeNumber 1, Atom (BoundArg 1))
               ])
            (Just (Atom (BoundArg 2)))) `shouldBe`
-      NativeBranchTable
+      BranchTable
+        mempty
         (HM.fromList
-           [ (NativeNumber 0, Atom (Local 9))
-           , (NativeNumber 1, Atom (Local 10))
-           ])
+           [(NativeNumber 0, Atom (Local 9)), (NativeNumber 1, Atom (Local 10))])
         (Just (Atom (Local 11)))
     it "adjusts func refs" $
       argsAt 9 (Ref (BoundArg 0)) `shouldBe` Ref (Local 9)

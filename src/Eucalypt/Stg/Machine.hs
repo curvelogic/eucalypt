@@ -117,15 +117,12 @@ instance StgPretty ValVec where
 data Continuation
   = Branch !BranchTable
            !ValVec
-  | NativeBranch !NativeBranchTable
-                 !ValVec
   | Update !Address
   | ApplyToArgs !ValVec
   deriving (Eq, Show)
 
 instance StgPretty Continuation where
   prettify (Branch _ _) = P.text "Br"
-  prettify (NativeBranch _ _) = P.text "NBr"
   prettify (Update _) = P.text "Up"
   prettify (ApplyToArgs _) = P.text "Ap"
 

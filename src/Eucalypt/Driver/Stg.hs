@@ -12,7 +12,6 @@ module Eucalypt.Driver.Stg
   , dumpStg
   ) where
 
-import Control.Monad (void)
 import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
@@ -21,8 +20,10 @@ import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event (Event(..))
 import Eucalypt.Stg.Machine
   ( MachineState(..)
+  , dump
   , dumpEmission
   , initStandardMachineState
+  , initDebugMachineState
   )
 import Eucalypt.Stg.Syn (StgPretty(..), StgSyn)
 import qualified Text.PrettyPrint as P
@@ -31,11 +32,13 @@ import qualified Text.PrettyPrint as P
 render :: EucalyptOptions -> CoreExpr -> IO ()
 render opts expr = do
   syn <- compile expr
-  ms <- machine syn
-  void $ run ms {machineEmit = emit}
+  ms <- newMachine syn
+  ms' <- run ms {machineEmit = emit}
+  dump ms'
   where
     format = fromMaybe "yaml" (optionExportFormat opts)
     emit = selectRenderSink format
+    newMachine = if optionDebug opts then debugMachine else machine
 
 -- | Dump STG expression to stdout
 dumpStg :: EucalyptOptions -> CoreExpr -> IO ()
@@ -48,6 +51,10 @@ compile expr = return $ C.compile 0 C.emptyContext expr
 -- | Instantiate the STG machine
 machine :: StgSyn -> IO MachineState
 machine = initStandardMachineState
+
+-- | Instantiate the debug STG machine
+debugMachine :: StgSyn -> IO MachineState
+debugMachine s = putStrLn "DEBUG" >> initDebugMachineState s
 
 -- | Select an emit function appropriate to the render format
 selectRenderSink :: String -> MachineState -> Event -> IO MachineState
