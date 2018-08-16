@@ -15,13 +15,11 @@ module Eucalypt.Stg.Intrinsics.StrSpec
 import Data.List (intercalate, isInfixOf)
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Compiler
-import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Syn
-import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.StgTestUtil
 import Test.QuickCheck
-import Test.QuickCheck.Arbitrary (arbitraryUnicodeChar)
+import Test.QuickCheck.Arbitrary (arbitraryPrintableChar)
 import qualified Test.QuickCheck.Monadic as QM
 import Test.Hspec
 
@@ -34,7 +32,7 @@ instance Arbitrary RegexSafeString where
   arbitrary = RegexSafeString `fmap` listOf arbitraryNonRegexChar
     where
       arbitraryNonRegexChar =
-        arbitraryUnicodeChar `suchThat` (not . (`elem` "[]().\\*+{}?^\0$&|"))
+        arbitraryPrintableChar `suchThat` (not . (`elem` "[]().\\*+{}?^\0$&|"))
   shrink (RegexSafeString xs) = RegexSafeString `fmap` shrink xs
 
 
@@ -51,10 +49,9 @@ joinStg xs sep =
 
 joins :: [String] -> String -> Property
 joins xs sep =
-  QM.monadicIO $ do
-    ms <- QM.run $ initStandardMachineState (joinStg xs sep)
-    ms' <- QM.run $ run ms
-    QM.assert $ returnsNative (NativeString (intercalate sep xs)) ms'
+  QM.monadicIO $
+  calculates (joinStg xs sep) $
+  returnsNative (NativeString (intercalate sep xs))
 
 splitStg :: [String] -> String -> StgSyn
 splitStg xs sep =
@@ -68,10 +65,8 @@ splits :: NonEmptyList RegexSafeString -> RegexSafeString -> Property
 splits (NonEmpty xs) (RegexSafeString sep) =
   not (any ((sep `isInfixOf`) . getRegexSafeString) xs) ==> QM.monadicIO $ do
     let components = map getRegexSafeString xs
-    ms <- QM.run $ initStandardMachineState (splitStg components sep)
-    ms' <- QM.run $ run ms
-    ret <- QM.run $ readStrListReturn ms'
-    QM.assert $ ret == components
+    calculatesM (splitStg components sep)
+      (fmap (components ==) . readStrListReturn)
 
 spec :: Spec
 spec =

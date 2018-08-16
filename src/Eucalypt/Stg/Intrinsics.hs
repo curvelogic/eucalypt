@@ -14,7 +14,9 @@ import Data.List (findIndex)
 import Data.Maybe (fromMaybe)
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
+import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
+import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
 import Eucalypt.Stg.Machine
 
 data IntrinsicInfo = IntrinsicInfo
@@ -25,7 +27,8 @@ data IntrinsicInfo = IntrinsicInfo
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
-  [ IntrinsicInfo "ADD" 2 Arith.add
+  [ IntrinsicInfo "===" 2 Eq.natEq
+  , IntrinsicInfo "ADD" 2 Arith.add
   , IntrinsicInfo "SUB" 2 Arith.sub
   , IntrinsicInfo "MUL" 2 Arith.mul
   , IntrinsicInfo "EMIT{" 0 Emit.emitMappingStart
@@ -37,6 +40,7 @@ intrinsics =
   , IntrinsicInfo "MATCH" 2 Str.match
   , IntrinsicInfo "MATCHES" 2 Str.matches
   , IntrinsicInfo "JOIN" 2 Str.join
+  , IntrinsicInfo "PANIC" 1 Panic.panic
   ]
 
 -- | Used during compilation to find the index at which an intrinsic
