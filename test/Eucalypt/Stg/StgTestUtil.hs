@@ -14,6 +14,7 @@ import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.StandardMachine
 import qualified Text.PrettyPrint as P
@@ -22,6 +23,28 @@ import qualified Test.QuickCheck.Monadic as QM
 -- | List of literals
 litList_ :: Int -> [Native] -> StgSyn
 litList_ envN nats = list_ envN $ map Literal nats
+
+nat :: Integer -> Native
+nat n = NativeNumber $ fromInteger n
+
+kv :: String -> Integer -> StgSyn
+kv k v =
+  letrec_
+    [ pc0_ nilConstructor
+    , pc_ [Literal $ nat v, Local 0] consConstructor
+    , pc_ [Literal $ NativeSymbol k, Local 1] consConstructor
+    ]
+    (App (Ref (Local 2)) mempty)
+
+block :: [StgSyn] -> StgSyn
+block kvs =
+  let pcs = map (pc0_ . value_) kvs
+      itemCount = length pcs
+      itemRefs = [(Local . fromIntegral) n | n <- [0 .. itemCount - 1]]
+      l = pc_ itemRefs $ thunkn_ itemCount $ list_ itemCount itemRefs
+      bl = pc_ [Local $ fromIntegral itemCount] blockConstructor
+      pcs' = pcs ++ [l, bl]
+   in letrec_ pcs' (App (Ref (Local (fromIntegral (itemCount + 1)))) mempty)
 
 -- machine state accessors and assertions
 
@@ -44,6 +67,10 @@ returnsNative _ _ = False
 emits :: [Event] -> MachineState -> Bool
 emits events MachineState {machineDebugEmitLog = logged} = events == logged
 
+-- | Extract the events emitted
+emitLog :: MachineState -> [Event]
+emitLog = machineDebugEmitLog
+
 -- dump / trace helpers
 
 dumpEnv :: ValVec -> IO ()
@@ -62,7 +89,10 @@ machine :: StgSyn -> IO MachineState
 machine = initStandardMachineState
 
 machineD :: StgSyn -> IO MachineState
-machineD = initDebugMachineState
+machineD syn = machine syn >>= (\s -> return s{ machineEmit = dumpEmission })
+
+tracingMachine :: StgSyn -> IO MachineState
+tracingMachine = initDebugMachineState
 
 test :: StgSyn -> IO MachineState
 test s = machine s >>= run

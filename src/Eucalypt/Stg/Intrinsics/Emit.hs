@@ -40,4 +40,4 @@ emitSequenceEnd s _ = emit s OutputSequenceEnd
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do
   let (StgNat n) = xs ! 0
-  emit s (OutputScalar n) >> return (setCode s (ReturnLit n))
+  (`setCode` ReturnLit n) <$> emit s (OutputScalar n)

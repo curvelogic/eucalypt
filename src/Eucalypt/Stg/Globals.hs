@@ -17,6 +17,7 @@ module Eucalypt.Stg.Globals where
 
 import qualified Data.HashMap.Strict as HM
 import Eucalypt.Stg.Globals.Bool as Bool
+import Eucalypt.Stg.Globals.Emit as Emit
 import Eucalypt.Stg.Globals.Eq as Eq
 import Eucalypt.Stg.Globals.Panic as Panic
 import Eucalypt.Stg.Syn
@@ -103,5 +104,6 @@ standardGlobals =
     , ("HEAD", euHead)
     , ("LOOKUP", euLookup)
     , ("LOOKUP_LIST", euLookupList)
+    , ("RENDER", Emit.euRender)
     , ("seqNatList", seqNatList)
     ]
