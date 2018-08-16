@@ -20,6 +20,7 @@ library:
   dependencies:
     - aeson
     - aeson-pretty
+    - array
     - bound
     - bytestring
     - comonad
@@ -31,6 +32,7 @@ library:
     - exceptions
     - filepath
     - file-embed
+    - hashable
     - mtl
     - network-uri
     - optparse-applicative
@@ -39,7 +41,10 @@ library:
     - mtl
     - path
     - pretty
+    - primitive
+    - QuickCheck
     - regex-pcre-builtin
+    - pcre-heavy
     - resourcet
     - safe
     - safe-exceptions
@@ -83,14 +88,18 @@ tests:
       - aeson-pretty
       - bound
       - bytestring
+      - containers
       - eucalypt-hs
       - hspec
       - hspec-megaparsec
       - megaparsec
+      - monad-loops
       - mtl
       - network-uri
       - pretty
       - text
+      - unordered-containers
+      - vector
       - yaml
 
 eu-build:
