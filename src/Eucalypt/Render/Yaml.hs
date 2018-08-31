@@ -13,9 +13,9 @@ module Eucalypt.Render.Yaml
   where
 
 import Conduit
-import qualified Data.Conduit.Combinators as C
 import Control.Monad ((>=>))
 import qualified Data.ByteString as BS
+import qualified Data.Conduit.Combinators as C
 import Data.Maybe (catMaybes)
 import Data.Scientific
 import Data.Text (Text, pack)
@@ -28,9 +28,8 @@ import Eucalypt.Render.Classes
 import Eucalypt.Render.Common
 import qualified Text.Libyaml as L
 
-import Eucalypt.Stg.Syn (Native(..))
-import Eucalypt.Stg.Machine (MachineState)
 import qualified Eucalypt.Stg.Event as E
+import Eucalypt.Stg.Syn (Native(..))
 
 
 
@@ -135,11 +134,24 @@ instance Renderer YamlConfig where
 
 -- STG implementation
 
-renderScalar :: Native -> BS.ByteString
-renderScalar (NativeNumber n) = encodeUtf8 $ pack $ show n
-renderScalar (NativeSymbol s) = encodeUtf8 $ pack s
-renderScalar (NativeString s) = encodeUtf8 $ pack s
-renderScalar (NativeBool b) = encodeUtf8 $ pack $ if b then "true" else "false"
+renderValue :: Native -> L.Event
+renderValue (NativeNumber n) =
+  L.EventScalar (encodeUtf8 $ pack $ show n) L.IntTag L.PlainNoTag Nothing
+renderValue (NativeSymbol s) =
+  L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
+renderValue (NativeString s) =
+  L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
+renderValue (NativeBool b) =
+  L.EventScalar
+    (encodeUtf8 $
+     pack $
+     if b
+       then "true"
+       else "false")
+    L.BoolTag
+    L.PlainNoTag
+    Nothing
+
 
 toYamlEvents :: E.Event -> [L.Event]
 toYamlEvents e =
@@ -148,15 +160,12 @@ toYamlEvents e =
     E.OutputStreamEnd -> [L.EventStreamEnd]
     E.OutputDocumentStart -> [L.EventDocumentStart]
     E.OutputDocumentEnd -> [L.EventDocumentEnd]
-    E.OutputScalar n -> [L.EventScalar (renderScalar n) L.NoTag L.Any Nothing]
+    E.OutputScalar n -> [renderValue n]
     E.OutputSequenceStart -> [L.EventSequenceStart Nothing]
     E.OutputSequenceEnd -> [L.EventSequenceEnd]
     E.OutputMappingStart -> [L.EventMappingStart Nothing]
     E.OutputMappingEnd -> [L.EventMappingEnd]
     _ -> []
 
-pipeline :: ConduitT E.Event Void (ResourceT IO) BS.ByteString
+pipeline :: (MonadIO m, MonadResource m) => ConduitT E.Event Void m BS.ByteString
 pipeline = mapC toYamlEvents .| C.concat .| L.encode
-
-emit :: ConduitT E.Event Void IO b -> MachineState -> E.Event -> IO MachineState
-emit c ms e = runConduit (yield e .| c) >> return ms
