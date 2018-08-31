@@ -162,7 +162,7 @@ data MachineState = MachineState
     -- ^ whether the machine has terminated
   , machineTrace :: MachineState -> IO ()
     -- ^ debug action to run prior to each step
-  , machineEvents :: [Event]
+  , machineEvents :: Vector Event
     -- ^ events fired by last step
   , machineEmit :: MachineState -> Event -> IO MachineState
     -- ^ emit function to send out events
@@ -181,7 +181,7 @@ traceOut ms@MachineState {machineTrace = tr} = liftIO $ tr ms
 prepareStep :: MonadIO m => String -> MachineState -> m MachineState
 prepareStep stepName ms =
   traceOut ms >>
-  return (tick $ ms {machineEvents = [], machineLastStepName = stepName})
+  return (tick $ ms {machineEvents = mempty, machineLastStepName = stepName})
 
 allocGlobal :: String -> LambdaForm -> IO StgValue
 allocGlobal _name impl =
@@ -199,7 +199,7 @@ initMachineState stg ge = do
       , machineCounter = 0
       , machineTerminated = False
       , machineTrace = \_ -> return ()
-      , machineEvents = []
+      , machineEvents = mempty
       , machineEmit = \s _ -> return s
       , machineDebug = False
       , machineDebugEmitLog = []
@@ -273,6 +273,11 @@ setCode ms@MachineState {} c = ms {machineCode = c}
 -- | Set the name of the last rule executed
 setRule :: String -> MachineState -> MachineState
 setRule r ms@MachineState {} = ms {machineLastStepName = r}
+
+-- | Append event for this step
+appendEvent :: Event -> MachineState -> MachineState
+appendEvent es ms@MachineState {machineEvents = es0} =
+  ms {machineEvents = es0 `Vector.snoc` es}
 
 -- | Build a closure from a STG PreClosure
 buildClosure ::

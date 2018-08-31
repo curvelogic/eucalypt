@@ -68,7 +68,7 @@ blockSpec =
     it "returns lit 1" $
       (returnsNative (nat 1) <$> test headOfList) `shouldReturn` True
     it "returns true" $
-      (returnsNative (NativeBool True) <$> testTracing addTest) `shouldReturn` True
+      (returnsNative (NativeBool True) <$> test addTest) `shouldReturn` True
     it "emits empty map" $
       (emits [OutputMappingStart, OutputMappingEnd] <$> test renderEmptyMap) `shouldReturn`
       True

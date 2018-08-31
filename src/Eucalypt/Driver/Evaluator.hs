@@ -267,7 +267,7 @@ evaluate opts whnfM = do
       -- Compile to STG and execute in machine
       when (cmd == DumpStg)
         (STG.dumpStg opts cookedEvaluand >> exitSuccess)
-      STG.render opts cookedEvaluand >> exitSuccess
+      STG.renderConduit opts cookedEvaluand >> exitSuccess
     else render cookedEvaluand >>= \case
            Left s -> reportErrors [s] >> return (ExitFailure 1)
            Right bytes -> outputBytes opts bytes >> return ExitSuccess

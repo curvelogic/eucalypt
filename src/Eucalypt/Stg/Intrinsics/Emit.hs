@@ -21,7 +21,9 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Tags
 
 emit :: MachineState -> Event -> IO MachineState
-emit s e = send e >>= \s' -> return $ setCode s' (ReturnCon stgUnit mempty)
+emit s e =
+  send e >>= \s' ->
+    return $ (appendEvent e . setCode s') (ReturnCon stgUnit mempty)
   where
     send = machineEmit s s
 

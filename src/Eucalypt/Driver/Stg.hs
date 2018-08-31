@@ -8,41 +8,26 @@ Stability   : experimental
 -}
 
 module Eucalypt.Driver.Stg
-  ( render
-  , renderConduit
+  ( renderConduit
   , dumpStg
   ) where
 
 
 import Conduit
-import Control.Monad (when)
+import Control.Monad (unless)
 import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Stg.Compiler as C
-import Eucalypt.Stg.Eval (run, step)
+import Eucalypt.Stg.Eval (step)
 import Eucalypt.Stg.Event (Event(..))
 import Eucalypt.Stg.Machine (MachineState(..))
 import Eucalypt.Stg.StandardMachine
-  ( dump
-  , dumpEmission
-  , initStandardMachineState
+  ( initStandardMachineState
   , initDebugMachineState
   )
 import Eucalypt.Stg.Syn (StgPretty(..), StgSyn)
 import qualified Text.PrettyPrint as P
-
--- | Compile, install a render sink and run
-render :: EucalyptOptions -> CoreExpr -> IO ()
-render opts expr = do
-  syn <- compile expr
-  ms <- newMachine syn
-  ms' <- run ms {machineEmit = emit}
-  dump ms'
-  where
-    format = fromMaybe "yaml" (optionExportFormat opts)
-    emit = selectRenderSink format
-    newMachine = if optionDebug opts then debugMachine else machine
 
 -- | Dump STG expression to stdout
 dumpStg :: EucalyptOptions -> CoreExpr -> IO ()
@@ -58,11 +43,7 @@ machine = initStandardMachineState
 
 -- | Instantiate the debug STG machine
 debugMachine :: StgSyn -> IO MachineState
-debugMachine s = putStrLn "DEBUG" >> initDebugMachineState s
-
--- | Select an emit function appropriate to the render format
-selectRenderSink :: String -> MachineState -> Event -> IO MachineState
-selectRenderSink _format = dumpEmission
+debugMachine = initDebugMachineState
 
 -- | Build a conduit streaming pipeline where the machine generates
 -- events and renderer processes them.
@@ -78,13 +59,16 @@ renderConduit opts expr = do
         then debugMachine
         else machine
 
+
+-- | Step through the machine yielding events via the conduit pipeline
+-- at each stage
 machineSource :: MachineState -> ConduitT () Event IO ()
 machineSource = loop
   where
     loop s = do
       s' <- step s
       yieldMany $ machineEvents s'
-      when (machineTerminated s') $ loop s'
+      unless (machineTerminated s') $ loop s'
 
 
 renderPipeline :: String -> ConduitT Event Void IO ()
