@@ -15,8 +15,7 @@ import Bound.Var as Var
 import Bound.Scope (fromScope)
 import qualified Data.Array as A
 import Data.Foldable (toList)
-import Data.List (nub)
-import Data.Maybe (fromMaybe)
+import Data.List (nub, elemIndex)
 import Data.Scientific
 import qualified Data.Vector as V
 import Eucalypt.Core.Syn as C
@@ -32,11 +31,11 @@ import Eucalypt.Stg.Tags
 -- | Construct a list asa STG LetRec
 list_ :: Int -> [Ref] -> StgSyn
 list_ _ [] = appcon_ stgNil mempty
-list_ envSize refs = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
+list_ envSize rs = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
   where
     pc0 = pc0_ nilConstructor
     preclose (i, r) = pc_ [r, Local $ fromIntegral i] consConstructor
-    pcs = zipWith (curry preclose) [envSize ..] $ reverse refs
+    pcs = zipWith (curry preclose) [envSize ..] $ reverse rs
     pcn = fromIntegral $ envSize + length pcs
 
 convert :: C.Primitive -> Native
@@ -54,7 +53,8 @@ compileBinding _ context expr = pc_ free $ compileLambdaForm expr
   where
     fvs = [(v, context v) | v <- nub . toList $ expr]
     free = map snd fvs
-    context' v = fromMaybe (context v) (lookup v fvs)
+    context' v =
+      maybe (context v) (Local . fromIntegral) (elemIndex v (map fst fvs))
     contextL' (Var.F v) = context' v
     contextL' (Var.B i) = BoundArg $ fromIntegral i
     compileLambdaForm e =
@@ -63,7 +63,7 @@ compileBinding _ context expr = pc_ free $ compileLambdaForm expr
           lam_ (length free) (length ns) $
           compile (length free) contextL' $ fromScope body
         (CoreList []) -> nilConstructor -- TODO: id all std cons?
-        CorePrim{} -> value_ $ compile (length free) context' e
+        CorePrim {} -> value_ $ compile (length free) context' e
         _ -> thunkn_ (length free) $ compile (length free) context' e
 
 
@@ -83,7 +83,7 @@ compile envSize context (C.CoreLet bs b) = letrec_ stgBindings stgBody
 compile _ context (C.CoreVar v) = Atom $ context v
 
 -- | Compile a builtin on its own, NB this creates a partial
--- application, we can do better by compiling the builting in the
+-- application, we can do better by compiling the builtin in the
 -- context of a call to it
 compile _ _ (C.CoreBuiltin n) = App (Ref (Global n)) mempty
 
@@ -159,9 +159,11 @@ compile _ _ CorePAp{} = error "Cannot compile PAp"
 compile _ _ (CoreTraced _) = error "Cannot compile traced"
 compile _ _ (CoreChecked _ _) = error "Cannot compile checked"
 
+-- | An empty context with no Refs for any Var
 emptyContext :: Eq v => v -> Ref
 emptyContext _  = error "Missing from context during compilation"
 
+-- | Extend the context to apply to Vars in Scope
 extendContextForScope :: Int -> (v -> Ref) -> Int -> (Var Int v -> Ref)
 extendContextForScope envSize context count = context'
   where
@@ -171,3 +173,10 @@ extendContextForScope envSize context count = context'
       A.array
         (envSize, envSize + count - 1)
         [(i, Local $ fromIntegral i) | i <- [envSize .. envSize + count - 1]]
+
+-- | Wrap in a render builtin which will NF eval and emit render events
+compileForRender :: CoreExpr -> StgSyn
+compileForRender expr =
+  let_
+    [pc0_ $ thunk_ (compile 0 emptyContext expr)]
+    (appfn_ (Global "RENDER") [Local 0])

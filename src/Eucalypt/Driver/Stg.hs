@@ -9,14 +9,18 @@ Stability   : experimental
 
 module Eucalypt.Driver.Stg
   ( render
+  , renderConduit
   , dumpStg
   ) where
 
+
+import Conduit
+import Control.Monad (when)
 import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Stg.Compiler as C
-import Eucalypt.Stg.Eval (run)
+import Eucalypt.Stg.Eval (run, step)
 import Eucalypt.Stg.Event (Event(..))
 import Eucalypt.Stg.Machine (MachineState(..))
 import Eucalypt.Stg.StandardMachine
@@ -46,7 +50,7 @@ dumpStg _opts expr = compile expr >>= putStrLn . P.render . prettify
 
 -- | Compile Core to STG
 compile :: CoreExpr -> IO StgSyn
-compile expr = return $ C.compile 0 C.emptyContext expr
+compile expr = return $ C.compileForRender expr
 
 -- | Instantiate the STG machine
 machine :: StgSyn -> IO MachineState
@@ -59,3 +63,29 @@ debugMachine s = putStrLn "DEBUG" >> initDebugMachineState s
 -- | Select an emit function appropriate to the render format
 selectRenderSink :: String -> MachineState -> Event -> IO MachineState
 selectRenderSink _format = dumpEmission
+
+-- | Build a conduit streaming pipeline where the machine generates
+-- events and renderer processes them.
+renderConduit :: EucalyptOptions -> CoreExpr -> IO ()
+renderConduit opts expr = do
+  syn <- compile expr
+  ms <- newMachine syn
+  runConduit $ machineSource ms .| renderPipeline format
+  where
+    format = fromMaybe "yaml" (optionExportFormat opts)
+    newMachine =
+      if optionDebug opts
+        then debugMachine
+        else machine
+
+machineSource :: MachineState -> ConduitT () Event IO ()
+machineSource = loop
+  where
+    loop s = do
+      s' <- step s
+      yieldMany $ machineEvents s'
+      when (machineTerminated s') $ loop s'
+
+
+renderPipeline :: String -> ConduitT Event Void IO ()
+renderPipeline _format = mapM_C print

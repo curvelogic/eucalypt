@@ -88,17 +88,17 @@ dumpEvalEnv _ = error "Code is not Eval"
 machine :: StgSyn -> IO MachineState
 machine = initStandardMachineState
 
-machineD :: StgSyn -> IO MachineState
-machineD syn = machine syn >>= (\s -> return s{ machineEmit = dumpEmission })
+testMachine :: StgSyn -> IO MachineState
+testMachine syn = machine syn >>= (\s -> return s{ machineEmit = dumpEmission , machineDebug = True})
 
 tracingMachine :: StgSyn -> IO MachineState
 tracingMachine = initDebugMachineState
 
 test :: StgSyn -> IO MachineState
-test s = machine s >>= run
+test s = testMachine s >>= run
 
-testD :: StgSyn -> IO MachineState
-testD s = machineD s >>= run
+testTracing :: StgSyn -> IO MachineState
+testTracing s = tracingMachine s >>= run
 
 -- quickcheck helpers
 

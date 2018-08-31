@@ -45,7 +45,7 @@ euRender =
         -- wrapBlock
     , pc_ [continueKVList] $
       lam_ 1 1 $ seqall_ [emitMS, appfn_ (Local 0) [BoundArg 0], emitME]
-        -- renderKV
+        -- renderKV (unless lambda)
     , pc_ [] $
       lam_ 0 1 $
       casedef_
@@ -56,9 +56,16 @@ euRender =
                 (Atom (Local 2))
                 [ ( stgCons
                   , ( 2
-                    , seq_
-                        (appfn_ (Global "RENDER") [Local 1])
-                        (appfn_ (Global "RENDER") [Local 3])))
+                    , force_
+                        (Atom (Local 3))
+                        (caselit_
+                           (appbif_ (intrinsicIndex "CLOSED") [Local 5])
+                           [ ( NativeBool True
+                             , seq_
+                                 (appfn_ (Global "RENDER") [Local 1])
+                                 (appfn_ (Global "RENDER") [Local 5]))
+                           ]
+                           (Just (appcon_ stgUnit [])))))
                 ]))
         ]
         (appfn_ (Global "BOMB") [])

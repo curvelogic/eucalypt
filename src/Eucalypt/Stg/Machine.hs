@@ -13,6 +13,7 @@ module Eucalypt.Stg.Machine where
 
 import Control.Applicative
 import Control.Exception.Safe
+import Control.Monad.IO.Class
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
@@ -20,8 +21,8 @@ import Data.IORef
 import Data.Vector (Vector, (!?))
 import qualified Data.Vector as Vector
 import Data.Word
-import Eucalypt.Stg.Event
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 import qualified Text.PrettyPrint as P
@@ -93,12 +94,12 @@ singleton :: StgValue -> ValVec
 singleton = ValVec . Vector.singleton
 
 extendEnv :: ValVec -> ValVec -> (ValVec, RefVec)
-extendEnv env args = (env', refs)
+extendEnv env args = (env', rs)
   where
     envlen = envSize env
     arglen = envSize args
     env' = env <> args
-    refs = locals envlen (arglen + envlen)
+    rs = locals envlen (arglen + envlen)
 
 instance Semigroup ValVec where
   (<>) (ValVec l) (ValVec r) = ValVec $ l Vector.++ r
@@ -108,8 +109,10 @@ instance Monoid ValVec where
   mappend = (<>)
 
 instance StgPretty ValVec where
-  prettify (ValVec vs) =
-    P.braces $ P.hcat $ P.punctuate P.comma (map prettify (toList vs))
+  prettify (ValVec vs) = P.braces $ P.hcat $ map p (toList vs)
+    where
+      p (StgNat v) = prettify v
+      p (StgAddr _) = P.char '.'
 
 -- | Entry on the frame stack, encoding processing to be done later
 -- when a value is available
@@ -132,6 +135,7 @@ data Code
   | ReturnCon !Tag
               !ValVec
   | ReturnLit !Native
+  | ReturnFun !Address
   deriving (Eq, Show)
 
 instance StgPretty Code where
@@ -141,6 +145,7 @@ instance StgPretty Code where
     P.text "RETURNCON" <> P.space <> P.int (fromIntegral t) <> P.space <>
     prettify binds
   prettify (ReturnLit n) = P.text "RETURNLIT" <> P.space <> prettify n
+  prettify (ReturnFun _) = P.text "RETURNFUN" <> P.space <> P.text "."
 
 -- | Machine state.
 --
@@ -157,11 +162,26 @@ data MachineState = MachineState
     -- ^ whether the machine has terminated
   , machineTrace :: MachineState -> IO ()
     -- ^ debug action to run prior to each step
+  , machineEvents :: [Event]
+    -- ^ events fired by last step
   , machineEmit :: MachineState -> Event -> IO MachineState
     -- ^ emit function to send out events
+  , machineDebug :: Bool
+    -- ^ debug checks on
   , machineDebugEmitLog :: [Event]
     -- ^ log of emitted events for debug / testing
+  , machineLastStepName :: String
   }
+
+-- | Call the machine's trace function
+traceOut :: MonadIO m => MachineState -> m ()
+traceOut ms@MachineState {machineTrace = tr} = liftIO $ tr ms
+
+-- | Clear events and prepare for next step
+prepareStep :: MonadIO m => String -> MachineState -> m MachineState
+prepareStep stepName ms =
+  traceOut ms >>
+  return (tick $ ms {machineEvents = [], machineLastStepName = stepName})
 
 allocGlobal :: String -> LambdaForm -> IO StgValue
 allocGlobal _name impl =
@@ -179,8 +199,11 @@ initMachineState stg ge = do
       , machineCounter = 0
       , machineTerminated = False
       , machineTrace = \_ -> return ()
+      , machineEvents = []
       , machineEmit = \s _ -> return s
+      , machineDebug = False
       , machineDebugEmitLog = []
+      , machineLastStepName = "<INIT>"
       }
 
 -- | Dump machine state for debugging.
@@ -190,10 +213,12 @@ instance StgPretty MachineState where
                         , machineStack = stack
                         , machineCounter = counter
                         , machineDebugEmitLog = events
+                        , machineLastStepName = step
                         } =
     P.nest 10 $
     P.vcat
-      [ P.int counter <> P.colon <> P.space <>
+      [ P.text step <> P.text "-->"
+      , P.int counter <> P.colon <> P.space <>
         P.parens (P.hcat (P.punctuate P.colon (map prettify (toList stack)))) <>
         P.space <>
         prettify code
@@ -210,7 +235,7 @@ val :: MonadThrow m => ValVec -> MachineState -> Ref -> m StgValue
 val (ValVec le) _ (Local l) =
   case le !? fromIntegral l of
     Just v -> return v
-    _ -> throwM EnvironmentIndexOutOfRange
+    _ -> throwM $ EnvironmentIndexOutOfRange $ fromIntegral l
 val _ _ (BoundArg _) = throwM AttemptToResolveBoundArg
 val _ MachineState {machineGlobals = g} (Global nm) = case HM.lookup nm g of
   Just v -> return v
@@ -220,7 +245,7 @@ val _ _ (Literal n) = return $ StgNat n
 -- | Resolve a vector of refs against an environment to create
 -- environment
 vals :: MonadThrow m => ValVec -> MachineState -> Vector Ref -> m ValVec
-vals le ms refs = ValVec <$> traverse (val le ms) refs
+vals le ms rs = ValVec <$> traverse (val le ms) rs
 
 -- | Resolve a ref against env and machine to get address of
 -- HeapObject
@@ -245,12 +270,28 @@ tick ms@MachineState {machineCounter = n} = ms {machineCounter = n + 1}
 setCode :: MachineState -> Code -> MachineState
 setCode ms@MachineState {} c = ms {machineCode = c}
 
+-- | Set the name of the last rule executed
+setRule :: String -> MachineState -> MachineState
+setRule r ms@MachineState {} = ms {machineLastStepName = r}
+
 -- | Build a closure from a STG PreClosure
 buildClosure ::
      MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
 buildClosure le ms (PreClosure captures code) =
   Closure code <$> vals le ms captures
 
--- | Allocate new closure.
+-- | Allocate new closure. Validate env refs if we're in debug mode.
 allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
-allocClosure le ms cc = buildClosure le ms cc >>= allocate
+allocClosure le ms cc = buildClosure le ms cc >>= check >>= allocate
+  where
+    check c =
+      if machineDebug ms && not (validateClosure c)
+      then throwM (CompilerBug $ "Invalid local env ref" ++ show c)
+      else return c
+
+-- | In debug runs, validate every closure to ensure there are no
+-- local references outside the environment
+validateClosure :: HeapObject -> Bool
+validateClosure (Closure code env) =
+  validateRefs (fromIntegral (envSize env)) code
+validateClosure _ = True

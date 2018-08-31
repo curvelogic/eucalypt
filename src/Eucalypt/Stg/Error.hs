@@ -22,7 +22,7 @@ data StgException
   | ArgInsteadOfBranchTable
   | ArgInsteadOfNativeBranchTable
   | StackIndexOutOfRange
-  | EnvironmentIndexOutOfRange
+  | EnvironmentIndexOutOfRange !Int
   | IntrinsicIndexOutOfRange
   | SteppingTerminated
   | AttemptToResolveBoundArg
@@ -31,6 +31,7 @@ data StgException
   | InvalidRegex !String
   | UnknownGlobal !String
   | Panic !String
+  | CompilerBug !String
   deriving (Typeable, Show, Eq)
 
 instance Exception StgException

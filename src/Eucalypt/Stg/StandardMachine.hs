@@ -34,4 +34,5 @@ dumpEmission ms@MachineState {machineDebugEmitLog = es} e =
 initDebugMachineState :: StgSyn -> IO MachineState
 initDebugMachineState stg = do
   ms <- initStandardMachineState stg
-  return $ ms {machineTrace = dump, machineEmit = dumpEmission}
+  return $
+    ms {machineTrace = dump, machineEmit = dumpEmission, machineDebug = True}
