@@ -27,28 +27,37 @@ import Prelude hiding (log)
 -- | Allocate a PAP to record args provided so far and the function
 -- info already discovered
 allocPartial :: ValVec -> MachineState -> LambdaForm -> ValVec -> IO Address
-allocPartial le _ms lf xs = allocate pap
+allocPartial le ms lf xs = allocate pap
   where
     pap =
-      PartialApplication {papCode = lf, papEnv = le, papArgs = xs, papArity = a}
+      PartialApplication
+        { papCode = lf
+        , papEnv = le
+        , papArgs = xs
+        , papArity = a
+        , papCallStack = machineCallStack ms
+        }
     a = fromIntegral (_bound lf) - envSize xs
 
 -- | Push a continuation onto the stack
 push :: MachineState -> Continuation -> MachineState
-push ms@MachineState {machineStack = st} v =
-  ms {machineStack = Vector.snoc st v}
+push ms@MachineState {machineStack = st} k =
+  let stackElement = StackElement k (machineCallStack ms)
+   in ms {machineStack = Vector.snoc st stackElement}
 
 -- | Pop a continuation off the stack
 pop :: MonadThrow m => MachineState -> m (Maybe Continuation, MachineState)
 pop ms@MachineState {machineStack = st} =
   if Vector.null st
     then return (Nothing, ms)
-    else return (Just $ Vector.last st, ms {machineStack = Vector.init st})
+    else let StackElement k cs = Vector.last st
+          in return
+               ( Just k
+               , ms {machineStack = Vector.init st, machineCallStack = cs})
 
 -- | Push an ApplyToArgs continuation on the stack
 pushApplyToArgs :: MonadThrow m => MachineState -> ValVec -> m MachineState
-pushApplyToArgs ms@MachineState {machineStack = stack} xs =
-  return $ ms {machineStack = stack `Vector.snoc` ApplyToArgs xs}
+pushApplyToArgs ms xs = return $ push ms (ApplyToArgs xs)
 
 -- | Branch expressions expect to find their args as the top entries
 -- in the environment (and right now the compiler needs to work out
@@ -78,7 +87,7 @@ call env _ms code addrs = do
 -- | Main machine step function
 step :: (MonadIO m, MonadThrow m) => MachineState -> m MachineState
 step ms@MachineState {machineTerminated = True} =
-  prepareStep "TERM" ms >> throwM SteppingTerminated
+  prepareStep "TERM" ms >> throwIn ms SteppingTerminated
 step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
   ms <- prepareStep "EVAL APP" ms0
   let len = length xs
@@ -87,18 +96,18 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
       addr <- resolveHeapObject env ms r
       obj <- liftIO $ peek addr
       case obj of
-        Closure lf@LambdaForm {_bound = ar} le ->
+        Closure lf@LambdaForm {_bound = ar} le cs ->
           case compare (fromIntegral len) ar
             -- EXACT
                 of
             EQ ->
-              setRule "EXACT" . setCode ms <$>
+              setCallStack cs . setRule "EXACT" . setCode ms <$>
               (vals env ms xs >>= call le ms lf)
             -- CALLK
             GT ->
               let (enough, over) = Vector.splitAt (fromIntegral ar) xs
                in vals env ms over >>= pushApplyToArgs ms >>= \s ->
-                    setRule "CALLK" . setCode s <$>
+                    setCallStack cs . setRule "CALLK" . setCode s <$>
                     (vals env ms enough >>= call le ms lf)
             -- PAP2
             LT ->
@@ -108,17 +117,17 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
                      vals env ms xs >>= allocPartial le ms lf >>= \a ->
                        return $ (setRule "PAP2" . setCode ms) (ReturnFun a)
         -- PCALL
-        PartialApplication code le args ar ->
+        PartialApplication code le args ar cs ->
           case compare (fromIntegral len) ar of
             EQ ->
               vals env ms xs >>= \as ->
-                setRule "PCALL EXACT" . setCode ms <$>
+                setCallStack cs . setRule "PCALL EXACT" . setCode ms <$>
                 call le ms code (args <> as)
             GT ->
               let (enough, over) = Vector.splitAt (fromIntegral ar) xs
                in vals env ms over >>= pushApplyToArgs ms >>= \s ->
                     vals env ms enough >>= \as ->
-                      setRule "PCALLK" . setCode s <$>
+                      setCallStack cs . setRule "PCALLK" . setCode s <$>
                       call le ms code (args <> as)
             LT ->
               if len == 0
@@ -128,7 +137,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
                      vals env ms xs >>= allocPartial le ms code >>= \a ->
                        return $
                        (setRule "PCALL PAP2" . setCode ms) (ReturnFun a)
-        BlackHole -> throwM EnteredBlackHole
+        BlackHole -> throwIn ms EnteredBlackHole
     -- must be saturated
     Con t -> do
       env' <- vals env ms xs
@@ -184,16 +193,19 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
             allocate
               (Closure
                  (LambdaForm 0 0 False (App (Con t) (locals 0 (envSize xs))))
-                 xs)
+                 xs
+                 (machineCallStack ms))
           case defaultBranch k of
             (Just expr) ->
-              return $
-               setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
-            Nothing -> throwM NoBranchFound
+              return $ setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
+            Nothing -> throwIn ms' NoBranchFound
     (Just (Update a)) -> do
-      liftIO $ poke a (Closure (standardConstructor (envSize xs) t) xs)
+      liftIO $
+        poke
+          a
+          (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms))
       return ms'
-    (Just (ApplyToArgs _)) -> throwM ArgInsteadOfBranchTable
+    (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
     Nothing -> return $ terminate ms'
 
 
@@ -206,16 +218,14 @@ step ms0@MachineState {machineCode = (ReturnLit nat)} = do
   case entry of
     (Just (Branch k le)) ->
       case selectNativeBranch k nat of
-        -- CASECON
         (Just expr) -> return $ setCode ms' (Eval expr le)
-        -- CASEANY (lit)
         Nothing ->
           case defaultBranch k of
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgNat nat)))
-            Nothing -> throwM NoBranchFound
-    (Just (Update _)) -> throwM LiteralUpdate
-    (Just (ApplyToArgs _)) -> throwM ArgInsteadOfNativeBranchTable
+            Nothing -> throwIn ms' NoBranchFound
+    (Just (Update _)) -> throwIn ms' LiteralUpdate
+    (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfNativeBranchTable
     Nothing -> return $ terminate ms'
 
 
@@ -228,7 +238,8 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
   case entry of
     (Just (ApplyToArgs addrs)) ->
       let (env', args') = extendEnv mempty $ singleton (StgAddr r) <> addrs
-       in return $ setCode ms' (Eval (App (Ref $ Local 0) args') env')
+       in return $
+          setCode ms' (Eval (App (Ref $ Vector.head args') (Vector.tail args')) env')
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
@@ -251,7 +262,9 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
       return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v)) -- (ReturnFun a) -- what if it's a thunk?
     StgNat n -> return $ setCode ms (ReturnLit n)
 
-
+-- | Append an annotation to the call stack
+step ms@MachineState {machineCode = (Eval (Ann s expr) env)} =
+  return . appendCallStack s . setRule "ANN" $ setCode ms (Eval expr env)
 
 -- | Step repeatedly until the terminated flag is set
 run :: (MonadIO m, MonadThrow m) => MachineState -> m MachineState

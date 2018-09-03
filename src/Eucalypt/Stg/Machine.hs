@@ -21,6 +21,7 @@ import Data.IORef
 import Data.Vector (Vector, (!?))
 import qualified Data.Vector as Vector
 import Data.Word
+import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
@@ -62,17 +63,19 @@ instance StgPretty StgValue where
 -- | Anything storable in an 'Address'.
 data HeapObject
   = Closure { closureCode :: !LambdaForm
-            , closureEnv :: !ValVec }
+            , closureEnv :: !ValVec
+            , closureCallStack :: Vector String}
   | PartialApplication { papCode :: !LambdaForm
                        , papEnv :: !ValVec
                        , papArgs :: !ValVec
-                       , papArity :: !Word64 }
+                       , papArity :: !Word64
+                       , papCallStack :: Vector String}
   | BlackHole
   deriving (Eq, Show)
 
 instance StgPretty HeapObject where
-  prettify (Closure lf env) = prettify env <> P.space <> prettify lf
-  prettify (PartialApplication lf env args arity) =
+  prettify (Closure lf env _) = prettify env <> P.space <> prettify lf
+  prettify (PartialApplication lf env args arity _) =
     prettify env <> P.space <>
     P.parens (prettify args <> P.text "..." <> P.int (fromIntegral arity)) <>
     prettify lf
@@ -128,6 +131,17 @@ instance StgPretty Continuation where
   prettify (Update _) = P.text "Up"
   prettify (ApplyToArgs _) = P.text "Ap"
 
+-- Continuation stack also records
+-- call stacks for restoring them on return
+data StackElement = StackElement
+  { stackContinuation :: Continuation
+  , stackCallStack :: CallStack
+  }
+  deriving (Eq, Show)
+
+instance StgPretty StackElement where
+  prettify (StackElement k _) = prettify k
+
 -- | Currently executing code
 data Code
   = Eval !StgSyn
@@ -154,7 +168,7 @@ data MachineState = MachineState
     -- ^ Next instruction to execute
   , machineGlobals :: HashMap String StgValue
     -- ^ Global (heap allocated) objects
-  , machineStack :: Vector Continuation
+  , machineStack :: Vector StackElement
     -- ^ stack of continuations
   , machineCounter :: Int
     -- ^ count of steps executed so far
@@ -171,6 +185,8 @@ data MachineState = MachineState
   , machineDebugEmitLog :: [Event]
     -- ^ log of emitted events for debug / testing
   , machineLastStepName :: String
+    -- ^ current call stack for debugging
+  , machineCallStack :: CallStack
   }
 
 -- | Call the machine's trace function
@@ -185,7 +201,10 @@ prepareStep stepName ms =
 
 allocGlobal :: String -> LambdaForm -> IO StgValue
 allocGlobal _name impl =
-  StgAddr <$> allocate (Closure {closureCode = impl, closureEnv = mempty})
+  StgAddr <$>
+  allocate
+    (Closure
+       {closureCode = impl, closureEnv = mempty, closureCallStack = mempty})
 
 -- | Initialise machine state.
 initMachineState :: StgSyn -> HashMap String LambdaForm -> IO MachineState
@@ -204,6 +223,7 @@ initMachineState stg ge = do
       , machineDebug = False
       , machineDebugEmitLog = []
       , machineLastStepName = "<INIT>"
+      , machineCallStack = mempty
       }
 
 -- | Dump machine state for debugging.
@@ -227,19 +247,24 @@ instance StgPretty MachineState where
           else P.nest 2 (P.text ">>> " <> P.text (show events))
       ]
 
+
+-- | Throw STG error, passing in current call stack
+throwIn :: MonadThrow m => MachineState -> StgError -> m a
+throwIn ms err = throwM $ StgException err (machineCallStack ms)
+
 -- | Resolve environment references against local and global
 -- environments. If a ref is still a BoundArg at the point it is
 -- resolved, AttemptToResolveBoundArg will be thrown. Args are
 -- resolved and recorded in environment for use.
 val :: MonadThrow m => ValVec -> MachineState -> Ref -> m StgValue
-val (ValVec le) _ (Local l) =
+val (ValVec le) ms (Local l) =
   case le !? fromIntegral l of
     Just v -> return v
-    _ -> throwM $ EnvironmentIndexOutOfRange $ fromIntegral l
-val _ _ (BoundArg _) = throwM AttemptToResolveBoundArg
-val _ MachineState {machineGlobals = g} (Global nm) = case HM.lookup nm g of
+    _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
+val _ ms (BoundArg _) = throwIn ms AttemptToResolveBoundArg
+val _ ms@MachineState {machineGlobals = g} (Global nm) = case HM.lookup nm g of
   Just v -> return v
-  _ -> throwM $ UnknownGlobal nm
+  _ -> throwIn ms $ UnknownGlobal nm
 val _ _ (Literal n) = return $ StgNat n
 
 -- | Resolve a vector of refs against an environment to create
@@ -250,15 +275,16 @@ vals le ms rs = ValVec <$> traverse (val le ms) rs
 -- | Resolve a ref against env and machine to get address of
 -- HeapObject
 resolveHeapObject :: MonadThrow m => ValVec -> MachineState -> Ref -> m Address
-resolveHeapObject env st ref =
-  val env st ref >>= \case
+resolveHeapObject env ms ref =
+  val env ms ref >>= \case
     StgAddr r -> return r
-    StgNat _ -> throwM NonAddressStgValue
+    StgNat _ -> throwIn ms NonAddressStgValue
 
+-- | Resolve a ref against env and machine
 resolveNative :: MonadThrow m => ValVec -> MachineState -> Ref -> m Native
-resolveNative env st ref =
-  val env st ref >>= \case
-    StgAddr _ -> throwM NonNativeStgValue
+resolveNative env ms ref =
+  val env ms ref >>= \case
+    StgAddr _ -> throwIn ms NonNativeStgValue
     StgNat n -> return n
 
 -- | Increase counters
@@ -274,16 +300,26 @@ setCode ms@MachineState {} c = ms {machineCode = c}
 setRule :: String -> MachineState -> MachineState
 setRule r ms@MachineState {} = ms {machineLastStepName = r}
 
+-- | Set the current call stack
+setCallStack :: CallStack -> MachineState -> MachineState
+setCallStack cs ms = ms { machineCallStack = cs }
+
+-- | Append annotation to current
+-- call stack
+appendCallStack :: String -> MachineState -> MachineState
+appendCallStack ann ms@MachineState {machineCallStack = cs} =
+  ms {machineCallStack = cs `Vector.snoc` ann}
+
 -- | Append event for this step
 appendEvent :: Event -> MachineState -> MachineState
-appendEvent es ms@MachineState {machineEvents = es0} =
-  ms {machineEvents = es0 `Vector.snoc` es}
+appendEvent e ms@MachineState {machineEvents = es0} =
+  ms {machineEvents = es0 `Vector.snoc` e}
 
 -- | Build a closure from a STG PreClosure
 buildClosure ::
      MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
 buildClosure le ms (PreClosure captures code) =
-  Closure code <$> vals le ms captures
+  Closure code <$> vals le ms captures <*> pure (machineCallStack ms)
 
 -- | Allocate new closure. Validate env refs if we're in debug mode.
 allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
@@ -291,12 +327,12 @@ allocClosure le ms cc = buildClosure le ms cc >>= check >>= allocate
   where
     check c =
       if machineDebug ms && not (validateClosure c)
-      then throwM (CompilerBug $ "Invalid local env ref" ++ show c)
+      then throwIn ms (CompilerBug $ "Invalid local env ref" ++ show c)
       else return c
 
 -- | In debug runs, validate every closure to ensure there are no
 -- local references outside the environment
 validateClosure :: HeapObject -> Bool
-validateClosure (Closure code env) =
+validateClosure (Closure code env _) =
   validateRefs (fromIntegral (envSize env)) code
 validateClosure _ = True

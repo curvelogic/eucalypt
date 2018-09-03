@@ -276,6 +276,7 @@ data StgSyn
         !StgSyn
   | LetRec (Vector PreClosure)
            !StgSyn
+  | Ann !String !StgSyn
   deriving (Eq, Show)
 
 instance HasArgRefs StgSyn where
@@ -285,6 +286,7 @@ instance HasArgRefs StgSyn where
   argsAt n (LetRec pcs syn) = LetRec (V.map (argsAt n) pcs) (argsAt n syn)
   argsAt n (App f rs) = App (argsAt n f) (V.map (argsAt n) rs)
   argsAt n (Case expr k) = Case (argsAt n expr) (argsAt n k)
+  argsAt n (Ann _ expr) = argsAt n expr
 
 instance HasRefs StgSyn where
   refs (Atom r) = [r]
@@ -292,6 +294,7 @@ instance HasRefs StgSyn where
   refs (App f xs) = refs f <> toList xs
   refs (Let pcs expr) = foldMap refs pcs <> refs expr
   refs (LetRec pcs expr) = foldMap refs pcs <> refs expr
+  refs (Ann _ expr) = refs expr
   validateRefs size (Case r k) = validateRefs size r && validateRefs size k
   validateRefs size (Let pcs expr) =
     getAll (foldMap (All . validateRefs size) pcs) &&
@@ -317,6 +320,7 @@ instance StgPretty StgSyn where
   prettify (LetRec pcs e) =
     P.hang (P.text "letrec") 7 (P.vcat (map prettify (toList pcs))) P.$$
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
+  prettify (Ann s expr) = P.char '`' <> P.text s <> P.char '`' <> P.space <> prettify expr
 
 force_ :: StgSyn -> StgSyn -> StgSyn
 force_ scrutinee df = Case scrutinee (BranchTable mempty mempty (Just df))
@@ -374,6 +378,9 @@ pc0_ = PreClosure mempty
 
 pc_ :: [Ref] -> LambdaForm -> PreClosure
 pc_ = PreClosure . V.fromList
+
+ann_ :: String -> StgSyn -> StgSyn
+ann_ = Ann
 
 -- | Standard constructor - applies saturated data constructor of tag
 -- @t@ to refs on stack.

@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Driver.Stg
 Description : Drive compilation, evaluation and render using STG
@@ -14,6 +15,7 @@ module Eucalypt.Driver.Stg
 
 
 import Conduit
+import Control.Exception (IOException)
 import Control.Monad (unless)
 import qualified Data.ByteString as BS
 import Data.Maybe (fromMaybe)
@@ -21,6 +23,7 @@ import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Render.Yaml as Yaml
 import qualified Eucalypt.Stg.Compiler as C
+import Eucalypt.Stg.Error
 import Eucalypt.Stg.Eval (step)
 import Eucalypt.Stg.Event (Event(..))
 import Eucalypt.Stg.Machine (MachineState(..))
@@ -74,7 +77,9 @@ renderConduit opts expr = do
 -- | Step through the machine yielding events via the conduit pipeline
 -- at each stage
 machineSource ::
-  (MonadResource m, MonadIO m, MonadThrow m) => MachineState -> ConduitT () Event m ()
+     (MonadUnliftIO m, MonadResource m, MonadIO m, MonadThrow m)
+  => MachineState
+  -> ConduitT () Event m ()
 machineSource ms = do
   yield OutputStreamStart
   yield OutputDocumentStart
@@ -83,7 +88,10 @@ machineSource ms = do
   yield OutputStreamEnd
   where
     loop s = do
-      s' <- step s
+      s' <-
+        step s `catchC`
+        (\(e :: IOException) ->
+           throwM $ StgException (IOSystem e) (machineCallStack s))
       yieldMany $ machineEvents s'
       unless (machineTerminated s') $ loop s'
 

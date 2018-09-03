@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-|
 Module      : Eucalypt.Stg.Compiler
 Description : Compile core to STG-code
@@ -14,6 +15,7 @@ module Eucalypt.Stg.Compiler where
 import Bound.Var as Var
 import Bound.Scope (fromScope)
 import qualified Data.Array as A
+import Data.Bifunctor (second)
 import Data.Foldable (toList)
 import Data.List (nub, elemIndex)
 import Data.Scientific
@@ -48,8 +50,8 @@ convert CoreNull = error "No native null"
 
 
 -- | Compile a let / letrec binding
-compileBinding :: Eq v => Int -> (v -> Ref) -> C.CoreExp v -> PreClosure
-compileBinding _ context expr = pc_ free $ compileLambdaForm expr
+compileBinding :: Eq v => Int -> (v -> Ref) -> (CoreBindingName, C.CoreExp v) -> PreClosure
+compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
   where
     fvs = [(v, context v) | v <- nub . toList $ expr]
     free = map snd fvs
@@ -60,7 +62,7 @@ compileBinding _ context expr = pc_ free $ compileLambdaForm expr
     compileLambdaForm e =
       case e of
         (CoreLambda ns body) ->
-          lam_ (length free) (length ns) $
+          lam_ (length free) (length ns) $ ann_ nm $
           compile (length free) contextL' $ fromScope body
         (CoreList []) -> nilConstructor -- TODO: id all std cons?
         CorePrim {} -> value_ $ compile (length free) context' e
@@ -75,7 +77,7 @@ compile envSize context (C.CoreLet bs b) = letrec_ stgBindings stgBody
   where
     l = length bs
     envSize' = envSize + l
-    stgBindings = map (compileBinding envSize' context' . fromScope . snd) bs
+    stgBindings = map (compileBinding envSize' context' . second fromScope) bs
     stgBody = compile envSize' context' $ fromScope b
     context' = extendContextForScope envSize context l
 
@@ -95,7 +97,7 @@ compile _ _ (C.CorePrim n) = Atom (Literal (convert n))
 -- | Block literals
 compile envSize context (C.CoreBlock content) = let_ [c] b
   where
-    c = compileBinding envSize context content
+    c = compileBinding envSize context ("", content)
     cref = Local $ fromIntegral envSize
     b = appcon_ stgBlock [cref]
 
@@ -105,7 +107,7 @@ compile _ _ (C.CoreList []) = appcon_ stgNil mempty
 -- | List literals
 compile envSize context (C.CoreList els) = let_ elBinds buildList
   where
-    elBinds = map (compileBinding envSize context) els
+    elBinds = map (compileBinding envSize context . ("",)) els
     elCount = length elBinds
     buildList =
       list_ (envSize + elCount) $ localsList envSize (envSize + elCount)
@@ -123,14 +125,14 @@ compile envSize context (C.CoreApply f xs) =
         (CoreBuiltin n) -> ([], Ref $ Global n)
         (CoreVar a) -> ([], Ref $ context a)
         _ ->
-          ( [compileBinding envSize context f]
+          ( [compileBinding envSize context ("<fn>", f)]
           , Ref (Local $ fromIntegral envSize))
     acc (ps, xrs) x =
       case x of
         (CoreVar a) -> (ps, xrs ++ [context a])
         (CorePrim n) -> (ps, xrs ++ [Literal $ convert n])
         _ ->
-          ( ps ++ [compileBinding envSize context x]
+          ( ps ++ [compileBinding envSize context ("", x)]
           , xrs ++ [Local $ fromIntegral $ envSize + length ps])
     (pcs, xrefs) = foldl acc (pcs0, []) xs
     op fn =
@@ -141,7 +143,7 @@ compile envSize context (C.CoreApply f xs) =
 
 compile envSize context (CoreLookup obj nm) =
   let_
-    [compileBinding envSize context obj]
+    [compileBinding envSize context ("", obj)]
     (appfn_ (Global "LOOKUP") [Literal (NativeSymbol nm)])
 
 

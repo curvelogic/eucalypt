@@ -13,8 +13,13 @@ import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Data.Vector ((!))
 
+
+assertNat :: StgValue -> Native
+assertNat (StgNat n) = n
+assertNat v = error $ "Non-native arg:" ++ show v
+
 natEq :: MachineState -> ValVec -> IO MachineState
 natEq ms (ValVec xs) = do
-  let (StgNat lhs) = xs ! 0
-  let (StgNat rhs) = xs ! 1
+  let lhs = assertNat $ xs ! 0
+  let rhs = assertNat $ xs ! 1
   return $ setCode ms (ReturnLit (NativeBool (lhs == rhs)))

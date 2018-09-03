@@ -15,7 +15,6 @@ module Eucalypt.Stg.Intrinsics.Str
   ) where
 
 import Safe (headMay)
-import Control.Exception.Safe
 import Eucalypt.Stg.Intrinsics.Common (returnNatList, readStrList)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
@@ -35,7 +34,7 @@ split ms (ValVec args) = do
   let (StgNat (NativeString regex)) = args ! 1
   case toRegex regex of
     (Right r) -> returnNatList ms $ map NativeString $ R.split r target
-    (Left s) -> throwM $ InvalidRegex s
+    (Left s) -> throwIn ms $ InvalidRegex s
 
 match :: MachineState -> ValVec -> IO MachineState
 match ms (ValVec args) = do
@@ -47,7 +46,7 @@ match ms (ValVec args) = do
       case headMay $ R.scan r target of
         Just (m, gs) -> map NativeString (m : gs)
         Nothing -> []
-    (Left s) -> throwM $ InvalidRegex s
+    (Left s) -> throwIn ms $ InvalidRegex s
 
 matches :: MachineState -> ValVec -> IO MachineState
 matches ms (ValVec args) = do
@@ -55,7 +54,7 @@ matches ms (ValVec args) = do
   let (StgNat (NativeString regex)) = args ! 1
   case toRegex regex of
     (Right r) -> returnNatList ms $ map (NativeString . fst) $ R.scan r target
-    (Left s) -> throwM $ InvalidRegex s
+    (Left s) -> throwIn ms $ InvalidRegex s
 
 join :: MachineState -> ValVec -> IO MachineState
 join ms (ValVec args) = do
