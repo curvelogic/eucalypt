@@ -131,7 +131,7 @@ compile envSize context (C.CoreApply f xs) =
         (CorePrim n) -> (ps, xrs ++ [Literal $ convert n])
         _ ->
           ( ps ++ [compileBinding envSize context x]
-          , [Local $ fromIntegral $ envSize + length ps])
+          , xrs ++ [Local $ fromIntegral $ envSize + length ps])
     (pcs, xrefs) = foldl acc (pcs0, []) xs
     op fn =
       case fn of
@@ -160,8 +160,8 @@ compile _ _ (CoreTraced _) = error "Cannot compile traced"
 compile _ _ (CoreChecked _ _) = error "Cannot compile checked"
 
 -- | An empty context with no Refs for any Var
-emptyContext :: Eq v => v -> Ref
-emptyContext _  = error "Missing from context during compilation"
+emptyContext :: (Show v, Eq v) => v -> Ref
+emptyContext v  = error $ show v ++ " missing from context during compilation"
 
 -- | Extend the context to apply to Vars in Scope
 extendContextForScope :: Int -> (v -> Ref) -> Int -> (Var Int v -> Ref)
