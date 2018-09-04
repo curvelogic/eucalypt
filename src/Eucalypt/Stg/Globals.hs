@@ -55,7 +55,7 @@ euLookupList =
                     (appfn_ (Global "EQ") [Local 4, BoundArg 1])
                     [ (NativeBool True, appfn_ (Global "HEAD") [Local 5])
                     , ( NativeBool False
-                      , appfn_ (Global "LOOKUP_LIST") [Local 5, BoundArg 1])
+                      , appfn_ (Global "LOOKUP_LIST") [Local 3, BoundArg 1])
                     ]
                     Nothing))
             ]))
