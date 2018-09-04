@@ -27,6 +27,7 @@ import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 import qualified Text.PrettyPrint as P
+import Text.PrettyPrint ((<+>), ($+$))
 
 -- | A mutable refence to a heap object
 newtype Address =
@@ -64,12 +65,12 @@ instance StgPretty StgValue where
 data HeapObject
   = Closure { closureCode :: !LambdaForm
             , closureEnv :: !ValVec
-            , closureCallStack :: Vector String}
+            , closureCallStack :: !CallStack}
   | PartialApplication { papCode :: !LambdaForm
                        , papEnv :: !ValVec
                        , papArgs :: !ValVec
                        , papArity :: !Word64
-                       , papCallStack :: Vector String}
+                       , papCallStack :: !CallStack}
   | BlackHole
   deriving (Eq, Show)
 
@@ -140,17 +141,8 @@ data StackElement = StackElement
   deriving (Eq, Show)
 
 
-
 instance StgPretty StackElement where
-  prettify (StackElement k cs) = stack <> prettify k
-    where
-      stack =
-        if Vector.null cs
-          then P.empty
-          else P.brackets
-                 (P.hcat (P.punctuate (P.char '>') (map P.text (toList cs))))
-
-
+  prettify (StackElement k _cs) = prettify k
 
 -- | Currently executing code
 data Code
@@ -244,17 +236,18 @@ instance StgPretty MachineState where
                         , machineCounter = counter
                         , machineDebugEmitLog = events
                         , machineLastStepName = step
+                        , machineCallStack = cs
                         } =
-    P.nest 10 $
     P.vcat
-      [ P.text step <> P.text "-->"
-      , P.int counter <> P.colon <> P.space <>
-        P.parens (P.hcat (P.punctuate P.colon (map prettify (toList stack)))) <>
-        P.space <>
-        prettify code
+      [ (P.int counter <> P.colon) <+>
+        (P.text step <> P.text "-->") <+>
+        P.parens (P.hcat (P.punctuate P.colon (map prettify (toList stack)))) <+>
+        prettify cs
+      , P.nest 4 $ P.space $+$ prettify code $+$ P.space
       , if null events
           then P.empty
           else P.nest 2 (P.text ">>> " <> P.text (show events))
+      , P.space
       ]
 
 
@@ -318,7 +311,7 @@ setCallStack cs ms = ms { machineCallStack = cs }
 -- call stack
 appendCallStack :: String -> MachineState -> MachineState
 appendCallStack ann ms@MachineState {machineCallStack = cs} =
-  ms {machineCallStack = cs `Vector.snoc` ann}
+  ms {machineCallStack = addEntry ann cs}
 
 -- | Append event for this step
 appendEvent :: Event -> MachineState -> MachineState

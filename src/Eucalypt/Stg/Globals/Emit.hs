@@ -24,10 +24,10 @@ euRender =
   lam_ 0 1 $ ann_ "__RENDER" $
   letrec_
       -- emptyList
-    [ pc0_ $ value_ $ seq_ emitSS emitSE
+    [ pc0_ $ value_ $ ann_ "emptyList" $ seq_ emitSS emitSE
         -- continueList
     , pc_ [continueList] $
-      lam_ 1 1 $
+      lam_ 1 1 $ ann_ "continueList" $
       casedef_
         (Atom (BoundArg 0))
         [ ( stgCons
@@ -39,7 +39,7 @@ euRender =
         (emitScalar (Local 2))
         -- startList
     , pc_ [continueList] $
-      lam_ 1 2 $
+      lam_ 1 2 $ ann_ "startList" $
       seq_
         emitSS
         (seq_
@@ -47,10 +47,10 @@ euRender =
            (appfn_ (Local 0) [BoundArg 1]))
         -- wrapBlock
     , pc_ [continueKVList] $
-      lam_ 1 1 $ seqall_ [emitMS, appfn_ (Local 0) [BoundArg 0], emitME]
+      lam_ 1 1 $ ann_ "wrapBlock" $ seqall_ [emitMS, appfn_ (Local 0) [BoundArg 0], emitME]
         -- renderKV (unless lambda)
     , pc_ [] $
-      lam_ 0 1 $
+      lam_ 0 1 $ ann_ "renderKV" $
       casedef_
         (Atom (BoundArg 0))
         [ ( stgCons
@@ -74,7 +74,7 @@ euRender =
         (appfn_ (Global "BOMB") [])
         -- continueKVList
     , pc_ [renderKV, continueKVList] $
-      lam_ 2 1 $
+      lam_ 2 1 $ ann_ "continueKVList" $
       case_
         (Atom (BoundArg 0))
         [ ( stgCons
@@ -83,7 +83,7 @@ euRender =
         ]
         -- typeSwitch
     , pc_ [emptyList, continueList, startList, wrapBlock] $
-      lam_ 4 1 $
+      lam_ 4 1 $ ann_ "typeSwitch" $
       casedef_
         (Atom (BoundArg 0))
         [ (stgBlock, (1, appfn_ (Local 3) [Local 5]))
