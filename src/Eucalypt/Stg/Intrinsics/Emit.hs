@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Emit
   ( emitMappingStart
   , emitMappingEnd
+  , emitNull
   , emitSequenceStart
   , emitSequenceEnd
   , emitScalar
@@ -38,6 +39,9 @@ emitSequenceStart s _ = emit s OutputSequenceStart
 
 emitSequenceEnd :: MachineState -> ValVec -> IO MachineState
 emitSequenceEnd s _ = emit s OutputSequenceEnd
+
+emitNull :: MachineState -> ValVec -> IO MachineState
+emitNull s _ = emit s OutputNull
 
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do

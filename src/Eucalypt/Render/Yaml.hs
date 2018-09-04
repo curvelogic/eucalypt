@@ -161,6 +161,7 @@ toYamlEvents e =
     E.OutputDocumentStart -> [L.EventDocumentStart]
     E.OutputDocumentEnd -> [L.EventDocumentEnd]
     E.OutputScalar n -> [renderValue n]
+    E.OutputNull -> [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
     E.OutputSequenceStart -> [L.EventSequenceStart Nothing]
     E.OutputSequenceEnd -> [L.EventSequenceEnd]
     E.OutputMappingStart -> [L.EventMappingStart Nothing]

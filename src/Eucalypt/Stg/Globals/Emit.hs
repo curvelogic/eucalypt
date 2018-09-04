@@ -9,16 +9,19 @@ Stability   : experimental
 
 module Eucalypt.Stg.Globals.Emit
   ( euRender
+  , euNull
   ) where
 
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
+euNull :: LambdaForm
+euNull = standardConstructor 0 stgUnit
 
 euRender :: LambdaForm
 euRender =
-  lam_ 0 1 $
+  lam_ 0 1 $ ann_ "__RENDER" $
   letrec_
       -- emptyList
     [ pc0_ $ value_ $ seq_ emitSS emitSE

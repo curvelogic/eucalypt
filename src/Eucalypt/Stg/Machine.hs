@@ -139,8 +139,18 @@ data StackElement = StackElement
   }
   deriving (Eq, Show)
 
+
+
 instance StgPretty StackElement where
-  prettify (StackElement k _) = prettify k
+  prettify (StackElement k cs) = stack <> prettify k
+    where
+      stack =
+        if Vector.null cs
+          then P.empty
+          else P.braces
+                 (P.hcat (P.punctuate (P.char '>') (map P.text (toList cs))))
+
+
 
 -- | Currently executing code
 data Code

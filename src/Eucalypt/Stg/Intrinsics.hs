@@ -37,6 +37,7 @@ intrinsics =
   , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart
   , IntrinsicInfo "EMIT]" 0 Emit.emitSequenceEnd
   , IntrinsicInfo "EMITx" 1 Emit.emitScalar
+  , IntrinsicInfo "EMIT0" 0 Emit.emitNull
   , IntrinsicInfo "SPLIT" 2 Str.split
   , IntrinsicInfo "MATCH" 2 Str.match
   , IntrinsicInfo "MATCHES" 2 Str.matches

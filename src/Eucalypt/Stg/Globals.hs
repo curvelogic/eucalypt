@@ -105,5 +105,6 @@ standardGlobals =
     , ("LOOKUP", euLookup)
     , ("LOOKUP_LIST", euLookupList)
     , ("RENDER", Emit.euRender)
+    , ("NULL", Emit.euNull)
     , ("seqNatList", seqNatList)
     ]

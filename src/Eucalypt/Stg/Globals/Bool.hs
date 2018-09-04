@@ -33,7 +33,7 @@ euFalse = value_ (Atom $ Literal $ NativeBool False)
 -- | __NOT(b)
 euNot :: LambdaForm
 euNot =
-  lam_ 0 1 $
+  lam_ 0 1 $ ann_ "__NOT" $
   caselit_
     (Atom (BoundArg 0))
     [ (NativeBool True, Atom $ Literal $ NativeBool False)
@@ -45,7 +45,7 @@ euNot =
 -- | __AND(l, r) - shortcircuit AND
 euAnd :: LambdaForm
 euAnd =
-  lam_ 0 2 $
+  lam_ 0 2 $ ann_ "__AND" $
   caselit_
     (Atom (BoundArg 0))
     [ (NativeBool False, Atom $ Literal $ NativeBool False)
@@ -64,7 +64,7 @@ euAnd =
 -- | __OR(l, r) - shortcircuit OR
 euOr :: LambdaForm
 euOr =
-  lam_ 0 2 $
+  lam_ 0 2 $ ann_ "__OR" $
   caselit_
     (Atom (BoundArg 0))
     [ (NativeBool True, Atom $ Literal $ NativeBool True)
@@ -83,7 +83,7 @@ euOr =
 -- | __IF(c, t, f)
 euIf :: LambdaForm
 euIf =
-  lam_ 0 3 $
+  lam_ 0 3 $ ann_ "__IF" $
   caselit_
     (Atom (BoundArg 0))
     [ (NativeBool True, Atom $ BoundArg 1)
