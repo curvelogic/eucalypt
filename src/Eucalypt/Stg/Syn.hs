@@ -286,7 +286,7 @@ instance HasArgRefs StgSyn where
   argsAt n (LetRec pcs syn) = LetRec (V.map (argsAt n) pcs) (argsAt n syn)
   argsAt n (App f rs) = App (argsAt n f) (V.map (argsAt n) rs)
   argsAt n (Case expr k) = Case (argsAt n expr) (argsAt n k)
-  argsAt n (Ann _ expr) = argsAt n expr
+  argsAt n (Ann s expr) = Ann s $ argsAt n expr
 
 instance HasRefs StgSyn where
   refs (Atom r) = [r]

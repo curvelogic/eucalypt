@@ -147,7 +147,7 @@ instance StgPretty StackElement where
       stack =
         if Vector.null cs
           then P.empty
-          else P.braces
+          else P.brackets
                  (P.hcat (P.punctuate (P.char '>') (map P.text (toList cs))))
 
 
