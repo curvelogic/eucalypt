@@ -89,6 +89,7 @@ euRender =
         [ (stgBlock, (1, appfn_ (Local 3) [Local 5]))
         , (stgCons, (2, appfn_ (Local 2) [Local 5, Local 6]))
         , (stgNil, (0, appfn_ (Local 0) []))
+        , (stgUnit, (0, emitNull))
         ]
         (emitScalar (Local 5))
     ]
@@ -106,3 +107,4 @@ euRender =
     emitSS = appbif_ (intrinsicIndex "EMIT[") []
     emitSE = appbif_ (intrinsicIndex "EMIT]") []
     emitScalar n = appbif_ (intrinsicIndex "EMITx") [n]
+    emitNull = appbif_ (intrinsicIndex "EMIT0") []
