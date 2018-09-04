@@ -55,6 +55,13 @@ spec = do
       it "compiles an simple data block" $
         comp (C.block [C.element "a" $ C.str "a", C.element "b" $ C.str "b"]) `shouldBe`
         asAndBs
+    context "handles catenation" $
+      it "compiles catenations with internal args" $
+      comp (C.app (C.bif "CAT") [C.int 5, C.app (C.bif "F") [C.int 1]]) `shouldBe`
+      let_
+        [pc0_ $ thunk_ (appfn_ (Global "F") [Literal (NativeNumber 1)])]
+        (appfn_ (Global "CAT") [Literal (NativeNumber 5), Local 0])
+
 
 
 asAndBs :: StgSyn

@@ -15,9 +15,11 @@ module Eucalypt.Render.Yaml
 import Conduit
 import Control.Monad ((>=>))
 import qualified Data.ByteString as BS
+import qualified Data.Conduit.Combinators as C
 import Data.Maybe (catMaybes)
 import Data.Scientific
 import Data.Text (Text, pack)
+import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Yaml.Builder as B
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
@@ -26,7 +28,8 @@ import Eucalypt.Render.Classes
 import Eucalypt.Render.Common
 import qualified Text.Libyaml as L
 
-
+import qualified Eucalypt.Stg.Event as E
+import Eucalypt.Stg.Syn (Native(..))
 
 
 
@@ -128,3 +131,42 @@ data YamlConfig = YamlConfig {}
 
 instance Renderer YamlConfig where
   renderBytes _ = renderYamlBytes
+
+-- STG implementation
+
+renderValue :: Native -> L.Event
+renderValue (NativeNumber n) =
+  L.EventScalar (encodeUtf8 $ pack $ show n) L.IntTag L.PlainNoTag Nothing
+renderValue (NativeSymbol s) =
+  L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
+renderValue (NativeString s) =
+  L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
+renderValue (NativeBool b) =
+  L.EventScalar
+    (encodeUtf8 $
+     pack $
+     if b
+       then "true"
+       else "false")
+    L.BoolTag
+    L.PlainNoTag
+    Nothing
+
+
+toYamlEvents :: E.Event -> [L.Event]
+toYamlEvents e =
+  case e of
+    E.OutputStreamStart -> [L.EventStreamStart]
+    E.OutputStreamEnd -> [L.EventStreamEnd]
+    E.OutputDocumentStart -> [L.EventDocumentStart]
+    E.OutputDocumentEnd -> [L.EventDocumentEnd]
+    E.OutputScalar n -> [renderValue n]
+    E.OutputNull -> [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
+    E.OutputSequenceStart -> [L.EventSequenceStart Nothing]
+    E.OutputSequenceEnd -> [L.EventSequenceEnd]
+    E.OutputMappingStart -> [L.EventMappingStart Nothing]
+    E.OutputMappingEnd -> [L.EventMappingEnd]
+    _ -> []
+
+pipeline :: (MonadIO m, MonadResource m) => ConduitT E.Event Void m BS.ByteString
+pipeline = mapC toYamlEvents .| C.concat .| L.encode

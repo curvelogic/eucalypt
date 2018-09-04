@@ -29,7 +29,7 @@ newtype RegexSafeString = RegexSafeString
   } deriving (Show, Eq)
 
 instance Arbitrary RegexSafeString where
-  arbitrary = RegexSafeString `fmap` listOf arbitraryNonRegexChar
+  arbitrary = RegexSafeString `fmap` listOf1 arbitraryNonRegexChar
     where
       arbitraryNonRegexChar =
         arbitraryPrintableChar `suchThat` (not . (`elem` "[]().\\*+{}?^\0$&|"))

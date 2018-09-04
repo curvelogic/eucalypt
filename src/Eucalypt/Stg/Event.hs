@@ -21,6 +21,7 @@ data Event
   | OutputDocumentStart
   | OutputDocumentEnd
   | OutputScalar !Native
+  | OutputNull
   | OutputSequenceStart
   | OutputSequenceEnd
   | OutputMappingStart

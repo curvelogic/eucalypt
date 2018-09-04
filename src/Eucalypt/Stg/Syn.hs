@@ -18,14 +18,17 @@ import Data.Bifunctor (second)
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
+import Data.List (maximum)
 import qualified Data.Map as Map
+import Data.Maybe (mapMaybe)
+import Data.Monoid (All(..))
 import Data.Scientific
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Word
 import GHC.Generics (Generic)
+import Test.QuickCheck (Arbitrary(..), Gen, oneof)
 import qualified Text.PrettyPrint as P
-import Test.QuickCheck (Arbitrary(..), oneof, Gen)
 
 -- | Pretty printable syntax element
 class StgPretty a where
@@ -77,6 +80,10 @@ data Ref
   | Literal !Native
   deriving (Eq, Show)
 
+envIndex :: Ref -> Maybe Word64
+envIndex (Local n) = Just n
+envIndex _ = Nothing
+
 -- | Vector of Ref, describing source of free variables
 type RefVec = Vector Ref
 
@@ -88,6 +95,24 @@ locals from to =
 
 localsList :: Int -> Int -> [Ref]
 localsList from to = [Local $ fromIntegral i | i <- [from .. to - 1]]
+
+-- | Extract refs from a syntax expression
+class Show a =>
+      HasRefs a
+  where
+  refs :: a -> [Ref]
+  validateRefs :: Int -> a -> Bool
+  validateRefs size expr =
+    case mapMaybe (fmap fromIntegral . envIndex) $ refs expr of
+      [] -> True
+      is ->
+        let m = maximum is
+         in (m <= size) ||
+            error
+              ("Local " ++
+               show m ++
+               " exceeds env length " ++ show size ++ " in " ++ show expr)
+
 
 -- | Something which has reference to (bound arguments); once these
 -- are located in an environment they can become environment refs
@@ -144,6 +169,15 @@ instance HasArgRefs BranchTable where
       nativeBranches' = HM.map (argsAt n) nativeBranches
       df' = argsAt n <$> df
 
+instance HasRefs BranchTable where
+  refs (BranchTable brs nbrs df) =
+    foldMap (refs . snd) brs <> foldMap refs nbrs <> foldMap refs df
+  validateRefs size (BranchTable brs nbrs df) =
+    getAll $
+    foldMap (\(n, e) -> All $ validateRefs (size + fromIntegral n) e) brs <>
+    foldMap (All . validateRefs (size + 1)) nbrs <>
+    foldMap (All . validateRefs (size + 1)) df
+
 instance StgPretty BranchTable where
   prettify (BranchTable bs nbs df) =
     case df of
@@ -151,7 +185,7 @@ instance StgPretty BranchTable where
         branchesDoc P.$$ nativeBranchesDoc P.$$ (P.text "_ -> " <> prettify d)
       Nothing -> branchesDoc
     where
-      branchesDoc = Map.foldrWithKey accBr (P.text "") bs
+      branchesDoc = Map.foldrWithKey accBr P.empty bs
       accBr k (binds, syn) doc =
         doc P.$$ P.text "C|" <> P.int (fromIntegral k) <> P.space <> P.text "->" <>
         P.space <>
@@ -173,6 +207,12 @@ instance HasArgRefs Func where
   argsAt n (Ref r) = Ref $ argsAt n r
   argsAt _ f = f
 
+instance HasRefs Func where
+  refs (Ref r) = [r]
+  refs _ = []
+  validateRefs size (Ref (Local r)) = fromIntegral r < size
+  validateRefs _ _ = True
+
 instance StgPretty Func where
   prettify (Ref r) = prettify r
   prettify (Con t) = P.text "C|" <> P.int (fromIntegral t)
@@ -187,6 +227,11 @@ data LambdaForm = LambdaForm
   , _update :: !Bool
   , _body :: !StgSyn
   } deriving (Eq, Show)
+
+instance HasRefs LambdaForm where
+  refs lf = refs $ _body lf
+  validateRefs size lf =
+    validateRefs (size + fromIntegral (_bound lf)) $ _body lf
 
 instance StgPretty LambdaForm where
   prettify (LambdaForm f b u body) =
@@ -208,14 +253,17 @@ data PreClosure =
   deriving (Eq, Show)
 
 instance HasArgRefs PreClosure where
-  argsAt n (PreClosure refs lf) = PreClosure (V.map (argsAt n) refs) lf
+  argsAt n (PreClosure rs lf) = PreClosure (V.map (argsAt n) rs) lf
+
+instance HasRefs PreClosure where
+  refs (PreClosure rv _) = toList rv
 
 instance StgPretty PreClosure where
-  prettify (PreClosure refs lf) = refDoc <> P.space <> prettify lf
+  prettify (PreClosure rs lf) = refDoc <> P.space <> prettify lf
     where
       refDoc =
         P.braces $
-        P.hcat $ P.punctuate (P.comma <> P.space) (map prettify (toList refs))
+        P.hcat $ P.punctuate (P.comma <> P.space) (map prettify (toList rs))
 
 -- | The STG language
 data StgSyn
@@ -228,6 +276,7 @@ data StgSyn
         !StgSyn
   | LetRec (Vector PreClosure)
            !StgSyn
+  | Ann !String !StgSyn
   deriving (Eq, Show)
 
 instance HasArgRefs StgSyn where
@@ -235,8 +284,28 @@ instance HasArgRefs StgSyn where
   argsAt _ a@Atom {} = a
   argsAt n (Let pcs syn) = Let (V.map (argsAt n) pcs) (argsAt n syn)
   argsAt n (LetRec pcs syn) = LetRec (V.map (argsAt n) pcs) (argsAt n syn)
-  argsAt n (App f refs) = App (argsAt n f) (V.map (argsAt n) refs)
+  argsAt n (App f rs) = App (argsAt n f) (V.map (argsAt n) rs)
   argsAt n (Case expr k) = Case (argsAt n expr) (argsAt n k)
+  argsAt n (Ann s expr) = Ann s $ argsAt n expr
+
+instance HasRefs StgSyn where
+  refs (Atom r) = [r]
+  refs (Case r k) = refs r <> refs k
+  refs (App f xs) = refs f <> toList xs
+  refs (Let pcs expr) = foldMap refs pcs <> refs expr
+  refs (LetRec pcs expr) = foldMap refs pcs <> refs expr
+  refs (Ann _ expr) = refs expr
+  validateRefs size (Case r k) = validateRefs size r && validateRefs size k
+  validateRefs size (Let pcs expr) =
+    getAll (foldMap (All . validateRefs size) pcs) &&
+    validateRefs (size + length pcs) expr
+  validateRefs size (LetRec pcs expr) =
+    getAll (foldMap (All . validateRefs (size + length pcs)) pcs) &&
+    validateRefs (size + length pcs) expr
+  validateRefs size expr =
+    case mapMaybe (fmap fromIntegral . envIndex) $ refs expr of
+      [] -> True
+      is -> size > maximum is
 
 instance StgPretty StgSyn where
   prettify (Atom r) = P.char '*' <> prettify r
@@ -251,6 +320,7 @@ instance StgPretty StgSyn where
   prettify (LetRec pcs e) =
     P.hang (P.text "letrec") 7 (P.vcat (map prettify (toList pcs))) P.$$
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
+  prettify (Ann s expr) = P.char '`' <> P.text s <> P.char '`' <> P.space <> prettify expr
 
 force_ :: StgSyn -> StgSyn -> StgSyn
 force_ scrutinee df = Case scrutinee (BranchTable mempty mempty (Just df))
@@ -308,6 +378,9 @@ pc0_ = PreClosure mempty
 
 pc_ :: [Ref] -> LambdaForm -> PreClosure
 pc_ = PreClosure . V.fromList
+
+ann_ :: String -> StgSyn -> StgSyn
+ann_ = Ann
 
 -- | Standard constructor - applies saturated data constructor of tag
 -- @t@ to refs on stack.

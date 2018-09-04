@@ -17,6 +17,7 @@ import qualified Data.Text.IO as T
 import Data.Yaml as Y
 import Eucalypt.Core.Cook (distributeFixities, cookAllSoup)
 import Eucalypt.Core.Desugar (varify, translateToCore)
+import Eucalypt.Core.Eliminate (prune)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Pretty
@@ -254,21 +255,26 @@ evaluate opts whnfM = do
   cookedEvaluand <- runFixityPass evaluand
   when (cmd == DumpCooked)
     (putStrLn (pprint cookedEvaluand) >> exitSuccess)
-  when (cmd == DumpFinalCore)
-    (putStrLn (pprint cookedEvaluand) >> exitSuccess)
 
-  -- Stage 6: run final checks
-  let failures = runChecks cookedEvaluand
+  -- Stage 6: dead code elimination to reduce compile and make
+  -- debugging STG impelmentation a bit easier
+  let finalEvaluand = prune cookedEvaluand
+  when (cmd == DumpFinalCore)
+    (putStrLn (pprint finalEvaluand) >> exitSuccess)
+
+  -- Stage 7: run final checks
+  let failures = runChecks finalEvaluand
   unless (null failures) $ reportErrors failures >> exitFailure
 
-  -- Stage 7: drive the evaluation by rendering it
+  -- Stage 8: drive the evaluation by rendering it
   if optionXStg opts
     then do
       -- Compile to STG and execute in machine
       when (cmd == DumpStg)
-        (STG.dumpStg opts cookedEvaluand >> exitSuccess)
-      STG.render opts cookedEvaluand >> exitSuccess
-    else render cookedEvaluand >>= \case
+        (STG.dumpStg opts finalEvaluand >> exitSuccess)
+      bytes <- STG.renderConduit opts finalEvaluand
+      outputBytes opts bytes >> exitSuccess
+    else render finalEvaluand >>= \case
            Left s -> reportErrors [s] >> return (ExitFailure 1)
            Right bytes -> outputBytes opts bytes >> return ExitSuccess
 

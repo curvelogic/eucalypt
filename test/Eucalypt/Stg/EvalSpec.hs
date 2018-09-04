@@ -12,7 +12,7 @@ where
 import Data.Vector (fromList)
 import qualified Data.Vector as Vector
 import Eucalypt.Stg.Event
-import Eucalypt.Stg.Globals (euHead)
+import Eucalypt.Stg.Globals.List (euHead)
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -24,30 +24,6 @@ main = hspec spec
 
 spec :: Spec
 spec = blockSpec
-
-nat :: Integer -> Native
-nat n = NativeNumber $ fromInteger n
-
-kv :: String -> Integer -> StgSyn
-kv k v =
-  let kn = NativeString k
-      vn = nat v
-      pcs =
-        [ PreClosure mempty nilConstructor
-        , PreClosure (fromList [Literal vn, Local 0]) consConstructor
-        , PreClosure (fromList [Literal kn, Local 1]) consConstructor
-        ]
-   in LetRec (fromList pcs) (App (Ref (Local 2)) mempty)
-
-block :: [StgSyn] -> StgSyn
-block kvs =
-  let pcs =
-        fromList $ map (PreClosure mempty . LambdaForm 0 0 False) kvs
-      itemCount = Vector.length pcs
-      itemRefs = fromList [(Local . fromIntegral) n | n <- [0 .. itemCount-1]]
-      bl = PreClosure itemRefs blockConstructor
-      pcs' = pcs `Vector.snoc` bl
-   in LetRec pcs' (App (Ref (Local (fromIntegral itemCount))) mempty)
 
 -- A test which finds the head of a list
 headOfList :: StgSyn
@@ -82,48 +58,6 @@ renderEmptyMap = seq_ emitMS emitME
   where
     emitMS = appbif_ (intrinsicIndex "EMIT{") []
     emitME = appbif_ (intrinsicIndex "EMIT}") []
-    
--- | A crude rendering function to resolve to NF and pass data
--- structures to emit
-_render :: StgSyn
-_render =
-  letrec_
-      -- emptyList
-    [ PreClosure mempty $ LambdaForm 0 0 False $ seq_ emitSS emitSE
-      -- continueList
-    , PreClosure (fromList [continueList]) $
-      LambdaForm 1 1 False $
-      case_
-        (Atom (BoundArg 0))
-        [(stgCons, (2, appfn_ (Local 0) [Local 2])), (stgNil, (0, emitSE))]
-      -- startList
-    , PreClosure (fromList [continueList]) $
-      LambdaForm 0 2 False $ seq_ emitSS (appfn_ (Local 0) [BoundArg 1])
-      -- wrapBlock
-    , PreClosure (fromList [typeSwitch]) $
-      LambdaForm 1 1 False $
-      seqall_ [emitMS, appfn_ (Local 0) [BoundArg 0], emitME]
-      -- typeSwitch
-    , PreClosure (fromList [emptyList, continueList, startList, wrapBlock]) $
-      LambdaForm 4 1 True $
-      case_
-        (Atom (BoundArg 0))
-        [ (stgBlock, (1, appfn_ (Local 3) [Local 5]))
-        , (stgCons, (2, appfn_ (Local 2) [Local 5, Local 6]))
-        , (stgNil, (0, appfn_ (Local 0) []))
-        ]
-    ]
-    (Atom (Local 4))
-  where
-    emptyList = Local 0
-    continueList = Local 1
-    startList = Local 2
-    wrapBlock = Local 3
-    typeSwitch = Local 4
-    emitMS = appbif_ (intrinsicIndex "EMIT{") []
-    emitME = appbif_ (intrinsicIndex "EMIT}") []
-    emitSS = appbif_ (intrinsicIndex "EMIT[") []
-    emitSE = appbif_ (intrinsicIndex "EMIT]") []
 
 blockSpec :: Spec
 blockSpec =
@@ -136,5 +70,5 @@ blockSpec =
     it "returns true" $
       (returnsNative (NativeBool True) <$> test addTest) `shouldReturn` True
     it "emits empty map" $
-      (emits [OutputMappingStart, OutputMappingEnd] <$> testD renderEmptyMap) `shouldReturn`
+      (emits [OutputMappingStart, OutputMappingEnd] <$> test renderEmptyMap) `shouldReturn`
       True

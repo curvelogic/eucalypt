@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Emit
   ( emitMappingStart
   , emitMappingEnd
+  , emitNull
   , emitSequenceStart
   , emitSequenceEnd
   , emitScalar
@@ -21,7 +22,9 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Tags
 
 emit :: MachineState -> Event -> IO MachineState
-emit s e = send e >>= \s' -> return $ setCode s' (ReturnCon stgUnit mempty)
+emit s e =
+  send e >>= \s' ->
+    return $ (appendEvent e . setCode s') (ReturnCon stgUnit mempty)
   where
     send = machineEmit s s
 
@@ -37,7 +40,10 @@ emitSequenceStart s _ = emit s OutputSequenceStart
 emitSequenceEnd :: MachineState -> ValVec -> IO MachineState
 emitSequenceEnd s _ = emit s OutputSequenceEnd
 
+emitNull :: MachineState -> ValVec -> IO MachineState
+emitNull s _ = emit s OutputNull
+
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do
   let (StgNat n) = xs ! 0
-  emit s (OutputScalar n) >> return (setCode s (ReturnLit n))
+  (`setCode` ReturnLit n) <$> emit s (OutputScalar n)

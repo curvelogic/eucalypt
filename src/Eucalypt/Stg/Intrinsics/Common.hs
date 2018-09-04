@@ -9,7 +9,6 @@ Stability   : experimental
 
 module Eucalypt.Stg.Intrinsics.Common where
 
-import Control.Exception.Safe
 import Control.Monad (foldM)
 import qualified Data.Vector as V
 import Eucalypt.Stg.Error
@@ -32,7 +31,7 @@ returnNatList ms ns = do
       return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]))
   where
     link as a =
-      StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]))
+      StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]) mempty)
 
 -- | Utility to read a list from the machine into a native haskell
 -- list for a primitive function.
@@ -49,8 +48,8 @@ readNatList ms addr = do
             (h :) <$> readNatList ms a
         LambdaForm {_body = (App (Con t) _)}
           | t == stgNil -> return []
-        _ -> throwM IntrinsicExpectedNativeList
-    _ -> throwM IntrinsicExpectedNativeList
+        _ -> throwIn ms IntrinsicExpectedNativeList
+    _ -> throwIn ms IntrinsicExpectedNativeList
 
 
 -- | Read native list from machine state where head is currently in a
@@ -64,7 +63,7 @@ readNatListReturn ms =
         let (StgAddr t) = xs V.! 1
         (h :) <$> readNatList ms t
       | c == stgNil -> return []
-    _ -> throwM IntrinsicExpectedNativeList
+    _ -> throwIn ms IntrinsicExpectedNativeList
 
 
 -- | Read a list of strings from machine into native haskell list
@@ -72,7 +71,7 @@ readStrList :: MachineState -> Address -> IO [String]
 readStrList ms addr = readNatList ms addr >>= traverse convert
   where
     convert (NativeString s) = return s
-    convert _ = throwM IntrinsicExpectedStringList
+    convert _ = throwIn ms IntrinsicExpectedStringList
 
 -- | Read a list of strings from machine to native haskell list where
 -- head of list is currently in a ReturnCon form
@@ -80,4 +79,4 @@ readStrListReturn :: MachineState -> IO [String]
 readStrListReturn ms = readNatListReturn ms >>= traverse convert
   where
     convert (NativeString s) = return s
-    convert _ = throwM IntrinsicExpectedStringList
+    convert _ = throwIn ms IntrinsicExpectedStringList

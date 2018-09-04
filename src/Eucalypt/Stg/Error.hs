@@ -10,8 +10,14 @@ Stability   : experimental
 module Eucalypt.Stg.Error where
 
 import Control.Exception.Safe
+import Eucalypt.Stg.CallStack
 
-data StgException
+data StgException = StgException
+  { stgExcError :: StgError
+  , stgExcCallStack :: CallStack
+  } deriving (Eq, Show, Typeable)
+
+data StgError
   = NonArgStackEntry
   | NonAddressStgValue
   | NonNativeStgValue
@@ -22,7 +28,7 @@ data StgException
   | ArgInsteadOfBranchTable
   | ArgInsteadOfNativeBranchTable
   | StackIndexOutOfRange
-  | EnvironmentIndexOutOfRange
+  | EnvironmentIndexOutOfRange !Int
   | IntrinsicIndexOutOfRange
   | SteppingTerminated
   | AttemptToResolveBoundArg
@@ -31,6 +37,8 @@ data StgException
   | InvalidRegex !String
   | UnknownGlobal !String
   | Panic !String
+  | CompilerBug !String
+  | IOSystem IOException
   deriving (Typeable, Show, Eq)
 
 instance Exception StgException

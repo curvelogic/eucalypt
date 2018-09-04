@@ -41,7 +41,7 @@ spec =
       test (Atom (Global "FALSE")) `shouldReturn` NativeBool False
     it "fails sensibly" $
       test (Atom (Global "NONESUCH")) `shouldThrow`
-      (== UnknownGlobal "NONESUCH")
+      (\s -> stgExcError s == UnknownGlobal "NONESUCH")
     context "IF builtin" $ do
       it "selects true for true and doesn't eval false branch" $
         nativeReturn <$>

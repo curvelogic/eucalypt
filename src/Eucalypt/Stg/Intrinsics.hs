@@ -17,6 +17,7 @@ import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
 import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
+import qualified Eucalypt.Stg.Intrinsics.General as General
 import Eucalypt.Stg.Machine
 
 data IntrinsicInfo = IntrinsicInfo
@@ -36,11 +37,13 @@ intrinsics =
   , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart
   , IntrinsicInfo "EMIT]" 0 Emit.emitSequenceEnd
   , IntrinsicInfo "EMITx" 1 Emit.emitScalar
+  , IntrinsicInfo "EMIT0" 0 Emit.emitNull
   , IntrinsicInfo "SPLIT" 2 Str.split
   , IntrinsicInfo "MATCH" 2 Str.match
   , IntrinsicInfo "MATCHES" 2 Str.matches
   , IntrinsicInfo "JOIN" 2 Str.join
   , IntrinsicInfo "PANIC" 1 Panic.panic
+  , IntrinsicInfo "CLOSED" 1 General.closed
   ]
 
 -- | Used during compilation to find the index at which an intrinsic

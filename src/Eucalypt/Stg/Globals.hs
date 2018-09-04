@@ -8,16 +8,14 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 
-These are STG snippets, mainly for marshalling values between haskell
-world and the machine world, and for forcing strict evaluation before
-forwarding on to intrinsics.
-
 -}
 module Eucalypt.Stg.Globals where
 
 import qualified Data.HashMap.Strict as HM
 import Eucalypt.Stg.Globals.Bool as Bool
+import Eucalypt.Stg.Globals.Emit as Emit
 import Eucalypt.Stg.Globals.Eq as Eq
+import Eucalypt.Stg.Globals.List as List
 import Eucalypt.Stg.Globals.Panic as Panic
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -25,13 +23,6 @@ import Eucalypt.Stg.Tags
 -- | __CAT(x, f)
 euCat :: LambdaForm
 euCat = lam_ 0 2 $ appfn_ (BoundArg 1) [BoundArg 0]
-
-
--- | __HEAD(list)
-euHead :: LambdaForm
-euHead =
-  lam_ 0 1 $
-  case_ (Atom (BoundArg 0)) [(stgCons, (2, Atom (Local 1)))] -- binds after
 
 
 -- | __LOOKUP(block, symbol)
@@ -97,11 +88,17 @@ standardGlobals =
     , ("AND", Bool.euAnd)
     , ("OR", Bool.euOr)
     , ("IF", Bool.euIf)
+    , ("CONS", List.euCons)
+    , ("NIL", List.euNil)
+    , ("HEAD", List.euHead)
+    , ("TAIL", List.euTail)
     , ("PANIC", Panic.euPanic)
     , ("BOMB", Panic.euBomb)
     , ("CAT", euCat)
     , ("HEAD", euHead)
     , ("LOOKUP", euLookup)
     , ("LOOKUP_LIST", euLookupList)
+    , ("RENDER", Emit.euRender)
+    , ("NULL", Emit.euNull)
     , ("seqNatList", seqNatList)
     ]
