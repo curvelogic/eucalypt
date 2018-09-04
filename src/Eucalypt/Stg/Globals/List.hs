@@ -21,7 +21,7 @@ import Eucalypt.Stg.Tags
 
 -- | __CONS(h, t)
 euCons :: LambdaForm
-euCons = standardConstructor 2 stgCons
+euCons = lam_ 0 2 $ appcon_ stgCons [BoundArg 0, BoundArg 1]
 
 
 
