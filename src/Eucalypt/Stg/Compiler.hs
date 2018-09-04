@@ -63,7 +63,7 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
       case e of
         (CoreLambda ns body) ->
           lam_ (length free) (length ns) $ ann_ nm $
-          compile (length free) contextL' $ fromScope body
+          compile (length free + length ns) contextL' $ fromScope body
         (CoreList []) -> nilConstructor -- TODO: id all std cons?
         CorePrim {} -> value_ $ compile (length free) context' e
         _ -> thunkn_ (length free) $ compile (length free) context' e
@@ -146,7 +146,9 @@ compile envSize context (C.CoreApply f xs) =
 compile envSize context (CoreLookup obj nm) =
   let_
     [compileBinding envSize context ("", obj)]
-    (appfn_ (Global "LOOKUP") [Literal (NativeSymbol nm)])
+    (appfn_
+       (Global "LOOKUP")
+       [Local (fromIntegral envSize), Literal (NativeSymbol nm)])
 
 
 -- | TODO: implement metadata in STG

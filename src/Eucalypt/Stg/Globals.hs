@@ -12,6 +12,7 @@ Stability   : experimental
 module Eucalypt.Stg.Globals where
 
 import qualified Data.HashMap.Strict as HM
+import Eucalypt.Stg.Globals.Arithmetic as Arith
 import Eucalypt.Stg.Globals.Bool as Bool
 import Eucalypt.Stg.Globals.Emit as Emit
 import Eucalypt.Stg.Globals.Eq as Eq
@@ -28,7 +29,7 @@ euCat = lam_ 0 2 $ appfn_ (BoundArg 1) [BoundArg 0]
 -- | __LOOKUP(block, symbol)
 euLookup :: LambdaForm
 euLookup =
-  lam_ 0 2 $
+  lam_ 0 2 $ ann_ "__LOOKUP" $
   case_
     (Atom (BoundArg 0))
     [(stgBlock, (1, appfn_ (Global "LOOKUP_LIST") [Local 2, BoundArg 1]))]
@@ -38,7 +39,7 @@ euLookup =
 -- | _LOOKUP_LIST(els, key)
 euLookupList :: LambdaForm
 euLookupList =
-  lam_ 0 2 $
+  lam_ 0 2 $ ann_ "__LOOKUP_LIST" $
   -- break head off list of elements
   case_
     (Atom (BoundArg 0))
@@ -51,10 +52,10 @@ euLookupList =
               , ( 2
                   -- compare k with
                 , caselit_
-                    (appfn_ (Global "EQ") [Local 3, BoundArg 1])
-                    [ (NativeBool True, appfn_ (Global "HEAD") [Local 4])
+                    (appfn_ (Global "EQ") [Local 4, BoundArg 1])
+                    [ (NativeBool True, appfn_ (Global "HEAD") [Local 5])
                     , ( NativeBool False
-                      , appfn_ (Global "LOOKUP_LIST") [Local 4, BoundArg 1])
+                      , appfn_ (Global "LOOKUP_LIST") [Local 3, BoundArg 1])
                     ]
                     Nothing))
             ]))
@@ -92,6 +93,14 @@ standardGlobals =
     , ("NIL", List.euNil)
     , ("HEAD", List.euHead)
     , ("TAIL", List.euTail)
+    , ("ADD", Arith.euAdd)
+    , ("SUB", Arith.euSub)
+    , ("MUL", Arith.euMul)
+    , ("DIV", Arith.euDiv)
+    , ("LT", Arith.euLt)
+    , ("GT", Arith.euGt)
+    , ("LTE", Arith.euLte)
+    , ("GTE", Arith.euGte)
     , ("PANIC", Panic.euPanic)
     , ("BOMB", Panic.euBomb)
     , ("CAT", euCat)

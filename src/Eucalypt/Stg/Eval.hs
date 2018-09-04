@@ -263,8 +263,9 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
     StgNat n -> return $ setCode ms (ReturnLit n)
 
 -- | Append an annotation to the call stack
-step ms@MachineState {machineCode = (Eval (Ann s expr) env)} =
-  return . appendCallStack s . setRule "ANN" $ setCode ms (Eval expr env)
+step ms0@MachineState {machineCode = (Eval (Ann s expr) env)} = do
+  ms <- prepareStep "ANN" ms0
+  return . appendCallStack s $ setCode ms (Eval expr env)
 
 -- | Step repeatedly until the terminated flag is set
 run :: (MonadIO m, MonadThrow m) => MachineState -> m MachineState
