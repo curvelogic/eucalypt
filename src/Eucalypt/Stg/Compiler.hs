@@ -40,13 +40,13 @@ list_ envSize rs = letrec_ (pc0 : pcs) (App (Ref (Local pcn)) mempty)
     pcs = zipWith (curry preclose) [envSize ..] $ reverse rs
     pcn = fromIntegral $ envSize + length pcs
 
-convert :: C.Primitive -> Native
-convert (CoreInt n) = NativeNumber $ fromIntegral n
-convert (CoreFloat d) = NativeNumber $ fromFloatDigits d
-convert (CoreSymbol s) = NativeSymbol s
-convert (CoreString s) = NativeString s
-convert (CoreBoolean b) = NativeBool b
-convert CoreNull = error "No native null"
+convert :: C.Primitive -> Maybe Native
+convert (CoreInt n) = Just $ NativeNumber $ fromIntegral n
+convert (CoreFloat d) = Just $ NativeNumber $ fromFloatDigits d
+convert (CoreSymbol s) = Just $ NativeSymbol s
+convert (CoreString s) = Just $ NativeString s
+convert (CoreBoolean b) = Just $ NativeBool b
+convert CoreNull = Nothing
 
 
 -- | Compile a let / letrec binding
@@ -92,7 +92,9 @@ compile _ _ (C.CoreBuiltin n) = App (Ref (Global n)) mempty
 -- | Compile primitive to STG native.
 --
 -- TODO: unify native handling
-compile _ _ (C.CorePrim n) = Atom (Literal (convert n))
+compile _ _ (C.CorePrim p) = case convert p of
+  Just n -> Atom (Literal n)
+  Nothing -> Atom (Global "NULL")
 
 -- | Block literals
 compile envSize context (C.CoreBlock content) = let_ [c] b
@@ -130,7 +132,7 @@ compile envSize context (C.CoreApply f xs) =
     acc (ps, xrs) x =
       case x of
         (CoreVar a) -> (ps, xrs ++ [context a])
-        (CorePrim n) -> (ps, xrs ++ [Literal $ convert n])
+        (CorePrim n) -> (ps, xrs ++ [maybe (Global "NULL") Literal (convert n)])
         _ ->
           ( ps ++ [compileBinding envSize context ("", x)]
           , xrs ++ [Local $ fromIntegral $ envSize + length ps])
