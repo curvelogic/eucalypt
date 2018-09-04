@@ -27,7 +27,14 @@ euCons = standardConstructor 2 stgCons
 
 -- | __NIL
 euNil :: LambdaForm
-euNil = standardConstructor 0 stgNil
+euNil =
+  lam_ 0 1 $
+  ann_ "NIL" $
+  case_
+    (Atom (BoundArg 0))
+    [ (stgCons, (2, Atom (Literal (NativeBool False))))
+    , (stgNil, (0, Atom (Literal (NativeBool True))))
+    ]
 
 
 

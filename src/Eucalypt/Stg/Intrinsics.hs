@@ -32,6 +32,11 @@ intrinsics =
   , IntrinsicInfo "ADD" 2 Arith.add
   , IntrinsicInfo "SUB" 2 Arith.sub
   , IntrinsicInfo "MUL" 2 Arith.mul
+  , IntrinsicInfo "DIV" 2 Arith.divide
+  , IntrinsicInfo "LT" 2 Arith.lt
+  , IntrinsicInfo "GT" 2 Arith.gt
+  , IntrinsicInfo "LTE" 2 Arith.lte
+  , IntrinsicInfo "GTE" 2 Arith.gte
   , IntrinsicInfo "EMIT{" 0 Emit.emitMappingStart
   , IntrinsicInfo "EMIT}" 0 Emit.emitMappingEnd
   , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart

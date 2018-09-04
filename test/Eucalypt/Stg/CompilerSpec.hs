@@ -61,6 +61,15 @@ spec = do
       let_
         [pc0_ $ thunk_ (appfn_ (Global "F") [Literal (NativeNumber 1)])]
         (appfn_ (Global "CAT") [Literal (NativeNumber 5), Local 0])
+    context "handles lookup" $
+      it "compiles lookup correctly" $
+      comp
+        (C.CoreLookup
+           (C.block [C.element "a" $ C.str "a", C.element "b" $ C.str "b"])
+           "a") `shouldBe`
+      let_
+        [pc0_ $ thunk_ asAndBs]
+        (appfn_ (Global "LOOKUP") [Local 0, Literal $ NativeSymbol "a"])
     context "manages envsize for subexprs" $
       it "factors both free and bound into envsize for subexprs" $
       comp
