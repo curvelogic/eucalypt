@@ -68,32 +68,18 @@ argRefSpec =
     it "adjusts func refs" $
       argsAt 9 (Ref (BoundArg 0)) `shouldBe` Ref (Local 9)
     it "adjusts preclosures" $
-      argsAt
-        9
-        (PreClosure
-           (fromList [BoundArg 1, Local 0])
-           (LambdaForm 0 1 True (Atom (BoundArg 0)))) `shouldBe`
-      PreClosure
-        (fromList [Local 10, Local 0])
-        (LambdaForm 0 1 True (Atom (BoundArg 0)))
+      argsAt 9 (pc_ [BoundArg 1, Local 0] (lam_ 0 1 (Atom (BoundArg 0)))) `shouldBe`
+      pc_ [Local 10, Local 0] (lam_ 0 1 (Atom (BoundArg 0)))
     it "adjusts StgSyn letrecs" $
       argsAt
         9
         (letrec_
-           [ PreClosure
-               (fromList [BoundArg 0])
-               (LambdaForm 1 0 False (Atom (Local 0)))
-           , PreClosure
-               (fromList [Local 1])
-               (LambdaForm 0 1 False (Atom (BoundArg 0)))
+           [ pc_ [BoundArg 0] (LambdaForm 1 0 False (Atom (Local 0)))
+           , pc_ [Local 1] (LambdaForm 0 1 False (Atom (BoundArg 0)))
            ]
            (Atom (BoundArg 0))) `shouldBe`
       letrec_
-        [ PreClosure
-            (fromList [Local 9])
-            (LambdaForm 1 0 False (Atom (Local 0)))
-        , PreClosure
-            (fromList [Local 1])
-            (LambdaForm 0 1 False (Atom (BoundArg 0)))
+        [ pc_ [Local 9] (LambdaForm 1 0 False (Atom (Local 0)))
+        , pc_ [Local 1] (LambdaForm 0 1 False (Atom (BoundArg 0)))
         ]
         (Atom (Local 9))

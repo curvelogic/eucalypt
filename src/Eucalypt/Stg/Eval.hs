@@ -36,6 +36,7 @@ allocPartial le ms lf xs = allocate pap
         , papArgs = xs
         , papArity = a
         , papCallStack = machineCallStack ms
+        , papMeta = Passthrough
         }
     a = fromIntegral (_bound lf) - envSize xs
 
@@ -100,7 +101,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
       addr <- resolveHeapObject env ms r
       obj <- liftIO $ peek addr
       case obj of
-        Closure lf@LambdaForm {_bound = ar} le cs ->
+        Closure lf@LambdaForm {_bound = ar} le cs _meta ->
           case compare (fromIntegral len) ar
             -- EXACT
                 of
@@ -121,7 +122,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
                      vals env ms xs >>= allocPartial le ms lf >>= \a ->
                        return $ (setRule "PAP2" . setCode ms) (ReturnFun a)
         -- PCALL
-        PartialApplication code le args ar cs ->
+        PartialApplication code le args ar cs _meta ->
           case compare (fromIntegral len) ar of
             EQ ->
               vals env ms xs >>= \as ->
@@ -199,7 +200,8 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
               (Closure
                  (LambdaForm 0 0 False (App (Con t) (locals 0 (envSize xs))))
                  xs
-                 (machineCallStack ms))
+                 (machineCallStack ms)
+                 Blank)
           case defaultBranch k of
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
@@ -208,7 +210,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
       liftIO $
         poke
           a
-          (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms))
+          (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms) Blank)
       return . setRule "UPDATE" $  ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
     Nothing -> return $ terminate ms'
@@ -230,7 +232,7 @@ step ms0@MachineState {machineCode = (ReturnLit nat)} = do
               return $ setCode ms' (Eval expr (le <> singleton (StgNat nat)))
             Nothing -> throwIn ms' NoBranchFound
     (Just (Update a)) -> do
-      liftIO $ poke a (Closure (value_ (Atom (Literal nat))) mempty mempty)
+      liftIO $ poke a (Closure (value_ (Atom (Literal nat))) mempty mempty Blank)
       return . setRule "UPDATELIT" $  ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfNativeBranchTable
     Nothing -> return $ terminate ms'
@@ -252,15 +254,15 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
-    (Just (Update a))
-     -> do
+    (Just (Update a)) -> do
       liftIO $
         poke
           a
           (Closure
              (value_ (Atom (Local 0)))
              (singleton (StgAddr r))
-             (machineCallStack ms))
+             (machineCallStack ms)
+             Blank)
       return . setRule "UPDATEFN" $ ms'
     _ ->
       return $
@@ -277,14 +279,14 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
     StgAddr addr -> do
       obj <- liftIO $ peek addr
       case obj of
-        Closure LambdaForm {_update = True, _body = code} le cs -> do
+        Closure LambdaForm {_update = True, _body = code} le cs _ -> do
           ms' <- pushUpdate ms addr
           liftIO $ poke addr BlackHole
           (return . setCallStack cs . setRule "THUNK") $
             setCode ms' (Eval code le)
-        Closure LambdaForm {_bound = 0} _ _ ->
+        Closure LambdaForm {_bound = 0} _ _ _ ->
           return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
-        PartialApplication _ _ _ 0 _ ->
+        PartialApplication _ _ _ 0 _ _ ->
           return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
         Closure{} ->
           (return . setRule "RETURNFUN" . (`setCode` ReturnFun addr)) ms

@@ -61,22 +61,30 @@ instance StgPretty StgValue where
   prettify (StgAddr _) = P.text "<addr>"
   prettify (StgNat n) = prettify n
 
+data HeapObjectMetadata
+  = Blank
+  | Passthrough
+  | MetadataValue !StgValue
+  deriving (Eq, Show)
+
 -- | Anything storable in an 'Address'.
 data HeapObject
   = Closure { closureCode :: !LambdaForm
             , closureEnv :: !ValVec
-            , closureCallStack :: !CallStack}
+            , closureCallStack :: !CallStack
+            , closureMeta :: !HeapObjectMetadata }
   | PartialApplication { papCode :: !LambdaForm
                        , papEnv :: !ValVec
                        , papArgs :: !ValVec
                        , papArity :: !Word64
-                       , papCallStack :: !CallStack}
+                       , papCallStack :: !CallStack
+                       , papMeta :: !HeapObjectMetadata }
   | BlackHole
   deriving (Eq, Show)
 
 instance StgPretty HeapObject where
-  prettify (Closure lf env _) = prettify env <> P.space <> prettify lf
-  prettify (PartialApplication lf env args arity _) =
+  prettify (Closure lf env _ _) = prettify env <> P.space <> prettify lf
+  prettify (PartialApplication lf env args arity _ _) =
     prettify env <> P.space <>
     P.parens (prettify args <> P.text "..." <> P.int (fromIntegral arity)) <>
     prettify lf
@@ -206,7 +214,11 @@ allocGlobal _name impl =
   StgAddr <$>
   allocate
     (Closure
-       {closureCode = impl, closureEnv = mempty, closureCallStack = mempty})
+       { closureCode = impl
+       , closureEnv = mempty
+       , closureCallStack = mempty
+       , closureMeta = Blank
+       })
 
 -- | Initialise machine state.
 initMachineState :: StgSyn -> HashMap String LambdaForm -> IO MachineState
@@ -328,8 +340,12 @@ appendEvent e ms@MachineState {machineEvents = es0} =
 -- | Build a closure from a STG PreClosure
 buildClosure ::
      MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
-buildClosure le ms (PreClosure captures code) =
-  Closure code <$> vals le ms captures <*> pure (machineCallStack ms)
+buildClosure le ms (PreClosure captures metaref code) = do
+  env <- vals le ms captures
+  meta <- case metaref of
+    Nothing -> return Passthrough
+    Just r -> MetadataValue <$> val le ms r
+  return $ Closure code env (machineCallStack ms) meta
 
 -- | Allocate new closure. Validate env refs if we're in debug mode.
 allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
@@ -343,6 +359,6 @@ allocClosure le ms cc = buildClosure le ms cc >>= check >>= allocate
 -- | In debug runs, validate every closure to ensure there are no
 -- local references outside the environment
 validateClosure :: HeapObject -> Bool
-validateClosure (Closure code env _) =
+validateClosure (Closure code env _ _) =
   validateRefs (fromIntegral (envSize env)) code
 validateClosure _ = True

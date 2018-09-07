@@ -21,7 +21,7 @@ dummyStg :: LambdaForm
 dummyStg = LambdaForm 0 0 False $ App (Con 0) mempty
 
 dummyClosure :: HeapObject
-dummyClosure = Closure dummyStg (ValVec mempty) mempty
+dummyClosure = Closure dummyStg (ValVec mempty) mempty Blank
 
 spec :: Spec
 spec = addressSpec

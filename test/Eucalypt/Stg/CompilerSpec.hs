@@ -21,7 +21,7 @@ main :: IO ()
 main = hspec spec
 
 comp :: C.CoreExpr -> StgSyn
-comp = compile 0 emptyContext
+comp = compile 0 emptyContext Nothing
 
 spec :: Spec
 spec = do

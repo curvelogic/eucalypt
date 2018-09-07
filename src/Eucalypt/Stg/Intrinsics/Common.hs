@@ -18,9 +18,9 @@ import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 
 
-snoc :: StgValue -> StgValue -> IO StgValue
-snoc as a =
-  StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]) mempty)
+flipCons :: StgValue -> StgValue -> IO StgValue
+flipCons as a =
+  StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]) mempty Blank)
 
 
 -- | Utility to return a native list from a primitive function.
@@ -34,7 +34,7 @@ returnNatList ms ns = do
     then return $ setCode ms (ReturnCon stgNil mempty)
     else do
       let headAddr = head natAddrs
-      tailAddr <- foldM snoc nilAddr (reverse $ tail natAddrs)
+      tailAddr <- foldM flipCons nilAddr (reverse $ tail natAddrs)
       return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]))
 
 
