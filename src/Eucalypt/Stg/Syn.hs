@@ -249,17 +249,18 @@ instance StgPretty LambdaForm where
 -- resolved to the bindings at allocation time.
 data PreClosure =
   PreClosure !RefVec
+             !(Maybe Ref)
              !LambdaForm
   deriving (Eq, Show)
 
 instance HasArgRefs PreClosure where
-  argsAt n (PreClosure rs lf) = PreClosure (V.map (argsAt n) rs) lf
+  argsAt n (PreClosure rs m lf) = PreClosure (V.map (argsAt n) rs) (fmap (argsAt n) m) lf
 
 instance HasRefs PreClosure where
-  refs (PreClosure rv _) = toList rv
+  refs (PreClosure rv m _) = toList rv <> toList m
 
 instance StgPretty PreClosure where
-  prettify (PreClosure rs lf) = refDoc <> P.space <> prettify lf
+  prettify (PreClosure rs _ lf) = refDoc <> P.space <> prettify lf
     where
       refDoc =
         P.braces $
@@ -374,10 +375,10 @@ seqall_ :: [StgSyn] -> StgSyn
 seqall_ = foldl1 seq_
 
 pc0_ :: LambdaForm -> PreClosure
-pc0_ = PreClosure mempty
+pc0_ = PreClosure mempty Nothing
 
 pc_ :: [Ref] -> LambdaForm -> PreClosure
-pc_ = PreClosure . V.fromList
+pc_ = (`PreClosure` Nothing) . V.fromList
 
 ann_ :: String -> StgSyn -> StgSyn
 ann_ = Ann

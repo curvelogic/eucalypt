@@ -36,6 +36,7 @@ allocPartial le ms lf xs = allocate pap
         , papArgs = xs
         , papArity = a
         , papCallStack = machineCallStack ms
+        , papMeta = Passthrough
         }
     a = fromIntegral (_bound lf) - envSize xs
 
@@ -96,7 +97,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
       addr <- resolveHeapObject env ms r
       obj <- liftIO $ peek addr
       case obj of
-        Closure lf@LambdaForm {_bound = ar} le cs ->
+        Closure lf@LambdaForm {_bound = ar} le cs _meta ->
           case compare (fromIntegral len) ar
             -- EXACT
                 of
@@ -117,7 +118,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
                      vals env ms xs >>= allocPartial le ms lf >>= \a ->
                        return $ (setRule "PAP2" . setCode ms) (ReturnFun a)
         -- PCALL
-        PartialApplication code le args ar cs ->
+        PartialApplication code le args ar cs _meta ->
           case compare (fromIntegral len) ar of
             EQ ->
               vals env ms xs >>= \as ->
@@ -195,7 +196,8 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
               (Closure
                  (LambdaForm 0 0 False (App (Con t) (locals 0 (envSize xs))))
                  xs
-                 (machineCallStack ms))
+                 (machineCallStack ms)
+                 Blank)
           case defaultBranch k of
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
@@ -204,7 +206,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
       liftIO $
         poke
           a
-          (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms))
+          (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms) Blank)
       return ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
     Nothing -> return $ terminate ms'

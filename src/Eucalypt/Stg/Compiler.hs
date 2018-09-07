@@ -63,51 +63,51 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
       case e of
         (CoreLambda ns body) ->
           lam_ (length free) (length ns) $ ann_ nm $
-          compile (length free + length ns) contextL' $ fromScope body
+          compile (length free + length ns) contextL' Nothing $ fromScope body
         (CoreList []) -> nilConstructor -- TODO: id all std cons?
-        CorePrim {} -> value_ $ compile (length free) context' e
-        _ -> thunkn_ (length free) $ compile (length free) context' e
+        CorePrim {} -> value_ $ compile (length free) context' Nothing e
+        _ -> thunkn_ (length free) $ compile (length free) context' Nothing e
 
 
 -- | Compile a CoreExp into STG expression
-compile :: Eq v => Int -> (v -> Ref) -> C.CoreExp v -> StgSyn
+compile :: Eq v => Int -> (v -> Ref) -> Maybe Ref -> C.CoreExp v -> StgSyn
 
 -- | Compile a let. All Core lets are potentially recursive
-compile envSize context (C.CoreLet bs b) = letrec_ stgBindings stgBody
+compile envSize context _metaref (C.CoreLet bs b) = letrec_ stgBindings stgBody
   where
     l = length bs
     envSize' = envSize + l
     stgBindings = map (compileBinding envSize' context' . second fromScope) bs
-    stgBody = compile envSize' context' $ fromScope b
+    stgBody = compile envSize' context' Nothing $ fromScope b
     context' = extendContextForScope envSize context l
 
 -- | Compile a var
-compile _ context (C.CoreVar v) = Atom $ context v
+compile _ context _metaref (C.CoreVar v) = Atom $ context v
 
 -- | Compile a builtin on its own, NB this creates a partial
 -- application, we can do better by compiling the builtin in the
 -- context of a call to it
-compile _ _ (C.CoreBuiltin n) = App (Ref (Global n)) mempty
+compile _ _ _ (C.CoreBuiltin n) = App (Ref (Global n)) mempty
 
 -- | Compile primitive to STG native.
 --
 -- TODO: unify native handling
-compile _ _ (C.CorePrim p) = case convert p of
+compile _ _ _ (C.CorePrim p) = case convert p of
   Just n -> Atom (Literal n)
   Nothing -> Atom (Global "NULL")
 
 -- | Block literals
-compile envSize context (C.CoreBlock content) = let_ [c] b
+compile envSize context _metaref (C.CoreBlock content) = let_ [c] b
   where
     c = compileBinding envSize context ("", content)
     cref = Local $ fromIntegral envSize
     b = appcon_ stgBlock [cref]
 
 -- | Empty list
-compile _ _ (C.CoreList []) = appcon_ stgNil mempty
+compile _ _ _ (C.CoreList []) = appcon_ stgNil mempty
 
 -- | List literals
-compile envSize context (C.CoreList els) = let_ elBinds buildList
+compile envSize context _metaref (C.CoreList els) = let_ elBinds buildList
   where
     elBinds = map (compileBinding envSize context . ("",)) els
     elCount = length elBinds
@@ -117,7 +117,7 @@ compile envSize context (C.CoreList els) = let_ elBinds buildList
 
 -- | Compile application, ensuring all args are atoms, allocating as
 -- necessary to achieve this.
-compile envSize context (C.CoreApply f xs) =
+compile envSize context _metaref (C.CoreApply f xs) =
   if null pcs
     then App func $ V.fromList xrefs
     else let_ pcs (App func $ V.fromList xrefs)
@@ -143,7 +143,7 @@ compile envSize context (C.CoreApply f xs) =
         _ -> fn
 
 
-compile envSize context (CoreLookup obj nm) =
+compile envSize context _metaref (CoreLookup obj nm) =
   let_
     [compileBinding envSize context ("", obj)]
     (appfn_
@@ -151,19 +151,20 @@ compile envSize context (CoreLookup obj nm) =
        [Literal (NativeSymbol nm), Local (fromIntegral envSize)])
 
 
--- | TODO: implement metadata in STG
-compile envSize context (CoreMeta _meta obj) = compile envSize context obj
+compile envSize context _metaref (CoreMeta meta obj) =
+  let_ [compileBinding envSize context ("", meta)] $
+  compile (envSize + 1) context (Just (Local $ fromIntegral envSize)) obj
 
 -- | Operator metadata no longer required by the time we hit STG, pass through
-compile envSize context (CoreOperator _x _p expr) = compile envSize context expr
+compile envSize context _ (CoreOperator _x _p expr) = compile envSize context Nothing expr
 
-compile _ _ (CoreName _) = error "Cannot compile name"
-compile _ _ (CoreArgTuple _) = error "Cannot compile arg tuple"
-compile _ _ (CoreOpSoup _) = error "Cannot compile op soup"
-compile _ _ (CoreLambda _ _) = error "Cannot compile lambda"
-compile _ _ CorePAp{} = error "Cannot compile PAp"
-compile _ _ (CoreTraced _) = error "Cannot compile traced"
-compile _ _ (CoreChecked _ _) = error "Cannot compile checked"
+compile _ _ _ (CoreName _) = error "Cannot compile name"
+compile _ _ _ (CoreArgTuple _) = error "Cannot compile arg tuple"
+compile _ _ _ (CoreOpSoup _) = error "Cannot compile op soup"
+compile _ _ _ (CoreLambda _ _) = error "Cannot compile lambda"
+compile _ _ _ CorePAp{} = error "Cannot compile PAp"
+compile _ _ _ (CoreTraced _) = error "Cannot compile traced"
+compile _ _ _ (CoreChecked _ _) = error "Cannot compile checked"
 
 -- | An empty context with no Refs for any Var
 emptyContext :: (Show v, Eq v) => v -> Ref
@@ -184,5 +185,5 @@ extendContextForScope envSize context count = context'
 compileForRender :: CoreExpr -> StgSyn
 compileForRender expr =
   let_
-    [pc0_ $ thunk_ (compile 0 emptyContext expr)]
+    [pc0_ $ thunk_ (compile 0 emptyContext Nothing expr)]
     (appfn_ (Global "RENDER") [Local 0])

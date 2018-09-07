@@ -31,7 +31,7 @@ returnPairList ms om = do
    in case pairs of
         [] -> return $ setCode ms (ReturnCon stgNil mempty)
         (h:t) -> do
-          tv <- foldM snoc nilAddr (reverse t)
+          tv <- foldM flipCons nilAddr (reverse t)
           return $ setCode ms (ReturnCon stgCons (toValVec [h, tv]))
 
 

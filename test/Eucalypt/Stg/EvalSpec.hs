@@ -9,7 +9,6 @@ Stability   : experimental
 module Eucalypt.Stg.EvalSpec (main, spec)
 where
 
-import Data.Vector (fromList)
 import qualified Data.Vector as Vector
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Intrinsics
@@ -29,9 +28,7 @@ headOfList :: StgSyn
 headOfList =
   let_
     [ pc0_ $ thunk_ $ appfn_ (Global "HEAD") []
-    , PreClosure
-        mempty
-        (LambdaForm 0 0 True (litList_ 0 [nat 1, nat 2]))
+    , pc0_ $ thunk_ (litList_ 0 [nat 1, nat 2])
     ]
     (App (Ref (Local 0)) $ Vector.singleton (Local 1))
 
@@ -39,9 +36,9 @@ headOfList =
 addTest :: StgSyn
 addTest =
   letrec_
-    [ PreClosure mempty $ LambdaForm 0 0 False (Atom (Literal $ nat 1))
-    , PreClosure mempty $ LambdaForm 0 0 False (Atom (Literal $ nat 2))
-    , PreClosure (fromList [Local 0, Local 1]) $
+    [ pc0_ $ LambdaForm 0 0 False (Atom (Literal $ nat 1))
+    , pc0_ $ LambdaForm 0 0 False (Atom (Literal $ nat 2))
+    , pc_ [Local 0, Local 1] $
       thunk_ $
       caselit_ (Atom (Local 0)) mempty $
       Just (caselit_ (Atom (Local 1)) mempty $ Just (add [Local 2, Local 3]))
