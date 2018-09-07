@@ -14,7 +14,7 @@ import Eucalypt.Stg.Machine
 import Data.Vector ((!))
 
 asNative :: StgValue -> Maybe Native
-asNative (StgNat n) = Just n
+asNative (StgNat n _) = Just n
 asNative _ = Nothing
 
 natEq :: MachineState -> ValVec -> IO MachineState

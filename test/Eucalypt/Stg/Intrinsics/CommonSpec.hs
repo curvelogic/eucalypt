@@ -35,7 +35,7 @@ readsReturns ns =
     case ms' of
       MachineState {machineCode = (ReturnCon c (ValVec xs))}
         | c == stgCons -> do
-          let (StgNat h) = V.head xs
+          let (StgNat h _) = V.head xs
           let (StgAddr t) = xs V.! 1
           r <- run $ (h :) <$> readNatList ms' t
           assert $ r == ns

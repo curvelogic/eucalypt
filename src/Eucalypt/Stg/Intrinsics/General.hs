@@ -23,7 +23,7 @@ import Eucalypt.Stg.Machine
 closed :: MachineState -> ValVec -> IO MachineState
 closed ms (ValVec xs) =
   case xs ! 0 of
-    (StgNat _) -> return $ setCode ms (ReturnLit $ NativeBool True)
+    (StgNat _ _) -> return $ setCode ms (ReturnLit $ NativeBool True)
     (StgAddr a) -> do
       obj <- peek a
       let ret =

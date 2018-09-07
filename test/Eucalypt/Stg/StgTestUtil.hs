@@ -75,7 +75,7 @@ returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs))}
     validate (StgAddr h) (StgAddr t) = do
       cons <- readCons ms h
       case cons of
-        Just (StgNat (NativeSymbol _), _) -> do
+        Just (StgNat (NativeSymbol _) _, _) -> do
           cons' <- readCons ms t
           case cons' of
             Just (h', t') -> validate h' t'
@@ -97,7 +97,7 @@ emitLog = machineDebugEmitLog
 dumpEnv :: ValVec -> IO ()
 dumpEnv (ValVec env)  = traverse_ dumpVal $ toList env
   where
-    dumpVal (StgNat n) = putStrLn $ P.render $ prettify n
+    dumpVal (StgNat n _) = putStrLn $ P.render $ prettify n
     dumpVal (StgAddr a) = peek a >>= (putStrLn . P.render . prettify)
 
 dumpEvalEnv :: MachineState -> IO ()

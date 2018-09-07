@@ -229,7 +229,7 @@ step ms0@MachineState {machineCode = (ReturnLit nat)} = do
         Nothing ->
           case defaultBranch k of
             (Just expr) ->
-              return $ setCode ms' (Eval expr (le <> singleton (StgNat nat)))
+              return $ setCode ms' (Eval expr (le <> singleton (StgNat nat Nothing)))
             Nothing -> throwIn ms' NoBranchFound
     (Just (Update a)) -> do
       liftIO $ poke a (Closure (value_ (Atom (Literal nat))) mempty mempty Blank)
@@ -294,7 +294,6 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
           (return . setRule "RETURNFUN-PAP" . (`setCode` ReturnFun addr)) ms
         BlackHole -> throwIn ms EnteredBlackHole
     StgNat n -> return $ setCode ms (ReturnLit n)
-
 
 
 -- | Append an annotation to the call stack

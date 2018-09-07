@@ -16,5 +16,5 @@ import Data.Vector ((!))
 
 panic :: MachineState -> ValVec -> IO MachineState
 panic ms (ValVec xs) = do
-  let (StgNat (NativeString s)) = xs ! 0
+  let (StgNat (NativeString s) _) = xs ! 0
   throwIn ms $ Panic s

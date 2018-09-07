@@ -53,13 +53,13 @@ peek (Address r) = readIORef r
 -- primitives. All 'Ref's are resolved to 'StgValues' within the
 -- machine.
 data StgValue
-  = StgAddr Address
-  | StgNat Native
+  = StgAddr !Address
+  | StgNat !Native !(Maybe StgValue)
   deriving (Eq, Show)
 
 instance StgPretty StgValue where
   prettify (StgAddr _) = P.text "<addr>"
-  prettify (StgNat n) = prettify n
+  prettify (StgNat n _) = prettify n
 
 data HeapObjectMetadata
   = Blank
@@ -123,7 +123,7 @@ instance Monoid ValVec where
 instance StgPretty ValVec where
   prettify (ValVec vs) = P.braces $ P.hcat $ map p (toList vs)
     where
-      p (StgNat v) = prettify v
+      p (StgNat v _) = prettify v
       p (StgAddr _) = P.char '.'
 
 -- | Entry on the frame stack, encoding processing to be done later
@@ -286,8 +286,15 @@ val (ValVec le) ms (Local l) =
     Just v -> return v
     _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
 val _ ms (BoundArg _) = throwIn ms AttemptToResolveBoundArg
+<<<<<<< HEAD
 val _ ms (Global nm) = globalAddress ms nm
 val _ _ (Literal n) = return $ StgNat n
+=======
+val _ ms@MachineState {machineGlobals = g} (Global nm) = case HM.lookup nm g of
+  Just v -> return v
+  _ -> throwIn ms $ UnknownGlobal nm
+val _ _ (Literal n) = return $ StgNat n Nothing
+>>>>>>> Add metadata to natives
 
 -- | Resolve a vector of refs against an environment to create
 -- environment
@@ -300,14 +307,14 @@ resolveHeapObject :: MonadThrow m => ValVec -> MachineState -> Ref -> m Address
 resolveHeapObject env ms ref =
   val env ms ref >>= \case
     StgAddr r -> return r
-    StgNat _ -> throwIn ms NonAddressStgValue
+    StgNat _ _ -> throwIn ms NonAddressStgValue
 
 -- | Resolve a ref against env and machine
 resolveNative :: MonadThrow m => ValVec -> MachineState -> Ref -> m Native
 resolveNative env ms ref =
   val env ms ref >>= \case
     StgAddr _ -> throwIn ms NonNativeStgValue
-    StgNat n -> return n
+    StgNat n _ -> return n
 
 -- | Increase counters
 tick :: MachineState -> MachineState

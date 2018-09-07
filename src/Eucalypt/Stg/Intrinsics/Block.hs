@@ -66,7 +66,7 @@ prune ms (ValVec xs) =
     kv (StgAddr a) = do
       pair <- readCons ms a
       case pair of
-        Just (StgNat (NativeSymbol s), t) -> return (s, t)
+        Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
         _ -> throwIn ms $ IntrinsicBadPair $ show pair
     kv _ = throwIn ms IntrinsicExpectedList
 

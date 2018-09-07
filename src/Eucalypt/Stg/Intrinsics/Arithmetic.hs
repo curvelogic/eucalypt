@@ -29,8 +29,8 @@ binop ::
   -> ValVec
   -> IO MachineState
 binop op ms (ValVec args) = do
-  let (StgNat (NativeNumber lhs)) = args ! 0
-  let (StgNat (NativeNumber rhs)) = args ! 1
+  let (StgNat (NativeNumber lhs) _) = args ! 0
+  let (StgNat (NativeNumber rhs) _) = args ! 1
   return $ setCode ms (ReturnLit (NativeNumber (op lhs rhs)))
 
 add :: MachineState -> ValVec -> IO MachineState
@@ -59,8 +59,8 @@ binopBool ::
   -> ValVec
   -> IO MachineState
 binopBool op ms (ValVec args) = do
-  let (StgNat (NativeNumber lhs)) = args ! 0
-  let (StgNat (NativeNumber rhs)) = args ! 1
+  let (StgNat (NativeNumber lhs) _) = args ! 0
+  let (StgNat (NativeNumber rhs) _) = args ! 1
   return $ setCode ms (ReturnLit (NativeBool (op lhs rhs)))
 
 lt :: MachineState -> ValVec -> IO MachineState

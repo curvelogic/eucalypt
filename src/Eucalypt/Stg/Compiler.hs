@@ -50,7 +50,8 @@ convert CoreNull = Nothing
 
 
 -- | Compile a let / letrec binding
-compileBinding :: Eq v => Int -> (v -> Ref) -> (CoreBindingName, C.CoreExp v) -> PreClosure
+compileBinding ::
+     Eq v => Int -> (v -> Ref) -> (CoreBindingName, C.CoreExp v) -> PreClosure
 compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
   where
     fvs = [(v, context v) | v <- nub . toList $ expr]
@@ -78,7 +79,7 @@ compile envSize context _metaref (C.CoreLet bs b) = letrec_ stgBindings stgBody
     l = length bs
     envSize' = envSize + l
     stgBindings = map (compileBinding envSize' context' . second fromScope) bs
-    stgBody = compile envSize' context' Nothing $ fromScope b
+    stgBody = compile envSize' context' _metaref $ fromScope b
     context' = extendContextForScope envSize context l
 
 -- | Compile a var
