@@ -148,7 +148,7 @@ compile envSize context (CoreLookup obj nm) =
     [compileBinding envSize context ("", obj)]
     (appfn_
        (Global "LOOKUP")
-       [Local (fromIntegral envSize), Literal (NativeSymbol nm)])
+       [Literal (NativeSymbol nm), Local (fromIntegral envSize)])
 
 
 -- | TODO: implement metadata in STG

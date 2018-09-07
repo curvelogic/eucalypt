@@ -13,6 +13,7 @@ import Data.Foldable (toList, traverse_)
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
@@ -62,6 +63,26 @@ nativeReturn ms = error $ "Expected native return, got" ++ show (machineCode ms)
 returnsNative :: Native -> MachineState -> Bool
 returnsNative n MachineState {machineCode = (ReturnLit ret)} = ret == n
 returnsNative _ _ = False
+
+-- | Check that the return is a fully constructed list of pairs with
+-- fully evaled native symbol keys
+returnedForcedPairList :: MachineState -> IO Bool
+returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs))} =
+  case toList xs of
+    [h, t] -> validate h t
+    _ -> return False
+  where
+    validate (StgAddr h) (StgAddr t) = do
+      cons <- readCons ms h
+      case cons of
+        Just (StgNat (NativeSymbol _), _) -> do
+          cons' <- readCons ms t
+          case cons' of
+            Just (h', t') -> validate h' t'
+            Nothing -> return True
+        _ -> return False
+    validate _ _ = return False
+returnedForcedPairList _ = return False
 
 -- | Machine has logged events specified
 emits :: [Event] -> MachineState -> Bool

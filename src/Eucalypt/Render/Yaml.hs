@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -136,7 +137,9 @@ instance Renderer YamlConfig where
 
 renderValue :: Native -> L.Event
 renderValue (NativeNumber n) =
-  L.EventScalar (encodeUtf8 $ pack $ show n) L.IntTag L.PlainNoTag Nothing
+  case floatingOrInteger n of
+    Left r -> L.EventScalar (encodeUtf8 $ pack $ show r) L.FloatTag L.PlainNoTag Nothing
+    Right i -> L.EventScalar (encodeUtf8 $ pack $ show i) L.IntTag L.PlainNoTag Nothing
 renderValue (NativeSymbol s) =
   L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
 renderValue (NativeString s) =

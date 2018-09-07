@@ -134,9 +134,10 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
                 then return $ -- return fun?
                      (setRule "PCALL PAP2-0" . setCode ms) (ReturnFun addr)
                 else liftIO $
-                     vals env ms xs >>= allocPartial le ms code >>= \a ->
-                       return $
-                       (setRule "PCALL PAP2" . setCode ms) (ReturnFun a)
+                     vals env ms xs >>= \fresh ->
+                       allocPartial le ms code (args <> fresh) >>= \a ->
+                         return $
+                         (setRule "PCALL PAP2" . setCode ms) (ReturnFun a)
         BlackHole -> throwIn ms EnteredBlackHole
     -- must be saturated
     Con t -> do

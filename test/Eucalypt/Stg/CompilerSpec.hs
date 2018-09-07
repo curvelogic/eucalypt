@@ -69,7 +69,7 @@ spec = do
            "a") `shouldBe`
       let_
         [pc0_ $ thunk_ asAndBs]
-        (appfn_ (Global "LOOKUP") [Local 0, Literal $ NativeSymbol "a"])
+        (appfn_ (Global "LOOKUP") [Literal $ NativeSymbol "a", Local 0])
     context "manages envsize for subexprs" $
       it "factors both free and bound into envsize for subexprs" $
       comp

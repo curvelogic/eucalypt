@@ -42,8 +42,16 @@ sub = binop (-)
 mul :: MachineState -> ValVec -> IO MachineState
 mul = binop (*)
 
+sciDivide :: Scientific -> Scientific -> Scientific
+sciDivide l r =
+  let lr = toRational l
+      rr = toRational r
+      result = lr / rr
+      float = fromRational result :: Double
+   in fromFloatDigits float
+
 divide :: MachineState -> ValVec -> IO MachineState
-divide = binop (/)
+divide = binop sciDivide
 
 binopBool ::
      (Scientific -> Scientific -> Bool)
