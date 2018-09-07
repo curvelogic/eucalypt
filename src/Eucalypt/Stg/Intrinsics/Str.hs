@@ -34,16 +34,20 @@ toRegex = (`R.compileM` []) . encodeUtf8 . pack
 
 
 
+-- | __SPLIT(s, re)
 split :: MachineState -> ValVec -> IO MachineState
 split ms (ValVec args) = do
   let (StgNat (NativeString target)) = args ! 0
   let (StgNat (NativeString regex)) = args ! 1
-  case toRegex regex of
-    (Right r) -> returnNatList ms $ map NativeString $ R.split r target
-    (Left s) -> throwIn ms $ InvalidRegex s
+  if null regex
+    then returnNatList ms [NativeString target]
+    else case toRegex regex of
+           (Right r) -> returnNatList ms $ map NativeString $ R.split r target
+           (Left s) -> throwIn ms $ InvalidRegex s
 
 
 
+-- | __MATCH(s, re)
 match :: MachineState -> ValVec -> IO MachineState
 match ms (ValVec args) = do
   let (StgNat (NativeString target)) = args ! 0
@@ -58,6 +62,7 @@ match ms (ValVec args) = do
 
 
 
+-- | __MATCHES(s, re)
 matches :: MachineState -> ValVec -> IO MachineState
 matches ms (ValVec args) = do
   let (StgNat (NativeString target)) = args ! 0
@@ -68,6 +73,7 @@ matches ms (ValVec args) = do
 
 
 
+-- | __JOIN(els, sep)
 join :: MachineState -> ValVec -> IO MachineState
 join ms (ValVec args) = do
   let (StgAddr l) = args ! 0
