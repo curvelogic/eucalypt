@@ -50,7 +50,7 @@ instance Hashable Native
 
 instance StgPretty Native where
   prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
-  prettify (NativeString s) = P.text s
+  prettify (NativeString s) = P.text $ show s
   prettify (NativeSymbol s) = P.colon <> P.text s
   prettify (NativeBool b) =
     if b

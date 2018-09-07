@@ -32,8 +32,12 @@ data StgError
   | IntrinsicIndexOutOfRange
   | SteppingTerminated
   | AttemptToResolveBoundArg
+  | IntrinsicImproperList
+  | IntrinsicBadPair !String
+  | IntrinsicExpectedList
   | IntrinsicExpectedNativeList
   | IntrinsicExpectedStringList
+  | IntrinsicExpectedEvaluatedList !String
   | InvalidRegex !String
   | UnknownGlobal !String
   | Panic !String

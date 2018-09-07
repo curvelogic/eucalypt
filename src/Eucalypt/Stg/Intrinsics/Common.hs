@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Common
 Description : Common utilities for intrinsics
@@ -16,6 +17,12 @@ import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 
+
+snoc :: StgValue -> StgValue -> IO StgValue
+snoc as a =
+  StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]) mempty)
+
+
 -- | Utility to return a native list from a primitive function.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
@@ -27,11 +34,9 @@ returnNatList ms ns = do
     then return $ setCode ms (ReturnCon stgNil mempty)
     else do
       let headAddr = head natAddrs
-      tailAddr <- foldM link nilAddr (reverse $ tail natAddrs)
+      tailAddr <- foldM snoc nilAddr (reverse $ tail natAddrs)
       return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]))
-  where
-    link as a =
-      StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]) mempty)
+
 
 -- | Utility to read a list from the machine into a native haskell
 -- list for a primitive function.
@@ -80,3 +85,40 @@ readStrListReturn ms = readNatListReturn ms >>= traverse convert
   where
     convert (NativeString s) = return s
     convert _ = throwIn ms IntrinsicExpectedStringList
+
+
+-- | Utility to read a list of pairs from the machine into a native
+-- haskell list for an intrinsic function.
+readPairList :: MachineState -> Address -> IO [(String, StgValue)]
+readPairList ms addr = do
+  cons <- readCons ms addr
+  case cons of
+    Just (h, StgAddr t) -> do
+      (k, cdr) <- kv h
+      ((k, cdr) :) <$> readPairList ms t
+    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Nothing -> return []
+  where
+    kv (StgAddr a) = do
+      pair <- readCons ms a
+      case pair of
+        Just (StgNat (NativeSymbol s), t) -> return (s, t)
+        _ -> throwIn ms $ IntrinsicBadPair $ show pair
+    kv _ = throwIn ms IntrinsicExpectedList
+
+
+
+readCons :: MachineState -> Address -> IO (Maybe (StgValue, StgValue))
+readCons ms addr =
+  peek addr >>= \case
+    Closure {closureCode = lf, closureEnv = e} ->
+      case lf of
+        LambdaForm {_body = (App (Con t) xs)}
+          | t == stgCons -> do
+            h' <- val e ms (V.head xs)
+            t' <- val e ms (xs V.! 1)
+            return $ Just (h', t')
+        LambdaForm {_body = (App (Con t) _)}
+          | t == stgNil -> return Nothing
+        _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (show (_body lf))
+    _ -> throwIn ms IntrinsicExpectedList

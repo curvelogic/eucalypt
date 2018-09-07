@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Str
 Description : Basic string built-ins for the STG evaluator
@@ -12,6 +13,8 @@ module Eucalypt.Stg.Intrinsics.Str
   , match
   , matches
   , join
+  , strNat
+  , strSym
   ) where
 
 import Safe (headMay)
@@ -20,6 +23,7 @@ import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Data.List (intercalate)
+import Data.Scientific (floatingOrInteger)
 import Data.Vector ((!))
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
@@ -28,14 +32,22 @@ import qualified Text.Regex.PCRE.Heavy as R
 toRegex :: String -> Either String R.Regex
 toRegex = (`R.compileM` []) . encodeUtf8 . pack
 
+
+
+-- | __SPLIT(s, re)
 split :: MachineState -> ValVec -> IO MachineState
 split ms (ValVec args) = do
   let (StgNat (NativeString target)) = args ! 0
   let (StgNat (NativeString regex)) = args ! 1
-  case toRegex regex of
-    (Right r) -> returnNatList ms $ map NativeString $ R.split r target
-    (Left s) -> throwIn ms $ InvalidRegex s
+  if null regex
+    then returnNatList ms [NativeString target]
+    else case toRegex regex of
+           (Right r) -> returnNatList ms $ map NativeString $ R.split r target
+           (Left s) -> throwIn ms $ InvalidRegex s
 
+
+
+-- | __MATCH(s, re)
 match :: MachineState -> ValVec -> IO MachineState
 match ms (ValVec args) = do
   let (StgNat (NativeString target)) = args ! 0
@@ -48,6 +60,9 @@ match ms (ValVec args) = do
         Nothing -> []
     (Left s) -> throwIn ms $ InvalidRegex s
 
+
+
+-- | __MATCHES(s, re)
 matches :: MachineState -> ValVec -> IO MachineState
 matches ms (ValVec args) = do
   let (StgNat (NativeString target)) = args ! 0
@@ -56,9 +71,40 @@ matches ms (ValVec args) = do
     (Right r) -> returnNatList ms $ map (NativeString . fst) $ R.scan r target
     (Left s) -> throwIn ms $ InvalidRegex s
 
+
+
+-- | __JOIN(els, sep)
 join :: MachineState -> ValVec -> IO MachineState
 join ms (ValVec args) = do
   let (StgAddr l) = args ! 0
   let (StgNat (NativeString s)) = args ! 1
   xs <- readStrList ms l
   return $ setCode ms (ReturnLit $ NativeString $ intercalate s xs)
+
+
+
+strNat :: MachineState -> ValVec -> IO MachineState
+strNat ms (ValVec args) =
+  return $
+  setCode ms $
+  ReturnLit $
+  NativeString $
+  let (StgNat n) = args ! 0
+   in case n of
+        NativeNumber sc ->
+          case floatingOrInteger sc of
+            Left f -> show f
+            Right i -> show i
+        NativeString s -> s
+        NativeSymbol s -> s
+        NativeBool b ->
+          if b
+            then "true"
+            else "false"
+
+
+
+strSym :: MachineState -> ValVec -> IO MachineState
+strSym ms (ValVec args) =
+  let (StgNat (NativeString nm)) = args ! 0
+   in return $ setCode ms $ ReturnLit $ NativeSymbol nm

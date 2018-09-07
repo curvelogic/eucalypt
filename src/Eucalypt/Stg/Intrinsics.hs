@@ -13,6 +13,7 @@ import qualified Data.Array as A
 import Data.List (findIndex)
 import Data.Maybe (fromMaybe)
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
+import qualified Eucalypt.Stg.Intrinsics.Block as Block
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
@@ -48,7 +49,10 @@ intrinsics =
   , IntrinsicInfo "MATCHES" 2 Str.matches
   , IntrinsicInfo "JOIN" 2 Str.join
   , IntrinsicInfo "PANIC" 1 Panic.panic
+  , IntrinsicInfo "PRUNE" 1 Block.prune
   , IntrinsicInfo "CLOSED" 1 General.closed
+  , IntrinsicInfo "STRNAT" 1 Str.strNat
+  , IntrinsicInfo "STRSYM" 1 Str.strSym
   ]
 
 -- | Used during compilation to find the index at which an intrinsic

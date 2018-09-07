@@ -12,7 +12,6 @@ where
 import Data.Vector (fromList)
 import qualified Data.Vector as Vector
 import Eucalypt.Stg.Event
-import Eucalypt.Stg.Globals.List (euHead)
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -29,7 +28,7 @@ spec = blockSpec
 headOfList :: StgSyn
 headOfList =
   let_
-    [ PreClosure mempty euHead
+    [ pc0_ $ thunk_ $ appfn_ (Global "HEAD") []
     , PreClosure
         mempty
         (LambdaForm 0 0 True (litList_ 0 [nat 1, nat 2]))
