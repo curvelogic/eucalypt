@@ -31,11 +31,11 @@ returnNatList ms ns = do
   nilAddr <- StgAddr <$> allocClosure mempty ms (pc0_ nilConstructor)
   let natAddrs = map (`StgNat` Nothing) ns
   if null natAddrs
-    then return $ setCode ms (ReturnCon stgNil mempty)
+    then return $ setCode ms (ReturnCon stgNil mempty Nothing)
     else do
       let headAddr = head natAddrs
       tailAddr <- foldM flipCons nilAddr (reverse $ tail natAddrs)
-      return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]))
+      return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]) Nothing)
 
 
 -- | Utility to read a list from the machine into a native haskell
@@ -62,7 +62,7 @@ readNatList ms addr = do
 readNatListReturn :: MachineState -> IO [Native]
 readNatListReturn ms =
   case ms of
-    MachineState {machineCode = (ReturnCon c (ValVec xs))}
+    MachineState {machineCode = (ReturnCon c (ValVec xs) Nothing)}
       | c == stgCons -> do
         let (StgNat h _) = V.head xs
         let (StgAddr t) = xs V.! 1

@@ -79,7 +79,7 @@ join ms (ValVec args) = do
   let (StgAddr l) = args ! 0
   let (StgNat (NativeString s) _) = args ! 1
   xs <- readStrList ms l
-  return $ setCode ms (ReturnLit $ NativeString $ intercalate s xs)
+  return $ setCode ms (ReturnLit (NativeString $ intercalate s xs) Nothing)
 
 
 
@@ -87,7 +87,7 @@ strNat :: MachineState -> ValVec -> IO MachineState
 strNat ms (ValVec args) =
   return $
   setCode ms $
-  ReturnLit $
+  (`ReturnLit` Nothing) $
   NativeString $
   let (StgNat n _) = args ! 0
    in case n of
@@ -107,4 +107,4 @@ strNat ms (ValVec args) =
 strSym :: MachineState -> ValVec -> IO MachineState
 strSym ms (ValVec args) =
   let (StgNat (NativeString nm) _) = args ! 0
-   in return $ setCode ms $ ReturnLit $ NativeSymbol nm
+   in return $ setCode ms $ (`ReturnLit` Nothing) $ NativeSymbol nm

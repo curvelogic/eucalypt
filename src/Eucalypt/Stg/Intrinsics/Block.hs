@@ -30,10 +30,10 @@ returnPairList ms om = do
   nilAddr <- globalAddress ms "KNIL"
   let pairs = (map snd . OM.toList) om
    in case pairs of
-        [] -> return $ setCode ms (ReturnCon stgNil mempty)
+        [] -> return $ setCode ms (ReturnCon stgNil mempty Nothing)
         (h:t) -> do
           tv <- foldM flipCons nilAddr (reverse t)
-          return $ setCode ms (ReturnCon stgCons (toValVec [h, tv]))
+          return $ setCode ms (ReturnCon stgCons (toValVec [h, tv]) Nothing)
 
 
 

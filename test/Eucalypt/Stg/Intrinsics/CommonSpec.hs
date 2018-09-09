@@ -33,7 +33,7 @@ readsReturns ns =
     ms <- run $ initStandardMachineState (Atom (Literal (NativeSymbol "foo")))
     ms' <- run $ returnNatList ms ns
     case ms' of
-      MachineState {machineCode = (ReturnCon c (ValVec xs))}
+      MachineState {machineCode = (ReturnCon c (ValVec xs) _)}
         | c == stgCons -> do
           let (StgNat h _) = V.head xs
           let (StgAddr t) = xs V.! 1

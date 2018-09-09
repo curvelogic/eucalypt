@@ -147,7 +147,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
     -- must be saturated
     Con t -> do
       env' <- vals env ms xs
-      return $ setCode ms (ReturnCon t env')
+      return $ setCode ms (ReturnCon t env' Nothing)
     -- must be saturated
     Intrinsic i ->
       let mf = intrinsicFunction i
@@ -183,7 +183,7 @@ step ms0@MachineState {machineCode = (Eval (Case syn k) env)} = do
 
 
 -- | ReturnCon - returns a data structure into a BranchTable branch
-step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
+step ms0@MachineState {machineCode = (ReturnCon t xs _meta)} = do
   ms <- prepareStep "RETURNCON" ms0
   (entry, ms') <- pop ms
   case entry of
@@ -219,7 +219,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
 
 -- | ReturnLit - returns a native value to a NativeBranchTable or
 -- terminates if none.
-step ms0@MachineState {machineCode = (ReturnLit nat)} = do
+step ms0@MachineState {machineCode = (ReturnLit nat _meta)} = do
   ms <- prepareStep "RETURNLIT" ms0
   (entry, ms') <- pop ms
   case entry of
@@ -293,8 +293,7 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
         PartialApplication{} ->
           (return . setRule "RETURNFUN-PAP" . (`setCode` ReturnFun addr)) ms
         BlackHole -> throwIn ms EnteredBlackHole
-    StgNat n -> return $ setCode ms (ReturnLit n)
-
+    StgNat n meta -> return $ setCode ms (ReturnLit n meta)
 
 -- | Append an annotation to the call stack
 step ms0@MachineState {machineCode = (Eval (Ann s expr) env)} = do

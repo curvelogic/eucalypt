@@ -31,7 +31,7 @@ binop ::
 binop op ms (ValVec args) = do
   let (StgNat (NativeNumber lhs) _) = args ! 0
   let (StgNat (NativeNumber rhs) _) = args ! 1
-  return $ setCode ms (ReturnLit (NativeNumber (op lhs rhs)))
+  return $ setCode ms (ReturnLit (NativeNumber (op lhs rhs)) Nothing)
 
 add :: MachineState -> ValVec -> IO MachineState
 add = binop (+)
@@ -61,7 +61,7 @@ binopBool ::
 binopBool op ms (ValVec args) = do
   let (StgNat (NativeNumber lhs) _) = args ! 0
   let (StgNat (NativeNumber rhs) _) = args ! 1
-  return $ setCode ms (ReturnLit (NativeBool (op lhs rhs)))
+  return $ setCode ms (ReturnLit (NativeBool (op lhs rhs)) Nothing)
 
 lt :: MachineState -> ValVec -> IO MachineState
 lt = binopBool (<)

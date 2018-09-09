@@ -158,17 +158,19 @@ data Code
          !ValVec
   | ReturnCon !Tag
               !ValVec
+              !(Maybe StgValue)
   | ReturnLit !Native
+              !(Maybe StgValue)
   | ReturnFun !Address
   deriving (Eq, Show)
 
 instance StgPretty Code where
   prettify (Eval e le) =
     P.text "EVAL" <> P.space <> prettify le <> P.space <> prettify e
-  prettify (ReturnCon t binds) =
+  prettify (ReturnCon t binds _) =
     P.text "RETURNCON" <> P.space <> P.int (fromIntegral t) <> P.space <>
     prettify binds
-  prettify (ReturnLit n) = P.text "RETURNLIT" <> P.space <> prettify n
+  prettify (ReturnLit n _) = P.text "RETURNLIT" <> P.space <> prettify n
   prettify (ReturnFun _) = P.text "RETURNFUN" <> P.space <> P.text "."
 
 -- | Machine state.

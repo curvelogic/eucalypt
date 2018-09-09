@@ -51,23 +51,23 @@ block kvs =
 
 -- | Machine is in state with code that returns constructor
 returnsConstructor :: Tag -> MachineState -> Bool
-returnsConstructor t MachineState {machineCode = (ReturnCon tag _)} = t == tag
+returnsConstructor t MachineState {machineCode = (ReturnCon tag _ _)} = t == tag
 returnsConstructor _ _ = False
 
 -- | Extract the native return value from the machine state
 nativeReturn :: MachineState -> Native
-nativeReturn MachineState {machineCode = (ReturnLit ret)} = ret
+nativeReturn MachineState {machineCode = (ReturnLit ret _)} = ret
 nativeReturn ms = error $ "Expected native return, got" ++ show (machineCode ms)
 
 -- | Machine is in state which returns specified native
 returnsNative :: Native -> MachineState -> Bool
-returnsNative n MachineState {machineCode = (ReturnLit ret)} = ret == n
+returnsNative n MachineState {machineCode = (ReturnLit ret _)} = ret == n
 returnsNative _ _ = False
 
 -- | Check that the return is a fully constructed list of pairs with
 -- fully evaled native symbol keys
 returnedForcedPairList :: MachineState -> IO Bool
-returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs))} =
+returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs) _)} =
   case toList xs of
     [h, t] -> validate h t
     _ -> return False

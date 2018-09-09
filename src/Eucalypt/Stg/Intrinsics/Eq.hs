@@ -19,7 +19,7 @@ asNative _ = Nothing
 
 natEq :: MachineState -> ValVec -> IO MachineState
 natEq ms (ValVec xs) =
-  (return . setCode ms . ReturnLit . NativeBool) $
+  (return . setCode ms . (`ReturnLit` Nothing) . NativeBool) $
   case (asNative $ xs ! 0, asNative $ xs ! 1) of
     (Just l, Just r) -> l == r
     _ -> False
