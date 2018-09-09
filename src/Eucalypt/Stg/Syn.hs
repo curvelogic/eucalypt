@@ -364,8 +364,11 @@ thunk_ = thunkn_ 0
 box_ :: Native -> LambdaForm
 box_ n = LambdaForm 0 0 False (Atom (Literal n))
 
+valuen_ :: Int -> StgSyn -> LambdaForm
+valuen_ n = LambdaForm (fromIntegral n) 0 False
+
 value_ :: StgSyn -> LambdaForm
-value_ = LambdaForm 0 0 False
+value_ = valuen_ 0
 
 seq_ :: StgSyn -> StgSyn -> StgSyn
 seq_ a b = Case a $ BranchTable mempty mempty (Just b)
