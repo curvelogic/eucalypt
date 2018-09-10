@@ -209,7 +209,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
         poke
           a
           (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms))
-      return ms'
+      return . setRule "UPDATE" $  ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
     Nothing -> return $ terminate ms'
 
@@ -229,9 +229,9 @@ step ms0@MachineState {machineCode = (ReturnLit nat)} = do
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgNat nat)))
             Nothing -> throwIn ms' NoBranchFound
-    (Just (Update a)) ->
-      liftIO $
-      poke a (Closure (value_ (Atom (Literal nat))) mempty mempty) >> return ms'
+    (Just (Update a)) -> do
+      liftIO $ poke a (Closure (value_ (Atom (Literal nat))) mempty mempty)
+      return . setRule "UPDATELIT" $  ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfNativeBranchTable
     Nothing -> return $ terminate ms'
 
@@ -250,9 +250,9 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
-    -- (Just (Update a)) -> do  -- update with indirect?
-    --   liftIO $ poke a (Closure (standardConstructor (envSize xs) t) xs)
-    --   return ms'
+    (Just (Update a)) -> do  -- update with indirect...
+      liftIO $ poke a (Closure (value_ (Atom (Local 0))) (singleton (StgAddr r)) mempty)
+      return . setRule "UPDATEFN" $  ms'
     _ ->
       return $
       setCode ms' (Eval (App (Ref $ Local 0) mempty) (singleton (StgAddr r)))
