@@ -255,6 +255,15 @@ instance StgPretty MachineState where
 throwIn :: MonadThrow m => MachineState -> StgError -> m a
 throwIn ms err = throwM $ StgException err (machineCallStack ms)
 
+
+-- | Lookup address of global
+globalAddress :: MonadThrow m => MachineState -> String -> m StgValue
+globalAddress ms@MachineState {machineGlobals = g} nm =
+  case HM.lookup nm g of
+    Just v -> return v
+    _ -> throwIn ms $ UnknownGlobal nm
+
+
 -- | Resolve environment references against local and global
 -- environments. If a ref is still a BoundArg at the point it is
 -- resolved, AttemptToResolveBoundArg will be thrown. Args are
@@ -265,9 +274,7 @@ val (ValVec le) ms (Local l) =
     Just v -> return v
     _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
 val _ ms (BoundArg _) = throwIn ms AttemptToResolveBoundArg
-val _ ms@MachineState {machineGlobals = g} (Global nm) = case HM.lookup nm g of
-  Just v -> return v
-  _ -> throwIn ms $ UnknownGlobal nm
+val _ ms (Global nm) = globalAddress ms nm
 val _ _ (Literal n) = return $ StgNat n
 
 -- | Resolve a vector of refs against an environment to create

@@ -50,6 +50,7 @@ intrinsics =
   , IntrinsicInfo "JOIN" 2 Str.join
   , IntrinsicInfo "PANIC" 1 Panic.panic
   , IntrinsicInfo "PRUNE" 1 Block.prune
+  , IntrinsicInfo "PRUNEMERGE" 2 Block.pruneMerge
   , IntrinsicInfo "CLOSED" 1 General.closed
   , IntrinsicInfo "STRNAT" 1 Str.strNat
   , IntrinsicInfo "STRSYM" 1 Str.strSym

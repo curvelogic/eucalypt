@@ -9,6 +9,8 @@ Stability   : experimental
 
 module Eucalypt.Stg.Globals.Block
   ( euMerge
+  , euDeepMerge
+  , euDeepMergeIfBlocks
   , euBlock
   , euElements
   , euLookup
@@ -21,11 +23,14 @@ import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
--- | __MERGE(l, r)
-euMerge :: LambdaForm
-euMerge =
+
+-- | Both merge builtins combined lists and the prune to handle
+-- duplicates. This abstracts the common template. Provide a
+-- LambdaForm that prunes the single environment entry @Local 0@.
+mergeTemplate :: String -> LambdaForm -> LambdaForm
+mergeTemplate name prune =
   lam_ 0 2 $
-  ann_ "__MERGE" $
+  ann_ name $
   let l = BoundArg 0
       r = BoundArg 1
       lel = Local 2
@@ -39,11 +44,42 @@ euMerge =
         , pc_ [lel, rel] $
           thunkn_ 2 $ appfn_ (Global "CONCAT") [Local 0, Local 1]
         , pc_ [els] $ thunkn_ 1 $ appfn_ (Global "seqPairList") [Local 0]
-        , pc_ [evaled] $
-          thunkn_ 1 $
-          force_ (Atom $ Local 0) (appbif_ (intrinsicIndex "PRUNE") [Local 1])
+        , pc_ [evaled] prune
         ] $
       appcon_ stgBlock [merged]
+
+
+-- | __MERGE(l, r)
+euMerge :: LambdaForm
+euMerge =
+  mergeTemplate "__MERGE" $
+  thunkn_ 1 $
+  force_ (Atom $ Local 0) (appbif_ (intrinsicIndex "PRUNE") [Local 1])
+
+-- | __DEEPMERGE(l, r)
+euDeepMerge :: LambdaForm
+euDeepMerge =
+  mergeTemplate "__DEEPMERGE" $
+  thunkn_ 1 $
+  force_
+    (Atom $ Local 0)
+    (appbif_ (intrinsicIndex "PRUNEMERGE") [Local 1, Global "DEEPMERGEIFBLOCKS"])
+
+-- | __DEEPMERGEIFBLOCKS
+euDeepMergeIfBlocks :: LambdaForm
+euDeepMergeIfBlocks =
+  lam_ 0 2 $
+  ann_ "__DEEPMERGEIFBLOCKS" $
+  casedef_
+    (Atom $ BoundArg 1)
+    [ ( stgBlock
+      , ( 1
+        , casedef_
+            (Atom $ BoundArg 2)
+            [(stgBlock, (1, appfn_ (Global "DEEPMERGE") [Local 2, Local 3]))]
+            (Atom $ Local 2)))
+    ]
+    (Atom $ Local 2)
 
 -- | __BLOCK(l)
 euBlock :: LambdaForm
