@@ -47,9 +47,9 @@ euEq =
               , ( 1
                 , let_
                     [ pc_ [Local 2, Local 4] $
-                      thunkn_ 2 $ appfn_ (Global "EQ") [Local 0, Local 1]
+                      valuen_ 2 $ appfn_ (Global "EQ") [Local 0, Local 1]
                     , pc_ [Local 3, Local 5] $
-                      thunkn_ 2 $ appfn_ (Global "EQ") [Local 0, Local 1]
+                      valuen_ 2 $ appfn_ (Global "EQ") [Local 0, Local 1]
                     ]
                     (appfn_ (Global "AND") [Local 6, Local 7])))
             ]

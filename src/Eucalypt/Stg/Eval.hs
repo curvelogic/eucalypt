@@ -59,6 +59,10 @@ pop ms@MachineState {machineStack = st} =
 pushApplyToArgs :: MonadThrow m => MachineState -> ValVec -> m MachineState
 pushApplyToArgs ms xs = return $ push ms (ApplyToArgs xs)
 
+-- | Push an update continuation
+pushUpdate :: MonadThrow m => MachineState -> Address -> m MachineState
+pushUpdate ms a = return $ push ms (Update a)
+
 -- | Branch expressions expect to find their args as the top entries
 -- in the environment (and right now the compiler needs to work out
 -- where...)
@@ -205,7 +209,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs)} = do
         poke
           a
           (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms))
-      return ms'
+      return . setRule "UPDATE" $  ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
     Nothing -> return $ terminate ms'
 
@@ -225,7 +229,9 @@ step ms0@MachineState {machineCode = (ReturnLit nat)} = do
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgNat nat)))
             Nothing -> throwIn ms' NoBranchFound
-    (Just (Update _)) -> throwIn ms' LiteralUpdate
+    (Just (Update a)) -> do
+      liftIO $ poke a (Closure (value_ (Atom (Literal nat))) mempty mempty)
+      return . setRule "UPDATELIT" $  ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfNativeBranchTable
     Nothing -> return $ terminate ms'
 
@@ -244,9 +250,9 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
-    -- (Just (Update a)) -> do  -- update with indirect?
-    --   liftIO $ poke a (Closure (standardConstructor (envSize xs) t) xs)
-    --   return ms'
+    (Just (Update a)) -> do  -- update with indirect...
+      liftIO $ poke a (Closure (value_ (Atom (Local 0))) (singleton (StgAddr r)) mempty)
+      return . setRule "UPDATEFN" $  ms'
     _ ->
       return $
       setCode ms' (Eval (App (Ref $ Local 0) mempty) (singleton (StgAddr r)))
@@ -259,9 +265,26 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
   ms <- prepareStep "EVAL ATOM" ms0
   v <- val env ms ref
   case v of
-    StgAddr _ ->
-      return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v)) -- (ReturnFun a) -- what if it's a thunk?
+    StgAddr addr -> do
+      obj <- liftIO $ peek addr
+      case obj of
+        Closure LambdaForm {_update = True, _body = code} le cs -> do
+          ms' <- pushUpdate ms addr
+          liftIO $ poke addr BlackHole
+          (return . setCallStack cs . setRule "THUNK") $
+            setCode ms' (Eval code le)
+        Closure LambdaForm {_bound = 0} _ _ ->
+          return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
+        PartialApplication _ _ _ 0 _ ->
+          return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
+        Closure{} ->
+          (return . setRule "RETURNFUN" . (`setCode` ReturnFun addr)) ms
+        PartialApplication{} ->
+          (return . setRule "RETURNFUN-PAP" . (`setCode` ReturnFun addr)) ms
+        BlackHole -> throwIn ms EnteredBlackHole
     StgNat n -> return $ setCode ms (ReturnLit n)
+
+
 
 -- | Append an annotation to the call stack
 step ms0@MachineState {machineCode = (Eval (Ann s expr) env)} = do
