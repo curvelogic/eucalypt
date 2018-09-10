@@ -229,7 +229,9 @@ step ms0@MachineState {machineCode = (ReturnLit nat)} = do
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgNat nat)))
             Nothing -> throwIn ms' NoBranchFound
-    (Just (Update _)) -> throwIn ms' LiteralUpdate
+    (Just (Update a)) ->
+      liftIO $
+      poke a (Closure (value_ (Atom (Literal nat))) mempty mempty) >> return ms'
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfNativeBranchTable
     Nothing -> return $ terminate ms'
 
