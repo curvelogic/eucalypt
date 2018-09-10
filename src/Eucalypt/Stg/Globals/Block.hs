@@ -71,15 +71,15 @@ euDeepMergeIfBlocks =
   lam_ 0 2 $
   ann_ "__DEEPMERGEIFBLOCKS" $
   casedef_
-    (Atom $ BoundArg 1)
+    (Atom $ BoundArg 0)
     [ ( stgBlock
       , ( 1
         , casedef_
-            (Atom $ BoundArg 2)
-            [(stgBlock, (1, appfn_ (Global "DEEPMERGE") [Local 2, Local 3]))]
-            (Atom $ Local 2)))
+            (Atom $ BoundArg 1)
+            [(stgBlock, (1, appfn_ (Global "DEEPMERGE") [BoundArg 0, BoundArg 1]))]
+            (Atom $ BoundArg 1)))
     ]
-    (Atom $ Local 2)
+    (Atom $ BoundArg 1)
 
 -- | __BLOCK(l)
 euBlock :: LambdaForm

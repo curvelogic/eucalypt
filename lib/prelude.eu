@@ -125,9 +125,8 @@ deep-merge: __DEEPMERGE
 ` { doc: "`l << r` - deep merge block `r` on top of `l`, merging nested blocks, not lists."
     export: :suppress
     associates: :left
-    precedence: :cat }
+    precedence: :append }
 (l << r): __DEEPMERGE(l, r)
-
 
 ` { doc: "`elements(b)` - expose list of elements of block `b`."
     export: :suppress }

@@ -91,13 +91,15 @@ pruneMerge ms (ValVec xs) =
       cons <- readCons ms a
       case cons of
         Just (h, StgAddr t) -> do
-          (k, v) <- kv h
+          (k, StgAddr cdr) <- kv h
           let old = OM.lookup k om
           case old of
             Nothing -> pruneMergeSub f (OM.insert k h om) t
             Just o -> do
-              (_, oldv) <- kv o
-              combined <- combine k f oldv v
+              (_, StgAddr oldcdr) <- kv o
+              Just (oldval, _) <- readCons ms oldcdr
+              Just (newval, _) <- readCons ms cdr
+              combined <- combine k f newval oldval
               pruneMergeSub f (OM.insert k combined om) t
         Just (_, _) -> throwIn ms IntrinsicImproperList
         Nothing -> return om
@@ -127,5 +129,5 @@ pruneMerge ms (ValVec xs) =
                allocate
                  (Closure
                     consConstructor
-                    (toValVec [StgNat $ NativeString k, t])
+                    (toValVec [StgNat $ NativeSymbol k, t])
                     cs)
