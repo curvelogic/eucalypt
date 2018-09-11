@@ -288,15 +288,8 @@ val (ValVec le) ms (Local l) =
     Just v -> return v
     _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
 val _ ms (BoundArg _) = throwIn ms AttemptToResolveBoundArg
-<<<<<<< HEAD
 val _ ms (Global nm) = globalAddress ms nm
-val _ _ (Literal n) = return $ StgNat n
-=======
-val _ ms@MachineState {machineGlobals = g} (Global nm) = case HM.lookup nm g of
-  Just v -> return v
-  _ -> throwIn ms $ UnknownGlobal nm
 val _ _ (Literal n) = return $ StgNat n Nothing
->>>>>>> Add metadata to natives
 
 -- | Resolve a vector of refs against an environment to create
 -- environment

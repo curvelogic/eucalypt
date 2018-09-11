@@ -106,7 +106,7 @@ pruneMerge ms (ValVec xs) =
     kv (StgAddr a) = do
       pair <- readCons ms a
       case pair of
-        Just (StgNat (NativeSymbol s), t) -> return (s, t)
+        Just (StgNat (NativeSymbol s) _meta, t) -> return (s, t)
         _ -> throwIn ms $ IntrinsicBadPair $ show pair
     kv _ = throwIn ms IntrinsicExpectedList
     combine :: String -> Address -> StgValue -> StgValue -> IO StgValue
@@ -119,15 +119,21 @@ pruneMerge ms (ValVec xs) =
                  (Closure
                     (thunkn_ 3 $ appfn_ (Local 0) [Local 1, Local 2])
                     env
-                    cs)
+                    cs
+                    Blank)
              t <-
                do nilAddr <- globalAddress ms "KNIL"
                   StgAddr <$>
                     allocate
-                      (Closure consConstructor (toValVec [addr, nilAddr]) cs)
+                      (Closure
+                         consConstructor
+                         (toValVec [addr, nilAddr])
+                         cs
+                         Blank)
              StgAddr <$>
                allocate
                  (Closure
                     consConstructor
-                    (toValVec [StgNat $ NativeSymbol k, t])
-                    cs)
+                    (toValVec [StgNat (NativeSymbol k) Nothing, t])
+                    cs
+                    Blank)
