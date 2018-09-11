@@ -23,6 +23,10 @@ import Eucalypt.Stg.Globals.Str as Str
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
+-- | Constant: __KNIL
+euStgNil :: LambdaForm
+euStgNil = value_ $ appcon_ stgNil mempty
+
 -- | __CAT(x, f)
 euCat :: LambdaForm
 euCat =
@@ -116,14 +120,15 @@ standardGlobals =
     , ("BLOCK", Block.euBlock)
     , ("ELEMENTS", Block.euElements)
     , ("MERGE", Block.euMerge)
+    , ("DEEPMERGE", Block.euDeepMerge)
+    , ("DEEPMERGEIFBLOCKS", Block.euDeepMergeIfBlocks)
     , ("LOOKUP", Block.euLookup)
     , ("LOOKUPLIST", Block.euLookupList)
     , ("LOOKUPOR", Block.euLookupOr)
     , ("LOOKUPLISTOR", Block.euLookupListOr)
     , ("RENDER", Emit.euRender)
     , ("NULL", Emit.euNull)
+    , ("KNIL", euStgNil)
     , ("seqNatList", seqNatList)
     , ("seqPairList", seqPairList)
     ]
-
--- TODO: block, elements, split

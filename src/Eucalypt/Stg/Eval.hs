@@ -246,13 +246,22 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
     (Just (ApplyToArgs addrs)) ->
       let (env', args') = extendEnv mempty $ singleton (StgAddr r) <> addrs
        in return $
-          setCode ms' (Eval (App (Ref $ Vector.head args') (Vector.tail args')) env')
+          setCode
+            ms'
+            (Eval (App (Ref $ Vector.head args') (Vector.tail args')) env')
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
-    (Just (Update a)) -> do  -- update with indirect...
-      liftIO $ poke a (Closure (value_ (Atom (Local 0))) (singleton (StgAddr r)) mempty)
-      return . setRule "UPDATEFN" $  ms'
+    (Just (Update a))
+     -> do
+      liftIO $
+        poke
+          a
+          (Closure
+             (value_ (Atom (Local 0)))
+             (singleton (StgAddr r))
+             (machineCallStack ms))
+      return . setRule "UPDATEFN" $ ms'
     _ ->
       return $
       setCode ms' (Eval (App (Ref $ Local 0) mempty) (singleton (StgAddr r)))
