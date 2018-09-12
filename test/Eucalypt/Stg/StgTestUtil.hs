@@ -28,12 +28,25 @@ litList_ envN nats = list_ envN (map Literal nats) Nothing
 nat :: Integer -> Native
 nat n = NativeNumber $ fromInteger n
 
-kv :: String -> Integer -> StgSyn
+kv :: String -> Native -> StgSyn
 kv k v =
   letrec_
     [ pc0_ nilConstructor
-    , pc_ [Literal $ nat v, Local 0] consConstructor
+    , pc_ [Literal $ v, Local 0] consConstructor
     , pc_ [Literal $ NativeSymbol k, Local 1] consConstructor
+    ]
+    (App (Ref (Local 2)) mempty)
+
+suppressMeta :: StgSyn
+suppressMeta = block [kv "export" (NativeSymbol "suppress")]
+
+-- | An export-suppressed key/value pair
+kv_ :: String -> Native -> StgSyn
+kv_ k v =
+  letrec_
+    [ pc0_ $ thunk_ suppressMeta
+    , pc_ [Literal $ v, Global "KNIL"] consConstructor
+    , pcm_ [Literal $ NativeSymbol k, Local 1] (Just $ Local 0) consConstructor
     ]
     (App (Ref (Local 2)) mempty)
 

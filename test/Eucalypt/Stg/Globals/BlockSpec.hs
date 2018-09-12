@@ -24,7 +24,7 @@ main = hspec spec
 blockA :: StgSyn
 blockA =
   letrec_
-    [ pc0_ $ thunk_ $ kv "a" 1
+    [ pc0_ $ thunk_ $ kv "a" $ nat 1
     , pc_ [Local 0] $ thunkn_ 1 $ list_ 1 [Local 0] Nothing
     ] $
   appcon_ stgBlock [Local 1]
@@ -32,9 +32,9 @@ blockA =
 blockABC :: StgSyn
 blockABC =
   letrec_
-    [ pc0_ $ thunk_ $ kv "a" 1
-    , pc0_ $ thunk_ $ kv "b" 2
-    , pc0_ $ thunk_ $ kv "c" 3
+    [ pc0_ $ thunk_ $ kv "a" $ nat 1
+    , pc0_ $ thunk_ $ kv "b" $ nat 2
+    , pc0_ $ thunk_ $ kv "c" $ nat 3
     , pc_ (map Local [0 .. 2]) $ thunkn_ 3 $ list_ 3 (map Local [0 .. 2]) Nothing
     ] $
   appcon_ stgBlock [Local 3]

@@ -340,6 +340,15 @@ caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
 caselit_ scrutinee cases df =
   Case scrutinee (BranchTable mempty (HM.fromList cases) df)
 
+polycase_ ::
+     StgSyn
+  -> [(Tag, (Word64, StgSyn))]
+  -> [(Native, StgSyn)]
+  -> Maybe StgSyn
+  -> StgSyn
+polycase_ scrutinee bs nbs df =
+  Case scrutinee (BranchTable (Map.fromList bs) (HM.fromList nbs) df)
+
 let_ :: [PreClosure] -> StgSyn -> StgSyn
 let_ pcs = Let (V.fromList pcs)
 

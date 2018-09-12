@@ -62,7 +62,8 @@ blockSpec :: Spec
 blockSpec =
   describe "STG Evaluation" $ do
     it "evals block letrec to ReturnCon" $
-      (returnsConstructor stgBlock <$> test (block [kv "a" 1, kv "b" 2])) `shouldReturn`
+      (returnsConstructor stgBlock <$>
+       test (block [kv "a" $ nat 1, kv "b" $ nat 2])) `shouldReturn`
       True
     it "returns lit 1" $
       (returnsNative (nat 1) <$> test headOfList) `shouldReturn` True
@@ -90,4 +91,4 @@ metaSpec :: Spec
 metaSpec =
   describe "metadata" $
   it "propagates into case data branches" $
-  returnsNative (nat 99) <$> testTracing evalMetadata `shouldReturn` True
+  returnsNative (nat 99) <$> test evalMetadata `shouldReturn` True
