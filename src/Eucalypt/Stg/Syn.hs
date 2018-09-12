@@ -139,9 +139,6 @@ isContextualRef _ = True
 -- | Constructor tag
 type Tag = Word64
 
-class HasDefaultBranch a where
-  defaultBranch :: a -> Maybe StgSyn
-
 -- | Branches of a case expression.
 --
 -- Matching data structures via constructor and native scalars via
@@ -152,21 +149,18 @@ class HasDefaultBranch a where
 --
 -- (The scalars are after all "boxed" with the 'Native' type, there is
 -- not much sense boxing them again in STG.)
-data BranchTable =
-  BranchTable (Map.Map Tag (Word64, StgSyn))
-              (HM.HashMap Native StgSyn)
-              (Maybe StgSyn)
-  deriving (Eq, Show)
+data BranchTable = BranchTable
+  { dataBranches :: Map.Map Tag (Word64, StgSyn)
+  , nativeBranches :: HM.HashMap Native StgSyn
+  , defaultBranch :: Maybe StgSyn
+  } deriving (Eq, Show)
 
-instance HasDefaultBranch BranchTable where
-  defaultBranch (BranchTable _ _ df) = df
 
 instance HasArgRefs BranchTable where
-  argsAt n (BranchTable branches nativeBranches df) =
-    BranchTable branches' nativeBranches' df'
+  argsAt n (BranchTable bs nbs df) = BranchTable bs' nbs' df'
     where
-      branches' = Map.map (second (argsAt n)) branches
-      nativeBranches' = HM.map (argsAt n) nativeBranches
+      bs' = Map.map (second (argsAt n)) bs
+      nbs' = HM.map (argsAt n) nbs
       df' = argsAt n <$> df
 
 instance HasRefs BranchTable where
@@ -247,11 +241,16 @@ instance StgPretty LambdaForm where
 
 -- | A PreClosure is a LambdaForm together with refs which will be
 -- resolved to the bindings at allocation time.
-data PreClosure =
-  PreClosure !RefVec
-             !(Maybe Ref)
-             !LambdaForm
-  deriving (Eq, Show)
+data PreClosure = PreClosure
+  { pcFreeRefs :: !RefVec
+    -- ^ Refs into existing environment to use to form local
+    -- environment for the closure
+  , pcMetaRef :: !(Maybe Ref)
+    -- ^ Optional ref into existing environment representing metadata
+    -- tagged onto the resulting value
+  , pcLambdaForm :: !LambdaForm
+    -- ^ 'LambdaForm' containing expression to evaluate
+  } deriving (Eq, Show)
 
 instance HasArgRefs PreClosure where
   argsAt n (PreClosure rs m lf) = PreClosure (V.map (argsAt n) rs) (fmap (argsAt n) m) lf
@@ -260,11 +259,14 @@ instance HasRefs PreClosure where
   refs (PreClosure rv m _) = toList rv <> toList m
 
 instance StgPretty PreClosure where
-  prettify (PreClosure rs _ lf) = refDoc <> P.space <> prettify lf
+  prettify (PreClosure rs md lf) = refDoc <> metaDoc <> P.space <> prettify lf
     where
       refDoc =
         P.braces $
         P.hcat $ P.punctuate (P.comma <> P.space) (map prettify (toList rs))
+      metaDoc = case md of
+        Just r -> P.char '`' <> prettify r <> P.char '`'
+        Nothing -> P.empty
 
 -- | The STG language
 data StgSyn
@@ -380,8 +382,14 @@ seqall_ = foldl1 seq_
 pc0_ :: LambdaForm -> PreClosure
 pc0_ = PreClosure mempty Nothing
 
+pc0m_ :: Ref -> LambdaForm -> PreClosure
+pc0m_ meta = PreClosure mempty (Just meta)
+
 pc_ :: [Ref] -> LambdaForm -> PreClosure
 pc_ = (`PreClosure` Nothing) . V.fromList
+
+pcm_ :: [Ref] -> Maybe Ref -> LambdaForm -> PreClosure
+pcm_ rs = PreClosure (V.fromList rs)
 
 ann_ :: String -> StgSyn -> StgSyn
 ann_ = Ann

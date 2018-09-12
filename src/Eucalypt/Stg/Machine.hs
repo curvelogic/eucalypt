@@ -61,11 +61,32 @@ instance StgPretty StgValue where
   prettify (StgAddr _) = P.text "<addr>"
   prettify (StgNat n _) = prettify n
 
+-- | Metadata as referenced from a closure
+--
+-- References to metadata may be attached to heap objects and natives.
+-- This data does not form part of the value, is not evaluated except
+-- when explicitly forced and is irrelevant for object equality.
+--
+-- It can be used to control formatting during render, give hints to
+-- evaluation and diagnostic functionality etc.
 data HeapObjectMetadata
-  = Blank
-  | Passthrough
-  | MetadataValue !StgValue
+  = MetadataBlank -- ^ blank whatever metadata is attached to the value
+  | MetadataPassThrough -- ^ use whatever metadata is attached to the value
+  | MetadataValue !StgValue -- ^ override value's metadata
   deriving (Eq, Show)
+
+withMeta :: HeapObjectMetadata -> HeapObjectMetadata -> HeapObjectMetadata
+withMeta _ MetadataBlank = MetadataBlank
+withMeta l MetadataPassThrough = l
+withMeta _ r = r
+
+asMeta :: Maybe StgValue -> HeapObjectMetadata
+asMeta Nothing = MetadataBlank
+asMeta (Just v) = MetadataValue v
+
+fromMeta :: HeapObjectMetadata -> Maybe StgValue
+fromMeta (MetadataValue v) = Just v
+fromMeta _ = Nothing
 
 -- | Anything storable in an 'Address'.
 data HeapObject
@@ -129,24 +150,24 @@ instance StgPretty ValVec where
 -- | Entry on the frame stack, encoding processing to be done later
 -- when a value is available
 data Continuation
-  = Branch !BranchTable
-           !ValVec
-  | Update !Address
-  | ApplyToArgs !ValVec
+  = Branch { branchTable :: !BranchTable
+           , branchEnv :: !ValVec }
+  | Update { updateAddress :: !Address
+           , updateMetadata :: !HeapObjectMetadata }
+  | ApplyToArgs { pendingArgs :: !ValVec }
   deriving (Eq, Show)
 
 instance StgPretty Continuation where
   prettify (Branch _ _) = P.text "Br"
-  prettify (Update _) = P.text "Up"
+  prettify (Update _ _) = P.text "Up"
   prettify (ApplyToArgs _) = P.text "Ap"
 
--- Continuation stack also records
--- call stacks for restoring them on return
+-- | Continuation stack also records call stacks for restoring them on
+-- return
 data StackElement = StackElement
   { stackContinuation :: Continuation
   , stackCallStack :: CallStack
-  }
-  deriving (Eq, Show)
+  } deriving (Eq, Show)
 
 
 instance StgPretty StackElement where
@@ -165,13 +186,13 @@ data Code
   deriving (Eq, Show)
 
 instance StgPretty Code where
-  prettify (Eval e le) =
-    P.text "EVAL" <> P.space <> prettify le <> P.space <> prettify e
-  prettify (ReturnCon t binds _) =
-    P.text "RETURNCON" <> P.space <> P.int (fromIntegral t) <> P.space <>
-    prettify binds
-  prettify (ReturnLit n _) = P.text "RETURNLIT" <> P.space <> prettify n
-  prettify (ReturnFun _) = P.text "RETURNFUN" <> P.space <> P.text "."
+  prettify (Eval e le) = P.text "EVAL" <+> prettify le <+> prettify e
+  prettify (ReturnCon t binds meta) =
+    P.text "RETURNCON" <+>
+    P.int (fromIntegral t) <+> prettify binds <+> maybe P.empty prettify meta
+  prettify (ReturnLit n meta) =
+    P.text "RETURNLIT" <+> prettify n <+> maybe P.empty prettify meta
+  prettify (ReturnFun _) = P.text "RETURNFUN" <+> P.text "."
 
 -- | Machine state.
 --
@@ -219,7 +240,7 @@ allocGlobal _name impl =
        { closureCode = impl
        , closureEnv = mempty
        , closureCallStack = mempty
-       , closureMeta = Blank
+       , closureMeta = MetadataBlank
        })
 
 -- | Initialise machine state.
@@ -345,7 +366,7 @@ buildClosure ::
 buildClosure le ms (PreClosure captures metaref code) = do
   env <- vals le ms captures
   meta <- case metaref of
-    Nothing -> return Passthrough
+    Nothing -> return MetadataPassThrough
     Just r -> MetadataValue <$> val le ms r
   return $ Closure code env (machineCallStack ms) meta
 

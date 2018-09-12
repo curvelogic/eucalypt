@@ -23,7 +23,7 @@ import qualified Test.QuickCheck.Monadic as QM
 
 -- | List of literals
 litList_ :: Int -> [Native] -> StgSyn
-litList_ envN nats = list_ envN $ map Literal nats
+litList_ envN nats = list_ envN (map Literal nats) Nothing
 
 nat :: Integer -> Native
 nat n = NativeNumber $ fromInteger n
@@ -42,7 +42,7 @@ block kvs =
   let pcs = map (pc0_ . value_) kvs
       itemCount = length pcs
       itemRefs = [(Local . fromIntegral) n | n <- [0 .. itemCount - 1]]
-      l = pc_ itemRefs $ thunkn_ itemCount $ list_ itemCount itemRefs
+      l = pc_ itemRefs $ thunkn_ itemCount $ list_ itemCount itemRefs Nothing
       bl = pc_ [Local $ fromIntegral itemCount] blockConstructor
       pcs' = pcs ++ [l, bl]
    in letrec_ pcs' (App (Ref (Local (fromIntegral (itemCount + 1)))) mempty)

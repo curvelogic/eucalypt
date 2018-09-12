@@ -17,7 +17,9 @@ import Control.Monad.State
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import qualified Data.Vector as Vector
+import Data.Word
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Machine
@@ -36,7 +38,7 @@ allocPartial le ms lf xs = allocate pap
         , papArgs = xs
         , papArity = a
         , papCallStack = machineCallStack ms
-        , papMeta = Passthrough
+        , papMeta = MetadataPassThrough
         }
     a = fromIntegral (_bound lf) - envSize xs
 
@@ -61,14 +63,24 @@ pushApplyToArgs :: MonadThrow m => MachineState -> ValVec -> m MachineState
 pushApplyToArgs ms xs = return $ push ms (ApplyToArgs xs)
 
 -- | Push an update continuation
-pushUpdate :: MonadThrow m => MachineState -> Address -> m MachineState
-pushUpdate ms a = return $ push ms (Update a)
+pushUpdate ::
+     MonadThrow m
+  => MachineState
+  -> Address -- ^ address to update
+  -> HeapObjectMetadata -- ^ metadata override or pass through
+  -> m MachineState
+pushUpdate ms a md = return $ push ms (Update a md)
 
 -- | Branch expressions expect to find their args as the top entries
 -- in the environment (and right now the compiler needs to work out
--- where...)
-selectBranch :: BranchTable -> Tag -> Maybe StgSyn
-selectBranch (BranchTable bs _ _) t = snd <$> Map.lookup t bs
+-- where...) and if they expect a metadata argument the arity will be
+-- one more than the arity of the constructor.
+--
+-- e.g. if deconstructing cons, a branch which specifies arity 2 gets
+-- head and tail, a branch which specifies arity 3 gets head, tail and
+-- metadata.
+selectBranch :: BranchTable -> Tag -> Maybe (Word64, StgSyn)
+selectBranch (BranchTable bs _ _) t = Map.lookup t bs
 
 -- | Match a native branch table alternative, return the next
 -- expression to eval
@@ -183,43 +195,59 @@ step ms0@MachineState {machineCode = (Eval (Case syn k) env)} = do
 
 
 -- | ReturnCon - returns a data structure into a BranchTable branch
-step ms0@MachineState {machineCode = (ReturnCon t xs _meta)} = do
+step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = do
   ms <- prepareStep "RETURNCON" ms0
   (entry, ms') <- pop ms
   case entry of
     (Just (Branch k le)) ->
-      case selectBranch k t
-        -- | CASECON
-            of
-        (Just expr) -> return $ setCode ms' (Eval expr (le <> xs))
-        -- | CASEANY
+      case selectBranch k t of
+        (Just (branchArity, expr)) -> do
+          env <- argsToEnv ms' le branchArity xs
+          return $ setCode ms' (Eval expr env)
         Nothing -> do
-          addr <-
-            liftIO $
-            allocate
-              (Closure
-                 (LambdaForm 0 0 False (App (Con t) (locals 0 (envSize xs))))
-                 xs
-                 (machineCallStack ms)
-                 Blank)
+          addr <- allocateForDefault ms' xs meta
           case defaultBranch k of
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
             Nothing -> throwIn ms' NoBranchFound
-    (Just (Update a)) -> do
-      liftIO $
-        poke
-          a
-          (Closure (standardConstructor (envSize xs) t) xs (machineCallStack ms) Blank)
-      return . setRule "UPDATE" $  ms'
+    (Just (Update a storedMeta)) -> do
+      let newMeta = asMeta meta `withMeta` storedMeta
+      updateAddr ms' a t xs newMeta
+      return . setRule "UPDATE" $
+        setCode ms' (ReturnCon t xs (fromMeta newMeta))
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
     Nothing -> return $ terminate ms'
+  where
+    argsToEnv ms le expectedArity args =
+      if envSize args < expectedArity
+        then do
+          e <- globalAddress ms "KEMPTYBLOCK"
+          return $ le <> args <> toValVec [fromMaybe e meta]
+        else return (le <> args)
+    allocateForDefault ms args md =
+      liftIO $
+      allocate
+        (Closure
+           (LambdaForm 0 0 False (App (Con t) (locals 0 (envSize args))))
+           args
+           (machineCallStack ms) $
+         maybe MetadataPassThrough MetadataValue md)
+    updateAddr ms a tag args md =
+      liftIO $
+      poke
+        a
+        (Closure
+           (standardConstructor (envSize args) tag)
+           args
+           (machineCallStack ms)
+           md)
+
 
 
 
 -- | ReturnLit - returns a native value to a NativeBranchTable or
 -- terminates if none.
-step ms0@MachineState {machineCode = (ReturnLit nat _meta)} = do
+step ms0@MachineState {machineCode = (ReturnLit nat meta)} = do
   ms <- prepareStep "RETURNLIT" ms0
   (entry, ms') <- pop ms
   case entry of
@@ -229,11 +257,15 @@ step ms0@MachineState {machineCode = (ReturnLit nat _meta)} = do
         Nothing ->
           case defaultBranch k of
             (Just expr) ->
-              return $ setCode ms' (Eval expr (le <> singleton (StgNat nat Nothing)))
+              return $
+              setCode ms' (Eval expr (le <> singleton (StgNat nat Nothing)))
             Nothing -> throwIn ms' NoBranchFound
-    (Just (Update a)) -> do
-      liftIO $ poke a (Closure (value_ (Atom (Literal nat))) mempty mempty Blank)
-      return . setRule "UPDATELIT" $  ms'
+    (Just (Update a storedMeta)) -> do
+      let newMeta = asMeta meta `withMeta` storedMeta
+      liftIO $
+        poke a (Closure (value_ (Atom (Literal nat))) mempty mempty newMeta)
+      return . setRule "UPDATELIT" $
+        setCode ms' (ReturnLit nat (fromMeta newMeta))
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfNativeBranchTable
     Nothing -> return $ terminate ms'
 
@@ -254,7 +286,7 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
-    (Just (Update a)) -> do
+    (Just (Update a storedMeta)) -> do
       liftIO $
         poke
           a
@@ -262,13 +294,14 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
              (value_ (Atom (Local 0)))
              (singleton (StgAddr r))
              (machineCallStack ms)
-             Blank)
+             storedMeta)
       return . setRule "UPDATEFN" $ ms'
     _ ->
       return $
       setCode ms' (Eval (App (Ref $ Local 0) mempty) (singleton (StgAddr r)))
 
 
+-- TODO: Pull CON and THUNK objects out of Closure to clean this up
 
 -- | In most cases, we punt on to Eval App which should cause
 -- ReturnCon or ReturnLit when we reach a value
@@ -279,21 +312,38 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
     StgAddr addr -> do
       obj <- liftIO $ peek addr
       case obj of
-        Closure LambdaForm {_update = True, _body = code} le cs _ -> do
-          ms' <- pushUpdate ms addr
-          liftIO $ poke addr BlackHole
-          (return . setCallStack cs . setRule "THUNK") $
-            setCode ms' (Eval code le)
-        Closure LambdaForm {_bound = 0} _ _ _ ->
-          return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
-        PartialApplication _ _ _ 0 _ _ ->
-          return $ setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
-        Closure{} ->
+        Closure LambdaForm {_update = True, _body = code} le cs meta ->
+          setRule "THUNK" <$> pushAndEval ms addr code le cs meta
+        Closure LambdaForm {_bound = 0, _body = code} le cs meta ->
+          case meta of
+            MetadataBlank ->
+              setRule "BLANKMETA" <$> pushAndEval ms addr code le cs meta
+            MetadataValue _ ->
+              setRule "SETMETA" <$> pushAndEval ms addr code le cs meta
+            MetadataPassThrough ->
+              return $
+              setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
+        PartialApplication LambdaForm {_body = code} le _args 0 cs meta ->
+          case meta of
+            MetadataBlank ->
+              setRule "BLANKMETAPAP" <$> pushAndEval ms addr code le cs meta
+            MetadataValue _ ->
+              setRule "SETMETAPAP" <$> pushAndEval ms addr code le cs meta
+            MetadataPassThrough ->
+              return $
+              setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
+        Closure {} ->
           (return . setRule "RETURNFUN" . (`setCode` ReturnFun addr)) ms
-        PartialApplication{} ->
+        PartialApplication {} ->
           (return . setRule "RETURNFUN-PAP" . (`setCode` ReturnFun addr)) ms
         BlackHole -> throwIn ms EnteredBlackHole
     StgNat n meta -> return $ setCode ms (ReturnLit n meta)
+  where
+    pushAndEval ms addr code le cs meta = do
+      ms' <- pushUpdate ms addr meta
+      liftIO $ poke addr BlackHole
+      (return . setCallStack cs) $ setCode ms' (Eval code le)
+
 
 -- | Append an annotation to the call stack
 step ms0@MachineState {machineCode = (Eval (Ann s expr) env)} = do

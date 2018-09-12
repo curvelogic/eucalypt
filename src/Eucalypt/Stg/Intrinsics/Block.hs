@@ -120,7 +120,7 @@ pruneMerge ms (ValVec xs) =
                     (thunkn_ 3 $ appfn_ (Local 0) [Local 1, Local 2])
                     env
                     cs
-                    Blank)
+                    MetadataBlank)
              t <-
                do nilAddr <- globalAddress ms "KNIL"
                   StgAddr <$>
@@ -129,11 +129,11 @@ pruneMerge ms (ValVec xs) =
                          consConstructor
                          (toValVec [addr, nilAddr])
                          cs
-                         Blank)
+                         MetadataBlank)
              StgAddr <$>
                allocate
                  (Closure
                     consConstructor
                     (toValVec [StgNat (NativeSymbol k) Nothing, t])
                     cs
-                    Blank)
+                    MetadataBlank)

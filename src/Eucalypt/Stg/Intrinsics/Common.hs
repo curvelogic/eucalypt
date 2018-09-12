@@ -20,7 +20,8 @@ import Eucalypt.Stg.Machine
 
 flipCons :: StgValue -> StgValue -> IO StgValue
 flipCons as a =
-  StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]) mempty Blank)
+  StgAddr <$>
+  allocate (Closure consConstructor (toValVec [a, as]) mempty MetadataBlank)
 
 
 -- | Utility to return a native list from a primitive function.

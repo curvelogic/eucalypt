@@ -27,6 +27,10 @@ import Eucalypt.Stg.Tags
 euStgNil :: LambdaForm
 euStgNil = value_ $ appcon_ stgNil mempty
 
+-- | Constant: __KEMPTYBLOCK
+euEmptyBlock :: LambdaForm
+euEmptyBlock = thunk_ $ appcon_ stgBlock [Global "KNIL"]
+
 -- | __CAT(x, f)
 euCat :: LambdaForm
 euCat =
@@ -129,6 +133,7 @@ standardGlobals =
     , ("RENDER", Emit.euRender)
     , ("NULL", Emit.euNull)
     , ("KNIL", euStgNil)
+    , ("KEMPTYBLOCK", euEmptyBlock)
     , ("seqNatList", seqNatList)
     , ("seqPairList", seqPairList)
     ]
