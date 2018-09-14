@@ -24,7 +24,7 @@ import Eucalypt.Stg.Tags
 emit :: MachineState -> Event -> IO MachineState
 emit s e =
   send e >>= \s' ->
-    return $ (appendEvent e . setCode s') (ReturnCon stgUnit mempty)
+    return $ (appendEvent e . setCode s') (ReturnCon stgUnit mempty Nothing)
   where
     send = machineEmit s s
 
@@ -45,5 +45,5 @@ emitNull s _ = emit s OutputNull
 
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do
-  let (StgNat n) = xs ! 0
-  (`setCode` ReturnLit n) <$> emit s (OutputScalar n)
+  let (StgNat n _) = xs ! 0
+  (`setCode` ReturnLit n Nothing) <$> emit s (OutputScalar n)

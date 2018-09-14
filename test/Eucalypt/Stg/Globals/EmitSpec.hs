@@ -59,7 +59,7 @@ spec =
       emitLog <$>
       test
         (let_
-           [pc0_ $ thunk_ $ block [kv "a" 1, kv "b" 2]]
+           [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv "b" $ nat 2]]
            (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`
       [ OutputMappingStart
       , OutputScalar $ NativeSymbol "a"
@@ -72,12 +72,23 @@ spec =
       emitLog <$>
       test
         (let_
-           [pc0_ $ thunk_ $ block [kv "a" 1, kv "b" 2]]
+           [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv "b" $ nat 2]]
            (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`
       [ OutputMappingStart
       , OutputScalar $ NativeSymbol "a"
       , OutputScalar $ NativeNumber 1
       , OutputScalar $ NativeSymbol "b"
       , OutputScalar $ NativeNumber 2
+      , OutputMappingEnd
+      ]
+    it "ignores suppressed KVs" $
+      emitLog <$>
+      test
+        (let_
+           [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv_ "b" $ nat 2]]
+           (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`
+      [ OutputMappingStart
+      , OutputScalar $ NativeSymbol "a"
+      , OutputScalar $ NativeNumber 1
       , OutputMappingEnd
       ]

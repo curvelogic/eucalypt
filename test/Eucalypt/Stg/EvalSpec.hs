@@ -10,6 +10,7 @@ module Eucalypt.Stg.EvalSpec (main, spec)
 where
 
 import qualified Data.Vector as Vector
+import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Syn
@@ -21,7 +22,9 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = blockSpec
+spec = do
+  blockSpec
+  metaSpec
 
 -- A test which finds the head of a list
 headOfList :: StgSyn
@@ -54,11 +57,13 @@ renderEmptyMap = seq_ emitMS emitME
     emitMS = appbif_ (intrinsicIndex "EMIT{") []
     emitME = appbif_ (intrinsicIndex "EMIT}") []
 
+
 blockSpec :: Spec
 blockSpec =
   describe "STG Evaluation" $ do
     it "evals block letrec to ReturnCon" $
-      (returnsConstructor stgBlock <$> test (block [kv "a" 1, kv "b" 2])) `shouldReturn`
+      (returnsConstructor stgBlock <$>
+       test (block [kv "a" $ nat 1, kv "b" $ nat 2])) `shouldReturn`
       True
     it "returns lit 1" $
       (returnsNative (nat 1) <$> test headOfList) `shouldReturn` True
@@ -67,3 +72,23 @@ blockSpec =
     it "emits empty map" $
       (emits [OutputMappingStart, OutputMappingEnd] <$> test renderEmptyMap) `shouldReturn`
       True
+
+evalMetadata :: StgSyn
+evalMetadata =
+  letrec_
+    [ pc0_ $ value_ $ Atom (Literal $ NativeNumber 99)
+    , pc_ [Local 0] $
+      thunkn_ 1 $
+      list_
+        1
+        [Literal $ NativeNumber 0, Literal $ NativeNumber 1]
+        (Just $ Local 0)
+    ] $
+  case_ (Atom $ Local 1) [(stgCons, (3, Atom $ Local 4))]
+
+
+metaSpec :: Spec
+metaSpec =
+  describe "metadata" $
+  it "propagates into case data branches" $
+  returnsNative (nat 99) <$> test evalMetadata `shouldReturn` True

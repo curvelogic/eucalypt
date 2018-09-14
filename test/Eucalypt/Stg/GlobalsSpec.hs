@@ -26,7 +26,7 @@ unforcedKV k v =
     [ pc0_ $ value_ $ Atom (Literal $ NativeSymbol k)
     , pc0_ $ value_ v
     ] $
-  list_ 2 (map Local [0 .. 1])
+  list_ 2 (map Local [0 .. 1]) Nothing
 
 unforcedList :: StgSyn
 unforcedList =
@@ -35,7 +35,7 @@ unforcedList =
     , pc0_ $ thunk_ $ unforcedKV "b" (Atom $ Global "BOMB")
     , pc0_ $ thunk_ $ unforcedKV "c" (Atom $ Global "BOMB")
     ] $
-  list_ 3 (map Local [0 .. 2])
+  list_ 3 (map Local [0 .. 2]) Nothing
 
 forceUnevaledPairList :: StgSyn
 forceUnevaledPairList =

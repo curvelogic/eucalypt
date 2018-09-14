@@ -18,6 +18,7 @@ import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
 import Data.IORef
+import Data.Semigroup
 import Data.Vector (Vector, (!?))
 import qualified Data.Vector as Vector
 import Data.Word
@@ -53,30 +54,65 @@ peek (Address r) = readIORef r
 -- primitives. All 'Ref's are resolved to 'StgValues' within the
 -- machine.
 data StgValue
-  = StgAddr Address
-  | StgNat Native
+  = StgAddr !Address
+  | StgNat !Native !(Maybe StgValue)
   deriving (Eq, Show)
 
 instance StgPretty StgValue where
   prettify (StgAddr _) = P.text "<addr>"
-  prettify (StgNat n) = prettify n
+  prettify (StgNat n _) = prettify n
+
+-- | Metadata as referenced from a closure
+--
+-- References to metadata may be attached to heap objects and natives.
+-- This data does not form part of the value, is not evaluated except
+-- when explicitly forced and is irrelevant for object equality.
+--
+-- It can be used to control formatting during render, give hints to
+-- evaluation and diagnostic functionality etc.
+data HeapObjectMetadata
+  = MetadataBlank -- ^ blank whatever metadata is attached to the value
+  | MetadataPassThrough -- ^ use whatever metadata is attached to the value
+  | MetadataValue !StgValue -- ^ override value's metadata
+  deriving (Eq, Show)
+
+instance Semigroup HeapObjectMetadata where
+  (<>) _ MetadataBlank = MetadataBlank
+  (<>) l MetadataPassThrough = l
+  (<>) _ r = r
+
+asMeta :: Maybe StgValue -> HeapObjectMetadata
+asMeta Nothing = MetadataBlank
+asMeta (Just v) = MetadataValue v
+
+fromMeta :: HeapObjectMetadata -> Maybe StgValue
+fromMeta (MetadataValue v) = Just v
+fromMeta _ = Nothing
 
 -- | Anything storable in an 'Address'.
 data HeapObject
   = Closure { closureCode :: !LambdaForm
             , closureEnv :: !ValVec
-            , closureCallStack :: !CallStack}
+            , closureCallStack :: !CallStack
+            , closureMeta :: !HeapObjectMetadata }
   | PartialApplication { papCode :: !LambdaForm
                        , papEnv :: !ValVec
                        , papArgs :: !ValVec
                        , papArity :: !Word64
-                       , papCallStack :: !CallStack}
+                       , papCallStack :: !CallStack
+                       , papMeta :: !HeapObjectMetadata }
   | BlackHole
   deriving (Eq, Show)
 
+objectMeta :: HeapObject -> Maybe StgValue
+objectMeta obj = case obj of
+  Closure { closureMeta = (MetadataValue v) } -> Just v
+  PartialApplication { papMeta = (MetadataValue v) } -> Just v
+  _ -> Nothing
+
 instance StgPretty HeapObject where
-  prettify (Closure lf env _) = prettify env <> P.space <> prettify lf
-  prettify (PartialApplication lf env args arity _) =
+  prettify (Closure lf env _ _) = prettify env <> P.space <> prettify lf
+  prettify (PartialApplication lf env args arity _ _) =
     prettify env <> P.space <>
     P.parens (prettify args <> P.text "..." <> P.int (fromIntegral arity)) <>
     prettify lf
@@ -115,30 +151,30 @@ instance Monoid ValVec where
 instance StgPretty ValVec where
   prettify (ValVec vs) = P.braces $ P.hcat $ map p (toList vs)
     where
-      p (StgNat v) = prettify v
+      p (StgNat v _) = prettify v
       p (StgAddr _) = P.char '.'
 
 -- | Entry on the frame stack, encoding processing to be done later
 -- when a value is available
 data Continuation
-  = Branch !BranchTable
-           !ValVec
-  | Update !Address
-  | ApplyToArgs !ValVec
+  = Branch { branchTable :: !BranchTable
+           , branchEnv :: !ValVec }
+  | Update { updateAddress :: !Address
+           , updateMetadata :: !HeapObjectMetadata }
+  | ApplyToArgs { pendingArgs :: !ValVec }
   deriving (Eq, Show)
 
 instance StgPretty Continuation where
   prettify (Branch _ _) = P.text "Br"
-  prettify (Update _) = P.text "Up"
+  prettify (Update _ _) = P.text "Up"
   prettify (ApplyToArgs _) = P.text "Ap"
 
--- Continuation stack also records
--- call stacks for restoring them on return
+-- | Continuation stack also records call stacks for restoring them on
+-- return
 data StackElement = StackElement
   { stackContinuation :: Continuation
   , stackCallStack :: CallStack
-  }
-  deriving (Eq, Show)
+  } deriving (Eq, Show)
 
 
 instance StgPretty StackElement where
@@ -150,18 +186,20 @@ data Code
          !ValVec
   | ReturnCon !Tag
               !ValVec
+              !(Maybe StgValue)
   | ReturnLit !Native
+              !(Maybe StgValue)
   | ReturnFun !Address
   deriving (Eq, Show)
 
 instance StgPretty Code where
-  prettify (Eval e le) =
-    P.text "EVAL" <> P.space <> prettify le <> P.space <> prettify e
-  prettify (ReturnCon t binds) =
-    P.text "RETURNCON" <> P.space <> P.int (fromIntegral t) <> P.space <>
-    prettify binds
-  prettify (ReturnLit n) = P.text "RETURNLIT" <> P.space <> prettify n
-  prettify (ReturnFun _) = P.text "RETURNFUN" <> P.space <> P.text "."
+  prettify (Eval e le) = P.text "EVAL" <+> prettify le <+> prettify e
+  prettify (ReturnCon t binds meta) =
+    P.text "RETURNCON" <+>
+    P.int (fromIntegral t) <+> prettify binds <+> maybe P.empty prettify meta
+  prettify (ReturnLit n meta) =
+    P.text "RETURNLIT" <+> prettify n <+> maybe P.empty prettify meta
+  prettify (ReturnFun _) = P.text "RETURNFUN" <+> P.text "."
 
 -- | Machine state.
 --
@@ -206,7 +244,11 @@ allocGlobal _name impl =
   StgAddr <$>
   allocate
     (Closure
-       {closureCode = impl, closureEnv = mempty, closureCallStack = mempty})
+       { closureCode = impl
+       , closureEnv = mempty
+       , closureCallStack = mempty
+       , closureMeta = MetadataPassThrough
+       })
 
 -- | Initialise machine state.
 initMachineState :: StgSyn -> HashMap String LambdaForm -> IO MachineState
@@ -275,7 +317,7 @@ val (ValVec le) ms (Local l) =
     _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
 val _ ms (BoundArg _) = throwIn ms AttemptToResolveBoundArg
 val _ ms (Global nm) = globalAddress ms nm
-val _ _ (Literal n) = return $ StgNat n
+val _ _ (Literal n) = return $ StgNat n Nothing
 
 -- | Resolve a vector of refs against an environment to create
 -- environment
@@ -288,14 +330,14 @@ resolveHeapObject :: MonadThrow m => ValVec -> MachineState -> Ref -> m Address
 resolveHeapObject env ms ref =
   val env ms ref >>= \case
     StgAddr r -> return r
-    StgNat _ -> throwIn ms NonAddressStgValue
+    StgNat _ _ -> throwIn ms NonAddressStgValue
 
 -- | Resolve a ref against env and machine
 resolveNative :: MonadThrow m => ValVec -> MachineState -> Ref -> m Native
 resolveNative env ms ref =
   val env ms ref >>= \case
     StgAddr _ -> throwIn ms NonNativeStgValue
-    StgNat n -> return n
+    StgNat n _ -> return n
 
 -- | Increase counters
 tick :: MachineState -> MachineState
@@ -328,8 +370,12 @@ appendEvent e ms@MachineState {machineEvents = es0} =
 -- | Build a closure from a STG PreClosure
 buildClosure ::
      MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
-buildClosure le ms (PreClosure captures code) =
-  Closure code <$> vals le ms captures <*> pure (machineCallStack ms)
+buildClosure le ms (PreClosure captures metaref code) = do
+  env <- vals le ms captures
+  meta <- case metaref of
+    Nothing -> return MetadataPassThrough
+    Just r -> MetadataValue <$> val le ms r
+  return $ Closure code env (machineCallStack ms) meta
 
 -- | Allocate new closure. Validate env refs if we're in debug mode.
 allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
@@ -343,6 +389,6 @@ allocClosure le ms cc = buildClosure le ms cc >>= check >>= allocate
 -- | In debug runs, validate every closure to ensure there are no
 -- local references outside the environment
 validateClosure :: HeapObject -> Bool
-validateClosure (Closure code env _) =
+validateClosure (Closure code env _ _) =
   validateRefs (fromIntegral (envSize env)) code
 validateClosure _ = True

@@ -25,6 +25,7 @@ data StgError
   | NoBranchFound
   | PopEmptyStack
   | EnteredBlackHole
+  | AddMetaToBlackHole
   | ArgInsteadOfBranchTable
   | ArgInsteadOfNativeBranchTable
   | StackIndexOutOfRange

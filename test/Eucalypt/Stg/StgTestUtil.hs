@@ -23,51 +23,68 @@ import qualified Test.QuickCheck.Monadic as QM
 
 -- | List of literals
 litList_ :: Int -> [Native] -> StgSyn
-litList_ envN nats = list_ envN $ map Literal nats
+litList_ envN nats = list_ envN (map Literal nats) Nothing
 
 nat :: Integer -> Native
 nat n = NativeNumber $ fromInteger n
 
-kv :: String -> Integer -> StgSyn
+kv :: String -> Native -> StgSyn
 kv k v =
   letrec_
     [ pc0_ nilConstructor
-    , pc_ [Literal $ nat v, Local 0] consConstructor
+    , pc_ [Literal v, Local 0] consConstructor
     , pc_ [Literal $ NativeSymbol k, Local 1] consConstructor
     ]
-    (App (Ref (Local 2)) mempty)
+    (Atom $ Local 2)
+
+suppressMeta :: StgSyn
+suppressMeta = block [kv "export" (NativeSymbol "suppress")]
+
+-- | An export-suppressed key/value pair
+kv_ :: String -> Native -> StgSyn
+kv_ k v =
+  letrec_
+    [ pc0_ $ thunk_ suppressMeta
+    , pc_ [Literal v, Global "KNIL"] consConstructor
+    , pcm_ [Literal $ NativeSymbol k, Local 1] (Just $ Local 0) consConstructor
+    ]
+    (Atom $ Local 2)
 
 block :: [StgSyn] -> StgSyn
 block kvs =
   let pcs = map (pc0_ . value_) kvs
       itemCount = length pcs
       itemRefs = [(Local . fromIntegral) n | n <- [0 .. itemCount - 1]]
-      l = pc_ itemRefs $ thunkn_ itemCount $ list_ itemCount itemRefs
+      l = pc_ itemRefs $ thunkn_ itemCount $ list_ itemCount itemRefs Nothing
       bl = pc_ [Local $ fromIntegral itemCount] blockConstructor
       pcs' = pcs ++ [l, bl]
-   in letrec_ pcs' (App (Ref (Local (fromIntegral (itemCount + 1)))) mempty)
+   in letrec_ pcs' (Atom $ Local (fromIntegral (itemCount + 1)))
 
 -- machine state accessors and assertions
 
 -- | Machine is in state with code that returns constructor
 returnsConstructor :: Tag -> MachineState -> Bool
-returnsConstructor t MachineState {machineCode = (ReturnCon tag _)} = t == tag
+returnsConstructor t MachineState {machineCode = (ReturnCon tag _ _)} = t == tag
 returnsConstructor _ _ = False
 
 -- | Extract the native return value from the machine state
 nativeReturn :: MachineState -> Native
-nativeReturn MachineState {machineCode = (ReturnLit ret)} = ret
+nativeReturn MachineState {machineCode = (ReturnLit ret _)} = ret
 nativeReturn ms = error $ "Expected native return, got" ++ show (machineCode ms)
 
 -- | Machine is in state which returns specified native
 returnsNative :: Native -> MachineState -> Bool
-returnsNative n MachineState {machineCode = (ReturnLit ret)} = ret == n
+returnsNative n MachineState {machineCode = (ReturnLit ret _)} = ret == n
 returnsNative _ _ = False
+
+-- | Machine is in stte which returns native bool true
+returnsTrue :: MachineState -> Bool
+returnsTrue = returnsNative $ NativeBool True
 
 -- | Check that the return is a fully constructed list of pairs with
 -- fully evaled native symbol keys
 returnedForcedPairList :: MachineState -> IO Bool
-returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs))} =
+returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs) _)} =
   case toList xs of
     [h, t] -> validate h t
     _ -> return False
@@ -75,7 +92,7 @@ returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs))}
     validate (StgAddr h) (StgAddr t) = do
       cons <- readCons ms h
       case cons of
-        Just (StgNat (NativeSymbol _), _) -> do
+        Just (StgNat (NativeSymbol _) _, _) -> do
           cons' <- readCons ms t
           case cons' of
             Just (h', t') -> validate h' t'
@@ -97,7 +114,7 @@ emitLog = machineDebugEmitLog
 dumpEnv :: ValVec -> IO ()
 dumpEnv (ValVec env)  = traverse_ dumpVal $ toList env
   where
-    dumpVal (StgNat n) = putStrLn $ P.render $ prettify n
+    dumpVal (StgNat n _) = putStrLn $ P.render $ prettify n
     dumpVal (StgAddr a) = peek a >>= (putStrLn . P.render . prettify)
 
 dumpEvalEnv :: MachineState -> IO ()

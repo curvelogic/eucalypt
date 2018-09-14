@@ -42,7 +42,7 @@ main = hspec spec
 joinStg :: [String] -> String -> StgSyn
 joinStg xs sep =
   letrec_
-    [pc0_ $ thunk_ $ list_ 0 (map (Literal . NativeString) xs)]
+    [pc0_ $ thunk_ $ list_ 0 (map (Literal . NativeString) xs) Nothing]
     (force_
        (appfn_ (Global "seqNatList") [Local 0])
        (appbif_ (intrinsicIndex "JOIN") [Local 1, Literal (NativeString sep)]))

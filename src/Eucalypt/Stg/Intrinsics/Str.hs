@@ -37,8 +37,8 @@ toRegex = (`R.compileM` []) . encodeUtf8 . pack
 -- | __SPLIT(s, re)
 split :: MachineState -> ValVec -> IO MachineState
 split ms (ValVec args) = do
-  let (StgNat (NativeString target)) = args ! 0
-  let (StgNat (NativeString regex)) = args ! 1
+  let (StgNat (NativeString target) _) = args ! 0
+  let (StgNat (NativeString regex) _) = args ! 1
   if null regex
     then returnNatList ms [NativeString target]
     else case toRegex regex of
@@ -50,8 +50,8 @@ split ms (ValVec args) = do
 -- | __MATCH(s, re)
 match :: MachineState -> ValVec -> IO MachineState
 match ms (ValVec args) = do
-  let (StgNat (NativeString target)) = args ! 0
-  let (StgNat (NativeString regex)) = args ! 1
+  let (StgNat (NativeString target) _) = args ! 0
+  let (StgNat (NativeString regex) _) = args ! 1
   case toRegex regex of
     (Right r) ->
       returnNatList ms $
@@ -65,8 +65,8 @@ match ms (ValVec args) = do
 -- | __MATCHES(s, re)
 matches :: MachineState -> ValVec -> IO MachineState
 matches ms (ValVec args) = do
-  let (StgNat (NativeString target)) = args ! 0
-  let (StgNat (NativeString regex)) = args ! 1
+  let (StgNat (NativeString target) _) = args ! 0
+  let (StgNat (NativeString regex) _) = args ! 1
   case toRegex regex of
     (Right r) -> returnNatList ms $ map (NativeString . fst) $ R.scan r target
     (Left s) -> throwIn ms $ InvalidRegex s
@@ -77,9 +77,9 @@ matches ms (ValVec args) = do
 join :: MachineState -> ValVec -> IO MachineState
 join ms (ValVec args) = do
   let (StgAddr l) = args ! 0
-  let (StgNat (NativeString s)) = args ! 1
+  let (StgNat (NativeString s) _) = args ! 1
   xs <- readStrList ms l
-  return $ setCode ms (ReturnLit $ NativeString $ intercalate s xs)
+  return $ setCode ms (ReturnLit (NativeString $ intercalate s xs) Nothing)
 
 
 
@@ -87,9 +87,9 @@ strNat :: MachineState -> ValVec -> IO MachineState
 strNat ms (ValVec args) =
   return $
   setCode ms $
-  ReturnLit $
+  (`ReturnLit` Nothing) $
   NativeString $
-  let (StgNat n) = args ! 0
+  let (StgNat n _) = args ! 0
    in case n of
         NativeNumber sc ->
           case floatingOrInteger sc of
@@ -106,5 +106,5 @@ strNat ms (ValVec args) =
 
 strSym :: MachineState -> ValVec -> IO MachineState
 strSym ms (ValVec args) =
-  let (StgNat (NativeString nm)) = args ! 0
-   in return $ setCode ms $ ReturnLit $ NativeSymbol nm
+  let (StgNat (NativeString nm) _) = args ! 0
+   in return $ setCode ms $ (`ReturnLit` Nothing) $ NativeSymbol nm

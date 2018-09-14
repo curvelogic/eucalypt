@@ -23,7 +23,7 @@ import Eucalypt.Stg.Machine
 closed :: MachineState -> ValVec -> IO MachineState
 closed ms (ValVec xs) =
   case xs ! 0 of
-    (StgNat _) -> return $ setCode ms (ReturnLit $ NativeBool True)
+    (StgNat _ _) -> return $ setCode ms (ReturnLit (NativeBool True) Nothing)
     (StgAddr a) -> do
       obj <- peek a
       let ret =
@@ -31,4 +31,4 @@ closed ms (ValVec xs) =
               Closure {closureCode = LambdaForm {_bound = b}} -> b == 0
               PartialApplication {papArity = 0} -> True
               _ -> False
-      return $ setCode ms (ReturnLit $ NativeBool ret)
+      return $ setCode ms (ReturnLit (NativeBool ret) Nothing)

@@ -18,6 +18,7 @@ import Eucalypt.Stg.Globals.Bool as Bool
 import Eucalypt.Stg.Globals.Emit as Emit
 import Eucalypt.Stg.Globals.Eq as Eq
 import Eucalypt.Stg.Globals.List as List
+import Eucalypt.Stg.Globals.Meta as Meta
 import Eucalypt.Stg.Globals.Panic as Panic
 import Eucalypt.Stg.Globals.Str as Str
 import Eucalypt.Stg.Syn
@@ -26,6 +27,10 @@ import Eucalypt.Stg.Tags
 -- | Constant: __KNIL
 euStgNil :: LambdaForm
 euStgNil = value_ $ appcon_ stgNil mempty
+
+-- | Constant: __KEMPTYBLOCK
+euEmptyBlock :: LambdaForm
+euEmptyBlock = thunk_ $ appcon_ stgBlock [Global "KNIL"]
 
 -- | __CAT(x, f)
 euCat :: LambdaForm
@@ -128,7 +133,10 @@ standardGlobals =
     , ("LOOKUPLISTOR", Block.euLookupListOr)
     , ("RENDER", Emit.euRender)
     , ("NULL", Emit.euNull)
+    , ("META", Meta.euMeta)
+    , ("WITHMETA", Meta.euWithMeta)
     , ("KNIL", euStgNil)
+    , ("KEMPTYBLOCK", euEmptyBlock)
     , ("seqNatList", seqNatList)
     , ("seqPairList", seqPairList)
     ]

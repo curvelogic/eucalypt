@@ -18,9 +18,10 @@ import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 
 
-snoc :: StgValue -> StgValue -> IO StgValue
-snoc as a =
-  StgAddr <$> allocate (Closure consConstructor (toValVec [a, as]) mempty)
+flipCons :: StgValue -> StgValue -> IO StgValue
+flipCons as a =
+  StgAddr <$>
+  allocate (Closure consConstructor (toValVec [a, as]) mempty MetadataPassThrough)
 
 
 -- | Utility to return a native list from a primitive function.
@@ -29,13 +30,13 @@ snoc as a =
 returnNatList :: MachineState -> [Native] -> IO MachineState
 returnNatList ms ns = do
   nilAddr <- StgAddr <$> allocClosure mempty ms (pc0_ nilConstructor)
-  let natAddrs = map StgNat ns
+  let natAddrs = map (`StgNat` Nothing) ns
   if null natAddrs
-    then return $ setCode ms (ReturnCon stgNil mempty)
+    then return $ setCode ms (ReturnCon stgNil mempty Nothing)
     else do
       let headAddr = head natAddrs
-      tailAddr <- foldM snoc nilAddr (reverse $ tail natAddrs)
-      return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]))
+      tailAddr <- foldM flipCons nilAddr (reverse $ tail natAddrs)
+      return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]) Nothing)
 
 
 -- | Utility to read a list from the machine into a native haskell
@@ -48,7 +49,7 @@ readNatList ms addr = do
       case lf of
         LambdaForm {_body = (App (Con t) xs)}
           | t == stgCons -> do
-            (StgNat h) <- val e ms (V.head xs)
+            (StgNat h _) <- val e ms (V.head xs)
             (StgAddr a) <- val e ms (xs V.! 1)
             (h :) <$> readNatList ms a
         LambdaForm {_body = (App (Con t) _)}
@@ -62,9 +63,9 @@ readNatList ms addr = do
 readNatListReturn :: MachineState -> IO [Native]
 readNatListReturn ms =
   case ms of
-    MachineState {machineCode = (ReturnCon c (ValVec xs))}
+    MachineState {machineCode = (ReturnCon c (ValVec xs) Nothing)}
       | c == stgCons -> do
-        let (StgNat h) = V.head xs
+        let (StgNat h _) = V.head xs
         let (StgAddr t) = xs V.! 1
         (h :) <$> readNatList ms t
       | c == stgNil -> return []
@@ -102,7 +103,7 @@ readPairList ms addr = do
     kv (StgAddr a) = do
       pair <- readCons ms a
       case pair of
-        Just (StgNat (NativeSymbol s), t) -> return (s, t)
+        Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
         _ -> throwIn ms $ IntrinsicBadPair $ show pair
     kv _ = throwIn ms IntrinsicExpectedList
 
