@@ -21,6 +21,7 @@ import qualified Data.ByteString as BS
 import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
+import qualified Eucalypt.Render.Json as Json
 import qualified Eucalypt.Render.Yaml as Yaml
 import qualified Eucalypt.Stg.Compiler as C
 import Eucalypt.Stg.Error
@@ -41,26 +42,27 @@ dumpStg _opts expr = compile expr >>= putStrLn . P.render . prettify
 
 
 -- | Compile Core to STG
-compile :: CoreExpr -> IO StgSyn
+compile :: MonadIO m => CoreExpr -> m StgSyn
 compile expr = return $ C.compileForRender expr
 
 
 
 -- | Instantiate the STG machine
-machine :: StgSyn -> IO MachineState
+machine :: MonadIO m => StgSyn -> m MachineState
 machine = initStandardMachineState
 
 
 
 -- | Instantiate the debug STG machine
-debugMachine :: StgSyn -> IO MachineState
+debugMachine :: MonadIO m => StgSyn -> m MachineState
 debugMachine = initDebugMachineState
 
 
 
 -- | Build a conduit streaming pipeline where the machine generates
 -- events and renderer processes them.
-renderConduit :: EucalyptOptions -> CoreExpr -> IO BS.ByteString
+renderConduit ::
+     (MonadUnliftIO m, MonadIO m, MonadThrow m) => EucalyptOptions -> CoreExpr -> m BS.ByteString
 renderConduit opts expr = do
   syn <- compile expr
   ms <- newMachine syn
@@ -96,9 +98,9 @@ machineSource ms = do
       unless (machineTerminated s') $ loop s'
 
 
-
 -- | Select an appropriate render pipeline based on the requested
 -- format
 renderPipeline ::
      (MonadResource m) => String -> ConduitT Event Void m BS.ByteString
-renderPipeline _format = Yaml.pipeline
+renderPipeline "json" = Json.pipeline
+renderPipeline _ = Yaml.pipeline

@@ -61,6 +61,6 @@ spec =
   it "sets and retrieves on block" $
     returnsTrue <$> test metaOnBlock `shouldReturn` True
   it "sets and retrieves on native in env" $
-    returnsTrue <$> testTracing metaOnEnvNat `shouldReturn` True
+    returnsTrue <$> test metaOnEnvNat `shouldReturn` True
   it "sets and retrieves on block in env" $
     returnsTrue <$> test metaOnEnvCon `shouldReturn` True

@@ -9,6 +9,7 @@ Stability   : experimental
 
 module Eucalypt.Stg.StandardMachine where
 
+import Control.Monad.IO.Class
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Globals
@@ -17,7 +18,7 @@ import qualified Text.PrettyPrint as P
 
 
 -- | Initialise machine state with the standard global defs.
-initStandardMachineState :: StgSyn -> IO MachineState
+initStandardMachineState :: MonadIO m => StgSyn -> m MachineState
 initStandardMachineState s = initMachineState s standardGlobals
 
 -- | A debug dump to use as machine's trace function
@@ -31,7 +32,7 @@ dumpEmission ms@MachineState {machineDebugEmitLog = es} e =
 
 -- | Initialise machine state with a trace function that dumps state
 -- every step
-initDebugMachineState :: StgSyn -> IO MachineState
+initDebugMachineState :: MonadIO m => StgSyn -> m MachineState
 initDebugMachineState stg = do
   ms <- initStandardMachineState stg
   return $
