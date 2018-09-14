@@ -211,7 +211,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = do
               return $ setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
             Nothing -> throwIn ms' NoBranchFound
     (Just (Update a storedMeta)) -> do
-      let newMeta = asMeta meta `withMeta` storedMeta
+      let newMeta = asMeta meta <> storedMeta
       updateAddr ms' a t xs newMeta
       return . setRule "UPDATE" $
         setCode ms' (ReturnCon t xs (fromMeta newMeta))
@@ -228,7 +228,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = do
       liftIO $
       allocate
         (Closure
-           (LambdaForm 0 0 False (App (Con t) (locals 0 (envSize args))))
+           (value_ (App (Con t) (locals 0 (envSize args))))
            args
            (machineCallStack ms) $
          maybe MetadataPassThrough MetadataValue md)
@@ -258,10 +258,10 @@ step ms0@MachineState {machineCode = (ReturnLit nat meta)} = do
           case defaultBranch k of
             (Just expr) ->
               return $
-              setCode ms' (Eval expr (le <> singleton (StgNat nat Nothing)))
+              setCode ms' (Eval expr (le <> singleton (StgNat nat meta)))
             Nothing -> throwIn ms' NoBranchFound
     (Just (Update a storedMeta)) -> do
-      let newMeta = asMeta meta `withMeta` storedMeta
+      let newMeta = asMeta meta <> storedMeta
       liftIO $
         poke a (Closure (value_ (Atom (Literal nat))) mempty mempty newMeta)
       return . setRule "UPDATELIT" $

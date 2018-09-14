@@ -18,6 +18,7 @@ import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
 import Data.IORef
+import Data.Semigroup
 import Data.Vector (Vector, (!?))
 import qualified Data.Vector as Vector
 import Data.Word
@@ -75,10 +76,10 @@ data HeapObjectMetadata
   | MetadataValue !StgValue -- ^ override value's metadata
   deriving (Eq, Show)
 
-withMeta :: HeapObjectMetadata -> HeapObjectMetadata -> HeapObjectMetadata
-withMeta _ MetadataBlank = MetadataBlank
-withMeta l MetadataPassThrough = l
-withMeta _ r = r
+instance Semigroup HeapObjectMetadata where
+  (<>) _ MetadataBlank = MetadataBlank
+  (<>) l MetadataPassThrough = l
+  (<>) _ r = r
 
 asMeta :: Maybe StgValue -> HeapObjectMetadata
 asMeta Nothing = MetadataBlank
@@ -102,6 +103,12 @@ data HeapObject
                        , papMeta :: !HeapObjectMetadata }
   | BlackHole
   deriving (Eq, Show)
+
+objectMeta :: HeapObject -> Maybe StgValue
+objectMeta obj = case obj of
+  Closure { closureMeta = (MetadataValue v) } -> Just v
+  PartialApplication { papMeta = (MetadataValue v) } -> Just v
+  _ -> Nothing
 
 instance StgPretty HeapObject where
   prettify (Closure lf env _ _) = prettify env <> P.space <> prettify lf
@@ -240,7 +247,7 @@ allocGlobal _name impl =
        { closureCode = impl
        , closureEnv = mempty
        , closureCallStack = mempty
-       , closureMeta = MetadataBlank
+       , closureMeta = MetadataPassThrough
        })
 
 -- | Initialise machine state.

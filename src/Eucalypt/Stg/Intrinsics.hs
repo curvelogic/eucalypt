@@ -15,6 +15,7 @@ import Data.Maybe (fromMaybe)
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Block as Block
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
+import qualified Eucalypt.Stg.Intrinsics.Meta as Meta
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
 import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
@@ -48,6 +49,8 @@ intrinsics =
   , IntrinsicInfo "MATCH" 2 Str.match
   , IntrinsicInfo "MATCHES" 2 Str.matches
   , IntrinsicInfo "JOIN" 2 Str.join
+  , IntrinsicInfo "META" 1 Meta.meta
+  , IntrinsicInfo "WITHMETA" 2 Meta.withMeta
   , IntrinsicInfo "PANIC" 1 Panic.panic
   , IntrinsicInfo "PRUNE" 1 Block.prune
   , IntrinsicInfo "PRUNEMERGE" 2 Block.pruneMerge

@@ -83,7 +83,7 @@ spec =
       ]
     it "ignores suppressed KVs" $
       emitLog <$>
-      testTracing
+      test
         (let_
            [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv_ "b" $ nat 2]]
            (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`

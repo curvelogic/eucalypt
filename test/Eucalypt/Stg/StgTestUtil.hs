@@ -32,10 +32,10 @@ kv :: String -> Native -> StgSyn
 kv k v =
   letrec_
     [ pc0_ nilConstructor
-    , pc_ [Literal $ v, Local 0] consConstructor
+    , pc_ [Literal v, Local 0] consConstructor
     , pc_ [Literal $ NativeSymbol k, Local 1] consConstructor
     ]
-    (App (Ref (Local 2)) mempty)
+    (Atom $ Local 2)
 
 suppressMeta :: StgSyn
 suppressMeta = block [kv "export" (NativeSymbol "suppress")]
@@ -45,10 +45,10 @@ kv_ :: String -> Native -> StgSyn
 kv_ k v =
   letrec_
     [ pc0_ $ thunk_ suppressMeta
-    , pc_ [Literal $ v, Global "KNIL"] consConstructor
+    , pc_ [Literal v, Global "KNIL"] consConstructor
     , pcm_ [Literal $ NativeSymbol k, Local 1] (Just $ Local 0) consConstructor
     ]
-    (App (Ref (Local 2)) mempty)
+    (Atom $ Local 2)
 
 block :: [StgSyn] -> StgSyn
 block kvs =
@@ -58,7 +58,7 @@ block kvs =
       l = pc_ itemRefs $ thunkn_ itemCount $ list_ itemCount itemRefs Nothing
       bl = pc_ [Local $ fromIntegral itemCount] blockConstructor
       pcs' = pcs ++ [l, bl]
-   in letrec_ pcs' (App (Ref (Local (fromIntegral (itemCount + 1)))) mempty)
+   in letrec_ pcs' (Atom $ Local (fromIntegral (itemCount + 1)))
 
 -- machine state accessors and assertions
 
@@ -76,6 +76,10 @@ nativeReturn ms = error $ "Expected native return, got" ++ show (machineCode ms)
 returnsNative :: Native -> MachineState -> Bool
 returnsNative n MachineState {machineCode = (ReturnLit ret _)} = ret == n
 returnsNative _ _ = False
+
+-- | Machine is in stte which returns native bool true
+returnsTrue :: MachineState -> Bool
+returnsTrue = returnsNative $ NativeBool True
 
 -- | Check that the return is a fully constructed list of pairs with
 -- fully evaled native symbol keys
