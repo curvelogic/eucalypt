@@ -39,16 +39,16 @@ instance Show Address where
   show _ = "0x?"
 
 -- | Allocate a new heap object, return address
-allocate :: HeapObject -> IO Address
-allocate obj = Address <$> newIORef obj
+allocate :: MonadIO m => HeapObject -> m Address
+allocate obj = liftIO $ Address <$> newIORef obj
 
 -- | Replace the heap object at this address
-poke :: Address -> HeapObject -> IO ()
-poke (Address r) = writeIORef r
+poke :: MonadIO m => Address -> HeapObject -> m ()
+poke (Address r) = liftIO . writeIORef r
 
 -- | Retrieve the heap object at this address
-peek :: Address -> IO HeapObject
-peek (Address r) = readIORef r
+peek :: MonadIO m => Address -> m HeapObject
+peek (Address r) = liftIO $ readIORef r
 
 -- | Values on the stack or in environments can be addresses or
 -- primitives. All 'Ref's are resolved to 'StgValues' within the
@@ -239,8 +239,8 @@ prepareStep stepName ms =
   traceOut ms >>
   return (tick $ ms {machineEvents = mempty, machineLastStepName = stepName})
 
-allocGlobal :: String -> LambdaForm -> IO StgValue
-allocGlobal _name impl =
+allocGlobal :: MonadIO m => String -> LambdaForm -> m StgValue
+allocGlobal _name impl = liftIO $
   StgAddr <$>
   allocate
     (Closure
@@ -251,9 +251,10 @@ allocGlobal _name impl =
        })
 
 -- | Initialise machine state.
-initMachineState :: StgSyn -> HashMap String LambdaForm -> IO MachineState
+initMachineState ::
+     MonadIO m => StgSyn -> HashMap String LambdaForm -> m MachineState
 initMachineState stg ge = do
-  genv <- HM.traverseWithKey allocGlobal ge
+  genv <- liftIO $ HM.traverseWithKey allocGlobal ge
   return $
     MachineState
       { machineCode = Eval stg mempty
