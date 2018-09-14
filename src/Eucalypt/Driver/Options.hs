@@ -46,7 +46,6 @@ data EucalyptOptions = EucalyptOptions
   , optionInhibitPrelude :: Bool
   , optionCommand :: Command
   , optionInputs :: [Input]
-  , optionXStg :: Bool
   , optionDebug :: Bool
   } deriving (Show)
 
@@ -100,10 +99,6 @@ commandOption =
     DumpFinalCore
     (long "dump-core" <>
      help "Dump final core syntax prior to evaluation") <|>
-  flag'
-    DumpStg
-    (long "dump-stg" <>
-     help "Dump STG syntax prior to evaluation") <|>
   flag
     Evaluate
     Parse
@@ -136,9 +131,6 @@ options = EucalyptOptions
              <> help "Don't include standard prelude" )
   <*> commandOption
   <*> many (argument parseInputArgument (metavar "INPUTS..."))
-  <*> switch ( long "XSTG"
-             <> short 'G'
-             <> help "Turn on experimental STG implementation")
   <*> switch ( long "debug"
              <> short 'd'
              <> help "Switch on debugging features")

@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Eucalypt.Driver.Evaluator
 where
 
@@ -31,8 +31,6 @@ import Eucalypt.Driver.Input (Input(..), Locator(..))
 import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
 import qualified Eucalypt.Driver.Stg as STG
-import Eucalypt.Render (configureRenderer)
-import Eucalypt.Render.Classes
 import Eucalypt.Reporting.Error (EucalyptError(..))
 import Eucalypt.Reporting.Report (reportErrors)
 import Eucalypt.Source.Error (DataParseException(..))
@@ -222,8 +220,8 @@ formEvaluand opts targets source =
 
 
 -- | Implement the Evaluate command, read files and render
-evaluate :: EucalyptOptions -> WhnfEvaluator -> IO ExitCode
-evaluate opts whnfM = do
+evaluate :: EucalyptOptions -> IO ExitCode
+evaluate opts = do
   when (cmd == Parse) (parseAndDumpASTs opts >> exitSuccess)
 
   -- Stage 1: parse all units specified on command line (or inferred)
@@ -267,19 +265,13 @@ evaluate opts whnfM = do
   unless (null failures) $ reportErrors failures >> exitFailure
 
   -- Stage 8: drive the evaluation by rendering it
-  if optionXStg opts
-    then do
-      -- Compile to STG and execute in machine
-      when (cmd == DumpStg)
-        (STG.dumpStg opts finalEvaluand >> exitSuccess)
-      bytes <- STG.renderConduit opts finalEvaluand
-      outputBytes opts bytes >> exitSuccess
-    else render finalEvaluand >>= \case
-           Left s -> reportErrors [s] >> return (ExitFailure 1)
-           Right bytes -> outputBytes opts bytes >> return ExitSuccess
+  -- Compile to STG and execute in machine
+  when (cmd == DumpStg)
+    (STG.dumpStg opts finalEvaluand >> exitSuccess)
+  bytes <- STG.renderConduit opts finalEvaluand
+  outputBytes opts bytes >> exitSuccess
 
   where
-    render = renderBytes (configureRenderer opts) whnfM
     cmd = optionCommand opts
 
 
