@@ -16,16 +16,16 @@ import Eucalypt.Core.Error
 import Eucalypt.Core.Syn
 
 -- | Run all the check functions throughout the tree
-runChecks :: Show b => CoreExp b -> [EvaluationError]
+runChecks :: Show b => CoreExp b -> [CoreError]
 runChecks expr = verify noSoup expr ++ map (VerifyUnresolvedVar . show) (toList expr)
 
 -- | Apply a check function to every level in the syntax tree
 verify ::
      Show b
   => (forall a. Show a =>
-                  (CoreExp a -> [EvaluationError]))
+                  (CoreExp a -> [CoreError]))
   -> CoreExp b
-  -> [EvaluationError]
+  -> [CoreError]
 verify f e@(CoreLet bs b) =
   let shallow = f e
       deep = fold (verify f (unscope b) : map (verify f . unscope . snd) bs)
@@ -50,6 +50,6 @@ verify f e@(CoreOperator _ _ expr) =
   f e ++ verify f expr
 verify f e = f e
 
-noSoup :: Show a => CoreExp a -> [EvaluationError]
+noSoup :: Show a => CoreExp a -> [CoreError]
 noSoup o@(CoreOpSoup _) = [(VerifyOperatorsFailed . CoreExpShow) o]
 noSoup _ = []
