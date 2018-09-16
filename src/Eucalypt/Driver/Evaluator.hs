@@ -227,7 +227,7 @@ evaluate opts = do
   -- Stage 1: parse all units specified on command line (or inferred)
   -- to core syntax - cross unit references will be dangling at this
   -- stage
-  units <- parseUnits opts
+  units <- {-# SCC "ParseToCore" #-} parseUnits opts
 
   -- Stage 2: prepare an IO unit to contain launch environment data
   io <- prepareIOUnit
@@ -244,32 +244,32 @@ evaluate opts = do
 
   -- Stage 4: form an expression to evaluate from the source or
   -- command line and embed it in the core tree
-  evaluand <- formEvaluand opts targets core
+  evaluand <- {-# SCC "FormEvaluand" #-} formEvaluand opts targets core
   when (cmd == DumpEvalSubstituted)
     (putStrLn (pprint evaluand) >> exitSuccess)
 
   -- Stage 5: cook operator soups to resolve all fixities and prepare
   -- a final tree for evaluation
-  cookedEvaluand <- runFixityPass evaluand
+  cookedEvaluand <- {-# SCC "FixityPass" #-} runFixityPass evaluand
   when (cmd == DumpCooked)
     (putStrLn (pprint cookedEvaluand) >> exitSuccess)
 
   -- Stage 6: dead code elimination to reduce compile and make
   -- debugging STG impelmentation a bit easier
-  let finalEvaluand = prune cookedEvaluand
+  let finalEvaluand = {-# SCC "DeadCodeElimination" #-} prune cookedEvaluand
   when (cmd == DumpFinalCore)
     (putStrLn (pprint finalEvaluand) >> exitSuccess)
 
   -- Stage 7: run final checks
-  let failures = runChecks finalEvaluand
+  let failures = {-# SCC "VerifyCore" #-} runChecks finalEvaluand
   unless (null failures) $ reportErrors failures >> exitFailure
 
   -- Stage 8: drive the evaluation by rendering it
   -- Compile to STG and execute in machine
   when (cmd == DumpStg)
     (STG.dumpStg opts finalEvaluand >> exitSuccess)
-  bytes <- STG.renderConduit opts finalEvaluand
-  outputBytes opts bytes >> exitSuccess
+  bytes <- {-# SCC "RenderBytes" #-} STG.renderConduit opts finalEvaluand
+  {-# SCC "OutputBytes" #-} outputBytes opts bytes >> exitSuccess
 
   where
     cmd = optionCommand opts

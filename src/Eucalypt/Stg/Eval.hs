@@ -105,7 +105,7 @@ call env _ms code addrs = do
 step :: (MonadIO m, MonadThrow m) => MachineState -> m MachineState
 step ms@MachineState {machineTerminated = True} =
   prepareStep "TERM" ms >> throwIn ms SteppingTerminated
-step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
+step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" #-} do
   ms <- prepareStep "EVAL APP" ms0
   let len = length xs
   case f of
@@ -168,7 +168,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = do
 
 
 -- | LET
-step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = do
+step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = {-# SCC "EvalLet" #-}do
   ms <- prepareStep "EVAL LET" ms0
   addrs <- liftIO $ traverse (allocClosure env ms) pcs
   let env' = env <> (ValVec . Vector.map StgAddr) addrs
@@ -177,7 +177,7 @@ step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = do
 
 
 -- | LET (recursive)
-step ms0@MachineState {machineCode = (Eval (LetRec pcs body) env)} = do
+step ms0@MachineState {machineCode = (Eval (LetRec pcs body) env)} = {-# SCC "EvalLetRec" #-} do
   ms <- prepareStep "EVAL LETREC" ms0
   addrs <- liftIO $ sequenceA $ replicate (length pcs) (allocate BlackHole)
   let env' = env <> (toValVec . map StgAddr) addrs
@@ -188,14 +188,14 @@ step ms0@MachineState {machineCode = (Eval (LetRec pcs body) env)} = do
 
 
 -- | CASE
-step ms0@MachineState {machineCode = (Eval (Case syn k) env)} = do
+step ms0@MachineState {machineCode = (Eval (Case syn k) env)} = {-# SCC "Case" #-} do
   ms <- prepareStep "EVAL CASE" ms0
   return $ setCode (push ms (Branch k env)) (Eval syn env)
 
 
 
 -- | ReturnCon - returns a data structure into a BranchTable branch
-step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = do
+step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon" #-} do
   ms <- prepareStep "RETURNCON" ms0
   (entry, ms') <- pop ms
   case entry of
@@ -247,7 +247,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = do
 
 -- | ReturnLit - returns a native value to a NativeBranchTable or
 -- terminates if none.
-step ms0@MachineState {machineCode = (ReturnLit nat meta)} = do
+step ms0@MachineState {machineCode = (ReturnLit nat meta)} = {-# SCC "ReturnLit" #-} do
   ms <- prepareStep "RETURNLIT" ms0
   (entry, ms') <- pop ms
   case entry of
@@ -273,7 +273,7 @@ step ms0@MachineState {machineCode = (ReturnLit nat meta)} = do
 
 -- | ReturnFun - returns a callable into either a continuation that
 -- will apply it or a case expressions that can inspect it (closed?)
-step ms0@MachineState {machineCode = (ReturnFun r)} = do
+step ms0@MachineState {machineCode = (ReturnFun r)} = {-# SCC "ReturnFun" #-} do
   ms <- prepareStep "RETURNFUN" ms0
   (entry, ms') <- pop ms
   case entry of
@@ -305,7 +305,7 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = do
 
 -- | In most cases, we punt on to Eval App which should cause
 -- ReturnCon or ReturnLit when we reach a value
-step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
+step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = {-# SCC "EvalAtom" #-} do
   ms <- prepareStep "EVAL ATOM" ms0
   v <- val env ms ref
   case v of
@@ -346,7 +346,7 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = do
 
 
 -- | Append an annotation to the call stack
-step ms0@MachineState {machineCode = (Eval (Ann s expr) env)} = do
+step ms0@MachineState {machineCode = (Eval (Ann s expr) env)} = {-# SCC "EvalAnn" #-} do
   ms <- prepareStep "ANN" ms0
   return . appendCallStack s $ setCode ms (Eval expr env)
 
