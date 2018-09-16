@@ -88,6 +88,7 @@ tests:
       - aeson-pretty
       - bound
       - bytestring
+      - conduit
       - containers
       - eucalypt-hs
       - hspec

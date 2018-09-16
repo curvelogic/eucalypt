@@ -62,7 +62,10 @@ debugMachine = initDebugMachineState
 -- | Build a conduit streaming pipeline where the machine generates
 -- events and renderer processes them.
 renderConduit ::
-     (MonadUnliftIO m, MonadIO m, MonadThrow m) => EucalyptOptions -> CoreExpr -> m BS.ByteString
+     (MonadUnliftIO m, MonadIO m, MonadThrow m)
+  => EucalyptOptions
+  -> CoreExpr
+  -> m BS.ByteString
 renderConduit opts expr = do
   syn <- compile expr
   ms <- newMachine syn
