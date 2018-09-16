@@ -43,8 +43,15 @@ euNil =
 -- | __HEAD(list)
 euHead :: LambdaForm
 euHead =
-  lam_ 0 1 $ ann_ "__HEAD" $
-  case_ (Atom (BoundArg 0)) [(stgCons, (2, Atom (Local 1)))]
+  lam_ 0 1 $
+  ann_ "__HEAD" $
+  case_
+    (Atom (BoundArg 0))
+    [ (stgCons, (2, Atom (Local 1)))
+    , ( stgNil
+      , ( 0
+        , appfn_ (Global "PANIC") [Literal $ NativeString "Head of empty list"]))
+    ]
 
 
 

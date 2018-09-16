@@ -98,6 +98,7 @@ tests:
       - mtl
       - network-uri
       - pretty
+      - scientific
       - text
       - unordered-containers
       - vector
