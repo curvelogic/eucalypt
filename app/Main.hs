@@ -3,7 +3,6 @@ where
 
 import Eucalypt.Driver.Options
 import Eucalypt.Driver.Evaluator (evaluate)
-import Eucalypt.Core.EvalByName (whnfM)
 import System.Exit
 import Paths_eucalypt_hs (version)
 import Data.Version (showVersion)
@@ -19,4 +18,4 @@ main = do
   case optionCommand opts of
     Explain -> print opts >> exitSuccess
     ShowVersion -> putStrLn banner
-    _ -> evaluate opts whnfM >>= exitWith
+    _ -> evaluate opts >>= exitWith

@@ -55,3 +55,14 @@ spec =
       (test (mergeListTwice blockA) >>= returnedForcedPairList) `shouldReturn` True
     it "for multi-element block" $
       (test (mergeListTwice blockABC) >>= returnedForcedPairList) `shouldReturn` True
+
+
+-- blockSpec :: Spec
+-- blockSpec =
+--   describe "Block merges" $
+--     it "overrides preserving original order" $
+--       let b1 = block [element "b" $ int 1, element "a" $ int 5]
+--           b2 = block [element "b" $ int (-1)]
+--           b3 = block [element "b" $ int (-1), element "a" $ int 5]
+--           merged = runRightInterpreter $ euMerge return [b1, b2]
+--       in (merged `shouldBe` b3)

@@ -1,90 +1,71 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Eucalypt.Stg.Render.Yaml
+Description : Test Yaml rendering
+Copyright   : (c) Greg Hawkins, 2018
+License     :
+Maintainer  : greg@curvelogic.co.uk
+Stability   : experimental
+-}
 module Eucalypt.Render.YamlSpec
   ( main
   , spec
   ) where
-
-import Data.Either (fromRight)
-import Eucalypt.Render.Yaml
-import Eucalypt.Core.Syn
-import Test.Hspec
-import Eucalypt.Core.EvalByName
+import Conduit
+import qualified Data.ByteString as BS
 import Data.Text.Encoding (encodeUtf8)
-
-right :: Either l r -> r
-right = fromRight undefined
-
+import Eucalypt.Stg.Syn
+import qualified Eucalypt.Stg.Event as E
+import Eucalypt.Render.Yaml
+import Test.Hspec
 
 main :: IO ()
 main = hspec spec
 
+test1 :: [E.Event]
+test1 =
+  [ E.OutputMappingStart
+  , E.OutputScalar $ NativeSymbol "a"
+  , E.OutputScalar $ NativeNumber 1234
+  , E.OutputScalar $ NativeSymbol "b"
+  , E.OutputSequenceStart
+  , E.OutputScalar $ NativeString "x"
+  , E.OutputScalar $ NativeString "y"
+  , E.OutputScalar $ NativeString "z"
+  , E.OutputSequenceEnd
+  , E.OutputMappingEnd
+  ]
 
+test2 :: [E.Event]
+test2 =
+  [E.OutputSequenceStart] <>
+  map (E.OutputScalar . NativeNumber . fromInteger) [1 .. 7] <>
+  [E.OutputSequenceEnd]
 
-coreNF1 :: CoreExp a
-coreNF1 =
-  CoreBlock
-    (CoreList
-       [ CoreList [sym "a", int 1234]
-       , CoreList [sym "b", CoreList [str "x", str "y", str "z"]]
-       ])
+testNull :: [E.Event]
+testNull =
+  [ E.OutputMappingStart
+  , E.OutputScalar $ NativeSymbol "a"
+  , E.OutputNull
+  , E.OutputMappingEnd
+  ]
 
-
-
-coreNF2 :: CoreExp a
-coreNF2 = CoreList
-               [ int 1
-               , int 2
-               , int 3
-               , int 4
-               , int 5
-               , int 6
-               , int 7
-               ]
-
-
-
-coreNF3 :: CoreExp a
-coreNF3 =
-  CoreBlock
-    (CoreList
-       [ CoreList [sym "a", int 1]
-       , CoreList [sym "b", int 2]
-       , CoreList [sym "c", int 3]
-       , CoreList [sym "d", int 4]
-       , CoreList [sym "e", int 5]
-       , CoreList [sym "f", int 6]
-       , CoreList [sym "g", int 7]
-       ])
-
-
+render :: [E.Event] -> IO BS.ByteString
+render es = runConduitRes $ yieldMany events .| pipeline
+  where
+    events =
+      [E.OutputStreamStart, E.OutputDocumentStart] <> es <>
+      [E.OutputDocumentEnd, E.OutputStreamEnd]
 
 spec :: Spec
 spec =
   describe "Yaml rendering" $ do
-    xit "Renders simple NF core block to Yaml" $
-      right <$> renderYamlBytes return coreNF1 `shouldReturn`
-      encodeUtf8 "a: 1234\nb:\n  - x\n  y\n  z\n"
-      -- expected: Right "a: 1234\nb:\n  - x\n  y\n  z\n"
-      --  but got: Right "a: 1234\nb:\n- x\n- 'y'\n- z\n"
-      -- TODO: mysterious...
-    it "Renders NF core list" $
-      right <$>
-      renderYamlBytes return coreNF2 `shouldReturn`
+    it "Renders simple YAML snippet" $
+      render test1 `shouldReturn`
+      encodeUtf8 "a: 1234\nb:\n- x\n- y\n- z\n"
+    it "Renders list" $
+      render test2 `shouldReturn`
       encodeUtf8 "- 1\n- 2\n- 3\n- 4\n- 5\n- 6\n- 7\n"
-    it "Maintains key order" $
-      right <$>
-      renderYamlBytes return coreNF3 `shouldReturn`
-      encodeUtf8 "a: 1\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\n"
-    it "Forces to WHNF to render" pending
-    it "renders and evals { a: __NULL }" $
-      right <$>
-      renderYamlBytes
-        whnfM
-        (CoreBlock (CoreList [CoreList [sym "a", bif "NULL"]])) `shouldReturn`
+    it "Renders null" $
+      render testNull `shouldReturn`
       encodeUtf8 "a: null\n"
-    it "omits builtin declarations from render" $
-      right <$>
-      renderYamlBytes
-        whnfM
-        (CoreBlock (CoreList [CoreList [sym "a", bif "OR"]])) `shouldReturn`
-      encodeUtf8 "{}\n"

@@ -66,7 +66,7 @@ cook es = case cookSoup False es of
 
 -- | Take sequence of expression in operator soup and rearrange into
 -- non-soup expression using operator fixity.
-cookSoup :: Anaphora a => Bool -> [CoreExp a] -> Either EvaluationError (CoreExp a)
+cookSoup :: Anaphora a => Bool -> [CoreExp a] -> Either CoreError (CoreExp a)
 cookSoup parentAnaphoric es = do
   subcooked <- cookSubsoups inAnaphoricLambda filled
   expr <- evalState shunt (initState subcooked inAnaphoricLambda)
@@ -96,12 +96,12 @@ precook = fillGaps
 
 
 -- | Recurse down cooking any operator soups from the bottom upwards
-cookSubsoups :: Anaphora a => Bool -> [CoreExp a] -> Either EvaluationError [CoreExp a]
+cookSubsoups :: Anaphora a => Bool -> [CoreExp a] -> Either CoreError [CoreExp a]
 cookSubsoups anaphoric = mapM (cookBottomUp anaphoric)
 
 
 cookBottomUp ::
-     Anaphora a => Bool -> CoreExp a -> Either EvaluationError (CoreExp a)
+     Anaphora a => Bool -> CoreExp a -> Either CoreError (CoreExp a)
 cookBottomUp anaphoric (CoreOpSoup exprs) = cookSoup anaphoric exprs
 cookBottomUp anaphoric (CoreArgTuple exprs) =
   CoreArgTuple <$> traverse (cookBottomUp anaphoric) exprs
@@ -124,7 +124,7 @@ cookBottomUp _ e = Right e
 
 
 -- | Run the shunting algorithm until finished or errored
-shunt :: Anaphora a => State (ShuntState a) (Either EvaluationError (CoreExp a))
+shunt :: Anaphora a => State (ShuntState a) (Either CoreError (CoreExp a))
 shunt = (shunt1 `untilM_` finished) >> result
   where
     finished = complete <$> get
@@ -144,7 +144,7 @@ data ShuntState a = ShuntState
   { shuntOutput :: [CoreExp a]
   , shuntOps :: [CoreExp a]
   , shuntSource :: [CoreExp a]
-  , shuntError :: Maybe EvaluationError
+  , shuntError :: Maybe CoreError
   , shuntInsideAnaphoricLambda :: Bool
   } deriving (Show)
 
@@ -163,7 +163,7 @@ complete ShuntState {shuntOps = ops, shuntSource = source} =
   null ops && null source
 
 -- | Set the error state
-setError :: EvaluationError -> State (ShuntState a) ()
+setError :: CoreError -> State (ShuntState a) ()
 setError e = modify $ \s -> s {shuntError = Just e}
 
 -- | Pop the next expression from the input soup

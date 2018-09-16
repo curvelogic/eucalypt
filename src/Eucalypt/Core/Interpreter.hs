@@ -16,12 +16,12 @@ import Eucalypt.Core.Syn
 
 
 -- | The interpreter monad
-newtype Interpreter a = Interpreter { runInterpreter :: Either EvaluationError a }
+newtype Interpreter a = Interpreter { runInterpreter :: Either CoreError a }
   deriving (Show, Functor, Applicative, Monad)
 
 
--- | Abort interpreter with 'EvaluationError'
-throwEvalError :: EvaluationError -> Interpreter a
+-- | Abort interpreter with 'CoreError'
+throwEvalError :: CoreError -> Interpreter a
 throwEvalError = Interpreter . Left
 
 

@@ -10,7 +10,7 @@ import Control.Exception (SomeException)
 
 -- | All the types of error that Eucalypt can experience and report
 data EucalyptError
-  = Core Core.EvaluationError
+  = Core Core.CoreError
   | Source Source.DataParseException
   | Syntax Syntax.SyntaxError
   | System SomeException
