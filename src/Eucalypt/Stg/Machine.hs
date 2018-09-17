@@ -172,8 +172,8 @@ instance StgPretty Continuation where
 -- | Continuation stack also records call stacks for restoring them on
 -- return
 data StackElement = StackElement
-  { stackContinuation :: Continuation
-  , stackCallStack :: CallStack
+  { stackContinuation :: !Continuation
+  , stackCallStack :: !CallStack
   } deriving (Eq, Show)
 
 
@@ -206,27 +206,27 @@ instance StgPretty Code where
 data MachineState = MachineState
   { machineCode :: Code
     -- ^ Next instruction to execute
-  , machineGlobals :: HashMap String StgValue
+  , machineGlobals :: !(HashMap String StgValue)
     -- ^ Global (heap allocated) objects
-  , machineStack :: Vector StackElement
+  , machineStack :: !(Vector StackElement)
     -- ^ stack of continuations
-  , machineCounter :: Int
+  , machineCounter :: !Int
     -- ^ count of steps executed so far
-  , machineTerminated :: Bool
+  , machineTerminated :: !Bool
     -- ^ whether the machine has terminated
   , machineTrace :: MachineState -> IO ()
     -- ^ debug action to run prior to each step
-  , machineEvents :: Vector Event
+  , machineEvents :: !(Vector Event)
     -- ^ events fired by last step
   , machineEmit :: MachineState -> Event -> IO MachineState
     -- ^ emit function to send out events
-  , machineDebug :: Bool
+  , machineDebug :: !Bool
     -- ^ debug checks on
-  , machineDebugEmitLog :: [Event]
+  , machineDebugEmitLog :: ![Event]
     -- ^ log of emitted events for debug / testing
-  , machineLastStepName :: String
+  , machineLastStepName :: !String
     -- ^ current call stack for debugging
-  , machineCallStack :: CallStack
+  , machineCallStack :: !CallStack
   }
 
 -- | Call the machine's trace function
