@@ -25,8 +25,8 @@ binop :: String -> LambdaForm
 binop intrinsicName =
   lam_ 0 2 $
   ann_ ("__" ++ intrinsicName) $
-  force_ (Atom (BoundArg 0)) $
-  force_ (Atom (BoundArg 1)) $
+  force_ (Atom (Local 0)) $
+  force_ (Atom (Local 1)) $
   appbif_ (intrinsicIndex intrinsicName) [Local 2, Local 3]
 
 euAdd :: LambdaForm

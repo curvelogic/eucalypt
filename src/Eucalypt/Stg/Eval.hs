@@ -94,11 +94,7 @@ terminate ms@MachineState{} = ms {machineTerminated = True}
 -- | Call a lambda form by putting args in environment and rewiring
 -- refs then evaluating.
 call :: MonadThrow m => ValVec -> MachineState -> LambdaForm -> ValVec -> m Code
-call env _ms code addrs = do
-  let env' = env <> addrs
-  let code' = argsAt (fromIntegral (envSize env)) (_body code)
-  return (Eval code' env')
-
+call env _ms code addrs = return (Eval (_body code) (env <> addrs))
 
 
 -- | Main machine step function

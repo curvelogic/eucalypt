@@ -21,7 +21,7 @@ euMeta :: LambdaForm
 euMeta =
   lam_ 0 1 $
   ann_ "__META" $
-  force_ (Atom (BoundArg 0)) (appbif_ (intrinsicIndex "META") [Local 1])
+  force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "META") [Local 1])
 
 
 -- | __WITHMETA(m, o)
@@ -29,4 +29,4 @@ euWithMeta :: LambdaForm
 euWithMeta =
   lam_ 0 2 $
   ann_ "__WITHMETA" $
-  appbif_ (intrinsicIndex "WITHMETA") [BoundArg 0, BoundArg 1]
+  appbif_ (intrinsicIndex "WITHMETA") [Local 0, Local 1]

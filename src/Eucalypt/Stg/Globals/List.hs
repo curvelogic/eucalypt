@@ -23,7 +23,7 @@ import Eucalypt.Stg.Tags
 
 -- | __CONS(h, t)
 euCons :: LambdaForm
-euCons = lam_ 0 2 $ appcon_ stgCons [BoundArg 0, BoundArg 1]
+euCons = lam_ 0 2 $ appcon_ stgCons [Local 0, Local 1]
 
 
 
@@ -33,7 +33,7 @@ euNil =
   lam_ 0 1 $
   ann_ "NIL" $
   case_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ (stgCons, (2, Atom (Literal (NativeBool False))))
     , (stgNil, (0, Atom (Literal (NativeBool True))))
     ]
@@ -46,7 +46,7 @@ euHead =
   lam_ 0 1 $
   ann_ "__HEAD" $
   case_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ (stgCons, (2, Atom (Local 1)))
     , ( stgNil
       , ( 0
@@ -59,14 +59,14 @@ euHead =
 euTail :: LambdaForm
 euTail =
   lam_ 0 1 $ ann_ "__TAIL" $
-  case_ (Atom (BoundArg 0)) [(stgCons, (2, Atom (Local 2)))]
+  case_ (Atom (Local 0)) [(stgCons, (2, Atom (Local 2)))]
 
 
 -- | __CONCAT(l, r)
 euConcat :: LambdaForm
 euConcat =
-  let l = BoundArg 0
-      r = BoundArg 1
+  let l = Local 0
+      r = Local 1
    in lam_ 0 2 $
       ann_ "__CONCAT" $
       case_
@@ -89,16 +89,16 @@ euConcat =
 euReverse :: LambdaForm
 euReverse =
   lam_ 0 1 $ ann_ "__REVERSE" $
-  let list = BoundArg 0
+  let list = Local 0
       self = Local 1
       empty = Local 2
    in letrec_
         [ pc_ [self] $
           lam_ 1 2 $
           let recurse = Local 0
-              acc = BoundArg 0
-              rest = BoundArg 1
-           in case_
+              acc = Local 1
+              rest = Local 2
+           in casedef_
                  (Atom rest)
                  [ ( stgCons
                    , ( 2
@@ -110,6 +110,7 @@ euReverse =
                              (appfn_ recurse [newacc, t])))
                  , (stgNil, (0, Atom acc))
                  ]
+                 (appfn_ (Global "PANIC") [Literal $ NativeString "Improper list in __REVERSE"])
         , pc0_ $ standardConstructor 0 stgNil
         ]
         (appfn_ self [empty, list])

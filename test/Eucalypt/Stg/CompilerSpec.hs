@@ -89,16 +89,16 @@ spec = do
            ]
            (C.app (C.bif "CAT") [C.int 5, C.app (var "s") [var "k", var "k"]])) `shouldBe`
       letrec_
-        [ pc0_ $ lam_ 0 2 (ann_ "k" $ Atom (BoundArg 0))
+        [ pc0_ $ lam_ 0 2 (ann_ "k" $ Atom (Local 0))
         , pc0_ $
           lam_
             0
             3
             (ann_ "s" $
              let_
-               [ pc_ [BoundArg 1, BoundArg 2] $
+               [ pc_ [Local 1, Local 2] $
                  thunkn_ 2 $ appfn_ (Local 0) [Local 1]
-               , pc_ [BoundArg 0, BoundArg 2] $
+               , pc_ [Local 0, Local 2] $
                  thunkn_ 2 $ appfn_ (Local 0) [Local 1]
                ]
                (appfn_ (Global "CAT") [Local 3, Local 4]))

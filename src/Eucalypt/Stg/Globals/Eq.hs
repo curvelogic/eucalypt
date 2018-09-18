@@ -20,29 +20,29 @@ euEq :: LambdaForm
 euEq =
   lam_ 0 2 $ ann_ "__EQ" $
   casedef_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ ( stgNil
       , ( 0
         , casedef_
-            (Atom (BoundArg 1))
+            (Atom (Local 1))
             [(stgNil, (0, Atom (Literal $ NativeBool True)))]
             (Atom $ Literal $ NativeBool False)))
     , ( stgUnit
       , ( 0
         , casedef_
-            (Atom (BoundArg 1))
+            (Atom (Local 1))
             [(stgUnit, (0, Atom (Literal $ NativeBool True)))]
             (Atom $ Literal $ NativeBool False)))
     , ( stgBlock
       , ( 1
         , casedef_
-            (Atom (BoundArg 1))
+            (Atom (Local 1))
             [(stgBlock, (1, appfn_ (Global "EQ") [Local 2, Local 3]))]
             (Atom $ Literal $ NativeBool False)))
     , ( stgCons
       , ( 1
         , casedef_
-            (Atom (BoundArg 1))
+            (Atom (Local 1))
             [ ( stgCons
               , ( 1
                 , let_
@@ -56,5 +56,5 @@ euEq =
             (Atom $ Literal $ NativeBool False)))
     ]
     (force_
-       (Atom (BoundArg 1))
+       (Atom (Local 1))
        (appbif_ (intrinsicIndex "===") [Local 2, Local 3]))
