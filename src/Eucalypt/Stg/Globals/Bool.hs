@@ -35,7 +35,7 @@ euNot :: LambdaForm
 euNot =
   lam_ 0 1 $ ann_ "__NOT" $
   caselit_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ (NativeBool True, Atom $ Literal $ NativeBool False)
     , (NativeBool False, Atom $ Literal $ NativeBool True)
     ] Nothing
@@ -47,11 +47,11 @@ euAnd :: LambdaForm
 euAnd =
   lam_ 0 2 $ ann_ "__AND" $
   caselit_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ (NativeBool False, Atom $ Literal $ NativeBool False)
     , ( NativeBool True
       , caselit_
-          (Atom (BoundArg 1))
+          (Atom (Local 1))
           [ (NativeBool False, Atom $ Literal $ NativeBool False)
           , (NativeBool True, Atom $ Literal $ NativeBool True)
           ]
@@ -66,11 +66,11 @@ euOr :: LambdaForm
 euOr =
   lam_ 0 2 $ ann_ "__OR" $
   caselit_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ (NativeBool True, Atom $ Literal $ NativeBool True)
     , ( NativeBool False
       , caselit_
-          (Atom (BoundArg 1))
+          (Atom (Local 1))
           [ (NativeBool True, Atom $ Literal $ NativeBool True)
           , (NativeBool False, Atom $ Literal $ NativeBool False)
           ]
@@ -85,8 +85,8 @@ euIf :: LambdaForm
 euIf =
   lam_ 0 3 $ ann_ "__IF" $
   caselit_
-    (Atom (BoundArg 0))
-    [ (NativeBool True, Atom $ BoundArg 1)
-    , (NativeBool False, Atom $ BoundArg 2)
+    (Atom (Local 0))
+    [ (NativeBool True, Atom $ Local 1)
+    , (NativeBool False, Atom $ Local 2)
     ]
     Nothing

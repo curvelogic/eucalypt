@@ -25,8 +25,8 @@ euMatch :: LambdaForm
 euMatch =
   lam_ 0 2 $
   ann_ "__MATCH" $
-  force_ (Atom (BoundArg 0)) $
-  force_ (Atom (BoundArg 1)) $
+  force_ (Atom (Local 0)) $
+  force_ (Atom (Local 1)) $
   appbif_ (intrinsicIndex "MATCH") [Local 2, Local 3]
 
 
@@ -35,8 +35,8 @@ euMatches :: LambdaForm
 euMatches =
   lam_ 0 2 $
   ann_ "__MATCHES" $
-  force_ (Atom (BoundArg 0)) $
-  force_ (Atom (BoundArg 1)) $
+  force_ (Atom (Local 0)) $
+  force_ (Atom (Local 1)) $
   appbif_ (intrinsicIndex "MATCHES") [Local 2, Local 3]
 
 
@@ -46,9 +46,9 @@ euJoin =
   lam_ 0 2 $
   ann_ "__JOIN" $
   let_
-    [pc_ [BoundArg 0] $ thunkn_ 1 $ appfn_ (Global "seqNatList") [Local 0]]
+    [pc_ [Local 0] $ thunkn_ 1 $ appfn_ (Global "seqNatList") [Local 0]]
     (force_
-       (Atom (BoundArg 1))
+       (Atom (Local 1))
        (force_ (Atom (Local 2)) $
         appbif_ (intrinsicIndex "JOIN") [Local 4, Local 3]))
 
@@ -56,8 +56,8 @@ euJoin =
 -- | SPLIT(s, re)
 euSplit :: LambdaForm
 euSplit =
-  let s = BoundArg 0
-      re = BoundArg 1
+  let s = Local 0
+      re = Local 1
       es = Local 2
       ere = Local 3
    in lam_ 0 2 $
@@ -72,7 +72,7 @@ euStr :: LambdaForm
 euStr =
   lam_ 0 1 $
   ann_ "__STR" $
-  force_ (Atom (BoundArg 0)) (appbif_ (intrinsicIndex "STRNAT") [Local 1])
+  force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "STRNAT") [Local 1])
 
 
 -- | __SYM(n)
@@ -80,4 +80,4 @@ euSym :: LambdaForm
 euSym =
   lam_ 0 1 $
   ann_ "__SYM" $
-  force_ (Atom (BoundArg 0)) (appbif_ (intrinsicIndex "STRSYM") [Local 1])
+  force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "STRSYM") [Local 1])

@@ -14,7 +14,6 @@ https://github.com/ermine-language/ermine/blob/master/src/Ermine/Syntax/G.hs
 -}
 module Eucalypt.Stg.Syn where
 
-import Data.Bifunctor (second)
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
@@ -76,7 +75,6 @@ instance Arbitrary Native where
 data Ref
   = Global !String
   | Local !Word64
-  | BoundArg !Word64
   | Literal !Native
   deriving (Eq, Show)
 
@@ -114,21 +112,9 @@ class Show a =>
                " exceeds env length " ++ show size ++ " in " ++ show expr)
 
 
--- | Something which has reference to (bound arguments); once these
--- are located in an environment they can become environment refs
--- instead
-class HasArgRefs a where
-  argsAt :: Int -> a -> a
-
--- | Once args are in environment vector, we can replace the refs
-instance HasArgRefs Ref where
-  argsAt n (BoundArg i) = Local (fromIntegral n + i)
-  argsAt _ r = r
-
 instance StgPretty Ref where
   prettify (Global s) = P.char 'G' <> P.brackets (P.text s)
   prettify (Local i) = P.char 'E' <> P.brackets (P.int (fromIntegral i))
-  prettify (BoundArg i) = P.char 'S' <> P.brackets (P.int (fromIntegral i))
   prettify (Literal n) = prettify n
 
 -- | References to stack or env are contextual, global vars not.
@@ -154,14 +140,6 @@ data BranchTable = BranchTable
   , nativeBranches :: HM.HashMap Native StgSyn
   , defaultBranch :: Maybe StgSyn
   } deriving (Eq, Show)
-
-
-instance HasArgRefs BranchTable where
-  argsAt n (BranchTable bs nbs df) = BranchTable bs' nbs' df'
-    where
-      bs' = Map.map (second (argsAt n)) bs
-      nbs' = HM.map (argsAt n) nbs
-      df' = argsAt n <$> df
 
 instance HasRefs BranchTable where
   refs (BranchTable brs nbrs df) =
@@ -196,10 +174,6 @@ data Func
   | Con !Tag
   | Intrinsic !Int
   deriving (Eq, Show)
-
-instance HasArgRefs Func where
-  argsAt n (Ref r) = Ref $ argsAt n r
-  argsAt _ f = f
 
 instance HasRefs Func where
   refs (Ref r) = [r]
@@ -252,9 +226,6 @@ data PreClosure = PreClosure
     -- ^ 'LambdaForm' containing expression to evaluate
   } deriving (Eq, Show)
 
-instance HasArgRefs PreClosure where
-  argsAt n (PreClosure rs m lf) = PreClosure (V.map (argsAt n) rs) (fmap (argsAt n) m) lf
-
 instance HasRefs PreClosure where
   refs (PreClosure rv m _) = toList rv <> toList m
 
@@ -281,15 +252,6 @@ data StgSyn
            !StgSyn
   | Ann !String !StgSyn
   deriving (Eq, Show)
-
-instance HasArgRefs StgSyn where
-  argsAt n (Atom (BoundArg i)) = Atom (Local (fromIntegral n + i))
-  argsAt _ a@Atom {} = a
-  argsAt n (Let pcs syn) = Let (V.map (argsAt n) pcs) (argsAt n syn)
-  argsAt n (LetRec pcs syn) = LetRec (V.map (argsAt n) pcs) (argsAt n syn)
-  argsAt n (App f rs) = App (argsAt n f) (V.map (argsAt n) rs)
-  argsAt n (Case expr k) = Case (argsAt n expr) (argsAt n k)
-  argsAt n (Ann s expr) = Ann s $ argsAt n expr
 
 instance HasRefs StgSyn where
   refs (Atom r) = [r]

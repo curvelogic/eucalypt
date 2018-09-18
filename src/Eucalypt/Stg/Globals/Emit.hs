@@ -29,7 +29,7 @@ renderKV =
   lam_ 1 1 $
   ann_ "renderKV" $
   casedef_
-    (Atom (BoundArg 0))
+    (Atom arg)
     [ ( stgCons
       , ( 3
         , caselit_
@@ -55,6 +55,7 @@ renderKV =
     (appfn_ (Global "BOMB") [])
   where
     suppressesRef = Local 0
+    arg = Local 1
     key = Local 2
     t = Local 3
     meta = Local 4
@@ -68,7 +69,7 @@ suppresses =
   lam_ 0 1 $
   ann_ "suppresses" $
   casedef_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ ( stgBlock
       , ( 1
         , caselit_
@@ -76,7 +77,7 @@ suppresses =
                (Global "LOOKUPOR")
                [ Literal $ NativeSymbol "export"
                , Literal $ NativeSymbol "enable"
-               , BoundArg 0
+               , Local 0
                ])
             [(NativeSymbol "suppress", Atom $ Literal $ NativeBool True)]
             (Just $ Atom $ Literal $ NativeBool False)))
@@ -97,7 +98,7 @@ euRender =
       lam_ 1 1 $
       ann_ "continueList" $
       casedef_
-        (Atom (BoundArg 0))
+        (Atom (Local 1))
         [ ( stgCons
           , ( 2
             , seq_ (appfn_ (Global "RENDER") [Local 2]) $
@@ -112,19 +113,19 @@ euRender =
       seq_
         emitSS
         (seq_
-           (appfn_ (Global "RENDER") [BoundArg 0])
-           (appfn_ (Local 0) [BoundArg 1]))
+           (appfn_ (Global "RENDER") [Local 1])
+           (appfn_ (Local 0) [Local 2]))
         -- wrapBlock
     , pc_ [continueKVList] $
       lam_ 1 1 $
-      ann_ "wrapBlock" $ seqall_ [emitMS, appfn_ (Local 0) [BoundArg 0], emitME]
+      ann_ "wrapBlock" $ seqall_ [emitMS, appfn_ (Local 0) [Local 1], emitME]
     , pc_ [suppressesRef] renderKV
         -- continueKVList
     , pc_ [renderKVRef, continueKVList] $
       lam_ 2 1 $
       ann_ "continueKVList" $
       case_
-        (Atom (BoundArg 0))
+        (Atom (Local 2))
         [ ( stgCons
           , (2, seq_ (appfn_ (Local 0) [Local 3]) $ appfn_ (Local 1) [Local 4]))
         , (stgNil, (0, appcon_ stgUnit []))
@@ -134,7 +135,7 @@ euRender =
       lam_ 4 1 $
       ann_ "typeSwitch" $
       casedef_
-        (Atom (BoundArg 0))
+        (Atom (Local 4))
         [ (stgBlock, (1, appfn_ (Local 3) [Local 5]))
         , (stgCons, (2, appfn_ (Local 2) [Local 5, Local 6]))
         , (stgNil, (0, appfn_ (Local 0) []))
@@ -143,7 +144,7 @@ euRender =
         (emitScalar (Local 5))
     , pc0_ suppresses
     ]
-    (appfn_ typeSwitch [BoundArg 0])
+    (appfn_ typeSwitch [Local 0])
   where
     emptyList = Local 1
     continueList = Local 2

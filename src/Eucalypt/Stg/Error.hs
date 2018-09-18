@@ -32,7 +32,6 @@ data StgError
   | EnvironmentIndexOutOfRange !Int
   | IntrinsicIndexOutOfRange
   | SteppingTerminated
-  | AttemptToResolveBoundArg
   | IntrinsicImproperList
   | IntrinsicBadPair !String
   | IntrinsicExpectedList

@@ -46,13 +46,13 @@ metaOnRef envSize r =
 metaOnEnvNat :: StgSyn
 metaOnEnvNat =
   let_
-    [pc0_ $ lam_ 0 1 $ metaOnRef 1 (BoundArg 0)]
+    [pc0_ $ lam_ 0 1 $ metaOnRef 1 (Local 0)]
     (appfn_ (Local 0) [Literal $ NativeNumber 99])
 
 metaOnEnvCon :: StgSyn
 metaOnEnvCon =
   let_
-    [pc0_ $ thunk_ $ block [], pc0_ $ lam_ 0 1 $ metaOnRef 1 (BoundArg 0)]
+    [pc0_ $ thunk_ $ block [], pc0_ $ lam_ 0 1 $ metaOnRef 1 (Local 0)]
     (appfn_ (Local 1) [Local 0])
 
 spec :: Spec

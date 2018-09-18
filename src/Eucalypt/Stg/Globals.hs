@@ -38,9 +38,9 @@ euCat =
   lam_ 0 2 $
   ann_ "__CAT" $
   casedef_
-    (Atom (BoundArg 1))
-    [(stgBlock, (1, appfn_ (Global "MERGE") [BoundArg 0, BoundArg 1]))] $
-  appfn_ (BoundArg 1) [BoundArg 0]
+    (Atom (Local 1))
+    [(stgBlock, (1, appfn_ (Global "MERGE") [Local 0, Local 1]))] $
+  appfn_ (Local 1) [Local 0]
 
 
 -- | Strictly evaluate a list of natives to NF
@@ -48,7 +48,7 @@ seqNatList :: LambdaForm
 seqNatList =
   lam_ 0 1 $
   case_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ (stgNil, (0, appcon_ stgNil mempty))
     , ( stgCons
       , ( 2
@@ -65,7 +65,7 @@ seqPairList =
   lam_ 0 1 $
   ann_ "__seqPairList" $
   case_
-    (Atom (BoundArg 0))
+    (Atom (Local 0))
     [ (stgNil, (0, appcon_ stgNil []))
     , ( stgCons
       , ( 2

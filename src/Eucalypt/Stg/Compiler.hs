@@ -71,14 +71,18 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
     free = map snd fvs
     context' v =
       maybe (context v) (Local . fromIntegral) (elemIndex v (map fst fvs))
-    contextL' (Var.F v) = context' v
-    contextL' (Var.B i) = BoundArg $ fromIntegral i
+    contextL' _ (Var.F v) = context' v
+    contextL' envSize (Var.B i) = Local $ envSize + fromIntegral i
     compileLambdaForm e =
       case e of
         (CoreLambda ns body) ->
           lam_ (length free) (length ns) $
           ann_ nm $
-          compile (length free + length ns) contextL' Nothing $ fromScope body
+          compile
+            (length free + length ns)
+            (contextL' . fromIntegral . length $ free)
+            Nothing $
+          fromScope body
         (CoreList []) -> nilConstructor -- TODO: id all std cons?
         CorePrim {} -> value_ $ compile (length free) context' Nothing e
         _ -> thunkn_ (length free) $ compile (length free) context' Nothing e

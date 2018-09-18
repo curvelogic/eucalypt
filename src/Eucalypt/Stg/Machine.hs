@@ -308,15 +308,12 @@ globalAddress ms@MachineState {machineGlobals = g} nm =
 
 
 -- | Resolve environment references against local and global
--- environments. If a ref is still a BoundArg at the point it is
--- resolved, AttemptToResolveBoundArg will be thrown. Args are
--- resolved and recorded in environment for use.
+-- environments.
 val :: MonadThrow m => ValVec -> MachineState -> Ref -> m StgValue
 val (ValVec le) ms (Local l) =
   case le !? fromIntegral l of
     Just v -> return v
     _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
-val _ ms (BoundArg _) = throwIn ms AttemptToResolveBoundArg
 val _ ms (Global nm) = globalAddress ms nm
 val _ _ (Literal n) = return $ StgNat n Nothing
 

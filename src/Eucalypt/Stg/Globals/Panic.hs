@@ -22,4 +22,4 @@ euBomb = value_ $ appbif_ (intrinsicIndex "PANIC") [Literal $ NativeString "BOMB
 euPanic :: LambdaForm
 euPanic =
   lam_ 0 1 $
-  force_ (Atom (BoundArg 0)) $ appbif_ (intrinsicIndex "PANIC") [Local 0]
+  force_ (Atom (Local 0)) $ appbif_ (intrinsicIndex "PANIC") [Local 0]
