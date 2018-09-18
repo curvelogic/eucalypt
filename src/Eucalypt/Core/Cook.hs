@@ -49,8 +49,6 @@ distributeFixities (CoreLet bs b) = CoreLet prunedBindings newBody
     exposeCallable e = e
     distributeScopeFixities = Scope . distributeFixities . unscope
 distributeFixities (CoreMeta m e) = CoreMeta m $ distributeFixities e
-distributeFixities (CoreChecked f e) = CoreChecked f $ distributeFixities e
-distributeFixities (CoreTraced e) = CoreTraced $ distributeFixities e
 distributeFixities e = e
 
 -- | A core pass prior to evaluation to cook all soup that can be

@@ -36,10 +36,6 @@ verify f e@(CoreLambda _ b) =
    in shallow ++ deep
 verify f e@(CoreMeta m expr) =
   f e ++ verify f m ++ verify f expr
-verify f e@(CoreTraced expr) =
-  f e ++ verify f expr
-verify f e@(CoreChecked ck expr) =
-  f e ++ verify f ck ++ verify f expr
 verify f e@(CoreBlock expr) =
   f e ++ verify f expr
 verify f e@(CoreList exprs) =

@@ -48,8 +48,6 @@ unquote xs = xs
 -- | Generate the format document for rendering
 prepare :: Show a => CoreExp a -> Doc
 prepare (CoreBuiltin n) = text $ "__" ++ n
-prepare (CorePAp _ f xs) =
-  parens $ foldr ((<+>) . prepare) (text "partial:" <+> prepare f) xs
 prepare (CoreVar x) = (text . unquote . show) x
 prepare (CorePrim x) = (text . renderLiteral) x
 prepare (CoreLet bs body) =
@@ -65,8 +63,6 @@ prepare (CoreBlock e) = braces $ prepare e
 prepare (CoreList [k@(CorePrim (CoreSymbol _)), v]) = brackets (prepare k <> comma <> prepare v)
 prepare (CoreList xs) = brackets . vcat . punctuate comma $ map prepare xs
 prepare (CoreMeta m e) = vcat [text "`" <+> prepare m, prepare e]
-prepare (CoreTraced v) = prepare v
-prepare (CoreChecked _ v) = prepare v
 prepare (CoreOpSoup es) = parens ( hsep $ map prepare es)
 prepare (CoreArgTuple xs) = parens . hsep . punctuate comma $ map prepare xs
 prepare (CoreLambda names e) =

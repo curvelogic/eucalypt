@@ -98,15 +98,6 @@ data CoreExp a
   | CoreOperator Fixity
                  Precedence
                  (CoreExp a)
-  | CorePAp Int
-            (CoreExp a)
-            [CoreExp a]
-    -- ^ during evaluation only
-  | CoreTraced (CoreExp a)
-    -- ^ during evaluation only
-  | CoreChecked (CoreExp a)
-                (CoreExp a)
-    -- ^ during evaluation only
   deriving (Functor, Foldable, Traversable)
 
 
@@ -161,14 +152,11 @@ instance Monad CoreExp where
   CoreVar a >>= f = f a
   CoreLet bs b >>= f = CoreLet (map (second (>>>= f)) bs) (b >>>= f)
   CoreBuiltin n >>= _ = CoreBuiltin n
-  CorePAp a e as >>= f = CorePAp a (e >>= f) (map (>>= f) as)
   CorePrim p >>= _ = CorePrim p
   CoreLookup e n >>= f = CoreLookup (e >>= f) n
   CoreList es >>= f = CoreList (map (>>= f) es)
   CoreBlock e >>= f = CoreBlock (e >>= f)
   CoreMeta m e >>= f = CoreMeta (m >>= f) (e >>= f) -- TODO: separate meta?
-  CoreTraced e >>= f = CoreTraced (e >>= f)
-  CoreChecked check e >>= f = CoreChecked (check >>= f) (e >>= f)
   CoreOpSoup es >>= f = CoreOpSoup (map (>>= f) es)
   CoreLambda n e >>= f = CoreLambda n (e >>>= f)
   CoreOperator x p e >>= f = CoreOperator x p (e >>= f)
@@ -469,8 +457,6 @@ rebody (CoreLet bs body) payload =
         (Just b) -> (b, ) <$> (b `elemIndex` map fst bs)
         Nothing -> Nothing
 rebody (CoreMeta m e) payload = CoreMeta m (rebody e payload)
-rebody (CoreTraced e) payload = CoreTraced (rebody e payload)
-rebody (CoreChecked _ e) payload = rebody e payload
 rebody _ payload = payload
 
 
