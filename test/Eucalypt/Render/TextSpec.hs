@@ -1,13 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-|
-Module      : Eucalypt.Render.Yaml
-Description : Test Yaml rendering
+Module      : Eucalypt.Render.Text
+Description : Test Text rendering
 Copyright   : (c) Greg Hawkins, 2018
 License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
-module Eucalypt.Render.YamlSpec
+module Eucalypt.Render.TextSpec
   ( main
   , spec
   ) where
@@ -16,7 +16,7 @@ import qualified Data.ByteString as BS
 import Data.Text.Encoding (encodeUtf8)
 import Eucalypt.Stg.Syn
 import qualified Eucalypt.Stg.Event as E
-import Eucalypt.Render.Yaml
+import Eucalypt.Render.Text
 import Test.Hspec
 
 main :: IO ()
@@ -59,13 +59,13 @@ render es = runConduitRes $ yieldMany events .| pipeline
 
 spec :: Spec
 spec =
-  describe "Yaml rendering" $ do
-    it "Renders simple YAML snippet" $
+  describe "Text rendering" $ do
+    it "Renders simple text snippet" $
       render test1 `shouldReturn`
-      encodeUtf8 "a: 1234\nb:\n- x\n- y\n- z\n"
+      encodeUtf8 "a\n1234\nb\nx\ny\nz"
     it "Renders list" $
       render test2 `shouldReturn`
-      encodeUtf8 "- 1\n- 2\n- 3\n- 4\n- 5\n- 6\n- 7\n"
-    it "Renders null" $
+      encodeUtf8 "1\n2\n3\n4\n5\n6\n7"
+    it "Ignores null" $
       render testNull `shouldReturn`
-      encodeUtf8 "a: null\n"
+      encodeUtf8 "a"
