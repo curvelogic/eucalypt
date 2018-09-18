@@ -99,6 +99,10 @@ commandOption =
     DumpFinalCore
     (long "dump-core" <>
      help "Dump final core syntax prior to evaluation") <|>
+  flag'
+    DumpStg
+    (long "dump-stg" <>
+     help "Dump STG syntax prior to evaluation") <|>
   flag
     Evaluate
     Parse

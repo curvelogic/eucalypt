@@ -96,9 +96,9 @@ euReverse =
         [ pc_ [self] $
           lam_ 1 2 $
           let recurse = Local 0
-              acc = Local 0
-              rest = Local 1
-           in case_
+              acc = Local 1
+              rest = Local 2
+           in casedef_
                  (Atom rest)
                  [ ( stgCons
                    , ( 2
@@ -110,6 +110,7 @@ euReverse =
                              (appfn_ recurse [newacc, t])))
                  , (stgNil, (0, Atom acc))
                  ]
+                 (appfn_ (Global "PANIC") [Literal $ NativeString "Improper list in __REVERSE"])
         , pc0_ $ standardConstructor 0 stgNil
         ]
         (appfn_ self [empty, list])
