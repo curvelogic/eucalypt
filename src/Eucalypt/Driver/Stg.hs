@@ -22,6 +22,7 @@ import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Render.Json as Json
+import qualified Eucalypt.Render.Text as Text
 import qualified Eucalypt.Render.Yaml as Yaml
 import qualified Eucalypt.Stg.Compiler as C
 import Eucalypt.Stg.Error
@@ -106,4 +107,5 @@ machineSource ms = do
 renderPipeline ::
      (MonadResource m) => String -> ConduitT Event Void m BS.ByteString
 renderPipeline "json" = Json.pipeline
+renderPipeline "text" = Text.pipeline
 renderPipeline _ = Yaml.pipeline
