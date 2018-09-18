@@ -184,38 +184,6 @@ letMetaLetResult1 =
   withMeta (block []) $
   letexp [("two", int 2)] $ letexp [("one", int 1)] (var "three")
 
-
-letTracedLetTarget :: CoreExpr
-letTracedLetTarget =
-  letexp [("three", int 3)] $
-  CoreTraced $
-  letexp [("two", int 2)] $ letexp [("one", int 1)] (var "one")
-
-letTracedLetPayload1 :: CoreExpr
-letTracedLetPayload1 = var "three"
-
-letTracedLetResult1 :: CoreExpr
-letTracedLetResult1 =
-  letexp [("three", int 3)] $
-  CoreTraced $
-  letexp [("two", int 2)] $ letexp [("one", int 1)] (var "three")
-
-
-letCheckedLetTarget :: CoreExpr
-letCheckedLetTarget =
-  letexp [("three", int 3)] $
-  CoreChecked (bif "*") $
-  letexp [("two", int 2)] $ letexp [("one", int 1)] (var "one")
-
-letCheckedLetPayload1 :: CoreExpr
-letCheckedLetPayload1 = var "three"
-
-letCheckedLetResult1 :: CoreExpr
-letCheckedLetResult1 =
-  letexp [("three", int 3)] $
-  letexp [("two", int 2)] $ letexp [("one", int 1)] (var "three")
-
-
 evaluandSpec :: Spec
 evaluandSpec =
   describe "evaluand delivery" $ do
@@ -223,7 +191,3 @@ evaluandSpec =
       rebody doubleLetTarget doubleLetPayload1 `shouldBe` doubleLetResult1
     it "modifies payload in lets and metas" $
       rebody letMetaLetTarget letMetaLetPayload1 `shouldBe` letMetaLetResult1
-    it "leaves traces in place" $
-      rebody letTracedLetTarget letTracedLetPayload1 `shouldBe` letTracedLetResult1
-    it "removes checks" $
-      rebody letCheckedLetTarget letCheckedLetPayload1 `shouldBe` letCheckedLetResult1

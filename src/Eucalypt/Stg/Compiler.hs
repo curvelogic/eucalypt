@@ -189,9 +189,6 @@ compile _ _ _ (CoreName _) = error "Cannot compile name"
 compile _ _ _ (CoreArgTuple _) = error "Cannot compile arg tuple"
 compile _ _ _ (CoreOpSoup _) = error "Cannot compile op soup"
 compile _ _ _ (CoreLambda _ _) = error "Cannot compile lambda"
-compile _ _ _ CorePAp{} = error "Cannot compile PAp"
-compile _ _ _ (CoreTraced _) = error "Cannot compile traced"
-compile _ _ _ (CoreChecked _ _) = error "Cannot compile checked"
 
 -- | An empty context with no Refs for any Var
 emptyContext :: (Show v, Eq v) => v -> Ref

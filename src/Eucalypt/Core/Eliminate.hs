@@ -40,7 +40,4 @@ prune (CoreList exprs) = CoreList $ map prune exprs
 prune (CoreMeta m e) = CoreMeta (prune m) (prune e)
 prune (CoreApply f exprs) = CoreApply (prune f) $ map prune exprs
 prune (CoreLambda n body) = CoreLambda n $ (toScope . prune . fromScope) body
-prune (CoreTraced expr) = CoreTraced $ prune expr
-prune (CoreChecked t e) = CoreChecked (prune t) (prune e)
-prune (CorePAp n f exprs) = CorePAp n (prune f) (map prune exprs)
 prune e = e
