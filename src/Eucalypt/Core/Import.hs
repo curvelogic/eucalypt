@@ -8,7 +8,6 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Import where
 
-import Debug.Trace
 import Bound
 import Control.Monad.Trans
 import Data.Foldable (toList)
@@ -82,13 +81,14 @@ processUnit load u@TranslationUnit {truCore = body} =
 
 
 -- | Process all imports in topologically sorted order
-importAll :: M.Map Input TranslationUnit -> M.Map Input TranslationUnit
-importAll unitMap = foldl processInput unitMap (traceShowId sortedInputs)
+applyAllImports :: M.Map Input TranslationUnit -> M.Map Input TranslationUnit
+applyAllImports unitMap = foldl processInput unitMap sortedInputs
   where
     (graph, getVertex) = G.graphFromEdges' $ map edgeSpec $ M.assocs unitMap
     edgeSpec (k, v) = (k, k, toList $ truImports v)
     sortedInputs = map (toInput . getVertex) $ (reverse . G.topSort) graph
     toInput (i, _, _) = i
     toLoadFn m k = truCore $ fromJust (M.lookup k m)
-    processInput :: M.Map Input TranslationUnit -> Input -> M.Map Input TranslationUnit
+    processInput ::
+         M.Map Input TranslationUnit -> Input -> M.Map Input TranslationUnit
     processInput m input = M.update (return . processUnit (toLoadFn m)) input m

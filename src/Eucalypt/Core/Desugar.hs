@@ -45,19 +45,6 @@ relativeName n =
 
 
 
--- | Core metadata must be blocks, we apply conventional rules here to
--- massage other shorthands into blocks.
-processAnnotation :: CoreExpr -> CoreExpr
-processAnnotation s@(CorePrim (CoreString _)) = Syn.block [element "doc" s]
-processAnnotation e@(CorePrim (CoreSymbol s))
-  | s == "alias" = Syn.block [element "ref" e]
-  | s == "suppress" = Syn.block [element "export" e]
-  | s == "main" = Syn.block [element "target" e]
-  | s == "trace" = Syn.block [element "trace" (CorePrim (CoreBoolean True))]
-  | otherwise = Syn.block []
-processAnnotation e = e
-
-
 -- | Names that aren't in lookup positions need to become variables or
 -- builtins as appropriate
 name2Var :: String -> CoreExpr
@@ -152,7 +139,7 @@ translateSoup items =
 translateAnnotation :: Annotated DeclarationForm -> Maybe CoreExpr
 translateAnnotation Annotated {annotation = Just a} =
   flip evalState initTranslateState $
-  unTranslate $ Just . instantiateLet . processAnnotation <$> translate a
+  unTranslate $ Just . instantiateLet . normaliseMetadata <$> translate a
 translateAnnotation _ = Nothing
 
 
@@ -183,12 +170,16 @@ translateBlock blk = do
       let a = translateAnnotation d
       let k = extractKey d
       pushKey k
-      case a of
-        Just annot -> checkTarget annot >> checkImports annot
-        Nothing -> return ()
+      (declMeta, valMeta) <-
+        case a of
+          Just annot -> do
+            checkTarget annot
+            checkImports annot
+            return $ splitAnnotationMetadata annot
+          Nothing -> return (Nothing, Nothing)
       expr <- translateDeclarationForm a k (declaration d)
       popKey
-      return (a, k, expr)
+      return (declMeta, k, valMeta, expr)
   return $ letexp (bindings dforms) (body dforms)
   where
     extractKey Annotated {declaration = Located {locatee = decl}} =
@@ -198,8 +189,14 @@ translateBlock blk = do
               (FunctionDecl k _ _) -> k
               (OperatorDecl k _ _ _) -> k
        in atomicName name
-    bindings = map (\(_, n, b) -> (n, b))
-    body decls = Syn.block [ref annot name | (annot, name, _) <- decls]
+    bindings =
+      map
+        (\(_, n, vm, b) ->
+           ( n
+           , case vm of
+               Just m -> withMeta m b
+               Nothing -> b))
+    body decls = Syn.block [ref dm name | (dm, name, _, _) <- decls]
     ref annot name =
       case annot of
         Just a -> withMeta a $ element name (var name)

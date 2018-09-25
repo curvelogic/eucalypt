@@ -13,15 +13,15 @@ where
 import Control.Applicative ((<|>))
 import Control.Exception.Safe (try)
 import Control.Monad (forM_, unless, when)
--- import Control.Monad.Loops (iterateUntilM)
+import Control.Monad.Loops (iterateUntilM)
 import Data.Bifunctor
 import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_, toList)
 import Data.List (intercalate)
--- import qualified Data.Map as M
-import Data.Maybe (fromJust)
--- import qualified Data.Set as S
+import qualified Data.Map as M
+import Data.Maybe (fromJust, mapMaybe)
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
@@ -30,6 +30,7 @@ import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
 import Eucalypt.Core.Desugar (translateToCore, varify)
 import Eucalypt.Core.Eliminate (prune)
 import Eucalypt.Core.Error
+import Eucalypt.Core.Import
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Target
@@ -171,10 +172,10 @@ listTargets opts targets = do
 
 
 -- | Parse units, reporting and exiting on error
-parseUnits :: [Input] -> IO [TranslationUnit]
+parseUnits :: (Traversable t, Foldable t) => t Input -> IO [TranslationUnit]
 parseUnits inputs = do
   asts <- traverse parseInputToCore inputs
-  case partitionEithers asts of
+  case partitionEithers (toList asts) of
     (errs@(_:_), _) -> reportErrors errs >> exitFailure
     ([], []) -> reportErrors [NoSource] >> exitFailure
     ([], units) -> return units
@@ -183,19 +184,18 @@ parseUnits inputs = do
 
 -- | Parse all units in the graph of imports.
 --
--- parseAllUnits :: EucalyptOptions -> IO (M.Map Input TranslationUnit)
--- parseAllUnits opts = do
---   m <- step mempty $ optionInputs opts
---   iterateUntilM (null . pendingImports) step m
---   where
---     step m inputs = do
---       units <- parseUnits inputs
---       return $ foldl (\m (k, v) -> M.insert k v m) m $ zip inputs units
---     collectImports = foldMap truImports . M.elems
---     collectInputs = S.fromList M.keys
---     pendingImports m = S.difference (collectImports m) (collectInputs m)
-
-
+parseAllUnits :: [Input] -> IO (M.Map Input TranslationUnit)
+parseAllUnits inputs = do
+  unitMap <- readImportsToMap inputs mempty
+  iterateUntilM (null . pendingImports) step unitMap
+  where
+    readImportsToMap ins m = do
+      units <- parseUnits ins
+      return $ foldl (\m' (k, v) -> M.insert k v m') m $ zip ins units
+    step m = readImportsToMap (toList $ pendingImports m) m
+    collectImports = foldMap truImports . M.elems
+    collectInputs = M.keysSet
+    pendingImports m = S.difference (collectImports m) (collectInputs m)
 
 
 
@@ -253,9 +253,15 @@ evaluate opts = do
   when (cmd == Parse) (parseAndDumpASTs opts >> exitSuccess)
 
   -- Stage 1: parse all units specified on command line (or inferred)
-  -- to core syntax - cross unit references will be dangling at this
-  -- stage
-  units <- {-# SCC "ParseToCore" #-} parseUnits (optionInputs opts)
+  -- to core syntax, processing imports on the way to arrive at a map
+  -- of all units specified directly or indirectly, each with fully
+  -- realised core expression with values bound by imported lets.
+  let inputs = optionInputs opts
+  -- units <- {-# SCC "ParseToCore" #-} parseUnits inputs
+  units <- {-# SCC "ParseToCore" #-} do
+    unitMap <- parseAllUnits inputs
+    let processedUnitMap = applyAllImports unitMap
+    return $ mapMaybe (`M.lookup` processedUnitMap) inputs
 
   -- Stage 2: prepare an IO unit to contain launch environment data
   io <- prepareIOUnit
@@ -284,7 +290,7 @@ evaluate opts = do
 
   -- Stage 6: dead code elimination to reduce compile and make
   -- debugging STG impelmentation a bit easier
-  let finalEvaluand = {-# SCC "DeadCodeElimination" #-} prune cookedEvaluand
+  let finalEvaluand = {-# SCC "DeadCodeElimination" #-} prune $ prune cookedEvaluand
   when (cmd == DumpFinalCore)
     (putStrLn (pprint finalEvaluand) >> exitSuccess)
 

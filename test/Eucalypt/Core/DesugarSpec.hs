@@ -48,7 +48,7 @@ coreSpec =
   describe "Core" $ do
     it "represents literals" $ desugarLiteral (VInt 8) `shouldBe` Syn.int 8
     it "processes annotation shortcuts" $
-      processAnnotation (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
+      normaliseMetadata (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
       Syn.CoreBlock
         (Syn.CoreList
            [ Syn.CoreList

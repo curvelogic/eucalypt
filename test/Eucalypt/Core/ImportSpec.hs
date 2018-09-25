@@ -110,9 +110,9 @@ spec =
       it "processes a single import" $
         processImports (const unitACore) unitBCore `shouldBe` unitBCoreResult
       it "processes single import from unit map" $
-        truCore <$> M.lookup unitBInput (importAll unitsAB) `shouldBe` Just unitBCoreResult
+        truCore <$> M.lookup unitBInput (applyAllImports unitsAB) `shouldBe` Just unitBCoreResult
     context "transitive imports" $ do
       it "intermediates are correct" $
-        truCore <$> M.lookup unitBInput (importAll unitsABC) `shouldBe` Just unitBCoreResult
+        truCore <$> M.lookup unitBInput (applyAllImports unitsABC) `shouldBe` Just unitBCoreResult
       it "end result is correct" $
-        truCore <$> M.lookup unitCInput (importAll unitsABC) `shouldBe` Just unitCCoreResult
+        truCore <$> M.lookup unitCInput (applyAllImports unitsABC) `shouldBe` Just unitCCoreResult
