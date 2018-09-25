@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, GeneralizedNewtypeDeriving, TupleSections #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving  #-}
 {-|
 Module      : Eucalypt.Core.Syn
 Description : Desugar from surface syntax to core syntax
@@ -14,14 +14,16 @@ where
 import Control.Monad.State.Strict
 import Data.Char (isUpper)
 import Data.List (isPrefixOf)
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (mapMaybe)
+import qualified Data.Set as S
 import Eucalypt.Core.Anaphora ()
 import Eucalypt.Core.Syn as Syn
+import Eucalypt.Core.Metadata
 import Eucalypt.Core.Target
 import Eucalypt.Core.Unit
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast as Ast
-
+import Eucalypt.Syntax.Input
 
 -- | Transform a literal into its value
 desugarLiteral :: PrimitiveLiteral -> CoreExpr
@@ -63,66 +65,6 @@ name2Var n
   | "__" `isPrefixOf` n && isUpper (n !! 2) = CoreBuiltin (drop 2 n)
   | otherwise = CoreVar n
 
--- | Read from unevaluated metadata (expanding out only an outer let
--- to prepare a block for lookup).
-readUnevaluatedMetadata :: String -> CoreExpr -> (CoreExpr -> a) -> Maybe a
-readUnevaluatedMetadata key expr@(Syn.CoreLet _ _) readVal =
-  readUnevaluatedMetadata key (instantiateLet expr) readVal
-readUnevaluatedMetadata key (Syn.CoreBlock (Syn.CoreList items)) readVal =
-  readVal <$> lookup key buildSearchList
-  where
-    buildSearchList = mapMaybe kv items
-    kv (Syn.CoreList [Syn.CorePrim (Syn.CoreSymbol k), v]) = Just (k, v)
-    kv (Syn.CoreMeta _ i) = kv i
-    kv _ = Nothing
-readUnevaluatedMetadata _ _ _ = Nothing
-
--- | Precedence classes
-precedenceClasses :: [(String, Precedence)]
-precedenceClasses =
-  [ ("lookup", 100)
-  , ("call", 90)
-  , ("exp", 85)
-  , ("prod", 80)
-  , ("sum", 75)
-  , ("shift", 60)
-  , ("bitwise", 55)
-  , ("cmp", 50)
-  , ("append", 45)
-  , ("map", 42)
-  , ("eq", 40)
-  , ("bool-prod", 35)
-  , ("bool-sum", 30)
-  , ("cat", 20)
-  , ("meta", 5)
-  ]
-
--- | Use (unevaluated) metadata and default rules to infer fixity and
--- precedence for an operator
-determineFixity :: Maybe CoreExpr -> (Fixity, Precedence)
-determineFixity (Just meta) = (fixity, fromMaybe 50 prec)
-  where
-    fixity =
-      case readUnevaluatedMetadata "associates" meta symbolName of
-        (Just (Just "right")) -> InfixRight
-        _ -> InfixLeft
-    prec =
-      readUnevaluatedMetadata "precedence" meta $ \case
-        (CorePrim (CoreInt n)) -> fromInteger n
-        (CorePrim (CoreSymbol cls)) -> (fromMaybe 50 (lookup cls precedenceClasses))
-        _ -> 50
-determineFixity Nothing = (InfixLeft, 50)
-
-
--- | Check (unevaluated) metadata for target annotations and their
--- documentation
-determineTarget :: Maybe CoreExpr -> Maybe (String, String)
-determineTarget (Just meta) = (, doc) <$> target
-  where
-    target = join $ readUnevaluatedMetadata "target" meta symbolName
-    doc = fromMaybe "" $ join $ readUnevaluatedMetadata "doc" meta stringContent
-determineTarget _ = Nothing
-
 
 -- | Ignore splices for now TODO: splice expressions
 declarations :: Block -> [Annotated DeclarationForm]
@@ -146,6 +88,7 @@ varify e = e
 data TranslateState = TranslateState
   { trTargets :: [TargetSpec]
   , trStack :: [CoreBindingName]
+  , trImports :: [Input]
   }
 
 newtype Translate a = Translate { unTranslate :: State TranslateState a }
@@ -153,7 +96,7 @@ newtype Translate a = Translate { unTranslate :: State TranslateState a }
 
 -- | Initial state
 initTranslateState :: TranslateState
-initTranslateState = TranslateState [] []
+initTranslateState = TranslateState [] [] []
 
 -- | Push a key onto the stack to track where we are, considering
 -- statically declared blocks as namespaces
@@ -171,7 +114,12 @@ recordTarget targetName targetDoc = do
   stack <- gets trStack
   let target = TargetSpec targetName targetDoc (reverse stack)
   targets <- gets trTargets
-  put TranslateState {trTargets = target : targets, trStack = stack}
+  modify $ \s -> s {trTargets = target : targets, trStack = stack}
+
+-- | Record newly found imports in the unit
+recordImports :: [Input] -> Translate ()
+recordImports imports =
+  modify $ \s@TranslateState {trImports = old} -> s {trImports = old ++ imports}
 
 -- | Desugar Ast op soup into core op soup (to be cooked into better
 -- tree later, once fixity and precedence of all ops is resolved).
@@ -204,7 +152,7 @@ translateSoup items =
 translateAnnotation :: Annotated DeclarationForm -> Maybe CoreExpr
 translateAnnotation Annotated {annotation = Just a} =
   flip evalState initTranslateState $
-  unTranslate $ Just . processAnnotation <$> translate a
+  unTranslate $ Just . instantiateLet . processAnnotation <$> translate a
 translateAnnotation _ = Nothing
 
 
@@ -235,7 +183,9 @@ translateBlock blk = do
       let a = translateAnnotation d
       let k = extractKey d
       pushKey k
-      checkTarget a
+      case a of
+        Just annot -> checkTarget annot >> checkImports annot
+        Nothing -> return ()
       expr <- translateDeclarationForm a k (declaration d)
       popKey
       return (a, k, expr)
@@ -258,6 +208,7 @@ translateBlock blk = do
       case determineTarget annot of
         Just (tgt, doc) -> recordTarget tgt doc
         Nothing -> return ()
+    checkImports annot = forM_ (importsFromMetadata annot) recordImports
 
 -- | Translates a string literal pattern expression into core
 -- representation - currently a concatenation of vars and literals,
@@ -299,6 +250,10 @@ desugar = (`evalState` initTranslateState) . unTranslate . translate
 -- the way
 translateToCore :: Expression -> TranslationUnit
 translateToCore ast =
-  TranslationUnit {truCore = e, truTargets = (reverse . trTargets) s}
+  TranslationUnit
+    { truCore = e
+    , truTargets = (reverse . trTargets) s
+    , truImports = S.fromList $ trImports s
+    }
   where
     (e, s) = runState (unTranslate $ translate ast) initTranslateState

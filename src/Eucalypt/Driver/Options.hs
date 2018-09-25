@@ -5,7 +5,7 @@ import Control.Monad (filterM, (>=>))
 import Control.Monad.IO.Class
 import Data.Maybe (fromJust)
 import Data.Semigroup ((<>))
-import Eucalypt.Driver.Input (Input(..), Locator(..), parseInputFromString)
+import Eucalypt.Syntax.Input (Input(..), Locator(..), parseInputFromString)
 import Options.Applicative
 import Path
 import System.Directory (doesFileExist, getCurrentDirectory, getHomeDirectory)

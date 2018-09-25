@@ -1,3 +1,5 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 
 {-|
@@ -18,10 +20,19 @@ import Data.List (foldl')
 import Data.Monoid
 import Eucalypt.Core.Anaphora
 import Eucalypt.Core.Error
-import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
 import Safe (headMay)
 
+
+
+-- | The interpreter monad
+newtype Interpreter a = Interpreter { runInterpreter :: Either CoreError a }
+  deriving (Show, Functor, Applicative, Monad)
+
+
+-- | Abort interpreter with 'CoreError'
+throwEvalError :: CoreError -> Interpreter a
+throwEvalError = Interpreter . Left
 
 
 -- | Distribute fixities to call sites

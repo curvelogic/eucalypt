@@ -1,10 +1,10 @@
-module Eucalypt.Driver.InputSpec (spec, main)
+module Eucalypt.Syntax.InputSpec (spec, main)
   where
 
 import Network.URI
 import Test.Hspec
 import Data.Maybe ( fromJust, isNothing )
-import Eucalypt.Driver.Input
+import Eucalypt.Syntax.Input
 
 spec :: Spec
 spec = do
