@@ -1,4 +1,12 @@
-module Eucalypt.Driver.Input
+{-|
+Module      : Eucalypt.Syntax.Input
+Description : Syntax for specifying inputs, imports, inserts...
+Copyright   : (c) Greg Hawkins, 2018
+License     :
+Maintainer  : greg@curvelogic.co.uk
+Stability   : experimental
+-}
+module Eucalypt.Syntax.Input
   where
 
 import Control.Applicative ((<|>))
@@ -22,7 +30,7 @@ data Locator
   = URLInput URI
   | ResourceInput String
   | StdInput
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 
 
@@ -40,7 +48,7 @@ data Input = Input
   { inputLocator :: Locator -- ^ location (file or url)
   , inputName :: Maybe String -- ^ name (for a block to contain the data)
   , inputFormat :: Format -- ^ data format
-  } deriving (Eq)
+  } deriving (Eq, Ord)
 
 
 

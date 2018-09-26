@@ -1,25 +1,40 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Eucalypt.Driver.Evaluator
+Description : Main command for running eucalypt transformations
+Copyright   : (c) Greg Hawkins, 2018
+License     :
+Maintainer  : greg@curvelogic.co.uk
+Stability   : experimental
+-}
 module Eucalypt.Driver.Evaluator
 where
 
 import Control.Applicative ((<|>))
 import Control.Exception.Safe (try)
-import Control.Monad (forM_, when, unless)
+import Control.Monad (forM_, unless, when)
+import Control.Monad.Loops (iterateUntilM)
 import Data.Bifunctor
 import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_, toList)
 import Data.List (intercalate)
-import Data.Maybe (fromJust)
+import qualified Data.Map as M
+import Data.Maybe (fromJust, mapMaybe)
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
-import Eucalypt.Core.Cook (distributeFixities, cookAllSoup)
-import Eucalypt.Core.Desugar (varify, translateToCore)
+import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
+import Eucalypt.Core.Desugar
+  ( translateExpressionToCore
+  , translateToCore
+  , varify
+  )
 import Eucalypt.Core.Eliminate (prune)
 import Eucalypt.Core.Error
-import Eucalypt.Core.Interpreter
+import Eucalypt.Core.Import
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Target
@@ -27,7 +42,6 @@ import Eucalypt.Core.Unit
 import Eucalypt.Core.Verify
 import Eucalypt.Driver.Error (CommandError(..))
 import Eucalypt.Driver.IOSource (prepareIOUnit)
-import Eucalypt.Driver.Input (Input(..), Locator(..))
 import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
 import qualified Eucalypt.Driver.Stg as STG
@@ -35,8 +49,9 @@ import Eucalypt.Reporting.Error (EucalyptError(..))
 import Eucalypt.Reporting.Report (reportErrors)
 import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.YamlSource
-import Eucalypt.Syntax.Ast (Expression)
+import Eucalypt.Syntax.Ast (Unit, Expression)
 import Eucalypt.Syntax.Error (SyntaxError(..))
+import Eucalypt.Syntax.Input (Input(..), Locator(..))
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
 import Safe (headMay)
@@ -82,7 +97,7 @@ readInput StdInput = readStdInput
 
 
 -- | Parse a byteString as eucalypt
-parseEucalypt :: BS.ByteString -> String -> Either SyntaxError Expression
+parseEucalypt :: BS.ByteString -> String -> Either SyntaxError Unit
 parseEucalypt source = PE.parseUnit text
   where text = (T.unpack . T.decodeUtf8) source
 
@@ -120,7 +135,7 @@ parseInputToCore i@(Input locator name format) = do
 
 
 -- | Dump ASTs
-dumpASTs :: EucalyptOptions -> [Expression] -> IO ()
+dumpASTs :: EucalyptOptions -> [Unit] -> IO ()
 dumpASTs _ exprs = forM_ exprs $ \e ->
   putStrLn "---" >>  (T.putStrLn . T.decodeUtf8 . Y.encode) e
 
@@ -131,9 +146,9 @@ parseAndDumpASTs :: EucalyptOptions -> IO ExitCode
 parseAndDumpASTs opts = do
   texts <- traverse readInput euLocators
   let filenames = map show euLocators
-  let (errs, exprs) = partitionEithers (zipWith parseEucalypt texts filenames)
+  let (errs, units) = partitionEithers (zipWith parseEucalypt texts filenames)
   if null errs
-    then dumpASTs opts exprs >> return ExitSuccess
+    then dumpASTs opts units >> return ExitSuccess
     else reportErrors errs >> return (ExitFailure 1)
   where
     euLocators =
@@ -161,13 +176,30 @@ listTargets opts targets = do
 
 
 -- | Parse units, reporting and exiting on error
-parseUnits :: EucalyptOptions -> IO [TranslationUnit]
-parseUnits opts = do
-  asts <- traverse parseInputToCore (optionInputs opts)
-  case partitionEithers asts of
+parseUnits :: (Traversable t, Foldable t) => t Input -> IO [TranslationUnit]
+parseUnits inputs = do
+  asts <- traverse parseInputToCore inputs
+  case partitionEithers (toList asts) of
     (errs@(_:_), _) -> reportErrors errs >> exitFailure
     ([], []) -> reportErrors [NoSource] >> exitFailure
-    ([], units) -> return  units
+    ([], units) -> return units
+
+
+
+-- | Parse all units in the graph of imports.
+--
+parseAllUnits :: [Input] -> IO (M.Map Input TranslationUnit)
+parseAllUnits inputs = do
+  unitMap <- readImportsToMap inputs mempty
+  iterateUntilM (null . pendingImports) step unitMap
+  where
+    readImportsToMap ins m = do
+      units <- parseUnits ins
+      return $ foldl (\m' (k, v) -> M.insert k v m') m $ zip ins units
+    step m = readImportsToMap (toList $ pendingImports m) m
+    collectImports = foldMap truImports . M.elems
+    collectInputs = M.keysSet
+    pendingImports m = S.difference (collectImports m) (collectInputs m)
 
 
 
@@ -181,15 +213,18 @@ runFixityPass expr =
         Left err -> reportErrors [err] >> exitFailure
 
 
+
 -- | Parse text from -e option as expression
 parseEvaluand :: String -> Either SyntaxError Expression
 parseEvaluand = flip PE.parseExpression "[cli evaluand]"
 
 
+
 -- | Parse, desugar, and create unit for evaluand
 readEvaluand :: String -> Either EucalyptError CoreExpr
 readEvaluand src =
-  first Syntax $ varify . truCore . translateToCore <$> parseEvaluand src
+  first Syntax $
+  varify . truCore . translateExpressionToCore <$> parseEvaluand src
 
 
 
@@ -219,15 +254,26 @@ formEvaluand opts targets source =
     fmtPath = intercalate "."
 
 
+
+-- | Parse all units specified on command line (or inferred) to core
+-- syntax, processing imports on the way to arrive at a map of all
+-- units specified directly or indirectly, each with fully realised
+-- core expression with values bound by imported lets.
+parseInputsAndImports :: [Input] -> IO [TranslationUnit]
+parseInputsAndImports inputs = do
+  unitMap <- parseAllUnits inputs
+  let processedUnitMap = applyAllImports unitMap
+  return $ mapMaybe (`M.lookup` processedUnitMap) inputs
+
+
+
 -- | Implement the Evaluate command, read files and render
 evaluate :: EucalyptOptions -> IO ExitCode
 evaluate opts = do
   when (cmd == Parse) (parseAndDumpASTs opts >> exitSuccess)
 
-  -- Stage 1: parse all units specified on command line (or inferred)
-  -- to core syntax - cross unit references will be dangling at this
-  -- stage
-  units <- {-# SCC "ParseToCore" #-} parseUnits opts
+  -- Stage 1: parse inputs and translate to core units
+  units <- {-# SCC "ParseToCore" #-} parseInputsAndImports $ optionInputs opts
 
   -- Stage 2: prepare an IO unit to contain launch environment data
   io <- prepareIOUnit
@@ -256,7 +302,7 @@ evaluate opts = do
 
   -- Stage 6: dead code elimination to reduce compile and make
   -- debugging STG impelmentation a bit easier
-  let finalEvaluand = {-# SCC "DeadCodeElimination" #-} prune cookedEvaluand
+  let finalEvaluand = {-# SCC "DeadCodeElimination" #-} prune $ prune cookedEvaluand
   when (cmd == DumpFinalCore)
     (putStrLn (pprint finalEvaluand) >> exitSuccess)
 

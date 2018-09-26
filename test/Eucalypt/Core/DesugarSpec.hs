@@ -6,13 +6,17 @@ module Eucalypt.Core.DesugarSpec
   ) where
 
 import Control.Monad.State.Strict
+import Data.Foldable (toList)
+import Data.Maybe (fromJust)
 import Eucalypt.Core.Desugar
+import Eucalypt.Core.Metadata
 import Eucalypt.Core.Target
 import qualified Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.Unit
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.ParseExpr
+import Eucalypt.Syntax.Input
 import Test.Hspec
 
 main :: IO ()
@@ -25,6 +29,7 @@ spec = do
   blockSpec
   sampleSpec
   targetsSpec
+  importsSpec
   interpolationSpec
 
 -- ? shims
@@ -43,7 +48,7 @@ coreSpec =
   describe "Core" $ do
     it "represents literals" $ desugarLiteral (VInt 8) `shouldBe` Syn.int 8
     it "processes annotation shortcuts" $
-      processAnnotation (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
+      normaliseMetadata (Syn.CorePrim (Syn.CoreString "blah")) `shouldBe`
       Syn.CoreBlock
         (Syn.CoreList
            [ Syn.CoreList
@@ -181,16 +186,16 @@ sampleSpec =
 targetAnnotation :: String -> String -> Expression
 targetAnnotation n d = block [bare $ prop "target" $ sym n , bare $ prop "doc" $ str d]
 
-targetSampleA :: Expression
+targetSampleA :: Unit
 targetSampleA =
-  block
+  bareUnit
     [ bare $
       prop "a" $ block [ann (targetAnnotation "T" "x") (prop "b" $ int 1)]
     ]
 
-targetSampleB :: Expression
+targetSampleB :: Unit
 targetSampleB =
-  block
+  bareUnit
     [ bare $
       prop "a" $
       block
@@ -203,7 +208,7 @@ targetsSpec :: Spec
 targetsSpec =
   describe "target detection" $ do
     it "reads annotation ` {target: :T doc: \"x\"}" $
-      (determineTarget . Just . testDesugar) (targetAnnotation "T" "x") `shouldBe`
+      (determineTarget . testDesugar) (targetAnnotation "T" "x") `shouldBe`
       Just ("T", "x")
     it "finds T in { a: { ` {target: :T doc: \"x\"} b: _ } }" $
       (truTargets . translateToCore) targetSampleA `shouldBe`
@@ -212,6 +217,26 @@ targetsSpec =
       (truTargets . translateToCore) targetSampleB `shouldBe`
       [TargetSpec "T" "x" ["a", "b"], TargetSpec "U" "y" ["a", "c"]]
 
+importAnnotation :: [String] -> Expression
+importAnnotation inputs = block [bare $ prop "import" $ list (map str inputs)]
+
+importSampleA :: Unit
+importSampleA =
+  bareUnit
+    [ bare $
+      prop "a" $
+      block [ann (importAnnotation ["a.yaml", "b.yaml"]) (prop "b" $ int 1)]
+    ]
+
+importsSpec :: Spec
+importsSpec =
+  describe "import detection" $ do
+  it "reads annotation `{import: [\"x.eu\", \"y.eu\"]}`" $
+    (importsFromMetadata . testDesugar) (importAnnotation ["x.eu", "y.eu"]) `shouldBe`
+    traverse parseInputFromString ["x.eu", "y.eu"]
+  it "finds imports for nested block" $
+    (toList . truImports . translateToCore) importSampleA `shouldBe`
+    fromJust (traverse parseInputFromString ["a.yaml", "b.yaml"])
 
 interpolationSpec:: Spec
 interpolationSpec =

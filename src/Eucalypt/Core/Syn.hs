@@ -417,13 +417,14 @@ instantiateBody :: [CoreExpr] -> Scope Int CoreExp CoreBindingName -> CoreExpr
 instantiateBody vals = instantiate (vals !!)
 
 -- | Use Bound to wire the bindings into the appropriate places in the
--- expressions (lazily...)
-instantiateLet :: CoreExpr -> CoreExpr
+-- expressions (lazily...). This expands using bindings in top-level
+-- lets
+instantiateLet :: CoreExp a -> CoreExp a
 instantiateLet (CoreLet bs b) = inst b
   where
     es = map (inst . snd) bs
     inst = instantiate (es !!)
-instantiateLet _ = error "instantiateLet called on non-let"
+instantiateLet expr = expr
 
 
 -- ? rebodying
@@ -534,6 +535,7 @@ unitBindingsAndBody ::
   CoreExpr
   -> ([(CoreBindingName, Scope Int CoreExp CoreBindingName)],
       Scope Int CoreExp CoreBindingName)
+unitBindingsAndBody (CoreMeta _ b) = unitBindingsAndBody b
 unitBindingsAndBody (CoreLet bs b) = (bs, b)
 unitBindingsAndBody e@CoreBlock{} = ([], abstract (const Nothing) e)
 unitBindingsAndBody CoreList{} = error "Input is a sequence and must be named."

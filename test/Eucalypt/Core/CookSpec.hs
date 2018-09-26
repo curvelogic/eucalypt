@@ -5,7 +5,6 @@ module Eucalypt.Core.CookSpec
 
 import Data.Either (fromRight)
 import Eucalypt.Core.Cook
-import Eucalypt.Core.Interpreter
 import Eucalypt.Core.Syn
 import Test.Hspec
 

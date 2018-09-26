@@ -19,7 +19,6 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
-
 -- $locations
 --
 -- Most elements of the expression tree are annotated with source
@@ -265,21 +264,29 @@ anyDeclaration :: Parser BlockElement
 anyDeclaration = label "declaration" $ lexeme $ located $ do
   a <- optional declarationAnnotation
   d <- declarationForm
-  return $ Declaration Annotated { annotation = a, declaration = d }
+  return $ Declaration Annotated { annotation = a, content = d }
 
 blockContent :: Parser Block
-blockContent = sc >> located (Block <$> many anyDeclaration)
+blockContent = sc >> located (Block <$> many anyDeclaration) <?> "block content"
 
 blockLiteral :: Parser Expression
 blockLiteral = located $ EBlock <$> braces blockContent
 
-unit :: Parser Expression
-unit = located $ EBlock <$> blockContent
+unannotatedBlock :: Parser (Annotated Block)
+unannotatedBlock = (Annotated Nothing <$> blockContent) <?> "unannotated block"
+
+annotatedBlock :: Parser (Annotated Block)
+annotatedBlock =
+  (Annotated <$> (Just <$> lexeme expression) <*> blockContent) <?>
+  "annotated block"
+
+unit :: Parser (Located (Annotated Block))
+unit = sc >> located (try $ unannotatedBlock <* eof <|> annotatedBlock <* eof)
 
 -- ? driver functions
 --
 
-parseUnit :: String -> String -> Either SyntaxError Expression
+parseUnit :: String -> String -> Either SyntaxError (Located (Annotated Block))
 parseUnit text n  = first MegaparsecError $ parse unit n text
 
 parseExpression :: String -> String -> Either SyntaxError Expression
