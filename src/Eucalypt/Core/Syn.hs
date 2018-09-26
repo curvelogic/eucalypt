@@ -535,6 +535,7 @@ unitBindingsAndBody ::
   CoreExpr
   -> ([(CoreBindingName, Scope Int CoreExp CoreBindingName)],
       Scope Int CoreExp CoreBindingName)
+unitBindingsAndBody (CoreMeta _ b) = unitBindingsAndBody b
 unitBindingsAndBody (CoreLet bs b) = (bs, b)
 unitBindingsAndBody e@CoreBlock{} = ([], abstract (const Nothing) e)
 unitBindingsAndBody CoreList{} = error "Input is a sequence and must be named."

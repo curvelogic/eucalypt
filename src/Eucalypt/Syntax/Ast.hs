@@ -123,7 +123,6 @@ data Expression_
 
   deriving (Eq, Show, Generic, ToJSON)
 
-
 -- | Strip location from a located expression; useful for testing.
 -- TODO: generalise
 instance HasLocation Expression_ where
@@ -138,10 +137,17 @@ instance HasLocation Expression_ where
 data Annotated a
   = Annotated { annotation :: Maybe Expression,
                 -- ^ arbitrary expression used to annotated the declaration
-                declaration :: a
-                -- ^ the declaration itself
+                content :: a
+                -- ^ the declaration / syntax element itself
               }
   deriving (Eq, Show, Generic, ToJSON)
+
+instance HasLocation a => HasLocation (Annotated a) where
+  stripLocation Annotated {annotation = a, content = c} =
+    Annotated {annotation = stripLocation <$> a, content = stripLocation c}
+
+-- | Units are block but have optional top-level metadata annotations
+type Unit = Located (Annotated Block)
 
 -- | A declaration form has source location metadata
 type DeclarationForm = Located DeclarationForm_
@@ -181,8 +187,8 @@ data BlockElement_ = Declaration (Annotated DeclarationForm)
   deriving (Eq, Show, Generic, ToJSON)
 
 instance HasLocation BlockElement_ where
-  stripLocation (Declaration Annotated {annotation = a, declaration = d}) =
-    Declaration Annotated{annotation = stripLocation <$> a, declaration = stripLocation d}
+  stripLocation (Declaration Annotated {annotation = a, content = d}) =
+    Declaration Annotated{annotation = stripLocation <$> a, content = stripLocation d}
   stripLocation (Splice e) = Splice $ stripLocation e
 
 -- | A Block is a block with location metadata
@@ -232,15 +238,27 @@ oper o l r e = at nowhere $ OperatorDecl (OperatorName o) l r e
 
 -- | Create an annotated block element
 ann :: Expression -> DeclarationForm -> BlockElement
-ann a decl = at nowhere $ Declaration Annotated { annotation = Just a, declaration = decl }
+ann a decl = at nowhere $ Declaration Annotated { annotation = Just a, content = decl }
 
 -- | Create an unannotated block element
 bare :: DeclarationForm -> BlockElement
-bare decl = at nowhere $ Declaration Annotated { annotation = Nothing, declaration = decl }
+bare decl = at nowhere $ Declaration Annotated { annotation = Nothing, content = decl }
 
 -- | Create a block expression
 block :: [BlockElement] -> Expression
 block = at nowhere . EBlock . at nowhere . Block
+
+-- | Create an annotated unit
+bareUnit :: [BlockElement] -> Unit
+bareUnit els =
+  at nowhere $
+  Annotated {annotation = Nothing, content = at nowhere $ Block els}
+
+-- | Create an annotated unit
+annUnit :: Expression -> [BlockElement] -> Unit
+annUnit a els =
+  at nowhere $
+  Annotated {annotation = Just a, content = at nowhere $ Block els}
 
 -- | Create an op soup expression with implicit bracketset
 opsoup :: [Expression] -> Expression

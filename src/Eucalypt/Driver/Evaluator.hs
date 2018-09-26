@@ -27,7 +27,11 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
 import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
-import Eucalypt.Core.Desugar (translateToCore, varify)
+import Eucalypt.Core.Desugar
+  ( translateExpressionToCore
+  , translateToCore
+  , varify
+  )
 import Eucalypt.Core.Eliminate (prune)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Import
@@ -45,7 +49,7 @@ import Eucalypt.Reporting.Error (EucalyptError(..))
 import Eucalypt.Reporting.Report (reportErrors)
 import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.YamlSource
-import Eucalypt.Syntax.Ast (Expression)
+import Eucalypt.Syntax.Ast (Unit, Expression)
 import Eucalypt.Syntax.Error (SyntaxError(..))
 import Eucalypt.Syntax.Input (Input(..), Locator(..))
 import qualified Eucalypt.Syntax.ParseExpr as PE
@@ -93,7 +97,7 @@ readInput StdInput = readStdInput
 
 
 -- | Parse a byteString as eucalypt
-parseEucalypt :: BS.ByteString -> String -> Either SyntaxError Expression
+parseEucalypt :: BS.ByteString -> String -> Either SyntaxError Unit
 parseEucalypt source = PE.parseUnit text
   where text = (T.unpack . T.decodeUtf8) source
 
@@ -131,7 +135,7 @@ parseInputToCore i@(Input locator name format) = do
 
 
 -- | Dump ASTs
-dumpASTs :: EucalyptOptions -> [Expression] -> IO ()
+dumpASTs :: EucalyptOptions -> [Unit] -> IO ()
 dumpASTs _ exprs = forM_ exprs $ \e ->
   putStrLn "---" >>  (T.putStrLn . T.decodeUtf8 . Y.encode) e
 
@@ -142,9 +146,9 @@ parseAndDumpASTs :: EucalyptOptions -> IO ExitCode
 parseAndDumpASTs opts = do
   texts <- traverse readInput euLocators
   let filenames = map show euLocators
-  let (errs, exprs) = partitionEithers (zipWith parseEucalypt texts filenames)
+  let (errs, units) = partitionEithers (zipWith parseEucalypt texts filenames)
   if null errs
-    then dumpASTs opts exprs >> return ExitSuccess
+    then dumpASTs opts units >> return ExitSuccess
     else reportErrors errs >> return (ExitFailure 1)
   where
     euLocators =
@@ -209,15 +213,18 @@ runFixityPass expr =
         Left err -> reportErrors [err] >> exitFailure
 
 
+
 -- | Parse text from -e option as expression
 parseEvaluand :: String -> Either SyntaxError Expression
 parseEvaluand = flip PE.parseExpression "[cli evaluand]"
 
 
+
 -- | Parse, desugar, and create unit for evaluand
 readEvaluand :: String -> Either EucalyptError CoreExpr
 readEvaluand src =
-  first Syntax $ varify . truCore . translateToCore <$> parseEvaluand src
+  first Syntax $
+  varify . truCore . translateExpressionToCore <$> parseEvaluand src
 
 
 
@@ -247,21 +254,26 @@ formEvaluand opts targets source =
     fmtPath = intercalate "."
 
 
+
+-- | Parse all units specified on command line (or inferred) to core
+-- syntax, processing imports on the way to arrive at a map of all
+-- units specified directly or indirectly, each with fully realised
+-- core expression with values bound by imported lets.
+parseInputsAndImports :: [Input] -> IO [TranslationUnit]
+parseInputsAndImports inputs = do
+  unitMap <- parseAllUnits inputs
+  let processedUnitMap = applyAllImports unitMap
+  return $ mapMaybe (`M.lookup` processedUnitMap) inputs
+
+
+
 -- | Implement the Evaluate command, read files and render
 evaluate :: EucalyptOptions -> IO ExitCode
 evaluate opts = do
   when (cmd == Parse) (parseAndDumpASTs opts >> exitSuccess)
 
-  -- Stage 1: parse all units specified on command line (or inferred)
-  -- to core syntax, processing imports on the way to arrive at a map
-  -- of all units specified directly or indirectly, each with fully
-  -- realised core expression with values bound by imported lets.
-  let inputs = optionInputs opts
-  -- units <- {-# SCC "ParseToCore" #-} parseUnits inputs
-  units <- {-# SCC "ParseToCore" #-} do
-    unitMap <- parseAllUnits inputs
-    let processedUnitMap = applyAllImports unitMap
-    return $ mapMaybe (`M.lookup` processedUnitMap) inputs
+  -- Stage 1: parse inputs and translate to core units
+  units <- {-# SCC "ParseToCore" #-} parseInputsAndImports $ optionInputs opts
 
   -- Stage 2: prepare an IO unit to contain launch environment data
   io <- prepareIOUnit

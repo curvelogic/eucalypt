@@ -135,12 +135,14 @@ translateSoup items =
     toVar e _ = e
 
 
+
 -- | Extract and translate the metadata annotation from the declaration
 translateAnnotation :: Annotated DeclarationForm -> Maybe CoreExpr
 translateAnnotation Annotated {annotation = Just a} =
   flip evalState initTranslateState $
   unTranslate $ Just . instantiateLet . normaliseMetadata <$> translate a
 translateAnnotation _ = Nothing
+
 
 
 -- | Translate a declaration form into the expression that will be
@@ -162,6 +164,22 @@ translateDeclarationForm a _k Located {locatee = form} =
     varifyTranslate = translate >=> return . varify
 
 
+
+-- | Check translated metadata expression for targets
+checkTarget :: CoreExpr -> Translate ()
+checkTarget annot =
+  case determineTarget annot of
+    Just (tgt, doc) -> recordTarget tgt doc
+    Nothing -> return ()
+
+
+
+-- | Check translated metadata expression for imports
+checkImports :: CoreExpr -> Translate ()
+checkImports annot = forM_ (importsFromMetadata annot) recordImports
+
+
+
 -- | Translate an AST block to CoreExpr
 translateBlock :: Block -> Translate CoreExpr
 translateBlock blk = do
@@ -177,12 +195,12 @@ translateBlock blk = do
             checkImports annot
             return $ splitAnnotationMetadata annot
           Nothing -> return (Nothing, Nothing)
-      expr <- translateDeclarationForm a k (declaration d)
+      expr <- translateDeclarationForm a k (content d)
       popKey
       return (declMeta, k, valMeta, expr)
   return $ letexp (bindings dforms) (body dforms)
   where
-    extractKey Annotated {declaration = Located {locatee = decl}} =
+    extractKey Annotated {content = Located {locatee = decl}} =
       let name =
             case decl of
               (PropertyDecl k _) -> k
@@ -201,11 +219,6 @@ translateBlock blk = do
       case annot of
         Just a -> withMeta a $ element name (var name)
         Nothing -> element name (var name)
-    checkTarget annot =
-      case determineTarget annot of
-        Just (tgt, doc) -> recordTarget tgt doc
-        Nothing -> return ()
-    checkImports annot = forM_ (importsFromMetadata annot) recordImports
 
 -- | Translates a string literal pattern expression into core
 -- representation - currently a concatenation of vars and literals,
@@ -238,15 +251,29 @@ translate Located {locatee = expr} =
     varifyTranslate = translate >=> return . varify
 
 
+-- | Handle unit-level metadata and then begin recursing down
+translateUnit :: Unit -> Translate CoreExpr
+translateUnit Located { location = l
+                      , locatee = Annotated {annotation = a, content = b}
+                      } =
+  case a of
+    Just annot -> do
+      m <- translate annot
+      checkImports m
+      checkTarget m
+      CoreMeta m <$> e
+    Nothing -> e
+  where
+    e = translate (Located {location = l, locatee = EBlock b})
+
 -- | Shim for old API
 desugar :: Expression -> Syn.CoreExpr
 desugar = (`evalState` initTranslateState) . unTranslate . translate
 
-
 -- | Translate AST into core syntax and generate target metadata on
 -- the way
-translateToCore :: Expression -> TranslationUnit
-translateToCore ast =
+translateExpressionToCore :: Expression -> TranslationUnit
+translateExpressionToCore ast =
   TranslationUnit
     { truCore = e
     , truTargets = (reverse . trTargets) s
@@ -254,3 +281,15 @@ translateToCore ast =
     }
   where
     (e, s) = runState (unTranslate $ translate ast) initTranslateState
+
+-- | Translate AST into core syntax and generate target metadata on
+-- the way
+translateToCore :: Unit -> TranslationUnit
+translateToCore ast =
+  TranslationUnit
+    { truCore = e
+    , truTargets = (reverse . trTargets) s
+    , truImports = S.fromList $ trImports s
+    }
+  where
+    (e, s) = runState (unTranslate $ translateUnit ast) initTranslateState

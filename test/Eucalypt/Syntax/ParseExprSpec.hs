@@ -486,15 +486,15 @@ blockSpec = do
         ]
   describe "unit parsing" $
     it "parses foo : bar baz : quux " $
-      testParse unit "foo : bar baz : quux" `shouldParse`
-      block
-        [ bare $ prop "foo" $ normalName "bar"
-        , bare $ prop "baz" $ normalName "quux"
-        ]
+    testParse unit "foo : bar baz : quux" `shouldParse`
+    bareUnit
+      [ bare $ prop "foo" $ normalName "bar"
+      , bare $ prop "baz" $ normalName "quux"
+      ]
   describe "unicode support" $ do
     it "parses unicode operators" $
       testParse unit " (f ∘ g): compose(f, g) " `shouldParse`
-      block
+      bareUnit
         [ bare
             (oper
                "∘"
@@ -507,10 +507,20 @@ blockSpec = do
         ]
     it "accepts unicode names" $
       testParse unit " β(ॵ): כֿ(ॵ) " `shouldParse`
-      block
+      bareUnit
         [ bare
             (func
                "β"
                ["ॵ"]
                (opsoup [normalName "כֿ", applyTuple [normalName "ॵ"]]))
         ]
+    it "accepts annotated units" $
+      testParse unit "{ import: \"import.eu\" } result: foo" `shouldParse`
+      annUnit
+        (block [bare $ prop "import" $ str "import.eu"])
+        [bare $ prop "result" $ normalName "foo"]
+    it "accepts annotated units after comments / ws" $
+      testParse unit " { import: \"import.eu\" } result: foo " `shouldParse`
+      annUnit
+        (block [bare $ prop "import" $ str "import.eu"])
+        [bare $ prop "result" $ normalName "foo"]

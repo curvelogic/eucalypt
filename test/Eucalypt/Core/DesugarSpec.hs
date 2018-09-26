@@ -186,16 +186,16 @@ sampleSpec =
 targetAnnotation :: String -> String -> Expression
 targetAnnotation n d = block [bare $ prop "target" $ sym n , bare $ prop "doc" $ str d]
 
-targetSampleA :: Expression
+targetSampleA :: Unit
 targetSampleA =
-  block
+  bareUnit
     [ bare $
       prop "a" $ block [ann (targetAnnotation "T" "x") (prop "b" $ int 1)]
     ]
 
-targetSampleB :: Expression
+targetSampleB :: Unit
 targetSampleB =
-  block
+  bareUnit
     [ bare $
       prop "a" $
       block
@@ -220,9 +220,9 @@ targetsSpec =
 importAnnotation :: [String] -> Expression
 importAnnotation inputs = block [bare $ prop "import" $ list (map str inputs)]
 
-importSampleA :: Expression
+importSampleA :: Unit
 importSampleA =
-  block
+  bareUnit
     [ bare $
       prop "a" $
       block [ann (importAnnotation ["a.yaml", "b.yaml"]) (prop "b" $ int 1)]
