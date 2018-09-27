@@ -44,7 +44,8 @@ processImports ::
 processImports load expr@(CoreMeta m body) =
   case importsFromMetadata m of
     Just imports ->
-      CoreMeta (pruneImports m) $ foldr (\i e -> rebody (load i) e) body imports
+      CoreMeta (pruneImports m) $
+      foldr (\i e -> rebody (load i) e) (processImports load body) imports
     Nothing -> expr
 processImports load (CoreLet bs b) = CoreLet bs' b'
   where
