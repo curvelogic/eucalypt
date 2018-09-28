@@ -3,6 +3,7 @@ module Eucalypt.Core.ImportSpec
   , spec
   ) where
 
+import Data.Either (fromLeft, fromRight)
 import qualified Data.Map as M
 import Data.Maybe (fromJust)
 import qualified Data.Set as S
@@ -153,6 +154,71 @@ unitsNamedAndD =
   M.fromList [(namedInput, namedUnit), (unitDInput, unitD)]
 
 
+importUnderImportInput :: Input
+importUnderImportInput = fromJust $ parseInputFromString "importUnderImport"
+
+importUnderImportCore :: CoreExpr
+importUnderImportCore =
+  withMeta (block [element "import" $ str "unitA"]) $
+  letexp
+    [ ( "nest"
+      , withMeta (block [element "import" $ str "unitA"]) $
+        block [element "foo" $ var "foo"])
+    ] $
+  block [element "foo" $ var "foo"]
+
+importUnderImportCoreResult :: CoreExpr
+importUnderImportCoreResult =
+  withMeta (block []) $
+  letexp [("foo", sym "foo"), ("bar", sym "bar")] $
+  letexp
+    [ ( "nest"
+      , withMeta (block []) $
+        letexp [("foo", sym "foo"), ("bar", sym "bar")] $
+        block [element "foo" $ var "foo"])
+    ] $
+  block [element "foo" $ var "foo"]
+
+
+importUnderImport :: TranslationUnit
+importUnderImport =
+  TranslationUnit
+    { truCore = importUnderImportCore
+    , truImports = S.fromList [unitAInput]
+    , truTargets = mempty
+    }
+
+unitsImportUnderImportAndA :: M.Map Input TranslationUnit
+unitsImportUnderImportAndA =
+  M.fromList [(unitAInput, unitA), (importUnderImportInput, importUnderImport)]
+
+circularImportInput :: Input
+circularImportInput = fromJust $ parseInputFromString "circularImport"
+
+circularImportCore :: CoreExpr
+circularImportCore =
+  letexp
+    [ ( "z"
+      , withMeta (block [element "import" $ str "circularImport"]) $
+        block [element "foo" $ var "foo"])
+    ] $
+  block [element "z" $ var "z"]
+
+circularImport :: TranslationUnit
+circularImport =
+  TranslationUnit
+    { truCore = circularImportCore
+    , truImports = S.fromList [circularImportInput]
+    , truTargets = mempty
+    }
+
+unitsCircularImport :: M.Map Input TranslationUnit
+unitsCircularImport =
+  M.fromList [(circularImportInput, circularImport)]
+
+importAll :: M.Map Input TranslationUnit -> M.Map Input TranslationUnit
+importAll = fromRight mempty . applyAllImports
+
 spec :: Spec
 spec =
   describe "Import processing" $ do
@@ -160,11 +226,23 @@ spec =
       it "processes a single import" $
         processImports (const unitACore) unitBCore `shouldBe` unitBCoreResult
       it "processes single import from unit map" $
-        truCore <$> M.lookup unitBInput (applyAllImports unitsAB) `shouldBe` Just unitBCoreResult
+        truCore <$>
+        M.lookup unitBInput (importAll unitsAB) `shouldBe` Just unitBCoreResult
       it "processes single named import from unit map" $
-        truCore <$> M.lookup unitDInput (applyAllImports unitsNamedAndD) `shouldBe` Just unitDCoreResult
+        truCore <$>
+        M.lookup unitDInput (importAll unitsNamedAndD) `shouldBe`
+        Just unitDCoreResult
+      it "processes imports under imports" $
+        truCore <$>
+        M.lookup importUnderImportInput (importAll unitsImportUnderImportAndA) `shouldBe`
+        Just importUnderImportCoreResult
+      it "handles circular imports gracefully" $
+        fromLeft [] (applyAllImports unitsCircularImport) `shouldBe`
+        [circularImportInput]
     context "transitive imports" $ do
       it "intermediates are correct" $
-        truCore <$> M.lookup unitBInput (applyAllImports unitsABC) `shouldBe` Just unitBCoreResult
+        truCore <$>
+        M.lookup unitBInput (importAll unitsABC) `shouldBe` Just unitBCoreResult
       it "end result is correct" $
-        truCore <$> M.lookup unitCInput (applyAllImports unitsABC) `shouldBe` Just unitCCoreResult
+        truCore <$>
+        M.lookup unitCInput (importAll unitsABC) `shouldBe` Just unitCCoreResult

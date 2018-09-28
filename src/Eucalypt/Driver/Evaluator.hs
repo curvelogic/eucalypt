@@ -11,7 +11,7 @@ module Eucalypt.Driver.Evaluator
 where
 
 import Control.Applicative ((<|>))
-import Control.Exception.Safe (try)
+import Control.Exception.Safe (throwM, try)
 import Control.Monad (forM_, unless, when)
 import Control.Monad.Loops (iterateUntilM)
 import Data.Bifunctor
@@ -262,8 +262,10 @@ formEvaluand opts targets source =
 parseInputsAndImports :: [Input] -> IO [TranslationUnit]
 parseInputsAndImports inputs = do
   unitMap <- parseAllUnits inputs
-  let processedUnitMap = applyAllImports unitMap
-  return $ mapMaybe (`M.lookup` processedUnitMap) inputs
+  case applyAllImports unitMap of
+    Right processedUnitMap ->
+      return $ mapMaybe (`M.lookup` processedUnitMap) inputs
+    Left cyclicInputs -> throwM $ CyclicInputs cyclicInputs
 
 
 
