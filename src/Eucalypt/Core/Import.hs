@@ -13,7 +13,7 @@ import Control.Monad.Trans
 import Data.Foldable (toList)
 import qualified Data.Graph as G
 import qualified Data.Map as M
-import Data.Maybe (fromJust)
+import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Metadata
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Unit
@@ -44,7 +44,8 @@ processImports ::
 processImports load expr@(CoreMeta m body) =
   case importsFromMetadata m of
     Just imports ->
-      CoreMeta (pruneImports m) $ foldr (\i e -> rebody (load i) e) body imports
+      CoreMeta (pruneImports m) $
+      foldr (\i e -> rebody (load i) e) (processImports load body) imports
     Nothing -> expr
 processImports load (CoreLet bs b) = CoreLet bs' b'
   where
@@ -80,15 +81,25 @@ processUnit load u@TranslationUnit {truCore = body} =
 
 
 
--- | Process all imports in topologically sorted order
-applyAllImports :: M.Map Input TranslationUnit -> M.Map Input TranslationUnit
-applyAllImports unitMap = foldl processInput unitMap sortedInputs
+-- | Process all imports in topologically sorted order unless there
+-- are cycles, in which case return the inputs involved in the cycles
+-- (in Left)
+applyAllImports ::
+     M.Map Input TranslationUnit -> Either [Input] (M.Map Input TranslationUnit)
+applyAllImports unitMap =
+  if (not . null) cyclicInputs
+    then Left cyclicInputs
+    else Right $ foldl processInput unitMap sortedInputs
   where
     (graph, getVertex) = G.graphFromEdges' $ map edgeSpec $ M.assocs unitMap
     edgeSpec (k, v) = (k, k, toList $ truImports v)
-    sortedInputs = map (toInput . getVertex) $ (reverse . G.topSort) graph
-    toInput (i, _, _) = i
-    toLoadFn m k = truCore $ fromJust (M.lookup k m)
-    processInput ::
-         M.Map Input TranslationUnit -> Input -> M.Map Input TranslationUnit
+    sortedInputs = map toInput $ (reverse . G.topSort) graph
+    toInput v =
+      case getVertex v of
+        (i, _, _) -> i
+    toLoadFn m k =
+      truCore $ fromMaybe (error $ "no such key: " ++ show k) (M.lookup k m)
     processInput m input = M.update (return . processUnit (toLoadFn m)) input m
+    cyclicInputs =
+      (map toInput . mconcat . filter isCycle . map toList . G.scc) graph
+    isCycle cc = length cc > 1 || (minimum cc, minimum cc) `elem` G.edges graph
