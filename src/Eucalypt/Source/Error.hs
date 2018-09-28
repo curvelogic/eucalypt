@@ -10,6 +10,7 @@ data DataParseException
   = UnexpectedEndOfEvents
   | UnexpectedEvent Event
   | FromYamlException Text
+  | FromTomlException Text
   deriving (Show, Typeable)
 
 instance Exception DataParseException

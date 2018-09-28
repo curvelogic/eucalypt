@@ -52,6 +52,7 @@ library:
     - split
     - strict
     - text
+    - tomland
     - transformers
     - unix
     - unordered-containers
@@ -100,6 +101,7 @@ tests:
       - pretty
       - scientific
       - text
+      - tomland
       - unordered-containers
       - vector
       - yaml
