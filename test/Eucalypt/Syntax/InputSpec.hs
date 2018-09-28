@@ -8,10 +8,13 @@ import Eucalypt.Syntax.Input
 
 spec :: Spec
 spec = do
-  describe "inferFormat" $
-    it "respects extension" $
-    (inferFormat . URLInput . fromJust . parseRelativeReference) "data.json" `shouldBe`
-    Just "json"
+  describe "infer format" $ do
+    it "recognises json" $
+      (inferFormat . URLInput . fromJust . parseRelativeReference) "data.json" `shouldBe`
+      Just "json"
+    it "recognises toml" $
+      (inferFormat . URLInput . fromJust . parseRelativeReference) "data.toml" `shouldBe`
+      Just "toml"
   describe "parseInput" $ do
     it "parses simple.eu" $
       parseInputFromString "simple.eu" `shouldBe`
