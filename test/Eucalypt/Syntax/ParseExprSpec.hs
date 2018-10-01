@@ -369,6 +369,9 @@ expressionSpec =
                 ]
             ]
         ]
+    it "parses ⊡ 2 ⨈ correctly" $
+      testParse expression "⊡ :k ⨈" `shouldParse`
+      opsoup [operatorName "⊡", sym "k", operatorName "⨈"]
 
 
 blockSpec :: Spec
@@ -418,6 +421,12 @@ blockSpec = do
         "foo"
         "bar"
         (opsoup [normalName "bar", normalName "foo", applyTuple [int 344]])
+    it "parses (££ x): 6 / x" $
+      testParse prefixOperatorDeclaration "(££ x): 6 / x" `shouldParse`
+      loper "££" "x" (opsoup [int 6, operatorName "/", normalName "x"])
+    it "parses (x ££): 6 / x" $
+      testParse postfixOperatorDeclaration "(x ££): 6 / x" `shouldParse`
+      roper "££" "x" (opsoup [int 6, operatorName "/", normalName "x"])
   describe "parsing declarations" $ do
     it "accepts '` :k a : b'" $
       testParse anyDeclaration "` :k a : b" `shouldParse`

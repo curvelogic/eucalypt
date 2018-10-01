@@ -9,7 +9,7 @@ Stability   : experimental
 module Eucalypt.Syntax.ParseExpr where
 
 import Data.Bifunctor (first)
-import Data.Char (isAscii, isSymbol)
+import Data.Char (isPunctuation, isAscii, isSymbol)
 import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Ast
 import Eucalypt.Syntax.Error
@@ -44,10 +44,10 @@ operatorIdentifier =
   where
     opIdentStartChar =
       oneOf ".!@£%^&*|></+=-~" <|>
-      satisfy (\c -> (not . isAscii) c && isSymbol c)
+      satisfy (\c -> (not . isAscii) c && (isSymbol c || isPunctuation c))
     opIdentContinuationChar =
       oneOf ".!@£$%^&*|></?+=-~" <|>
-      satisfy (\c -> (not . isAscii) c && isSymbol c)
+      satisfy (\c -> (not . isAscii) c && (isSymbol c || isPunctuation c))
 
 
 
@@ -245,16 +245,50 @@ operatorSignature = do
   r <- lexeme normalIdentifier <* symbol ")"
   return (l, o, r)
 
+prefixOperatorSignature :: Parser (AtomicName, String)
+prefixOperatorSignature = do
+  o <- symbol "(" >> (OperatorName <$> lexeme operatorIdentifier)
+  x <- lexeme normalIdentifier <* symbol ")"
+  return (o, x)
+
+postfixOperatorSignature :: Parser (String, AtomicName)
+postfixOperatorSignature = do
+  x <- symbol "(" >> lexeme normalIdentifier
+  o <- (OperatorName <$> lexeme operatorIdentifier) <* symbol ")"
+  return (x, o)
+
 operatorDeclaration :: Parser DeclarationForm
-operatorDeclaration = label "operator declaration" $ lexeme $ located $ do
-  (l, o, r) <- operatorSignature
-  expr <- colon >> expression
-  return $ OperatorDecl o l r expr
+operatorDeclaration =
+  label "operator declaration" $
+  lexeme $
+  located $ do
+    (l, o, r) <- operatorSignature
+    expr <- colon >> expression
+    return $ OperatorDecl o l r expr
+
+prefixOperatorDeclaration :: Parser DeclarationForm
+prefixOperatorDeclaration =
+  label "prefix operator declaration" $
+  lexeme $
+  located $ do
+    (o, x) <- prefixOperatorSignature
+    expr <- colon >> expression
+    return $ LeftOperatorDecl o x expr
+
+postfixOperatorDeclaration :: Parser DeclarationForm
+postfixOperatorDeclaration =
+  label "postfix operator declaration" $
+  lexeme $
+  located $ do
+    (x, o) <- postfixOperatorSignature
+    expr <- colon >> expression
+    return $ RightOperatorDecl o x expr
 
 declarationForm :: Parser DeclarationForm
 declarationForm =
   lexeme $
-  try propertyDeclaration <|> functionDeclaration <|> operatorDeclaration
+  try propertyDeclaration <|> try functionDeclaration <|> try operatorDeclaration <|>
+  try prefixOperatorDeclaration <|> postfixOperatorDeclaration
   
 declarationAnnotation :: Parser Expression
 declarationAnnotation =

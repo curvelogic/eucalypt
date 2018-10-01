@@ -113,6 +113,15 @@ determineFixity (Just meta) = (fixity, fromMaybe 50 prec)
         _ -> 50
 determineFixity Nothing = (InfixLeft, 50)
 
+-- | Determine precedence when fixity is already known (i.e. unary).
+determinePrecedence :: Maybe CoreExpr -> Precedence
+determinePrecedence (Just meta) =
+  fromMaybe 50 $
+  readUnevaluatedMetadata "precedence" meta $ \case
+    (CorePrim (CoreInt n)) -> fromInteger n
+    (CorePrim (CoreSymbol cls)) -> (fromMaybe 50 (lookup cls precedenceClasses))
+    _ -> 50
+determinePrecedence _ = 50
 
 -- | Check (unevaluated) metadata for target annotations and their
 -- documentation

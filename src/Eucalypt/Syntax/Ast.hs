@@ -157,17 +157,23 @@ type DeclarationForm = Located DeclarationForm_
 -- This may be any of
 -- * a property declaration
 -- * a function declaration
--- * an operator declaration
+-- * an operator declaration (binary, left or right unary)
 data DeclarationForm_
 
-  = PropertyDecl AtomicName Expression |
+  = PropertyDecl AtomicName Expression
     -- ^ A simple property declaration: @key: value-expression@
 
-    FunctionDecl AtomicName [ParameterName] Expression |
+  | FunctionDecl AtomicName [ParameterName] Expression
     -- ^ A function declaration @f(x, y, z): value-expression@
 
-    OperatorDecl AtomicName ParameterName ParameterName Expression
+  | OperatorDecl AtomicName ParameterName ParameterName Expression
     -- ^ A binary operator declaration @(x ** y): value-expression@
+
+  | LeftOperatorDecl AtomicName ParameterName Expression
+    -- ^ A left unary operator declaration @(! x): value-expression@
+
+  | RightOperatorDecl AtomicName ParameterName Expression
+    -- ^ A right unary operator declaration @(x !): value-expression@
 
   deriving (Eq, Show, Generic, ToJSON)
 
@@ -176,6 +182,8 @@ instance HasLocation DeclarationForm_ where
   stripLocation (PropertyDecl n e) = PropertyDecl n (stripLocation e)
   stripLocation (FunctionDecl f ps e) = FunctionDecl f ps (stripLocation e)
   stripLocation (OperatorDecl n l r e) = OperatorDecl n l r (stripLocation e)
+  stripLocation (LeftOperatorDecl n o e) = LeftOperatorDecl n o (stripLocation e)
+  stripLocation (RightOperatorDecl n o e) = RightOperatorDecl n o (stripLocation e)
 
 type BlockElement = Located BlockElement_
 
@@ -235,6 +243,14 @@ func f params e = at nowhere $ FunctionDecl (NormalName f) params e
 -- | Create an operator declaration
 oper :: String -> String -> String -> Expression -> DeclarationForm
 oper o l r e = at nowhere $ OperatorDecl (OperatorName o) l r e
+
+-- | Create an operator declaration
+loper :: String -> String -> Expression -> DeclarationForm
+loper o x e = at nowhere $ LeftOperatorDecl (OperatorName o) x e
+
+-- | Create an operator declaration
+roper :: String -> String -> Expression -> DeclarationForm
+roper o x e = at nowhere $ RightOperatorDecl (OperatorName o) x e
 
 -- | Create an annotated block element
 ann :: Expression -> DeclarationForm -> BlockElement
