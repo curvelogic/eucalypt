@@ -82,6 +82,7 @@ precedenceClasses :: [(String, Precedence)]
 precedenceClasses =
   [ ("lookup", 100)
   , ("call", 90)
+  , ("bool-unary", 88)
   , ("exp", 85)
   , ("prod", 80)
   , ("sum", 75)

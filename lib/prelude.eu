@@ -164,37 +164,45 @@ lookup-alts(syms, d, b): foldr(lookup-or-in(b), d, syms)
 ## Boolean
 ##
 
-` { doc: "`not(b) - toggle boolean.`"
+` { doc: "`not(b) - toggle boolean."
     export: :suppress }
 not: __NOT
 
-` { doc: "`l && r`` - true if and only if `l` and `r` are true."
+` { doc: "`!x` - not x, toggle boolean."
+    precedence: :bool-unary }
+(! b): b not
+
+` { doc: "`¬x` - not x, toggle boolean."
+    precedence: :bool-unary }
+(¬ b): b not
+
+` { doc: "`l && r` - true if and only if `l` and `r` are true."
     export: :suppress
     associates: :left
     precedence: :bool-prod }
 (l && r): __AND(l, r)
 
-` { doc: "`and(l, r)`` - true if and only if `l` and `r` are true."
+` { doc: "`and(l, r)` - true if and only if `l` and `r` are true."
     export: :suppress }
 and: __AND
 
-` { doc: "`l ∧ r`` - true if and only if `l` and `r`"
+` { doc: "`l ∧ r` - true if and only if `l` and `r`"
     export: :suppress
     associates: :left
     precedence: :bool-prod }
 (l ∧ r): l && r
 
-` { doc: "`or(l, r)`` - true if and only if `l` or `r` is true."
+` { doc: "`or(l, r)` - true if and only if `l` or `r` is true."
     export: :suppress }
 or: __OR
 
-` { doc: "`l || r`` - true if and only if `l` or `r`"
+` { doc: "`l || r` - true if and only if `l` or `r`"
     export: :suppress
     associates: :left
     precedence: :bool-sum }
 (l || r): __OR(l, r)
 
-` { doc: "`l ∨ r`` - true if and only if `l` or `r`"
+` { doc: "`l ∨ r` - true if and only if `l` or `r`"
     export: :suppress
     associates: :left
     precedence: :bool-sum }
