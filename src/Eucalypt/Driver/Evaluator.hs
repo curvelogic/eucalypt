@@ -46,7 +46,7 @@ import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
 import qualified Eucalypt.Driver.Stg as STG
 import Eucalypt.Reporting.Error (EucalyptError(..))
-import Eucalypt.Reporting.Report (reportErrors)
+import Eucalypt.Reporting.Report (reportErrors, tryOrReport)
 import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
@@ -183,8 +183,9 @@ parseUnits :: (Traversable t, Foldable t) => t Input -> IO [TranslationUnit]
 parseUnits inputs = do
   asts <- traverse parseInputToCore inputs
   case partitionEithers (toList asts) of
-    (errs@(_:_), _) -> reportErrors errs >> exitFailure
-    ([], []) -> reportErrors [NoSource] >> exitFailure
+    -- TODO: propagate all errors
+    (e:_, _) -> throwM e
+    ([], []) -> throwM NoSource
     ([], units) -> return units
 
 
@@ -274,7 +275,7 @@ parseInputsAndImports inputs = do
 
 -- | Implement the Evaluate command, read files and render
 evaluate :: EucalyptOptions -> IO ExitCode
-evaluate opts = do
+evaluate opts = tryOrReport $ do
   when (cmd == Parse) (parseAndDumpASTs opts >> exitSuccess)
 
   -- Stage 1: parse inputs and translate to core units

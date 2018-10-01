@@ -157,10 +157,15 @@ translateDeclarationForm a _k Located {locatee = form} =
     (PropertyDecl _ expr) -> varifyTranslate expr
     (FunctionDecl _ as expr) -> lam as <$> varifyTranslate expr
     (OperatorDecl _ l r expr) -> newOp l r <$> varifyTranslate expr
+    (LeftOperatorDecl _ x expr) -> newUnOp UnaryPrefix x <$> varifyTranslate expr
+    (RightOperatorDecl _ x expr) -> newUnOp UnaryPostfix x <$> varifyTranslate expr
   where
     newOp l r expr =
       let (fixity, precedence) = determineFixity a
        in CoreOperator fixity precedence $ lam [l, r] expr
+    newUnOp fixity x expr =
+      let precedence = determinePrecedence a
+       in CoreOperator fixity precedence $ lam [x] expr
     varifyTranslate = translate >=> return . varify
 
 
@@ -206,6 +211,8 @@ translateBlock blk = do
               (PropertyDecl k _) -> k
               (FunctionDecl k _ _) -> k
               (OperatorDecl k _ _ _) -> k
+              (LeftOperatorDecl k _ _) -> k
+              (RightOperatorDecl k _ _) -> k
        in atomicName name
     bindings =
       map

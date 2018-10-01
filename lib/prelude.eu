@@ -164,37 +164,45 @@ lookup-alts(syms, d, b): foldr(lookup-or-in(b), d, syms)
 ## Boolean
 ##
 
-` { doc: "`not(b) - toggle boolean.`"
+` { doc: "`not(b) - toggle boolean."
     export: :suppress }
 not: __NOT
 
-` { doc: "`l && r`` - true if and only if `l` and `r` are true."
+` { doc: "`!x` - not x, toggle boolean."
+    precedence: :bool-unary }
+(! b): b not
+
+` { doc: "`¬x` - not x, toggle boolean."
+    precedence: :bool-unary }
+(¬ b): b not
+
+` { doc: "`l && r` - true if and only if `l` and `r` are true."
     export: :suppress
     associates: :left
     precedence: :bool-prod }
 (l && r): __AND(l, r)
 
-` { doc: "`and(l, r)`` - true if and only if `l` and `r` are true."
+` { doc: "`and(l, r)` - true if and only if `l` and `r` are true."
     export: :suppress }
 and: __AND
 
-` { doc: "`l ∧ r`` - true if and only if `l` and `r`"
+` { doc: "`l ∧ r` - true if and only if `l` and `r`"
     export: :suppress
     associates: :left
     precedence: :bool-prod }
 (l ∧ r): l && r
 
-` { doc: "`or(l, r)`` - true if and only if `l` or `r` is true."
+` { doc: "`or(l, r)` - true if and only if `l` or `r` is true."
     export: :suppress }
 or: __OR
 
-` { doc: "`l || r`` - true if and only if `l` or `r`"
+` { doc: "`l || r` - true if and only if `l` or `r`"
     export: :suppress
     associates: :left
     precedence: :bool-sum }
 (l || r): __OR(l, r)
 
-` { doc: "`l ∨ r`` - true if and only if `l` or `r`"
+` { doc: "`l ∨ r` - true if and only if `l` or `r`"
     export: :suppress
     associates: :left
     precedence: :bool-sum }
@@ -444,13 +452,10 @@ nth(n, l): l drop(n dec) head
 ` { doc: "`l !! n` - return `n`th item of list if it exists, otherwise error."}
 (l !! n): l nth(n)
 
-# TODO: Can't use this until lists are exposed to eu as cons is not
-# currently lazy enough
 ` { doc: "`repeat(i)` - return infinite list of instances of item `i`."
     export: :suppress }
 repeat(i): __CONS(i, repeat(i))
 
-# TODO: sections
 ` { doc: "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i` "
     # example: foldl(+, i, [1,2,3]) //=> (((i + 1) + 2) + 3)
     export: :suppress }
@@ -470,9 +475,7 @@ _impl: {
     export: :suppress }
 count(l): foldl(_impl.const-apply2(inc), 0, l)
 
-# TODO: lambdas
 ` { doc: "`map(f, l)` - map function `f` over list `l`"
-    # example: map(|x|(x+2),[1,2,3]) //=> [3,4,5]
     export: :suppress }
 map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
