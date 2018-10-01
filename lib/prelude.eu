@@ -452,13 +452,10 @@ nth(n, l): l drop(n dec) head
 ` { doc: "`l !! n` - return `n`th item of list if it exists, otherwise error."}
 (l !! n): l nth(n)
 
-# TODO: Can't use this until lists are exposed to eu as cons is not
-# currently lazy enough
 ` { doc: "`repeat(i)` - return infinite list of instances of item `i`."
     export: :suppress }
 repeat(i): __CONS(i, repeat(i))
 
-# TODO: sections
 ` { doc: "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i` "
     # example: foldl(+, i, [1,2,3]) //=> (((i + 1) + 2) + 3)
     export: :suppress }
@@ -478,9 +475,7 @@ _impl: {
     export: :suppress }
 count(l): foldl(_impl.const-apply2(inc), 0, l)
 
-# TODO: lambdas
 ` { doc: "`map(f, l)` - map function `f` over list `l`"
-    # example: map(|x|(x+2),[1,2,3]) //=> [3,4,5]
     export: :suppress }
 map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
 
