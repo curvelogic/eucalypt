@@ -43,7 +43,7 @@ throwEvalError = Interpreter . Left
 -- binding to (*) = (Lambda body)
 --
 distributeFixities :: CoreExp a -> CoreExp a
-distributeFixities (CoreLet bs b) = CoreLet prunedBindings newBody
+distributeFixities (CoreLet smid bs b) = CoreLet smid prunedBindings newBody
   where
     newBody = modifyBoundVars bindSiteReplace $ distributeScopeFixities b
     distBindings =
@@ -54,12 +54,12 @@ distributeFixities (CoreLet bs b) = CoreLet prunedBindings newBody
       map (second $ Scope . exposeCallable . unscope) distBindings
     bindSiteReplace z =
       case unscope $ snd $ bs !! z of
-        (CoreOperator f p _) -> CoreOperator f p
+        (CoreOperator smid' f p _) -> CoreOperator smid' f p
         _ -> id
-    exposeCallable (CoreOperator _ _ lambda) = lambda
+    exposeCallable (CoreOperator _ _ _ lambda) = lambda
     exposeCallable e = e
     distributeScopeFixities = Scope . distributeFixities . unscope
-distributeFixities (CoreMeta m e) = CoreMeta m $ distributeFixities e
+distributeFixities (CoreMeta smid m e) = CoreMeta smid m $ distributeFixities e
 distributeFixities e = e
 
 -- | A core pass prior to evaluation to cook all soup that can be
@@ -111,19 +111,19 @@ cookSubsoups anaphoric = mapM (cookBottomUp anaphoric)
 
 cookBottomUp ::
      Anaphora a => Bool -> CoreExp a -> Either CoreError (CoreExp a)
-cookBottomUp anaphoric (CoreOpSoup exprs) = cookSoup anaphoric exprs
-cookBottomUp anaphoric (CoreArgTuple exprs) =
-  CoreArgTuple <$> traverse (cookBottomUp anaphoric) exprs
-cookBottomUp anaphoric (CoreList exprs) =
-  CoreList <$> traverse (cookBottomUp anaphoric) exprs
-cookBottomUp anaphoric (CoreBlock l) = CoreBlock <$> cookBottomUp anaphoric l
-cookBottomUp anaphoric (CoreMeta m e) = CoreMeta m <$> cookBottomUp anaphoric e
-cookBottomUp anaphoric (CoreApply f exprs) =
-  CoreApply <$> cookBottomUp anaphoric f <*>
+cookBottomUp anaphoric (CoreOpSoup _ exprs) = cookSoup anaphoric exprs
+cookBottomUp anaphoric (CoreArgTuple smid exprs) =
+  CoreArgTuple smid <$> traverse (cookBottomUp anaphoric) exprs
+cookBottomUp anaphoric (CoreList smid exprs) =
+  CoreList smid <$> traverse (cookBottomUp anaphoric) exprs
+cookBottomUp anaphoric (CoreBlock smid l) = CoreBlock smid <$> cookBottomUp anaphoric l
+cookBottomUp anaphoric (CoreMeta smid m e) = CoreMeta smid m <$> cookBottomUp anaphoric e
+cookBottomUp anaphoric (CoreApply smid f exprs) =
+  CoreApply smid <$> cookBottomUp anaphoric f <*>
   traverse (cookBottomUp anaphoric) exprs
-cookBottomUp anaphoric (CoreLambda n body) =
-  CoreLambda n <$> runInterpreter (cookScope anaphoric body)
-cookBottomUp anaphoric (CoreLet bs body) = CoreLet <$> newBindings <*> newBody
+cookBottomUp anaphoric (CoreLambda smid n body) =
+  CoreLambda smid n <$> runInterpreter (cookScope anaphoric body)
+cookBottomUp anaphoric (CoreLet smid bs body) = CoreLet smid <$> newBindings <*> newBody
   where
     newBody = runInterpreter (cookScope anaphoric body)
     newBindings =
@@ -212,15 +212,15 @@ popOne =
 -- so once precedence is resolved we'll transform the syntax. This
 -- happens when we apply to the output stack.
 formApply :: CoreExp a -> [CoreExp a] -> CoreExp a
-formApply (CoreBuiltin "*CALL*") [f, CoreArgTuple as] =
-  CoreApply f as
-formApply (CoreBuiltin "*DOT*") [o, CoreName n] = CoreLookup o n
-formApply f as = CoreApply f as
+formApply (CoreBuiltin _ "*CALL*") [f, CoreArgTuple smid as] =
+  CoreApply smid f as
+formApply (CoreBuiltin _ "*DOT*") [o, CoreName smid n] = CoreLookup smid o n
+formApply f as = CoreApply (sourceMapId f) f as
 
 -- | Apply the given operator to the argument(s) at the top of the
 -- output stack
 applyOp :: Show a => CoreExp a -> State (ShuntState a) ()
-applyOp op@(CoreOperator x _ e) =
+applyOp op@(CoreOperator _ x _ e) =
   case x of
     InfixLeft -> applyTwo
     InfixRight -> applyTwo
@@ -255,9 +255,9 @@ pushOp e =
 -- | Push operator onto stack, making way by applying any operators of
 -- a lower precedence first
 seatOp :: Show a => CoreExp a -> State (ShuntState a) ()
-seatOp op@(CoreOperator x p _) =
+seatOp op@(CoreOperator _ x p _) =
   peekOp >>= \case
-    Just op'@(CoreOperator x' p' _)
+    Just op'@(CoreOperator _ x' p' _)
       | x' == InfixLeft ->
         if p <= p'
           then dealWith op'
@@ -302,7 +302,7 @@ ensureValidSequence :: Anaphora a => Maybe (CoreExp a) -> State (ShuntState a) (
 ensureValidSequence lhs =
   peekSource >>= \rhs ->
   case validExprSeq lhs rhs of
-    Just e@(CoreVar _) -> pushback e -- push an anaphoric var to input
+    Just e@(CoreVar _ _) -> pushback e -- push an anaphoric var to input
     Just e -> pushback e
     Nothing -> return ()
 
@@ -324,10 +324,10 @@ data BindSide = OpLike | ValueLike
 -- | Classify each 'CoreExp a' with respect to what can appear on
 -- either side
 bindSides :: Maybe (CoreExp a) -> (BindSide, BindSide)
-bindSides (Just (CoreOperator InfixLeft _ _)) = (OpLike, OpLike)
-bindSides (Just (CoreOperator InfixRight _ _)) = (OpLike, OpLike)
-bindSides (Just (CoreOperator UnaryPostfix _ _)) = (OpLike, ValueLike)
-bindSides (Just (CoreOperator UnaryPrefix _ _)) = (ValueLike, OpLike)
+bindSides (Just (CoreOperator _ InfixLeft _ _)) = (OpLike, OpLike)
+bindSides (Just (CoreOperator _ InfixRight _ _)) = (OpLike, OpLike)
+bindSides (Just (CoreOperator _ UnaryPostfix _ _)) = (OpLike, ValueLike)
+bindSides (Just (CoreOperator _ UnaryPrefix _ _)) = (ValueLike, OpLike)
 bindSides (Just _) = (ValueLike, ValueLike)
 bindSides Nothing = (OpLike, OpLike)
 

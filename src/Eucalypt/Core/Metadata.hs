@@ -22,13 +22,13 @@ import Eucalypt.Core.Syn
 -- the surface syntax. At present it's very ad hoc but we'll
 -- substitute a more general handling later
 normaliseMetadata :: CoreExpr -> CoreExpr
-normaliseMetadata s@(CorePrim (CoreString _)) = block [element "doc" s]
-normaliseMetadata e@(CorePrim (CoreSymbol s))
-  | s == "alias" = block [element "ref" e]
-  | s == "suppress" = block [element "export" e]
-  | s == "main" = block [element "target" e]
-  | s == "trace" = block [element "trace" (CorePrim (CoreBoolean True))]
-  | otherwise = block []
+normaliseMetadata s@(CorePrim smid (CoreString _)) = block smid [element smid "doc" s]
+normaliseMetadata e@(CorePrim smid (CoreSymbol s))
+  | s == "alias" = block smid [element smid "ref" e]
+  | s == "suppress" = block smid [element smid "export" e]
+  | s == "main" = block smid [element smid "target" e]
+  | s == "trace" = block smid [element smid "trace" (CorePrim smid (CoreBoolean True))]
+  | otherwise = block smid []
 normaliseMetadata e = e
 
 -- | Some annotation metadata can be expressed at the declaration
@@ -36,11 +36,12 @@ normaliseMetadata e = e
 -- metadata into those that apply to declaration and those that apply
 -- to the value
 splitAnnotationMetadata :: CoreExpr -> (Maybe CoreExpr, Maybe CoreExpr)
-splitAnnotationMetadata m@(CoreLet _ _) = splitAnnotationMetadata $ instantiateLet m
-splitAnnotationMetadata (CoreBlock (CoreList items)) =
+splitAnnotationMetadata m@CoreLet{} =
+  splitAnnotationMetadata $ instantiateLet m
+splitAnnotationMetadata (CoreBlock smid (CoreList _ items)) =
   bimap maybeBlock maybeBlock $ partitionEithers $ map classify items
   where
-    classify item@(CoreList [CorePrim (CoreSymbol k), _]) =
+    classify item@(CoreList _ [CorePrim _ (CoreSymbol k), _]) =
       if k == "import"
         then Right item
         else Left item
@@ -49,31 +50,31 @@ splitAnnotationMetadata (CoreBlock (CoreList items)) =
     maybeBlock els =
       if null els
         then Nothing
-        else (Just . CoreBlock . CoreList) els
+        else (Just . CoreBlock smid . CoreList smid) els
 splitAnnotationMetadata m = (Just m, Nothing)
 
 -- | Read from unevaluated metadata (expanding out only an outer let
 -- to prepare a block for lookup).
 readUnevaluatedMetadata :: String -> CoreExp a -> (CoreExp a -> b) -> Maybe b
-readUnevaluatedMetadata key expr@(CoreLet _ _) readVal =
+readUnevaluatedMetadata key expr@CoreLet{} readVal =
   readUnevaluatedMetadata key (instantiateLet expr) readVal
-readUnevaluatedMetadata key (CoreBlock (CoreList items)) readVal =
+readUnevaluatedMetadata key (CoreBlock _ (CoreList _ items)) readVal =
   readVal <$> lookup key buildSearchList
   where
     buildSearchList = mapMaybe kv items
-    kv (CoreList [CorePrim (CoreSymbol k), v]) = Just (k, v)
-    kv (CoreMeta _ i) = kv i
+    kv (CoreList _ [CorePrim _ (CoreSymbol k), v]) = Just (k, v)
+    kv (CoreMeta _ _ i) = kv i
     kv _ = Nothing
 readUnevaluatedMetadata _ _ _ = Nothing
 
 -- | Remove elements from an unevaluated metadata block by key
 pruneUnevaluatedMetadata :: String -> CoreExp a -> CoreExp a
-pruneUnevaluatedMetadata key expr@(CoreLet _ _) =
+pruneUnevaluatedMetadata key expr@CoreLet{} =
   pruneUnevaluatedMetadata key (instantiateLet expr)
-pruneUnevaluatedMetadata key (CoreBlock (CoreList items)) =
-  CoreBlock (CoreList $ filter keep items)
+pruneUnevaluatedMetadata key (CoreBlock bsmid (CoreList lsmid items)) =
+  CoreBlock bsmid (CoreList lsmid $ filter keep items)
   where
-    keep (CoreList [CorePrim (CoreSymbol k), _]) = k /= key
+    keep (CoreList _ [CorePrim _ (CoreSymbol k), _]) = k /= key
     keep _ = False
 pruneUnevaluatedMetadata _ meta = meta
 
@@ -109,8 +110,8 @@ determineFixity (Just meta) = (fixity, fromMaybe 50 prec)
         _ -> InfixLeft
     prec =
       readUnevaluatedMetadata "precedence" meta $ \case
-        (CorePrim (CoreInt n)) -> fromInteger n
-        (CorePrim (CoreSymbol cls)) -> (fromMaybe 50 (lookup cls precedenceClasses))
+        (CorePrim _ (CoreInt n)) -> fromInteger n
+        (CorePrim _ (CoreSymbol cls)) -> (fromMaybe 50 (lookup cls precedenceClasses))
         _ -> 50
 determineFixity Nothing = (InfixLeft, 50)
 
@@ -119,8 +120,8 @@ determinePrecedence :: Maybe CoreExpr -> Precedence
 determinePrecedence (Just meta) =
   fromMaybe 50 $
   readUnevaluatedMetadata "precedence" meta $ \case
-    (CorePrim (CoreInt n)) -> fromInteger n
-    (CorePrim (CoreSymbol cls)) -> (fromMaybe 50 (lookup cls precedenceClasses))
+    (CorePrim _ (CoreInt n)) -> fromInteger n
+    (CorePrim _ (CoreSymbol cls)) -> (fromMaybe 50 (lookup cls precedenceClasses))
     _ -> 50
 determinePrecedence _ = 50
 
@@ -137,8 +138,8 @@ importsFromMetadata :: ToCoreBindingName a => CoreExp a -> Maybe [Input]
 importsFromMetadata m =
   readUnevaluatedMetadata "import" m extract
   where
-    extract (CorePrim (CoreString s)) = maybeToList $ parseInputFromString s
-    extract (CoreList l) = concatMap extract l
+    extract (CorePrim _ (CoreString s)) = maybeToList $ parseInputFromString s
+    extract (CoreList _ l) = concatMap extract l
     extract _ = []
 
 pruneImports :: CoreExp a -> CoreExp a

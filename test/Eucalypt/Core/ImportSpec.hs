@@ -8,7 +8,8 @@ import qualified Data.Map as M
 import Data.Maybe (fromJust)
 import qualified Data.Set as S
 import Eucalypt.Core.Import
-import Eucalypt.Core.Syn
+import Eucalypt.Core.Syn (CoreExpr)
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Unit
 import Eucalypt.Syntax.Input
 import Test.Hspec

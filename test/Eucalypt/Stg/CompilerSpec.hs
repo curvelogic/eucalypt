@@ -9,7 +9,8 @@ Stability   : experimental
 module Eucalypt.Stg.CompilerSpec (main, spec)
 where
 
-import Eucalypt.Core.Syn as C
+import Eucalypt.Core.Syn (CoreExpr)
+import Eucalypt.Core.AnonSyn as C
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Syn
@@ -20,7 +21,7 @@ import Text.PrettyPrint as P
 main :: IO ()
 main = hspec spec
 
-comp :: C.CoreExpr -> StgSyn
+comp :: CoreExpr -> StgSyn
 comp = compile 0 emptyContext Nothing
 
 spec :: Spec
@@ -45,9 +46,9 @@ spec = do
         comp (C.corebool False) `shouldBe` Atom (Literal (NativeBool False))
     context "handles simple lists" $ do
       it "compiles an empty list" $
-        comp (C.CoreList []) `shouldBe` Atom (Global "KNIL")
+        comp (C.corelist []) `shouldBe` Atom (Global "KNIL")
       it "compiles an singleton list" $
-        comp (C.CoreList [C.int 2]) `shouldBe`
+        comp (C.corelist [C.int 2]) `shouldBe`
         let_
           [pc0_ $ box_ (NativeNumber 2)]
           (letrec_
@@ -69,7 +70,7 @@ spec = do
     context "handles lookup" $
       it "compiles lookup correctly" $
       comp
-        (C.CoreLookup
+        (C.corelookup
            (C.block [C.element "a" $ C.str "a", C.element "b" $ C.str "b"])
            "a") `shouldBe`
       let_

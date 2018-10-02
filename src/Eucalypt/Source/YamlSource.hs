@@ -19,9 +19,10 @@ import qualified Data.Map as Map
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Eucalypt.Core.Desugar (desugar)
+import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn as S
 import Eucalypt.Source.Error
-import Eucalypt.Syntax.Error()
+import Eucalypt.Syntax.Error ()
 import Eucalypt.Syntax.ParseExpr (parseExpression)
 import Text.Libyaml
 import Text.Regex.PCRE
@@ -75,22 +76,22 @@ instance YamlTranslator InertTranslator where
   handleScalar (InertTranslator (TagResolver resolve)) text tag _ _ =
     return $
     case tag' of
-      StrTag -> S.str s
-      IntTag -> S.int (read s)
-      FloatTag -> S.float (read s)
-      BoolTag -> S.corebool (read s)
-      NullTag -> S.corenull
-      _ -> S.str s
+      StrTag -> anon S.str s
+      IntTag -> anon S.int (read s)
+      FloatTag -> anon S.float (read s)
+      BoolTag -> anon S.corebool (read s)
+      NullTag -> anon S.corenull
+      _ -> anon S.str s
     where
       s = (unpack . decodeUtf8) text
       tag' =
         if tag == NoTag
           then resolve s
           else tag
-  handleList _ = return . CoreList
-  handleMapping _ pairs = return $ CoreBlock $ CoreList (map kv pairs)
+  handleList _ = return . anon CoreList
+  handleMapping _ pairs = return $ anon CoreBlock $ anon CoreList (map kv pairs)
     where
-      kv (t, e) = CoreList [CorePrim (S.CoreSymbol (unpack t)), e]
+      kv (t, e) = anon CoreList [anon CorePrim (S.CoreSymbol (unpack t)), e]
 
 -- | Parse and desugar a eucalypt expression from string
 expressionFromString :: (Monad m, MonadThrow m) => String -> m CoreExpr
@@ -105,27 +106,28 @@ expressionFromString s =
 instance YamlTranslator ActiveTranslator where
   handleScalar (ActiveTranslator (TagResolver resolve)) text tag _ _ =
     case tag' of
-      StrTag -> return $ S.str s
-      IntTag -> return $ S.int (read s)
-      FloatTag -> return $ S.float (read s)
-      BoolTag -> return $ S.corebool (read s)
-      NullTag -> return S.corenull
+      StrTag -> return $ anon S.str s
+      IntTag -> return $ anon S.int (read s)
+      FloatTag -> return $ anon S.float (read s)
+      BoolTag -> return $ anon S.corebool (read s)
+      NullTag -> return $ anon S.corenull
       UriTag u ->
         if u == "!eu"
           then expressionFromString s
-          else return $ S.str s
-      _ -> return $ S.str s
+          else return $ anon S.str s
+      _ -> return $ anon S.str s
     where
       s = (unpack . decodeUtf8) text
       tag' =
         if tag == NoTag
           then resolve s
           else tag
-  handleList _ = return . CoreList
-  handleMapping _ pairs = return $ letexp bindings body
+  handleList _ = return . anon CoreList
+  handleMapping _ pairs = return $ anon letexp bindings body
     where
       bindings = map (first unpack) pairs
-      body = block [element n (var n) | n <- map (unpack . fst) pairs]
+      body =
+        anon block [anon element n (anon var n) | n <- map (unpack . fst) pairs]
 
 -- | Track a reference to be linked up later
 coreAlias :: AnchorName -> CoreExpr

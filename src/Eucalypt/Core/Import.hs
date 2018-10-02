@@ -41,35 +41,35 @@ processImports ::
   => (Input -> CoreExp a)
   -> CoreExp a
   -> CoreExp a
-processImports load expr@(CoreMeta m body) =
+processImports load expr@(CoreMeta smid m body) =
   case importsFromMetadata m of
     Just imports ->
-      CoreMeta (pruneImports m) $
+      CoreMeta smid (pruneImports m) $
       foldr (\i e -> rebody (load i) e) (processImports load body) imports
     Nothing -> expr
-processImports load (CoreLet bs b) = CoreLet bs' b'
+processImports load (CoreLet smid bs b) = CoreLet smid bs' b'
   where
     b' = f b
     bs' = map (second f) bs
     f = transScope (processImports (liftLoad load))
-processImports load (CoreLambda ns b) = CoreLambda ns b'
+processImports load (CoreLambda smid ns b) = CoreLambda smid ns b'
   where
     b' = f b
     f = transScope (processImports (liftLoad load))
-processImports load (CoreLookup obj n) =
-  CoreLookup (processImports load obj) n
-processImports load (CoreList els) =
-  CoreList $ map (processImports load) els
-processImports load (CoreBlock l) =
-  CoreBlock $ processImports load l
-processImports load (CoreArgTuple as) =
-  CoreArgTuple $ map (processImports load) as
-processImports load (CoreApply f xs) =
-  CoreApply (processImports load f) (map (processImports load) xs)
-processImports load (CoreOpSoup els) =
-  CoreOpSoup $ map (processImports load) els
-processImports load (CoreOperator x p e) =
-  CoreOperator x p $ processImports load e
+processImports load (CoreLookup smid obj n) =
+  CoreLookup smid (processImports load obj) n
+processImports load (CoreList smid els) =
+  CoreList smid $ map (processImports load) els
+processImports load (CoreBlock smid l) =
+  CoreBlock smid $ processImports load l
+processImports load (CoreArgTuple smid as) =
+  CoreArgTuple smid $ map (processImports load) as
+processImports load (CoreApply smid f xs) =
+  CoreApply smid (processImports load f) (map (processImports load) xs)
+processImports load (CoreOpSoup smid els) =
+  CoreOpSoup smid $ map (processImports load) els
+processImports  load (CoreOperator smid x p e) =
+  CoreOperator smid x p $ processImports load e
 processImports _ expr = expr
 
 

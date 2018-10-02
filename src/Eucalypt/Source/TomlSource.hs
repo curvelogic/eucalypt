@@ -19,21 +19,27 @@ import qualified Data.List.NonEmpty as NonEmpty
 import Data.Text (unpack)
 import Data.Text.Encoding (decodeUtf8)
 import Eucalypt.Core.Syn
+import Eucalypt.Core.SourceMap
 import Eucalypt.Source.Error
 import qualified Toml
 
 -- | Convert a TOML primitive to a core expression
 --
 tomlValue :: Toml.Value t -> CoreExpr
-tomlValue (Toml.Bool b) = corebool b
-tomlValue (Toml.Integer n) = int n
-tomlValue (Toml.Double d) = float d
-tomlValue (Toml.Text s) = (str . unpack) s
+tomlValue (Toml.Bool b) = anon corebool b
+tomlValue (Toml.Integer n) = anon int n
+tomlValue (Toml.Double d) = anon float d
+tomlValue (Toml.Text s) = (anon str . unpack) s
 tomlValue (Toml.Date d) =
-  withMeta
-    (block [element "toml" $ block [element "type" $ sym "date"]])
-    (str $ show d)
-tomlValue (Toml.Array a) = CoreList $ map tomlValue a
+  anon
+    withMeta
+    (anon
+       block
+       [ anon element "toml" $
+         anon block [anon element "type" $ anon sym "date"]
+       ])
+    (anon str $ show d)
+tomlValue (Toml.Array a) = anon CoreList $ map tomlValue a
 
 pieceToBindingName :: Toml.Piece -> CoreBindingName
 pieceToBindingName = unpack . Toml.unPiece
@@ -53,8 +59,8 @@ translatePrefixTree Toml.Branch {..} =
 -- | Translate a prefix map
 translatePrefixMap :: Toml.PrefixMap Toml.TOML -> CoreExpr
 translatePrefixMap m =
-  block
-    [ element (pieceToBindingName k) $ translatePrefixTree v
+  anon block
+    [ anon element (pieceToBindingName k) $ translatePrefixTree v
     | (k, v) <- HM.toList m
     ]
 
@@ -63,7 +69,7 @@ translatePrefixMap m =
 inPrefixBlocks :: Toml.Prefix -> CoreExpr -> CoreExpr
 inPrefixBlocks k ex = foldr wrap ex names
   where
-    wrap l r = block [element l r]
+    wrap l r = anon block [anon element l r]
     names = map pieceToBindingName (NonEmpty.toList . Toml.unKey $ k)
 
 -- | Translate a TOML file into a 'CoreExpr'
@@ -74,8 +80,8 @@ translateToml Toml.TOML {..} = foldl1 collapse (pairBlocks ++ tables)
     pairBlocks = map kvBlock $ HM.toList tomlPairs
     tables = map translatePrefixTree $ HM.elems tomlTables
     kvBlock (k, Toml.AnyValue val) = inPrefixBlocks k $ tomlValue val
-    collapse (CoreBlock (CoreList l)) (CoreBlock (CoreList r)) =
-      CoreBlock . CoreList $ l ++ r
+    collapse (CoreBlock _ (CoreList _ l)) (CoreBlock _ (CoreList _ r)) =
+      anon CoreBlock . anon CoreList $ l ++ r
     collapse _ _ = error "Collapsing non-block expressions"
 
 -- | Parse inert TOML data into a CoreExpr

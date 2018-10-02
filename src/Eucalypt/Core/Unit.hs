@@ -11,6 +11,7 @@ module Eucalypt.Core.Unit where
 
 import qualified Data.Set as S
 import Eucalypt.Syntax.Input
+import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn 
 import Eucalypt.Core.Target (TargetSpec, prefixPath)
 
@@ -36,7 +37,7 @@ applyName n TranslationUnit {..} =
   TranslationUnit
     {truCore = newCore, truTargets = newTargets, truImports = truImports}
   where
-    newCore = letexp [(n, truCore)] (block [element n (var n)])
+    newCore = anon letexp [(n, truCore)] (anon block [anon element n (anon var n)])
     newTargets = map (prefixPath n) truTargets
 
 

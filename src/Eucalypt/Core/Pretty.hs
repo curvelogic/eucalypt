@@ -13,6 +13,7 @@ module Eucalypt.Core.Pretty
 import qualified Data.Vector as V
 import Bound.Scope
 import Eucalypt.Core.Syn
+import Eucalypt.Core.SourceMap
 import Prelude hiding ((<>))
 import Text.PrettyPrint
   ( Doc
@@ -47,36 +48,36 @@ unquote xs = xs
 
 -- | Generate the format document for rendering
 prepare :: Show a => CoreExp a -> Doc
-prepare (CoreBuiltin n) = text $ "__" ++ n
-prepare (CoreVar x) = (text . unquote . show) x
-prepare (CorePrim x) = (text . renderLiteral) x
-prepare (CoreLet bs body) =
+prepare (CoreBuiltin _ n) = text $ "__" ++ n
+prepare (CoreVar _ x) = (text . unquote . show) x
+prepare (CorePrim _ x) = (text . renderLiteral) x
+prepare (CoreLet _ bs body) =
   text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
   where
     names = map fst bs
-    inst = splat (CoreVar . unquote . show) (\i -> CoreVar (names !! i))
+    inst = splat (anon CoreVar . unquote . show) (\i -> anon CoreVar (names !! i))
     prettyBody = (prepare . inst) body
     bindExprs = map (prepare . inst . snd) bs
     binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
-prepare (CoreLookup x y) = prepare x <+> char '.' <> text y
-prepare (CoreBlock e) = braces $ prepare e
-prepare (CoreList [k@(CorePrim (CoreSymbol _)), v]) = brackets (prepare k <> comma <> prepare v)
-prepare (CoreList xs) = brackets . vcat . punctuate comma $ map prepare xs
-prepare (CoreMeta m e) = vcat [text "`" <+> prepare m, prepare e]
-prepare (CoreOpSoup es) = parens ( hsep $ map prepare es)
-prepare (CoreArgTuple xs) = parens . hsep . punctuate comma $ map prepare xs
-prepare (CoreLambda names e) =
+prepare (CoreLookup _ x y) = prepare x <+> char '.' <> text y
+prepare (CoreBlock _ e) = braces $ prepare e
+prepare (CoreList _ [k@(CorePrim _ (CoreSymbol _)), v]) = brackets (prepare k <> comma <> prepare v)
+prepare (CoreList _ xs) = brackets . vcat . punctuate comma $ map prepare xs
+prepare (CoreMeta _ m e) = vcat [text "`" <+> prepare m, prepare e]
+prepare (CoreOpSoup _ es) = parens ( hsep $ map prepare es)
+prepare (CoreArgTuple _ xs) = parens . hsep . punctuate comma $ map prepare xs
+prepare (CoreLambda _ names e) =
   parens $ text "\\" <+> hsep (V.toList (V.map text argNames)) <+> text "->" <+> body
   where
     argNames = V.fromList names
     body = prepare $ inst e
     inst =
       splat
-        (CoreVar . unquote . show)
-        (CoreVar . (names !!))
-prepare (CoreApply f es) = prepare f <> parens ( hsep . punctuate comma $ map prepare es)
-prepare (CoreName n) = text n
-prepare (CoreOperator x p e) =
+        (anon CoreVar . unquote . show)
+        (anon CoreVar . (names !!))
+prepare (CoreApply _ f es) = prepare f <> parens ( hsep . punctuate comma $ map prepare es)
+prepare (CoreName _ n) = text n
+prepare (CoreOperator _ x p e) =
   char '^' <> text (show x) <> parens (text (show p)) <> char '^' <> prepare e
 
 -- | Pretty Print a CoreExp to String

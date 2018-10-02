@@ -4,9 +4,20 @@ module Eucalypt.Core.SynSpec
   ) where
 
 import Bound
-import Eucalypt.Core.Syn
-import Test.Hspec
 import Data.Maybe (fromJust)
+import Eucalypt.Core.AnonSyn
+import Eucalypt.Core.Syn
+  ( CoreBindingName
+  , CoreExp(..)
+  , CoreExpr
+  , bindAnaphora
+  , bindMore
+  , isAnaphoricVar
+  , mergeUnits
+  , numberAnaphora
+  , rebody
+  )
+import Test.Hspec
 
 main :: IO ()
 main = hspec spec
@@ -23,7 +34,7 @@ let2 = letexp [("a", int 5), ("b", int 2)] body
 
 
 letBody :: CoreExpr -> Maybe (Scope Int CoreExp CoreBindingName)
-letBody (CoreLet _ b) = Just b
+letBody (CoreLet _ _ b) = Just b
 letBody _ = Nothing
 
 bodyA :: CoreExpr

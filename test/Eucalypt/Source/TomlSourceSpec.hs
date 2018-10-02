@@ -5,7 +5,7 @@ module Eucalypt.Source.TomlSourceSpec
   , spec
   ) where
 
-import Eucalypt.Core.Syn
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Source.TomlSource
 import Test.Hspec
 

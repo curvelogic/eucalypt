@@ -27,6 +27,7 @@ import Data.Maybe
 import Data.Traversable (for)
 import Data.Bifunctor (second)
 import Eucalypt.Core.Anaphora
+import Eucalypt.Core.SourceMap
 import Safe (maximumMay)
 
 -- | Primitive types (literals are available in the eucalypt syntax)
@@ -71,34 +72,57 @@ type Precedence = Int
 -- later.
 --
 data CoreExp a
-  = CoreVar a
+  = CoreVar SMID a
     -- ^ variable
-  | CoreLet [(CoreBindingName, Scope Int CoreExp a)]
+  | CoreLet SMID
+            [(CoreBindingName, Scope Int CoreExp a)]
             (Scope Int CoreExp a)
     -- ^ names only for pretty-printing, not binding
-  | CoreBuiltin CoreBuiltinName
-  | CorePrim Primitive
+  | CoreBuiltin SMID CoreBuiltinName
+  | CorePrim SMID Primitive
     -- ^ literal
-  | CoreLookup (CoreExp a)
+  | CoreLookup SMID
+               (CoreExp a)
                CoreRelativeName
-  | CoreName CoreRelativeName
+  | CoreName SMID CoreRelativeName
     -- ^ new parser - relative lookup name
-  | CoreList [CoreExp a]
-  | CoreBlock (CoreExp a)
-  | CoreMeta (CoreExp a)
-             (CoreExp a)
-  | CoreArgTuple [CoreExp a]
+  | CoreList SMID [CoreExp a]
+  | CoreBlock SMID (CoreExp a)
+  | CoreMeta SMID (CoreExp a) (CoreExp a)
+  | CoreArgTuple SMID [CoreExp a]
     -- ^ RHS of call operator
-  | CoreLambda [CoreBindingName]
+  | CoreLambda SMID
+               [CoreBindingName]
                (Scope Int CoreExp a)
     -- ^ names for pretty-printing, not binding
-  | CoreApply (CoreExp a)
+  | CoreApply SMID
+              (CoreExp a)
               [CoreExp a]
-  | CoreOpSoup [CoreExp a]
-  | CoreOperator Fixity
+  | CoreOpSoup SMID [CoreExp a]
+  | CoreOperator SMID
+                 Fixity
                  Precedence
                  (CoreExp a)
   deriving (Functor, Foldable, Traversable)
+
+
+
+sourceMapId :: CoreExp a -> SMID
+sourceMapId (CoreVar smid _) = smid
+sourceMapId (CoreLet smid _ _) = smid
+sourceMapId (CoreBuiltin smid _) = smid
+sourceMapId (CorePrim smid _) = smid
+sourceMapId (CoreLookup smid _ _) = smid
+sourceMapId (CoreName smid _) = smid
+sourceMapId (CoreList smid _) = smid
+sourceMapId (CoreBlock smid _) = smid
+sourceMapId (CoreMeta smid _ _) = smid
+sourceMapId (CoreArgTuple smid _) = smid
+sourceMapId (CoreLambda smid _ _) = smid
+sourceMapId (CoreApply smid _ _) = smid
+sourceMapId (CoreOpSoup smid _) = smid
+sourceMapId (CoreOperator smid _ _ _) = smid
+
 
 
 -- | Core expression using a simple string binding name
@@ -106,26 +130,26 @@ type CoreExpr = CoreExp CoreBindingName
 
 -- | True if expression is a block
 isBlock :: CoreExp a -> Bool
-isBlock (CoreBlock _) = True
+isBlock CoreBlock{} = True
 isBlock _ = False
 
 
 -- | True if expression is a list
 isList :: CoreExp a -> Bool
-isList (CoreList _) = True
+isList CoreList{} = True
 isList _ = False
 
 
 -- | Return the name of a symbol if the expression is a symbol.
 symbolName :: CoreExp a -> Maybe String
-symbolName (CorePrim (CoreSymbol s)) = Just s
+symbolName (CorePrim _ (CoreSymbol s)) = Just s
 symbolName _ = Nothing
 
 
 
 -- | String content of string literal if the expression is a string.
 stringContent :: CoreExp a -> Maybe String
-stringContent (CorePrim (CoreString s)) = Just s
+stringContent (CorePrim _ (CoreString s)) = Just s
 stringContent _ = Nothing
 
 
@@ -142,160 +166,168 @@ instance Read a => Read (CoreExp a) where readsPrec = readsPrec1
 
 
 instance Applicative CoreExp where
-  pure = CoreVar
+  pure = CoreVar 0
   (<*>) = ap
 
 
 
 instance Monad CoreExp where
-  return = CoreVar
-  CoreVar a >>= f = f a
-  CoreLet bs b >>= f = CoreLet (map (second (>>>= f)) bs) (b >>>= f)
-  CoreBuiltin n >>= _ = CoreBuiltin n
-  CorePrim p >>= _ = CorePrim p
-  CoreLookup e n >>= f = CoreLookup (e >>= f) n
-  CoreList es >>= f = CoreList (map (>>= f) es)
-  CoreBlock e >>= f = CoreBlock (e >>= f)
-  CoreMeta m e >>= f = CoreMeta (m >>= f) (e >>= f) -- TODO: separate meta?
-  CoreOpSoup es >>= f = CoreOpSoup (map (>>= f) es)
-  CoreLambda n e >>= f = CoreLambda n (e >>>= f)
-  CoreOperator x p e >>= f = CoreOperator x p (e >>= f)
-  CoreArgTuple es >>= f = CoreArgTuple (map (>>= f) es)
-  CoreApply g es >>= f = CoreApply (g >>= f) (map (>>= f) es)
-  CoreName n >>= _ = CoreName n
+  return = CoreVar 0
+  CoreVar _ a >>= f = f a
+  CoreLet smid bs b >>= f = CoreLet smid (map (second (>>>= f)) bs) (b >>>= f)
+  CoreBuiltin smid n >>= _ = CoreBuiltin smid n
+  CorePrim smid p >>= _ = CorePrim smid p
+  CoreLookup smid e n >>= f = CoreLookup smid (e >>= f) n
+  CoreList smid es >>= f = CoreList smid (map (>>= f) es)
+  CoreBlock smid e >>= f = CoreBlock smid (e >>= f)
+  CoreMeta smid m e >>= f = CoreMeta smid (m >>= f) (e >>= f) -- TODO: separate meta?
+  CoreOpSoup smid es >>= f = CoreOpSoup smid (map (>>= f) es)
+  CoreLambda smid n e >>= f = CoreLambda smid n (e >>>= f)
+  CoreOperator smid x p e >>= f = CoreOperator smid x p (e >>= f)
+  CoreArgTuple smid es >>= f = CoreArgTuple smid (map (>>= f) es)
+  CoreApply smid g es >>= f = CoreApply smid (g >>= f) (map (>>= f) es)
+  CoreName smid n >>= _ = CoreName smid n
+
+
 
 -- | Construct a var
-var :: a -> CoreExp a
+var :: SMID -> a -> CoreExp a
 var = CoreVar
 
 
 
 -- | Construct a name (maybe be a relative name, not a var)
-corename :: CoreRelativeName -> CoreExp a
+corename :: SMID -> CoreRelativeName -> CoreExp a
 corename = CoreName
 
 
 
+-- | Construct a lookup
+corelookup :: SMID -> CoreExp a -> CoreRelativeName -> CoreExp a
+corelookup = CoreLookup
+
+
+
 -- | Abstract lambda of several args
-lam :: [CoreBindingName] -> CoreExpr -> CoreExpr
-lam as expr = CoreLambda as scope
+lam :: SMID -> [CoreBindingName] -> CoreExpr -> CoreExpr
+lam smid as expr = CoreLambda smid as scope
   where
     scope = abstract (`elemIndex` as) expr
 
 
 
---- | Construct a function application
-app :: CoreExp a -> [CoreExp a] -> CoreExp a
+-- | Construct a function application
+app :: SMID -> CoreExp a -> [CoreExp a] -> CoreExp a
 app = CoreApply
 
 
 
 -- | Construct recursive let of several bindings
-letexp :: [(CoreBindingName, CoreExpr)] -> CoreExpr -> CoreExpr
-letexp [] b = b
-letexp bs b = CoreLet (map (second abstr) bs) (abstr b)
+letexp :: SMID -> [(CoreBindingName, CoreExpr)] -> CoreExpr -> CoreExpr
+letexp _ [] b = b
+letexp smid bs b = CoreLet smid (map (second abstr) bs) (abstr b)
   where abstr = abstract (`elemIndex` map fst bs)
 
 
 
 -- | Construct boolean expression
-corebool :: Bool -> CoreExp a
-corebool = CorePrim . CoreBoolean
+corebool :: SMID -> Bool -> CoreExp a
+corebool smid = CorePrim smid . CoreBoolean
 
 
 
 -- | Construct null expression
-corenull :: CoreExp a
-corenull = CorePrim CoreNull
+corenull :: SMID -> CoreExp a
+corenull smid = CorePrim smid CoreNull
 
 
 
 -- | CoreList
-corelist :: [CoreExp a] -> CoreExp a
+corelist :: SMID -> [CoreExp a] -> CoreExp a
 corelist = CoreList
 
 
 
 -- | Construct symbol expression
-sym :: String -> CoreExp a
-sym = CorePrim . CoreSymbol
+sym :: SMID -> String -> CoreExp a
+sym smid = CorePrim smid . CoreSymbol
 
 
 
 -- | Construct builtin expression
-bif :: String -> CoreExp a
+bif :: SMID -> String -> CoreExp a
 bif = CoreBuiltin
 
 
 
 -- | Construct an integer expression
-int :: Integer -> CoreExp a
-int = CorePrim . CoreInt
+int :: SMID -> Integer -> CoreExp a
+int smid = CorePrim smid . CoreInt
 
 
 
 -- | Construct an integer expression
-float :: Double -> CoreExp a
-float = CorePrim . CoreFloat
+float :: SMID -> Double -> CoreExp a
+float smid = CorePrim smid . CoreFloat
 
 
 
 -- | Construct a string expression
-str :: String -> CoreExp a
-str = CorePrim . CoreString
+str :: SMID -> String -> CoreExp a
+str smid = CorePrim smid . CoreString
 
 
 
 -- | A block element from string key and expr value
-element :: String -> CoreExp a -> CoreExp a
-element k v = CoreList [sym k, v]
+element :: SMID -> String -> CoreExp a -> CoreExp a
+element smid k v = CoreList smid [anon sym k, v]
 
 
 
 -- | A block from its items
-block :: [CoreExp a] -> CoreExp a
-block items = CoreBlock $ CoreList items
+block :: SMID -> [CoreExp a] -> CoreExp a
+block smid items = CoreBlock smid $ CoreList smid items
 
 
 
 -- | Apply metadata to another expression
-withMeta :: CoreExp a -> CoreExp a -> CoreExp a
+withMeta :: SMID -> CoreExp a -> CoreExp a -> CoreExp a
 withMeta = CoreMeta
 
 
 
 -- | A left-associative infix operation
-infixl_ :: Precedence -> CoreExp a -> CoreExp a
-infixl_ = CoreOperator InfixLeft
+infixl_ :: SMID -> Precedence -> CoreExp a -> CoreExp a
+infixl_ smid = CoreOperator smid InfixLeft
 
 
 
 -- | A right-associative infix operation
-infixr_ :: Precedence -> CoreExp a -> CoreExp a
-infixr_ = CoreOperator InfixRight
+infixr_ :: SMID -> Precedence -> CoreExp a -> CoreExp a
+infixr_ smid = CoreOperator smid InfixRight
 
 
 
 -- | A unary prefix operator
-prefix_ :: Precedence -> CoreExpr -> CoreExpr
-prefix_ = CoreOperator UnaryPrefix
+prefix_ :: SMID -> Precedence -> CoreExpr -> CoreExpr
+prefix_ smid = CoreOperator smid UnaryPrefix
 
 
 
 -- | A unary postfix operat
-postfix_ :: Precedence -> CoreExpr -> CoreExpr
-postfix_ = CoreOperator UnaryPostfix
+postfix_ :: SMID -> Precedence -> CoreExpr -> CoreExpr
+postfix_ smid = CoreOperator smid UnaryPostfix
 
 
 
 -- | Operator soup without explicit brackets
-soup :: [CoreExpr] -> CoreExpr
+soup :: SMID -> [CoreExpr] -> CoreExpr
 soup = CoreOpSoup
 
 
 
 -- | Arg tuple constructor
-args :: [CoreExpr] -> CoreExpr
+args :: SMID -> [CoreExpr] -> CoreExpr
 args = CoreArgTuple
 
 -- $ special operators
@@ -304,7 +336,7 @@ args = CoreArgTuple
 
 -- | Catenation operator
 catOp :: CoreExp a
-catOp = infixl_ 20 (CoreBuiltin "CAT")
+catOp = anon infixl_ 20 (anon bif "CAT")
 
 
 
@@ -312,14 +344,14 @@ catOp = infixl_ 20 (CoreBuiltin "CAT")
 -- fixity / precedence resolution phases but formed into core syntax
 -- after that.
 callOp :: CoreExp a
-callOp = infixl_ 90 (CoreBuiltin "*CALL*")
+callOp = anon infixl_ 90 (anon bif "*CALL*")
 
 
 
 -- | Name lookup is treated as operator during the fixity / precedence
 -- resolution phases but formed into core syntax after that.
 lookupOp :: CoreExpr
-lookupOp = infixl_ 95 (CoreBuiltin "*DOT*")
+lookupOp = anon infixl_ 95 (anon bif "*DOT*")
 
 -- ? anaphora
 --
@@ -359,10 +391,10 @@ instance (Anaphora a, Eq b, Show b) => Anaphora (Var b a) where
 
 
 expressionAnaphor :: (Anaphora a) => CoreExp a
-expressionAnaphor = var unnumberedAnaphor
+expressionAnaphor = anon var unnumberedAnaphor
 
 isAnaphoricVar :: (Anaphora a) => CoreExp a -> Bool
-isAnaphoricVar (CoreVar s) = isAnaphor s
+isAnaphoricVar (CoreVar _ s) = isAnaphor s
 isAnaphoricVar _ = False
 
 applyNumber :: (Anaphora a, Eq a) => a -> State Int a
@@ -394,13 +426,14 @@ numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
 bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
 bindAnaphora expr =
   case maxAnaphor of
-    Just n -> CoreLambda (anaphora n) $ abstract toNumber expr
+    Just n ->
+      CoreLambda (sourceMapId expr) (anaphora n) $ abstract toNumber expr
     Nothing -> expr
   where
     freeVars = foldr (:) [] expr
     freeAnaphora = mapMaybe toNumber freeVars
     maxAnaphor = maximumMay freeAnaphora
-    anaphora upTo = map fromNumber [0..upTo]
+    anaphora upTo = map fromNumber [0 .. upTo]
 
 
 
@@ -420,7 +453,7 @@ instantiateBody vals = instantiate (vals !!)
 -- expressions (lazily...). This expands using bindings in top-level
 -- lets
 instantiateLet :: CoreExp a -> CoreExp a
-instantiateLet (CoreLet bs b) = inst b
+instantiateLet (CoreLet _ bs b) = inst b
   where
     es = map (inst . snd) bs
     inst = instantiate (es !!)
@@ -448,16 +481,16 @@ instance ToCoreBindingName a => ToCoreBindingName (Var b a) where
 -- expressions in that body according to the bindings of the
 -- containing lets.
 rebody :: (ToCoreBindingName a, Show a) => CoreExp a -> CoreExp a -> CoreExp a
-rebody (CoreLet bs body) payload =
+rebody (CoreLet smid bs body) payload =
   let payload' = rebody (fromScope body) (fmap return payload)
-   in CoreLet bs (bindMore'' toNameAndBinding (toScope payload'))
+   in CoreLet smid bs (bindMore'' toNameAndBinding (toScope payload'))
   where
     toNameAndBinding :: ToCoreBindingName a => a -> Maybe (CoreBindingName, Int)
     toNameAndBinding nm =
       case toCoreBindingName nm of
         (Just b) -> (b, ) <$> (b `elemIndex` map fst bs)
         Nothing -> Nothing
-rebody (CoreMeta m e) payload = CoreMeta m (rebody e payload)
+rebody (CoreMeta smid m e) payload = CoreMeta smid m (rebody e payload)
 rebody _ payload = payload
 
 
@@ -518,16 +551,18 @@ modifyBoundVars k e =
       F a -> pure $ F a
 
 
+
 -- | Replace bound variables in let and lambda bodies with
 -- appropriately named free variables. Handy for inspecting
 -- expression in tests.
 unbind :: CoreExpr -> CoreExpr
-unbind (CoreLambda _ e) = instantiate (CoreVar . show) e
-unbind (CoreLet bs body) = inst body
+unbind (CoreLambda _ _ e) = instantiate (anon var . show) e
+unbind (CoreLet _ bs body) = inst body
   where
     names = map fst bs
-    inst = instantiate (\n -> CoreVar (names !! n))
+    inst = instantiate (\n -> anon var (names !! n))
 unbind e = e
+
 
 
 -- | Pull a unit (let or block) apart into bindings and body
@@ -535,11 +570,12 @@ unitBindingsAndBody ::
   CoreExpr
   -> ([(CoreBindingName, Scope Int CoreExp CoreBindingName)],
       Scope Int CoreExp CoreBindingName)
-unitBindingsAndBody (CoreMeta _ b) = unitBindingsAndBody b
-unitBindingsAndBody (CoreLet bs b) = (bs, b)
+unitBindingsAndBody (CoreMeta _ _ b) = unitBindingsAndBody b
+unitBindingsAndBody (CoreLet _ bs b) = (bs, b)
 unitBindingsAndBody e@CoreBlock{} = ([], abstract (const Nothing) e)
 unitBindingsAndBody CoreList{} = error "Input is a sequence and must be named."
 unitBindingsAndBody _ = error "Unsupported unit type (not block or sequence)"
+
 
 
 -- | Merge bindings from core units, using body of final unit as
@@ -564,4 +600,4 @@ mergeUnits lets = last newLets
     rebindBody oldBody newBindList =
       let abstr = bindMore (`elemIndex` map fst newBindList)
        in abstr oldBody
-    newLets = zipWith CoreLet bindLists' bodies'
+    newLets = zipWith (anon CoreLet) bindLists' bodies'

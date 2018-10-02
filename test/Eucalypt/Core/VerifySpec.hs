@@ -3,7 +3,7 @@ module Eucalypt.Core.VerifySpec
   , spec
   ) where
 
-import Eucalypt.Core.Syn
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Verify
 import Test.Hspec
 

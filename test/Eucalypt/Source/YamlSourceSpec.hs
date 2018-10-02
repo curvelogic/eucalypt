@@ -5,7 +5,7 @@ module Eucalypt.Source.YamlSourceSpec
   , spec
   ) where
 
-import Eucalypt.Core.Syn
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Source.YamlSource
 import Test.Hspec
 import Text.Libyaml (Tag(..))
@@ -22,7 +22,7 @@ spec =
     it "Parses JSON data" $
       parseYamlData " { a: [1, 2, 3], b: {x: \"y\"} } " `shouldReturn`
       block
-        [ element "a" $ CoreList [int 1, int 2, int 3]
+        [ element "a" $ corelist [int 1, int 2, int 3]
         , element "b" $ block [element "x" (str "y")]
         ]
     it "Resolves unknown tags" $ do

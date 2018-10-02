@@ -1,7 +1,8 @@
 module Eucalypt.Core.PrettySpec (main, spec)
 where
 
-import Eucalypt.Core.Syn
+import Eucalypt.Core.Syn (CoreExpr)
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Pretty
 import Test.Hspec
 
@@ -20,7 +21,7 @@ sample =
              , infixl_ 90 (bif "*CALL*")
              , args
                  [ soup [var "n", var "zero?"]
-                 , CoreList []
+                 , corelist []
                  , soup
                      [ var "cons"
                      , infixl_ 90 (bif "*CALL*")

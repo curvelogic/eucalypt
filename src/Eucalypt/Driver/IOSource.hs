@@ -8,29 +8,37 @@ Stability   : experimental
 -}
 module Eucalypt.Driver.IOSource where
 
+import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Unit
 import System.Posix.Time (epochTime)
 import System.Environment (getEnvironment)
 
 euEnv :: IO CoreExpr
-euEnv = getEnvironment >>= \e -> return $ CoreBlock . CoreList $ map kv e
+euEnv = getEnvironment >>= \e -> return $ anon CoreBlock . anon CoreList $ map kv e
   where
     kv (k, v) =
-      CoreList [CorePrim (CoreSymbol k), CorePrim (CoreString v)]
+      anon CoreList [anon CorePrim (CoreSymbol k), anon CorePrim (CoreString v)]
 
 euUnixTimestamp :: IO CoreExpr
-euUnixTimestamp = epochTime >>= \t -> return $ (CorePrim . CoreInt . toInteger . fromEnum) t
+euUnixTimestamp =
+  epochTime >>= \t ->
+    return $ (anon CorePrim . CoreInt . toInteger . fromEnum) t
 
 prepareIOUnit :: IO TranslationUnit
 prepareIOUnit = do
   env <- euEnv
   et <- euUnixTimestamp
-  return $ dataUnit $
-    letexp
+  return $
+    dataUnit $
+    anon
+      letexp
       [ ( "__io"
-        , letexp [("ENV", env), ("EPOCHTIME", et)] $
-          block
-            [element "ENV" $ var "ENV", element "EPOCHTIME" $ var "EPOCHTIME"])
+        , anon letexp [("ENV", env), ("EPOCHTIME", et)] $
+          anon
+            block
+            [ anon element "ENV" $ anon var "ENV"
+            , anon element "EPOCHTIME" $ anon var "EPOCHTIME"
+            ])
       ]
-      (block [])
+      (anon block [])
