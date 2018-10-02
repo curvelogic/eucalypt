@@ -1,0 +1,218 @@
+-- This file has been generated from package.yaml by hpack version 0.28.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: d102d437cf6b41723534516602974b7a4a1a18e66aa31de2f3e0f249e8ad583a
+
+name:           eucalypt-hs
+version:        0.1.0.0
+synopsis:       Haskell implementation of Eucalypt tooling and language
+description:    Please see the README on Github at <https://github.com/curvelogic/eucalypt-hs#readme>
+homepage:       https://github.com/curvelogic/eucalypt-hs#readme
+bug-reports:    https://github.com/curvelogic/eucalypt-hs/issues
+author:         Greg Hawkins
+maintainer:     greg@curvelogic.co.uk
+copyright:      2018 Greg Hawkins
+license:        MIT
+build-type:     Simple
+cabal-version:  >= 1.10
+extra-source-files:
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/curvelogic/eucalypt-hs
+
+library
+  hs-source-dirs:
+      src
+  build-depends:
+      QuickCheck
+    , aeson
+    , aeson-pretty
+    , array
+    , base >=4.7 && <5
+    , bound
+    , bytestring
+    , comonad
+    , conduit
+    , containers
+    , deriving-compat
+    , directory
+    , exceptions
+    , file-embed
+    , filepath
+    , hashable
+    , insert-ordered-containers
+    , megaparsec
+    , monad-loops
+    , mtl
+    , network-uri
+    , optparse-applicative
+    , path
+    , pcre-heavy
+    , pretty
+    , primitive
+    , regex-pcre-builtin
+    , resourcet
+    , safe
+    , safe-exceptions
+    , scientific
+    , split
+    , strict
+    , text
+    , tomland
+    , transformers
+    , unix
+    , unordered-containers
+    , vector
+    , yaml
+  exposed-modules:
+      Eucalypt.Core.Anaphora
+      Eucalypt.Core.Cook
+      Eucalypt.Core.Desugar
+      Eucalypt.Core.Eliminate
+      Eucalypt.Core.Error
+      Eucalypt.Core.Import
+      Eucalypt.Core.Metadata
+      Eucalypt.Core.Pretty
+      Eucalypt.Core.Syn
+      Eucalypt.Core.Target
+      Eucalypt.Core.Unit
+      Eucalypt.Core.Verify
+      Eucalypt.Driver.Error
+      Eucalypt.Driver.Evaluator
+      Eucalypt.Driver.IOSource
+      Eucalypt.Driver.Lib
+      Eucalypt.Driver.Options
+      Eucalypt.Driver.Stg
+      Eucalypt.Render.Json
+      Eucalypt.Render.Text
+      Eucalypt.Render.Yaml
+      Eucalypt.Reporting.Error
+      Eucalypt.Reporting.Location
+      Eucalypt.Reporting.Report
+      Eucalypt.Source.Error
+      Eucalypt.Source.TomlSource
+      Eucalypt.Source.YamlSource
+      Eucalypt.Stg.CallStack
+      Eucalypt.Stg.Compiler
+      Eucalypt.Stg.Error
+      Eucalypt.Stg.Eval
+      Eucalypt.Stg.Event
+      Eucalypt.Stg.Globals
+      Eucalypt.Stg.Globals.Arithmetic
+      Eucalypt.Stg.Globals.Block
+      Eucalypt.Stg.Globals.Bool
+      Eucalypt.Stg.Globals.Emit
+      Eucalypt.Stg.Globals.Eq
+      Eucalypt.Stg.Globals.List
+      Eucalypt.Stg.Globals.Meta
+      Eucalypt.Stg.Globals.Panic
+      Eucalypt.Stg.Globals.Str
+      Eucalypt.Stg.Intrinsics
+      Eucalypt.Stg.Intrinsics.Arithmetic
+      Eucalypt.Stg.Intrinsics.Block
+      Eucalypt.Stg.Intrinsics.Common
+      Eucalypt.Stg.Intrinsics.Emit
+      Eucalypt.Stg.Intrinsics.Eq
+      Eucalypt.Stg.Intrinsics.General
+      Eucalypt.Stg.Intrinsics.Meta
+      Eucalypt.Stg.Intrinsics.Panic
+      Eucalypt.Stg.Intrinsics.Str
+      Eucalypt.Stg.Machine
+      Eucalypt.Stg.StandardMachine
+      Eucalypt.Stg.Syn
+      Eucalypt.Stg.Tags
+      Eucalypt.Syntax.Ast
+      Eucalypt.Syntax.Error
+      Eucalypt.Syntax.Input
+      Eucalypt.Syntax.ParseCommon
+      Eucalypt.Syntax.ParseExpr
+      Eucalypt.Syntax.ParseString
+  other-modules:
+      Paths_eucalypt_hs
+  default-language: Haskell2010
+
+executable eu
+  main-is: Main.hs
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , directory
+    , eucalypt-hs
+    , filepath
+    , network-uri
+    , optparse-applicative
+    , path
+  other-modules:
+      Paths_eucalypt_hs
+  default-language: Haskell2010
+
+test-suite eucalypt-hs-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      QuickCheck
+    , aeson
+    , aeson-pretty
+    , base >=4.7 && <5
+    , bound
+    , bytestring
+    , conduit
+    , containers
+    , eucalypt-hs
+    , hspec
+    , hspec-megaparsec
+    , megaparsec
+    , monad-loops
+    , mtl
+    , network-uri
+    , pretty
+    , scientific
+    , text
+    , tomland
+    , unordered-containers
+    , vector
+    , yaml
+  other-modules:
+      Eucalypt.Core.CookSpec
+      Eucalypt.Core.DesugarSpec
+      Eucalypt.Core.EliminateSpec
+      Eucalypt.Core.ImportSpec
+      Eucalypt.Core.MetadataSpec
+      Eucalypt.Core.PrettySpec
+      Eucalypt.Core.SynSpec
+      Eucalypt.Core.VerifySpec
+      Eucalypt.Render.JsonSpec
+      Eucalypt.Render.TextSpec
+      Eucalypt.Render.YamlSpec
+      Eucalypt.Reporting.LocationSpec
+      Eucalypt.Source.TomlSourceSpec
+      Eucalypt.Source.YamlSourceSpec
+      Eucalypt.Stg.CompilerSpec
+      Eucalypt.Stg.EvalSpec
+      Eucalypt.Stg.Globals.ArithmeticSpec
+      Eucalypt.Stg.Globals.BlockSpec
+      Eucalypt.Stg.Globals.BoolSpec
+      Eucalypt.Stg.Globals.EmitSpec
+      Eucalypt.Stg.Globals.EqSpec
+      Eucalypt.Stg.Globals.ListSpec
+      Eucalypt.Stg.Globals.MetaSpec
+      Eucalypt.Stg.GlobalsSpec
+      Eucalypt.Stg.Intrinsics.CommonSpec
+      Eucalypt.Stg.Intrinsics.StrSpec
+      Eucalypt.Stg.MachineSpec
+      Eucalypt.Stg.StgTestUtil
+      Eucalypt.Stg.SynSpec
+      Eucalypt.Syntax.AstSpec
+      Eucalypt.Syntax.InputSpec
+      Eucalypt.Syntax.ParseExprSpec
+      Eucalypt.Syntax.ParseStringSpec
+      Paths_eucalypt_hs
+  default-language: Haskell2010
