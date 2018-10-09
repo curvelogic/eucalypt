@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 850630e007c4c92f487ae4c52c83f97576f733d231e0026bef52b1f70f0fe495
+-- hash: 70feae6bb4c13eda9b1f3ed356320c50fb58538191777bfa1a2f423add3aecf0
 
 name:           eucalypt-hs
 version:        0.1.0.0
@@ -49,6 +49,7 @@ library
       Eucalypt.Render.Text
       Eucalypt.Render.Yaml
       Eucalypt.Reporting.Classes
+      Eucalypt.Reporting.Code
       Eucalypt.Reporting.Error
       Eucalypt.Reporting.Location
       Eucalypt.Reporting.Report
@@ -169,6 +170,7 @@ test-suite eucalypt-hs-test
       Eucalypt.Render.JsonSpec
       Eucalypt.Render.TextSpec
       Eucalypt.Render.YamlSpec
+      Eucalypt.Reporting.CodeSpec
       Eucalypt.Reporting.LocationSpec
       Eucalypt.Source.TomlSourceSpec
       Eucalypt.Source.YamlSourceSpec

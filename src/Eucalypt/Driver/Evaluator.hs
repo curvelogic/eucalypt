@@ -46,7 +46,7 @@ import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
 import qualified Eucalypt.Driver.Stg as STG
 import Eucalypt.Reporting.Error (EucalyptError(..))
-import Eucalypt.Reporting.Report (reportErrors, tryOrReport)
+import Eucalypt.Reporting.Report (reportErrors, tryOrReportWithCode)
 import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
@@ -90,10 +90,16 @@ readURLInput u =
 
 
 -- | Read any locator into a bytestring
-readInput :: Locator -> IO BS.ByteString
-readInput (URLInput u) = readURLInput u
-readInput (ResourceInput n) = return $ fromJust $ getResource n
-readInput StdInput = readStdInput
+readInputLocator :: Locator -> IO BS.ByteString
+readInputLocator (URLInput u) = readURLInput u
+readInputLocator (ResourceInput n) = return $ fromJust $ getResource n
+readInputLocator StdInput = readStdInput
+
+
+
+-- | Read bytestring content for an Input
+readInput :: Input -> IO BS.ByteString
+readInput = readInputLocator . inputLocator
 
 
 
@@ -111,7 +117,7 @@ parseEucalypt source = PE.parseUnit text
 -- assumed that they will be referenced by name in subsequent source.
 parseInputToCore :: Input -> IO (Either EucalyptError TranslationUnit)
 parseInputToCore i@(Input locator name format) = do
-  source <- readInput locator
+  source <- readInput i
   case format of
     "toml" -> tomlDataToCore source
     "yaml" -> activeYamlToCore source
@@ -147,7 +153,7 @@ dumpASTs _ exprs = forM_ exprs $ \e ->
 -- | Parse and dump ASTs
 parseAndDumpASTs :: EucalyptOptions -> IO ExitCode
 parseAndDumpASTs opts = do
-  texts <- traverse readInput euLocators
+  texts <- traverse readInputLocator euLocators
   let filenames = map show euLocators
   let (errs, units) = partitionEithers (zipWith parseEucalypt texts filenames)
   if null errs
@@ -275,7 +281,8 @@ parseInputsAndImports inputs = do
 
 -- | Implement the Evaluate command, read files and render
 evaluate :: EucalyptOptions -> IO ExitCode
-evaluate opts = tryOrReport $ do
+evaluate opts = tryOrReportWithCode readInput $ do
+
   when (cmd == Parse) (parseAndDumpASTs opts >> exitSuccess)
 
   -- Stage 1: parse inputs and translate to core units

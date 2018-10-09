@@ -16,15 +16,15 @@ sample1 = "foo\nbar\nbaz\nquux\n"
 
 result1 :: String
 result1 =
-  intercalate "\n" ["   |", "   |", " 3 | quux", "   |   ^", "   | --/"]
+  intercalate "\n" ["   |", "   |", " 3 | baz", "   | --^", "   |"]
 
 result2 :: String
 result2 =
-  intercalate "\n" ["   |", "   |", " 2 | baz", "   | ^^", "   |"]
+  intercalate "\n" ["   |", "   |", " 2 | bar", "   | ^^", "   |"]
 
 result3 :: String
 result3 =
-  intercalate "\n" ["   |", " 1 | bar", "   | ...", "   | ...", " 3 | quux", "   |"]
+  intercalate "\n" ["   |", " 1 | foo", "   | ...", "   | ...", " 3 | baz", "   |"]
 
 spec :: Spec
 spec =

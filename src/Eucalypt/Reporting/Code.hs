@@ -8,7 +8,7 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 
-module Eucalypt.Reporting.Code (codeToDoc, formatPoint, formatSingleLine, formatRegion)
+module Eucalypt.Reporting.Code (format, formatPoint, formatSingleLine, formatRegion)
 where
 
 import qualified Data.ByteString as B
@@ -16,26 +16,8 @@ import Data.Char (ord)
 import Data.Maybe (fromMaybe)
 import Data.Text (unpack)
 import Data.Text.Encoding (decodeUtf8)
-import Eucalypt.Reporting.Location
-import Eucalypt.Syntax.Input
 import Safe (atMay)
-import qualified Text.Megaparsec.Pos as M
 import qualified Text.PrettyPrint as P
-
-codeToDoc :: (Input -> B.ByteString) -> SourceSpan -> P.Doc
-codeToDoc toBytes (SourcePosition start, SourcePosition end) =
-  case input of
-    Nothing -> P.text "!!! CANNOT FIND SOURCE FOR" P.<+> P.text name
-    Just i ->
-      let bytes = toBytes i
-       in format bytes startLine startCol endLine endCol
-  where
-    name = M.sourceName start
-    input = parseInputFromString name
-    startLine = M.unPos $ M.sourceLine start
-    startCol = M.unPos $ M.sourceColumn start
-    endLine = M.unPos $ M.sourceLine end
-    endCol = M.unPos $ M.sourceColumn end
 
 
 
@@ -71,11 +53,12 @@ againstLineNumberedMargin from m ls = P.vcat $ zipWith formLine margin ls
 
 
 
--- | Read the specified line out of the supplied byte string
+-- | Read the specified line out of the supplied byte string. (Line
+-- indexes are 1-based)
 selectLine :: B.ByteString -> Int -> Maybe String
 selectLine text n =
   unpack . decodeUtf8 <$>
-  atMay (B.splitWith (== fromIntegral (ord '\n')) text) n
+  atMay (B.splitWith (== fromIntegral (ord '\n')) text) (n - 1)
 
 
 
@@ -85,11 +68,11 @@ formatPoint text line column =
   againstLineNumberedMargin
     line
     2
-    [P.empty, P.empty, lineText, pointer1, pointer2]
+    [P.empty, P.empty, lineText, pointer1, P.empty]
   where
     lineText = P.text $ fromMaybe "" $ selectLine text line
-    pointer1 = P.text $ replicate (column - 1) ' ' ++ "^"
-    pointer2 = P.text $ replicate (column - 1) '-' ++ "/"
+    pointer1 = P.text $ replicate (column - 1) '-' ++ "^"
+    _pointer2 = P.text $ replicate (column - 1) ' ' ++ "|"
 
 
 
