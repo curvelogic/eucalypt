@@ -19,4 +19,4 @@ title = text
 
 -- | Format title and exception message
 standardReport :: String -> String -> Doc
-standardReport t msg = title t $$ text msg
+standardReport t msg = title t $$ text "" $$ text msg

@@ -56,7 +56,7 @@ emitNull = appbif_ (intrinsicIndex "EMIT0") []
 renderKV :: LambdaForm
 renderKV =
   lam_ 0 1 $
-  ann_ "renderKV" $
+  ann_ "renderKV" 0 $
   casedef_
     (Atom arg)
     [ ( stgCons
@@ -101,7 +101,7 @@ renderKV =
 suppresses :: LambdaForm
 suppresses =
   lam_ 0 1 $
-  ann_ "Emit.suppresses" $
+  ann_ "Emit.suppresses" 0 $
   casedef_
     (Atom (Local 0))
     [ ( stgBlock
@@ -119,13 +119,13 @@ suppresses =
   Atom $ Literal $ NativeBool False
 
 emptyList :: LambdaForm
-emptyList = value_ $ ann_ "emptyList" $ seq_ emitSS emitSE
+emptyList = value_ $ ann_ "emptyList" 0 $ seq_ emitSS emitSE
 
 -- | Emit.continueList(l)
 continueList :: LambdaForm
 continueList =
   lam_ 0 1 $
-  ann_ "Emit.continueList" $
+  ann_ "Emit.continueList" 0 $
   casedef_
     (Atom (Local 0))
     [ ( stgCons
@@ -139,7 +139,7 @@ continueList =
 startList :: LambdaForm
 startList =
   lam_ 0 2 $
-  ann_ "Emit.startList" $
+  ann_ "Emit.startList" 0 $
   seq_
     emitSS
     (seq_
@@ -150,7 +150,7 @@ startList =
 continueKVList :: LambdaForm
 continueKVList =
   lam_ 0 1 $
-  ann_ "Emit.continueKVList" $
+  ann_ "Emit.continueKVList" 0 $
   case_
     (Atom (Local 0))
     [ ( stgCons
@@ -164,7 +164,7 @@ continueKVList =
 wrapBlock :: LambdaForm
 wrapBlock =
   lam_ 0 1 $
-  ann_ "Emit.wrapBlock" $
+  ann_ "Emit.wrapBlock" 0 $
   seqall_ [emitMS, appfn_ (Global "Emit.continueKVList") [Local 0], emitME]
 
 
@@ -172,7 +172,7 @@ wrapBlock =
 euRender :: LambdaForm
 euRender =
   lam_ 0 1 $
-  ann_ "__RENDER" $
+  ann_ "__RENDER" 0 $
   casedef_
     (Atom (Local 0))
     [ (stgBlock, (1, appfn_ (Global "Emit.wrapBlock") [Local 1]))

@@ -18,7 +18,7 @@ import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 -- | __EQ(l, r) - deep equality test in STG
 euEq :: LambdaForm
 euEq =
-  lam_ 0 2 $ ann_ "__EQ" $
+  lam_ 0 2 $ ann_ "__EQ" 0 $
   casedef_
     (Atom (Local 0))
     [ ( stgNil

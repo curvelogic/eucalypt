@@ -36,7 +36,7 @@ euEmptyBlock = thunk_ $ appcon_ stgBlock [Global "KNIL"]
 euCat :: LambdaForm
 euCat =
   lam_ 0 2 $
-  ann_ "__CAT" $
+  ann_ "__CAT" 0 $
   casedef_
     (Atom (Local 1))
     [(stgBlock, (1, appfn_ (Global "MERGE") [Local 0, Local 1]))] $
@@ -63,7 +63,7 @@ seqNatList =
 seqPairList :: LambdaForm
 seqPairList =
   lam_ 0 1 $
-  ann_ "__seqPairList" $
+  ann_ "__seqPairList" 0 $
   case_
     (Atom (Local 0))
     [ (stgNil, (0, appcon_ stgNil []))

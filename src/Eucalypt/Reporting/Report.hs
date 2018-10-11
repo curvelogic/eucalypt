@@ -76,7 +76,7 @@ reportToConsole resolve e = do
           Just input -> (`codeToDoc` sp) <$> resolve input
   let messageDoc = report e
   consoleError
-    (P.char '\n' P.$$ messageDoc <> P.char '\n' P.$$ codeDoc <> P.char '\n')
+    (messageDoc P.$$ codeDoc <> P.char '\n')
 
 
 

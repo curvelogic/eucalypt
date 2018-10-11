@@ -262,7 +262,7 @@ step ms0@MachineState {machineCode = (ReturnLit nat meta)} = {-# SCC "ReturnLit"
         poke a (Closure (value_ (Atom (Literal nat))) mempty mempty newMeta)
       return . setRule "UPDATELIT" $
         setCode ms' (ReturnLit nat (fromMeta newMeta))
-    (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfNativeBranchTable
+    (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
     Nothing -> return $ terminate ms'
 
 
@@ -342,9 +342,9 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = {-# SCC "EvalAtom"
 
 
 -- | Append an annotation to the call stack
-step ms0@MachineState {machineCode = (Eval (Ann s expr) env)} = {-# SCC "EvalAnn" #-} do
+step ms0@MachineState {machineCode = (Eval (Ann s smid expr) env)} = {-# SCC "EvalAnn" #-} do
   ms <- prepareStep "ANN" ms0
-  return . appendCallStack s $ setCode ms (Eval expr env)
+  return . appendCallStack (s, smid) $ setCode ms (Eval expr env)
 
 -- | Step repeatedly until the terminated flag is set
 run :: (MonadIO m, MonadThrow m) => MachineState -> m MachineState

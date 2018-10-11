@@ -17,6 +17,7 @@ import qualified Eucalypt.Core.Error as Core
 import qualified Eucalypt.Driver.Error as Driver
 import Eucalypt.Reporting.Classes
 import qualified Eucalypt.Source.Error as Source
+import qualified Eucalypt.Stg.Error as Stg
 import qualified Eucalypt.Syntax.Error as Syntax
 import qualified Text.PrettyPrint as P
 
@@ -27,6 +28,7 @@ data EucalyptError
   | Syntax Syntax.SyntaxError
   | System SomeException
   | Command Driver.CommandError
+  | Execution Stg.StgException
   | Multiple [EucalyptError]
   deriving (Show, Typeable)
 
@@ -40,6 +42,7 @@ instance Reportable EucalyptError where
   report (Core e) = report e
   report (Source e) = report e
   report (Command e) = report e
+  report (Execution e) = report e
   report e = P.text $ show e
 
 -- | We can add a source map to a 'EucalyptError' to enhance code
@@ -50,6 +53,7 @@ instance Reportable (SourceMap, EucalyptError) where
   code (_, System _) = Nothing
   code (_, Command e) = code e
   code (sm, Core e) = code e <|> toSource sm e
+  code (sm, Execution e) = code e <|> toSource sm e
   code _ = Nothing
 
   report (_, e) = report e

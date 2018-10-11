@@ -22,6 +22,7 @@ import Data.Semigroup
 import Data.Vector (Vector, (!?))
 import qualified Data.Vector as Vector
 import Data.Word
+import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Event
@@ -356,7 +357,7 @@ setCallStack cs ms = ms { machineCallStack = cs }
 
 -- | Append annotation to current
 -- call stack
-appendCallStack :: String -> MachineState -> MachineState
+appendCallStack :: (String, SMID) -> MachineState -> MachineState
 appendCallStack ann ms@MachineState {machineCallStack = cs} =
   ms {machineCallStack = addEntry ann cs}
 

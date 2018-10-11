@@ -24,7 +24,7 @@ import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 euMatch :: LambdaForm
 euMatch =
   lam_ 0 2 $
-  ann_ "__MATCH" $
+  ann_ "__MATCH" 0 $
   force_ (Atom (Local 0)) $
   force_ (Atom (Local 1)) $
   appbif_ (intrinsicIndex "MATCH") [Local 2, Local 3]
@@ -34,7 +34,7 @@ euMatch =
 euMatches :: LambdaForm
 euMatches =
   lam_ 0 2 $
-  ann_ "__MATCHES" $
+  ann_ "__MATCHES" 0 $
   force_ (Atom (Local 0)) $
   force_ (Atom (Local 1)) $
   appbif_ (intrinsicIndex "MATCHES") [Local 2, Local 3]
@@ -44,7 +44,7 @@ euMatches =
 euJoin :: LambdaForm
 euJoin =
   lam_ 0 2 $
-  ann_ "__JOIN" $
+  ann_ "__JOIN" 0 $
   let_
     [pc_ [Local 0] $ thunkn_ 1 $ appfn_ (Global "seqNatList") [Local 0]]
     (force_
@@ -61,7 +61,7 @@ euSplit =
       es = Local 2
       ere = Local 3
    in lam_ 0 2 $
-      ann_ "__SPLIT" $
+      ann_ "__SPLIT" 0 $
       force_
         (Atom s)
         (force_ (Atom re) $ appbif_ (intrinsicIndex "SPLIT") [es, ere])
@@ -71,7 +71,7 @@ euSplit =
 euStr :: LambdaForm
 euStr =
   lam_ 0 1 $
-  ann_ "__STR" $
+  ann_ "__STR" 0 $
   force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "STRNAT") [Local 1])
 
 
@@ -79,5 +79,5 @@ euStr =
 euSym :: LambdaForm
 euSym =
   lam_ 0 1 $
-  ann_ "__SYM" $
+  ann_ "__SYM" 0 $
   force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "STRSYM") [Local 1])

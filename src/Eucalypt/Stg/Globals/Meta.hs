@@ -20,7 +20,7 @@ import Eucalypt.Stg.Syn
 euMeta :: LambdaForm
 euMeta =
   lam_ 0 1 $
-  ann_ "__META" $
+  ann_ "__META" 0 $
   force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "META") [Local 1])
 
 
@@ -28,5 +28,5 @@ euMeta =
 euWithMeta :: LambdaForm
 euWithMeta =
   lam_ 0 2 $
-  ann_ "__WITHMETA" $
+  ann_ "__WITHMETA" 0 $
   appbif_ (intrinsicIndex "WITHMETA") [Local 0, Local 1]

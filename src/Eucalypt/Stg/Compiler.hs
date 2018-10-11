@@ -75,9 +75,9 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
     contextL' envSize (Var.B i) = Local $ envSize + fromIntegral i
     compileLambdaForm e =
       case e of
-        (CoreLambda _ ns body) ->
+        (CoreLambda smid ns body) ->
           lam_ (length free) (length ns) $
-          ann_ nm $
+          ann_ nm smid $
           compile
             (length free + length ns)
             (contextL' . fromIntegral . length $ free)
@@ -85,7 +85,9 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
           fromScope body
         (CoreList _ []) -> nilConstructor -- TODO: id all std cons?
         CorePrim {} -> value_ $ compile (length free) context' Nothing e
-        _ -> thunkn_ (length free) $ compile (length free) context' Nothing e
+        _ ->
+          thunkn_ (length free) $
+          ann_ nm (sourceMapId e) $ compile (length free) context' Nothing e
 
 
 -- | Compile a CoreExp into STG expression
