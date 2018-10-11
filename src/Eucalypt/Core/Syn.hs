@@ -106,7 +106,6 @@ data CoreExp a
   deriving (Functor, Foldable, Traversable)
 
 
-
 sourceMapId :: CoreExp a -> SMID
 sourceMapId (CoreVar smid _) = smid
 sourceMapId (CoreLet smid _ _) = smid
@@ -123,7 +122,8 @@ sourceMapId (CoreApply smid _ _) = smid
 sourceMapId (CoreOpSoup smid _) = smid
 sourceMapId (CoreOperator smid _ _ _) = smid
 
-
+instance HasSourceMapIds (CoreExp a) where
+  toSourceMapIds e = [sourceMapId e]
 
 -- | Core expression using a simple string binding name
 type CoreExpr = CoreExp CoreBindingName

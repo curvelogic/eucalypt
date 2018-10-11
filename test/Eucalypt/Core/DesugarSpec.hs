@@ -35,16 +35,16 @@ spec = do
 
 -- ? shims
 testDesugarSoup :: [Expression] -> Syn.CoreExpr
-testDesugarSoup = (`evalState` initTranslateState) . unTranslate . translateSoup
+testDesugarSoup = (`evalState` initTranslateState 1) . unTranslate . translateSoup
 
 testDesugarBlock :: Block -> Syn.CoreExpr
-testDesugarBlock = (`evalState` initTranslateState) . unTranslate . translateBlock nowhere
+testDesugarBlock = (`evalState` initTranslateState 1) . unTranslate . translateBlock nowhere
 
 testDesugar :: Expression -> Syn.CoreExpr
-testDesugar = (`evalState` initTranslateState) . unTranslate . translate
+testDesugar = (`evalState` initTranslateState 1) . unTranslate . translate
 
 testDesugarLiteral :: PrimitiveLiteral -> Syn.CoreExpr
-testDesugarLiteral = (`evalState` initTranslateState) . unTranslate . desugarLiteral nowhere
+testDesugarLiteral = (`evalState` initTranslateState 1) . unTranslate . desugarLiteral nowhere
 
 coreSpec :: Spec
 coreSpec =
@@ -223,10 +223,10 @@ targetsSpec =
       (determineTarget . testDesugar) (targetAnnotation "T" "x") `shouldBe`
       Just ("T", "x")
     it "finds T in { a: { ` {target: :T doc: \"x\"} b: _ } }" $
-      (truTargets . translateToCore) targetSampleA `shouldBe`
+      (truTargets . translateToCore 1) targetSampleA `shouldBe`
       [TargetSpec "T" "x" ["a", "b"]]
     it "finds T and U in larger sample " $
-      (truTargets . translateToCore) targetSampleB `shouldBe`
+      (truTargets . translateToCore 1) targetSampleB `shouldBe`
       [TargetSpec "T" "x" ["a", "b"], TargetSpec "U" "y" ["a", "c"]]
 
 importAnnotation :: [String] -> Expression
@@ -247,7 +247,7 @@ importsSpec =
     (importsFromMetadata . testDesugar) (importAnnotation ["x.eu", "y.eu"]) `shouldBe`
     traverse parseInputFromString ["x.eu", "y.eu"]
   it "finds imports for nested block" $
-    (toList . truImports . translateToCore) importSampleA `shouldBe`
+    (toList . truImports . translateToCore 1) importSampleA `shouldBe`
     fromJust (traverse parseInputFromString ["a.yaml", "b.yaml"])
 
 interpolationSpec:: Spec

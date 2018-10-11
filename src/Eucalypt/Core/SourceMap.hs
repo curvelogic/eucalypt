@@ -10,8 +10,10 @@ Stability   : experimental
 
 module Eucalypt.Core.SourceMap where
 
+import Safe
 import Eucalypt.Reporting.Location
-import Data.IntMap
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IM
 
 type SMID = Int
 
@@ -24,11 +26,26 @@ instance Semigroup SourceMap where
 instance Monoid SourceMap where
   mempty = SourceMap mempty
 
+
+
+-- | Next free source map ID from SourceMap
+nextSMID :: SMID -> SourceMap -> SMID
+nextSMID initSMID SourceMap {..} =
+  maybe initSMID ((+ 1) . fst) $ IM.lookupMax sourceMap
+
+
+
 -- | Insert new SourceSpan at next available key
-addSpan :: SourceMap -> SourceSpan -> (SMID, SourceMap)
-addSpan SourceMap{..} sp =
-  let k = (maybe 1 ((+1) . fst) $ lookupMax sourceMap)
-   in (k, SourceMap $ insert k sp sourceMap)
+addSpan :: SourceMap -> SMID -> SourceSpan -> (SMID, SourceMap)
+addSpan sm@SourceMap{..} initSMID sp =
+  let k = nextSMID initSMID sm
+   in (k, SourceMap $ IM.insert k sp sourceMap)
+
+
+
+-- | Retrieve source span from SourceMap id
+lookupSource :: SourceMap -> SMID -> Maybe SourceSpan
+lookupSource (SourceMap sm) smid = IM.lookup smid sm
 
 
 
@@ -67,3 +84,12 @@ mint3 con sp x y z = recordSpan sp >>= \smid -> return $ con smid x y z
 -- | A version of smart constructor that
 anon :: (SMID -> a) -> a
 anon f = f 0
+
+
+class HasSourceMapIds a where
+  toSourceMapIds :: a -> [SMID]
+
+
+-- | Find source using source map and first available source map id
+toSource :: HasSourceMapIds e => SourceMap -> e -> Maybe SourceSpan
+toSource sm e = headMay (toSourceMapIds e) >>= lookupSource sm

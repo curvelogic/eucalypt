@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-|
 Module      : Eucalypt.Reporting.Report
 Description : Facilities for reporting errors
@@ -10,45 +11,23 @@ module Eucalypt.Reporting.Report where
 
 import Control.Exception.Safe
 import qualified Data.ByteString as B
-import qualified Eucalypt.Reporting.Code as Code
-import Eucalypt.Reporting.Location
+import Data.Foldable (traverse_)
+import Eucalypt.Core.SourceMap
 import Eucalypt.Reporting.Classes
+import qualified Eucalypt.Reporting.Code as Code
 import Eucalypt.Reporting.Error
+import Eucalypt.Reporting.Location
 import Eucalypt.Syntax.Input
 import System.Exit
 import System.IO
-import qualified Text.PrettyPrint as P
 import qualified Text.Megaparsec.Pos as M
-
--- | Report any errors to stderr
-reportErrors :: Show a => [a] -> IO ()
-reportErrors = mapM_ (hPrint stderr)
+import qualified Text.PrettyPrint as P
 
 
 
 -- | Send a pretty print doc to stderr
 consoleError :: P.Doc -> IO ()
 consoleError = hPutStr stderr . P.render
-
-
-
--- | Report an error to the console
-reportToConsole :: Reportable a => a -> IO ()
-reportToConsole e = consoleError $ report e
-
-
-
--- | Attempt an IO action, but report and abort in the case of a
--- reportable error.
-tryOrReport :: IO a -> IO a
-tryOrReport action = do
-  result <- tryJust eucalyptError action
-  case result of
-    Left e -> reportToConsole e >> exitFailure
-    Right v -> return v
-  where
-    eucalyptError :: EucalyptError -> Maybe EucalyptError
-    eucalyptError = Just
 
 
 
@@ -59,19 +38,45 @@ tryOrReportWithCode :: (Input -> IO B.ByteString) -> IO a -> IO a
 tryOrReportWithCode resolve action = do
   result <- tryJust eucalyptError action
   case result of
-    Left e -> do
-      codeDoc <- case code e of
-                   Nothing -> return P.empty
-                   Just sp ->
-                     case codeInput sp of
-                       Nothing -> return $ P.text "!!! CANNOT FIND SOURCE !!!"
-                       Just input -> (`codeToDoc` sp) <$> resolve input
-      let messageDoc = report e
-      consoleError (messageDoc P.$$ codeDoc <> P.char '\n') >> exitFailure
+    Left e ->
+      let es = flattenErrors e
+       in traverse_ (reportToConsole resolve) es >> exitFailure
     Right v -> return v
   where
     eucalyptError :: EucalyptError -> Maybe EucalyptError
     eucalyptError = Just
+
+
+
+-- | Attempt IO, but report and abort in the case of reportable error,
+-- using supplied function to read source and supplied source map to
+-- locate items within source.
+tryOrReportUsingSourceMap :: (Input -> IO B.ByteString) -> SourceMap -> IO a -> IO a
+tryOrReportUsingSourceMap resolve sm action = do
+  result <- tryJust eucalyptError action
+  case result of
+    Left e ->
+      let es = flattenErrors e
+       in traverse_ (reportToConsole resolve . (sm, )) es >> exitFailure
+    Right v -> return v
+  where
+    eucalyptError :: EucalyptError -> Maybe EucalyptError
+    eucalyptError = Just
+
+
+
+reportToConsole :: Reportable e => (Input -> IO B.ByteString) -> e -> IO ()
+reportToConsole resolve e = do
+  codeDoc <-
+    case code e of
+      Nothing -> return P.empty
+      Just sp ->
+        case codeInput sp of
+          Nothing -> return $ P.text "!!! CANNOT FIND SOURCE !!!"
+          Just input -> (`codeToDoc` sp) <$> resolve input
+  let messageDoc = report e
+  consoleError
+    (P.char '\n' P.$$ messageDoc <> P.char '\n' P.$$ codeDoc <> P.char '\n')
 
 
 

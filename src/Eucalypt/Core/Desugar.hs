@@ -34,6 +34,7 @@ data TranslateState = TranslateState
   , trStack :: [CoreBindingName]
   , trImports :: [Input]
   , trSourceMap :: SourceMap
+  , trBaseSMID :: SMID
   }
 
 newtype Translate a = Translate { unTranslate :: State TranslateState a }
@@ -42,12 +43,13 @@ newtype Translate a = Translate { unTranslate :: State TranslateState a }
 instance MonadSupplySMID Translate where
   recordSpan loc = do
     sm <- gets trSourceMap
-    let (k, sm') = addSpan sm loc
+    base <- gets trBaseSMID
+    let (k, sm') = addSpan sm base loc
     modify $ \s -> s {trSourceMap = sm'}
     return k
 
 -- | Initial state
-initTranslateState :: TranslateState
+initTranslateState :: SMID -> TranslateState
 initTranslateState = TranslateState [] [] [] mempty
 
 -- | Push a key onto the stack to track where we are, considering
@@ -163,13 +165,11 @@ translateSoup items =
 
 
 
-
 -- | Extract and translate the metadata annotation from the declaration
-translateAnnotation :: Annotated DeclarationForm -> Maybe CoreExpr
+translateAnnotation :: Annotated DeclarationForm -> Translate (Maybe CoreExpr)
 translateAnnotation Annotated {annotation = Just a} =
-  flip evalState initTranslateState $
-  unTranslate $ Just . instantiateLet . normaliseMetadata <$> translate a
-translateAnnotation _ = Nothing
+  Just . instantiateLet . normaliseMetadata <$> translate a
+translateAnnotation _ = return Nothing
 
 
 
@@ -221,7 +221,7 @@ translateBlock :: SourceSpan -> Block -> Translate CoreExpr
 translateBlock loc blk = do
   dforms <-
     forM (declarations blk) $ \d -> do
-      let a = translateAnnotation d
+      a <- translateAnnotation d
       let k = extractKey d
       pushKey k
       (declMeta, valMeta) <-
@@ -318,30 +318,40 @@ translateUnit Located { location = l
 
 -- | Shim for old API
 desugar :: Expression -> Syn.CoreExpr
-desugar = (`evalState` initTranslateState) . unTranslate . translate
+desugar = (`evalState` initTranslateState 1) . unTranslate . translate
 
 
 
 -- | Translate AST into core syntax and generate target metadata on
 -- the way
-translateExpressionToCore :: Expression -> TranslationUnit
-translateExpressionToCore ast =
+translateExpressionToCore :: SMID -> Expression -> TranslationUnit
+translateExpressionToCore baseSMID ast =
   TranslationUnit
     { truCore = e
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
+    , truSourceMap = trSourceMap s
     }
   where
-    (e, s) = runState (unTranslate $ translate ast) initTranslateState
+    (e, s) =
+      runState (unTranslate $ translate ast) $ initTranslateState baseSMID
 
 -- | Translate AST into core syntax and generate target metadata on
 -- the way
-translateToCore :: Unit -> TranslationUnit
-translateToCore ast =
+translateToCore :: SMID -> Unit -> TranslationUnit
+translateToCore baseSMID ast =
   TranslationUnit
     { truCore = e
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
+    , truSourceMap = trSourceMap s
     }
   where
-    (e, s) = runState (unTranslate $ translateUnit ast) initTranslateState
+    (e, s) =
+      runState (unTranslate $ translateUnit ast) $ initTranslateState baseSMID
+
+
+
+-- | A state wrapping monad for tracking SMID between different
+-- translations - we need to ensure unique souce map IDs in all trees
+type CoreLoad a = StateT SMID IO a
