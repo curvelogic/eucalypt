@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 70feae6bb4c13eda9b1f3ed356320c50fb58538191777bfa1a2f423add3aecf0
+-- hash: 93921ace370b6f6a7154345f959c1f0c3b33cca211ffc73d9a910e84d0c50c4e
 
 name:           eucalypt-hs
 version:        0.1.0.0
@@ -39,6 +39,7 @@ library
       Eucalypt.Core.Target
       Eucalypt.Core.Unit
       Eucalypt.Core.Verify
+      Eucalypt.Driver.Core
       Eucalypt.Driver.Error
       Eucalypt.Driver.Evaluator
       Eucalypt.Driver.IOSource
@@ -50,6 +51,7 @@ library
       Eucalypt.Render.Yaml
       Eucalypt.Reporting.Classes
       Eucalypt.Reporting.Code
+      Eucalypt.Reporting.Common
       Eucalypt.Reporting.Error
       Eucalypt.Reporting.Location
       Eucalypt.Reporting.Report
