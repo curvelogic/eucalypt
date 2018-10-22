@@ -67,8 +67,8 @@ prune ms (ValVec xs) =
       pair <- readCons ms a
       case pair of
         Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
-        _ -> throwIn ms $ IntrinsicBadPair $ show pair
-    kv _ = throwIn ms IntrinsicExpectedList
+        _ -> throwIn ms IntrinsicBadPair
+    kv (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
 
 
 -- | Similar to prune but accepts a function to use to combine values
@@ -107,8 +107,8 @@ pruneMerge ms (ValVec xs) =
       pair <- readCons ms a
       case pair of
         Just (StgNat (NativeSymbol s) _meta, t) -> return (s, t)
-        _ -> throwIn ms $ IntrinsicBadPair $ show pair
-    kv _ = throwIn ms IntrinsicExpectedList
+        _ -> throwIn ms IntrinsicBadPair
+    kv (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
     combine :: String -> Address -> StgValue -> StgValue -> IO StgValue
     combine k f new old =
       let env = toValVec [StgAddr f, old, new]

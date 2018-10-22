@@ -30,7 +30,7 @@ import Eucalypt.Stg.Tags
 mergeTemplate :: String -> LambdaForm -> LambdaForm
 mergeTemplate name prune =
   lam_ 0 2 $
-  ann_ name $
+  ann_ name 0 $
   let l = Local 0
       r = Local 1
       lel = Local 2
@@ -69,7 +69,7 @@ euDeepMerge =
 euDeepMergeIfBlocks :: LambdaForm
 euDeepMergeIfBlocks =
   lam_ 0 2 $
-  ann_ "__DEEPMERGEIFBLOCKS" $
+  ann_ "__DEEPMERGEIFBLOCKS" 0 $
   casedef_
     (Atom $ Local 0)
     [ ( stgBlock
@@ -89,7 +89,7 @@ euBlock = lam_ 0 1 $ appcon_ stgBlock [Local 0]
 -- iteration (and pruned so no duplicates...)
 euElements :: LambdaForm
 euElements =
-  lam_ 0 1 $ ann_ "__ELEMENTS" $
+  lam_ 0 1 $ ann_ "__ELEMENTS" 0 $
   casedef_
     (Atom (Local 0))
     [(stgBlock, (1, Atom (Local 1)))]
@@ -101,7 +101,7 @@ euElements =
 euLookup :: LambdaForm
 euLookup =
   lam_ 0 2 $
-  ann_ "__LOOKUP" $
+  ann_ "__LOOKUP" 0 $
   case_
     (Atom (Local 1))
     [ ( stgBlock
@@ -120,7 +120,7 @@ euLookupOr =
       deft = Local 1
       blk = Local 2
    in lam_ 0 3 $
-      ann_ "__LOOKUPOR" $
+      ann_ "__LOOKUPOR" 0 $
       case_
         (Atom blk)
         [ ( stgBlock
@@ -140,7 +140,7 @@ euLookupOr =
 euLookupList :: LambdaForm
 euLookupList =
   lam_ 0 2 $
-  ann_ "__LOOKUPLIST" $
+  ann_ "__LOOKUPLIST" 0 $
   -- break head off list of elements
   case_
     (Atom (Local 0))
@@ -170,7 +170,7 @@ euLookupListOr =
       def = Local 1
       sym = Local 2
    in lam_ 0 3 $
-      ann_ "__LOOKUPLISTOR" $
+      ann_ "__LOOKUPLISTOR" 0 $
       case_
         (Atom l)
         [ ( stgCons

@@ -4,8 +4,10 @@ module Eucalypt.Core.CookSpec
   ) where
 
 import Data.Either (fromRight)
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Cook
-import Eucalypt.Core.Syn
+import Eucalypt.Core.SourceMap
+import Eucalypt.Core.Syn (CoreExp(..), CoreExpr, Primitive(..), callOp)
 import Test.Hspec
 
 main :: IO ()
@@ -107,7 +109,7 @@ cookSpec =
            (bif "PRE10")
            [ app
                (bif "POST10")
-               [app (bif "L50") [var "_0", CorePrim (CoreInt 30)]]
+               [app (bif "L50") [var "_0", anon CorePrim (CoreInt 30)]]
            ])
     it "fills ... (binary) (unary post) ... with anaphor and abstracts" $
       cookUp [int 30, l50, post100, pre100, int 20] `shouldBe`
@@ -148,8 +150,8 @@ sampleA =
           [ bif "CONS"
           , callOp
           , args
-              [ soup [CoreList [int 1, int 2, int 3], bif "HEAD"]
-              , soup [CoreList [int 1, int 2, int 3], bif "TAIL"]
+              [ soup [anon CoreList [int 1, int 2, int 3], bif "HEAD"]
+              , soup [anon CoreList [int 1, int 2, int 3], bif "TAIL"]
               ]
           ]
       ]
@@ -164,8 +166,8 @@ sampleSpec =
          (bif "HEAD")
          [ app
              (bif "CONS")
-             [ app (bif "CAT") [CoreList [int 1, int 2, int 3], bif "HEAD"]
-             , app (bif "CAT") [CoreList [int 1, int 2, int 3], bif "TAIL"]
+             [ app (bif "CAT") [anon CoreList [int 1, int 2, int 3], bif "HEAD"]
+             , app (bif "CAT") [anon CoreList [int 1, int 2, int 3], bif "TAIL"]
              ]
          ]
     it "cooks cons(h, t) head" $

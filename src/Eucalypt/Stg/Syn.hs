@@ -28,6 +28,7 @@ import Data.Word
 import GHC.Generics (Generic)
 import Test.QuickCheck (Arbitrary(..), Gen, oneof)
 import qualified Text.PrettyPrint as P
+import Eucalypt.Core.SourceMap (SMID)
 
 -- | Pretty printable syntax element
 class StgPretty a where
@@ -250,7 +251,7 @@ data StgSyn
         !StgSyn
   | LetRec (Vector PreClosure)
            !StgSyn
-  | Ann !String !StgSyn
+  | Ann !String !SMID !StgSyn
   deriving (Eq, Show)
 
 instance HasRefs StgSyn where
@@ -259,7 +260,7 @@ instance HasRefs StgSyn where
   refs (App f xs) = refs f <> toList xs
   refs (Let pcs expr) = foldMap refs pcs <> refs expr
   refs (LetRec pcs expr) = foldMap refs pcs <> refs expr
-  refs (Ann _ expr) = refs expr
+  refs (Ann _ _ expr) = refs expr
   validateRefs size (Case r k) = validateRefs size r && validateRefs size k
   validateRefs size (Let pcs expr) =
     getAll (foldMap (All . validateRefs size) pcs) &&
@@ -285,7 +286,7 @@ instance StgPretty StgSyn where
   prettify (LetRec pcs e) =
     P.hang (P.text "letrec") 7 (P.vcat (map prettify (toList pcs))) P.$$
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
-  prettify (Ann s expr) = P.char '`' <> P.text s <> P.char '`' <> P.space <> prettify expr
+  prettify (Ann s _ expr) = P.char '`' <> P.text s <> P.char '`' <> P.space <> prettify expr
 
 force_ :: StgSyn -> StgSyn -> StgSyn
 force_ scrutinee df = Case scrutinee (BranchTable mempty mempty (Just df))
@@ -362,7 +363,7 @@ pc_ = (`PreClosure` Nothing) . V.fromList
 pcm_ :: [Ref] -> Maybe Ref -> LambdaForm -> PreClosure
 pcm_ rs = PreClosure (V.fromList rs)
 
-ann_ :: String -> StgSyn -> StgSyn
+ann_ :: String -> SMID -> StgSyn -> StgSyn
 ann_ = Ann
 
 -- | Standard constructor - applies saturated data constructor of tag

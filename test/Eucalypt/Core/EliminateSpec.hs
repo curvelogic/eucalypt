@@ -4,7 +4,8 @@ module Eucalypt.Core.EliminateSpec
   ) where
 
 import Eucalypt.Core.Eliminate
-import Eucalypt.Core.Syn
+import Eucalypt.Core.Syn (CoreExpr)
+import Eucalypt.Core.AnonSyn
 import Test.Hspec
 
 main :: IO ()

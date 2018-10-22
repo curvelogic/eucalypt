@@ -7,8 +7,9 @@ import Data.Either (fromLeft, fromRight)
 import qualified Data.Map as M
 import Data.Maybe (fromJust)
 import qualified Data.Set as S
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Import
-import Eucalypt.Core.Syn
+import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Core.Unit
 import Eucalypt.Syntax.Input
 import Test.Hspec
@@ -30,6 +31,7 @@ unitA =
     { truCore = unitACore
     , truImports = mempty
     , truTargets = mempty
+    , truSourceMap = mempty
     }
 
 unitBInput :: Input
@@ -60,6 +62,7 @@ unitB =
     { truCore = unitBCore
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
+    , truSourceMap = mempty
     }
 
 unitsAB :: M.Map Input TranslationUnit
@@ -98,6 +101,7 @@ unitC =
     { truCore = unitCCore
     , truImports = S.fromList [unitBInput]
     , truTargets = mempty
+    , truSourceMap = mempty
     }
 
 unitsABC :: M.Map Input TranslationUnit
@@ -113,6 +117,7 @@ namedUnit = applyName "name"
     { truCore = unitACore
     , truImports = mempty
     , truTargets = mempty
+    , truSourceMap = mempty
     }
 
 unitDInput :: Input
@@ -147,6 +152,7 @@ unitD =
     { truCore = unitDCore
     , truImports = S.fromList [namedInput]
     , truTargets = mempty
+    , truSourceMap = mempty
     }
 
 unitsNamedAndD :: M.Map Input TranslationUnit
@@ -186,6 +192,7 @@ importUnderImport =
     { truCore = importUnderImportCore
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
+    , truSourceMap =  mempty
     }
 
 unitsImportUnderImportAndA :: M.Map Input TranslationUnit
@@ -210,6 +217,7 @@ circularImport =
     { truCore = circularImportCore
     , truImports = S.fromList [circularImportInput]
     , truTargets = mempty
+    , truSourceMap = mempty
     }
 
 unitsCircularImport :: M.Map Input TranslationUnit

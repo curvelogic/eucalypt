@@ -4,7 +4,8 @@ module Eucalypt.Core.MetadataSpec
   ) where
 
 import Eucalypt.Core.Metadata
-import Eucalypt.Core.Syn
+import Eucalypt.Core.Syn (CoreExpr)
+import Eucalypt.Core.AnonSyn
 import Eucalypt.Syntax.Input
 import Test.Hspec
 

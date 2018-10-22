@@ -14,8 +14,8 @@ module Eucalypt.Driver.Stg
   ) where
 
 
-import Conduit
-import Control.Exception (IOException)
+import Conduit hiding (throwM)
+import Control.Exception.Safe (handle, IOException, throwM, MonadCatch)
 import Control.Monad (unless)
 import qualified Data.ByteString as BS
 import Data.Maybe (fromMaybe)
@@ -25,6 +25,7 @@ import qualified Eucalypt.Render.Json as Json
 import qualified Eucalypt.Render.Text as Text
 import qualified Eucalypt.Render.Yaml as Yaml
 import qualified Eucalypt.Stg.Compiler as C
+import Eucalypt.Reporting.Error
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Eval (step)
 import Eucalypt.Stg.Event (Event(..))
@@ -63,11 +64,11 @@ debugMachine = initDebugMachineState
 -- | Build a conduit streaming pipeline where the machine generates
 -- events and renderer processes them.
 renderConduit ::
-     (MonadUnliftIO m, MonadIO m, MonadThrow m)
+     (MonadUnliftIO m, MonadIO m, MonadThrow m, MonadCatch m)
   => EucalyptOptions
   -> CoreExpr
   -> m BS.ByteString
-renderConduit opts expr = do
+renderConduit opts expr = handle handler $ do
   syn <- compile expr
   ms <- newMachine syn
   runConduitRes $ machineSource ms .| renderPipeline format
@@ -77,7 +78,8 @@ renderConduit opts expr = do
       if optionDebug opts
         then debugMachine
         else machine
-
+    handler :: MonadCatch m => StgException -> m BS.ByteString
+    handler e = throwM $ Execution e
 
 
 -- | Step through the machine yielding events via the conduit pipeline

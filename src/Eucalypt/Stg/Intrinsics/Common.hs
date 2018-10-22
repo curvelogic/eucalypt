@@ -104,8 +104,8 @@ readPairList ms addr = do
       pair <- readCons ms a
       case pair of
         Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
-        _ -> throwIn ms $ IntrinsicBadPair $ show pair
-    kv _ = throwIn ms IntrinsicExpectedList
+        _ -> throwIn ms IntrinsicBadPair
+    kv (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
 
 
 
@@ -121,5 +121,6 @@ readCons ms addr =
             return $ Just (h', t')
         LambdaForm {_body = (App (Con t) _)}
           | t == stgNil -> return Nothing
-        _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (show (_body lf))
-    _ -> throwIn ms IntrinsicExpectedList
+        _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (_body lf)
+    BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
+    PartialApplication{} -> throwIn ms IntrinsicExpectedListFoundPartialApplication

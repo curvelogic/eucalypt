@@ -11,6 +11,7 @@ module Eucalypt.Core.Unit where
 
 import qualified Data.Set as S
 import Eucalypt.Syntax.Input
+import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn 
 import Eucalypt.Core.Target (TargetSpec, prefixPath)
 
@@ -19,13 +20,14 @@ data TranslationUnit = TranslationUnit
   { truCore :: CoreExpr
   , truTargets :: [TargetSpec]
   , truImports :: S.Set Input
+  , truSourceMap :: SourceMap
   }
 
 
 
 -- | Create a data unit (as a unit with no targets)
 dataUnit :: CoreExpr -> TranslationUnit
-dataUnit expr = TranslationUnit expr [] mempty
+dataUnit expr = TranslationUnit expr [] mempty mempty
 
 
 
@@ -34,9 +36,14 @@ dataUnit expr = TranslationUnit expr [] mempty
 applyName :: CoreBindingName -> TranslationUnit -> TranslationUnit
 applyName n TranslationUnit {..} =
   TranslationUnit
-    {truCore = newCore, truTargets = newTargets, truImports = truImports}
+    { truCore = newCore
+    , truTargets = newTargets
+    , truImports = truImports
+    , truSourceMap = truSourceMap
+    }
   where
-    newCore = letexp [(n, truCore)] (block [element n (var n)])
+    newCore =
+      anon letexp [(n, truCore)] (anon block [anon element n (anon var n)])
     newTargets = map (prefixPath n) truTargets
 
 
@@ -53,4 +60,5 @@ mergeTranslationUnits ts =
     { truCore = mergeUnits $ map truCore ts
     , truTargets = concatMap truTargets ts
     , truImports = foldMap truImports ts
+    , truSourceMap = mconcat $ map truSourceMap ts
     }

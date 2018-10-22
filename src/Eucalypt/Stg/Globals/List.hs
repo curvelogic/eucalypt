@@ -31,7 +31,7 @@ euCons = lam_ 0 2 $ appcon_ stgCons [Local 0, Local 1]
 euNil :: LambdaForm
 euNil =
   lam_ 0 1 $
-  ann_ "NIL" $
+  ann_ "NIL" 0 $
   case_
     (Atom (Local 0))
     [ (stgCons, (2, Atom (Literal (NativeBool False))))
@@ -44,7 +44,7 @@ euNil =
 euHead :: LambdaForm
 euHead =
   lam_ 0 1 $
-  ann_ "__HEAD" $
+  ann_ "__HEAD" 0 $
   case_
     (Atom (Local 0))
     [ (stgCons, (2, Atom (Local 1)))
@@ -58,7 +58,7 @@ euHead =
 -- | __TAIL(list)
 euTail :: LambdaForm
 euTail =
-  lam_ 0 1 $ ann_ "__TAIL" $
+  lam_ 0 1 $ ann_ "__TAIL" 0 $
   case_ (Atom (Local 0)) [(stgCons, (2, Atom (Local 2)))]
 
 
@@ -68,7 +68,7 @@ euConcat =
   let l = Local 0
       r = Local 1
    in lam_ 0 2 $
-      ann_ "__CONCAT" $
+      ann_ "__CONCAT" 0 $
       case_
         (Atom l)
         [ ( stgCons
@@ -88,7 +88,7 @@ euConcat =
 -- | __REVERSE(l)
 euReverse :: LambdaForm
 euReverse =
-  lam_ 0 1 $ ann_ "__REVERSE" $
+  lam_ 0 1 $ ann_ "__REVERSE" 0 $
   let list = Local 0
       self = Local 1
       empty = Local 2

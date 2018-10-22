@@ -24,7 +24,7 @@ import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 binop :: String -> LambdaForm
 binop intrinsicName =
   lam_ 0 2 $
-  ann_ ("__" ++ intrinsicName) $
+  ann_ ("__" ++ intrinsicName) 0 $
   force_ (Atom (Local 0)) $
   force_ (Atom (Local 1)) $
   appbif_ (intrinsicIndex intrinsicName) [Local 2, Local 3]

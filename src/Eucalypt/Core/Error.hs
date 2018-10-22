@@ -11,12 +11,18 @@ Stability   : experimental
 module Eucalypt.Core.Error
   where
 
-import Data.List (intercalate)
 import Control.Exception.Safe
+import Data.List (intercalate)
 import Eucalypt.Core.Pretty
+import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn
+import Eucalypt.Reporting.Classes
+import qualified Text.PrettyPrint as T
 
 data CoreExpShow = forall a. Show a => CoreExpShow (CoreExp a)
+
+instance HasSourceMapIds CoreExpShow where
+  toSourceMapIds (CoreExpShow a) = toSourceMapIds a
 
 -- | All the errors that may occur during processing of core expressions
 data CoreError
@@ -40,3 +46,16 @@ instance Show CoreError where
   show NoSource = "No source"
 
 instance Exception CoreError
+
+instance Reportable CoreError where
+  report = T.text . show
+
+instance HasSourceMapIds CoreError where
+  toSourceMapIds (MultipleErrors es) = concatMap toSourceMapIds es
+  toSourceMapIds (TooFewOperands op) = toSourceMapIds op
+  toSourceMapIds (InvalidOperatorOutputStack exprs) = concatMap toSourceMapIds exprs
+  toSourceMapIds (InvalidOperatorSequence l r) = concatMap toSourceMapIds [l, r]
+  toSourceMapIds (VerifyOperatorsFailed expr) = toSourceMapIds expr
+  toSourceMapIds (VerifyUnresolvedVar _) = []
+  toSourceMapIds (Bug _ expr) = toSourceMapIds expr
+  toSourceMapIds NoSource = []

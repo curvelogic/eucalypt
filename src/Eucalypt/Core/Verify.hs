@@ -26,26 +26,26 @@ verify ::
                   (CoreExp a -> [CoreError]))
   -> CoreExp b
   -> [CoreError]
-verify f e@(CoreLet bs b) =
+verify f e@(CoreLet _ bs b) =
   let shallow = f e
       deep = fold (verify f (unscope b) : map (verify f . unscope . snd) bs)
   in shallow ++ deep
-verify f e@(CoreLambda _ b) =
+verify f e@(CoreLambda _ _ b) =
   let shallow = f e
       deep = verify f (unscope b)
    in shallow ++ deep
-verify f e@(CoreMeta m expr) =
+verify f e@(CoreMeta _ m expr) =
   f e ++ verify f m ++ verify f expr
-verify f e@(CoreBlock expr) =
+verify f e@(CoreBlock _ expr) =
   f e ++ verify f expr
-verify f e@(CoreList exprs) =
+verify f e@(CoreList _ exprs) =
   f e ++ concatMap (verify f) exprs
-verify f e@(CoreArgTuple exprs) =
+verify f e@(CoreArgTuple _ exprs) =
   f e ++ concatMap (verify f) exprs
-verify f e@(CoreOperator _ _ expr) =
+verify f e@(CoreOperator _ _ _ expr) =
   f e ++ verify f expr
 verify f e = f e
 
 noSoup :: Show a => CoreExp a -> [CoreError]
-noSoup o@(CoreOpSoup _) = [(VerifyOperatorsFailed . CoreExpShow) o]
+noSoup o@(CoreOpSoup _ _) = [(VerifyOperatorsFailed . CoreExpShow) o]
 noSoup _ = []
