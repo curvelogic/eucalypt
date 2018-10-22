@@ -73,7 +73,9 @@ reportToConsole resolve e = do
       Just sp ->
         case codeInput sp of
           Nothing -> return $ P.text "!!! CANNOT FIND SOURCE !!!"
-          Just input -> (`codeToDoc` sp) <$> resolve input
+          Just input -> catchIO
+                          ((`codeToDoc` sp) <$> resolve input) $
+                          \_ -> return $ P.text "!!! CANNOT FIND SOURCE !!!"
   let messageDoc = report e
   consoleError
     (messageDoc P.$$ codeDoc <> P.char '\n')

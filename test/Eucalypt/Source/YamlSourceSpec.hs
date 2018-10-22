@@ -25,6 +25,16 @@ spec =
         [ element "a" $ corelist [int 1, int 2, int 3]
         , element "b" $ block [element "x" (str "y")]
         ]
+    it "Parses bools" $
+      parseYamlData "a: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE " `shouldReturn`
+      block
+        [ element "a" $ corebool True
+        , element "b" $ corebool True
+        , element "c" $ corebool True
+        , element "d" $ corebool False
+        , element "e" $ corebool False
+        , element "f" $ corebool False
+        ]
     it "Resolves unknown tags" $ do
       coreTagResolve "null" `shouldBe` NullTag
       coreTagResolve "Null" `shouldBe` NullTag

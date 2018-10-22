@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 module Eucalypt.Driver.Options
   where
 
@@ -192,6 +193,15 @@ appendInputs opts is = opts { optionInputs = optionInputs opts ++ is }
 
 
 
+-- | Check whether stdin is specified explicity already
+specifiesStdIn :: EucalyptOptions -> Bool
+specifiesStdIn EucalyptOptions {..} = any isStdIn optionInputs
+  where
+    isStdIn Input {inputLocator = StdInput} = True
+    isStdIn _ = False
+
+
+
 -- | Add prelude input
 insertPrelude :: EucalyptOptions -> EucalyptOptions
 insertPrelude opts =
@@ -290,7 +300,10 @@ defaultStdInput opts = do
   istty <- queryTerminal stdInput
   if istty
     then return opts
-    else return $ appendInputs opts [ (fromJust . parseInputFromString) "yaml@-" ]
+    else return $
+         if specifiesStdIn opts
+           then opts
+           else appendInputs opts [(fromJust . parseInputFromString) "yaml@-"]
 
 
 
