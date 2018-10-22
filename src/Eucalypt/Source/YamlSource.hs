@@ -71,6 +71,16 @@ coreTagResolve s
   | s =~ "^\\.nan|\\.NaN|\\.NAN$" = FloatTag
 coreTagResolve _ = StrTag
 
+-- | Accept any of the tag:yaml.org,2002:bool in the "Core schema"
+--
+-- NB. tag has already been resolved as boolean so there should be no
+-- error result
+parseBool :: String -> Bool
+parseBool "TRUE" = True
+parseBool "True" = True
+parseBool "true" = True
+parseBool _ = False
+
 -- | Translate as inert data - ignore eucalypt tags
 instance YamlTranslator InertTranslator where
   handleScalar (InertTranslator (TagResolver resolve)) text tag _ _ =
@@ -79,7 +89,7 @@ instance YamlTranslator InertTranslator where
       StrTag -> anon S.str s
       IntTag -> anon S.int (read s)
       FloatTag -> anon S.float (read s)
-      BoolTag -> anon S.corebool (read s)
+      BoolTag -> anon S.corebool (parseBool s)
       NullTag -> anon S.corenull
       _ -> anon S.str s
     where
@@ -109,7 +119,7 @@ instance YamlTranslator ActiveTranslator where
       StrTag -> return $ anon S.str s
       IntTag -> return $ anon S.int (read s)
       FloatTag -> return $ anon S.float (read s)
-      BoolTag -> return $ anon S.corebool (read s)
+      BoolTag -> return $ anon S.corebool (parseBool s)
       NullTag -> return $ anon S.corenull
       UriTag u ->
         if u == "!eu"
