@@ -352,7 +352,7 @@ str: {
     export: :suppress }
 identity(v): v
 
-` { doc: "`constantly(k)` - return single arg function that always returns k."
+` { doc: "`const(k)` - return single arg function that always returns k."
     export: :suppress }
 const(k, _): k
 
@@ -415,17 +415,30 @@ with-meta: __WITHMETA
     export: :suppress }
 meta: __META
 
+` :suppress
+assertions: {
+  # In debug mode maybe the machine checks every return value against
+  # metadata, but for performance reasons we only check for explicit
+  # assertions.
+
+` { doc: "`validator(v)` - find the validator for a value `v` in its metadata" }
+  validator(v): lookup-or(:assert, const(true), meta(v))
+
+` { doc: "`check(v)` - panic if value doesn't satisfy its validator" }
+  check(v): if(v validator(v), v, panic("assertion failed"))
+}
+
 ` { doc: "`e //=> v` - add metadata to assert expression `e` evaluates to `v` and return value of `e`."
     export: :suppress 
     associates: :left
     precedence: :meta }
-(e //=> v): e with-meta({ assert: __EQ(v)})
+(e //=> v): e with-meta({ assert: __EQ(v)}) assertions.check
 
 ` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies function `f` and return value of `e`."
     export: :suppress 
     associates: :left
     precedence: :meta }
-(e //=? f): e with-meta({ assert: f})
+(e //=? f): e with-meta({ assert: f}) assertions.check
 
 
 #
