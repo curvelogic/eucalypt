@@ -17,7 +17,7 @@ import Eucalypt.Core.Pretty
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn
 import Eucalypt.Reporting.Classes
-import qualified Text.PrettyPrint as T
+import Eucalypt.Reporting.Common
 
 data CoreExpShow = forall a. Show a => CoreExpShow (CoreExp a)
 
@@ -32,6 +32,7 @@ data CoreError
   | InvalidOperatorSequence CoreExpShow CoreExpShow
   | Bug String CoreExpShow
   | VerifyOperatorsFailed CoreExpShow
+  | VerifyNamesFailed CoreExpShow
   | VerifyUnresolvedVar CoreBindingName
   | NoSource
 
@@ -41,6 +42,7 @@ instance Show CoreError where
   show (InvalidOperatorOutputStack exprs) = "Invalid output stack while cooking operator soup: [" ++ intercalate "," (map (\(CoreExpShow s) -> pprint s) exprs) ++ "]"
   show (InvalidOperatorSequence (CoreExpShow l) (CoreExpShow r)) = "Invalid sequence of operators:" ++ pprint l ++ " " ++ pprint r
   show (VerifyOperatorsFailed (CoreExpShow expr)) = "Unresolved operator in " ++ pprint expr
+  show (VerifyNamesFailed (CoreExpShow expr)) = "Found name nodes, not translated to vars:" ++ pprint expr
   show (VerifyUnresolvedVar name) = "Unresolved variable in " ++ name
   show (Bug message (CoreExpShow expr)) = "BUG! " ++ message ++ " - " ++ pprint expr
   show NoSource = "No source"
@@ -48,7 +50,7 @@ instance Show CoreError where
 instance Exception CoreError
 
 instance Reportable CoreError where
-  report = T.text . show
+  report = standardReport "CORE ERROR" . show
 
 instance HasSourceMapIds CoreError where
   toSourceMapIds (MultipleErrors es) = concatMap toSourceMapIds es
@@ -56,6 +58,7 @@ instance HasSourceMapIds CoreError where
   toSourceMapIds (InvalidOperatorOutputStack exprs) = concatMap toSourceMapIds exprs
   toSourceMapIds (InvalidOperatorSequence l r) = concatMap toSourceMapIds [l, r]
   toSourceMapIds (VerifyOperatorsFailed expr) = toSourceMapIds expr
+  toSourceMapIds (VerifyNamesFailed expr) = toSourceMapIds expr
   toSourceMapIds (VerifyUnresolvedVar _) = []
   toSourceMapIds (Bug _ expr) = toSourceMapIds expr
   toSourceMapIds NoSource = []

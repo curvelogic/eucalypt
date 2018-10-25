@@ -179,6 +179,13 @@ expressionSpec =
         , applyTuple [normalName "b"]
         , applyTuple [normalName "c"]
         ]
+    it "does not confuse gen lookup with call syntax" $
+      testParse expression "{ a: x }.(a + a)" `shouldParse`
+      opsoup
+        [ block [bare $ prop "a" $ normalName "x"]
+        , operatorName "."
+        , opsoupParens [normalName "a", operatorName "+", normalName "a"]
+        ]
     it "rejects lonely colons" $ do
       testParse expression `shouldFailOn` "a : a"
       testParse expression `shouldFailOn` "a:"

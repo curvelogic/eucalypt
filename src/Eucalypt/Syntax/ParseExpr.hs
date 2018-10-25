@@ -87,10 +87,23 @@ categorisedIdentifier =
   "identifier"
 
 
+-- | Any type of identifier
+categorisedNormalIdentifier :: Parser AtomicName
+categorisedNormalIdentifier =
+  try (NormalName <$> normalIdentifier <|>
+       NormalName <$> quotedIdentifier) <?>
+  "identifier"
+
 
 -- | An identifier as an expression
 name :: Parser Expression
 name = located (EName <$> categorisedIdentifier <?> "name")
+
+
+
+-- | A non-operator identifier as an expression
+nonOperatorName :: Parser Expression
+nonOperatorName = located (EName <$> categorisedNormalIdentifier <?> "property name")
 
 
 
@@ -161,7 +174,11 @@ tuple = parens $ expression `sepBy1` comma
 -- call parser identifies both the anchor and the arg tuple and
 -- returns both to the expression parser for inclusion in opsoup. This
 -- is why 'element' returns more than one expression.
--- 
+--
+--
+-- Also note that instances of generalised lookup may have parentheses
+-- directly after a dot operator, e.g. @{a: 1}.(a+1)@. These must not
+-- be parsed as calls.
 rootCall :: Parser [Expression]
 rootCall = label "function call" $
            (\x y -> [x, y]) <$> callAnchorExpression <*> located (EApplyTuple <$> tuple)
@@ -174,7 +191,7 @@ call :: Parser [Expression]
 call = foldl invocation <$> rootCall <*> many tuple
        
 callAnchorExpression :: Parser Expression
-callAnchorExpression = try atom <|> parenExpression
+callAnchorExpression = try nonOperatorName <|> parenExpression
 
 listify :: Parser a -> Parser [a]
 listify = fmap (: [])

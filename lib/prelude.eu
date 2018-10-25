@@ -73,6 +73,10 @@ cat: __CAT
     export: :suppress }
 if: __IF
 
+` { doc: "`then(t, f, c)` - for pipeline if: - `x? then(t, f)``"
+    export: :suppress }
+then(t, f, c): if(c, t, f)
+
 ##
 ## List basics
 ##
@@ -424,21 +428,30 @@ assertions: {
 ` { doc: "`validator(v)` - find the validator for a value `v` in its metadata" }
   validator(v): lookup-or(:assert, const(true), meta(v))
 
-` { doc: "`check(v)` - panic if value doesn't satisfy its validator" }
-  check(v): if(v validator(v), v, panic("assertion failed"))
+` { doc: "`check(v)` - true if v is valid according to assert metadata" }
+  check(v): v validator(v)
+
+` { doc: "`checked(v)` - panic if value doesn't satisfy its validator" }
+  checked(v): if(check(v), v, panic("assertion failed"))
 }
+
+` { doc: "`e //= v` - add metadata to check expression `e` evaluates to `v` and return whether valid"
+    export: :suppress 
+    associates: :left
+    precedence: :meta }
+(e //= v): e with-meta({ assert: __EQ(v)}) assertions.check
 
 ` { doc: "`e //=> v` - add metadata to assert expression `e` evaluates to `v` and return value of `e`."
     export: :suppress 
     associates: :left
     precedence: :meta }
-(e //=> v): e with-meta({ assert: __EQ(v)}) assertions.check
+(e //=> v): e with-meta({ assert: __EQ(v)}) assertions.checked
 
 ` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies function `f` and return value of `e`."
     export: :suppress 
     associates: :left
     precedence: :meta }
-(e //=? f): e with-meta({ assert: f}) assertions.check
+(e //=? f): e with-meta({ assert: f}) assertions.checked
 
 
 #
