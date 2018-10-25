@@ -15,6 +15,7 @@ module Eucalypt.Render.JsonSpec
 import Conduit
 import Data.Aeson
 import qualified Data.ByteString as BS
+import Data.ByteString.Builder
 import qualified Data.ByteString.Lazy as BL
 import Eucalypt.Stg.Syn
 import qualified Eucalypt.Stg.Event as E
@@ -52,6 +53,8 @@ testNull =
   , E.OutputMappingEnd
   ]
 
+
+
 render :: [E.Event] -> BS.ByteString
 render es = runConduitPure $ yieldMany es .| pipeline
 
@@ -68,3 +71,8 @@ spec =
     it "Renders null" $
       ((decode . BL.fromStrict . render) testNull :: Maybe Value) `shouldBe`
       (decode "{ \"a\": null }" :: Maybe Value)
+    -- it "Renders unicode keys and values" $
+    --   render testUnicode `shouldBe` "{ \"α\": \"α\" }"
+    it "Renders unicode as utf8" $
+      render [E.OutputScalar $ NativeString "α"] `shouldBe`
+      BL.toStrict (toLazyByteString (char8 '"' <> charUtf8 'α' <> char8 '"'))
