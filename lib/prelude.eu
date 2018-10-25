@@ -73,6 +73,10 @@ cat: __CAT
     export: :suppress }
 if: __IF
 
+` { doc: "`then(t, f, c)` - for pipeline if: - `x? then(t, f)``"
+    export: :suppress }
+then(t, f, c): if(c, t, f)
+
 ##
 ## List basics
 ##
