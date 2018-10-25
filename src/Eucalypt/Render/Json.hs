@@ -80,13 +80,21 @@ putScalar e txt = do
           _ -> BS.concat [", ", txt]
   setLast e
 
+jsonStr :: String -> BS.ByteString
+jsonStr s = BS.concat ["\"", encodeUtf8 $ pack s', "\""]
+  where
+    s' = concatMap escape s
+    escape '"' = "\\\""
+    escape '\\' = "\\\\"
+    escape c = [c]
+
 formatScalar :: Native -> BS.ByteString
 formatScalar (NativeNumber n) =
   case floatingOrInteger n of
     Left r -> encodeUtf8 $ pack $ show r
     Right i -> encodeUtf8 $ pack $ show i
-formatScalar (NativeSymbol s) = BS.concat ["\"", encodeUtf8 $ pack s, "\""]
-formatScalar (NativeString s) = BS.concat ["\"", encodeUtf8 $ pack s, "\""]
+formatScalar (NativeSymbol s) = jsonStr s
+formatScalar (NativeString s) = jsonStr s
 formatScalar (NativeBool b) =
   if b
     then "true"
