@@ -72,6 +72,7 @@ inferFormat loc =
     extToFormat ext =
       case ext of
         ".json" -> Just "json"
+        ".txt" -> Just "text"
         ".toml" -> Just "toml"
         ".yaml" -> Just "yaml"
         ".yml" -> Just "yaml"
