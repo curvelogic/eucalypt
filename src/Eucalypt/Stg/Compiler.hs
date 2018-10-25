@@ -156,7 +156,7 @@ compile envSize context _metaref (C.CoreApply _ f xs) =
         (CoreBuiltin _ n) -> ([], Ref $ Global n)
         (CoreVar _ a) -> ([], Ref $ context a)
         _ ->
-          ( [compileBinding envSize context ("<fn>", f)]
+          ( [compileBinding envSize context ("<anon>", f)]
           , Ref (Local $ fromIntegral envSize))
     acc (ps, xrs) x =
       case x of
@@ -170,6 +170,14 @@ compile envSize context _metaref (C.CoreApply _ f xs) =
       case fn of
         (CoreOperator _ _x _p e) -> e
         _ -> fn
+
+
+
+-- | Compile lambda into let to allocate and return fn
+compile envSize context _metaref f@CoreLambda{} =
+  let_ [compileBinding envSize context ("<anon>", f)]
+  $ Atom $ Local $ fromIntegral envSize
+
 
 
 compile envSize context _metaref (CoreLookup _ obj nm) =
@@ -191,7 +199,6 @@ compile envSize context _ (CoreOperator _ _x _p expr) = compile envSize context 
 compile _ _ _ CoreName{} = error "Cannot compile name"
 compile _ _ _ CoreArgTuple{} = error "Cannot compile arg tuple"
 compile _ _ _ CoreOpSoup{} = error "Cannot compile op soup"
-compile _ _ _ CoreLambda{} = error "Cannot compile lambda"
 
 -- | An empty context with no Refs for any Var
 emptyContext :: (Show v, Eq v) => v -> Ref

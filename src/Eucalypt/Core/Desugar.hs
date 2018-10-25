@@ -128,6 +128,7 @@ recordImports imports =
   modify $ \s@TranslateState {trImports = old} -> s {trImports = old ++ imports}
 
 
+
 -- | Process names to vars as appropriate for a context where the
 -- exprs will be statically bound
 interpretForStaticBoundContext :: [CoreExpr] -> [CoreExpr]
@@ -139,6 +140,27 @@ interpretForStaticBoundContext exprs =
       n
     toVar (CoreName smid v) _ = name2Var smid v
     toVar e _ = e
+
+
+
+-- | Process static instances of generalised lookup
+--
+-- Assumes call operator is highest precedence
+processStaticGenLookup :: [CoreExpr] -> [CoreExpr]
+processStaticGenLookup =
+  result . head . dropWhile (not . done) . iterate stepOne . initState
+  where
+    initState es = ([], False, es)
+    stepOne (o@CoreLet {}:os, False, CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):es) =
+      (o : os, True, es)
+    stepOne (out, False, e:es) = (e : out, False, es)
+    stepOne (o@CoreLet {}:os, True, e:es) =
+      (rebody o (varify e) : os, False, es)
+    stepOne _ = error "Unhandled step while processing gen lookups"
+    done (_, _, []) = True
+    done _ = False
+    result (out, _, _) = reverse out
+
 
 
 -- | Desugar Ast op soup into core op soup (to be cooked into better
@@ -154,7 +176,8 @@ interpretForStaticBoundContext exprs =
 -- resolved and which are just lookup keys.
 translateSoup :: [Expression] -> Translate CoreExpr
 translateSoup items =
-  anon CoreOpSoup . interpretForStaticBoundContext . concat <$>
+  anon CoreOpSoup .
+  processStaticGenLookup . interpretForStaticBoundContext . concat <$>
   traverse trans items
   where
     trans :: Expression -> Translate [CoreExpr]
