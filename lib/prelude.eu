@@ -295,6 +295,15 @@ zero?(n): n = 0
 ##
 ## Text and regexes
 ##
+` { export: :suppress
+    doc: "We don't support the usual string escapes so these make it a
+    little more convenient to use interpolation instead. e.g
+    `\"line1{ch.n}line2{ch.n}\"` or `{n: ch.n}.\"line1{n}line2{n}\"`."}
+ch: {
+  n: "
+"
+  t: "	"
+}
 
 ` :suppress
 str: {
@@ -439,13 +448,13 @@ assertions: {
     export: :suppress 
     associates: :left
     precedence: :meta }
-(e //= v): e with-meta({ assert: __EQ(v)}) assertions.check
+(e //= v): e with-meta({ assert: (= v)}) assertions.check
 
 ` { doc: "`e //=> v` - add metadata to assert expression `e` evaluates to `v` and return value of `e`."
     export: :suppress 
     associates: :left
     precedence: :meta }
-(e //=> v): e with-meta({ assert: __EQ(v)}) assertions.checked
+(e //=> v): e with-meta({ assert: (= v)}) assertions.checked
 
 ` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies function `f` and return value of `e`."
     export: :suppress 
@@ -453,6 +462,21 @@ assertions: {
     precedence: :meta }
 (e //=? f): e with-meta({ assert: f}) assertions.checked
 
+` { doc: "`e //!? f` - add metadata to assert expression `e` satisfies function `f` and return value of `e`."
+    export: :suppress 
+    associates: :left
+    precedence: :meta }
+(e //!? f): e with-meta({ assert: complement(f)}) assertions.checked
+
+` { doc: "`e //! f` - add metadata to assert expression `e` is true and return value of `e`."
+    export: :suppress 
+    precedence: :meta }
+(e //!): e with-meta({ assert: (= true) }) assertions.checked
+
+` { doc: "`e //!! f` - add metadata to assert expression `e` is false and return value of `e`."
+    export: :suppress 
+    precedence: :meta }
+(e //!!): e with-meta({ assert: (= false) }) assertions.checked
 
 #
 # List library functions, maps and folds
@@ -655,7 +679,7 @@ select-items(f, b): b elements filter(f)
 match-select-values(re, b): b select-items(by-key-match(re)) map(value)
 
 ` "`select-values(p?, b)` - return items from block `b` where values match predicate `p?`"
-select-values(p?, b): b map(value) filter(p?)
+select-values(p?, b): b values filter(p?)
 
 ` :suppress
 _block: {
