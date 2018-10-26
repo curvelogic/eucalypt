@@ -8,6 +8,7 @@ copyright:           "2018 Greg Hawkins"
 
 extra-source-files:
 - README.md
+- lib/prelude.eu
 
 synopsis:            Haskell implementation of Eucalypt tooling and language
 description:         Please see the README on Github at <https://github.com/curvelogic/eucalypt-hs#readme>

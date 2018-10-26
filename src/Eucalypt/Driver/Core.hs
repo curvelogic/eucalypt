@@ -39,6 +39,7 @@ import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import Eucalypt.Reporting.Error (EucalyptError(..))
 import Eucalypt.Source.Error (DataParseException(..))
+import Eucalypt.Source.TextSource
 import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Unit)
@@ -136,6 +137,7 @@ loadUnit i@(Input locator name format) = do
   coreUnit <-
     liftIO $
     case format of
+      "text" -> textDataToCore source
       "toml" -> tomlDataToCore source
       "yaml" -> activeYamlToCore source
       "json" -> yamlDataToCore source
@@ -157,7 +159,8 @@ loadUnit i@(Input locator name format) = do
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit) core
-    tomlDataToCore text = parseTomlData text >>= (return . Right <$> dataUnit)
+    textDataToCore text = parseTextLines text >>= (return . Right . maybeApplyName <$> dataUnit)
+    tomlDataToCore text = parseTomlData text >>= (return . Right .maybeApplyName <$> dataUnit)
     activeYamlToCore text = do
       r <- try (parseYamlExpr text) :: IO (Either DataParseException CoreExpr)
       case r of
