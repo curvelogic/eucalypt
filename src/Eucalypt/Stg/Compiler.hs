@@ -75,7 +75,7 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
     contextL' envSize (Var.B i) = Local $ envSize + fromIntegral i
     compileLambdaForm e =
       case e of
-        (CoreLambda smid ns body) ->
+        (CoreLambda smid _ ns body) ->
           lam_ (length free) (length ns) $
           ann_ nm smid $
           compile

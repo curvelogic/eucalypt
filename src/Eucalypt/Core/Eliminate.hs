@@ -40,5 +40,5 @@ prune (CoreArgTuple smid exprs) = CoreArgTuple smid $ map prune exprs
 prune (CoreList smid exprs) = CoreList smid $ map prune exprs
 prune (CoreMeta smid m e) = CoreMeta smid (prune m) (prune e)
 prune (CoreApply smid f exprs) = CoreApply smid (prune f) $ map prune exprs
-prune (CoreLambda smid n body) = CoreLambda smid n $ (toScope . prune . fromScope) body
+prune (CoreLambda smid i n body) = CoreLambda smid i n $ (toScope . prune . fromScope) body
 prune e = e

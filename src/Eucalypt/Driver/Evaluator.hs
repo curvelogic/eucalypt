@@ -22,6 +22,7 @@ import qualified Data.Text.IO as T
 import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
 import Eucalypt.Core.Desugar (translateExpressionToCore, varify)
 import Eucalypt.Core.Eliminate (prune)
+import Eucalypt.Core.Inliner (inline)
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn
@@ -160,7 +161,12 @@ evaluate opts = do
 
     -- Stage 6: dead code elimination to reduce compile and make
     -- debugging STG impelmentation a bit easier
-    let finalEvaluand = {-# SCC "DeadCodeElimination" #-} prune $ prune cookedEvaluand
+    let prunedEvaluand = {-# SCC "DeadCodeElimination" #-} prune $ prune cookedEvaluand
+    when (cmd == DumpPrunedCore)
+      (putStrLn (pprint prunedEvaluand) >> exitSuccess)
+
+    -- Now some inlining
+    let finalEvaluand = {-# SCC "Inlining" #-} inline $ inline $ inline prunedEvaluand
     when (cmd == DumpFinalCore)
       (putStrLn (pprint finalEvaluand) >> exitSuccess)
 

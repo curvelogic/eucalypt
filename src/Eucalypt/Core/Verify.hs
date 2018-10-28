@@ -33,7 +33,7 @@ verify f e@(CoreLet _ bs b) =
   let shallow = f e
       deep = fold (verify f (unscope b) : map (verify f . unscope . snd) bs)
   in shallow ++ deep
-verify f e@(CoreLambda _ _ b) =
+verify f e@(CoreLambda _ _ _ b) =
   let shallow = f e
       deep = verify f (unscope b)
    in shallow ++ deep

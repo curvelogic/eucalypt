@@ -66,7 +66,7 @@ prepare (CoreList _ xs) = brackets . vcat . punctuate comma $ map prepare xs
 prepare (CoreMeta _ m e) = vcat [text "`" <+> prepare m, prepare e]
 prepare (CoreOpSoup _ es) = parens ( hsep $ map prepare es)
 prepare (CoreArgTuple _ xs) = parens . hsep . punctuate comma $ map prepare xs
-prepare (CoreLambda _ names e) =
+prepare (CoreLambda _ _ names e) =
   parens $ text "\\" <+> hsep (V.toList (V.map text argNames)) <+> text "->" <+> body
   where
     argNames = V.fromList names
