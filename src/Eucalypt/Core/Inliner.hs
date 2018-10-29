@@ -8,8 +8,6 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Inliner where
 
--- import Debug.Trace
-
 import Data.Bifunctor
 import Bound
 import Eucalypt.Core.Syn
@@ -118,8 +116,12 @@ tagInlinables e = e
 
 
 betaReduce :: CoreExp a -> CoreExp a
-betaReduce (CoreApply _ (CoreLambda _ True _ body) xs) =
-  instantiate (xs !!) body
+betaReduce e@(CoreApply _ (CoreLambda _ True ns body) xs) =
+  if length xs == length ns
+  then
+    instantiate (xs !!) body
+  else
+    e
 betaReduce (CoreLambda smid i ns body) =
   CoreLambda smid i ns $ (Scope . betaReduce . unscope) body
 betaReduce (CoreLet smid bs b) =
