@@ -51,18 +51,40 @@ singleTransposedResult = tagInlinables $
 
 
 
+sampleB :: CoreExpr
+sampleB =
+  letexp
+    [ ("i", lam ["x"] $ var "x")
+    , ("box", block [element "value" $ app (var "i") [var "x"]])
+    ] $
+  app (var "lookup") [var "box", sym "value"]
+
+
+
+sampleBEquiv :: CoreExpr
+sampleBEquiv = tagInlinables $
+  letexp
+    [ ("i", lam ["x"] $ var "x")
+    , ("box", block [element "value" $ var "x"])
+    ] $
+  app (var "lookup") [var "box", sym "value"]
+
+
 
 spec :: Spec
 spec =
   describe "Inliner" $ do
     it "inlines synonyms" $
       inline sampleA `shouldBe`
-      letexp
-        [("a", bif "A"), ("b", lam ["x"] (var "x"))]
-        (app (bif "A") [var "x"])
+      tagInlinables
+        (letexp
+           [("a", bif "A"), ("b", lam ["x"] (var "x"))]
+           (app (bif "A") [var "x"]))
     it "detects transpositions" $
       isTransposition transpositionSample `shouldBe` True
     it "tags transpositions for inline" $
       isInlinable (tagInlinables singleTransposition) `shouldBe` True
     it "inlines transpositions" $
       inline singleTranspositionApplied `shouldBe` singleTransposedResult
+    it "inlines sample B" $
+       inline sampleB `shouldBe` sampleBEquiv

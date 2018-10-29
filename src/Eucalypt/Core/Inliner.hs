@@ -8,6 +8,8 @@ Stability   : experimental
 -}
 module Eucalypt.Core.Inliner where
 
+-- import Debug.Trace
+
 import Data.Bifunctor
 import Bound
 import Eucalypt.Core.Syn
@@ -81,6 +83,7 @@ isInlinable _ = False
 isTransposition :: Scope Int CoreExp a -> Bool
 isTransposition s = case unscope s of
   (CoreApply _ f xs) -> all isVar xs && isSimple f
+  (CoreVar _ _) -> True
   _ -> False
   where
     isVar CoreVar{} = True
