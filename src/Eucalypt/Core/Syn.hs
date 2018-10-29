@@ -104,6 +104,7 @@ data CoreExp a
                  Fixity
                  Precedence
                  (CoreExp a)
+  | CoreEliminated
   deriving (Functor, Foldable, Traversable)
 
 
@@ -122,6 +123,7 @@ sourceMapId (CoreLambda smid _ _ _) = smid
 sourceMapId (CoreApply smid _ _) = smid
 sourceMapId (CoreOpSoup smid _) = smid
 sourceMapId (CoreOperator smid _ _ _) = smid
+sourceMapId CoreEliminated = 0
 
 instance HasSourceMapIds (CoreExp a) where
   toSourceMapIds e = [sourceMapId e]
@@ -152,6 +154,13 @@ symbolName _ = Nothing
 stringContent :: CoreExp a -> Maybe String
 stringContent (CorePrim _ (CoreString s)) = Just s
 stringContent _ = Nothing
+
+
+
+isEliminated :: CoreExp a -> Bool
+isEliminated CoreEliminated = True
+isEliminated _ = False
+
 
 
 
@@ -188,7 +197,7 @@ instance Monad CoreExp where
   CoreArgTuple smid es >>= f = CoreArgTuple smid (map (>>= f) es)
   CoreApply smid g es >>= f = CoreApply smid (g >>= f) (map (>>= f) es)
   CoreName smid n >>= _ = CoreName smid n
-
+  CoreEliminated >>= _ = CoreEliminated
 
 
 -- | Construct a var

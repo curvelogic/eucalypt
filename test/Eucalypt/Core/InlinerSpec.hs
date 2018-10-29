@@ -51,6 +51,7 @@ singleTransposedResult = tagInlinables $
 
 
 
+
 spec :: Spec
 spec =
   describe "Inliner" $ do

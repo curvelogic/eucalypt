@@ -34,6 +34,7 @@ data CoreError
   | VerifyOperatorsFailed CoreExpShow
   | VerifyNamesFailed CoreExpShow
   | VerifyUnresolvedVar CoreBindingName
+  | VerifyNoEliminated CoreExpShow
   | NoSource
 
 instance Show CoreError where
@@ -42,6 +43,7 @@ instance Show CoreError where
   show (InvalidOperatorOutputStack exprs) = "Invalid output stack while cooking operator soup: [" ++ intercalate "," (map (\(CoreExpShow s) -> pprint s) exprs) ++ "]"
   show (InvalidOperatorSequence (CoreExpShow l) (CoreExpShow r)) = "Invalid sequence of operators:" ++ pprint l ++ " " ++ pprint r
   show (VerifyOperatorsFailed (CoreExpShow expr)) = "Unresolved operator in " ++ pprint expr
+  show (VerifyNoEliminated (CoreExpShow expr)) = "Eliminated code found " ++ pprint expr
   show (VerifyNamesFailed (CoreExpShow expr)) = "Found name nodes, not translated to vars:" ++ pprint expr
   show (VerifyUnresolvedVar name) = "Unresolved variable in " ++ name
   show (Bug message (CoreExpShow expr)) = "BUG! " ++ message ++ " - " ++ pprint expr
@@ -61,4 +63,4 @@ instance HasSourceMapIds CoreError where
   toSourceMapIds (VerifyNamesFailed expr) = toSourceMapIds expr
   toSourceMapIds (VerifyUnresolvedVar _) = []
   toSourceMapIds (Bug _ expr) = toSourceMapIds expr
-  toSourceMapIds NoSource = []
+  toSourceMapIds _ = []

@@ -31,6 +31,7 @@ import Text.PrettyPrint
   , render
   , text
   , vcat
+  -- , empty
   )
 
 renderLiteral :: Primitive -> String
@@ -79,6 +80,9 @@ prepare (CoreApply _ f es) = prepare f <> parens ( hsep . punctuate comma $ map 
 prepare (CoreName _ n) = text n
 prepare (CoreOperator _ x p e) =
   char '^' <> text (show x) <> parens (text (show p)) <> char '^' <> prepare e
+prepare CoreEliminated = text "**********GONE**********"
+
+
 
 -- | Pretty Print a CoreExp to String
 pprint :: Show a => CoreExp a -> String

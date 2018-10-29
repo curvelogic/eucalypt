@@ -51,12 +51,20 @@ verify f e = f e
 
 
 cleanCore :: Show a => CoreExp a -> [CoreError]
-cleanCore e = noSoup e ++ noCoreName e
+cleanCore e = noSoup e ++ noCoreName e ++ noEliminated e
+
 
 
 noSoup :: Show a => CoreExp a -> [CoreError]
 noSoup o@(CoreOpSoup _ _) = [(VerifyOperatorsFailed . CoreExpShow) o]
 noSoup _ = []
+
+
+
+noEliminated :: Show a => CoreExp a -> [CoreError]
+noEliminated o@CoreEliminated = [(VerifyNoEliminated . CoreExpShow) o]
+noEliminated _ = []
+
 
 
 noCoreName :: Show a => CoreExp a -> [CoreError]

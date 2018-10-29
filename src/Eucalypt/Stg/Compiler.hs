@@ -199,6 +199,7 @@ compile envSize context _ (CoreOperator _ _x _p expr) = compile envSize context 
 compile _ _ _ CoreName{} = error "Cannot compile name"
 compile _ _ _ CoreArgTuple{} = error "Cannot compile arg tuple"
 compile _ _ _ CoreOpSoup{} = error "Cannot compile op soup"
+compile _ _ _ CoreEliminated = error "Cannot compile eliminated code"
 
 -- | An empty context with no Refs for any Var
 emptyContext :: (Show v, Eq v) => v -> Ref
