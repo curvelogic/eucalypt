@@ -52,7 +52,7 @@ processImports load (CoreLet smid bs b) = CoreLet smid bs' b'
     b' = f b
     bs' = map (second f) bs
     f = transScope (processImports (liftLoad load))
-processImports load (CoreLambda smid ns b) = CoreLambda smid ns b'
+processImports load (CoreLambda smid i ns b) = CoreLambda smid i ns b'
   where
     b' = f b
     f = transScope (processImports (liftLoad load))

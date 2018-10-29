@@ -92,6 +92,7 @@ data CoreExp a
   | CoreArgTuple SMID [CoreExp a]
     -- ^ RHS of call operator
   | CoreLambda SMID
+               Bool
                [CoreBindingName]
                (Scope Int CoreExp a)
     -- ^ names for pretty-printing, not binding
@@ -103,6 +104,7 @@ data CoreExp a
                  Fixity
                  Precedence
                  (CoreExp a)
+  | CoreEliminated
   deriving (Functor, Foldable, Traversable)
 
 
@@ -117,10 +119,11 @@ sourceMapId (CoreList smid _) = smid
 sourceMapId (CoreBlock smid _) = smid
 sourceMapId (CoreMeta smid _ _) = smid
 sourceMapId (CoreArgTuple smid _) = smid
-sourceMapId (CoreLambda smid _ _) = smid
+sourceMapId (CoreLambda smid _ _ _) = smid
 sourceMapId (CoreApply smid _ _) = smid
 sourceMapId (CoreOpSoup smid _) = smid
 sourceMapId (CoreOperator smid _ _ _) = smid
+sourceMapId CoreEliminated = 0
 
 instance HasSourceMapIds (CoreExp a) where
   toSourceMapIds e = [sourceMapId e]
@@ -154,6 +157,13 @@ stringContent _ = Nothing
 
 
 
+isEliminated :: CoreExp a -> Bool
+isEliminated CoreEliminated = True
+isEliminated _ = False
+
+
+
+
 deriveEq1   ''CoreExp
 deriveOrd1  ''CoreExp
 deriveRead1 ''CoreExp
@@ -182,12 +192,12 @@ instance Monad CoreExp where
   CoreBlock smid e >>= f = CoreBlock smid (e >>= f)
   CoreMeta smid m e >>= f = CoreMeta smid (m >>= f) (e >>= f) -- TODO: separate meta?
   CoreOpSoup smid es >>= f = CoreOpSoup smid (map (>>= f) es)
-  CoreLambda smid n e >>= f = CoreLambda smid n (e >>>= f)
+  CoreLambda smid i n e >>= f = CoreLambda smid i n (e >>>= f)
   CoreOperator smid x p e >>= f = CoreOperator smid x p (e >>= f)
   CoreArgTuple smid es >>= f = CoreArgTuple smid (map (>>= f) es)
   CoreApply smid g es >>= f = CoreApply smid (g >>= f) (map (>>= f) es)
   CoreName smid n >>= _ = CoreName smid n
-
+  CoreEliminated >>= _ = CoreEliminated
 
 
 -- | Construct a var
@@ -210,7 +220,7 @@ corelookup = CoreLookup
 
 -- | Abstract lambda of several args
 lam :: SMID -> [CoreBindingName] -> CoreExpr -> CoreExpr
-lam smid as expr = CoreLambda smid as scope
+lam smid as expr = CoreLambda smid False as scope
   where
     scope = abstract (`elemIndex` as) expr
 
@@ -427,7 +437,7 @@ bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
 bindAnaphora expr =
   case maxAnaphor of
     Just n ->
-      CoreLambda (sourceMapId expr) (anaphora n) $ abstract toNumber expr
+      CoreLambda (sourceMapId expr) False (anaphora n) $ abstract toNumber expr
     Nothing -> expr
   where
     freeVars = foldr (:) [] expr
@@ -556,7 +566,7 @@ modifyBoundVars k e =
 -- appropriately named free variables. Handy for inspecting
 -- expression in tests.
 unbind :: CoreExpr -> CoreExpr
-unbind (CoreLambda _ _ e) = instantiate (anon var . show) e
+unbind (CoreLambda _ _ _ e) = instantiate (anon var . show) e
 unbind (CoreLet _ bs body) = inst body
   where
     names = map fst bs

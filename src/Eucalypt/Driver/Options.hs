@@ -31,6 +31,7 @@ data Command
   | DumpDesugared
   | DumpEvalSubstituted
   | DumpCooked
+  | DumpPrunedCore
   | DumpFinalCore
   | DumpStg
   deriving (Show, Eq)
@@ -96,6 +97,10 @@ commandOption =
     DumpCooked
     (long "dump-cooked" <>
      help "Dump core syntax after operator fixities have been resolved") <|>
+  flag'
+    DumpPrunedCore
+    (long "dump-pruned-core" <>
+     help "Dump core syntax after first prune of dead code") <|>
   flag'
     DumpFinalCore
     (long "dump-core" <>

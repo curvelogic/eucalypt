@@ -75,7 +75,7 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
     contextL' envSize (Var.B i) = Local $ envSize + fromIntegral i
     compileLambdaForm e =
       case e of
-        (CoreLambda smid ns body) ->
+        (CoreLambda smid _ ns body) ->
           lam_ (length free) (length ns) $
           ann_ nm smid $
           compile
@@ -199,6 +199,7 @@ compile envSize context _ (CoreOperator _ _x _p expr) = compile envSize context 
 compile _ _ _ CoreName{} = error "Cannot compile name"
 compile _ _ _ CoreArgTuple{} = error "Cannot compile arg tuple"
 compile _ _ _ CoreOpSoup{} = error "Cannot compile op soup"
+compile _ _ _ CoreEliminated = error "Cannot compile eliminated code"
 
 -- | An empty context with no Refs for any Var
 emptyContext :: (Show v, Eq v) => v -> Ref

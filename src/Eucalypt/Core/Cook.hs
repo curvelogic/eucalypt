@@ -121,8 +121,8 @@ cookBottomUp anaphoric (CoreMeta smid m e) = CoreMeta smid m <$> cookBottomUp an
 cookBottomUp anaphoric (CoreApply smid f exprs) =
   CoreApply smid <$> cookBottomUp anaphoric f <*>
   traverse (cookBottomUp anaphoric) exprs
-cookBottomUp anaphoric (CoreLambda smid n body) =
-  CoreLambda smid n <$> runInterpreter (cookScope anaphoric body)
+cookBottomUp anaphoric (CoreLambda smid i n body) =
+  CoreLambda smid i n <$> runInterpreter (cookScope anaphoric body)
 cookBottomUp anaphoric (CoreLet smid bs body) = CoreLet smid <$> newBindings <*> newBody
   where
     newBody = runInterpreter (cookScope anaphoric body)

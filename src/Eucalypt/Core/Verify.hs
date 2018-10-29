@@ -33,7 +33,7 @@ verify f e@(CoreLet _ bs b) =
   let shallow = f e
       deep = fold (verify f (unscope b) : map (verify f . unscope . snd) bs)
   in shallow ++ deep
-verify f e@(CoreLambda _ _ b) =
+verify f e@(CoreLambda _ _ _ b) =
   let shallow = f e
       deep = verify f (unscope b)
    in shallow ++ deep
@@ -51,12 +51,20 @@ verify f e = f e
 
 
 cleanCore :: Show a => CoreExp a -> [CoreError]
-cleanCore e = noSoup e ++ noCoreName e
+cleanCore e = noSoup e ++ noCoreName e ++ noEliminated e
+
 
 
 noSoup :: Show a => CoreExp a -> [CoreError]
 noSoup o@(CoreOpSoup _ _) = [(VerifyOperatorsFailed . CoreExpShow) o]
 noSoup _ = []
+
+
+
+noEliminated :: Show a => CoreExp a -> [CoreError]
+noEliminated o@CoreEliminated = [(VerifyNoEliminated . CoreExpShow) o]
+noEliminated _ = []
+
 
 
 noCoreName :: Show a => CoreExp a -> [CoreError]
