@@ -64,6 +64,11 @@ t4equiv =
     ] $
   corelist [var "b0", var "b2"]
 
+t5 :: CoreExpr
+t5 = letexp [("circle", lam ["x"] (app (var "circle") [var "x"]))] $ int 1
+
+t5equiv :: CoreExpr
+t5equiv = int 1
 
 spec :: Spec
 spec = do
@@ -76,6 +81,8 @@ spec = do
     it "renumbers correctly" $
     newBindIndexes [True, False, False, True, True, False] `shouldBe`
     [Just 0, Nothing, Nothing, Just 1, Just 2, Nothing]
-  describe "compresses bindings once eliminated" $
+  describe "compresses bindings once eliminated" $ do
     it "compresses correctly" $
-    compress t4 `shouldBe` t4equiv
+      compress t4 `shouldBe` t4equiv
+    it "prunes self referential bindings with no further references" $
+      (compress . prune) t5 `shouldBe` t5equiv

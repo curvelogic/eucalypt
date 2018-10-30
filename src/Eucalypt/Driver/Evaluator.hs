@@ -166,7 +166,7 @@ evaluate opts = do
       (putStrLn (pprint prunedEvaluand) >> exitSuccess)
 
     -- Now some inlining
-    let inlinedEvaluand = {-# SCC "Inlining" #-} prune $ inline $ inline $ inline $ inline $ inline prunedEvaluand
+    let inlinedEvaluand = {-# SCC "Inlining" #-} prune $ prune $ inline $ inline $ inline $ inline $ inline prunedEvaluand
     let compressedEvaluand = {-# SCC "Compression" #-} compress inlinedEvaluand
 
     let finalEvaluand = compressedEvaluand
