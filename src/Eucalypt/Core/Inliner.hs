@@ -115,21 +115,29 @@ tagInlinables e = e
 
 
 
+transScope ::
+     (Monad f1, Monad f2)
+  => (f2 (Var b1 a1) -> f1 (Var b2 a2))
+  -> Scope b1 f2 a1
+  -> Scope b2 f1 a2
+transScope f = toScope . f . fromScope
+
+
+
 betaReduce :: CoreExp a -> CoreExp a
-betaReduce e@(CoreApply _ (CoreLambda _ True ns body) xs) =
-  if length xs == length ns
-  then
-    instantiate (xs !!) body
-  else
-    e
+betaReduce (CoreApply smid l@(CoreLambda _ inlineFlag ns body) xs) =
+  if inlineFlag && length xs == length ns
+    then betaReduce $ instantiate (map betaReduce xs !!) body
+  else CoreApply smid (betaReduce l) (map betaReduce xs)
+betaReduce (CoreApply smid f xs) =
+  CoreApply smid (betaReduce f) (map betaReduce xs)
 betaReduce (CoreLambda smid i ns body) =
-  CoreLambda smid i ns $ (Scope . betaReduce . unscope) body
-betaReduce (CoreLet smid bs b) =
-  CoreLet smid bs' b'
+  CoreLambda smid i ns $ transScope betaReduce body
+betaReduce (CoreLet smid bs b) = CoreLet smid bs' b'
   where
     b' = betaReduceScope b
     bs' = map (second betaReduceScope) bs
-    betaReduceScope = Scope . betaReduce . unscope
+    betaReduceScope = transScope betaReduce
 betaReduce (CoreMeta smid m e) = CoreMeta smid (betaReduce m) $ betaReduce e
 betaReduce (CoreLookup smid b e) = CoreLookup smid (betaReduce b) e
 betaReduce (CoreList smid xs) = CoreList smid (map betaReduce xs)

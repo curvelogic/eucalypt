@@ -87,4 +87,4 @@ spec =
     it "inlines transpositions" $
       inline singleTranspositionApplied `shouldBe` singleTransposedResult
     it "inlines sample B" $
-       inline sampleB `shouldBe` sampleBEquiv
+      inline sampleB `shouldBe` sampleBEquiv
