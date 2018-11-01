@@ -51,11 +51,9 @@ spec = do
         comp (C.corelist []) `shouldBe` Atom (Global "KNIL")
       it "compiles an singleton list" $
         comp (C.corelist [C.int 2]) `shouldBe`
-        let_
-          [pc0_ $ box_ (NativeNumber 2)]
-          (letrec_
-             [pc_ [Local 0, Global "KNIL"] consConstructor]
-             (Atom $ Local 1))
+          letrec_
+          [pc_ [Literal $ NativeNumber 2, Global "KNIL"] consConstructor]
+          (Atom $ Local 0)
     context "handles simple blocks" $ do
       it "compiles an empty block" $
         comp (C.block []) `shouldBe`
@@ -153,11 +151,9 @@ applySpec =
         [ pc0_ $
           thunk_ $
           ann_ "" 0 $
-          let_
-            [pc0_ $ box_ (NativeSymbol "foo")]
-            (letrec_
-               [pc_ [Local 0, Global "KNIL"] consConstructor]
-               (Atom $ Local 1))
+          letrec_
+            [pc_ [Literal $ NativeSymbol "foo", Global "KNIL"] consConstructor]
+            (Atom $ Local 0)
         ]
         (appfn_ (Global "BLOCK") [Local 0])
     it "combines cases and lets correctly" $

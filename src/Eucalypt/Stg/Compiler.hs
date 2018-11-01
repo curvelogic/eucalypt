@@ -131,57 +131,34 @@ compile envSize context _metaref (C.CoreBlock _ content) = let_ [c] b
     cref = Local $ fromIntegral envSize
     b = appcon_ stgBlock [cref]
 
--- | Empty list with no metadata
-compile envSize _ Nothing (C.CoreList _ []) = list_ envSize [] Nothing
-
 -- | Empty list with metadata, allocate to embed metadta
 compile envSize _ metaref (C.CoreList _ []) = list_ envSize [] metaref
 
 -- | List literals
-compile envSize context metaref (C.CoreList _ els) = let_ elBinds buildList
+compile envSize context metaref (C.CoreList _ els) =
+  if null elBinds
+    then buildList
+    else let_ elBinds buildList
   where
-    elBinds = map (compileBinding envSize context . ("<item>", )) els
-    elCount = length elBinds
-    elRefs = localsList envSize (envSize + elCount)
-    buildList = list_ (envSize + elCount) elRefs metaref
-
+    elAnalyses = numberPreClosures (map classify els, 0)
+    classify (CoreVar _ n) = EnvRef $ context n
+    classify (CorePrim _ p) = EnvRef $ maybe (Global "NULL") Literal (convert p)
+    classify expr = Closure Nothing expr
+    elRefs = map (toRef envSize) elAnalyses
+    elBinds =
+      map (compileBinding envSize context . ("<item>", ) . closureExpr) $
+      filter isClosure elAnalyses
+    buildList = list_ (envSize + length elBinds) elRefs metaref
 
 -- | Compile application, ensuring all args are atoms, allocating as
 -- necessary to achieve this.
 compile envSize context _metaref expr@C.CoreApply{} =
   compileApply envSize context  _metaref expr
-  -- if null pcs
-  --   then App func $ V.fromList xrefs
-  --   else let_ pcs (App func $ V.fromList xrefs)
-  -- where
-  --   (pcs0, func) =
-  --     case op f of
-  --       (CoreBuiltin _ n) -> ([], Ref $ Global n)
-  --       (CoreVar _ a) -> ([], Ref $ context a)
-  --       _ ->
-  --         ( [compileBinding envSize context ("<anon>", f)]
-  --         , Ref (Local $ fromIntegral envSize))
-  --   acc (ps, xrs) x =
-  --     case x of
-  --       (CoreVar _ a) -> (ps, xrs ++ [context a])
-  --       (CorePrim _ n) -> (ps, xrs ++ [maybe (Global "NULL") Literal (convert n)])
-  --       _ ->
-  --         ( ps ++ [compileBinding envSize context ("<arg>", x)]
-  --         , xrs ++ [Local $ fromIntegral $ envSize + length ps])
-  --   (pcs, xrefs) = foldl acc (pcs0, []) xs
-  --   op fn =
-  --     case fn of
-  --       (CoreOperator _ _x _p e) -> e
-  --       _ -> fn
-
-
 
 -- | Compile lambda into let to allocate and return fn
 compile envSize context _metaref f@CoreLambda{} =
   let_ [compileBinding envSize context ("<anon>", f)]
   $ Atom $ Local $ fromIntegral envSize
-
-
 
 compile envSize context _metaref (CoreLookup _ obj nm) =
   let_
@@ -218,6 +195,21 @@ index :: ArgCase a -> Int
 index (Scrutinee (Just i) _) = i
 index (Closure (Just i) _) = i
 index _ = error "Unexpected argument case in CoreApply compilation"
+
+toRef :: Int -> ArgCase a -> Ref
+toRef envSize component = case component of
+  EnvRef r -> r
+  Scrutinee (Just n) _ -> Local $ fromIntegral (n + envSize)
+  Closure (Just n) _ -> Local $ fromIntegral (n + envSize)
+  _ -> error "Unexpected ArgCase during compilation"
+
+closureExpr :: ArgCase a -> CoreExp a
+closureExpr (Closure _ expr) = expr
+closureExpr _ = error "closureExpr on non-closure"
+
+isClosure :: ArgCase a -> Bool
+isClosure (Closure _ _) = True
+isClosure _ = False
 
 
 -- | All arguments to apply must be primitives or vars (no complex
@@ -307,14 +299,8 @@ wrappers = span isScrutinee . sortOn index . filter notEnvRef
 -- | Compile the apply expression
 compileCall :: Int -> [ArgCase a] -> StgSyn
 compileCall envSize components =
-  App (Ref $ toRef $ head components) $ V.fromList (map toRef $ tail components)
-  where
-    toRef component = case component of
-      EnvRef r -> r
-      Scrutinee (Just n) _ -> Local $ fromIntegral (n + envSize)
-      Closure (Just n) _ -> Local $ fromIntegral (n + envSize)
-      _ -> error "Unexpected component during compilation of CoreApply"
-
+  App (Ref $ toRef envSize $ head components) $
+  V.fromList (map (toRef envSize) $ tail components)
 
 
 -- | Compile the wrappers
@@ -341,8 +327,6 @@ compileWrappers envSize  context metaref (scrutinees, closures) call =
           force_ (compile (envSize + n) context metaref expr) body
         _ ->
           error "Unexpected component while wrapping cases in apply compilation"
-    closureExpr (Closure _ expr) = expr
-    closureExpr _ = error "closureExpr on non-closure"
 
 
 
