@@ -12,6 +12,8 @@ where
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Core.AnonSyn as C
 import Eucalypt.Stg.Compiler
+import Eucalypt.Stg.GlobalInfo
+import Eucalypt.Stg.Globals
 import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -109,7 +111,7 @@ spec = do
              thunkn_ 2 $ appfn_ (Local 0) [Local 1, Local 1]
            ]
            (appfn_ (Global "CAT") [Literal (NativeNumber 5), Local 2]))
-
+  applySpec
 
 asAndBs :: StgSyn
 asAndBs = blk
@@ -127,3 +129,49 @@ asAndBs = blk
         [pc0_ $ thunk_ a2a, pc0_ $ thunk_ b2b]
         (list_ 2 [Local 0, Local 1] Nothing)
     blk = let_ [pc0_ $ thunk_ els] (appcon_ stgBlock [Local 0])
+
+
+applySpec :: Spec
+applySpec =
+  describe "compilation of CoreApply" $ do
+    it "reads strictness" $
+      standardGlobalStrictness "ADD" `shouldBe` [Strict, Strict]
+    it "uses cases for strict arguments" $
+      comp
+        (C.app
+           (C.bif "ADD")
+           [ C.app (C.bif "SUB") [C.int 3, C.int 2]
+           , C.app (C.bif "SUB") [C.int 3, C.int 2]
+           ]) `shouldBe`
+      force_
+        (appfn_ (Global "SUB") [Literal $ nat 3, Literal $ nat 2])
+        (force_ (appfn_ (Global "SUB") [Literal $ nat 3, Literal $ nat 2]) $
+         appfn_ (Global "ADD") [Local 0, Local 1])
+    it "uses lets for non-strict arguments" $
+      comp (C.app (C.bif "BLOCK") [C.corelist [C.sym "foo"]]) `shouldBe`
+      let_
+        [ pc0_ $
+          thunk_ $
+          ann_ "" 0 $
+          let_
+            [pc0_ $ box_ (NativeSymbol "foo")]
+            (letrec_
+               [pc_ [Local 0, Global "KNIL"] consConstructor]
+               (Atom $ Local 1))
+        ]
+        (appfn_ (Global "BLOCK") [Local 0])
+    it "combines cases and lets correctly" $
+      comp
+        (C.app
+           (C.bif "IF")
+           [ C.app (C.bif "TRUE") []
+           , C.app (C.bif "BOMB") []
+           , C.app (C.bif "BOMB") []
+           ]) `shouldBe`
+      force_
+        (appfn_ (Global "TRUE") [])
+        (let_
+           [ pc0_ $ thunk_ $ ann_ "" 0 $ appfn_ (Global "BOMB") []
+           , pc0_ $ thunk_ $ ann_ "" 0 $ appfn_ (Global "BOMB") []
+           ] $
+         appfn_ (Global "IF") [Local 0, Local 1, Local 2])

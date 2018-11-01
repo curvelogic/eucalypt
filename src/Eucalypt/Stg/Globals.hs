@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 {-|
@@ -12,6 +13,7 @@ Stability   : experimental
 module Eucalypt.Stg.Globals where
 
 import qualified Data.HashMap.Strict as HM
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals.Arithmetic as Arith
 import Eucalypt.Stg.Globals.Block as Block
 import Eucalypt.Stg.Globals.Bool as Bool
@@ -88,54 +90,66 @@ seqPairList =
     ]
 
 
-standardGlobals :: HM.HashMap String LambdaForm
+
+standardGlobals :: [GlobalInfo]
 standardGlobals =
-  HM.fromList $
-  [ ("EQ", Eq.euEq)
-  , ("TRUE", Bool.euTrue)
-  , ("FALSE", Bool.euFalse)
-  , ("NOT", Bool.euNot)
-  , ("AND", Bool.euAnd)
-  , ("OR", Bool.euOr)
-  , ("IF", Bool.euIf)
-  , ("CONS", List.euCons)
-  , ("NIL", List.euNil)
-  , ("HEAD", List.euHead)
-  , ("TAIL", List.euTail)
-  , ("CONCAT", List.euConcat)
-  , ("REVERSE", List.euReverse)
-  , ("ADD", Arith.euAdd)
-  , ("SUB", Arith.euSub)
-  , ("MUL", Arith.euMul)
-  , ("DIV", Arith.euDiv)
-  , ("LT", Arith.euLt)
-  , ("GT", Arith.euGt)
-  , ("LTE", Arith.euLte)
-  , ("GTE", Arith.euGte)
-  , ("PANIC", Panic.euPanic)
-  , ("BOMB", Panic.euBomb)
-  , ("MATCHES", Str.euMatches)
-  , ("MATCH", Str.euMatch)
-  , ("JOIN", Str.euJoin)
-  , ("SPLIT", Str.euSplit)
-  , ("STR", Str.euStr)
-  , ("SYM", Str.euSym)
-  , ("CAT", euCat)
-  , ("HEAD", euHead)
-  , ("BLOCK", Block.euBlock)
-  , ("ELEMENTS", Block.euElements)
-  , ("MERGE", Block.euMerge)
-  , ("DEEPMERGE", Block.euDeepMerge)
-  , ("DEEPMERGEIFBLOCKS", Block.euDeepMergeIfBlocks)
-  , ("LOOKUP", Block.euLookup)
-  , ("LOOKUPLIST", Block.euLookupList)
-  , ("LOOKUPOR", Block.euLookupOr)
-  , ("LOOKUPLISTOR", Block.euLookupListOr)
-  , ("META", Meta.euMeta)
-  , ("WITHMETA", Meta.euWithMeta)
-  , ("KNIL", euStgNil)
-  , ("KEMPTYBLOCK", euEmptyBlock)
-  , ("seqNatList", seqNatList)
-  , ("seqPairList", seqPairList)
+  [ GlobalInfo "EQ" Eq.euEq [NonStrict, NonStrict]
+  , GlobalInfo "TRUE" Bool.euTrue []
+  , GlobalInfo "FALSE" Bool.euFalse []
+  , GlobalInfo "NOT" Bool.euNot [Strict]
+  , GlobalInfo "AND" Bool.euAnd [Strict, NonStrict]
+  , GlobalInfo "OR" Bool.euOr [Strict, NonStrict]
+  , GlobalInfo "IF" Bool.euIf [Strict, NonStrict, NonStrict]
+  , GlobalInfo "CONS" List.euCons [NonStrict, NonStrict]
+  , GlobalInfo "NIL" List.euNil [NonStrict]
+  , GlobalInfo "HEAD" List.euHead [NonStrict]
+  , GlobalInfo "TAIL" List.euTail [NonStrict]
+  , GlobalInfo "CONCAT" List.euConcat [NonStrict]
+  , GlobalInfo "REVERSE" List.euReverse [NonStrict]
+  , GlobalInfo "ADD" Arith.euAdd [Strict, Strict]
+  , GlobalInfo "SUB" Arith.euSub [Strict, Strict]
+  , GlobalInfo "MUL" Arith.euMul [Strict, Strict]
+  , GlobalInfo "DIV" Arith.euDiv [Strict, Strict]
+  , GlobalInfo "LT" Arith.euLt [Strict, Strict]
+  , GlobalInfo "GT" Arith.euGt [Strict, Strict]
+  , GlobalInfo "LTE" Arith.euLte [Strict, Strict]
+  , GlobalInfo "GTE" Arith.euGte [Strict, Strict]
+  , GlobalInfo "PANIC" Panic.euPanic [Strict]
+  , GlobalInfo "BOMB" Panic.euBomb []
+  , GlobalInfo "MATCHES" Str.euMatches [Strict, Strict]
+  , GlobalInfo "MATCH" Str.euMatch [Strict, Strict]
+  , GlobalInfo "JOIN" Str.euJoin [Strict, Strict]
+  , GlobalInfo "SPLIT" Str.euSplit [Strict, Strict]
+  , GlobalInfo "STR" Str.euStr [Strict]
+  , GlobalInfo "SYM" Str.euSym [Strict]
+  , GlobalInfo "CAT" euCat [NonStrict, NonStrict]
+  , GlobalInfo "BLOCK" Block.euBlock [NonStrict]
+  , GlobalInfo "ELEMENTS" Block.euElements [NonStrict]
+  , GlobalInfo "MERGE" Block.euMerge [NonStrict, NonStrict]
+  , GlobalInfo "DEEPMERGE" Block.euDeepMerge [NonStrict, NonStrict]
+  , GlobalInfo "DEEPMERGEIFBLOCKS" Block.euDeepMergeIfBlocks [NonStrict, NonStrict]
+  , GlobalInfo "LOOKUP" Block.euLookup [NonStrict, Strict]
+  , GlobalInfo "LOOKUPLIST" Block.euLookupList [NonStrict, Strict]
+  , GlobalInfo "LOOKUPOR" Block.euLookupOr [NonStrict, Strict, NonStrict]
+  , GlobalInfo "LOOKUPLISTOR" Block.euLookupListOr [NonStrict, Strict, NonStrict]
+  , GlobalInfo "META" Meta.euMeta [Strict]
+  , GlobalInfo "WITHMETA" Meta.euWithMeta [NonStrict, NonStrict]
+  , GlobalInfo "KNIL" euStgNil []
+  , GlobalInfo "KEMPTYBLOCK" euEmptyBlock []
+  , GlobalInfo "seqNatList" seqNatList [NonStrict]
+  , GlobalInfo "seqPairList" seqPairList [NonStrict]
   ] <>
   Emit.globals
+
+standardGlobalMap :: HM.HashMap String LambdaForm
+standardGlobalMap = HM.fromList $ map toPair standardGlobals
+  where
+    toPair GlobalInfo{..} = (globalName, globalCode)
+
+standardGlobalInfoMap :: HM.HashMap String GlobalInfo
+standardGlobalInfoMap = HM.fromList $ map toPair standardGlobals
+  where
+    toPair g@GlobalInfo{..} = (globalName, g)
+
+standardGlobalStrictness :: String -> [Strictness]
+standardGlobalStrictness n = globalStrictness $ standardGlobalInfoMap HM.! n

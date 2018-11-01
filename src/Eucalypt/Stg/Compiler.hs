@@ -15,12 +15,14 @@ module Eucalypt.Stg.Compiler where
 import Bound.Var as Var
 import Bound.Scope (fromScope)
 import qualified Data.Array as A
-import Data.Bifunctor (second)
+import Data.Bifunctor (first, second)
 import Data.Foldable (toList)
-import Data.List (nub, elemIndex)
+import Data.List (nub, elemIndex, sortOn)
 import Data.Scientific
 import qualified Data.Vector as V
 import Eucalypt.Core.Syn as C
+import Eucalypt.Stg.GlobalInfo
+import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
@@ -125,7 +127,7 @@ compile _ _ _ (C.CorePrim _ p) = case convert p of
 -- | Block literals
 compile envSize context _metaref (C.CoreBlock _ content) = let_ [c] b
   where
-    c = compileBinding envSize context ("", content)
+    c = compileBinding envSize context ("<content>", content)
     cref = Local $ fromIntegral envSize
     b = appcon_ stgBlock [cref]
 
@@ -138,7 +140,7 @@ compile envSize _ metaref (C.CoreList _ []) = list_ envSize [] metaref
 -- | List literals
 compile envSize context metaref (C.CoreList _ els) = let_ elBinds buildList
   where
-    elBinds = map (compileBinding envSize context . ("", )) els
+    elBinds = map (compileBinding envSize context . ("<item>", )) els
     elCount = length elBinds
     elRefs = localsList envSize (envSize + elCount)
     buildList = list_ (envSize + elCount) elRefs metaref
@@ -146,30 +148,31 @@ compile envSize context metaref (C.CoreList _ els) = let_ elBinds buildList
 
 -- | Compile application, ensuring all args are atoms, allocating as
 -- necessary to achieve this.
-compile envSize context _metaref (C.CoreApply _ f xs) =
-  if null pcs
-    then App func $ V.fromList xrefs
-    else let_ pcs (App func $ V.fromList xrefs)
-  where
-    (pcs0, func) =
-      case op f of
-        (CoreBuiltin _ n) -> ([], Ref $ Global n)
-        (CoreVar _ a) -> ([], Ref $ context a)
-        _ ->
-          ( [compileBinding envSize context ("<anon>", f)]
-          , Ref (Local $ fromIntegral envSize))
-    acc (ps, xrs) x =
-      case x of
-        (CoreVar _ a) -> (ps, xrs ++ [context a])
-        (CorePrim _ n) -> (ps, xrs ++ [maybe (Global "NULL") Literal (convert n)])
-        _ ->
-          ( ps ++ [compileBinding envSize context ("", x)]
-          , xrs ++ [Local $ fromIntegral $ envSize + length ps])
-    (pcs, xrefs) = foldl acc (pcs0, []) xs
-    op fn =
-      case fn of
-        (CoreOperator _ _x _p e) -> e
-        _ -> fn
+compile envSize context _metaref expr@C.CoreApply{} =
+  compileApply envSize context  _metaref expr
+  -- if null pcs
+  --   then App func $ V.fromList xrefs
+  --   else let_ pcs (App func $ V.fromList xrefs)
+  -- where
+  --   (pcs0, func) =
+  --     case op f of
+  --       (CoreBuiltin _ n) -> ([], Ref $ Global n)
+  --       (CoreVar _ a) -> ([], Ref $ context a)
+  --       _ ->
+  --         ( [compileBinding envSize context ("<anon>", f)]
+  --         , Ref (Local $ fromIntegral envSize))
+  --   acc (ps, xrs) x =
+  --     case x of
+  --       (CoreVar _ a) -> (ps, xrs ++ [context a])
+  --       (CorePrim _ n) -> (ps, xrs ++ [maybe (Global "NULL") Literal (convert n)])
+  --       _ ->
+  --         ( ps ++ [compileBinding envSize context ("<arg>", x)]
+  --         , xrs ++ [Local $ fromIntegral $ envSize + length ps])
+  --   (pcs, xrefs) = foldl acc (pcs0, []) xs
+  --   op fn =
+  --     case fn of
+  --       (CoreOperator _ _x _p e) -> e
+  --       _ -> fn
 
 
 
@@ -200,6 +203,145 @@ compile _ _ _ CoreName{} = error "Cannot compile name"
 compile _ _ _ CoreArgTuple{} = error "Cannot compile arg tuple"
 compile _ _ _ CoreOpSoup{} = error "Cannot compile op soup"
 compile _ _ _ CoreEliminated = error "Cannot compile eliminated code"
+
+
+data ArgCase a
+  = EnvRef Ref
+  | Scrutinee (Maybe Int)
+              (CoreExp a)
+  | Closure (Maybe Int)
+            (CoreExp a)
+  deriving (Show)
+
+-- | Retrieve the index from an ArgCase (must be present)
+index :: ArgCase a -> Int
+index (Scrutinee (Just i) _) = i
+index (Closure (Just i) _) = i
+index _ = error "Unexpected argument case in CoreApply compilation"
+
+
+-- | All arguments to apply must be primitives or vars (no complex
+-- expressions). Depending on whether the argument position is strict
+-- or non-strict, we generate wrapping case or let expressions to
+-- pre-evaluate to values or allocate thunks.
+compileApply ::
+     Eq v
+  => Int -- ^ current environment size
+  -> (v -> Ref) -- ^ current context (mapping vars to refs into environment)
+  -> Maybe Ref -- ^ metadata as ref into environment
+  -> C.CoreExp v -- ^ core expression to compile
+  -> StgSyn
+compileApply envSize context metaref (C.CoreApply _ f xs) = wrappedCall
+  where
+    strictness =
+      case op f of
+        (CoreBuiltin _ n) -> standardGlobalStrictness n
+        _ -> replicate (length xs) NonStrict
+    components0 =
+      case op f of
+        (CoreBuiltin _ n) -> [EnvRef $ Global n]
+        (CoreVar _ a) -> [EnvRef $ context a]
+        _ -> [Closure Nothing f]
+    acc comps (x, strict) =
+      case x of
+        (CoreVar _ a) -> comps ++ [EnvRef $ context a]
+        (CorePrim _ n) ->
+          comps ++ [EnvRef $ maybe (Global "NULL") Literal (convert n)]
+        _ ->
+          case strict of
+            NonStrict -> comps ++ [Closure Nothing x]
+            Strict -> comps ++ [Scrutinee Nothing x]
+    components = numberArgCases $ foldl acc components0 (zip xs strictness)
+    call = compileCall envSize components
+    wrappedCall =
+      compileWrappers envSize context metaref (wrappers components) call
+    op fn =
+      case fn of
+        (CoreOperator _ _x _p e) -> e
+        _ -> fn
+compileApply _ _ _ _ = error "compileApply called for non apply arg"
+
+
+-- | Number the scrutinees (from 0), returning number cases plus next counter
+numberScrutinees :: [ArgCase a] -> ([ArgCase a], Int)
+numberScrutinees = first reverse . foldl acc ([], 0)
+  where
+    acc (o, n) i =
+      case i of
+        (Scrutinee Nothing x) -> (Scrutinee (Just n) x : o, n + 1)
+        _ -> (i : o, n)
+
+
+
+-- | Number the pre closures (from next counter), returning numbered cases
+numberPreClosures :: ([ArgCase a], Int) -> [ArgCase a]
+numberPreClosures (cs, next) = reverse $ fst $ foldl acc ([], next) cs
+  where
+    acc (o, n) i =
+      case i of
+        (Closure Nothing x) -> (Closure (Just n) x : o, n + 1)
+        _ -> (i : o, n)
+
+
+
+numberArgCases :: [ArgCase a] -> [ArgCase a]
+numberArgCases = numberPreClosures . numberScrutinees
+
+
+
+-- | Sort those args which need evaluating or allocating into
+-- scrutinees then preclosures in the order dictated by numbering
+wrappers :: [ArgCase a] -> ([ArgCase a], [ArgCase a])
+wrappers = span isScrutinee . sortOn index . filter notEnvRef
+  where
+    notEnvRef (EnvRef _) = False
+    notEnvRef _ = True
+    isScrutinee Scrutinee{} = True
+    isScrutinee _ = False
+
+
+
+-- | Compile the apply expression
+compileCall :: Int -> [ArgCase a] -> StgSyn
+compileCall envSize components =
+  App (Ref $ toRef $ head components) $ V.fromList (map toRef $ tail components)
+  where
+    toRef component = case component of
+      EnvRef r -> r
+      Scrutinee (Just n) _ -> Local $ fromIntegral (n + envSize)
+      Closure (Just n) _ -> Local $ fromIntegral (n + envSize)
+      _ -> error "Unexpected component during compilation of CoreApply"
+
+
+
+-- | Compile the wrappers
+compileWrappers ::
+     Eq v
+  => Int
+  -> (v -> Ref)
+  -> Maybe Ref
+  -> ([ArgCase v], [ArgCase v])
+  -> StgSyn
+  -> StgSyn
+compileWrappers envSize  context metaref (scrutinees, closures) call =
+  foldr wrapCase allocWrappedCall scrutinees
+  where
+    preclosures =
+      map (compileBinding envSize context . ("", ) . closureExpr) closures
+    allocWrappedCall =
+      if null preclosures
+        then call
+        else let_ preclosures call
+    wrapCase c body =
+      case c of
+        (Scrutinee (Just n) expr) ->
+          force_ (compile (envSize + n) context metaref expr) body
+        _ ->
+          error "Unexpected component while wrapping cases in apply compilation"
+    closureExpr (Closure _ expr) = expr
+    closureExpr _ = error "closureExpr on non-closure"
+
+
 
 -- | An empty context with no Refs for any Var
 emptyContext :: (Show v, Eq v) => v -> Ref
