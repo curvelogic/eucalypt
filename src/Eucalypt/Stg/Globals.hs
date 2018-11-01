@@ -14,15 +14,15 @@ module Eucalypt.Stg.Globals where
 
 import qualified Data.HashMap.Strict as HM
 import Eucalypt.Stg.GlobalInfo
-import Eucalypt.Stg.Globals.Arithmetic as Arith
-import Eucalypt.Stg.Globals.Block as Block
-import Eucalypt.Stg.Globals.Bool as Bool
-import Eucalypt.Stg.Globals.Emit as Emit
-import Eucalypt.Stg.Globals.Eq as Eq
-import Eucalypt.Stg.Globals.List as List
-import Eucalypt.Stg.Globals.Meta as Meta
-import Eucalypt.Stg.Globals.Panic as Panic
-import Eucalypt.Stg.Globals.Str as Str
+import qualified Eucalypt.Stg.Globals.Arithmetic as Arith
+import qualified Eucalypt.Stg.Globals.Block as Block
+import qualified Eucalypt.Stg.Globals.Bool as Bool
+import qualified Eucalypt.Stg.Globals.Emit as Emit
+import qualified Eucalypt.Stg.Globals.Eq as Eq
+import qualified Eucalypt.Stg.Globals.List as List
+import qualified Eucalypt.Stg.Globals.Meta as Meta
+import qualified Eucalypt.Stg.Globals.Panic as Panic
+import qualified Eucalypt.Stg.Globals.Str as Str
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
@@ -106,14 +106,6 @@ standardGlobals =
   , GlobalInfo "TAIL" List.euTail [NonStrict]
   , GlobalInfo "CONCAT" List.euConcat [NonStrict]
   , GlobalInfo "REVERSE" List.euReverse [NonStrict]
-  , GlobalInfo "ADD" Arith.euAdd [Strict, Strict]
-  , GlobalInfo "SUB" Arith.euSub [Strict, Strict]
-  , GlobalInfo "MUL" Arith.euMul [Strict, Strict]
-  , GlobalInfo "DIV" Arith.euDiv [Strict, Strict]
-  , GlobalInfo "LT" Arith.euLt [Strict, Strict]
-  , GlobalInfo "GT" Arith.euGt [Strict, Strict]
-  , GlobalInfo "LTE" Arith.euLte [Strict, Strict]
-  , GlobalInfo "GTE" Arith.euGte [Strict, Strict]
   , GlobalInfo "PANIC" Panic.euPanic [Strict]
   , GlobalInfo "BOMB" Panic.euBomb []
   , GlobalInfo "MATCHES" Str.euMatches [Strict, Strict]
@@ -127,11 +119,17 @@ standardGlobals =
   , GlobalInfo "ELEMENTS" Block.euElements [NonStrict]
   , GlobalInfo "MERGE" Block.euMerge [NonStrict, NonStrict]
   , GlobalInfo "DEEPMERGE" Block.euDeepMerge [NonStrict, NonStrict]
-  , GlobalInfo "DEEPMERGEIFBLOCKS" Block.euDeepMergeIfBlocks [NonStrict, NonStrict]
+  , GlobalInfo
+      "DEEPMERGEIFBLOCKS"
+      Block.euDeepMergeIfBlocks
+      [NonStrict, NonStrict]
   , GlobalInfo "LOOKUP" Block.euLookup [NonStrict, Strict]
   , GlobalInfo "LOOKUPLIST" Block.euLookupList [NonStrict, Strict]
   , GlobalInfo "LOOKUPOR" Block.euLookupOr [NonStrict, Strict, NonStrict]
-  , GlobalInfo "LOOKUPLISTOR" Block.euLookupListOr [NonStrict, Strict, NonStrict]
+  , GlobalInfo
+      "LOOKUPLISTOR"
+      Block.euLookupListOr
+      [NonStrict, Strict, NonStrict]
   , GlobalInfo "META" Meta.euMeta [Strict]
   , GlobalInfo "WITHMETA" Meta.euWithMeta [NonStrict, NonStrict]
   , GlobalInfo "KNIL" euStgNil []
@@ -139,6 +137,7 @@ standardGlobals =
   , GlobalInfo "seqNatList" seqNatList [NonStrict]
   , GlobalInfo "seqPairList" seqPairList [NonStrict]
   ] <>
+  Arith.globals <>
   Emit.globals
 
 standardGlobalMap :: HM.HashMap String LambdaForm

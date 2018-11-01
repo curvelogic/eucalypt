@@ -243,14 +243,17 @@ compileApply envSize context metaref (C.CoreApply _ f xs) = wrappedCall
         (CoreVar _ a) -> [EnvRef $ context a]
         _ -> [Closure Nothing f]
     acc comps (x, strict) =
+      comps ++
       case x of
-        (CoreVar _ a) -> comps ++ [EnvRef $ context a]
-        (CorePrim _ n) ->
-          comps ++ [EnvRef $ maybe (Global "NULL") Literal (convert n)]
+        (CoreVar _ a) ->
+          case strict of
+            NonStrict -> [EnvRef $ context a]
+            Strict -> [Scrutinee Nothing x]
+        (CorePrim _ n) -> [EnvRef $ maybe (Global "NULL") Literal (convert n)]
         _ ->
           case strict of
-            NonStrict -> comps ++ [Closure Nothing x]
-            Strict -> comps ++ [Scrutinee Nothing x]
+            NonStrict -> [Closure Nothing x]
+            Strict -> [Scrutinee Nothing x]
     components = numberArgCases $ foldl acc components0 (zip xs strictness)
     call = compileCall envSize components
     wrappedCall =
