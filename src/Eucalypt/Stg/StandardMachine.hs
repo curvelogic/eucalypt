@@ -19,7 +19,7 @@ import qualified Text.PrettyPrint as P
 
 -- | Initialise machine state with the standard global defs.
 initStandardMachineState :: MonadIO m => StgSyn -> m MachineState
-initStandardMachineState s = initMachineState s standardGlobals
+initStandardMachineState s = initMachineState s standardGlobalMap
 
 -- | A debug dump to use as machine's trace function
 dump :: MachineState -> IO ()

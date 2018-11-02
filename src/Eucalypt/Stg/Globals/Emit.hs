@@ -13,19 +13,21 @@ module Eucalypt.Stg.Globals.Emit
 
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
-globals :: [(String, LambdaForm)]
+
+globals :: [GlobalInfo]
 globals =
-  [ ("Emit.suppresses", suppresses)
-  , ("Emit.renderKV", renderKV)
-  , ("Emit.continueKVList", continueKVList)
-  , ("Emit.emptyList", emptyList)
-  , ("Emit.startList", startList)
-  , ("Emit.continueList", continueList)
-  , ("Emit.wrapBlock", wrapBlock)
-  , ("RENDER", euRender)
-  , ("NULL", euNull)
+  [ GlobalInfo "Emit.suppresses" suppresses [NonStrict]
+  , GlobalInfo "Emit.renderKV" renderKV [NonStrict]
+  , GlobalInfo "Emit.continueKVList" continueKVList [NonStrict]
+  , GlobalInfo "Emit.emptyList" emptyList []
+  , GlobalInfo "Emit.startList" startList [NonStrict, NonStrict]
+  , GlobalInfo "Emit.continueList" continueList [NonStrict]
+  , GlobalInfo "Emit.wrapBlock" wrapBlock [NonStrict]
+  , GlobalInfo "RENDER" euRender [NonStrict]
+  , GlobalInfo "NULL" euNull []
   ]
 
 -- | __NULL - for emitting JSON / YAML null

@@ -16,8 +16,10 @@ module Eucalypt.Stg.Globals.Arithmetic
   , euLte
   , euGt
   , euGte
+  , globals
   ) where
 
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
@@ -52,3 +54,15 @@ euLte = binop "LTE"
 
 euGte :: LambdaForm
 euGte = binop "GTE"
+
+globals :: [GlobalInfo]
+globals =
+  [ GlobalInfo "ADD" euAdd [Strict, Strict]
+  , GlobalInfo "SUB" euSub [Strict, Strict]
+  , GlobalInfo "MUL" euMul [Strict, Strict]
+  , GlobalInfo "DIV" euDiv [Strict, Strict]
+  , GlobalInfo "LT" euLt [Strict, Strict]
+  , GlobalInfo "GT" euGt [Strict, Strict]
+  , GlobalInfo "LTE" euLte [Strict, Strict]
+  , GlobalInfo "GTE" euGte [Strict, Strict]
+  ]
