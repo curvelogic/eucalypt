@@ -188,21 +188,19 @@ invocation es xs = es ++ [at s $ EApplyTuple xs]
   where s = foldl1 merge (map location xs)
         
 call :: Parser [Expression]
-call = foldl invocation <$> rootCall <*> many tuple
+call = foldl invocation <$> try rootCall <*> many tuple
        
 callAnchorExpression :: Parser Expression
-callAnchorExpression = try nonOperatorName <|> parenExpression
+callAnchorExpression = parenExpression <|> nonOperatorName
 
 listify :: Parser a -> Parser [a]
 listify = fmap (: [])
 
 element :: Parser [Expression]
 element =
-  label
-    "element"
-    (try call <|> listify atom <|> listify listLiteral <|>
-     listify parenExpression <|>
-     listify blockLiteral)
+  (call <|> listify atom <|> listify listLiteral <|> listify parenExpression <|>
+   listify blockLiteral) <?>
+  "element"
 
 
 -- ? lists
@@ -233,7 +231,7 @@ parenExpression = located $ do
     es -> EOpSoup parentheses es
 
 expression :: Parser Expression
-expression = (try unparenExpression <|> parenExpression) <?> "expression"
+expression = unparenExpression <?> "expression"
 
 -- ? blocks
 --
@@ -243,8 +241,10 @@ expression = (try unparenExpression <|> parenExpression) <?> "expression"
 
 propertyDeclaration :: Parser DeclarationForm
 propertyDeclaration =
-  label "property declaration" $ lexeme $ located
-    (PropertyDecl <$> propertyIdentifier <* colon <*>
+  label "property declaration" $
+  lexeme $
+  located
+    (PropertyDecl <$> try (propertyIdentifier <* colon) <*>
      lexeme expression <?> "property declaration")
   
 parenTuple :: Parser [String]
@@ -252,8 +252,12 @@ parenTuple = parens $ normalIdentifier `sepBy1` comma
 
 functionDeclaration :: Parser DeclarationForm
 functionDeclaration =
-  label "function declaration" $ lexeme $ located $
-  FunctionDecl <$> propertyIdentifier <*> lexeme parenTuple <*> (colon >> expression)
+  label "function declaration" $
+  lexeme $
+  located $ do
+    decl <-
+      try $ FunctionDecl <$> propertyIdentifier <*> (lexeme parenTuple <* colon)
+    decl <$> expression
 
 operatorSignature :: Parser (String, AtomicName, String)
 operatorSignature = do
@@ -279,33 +283,31 @@ operatorDeclaration =
   label "operator declaration" $
   lexeme $
   located $ do
-    (l, o, r) <- operatorSignature
-    expr <- colon >> expression
-    return $ OperatorDecl o l r expr
+    (l, o, r) <- try $ operatorSignature <* colon
+    OperatorDecl o l r <$> expression
 
 prefixOperatorDeclaration :: Parser DeclarationForm
 prefixOperatorDeclaration =
   label "prefix operator declaration" $
   lexeme $
   located $ do
-    (o, x) <- prefixOperatorSignature
-    expr <- colon >> expression
-    return $ LeftOperatorDecl o x expr
+    (o, x) <- try $ prefixOperatorSignature <* colon
+    LeftOperatorDecl o x <$> expression
 
 postfixOperatorDeclaration :: Parser DeclarationForm
 postfixOperatorDeclaration =
   label "postfix operator declaration" $
   lexeme $
   located $ do
-    (x, o) <- postfixOperatorSignature
-    expr <- colon >> expression
-    return $ RightOperatorDecl o x expr
+    (x, o) <- try $ postfixOperatorSignature <* colon
+    RightOperatorDecl o x <$> expression
 
 declarationForm :: Parser DeclarationForm
 declarationForm =
   lexeme $
-  try propertyDeclaration <|> try functionDeclaration <|> try operatorDeclaration <|>
-  try prefixOperatorDeclaration <|> postfixOperatorDeclaration
+  propertyDeclaration <|> functionDeclaration <|> operatorDeclaration <|>
+  prefixOperatorDeclaration <|>
+  postfixOperatorDeclaration
   
 declarationAnnotation :: Parser Expression
 declarationAnnotation =
@@ -323,16 +325,16 @@ blockContent = sc >> located (Block <$> many anyDeclaration) <?> "block content"
 blockLiteral :: Parser Expression
 blockLiteral = located $ EBlock <$> braces blockContent
 
-unannotatedBlock :: Parser (Annotated Block)
-unannotatedBlock = (Annotated Nothing <$> blockContent) <?> "unannotated block"
+unannotatedUnit :: Parser (Annotated Block)
+unannotatedUnit = (Annotated Nothing <$> blockContent <* eof) <?> "unannotated unit"
 
-annotatedBlock :: Parser (Annotated Block)
-annotatedBlock =
-  (Annotated <$> (Just <$> lexeme expression) <*> blockContent) <?>
-  "annotated block"
+annotatedUnit :: Parser (Annotated Block)
+annotatedUnit =
+  (Annotated <$> (Just <$> lexeme expression) <*> blockContent <* eof) <?>
+  "annotated unit"
 
 unit :: Parser (Located (Annotated Block))
-unit = sc >> located (try $ unannotatedBlock <* eof <|> annotatedBlock <* eof)
+unit = sc >> located (unannotatedUnit <|> annotatedUnit) 
 
 -- ? driver functions
 --
