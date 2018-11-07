@@ -112,6 +112,9 @@ expressionFromString s =
     Left err -> throwM err
     Right expr -> return $ desugar expr
 
+tagMeta :: String -> CoreExpr
+tagMeta tag = anon S.block [anon element "tag" $ anon S.str tag]
+
 -- | Active translation scheme
 --
 -- @!eu@ tag causes expression parse, blocks become let expressions.
@@ -126,7 +129,7 @@ instance YamlTranslator ActiveTranslator where
       UriTag u ->
         if u == "!eu"
           then expressionFromString s
-          else return $ anon S.str s
+          else return $ anon S.withMeta (tagMeta u) $ anon S.str s
       _ -> return $ anon S.str s
     where
       s = (unpack . decodeUtf8) text

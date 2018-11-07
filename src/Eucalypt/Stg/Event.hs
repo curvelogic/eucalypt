@@ -13,6 +13,10 @@ module Eucalypt.Stg.Event where
 import Eucalypt.Stg.Syn
 import Data.ByteString as BS
 
+newtype RenderMetadata = RenderMetadata
+  { metaTag :: Maybe String
+  } deriving (Show, Eq)
+
 -- | Various events that can be emitted by the machine, including YAML
 -- / JSON output rendering and debug tracing.
 data Event
@@ -20,7 +24,7 @@ data Event
   | OutputStreamEnd
   | OutputDocumentStart
   | OutputDocumentEnd
-  | OutputScalar !Native
+  | OutputScalar RenderMetadata !Native
   | OutputNull
   | OutputSequenceStart
   | OutputSequenceEnd

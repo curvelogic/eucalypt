@@ -45,5 +45,9 @@ emitNull s _ = emit s OutputNull
 
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do
-  let (StgNat n _) = xs ! 0
-  (`setCode` ReturnLit n Nothing) <$> emit s (OutputScalar n)
+  let (StgNat n m) = xs ! 0
+  let event =
+        case m of
+          Just _metdata -> OutputScalar (RenderMetadata Nothing) n
+          Nothing -> OutputScalar (RenderMetadata Nothing) n
+  (`setCode` ReturnLit n Nothing) <$> emit s event
