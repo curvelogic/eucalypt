@@ -55,8 +55,8 @@ againstLineNumberedMargin from m ls = P.vcat $ zipWith formLine margin ls
 
 -- | Read the specified line out of the supplied byte string. (Line
 -- indexes are 1-based)
-selectLine :: B.ByteString -> Int -> Maybe String
-selectLine text n =
+selectLine :: B.ByteString -> Int -> P.Doc
+selectLine text n = P.text $ fromMaybe "" $
   unpack . decodeUtf8 <$>
   atMay (B.splitWith (== fromIntegral (ord '\n')) text) (n - 1)
 
@@ -65,14 +65,20 @@ selectLine text n =
 -- | Format code where the region of interest is a zero-width location
 formatPoint :: B.ByteString -> Int -> Int -> P.Doc
 formatPoint text line column =
-  againstLineNumberedMargin
-    line
-    2
-    [P.empty, P.empty, lineText, pointer1, P.empty]
+  if column <= 1 && line > 1
+    -- add previous line for more context
+    then againstLineNumberedMargin
+           (line - 1)
+           2
+           [P.empty, P.empty, prevLineText, lineText, pointer, P.empty]
+    else againstLineNumberedMargin
+           line
+           2
+           [P.empty, P.empty, lineText, pointer, P.empty]
   where
-    lineText = P.text $ fromMaybe "" $ selectLine text line
-    pointer1 = P.text $ replicate (column - 1) '-' ++ "^"
-    _pointer2 = P.text $ replicate (column - 1) ' ' ++ "|"
+    prevLineText = selectLine text (line - 1)
+    lineText = selectLine text line
+    pointer = P.text $ replicate (column - 1) '-' ++ "^"
 
 
 
@@ -84,7 +90,7 @@ formatSingleLine text line from to =
     2
     [P.empty, P.empty, lineText, underline, P.empty]
   where
-    lineText = P.text $ fromMaybe "" $ selectLine text line
+    lineText = selectLine text line
     underline = P.text $ replicate (from - 1) ' ' ++ replicate (to - from) '^'
 
 
@@ -92,8 +98,14 @@ formatSingleLine text line from to =
 -- | Format code where the region of interest spans many lines
 formatRegion :: B.ByteString -> Int -> Int -> Int -> Int -> P.Doc
 formatRegion text fromLine _ toLine _ =
-  againstLineNumberedMargin fromLine 1 [P.empty, startLineText, P.text "..."] P.$$
-  againstLineNumberedMargin toLine 1 [P.text "...", endLineText, P.empty]
+  if toLine - fromLine < 4
+    then againstLineNumberedMargin fromLine 1 $
+         [P.empty] ++ map (selectLine text) [fromLine .. toLine] ++ [P.empty]
+    else againstLineNumberedMargin
+           fromLine
+           1
+           [P.empty, startLineText, P.text "..."] P.$$
+         againstLineNumberedMargin toLine 1 [P.text "...", endLineText, P.empty]
   where
-    startLineText = P.text $ fromMaybe "" $ selectLine text fromLine
-    endLineText = P.text $ fromMaybe "" $ selectLine text toLine
+    startLineText = selectLine text fromLine
+    endLineText = selectLine text toLine
