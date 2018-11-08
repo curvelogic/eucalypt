@@ -12,7 +12,7 @@ main :: IO ()
 main = hspec spec
 
 sample1 :: B.ByteString
-sample1 = "foo\nbar\nbaz\nquux\n"
+sample1 = "foo\nbar\nbaz\nquux\nalpha\nbeta\ngamma\n"
 
 result1 :: String
 result1 =
@@ -24,7 +24,11 @@ result2 =
 
 result3 :: String
 result3 =
-  intercalate "\n" ["   |", " 1 | foo", "   | ...", "   | ...", " 3 | baz", "   |"]
+  intercalate "\n" ["   |", " 1 | foo", " 2 | bar", " 3 | baz", "   |"]
+
+result4 :: String
+result4 =
+  intercalate "\n" ["   |", " 1 | foo", "   | ...", "   | ...", " 7 | gamma", "   |"]
 
 spec :: Spec
 spec =
@@ -33,5 +37,7 @@ spec =
     P.render (formatPoint sample1 3 3) `shouldBe` result1
   it "formats single line spans" $
     P.render (formatSingleLine sample1 2 0 2) `shouldBe` result2
-  it "formats multiline regions" $
+  it "formats small multiline regions" $
     P.render (formatRegion sample1 1 0 3 0) `shouldBe` result3
+  it "formats large multiline regions" $
+    P.render (formatRegion sample1 1 0 7 3) `shouldBe` result4
