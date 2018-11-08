@@ -96,6 +96,7 @@ precedenceClasses =
   , ("bool-prod", 35)
   , ("bool-sum", 30)
   , ("cat", 20)
+  , ("apply", 10)
   , ("meta", 5)
   ]
 
