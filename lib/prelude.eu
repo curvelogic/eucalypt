@@ -378,7 +378,13 @@ compose(f, g, x): x g f
     precedence: 88 }
 (f ∘ g): compose(f,g)
 
-` { doc: "`apply(f, l)` - apply function `f` to arguments in list `l`."
+` { doc: "(l @ r) - function application operator, for reversing catentation args and eliding parentheses"
+    export: :suppress
+    associates: :right
+    precedence: :apply }
+(l @ r): l(r)
+
+{ doc: "`apply(f, l)` - apply function `f` to arguments in list `l`."
     export: :suppress }
 apply(f, l): foldl(cat flip, f, l)
 
