@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 {-|
 Module      : Eucalypt.Syntax.Ast
@@ -68,14 +69,15 @@ data Target
   | Reference String -- reference to value from block (or environment)
   deriving (Eq, Show, Generic, ToJSON)
 
-instance Anaphora Target where
-  unnumberedAnaphor = Anaphor Nothing
-  isAnaphor (Anaphor _) = True
-  isAnaphor _ = False
-  toNumber (Anaphor n) = n
-  toNumber _ = Nothing
-  fromNumber = Anaphor . Just
-  toName = show
+instance Anaphora () Target where
+  unnumberedAnaphor _ = Anaphor Nothing
+  isAnaphor _ (Anaphor _) = True
+  isAnaphor _ _ = False
+  toNumber _ (Anaphor n) = n
+  toNumber _ _ = Nothing
+  fromNumber _ = Anaphor . Just
+  toName _ (Anaphor (Just n)) = '_':show n
+  toName _ _ = ""
 
 -- | The interpolation request
 --

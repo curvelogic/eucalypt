@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
@@ -64,31 +65,37 @@ distributeFixities e = e
 
 -- | A core pass prior to evaluation to cook all soup that can be
 -- cooked.
-cookAllSoup :: Anaphora a => CoreExp a -> Interpreter (CoreExp a)
+cookAllSoup ::
+     (Anaphora SymbolicAnaphora a) => CoreExp a -> Interpreter (CoreExp a)
 cookAllSoup = Interpreter . cookBottomUp False
 
 -- | Entrypoint for evaluator if soup is discovered at runtime
-cook :: Anaphora a => [CoreExp a] -> Interpreter (CoreExp a)
+cook :: (Anaphora SymbolicAnaphora a) => [CoreExp a] -> Interpreter (CoreExp a)
 cook es = case cookSoup False es of
   Right expr -> return expr
   Left err -> throwEvalError err
 
 -- | Take sequence of expression in operator soup and rearrange into
 -- non-soup expression using operator fixity.
-cookSoup :: Anaphora a => Bool -> [CoreExp a] -> Either CoreError (CoreExp a)
+cookSoup ::
+     (Anaphora SymbolicAnaphora a)
+  => Bool
+  -> [CoreExp a]
+  -> Either CoreError (CoreExp a)
 cookSoup parentAnaphoric es = do
   subcooked <- cookSubsoups inAnaphoricLambda filled
   expr <- evalState shunt (initState subcooked inAnaphoricLambda)
   if wrap
-    then return $ (bindAnaphora . numberAnaphora) expr
+    then return $ processAnaphora expr
     else return expr
   where
     (filled, imAnaphoric) = precook es
     wrap = imAnaphoric && not parentAnaphoric
     inAnaphoricLambda = parentAnaphoric || imAnaphoric
+    processAnaphora = bindAnaphora expressionAnaphora . numberAnaphora expressionAnaphora
 
 cookScope ::
-     (Anaphora a, Eq b, Show b)
+     (Eq b, Show b, Anaphora SymbolicAnaphora a)
   => Bool
   -> Scope b CoreExp a
   -> Interpreter (Scope b CoreExp a)
@@ -99,18 +106,25 @@ cookScope anaphoric scope =
 --
 -- Go through each filling first so and determine whether there are
 -- anaphora at this level
-precook :: Anaphora a => [CoreExp a] -> ([CoreExp a], Bool)
+precook :: (Anaphora SymbolicAnaphora a) => [CoreExp a] -> ([CoreExp a], Bool)
 precook = fillGaps
 
 
 
 -- | Recurse down cooking any operator soups from the bottom upwards
-cookSubsoups :: Anaphora a => Bool -> [CoreExp a] -> Either CoreError [CoreExp a]
+cookSubsoups ::
+     (Anaphora SymbolicAnaphora a)
+  => Bool
+  -> [CoreExp a]
+  -> Either CoreError [CoreExp a]
 cookSubsoups anaphoric = mapM (cookBottomUp anaphoric)
 
 
 cookBottomUp ::
-     Anaphora a => Bool -> CoreExp a -> Either CoreError (CoreExp a)
+     (Anaphora SymbolicAnaphora a)
+  => Bool
+  -> CoreExp a
+  -> Either CoreError (CoreExp a)
 cookBottomUp anaphoric (CoreOpSoup _ exprs) = cookSoup anaphoric exprs
 cookBottomUp anaphoric (CoreArgTuple smid exprs) =
   CoreArgTuple smid <$> traverse (cookBottomUp anaphoric) exprs
@@ -133,7 +147,9 @@ cookBottomUp _ e = Right e
 
 
 -- | Run the shunting algorithm until finished or errored
-shunt :: Anaphora a => State (ShuntState a) (Either CoreError (CoreExp a))
+shunt ::
+     (Show a, Anaphora SymbolicAnaphora a)
+  => State (ShuntState a) (Either CoreError (CoreExp a))
 shunt = (shunt1 `untilM_` finished) >> result
   where
     finished = complete <$> get
@@ -157,7 +173,7 @@ data ShuntState a = ShuntState
   , shuntInsideAnaphoricLambda :: Bool
   } deriving (Show)
 
-initState :: Anaphora a => [CoreExp a] -> Bool -> ShuntState a
+initState :: [CoreExp a] -> Bool -> ShuntState a
 initState es anaphoric =
   ShuntState
     { shuntOutput = []
@@ -298,7 +314,10 @@ pushback e = state $ \s -> ((), s {shuntSource = e : shuntSource s})
 -- | Check the expression can be safely followed by what's coming up
 -- in next in the source and insert catenation operator or implicit
 -- parameter otherwise (giving us haskell style "sections" @(+)@ etc.)
-ensureValidSequence :: Anaphora a => Maybe (CoreExp a) -> State (ShuntState a) ()
+ensureValidSequence ::
+     (Anaphora SymbolicAnaphora a)
+  => Maybe (CoreExp a)
+  -> State (ShuntState a) ()
 ensureValidSequence lhs =
   peekSource >>= \rhs ->
   case validExprSeq lhs rhs of
@@ -307,7 +326,7 @@ ensureValidSequence lhs =
     Nothing -> return ()
 
 -- | A step of the shunting yard algorithm
-shunt1 :: Anaphora a => State (ShuntState a) ()
+shunt1 :: (Anaphora SymbolicAnaphora a) => State (ShuntState a) ()
 shunt1 =
   popNext >>= \case
     Just expr@CoreOperator {} -> ensureValidSequence (Just expr) >> seatOp expr
@@ -333,32 +352,38 @@ bindSides Nothing = (OpLike, OpLike)
 
 -- | Two exprs are valid together if one is OpLike and one is
 -- ValueLike on the sides that touch
-validExprSeq :: Anaphora a => Maybe (CoreExp a) -> Maybe (CoreExp a) -> Maybe (CoreExp a)
+validExprSeq ::
+     (Anaphora SymbolicAnaphora a)
+  => Maybe (CoreExp a)
+  -> Maybe (CoreExp a)
+  -> Maybe (CoreExp a)
 validExprSeq l r = filler ((snd . bindSides) l) ((fst . bindSides) r)
 
 -- | We can make an invalid sequence valid by inserting a catenation
 -- op or an anaphoric parameter
-filler :: Anaphora a => BindSide -> BindSide -> Maybe (CoreExp a)
+filler :: (Anaphora SymbolicAnaphora a) => BindSide -> BindSide -> Maybe (CoreExp a)
 filler ValueLike ValueLike = Just catOp
-filler OpLike OpLike = Just $ return unnumberedAnaphor
+filler OpLike OpLike = Just $ return $ unnumberedAnaphor expressionAnaphora
 filler _ _ = Nothing
 
 -- | Make a given expression valid by inserting catenation and
 -- anaphora as required and track whether the sequence contains any
 -- anaphora.
-fillGaps :: Anaphora a => [CoreExp a] -> ([CoreExp a], Bool)
+fillGaps :: (Anaphora SymbolicAnaphora a) => [CoreExp a] -> ([CoreExp a], Bool)
 fillGaps exprs =
   let (es, anaphoric) = foldl' accum ([], False) sides
-  in (reverse es, anaphoric)
+   in (reverse es, anaphoric)
   where
     sides = map Just exprs ++ [Nothing]
-    anaphoricMaybe = getAny . foldMap Any . fmap isAnaphoricVar
+    anaphoricMaybe =
+      getAny . foldMap Any . fmap (isAnaphoricVar expressionAnaphora)
     accum (l, b) e =
-      let (l', b') = case validExprSeq (headMay l) e of
-                       Just v
-                         | isAnaphoricVar v -> (v : l, True)
-                         | otherwise -> (v : l, b || anaphoricMaybe e)
-                       Nothing -> (l, b || anaphoricMaybe e)
-      in case e of
-        Just x -> (x: l', b')
-        Nothing -> (l', b')
+      let (l', b') =
+            case validExprSeq (headMay l) e of
+              Just v
+                | isAnaphoricVar expressionAnaphora v -> (v : l, True)
+                | otherwise -> (v : l, b || anaphoricMaybe e)
+              Nothing -> (l, b || anaphoricMaybe e)
+       in case e of
+            Just x -> (x : l', b')
+            Nothing -> (l', b')

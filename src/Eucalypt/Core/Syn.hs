@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+ {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase, TemplateHaskell, DeriveFunctor,
   DeriveFoldable, DeriveTraversable, FlexibleContexts,
   FlexibleInstances, TupleSections #-}
@@ -369,62 +370,79 @@ lookupOp = anon infixl_ 95 (anon bif "*DOT*")
 -- (e.g '_', '_0', '_1',...) which implicitly define lambdas by
 -- referring to automatic parameters
 
-instance Anaphora String where
-  unnumberedAnaphor = "_"
+-- An anaphora type which is introduced by a single special character
+-- with optional number
+newtype SymbolicAnaphora = SymbolicAnaphora Char
 
-  isAnaphor s
-    | s == "_" = True
-    | (isJust . anaphorIndex) s = True
-  isAnaphor _ = False
+-- | SymbolicAnaphora can be applied with Strings (CoreBindingNames)
+instance Anaphora SymbolicAnaphora CoreBindingName where
+  unnumberedAnaphor (SymbolicAnaphora c) = [c]
 
-  toNumber = anaphorIndex
+  isAnaphor (SymbolicAnaphora c) s
+    | s == [c] = True
+    | (isJust . anaphorIndex c) s = True
+  isAnaphor _ _ = False
 
-  fromNumber n = "_" ++ show n
+  toNumber (SymbolicAnaphora c) = anaphorIndex c
 
-  toName = id
+  fromNumber (SymbolicAnaphora c) n = c : show n
 
-instance (Anaphora a, Eq b, Show b) => Anaphora (Var b a) where
-  unnumberedAnaphor = F unnumberedAnaphor
+  toName _ = id
 
-  isAnaphor (F s)
-    | isAnaphor s = True
-    | (isJust . anaphorIndex . toName) s = True
-  isAnaphor _ = False
+-- | SymbolicAnaphora can be applied with 'Var b CoreBindingName'
+instance (Anaphora t a, Eq b, Show b) => Anaphora t (Var b a) where
+  unnumberedAnaphor t = F $ unnumberedAnaphor t
 
-  toNumber (F s) = anaphorIndex (toName s)
-  toNumber _ = Nothing
+  isAnaphor t (F s)
+    | isAnaphor t s = True
+    | (isJust . toNumber t) s = True
+  isAnaphor _ _ = False
 
-  fromNumber n = F $ fromNumber n
+  toNumber t (F s) = toNumber t s
+  toNumber _ _ = Nothing
 
-  toName (F s) = toName s
-  toName (B _) = ""
+  fromNumber t n = F $ fromNumber t n
+
+  toName t (F s) = toName t s
+  toName _ (B _) = ""
 
 
-expressionAnaphor :: (Anaphora a) => CoreExp a
-expressionAnaphor = anon var unnumberedAnaphor
+-- | Is it the name of a numbered symbolic anaphoric parameter? @_@
+-- doesn't count as it should have been substituted for a numbered
+-- version by cooking.
+anaphorIndex :: Char -> String -> Maybe Int
+anaphorIndex c (c0:s:_) | c == c0 && isDigit s  = Just (read [s] :: Int)
+anaphorIndex _ _ = Nothing
 
-isAnaphoricVar :: (Anaphora a) => CoreExp a -> Bool
-isAnaphoricVar (CoreVar _ s) = isAnaphor s
-isAnaphoricVar _ = False
+-- | Expression anaphora are '_', '_0', '_1', ...
+expressionAnaphora :: SymbolicAnaphora
+expressionAnaphora = SymbolicAnaphora '_'
 
-applyNumber :: (Anaphora a, Eq a) => a -> State Int a
-applyNumber s | s == unnumberedAnaphor = do
+-- | Block anaphora are '•', '•0', '•1', ...
+blockAnaphora :: SymbolicAnaphora
+blockAnaphora = SymbolicAnaphora '•'
+
+-- | The unnumbered anaphor as an expression
+expressionAnaphor :: CoreExpr
+expressionAnaphor = anon var (unnumberedAnaphor expressionAnaphora)
+
+-- | Is the expression an anaphoric var according to the anaphor type
+-- provided?
+isAnaphoricVar :: (Anaphora t a) => t -> CoreExp a -> Bool
+isAnaphoricVar t (CoreVar _ s) = isAnaphor t s
+isAnaphoricVar _ _ = False
+
+-- | Apply a number to the unnumbered anaphor
+applyNumber :: (Anaphora t a, Eq a) => t -> a -> State Int a
+applyNumber t s | s == unnumberedAnaphor t = do
   n <- get
   put (n + 1)
-  return $ fromNumber n
-applyNumber x = return x
-
-
--- | Is it the name of an anahoric parameter? @_@ doesn't count as it
--- should have been substituted for a numbered version by cooking.
-anaphorIndex :: String -> Maybe Int
-anaphorIndex ('_':s:_) | isDigit s  = Just (read [s] :: Int)
-anaphorIndex _ = Nothing
-
+  return $ fromNumber t n
+applyNumber _ x = return x
 
 -- | Add numbers to numberless anaphora
-numberAnaphora :: Anaphora a => CoreExp a -> CoreExp a
-numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
+numberAnaphora :: Anaphora t a => t -> CoreExp a -> CoreExp a
+numberAnaphora t expr = flip evalState (0 :: Int) $ for expr (applyNumber t)
 
 
 
@@ -433,17 +451,19 @@ numberAnaphora expr = flip evalState (0 :: Int) $ for expr applyNumber
 -- Wrap a lambda around the expression, binding all anaphoric
 -- parameters unless there are none in which case return the
 -- expression unchanged
-bindAnaphora :: Anaphora a => CoreExp a -> CoreExp a
-bindAnaphora expr =
+bindAnaphora :: forall a. forall t.
+     Anaphora t a => t -> CoreExp a -> CoreExp a
+bindAnaphora t expr =
   case maxAnaphor of
     Just n ->
-      CoreLambda (sourceMapId expr) False (anaphora n) $ abstract toNumber expr
+      CoreLambda (sourceMapId expr) False (anaphora n) $
+      abstract (toNumber t) expr
     Nothing -> expr
   where
     freeVars = foldr (:) [] expr
-    freeAnaphora = mapMaybe toNumber freeVars
+    freeAnaphora = mapMaybe (toNumber t) freeVars
     maxAnaphor = maximumMay freeAnaphora
-    anaphora upTo = map fromNumber [0 .. upTo]
+    anaphora upTo = map ((toName t :: a -> String) . (fromNumber t :: Int -> a)) [0 .. upTo]
 
 
 
