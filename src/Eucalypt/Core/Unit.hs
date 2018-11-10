@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Eucalypt.Core.Unit
@@ -16,13 +17,14 @@ import Eucalypt.Core.Syn
 import Eucalypt.Core.Target (TargetSpec, prefixPath)
 
 -- | The results of translation
-data TranslationUnit = TranslationUnit
-  { truCore :: CoreExpr
+data TranslationUnit_ a = TranslationUnit
+  { truCore :: a
   , truTargets :: [TargetSpec]
   , truImports :: S.Set Input
   , truSourceMap :: SourceMap
-  }
+  } deriving (Functor)
 
+type TranslationUnit = TranslationUnit_ CoreExpr
 
 
 -- | Create a data unit (as a unit with no targets)
