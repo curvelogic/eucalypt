@@ -384,7 +384,7 @@ compose(f, g, x): x g f
     precedence: :apply }
 (l @ r): l(r)
 
-{ doc: "`apply(f, l)` - apply function `f` to arguments in list `l`."
+` { doc: "`apply(f, l)` - apply function `f` to arguments in list `l`."
     export: :suppress }
 apply(f, l): foldl(cat flip, f, l)
 
