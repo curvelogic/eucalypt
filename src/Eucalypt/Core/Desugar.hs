@@ -290,9 +290,7 @@ translateBlock loc blk = do
 translateStringPattern :: SourceSpan -> [StringChunk] -> Translate CoreExpr
 translateStringPattern loc cs = do
   smid <- recordSpan loc
-  return $
-    bindAnaphora (numberAnaphora $ conc smid) >>= \(Reference v) ->
-      anon Syn.var v
+  return $ processAnaphora (conc smid) >>= \(Reference v) -> anon Syn.var v
   where
     sub :: StringChunk -> CoreExp Target
     sub (Interpolation InterpolationRequest {refTarget = t}) =
@@ -301,7 +299,7 @@ translateStringPattern loc cs = do
     exprs = map sub cs
     conc smid =
       Syn.app smid (anon Syn.bif "JOIN") [CoreList smid exprs, anon Syn.str ""]
-
+    processAnaphora = bindAnaphora () . numberAnaphora ()
 
 
 -- | Descend through the AST, translating to CoreExpr and recording

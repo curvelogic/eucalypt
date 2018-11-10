@@ -16,6 +16,7 @@ import Eucalypt.Core.Syn
   , mergeUnits
   , numberAnaphora
   , rebody
+  , expressionAnaphora
   )
 import Test.Hspec
 
@@ -124,19 +125,21 @@ spec = do
 anaphoraSpec :: Spec
 anaphoraSpec = do
   describe "expression anaphora" $ do
-    it "_x is not anaphoric" $ isAnaphoricVar (var "_x") `shouldBe` False
-    it "_3 is anaphoric" $ isAnaphoricVar (var "_3") `shouldBe` True
+    it "_x is not anaphoric" $
+      isAnaphoricVar expressionAnaphora (var "_x") `shouldBe` False
+    it "_3 is anaphoric" $
+      isAnaphoricVar expressionAnaphora (var "_3") `shouldBe` True
   describe "anaphora numbering" $
     it "numbers [_, _, _]" $
-      numberAnaphora (corelist [var "_", var "_", var "_"]) `shouldBe`
-      corelist [var "_0", var "_1", var "_2"]
+    numberAnaphora expressionAnaphora (corelist [var "_", var "_", var "_"]) `shouldBe`
+    corelist [var "_0", var "_1", var "_2"]
   describe "binding anaphora" $ do
     it "binds [_0, _1, _2]" $
-      bindAnaphora (corelist [var "_0", var "_1", var "_2"]) `shouldBe`
-        lam ["_0", "_1", "_2"] (corelist [var "_0", var "_1", var "_2"])
+      bindAnaphora expressionAnaphora (corelist [var "_0", var "_1", var "_2"]) `shouldBe`
+      lam ["_0", "_1", "_2"] (corelist [var "_0", var "_1", var "_2"])
     it "binds [_2]" $
-      bindAnaphora (corelist [var "_2"]) `shouldBe`
-        lam ["_0", "_1", "_2"] (corelist [var "_2"])
+      bindAnaphora expressionAnaphora (corelist [var "_2"]) `shouldBe`
+      lam ["_0", "_1", "_2"] (corelist [var "_2"])
 
 
 mergeUnitsSpec :: Spec

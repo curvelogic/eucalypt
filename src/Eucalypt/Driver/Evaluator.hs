@@ -19,6 +19,7 @@ import Data.Foldable (traverse_)
 import Data.List (intercalate)
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
+import Eucalypt.Core.BlockAnaphora (anaphorise)
 import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
 import Eucalypt.Core.Desugar (translateExpressionToCore, varify)
 import Eucalypt.Core.Eliminate (prune, compress)
@@ -126,12 +127,15 @@ evaluate opts = do
     when (cmd == Parse) (Core.parseAndDumpASTs opts >> exitSuccess)
 
     -- Stage 1: parse inputs and translate to core units
-    units <- {-# SCC "ParseToCore" #-} Core.parseInputsAndImports $ optionInputs opts
+    parsedUnits <- {-# SCC "ParseToCore" #-} Core.parseInputsAndImports $ optionInputs opts
 
-    -- Stage 2: prepare an IO unit to contain launch environment data
+    -- Stage 2: process any block anaphora
+    let units = {-# SCC "BlockAnaphora" #-} map (fmap anaphorise) parsedUnits
+
+    -- Stage 3: prepare an IO unit to contain launch environment data
     io <- prepareIOUnit
 
-    -- Stage 3: merge all units and bind any cross unit refs
+    -- Stage 4: merge all units and bind any cross unit refs
     let merged = {-# SCC "MergeUnits" #-} mergeTranslationUnits (io : units)
     let targets = truTargets merged
     let core = truCore merged
@@ -147,19 +151,19 @@ evaluate opts = do
   -- source map to trace exceptions back to the relevant source code.
   tryOrReportUsingSourceMap Core.readInput (truSourceMap unit) $ do
 
-    -- Stage 4: form an expression to evaluate from the source or
+    -- Stage 5: form an expression to evaluate from the source or
     -- command line and embed it in the core tree
     evaluand <- {-# SCC "FormEvaluand" #-} formEvaluand opts unit
     when (cmd == DumpEvalSubstituted)
       (putStrLn (pprint evaluand) >> exitSuccess)
 
-    -- Stage 5: cook operator soups to resolve all fixities and prepare
+    -- Stage 6: cook operator soups to resolve all fixities and prepare
     -- a final tree for evaluation
     cookedEvaluand <- {-# SCC "FixityPass" #-} runFixityPass evaluand
     when (cmd == DumpCooked)
       (putStrLn (pprint cookedEvaluand) >> exitSuccess)
 
-    -- Stage 6: dead code elimination to reduce compile and make
+    -- Stage 7: dead code elimination to reduce compile and make
     -- debugging STG impelmentation a bit easier
     let prunedEvaluand = {-# SCC "DeadCodeElimination" #-} prune $ prune $ prune $ prune cookedEvaluand
     when (cmd == DumpPrunedCore)
@@ -173,11 +177,11 @@ evaluate opts = do
     when (cmd == DumpFinalCore)
       (putStrLn (pprint finalEvaluand) >> exitSuccess)
 
-    -- Stage 7: run final checks
+    -- Stage 8: run final checks
     let failures = {-# SCC "VerifyCore" #-} runChecks finalEvaluand
     unless (null failures) $ throwM $ Multiple (map Core failures)
 
-    -- Stage 8: drive the evaluation by rendering it
+    -- Stage 9: drive the evaluation by rendering it
     -- Compile to STG and execute in machine
     when (cmd == DumpStg)
       (STG.dumpStg opts finalEvaluand >> exitSuccess)

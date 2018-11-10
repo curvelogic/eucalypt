@@ -44,7 +44,9 @@ operatorIdentifier =
   where
     opIdentStartChar =
       oneOf ".!@£%^&*|></+=-~" <|>
-      satisfy (\c -> (not . isAscii) c && (isSymbol c || isPunctuation c))
+      satisfy
+        (\c ->
+           (not . isAscii) c && (c /= '•') && (isSymbol c || isPunctuation c))
     opIdentContinuationChar =
       oneOf ".!@£$%^&*|></?+=-~" <|>
       satisfy (\c -> (not . isAscii) c && (isSymbol c || isPunctuation c))
