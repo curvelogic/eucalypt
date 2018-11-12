@@ -12,9 +12,12 @@ module Eucalypt.Reporting.Common where
 import Text.PrettyPrint
 
 
+width :: Int
+width = 80
+
 -- | Format a title for the exception type
 title :: String -> Doc
-title = text
+title s = text $ "- " ++ s ++ " " ++ replicate (width - 3 - length s) '-'
 
 
 -- | Format title and exception message

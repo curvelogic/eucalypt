@@ -113,8 +113,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
           case compare (fromIntegral len) ar
             -- EXACT
                 of
-            EQ ->
-              setCallStack cs . setRule "EXACT" . setCode ms <$>
+            EQ -> setRule "EXACT" . setCode ms <$>
               (vals env ms xs >>= call le ms lf)
             -- CALLK
             GT ->
