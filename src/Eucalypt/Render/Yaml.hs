@@ -34,7 +34,13 @@ renderValue (NativeNumber n) =
 renderValue (NativeSymbol s) =
   L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
 renderValue (NativeString s) =
-  L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
+  L.EventScalar (encodeUtf8 $ pack s) L.NoTag (style s) Nothing
+  where
+    style "" = L.DoubleQuoted
+    style "*" = L.DoubleQuoted
+    style "/" = L.DoubleQuoted
+    style str | length str > 60 = L.Literal
+    style _ = L.PlainNoTag
 renderValue (NativeBool b) =
   L.EventScalar
     (encodeUtf8 $
