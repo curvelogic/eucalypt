@@ -34,4 +34,4 @@ instance StgPretty CallStack where
              (P.hcat (P.punctuate (P.char '>') (map (P.text . fst) (toList cs))))
 
 instance HasSourceMapIds CallStack where
-  toSourceMapIds (CallStack v )= map snd . Vector.toList . Vector.reverse $ v
+  toSourceMapIds (CallStack v) = map snd . Vector.toList . Vector.reverse $ v

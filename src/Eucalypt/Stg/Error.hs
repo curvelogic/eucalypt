@@ -72,7 +72,7 @@ dumpCallStack (CallStack v) =
     then P.empty
     else P.hang (P.text "Call stack dump:") 2 $ P.vcat items
   where
-    items = map item $ toList v
+    items = map item $ filter (not . null . fst) $ toList v
     item i = P.text "-" P.<+> P.text (fst i)
 
 instance Reportable StgException where
