@@ -75,7 +75,7 @@ reportToConsole resolve e = do
           Nothing -> return $ P.text "!!! CANNOT FIND SOURCE !!!"
           Just input -> catchIO
                           ((`codeToDoc` sp) <$> resolve input) $
-                          \_ -> return $ P.text "!!! CANNOT FIND SOURCE !!!"
+                          \_ -> return $ P.text "!!! CANNOT LOAD SOURCE !!!"
   let messageDoc = report e
   consoleError
     (messageDoc P.$$ codeDoc <> P.char '\n')

@@ -123,7 +123,7 @@ evaluate opts = do
   -- In the first phase, we translate text into core. Any source
   -- locations are embedded directly in exceptions and reportable
   -- directly.
-  let loadUncached = Core.loadInput (Core.loader opts)
+  let loadUncached = Core.loadInput opts
   (unit, cachingLoader) <- tryOrReportWithCode loadUncached $ do
 
     when (cmd == Parse) (Core.parseAndDumpASTs opts >> exitSuccess)
@@ -152,7 +152,7 @@ evaluate opts = do
 
   -- In the second phase, we optimise then execute and may need a
   -- source map to trace exceptions back to the relevant source code.
-  let loadCached = Core.loadInput cachingLoader
+  let loadCached = Core.loadCachedInput cachingLoader
   tryOrReportUsingSourceMap loadCached (truSourceMap unit) $ do
 
     -- Stage 5: form an expression to evaluate from the source or

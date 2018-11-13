@@ -13,6 +13,7 @@ Stability   : experimental
 module Eucalypt.Driver.Core
   ( parseInputsAndImports
   , parseAndDumpASTs
+  , loadCachedInput
   , loadInput
   , loader
   , CoreLoader
@@ -48,7 +49,7 @@ import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Unit)
 import Eucalypt.Syntax.Error (SyntaxError(..))
-import Eucalypt.Syntax.Input (Input(..), Locator(..))
+import Eucalypt.Syntax.Input (normaliseInput, Input(..), Locator(..))
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
 import System.Exit
@@ -96,20 +97,24 @@ setNextSMID :: SMID -> CoreLoad ()
 setNextSMID smid = modify (\s -> s { clNextSMID = smid })
 
 
+loadInput :: EucalyptOptions -> Input -> IO BS.ByteString
+loadInput opts input = evalStateT (readInput input) (loader opts)
+
+
 
 -- | Load an input, using cached version in CoreLoader if appropriate.
 -- This is an external function used to leverage already cached
 -- content if possible, it does not update the cache. ('CoreLoad' is
 -- internal to this module)
-loadInput :: CoreLoader -> Input -> IO BS.ByteString
-loadInput CoreLoader {..} input =
+loadCachedInput :: CoreLoader -> Input -> IO BS.ByteString
+loadCachedInput CoreLoader {..} input =
   case inputLocator input of
     CLIEvaluand ->
       case loadEvaluand clOptions of
         Just s -> return . T.encodeUtf8 . T.pack $ s
         Nothing -> throwM $ Command MissingEvaluand
     _ ->
-      case clCache M.!? input of
+      case clCache M.!? normaliseInput input of
         Just bs -> return bs
         Nothing -> throwM $ Core NoSource
 
@@ -136,7 +141,8 @@ readInput i@Input {..} = do
         gets (loadEvaluand . clOptions) >>= \case
           Just text -> (return . T.encodeUtf8 . T.pack) text
           Nothing -> throwM $ Command MissingEvaluand
-  state $ \s@CoreLoader {..} -> (bs, s {clCache = M.insert i bs clCache})
+  state $ \s@CoreLoader {..} ->
+    (bs, s {clCache = M.insert (normaliseInput i) bs clCache})
   where
     readURLInput u =
       case uriScheme u of

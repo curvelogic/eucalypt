@@ -384,7 +384,7 @@ assertions: {
   check(v): v validator(v)
 
   ` "`checked(v)` - panic if value doesn't satisfy its validator"
-  checked(v): if(check(v), v, panic("assertion failed"))
+  checked(v): if(check(v), v, panic("Assertion failed"))
 }
 
 ` { doc: "`e //= v` - add metadata to check expression `e` evaluates to `v` and return whether valid"

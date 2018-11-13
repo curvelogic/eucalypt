@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Eucalypt.Syntax.Input
 Description : Syntax for specifying inputs, imports, inserts...
@@ -37,9 +38,8 @@ data Locator
 
 -- | Resources can be specified as URIs but we
 normaliseLocator :: Locator -> Locator
-normaliseLocator (URLInput u) | uriScheme u == "resource" = ResourceInput $ uriPath u
+normaliseLocator (URLInput u) | uriScheme u == "resource:" = ResourceInput $ uriPath u
 normaliseLocator l = l
-
 
 
 
@@ -47,7 +47,7 @@ normaliseLocator l = l
 instance Show Locator where
   show l = case l of
     URLInput uri -> show uri
-    ResourceInput n -> "resource:" ++ n
+    ResourceInput n -> "[resource:" ++ n ++ "]"
     StdInput -> "[stdin]"
     CLIEvaluand -> "[cli evaluand]"
 
@@ -100,9 +100,7 @@ validateLocator loc =
       if (isValid . uriPath) u
         then Just loc
         else Nothing
-    StdInput -> Just loc
-    ResourceInput _ -> Nothing
-    CLIEvaluand -> Just loc
+    _ -> Just loc
 
 
 
@@ -113,7 +111,14 @@ locatorFromString s = normaliseLocator <$>
     "-" -> Just StdInput
     "[stdin]" -> Just StdInput
     "[cli evaluand]" -> Just CLIEvaluand
+    ('[':xs) -> URLInput <$> (parseURI s <|> parseURI (init xs))
     _ -> URLInput <$> (parseURI s <|> parseURI ("file:" ++ s))
+
+
+
+normaliseInput :: Input -> Input
+normaliseInput i@Input{..} = i { inputLocator = normaliseLocator inputLocator }
+
 
 
 -- | Parser for parsing input strings
@@ -129,7 +134,7 @@ parseInput = do
   locatorStr <- many anyChar
 
   -- Try and interpret the URL portion of the input
-  let locator = locatorFromString locatorStr >>= validateLocator
+  let locator = normaliseLocator <$> locatorFromString locatorStr >>= validateLocator
 
   -- If we have it, infer format
   let extensionFormat = fromMaybe "eu" (locator >>= inferFormat)
@@ -137,7 +142,7 @@ parseInput = do
 
   case locator of
     Nothing -> fail "Invalid input"
-    Just loc -> return Input { inputLocator =  loc
+    Just loc -> return Input { inputLocator = loc
                              , inputFormat = inferredFormat
                              , inputName = name }
 
