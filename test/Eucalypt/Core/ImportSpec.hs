@@ -29,6 +29,7 @@ unitA :: TranslationUnit
 unitA =
   TranslationUnit
     { truCore = unitACore
+    , truInput = Just unitAInput
     , truImports = mempty
     , truTargets = mempty
     , truSourceMap = mempty
@@ -60,6 +61,7 @@ unitB :: TranslationUnit
 unitB =
   TranslationUnit
     { truCore = unitBCore
+    , truInput = Just unitBInput
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
     , truSourceMap = mempty
@@ -99,6 +101,7 @@ unitC :: TranslationUnit
 unitC =
   TranslationUnit
     { truCore = unitCCore
+    , truInput = Just unitCInput
     , truImports = S.fromList [unitBInput]
     , truTargets = mempty
     , truSourceMap = mempty
@@ -115,6 +118,7 @@ namedUnit :: TranslationUnit
 namedUnit = applyName "name"
   TranslationUnit
     { truCore = unitACore
+    , truInput = Just namedInput
     , truImports = mempty
     , truTargets = mempty
     , truSourceMap = mempty
@@ -150,6 +154,7 @@ unitD :: TranslationUnit
 unitD =
   TranslationUnit
     { truCore = unitDCore
+    , truInput = Just unitDInput
     , truImports = S.fromList [namedInput]
     , truTargets = mempty
     , truSourceMap = mempty
@@ -190,6 +195,7 @@ importUnderImport :: TranslationUnit
 importUnderImport =
   TranslationUnit
     { truCore = importUnderImportCore
+    , truInput = Just importUnderImportInput
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
     , truSourceMap =  mempty
@@ -215,6 +221,7 @@ circularImport :: TranslationUnit
 circularImport =
   TranslationUnit
     { truCore = circularImportCore
+    , truInput = Just circularImportInput
     , truImports = S.fromList [circularImportInput]
     , truTargets = mempty
     , truSourceMap = mempty

@@ -30,7 +30,7 @@ prepareIOUnit = do
   env <- euEnv
   et <- euUnixTimestamp
   return $
-    dataUnit $
+    specialUnit $
     anon
       letexp
       [ ( "__io"

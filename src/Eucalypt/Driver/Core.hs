@@ -137,11 +137,11 @@ loadUnit i@(Input locator name format) = do
   coreUnit <-
     liftIO $
     case format of
-      "text" -> textDataToCore source
-      "toml" -> tomlDataToCore source
-      "yaml" -> activeYamlToCore source
-      "json" -> yamlDataToCore source
-      "eu" -> eucalyptToCore firstSMID source
+      "text" -> textDataToCore i source
+      "toml" -> tomlDataToCore i source
+      "yaml" -> activeYamlToCore i source
+      "json" -> yamlDataToCore i source
+      "eu" -> eucalyptToCore i firstSMID source
       _ -> (return . Left . Command . InvalidInput) i
   case coreUnit of
     Right u -> put $ (nextSMID firstSMID . truSourceMap) u
@@ -149,23 +149,27 @@ loadUnit i@(Input locator name format) = do
   return coreUnit
   where
     maybeApplyName = maybe id applyName name
-    eucalyptToCore smid text =
+    eucalyptToCore input smid text =
       case parseEucalypt text (show locator) of
         Left e -> (return . Left . Syntax) e
         Right expr ->
-          (return . Right . maybeApplyName . translateToCore smid) expr
-    yamlDataToCore text = do
+          (return . Right . maybeApplyName . translateToCore input smid) expr
+    yamlDataToCore input text = do
       r <- try (parseYamlData text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
-        Right core -> (return . Right . maybeApplyName . dataUnit) core
-    textDataToCore text = parseTextLines text >>= (return . Right . maybeApplyName <$> dataUnit)
-    tomlDataToCore text = parseTomlData text >>= (return . Right .maybeApplyName <$> dataUnit)
-    activeYamlToCore text = do
+        Right core -> (return . Right . maybeApplyName . dataUnit input) core
+    textDataToCore input text =
+      parseTextLines text >>=
+      (return . Right . maybeApplyName <$> dataUnit input)
+    tomlDataToCore input text =
+      parseTomlData text >>=
+      (return . Right . maybeApplyName <$> dataUnit input)
+    activeYamlToCore input text = do
       r <- try (parseYamlExpr text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
-        Right core -> (return . Right . maybeApplyName . dataUnit) core
+        Right core -> (return . Right . maybeApplyName . dataUnit input) core
 
 
 

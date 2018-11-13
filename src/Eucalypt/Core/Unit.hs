@@ -19,6 +19,7 @@ import Eucalypt.Core.Target (TargetSpec, prefixPath)
 -- | The results of translation
 data TranslationUnit_ a = TranslationUnit
   { truCore :: a
+  , truInput :: Maybe Input
   , truTargets :: [TargetSpec]
   , truImports :: S.Set Input
   , truSourceMap :: SourceMap
@@ -27,9 +28,17 @@ data TranslationUnit_ a = TranslationUnit
 type TranslationUnit = TranslationUnit_ CoreExpr
 
 
--- | Create a data unit (as a unit with no targets)
-dataUnit :: CoreExpr -> TranslationUnit
-dataUnit expr = TranslationUnit expr [] mempty mempty
+
+-- | Create a data unit (as a unit from an input with no targets or imports)
+dataUnit :: Input -> CoreExpr -> TranslationUnit
+dataUnit input expr = TranslationUnit expr (Just input) [] mempty mempty
+
+
+
+-- | Create a special unit for programatically constructed core, like
+-- the IO unit, (not from real input, no targets / imports)
+specialUnit :: CoreExpr -> TranslationUnit
+specialUnit expr = TranslationUnit expr Nothing [] mempty mempty
 
 
 
@@ -39,6 +48,7 @@ applyName :: CoreBindingName -> TranslationUnit -> TranslationUnit
 applyName n TranslationUnit {..} =
   TranslationUnit
     { truCore = newCore
+    , truInput = truInput
     , truTargets = newTargets
     , truImports = truImports
     , truSourceMap = truSourceMap
@@ -60,6 +70,7 @@ mergeTranslationUnits :: [TranslationUnit] -> TranslationUnit
 mergeTranslationUnits ts =
   TranslationUnit
     { truCore = mergeUnits $ map truCore ts
+    , truInput = last $ map truInput ts
     , truTargets = concatMap truTargets ts
     , truImports = foldMap truImports ts
     , truSourceMap = mconcat $ map truSourceMap ts
