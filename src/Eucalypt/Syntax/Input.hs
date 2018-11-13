@@ -30,7 +30,16 @@ data Locator
   = URLInput URI
   | ResourceInput String
   | StdInput
+  | CLIEvaluand
   deriving (Eq, Ord)
+
+
+
+-- | Resources can be specified as URIs but we
+normaliseLocator :: Locator -> Locator
+normaliseLocator (URLInput u) | uriScheme u == "resource" = ResourceInput $ uriPath u
+normaliseLocator l = l
+
 
 
 
@@ -40,6 +49,7 @@ instance Show Locator where
     URLInput uri -> show uri
     ResourceInput n -> "resource:" ++ n
     StdInput -> "[stdin]"
+    CLIEvaluand -> "[cli evaluand]"
 
 
 
@@ -66,8 +76,9 @@ inferFormat :: Locator -> Maybe Format
 inferFormat loc =
   case loc of
     URLInput u -> (extToFormat . takeExtension . uriPath) u
-    StdInput -> Nothing
+    StdInput -> Just "json"
     ResourceInput _ -> Just "eu"
+    CLIEvaluand -> Just "eu"
   where
     extToFormat ext =
       case ext of
@@ -91,14 +102,17 @@ validateLocator loc =
         else Nothing
     StdInput -> Just loc
     ResourceInput _ -> Nothing
+    CLIEvaluand -> Just loc
 
 
 
 -- | Read an input locator from string
 locatorFromString :: String -> Maybe Locator
-locatorFromString s =
+locatorFromString s = normaliseLocator <$>
   case s of
     "-" -> Just StdInput
+    "[stdin]" -> Just StdInput
+    "[cli evaluand]" -> Just CLIEvaluand
     _ -> URLInput <$> (parseURI s <|> parseURI ("file:" ++ s))
 
 

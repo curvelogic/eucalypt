@@ -55,5 +55,5 @@ normalIdentifier =
   ((:) <$> normalIdentStartChar <*> many normalIdentContinuationChar) <?>
   "normal identifier"
   where
-    normalIdentStartChar = letterChar <|> oneOf "•$?_"
-    normalIdentContinuationChar = alphaNumChar <|> oneOf "$?!_-*"
+    normalIdentStartChar = letterChar <|> oneOf ("•$?_" :: String)
+    normalIdentContinuationChar = alphaNumChar <|> oneOf ("$?!_-*" :: String)

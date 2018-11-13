@@ -40,6 +40,7 @@ import Eucalypt.Reporting.Report
   , tryOrReportWithCode
   )
 import Eucalypt.Syntax.Ast
+import Eucalypt.Syntax.Input
 import Eucalypt.Syntax.Error (SyntaxError(..))
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Safe (headMay)
@@ -76,7 +77,7 @@ runFixityPass expr =
 
 -- | Parse text from -e option as expression
 parseEvaluand :: String -> Either SyntaxError Expression
-parseEvaluand = flip PE.parseExpression "[cli evaluand]"
+parseEvaluand = flip PE.parseExpression (show CLIEvaluand)
 
 
 

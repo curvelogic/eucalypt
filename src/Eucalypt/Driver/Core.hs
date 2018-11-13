@@ -86,6 +86,7 @@ readInputLocator :: Locator -> IO BS.ByteString
 readInputLocator (URLInput u) = readURLInput u
 readInputLocator (ResourceInput n) = return $ fromJust $ getResource n
 readInputLocator StdInput = readStdInput
+readInputLocator CLIEvaluand = error "CLIEvaluand input should not be read by readInputLocator"
 
 
 
