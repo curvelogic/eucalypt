@@ -372,9 +372,3 @@ translateToCore i baseSMID ast =
   where
     (e, s) =
       runState (unTranslate $ translateUnit ast) $ initTranslateState baseSMID
-
-
-
--- | A state wrapping monad for tracking SMID between different
--- translations - we need to ensure unique souce map IDs in all trees
-type CoreLoad a = StateT SMID IO a

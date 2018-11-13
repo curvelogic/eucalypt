@@ -123,12 +123,14 @@ evaluate opts = do
   -- In the first phase, we translate text into core. Any source
   -- locations are embedded directly in exceptions and reportable
   -- directly.
-  unit <- tryOrReportWithCode Core.readInput $ do
+  let loadUncached = Core.loadInput (Core.loader opts)
+  (unit, cachingLoader) <- tryOrReportWithCode loadUncached $ do
 
     when (cmd == Parse) (Core.parseAndDumpASTs opts >> exitSuccess)
 
     -- Stage 1: parse inputs and translate to core units
-    parsedUnits <- {-# SCC "ParseToCore" #-} Core.parseInputsAndImports $ optionInputs opts
+    (parsedUnits, ldr) <-
+      {-# SCC "ParseToCore" #-} Core.parseInputsAndImports opts
 
     -- Stage 2: process any block anaphora
     let units = {-# SCC "BlockAnaphora" #-} map (fmap anaphorise) parsedUnits
@@ -146,11 +148,12 @@ evaluate opts = do
     when (cmd == ListTargets)
       (listTargets opts targets >> exitSuccess)
 
-    return merged
+    return (merged, ldr)
 
   -- In the second phase, we optimise then execute and may need a
   -- source map to trace exceptions back to the relevant source code.
-  tryOrReportUsingSourceMap Core.readInput (truSourceMap unit) $ do
+  let loadCached = Core.loadInput cachingLoader
+  tryOrReportUsingSourceMap loadCached (truSourceMap unit) $ do
 
     -- Stage 5: form an expression to evaluate from the source or
     -- command line and embed it in the core tree
