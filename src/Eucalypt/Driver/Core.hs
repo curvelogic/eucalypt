@@ -13,10 +13,10 @@ Stability   : experimental
 module Eucalypt.Driver.Core
   ( parseInputsAndImports
   , parseAndDumpASTs
-  , loadCachedInput
   , loadInput
   , loader
-  , CoreLoader
+  , preloadInputs
+  , CoreLoader(..)
   ) where
 
 import Control.Exception.Safe (throwM, try)
@@ -49,7 +49,11 @@ import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Unit)
 import Eucalypt.Syntax.Error (SyntaxError(..))
-import Eucalypt.Syntax.Input (normaliseInput, Input(..), Locator(..))
+import Eucalypt.Syntax.Input
+  ( Input(..)
+  , Locator(..)
+  , normaliseLocator
+  )
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
 import System.Exit
@@ -67,7 +71,7 @@ data CoreLoaderOptions = CoreLoaderOptions
 -- | A loader with options and cache
 data CoreLoader = CoreLoader
   { clOptions :: CoreLoaderOptions
-  , clCache :: M.Map Input BS.ByteString
+  , clCache :: M.Map Locator BS.ByteString
   , clNextSMID :: SMID
   }
 
@@ -85,6 +89,11 @@ loader EucalyptOptions {..} =
     }
 
 
+preloadInputs :: EucalyptOptions -> IO CoreLoader
+preloadInputs opts@EucalyptOptions {..} =
+  execStateT (traverse readInput optionInputs) $ loader opts
+
+
 
 -- | Get the next source map identifier to stamp on syntax item
 getNextSMID :: CoreLoad SMID
@@ -97,26 +106,10 @@ setNextSMID :: SMID -> CoreLoad ()
 setNextSMID smid = modify (\s -> s { clNextSMID = smid })
 
 
-loadInput :: EucalyptOptions -> Input -> IO BS.ByteString
-loadInput opts input = evalStateT (readInput input) (loader opts)
-
-
-
--- | Load an input, using cached version in CoreLoader if appropriate.
--- This is an external function used to leverage already cached
--- content if possible, it does not update the cache. ('CoreLoad' is
--- internal to this module)
-loadCachedInput :: CoreLoader -> Input -> IO BS.ByteString
-loadCachedInput CoreLoader {..} input =
-  case inputLocator input of
-    CLIEvaluand ->
-      case loadEvaluand clOptions of
-        Just s -> return . T.encodeUtf8 . T.pack $ s
-        Nothing -> throwM $ Command MissingEvaluand
-    _ ->
-      case clCache M.!? normaliseInput input of
-        Just bs -> return bs
-        Nothing -> throwM $ Core NoSource
+-- | Load bytestring for input, using cache first but falling back to
+-- retrieving directly otherwise
+loadInput :: CoreLoader -> Input -> IO BS.ByteString
+loadInput coreLoader input = evalStateT (readInput input) coreLoader
 
 
 
@@ -126,24 +119,32 @@ type CoreLoad a = StateT CoreLoader IO a
 
 
 
--- | Read bytestring content for an Input and cache in the 'CoreLoader'
+-- | Read bytestring content from cache if possible else retrieve
+-- directly, adding to cache
 readInput :: Input -> CoreLoad BS.ByteString
-readInput i@Input {..} = do
-  bs <-
-    case inputLocator of
-      (URLInput u) -> liftIO $ readURLInput u
-      (ResourceInput nm) ->
-        case getResource nm of
-          Just content -> return content
-          Nothing -> throwM $ Command $ UnknownResource nm
-      StdInput -> liftIO $ BS.hGetContents stdin
-      CLIEvaluand ->
-        gets (loadEvaluand . clOptions) >>= \case
-          Just text -> (return . T.encodeUtf8 . T.pack) text
-          Nothing -> throwM $ Command MissingEvaluand
-  state $ \s@CoreLoader {..} ->
-    (bs, s {clCache = M.insert (normaliseInput i) bs clCache})
+readInput Input {..} = do
+  let loc = normaliseLocator inputLocator
+  cache <- gets clCache
+  case cache M.!? loc of
+    Just bs -> return bs
+    Nothing -> do
+      bs <- readContent loc
+      _ <-
+        state $ \s@CoreLoader {..} ->
+          (bs, s {clCache = M.insert loc bs clCache})
+      return bs
   where
+    readContent :: Locator -> CoreLoad BS.ByteString
+    readContent (URLInput u) = liftIO $ readURLInput u
+    readContent (ResourceInput nm) =
+      case getResource nm of
+        Just content -> return content
+        Nothing -> throwM $ Command $ UnknownResource nm
+    readContent StdInput = liftIO $ BS.hGetContents stdin
+    readContent CLIEvaluand =
+      gets (loadEvaluand . clOptions) >>= \case
+        Just text -> (return . T.encodeUtf8 . T.pack) text
+        Nothing -> throwM $ Command MissingEvaluand
     readURLInput u =
       case uriScheme u of
         "file:" -> BS.readFile (uriPath u)
@@ -263,12 +264,10 @@ loadAllUnits inputs = do
 --
 -- SourceMap ids are unique across all the units, starting at 1
 parseInputsAndImports ::
-     EucalyptOptions -> IO ([TranslationUnit], CoreLoader)
-parseInputsAndImports opts = do
-  (unitMap, populatedLoader) <- runStateT (loadAllUnits inputs) (loader opts)
+     CoreLoader -> [Input] -> IO ([TranslationUnit], CoreLoader)
+parseInputsAndImports coreLoader inputs = do
+  (unitMap, populatedLoader) <- runStateT (loadAllUnits inputs) coreLoader
   case applyAllImports unitMap of
     Right processedUnitMap ->
       return (mapMaybe (`M.lookup` processedUnitMap) inputs, populatedLoader)
     Left cyclicInputs -> throwM $ Command $ CyclicInputs cyclicInputs
-  where
-    inputs = optionInputs opts

@@ -120,17 +120,20 @@ formEvaluand EucalyptOptions {..} TranslationUnit {..} =
 evaluate :: EucalyptOptions -> IO ExitCode
 evaluate opts = do
 
+  --  Preload specified inputs (not transitive imports) - which helps
+  --  make sure we have source available for unexpected errors
+  basicLoader <- Core.preloadInputs opts
+
   -- In the first phase, we translate text into core. Any source
   -- locations are embedded directly in exceptions and reportable
   -- directly.
-  let loadUncached = Core.loadInput opts
-  (unit, cachingLoader) <- tryOrReportWithCode loadUncached $ do
+  (unit, cachingLoader) <- tryOrReportWithCode (Core.loadInput basicLoader) $ do
 
     when (cmd == Parse) (Core.parseAndDumpASTs opts >> exitSuccess)
 
     -- Stage 1: parse inputs and translate to core units
     (parsedUnits, ldr) <-
-      {-# SCC "ParseToCore" #-} Core.parseInputsAndImports opts
+      {-# SCC "ParseToCore" #-} Core.parseInputsAndImports basicLoader $ optionInputs opts
 
     -- Stage 2: process any block anaphora
     let units = {-# SCC "BlockAnaphora" #-} map (fmap anaphorise) parsedUnits
@@ -152,8 +155,7 @@ evaluate opts = do
 
   -- In the second phase, we optimise then execute and may need a
   -- source map to trace exceptions back to the relevant source code.
-  let loadCached = Core.loadCachedInput cachingLoader
-  tryOrReportUsingSourceMap loadCached (truSourceMap unit) $ do
+  tryOrReportUsingSourceMap (Core.loadInput cachingLoader) (truSourceMap unit) $ do
 
     -- Stage 5: form an expression to evaluate from the source or
     -- command line and embed it in the core tree
