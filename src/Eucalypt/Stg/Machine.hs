@@ -378,16 +378,4 @@ buildClosure le ms (PreClosure captures metaref code) = do
 
 -- | Allocate new closure. Validate env refs if we're in debug mode.
 allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
-allocClosure le ms cc = buildClosure le ms cc >>= check >>= allocate
-  where
-    check c =
-      if machineDebug ms && not (validateClosure c)
-      then throwIn ms (CompilerBug $ "Invalid local env ref" ++ show c)
-      else return c
-
--- | In debug runs, validate every closure to ensure there are no
--- local references outside the environment
-validateClosure :: HeapObject -> Bool
-validateClosure (Closure code env _ _) =
-  validateRefs (fromIntegral (envSize env)) code
-validateClosure _ = True
+allocClosure le ms cc = buildClosure le ms cc >>= allocate

@@ -1,4 +1,6 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 {-|
 Module      : Eucalypt.Driver.Core
 Description : Facilities for loading core from inputs
@@ -11,7 +13,10 @@ Stability   : experimental
 module Eucalypt.Driver.Core
   ( parseInputsAndImports
   , parseAndDumpASTs
-  , readInput
+  , loadInput
+  , loader
+  , preloadInputs
+  , CoreLoader(..)
   ) where
 
 import Control.Exception.Safe (throwM, try)
@@ -22,13 +27,13 @@ import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
 import Data.Foldable (toList)
 import qualified Data.Map as M
-import Data.Maybe (fromJust, mapMaybe)
+import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Data.Yaml as Y
-import Eucalypt.Core.Desugar (translateToCore, CoreLoad)
+import Eucalypt.Core.Desugar (translateToCore)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Import
 import Eucalypt.Core.SourceMap
@@ -44,54 +49,106 @@ import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Unit)
 import Eucalypt.Syntax.Error (SyntaxError(..))
-import Eucalypt.Syntax.Input (Input(..), Locator(..))
+import Eucalypt.Syntax.Input
+  ( Input(..)
+  , Locator(..)
+  , normaliseLocator
+  )
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
 import System.Exit
 import System.IO
 
 
-
--- $source
---
--- For now source is slurped in, eagerly, in its entirety into a
--- String, whether from stdin, file or URL. We can moved to a conduit
--- streaming model later if it's worth it.
-
-
-
--- | Read from Standard In
-readStdInput :: IO BS.ByteString
-readStdInput = BS.hGetContents stdin
+-- | Options relating to the loading of core from various inputs
+data CoreLoaderOptions = CoreLoaderOptions
+  { loadPath :: [FilePath] -- ^ search directories for relative paths
+  , loadEvaluand :: Maybe String -- ^ maybe a command line evaluand
+  }
 
 
 
--- | Read from FileSystem
-readFileInput :: FilePath -> IO BS.ByteString
-readFileInput = BS.readFile
+-- | A loader with options and cache
+data CoreLoader = CoreLoader
+  { clOptions :: CoreLoaderOptions
+  , clCache :: M.Map Locator BS.ByteString
+  , clNextSMID :: SMID
+  }
 
 
 
--- | Delegate to appropriate function to read input
-readURLInput :: URI -> IO BS.ByteString
-readURLInput u =
-  case uriScheme u of
-    "file:" -> readFileInput (uriPath u)
-    _ -> print ("scheme: " ++ uriScheme u) >> return ""
+-- | Create a new core loader from command line options, this tracks
+-- state during the load of all inputs
+loader :: EucalyptOptions -> CoreLoader
+loader EucalyptOptions {..} =
+  CoreLoader
+    { clOptions =
+        CoreLoaderOptions {loadPath = [], loadEvaluand = optionEvaluand}
+    , clCache = mempty
+    , clNextSMID = 1
+    }
+
+
+preloadInputs :: EucalyptOptions -> IO CoreLoader
+preloadInputs opts@EucalyptOptions {..} =
+  execStateT (traverse readInput optionInputs) $ loader opts
 
 
 
--- | Read any locator into a bytestring
-readInputLocator :: Locator -> IO BS.ByteString
-readInputLocator (URLInput u) = readURLInput u
-readInputLocator (ResourceInput n) = return $ fromJust $ getResource n
-readInputLocator StdInput = readStdInput
+-- | Get the next source map identifier to stamp on syntax item
+getNextSMID :: CoreLoad SMID
+getNextSMID = gets clNextSMID
 
 
 
--- | Read bytestring content for an Input
-readInput :: Input -> IO BS.ByteString
-readInput = readInputLocator . inputLocator
+-- | Update the next source map identifier
+setNextSMID :: SMID -> CoreLoad ()
+setNextSMID smid = modify (\s -> s { clNextSMID = smid })
+
+
+-- | Load bytestring for input, using cache first but falling back to
+-- retrieving directly otherwise
+loadInput :: CoreLoader -> Input -> IO BS.ByteString
+loadInput coreLoader input = evalStateT (readInput input) coreLoader
+
+
+
+-- | A state wrapping monad for tracking SMID between different
+-- translations - we need to ensure unique souce map IDs in all trees
+type CoreLoad a = StateT CoreLoader IO a
+
+
+
+-- | Read bytestring content from cache if possible else retrieve
+-- directly, adding to cache
+readInput :: Input -> CoreLoad BS.ByteString
+readInput Input {..} = do
+  let loc = normaliseLocator inputLocator
+  cache <- gets clCache
+  case cache M.!? loc of
+    Just bs -> return bs
+    Nothing -> do
+      bs <- readContent loc
+      _ <-
+        state $ \s@CoreLoader {..} ->
+          (bs, s {clCache = M.insert loc bs clCache})
+      return bs
+  where
+    readContent :: Locator -> CoreLoad BS.ByteString
+    readContent (URLInput u) = liftIO $ readURLInput u
+    readContent (ResourceInput nm) =
+      case getResource nm of
+        Just content -> return content
+        Nothing -> throwM $ Command $ UnknownResource nm
+    readContent StdInput = liftIO $ BS.hGetContents stdin
+    readContent CLIEvaluand =
+      gets (loadEvaluand . clOptions) >>= \case
+        Just text -> (return . T.encodeUtf8 . T.pack) text
+        Nothing -> throwM $ Command MissingEvaluand
+    readURLInput u =
+      case uriScheme u of
+        "file:" -> BS.readFile (uriPath u)
+        _ -> throwM $ Command $ UnsupportedURLScheme $ uriScheme u
 
 
 
@@ -111,17 +168,15 @@ dumpASTs _ exprs = forM_ exprs $ \e ->
 
 -- | Parse and dump ASTs
 parseAndDumpASTs :: EucalyptOptions -> IO ExitCode
-parseAndDumpASTs opts = do
-  texts <- traverse readInputLocator euLocators
-  let filenames = map show euLocators
+parseAndDumpASTs opts@EucalyptOptions {..} = do
+  texts <- evalStateT (traverse readInput euInputs) (loader opts)
+  let filenames = map show euInputs
   let (errs, units) = partitionEithers (zipWith parseEucalypt texts filenames)
   if null errs
     then dumpASTs opts units >> return ExitSuccess
     else throwM $ Multiple (map Syntax errs)
   where
-    euLocators =
-      (map inputLocator . filter (\i -> inputFormat i == "eu") . optionInputs)
-        opts
+    euInputs = filter (\i -> inputFormat i == "eu") optionInputs
 
 
 
@@ -132,40 +187,44 @@ parseAndDumpASTs opts = do
 -- assumed that they will be referenced by name in subsequent source.
 loadUnit :: Input -> CoreLoad (Either EucalyptError TranslationUnit)
 loadUnit i@(Input locator name format) = do
-  firstSMID <- get
-  source <- liftIO $ readInput i
+  firstSMID <- getNextSMID
+  source <- readInput i
   coreUnit <-
     liftIO $
     case format of
-      "text" -> textDataToCore source
-      "toml" -> tomlDataToCore source
-      "yaml" -> activeYamlToCore source
-      "json" -> yamlDataToCore source
-      "eu" -> eucalyptToCore firstSMID source
+      "text" -> textDataToCore i source
+      "toml" -> tomlDataToCore i source
+      "yaml" -> activeYamlToCore i source
+      "json" -> yamlDataToCore i source
+      "eu" -> eucalyptToCore i firstSMID source
       _ -> (return . Left . Command . InvalidInput) i
   case coreUnit of
-    Right u -> put $ (nextSMID firstSMID . truSourceMap) u
+    Right u -> setNextSMID $ (nextSMID firstSMID . truSourceMap) u
     Left _ -> return ()
   return coreUnit
   where
     maybeApplyName = maybe id applyName name
-    eucalyptToCore smid text =
+    eucalyptToCore input smid text =
       case parseEucalypt text (show locator) of
         Left e -> (return . Left . Syntax) e
         Right expr ->
-          (return . Right . maybeApplyName . translateToCore smid) expr
-    yamlDataToCore text = do
-      r <- try (parseYamlData text) :: IO (Either DataParseException CoreExpr)
+          (return . Right . maybeApplyName . translateToCore input smid) expr
+    yamlDataToCore input text = do
+      r <- try (parseYamlData (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
-        Right core -> (return . Right . maybeApplyName . dataUnit) core
-    textDataToCore text = parseTextLines text >>= (return . Right . maybeApplyName <$> dataUnit)
-    tomlDataToCore text = parseTomlData text >>= (return . Right .maybeApplyName <$> dataUnit)
-    activeYamlToCore text = do
-      r <- try (parseYamlExpr text) :: IO (Either DataParseException CoreExpr)
+        Right core -> (return . Right . maybeApplyName . dataUnit input) core
+    textDataToCore input text =
+      parseTextLines text >>=
+      (return . Right . maybeApplyName <$> dataUnit input)
+    tomlDataToCore input text =
+      parseTomlData text >>=
+      (return . Right . maybeApplyName <$> dataUnit input)
+    activeYamlToCore input text = do
+      r <- try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
-        Right core -> (return . Right . maybeApplyName . dataUnit) core
+        Right core -> (return . Right . maybeApplyName . dataUnit input) core
 
 
 
@@ -174,9 +233,9 @@ loadUnits :: (Traversable t, Foldable t) => t Input -> CoreLoad [TranslationUnit
 loadUnits inputs = do
   asts <- traverse loadUnit inputs
   case partitionEithers (toList asts) of
-    -- TODO: propagate all errors
-    (e:_, _) -> throwM e
-    ([], []) -> throwM NoSource
+    ([e], _) -> throwM e
+    (es@(_:_), _) -> throwM $ Multiple es
+    ([], []) -> throwM $ Core NoSource
     ([], units) -> return units
 
 
@@ -204,10 +263,11 @@ loadAllUnits inputs = do
 -- core expression with values bound by imported lets.
 --
 -- SourceMap ids are unique across all the units, starting at 1
-parseInputsAndImports :: [Input] -> IO [TranslationUnit]
-parseInputsAndImports inputs = do
-  (unitMap, _) <- runStateT (loadAllUnits inputs) 1
+parseInputsAndImports ::
+     CoreLoader -> [Input] -> IO ([TranslationUnit], CoreLoader)
+parseInputsAndImports coreLoader inputs = do
+  (unitMap, populatedLoader) <- runStateT (loadAllUnits inputs) coreLoader
   case applyAllImports unitMap of
     Right processedUnitMap ->
-      return $ mapMaybe (`M.lookup` processedUnitMap) inputs
-    Left cyclicInputs -> throwM $ CyclicInputs cyclicInputs
+      return (mapMaybe (`M.lookup` processedUnitMap) inputs, populatedLoader)
+    Left cyclicInputs -> throwM $ Command $ CyclicInputs cyclicInputs

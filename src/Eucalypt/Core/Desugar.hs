@@ -349,6 +349,7 @@ translateExpressionToCore :: SMID -> Expression -> TranslationUnit
 translateExpressionToCore baseSMID ast =
   TranslationUnit
     { truCore = e
+    , truInput = Nothing
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
     , truSourceMap = trSourceMap s
@@ -359,10 +360,11 @@ translateExpressionToCore baseSMID ast =
 
 -- | Translate AST into core syntax and generate target metadata on
 -- the way
-translateToCore :: SMID -> Unit -> TranslationUnit
-translateToCore baseSMID ast =
+translateToCore :: Input -> SMID -> Unit -> TranslationUnit
+translateToCore i baseSMID ast =
   TranslationUnit
     { truCore = e
+    , truInput = Just i
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
     , truSourceMap = trSourceMap s
@@ -370,9 +372,3 @@ translateToCore baseSMID ast =
   where
     (e, s) =
       runState (unTranslate $ translateUnit ast) $ initTranslateState baseSMID
-
-
-
--- | A state wrapping monad for tracking SMID between different
--- translations - we need to ensure unique souce map IDs in all trees
-type CoreLoad a = StateT SMID IO a

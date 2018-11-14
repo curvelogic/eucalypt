@@ -33,6 +33,10 @@ spec = do
   importsSpec
   interpolationSpec
 
+fakeInput :: Input
+fakeInput =
+  Input {inputLocator = StdInput, inputName = Nothing, inputFormat = "eu"}
+
 -- ? shims
 testDesugarSoup :: [Expression] -> Syn.CoreExpr
 testDesugarSoup = (`evalState` initTranslateState 1) . unTranslate . translateSoup
@@ -241,10 +245,10 @@ targetsSpec =
       (determineTarget . testDesugar) (targetAnnotation "T" "x") `shouldBe`
       Just ("T", "x")
     it "finds T in { a: { ` {target: :T doc: \"x\"} b: _ } }" $
-      (truTargets . translateToCore 1) targetSampleA `shouldBe`
+      (truTargets . translateToCore fakeInput 1) targetSampleA `shouldBe`
       [TargetSpec "T" "x" ["a", "b"]]
     it "finds T and U in larger sample " $
-      (truTargets . translateToCore 1) targetSampleB `shouldBe`
+      (truTargets . translateToCore fakeInput 1) targetSampleB `shouldBe`
       [TargetSpec "T" "x" ["a", "b"], TargetSpec "U" "y" ["a", "c"]]
 
 importAnnotation :: [String] -> Expression
@@ -265,7 +269,7 @@ importsSpec =
     (importsFromMetadata . testDesugar) (importAnnotation ["x.eu", "y.eu"]) `shouldBe`
     traverse parseInputFromString ["x.eu", "y.eu"]
   it "finds imports for nested block" $
-    (toList . truImports . translateToCore 1) importSampleA `shouldBe`
+    (toList . truImports . translateToCore fakeInput 1) importSampleA `shouldBe`
     fromJust (traverse parseInputFromString ["a.yaml", "b.yaml"])
 
 interpolationSpec:: Spec

@@ -142,12 +142,12 @@ euLookupList =
   lam_ 0 2 $
   ann_ "__LOOKUPLIST" 0 $
   -- break head off list of elements
-  case_
+  casedef_
     (Atom (Local 0))
     [ ( stgCons
       , ( 2
              -- break head (key) of kv pair
-        , case_
+        , casedef_
             (Atom (Local 2))
             [ ( stgCons
               , ( 2
@@ -159,8 +159,10 @@ euLookupList =
                       , appfn_ (Global "LOOKUPLIST") [Local 3, Local 1])
                     ]
                     Nothing))
-            ]))
+            ]
+            (appfn_ (Global "PANIC") [Literal $ NativeString "Key lookup error (non-pair)."])))
     ]
+    (appfn_ (Global "!KEYNOTFOUND") [Local 1])
 
 
 -- | __LOOKUPLISTOR(els, default, key)

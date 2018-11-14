@@ -11,6 +11,7 @@ Stability   : experimental
 module Eucalypt.Stg.Globals.Panic
   ( euBomb
   , euPanic
+  , euKeyNotFound
   ) where
 
 import Eucalypt.Stg.Syn
@@ -23,3 +24,9 @@ euPanic :: LambdaForm
 euPanic =
   lam_ 0 1 $
   force_ (Atom (Local 0)) $ appbif_ (intrinsicIndex "PANIC") [Local 0]
+
+euKeyNotFound :: LambdaForm
+euKeyNotFound =
+  lam_ 0 1 $
+  force_ (appfn_ (Global "JOIN") [Literal $ NativeString "Key not found: ", Local 0]) $
+  appbif_ (intrinsicIndex "PANIC") [Local 1]

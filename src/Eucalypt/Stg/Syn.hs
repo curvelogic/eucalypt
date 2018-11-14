@@ -17,10 +17,7 @@ module Eucalypt.Stg.Syn where
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable (Hashable)
-import Data.List (maximum)
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
-import Data.Monoid (All(..))
 import Data.Scientific
 import Data.Vector (Vector)
 import qualified Data.Vector as V
@@ -100,18 +97,6 @@ class Show a =>
       HasRefs a
   where
   refs :: a -> [Ref]
-  validateRefs :: Int -> a -> Bool
-  validateRefs size expr =
-    case mapMaybe (fmap fromIntegral . envIndex) $ refs expr of
-      [] -> True
-      is ->
-        let m = maximum is
-         in (m <= size) ||
-            error
-              ("Local " ++
-               show m ++
-               " exceeds env length " ++ show size ++ " in " ++ show expr)
-
 
 instance StgPretty Ref where
   prettify (Global s) = P.char 'G' <> P.brackets (P.text s)
@@ -145,11 +130,6 @@ data BranchTable = BranchTable
 instance HasRefs BranchTable where
   refs (BranchTable brs nbrs df) =
     foldMap (refs . snd) brs <> foldMap refs nbrs <> foldMap refs df
-  validateRefs size (BranchTable brs nbrs df) =
-    getAll $
-    foldMap (\(n, e) -> All $ validateRefs (size + fromIntegral n) e) brs <>
-    foldMap (All . validateRefs (size + 1)) nbrs <>
-    foldMap (All . validateRefs (size + 1)) df
 
 instance StgPretty BranchTable where
   prettify (BranchTable bs nbs df) =
@@ -179,8 +159,6 @@ data Func
 instance HasRefs Func where
   refs (Ref r) = [r]
   refs _ = []
-  validateRefs size (Ref (Local r)) = fromIntegral r < size
-  validateRefs _ _ = True
 
 instance StgPretty Func where
   prettify (Ref r) = prettify r
@@ -199,8 +177,6 @@ data LambdaForm = LambdaForm
 
 instance HasRefs LambdaForm where
   refs lf = refs $ _body lf
-  validateRefs size lf =
-    validateRefs (size + fromIntegral (_bound lf)) $ _body lf
 
 instance StgPretty LambdaForm where
   prettify (LambdaForm f b u body) =
@@ -261,17 +237,6 @@ instance HasRefs StgSyn where
   refs (Let pcs expr) = foldMap refs pcs <> refs expr
   refs (LetRec pcs expr) = foldMap refs pcs <> refs expr
   refs (Ann _ _ expr) = refs expr
-  validateRefs size (Case r k) = validateRefs size r && validateRefs size k
-  validateRefs size (Let pcs expr) =
-    getAll (foldMap (All . validateRefs size) pcs) &&
-    validateRefs (size + length pcs) expr
-  validateRefs size (LetRec pcs expr) =
-    getAll (foldMap (All . validateRefs (size + length pcs)) pcs) &&
-    validateRefs (size + length pcs) expr
-  validateRefs size expr =
-    case mapMaybe (fmap fromIntegral . envIndex) $ refs expr of
-      [] -> True
-      is -> size > maximum is
 
 instance StgPretty StgSyn where
   prettify (Atom r) = P.char '*' <> prettify r

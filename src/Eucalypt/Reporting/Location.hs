@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Reporting.Location where
 
 import Data.Aeson
+import Data.List (isPrefixOf)
 import Data.Text (pack)
 import GHC.Generics
 import qualified Text.Megaparsec.Pos as M
@@ -17,7 +18,16 @@ import qualified Text.Megaparsec.Pos as M
 -- | Wrapper for parsec SourcePos so we can cleanly JSONify
 newtype SourcePosition =
   SourcePosition M.SourcePos
-  deriving (Eq, Show, Generic, Ord)
+  deriving (Eq, Generic, Ord)
+
+instance Show SourcePosition where
+  show (SourcePosition sp) =
+    text ++ ":" ++ show line ++ ":" ++ show col
+    where
+      text = if "file:" `isPrefixOf` name then drop 5 name else name
+      name = M.sourceName sp
+      line = M.unPos $ M.sourceLine sp
+      col = M.unPos $ M.sourceColumn sp
 
 instance ToJSON SourcePosition where
   toJSON (SourcePosition p) =

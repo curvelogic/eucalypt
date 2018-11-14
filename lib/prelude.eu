@@ -71,7 +71,7 @@ cons: __CONS
 head: __HEAD
 
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
-head-or(xs, d): xs null? then(xs head, d)
+head-or(xs, d): xs nil? then(xs head, d)
 
 ` "`tail(l)` - return list `l` without the head item. [] causes error."
 tail: __TAIL
@@ -384,7 +384,7 @@ assertions: {
   check(v): v validator(v)
 
   ` "`checked(v)` - panic if value doesn't satisfy its validator"
-  checked(v): if(check(v), v, panic("assertion failed"))
+  checked(v): if(check(v), v, panic("Assertion failed"))
 }
 
 ` { doc: "`e //= v` - add metadata to check expression `e` evaluates to `v` and return whether valid"

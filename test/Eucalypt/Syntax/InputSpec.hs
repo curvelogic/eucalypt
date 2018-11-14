@@ -76,6 +76,25 @@ spec = do
           , inputName = Just "k"
           , inputFormat = "yaml"
           }
+    it "parses resource URIs" $
+      parseInputFromString "eu@resource:prelude" `shouldBe`
+      Just
+        Input
+          { inputLocator = ResourceInput "prelude"
+          , inputName = Nothing
+          , inputFormat = "eu"
+          }
+    it "parses resource URIs in brackets" $
+      parseInputFromString "eu@[resource:prelude]" `shouldBe`
+      Just
+        Input
+          { inputLocator = ResourceInput "prelude"
+          , inputName = Nothing
+          , inputFormat = "eu"
+          }
+    it "normalises resource locators" $
+      (normaliseLocator . URLInput <$> parseURI "resource:prelude") `shouldBe`
+      Just (ResourceInput "prelude")
 
 main :: IO ()
 main = hspec spec

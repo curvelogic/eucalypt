@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Eucalypt.Syntax.Input
 Description : Syntax for specifying inputs, imports, inserts...
@@ -30,7 +31,15 @@ data Locator
   = URLInput URI
   | ResourceInput String
   | StdInput
+  | CLIEvaluand
   deriving (Eq, Ord)
+
+
+
+-- | Resources can be specified as URIs but we
+normaliseLocator :: Locator -> Locator
+normaliseLocator (URLInput u) | uriScheme u == "resource:" = ResourceInput $ uriPath u
+normaliseLocator l = l
 
 
 
@@ -38,8 +47,9 @@ data Locator
 instance Show Locator where
   show l = case l of
     URLInput uri -> show uri
-    ResourceInput n -> "resource:" ++ n
+    ResourceInput n -> "[resource:" ++ n ++ "]"
     StdInput -> "[stdin]"
+    CLIEvaluand -> "[cli evaluand]"
 
 
 
@@ -66,8 +76,9 @@ inferFormat :: Locator -> Maybe Format
 inferFormat loc =
   case loc of
     URLInput u -> (extToFormat . takeExtension . uriPath) u
-    StdInput -> Nothing
+    StdInput -> Just "json"
     ResourceInput _ -> Just "eu"
+    CLIEvaluand -> Just "eu"
   where
     extToFormat ext =
       case ext of
@@ -89,17 +100,25 @@ validateLocator loc =
       if (isValid . uriPath) u
         then Just loc
         else Nothing
-    StdInput -> Just loc
-    ResourceInput _ -> Nothing
+    _ -> Just loc
 
 
 
 -- | Read an input locator from string
 locatorFromString :: String -> Maybe Locator
-locatorFromString s =
+locatorFromString s = normaliseLocator <$>
   case s of
     "-" -> Just StdInput
+    "[stdin]" -> Just StdInput
+    "[cli evaluand]" -> Just CLIEvaluand
+    ('[':xs) -> URLInput <$> (parseURI s <|> parseURI (init xs))
     _ -> URLInput <$> (parseURI s <|> parseURI ("file:" ++ s))
+
+
+
+normaliseInput :: Input -> Input
+normaliseInput i@Input{..} = i { inputLocator = normaliseLocator inputLocator }
+
 
 
 -- | Parser for parsing input strings
@@ -115,7 +134,7 @@ parseInput = do
   locatorStr <- many anyChar
 
   -- Try and interpret the URL portion of the input
-  let locator = locatorFromString locatorStr >>= validateLocator
+  let locator = normaliseLocator <$> locatorFromString locatorStr >>= validateLocator
 
   -- If we have it, infer format
   let extensionFormat = fromMaybe "eu" (locator >>= inferFormat)
@@ -123,7 +142,7 @@ parseInput = do
 
   case locator of
     Nothing -> fail "Invalid input"
-    Just loc -> return Input { inputLocator =  loc
+    Just loc -> return Input { inputLocator = loc
                              , inputFormat = inferredFormat
                              , inputName = name }
 

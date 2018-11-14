@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-|
 Module      : Eucalypt.Syntax.Error
@@ -17,6 +18,7 @@ import qualified Eucalypt.Core.Error as Core
 import qualified Eucalypt.Driver.Error as Driver
 import Eucalypt.Reporting.Classes
 import qualified Eucalypt.Source.Error as Source
+import qualified Eucalypt.Stg.CallStack as CS
 import qualified Eucalypt.Stg.Error as Stg
 import qualified Eucalypt.Syntax.Error as Syntax
 import qualified Text.PrettyPrint as P
@@ -36,6 +38,7 @@ instance Exception EucalyptError
 
 instance Reportable EucalyptError where
   code (Syntax e) = code e
+  code (Source e) = code e
   code _ = Nothing
 
   report (Syntax e) = report e
@@ -44,6 +47,7 @@ instance Reportable EucalyptError where
   report (Command e) = report e
   report (Execution e) = report e
   report e = P.text $ show e
+
 
 -- | We can add a source map to a 'EucalyptError' to enhance code
 -- reporting.
@@ -57,6 +61,10 @@ instance Reportable (SourceMap, EucalyptError) where
   code _ = Nothing
 
   report (_, e) = report e
+
+  callTrace (sm, Execution Stg.StgException {..}) =
+    Just $ CS.resolveSMIDs stgExcCallStack sm
+  callTrace _ = Nothing
 
 
 flattenErrors :: EucalyptError -> [EucalyptError]

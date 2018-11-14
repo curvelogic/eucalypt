@@ -40,6 +40,7 @@ import Eucalypt.Reporting.Report
   , tryOrReportWithCode
   )
 import Eucalypt.Syntax.Ast
+import Eucalypt.Syntax.Input
 import Eucalypt.Syntax.Error (SyntaxError(..))
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Safe (headMay)
@@ -76,7 +77,7 @@ runFixityPass expr =
 
 -- | Parse text from -e option as expression
 parseEvaluand :: String -> Either SyntaxError Expression
-parseEvaluand = flip PE.parseExpression "[cli evaluand]"
+parseEvaluand = flip PE.parseExpression (show CLIEvaluand)
 
 
 
@@ -119,15 +120,20 @@ formEvaluand EucalyptOptions {..} TranslationUnit {..} =
 evaluate :: EucalyptOptions -> IO ExitCode
 evaluate opts = do
 
+  --  Preload specified inputs (not transitive imports) - which helps
+  --  make sure we have source available for unexpected errors
+  basicLoader <- Core.preloadInputs opts
+
   -- In the first phase, we translate text into core. Any source
   -- locations are embedded directly in exceptions and reportable
   -- directly.
-  unit <- tryOrReportWithCode Core.readInput $ do
+  (unit, cachingLoader) <- tryOrReportWithCode (Core.loadInput basicLoader) $ do
 
     when (cmd == Parse) (Core.parseAndDumpASTs opts >> exitSuccess)
 
     -- Stage 1: parse inputs and translate to core units
-    parsedUnits <- {-# SCC "ParseToCore" #-} Core.parseInputsAndImports $ optionInputs opts
+    (parsedUnits, ldr) <-
+      {-# SCC "ParseToCore" #-} Core.parseInputsAndImports basicLoader $ optionInputs opts
 
     -- Stage 2: process any block anaphora
     let units = {-# SCC "BlockAnaphora" #-} map (fmap anaphorise) parsedUnits
@@ -145,11 +151,11 @@ evaluate opts = do
     when (cmd == ListTargets)
       (listTargets opts targets >> exitSuccess)
 
-    return merged
+    return (merged, ldr)
 
   -- In the second phase, we optimise then execute and may need a
   -- source map to trace exceptions back to the relevant source code.
-  tryOrReportUsingSourceMap Core.readInput (truSourceMap unit) $ do
+  tryOrReportUsingSourceMap (Core.loadInput cachingLoader) (truSourceMap unit) $ do
 
     -- Stage 5: form an expression to evaluate from the source or
     -- command line and embed it in the core tree

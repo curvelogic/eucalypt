@@ -107,6 +107,7 @@ standardGlobals =
   , GlobalInfo "CONCAT" List.euConcat [NonStrict]
   , GlobalInfo "REVERSE" List.euReverse [NonStrict]
   , GlobalInfo "PANIC" Panic.euPanic [Strict]
+  , GlobalInfo "!KEYNOTFOUND" Panic.euKeyNotFound [Strict]
   , GlobalInfo "BOMB" Panic.euBomb []
   , GlobalInfo "MATCHES" Str.euMatches [Strict, Strict]
   , GlobalInfo "MATCH" Str.euMatch [Strict, Strict]

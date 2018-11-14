@@ -92,4 +92,6 @@ class HasSourceMapIds a where
 
 -- | Find source using source map and first available source map id
 toSource :: HasSourceMapIds e => SourceMap -> e -> Maybe SourceSpan
-toSource sm e = headMay (toSourceMapIds e) >>= lookupSource sm
+toSource sm e = headMay goodIds >>= lookupSource sm
+  where
+    goodIds = filter (> 0) $ toSourceMapIds e
