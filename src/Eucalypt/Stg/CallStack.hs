@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 {-|
@@ -11,11 +12,18 @@ Stability   : experimental
 -}
 module Eucalypt.Stg.CallStack where
 
+import Data.Bifunctor (second)
 import Data.Foldable (toList)
 import Data.Vector (Vector)
 import qualified Data.Vector as Vector
 import Eucalypt.Stg.Syn
-import Eucalypt.Core.SourceMap (SMID, HasSourceMapIds(..))
+import Eucalypt.Core.SourceMap
+  ( HasSourceMapIds(..)
+  , SMID
+  , SourceMap
+  , lookupSource
+  )
+import qualified Eucalypt.Reporting.Location as L
 import qualified Text.PrettyPrint as P
 
 -- Structure to track (annotated) call stack
@@ -35,3 +43,10 @@ instance StgPretty CallStack where
 
 instance HasSourceMapIds CallStack where
   toSourceMapIds (CallStack v) = map snd . Vector.toList . Vector.reverse $ v
+
+
+-- | Using a SourceMap, resolve SMIDs to allow the call stack to be
+-- reportable in error messages.
+resolveSMIDs :: CallStack -> SourceMap -> [(String, Maybe L.SourceSpan)]
+resolveSMIDs CallStack {..} sm =
+  toList $ Vector.reverse $ Vector.map (second (lookupSource sm)) entries

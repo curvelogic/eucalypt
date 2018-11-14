@@ -65,20 +65,28 @@ tryOrReportUsingSourceMap resolve sm action = do
 
 
 
+-- | Report all available details of a Reportable to console
 reportToConsole :: Reportable e => (Input -> IO B.ByteString) -> e -> IO ()
 reportToConsole resolve e = do
+  let messageDoc = report e P.$$ P.text "" P.$$ P.text ""
   codeDoc <-
     case code e of
       Nothing -> return P.empty
       Just sp ->
         case codeInput sp of
           Nothing -> return $ P.text "!!! CANNOT FIND SOURCE !!!"
-          Just input -> catchIO
-                          ((`codeToDoc` sp) <$> resolve input) $
-                          \_ -> return $ P.text "!!! CANNOT LOAD SOURCE !!!"
-  let messageDoc = report e
-  consoleError
-    (messageDoc P.$$ codeDoc <> P.char '\n')
+          Just input ->
+            catchIO ((`codeToDoc` sp) <$> resolve input) $ \_ ->
+              return $ P.text "!!! CANNOT LOAD SOURCE !!!"
+  let callTraceDoc = maybe P.empty formatTrace (callTrace e)
+  consoleError $ P.vcat [messageDoc, callTraceDoc, codeDoc, P.text ""]
+  where
+    formatTrace cs = (P.nest 2 . P.vcat . map traceItem) cs P.$$ P.text ""
+    traceItem (fn, sp) =
+      P.text "-" P.<+>
+      case sp of
+        Just (s, _e) -> P.text fn P.<+> P.parens (P.text $ show s)
+        Nothing -> P.text fn
 
 
 

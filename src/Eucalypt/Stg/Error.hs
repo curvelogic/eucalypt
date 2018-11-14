@@ -11,7 +11,6 @@ Stability   : experimental
 module Eucalypt.Stg.Error where
 
 import Control.Exception.Safe
-import Data.Foldable (toList)
 import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Syn
@@ -51,34 +50,21 @@ data StgError
 
 instance Exception StgException
 
-execBug :: CallStack -> String -> P.Doc
-execBug cs msg =
-  standardReport "INTERNAL ERROR" msg P.$$ P.text "This is probably a bug in eu" P.$$
-  P.text "" P.$$
-  dumpCallStack cs
+execBug :: String -> P.Doc
+execBug msg =
+  standardReport "INTERNAL ERROR" msg P.$$ P.text "This is probably a bug in eu."
 
-execError :: CallStack -> String -> P.Doc
-execError cs msg =
-  standardReport "EXECUTION ERROR" msg P.$$ P.text "" P.$$ dumpCallStack cs
+execError :: String -> P.Doc
+execError = standardReport "EXECUTION ERROR"
 
-ioSystemError :: CallStack -> String -> P.Doc
-ioSystemError cs msg =
-  standardReport "I/O ERROR" msg P.$$ P.text "" P.$$ dumpCallStack cs
-
-dumpCallStack :: CallStack -> P.Doc
-dumpCallStack (CallStack v) =
-  if null v
-    then P.empty
-    else P.hang (P.text "Call stack dump:") 2 (P.vcat items) P.$$ P.text ""
-  where
-    items = reverse $ map item $ filter (not . null . fst) $ toList v
-    item i = P.text "-" P.<+> P.text (fst i) P.<+> P.brackets (P.text (show $ snd i))
+ioSystemError :: String -> P.Doc
+ioSystemError = standardReport "I/O ERROR"
 
 instance Reportable StgException where
   report StgException {..} =
-    let bug = execBug stgExcCallStack
-        err = execError stgExcCallStack
-        sys = ioSystemError stgExcCallStack
+    let bug = execBug
+        err = execError
+        sys = ioSystemError
      in case stgExcError of
           NonAddressStgValue ->
             bug "Found a native value when expecting a thunk."

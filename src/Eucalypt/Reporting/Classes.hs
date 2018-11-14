@@ -22,3 +22,11 @@ class Reportable a where
 
   -- | Formatted error report
   report :: a -> P.Doc
+
+  -- | Call trace
+  callTrace :: a -> Maybe [(String, Maybe L.SourceSpan)]
+  callTrace _ = Nothing
+
+  -- | Suggestions
+  suggestions :: a -> [String]
+  suggestions _ = []
