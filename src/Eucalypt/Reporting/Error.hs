@@ -36,6 +36,7 @@ instance Exception EucalyptError
 
 instance Reportable EucalyptError where
   code (Syntax e) = code e
+  code (Source e) = code e
   code _ = Nothing
 
   report (Syntax e) = report e

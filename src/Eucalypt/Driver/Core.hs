@@ -210,7 +210,7 @@ loadUnit i@(Input locator name format) = do
         Right expr ->
           (return . Right . maybeApplyName . translateToCore input smid) expr
     yamlDataToCore input text = do
-      r <- try (parseYamlData text) :: IO (Either DataParseException CoreExpr)
+      r <- try (parseYamlData (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit input) core
@@ -221,7 +221,7 @@ loadUnit i@(Input locator name format) = do
       parseTomlData text >>=
       (return . Right . maybeApplyName <$> dataUnit input)
     activeYamlToCore input text = do
-      r <- try (parseYamlExpr text) :: IO (Either DataParseException CoreExpr)
+      r <- try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit input) core

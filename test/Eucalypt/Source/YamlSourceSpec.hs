@@ -17,16 +17,16 @@ spec :: Spec
 spec =
   describe "Yaml parser" $ do
     it "Parses key value" $
-      parseYamlData "a: !!int 1234" `shouldReturn`
+      parseYamlData "<test>" "a: !!int 1234" `shouldReturn`
       block [element "a" $ int 1234]
     it "Parses JSON data" $
-      parseYamlData " { a: [1, 2, 3], b: {x: \"y\"} } " `shouldReturn`
+      parseYamlData "<test>" " { a: [1, 2, 3], b: {x: \"y\"} } " `shouldReturn`
       block
         [ element "a" $ corelist [int 1, int 2, int 3]
         , element "b" $ block [element "x" (str "y")]
         ]
     it "Parses bools" $
-      parseYamlData "a: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE " `shouldReturn`
+      parseYamlData "<test>" "a: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE " `shouldReturn`
       block
         [ element "a" $ corebool True
         , element "b" $ corebool True

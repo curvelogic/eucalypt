@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Eucalypt.Source.YamlSource
 Description : Ingest YAML (or JSON) into core syntax
@@ -10,6 +11,7 @@ Description : This is currently heavily based on Snoyman's Data.Yaml
 module Eucalypt.Source.YamlSource where
 
 import Conduit
+import Control.Exception.Safe (catchJust)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (MonadThrow, throwM)
 import Control.Monad.Trans.Writer.Strict (WriterT, tell)
@@ -211,10 +213,33 @@ incorporateAliases :: RawExpr -> CoreExpr
 incorporateAliases (RawExpr e _) = e -- TODO: Yaml aliases
 
 -- | Parse inert YAML data into a CoreExpr
-parseYamlData :: BS.ByteString -> IO CoreExpr
-parseYamlData s = incorporateAliases <$> runConduitRes (decode s .| sinkRawExpr)
+parseYamlData :: String -> BS.ByteString -> IO CoreExpr
+parseYamlData inputName s =
+  catchJust yamlError
+  (incorporateAliases <$> runConduitRes (decode s .| sinkRawExpr))
+  (throwM . yamlExceptionToDataParseException inputName)
+  where
+    yamlError :: YamlException -> Maybe YamlException
+    yamlError = Just
+
 
 -- | Parse eu-annotated active YAML into a CoreExpr
-parseYamlExpr :: BS.ByteString -> IO CoreExpr
-parseYamlExpr s =
-  incorporateAliases <$> runConduitRes (decode s .| sinkActiveRawExpr)
+parseYamlExpr :: String -> BS.ByteString -> IO CoreExpr
+parseYamlExpr inputName s =
+  catchJust yamlError
+  (incorporateAliases <$> runConduitRes (decode s .| sinkActiveRawExpr))
+  (throwM . yamlExceptionToDataParseException inputName)
+  where
+    yamlError :: YamlException -> Maybe YamlException
+    yamlError = Just
+
+
+yamlExceptionToDataParseException :: String -> YamlException -> DataParseException
+yamlExceptionToDataParseException inputName (YamlException msg) = YamlError inputName msg
+yamlExceptionToDataParseException inputName YamlParseException {..} =
+  YamlParseError
+    yamlProblem
+    yamlContext
+    inputName
+    (1 + yamlLine yamlProblemMark)
+    (1 + yamlColumn yamlProblemMark)
