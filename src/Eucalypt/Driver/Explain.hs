@@ -42,7 +42,7 @@ modeExplanation :: CommandLineMode -> Doc
 modeExplanation mode =
   vcat
     [ title ("Mode: " ++ modeName)
-    , para $ "You are running eu in " ++ modeName ++ "mode."
+    , para $ "You are running eu in " ++ modeName ++ " mode."
     , modeDoc
     , para "Ergonomic is the default, use -B to engage batch mode instead."
     ]
@@ -68,10 +68,14 @@ sourceExplanation :: [Input] -> Doc
 sourceExplanation inputs =
   vcat
     [ title "Inputs"
-    , hang (para "The following sources of code and data are specified:") 2 $
-      vcat (map inputDoc inputs)
-    , para "Some inputs are added automatically (Eufile if it exists, ~/.eucalypt in ergonomic mode, system defined inputs, prefixed with __)."
-    , para "Standard input may be specified explicitly as \"-\" or detected and added implicitly."
+    , (hang (para "The following sources of code and data are specified:") 2 $
+       vcat (map inputDoc inputs)) $$
+      text ""
+    , para $
+      "Some inputs are added automatically (Eufile if it exists, ~/.eucalypt in ergonomic mode, system defined inputs, prefixed with __). " ++
+      "Input formats (eu, yaml, json, toml) are inferred by default but can be specified explicitly using this @ syntax."
+    , para
+        "STDIN may be specified explicitly as \"-\" or detected and added implicitly."
     ]
   where
     inputDoc input = text "-" <+> text (show input)
