@@ -68,8 +68,10 @@ sourceExplanation :: [Input] -> Doc
 sourceExplanation inputs =
   vcat
     [ title "Inputs"
-    , (hang (para "The following sources of code and data are specified:") 2 $
-       vcat (map inputDoc inputs)) $$
+    , hang
+        (para "The following sources of code and data are specified:")
+        2
+        (vcat (map inputDoc inputs)) $$
       text ""
     , para $
       "Some inputs are added automatically (Eufile if it exists, ~/.eucalypt in ergonomic mode, system defined inputs, prefixed with __). " ++
