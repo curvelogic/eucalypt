@@ -2,6 +2,7 @@ module Main
 where
 
 import Eucalypt.Driver.Options
+import Eucalypt.Driver.Explain (explain)
 import Eucalypt.Driver.Evaluator (evaluate)
 import System.Exit
 import Paths_eucalypt_hs (version)
@@ -16,6 +17,6 @@ main :: IO ()
 main = do
   opts <- getOptions
   case optionCommand opts of
-    Explain -> print opts >> exitSuccess
+    Explain -> explain opts >> exitSuccess
     ShowVersion -> putStrLn banner
     _ -> evaluate opts >>= exitWith
