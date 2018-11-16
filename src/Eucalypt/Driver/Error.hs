@@ -20,6 +20,7 @@ data CommandError
   | CyclicInputs [Input] -- ^ input imports form one or more cycles
   | UnknownResource String -- ^ resource by this name does not exist
   | MissingEvaluand -- ^ tried to load a non-existent CLI evaluand
+  | CouldNotLoadFile String [String] -- ^ could not load file from load path
   deriving (Typeable)
 
 instance Show CommandError where
@@ -28,6 +29,7 @@ instance Show CommandError where
   show (CyclicInputs is) = "Cyclic imports! " ++ show is
   show (UnknownResource n) = "No such resource: " ++ show n
   show MissingEvaluand = "Tried to load a non-existent CLI evaluand"
+  show (CouldNotLoadFile file libPath) = "Could not load file " ++ file ++ "from load path: " ++ show libPath
 
 badInputReport :: [Input] -> String -> P.Doc
 badInputReport inputs msg =
@@ -40,13 +42,22 @@ messageReport :: String -> P.Doc
 messageReport msg =
   title "INPUT ERROR" P.$$ P.text msg
 
+fancyReport :: P.Doc -> P.Doc
+fancyReport doc = title "INPUT ERROR" P.$$ doc
+
+
 instance Reportable CommandError where
   code _ = Nothing
-
   report (InvalidInput i) = badInputReport [i] "Could not understand input"
-  report (UnsupportedURLScheme s) = messageReport ("Unsupported URL Scheme: " ++ s)
+  report (UnsupportedURLScheme s) =
+    messageReport ("Unsupported URL Scheme: " ++ s)
   report (CyclicInputs is) = badInputReport is "Found circular imports!"
   report (UnknownResource n) = messageReport ("No such resource: " ++ n)
-  report MissingEvaluand = messageReport "Tried to load a non-existent CLI evaluand"
+  report MissingEvaluand =
+    messageReport "Tried to load a non-existent CLI evaluand"
+  report (CouldNotLoadFile file libPath) =
+    fancyReport $
+    P.hang (P.text $ "Failed to load " ++ file ++ " from load path:") 2 $
+    P.vcat $ map ((P.text "-" P.<+>) . P.text) libPath
 
 instance Exception CommandError
