@@ -22,7 +22,7 @@ explain opts@EucalyptOptions {..} =
     doc =
       vcat
         [ modeExplanation optionMode
-        , sourceExplanation optionInputs
+        , sourceExplanation optionInputs optionLibPath
         , evaluandExplanation opts
         , formatExplanation $ fromMaybe "yaml" optionExportFormat
         ]
@@ -64,8 +64,9 @@ modeExplanation mode =
         "This disables some defaulting useful for interactive use, ignores .eucalypt files and assumes a non-interactive terminal."
 
 
-sourceExplanation :: [Input] -> Doc
-sourceExplanation inputs =
+
+sourceExplanation :: [Input] -> [String] -> Doc
+sourceExplanation inputs loadPath =
   vcat
     [ title "Inputs"
     , hang
@@ -78,9 +79,19 @@ sourceExplanation inputs =
       "Input formats (eu, yaml, json, toml) are inferred by default but can be specified explicitly using this @ syntax."
     , para
         "STDIN may be specified explicitly as \"-\" or detected and added implicitly."
+    , hang
+        (para
+           "The following directories are on the library load path and will be searched for file dependencies:")
+        2
+        (vcat (map loadPathDoc loadPath)) $$
+      text ""
+    , para "Use -L to add an entry to the library load path."
     ]
   where
     inputDoc input = text "-" <+> text (show input)
+    loadPathDoc path = text "-" <+> text path
+
+
 
 evaluandExplanation :: EucalyptOptions -> Doc
 evaluandExplanation EucalyptOptions {..} = vcat [title "Evaluand", doc, flagDoc]
@@ -102,6 +113,7 @@ evaluandExplanation EucalyptOptions {..} = vcat [title "Evaluand", doc, flagDoc]
               "Otherwise the entire body of the final input (" ++
               show (last optionInputs) ++ ") will be rendered."
     flagDoc = para "This can be controlled with -t and -e flags."
+
 
 
 formatExplanation :: String -> Doc

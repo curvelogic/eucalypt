@@ -11,6 +11,7 @@ import Options.Applicative
 import Path
 import System.Directory (doesFileExist, getCurrentDirectory, getHomeDirectory)
 import System.FilePath (takeExtension)
+import System.Posix.Directory (getWorkingDirectory)
 import System.Posix.IO (stdInput)
 import System.Posix.Terminal (queryTerminal)
 
@@ -49,6 +50,7 @@ data EucalyptOptions = EucalyptOptions
   , optionCommand :: Command
   , optionInputs :: [Input]
   , optionDebug :: Bool
+  , optionLibPath :: [String]
   } deriving (Show)
 
 
@@ -117,6 +119,12 @@ commandOption =
 
 
 
+-- | Read a single string option as a singleton list
+stringleton :: Mod OptionFields [String] -> Parser [String]
+stringleton = option (str >>= \x -> return [x])
+
+
+
 -- | Parse the command line options
 options :: Parser EucalyptOptions
 options = EucalyptOptions
@@ -144,6 +152,10 @@ options = EucalyptOptions
   <*> switch ( long "debug"
              <> short 'd'
              <> help "Switch on debugging features")
+  <*> stringleton ( long "lib-path"
+                  <> short 'L'
+                  <> help "Add a directory at the front of library search path"
+                  <> value [])
 
 
 
@@ -198,6 +210,13 @@ appendInputs opts is = opts { optionInputs = optionInputs opts ++ is }
 
 
 
+-- | Add a directory to the end of the lib path
+appendLibPath :: EucalyptOptions -> String -> EucalyptOptions
+appendLibPath opts@EucalyptOptions {..} dir =
+  opts {optionLibPath = optionLibPath ++ [dir]}
+
+
+
 -- | Check whether stdin is specified explicity already
 specifiesStdIn :: EucalyptOptions -> Bool
 specifiesStdIn EucalyptOptions {..} = any isStdIn optionInputs
@@ -231,7 +250,8 @@ insertBuildMetadata opts =
         }
     ]
 
--- | Insert Eufile into the inputs lits
+-- | Insert Eufile into the inputs lits, and add its directory to the
+-- lib path.
 insertEufile :: EucalyptOptions -> IO EucalyptOptions
 insertEufile opts = do
   dir <- pwd
@@ -240,7 +260,9 @@ insertEufile opts = do
     case eufile of
       Nothing -> opts
       Just path ->
-        prependInputs opts [(fromJust . parseInputFromString . toFilePath) path]
+        (opts `prependInputs`
+         [(fromJust . parseInputFromString . toFilePath) path]) `appendLibPath`
+        toFilePath (parent path)
 
 
 
@@ -263,7 +285,7 @@ processErgonomics :: EucalyptOptions -> IO EucalyptOptions
 processErgonomics opts =
   case optionMode opts of
     Ergonomic -> insertEufile opts >>= insertHomeFile
-    Batch -> return opts
+    Batch -> insertEufile opts
 
 
 -- | Add prelude if not inhibited
@@ -312,9 +334,16 @@ defaultStdInput opts = do
 
 
 
+-- | Get current working directory and add to load path
+addCurrentDirectoryToLoadPath :: EucalyptOptions -> IO EucalyptOptions
+addCurrentDirectoryToLoadPath opts = appendLibPath opts <$> getWorkingDirectory
+
+
+
 -- | Preprocess options in ergonomic mode
 preprocessOptions :: EucalyptOptions -> IO EucalyptOptions
 preprocessOptions =
+  addCurrentDirectoryToLoadPath >=>
   inferOutputFormat >=>
   defaultStdInput >=>
   processErgonomics >=> return . processStatics . processPrelude

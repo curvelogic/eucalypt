@@ -19,12 +19,12 @@ module Eucalypt.Driver.Core
   , CoreLoader(..)
   ) where
 
-import Control.Exception.Safe (throwM, try)
+import Control.Exception.Safe (IOException, catchJust, throwM, try, tryIO)
 import Control.Monad (forM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State.Strict
 import qualified Data.ByteString as BS
-import Data.Either (partitionEithers)
+import Data.Either (partitionEithers, rights)
 import Data.Foldable (toList)
 import qualified Data.Map as M
 import Data.Maybe (mapMaybe)
@@ -49,15 +49,15 @@ import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Unit)
 import Eucalypt.Syntax.Error (SyntaxError(..))
-import Eucalypt.Syntax.Input
-  ( Input(..)
-  , Locator(..)
-  , normaliseLocator
-  )
+import Eucalypt.Syntax.Input (Input(..), Locator(..), normaliseLocator)
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
+import Path
+import Safe (headMay)
 import System.Exit
 import System.IO
+import System.Posix.Directory
+
 
 
 -- | Options relating to the loading of core from various inputs
@@ -83,7 +83,8 @@ loader :: EucalyptOptions -> CoreLoader
 loader EucalyptOptions {..} =
   CoreLoader
     { clOptions =
-        CoreLoaderOptions {loadPath = [], loadEvaluand = optionEvaluand}
+        CoreLoaderOptions
+          {loadPath = optionLibPath, loadEvaluand = optionEvaluand}
     , clCache = mempty
     , clNextSMID = 1
     }
@@ -119,6 +120,50 @@ type CoreLoad a = StateT CoreLoader IO a
 
 
 
+
+toAbsDir :: MonadIO m => FilePath -> m (Path Abs Dir)
+toAbsDir d = liftIO $
+  catchJust
+    pathExceptions
+    (parseAbsDir d)
+    (\_ -> do
+       pwd <- getWorkingDirectory >>= parseAbsDir
+       dir <- parseRelDir d
+       return $ pwd </> dir)
+
+
+
+absolutise :: MonadIO m => Path Abs Dir -> FilePath -> m (Path Abs File)
+absolutise d f = liftIO $
+  catchJust
+    pathExceptions
+    ((d </>) <$> parseRelFile f)
+    (\_ -> parseAbsFile f)
+
+
+
+pathExceptions :: PathException -> Maybe PathException
+pathExceptions = Just
+
+
+
+-- | Read the content for a specified filename, using the configured
+-- load path.
+readFileFromLoadPath :: FilePath -> CoreLoad BS.ByteString
+readFileFromLoadPath file = do
+  CoreLoaderOptions {..} <- gets clOptions
+  libPathEntries <- traverse toAbsDir loadPath
+  filePaths <- traverse (`absolutise` file) libPathEntries
+  contents <- rights <$> traverse tryRead filePaths
+  case headMay contents of
+    Just bs -> return bs
+    Nothing -> throwM $ Command $ CouldNotLoadFile file loadPath
+  where
+    tryRead :: Path b t -> CoreLoad (Either IOException BS.ByteString)
+    tryRead p = liftIO $ tryIO $ BS.readFile (toFilePath p)
+
+
+
 -- | Read bytestring content from cache if possible else retrieve
 -- directly, adding to cache
 readInput :: Input -> CoreLoad BS.ByteString
@@ -135,7 +180,7 @@ readInput Input {..} = do
       return bs
   where
     readContent :: Locator -> CoreLoad BS.ByteString
-    readContent (URLInput u) = liftIO $ readURLInput u
+    readContent (URLInput u) = readURLInput u
     readContent (ResourceInput nm) =
       case getResource nm of
         Just content -> return content
@@ -147,7 +192,7 @@ readInput Input {..} = do
         Nothing -> throwM $ Command MissingEvaluand
     readURLInput u =
       case uriScheme u of
-        "file:" -> BS.readFile (uriPath u)
+        "file:" -> readFileFromLoadPath (uriPath u)
         _ -> throwM $ Command $ UnsupportedURLScheme $ uriScheme u
 
 
