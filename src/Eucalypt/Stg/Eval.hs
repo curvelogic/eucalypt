@@ -85,7 +85,7 @@ selectBranch (BranchTable bs _ _) t = Map.lookup t bs
 -- | Match a native branch table alternative, return the next
 -- expression to eval
 selectNativeBranch :: BranchTable -> Native -> Maybe StgSyn
-selectNativeBranch (BranchTable _ bs _) n = HM.lookup n bs
+selectNativeBranch (BranchTable _ bs _) n = snd <$> HM.lookup n bs
 
 -- | Halt the machine
 terminate :: MachineState -> MachineState
