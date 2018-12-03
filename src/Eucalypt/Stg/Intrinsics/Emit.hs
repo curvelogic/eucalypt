@@ -16,10 +16,13 @@ module Eucalypt.Stg.Intrinsics.Emit
   , emitScalar
   ) where
 
+import qualified Data.HashMap.Strict.InsOrd as OM
 import Data.Vector ((!))
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+import Eucalypt.Stg.Intrinsics.Block (pruneToMap)
 
 emit :: MachineState -> Event -> IO MachineState
 emit s e =
@@ -43,11 +46,21 @@ emitSequenceEnd s _ = emit s OutputSequenceEnd
 emitNull :: MachineState -> ValVec -> IO MachineState
 emitNull s _ = emit s OutputNull
 
+-- | This assumes that all render-relevant metadata has been forced to
+-- native values.
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do
   let (StgNat n m) = xs ! 0
-  let event =
-        case m of
-          Just _metdata -> OutputScalar (RenderMetadata Nothing) n
-          Nothing -> OutputScalar (RenderMetadata Nothing) n
+  event <-
+    case m of
+      Just meta -> flip OutputScalar n <$> renderMeta s meta
+      Nothing -> return $ OutputScalar (RenderMetadata Nothing) n
   (`setCode` ReturnLit n Nothing) <$> emit s event
+
+renderMeta :: MachineState -> StgValue -> IO RenderMetadata
+renderMeta ms (StgAddr a) = do
+  kvs <- pruneToMap ms mempty a
+  case OM.lookup "tag" kvs of
+    (Just (StgNat (NativeString tag) _)) -> return . RenderMetadata . Just $ tag
+    _ -> return . RenderMetadata $ Nothing
+renderMeta _ _ = error "Native metadata in emit intrinsics"

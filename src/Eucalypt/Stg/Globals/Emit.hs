@@ -207,11 +207,17 @@ forceExportMetadata =
   ann_ "Emit.forceExportMetadata" 0 $
   let b = Local 0
       l = Local 1
+      el = Local 2
    in case_
         (Atom b)
         [ ( stgBlock
-          , (1, appfn_ (Global "Emit.forceExportMetadataKVList") [l]))
+          , ( 1
+            , force_
+                (appfn_ (Global "Emit.forceExportMetadataKVList") [l])
+                (appcon_ stgBlock [el])))
         ]
+
+
 
 forceExportMetadataKVList :: LambdaForm
 forceExportMetadataKVList =
@@ -227,16 +233,11 @@ forceExportMetadataKVList =
         [ (stgNil, (0, Atom (Global "KNIL")))
         , ( stgCons
           , ( 2
-            , let_
-                [ pc_ [h] $
-                  thunkn_ 1 $
-                  appfn_ (Global "Emit.forceKVNatPair") [Local 0]
-                , pc_ [t] $
-                  thunkn_ 1 $
-                  appfn_ (Global "Emit.forceExportMetadataKVList") [Local 0]
-                ]
-                (appcon_ stgCons [eh, et])))
+            , force_ (appfn_ (Global "Emit.forceKVNatPair") [h]) $
+              force_ (appfn_ (Global "Emit.forceExportMetadataKVList") [t]) $
+              appcon_ stgCons [eh, et]))
         ]
+
 
 
 isRenderMetadataKey :: LambdaForm
