@@ -258,6 +258,9 @@ pos?: > 0
 ` "`neg?(n)` - return true if and only if number `n` is strictly negative"
 neg?: < 0
 
+` "`num(s)` - parse number from string"
+num: __NUMPARSE
+
 ##
 ## Text and regexes
 ##

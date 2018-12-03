@@ -16,6 +16,7 @@ import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Block as Block
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
 import qualified Eucalypt.Stg.Intrinsics.Meta as Meta
+import qualified Eucalypt.Stg.Intrinsics.Number as Number
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
 import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
@@ -57,6 +58,7 @@ intrinsics =
   , IntrinsicInfo "CLOSED" 1 General.closed
   , IntrinsicInfo "STRNAT" 1 Str.strNat
   , IntrinsicInfo "STRSYM" 1 Str.strSym
+  , IntrinsicInfo "NUMPARSE" 1 Number.parse
   ]
 
 -- | Used during compilation to find the index at which an intrinsic
