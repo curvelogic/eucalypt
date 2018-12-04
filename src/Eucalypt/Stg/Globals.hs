@@ -110,12 +110,6 @@ standardGlobals =
   , GlobalInfo "PANIC" Panic.euPanic [Strict]
   , GlobalInfo "!KEYNOTFOUND" Panic.euKeyNotFound [Strict]
   , GlobalInfo "BOMB" Panic.euBomb []
-  , GlobalInfo "MATCHES" Str.euMatches [Strict, Strict]
-  , GlobalInfo "MATCH" Str.euMatch [Strict, Strict]
-  , GlobalInfo "JOIN" Str.euJoin [Strict, Strict]
-  , GlobalInfo "SPLIT" Str.euSplit [Strict, Strict]
-  , GlobalInfo "STR" Str.euStr [Strict]
-  , GlobalInfo "SYM" Str.euSym [Strict]
   , GlobalInfo "CAT" euCat [NonStrict, NonStrict]
   , GlobalInfo "BLOCK" Block.euBlock [NonStrict]
   , GlobalInfo "ELEMENTS" Block.euElements [NonStrict]
@@ -141,7 +135,8 @@ standardGlobals =
   ] <>
   Arith.globals <>
   Emit.globals <>
-  Number.globals
+  Number.globals <>
+  Str.globals
 
 standardGlobalMap :: HM.HashMap String LambdaForm
 standardGlobalMap = HM.fromList $ map toPair standardGlobals

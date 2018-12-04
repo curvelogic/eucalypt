@@ -68,48 +68,19 @@ splits (NonEmpty xs) (RegexSafeString sep) =
     calculatesM (splitStg components sep)
       (fmap (components ==) . readStrListReturn)
 
+letterStg :: String -> StgSyn
+letterStg s =
+  appbif_ (intrinsicIndex "LETTERS") [Literal $ NativeString s]
+
+lettery :: String -> Property
+lettery s =
+  QM.monadicIO $ do
+    let components = map (:[]) s
+    calculatesM (letterStg s) (fmap (components ==) . readStrListReturn)
+
 spec :: Spec
 spec =
   describe "string intrinsics" $ do
-    it "joins strings" $ property joins
-    it "splits strings" $ property splits
-
-
--- stringSpec :: Spec
--- stringSpec = do
---   describe "euSplit" $ do
---     it "splits on regex" $
---       runRightInterpreter (euSplit return [str "1.2.3.4", str "\\."])
---       `shouldBe`
---       CoreList [str "1", str "2", str "3", str "4"]
---     it "filters out empty strings" $
---       runRightInterpreter (euSplit return [str "1..2", str "\\."])
---       `shouldBe`
---       CoreList [str "1", str "2"]
---     it "handles empty regex" $
---       runRightInterpreter (euSplit return [str "foo..bar", str ""])
---       `shouldBe`
---       CoreList [str "foo..bar"]
---     it "handles dot regex" $
---       runRightInterpreter (euSplit return [str "foo", str "."])
---       `shouldBe`
---       CoreList []
---     it "handles .* regex" $
---       runRightInterpreter (euSplit return [str "foo", str ".*"])
---       `shouldBe`
---       CoreList []
---   describe "euJoin" $
---     it "join on separator" $
---       runRightInterpreter (euJoin return [CoreList [str "1", str "2", str "3"], str "-"])
---       `shouldBe`
---       str "1-2-3"
---   describe "euMatch" $
---     it "matches regex" $
---       runRightInterpreter (euMatch return [str "192.168.0.2", str "(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)"])
---       `shouldBe`
---       CoreList [str "192.168.0.2", str "192", str "168", str "0", str "2"]
---   describe "euMatches" $
---     it "searches with regex" $
---       runRightInterpreter (euMatches return [str "192.168.0.2", str "(\\d+)"])
---       `shouldBe`
---       CoreList [str "192", str "168", str "0", str "2"]
+    it "join strings" $ property joins
+    it "split strings" $ property splits
+    it "extracts letters" $ property lettery

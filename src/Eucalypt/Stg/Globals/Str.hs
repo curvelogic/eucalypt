@@ -8,16 +8,23 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Globals.Str
-  ( euMatch
-  , euMatches
-  , euJoin
-  , euSplit
-  , euStr
-  , euSym
+  ( globals
   ) where
 
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
+
+globals :: [GlobalInfo]
+globals =
+  [ GlobalInfo "MATCHES" euMatches [Strict, Strict]
+  , GlobalInfo "MATCH" euMatch [Strict, Strict]
+  , GlobalInfo "JOIN" euJoin [Strict, Strict]
+  , GlobalInfo "SPLIT" euSplit [Strict, Strict]
+  , GlobalInfo "STR" euStr [Strict]
+  , GlobalInfo "SYM" euSym [Strict]
+  , GlobalInfo "LETTERS" euLetters [Strict]
+  ]
 
 
 
@@ -81,3 +88,11 @@ euSym =
   lam_ 0 1 $
   ann_ "__SYM" 0 $
   force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "STRSYM") [Local 1])
+
+
+-- | __LETTERS(s)
+euLetters :: LambdaForm
+euLetters =
+  lam_ 0 1 $
+  ann_ "__LETTERS" 0 $
+  force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "LETTERS") [Local 1])
