@@ -310,6 +310,9 @@ str: {
 
   ` "prefix(b, a) - return string `b` prefixed onto `a`."
   prefix(b, a): [b, a] join-on("")
+
+  ` "letters(s) - return individual letters of `s` as list of strings."
+  letters: __LETTERS
 }
 
 ##

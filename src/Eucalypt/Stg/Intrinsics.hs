@@ -50,6 +50,7 @@ intrinsics =
   , IntrinsicInfo "MATCH" 2 Str.match
   , IntrinsicInfo "MATCHES" 2 Str.matches
   , IntrinsicInfo "JOIN" 2 Str.join
+  , IntrinsicInfo "LETTERS" 1 Str.letters
   , IntrinsicInfo "META" 1 Meta.meta
   , IntrinsicInfo "WITHMETA" 2 Meta.withMeta
   , IntrinsicInfo "PANIC" 1 Panic.panic

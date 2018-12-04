@@ -15,6 +15,7 @@ module Eucalypt.Stg.Intrinsics.Str
   , join
   , strNat
   , strSym
+  , letters
   ) where
 
 import Safe (headMay)
@@ -81,6 +82,11 @@ join ms (ValVec args) = do
   xs <- readStrList ms l
   return $ setCode ms (ReturnLit (NativeString $ intercalate s xs) Nothing)
 
+-- | __LETTERS(s) - return letters of s as their own strings
+letters :: MachineState -> ValVec -> IO MachineState
+letters ms (ValVec args) = do
+  let (StgNat (NativeString s) _) = args ! 0
+  returnNatList ms $ map (\c -> NativeString [c]) s
 
 
 strNat :: MachineState -> ValVec -> IO MachineState
