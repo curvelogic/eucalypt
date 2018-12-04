@@ -46,6 +46,7 @@ data StgError
   | UnknownGlobal !String
   | Panic !String
   | IOSystem IOException
+  | InvalidNumber !String
   deriving (Typeable, Show, Eq)
 
 instance Exception StgException
@@ -101,6 +102,7 @@ instance Reportable StgException where
             err "Unknown global:" P.$$ P.nest 2 (P.text "-" P.<+> P.text s)
           (Panic s) -> err s
           (IOSystem e) -> sys $ show e
+          (InvalidNumber n) -> err $ "Invalid number (" ++ show n ++ ") could not be parsed."
 
 
 

@@ -1,5 +1,5 @@
 {-|
-Module      : Eucalypt.Stg.Globals.Bool
+Module      : Eucalypt.Stg.Globals.Arithmetic
 Description : Arithmetic fns in STG
 Copyright   : (c) Greg Hawkins, 2018
 License     :
