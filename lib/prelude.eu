@@ -448,7 +448,16 @@ repeat(i): __CONS(i, repeat(i))
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
 ` "`foldr(op, i, l)` - right fold operator `op` over list `l` ending with value `i` "
-foldr(op, i, l): if(l nil?, i, op(head(l), foldr(op, i, tail(l))))
+foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
+
+` "`scanl(op, i, l)` - left scan operator `op` over list `l` starting from value `i` "
+scanl(op, i, l): if(l nil?, [i], scanl(op, op(i, l head), l tail) cons(i)) 
+
+` "`scanr(op, i, l)` - right scan operator `op` over list `l` ending with value `i` "
+scanr(op, i, l): if(l nil?, [i], { scan: scanr(op, i, l tail) }.(cons(op(l head, scan head), scan)))
+
+` "`iterate(f, i) - return list of `i` with subsequent repeated applications of `f` to `i`"
+iterate(f, i): cons(i, iterate(f, i) map(f))
 
 ` "`count(l)` - return count of items in list `l`"
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
