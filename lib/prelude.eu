@@ -219,6 +219,12 @@ or: __OR
     precedence: :prod }
 (l / r): __DIV(l, r)
 
+` { doc: "`l % r` - modulus of `l` by `r`; both must be numbers; error `r` is zero."
+    export: :suppress
+    associates: :left
+    precedence: :prod }
+(l % r): __MOD(l, r)
+
 ` { doc: "`l < r` - `true` if and only if number `l` is less than number `r`."
     export: :suppress
     associates: :left

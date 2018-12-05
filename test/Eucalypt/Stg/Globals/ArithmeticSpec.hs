@@ -12,6 +12,7 @@ module Eucalypt.Stg.Globals.ArithmeticSpec
   , spec
   ) where
 
+import Data.Fixed (mod')
 import Data.Scientific
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.StgTestUtil
@@ -98,6 +99,27 @@ dividesFloats l (NonZero r) =
        , Literal $ NativeNumber $ fromFloatDigits r
        ])
     (returnsNative (NativeNumber (fromFloatDigits l / fromFloatDigits r)))
+
+modulosIntegers :: Integer -> NonZero Integer -> Property
+modulosIntegers l (NonZero r) =
+  QM.monadicIO $
+  calculates
+    (appfn_ (Global "MOD") [Literal $ nat l, Literal $ nat r])
+    (returnsNative
+       (NativeNumber $
+        fromFloatDigits (mod' (fromInteger l :: Double) (fromInteger r :: Double))))
+
+modulosFloats :: Double -> NonZero Double -> Property
+modulosFloats l (NonZero r) =
+  QM.monadicIO $
+  calculates
+    (appfn_
+       (Global "MOD")
+       [ Literal $ NativeNumber $ fromFloatDigits l
+       , Literal $ NativeNumber $ fromFloatDigits r
+       ])
+    (returnsNative (NativeNumber (mod' (fromFloatDigits l) (fromFloatDigits r))))
+
 
 ordersIntegersWithLt :: Integer -> Integer -> Property
 ordersIntegersWithLt l r =
@@ -199,6 +221,8 @@ arithSpec =
     it "multiplies floats" $ property multipliesFloats
     it "divides integers" $ property dividesIntegers
     xit "divides floats" $ property dividesFloats -- TODO hang in fromFloatDigits
+    it "modulos integers" $ property modulosIntegers
+    it "modulos floats" $ property modulosFloats
     it "orders ints with < / >=" $ property ordersIntegersWithLt
     it "orders ints with <= / >" $ property ordersIntegersWithGt
     it "orders floats with < / >=" $ property ordersFloatsWithLt

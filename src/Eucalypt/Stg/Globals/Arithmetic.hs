@@ -43,6 +43,9 @@ euMul = binop "MUL"
 euDiv :: LambdaForm
 euDiv = binop "DIV"
 
+euMod :: LambdaForm
+euMod = binop "MOD"
+
 euLt :: LambdaForm
 euLt = binop "LT"
 
@@ -61,6 +64,7 @@ globals =
   , GlobalInfo "SUB" euSub [Strict, Strict]
   , GlobalInfo "MUL" euMul [Strict, Strict]
   , GlobalInfo "DIV" euDiv [Strict, Strict]
+  , GlobalInfo "MOD" euMod [Strict, Strict]
   , GlobalInfo "LT" euLt [Strict, Strict]
   , GlobalInfo "GT" euGt [Strict, Strict]
   , GlobalInfo "LTE" euLte [Strict, Strict]

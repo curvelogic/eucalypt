@@ -16,10 +16,12 @@ module Eucalypt.Stg.Intrinsics.Arithmetic
   , gt
   , lte
   , gte
+  , modulo
   ) where
 
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
+import Data.Fixed (mod')
 import Data.Scientific
 import Data.Vector ((!))
 
@@ -41,6 +43,9 @@ sub = binop (-)
 
 mul :: MachineState -> ValVec -> IO MachineState
 mul = binop (*)
+
+modulo :: MachineState -> ValVec -> IO MachineState
+modulo = binop mod'
 
 sciDivide :: Scientific -> Scientific -> Scientific
 sciDivide l r =
