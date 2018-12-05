@@ -15,6 +15,7 @@ module Eucalypt.Render.Json
 import Conduit
 import Control.Monad.State
 import qualified Data.ByteString as BS
+import Data.Foldable (toList)
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Scientific
@@ -99,6 +100,9 @@ formatScalar (NativeBool b) =
   if b
     then "true"
     else "false"
+formatScalar (NativeSet s) =
+  jsonStr "[" <> BS.intercalate ", " (map formatScalar (toList s)) <>
+  jsonStr "]"
 
 putBSFragment :: MonadState JSONFormatState m => E.Event -> m ()
 putBSFragment e@E.OutputSequenceStart = do

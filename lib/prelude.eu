@@ -635,3 +635,26 @@ merge-at(ks, v, b): if(ks nil?,
 		       b update-value-or(ks head,
 		                         merge-at(ks tail, v),
 					 tongue(ks tail, v)))
+
+#
+# Set operations - sets are not intended for rendering and are a
+# mainly internal feature.
+#
+
+# ` "∅ - the empty set"
+# ∅: __EMPTYSET
+# TODO: need nullary ops
+
+` "s ∋ e - true if and only if `e` is a member of set `s`"
+(s ∋ e): __SETCONTAINS(s, e)
+
+` "e ∈ s - true if and only if `e` is a member of set `s`"
+(e ∈ s): __SETCONTAINS(s, e)
+
+set: {
+  empty: __EMPTYSET
+  insert(e, s): __SETADD(s, e)
+  delete(e, s): __SETREMOVE(s, e)
+  from(l): foldr(insert, empty, l)
+  singleton(x): empty set.insert(x)
+}

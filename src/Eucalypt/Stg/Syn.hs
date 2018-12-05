@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DeriveGeneric  #-}
 {-|
@@ -8,24 +9,26 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 
-Heavily based on
+Originally based on
 https://github.com/ermine-language/ermine/blob/master/src/Ermine/Syntax/G.hs
 (-- Copyright :  (c) Edward Kmett and Dan Doel 2014)
+though now not much similarity remains.
 -}
 module Eucalypt.Stg.Syn where
 
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
-import Data.Hashable (Hashable)
+import Data.Hashable
 import qualified Data.Map as Map
 import Data.Scientific
+import qualified Data.Set as S
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Word
+import Eucalypt.Core.SourceMap (SMID)
 import GHC.Generics (Generic)
 import Test.QuickCheck (Arbitrary(..), Gen, oneof)
 import qualified Text.PrettyPrint as P
-import Eucalypt.Core.SourceMap (SMID)
 
 -- | Pretty printable syntax element
 class StgPretty a where
@@ -40,10 +43,20 @@ data Native
   | NativeString !String
   | NativeSymbol !String
   | NativeBool !Bool
-  deriving (Eq, Show, Generic)
+  | NativeSet !(S.Set Native)
+  deriving (Eq, Show, Generic, Ord)
 
 -- | NativeBranchTable matches natives by hash map
-instance Hashable Native
+instance Hashable Native where
+  hashWithSalt s (NativeNumber n) = s `hashWithSalt` (0 :: Int) `hashWithSalt` n
+  hashWithSalt s (NativeString str) =
+    s `hashWithSalt` (1 :: Int) `hashWithSalt` str
+  hashWithSalt s (NativeSymbol sym) =
+    s `hashWithSalt` (2 :: Int) `hashWithSalt` sym
+  hashWithSalt s (NativeBool b) = s `hashWithSalt` (3 :: Int) `hashWithSalt` b
+  hashWithSalt s (NativeSet xs) =
+    S.foldl hashWithSalt (s `hashWithSalt` (4 :: Int)) xs
+
 
 instance StgPretty Native where
   prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
@@ -53,6 +66,9 @@ instance StgPretty Native where
     if b
       then P.text "#t"
       else P.text "#f"
+  prettify (NativeSet xs) =
+    P.text "#{" <> P.hcat (P.punctuate P.comma (map prettify (toList xs))) <>
+    P.text "}"
 
 instance Arbitrary Scientific where
   arbitrary =
@@ -66,6 +82,7 @@ instance Arbitrary Native where
       , NativeString <$> arbitrary
       , NativeSymbol <$> arbitrary
       , NativeBool <$> arbitrary
+      , NativeSet <$> arbitrary
       ]
 
 -- | The various types of reference from STG code to other closures

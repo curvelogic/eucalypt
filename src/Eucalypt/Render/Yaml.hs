@@ -16,6 +16,7 @@ module Eucalypt.Render.Yaml
 import Conduit
 import qualified Data.ByteString as BS
 import qualified Data.Conduit.Combinators as C
+import Data.Foldable (toList)
 import Data.Scientific
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
@@ -26,15 +27,15 @@ import Eucalypt.Stg.Syn (Native(..))
 
 -- STG implementation
 
-renderValue :: Native -> L.Event
+renderValue :: Native -> [L.Event]
 renderValue (NativeNumber n) =
   case floatingOrInteger n of
-    Left r -> L.EventScalar (encodeUtf8 $ pack $ show r) L.FloatTag L.PlainNoTag Nothing
-    Right i -> L.EventScalar (encodeUtf8 $ pack $ show i) L.IntTag L.PlainNoTag Nothing
+    Left r -> [L.EventScalar (encodeUtf8 $ pack $ show r) L.FloatTag L.PlainNoTag Nothing]
+    Right i -> [L.EventScalar (encodeUtf8 $ pack $ show i) L.IntTag L.PlainNoTag Nothing]
 renderValue (NativeSymbol s) =
-  L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing
+  [L.EventScalar (encodeUtf8 $ pack s) L.StrTag L.PlainNoTag Nothing]
 renderValue (NativeString s) =
-  L.EventScalar (encodeUtf8 $ pack s) L.NoTag (style s) Nothing
+  [L.EventScalar (encodeUtf8 $ pack s) L.NoTag (style s) Nothing]
   where
     style "" = L.DoubleQuoted
     style "*" = L.DoubleQuoted
@@ -42,7 +43,7 @@ renderValue (NativeString s) =
     style str | length str > 60 = L.Literal
     style _ = L.PlainNoTag
 renderValue (NativeBool b) =
-  L.EventScalar
+  [L.EventScalar
     (encodeUtf8 $
      pack $
      if b
@@ -50,8 +51,10 @@ renderValue (NativeBool b) =
        else "false")
     L.BoolTag
     L.PlainNoTag
-    Nothing
-
+    Nothing]
+renderValue (NativeSet s) =
+  [L.EventSequenceStart Nothing] ++
+  concatMap renderValue (toList s) ++ [L.EventSequenceEnd]
 
 toYamlEvents :: E.Event -> [L.Event]
 toYamlEvents e =
@@ -60,7 +63,7 @@ toYamlEvents e =
     E.OutputStreamEnd -> [L.EventStreamEnd]
     E.OutputDocumentStart -> [L.EventDocumentStart]
     E.OutputDocumentEnd -> [L.EventDocumentEnd]
-    E.OutputScalar n -> [renderValue n]
+    E.OutputScalar n -> renderValue n
     E.OutputNull -> [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
     E.OutputSequenceStart -> [L.EventSequenceStart Nothing]
     E.OutputSequenceEnd -> [L.EventSequenceEnd]

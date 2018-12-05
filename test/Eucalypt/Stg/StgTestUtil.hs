@@ -19,6 +19,7 @@ import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.StandardMachine
 import qualified Text.PrettyPrint as P
+import Test.QuickCheck (Gen, oneof, arbitrary)
 import qualified Test.QuickCheck.Monadic as QM
 
 -- | List of literals
@@ -139,6 +140,15 @@ testTracing :: StgSyn -> IO MachineState
 testTracing s = tracingMachine s >>= run
 
 -- quickcheck helpers
+
+simpleNative :: Gen Native
+simpleNative =
+    oneof
+      [ NativeNumber <$> arbitrary
+      , NativeString <$> arbitrary
+      , NativeSymbol <$> arbitrary
+      , NativeBool <$> arbitrary
+      ]
 
 calculates :: StgSyn -> (MachineState -> Bool) -> QM.PropertyM IO ()
 calculates syn check = QM.run (test syn) >>= (QM.assert . check)
