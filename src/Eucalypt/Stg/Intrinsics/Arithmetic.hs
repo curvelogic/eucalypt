@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Arithmetic
 Description : Basic arithmetic built ins for the STG evaluator
@@ -17,6 +18,8 @@ module Eucalypt.Stg.Intrinsics.Arithmetic
   , lte
   , gte
   , modulo
+  , flr
+  , ceil
   ) where
 
 import Eucalypt.Stg.Syn
@@ -79,3 +82,18 @@ lte = binopBool (<=)
 
 gte :: MachineState -> ValVec -> IO MachineState
 gte = binopBool (>=)
+
+unop ::
+     (Scientific -> Scientific)
+  -> MachineState
+  -> ValVec
+  -> IO MachineState
+unop op ms (ValVec args) = do
+  let (StgNat (NativeNumber n) _) = args ! 0
+  return $ setCode ms (ReturnLit (NativeNumber (op n)) Nothing)
+
+flr :: MachineState -> ValVec -> IO MachineState
+flr = unop (fromIntegral . floor)
+
+ceil :: MachineState -> ValVec -> IO MachineState
+ceil = unop (fromIntegral . ceiling)

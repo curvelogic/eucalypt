@@ -37,6 +37,8 @@ intrinsics =
   , IntrinsicInfo "LTE" 2 Arith.lte
   , IntrinsicInfo "GTE" 2 Arith.gte
   , IntrinsicInfo "MOD" 2 Arith.modulo
+  , IntrinsicInfo "FLOOR" 1 Arith.flr
+  , IntrinsicInfo "CEILING" 1 Arith.ceil
   , IntrinsicInfo "EMIT{" 0 Emit.emitMappingStart
   , IntrinsicInfo "EMIT}" 0 Emit.emitMappingEnd
   , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart

@@ -58,6 +58,18 @@ euLte = binop "LTE"
 euGte :: LambdaForm
 euGte = binop "GTE"
 
+unop :: String -> LambdaForm
+unop intrinsicName =
+  lam_ 0 1 $
+  ann_ ("__" ++ intrinsicName) 0 $
+  force_ (Atom (Local 0)) $ appbif_ (intrinsicIndex intrinsicName) [Local 1]
+
+euFloor :: LambdaForm
+euFloor = unop "FLOOR"
+
+euCeiling :: LambdaForm
+euCeiling = unop "CEILING"
+
 globals :: [GlobalInfo]
 globals =
   [ GlobalInfo "ADD" euAdd [Strict, Strict]
@@ -65,6 +77,8 @@ globals =
   , GlobalInfo "MUL" euMul [Strict, Strict]
   , GlobalInfo "DIV" euDiv [Strict, Strict]
   , GlobalInfo "MOD" euMod [Strict, Strict]
+  , GlobalInfo "FLOOR" euFloor [Strict]
+  , GlobalInfo "CEILING" euCeiling [Strict]
   , GlobalInfo "LT" euLt [Strict, Strict]
   , GlobalInfo "GT" euGt [Strict, Strict]
   , GlobalInfo "LTE" euLte [Strict, Strict]

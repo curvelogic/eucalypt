@@ -210,6 +210,21 @@ equatesEqualFloats n =
        ])
     (returnsNative $ NativeBool True)
 
+floors :: Double -> Property
+floors d =
+  QM.monadicIO $
+  calculates
+    (appfn_ (Global "FLOOR") [Literal $ NativeNumber $ fromFloatDigits d])
+    (returnsNative $ NativeNumber $ fromIntegral (floor d :: Integer))
+
+ceilings :: Double -> Property
+ceilings d =
+  QM.monadicIO $
+  calculates
+    (appfn_ (Global "CEILING") [Literal $ NativeNumber $ fromFloatDigits d])
+    (returnsNative $ NativeNumber $ fromIntegral (ceiling d :: Integer))
+
+
 arithSpec :: Spec
 arithSpec =
   describe "Arithmetic operations" $ do
@@ -229,3 +244,5 @@ arithSpec =
     it "orders floats with <= / >" $ property ordersFloatsWithGt
     it "equates equal ints" $ property equatesEqualInts
     it "equates equal floats" $ property equatesEqualFloats
+    it "calculates floors" $ property floors
+    it "calculates ceilings" $ property ceilings
