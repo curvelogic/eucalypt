@@ -16,6 +16,7 @@ import qualified Data.Vector as V
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.StandardMachine
 import Eucalypt.Stg.Intrinsics.Common
 import Test.QuickCheck
@@ -24,6 +25,9 @@ import Test.Hspec
 
 main :: IO ()
 main = hspec spec
+
+simpleNativeList :: Gen [Native]
+simpleNativeList = sized $ \n -> sequence [simpleNative | _ <- [1 .. n]]
 
 -- | If we allocate and return a list of natives, we should be able to
 -- read that list back into haskell land:
@@ -45,4 +49,4 @@ readsReturns ns =
 spec :: Spec
 spec =
   describe "marshalling lists" $
-    it "correctly reads returns" $ property readsReturns
+    it "correctly reads returns" $ property (forAll simpleNativeList readsReturns)

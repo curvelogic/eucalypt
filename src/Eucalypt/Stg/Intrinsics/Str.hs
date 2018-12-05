@@ -107,6 +107,7 @@ strNat ms (ValVec args) =
           if b
             then "true"
             else "false"
+        NativeSet _ -> "#SET"
 
 
 

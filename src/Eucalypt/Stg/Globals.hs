@@ -23,6 +23,7 @@ import qualified Eucalypt.Stg.Globals.List as List
 import qualified Eucalypt.Stg.Globals.Meta as Meta
 import qualified Eucalypt.Stg.Globals.Number as Number
 import qualified Eucalypt.Stg.Globals.Panic as Panic
+import qualified Eucalypt.Stg.Globals.Set as Set
 import qualified Eucalypt.Stg.Globals.Str as Str
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -136,7 +137,8 @@ standardGlobals =
   Arith.globals <>
   Emit.globals <>
   Number.globals <>
-  Str.globals
+  Str.globals <>
+  Set.globals
 
 standardGlobalMap :: HM.HashMap String LambdaForm
 standardGlobalMap = HM.fromList $ map toPair standardGlobals

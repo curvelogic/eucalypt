@@ -12,22 +12,18 @@ module Eucalypt.Stg.Intrinsics where
 import qualified Data.Array as A
 import Data.List (findIndex)
 import Data.Maybe (fromMaybe)
+import Eucalypt.Stg.IntrinsicInfo
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Block as Block
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
 import qualified Eucalypt.Stg.Intrinsics.Meta as Meta
 import qualified Eucalypt.Stg.Intrinsics.Number as Number
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
+import qualified Eucalypt.Stg.Intrinsics.Set as Set
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
 import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
 import qualified Eucalypt.Stg.Intrinsics.General as General
 import Eucalypt.Stg.Machine
-
-data IntrinsicInfo = IntrinsicInfo
-  { name :: String
-  , arity :: Int
-  , impl :: MachineState -> ValVec -> IO MachineState
-  }
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -60,7 +56,7 @@ intrinsics =
   , IntrinsicInfo "STRNAT" 1 Str.strNat
   , IntrinsicInfo "STRSYM" 1 Str.strSym
   , IntrinsicInfo "NUMPARSE" 1 Number.parse
-  ]
+  ] <> Set.intrinsics
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available

@@ -15,6 +15,8 @@ import Conduit
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.ByteString.Builder (Builder, stringUtf8)
+import Data.Foldable (toList)
+import Data.List (intersperse)
 import Data.Maybe (maybeToList)
 import Data.Scientific
 import qualified Eucalypt.Stg.Event as E
@@ -32,6 +34,8 @@ formatScalar (NativeBool b) = stringUtf8 $
   if b
     then "true"
     else "false"
+formatScalar (NativeSet s) =
+  mconcat $ intersperse (stringUtf8 ",") $ map formatScalar $ toList s
 
 toFragment :: E.Event -> Maybe Builder
 toFragment (E.OutputScalar n) = Just $ formatScalar n
