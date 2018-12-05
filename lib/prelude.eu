@@ -435,10 +435,22 @@ assertions: {
 nil?: = []
 
 ` "`take(n, l)` - return initial segment of integer `n` elements from list `l`."
-take(n, l): __IF(n zero?, [], cons(l head, take(n dec, l tail)))
+take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
  
 ` "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
+
+` "`take-while(p?, l)` - initial elements of list `l` while `p?` is true."
+take-while(p?, l): if(l nil?, [], if(l head p?, cons(l head, take-while(p?, l tail)), take-while(p?, l tail)))
+
+` "`take-until(p?, l)` - initial elements of list `l` while `p?` is false."
+take-until(p?): take-while(p? complement)
+
+` "`drop-while(p?, l)` - skip initial elements of list `l` while `p?` is true."
+drop-while(p?, l): if(l nil?, [], if(l head p?, drop-while(p?, l tail), l))
+
+` "`drop-until(p?, l)` - skip initial elements of list `l` while `p?` is false."
+drop-until(p?): drop-while(p? complement)
 
 ` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
 nth(n, l): l drop(n dec) head
@@ -467,6 +479,9 @@ iterate(f, i): cons(i, iterate(f, i) map(f))
 
 ` "`count(l)` - return count of items in list `l`"
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
+
+` "`cycle(l)` - create infinite list by cycling elements of list `l`"
+cycle(l): if(l nil?, [], l ++ cycle(l))
 
 ` "`map(f, l)` - map function `f` over list `l`"
 map(f, l): if(l nil?, l, cons(l head f, l tail map(f)))
@@ -652,9 +667,18 @@ merge-at(ks, v, b): if(ks nil?,
 (e ∈ s): __SETCONTAINS(s, e)
 
 set: {
+  ` "`empty` - the empty set."
   empty: __EMPTYSET
+
+  ` "`insert(e, s) - form set by adding element `e` to set `s`"
   insert(e, s): __SETADD(s, e)
+
+  ` "`delete(e, s) - form set by removing element `e` from set `s`"
   delete(e, s): __SETREMOVE(s, e)
+
+  ` "`from(l) - create a set from elements of list `l`"
   from(l): foldr(insert, empty, l)
+
+  ` "`singleton(x) - create a singleton set containing only element `x`"
   singleton(x): empty set.insert(x)
 }
