@@ -17,6 +17,7 @@ import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import qualified Data.Map.Strict as MS
 import Data.Vector ((!))
+import qualified Data.Vector as V
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -27,37 +28,61 @@ intrinsics =
   , IntrinsicInfo "DICTDEL" 2 dictDel
   ]
 
+isNative :: StgValue -> Bool
+isNative (StgNat _ _) = True
+isNative _ = False
+
+asNative :: StgValue -> Native
+asNative (StgNat n _) = n
+asNative _ = error "Not a native"
+
+getNatives :: MachineState -> ValVec -> IO (V.Vector Native)
+getNatives ms (ValVec v) =
+  if V.all isNative v
+    then return $ V.map asNative v
+    else throwIn ms NonNativeStgValue
+
+getDictAndKey
+  :: MachineState -> ValVec -> IO (MS.Map Native Native, Native)
+getDictAndKey ms args = do
+  ns <- getNatives ms args
+  let (NativeDict d) = ns ! 0
+  return (d, ns ! 1)
+
+getDictKeyAndValue
+  :: MachineState
+     -> ValVec -> IO (MS.Map Native Native, Native, Native)
+getDictKeyAndValue ms args= do
+  ns <- getNatives ms args
+  let (NativeDict d) = ns ! 0
+  return (d, ns ! 1, ns ! 2)
+
 -- | __EMPTYDICT
 emptyDict :: MachineState -> ValVec -> IO MachineState
 emptyDict ms _ = return $ setCode ms (ReturnLit (NativeDict MS.empty) Nothing)
 
 -- | __DICTCONTAINSKEY(d, k)
 dictContainsKey :: MachineState -> ValVec -> IO MachineState
-dictContainsKey ms (ValVec args) = do
-  let (StgNat (NativeDict d) _) = args ! 0
-  let (StgNat k _) = args ! 1
+dictContainsKey ms args = do
+  (d, k) <- getDictAndKey ms args
   return $ setCode ms (ReturnLit (NativeBool $ k `MS.member` d) Nothing)
 
 -- | __DICTGET(d, k)
 dictGet :: MachineState -> ValVec -> IO MachineState
-dictGet ms (ValVec args) = do
-  let (StgNat (NativeDict d) _) = args ! 0
-  let (StgNat k _) = args ! 1
+dictGet ms args = do
+  (d, k) <- getDictAndKey ms args
   case MS.lookup k d of
     Just n -> return $ setCode ms (ReturnLit n Nothing)
     Nothing -> throwIn ms $ DictKeyNotFound k
 
 -- | __DICTPUT(d, k, v)
 dictPut :: MachineState -> ValVec -> IO MachineState
-dictPut ms (ValVec args) = do
-  let (StgNat (NativeDict d) _) = args ! 0
-  let (StgNat k _) = args ! 1
-  let (StgNat v _) = args ! 2
+dictPut ms args = do
+  (d, k, v) <- getDictKeyAndValue ms args
   return $ setCode ms (ReturnLit (NativeDict $ MS.insert k v d) Nothing)
 
 -- | __DICTDEL(d, k)
 dictDel :: MachineState -> ValVec -> IO MachineState
-dictDel ms (ValVec args) = do
-  let (StgNat (NativeDict d) _) = args ! 0
-  let (StgNat k _) = args ! 1
+dictDel ms args = do
+  (d, k) <- getDictAndKey ms args
   return $ setCode ms (ReturnLit (NativeDict $ MS.delete k d) Nothing)

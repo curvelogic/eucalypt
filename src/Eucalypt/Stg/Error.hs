@@ -71,7 +71,7 @@ instance Reportable StgException where
           NonAddressStgValue ->
             bug "Found a native value when expecting a thunk."
           NonNativeStgValue ->
-            bug "Found a thunk when expecting a native value."
+            err "A native value is expected here."
           NoBranchFound -> bug "No branch available to handle value."
           EnteredBlackHole ->
             err "Entered a black hole. This may indicate a circular definition."

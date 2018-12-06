@@ -701,3 +701,37 @@ set: {
   ` "`singleton(x) - create a singleton set containing only element `x`"
   singleton(x): empty set.insert(x)
 }
+
+
+#
+# Dict operations - dicts are not intended for rendering and are a
+# mainly internal feature.
+#
+
+dict: {
+  ` "`empty` - the empty dict."
+  empty: __EMPTYDICT
+
+  ` "`has-key(k, d)` - true if and only if dict `d` contains entry with key `k`"
+  has-key(k, d): __DICTCONTAINSKEY(d, k)
+
+  ` "`get(k, d) - retrieve value for key `k` in dict `d`"
+  get(k, d): __DICTGET(d, k)
+
+  ` "`put(k, v, d) - set value for key `k` in dict `d`"
+  put(k, v, d): __DICTPUT(d, k, v)
+
+  ` "`del(k, d) - remove entry for key `k` from dict `d`"
+  del(k, d): __DICTDEL(d, k)
+
+  put-into(d): uncurry(__DICTPUT(d))
+
+  ` "`put-pair([k, v], d)` - put a pair of key and value into dict `d`"
+  put-pair: put-into flip
+
+  ` "`from-pairs(l)` - fill a new dict from list of key-value pairs `l`"
+  from-pairs(l): foldl(put-into, empty, l)
+
+  ` "`from(b)` - fill a new dict from block `b`"
+  from(b): b elements from-pairs
+}
