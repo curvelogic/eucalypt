@@ -219,6 +219,12 @@ or: __OR
     precedence: :prod }
 (l / r): __DIV(l, r)
 
+` { doc: "`l % r` - modulus of `l` by `r`; both must be numbers; error `r` is zero."
+    export: :suppress
+    associates: :left
+    precedence: :prod }
+(l % r): __MOD(l, r)
+
 ` { doc: "`l < r` - `true` if and only if number `l` is less than number `r`."
     export: :suppress
     associates: :left
@@ -260,6 +266,12 @@ neg?: < 0
 
 ` "`num(s)` - parse number from string"
 num: __NUMPARSE
+
+` "`floor(n)` - round number downwards to nearest integer"
+floor: __FLOOR
+
+` "`ceiling(n)` - round number upwards to nearest integer"
+ceiling: __CEILING
 
 ##
 ## Text and regexes
@@ -498,6 +510,9 @@ map2(f, l1, l2): if(nil?(l1) || nil?(l2), [], cons(f(l1 head, l2 head), map2(f, 
 ` "`zip-with(f, l1, l2)` - map function `f` over lists `l1` and `l2`, until the shorter is exhausted."
 zip-with: map2
 
+` "`zip(l1, l2)` - list of pairs of elements  `l1` and `l2`, until the shorter is exhausted."
+zip: zip-with(pair)
+
 ` "`filter(p?, l)` - return list of elements of list `l` that satisfy predicate `p?`."
 filter(p?, l): foldr({x: • xs: • }.(if(x p?, cons(x, xs), xs)), [], l)
 
@@ -660,10 +675,14 @@ merge-at(ks, v, b): if(ks nil?,
 # ∅: __EMPTYSET
 # TODO: need nullary ops
 
-` "s ∋ e - true if and only if `e` is a member of set `s`"
+` { doc: "s ∋ e - true if and only if `e` is a member of set `s`"
+    associates: :right
+    precedence: :cmp }
 (s ∋ e): __SETCONTAINS(s, e)
 
-` "e ∈ s - true if and only if `e` is a member of set `s`"
+` { doc: "e ∈ s - true if and only if `e` is a member of set `s`"
+    associates: :left
+    precedence: :cmp }
 (e ∈ s): __SETCONTAINS(s, e)
 
 set: {
