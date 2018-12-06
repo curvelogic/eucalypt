@@ -24,6 +24,7 @@ intrinsics =
   , IntrinsicInfo "SETCONTAINS" 2 setContains
   , IntrinsicInfo "SETADD" 2 setAdd
   , IntrinsicInfo "SETREMOVE" 2 setRemove
+  , IntrinsicInfo "SETMEMBERS" 2 setMembers
   ]
 
 getSetAndKey
@@ -55,3 +56,9 @@ setRemove :: MachineState -> ValVec -> IO MachineState
 setRemove ms args = do
   (s, n) <- getSetAndKey ms args
   return $ setCode ms (ReturnLit (NativeSet $ S.delete n s) Nothing)
+
+-- | __SETMEMBERS(s)
+setMembers :: MachineState -> ValVec -> IO MachineState
+setMembers ms (ValVec args) = do
+  let (StgNat (NativeSet s) _) = args ! 0
+  returnNatList ms (S.toList s)
