@@ -39,7 +39,7 @@ flipCons as a =
   allocate (Closure consConstructor (toValVec [a, as]) mempty MetadataPassThrough)
 
 
--- | Utility to return a native list from a primitive function.
+-- | Utility to return a native list from an intrinsic.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
 returnNatList :: MachineState -> [Native] -> IO MachineState
@@ -53,6 +53,23 @@ returnNatList ms ns = do
       tailAddr <- foldM flipCons nilAddr (reverse $ tail natAddrs)
       return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]) Nothing)
 
+-- | Utility to return a list of pairs of natives from an intrinsic.
+--
+-- Allocates all links and then 'ReturnCon's back to caller.
+returnNatPairList :: MachineState -> [(Native, Native)] -> IO MachineState
+returnNatPairList ms ns = do
+  nilAddr <- StgAddr <$> allocClosure mempty ms (pc0_ nilConstructor)
+  pairAddrs <- traverse (allocPair nilAddr) ns
+  if null pairAddrs
+    then return $ setCode ms (ReturnCon stgNil mempty Nothing)
+    else do
+      let headAddr = head pairAddrs
+      tailAddr <- foldM flipCons nilAddr (reverse $ tail pairAddrs)
+      return $
+        setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]) Nothing)
+  where
+    allocPair nil (k, v) =
+      foldM flipCons nil [StgNat v Nothing, StgNat k Nothing]
 
 -- | Utility to read a list from the machine into a native haskell
 -- list for a primitive function.

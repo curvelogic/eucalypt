@@ -22,6 +22,7 @@ globals =
   , GlobalInfo "DICTGET" euDictGet [Strict, Strict]
   , GlobalInfo "DICTPUT" euDictPut [Strict, Strict, Strict]
   , GlobalInfo "DICTDEL" euDictDel [Strict, Strict]
+  , GlobalInfo "DICTENTRIES" euDictEntries [Strict]
   ]
 
 euEmptyDict :: LambdaForm
@@ -57,3 +58,10 @@ euDictDel =
   force_ (Atom $ Local 0) $
   force_ (Atom $ Local 1) $
   appbif_ (intrinsicIndex "DICTDEL") [Local 2, Local 3]
+
+euDictEntries :: LambdaForm
+euDictEntries =
+  lam_ 0 1 $
+  ann_ "__DICTENTRIES" 0 $
+  force_ (Atom $ Local 0) $
+  appbif_ (intrinsicIndex "DICTENTRIES") [Local 1]

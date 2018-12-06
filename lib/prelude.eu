@@ -756,4 +756,10 @@ dict: {
 
   ` "`update-or(k, f, df, d)` - update dict `d`'s value for `k` by applying `f` unless absent when set to `df`"
   update-or(k, f, df, d): if(d has-key(k), d put(k, d get(k) f), d put(k, df))
+
+  ` "`entries(d)` - return entries of dict `d` as list of pairs"
+  entries: __DICTENTRIES
+
+  ` "`as-block(d)` - create a block from a dict - requires symbol keys"
+  as-block: entries block
 }

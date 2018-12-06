@@ -26,6 +26,7 @@ intrinsics =
   , IntrinsicInfo "DICTGET" 2 dictGet
   , IntrinsicInfo "DICTPUT" 2 dictPut
   , IntrinsicInfo "DICTDEL" 2 dictDel
+  , IntrinsicInfo "DICTENTRIES" 2 dictEntries
   ]
 
 getDictAndKey
@@ -72,3 +73,9 @@ dictDel :: MachineState -> ValVec -> IO MachineState
 dictDel ms args = do
   (d, k) <- getDictAndKey ms args
   return $ setCode ms (ReturnLit (NativeDict $ MS.delete k d) Nothing)
+
+-- | __DICTENTRIES(d)
+dictEntries :: MachineState -> ValVec -> IO MachineState
+dictEntries ms (ValVec args) = do
+  let (StgNat (NativeDict d) _) = args ! 0
+  returnNatPairList ms (MS.assocs d)
