@@ -16,6 +16,7 @@ import Conduit
 import Control.Monad.State
 import qualified Data.ByteString as BS
 import Data.Foldable (toList)
+import qualified Data.Map.Strict as MS
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Scientific
@@ -103,6 +104,12 @@ formatScalar (NativeBool b) =
 formatScalar (NativeSet s) =
   jsonStr "[" <> BS.intercalate ", " (map formatScalar (toList s)) <>
   jsonStr "]"
+formatScalar (NativeDict d) =
+  jsonStr "{" <>
+  BS.intercalate
+    ", "
+    (map (\(k, v) -> formatScalar k <> ": " <> formatScalar v) $ MS.assocs d) <>
+  jsonStr "}"
 
 putBSFragment :: MonadState JSONFormatState m => E.Event -> m ()
 putBSFragment e@E.OutputSequenceStart = do

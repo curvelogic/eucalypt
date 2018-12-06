@@ -20,6 +20,7 @@ import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable
 import qualified Data.Map as Map
+import qualified Data.Map.Strict as MS
 import Data.Scientific
 import qualified Data.Set as S
 import Data.Vector (Vector)
@@ -44,6 +45,7 @@ data Native
   | NativeSymbol !String
   | NativeBool !Bool
   | NativeSet !(S.Set Native)
+  | NativeDict !(MS.Map Native Native)
   deriving (Eq, Show, Generic, Ord)
 
 -- | NativeBranchTable matches natives by hash map
@@ -56,6 +58,11 @@ instance Hashable Native where
   hashWithSalt s (NativeBool b) = s `hashWithSalt` (3 :: Int) `hashWithSalt` b
   hashWithSalt s (NativeSet xs) =
     S.foldl hashWithSalt (s `hashWithSalt` (4 :: Int)) xs
+  hashWithSalt s (NativeDict dict) =
+    MS.foldlWithKey
+      (\a k v -> a `hashWithSalt` k `hashWithSalt` v)
+      (s `hashWithSalt` (5 :: Int))
+      dict
 
 
 instance StgPretty Native where
@@ -68,6 +75,15 @@ instance StgPretty Native where
       else P.text "#f"
   prettify (NativeSet xs) =
     P.text "#{" <> P.hcat (P.punctuate P.comma (map prettify (toList xs))) <>
+    P.text "}"
+  prettify (NativeDict dict) =
+    P.text "#{" <>
+    P.hcat
+      (P.punctuate
+         P.comma
+         (map
+            (\(k, v) -> prettify k P.<+> P.text "=>" P.<+> prettify v)
+            (MS.assocs dict))) <>
     P.text "}"
 
 instance Arbitrary Scientific where
@@ -83,6 +99,7 @@ instance Arbitrary Native where
       , NativeSymbol <$> arbitrary
       , NativeBool <$> arbitrary
       , NativeSet <$> arbitrary
+      , NativeDict <$> arbitrary
       ]
 
 -- | The various types of reference from STG code to other closures

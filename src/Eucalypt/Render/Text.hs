@@ -17,6 +17,7 @@ import qualified Data.ByteString.Lazy as BL
 import Data.ByteString.Builder (Builder, stringUtf8)
 import Data.Foldable (toList)
 import Data.List (intersperse)
+import qualified Data.Map.Strict as MS
 import Data.Maybe (maybeToList)
 import Data.Scientific
 import qualified Eucalypt.Stg.Event as E
@@ -36,6 +37,12 @@ formatScalar (NativeBool b) = stringUtf8 $
     else "false"
 formatScalar (NativeSet s) =
   mconcat $ intersperse (stringUtf8 ",") $ map formatScalar $ toList s
+formatScalar (NativeDict d) =
+  mconcat $
+  intersperse (stringUtf8 "\n") $
+  map (\(k, v) -> formatScalar k <> stringUtf8 ": " <> formatScalar v) $
+  MS.assocs d
+
 
 toFragment :: E.Event -> Maybe Builder
 toFragment (E.OutputScalar n) = Just $ formatScalar n
