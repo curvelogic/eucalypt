@@ -11,13 +11,13 @@ module Eucalypt.Stg.Intrinsics.Dict
   ( intrinsics
   ) where
 
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import qualified Data.Map.Strict as MS
 import Data.Vector ((!))
-import qualified Data.Vector as V
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -27,20 +27,6 @@ intrinsics =
   , IntrinsicInfo "DICTPUT" 2 dictPut
   , IntrinsicInfo "DICTDEL" 2 dictDel
   ]
-
-isNative :: StgValue -> Bool
-isNative (StgNat _ _) = True
-isNative _ = False
-
-asNative :: StgValue -> Native
-asNative (StgNat n _) = n
-asNative _ = error "Not a native"
-
-getNatives :: MachineState -> ValVec -> IO (V.Vector Native)
-getNatives ms (ValVec v) =
-  if V.all isNative v
-    then return $ V.map asNative v
-    else throwIn ms NonNativeStgValue
 
 getDictAndKey
   :: MachineState -> ValVec -> IO (MS.Map Native Native, Native)

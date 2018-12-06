@@ -715,8 +715,11 @@ dict: {
   ` "`has-key(k, d)` - true if and only if dict `d` contains entry with key `k`"
   has-key(k, d): __DICTCONTAINSKEY(d, k)
 
-  ` "`get(k, d) - retrieve value for key `k` in dict `d`"
+  ` "`get(k, d) - retrieve value for key `k` in dict `d`. Panic if absent."
   get(k, d): __DICTGET(d, k)
+
+  ` "`get(k, d) - retrieve value for key `k` in dict `d`, defaulting to `df` if absent."
+  get-or(k, df, d): if(d has-key(k), d get(k), df)
 
   ` "`put(k, v, d) - set value for key `k` in dict `d`"
   put(k, v, d): __DICTPUT(d, k, v)
@@ -724,6 +727,7 @@ dict: {
   ` "`del(k, d) - remove entry for key `k` from dict `d`"
   del(k, d): __DICTDEL(d, k)
 
+  ` "put-into(d, [k, v]) - put value `v` for key `k` in dict `d`"
   put-into(d): uncurry(__DICTPUT(d))
 
   ` "`put-pair([k, v], d)` - put a pair of key and value into dict `d`"
@@ -734,4 +738,7 @@ dict: {
 
   ` "`from(b)` - fill a new dict from block `b`"
   from(b): b elements from-pairs
+
+  ` "`update-or(k, f, df, d)` - update dict `d`'s value for `k` by applying `f` unless absent when set to `df`"
+  update-or(k, f, df, d): if(d has-key(k), d put(k, d get(k) f), d put(k, df))
 }

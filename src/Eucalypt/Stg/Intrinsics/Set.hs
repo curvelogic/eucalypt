@@ -11,6 +11,7 @@ module Eucalypt.Stg.Intrinsics.Set
   ( intrinsics
   ) where
 
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
@@ -25,27 +26,32 @@ intrinsics =
   , IntrinsicInfo "SETREMOVE" 2 setRemove
   ]
 
+getSetAndKey
+  :: MachineState -> ValVec -> IO (S.Set Native, Native)
+getSetAndKey ms args = do
+  ns <- getNatives ms args
+  let (NativeSet d) = ns ! 0
+  return (d, ns ! 1)
+
+
 -- | __EMPTYSET
 emptySet :: MachineState -> ValVec -> IO MachineState
 emptySet ms _ = return $ setCode ms (ReturnLit (NativeSet S.empty) Nothing)
 
 -- | __SETCONTAINS(s, e)
 setContains :: MachineState -> ValVec -> IO MachineState
-setContains ms (ValVec args) = do
-  let (StgNat (NativeSet s) _) = args ! 0
-  let (StgNat n _) = args ! 1
+setContains ms args = do
+  (s, n) <- getSetAndKey ms args
   return $ setCode ms (ReturnLit (NativeBool $ n `S.member` s) Nothing)
 
 -- | __SETADD(s, e)
 setAdd :: MachineState -> ValVec -> IO MachineState
-setAdd ms (ValVec args) = do
-  let (StgNat (NativeSet s) _) = args ! 0
-  let (StgNat n _) = args ! 1
+setAdd ms args = do
+  (s, n) <- getSetAndKey ms args
   return $ setCode ms (ReturnLit (NativeSet $ S.insert n s) Nothing)
 
 -- | __SETADD(s, e)
 setRemove :: MachineState -> ValVec -> IO MachineState
-setRemove ms (ValVec args) = do
-  let (StgNat (NativeSet s) _) = args ! 0
-  let (StgNat n _) = args ! 1
+setRemove ms args = do
+  (s, n) <- getSetAndKey ms args
   return $ setCode ms (ReturnLit (NativeSet $ S.delete n s) Nothing)

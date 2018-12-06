@@ -18,6 +18,21 @@ import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 
 
+isNative :: StgValue -> Bool
+isNative (StgNat _ _) = True
+isNative _ = False
+
+asNative :: StgValue -> Native
+asNative (StgNat n _) = n
+asNative _ = error "Not a native"
+
+getNatives :: MachineState -> ValVec -> IO (V.Vector Native)
+getNatives ms (ValVec v) =
+  if V.all isNative v
+    then return $ V.map asNative v
+    else throwIn ms NonNativeStgValue
+
+
 flipCons :: StgValue -> StgValue -> IO StgValue
 flipCons as a =
   StgAddr <$>
