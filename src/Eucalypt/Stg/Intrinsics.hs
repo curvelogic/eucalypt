@@ -15,6 +15,7 @@ import Data.Maybe (fromMaybe)
 import Eucalypt.Stg.IntrinsicInfo
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Block as Block
+import qualified Eucalypt.Stg.Intrinsics.Dict as Dict
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
 import qualified Eucalypt.Stg.Intrinsics.Meta as Meta
 import qualified Eucalypt.Stg.Intrinsics.Number as Number
@@ -59,7 +60,7 @@ intrinsics =
   , IntrinsicInfo "STRNAT" 1 Str.strNat
   , IntrinsicInfo "STRSYM" 1 Str.strSym
   , IntrinsicInfo "NUMPARSE" 1 Number.parse
-  ] <> Set.intrinsics
+  ] <> Set.intrinsics <> Dict.intrinsics
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available

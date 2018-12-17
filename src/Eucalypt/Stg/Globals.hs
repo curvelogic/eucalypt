@@ -17,6 +17,7 @@ import Eucalypt.Stg.GlobalInfo
 import qualified Eucalypt.Stg.Globals.Arithmetic as Arith
 import qualified Eucalypt.Stg.Globals.Block as Block
 import qualified Eucalypt.Stg.Globals.Bool as Bool
+import qualified Eucalypt.Stg.Globals.Dict as Dict
 import qualified Eucalypt.Stg.Globals.Emit as Emit
 import qualified Eucalypt.Stg.Globals.Eq as Eq
 import qualified Eucalypt.Stg.Globals.List as List
@@ -138,7 +139,8 @@ standardGlobals =
   Emit.globals <>
   Number.globals <>
   Str.globals <>
-  Set.globals
+  Set.globals <>
+  Dict.globals
 
 standardGlobalMap :: HM.HashMap String LambdaForm
 standardGlobalMap = HM.fromList $ map toPair standardGlobals

@@ -21,6 +21,7 @@ globals =
   , GlobalInfo "SETCONTAINS" euSetContains [Strict, Strict]
   , GlobalInfo "SETADD" euSetAdd [Strict, Strict]
   , GlobalInfo "SETREMOVE" euSetRemove [Strict, Strict]
+  , GlobalInfo "SETMEMBERS" euSetMembers [Strict]
   ]
 
 euEmptySet :: LambdaForm
@@ -47,3 +48,10 @@ euSetRemove =
   force_ (Atom $ Local 0) $
   force_ (Atom $ Local 1) $
   appbif_ (intrinsicIndex "SETREMOVE") [Local 2, Local 3]
+
+euSetMembers :: LambdaForm
+euSetMembers =
+  lam_ 0 1 $
+  ann_ "__SETMEMBERS" 0 $
+  force_ (Atom $ Local 0) $
+  appbif_ (intrinsicIndex "SETMEMBERS") [Local 1]

@@ -44,6 +44,7 @@ data StgError
   | IntrinsicExpectedEvaluatedList !StgSyn
   | InvalidRegex !String
   | UnknownGlobal !String
+  | DictKeyNotFound !Native
   | Panic !String
   | IOSystem IOException
   | InvalidNumber !String
@@ -70,7 +71,7 @@ instance Reportable StgException where
           NonAddressStgValue ->
             bug "Found a native value when expecting a thunk."
           NonNativeStgValue ->
-            bug "Found a thunk when expecting a native value."
+            err "A native value is expected here."
           NoBranchFound -> bug "No branch available to handle value."
           EnteredBlackHole ->
             err "Entered a black hole. This may indicate a circular definition."
@@ -100,6 +101,8 @@ instance Reportable StgException where
             P.nest 2 (P.text "-" P.<+> P.text s)
           (UnknownGlobal s) ->
             err "Unknown global:" P.$$ P.nest 2 (P.text "-" P.<+> P.text s)
+          (DictKeyNotFound k) ->
+            err "Dict key not found :" P.$$ P.nest 2 (P.text "-" P.<+> prettify k)
           (Panic s) -> err s
           (IOSystem e) -> sys $ show e
           (InvalidNumber n) -> err $ "Invalid number (" ++ show n ++ ") could not be parsed."

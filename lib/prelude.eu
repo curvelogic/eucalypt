@@ -273,6 +273,22 @@ floor: __FLOOR
 ` "`ceiling(n)` - round number upwards to nearest integer"
 ceiling: __CEILING
 
+` "`max(l, r) - return max of numbers `l` and `r`"
+max(l, r): if(l > r, l, r)
+
+` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
+max-of(l): cond( [[l nil?,      panic("max of empty list")]
+               , [count(l) = 1, l head]]
+	       , max(l head, max-of(l tail)))
+
+` "`min(l, r) - return min of numbers `l` and `r`"
+min(l, r): if(l < r, l, r)
+
+` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
+min-of(l): cond( [[l nil?,      panic("min of empty list")]
+               , [count(l) = 1, l head]]
+	       , min(l head, min-of(l tail)))
+
 ##
 ## Text and regexes
 ##
@@ -368,7 +384,7 @@ curry(f, x, y): f([x, y])
 uncurry(f, l): f(first(l), second(l))
 
 ` "`cond(l)` - in list `l` of [condition, value] select first true condition, returning value, else default `d`."
-cond(l, d): foldr(l, d, curry(if))
+cond(l, d): l foldr(uncurry(if), d)
 
 ` "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
 juxt(f, g, x): [x f, x g]
@@ -492,6 +508,9 @@ iterate(f, i): cons(i, iterate(f, i) map(f))
 ` "`count(l)` - return count of items in list `l`"
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
 
+` "`last(l)` - return last element of list `l`"
+last: head ∘ reverse
+
 ` "`cycle(l)` - create infinite list by cycling elements of list `l`"
 cycle(l): if(l nil?, [], l ++ cycle(l))
 
@@ -551,6 +570,18 @@ any-true?(l): foldr(or, false, l)
 
 ` "`any-true?(l)` - true if and only if any items in list `l` satisfy predicate `p?`."
 any(p?, l): l map(p?) any-true?
+
+` "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offest `step`"
+window(n, step, l): { chunk: l take(n) }.(if(count(chunk) >= n, cons(chunk, l drop(step) window(n, step)), []))
+
+` "`partition(n, l)` - list of lists of non-overlapping segments of list `l` of size `n`"
+partition(n): window(n, n)
+
+` "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list"
+over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
+
+` "differences(l) - calculate difference between each overlapping pair in list of numbers `l`"
+differences: over-sliding-pairs(_1 - _0)
 
 #
 # Block library functions
@@ -700,4 +731,54 @@ set: {
 
   ` "`singleton(x) - create a singleton set containing only element `x`"
   singleton(x): empty set.insert(x)
+  
+  ` "`members(s) - convert set `s` to list"
+  members: __SETMEMBERS
+}
+
+
+#
+# Dict operations - dicts are not intended for rendering and are a
+# mainly internal feature.
+#
+
+dict: {
+  ` "`empty` - the empty dict."
+  empty: __EMPTYDICT
+
+  ` "`has-key(k, d)` - true if and only if dict `d` contains entry with key `k`"
+  has-key(k, d): __DICTCONTAINSKEY(d, k)
+
+  ` "`get(k, d) - retrieve value for key `k` in dict `d`. Panic if absent."
+  get(k, d): __DICTGET(d, k)
+
+  ` "`get(k, d) - retrieve value for key `k` in dict `d`, defaulting to `df` if absent."
+  get-or(k, df, d): if(d has-key(k), d get(k), df)
+
+  ` "`put(k, v, d) - set value for key `k` in dict `d`"
+  put(k, v, d): __DICTPUT(d, k, v)
+
+  ` "`del(k, d) - remove entry for key `k` from dict `d`"
+  del(k, d): __DICTDEL(d, k)
+
+  ` "put-into(d, [k, v]) - put value `v` for key `k` in dict `d`"
+  put-into(d): uncurry(__DICTPUT(d))
+
+  ` "`put-pair([k, v], d)` - put a pair of key and value into dict `d`"
+  put-pair: put-into flip
+
+  ` "`from-pairs(l)` - fill a new dict from list of key-value pairs `l`"
+  from-pairs(l): foldl(put-into, empty, l)
+
+  ` "`from(b)` - fill a new dict from block `b`"
+  from(b): b elements from-pairs
+
+  ` "`update-or(k, f, df, d)` - update dict `d`'s value for `k` by applying `f` unless absent when set to `df`"
+  update-or(k, f, df, d): if(d has-key(k), d put(k, d get(k) f), d put(k, df))
+
+  ` "`entries(d)` - return entries of dict `d` as list of pairs"
+  entries: __DICTENTRIES
+
+  ` "`as-block(d)` - create a block from a dict - requires symbol keys"
+  as-block: entries block
 }

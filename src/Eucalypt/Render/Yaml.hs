@@ -17,6 +17,7 @@ import Conduit
 import qualified Data.ByteString as BS
 import qualified Data.Conduit.Combinators as C
 import Data.Foldable (toList)
+import qualified Data.Map.Strict as MS
 import Data.Scientific
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
@@ -55,6 +56,11 @@ renderValue (NativeBool b) =
 renderValue (NativeSet s) =
   [L.EventSequenceStart Nothing] ++
   concatMap renderValue (toList s) ++ [L.EventSequenceEnd]
+renderValue (NativeDict d) =
+  [L.EventMappingStart Nothing] ++
+  concatMap kv (MS.assocs d) ++ [L.EventMappingEnd]
+  where
+    kv (k, v) = renderValue k ++ renderValue v
 
 toYamlEvents :: E.Event -> [L.Event]
 toYamlEvents e =
