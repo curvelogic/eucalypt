@@ -273,6 +273,22 @@ floor: __FLOOR
 ` "`ceiling(n)` - round number upwards to nearest integer"
 ceiling: __CEILING
 
+` "`max(l, r) - return max of numbers `l` and `r`"
+max(l, r): if(l > r, l, r)
+
+` "`max-of(l) - return max element in list of numbers `l` - error if empty`"
+max-of(l): cond( [[l nil?,      panic("max of empty list")]
+               , [count(l) = 1, l head]]
+	       , max(l head, max-of(l tail)))
+
+` "`min(l, r) - return min of numbers `l` and `r`"
+min(l, r): if(l < r, l, r)
+
+` "`min-of(l) - return min element in list of numbers `l` - error if empty`"
+min-of(l): cond( [[l nil?,      panic("min of empty list")]
+               , [count(l) = 1, l head]]
+	       , min(l head, min-of(l tail)))
+
 ##
 ## Text and regexes
 ##
@@ -368,7 +384,7 @@ curry(f, x, y): f([x, y])
 uncurry(f, l): f(first(l), second(l))
 
 ` "`cond(l)` - in list `l` of [condition, value] select first true condition, returning value, else default `d`."
-cond(l, d): foldr(l, d, curry(if))
+cond(l, d): l foldr(uncurry(if), d)
 
 ` "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
 juxt(f, g, x): [x f, x g]
@@ -491,6 +507,9 @@ iterate(f, i): cons(i, iterate(f, i) map(f))
 
 ` "`count(l)` - return count of items in list `l`"
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
+
+` "`last(l)` - return last element of list `l`"
+last: head ∘ reverse
 
 ` "`cycle(l)` - create infinite list by cycling elements of list `l`"
 cycle(l): if(l nil?, [], l ++ cycle(l))
