@@ -24,6 +24,7 @@ globals =
   , GlobalInfo "STR" euStr [Strict]
   , GlobalInfo "SYM" euSym [Strict]
   , GlobalInfo "LETTERS" euLetters [Strict]
+  , GlobalInfo "DQ" euDoubleQuote []
   ]
 
 
@@ -96,3 +97,8 @@ euLetters =
   lam_ 0 1 $
   ann_ "__LETTERS" 0 $
   force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "LETTERS") [Local 1])
+
+
+-- | DQ Constant for double quote (while we don't support standard string escapes )
+euDoubleQuote :: LambdaForm
+euDoubleQuote = value_ (Atom $ Literal $ NativeString "\"")
