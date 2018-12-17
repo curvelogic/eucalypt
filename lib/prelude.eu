@@ -298,6 +298,8 @@ ch: {
   n: "
 "
   t: "	"
+
+  dq: __DQ
 }
 
 ` "String processing functions"
@@ -611,8 +613,8 @@ map-first(f, prs): map(bimap(f, identity), prs)
 ` "`map-second(f, prs)` - apply f to second elements of all pairs in list of pairs `prs`."
 map-second(f, prs): map(bimap(identity, f), prs)
 
-` "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`."
-map-kv(f, b): b elements map(uncurry(f)) block
+` "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`, returning list."
+map-kv(f, b): b elements map(uncurry(f))
 
 ` "`pair(k, v)` - form a block element from key (symbol) `k` and value `v`."
 pair(k, v): [k, v]
@@ -629,8 +631,8 @@ map-values(f, b): b elements map-second(f) block
 ` "`map-keys(f, b)` - apply `f(k)` to each key in block `b`."
 map-keys(f, b): b elements map-first(f) block
 
-` "`select-items(f, b)` - return items from block `b` which match item match function `f`"
-select-items(f, b): b elements filter(f) 
+` "`filter-items(f, b)` - return items from block `b` which match item match function `f`"
+filter-items(f, b): b elements filter(f) 
 
 ` "`by-key(p?)` - return item match function that checks predicate `p?` against the (symbol) key."
 by-key(p?): p? ∘ key
@@ -644,11 +646,11 @@ by-key-match(re): by-key-name(str.matches?(re))
 ` "`by-value(p?) - return item match runction that checks predicate `p?` against the item value."
 by-value(p?): p? ∘ value
 
-` "`match-select-values` - return list of values from block `b` with keys matching regex `re`."
-match-select-values(re, b): b select-items(by-key-match(re)) map(value)
+` "`match-filter-values` - return list of values from block `b` with keys matching regex `re`."
+match-filter-values(re, b): b filter-items(by-key-match(re)) map(value)
 
-` "`select-values(p?, b)` - return items from block `b` where values match predicate `p?`"
-select-values(p?, b): b values filter(p?)
+` "`filter-values(p?, b)` - return items from block `b` where values match predicate `p?`"
+filter-values(p?, b): b values filter(p?)
 
 _block: {
   ` "If `k` satisfies `k?` then `v!` else `v`"
@@ -661,10 +663,10 @@ _block: {
 # By property alteration of blocks
 
 ` "`alter-value(k, v, b)` - alter `b.k` to value `v`."
-alter-value(k, v, b): b map-kv(_block.alter?(= k, v))
+alter-value(k, v, b): b map-kv(_block.alter?(= k, v)) block
 
 ` "`update-value(k, f, b)` - update  `b.k` to `f(b.k)`."
-update-value(k, f, b): b map-kv(_block.update?(= k, f))
+update-value(k, f, b): b map-kv(_block.update?(= k, f)) block
 
 ` "`alter(ks, v, b)` - in nested block `b` alter value to value `v` at path-of-keys `ks`"
 alter(ks, v, b): b foldr(update-value, const(v), ks)
