@@ -27,47 +27,52 @@ import Eucalypt.Stg.Event (RenderMetadata(..))
 import qualified Eucalypt.Stg.Event as E
 import Eucalypt.Stg.Syn (Native(..))
 
--- STG implementation
 tag :: RenderMetadata -> L.Tag -> L.Tag
 tag RenderMetadata {metaTag = Nothing} def = def
 tag RenderMetadata {metaTag = (Just t)} _ = L.UriTag t
 
-
+style :: RenderMetadata -> L.Style -> L.Style
+style RenderMetadata {metaTag = Nothing} def = def
+style RenderMetadata {metaTag = _} _ = L.Plain
 
 -- | Render a native value as a YAML scalar
-renderValue :: Native -> E.RenderMetadata -> L.Event
+renderValue :: Native -> E.RenderMetadata -> [L.Event]
 renderValue (NativeNumber n) rm =
   case floatingOrInteger n of
-    Left r -> L.EventScalar (encodeUtf8 $ pack $ show r) (tag rm L.FloatTag) L.PlainNoTag Nothing
-    Right i -> L.EventScalar (encodeUtf8 $ pack $ show i) (tag rm L.IntTag) L.PlainNoTag Nothing
+    Left r -> [L.EventScalar (encodeUtf8 $ pack $ show r) (tag rm L.FloatTag) (style rm L.PlainNoTag) Nothing]
+    Right i -> [L.EventScalar (encodeUtf8 $ pack $ show i) (tag rm L.IntTag) (style rm L.PlainNoTag) Nothing]
 renderValue (NativeSymbol s) rm =
-  L.EventScalar (encodeUtf8 $ pack s) (tag rm L.StrTag) L.PlainNoTag Nothing
+  [L.EventScalar (encodeUtf8 $ pack s) (tag rm L.StrTag) (style rm L.PlainNoTag) Nothing]
 renderValue (NativeString s) rm =
-  L.EventScalar (encodeUtf8 $ pack s) (tag rm L.NoTag) (style s) Nothing
+  [L.EventScalar (encodeUtf8 $ pack s) (tag rm L.NoTag) (textStyle s) Nothing]
   where
-    style "" = L.DoubleQuoted
-    style "*" = L.DoubleQuoted
-    style "/" = L.DoubleQuoted
-    style str | length str > 60 = L.Literal
-    style _ = L.PlainNoTag
+    textStyle "" = L.DoubleQuoted
+    textStyle "*" = L.DoubleQuoted
+    textStyle "/" = L.DoubleQuoted
+    textStyle str
+      | length str > 60 = L.Literal
+    textStyle _ = style rm L.PlainNoTag
 renderValue (NativeBool b) rm =
-  L.EventScalar
+  [L.EventScalar
     (encodeUtf8 $
      pack $
      if b
        then "true"
        else "false")
     (tag rm L.BoolTag)
-    L.PlainNoTag
-    Nothing
-renderValue (NativeSet s) =
+    (style rm L.PlainNoTag)
+    Nothing]
+renderValue (NativeSet s) _ =
   [L.EventSequenceStart Nothing] ++
-  concatMap renderValue (toList s) ++ [L.EventSequenceEnd]
-renderValue (NativeDict d) =
+  concatMap (`renderValue` RenderMetadata {metaTag = Nothing}) (toList s) ++
+  [L.EventSequenceEnd]
+renderValue (NativeDict d) _ =
   [L.EventMappingStart Nothing] ++
   concatMap kv (MS.assocs d) ++ [L.EventMappingEnd]
   where
-    kv (k, v) = renderValue k ++ renderValue v
+    kv (k, v) =
+      renderValue k RenderMetadata {metaTag = Nothing} ++
+      renderValue v RenderMetadata {metaTag = Nothing}
 
 toYamlEvents :: E.Event -> [L.Event]
 toYamlEvents e =
@@ -76,7 +81,7 @@ toYamlEvents e =
     E.OutputStreamEnd -> [L.EventStreamEnd]
     E.OutputDocumentStart -> [L.EventDocumentStart]
     E.OutputDocumentEnd -> [L.EventDocumentEnd]
-    E.OutputScalar rm n -> [renderValue n rm]
+    E.OutputScalar rm n -> renderValue n rm
     E.OutputNull -> [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
     E.OutputSequenceStart -> [L.EventSequenceStart Nothing]
     E.OutputSequenceEnd -> [L.EventSequenceEnd]

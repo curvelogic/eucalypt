@@ -10,7 +10,7 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Block
   ( prune
   , pruneMerge
-  , pruneToMap
+  , pruneBlockToMap
   ) where
 
 import Control.Monad (foldM)
@@ -48,7 +48,8 @@ prune ms (ValVec xs) =
 
 
 
--- | Inspect a 'StgValue' to turn it into a pair of symbol and value
+-- | Inspect a 'StgValue' to turn it into a pair of symbol and
+-- value-tail
 kv :: MachineState -> StgValue -> IO (String, StgValue)
 kv ms (StgAddr addr) = do
   pair <- readCons ms addr
@@ -79,9 +80,22 @@ pruneSub ms om a = do
 
 
 
--- | The value of each pair in the ordered map is the pair itself
--- (allowing for simple reconstruction without allocation of the
--- pairs in the returned pair list.)
+-- | Read a block from the machine into a Haskell map. The value of
+-- each pair in this ordered map is the value of the kv pair. Values
+-- are not evaluated.
+pruneBlockToMap ::
+     MachineState
+  -> OM.InsOrdHashMap String StgValue
+  -> Address
+  -> IO (OM.InsOrdHashMap String StgValue)
+pruneBlockToMap ms om a = do
+  elements <- readBlock ms a
+  case elements of
+    (StgAddr e) -> pruneToMap ms om e
+    (StgNat n _) -> throwIn ms $ IntrinsicExpectedBlockFoundNative n
+
+
+
 pruneToMap ::
      MachineState
   -> OM.InsOrdHashMap String StgValue

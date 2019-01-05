@@ -42,6 +42,11 @@ data StgError
   | IntrinsicExpectedNativeList
   | IntrinsicExpectedStringList
   | IntrinsicExpectedEvaluatedList !StgSyn
+  | IntrinsicExpectedBlockFoundBlackHole
+  | IntrinsicExpectedBlockFoundPartialApplication
+  | IntrinsicExpectedBlockFoundNative !Native
+  | IntrinsicExpectedEvaluatedBlock !StgSyn
+  | IntrinsicExpectedBlock !StgSyn
   | InvalidRegex !String
   | UnknownGlobal !String
   | DictKeyNotFound !Native
@@ -91,11 +96,23 @@ instance Reportable StgException where
             bug "Expected a list, found a black hole."
           IntrinsicExpectedListFoundPartialApplication ->
             bug "Expected a list, found a partial application."
+          IntrinsicExpectedBlockFoundBlackHole ->
+            bug "Expected a block, found a black hole."
+          IntrinsicExpectedBlockFoundPartialApplication ->
+            bug "Expected a block, found a partial application."
           IntrinsicExpectedNativeList -> err "Expected list of native values."
           IntrinsicExpectedStringList -> err "Expected list of strings."
           IntrinsicExpectedEvaluatedList expr ->
             bug "Expected evaluated list, found unevaluated thunks." P.$$
             prettify expr
+          IntrinsicExpectedBlock expr ->
+            bug "Expected block, found something else." P.$$
+            prettify expr
+          IntrinsicExpectedEvaluatedBlock expr ->
+            bug "Expected evaluated block, found unevaluated thunks." P.$$
+            prettify expr
+          IntrinsicExpectedBlockFoundNative n ->
+            err "Expected a block but found native value: " P.$$ prettify n
           (InvalidRegex s) ->
             err "Regular expression was not valid:" P.$$
             P.nest 2 (P.text "-" P.<+> P.text s)

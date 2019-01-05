@@ -151,7 +151,7 @@ continueList =
     ] $
   force_ (appfn_ (Global "META") [Local 1]) $
   force_ (appfn_ (Global "Emit.forceExportMetadata") [Local 2]) $
-  emitScalar (Local 3)
+  emitScalar (Local 1) -- force is effectful
 
 -- | Emit.startList(l)
 startList :: LambdaForm
@@ -197,8 +197,10 @@ euRender =
     , (stgCons, (2, appfn_ (Global "Emit.startList") [Local 1, Local 2]))
     , (stgNil, (0, appfn_ (Global "Emit.emptyList") []))
     , (stgUnit, (0, emitNull))
-    ]
-    (emitScalar (Local 1))
+    ] $
+  force_ (appfn_ (Global "META") [Local 1]) $
+  force_ (appfn_ (Global "Emit.forceExportMetadata") [Local 2]) $
+  emitScalar (Local 1)
 
 -- | Single argument is the metadata (not the annotated value)
 forceExportMetadata :: LambdaForm
@@ -207,16 +209,14 @@ forceExportMetadata =
   ann_ "Emit.forceExportMetadata" 0 $
   let b = Local 0
       l = Local 1
-      el = Local 2
    in case_
         (Atom b)
         [ ( stgBlock
           , ( 1
             , force_
                 (appfn_ (Global "Emit.forceExportMetadataKVList") [l])
-                (appcon_ stgBlock [el])))
+                (appcon_ stgUnit [])))
         ]
-
 
 
 forceExportMetadataKVList :: LambdaForm
@@ -226,8 +226,6 @@ forceExportMetadataKVList =
   let l = Local 0
       h = Local 1
       t = Local 2
-      eh = Local 3
-      et = Local 4
    in case_
         (Atom l)
         [ (stgNil, (0, Atom (Global "KNIL")))
@@ -235,9 +233,8 @@ forceExportMetadataKVList =
           , ( 2
             , force_ (appfn_ (Global "Emit.forceKVNatPair") [h]) $
               force_ (appfn_ (Global "Emit.forceExportMetadataKVList") [t]) $
-              appcon_ stgCons [eh, et]))
+              appcon_ stgUnit []))
         ]
-
 
 
 isRenderMetadataKey :: LambdaForm
@@ -258,23 +255,13 @@ forceKVNatPair =
   ann_ "Emit.forceKVNatPair" 0 $
   let pr = Local 0
       prh = Local 1
-      prt = Local 2
-      _bool = Local 3
-      prth = Local 4
-      _prtt = Local 5
    in casedef_
         (Atom pr)
         [ ( stgCons
           , ( 2
             , caselit_
                 (appfn_ (Global "Emit.isRenderMetadataKey") [prh])
-                [ ( NativeBool True
-                  , casedef_
-                      (Atom prt)
-                      [(stgCons, (2, force_ (Atom prth) (Atom pr)))]
-                      (panic
-                         "Invalid pair tail while evaluating render metadata."))
-                ]
+                [(NativeBool True, appfn_ (Global "seqNatList") [pr])]
                 (Just (Atom pr))))
         ]
         (panic "Invalid pair (not cons) while evaluating render metadata")
