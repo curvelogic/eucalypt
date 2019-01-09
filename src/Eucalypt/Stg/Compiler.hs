@@ -23,6 +23,7 @@ import qualified Data.Vector as V
 import Eucalypt.Core.Syn as C
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals
+import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
@@ -120,9 +121,16 @@ compile _ context _metaref (C.CoreVar _ v) = Atom $ context v
 compile _ _ _ (C.CoreBuiltin _ n) = App (Ref (Global n)) mempty
 
 -- | Compile primitive to STG native.
-compile _ _ _ (C.CorePrim _ p) = case convert p of
-  Just n -> Atom (Literal n)
-  Nothing -> Atom (Global "NULL")
+compile _ _context metaref (C.CorePrim _ p) =
+  case convert p of
+    Just n -> annotated n
+    Nothing -> Atom (Global "NULL")
+  where
+    annotated n =
+      maybe
+        (Atom (Literal n))
+        (\r -> appbif_ (intrinsicIndex "WITHMETA") [r, Literal n])
+        metaref
 
 -- | Block literals
 compile envSize context _metaref (C.CoreBlock _ content) = let_ [c] b

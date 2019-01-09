@@ -9,11 +9,12 @@ Stability   : experimental
 module Eucalypt.Stg.CompilerSpec (main, spec)
 where
 
-import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Core.AnonSyn as C
+import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals
+import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -46,12 +47,23 @@ spec = do
         comp (C.str "foo") `shouldBe` Atom (Literal (NativeString "foo"))
       it "compiles strings" $
         comp (C.corebool False) `shouldBe` Atom (Literal (NativeBool False))
+    context "compiles metadata-annotated primitives" $ do
+      it "compiles metadata annotated ints" $
+        compile 0 emptyContext (Just (Global "Q")) (C.int 2 :: CoreExpr) `shouldBe`
+        appbif_
+          (intrinsicIndex "WITHMETA")
+          [Global "Q", Literal (NativeNumber 2.0)]
+      it "compiles metadata annotated symbols" $
+        compile 0 emptyContext (Just (Global "Q")) (C.sym "foo" :: CoreExpr) `shouldBe`
+        appbif_
+          (intrinsicIndex "WITHMETA")
+          [Global "Q", Literal (NativeSymbol "foo")]
     context "handles simple lists" $ do
       it "compiles an empty list" $
         comp (C.corelist []) `shouldBe` Atom (Global "KNIL")
       it "compiles an singleton list" $
         comp (C.corelist [C.int 2]) `shouldBe`
-          letrec_
+        letrec_
           [pc_ [Literal $ NativeNumber 2, Global "KNIL"] consConstructor]
           (Atom $ Local 0)
     context "handles simple blocks" $ do
@@ -65,7 +77,9 @@ spec = do
       it "compiles catenations with internal args" $
       comp (C.app (C.bif "CAT") [C.int 5, C.app (C.bif "ADD") [C.int 1]]) `shouldBe`
       let_
-        [pc0_ $ thunk_ $ ann_ "" 0 $ appfn_ (Global "ADD") [Literal (NativeNumber 1)]]
+        [ pc0_ $
+          thunk_ $ ann_ "" 0 $ appfn_ (Global "ADD") [Literal (NativeNumber 1)]
+        ]
         (appfn_ (Global "CAT") [Literal (NativeNumber 5), Local 0])
     context "handles lookup" $
       it "compiles lookup correctly" $
