@@ -26,23 +26,23 @@ spec =
     it "renders native int" $
       emitLog <$>
       test (appfn_ (Global "RENDER") [Literal $ NativeNumber 1]) `shouldReturn`
-      [OutputScalar $ NativeNumber 1]
+      [OutputScalar (RenderMetadata Nothing) $ NativeNumber 1]
     it "renders native float" $
       emitLog <$>
       test (appfn_ (Global "RENDER") [Literal $ NativeNumber 1.9]) `shouldReturn`
-      [OutputScalar $ NativeNumber 1.9]
+      [OutputScalar (RenderMetadata Nothing) $ NativeNumber 1.9]
     it "renders native string" $
       emitLog <$>
       test (appfn_ (Global "RENDER") [Literal $ NativeString "foo"]) `shouldReturn`
-      [OutputScalar $ NativeString "foo"]
+      [OutputScalar (RenderMetadata Nothing) $ NativeString "foo"]
     it "renders native symbol" $
       emitLog <$>
       test (appfn_ (Global "RENDER") [Literal $ NativeSymbol "foo"]) `shouldReturn`
-      [OutputScalar $ NativeSymbol "foo"]
+      [OutputScalar (RenderMetadata Nothing) $ NativeSymbol "foo"]
     it "renders native bool" $
       emitLog <$>
       test (appfn_ (Global "RENDER") [Literal $ NativeBool True]) `shouldReturn`
-      [OutputScalar $ NativeBool True]
+      [OutputScalar (RenderMetadata Nothing) $ NativeBool True]
     it "renders lists" $
       emitLog <$>
       test
@@ -50,9 +50,9 @@ spec =
            [pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])]
            (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`
       [ OutputSequenceStart
-      , OutputScalar $ NativeSymbol "a"
-      , OutputScalar $ NativeSymbol "b"
-      , OutputScalar $ NativeSymbol "c"
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "b"
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "c"
       , OutputSequenceEnd
       ]
     it "renders blocks" $
@@ -62,10 +62,10 @@ spec =
            [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv "b" $ nat 2]]
            (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`
       [ OutputMappingStart
-      , OutputScalar $ NativeSymbol "a"
-      , OutputScalar $ NativeNumber 1
-      , OutputScalar $ NativeSymbol "b"
-      , OutputScalar $ NativeNumber 2
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
+      , OutputScalar (RenderMetadata Nothing) $ NativeNumber 1
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "b"
+      , OutputScalar (RenderMetadata Nothing) $ NativeNumber 2
       , OutputMappingEnd
       ]
     it "ignores lambdas" $
@@ -75,10 +75,10 @@ spec =
            [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv "b" $ nat 2]]
            (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`
       [ OutputMappingStart
-      , OutputScalar $ NativeSymbol "a"
-      , OutputScalar $ NativeNumber 1
-      , OutputScalar $ NativeSymbol "b"
-      , OutputScalar $ NativeNumber 2
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
+      , OutputScalar (RenderMetadata Nothing) $ NativeNumber 1
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "b"
+      , OutputScalar (RenderMetadata Nothing) $ NativeNumber 2
       , OutputMappingEnd
       ]
     it "ignores suppressed KVs" $
@@ -88,7 +88,11 @@ spec =
            [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv_ "b" $ nat 2]]
            (appfn_ (Global "RENDER") [Local 0])) `shouldReturn`
       [ OutputMappingStart
-      , OutputScalar $ NativeSymbol "a"
-      , OutputScalar $ NativeNumber 1
+      , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
+      , OutputScalar (RenderMetadata Nothing) $ NativeNumber 1
       , OutputMappingEnd
       ]
+    -- it "can force blocks for metadata" $
+    --   (let_
+    --      [pc0_ $ value_ $ (Atom $ Literal $ nat 1)]
+    --      (block [kv "a" $  Local 0]))

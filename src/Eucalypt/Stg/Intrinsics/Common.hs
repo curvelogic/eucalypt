@@ -141,6 +141,7 @@ readPairList ms addr = do
 
 
 
+-- | Assuming the specified address is a Cons cell, return head and tail.
 readCons :: MachineState -> Address -> IO (Maybe (StgValue, StgValue))
 readCons ms addr =
   peek addr >>= \case
@@ -156,3 +157,19 @@ readCons ms addr =
         _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (_body lf)
     BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
     PartialApplication{} -> throwIn ms IntrinsicExpectedListFoundPartialApplication
+
+
+-- | Assuming the specified address is a Block, return the contents list.
+readBlock :: MachineState -> Address -> IO StgValue
+readBlock ms addr =
+  peek addr >>= \case
+    Closure {closureCode = lf, closureEnv = e} ->
+      case lf of
+        LambdaForm {_body = (App (Con t) xs)}
+          | t == stgBlock -> val e ms (V.head xs)
+        LambdaForm {_body = (App (Con _) _)} ->
+          throwIn ms $ IntrinsicExpectedBlock (_body lf)
+        _ -> throwIn ms $ IntrinsicExpectedEvaluatedBlock (_body lf)
+    BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
+    PartialApplication {} ->
+      throwIn ms IntrinsicExpectedBlockFoundPartialApplication

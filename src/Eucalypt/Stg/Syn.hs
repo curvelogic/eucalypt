@@ -157,13 +157,22 @@ type Tag = Word64
 -- not much sense boxing them again in STG.)
 data BranchTable = BranchTable
   { dataBranches :: Map.Map Tag (Word64, StgSyn)
-  , nativeBranches :: HM.HashMap Native StgSyn
+    -- ^ Map constructor tags, to expression and number of variables
+    -- to bind (which might be the arity of the constructor or arity
+    -- of constructor + 1 to receive metadata)
+  , nativeBranches :: HM.HashMap Native (Word64, StgSyn)
+    -- ^ Map native values (compared by equality), to expressions and
+    -- number of variables to bind (which might be 1 to receive only
+    -- the value or 2 to receive value and metadata
   , defaultBranch :: Maybe StgSyn
+    -- ^ Default branch only receives one binding because in each case
+    -- (constructor, native, ...), the metadata is persisted through
+    -- the environment
   } deriving (Eq, Show)
 
 instance HasRefs BranchTable where
   refs (BranchTable brs nbrs df) =
-    foldMap (refs . snd) brs <> foldMap refs nbrs <> foldMap refs df
+    foldMap (refs . snd) brs <> foldMap (refs . snd) nbrs <> foldMap refs df
 
 instance StgPretty BranchTable where
   prettify (BranchTable bs nbs df) =
@@ -180,14 +189,16 @@ instance StgPretty BranchTable where
         P.space <>
         prettify syn
       nativeBranchesDoc = HM.foldrWithKey accNBr P.empty nbs
-      accNBr n syn doc =
+      accNBr n (_, syn) doc =
         doc P.$$
         (prettify n <> P.space <> P.text "->" <> P.space <> prettify syn)
 
+
+-- | The type of callable
 data Func
-  = Ref !Ref -- closure ref
-  | Con !Tag
-  | Intrinsic !Int
+  = Ref !Ref -- ^ Ref to a closure
+  | Con !Tag -- ^ Constructor tag
+  | Intrinsic !Int -- ^ An intrinsic function
   deriving (Eq, Show)
 
 instance HasRefs Func where
@@ -300,12 +311,17 @@ casedef_ scrutinee cases df =
 
 caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
 caselit_ scrutinee cases df =
+  Case scrutinee (BranchTable mempty (HM.fromList cases') df)
+  where cases' = map (\(n, s) -> (n, (1, s))) cases
+
+caselitm_ :: StgSyn -> [(Native, (Word64, StgSyn))] -> Maybe StgSyn -> StgSyn
+caselitm_ scrutinee cases df =
   Case scrutinee (BranchTable mempty (HM.fromList cases) df)
 
 polycase_ ::
      StgSyn
   -> [(Tag, (Word64, StgSyn))]
-  -> [(Native, StgSyn)]
+  -> [(Native, (Word64, StgSyn))]
   -> Maybe StgSyn
   -> StgSyn
 polycase_ scrutinee bs nbs df =

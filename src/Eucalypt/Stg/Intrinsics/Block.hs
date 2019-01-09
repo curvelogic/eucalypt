@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Block
   ( prune
   , pruneMerge
+  , pruneBlockToMap
   ) where
 
 import Control.Monad (foldM)
@@ -36,39 +37,80 @@ returnPairList ms om = do
           return $ setCode ms (ReturnCon stgCons (toValVec [h, tv]) Nothing)
 
 
-
 -- | Takes list of pairs and prunes such that later values for the
 -- same key replace previous values, maintaining order of original
 -- occurence.
 --
--- The value of each pair in the ordered map is the pair itself
--- (allowing for simple reconstruction without allocation of the
--- pairs in the returned pair list.)
 prune :: MachineState -> ValVec -> IO MachineState
 prune ms (ValVec xs) =
   let (StgAddr a) = xs ! 0
-   in do om <- pruneSub OM.empty a
-         returnPairList ms om
-  where
-    pruneSub ::
-         OM.InsOrdHashMap String StgValue
-      -> Address
-      -> IO (OM.InsOrdHashMap String StgValue)
-    pruneSub om a = do
-      cons <- readCons ms a
-      case cons of
-        Just (h, StgAddr t) -> do
-          (k, _) <- kv h
-          let om' = OM.insertWith const k h om
-          pruneSub om' t
-        Just (_, _) -> throwIn ms IntrinsicImproperList
-        Nothing -> return om
-    kv (StgAddr a) = do
-      pair <- readCons ms a
-      case pair of
-        Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
-        _ -> throwIn ms IntrinsicBadPair
-    kv (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
+   in pruneSub ms OM.empty a >>= returnPairList ms
+
+
+
+-- | Inspect a 'StgValue' to turn it into a pair of symbol and
+-- value-tail
+kv :: MachineState -> StgValue -> IO (String, StgValue)
+kv ms (StgAddr addr) = do
+  pair <- readCons ms addr
+  case pair of
+    Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
+    _ -> throwIn ms IntrinsicBadPair
+kv ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
+
+
+
+-- | The value of each pair in the ordered map is the pair itself
+-- (allowing for simple reconstruction without allocation of the
+-- pairs in the returned pair list.)
+pruneSub ::
+     MachineState
+  -> OM.InsOrdHashMap String StgValue
+  -> Address
+  -> IO (OM.InsOrdHashMap String StgValue)
+pruneSub ms om a = do
+  cons <- readCons ms a
+  case cons of
+    Just (h, StgAddr t) -> do
+      (k, _) <- kv ms h
+      let om' = OM.insertWith const k h om
+      pruneSub ms om' t
+    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Nothing -> return om
+
+
+
+-- | Read a block from the machine into a Haskell map. The value of
+-- each pair in this ordered map is the value of the kv pair. Values
+-- are not evaluated.
+pruneBlockToMap ::
+     MachineState
+  -> OM.InsOrdHashMap String StgValue
+  -> Address
+  -> IO (OM.InsOrdHashMap String StgValue)
+pruneBlockToMap ms om a = do
+  elements <- readBlock ms a
+  case elements of
+    (StgAddr e) -> pruneToMap ms om e
+    (StgNat n _) -> throwIn ms $ IntrinsicExpectedBlockFoundNative n
+
+
+
+pruneToMap ::
+     MachineState
+  -> OM.InsOrdHashMap String StgValue
+  -> Address
+  -> IO (OM.InsOrdHashMap String StgValue)
+pruneToMap ms om a = do
+  cons <- readCons ms a
+  case cons of
+    Just (h, StgAddr t) -> do
+      (k, v) <- kv ms h
+      let om' = OM.insertWith const k v om
+      pruneToMap ms om' t
+    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Nothing -> return om
+
 
 
 -- | Similar to prune but accepts a function to use to combine values
@@ -91,24 +133,18 @@ pruneMerge ms (ValVec xs) =
       cons <- readCons ms a
       case cons of
         Just (h, StgAddr t) -> do
-          (k, StgAddr cdr) <- kv h
+          (k, StgAddr cdr) <- kv ms h
           let old = OM.lookup k om
           case old of
             Nothing -> pruneMergeSub f (OM.insert k h om) t
             Just o -> do
-              (_, StgAddr oldcdr) <- kv o
+              (_, StgAddr oldcdr) <- kv ms o
               Just (oldval, _) <- readCons ms oldcdr
               Just (newval, _) <- readCons ms cdr
               combined <- combine k f newval oldval
               pruneMergeSub f (OM.insert k combined om) t
         Just (_, _) -> throwIn ms IntrinsicImproperList
         Nothing -> return om
-    kv (StgAddr a) = do
-      pair <- readCons ms a
-      case pair of
-        Just (StgNat (NativeSymbol s) _meta, t) -> return (s, t)
-        _ -> throwIn ms IntrinsicBadPair
-    kv (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
     combine :: String -> Address -> StgValue -> StgValue -> IO StgValue
     combine k f new old =
       let env = toValVec [StgAddr f, old, new]

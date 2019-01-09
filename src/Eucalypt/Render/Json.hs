@@ -161,7 +161,7 @@ putBSFragment e@E.OutputMappingStart = do
   pushContext InObject
 
 putBSFragment e@E.OutputMappingEnd = setLast e >> popContext >> putText "}"
-putBSFragment e@(E.OutputScalar n) = putScalar e (formatScalar n)
+putBSFragment e@(E.OutputScalar _ n) = putScalar e (formatScalar n)
 putBSFragment e@E.OutputNull = putScalar e "null"
 putBSFragment _ = putText ""
 
