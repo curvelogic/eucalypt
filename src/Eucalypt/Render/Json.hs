@@ -49,8 +49,10 @@ pushContext c =
 
 popContext :: MonadState JSONFormatState m => m ()
 popContext = do
-  (_:t) <- gets context
-  modify $ \s -> s {context = t}
+  ctxt <- gets context
+  case ctxt of
+    (_:t) -> modify $ \s -> s {context = t}
+    _ -> error "Empty context during JSON render"
 
 currentContext :: MonadState JSONFormatState m => m JSONContext
 currentContext = head <$> gets context

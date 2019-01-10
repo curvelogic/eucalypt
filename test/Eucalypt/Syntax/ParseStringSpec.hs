@@ -40,7 +40,7 @@ refer v =
     , refConversion = Nothing
     }
 
-testParse :: String -> Either (ParseError Char Void) [StringChunk]
+testParse :: String -> Either (ParseErrorBundle String Void) [StringChunk]
 testParse = parse quotedStringContent "<<test>>"
 
 
