@@ -41,7 +41,7 @@ instance Reportable DataParseException where
   code (YamlParseError _ _ locator line col) = Just (p, p)
     where
       p =
-        SourcePosition $
+        SourcePosition
         M.SourcePos
           { M.sourceName = locator
           , M.sourceLine = M.mkPos line

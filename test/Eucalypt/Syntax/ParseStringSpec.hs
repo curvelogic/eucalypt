@@ -15,30 +15,30 @@ main = hspec spec
 
 anaphor :: StringChunk
 anaphor =
-  Interpolation $
-  InterpolationRequest
-    { refTarget = Anaphor Nothing
-    , refParseOrFormat = Nothing
-    , refConversion = Nothing
-    }
+  Interpolation
+    InterpolationRequest
+      { refTarget = Anaphor Nothing
+      , refParseOrFormat = Nothing
+      , refConversion = Nothing
+      }
 
 anaphor1 :: StringChunk
 anaphor1 =
-  Interpolation $
-  InterpolationRequest
-    { refTarget = Anaphor (Just 1)
-    , refParseOrFormat = Nothing
-    , refConversion = Nothing
-    }
+  Interpolation
+    InterpolationRequest
+      { refTarget = Anaphor (Just 1)
+      , refParseOrFormat = Nothing
+      , refConversion = Nothing
+      }
 
 refer :: String -> StringChunk
 refer v =
-  Interpolation $
-  InterpolationRequest
-    { refTarget = Reference v
-    , refParseOrFormat = Nothing
-    , refConversion = Nothing
-    }
+  Interpolation
+    InterpolationRequest
+      { refTarget = Reference v
+      , refParseOrFormat = Nothing
+      , refConversion = Nothing
+      }
 
 testParse :: String -> Either (ParseErrorBundle String Void) [StringChunk]
 testParse = parse quotedStringContent "<<test>>"

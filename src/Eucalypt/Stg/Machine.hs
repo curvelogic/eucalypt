@@ -241,22 +241,23 @@ prepareStep stepName ms =
   return (tick $ ms {machineEvents = mempty, machineLastStepName = stepName})
 
 allocGlobal :: MonadIO m => String -> LambdaForm -> m StgValue
-allocGlobal _name impl = liftIO $
+allocGlobal _name impl =
+  liftIO $
   StgAddr <$>
   allocate
-    (Closure
-       { closureCode = impl
-       , closureEnv = mempty
-       , closureCallStack = mempty
-       , closureMeta = MetadataPassThrough
-       })
+    Closure
+      { closureCode = impl
+      , closureEnv = mempty
+      , closureCallStack = mempty
+      , closureMeta = MetadataPassThrough
+      }
 
 -- | Initialise machine state.
 initMachineState ::
      MonadIO m => StgSyn -> HashMap String LambdaForm -> m MachineState
 initMachineState stg ge = do
   genv <- liftIO $ HM.traverseWithKey allocGlobal ge
-  return $
+  return
     MachineState
       { machineCode = Eval stg mempty
       , machineGlobals = genv
