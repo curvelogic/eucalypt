@@ -63,11 +63,11 @@ renderValue (NativeBool b) rm =
     (style rm L.PlainNoTag)
     Nothing]
 renderValue (NativeSet s) _ =
-  [L.EventSequenceStart Nothing] ++
+  [L.EventSequenceStart L.NoTag L.AnySequence Nothing] ++
   concatMap (`renderValue` RenderMetadata {metaTag = Nothing}) (toList s) ++
   [L.EventSequenceEnd]
 renderValue (NativeDict d) _ =
-  [L.EventMappingStart Nothing] ++
+  [L.EventMappingStart L.NoTag L.AnyMapping Nothing] ++
   concatMap kv (MS.assocs d) ++ [L.EventMappingEnd]
   where
     kv (k, v) =
@@ -83,9 +83,9 @@ toYamlEvents e =
     E.OutputDocumentEnd -> [L.EventDocumentEnd]
     E.OutputScalar rm n -> renderValue n rm
     E.OutputNull -> [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
-    E.OutputSequenceStart -> [L.EventSequenceStart Nothing]
+    E.OutputSequenceStart -> [L.EventSequenceStart L.NoTag L.AnySequence Nothing]
     E.OutputSequenceEnd -> [L.EventSequenceEnd]
-    E.OutputMappingStart -> [L.EventMappingStart Nothing]
+    E.OutputMappingStart -> [L.EventMappingStart L.NoTag L.AnyMapping Nothing]
     E.OutputMappingEnd -> [L.EventMappingEnd]
     _ -> []
 

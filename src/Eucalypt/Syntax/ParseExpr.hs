@@ -26,13 +26,15 @@ import qualified Text.Megaparsec.Char.Lexer as L
 
 -- | Takes a parser and records source locations to parse a located
 -- version
+--
+--  TODO: replace source pos with simple offset
 located :: Parser a -> Parser (Located a)
-located p = (\s x e -> at (mpos s, mpos e) x) <$> getPosition <*> p <*> getPosition
+located p = (\s x e -> at (mpos s, mpos e) x) <$> getSourcePos <*> p <*> getSourcePos
 
 -- | Takes a parser which already records location and updates the
 -- location
 relocated :: Parser (Located a) -> Parser (Located a)
-relocated p =  (\s x e -> move (mpos s, mpos e) x) <$> getPosition <*> p <*> getPosition
+relocated p =  (\s x e -> move (mpos s, mpos e) x) <$> getSourcePos <*> p <*> getSourcePos
 
 
 
@@ -59,7 +61,7 @@ operatorIdentifier =
 --
 quotedIdentifier :: Parser String
 quotedIdentifier =
-  (char '\'' >> manyTill anyChar (char '\'')) <?> "single quoted identifier"
+  (char '\'' >> manyTill anySingle (single '\'')) <?> "single quoted identifier"
 
 
 

@@ -169,11 +169,11 @@ sinkExpr t = start
       case anchor of
         Nothing -> return scalar
         Just alias -> tell' anchor scalar >> return (coreAlias alias)
-    go (EventSequenceStart anchor) = do
+    go (EventSequenceStart _tag _style anchor) = do
       vals <- goS id
       val <- handleList t vals
       tell' anchor val
-    go (EventMappingStart anchor) = do
+    go (EventMappingStart _tag _style anchor) = do
       pairs <- goM id
       val <- handleMapping t pairs
       tell' anchor val

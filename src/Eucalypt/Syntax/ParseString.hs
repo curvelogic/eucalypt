@@ -31,7 +31,7 @@ format = some (satisfy $ \ c -> c /= '}' && c /= ':')
 
 -- | Parse the conversion string
 conversion :: Parser String
-conversion = some (notChar '}')
+conversion = some (anySingleBut '}')
 
 
 -- | Parse an interpolation request
@@ -48,7 +48,7 @@ escapedBracesText :: Parser String
 escapedBracesText = do
   opens <- some $ char '{'
   let n = length opens
-  text <- manyTill anyChar (count n (char '}'))
+  text <- manyTill anySingle (count n (char '}'))
   return $ replicate (n - 1) '{' ++ text ++ replicate (n - 1) '}'
 
 
@@ -58,8 +58,8 @@ literalContent = some (satisfy $ \c -> c /= '{' && c /= '"')
 
 
 -- | Parse a chunk of the string literal content
-chunk :: Parser StringChunk
-chunk =
+stringChunk :: Parser StringChunk
+stringChunk =
   (LiteralContent <$> literalContent) <|>
   try (lookAhead (string "{{") >> LiteralContent <$> escapedBracesText) <|>
   try (lookAhead (char '{') >> Interpolation <$> interpolationRequest)
@@ -67,7 +67,7 @@ chunk =
 
 -- | Parse content of a string literal (with interpolation syntax)
 quotedStringContent :: Parser [StringChunk]
-quotedStringContent = many chunk
+quotedStringContent = many stringChunk
 
 -- | Parse the string content into either error or chunk list
 parseEucalyptString :: String -> Either SyntaxError [StringChunk]

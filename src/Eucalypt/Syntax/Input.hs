@@ -17,7 +17,6 @@ import Eucalypt.Syntax.ParseCommon (normalIdentifier)
 import Network.URI
 import System.FilePath
 import Text.Megaparsec
-import Text.Megaparsec.Char
 
 
 
@@ -129,9 +128,9 @@ parseInput :: Parser Input
 parseInput = do
 
   -- Pull the various components apart
-  name <- optional $ try (normalIdentifier <* char '=')
-  format <- optional $ try (normalIdentifier <* char '@')
-  locatorStr <- many anyChar
+  name <- optional $ try (normalIdentifier <* single '=')
+  format <- optional $ try (normalIdentifier <* single '@')
+  locatorStr <- many anySingle
 
   -- Try and interpret the URL portion of the input
   let locator = normaliseLocator <$> locatorFromString locatorStr >>= validateLocator

@@ -17,7 +17,7 @@ import Text.Megaparsec
 delocated :: HasLocation a => Parser a -> Parser a
 delocated = fmap stripLocation
 
-testParse :: HasLocation a => Parser a -> String -> Either (ParseError Char Void) a
+testParse :: HasLocation a => Parser a -> String -> Either (ParseErrorBundle String Void) a
 testParse p = parse (delocated p <* eof) ""
 
 main :: IO ()
