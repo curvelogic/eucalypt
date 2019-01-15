@@ -555,6 +555,9 @@ prepend: flip(append)
 ` "`concat(ls)` - concatenate all lists in `ls` together."
 concat(ls): foldr(append, [], ls)
 
+` "`mapcat(f, l)` - map items in l with `f` and concatenate the resulting lists."
+mapcat(f): concat ∘ map(f)
+
 ` "`zip-apply(fs, vs)` - apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted."
 zip-apply(fs, vs): zip-with(cat, vs, fs)
 
@@ -615,6 +618,9 @@ map-second(f, prs): map(bimap(identity, f), prs)
 
 ` "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`, returning list."
 map-kv(f, b): b elements map(uncurry(f))
+
+` "`map-as-block(f, syms)` - map each symbol in `syms` and create block mapping `syms` to mapped values."
+map-as-block(f, syms): syms map({k: •}.[k, f(k)]) block
 
 ` "`pair(k, v)` - form a block element from key (symbol) `k` and value `v`."
 pair(k, v): [k, v]
