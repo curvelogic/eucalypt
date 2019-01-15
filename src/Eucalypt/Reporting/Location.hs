@@ -93,6 +93,7 @@ move sp expr = expr {location = sp}
 
 -- | Merge to spans into a larger one (assumes source file is the
 -- same)
+{-# ANN merge ("HLint: ignore" :: String) #-}
 merge :: SourceSpan -> SourceSpan -> SourceSpan
 merge a b = (min (fst a) (fst b), max (snd a) (snd b))
 

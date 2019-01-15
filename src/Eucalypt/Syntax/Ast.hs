@@ -269,14 +269,12 @@ block = at nowhere . EBlock . at nowhere . Block
 -- | Create an annotated unit
 bareUnit :: [BlockElement] -> Unit
 bareUnit els =
-  at nowhere $
-  Annotated {annotation = Nothing, content = at nowhere $ Block els}
+  at nowhere Annotated {annotation = Nothing, content = at nowhere $ Block els}
 
 -- | Create an annotated unit
 annUnit :: Expression -> [BlockElement] -> Unit
 annUnit a els =
-  at nowhere $
-  Annotated {annotation = Just a, content = at nowhere $ Block els}
+  at nowhere Annotated {annotation = Just a, content = at nowhere $ Block els}
 
 -- | Create an op soup expression with implicit bracketset
 opsoup :: [Expression] -> Expression

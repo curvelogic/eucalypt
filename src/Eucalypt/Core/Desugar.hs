@@ -333,7 +333,7 @@ translateUnit Located { location = l
       e >>= mint2 CoreMeta l m
     Nothing -> e
   where
-    e = translate (Located {location = l, locatee = EBlock b})
+    e = translate Located {location = l, locatee = EBlock b}
 
 
 
