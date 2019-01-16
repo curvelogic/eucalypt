@@ -20,7 +20,8 @@ import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
 import Data.IORef
 import Data.Semigroup
-import Data.Vector (Vector, (!?))
+import Data.Vector (Vector)
+import qualified Data.Sequence as Seq
 import qualified Data.Vector as Vector
 import Data.Word
 import Eucalypt.Core.SourceMap
@@ -120,20 +121,20 @@ instance StgPretty HeapObject where
     prettify lf
   prettify BlackHole = P.text "•"
 
--- | Vector of values, used for both local environment and arrays of
+-- | Sequence of values, used for both local environment and arrays of
 -- resolved arguments.
 newtype ValVec =
-  ValVec (Vector StgValue)
+  ValVec (Seq.Seq StgValue)
   deriving (Eq, Show)
 
 toValVec :: [StgValue] -> ValVec
-toValVec = ValVec . Vector.fromList
+toValVec = ValVec . Seq.fromList
 
 envSize :: ValVec -> Word64
-envSize (ValVec v) = fromIntegral $ Vector.length v
+envSize (ValVec v) = fromIntegral $ Seq.length v
 
 singleton :: StgValue -> ValVec
-singleton = ValVec . Vector.singleton
+singleton = ValVec . Seq.singleton
 
 extendEnv :: ValVec -> ValVec -> (ValVec, RefVec)
 extendEnv env args = (env', rs)
@@ -144,7 +145,7 @@ extendEnv env args = (env', rs)
     rs = locals envlen (arglen + envlen)
 
 instance Semigroup ValVec where
-  (<>) (ValVec l) (ValVec r) = ValVec $ l Vector.++ r
+  (<>) (ValVec l) (ValVec r) = ValVec $ l Seq.>< r
 
 instance Monoid ValVec where
   mempty = ValVec mempty
@@ -334,7 +335,7 @@ globalAddress ms@MachineState {machineGlobals = g} nm =
 -- environments.
 val :: MonadThrow m => ValVec -> MachineState -> Ref -> m StgValue
 val (ValVec le) ms (Local l) =
-  case le !? fromIntegral l of
+  case le Seq.!? fromIntegral l of
     Just v -> return v
     _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
 val _ ms (Global nm) = globalAddress ms nm
@@ -343,7 +344,7 @@ val _ _ (Literal n) = return $ StgNat n Nothing
 -- | Resolve a vector of refs against an environment to create
 -- environment
 vals :: MonadThrow m => ValVec -> MachineState -> Vector Ref -> m ValVec
-vals le ms rs = ValVec <$> traverse (val le ms) rs
+vals le ms rs = ValVec . Seq.fromList . toList <$> traverse (val le ms) rs
 
 -- | Resolve a ref against env and machine to get address of
 -- HeapObject

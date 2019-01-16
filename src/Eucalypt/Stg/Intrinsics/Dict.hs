@@ -17,7 +17,9 @@ import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import qualified Data.Map.Strict as MS
-import Data.Vector ((!))
+import Data.Sequence ((!?))
+
+{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -33,16 +35,19 @@ getDictAndKey
   :: MachineState -> ValVec -> IO (MS.Map Native Native, Native)
 getDictAndKey ms args = do
   ns <- getNatives ms args
-  let (NativeDict d) = ns ! 0
-  return (d, ns ! 1)
+  let (Just (NativeDict d)) = ns !? 0
+  let (Just k) = ns !? 1
+  return (d, k)
 
 getDictKeyAndValue
   :: MachineState
      -> ValVec -> IO (MS.Map Native Native, Native, Native)
 getDictKeyAndValue ms args= do
   ns <- getNatives ms args
-  let (NativeDict d) = ns ! 0
-  return (d, ns ! 1, ns ! 2)
+  let (Just (NativeDict d)) = ns !? 0
+  let (Just k) = ns !? 1
+  let (Just v) = ns !? 2
+  return (d, k, v)
 
 -- | __EMPTYDICT
 emptyDict :: MachineState -> ValVec -> IO MachineState
@@ -77,5 +82,5 @@ dictDel ms args = do
 -- | __DICTENTRIES(d)
 dictEntries :: MachineState -> ValVec -> IO MachineState
 dictEntries ms (ValVec args) = do
-  let (StgNat (NativeDict d) _) = args ! 0
+  let (Just (StgNat (NativeDict d) _)) = args !? 0
   returnNatPairList ms (MS.assocs d)

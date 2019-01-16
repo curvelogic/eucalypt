@@ -18,6 +18,7 @@ import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
+import qualified Data.Sequence as Seq
 import qualified Data.Vector as Vector
 import Data.Word
 import Eucalypt.Stg.Error
@@ -149,8 +150,9 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
 -- | LET
 step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = {-# SCC "EvalLet" #-}do
   ms <- prepareStep "EVAL LET" ms0
-  addrs <- liftIO $ traverse (allocClosure env ms) pcs
-  let env' = env <> (ValVec . Vector.map StgAddr) addrs
+  addrs <- liftIO $ traverse (allocClosure env ms) pcs --TODO
+           --allocClosure should create vector
+  let env' = env <> (ValVec . Seq.fromList . map StgAddr . toList) addrs
   return $ setCode ms (Eval body env')
 
 

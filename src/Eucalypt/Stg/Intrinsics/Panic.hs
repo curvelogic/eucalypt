@@ -12,9 +12,9 @@ module Eucalypt.Stg.Intrinsics.Panic where
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
-import Data.Vector ((!))
+import Data.Sequence ((!?))
 
 panic :: MachineState -> ValVec -> IO MachineState
 panic ms (ValVec xs) = do
-  let (StgNat (NativeString s) _) = xs ! 0
+  let (Just (StgNat (NativeString s) _)) = xs !? 0
   throwIn ms $ Panic s

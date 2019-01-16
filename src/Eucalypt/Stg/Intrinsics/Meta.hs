@@ -12,7 +12,7 @@ module Eucalypt.Stg.Intrinsics.Meta
   , withMeta
   ) where
 
-import Data.Vector ((!))
+import Data.Sequence ((!?))
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn
@@ -20,9 +20,10 @@ import Eucalypt.Stg.Syn
 -- | Extract meta from (assumed NF) value
 meta :: MachineState -> ValVec -> IO MachineState
 meta ms (ValVec xs) = do
-  metaval <- case xs ! 0 of
-    (StgNat _ m) -> return m
-    (StgAddr addr) -> objectMeta <$> peek addr
+  metaval <- case xs !? 0 of
+    (Just (StgNat _ m)) -> return m
+    (Just (StgAddr addr)) -> objectMeta <$> peek addr
+    Nothing -> throwIn ms MissingArgument
   case metaval of
     (Just v) -> return $ setCode ms (Eval (Atom $ Local 0) (singleton v))
     Nothing -> return $ setCode ms (Eval (Atom $ Global "KEMPTYBLOCK") mempty)
@@ -30,15 +31,16 @@ meta ms (ValVec xs) = do
 -- | Override the metadata of a value
 withMeta :: MachineState -> ValVec -> IO MachineState
 withMeta ms (ValVec xs) = do
-  let m = xs ! 0
-  let v = xs ! 1
+  let m = xs !? 0
+  let v = xs !? 1
   case v of
-    (StgNat n _) -> return $ setCode ms (ReturnLit n (Just m))
-    (StgAddr a) -> do
+    (Just (StgNat n _)) -> return $ setCode ms (ReturnLit n m)
+    (Just (StgAddr a)) -> do
       obj <- peek a
       newAddr <-
         case obj of
-          c@Closure {} -> allocate c {closureMeta = asMeta (Just m)}
-          p@PartialApplication {} -> allocate p {papMeta = asMeta (Just m)}
+          c@Closure {} -> allocate c {closureMeta = asMeta m}
+          p@PartialApplication {} -> allocate p {papMeta = asMeta m}
           _ -> throwIn ms AddMetaToBlackHole
       return $ setCode ms (Eval (Atom $ Local 0) (singleton (StgAddr newAddr)))
+    Nothing -> throwIn ms MissingArgument

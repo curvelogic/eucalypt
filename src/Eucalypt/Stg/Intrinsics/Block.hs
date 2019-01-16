@@ -14,7 +14,7 @@ module Eucalypt.Stg.Intrinsics.Block
   ) where
 
 import Control.Monad (foldM)
-import Data.Vector ((!))
+import Data.Sequence ((!?))
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -43,7 +43,7 @@ returnPairList ms om = do
 --
 prune :: MachineState -> ValVec -> IO MachineState
 prune ms (ValVec xs) =
-  let (StgAddr a) = xs ! 0
+  let (Just (StgAddr a)) = xs !? 0
    in pruneSub ms OM.empty a >>= returnPairList ms
 
 
@@ -119,8 +119,8 @@ pruneToMap ms om a = do
 -- The combination thunk is allocated but not evaluated.
 pruneMerge :: MachineState -> ValVec -> IO MachineState
 pruneMerge ms (ValVec xs) =
-  let (StgAddr a) = xs ! 0
-      (StgAddr f) = xs ! 1
+  let (Just (StgAddr a)) = xs !? 0
+      (Just (StgAddr f)) = xs !? 1
    in do om <- pruneMergeSub f OM.empty a
          returnPairList ms om
   where
