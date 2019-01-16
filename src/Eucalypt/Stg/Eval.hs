@@ -42,22 +42,6 @@ allocPartial le ms lf xs = allocate pap
         }
     a = fromIntegral (_bound lf) - envSize xs
 
--- | Push a continuation onto the stack
-push :: MachineState -> Continuation -> MachineState
-push ms@MachineState {machineStack = st} k =
-  let stackElement = StackElement k (machineCallStack ms)
-   in ms {machineStack = Vector.snoc st stackElement}
-
--- | Pop a continuation off the stack
-pop :: MonadThrow m => MachineState -> m (Maybe Continuation, MachineState)
-pop ms@MachineState {machineStack = st} =
-  if Vector.null st
-    then return (Nothing, ms)
-    else let StackElement k cs = Vector.last st
-          in return
-               ( Just k
-               , ms {machineStack = Vector.init st, machineCallStack = cs})
-
 -- | Push an ApplyToArgs continuation on the stack
 pushApplyToArgs :: MonadThrow m => MachineState -> ValVec -> m MachineState
 pushApplyToArgs ms xs = return $ push ms (ApplyToArgs xs)

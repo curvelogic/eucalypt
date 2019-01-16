@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts, LambdaCase #-}
 
 {-|
@@ -202,6 +203,26 @@ instance StgPretty Code where
     P.text "RETURNLIT" <+> prettify n <+> maybe P.empty prettify meta
   prettify (ReturnFun _) = P.text "RETURNFUN" <+> P.text "."
 
+-- | MachineStack
+newtype MachineStack = MachineStack [StackElement]
+  deriving (Show, Eq, Semigroup, Monoid)
+
+-- | Push a continuation onto the stack
+push :: MachineState -> Continuation -> MachineState
+push ms@MachineState {machineStack = MachineStack st} k =
+  let stackElement = StackElement k (machineCallStack ms)
+   in ms {machineStack = MachineStack (stackElement : st)}
+
+-- | Pop a continuation off the stack
+pop :: MonadThrow m => MachineState -> m (Maybe Continuation, MachineState)
+pop ms@MachineState {machineStack = MachineStack []} = return (Nothing, ms)
+pop ms@MachineState {machineStack = MachineStack st} =
+  let StackElement k cs = head st
+   in return
+        ( Just k
+        , ms {machineStack = MachineStack (tail st), machineCallStack = cs})
+
+
 -- | Machine state.
 --
 data MachineState = MachineState
@@ -209,7 +230,7 @@ data MachineState = MachineState
     -- ^ Next instruction to execute
   , machineGlobals :: !(HashMap String StgValue)
     -- ^ Global (heap allocated) objects
-  , machineStack :: !(Vector StackElement)
+  , machineStack :: !MachineStack
     -- ^ stack of continuations
   , machineCounter :: !Int
     -- ^ count of steps executed so far
@@ -277,7 +298,7 @@ initMachineState stg ge = do
 instance StgPretty MachineState where
   prettify MachineState { machineCode = code
                         , machineGlobals = _globals
-                        , machineStack = stack
+                        , machineStack = MachineStack stack
                         , machineCounter = counter
                         , machineDebugEmitLog = events
                         , machineLastStepName = step
@@ -286,7 +307,7 @@ instance StgPretty MachineState where
     P.vcat
       [ (P.int counter <> P.colon) <+>
         (P.text step <> P.text "-->") <+>
-        P.parens (P.hcat (P.punctuate P.colon (map prettify (toList stack)))) <+>
+        P.parens (P.hcat (P.punctuate P.colon (map prettify (reverse stack)))) <+>
         prettify cs
       , P.nest 4 $ P.space $+$ prettify code $+$ P.space
       , if null events
