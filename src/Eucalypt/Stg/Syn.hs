@@ -120,7 +120,7 @@ type RefVec = Seq.Seq Ref
 -- 'to'.
 locals :: Word64 -> Word64 -> RefVec
 locals from to =
-  (Local . fromIntegral) <$> Seq.iterateN (fromIntegral (to - from)) (+ 1) from
+  Local . fromIntegral <$> Seq.iterateN (fromIntegral (to - from)) (+ 1) from
 
 localsList :: Int -> Int -> [Ref]
 localsList from to = [Local $ fromIntegral i | i <- [from .. to - 1]]
