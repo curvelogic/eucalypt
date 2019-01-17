@@ -19,7 +19,7 @@ import Data.Bifunctor (first, second)
 import Data.Foldable (toList)
 import Data.List (nub, elemIndex, sortOn)
 import Data.Scientific
-import qualified Data.Vector as V
+import qualified Data.Sequence as Seq
 import Eucalypt.Core.Syn as C
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals
@@ -308,7 +308,7 @@ wrappers = span isScrutinee . sortOn index . filter notEnvRef
 compileCall :: Int -> [ArgCase a] -> StgSyn
 compileCall envSize components =
   App (Ref $ toRef envSize $ head components) $
-  V.fromList (map (toRef envSize) $ tail components)
+  Seq.fromList (map (toRef envSize) $ tail components)
 
 
 -- | Compile the wrappers

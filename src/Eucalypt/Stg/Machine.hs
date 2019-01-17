@@ -343,8 +343,8 @@ val _ _ (Literal n) = return $ StgNat n Nothing
 
 -- | Resolve a vector of refs against an environment to create
 -- environment
-vals :: MonadThrow m => ValVec -> MachineState -> Vector Ref -> m ValVec
-vals le ms rs = ValVec . Seq.fromList . toList <$> traverse (val le ms) rs
+vals :: MonadThrow m => ValVec -> MachineState -> Seq.Seq Ref -> m ValVec
+vals le ms rs = ValVec <$> traverse (val le ms) rs
 
 -- | Resolve a ref against env and machine to get address of
 -- HeapObject

@@ -19,7 +19,6 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Sequence as Seq
-import qualified Data.Vector as Vector
 import Data.Word
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Intrinsics
@@ -102,7 +101,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
               (vals env ms xs >>= call le ms lf)
             -- CALLK
             GT ->
-              let (enough, over) = Vector.splitAt (fromIntegral ar) xs
+              let (enough, over) = Seq.splitAt (fromIntegral ar) xs
                in vals env ms over >>= pushApplyToArgs ms >>= \s ->
                     setCallStack cs . setRule "CALLK" . setCode s <$>
                     (vals env ms enough >>= call le ms lf)
@@ -121,7 +120,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
                 setCallStack cs . setRule "PCALL EXACT" . setCode ms <$>
                 call le ms code (args <> as)
             GT ->
-              let (enough, over) = Vector.splitAt (fromIntegral ar) xs
+              let (enough, over) = Seq.splitAt (fromIntegral ar) xs
                in vals env ms over >>= pushApplyToArgs ms >>= \s ->
                     vals env ms enough >>= \as ->
                       setCallStack cs . setRule "PCALLK" . setCode s <$>
@@ -263,7 +262,7 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = {-# SCC "ReturnFun" #-} do
        in return $
           setCode
             ms'
-            (Eval (App (Ref $ Vector.head args') (Vector.tail args')) env')
+            (Eval (App (Ref $ args' `Seq.index` 0) (Seq.drop 1 args')) env')
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))

@@ -12,7 +12,6 @@ module Eucalypt.Stg.Intrinsics.Common where
 
 import Control.Monad (foldM)
 import qualified Data.Sequence as Seq
-import qualified Data.Vector as V
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -82,8 +81,8 @@ readNatList ms addr = do
       case lf of
         LambdaForm {_body = (App (Con t) xs)}
           | t == stgCons -> do
-            (StgNat h _) <- val e ms (V.head xs)
-            (StgAddr a) <- val e ms (xs V.! 1)
+            (StgNat h _) <- val e ms (xs `Seq.index` 0)
+            (StgAddr a) <- val e ms (xs `Seq.index` 1)
             (h :) <$> readNatList ms a
         LambdaForm {_body = (App (Con t) _)}
           | t == stgNil -> return []
@@ -150,8 +149,8 @@ readCons ms addr =
       case lf of
         LambdaForm {_body = (App (Con t) xs)}
           | t == stgCons -> do
-            h' <- val e ms (V.head xs)
-            t' <- val e ms (xs V.! 1)
+            h' <- val e ms (xs `Seq.index` 0)
+            t' <- val e ms (xs `Seq.index` 1)
             return $ Just (h', t')
         LambdaForm {_body = (App (Con t) _)}
           | t == stgNil -> return Nothing
@@ -167,7 +166,7 @@ readBlock ms addr =
     Closure {closureCode = lf, closureEnv = e} ->
       case lf of
         LambdaForm {_body = (App (Con t) xs)}
-          | t == stgBlock -> val e ms (V.head xs)
+          | t == stgBlock -> val e ms (xs `Seq.index` 0)
         LambdaForm {_body = (App (Con _) _)} ->
           throwIn ms $ IntrinsicExpectedBlock (_body lf)
         _ -> throwIn ms $ IntrinsicExpectedEvaluatedBlock (_body lf)

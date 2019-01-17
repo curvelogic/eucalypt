@@ -9,7 +9,7 @@ Stability   : experimental
 module Eucalypt.Stg.EvalSpec (main, spec)
 where
 
-import qualified Data.Vector as Vector
+import qualified Data.Sequence as Seq
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Intrinsics
@@ -33,7 +33,7 @@ headOfList =
     [ pc0_ $ thunk_ $ appfn_ (Global "HEAD") []
     , pc0_ $ thunk_ (litList_ 0 [nat 1, nat 2])
     ]
-    (App (Ref (Local 0)) $ Vector.singleton (Local 1))
+    (App (Ref (Local 0)) $ Seq.singleton (Local 1))
 
 -- A test which adds 1 and 2...
 addTest :: StgSyn
