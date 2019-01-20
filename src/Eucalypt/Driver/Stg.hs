@@ -15,6 +15,7 @@ module Eucalypt.Driver.Stg
 
 
 import Conduit hiding (throwM)
+import Control.DeepSeq
 import Control.Exception.Safe (handle, IOException, throwM, MonadCatch)
 import Control.Monad (unless)
 import qualified Data.ByteString as BS
@@ -82,6 +83,7 @@ renderConduit opts expr = handle handler $ do
     handler e = throwM $ Execution e
 
 
+
 -- | Step through the machine yielding events via the conduit pipeline
 -- at each stage
 machineSource ::
@@ -100,7 +102,8 @@ machineSource ms = do
         step s `catchC`
         (\(e :: IOException) ->
            throwM $ StgException (IOSystem e) (machineCallStack s))
-      yieldMany $ reverse $ machineEvents s'
+      let events = reverse $ machineEvents s'
+       in events `deepseq` yieldMany events
       unless (machineTerminated s') $ loop s'
 
 

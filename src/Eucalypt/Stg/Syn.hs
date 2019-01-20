@@ -16,6 +16,7 @@ though now not much similarity remains.
 -}
 module Eucalypt.Stg.Syn where
 
+import Control.DeepSeq
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable
@@ -46,6 +47,8 @@ data Native
   | NativeSet !(S.Set Native)
   | NativeDict !(MS.Map Native Native)
   deriving (Eq, Show, Generic, Ord)
+
+instance NFData Native
 
 -- | NativeBranchTable matches natives by hash map
 instance Hashable Native where
