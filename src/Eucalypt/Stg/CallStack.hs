@@ -13,7 +13,6 @@ Stability   : experimental
 module Eucalypt.Stg.CallStack where
 
 import Data.Bifunctor (second)
-import Data.Foldable (toList)
 import Eucalypt.Stg.Syn
 import Eucalypt.Core.SourceMap
   ( HasSourceMapIds(..)
@@ -37,7 +36,8 @@ instance StgPretty CallStack where
     if null cs
       then P.empty
       else P.brackets
-             (P.hcat (P.punctuate (P.char '>') (map (P.text . fst) (toList cs))))
+             (P.hcat (P.punctuate (P.char '>') (map (P.text . fst) (reverse cs))))
+
 
 instance HasSourceMapIds CallStack where
   toSourceMapIds (CallStack v) = map snd v
