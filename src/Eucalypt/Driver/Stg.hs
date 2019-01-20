@@ -100,7 +100,7 @@ machineSource ms = do
         step s `catchC`
         (\(e :: IOException) ->
            throwM $ StgException (IOSystem e) (machineCallStack s))
-      yieldMany $ machineEvents s'
+      yieldMany $ reverse $ machineEvents s'
       unless (machineTerminated s') $ loop s'
 
 

@@ -20,9 +20,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
 import Data.IORef
 import Data.Semigroup
-import Data.Vector (Vector)
 import qualified Data.Sequence as Seq
-import qualified Data.Vector as Vector
 import Data.Word
 import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.CallStack
@@ -31,7 +29,8 @@ import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 import qualified Text.PrettyPrint as P
-import Text.PrettyPrint ((<+>), ($+$))
+import Text.PrettyPrint (($+$), (<+>))
+
 
 -- | A mutable refence to a heap object
 newtype Address =
@@ -239,7 +238,7 @@ data MachineState = MachineState
     -- ^ whether the machine has terminated
   , machineTrace :: MachineState -> IO ()
     -- ^ debug action to run prior to each step
-  , machineEvents :: !(Vector Event)
+  , machineEvents :: ![Event]
     -- ^ events fired by last step
   , machineEmit :: MachineState -> Event -> IO MachineState
     -- ^ emit function to send out events
@@ -387,7 +386,7 @@ appendCallStack ann ms@MachineState {machineCallStack = cs} =
 -- | Append event for this step
 appendEvent :: Event -> MachineState -> MachineState
 appendEvent e ms@MachineState {machineEvents = es0} =
-  ms {machineEvents = es0 `Vector.snoc` e}
+  ms {machineEvents = e : es0}
 
 -- | Build a closure from a STG PreClosure
 buildClosure ::
