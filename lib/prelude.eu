@@ -60,6 +60,9 @@ if: __IF
 ` "`then(t, f, c)` - for pipeline if: - `x? then(t, f)``"
 then(t, f, c): if(c, t, f)
 
+` "`when(p?, f, x)` - when `x` satisfies `p?` apply `f` else pass through unchanged."
+when(p?, f, x): if(x p?, x f, x)
+
 ##
 ## List basics
 ##
@@ -70,11 +73,17 @@ cons: __CONS
 ` "`head(xs)` - return the head item of list `xs`, panic if empty."
 head: __HEAD
 
-` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
-head-or(xs, d): xs nil? then(xs head, d)
+` "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
+nil?: = []
 
-` "`tail(l)` - return list `l` without the head item. [] causes error."
+` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
+head-or(d, xs): xs nil? then(xs head, d)
+
+` "`tail(xs)` - return list `xs` without the head item. [] causes error."
 tail: __TAIL
+
+` "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
+tail-or(d, xs): xs nil? then(d, xs tail)
 
 ` "`nil` - identical to `[]`, the empty list."
 nil: []
@@ -84,6 +93,9 @@ first: head
 
 ` "`second(xs)` - return second item of list - error if there is none."
 second(xs): xs tail head
+
+` "`second-or(xs, d)` - return second item of list - default `d` if there is none."
+second-or(d, xs): xs tail-or([d]) head-or(d)
 
 ##
 ## Blocks / merge
@@ -255,6 +267,12 @@ inc: _ + 1
 ` "`dec(x)` - decrement number `x` by 1."
 dec: _ - 1
 
+` "`negate(n)` - negate number `n`"
+negate: 0 -
+
+` "`∸ n` - unary minus; negate."
+(∸ n): negate(n)
+
 ` "`zero?(n)` - return true if and only if number `n` is 0."
 zero?: = 0
 
@@ -292,8 +310,9 @@ min-of(l): cond( [[l nil?,      panic("min of empty list")]
 ##
 ## Text and regexes
 ##
-` "We don't support the usual string escapes so these make it
+` { doc:"We don't support the usual string escapes so these make it
 a little more convenient to use interpolation instead.."
+    export: :suppress }
 ch: {
   n: "
 "
@@ -326,6 +345,12 @@ str: {
   ` "match-with(re, s) - match string `s` using regex `re`, return list of full match then capture groups."
   match-with: match flip
 
+  ` "extract(re, s) - use regex `re` (with single capture) to extract substring of s - or error."
+  extract(re): second ∘ match-with(re) 
+
+  ` "extract-or(re, d, s) - use regex `re` (with single capture) to extract substring of `s` - or default `d`."
+  extract-or(re, d, s): s match-with(re) second-or(d)
+
   ` "matches(s, re) - return list of all matches in string `s` of regex `re`."
   matches: __MATCHES
 
@@ -343,6 +368,9 @@ str: {
 
   ` "letters(s) - return individual letters of `s` as list of strings."
   letters: __LETTERS
+
+  ` "`len(s)` - return length of string in characters."
+  len: count ∘ letters
 }
 
 ##
@@ -352,8 +380,11 @@ str: {
 ` "`identity(v)` - identity function, return value `v`."
 identity(v): v
 
-` "`const(k)` - return single arg function that always returns k."
+` "`const(k)` - return single arg function that always returns `k`."
 const(k, _): k
+
+` "`(-> k)` - const; return single arg function that always returns `k`."
+(-> k): const(k)
 
 ` "`compose(f,g,x)` - apply function `f` to `g(x)`."
 compose(f, g, x): x g f
@@ -460,9 +491,6 @@ assertions: {
 #
 # List library functions, maps and folds
 #
-
-` "`nil?(l)` - `true` if list `l` is empty, `false` otherwise."
-nil?: = []
 
 ` "`take(n, l)` - return initial segment of integer `n` elements from list `l`."
 take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
@@ -691,7 +719,7 @@ update-value-or(k, f, d, b): {
   final-block: final-state (append flip uncurry) reverse block
 }.final-block
 
-` "set(k, v, b) - set `b.k` to `v`, adding if absent."
+` "set-value(k, v, b) - set `b.k` to `v`, adding if absent."
 set-value(k, v): update-value-or(k, const(v), v)
 
 ` "tongue(ks, v) - construct block with a single nested path-of-keys `ks` down to value `v`"
