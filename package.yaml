@@ -28,6 +28,7 @@ library:
     - conduit
     - containers
     - insert-ordered-containers
+    - deepseq
     - deriving-compat
     - directory
     - exceptions

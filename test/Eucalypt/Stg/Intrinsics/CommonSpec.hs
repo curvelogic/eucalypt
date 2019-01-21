@@ -12,7 +12,7 @@ module Eucalypt.Stg.Intrinsics.CommonSpec
   , spec
   ) where
 
-import qualified Data.Vector as V
+import Data.Sequence ((!?))
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
@@ -39,8 +39,8 @@ readsReturns ns =
     case ms' of
       MachineState {machineCode = (ReturnCon c (ValVec xs) _)}
         | c == stgCons -> do
-          let (StgNat h _) = V.head xs
-          let (StgAddr t) = xs V.! 1
+          let (Just (StgNat h _)) = xs !? 0
+          let (Just (StgAddr t)) = xs !? 1
           r <- run $ (h :) <$> readNatList ms' t
           assert $ r == ns
         | c == stgNil -> assert $ null ns

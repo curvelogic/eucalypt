@@ -16,6 +16,7 @@ though now not much similarity remains.
 -}
 module Eucalypt.Stg.Syn where
 
+import Control.DeepSeq
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable
@@ -23,8 +24,7 @@ import qualified Data.Map as Map
 import qualified Data.Map.Strict as MS
 import Data.Scientific
 import qualified Data.Set as S
-import Data.Vector (Vector)
-import qualified Data.Vector as V
+import qualified Data.Sequence as Seq
 import Data.Word
 import Eucalypt.Core.SourceMap (SMID)
 import GHC.Generics (Generic)
@@ -47,6 +47,8 @@ data Native
   | NativeSet !(S.Set Native)
   | NativeDict !(MS.Map Native Native)
   deriving (Eq, Show, Generic, Ord)
+
+instance NFData Native
 
 -- | NativeBranchTable matches natives by hash map
 instance Hashable Native where
@@ -115,13 +117,13 @@ envIndex (Local n) = Just n
 envIndex _ = Nothing
 
 -- | Vector of Ref, describing source of free variables
-type RefVec = Vector Ref
+type RefVec = Seq.Seq Ref
 
 -- | Create a ref vec of local environments references from 'from' to
 -- 'to'.
 locals :: Word64 -> Word64 -> RefVec
 locals from to =
-  V.generate (fromIntegral (to - from)) $ Local . (from +) . fromIntegral
+  Local . fromIntegral <$> Seq.iterateN (fromIntegral (to - from)) (+ 1) from
 
 localsList :: Int -> Int -> [Ref]
 localsList from to = [Local $ fromIntegral i | i <- [from .. to - 1]]
@@ -268,9 +270,9 @@ data StgSyn
          !BranchTable
   | App !Func
         !RefVec
-  | Let (Vector PreClosure)
+  | Let (Seq.Seq PreClosure)
         !StgSyn
-  | LetRec (Vector PreClosure)
+  | LetRec (Seq.Seq PreClosure)
            !StgSyn
   | Ann !String !SMID !StgSyn
   deriving (Eq, Show)
@@ -328,19 +330,19 @@ polycase_ scrutinee bs nbs df =
   Case scrutinee (BranchTable (Map.fromList bs) (HM.fromList nbs) df)
 
 let_ :: [PreClosure] -> StgSyn -> StgSyn
-let_ pcs = Let (V.fromList pcs)
+let_ pcs = Let (Seq.fromList pcs)
 
 letrec_ :: [PreClosure] -> StgSyn -> StgSyn
-letrec_ pcs = LetRec (V.fromList pcs)
+letrec_ pcs = LetRec (Seq.fromList pcs)
 
 appfn_ :: Ref -> [Ref] -> StgSyn
-appfn_ f xs = App (Ref f) $ V.fromList xs
+appfn_ f xs = App (Ref f) $ Seq.fromList xs
 
 appbif_ :: Int -> [Ref] -> StgSyn
-appbif_ f xs = App (Intrinsic f) $ V.fromList xs
+appbif_ f xs = App (Intrinsic f) $ Seq.fromList xs
 
 appcon_ :: Tag -> [Ref] -> StgSyn
-appcon_ t xs = App (Con t) $ V.fromList xs
+appcon_ t xs = App (Con t) $ Seq.fromList xs
 
 lam_ :: Int -> Int -> StgSyn -> LambdaForm
 lam_ f b = LambdaForm (fromIntegral f) (fromIntegral b) False
@@ -373,10 +375,10 @@ pc0m_ :: Ref -> LambdaForm -> PreClosure
 pc0m_ meta = PreClosure mempty (Just meta)
 
 pc_ :: [Ref] -> LambdaForm -> PreClosure
-pc_ = (`PreClosure` Nothing) . V.fromList
+pc_ = (`PreClosure` Nothing) . Seq.fromList
 
 pcm_ :: [Ref] -> Maybe Ref -> LambdaForm -> PreClosure
-pcm_ rs = PreClosure (V.fromList rs)
+pcm_ rs = PreClosure (Seq.fromList rs)
 
 ann_ :: String -> SMID -> StgSyn -> StgSyn
 ann_ = Ann
@@ -386,4 +388,4 @@ ann_ = Ann
 standardConstructor :: Word64 -> Tag -> LambdaForm
 standardConstructor f t =
   LambdaForm f 0 False $
-  App (Con t) $ V.generate (fromIntegral f) $ Local . fromIntegral
+  App (Con t) $ Local <$> Seq.iterateN (fromIntegral f) (+ 1) 0

@@ -9,7 +9,7 @@ Stability   : experimental
 module Eucalypt.Stg.SynSpec (main, spec)
 where
 
-import Data.Vector (fromList)
+import Data.Sequence (fromList)
 import Eucalypt.Stg.Syn
 import Test.Hspec
 

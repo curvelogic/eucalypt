@@ -18,7 +18,7 @@ module Eucalypt.Stg.Intrinsics.Emit
   ) where
 
 import qualified Data.HashMap.Strict.InsOrd as OM
-import Data.Vector ((!))
+import Data.Sequence ((!?))
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn
@@ -52,7 +52,7 @@ emitNull s _ = emit s OutputNull
 -- native values.
 emitScalar :: MachineState -> ValVec -> IO MachineState
 emitScalar s (ValVec xs) = do
-  let (StgNat n m) = xs ! 0
+  let (Just (StgNat n m)) = xs !? 0
   event <-
     case m of
       Just meta -> flip OutputScalar n <$> renderMeta s meta

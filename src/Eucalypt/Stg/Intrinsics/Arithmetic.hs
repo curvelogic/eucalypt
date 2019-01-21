@@ -26,7 +26,7 @@ import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Data.Fixed (mod')
 import Data.Scientific
-import Data.Vector ((!))
+import Data.Sequence ((!?))
 
 binop ::
      (Scientific -> Scientific -> Scientific)
@@ -34,8 +34,8 @@ binop ::
   -> ValVec
   -> IO MachineState
 binop op ms (ValVec args) = do
-  let (StgNat (NativeNumber lhs) _) = args ! 0
-  let (StgNat (NativeNumber rhs) _) = args ! 1
+  let (Just (StgNat (NativeNumber lhs) _)) = args !? 0
+  let (Just (StgNat (NativeNumber rhs) _)) = args !? 1
   return $ setCode ms (ReturnLit (NativeNumber (op lhs rhs)) Nothing)
 
 add :: MachineState -> ValVec -> IO MachineState
@@ -67,8 +67,8 @@ binopBool ::
   -> ValVec
   -> IO MachineState
 binopBool op ms (ValVec args) = do
-  let (StgNat (NativeNumber lhs) _) = args ! 0
-  let (StgNat (NativeNumber rhs) _) = args ! 1
+  let (Just (StgNat (NativeNumber lhs) _)) = args !? 0
+  let (Just (StgNat (NativeNumber rhs) _)) = args !? 1
   return $ setCode ms (ReturnLit (NativeBool (op lhs rhs)) Nothing)
 
 lt :: MachineState -> ValVec -> IO MachineState
@@ -89,7 +89,7 @@ unop ::
   -> ValVec
   -> IO MachineState
 unop op ms (ValVec args) = do
-  let (StgNat (NativeNumber n) _) = args ! 0
+  let (Just (StgNat (NativeNumber n) _)) = args !? 0
   return $ setCode ms (ReturnLit (NativeNumber (op n)) Nothing)
 
 flr :: MachineState -> ValVec -> IO MachineState

@@ -18,7 +18,7 @@ import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import qualified Data.Vector as Vector
+import qualified Data.Sequence as Seq
 import Data.Word
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Intrinsics
@@ -41,22 +41,6 @@ allocPartial le ms lf xs = allocate pap
         , papMeta = MetadataPassThrough
         }
     a = fromIntegral (_bound lf) - envSize xs
-
--- | Push a continuation onto the stack
-push :: MachineState -> Continuation -> MachineState
-push ms@MachineState {machineStack = st} k =
-  let stackElement = StackElement k (machineCallStack ms)
-   in ms {machineStack = Vector.snoc st stackElement}
-
--- | Pop a continuation off the stack
-pop :: MonadThrow m => MachineState -> m (Maybe Continuation, MachineState)
-pop ms@MachineState {machineStack = st} =
-  if Vector.null st
-    then return (Nothing, ms)
-    else let StackElement k cs = Vector.last st
-          in return
-               ( Just k
-               , ms {machineStack = Vector.init st, machineCallStack = cs})
 
 -- | Push an ApplyToArgs continuation on the stack
 pushApplyToArgs :: MonadThrow m => MachineState -> ValVec -> m MachineState
@@ -117,7 +101,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
               (vals env ms xs >>= call le ms lf)
             -- CALLK
             GT ->
-              let (enough, over) = Vector.splitAt (fromIntegral ar) xs
+              let (enough, over) = Seq.splitAt (fromIntegral ar) xs
                in vals env ms over >>= pushApplyToArgs ms >>= \s ->
                     setCallStack cs . setRule "CALLK" . setCode s <$>
                     (vals env ms enough >>= call le ms lf)
@@ -136,7 +120,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
                 setCallStack cs . setRule "PCALL EXACT" . setCode ms <$>
                 call le ms code (args <> as)
             GT ->
-              let (enough, over) = Vector.splitAt (fromIntegral ar) xs
+              let (enough, over) = Seq.splitAt (fromIntegral ar) xs
                in vals env ms over >>= pushApplyToArgs ms >>= \s ->
                     vals env ms enough >>= \as ->
                       setCallStack cs . setRule "PCALLK" . setCode s <$>
@@ -165,8 +149,9 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
 -- | LET
 step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = {-# SCC "EvalLet" #-}do
   ms <- prepareStep "EVAL LET" ms0
-  addrs <- liftIO $ traverse (allocClosure env ms) pcs
-  let env' = env <> (ValVec . Vector.map StgAddr) addrs
+  addrs <- liftIO $ traverse (allocClosure env ms) pcs --TODO
+           --allocClosure should create vector
+  let env' = env <> (ValVec . Seq.fromList . map StgAddr . toList) addrs
   return $ setCode ms (Eval body env')
 
 
@@ -277,7 +262,7 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = {-# SCC "ReturnFun" #-} do
        in return $
           setCode
             ms'
-            (Eval (App (Ref $ Vector.head args') (Vector.tail args')) env')
+            (Eval (App (Ref $ args' `Seq.index` 0) (Seq.drop 1 args')) env')
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))

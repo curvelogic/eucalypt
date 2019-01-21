@@ -11,7 +11,7 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Common where
 
 import Control.Monad (foldM)
-import qualified Data.Vector as V
+import qualified Data.Sequence as Seq
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -26,10 +26,10 @@ asNative :: StgValue -> Native
 asNative (StgNat n _) = n
 asNative _ = error "Not a native"
 
-getNatives :: MachineState -> ValVec -> IO (V.Vector Native)
+getNatives :: MachineState -> ValVec -> IO (Seq.Seq Native)
 getNatives ms (ValVec v) =
-  if V.all isNative v
-    then return $ V.map asNative v
+  if all isNative v
+    then return $ fmap asNative v
     else throwIn ms NonNativeStgValue
 
 
@@ -81,8 +81,8 @@ readNatList ms addr = do
       case lf of
         LambdaForm {_body = (App (Con t) xs)}
           | t == stgCons -> do
-            (StgNat h _) <- val e ms (V.head xs)
-            (StgAddr a) <- val e ms (xs V.! 1)
+            (StgNat h _) <- val e ms (xs `Seq.index` 0)
+            (StgAddr a) <- val e ms (xs `Seq.index` 1)
             (h :) <$> readNatList ms a
         LambdaForm {_body = (App (Con t) _)}
           | t == stgNil -> return []
@@ -97,8 +97,8 @@ readNatListReturn ms =
   case ms of
     MachineState {machineCode = (ReturnCon c (ValVec xs) Nothing)}
       | c == stgCons -> do
-        let (StgNat h _) = V.head xs
-        let (StgAddr t) = xs V.! 1
+        let (Just (StgNat h _)) = xs Seq.!? 0
+        let (Just (StgAddr t)) = xs Seq.!? 1
         (h :) <$> readNatList ms t
       | c == stgNil -> return []
     _ -> throwIn ms IntrinsicExpectedNativeList
@@ -149,8 +149,8 @@ readCons ms addr =
       case lf of
         LambdaForm {_body = (App (Con t) xs)}
           | t == stgCons -> do
-            h' <- val e ms (V.head xs)
-            t' <- val e ms (xs V.! 1)
+            h' <- val e ms (xs `Seq.index` 0)
+            t' <- val e ms (xs `Seq.index` 1)
             return $ Just (h', t')
         LambdaForm {_body = (App (Con t) _)}
           | t == stgNil -> return Nothing
@@ -166,7 +166,7 @@ readBlock ms addr =
     Closure {closureCode = lf, closureEnv = e} ->
       case lf of
         LambdaForm {_body = (App (Con t) xs)}
-          | t == stgBlock -> val e ms (V.head xs)
+          | t == stgBlock -> val e ms (xs `Seq.index` 0)
         LambdaForm {_body = (App (Con _) _)} ->
           throwIn ms $ IntrinsicExpectedBlock (_body lf)
         _ -> throwIn ms $ IntrinsicExpectedEvaluatedBlock (_body lf)

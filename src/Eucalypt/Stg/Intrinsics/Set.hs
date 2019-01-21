@@ -16,7 +16,7 @@ import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import qualified Data.Set as S
-import Data.Vector ((!))
+import Data.Sequence ((!?))
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -31,8 +31,9 @@ getSetAndKey
   :: MachineState -> ValVec -> IO (S.Set Native, Native)
 getSetAndKey ms args = do
   ns <- getNatives ms args
-  let (NativeSet d) = ns ! 0
-  return (d, ns ! 1)
+  let (Just (NativeSet d)) = ns !? 0
+  let (Just k) = ns !? 1
+  return (d, k)
 
 
 -- | __EMPTYSET
@@ -60,5 +61,5 @@ setRemove ms args = do
 -- | __SETMEMBERS(s)
 setMembers :: MachineState -> ValVec -> IO MachineState
 setMembers ms (ValVec args) = do
-  let (StgNat (NativeSet s) _) = args ! 0
+  let (Just (StgNat (NativeSet s) _)) = args !? 0
   returnNatList ms (S.toList s)

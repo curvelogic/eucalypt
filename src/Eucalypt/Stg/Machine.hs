@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts, LambdaCase #-}
 
 {-|
@@ -19,8 +20,7 @@ import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
 import Data.IORef
 import Data.Semigroup
-import Data.Vector (Vector, (!?))
-import qualified Data.Vector as Vector
+import qualified Data.Sequence as Seq
 import Data.Word
 import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.CallStack
@@ -29,7 +29,8 @@ import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 import qualified Text.PrettyPrint as P
-import Text.PrettyPrint ((<+>), ($+$))
+import Text.PrettyPrint (($+$), (<+>))
+
 
 -- | A mutable refence to a heap object
 newtype Address =
@@ -119,20 +120,20 @@ instance StgPretty HeapObject where
     prettify lf
   prettify BlackHole = P.text "•"
 
--- | Vector of values, used for both local environment and arrays of
+-- | Sequence of values, used for both local environment and arrays of
 -- resolved arguments.
 newtype ValVec =
-  ValVec (Vector StgValue)
+  ValVec (Seq.Seq StgValue)
   deriving (Eq, Show)
 
 toValVec :: [StgValue] -> ValVec
-toValVec = ValVec . Vector.fromList
+toValVec = ValVec . Seq.fromList
 
 envSize :: ValVec -> Word64
-envSize (ValVec v) = fromIntegral $ Vector.length v
+envSize (ValVec v) = fromIntegral $ Seq.length v
 
 singleton :: StgValue -> ValVec
-singleton = ValVec . Vector.singleton
+singleton = ValVec . Seq.singleton
 
 extendEnv :: ValVec -> ValVec -> (ValVec, RefVec)
 extendEnv env args = (env', rs)
@@ -143,7 +144,7 @@ extendEnv env args = (env', rs)
     rs = locals envlen (arglen + envlen)
 
 instance Semigroup ValVec where
-  (<>) (ValVec l) (ValVec r) = ValVec $ l Vector.++ r
+  (<>) (ValVec l) (ValVec r) = ValVec $ l Seq.>< r
 
 instance Monoid ValVec where
   mempty = ValVec mempty
@@ -202,6 +203,26 @@ instance StgPretty Code where
     P.text "RETURNLIT" <+> prettify n <+> maybe P.empty prettify meta
   prettify (ReturnFun _) = P.text "RETURNFUN" <+> P.text "."
 
+-- | MachineStack
+newtype MachineStack = MachineStack [StackElement]
+  deriving (Show, Eq, Semigroup, Monoid)
+
+-- | Push a continuation onto the stack
+push :: MachineState -> Continuation -> MachineState
+push ms@MachineState {machineStack = MachineStack st} k =
+  let stackElement = StackElement k (machineCallStack ms)
+   in ms {machineStack = MachineStack (stackElement : st)}
+
+-- | Pop a continuation off the stack
+pop :: MonadThrow m => MachineState -> m (Maybe Continuation, MachineState)
+pop ms@MachineState {machineStack = MachineStack []} = return (Nothing, ms)
+pop ms@MachineState {machineStack = MachineStack st} =
+  let StackElement k cs = head st
+   in return
+        ( Just k
+        , ms {machineStack = MachineStack (tail st), machineCallStack = cs})
+
+
 -- | Machine state.
 --
 data MachineState = MachineState
@@ -209,7 +230,7 @@ data MachineState = MachineState
     -- ^ Next instruction to execute
   , machineGlobals :: !(HashMap String StgValue)
     -- ^ Global (heap allocated) objects
-  , machineStack :: !(Vector StackElement)
+  , machineStack :: !MachineStack
     -- ^ stack of continuations
   , machineCounter :: !Int
     -- ^ count of steps executed so far
@@ -217,7 +238,7 @@ data MachineState = MachineState
     -- ^ whether the machine has terminated
   , machineTrace :: MachineState -> IO ()
     -- ^ debug action to run prior to each step
-  , machineEvents :: !(Vector Event)
+  , machineEvents :: ![Event]
     -- ^ events fired by last step
   , machineEmit :: MachineState -> Event -> IO MachineState
     -- ^ emit function to send out events
@@ -277,7 +298,7 @@ initMachineState stg ge = do
 instance StgPretty MachineState where
   prettify MachineState { machineCode = code
                         , machineGlobals = _globals
-                        , machineStack = stack
+                        , machineStack = MachineStack stack
                         , machineCounter = counter
                         , machineDebugEmitLog = events
                         , machineLastStepName = step
@@ -286,7 +307,7 @@ instance StgPretty MachineState where
     P.vcat
       [ (P.int counter <> P.colon) <+>
         (P.text step <> P.text "-->") <+>
-        P.parens (P.hcat (P.punctuate P.colon (map prettify (toList stack)))) <+>
+        P.parens (P.hcat (P.punctuate P.colon (map prettify (reverse stack)))) <+>
         prettify cs
       , P.nest 4 $ P.space $+$ prettify code $+$ P.space
       , if null events
@@ -313,7 +334,7 @@ globalAddress ms@MachineState {machineGlobals = g} nm =
 -- environments.
 val :: MonadThrow m => ValVec -> MachineState -> Ref -> m StgValue
 val (ValVec le) ms (Local l) =
-  case le !? fromIntegral l of
+  case le Seq.!? fromIntegral l of
     Just v -> return v
     _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
 val _ ms (Global nm) = globalAddress ms nm
@@ -321,7 +342,7 @@ val _ _ (Literal n) = return $ StgNat n Nothing
 
 -- | Resolve a vector of refs against an environment to create
 -- environment
-vals :: MonadThrow m => ValVec -> MachineState -> Vector Ref -> m ValVec
+vals :: MonadThrow m => ValVec -> MachineState -> Seq.Seq Ref -> m ValVec
 vals le ms rs = ValVec <$> traverse (val le ms) rs
 
 -- | Resolve a ref against env and machine to get address of
@@ -365,7 +386,7 @@ appendCallStack ann ms@MachineState {machineCallStack = cs} =
 -- | Append event for this step
 appendEvent :: Event -> MachineState -> MachineState
 appendEvent e ms@MachineState {machineEvents = es0} =
-  ms {machineEvents = es0 `Vector.snoc` e}
+  ms {machineEvents = e : es0}
 
 -- | Build a closure from a STG PreClosure
 buildClosure ::

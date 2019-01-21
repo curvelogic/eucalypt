@@ -17,7 +17,7 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Syntax.Ast (PrimitiveLiteral(..))
 import Eucalypt.Syntax.ParseExpr (number)
 import Data.Scientific
-import Data.Vector ((!))
+import Data.Sequence ((!?))
 import qualified Text.Megaparsec as M
 
 
@@ -29,7 +29,7 @@ toNative _ = Nothing
 -- | Parse text into a number
 parse :: MachineState -> ValVec -> IO MachineState
 parse ms (ValVec args) = do
-  let (StgNat (NativeString text) _) = args ! 0
+  let (Just (StgNat (NativeString text) _)) = args !? 0
   let num = M.parseMaybe number text >>= toNative
   case num of
     (Just n) -> return $ setCode ms (ReturnLit n Nothing)
