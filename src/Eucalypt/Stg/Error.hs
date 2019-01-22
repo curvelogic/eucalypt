@@ -47,7 +47,7 @@ data StgError
   | IntrinsicExpectedBlockFoundNative !Native
   | IntrinsicExpectedEvaluatedBlock !StgSyn
   | IntrinsicExpectedBlock !StgSyn
-  | IntrinsicTypeError
+  | IntrinsicTypeError !String !String
   | InvalidRegex !String
   | InvalidFormatSpecifier !String !Native
   | UnknownGlobal !String
@@ -113,9 +113,11 @@ instance Reportable StgException where
             bug "Expected evaluated block, found unevaluated thunks." P.$$
             prettify expr
           IntrinsicExpectedBlockFoundNative n ->
-            err "Expected a block but found native value: " P.$$ prettify n
-          IntrinsicTypeError ->
-            err "Intrinsic received argument of invalid type"
+            err "Expected a block but found native value:" P.$$ prettify n
+          IntrinsicTypeError expected actual ->
+            err "Intrinsic expected argument types:" P.$$
+            P.nest 4 (P.text expected) P.$$
+            (P.text " but received:" P.$$ P.nest 4 (P.text actual))
           (InvalidRegex s) ->
             err "Regular expression was not valid:" P.$$
             P.nest 2 (P.text "-" P.<+> P.text s)

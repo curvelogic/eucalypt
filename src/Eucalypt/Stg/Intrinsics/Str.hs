@@ -14,7 +14,12 @@ module Eucalypt.Stg.Intrinsics.Str
 
 import Safe (headMay)
 import Eucalypt.Stg.IntrinsicInfo
-import Eucalypt.Stg.Intrinsics.Common (invoke, returnNatList, readStrList)
+import Eucalypt.Stg.Intrinsics.Common
+  ( invoke
+  , nativeToString
+  , readStrList
+  , returnNatList
+  )
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
@@ -96,20 +101,8 @@ strNat ms n =
   return $
   setCode ms $
   (`ReturnLit` Nothing) $
-  NativeString $
-  case n of
-    NativeNumber sc ->
-      case floatingOrInteger sc of
-        Left f -> show f
-        Right i -> show i
-    NativeString s -> s
-    NativeSymbol s -> s
-    NativeBool b ->
-      if b
-        then "true"
-        else "false"
-    NativeSet _ -> "#SET"
-    NativeDict _ -> "#DICT"
+  NativeString $ nativeToString n
+
 
 
 
