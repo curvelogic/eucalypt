@@ -46,21 +46,14 @@ intrinsics =
   , IntrinsicInfo "EMIT]" 0 Emit.emitSequenceEnd
   , IntrinsicInfo "EMITx" 1 Emit.emitScalar
   , IntrinsicInfo "EMIT0" 0 Emit.emitNull
-  , IntrinsicInfo "SPLIT" 2 Str.split
-  , IntrinsicInfo "MATCH" 2 Str.match
-  , IntrinsicInfo "MATCHES" 2 Str.matches
-  , IntrinsicInfo "JOIN" 2 Str.join
-  , IntrinsicInfo "LETTERS" 1 Str.letters
   , IntrinsicInfo "META" 1 Meta.meta
   , IntrinsicInfo "WITHMETA" 2 Meta.withMeta
   , IntrinsicInfo "PANIC" 1 Panic.panic
   , IntrinsicInfo "PRUNE" 1 Block.prune
   , IntrinsicInfo "PRUNEMERGE" 2 Block.pruneMerge
   , IntrinsicInfo "CLOSED" 1 General.closed
-  , IntrinsicInfo "STRNAT" 1 Str.strNat
-  , IntrinsicInfo "STRSYM" 1 Str.strSym
   , IntrinsicInfo "NUMPARSE" 1 Number.parse
-  ] <> Set.intrinsics <> Dict.intrinsics
+  ] <> Set.intrinsics <> Dict.intrinsics <> Str.intrinsics
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available

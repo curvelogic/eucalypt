@@ -9,26 +9,34 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Intrinsics.Str
-  ( split
-  , match
-  , matches
-  , join
-  , strNat
-  , strSym
-  , letters
+  ( intrinsics
   ) where
 
 import Safe (headMay)
-import Eucalypt.Stg.Intrinsics.Common (returnNatList, readStrList)
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Common (invoke, returnNatList, readStrList)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Data.List (intercalate)
 import Data.Scientific (floatingOrInteger)
-import Data.Sequence ((!?))
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Text.Regex.PCRE.Heavy as R
+import qualified Text.Printf as PF
+
+intrinsics :: [IntrinsicInfo]
+intrinsics =
+  [ IntrinsicInfo "SPLIT" 2 (invoke split)
+  , IntrinsicInfo "MATCH" 2 (invoke match)
+  , IntrinsicInfo "MATCHES" 2 (invoke matches)
+  , IntrinsicInfo "JOIN" 2 (invoke join)
+  , IntrinsicInfo "LETTERS" 1 (invoke letters)
+  , IntrinsicInfo "STRNAT" 1 (invoke strNat)
+  , IntrinsicInfo "STRSYM" 1 (invoke strSym)
+  , IntrinsicInfo "FMT" 2 (invoke fmt)
+  ]
+
 
 toRegex :: String -> Either String R.Regex
 toRegex = (`R.compileM` []) . encodeUtf8 . pack
@@ -36,10 +44,8 @@ toRegex = (`R.compileM` []) . encodeUtf8 . pack
 
 
 -- | __SPLIT(s, re)
-split :: MachineState -> ValVec -> IO MachineState
-split ms (ValVec args) = do
-  let (Just (StgNat (NativeString target) _)) = args !? 0
-  let (Just (StgNat (NativeString regex) _)) = args !? 1
+split :: MachineState -> String -> String -> IO MachineState
+split ms target regex =
   if null regex
     then returnNatList ms [NativeString target]
     else case toRegex regex of
@@ -49,10 +55,8 @@ split ms (ValVec args) = do
 
 
 -- | __MATCH(s, re)
-match :: MachineState -> ValVec -> IO MachineState
-match ms (ValVec args) = do
-  let (Just (StgNat (NativeString target) _)) = args !? 0
-  let (Just (StgNat (NativeString regex) _)) = args !? 1
+match :: MachineState -> String -> String -> IO MachineState
+match ms target regex =
   case toRegex regex of
     (Right r) ->
       returnNatList ms $
@@ -64,10 +68,8 @@ match ms (ValVec args) = do
 
 
 -- | __MATCHES(s, re)
-matches :: MachineState -> ValVec -> IO MachineState
-matches ms (ValVec args) = do
-  let (Just (StgNat (NativeString target) _)) = args !? 0
-  let (Just (StgNat (NativeString regex) _)) = args !? 1
+matches :: MachineState -> String -> String -> IO MachineState
+matches ms target regex =
   case toRegex regex of
     (Right r) -> returnNatList ms $ map (NativeString . fst) $ R.scan r target
     (Left s) -> throwIn ms $ InvalidRegex s
@@ -75,44 +77,58 @@ matches ms (ValVec args) = do
 
 
 -- | __JOIN(els, sep)
-join :: MachineState -> ValVec -> IO MachineState
-join ms (ValVec args) = do
-  let (Just (StgAddr l)) = args !? 0
-  let (Just (StgNat (NativeString s) _)) = args !? 1
+join :: MachineState -> Address -> String -> IO MachineState
+join ms l s = do
   xs <- readStrList ms l
   return $ setCode ms (ReturnLit (NativeString $ intercalate s xs) Nothing)
 
+
+
 -- | __LETTERS(s) - return letters of s as their own strings
-letters :: MachineState -> ValVec -> IO MachineState
-letters ms (ValVec args) = do
-  let (Just (StgNat (NativeString s) _)) = args !? 0
-  returnNatList ms $ map (\c -> NativeString [c]) s
+letters :: MachineState -> String -> IO MachineState
+letters ms s = returnNatList ms $ map (\c -> NativeString [c]) s
 
 
-strNat :: MachineState -> ValVec -> IO MachineState
-strNat ms (ValVec args) =
+
+-- | __STR(n) - convert native to string in default way
+strNat :: MachineState -> Native -> IO MachineState
+strNat ms n =
   return $
   setCode ms $
   (`ReturnLit` Nothing) $
   NativeString $
-  let (Just (StgNat n _)) = args !? 0
-   in case n of
-        NativeNumber sc ->
-          case floatingOrInteger sc of
-            Left f -> show f
-            Right i -> show i
-        NativeString s -> s
-        NativeSymbol s -> s
-        NativeBool b ->
-          if b
-            then "true"
-            else "false"
-        NativeSet _ -> "#SET"
-        NativeDict _ -> "#DICT"
+  case n of
+    NativeNumber sc ->
+      case floatingOrInteger sc of
+        Left f -> show f
+        Right i -> show i
+    NativeString s -> s
+    NativeSymbol s -> s
+    NativeBool b ->
+      if b
+        then "true"
+        else "false"
+    NativeSet _ -> "#SET"
+    NativeDict _ -> "#DICT"
 
 
 
-strSym :: MachineState -> ValVec -> IO MachineState
-strSym ms (ValVec args) =
-  let (Just (StgNat (NativeString nm) _)) = args !? 0
-   in return $ setCode ms $ (`ReturnLit` Nothing) $ NativeSymbol nm
+-- | __FMT(obj, fmtstring)
+fmt :: MachineState -> Native -> String -> IO MachineState
+fmt ms obj spec =
+  let result =
+        case obj of
+          (NativeNumber n) ->
+            case floatingOrInteger n of
+              (Left r) -> PF.printf spec (r :: Double)
+              (Right i) -> PF.printf spec (i :: Integer)
+          (NativeString s) -> PF.printf spec s
+          (NativeSymbol s) -> PF.printf spec s
+          nat -> throwIn ms $ InvalidFormatSpecifier spec nat
+   in return $ setCode ms (ReturnLit (NativeString result) Nothing)
+
+
+
+-- | __SYM(s) - create symbol from string
+strSym :: MachineState -> String -> IO MachineState
+strSym ms nm = return $ setCode ms $ (`ReturnLit` Nothing) $ NativeSymbol nm

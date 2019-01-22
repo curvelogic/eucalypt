@@ -1,4 +1,6 @@
-{-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase, PatternSynonyms, ViewPatterns #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Common
 Description : Common utilities for intrinsics
@@ -12,11 +14,13 @@ module Eucalypt.Stg.Intrinsics.Common where
 
 import Control.Monad (foldM)
 import qualified Data.Sequence as Seq
+import Data.Sequence (Seq)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 
+type IntrinsicFunction = MachineState -> ValVec -> IO MachineState
 
 isNative :: StgValue -> Bool
 isNative (StgNat _ _) = True
@@ -173,3 +177,44 @@ readBlock ms addr =
     BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
     PartialApplication {} ->
       throwIn ms IntrinsicExpectedBlockFoundPartialApplication
+
+pattern Empty :: Seq a
+pattern Empty <- (Seq.viewl -> Seq.EmptyL)
+
+pattern (:<) :: a -> Seq a -> Seq a
+pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
+
+-- | class of Invokable intrinsic functions
+class Invokable f where
+  -- | String representation of expected signature for error messages etc.
+  sig :: f -> String
+  -- | Cast args as required to invoke the typed intrinsic function
+  invoke :: f -> IntrinsicFunction
+
+instance Invokable (MachineState -> Native -> IO MachineState) where
+  sig _ = "*"
+  invoke f ms (ValVec (StgNat a _ :< _)) = f ms a
+  invoke _ ms _ = throwIn ms IntrinsicTypeError
+
+instance Invokable (MachineState -> String -> IO MachineState) where
+  sig _ = "String"
+  invoke f ms (ValVec (StgNat (NativeString a) _ :< _)) = f ms a
+  invoke _ ms _ = throwIn ms IntrinsicTypeError
+
+instance Invokable (MachineState -> String -> String -> IO MachineState) where
+  sig _ = "String, String"
+  invoke f ms (ValVec (StgNat (NativeString a) _ :< (StgNat (NativeString b) _ :< _))) =
+    f ms a b
+  invoke _ ms _ = throwIn ms IntrinsicTypeError
+
+instance Invokable (MachineState -> Native -> String -> IO MachineState) where
+  sig _ = "*, String"
+  invoke f ms (ValVec (StgNat a _ :< (StgNat (NativeString b) _ :< _))) =
+    f ms a b
+  invoke _ ms _ = throwIn ms IntrinsicTypeError
+
+instance Invokable (MachineState -> Address -> String -> IO MachineState) where
+  sig _ = "@, String"
+  invoke f ms (ValVec (StgAddr a :< (StgNat (NativeString b) _ :< _))) =
+    f ms a b
+  invoke _ ms _ = throwIn ms IntrinsicTypeError

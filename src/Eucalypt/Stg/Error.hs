@@ -47,7 +47,9 @@ data StgError
   | IntrinsicExpectedBlockFoundNative !Native
   | IntrinsicExpectedEvaluatedBlock !StgSyn
   | IntrinsicExpectedBlock !StgSyn
+  | IntrinsicTypeError
   | InvalidRegex !String
+  | InvalidFormatSpecifier !String !Native
   | UnknownGlobal !String
   | DictKeyNotFound !Native
   | Panic !String
@@ -76,8 +78,7 @@ instance Reportable StgException where
      in case stgExcError of
           NonAddressStgValue ->
             bug "Found a native value when expecting a thunk."
-          NonNativeStgValue ->
-            err "A native value is expected here."
+          NonNativeStgValue -> err "A native value is expected here."
           NoBranchFound -> bug "No branch available to handle value."
           EnteredBlackHole ->
             err "Entered a black hole. This may indicate a circular definition."
@@ -107,23 +108,29 @@ instance Reportable StgException where
             bug "Expected evaluated list, found unevaluated thunks." P.$$
             prettify expr
           IntrinsicExpectedBlock expr ->
-            bug "Expected block, found something else." P.$$
-            prettify expr
+            bug "Expected block, found something else." P.$$ prettify expr
           IntrinsicExpectedEvaluatedBlock expr ->
             bug "Expected evaluated block, found unevaluated thunks." P.$$
             prettify expr
           IntrinsicExpectedBlockFoundNative n ->
             err "Expected a block but found native value: " P.$$ prettify n
+          IntrinsicTypeError ->
+            err "Intrinsic received argument of invalid type"
           (InvalidRegex s) ->
             err "Regular expression was not valid:" P.$$
             P.nest 2 (P.text "-" P.<+> P.text s)
+          (InvalidFormatSpecifier s n) ->
+            err ("Format specifier " ++ s ++ " invalid for value: ") P.$$
+            prettify n
           (UnknownGlobal s) ->
             err "Unknown global:" P.$$ P.nest 2 (P.text "-" P.<+> P.text s)
           (DictKeyNotFound k) ->
-            err "Dict key not found :" P.$$ P.nest 2 (P.text "-" P.<+> prettify k)
+            err "Dict key not found :" P.$$
+            P.nest 2 (P.text "-" P.<+> prettify k)
           (Panic s) -> err s
           (IOSystem e) -> sys $ show e
-          (InvalidNumber n) -> err $ "Invalid number (" ++ show n ++ ") could not be parsed."
+          (InvalidNumber n) ->
+            err $ "Invalid number (" ++ show n ++ ") could not be parsed."
           MissingArgument -> bug "Expected argument but none found"
 
 
