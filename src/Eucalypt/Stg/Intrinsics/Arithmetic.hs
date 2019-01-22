@@ -9,45 +9,47 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Intrinsics.Arithmetic
-  ( add
-  , sub
-  , mul
-  , divide
-  , lt
-  , gt
-  , lte
-  , gte
-  , modulo
-  , flr
-  , ceil
+  ( intrinsics
   ) where
 
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Common (IntrinsicFunction, invoke)
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Data.Fixed (mod')
 import Data.Scientific
-import Data.Sequence ((!?))
 
-binop ::
-     (Scientific -> Scientific -> Scientific)
-  -> MachineState
-  -> ValVec
-  -> IO MachineState
-binop op ms (ValVec args) = do
-  let (Just (StgNat (NativeNumber lhs) _)) = args !? 0
-  let (Just (StgNat (NativeNumber rhs) _)) = args !? 1
-  return $ setCode ms (ReturnLit (NativeNumber (op lhs rhs)) Nothing)
+intrinsics :: [IntrinsicInfo]
+intrinsics =
+  [ IntrinsicInfo "ADD" 2 add
+  , IntrinsicInfo "SUB" 2 sub
+  , IntrinsicInfo "MUL" 2 mul
+  , IntrinsicInfo "DIV" 2 divide
+  , IntrinsicInfo "LT" 2 lt
+  , IntrinsicInfo "GT" 2 gt
+  , IntrinsicInfo "LTE" 2 lte
+  , IntrinsicInfo "GTE" 2 gte
+  , IntrinsicInfo "MOD" 2 modulo
+  , IntrinsicInfo "FLOOR" 1 flr
+  , IntrinsicInfo "CEILING" 1 ceil
+  ]
 
-add :: MachineState -> ValVec -> IO MachineState
+binop :: (Scientific -> Scientific -> Scientific) -> IntrinsicFunction
+binop op =
+  invoke
+    (\ms lhs rhs ->
+       (return $ setCode ms (ReturnLit (NativeNumber (op lhs rhs)) Nothing)) :: IO MachineState)
+
+add :: IntrinsicFunction
 add = binop (+)
 
-sub :: MachineState -> ValVec -> IO MachineState
+sub :: IntrinsicFunction
 sub = binop (-)
 
-mul :: MachineState -> ValVec -> IO MachineState
+mul :: IntrinsicFunction
 mul = binop (*)
 
-modulo :: MachineState -> ValVec -> IO MachineState
+modulo :: IntrinsicFunction
 modulo = binop mod'
 
 sciDivide :: Scientific -> Scientific -> Scientific
@@ -58,42 +60,37 @@ sciDivide l r =
       float = fromRational result :: Double
    in fromFloatDigits float
 
-divide :: MachineState -> ValVec -> IO MachineState
+divide :: IntrinsicFunction
 divide = binop sciDivide
 
-binopBool ::
-     (Scientific -> Scientific -> Bool)
-  -> MachineState
-  -> ValVec
-  -> IO MachineState
-binopBool op ms (ValVec args) = do
-  let (Just (StgNat (NativeNumber lhs) _)) = args !? 0
-  let (Just (StgNat (NativeNumber rhs) _)) = args !? 1
-  return $ setCode ms (ReturnLit (NativeBool (op lhs rhs)) Nothing)
+binopBool :: (Scientific -> Scientific -> Bool) -> IntrinsicFunction
+binopBool op =
+  invoke
+    (\ms lhs rhs ->
+       (return $ setCode ms (ReturnLit (NativeBool (op lhs rhs)) Nothing)) :: IO MachineState)
 
-lt :: MachineState -> ValVec -> IO MachineState
+lt :: IntrinsicFunction
 lt = binopBool (<)
 
-gt :: MachineState -> ValVec -> IO MachineState
+gt :: IntrinsicFunction
 gt = binopBool (>)
 
-lte :: MachineState -> ValVec -> IO MachineState
+lte :: IntrinsicFunction
 lte = binopBool (<=)
 
-gte :: MachineState -> ValVec -> IO MachineState
+gte :: IntrinsicFunction
 gte = binopBool (>=)
 
 unop ::
      (Scientific -> Scientific)
-  -> MachineState
-  -> ValVec
-  -> IO MachineState
-unop op ms (ValVec args) = do
-  let (Just (StgNat (NativeNumber n) _)) = args !? 0
-  return $ setCode ms (ReturnLit (NativeNumber (op n)) Nothing)
+  -> IntrinsicFunction
+unop op =
+  invoke
+    (\ms n ->
+       (return $ setCode ms (ReturnLit (NativeNumber (op n)) Nothing)) :: IO MachineState)
 
-flr :: MachineState -> ValVec -> IO MachineState
+flr :: IntrinsicFunction
 flr = unop (fromIntegral . floor)
 
-ceil :: MachineState -> ValVec -> IO MachineState
+ceil :: IntrinsicFunction
 ceil = unop (fromIntegral . ceiling)

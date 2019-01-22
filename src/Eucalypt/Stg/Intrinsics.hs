@@ -29,17 +29,6 @@ import Eucalypt.Stg.Machine
 intrinsics :: [IntrinsicInfo]
 intrinsics =
   [ IntrinsicInfo "===" 2 Eq.natEq
-  , IntrinsicInfo "ADD" 2 Arith.add
-  , IntrinsicInfo "SUB" 2 Arith.sub
-  , IntrinsicInfo "MUL" 2 Arith.mul
-  , IntrinsicInfo "DIV" 2 Arith.divide
-  , IntrinsicInfo "LT" 2 Arith.lt
-  , IntrinsicInfo "GT" 2 Arith.gt
-  , IntrinsicInfo "LTE" 2 Arith.lte
-  , IntrinsicInfo "GTE" 2 Arith.gte
-  , IntrinsicInfo "MOD" 2 Arith.modulo
-  , IntrinsicInfo "FLOOR" 1 Arith.flr
-  , IntrinsicInfo "CEILING" 1 Arith.ceil
   , IntrinsicInfo "EMIT{" 0 Emit.emitMappingStart
   , IntrinsicInfo "EMIT}" 0 Emit.emitMappingEnd
   , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart
@@ -53,7 +42,7 @@ intrinsics =
   , IntrinsicInfo "PRUNEMERGE" 2 Block.pruneMerge
   , IntrinsicInfo "CLOSED" 1 General.closed
   , IntrinsicInfo "NUMPARSE" 1 Number.parse
-  ] <> Set.intrinsics <> Dict.intrinsics <> Str.intrinsics
+  ] <> Set.intrinsics <> Dict.intrinsics <> Str.intrinsics <> Arith.intrinsics
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available

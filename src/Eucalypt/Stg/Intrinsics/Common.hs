@@ -16,7 +16,7 @@ import Control.Monad (foldM)
 import Data.Foldable (toList)
 import Data.List (intercalate)
 import qualified Data.Sequence as Seq
-import Data.Scientific (floatingOrInteger)
+import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Sequence (Seq)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
@@ -204,6 +204,11 @@ instance Invokable (MachineState -> String -> IO MachineState) where
   invoke f ms (ValVec (StgNat (NativeString a) _ :< _)) = f ms a
   invoke f ms args = throwTypeError ms (sig f) args
 
+instance Invokable (MachineState -> Scientific -> IO MachineState) where
+  sig _ = "Number"
+  invoke f ms (ValVec (StgNat (NativeNumber a) _ :< _)) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
 instance Invokable (MachineState -> String -> String -> IO MachineState) where
   sig _ = "String, String"
   invoke f ms (ValVec (StgNat (NativeString a) _ :< (StgNat (NativeString b) _ :< _))) =
@@ -219,6 +224,12 @@ instance Invokable (MachineState -> Native -> String -> IO MachineState) where
 instance Invokable (MachineState -> Address -> String -> IO MachineState) where
   sig _ = "@, String"
   invoke f ms (ValVec (StgAddr a :< (StgNat (NativeString b) _ :< _))) =
+    f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Scientific -> Scientific -> IO MachineState) where
+  sig _ = "Number, Number"
+  invoke f ms (ValVec (StgNat (NativeNumber a) _ :< (StgNat (NativeNumber b) _ :< _))) =
     f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
