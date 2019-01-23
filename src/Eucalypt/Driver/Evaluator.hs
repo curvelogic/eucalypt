@@ -58,9 +58,12 @@ listTargets opts targets = do
     outputTarget t =
       putStrLn $
       "  - " ++
-      tgtName t ++ " [ path: " ++ fmtPath t ++ " ]\t" ++ tgtDoc t
+      tgtName t ++ format t ++ " [ path: " ++ fmtPath t ++ " ] " ++ "\n\n      " ++ tgtDoc t ++ "\n"
     outputInput i = putStrLn $ "  - " ++ show i
     fmtPath t = intercalate "." $ tgtPath t
+    format t = case tgtFormat t of
+      Just fmt -> " (as: " ++ fmt ++ ")"
+      Nothing -> ""
 
 
 

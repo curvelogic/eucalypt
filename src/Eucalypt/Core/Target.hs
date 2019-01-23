@@ -15,6 +15,7 @@ import Eucalypt.Core.Syn
 data TargetSpec = TargetSpec
   { tgtName :: String
   , tgtDoc :: String
+  , tgtFormat :: Maybe String
   , tgtPath :: [CoreBindingName]
   }
   deriving (Show, Eq)

@@ -220,6 +220,14 @@ sampleSpec =
 targetAnnotation :: String -> String -> Expression
 targetAnnotation n d = block [bare $ prop "target" $ sym n , bare $ prop "doc" $ str d]
 
+targetFormatAnnotation :: String -> String -> String -> Expression
+targetFormatAnnotation n d f =
+  block
+    [ bare $ prop "target" $ sym n
+    , bare $ prop "doc" $ str d
+    , bare $ prop "format" $ sym f
+    ]
+
 targetSampleA :: Unit
 targetSampleA =
   bareUnit
@@ -243,13 +251,16 @@ targetsSpec =
   describe "target detection" $ do
     it "reads annotation ` {target: :T doc: \"x\"}" $
       (determineTarget . testDesugar) (targetAnnotation "T" "x") `shouldBe`
-      Just ("T", "x")
+      Just ("T", "x", Nothing)
     it "finds T in { a: { ` {target: :T doc: \"x\"} b: _ } }" $
       (truTargets . translateToCore fakeInput 1) targetSampleA `shouldBe`
-      [TargetSpec "T" "x" ["a", "b"]]
+      [TargetSpec "T" "x" Nothing ["a", "b"]]
     it "finds T and U in larger sample " $
       (truTargets . translateToCore fakeInput 1) targetSampleB `shouldBe`
-      [TargetSpec "T" "x" ["a", "b"], TargetSpec "U" "y" ["a", "c"]]
+      [TargetSpec "T" "x" Nothing ["a", "b"], TargetSpec "U" "y" Nothing ["a", "c"]]
+    it "reads annotation ` {target: :T format: :f doc: \"x\"}" $
+      (determineTarget . testDesugar) (targetFormatAnnotation "T" "x" "f") `shouldBe`
+      Just ("T", "x", Just "f")
 
 importAnnotation :: [String] -> Expression
 importAnnotation inputs = block [bare $ prop "import" $ list (map str inputs)]

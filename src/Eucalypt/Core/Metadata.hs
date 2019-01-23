@@ -128,11 +128,13 @@ determinePrecedence _ = 50
 
 -- | Check (unevaluated) metadata for target annotations and their
 -- documentation
-determineTarget :: CoreExpr -> Maybe (String, String)
-determineTarget meta = (, doc) <$> target
+determineTarget :: CoreExpr -> Maybe (String, String, Maybe String)
+determineTarget meta = (, doc, format) <$> target
   where
     target = join $ readUnevaluatedMetadata "target" meta symbolName
     doc = fromMaybe "" $ join $ readUnevaluatedMetadata "doc" meta stringContent
+    format = join $ readUnevaluatedMetadata "format" meta symbolName
+
 
 
 importsFromMetadata :: ToCoreBindingName a => CoreExp a -> Maybe [Input]
