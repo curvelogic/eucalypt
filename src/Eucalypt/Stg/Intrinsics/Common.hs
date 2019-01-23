@@ -1,4 +1,6 @@
-{-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase, PatternSynonyms, ViewPatterns #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Common
 Description : Common utilities for intrinsics
@@ -11,12 +13,17 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Common where
 
 import Control.Monad (foldM)
+import Data.Foldable (toList)
+import Data.List (intercalate)
 import qualified Data.Sequence as Seq
+import Data.Scientific (Scientific, floatingOrInteger)
+import Data.Sequence (Seq)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine
 
+type IntrinsicFunction = MachineState -> ValVec -> IO MachineState
 
 isNative :: StgValue -> Bool
 isNative (StgNat _ _) = True
@@ -173,3 +180,81 @@ readBlock ms addr =
     BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
     PartialApplication {} ->
       throwIn ms IntrinsicExpectedBlockFoundPartialApplication
+
+pattern Empty :: Seq a
+pattern Empty <- (Seq.viewl -> Seq.EmptyL)
+
+pattern (:<) :: a -> Seq a -> Seq a
+pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
+
+-- | class of Invokable intrinsic functions
+class Invokable f where
+  -- | String representation of expected signature for error messages etc.
+  sig :: f -> String
+  -- | Cast args as required to invoke the typed intrinsic function
+  invoke :: f -> IntrinsicFunction
+
+instance Invokable (MachineState -> Native -> IO MachineState) where
+  sig _ = "*"
+  invoke f ms (ValVec (StgNat a _ :< _)) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> String -> IO MachineState) where
+  sig _ = "String"
+  invoke f ms (ValVec (StgNat (NativeString a) _ :< _)) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Scientific -> IO MachineState) where
+  sig _ = "Number"
+  invoke f ms (ValVec (StgNat (NativeNumber a) _ :< _)) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> String -> String -> IO MachineState) where
+  sig _ = "String, String"
+  invoke f ms (ValVec (StgNat (NativeString a) _ :< (StgNat (NativeString b) _ :< _))) =
+    f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Native -> String -> IO MachineState) where
+  sig _ = "*, String"
+  invoke f ms (ValVec (StgNat a _ :< (StgNat (NativeString b) _ :< _))) =
+    f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Address -> String -> IO MachineState) where
+  sig _ = "@, String"
+  invoke f ms (ValVec (StgAddr a :< (StgNat (NativeString b) _ :< _))) =
+    f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Scientific -> Scientific -> IO MachineState) where
+  sig _ = "Number, Number"
+  invoke f ms (ValVec (StgNat (NativeNumber a) _ :< (StgNat (NativeNumber b) _ :< _))) =
+    f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+throwTypeError :: MachineState -> String -> ValVec -> IO MachineState
+throwTypeError ms expected actual =
+  throwIn ms $ IntrinsicTypeError expected $ describeActualArgs actual
+
+describeActualArgs :: ValVec -> String
+describeActualArgs (ValVec args) = intercalate ", " $ map describe $ toList args
+  where
+    describe (StgNat n _) = nativeToString n
+    describe (StgAddr _) = "@"
+
+nativeToString :: Native -> String
+nativeToString n =
+  case n of
+    NativeNumber sc ->
+      case floatingOrInteger sc of
+        Left f -> show (f :: Double)
+        Right i -> show (i :: Integer)
+    NativeString s -> s
+    NativeSymbol s -> s
+    NativeBool b ->
+      if b
+        then "true"
+        else "false"
+    NativeSet _ -> "#SET"
+    NativeDict _ -> "#DICT"

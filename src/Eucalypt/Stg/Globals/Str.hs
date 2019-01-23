@@ -25,6 +25,7 @@ globals =
   , GlobalInfo "SYM" euSym [Strict]
   , GlobalInfo "LETTERS" euLetters [Strict]
   , GlobalInfo "DQ" euDoubleQuote []
+  , GlobalInfo "FMT" euFormat [Strict, Strict]
   ]
 
 
@@ -102,3 +103,12 @@ euLetters =
 -- | DQ Constant for double quote (while we don't support standard string escapes )
 euDoubleQuote :: LambdaForm
 euDoubleQuote = value_ (Atom $ Literal $ NativeString "\"")
+
+
+-- | __FMT(obj, spec) format a native object according to a format identifier
+euFormat :: LambdaForm
+euFormat =
+  lam_ 0 2 $
+  ann_ "__FMT" 0 $
+  force_ (Atom (Local 0)) $
+  force_ (Atom (Local 1)) $ appbif_ (intrinsicIndex "FMT") [Local 2, Local 3]

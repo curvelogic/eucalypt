@@ -29,38 +29,20 @@ import Eucalypt.Stg.Machine
 intrinsics :: [IntrinsicInfo]
 intrinsics =
   [ IntrinsicInfo "===" 2 Eq.natEq
-  , IntrinsicInfo "ADD" 2 Arith.add
-  , IntrinsicInfo "SUB" 2 Arith.sub
-  , IntrinsicInfo "MUL" 2 Arith.mul
-  , IntrinsicInfo "DIV" 2 Arith.divide
-  , IntrinsicInfo "LT" 2 Arith.lt
-  , IntrinsicInfo "GT" 2 Arith.gt
-  , IntrinsicInfo "LTE" 2 Arith.lte
-  , IntrinsicInfo "GTE" 2 Arith.gte
-  , IntrinsicInfo "MOD" 2 Arith.modulo
-  , IntrinsicInfo "FLOOR" 1 Arith.flr
-  , IntrinsicInfo "CEILING" 1 Arith.ceil
   , IntrinsicInfo "EMIT{" 0 Emit.emitMappingStart
   , IntrinsicInfo "EMIT}" 0 Emit.emitMappingEnd
   , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart
   , IntrinsicInfo "EMIT]" 0 Emit.emitSequenceEnd
   , IntrinsicInfo "EMITx" 1 Emit.emitScalar
   , IntrinsicInfo "EMIT0" 0 Emit.emitNull
-  , IntrinsicInfo "SPLIT" 2 Str.split
-  , IntrinsicInfo "MATCH" 2 Str.match
-  , IntrinsicInfo "MATCHES" 2 Str.matches
-  , IntrinsicInfo "JOIN" 2 Str.join
-  , IntrinsicInfo "LETTERS" 1 Str.letters
   , IntrinsicInfo "META" 1 Meta.meta
   , IntrinsicInfo "WITHMETA" 2 Meta.withMeta
   , IntrinsicInfo "PANIC" 1 Panic.panic
   , IntrinsicInfo "PRUNE" 1 Block.prune
   , IntrinsicInfo "PRUNEMERGE" 2 Block.pruneMerge
   , IntrinsicInfo "CLOSED" 1 General.closed
-  , IntrinsicInfo "STRNAT" 1 Str.strNat
-  , IntrinsicInfo "STRSYM" 1 Str.strSym
   , IntrinsicInfo "NUMPARSE" 1 Number.parse
-  ] <> Set.intrinsics <> Dict.intrinsics
+  ] <> Set.intrinsics <> Dict.intrinsics <> Str.intrinsics <> Arith.intrinsics
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available

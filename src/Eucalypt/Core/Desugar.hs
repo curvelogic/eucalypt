@@ -293,8 +293,11 @@ translateStringPattern loc cs = do
   return $ processAnaphora (conc smid) >>= \(Reference v) -> anon Syn.var v
   where
     sub :: StringChunk -> CoreExp Target
-    sub (Interpolation InterpolationRequest {refTarget = t}) =
-      anon Syn.app (anon Syn.bif "STR") [anon Syn.var t]
+    sub (Interpolation InterpolationRequest {refTarget = t, refParseOrFormat = spec}) =
+      case spec of
+        (Just fmt@('%':_)) -> anon Syn.app (anon Syn.bif "FMT") [anon Syn.var t, anon Syn.str fmt]
+        (Just fmt) -> anon Syn.app (anon Syn.var (Reference fmt)) [anon Syn.var t]
+        Nothing -> anon Syn.app (anon Syn.bif "STR") [anon Syn.var t]
     sub (LiteralContent s) = anon Syn.str s
     exprs = map sub cs
     conc smid =

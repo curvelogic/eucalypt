@@ -371,6 +371,9 @@ str: {
 
   ` "`len(s)` - return length of string in characters."
   len: count ∘ letters
+
+  ` "`fmt(x, spec)` - format `x` using printf-style format `spec`."
+  fmt: __FMT
 }
 
 ##

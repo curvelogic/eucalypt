@@ -313,6 +313,32 @@ interpolationSpec =
                ]
            , ASyn.str ""
            ])
+    it "handles printf format specifiers \"{foo:%-3d}{bar:%-3d}\"" $
+      testDesugar <$>
+      parseExpression "\"{foo:%-3d}{bar:%-3d}\"" "test" `shouldBe`
+      Right
+        (Syn.app
+           1
+           (ASyn.bif "JOIN")
+           [ Syn.corelist
+               1
+               [ASyn.app (ASyn.bif "FMT") [ASyn.var "foo", ASyn.str "%-3d"],
+                ASyn.app (ASyn.bif "FMT") [ASyn.var "bar", ASyn.str "%-3d"]]
+           , ASyn.str ""
+           ])
+    it "handles fn format specifiers \"{foo:myfmt}{bar:myfmt}\"" $
+      testDesugar <$>
+      parseExpression "\"{foo:myfmt}{bar:myfmt}\"" "test" `shouldBe`
+      Right
+        (Syn.app
+           1
+           (ASyn.bif "JOIN")
+           [ Syn.corelist
+               1
+               [ASyn.app (ASyn.var "myfmt") [ASyn.var "foo"],
+                ASyn.app (ASyn.var "myfmt") [ASyn.var "bar"]]
+           , ASyn.str ""
+           ])
     it "handles empty string \"\"" $
       testDesugar <$>
       parseExpression "\"\"" "test" `shouldBe` Right (Syn.str 1 "")
