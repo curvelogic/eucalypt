@@ -364,7 +364,10 @@ getOptions = execParser opts >>= preprocessOptions
 -- | Merge settings read from target metadata into options
 mergeTargetSettingsIntoOptions :: TargetSpec -> EucalyptOptions -> EucalyptOptions
 mergeTargetSettingsIntoOptions target opts =
-  opts { optionExportFormat = tgtFormat target }
+  case optionExportFormat opts of
+    Nothing -> opts {optionExportFormat = tgtFormat target}
+    _ -> opts
+
 
 
 -- | Set any options still remaining unconfigured to defaults prior to execution
