@@ -113,10 +113,10 @@ varify e = e
 
 -- | Record the current stack as a path into the namespaces with name
 -- of target and any associated documentation
-recordTarget :: String -> String -> Translate ()
-recordTarget targetName targetDoc = do
+recordTarget :: String -> String -> Maybe String -> Translate ()
+recordTarget targetName targetDoc targetFormat = do
   stack <- gets trStack
-  let target = TargetSpec targetName targetDoc (reverse stack)
+  let target = TargetSpec targetName targetDoc targetFormat (reverse stack)
   targets <- gets trTargets
   modify $ \s -> s {trTargets = target : targets, trStack = stack}
 
@@ -228,7 +228,7 @@ translateDeclarationForm a _k Located {locatee = form, location = loc} = do
 checkTarget :: CoreExpr -> Translate ()
 checkTarget annot =
   case determineTarget annot of
-    Just (tgt, doc) -> recordTarget tgt doc
+    Just (tgt, doc, format) -> recordTarget tgt doc format
     Nothing -> return ()
 
 
