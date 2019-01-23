@@ -31,7 +31,7 @@ import Eucalypt.Core.Target
 import Eucalypt.Core.Unit
 import Eucalypt.Core.Verify
 import Eucalypt.Driver.IOSource (prepareIOUnit)
-import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..))
+import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..), finalise, mergeTargetSettingsIntoOptions)
 import qualified Eucalypt.Driver.Stg as STG
 import qualified Eucalypt.Driver.Core as Core
 import Eucalypt.Reporting.Error (EucalyptError(..))
@@ -104,18 +104,14 @@ readEvaluand src baseSMID =
 --
 -- If an evaluand is found, it is applied by creating a new unit and
 -- merging it into that supplied
-formEvaluand :: EucalyptOptions -> TranslationUnit -> IO CoreExpr
-formEvaluand EucalyptOptions {..} TranslationUnit {..} =
+formEvaluand :: Maybe String -> Maybe TargetSpec -> TranslationUnit -> IO CoreExpr
+formEvaluand evaluand target TranslationUnit {..} =
   case evalSource of
     Nothing -> return truCore
     Just source ->
       rebody truCore <$> readEvaluand source (nextSMID 1 truSourceMap)
   where
-    findTarget tgt =
-      headMay $ map (fmtPath . tgtPath) $ filter ((== tgt) . tgtName) truTargets
-    evalSource =
-      optionEvaluand <|> (optionTarget >>= findTarget) <|> findTarget "main"
-    fmtPath = intercalate "."
+    evalSource = evaluand <|> fmap (intercalate "." . tgtPath) target
 
 
 
@@ -160,9 +156,18 @@ evaluate opts = do
   -- source map to trace exceptions back to the relevant source code.
   tryOrReportUsingSourceMap (Core.loadInput cachingLoader) (truSourceMap unit) $ do
 
+    -- If a target has been requested, merge any settings associated
+    -- with the target into our final options
+    let target = do
+          tgt <- optionTarget opts <|> Just "main"
+          headMay $ filter ((== tgt) . tgtName) (truTargets unit)
+    let finalOptions = case target of
+          (Just t) -> finalise $ mergeTargetSettingsIntoOptions t opts
+          Nothing -> opts
+
     -- Stage 5: form an expression to evaluate from the source or
     -- command line and embed it in the core tree
-    evaluand <- {-# SCC "FormEvaluand" #-} formEvaluand opts unit
+    evaluand <- {-# SCC "FormEvaluand" #-} formEvaluand (optionEvaluand finalOptions) target unit
     when (cmd == DumpEvalSubstituted)
       (putStrLn (pprint evaluand) >> exitSuccess)
 
@@ -193,13 +198,13 @@ evaluate opts = do
     -- Stage 9: drive the evaluation by rendering it
     -- Compile to STG and execute in machine
     when (cmd == DumpStg)
-      (STG.dumpStg opts finalEvaluand >> exitSuccess)
-    bytes <- {-# SCC "RenderBytes" #-} STG.renderConduit opts finalEvaluand
-    {-# SCC "OutputBytes" #-} outputBytes opts bytes >> exitSuccess
+      (STG.dumpStg finalOptions finalEvaluand >> exitSuccess)
+
+    bytes <- {-# SCC "RenderBytes" #-} STG.renderConduit finalOptions finalEvaluand
+    {-# SCC "OutputBytes" #-} outputBytes finalOptions bytes >> exitSuccess
 
   where
     cmd = optionCommand opts
-
 
 
 -- | Output the rendered bytes to the specified output

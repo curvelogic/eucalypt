@@ -6,6 +6,7 @@ import Control.Monad (filterM, (>=>))
 import Control.Monad.IO.Class
 import Data.Maybe (fromJust)
 import Data.Semigroup ((<>))
+import Eucalypt.Core.Target
 import Eucalypt.Syntax.Input (Input(..), Locator(..), parseInputFromString)
 import Options.Applicative
 import Path
@@ -307,7 +308,7 @@ inferOutputFormat opts =
     Nothing ->
       opts
         { optionExportFormat =
-            (takeExtension <$> optionOutput opts >>= extToFormat) <|> Just "yaml"
+            takeExtension <$> optionOutput opts >>= extToFormat
         }
     Just _ -> opts
   where
@@ -358,3 +359,16 @@ getOptions = execParser opts >>= preprocessOptions
         (options <**> helper)
         (fullDesc <> progDesc "Run eucalypt transformations" <>
          header "eu - command line interface to Eucalypt")
+
+
+-- | Merge settings read from target metadata into options
+mergeTargetSettingsIntoOptions :: TargetSpec -> EucalyptOptions -> EucalyptOptions
+mergeTargetSettingsIntoOptions target opts =
+  opts { optionExportFormat = tgtFormat target }
+
+
+-- | Set any options still remaining unconfigured to defaults prior to execution
+finalise :: EucalyptOptions -> EucalyptOptions
+finalise opts = case optionExportFormat opts of
+  Nothing -> opts { optionExportFormat = Just "yaml" }
+  _ -> opts
