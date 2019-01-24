@@ -43,7 +43,7 @@ data Primitive
 
 
 
--- | A name in a block namespace, used in lookups
+-- | A name in a bloc123k namespace, used in lookups
 type CoreRelativeName = String
 
 
@@ -362,7 +362,7 @@ callOp = anon infixl_ 90 (anon bif "*CALL*")
 -- | Name lookup is treated as operator during the fixity / precedence
 -- resolution phases but formed into core syntax after that.
 lookupOp :: CoreExpr
-lookupOp = anon infixl_ 95 (anon bif "*DOT*")
+lookupOp = anon infixl_ 90 (anon bif "*DOT*")
 
 -- ? anaphora
 --

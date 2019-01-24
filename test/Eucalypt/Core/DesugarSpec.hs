@@ -215,6 +215,17 @@ sampleSpec =
       testDesugar <$>
       parseExpression "x - 1" "test" `shouldBe`
       Right (ASyn.soup [Syn.var 1 "x", Syn.var 2 "-", Syn.int 3 1])
+    it "desugars f(x).v" $
+      testDesugar <$>
+      parseExpression "f(x).v" "test" `shouldBe`
+      Right
+        (ASyn.soup
+           [ Syn.var 1 "f"
+           , Syn.callOp
+           , Syn.args 3 [Syn.var 2 "x"]
+           , Syn.lookupOp
+           , Syn.corename 4 "v"
+           ])
 
 
 targetAnnotation :: String -> String -> Expression

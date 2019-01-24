@@ -81,7 +81,7 @@ pruneUnevaluatedMetadata _ meta = meta
 -- | Precedence classes
 precedenceClasses :: [(String, Precedence)]
 precedenceClasses =
-  [ ("lookup", 100)
+  [ ("lookup", 90)
   , ("call", 90)
   , ("bool-unary", 88)
   , ("exp", 85)
