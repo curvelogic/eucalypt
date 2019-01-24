@@ -80,10 +80,11 @@ transform False (CoreOperator smid x p e) =
   let anaphoric = hasNakedBlockAnaphora e
       e' = transform anaphoric e
   in CoreOperator smid x p e'
-transform False (CoreLookup smid o n) =
+transform False (CoreLookup smid o n d) =
   let anaphoric = hasNakedBlockAnaphora o
       o' = transform anaphoric o
-  in CoreLookup smid o' n
+      d' = transform anaphoric <$> d
+  in CoreLookup smid o' n d'
 transform False expr@(CoreApply smid f xs) =
   let anaphoric = hasNakedBlockAnaphora expr
       f' = transform anaphoric f

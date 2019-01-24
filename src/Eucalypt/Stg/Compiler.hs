@@ -168,7 +168,10 @@ compile envSize context _metaref f@CoreLambda{} =
   let_ [compileBinding envSize context ("<anon>", f)]
   $ Atom $ Local $ fromIntegral envSize
 
-compile envSize context _metaref (CoreLookup _ obj nm) =
+-- | Compile a dot lookup or name used in a generalised lookup context
+--
+-- TODO: lookup-or
+compile envSize context _metaref (CoreLookup _ obj nm _default) =
   let_
     [compileBinding envSize context ("", obj)]
     (appfn_

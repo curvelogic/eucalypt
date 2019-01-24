@@ -56,8 +56,8 @@ processImports load (CoreLambda smid i ns b) = CoreLambda smid i ns b'
   where
     b' = f b
     f = transScope (processImports (liftLoad load))
-processImports load (CoreLookup smid obj n) =
-  CoreLookup smid (processImports load obj) n
+processImports load (CoreLookup smid obj n d) =
+  CoreLookup smid (processImports load obj) n (processImports load <$> d)
 processImports load (CoreList smid els) =
   CoreList smid $ map (processImports load) els
 processImports load (CoreBlock smid l) =

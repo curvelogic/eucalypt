@@ -12,6 +12,7 @@ module Eucalypt.Core.Pretty
 
 import qualified Data.Vector as V
 import Bound.Scope
+import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn
 import Eucalypt.Core.SourceMap
 import Prelude hiding ((<>))
@@ -60,7 +61,7 @@ prepare (CoreLet _ bs body) =
     prettyBody = (prepare . inst) body
     bindExprs = map (prepare . inst . snd) bs
     binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
-prepare (CoreLookup _ x y) = prepare x <+> char '.' <> text y
+prepare (CoreLookup _ x y d) = prepare x <+> char '.' <> text y <> fromMaybe (text "") (prepare <$> d)
 prepare (CoreBlock _ e) = braces $ prepare e
 prepare (CoreList _ [k@(CorePrim _ (CoreSymbol _)), v]) = brackets (prepare k <> comma <> prepare v)
 prepare (CoreList _ xs) = brackets . vcat . punctuate comma $ map prepare xs

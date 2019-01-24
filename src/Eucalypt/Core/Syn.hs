@@ -85,6 +85,8 @@ data CoreExp a
   | CoreLookup SMID
                (CoreExp a)
                CoreRelativeName
+               (Maybe (CoreExp a))
+    -- ^ from dot operator or name used in generalised lookup context
   | CoreName SMID CoreRelativeName
     -- ^ new parser - relative lookup name
   | CoreList SMID [CoreExp a]
@@ -114,7 +116,7 @@ sourceMapId (CoreVar smid _) = smid
 sourceMapId (CoreLet smid _ _) = smid
 sourceMapId (CoreBuiltin smid _) = smid
 sourceMapId (CorePrim smid _) = smid
-sourceMapId (CoreLookup smid _ _) = smid
+sourceMapId (CoreLookup smid _ _ _) = smid
 sourceMapId (CoreName smid _) = smid
 sourceMapId (CoreList smid _) = smid
 sourceMapId (CoreBlock smid _) = smid
@@ -188,7 +190,7 @@ instance Monad CoreExp where
   CoreLet smid bs b >>= f = CoreLet smid (map (second (>>>= f)) bs) (b >>>= f)
   CoreBuiltin smid n >>= _ = CoreBuiltin smid n
   CorePrim smid p >>= _ = CorePrim smid p
-  CoreLookup smid e n >>= f = CoreLookup smid (e >>= f) n
+  CoreLookup smid e n d >>= f = CoreLookup smid (e >>= f) n ((>>= f) <$> d)
   CoreList smid es >>= f = CoreList smid (map (>>= f) es)
   CoreBlock smid e >>= f = CoreBlock smid (e >>= f)
   CoreMeta smid m e >>= f = CoreMeta smid (m >>= f) (e >>= f) -- TODO: separate meta?
@@ -215,7 +217,7 @@ corename = CoreName
 
 -- | Construct a lookup
 corelookup :: SMID -> CoreExp a -> CoreRelativeName -> CoreExp a
-corelookup = CoreLookup
+corelookup smid obj n = CoreLookup smid obj n Nothing
 
 
 
