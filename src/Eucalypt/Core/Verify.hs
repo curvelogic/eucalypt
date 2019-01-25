@@ -29,7 +29,7 @@ verify ::
                   (CoreExp a -> [CoreError]))
   -> CoreExp b
   -> [CoreError]
-verify f e@(CoreLet _ bs b) =
+verify f e@(CoreLet _ bs b _) =
   let shallow = f e
       deep = fold (verify f (unscope b) : map (verify f . unscope . snd) bs)
   in shallow ++ deep

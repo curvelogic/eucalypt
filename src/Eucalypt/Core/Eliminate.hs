@@ -17,14 +17,14 @@ import qualified Data.Set as Set
 
 -- | Eliminate unused bindings from let expressions.
 prune :: CoreExp a -> CoreExp a
-prune (CoreLet smid bs b) =
+prune (CoreLet smid bs b _) =
   let prunedB = pruneScope b
       usedInB = foldMapBound Set.singleton prunedB
       prunedBs = map (second pruneScope) bs
       setsBoundByBs = map (foldMapBound Set.singleton . snd) prunedBs
       usedInBs = mconcat $ removeSelfReferences setsBoundByBs
       used = usedInB <> usedInBs
-   in CoreLet smid (blankUnused used prunedBs) prunedB
+   in CoreLet smid (blankUnused used prunedBs) prunedB OtherLet
   where
     pruneScope = toScope . prune . fromScope
     blankUnused u binds = map (blankNon u) (zip [0 ..] binds)
@@ -56,19 +56,20 @@ removeSelfReferences boundSets = zipWith f boundSets [0..]
 -- | Remove let bindings that have been overwritten by CoreEliminated
 -- in the 'prune' step
 compress :: CoreExp a -> CoreExp a
-compress (CoreLet smid bs b) =
+compress (CoreLet smid bs b _) =
   let compressedB = compressScope b
       compressedBs = map (second compressScope) bs
       indexRemapping = newBindIndexes $ map bindingIsNotEliminated compressedBs
       editedBindings =
         map (second $ remapBindings indexRemapping) $
         filter bindingIsNotEliminated compressedBs
-   in
-    if null editedBindings
-    then
-      instantiate (const CoreEliminated) compressedB
-    else
-      CoreLet smid editedBindings $ remapBindings indexRemapping compressedB
+   in if null editedBindings
+        then instantiate (const CoreEliminated) compressedB
+        else CoreLet
+               smid
+               editedBindings
+               (remapBindings indexRemapping compressedB)
+               OtherLet
   where
     compressScope = toScope . compress . fromScope
     bindingIsNotEliminated = not . isEliminated . unscope . snd

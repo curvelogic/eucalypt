@@ -103,7 +103,7 @@ compile ::
   -> StgSyn
 
 -- | Compile a let. All Core lets are potentially recursive
-compile envSize context _metaref (C.CoreLet _ bs b) =
+compile envSize context _metaref (C.CoreLet _ bs b _) =
   letrec_ stgBindings stgBody
   where
     l = length bs

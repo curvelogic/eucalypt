@@ -39,6 +39,9 @@ lam = anon Syn.lam
 letexp :: [(Syn.CoreBindingName, Syn.CoreExpr)] -> Syn.CoreExpr -> Syn.CoreExpr
 letexp = anon Syn.letexp
 
+letblock :: [(Syn.CoreBindingName, Syn.CoreExpr)] -> Syn.CoreExpr -> Syn.CoreExpr
+letblock = anon Syn.letblock
+
 app :: Syn.CoreExp a -> [Syn.CoreExp a] -> Syn.CoreExp a
 app = anon Syn.app
 

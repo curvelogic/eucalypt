@@ -44,7 +44,8 @@ throwEvalError = Interpreter . Left
 -- binding to (*) = (Lambda body)
 --
 distributeFixities :: CoreExp a -> CoreExp a
-distributeFixities (CoreLet smid bs b) = CoreLet smid prunedBindings newBody
+distributeFixities (CoreLet smid bs b _) =
+  CoreLet smid prunedBindings newBody OtherLet
   where
     newBody = modifyBoundVars bindSiteReplace $ distributeScopeFixities b
     distBindings =
@@ -137,7 +138,8 @@ cookBottomUp anaphoric (CoreApply smid f exprs) =
   traverse (cookBottomUp anaphoric) exprs
 cookBottomUp anaphoric (CoreLambda smid i n body) =
   CoreLambda smid i n <$> runInterpreter (cookScope anaphoric body)
-cookBottomUp anaphoric (CoreLet smid bs body) = CoreLet smid <$> newBindings <*> newBody
+cookBottomUp anaphoric (CoreLet smid bs body _) =
+  CoreLet smid <$> newBindings <*> newBody <*> pure OtherLet
   where
     newBody = runInterpreter (cookScope anaphoric body)
     newBindings =

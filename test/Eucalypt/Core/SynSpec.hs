@@ -35,7 +35,7 @@ let2 = letexp [("a", int 5), ("b", int 2)] body
 
 
 letBody :: CoreExpr -> Maybe (Scope Int CoreExp CoreBindingName)
-letBody (CoreLet _ _ b) = Just b
+letBody (CoreLet _ _ b _) = Just b
 letBody _ = Nothing
 
 bodyA :: CoreExpr

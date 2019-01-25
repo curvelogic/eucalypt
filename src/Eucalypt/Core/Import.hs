@@ -47,7 +47,7 @@ processImports load expr@(CoreMeta smid m body) =
       CoreMeta smid (pruneImports m) $
       foldr (\i e -> rebody (load i) e) (processImports load body) imports
     Nothing -> expr
-processImports load (CoreLet smid bs b) = CoreLet smid bs' b'
+processImports load (CoreLet smid bs b _) = CoreLet smid bs' b' OtherLet
   where
     b' = f b
     bs' = map (second f) bs

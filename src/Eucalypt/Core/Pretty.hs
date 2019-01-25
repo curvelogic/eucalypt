@@ -53,7 +53,7 @@ prepare :: Show a => CoreExp a -> Doc
 prepare (CoreBuiltin _ n) = text $ "__" ++ n
 prepare (CoreVar _ x) = (text . unquote . show) x
 prepare (CorePrim _ x) = (text . renderLiteral) x
-prepare (CoreLet _ bs body) =
+prepare (CoreLet _ bs body _) =
   text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
   where
     names = map fst bs

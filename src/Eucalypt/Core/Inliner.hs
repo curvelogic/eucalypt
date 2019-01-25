@@ -21,8 +21,7 @@ inline = betaReduce . distribute . tagInlinables
 --
 -- Dead definitions will remain at this stage.
 distribute :: CoreExp a -> CoreExp a
-distribute (CoreLet smid bs b) =
-  CoreLet smid bindings body
+distribute (CoreLet smid bs b cl) = CoreLet smid bindings body cl
   where
     bindingsToInline = map (selectScopeForInline . snd) bs
     body = instantiateSome bindingsToInline b
@@ -101,7 +100,7 @@ tagInlinables e@(CoreLambda smid False ns body) =
     CoreLambda smid True ns body
   else
     e
-tagInlinables (CoreLet smid bs b) = CoreLet smid bs' b'
+tagInlinables (CoreLet smid bs b cl) = CoreLet smid bs' b' cl
   where
     b' = tagInlinablesScope b
     bs' = map (second tagInlinablesScope) bs
@@ -135,7 +134,7 @@ betaReduce (CoreApply smid f xs) =
   CoreApply smid (betaReduce f) (map betaReduce xs)
 betaReduce (CoreLambda smid i ns body) =
   CoreLambda smid i ns $ transScope betaReduce body
-betaReduce (CoreLet smid bs b) = CoreLet smid bs' b'
+betaReduce (CoreLet smid bs b cl) = CoreLet smid bs' b' cl
   where
     b' = betaReduceScope b
     bs' = map (second betaReduceScope) bs

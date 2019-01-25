@@ -143,23 +143,43 @@ interpretForStaticBoundContext exprs =
 
 
 
--- | Process static instances of generalised lookup
+-- | Process any static instances of generalised lookup
 --
--- Assumes call operator is highest precedence
+-- Works through soup identifying {..}.expr and turning expr into a
+-- new body for the let representing the block. This has the effect of
+-- also optimising @{ a: 1 }.a@ into @let a = 1 in a@ rather than a
+-- lookup in a block.
+--
+--
+-- This is too general, it should only be willing to rebody if the let
+-- truly represents a block that would expose all the bound names.
 processStaticGenLookup :: [CoreExpr] -> [CoreExpr]
 processStaticGenLookup =
   result . head . dropWhile (not . done) . iterate stepOne . initState
   where
-    initState es = ([], False, es)
-    stepOne (o@CoreLet {}:os, False, CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):es) =
-      (o : os, True, es)
-    stepOne (out, False, e:es) = (e : out, False, es)
-    stepOne (o@CoreLet {}:os, True, e:es) =
-      (rebody o (varify e) : os, False, es)
+    initState es = ([], False, es) -- (processed, in-lookup, to-process)
+    stepOne (o@(CoreLet _ _ _ DefaultBlockLet):os, False, CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):es) =
+      (o : os, True, es) -- turn in-lookup on
+    stepOne (out, False, e:es) = (e : out, False, es) -- move to processed
+    stepOne (o@(CoreLet _ _ _ DefaultBlockLet):os, True, e:es) =
+      (rebody o (varify e) : os, False, es) -- process the next
+      -- expression into a new body for the let representing the block
     stepOne _ = error "Unhandled step while processing gen lookups"
     done (_, _, []) = True
     done _ = False
     result (out, _, _) = reverse out
+
+
+
+-- | When an expression appears after the '.', all free variables
+-- inside it are potentially to be found within the lookup object,
+-- not our wider binding environment so we need to wrap the @CoreVar@
+-- in a @CoreLookup@.
+--
+-- TODO: this loses SMIDs!
+transformDynamicGenLookupContext :: CoreExpr -> CoreExpr -> CoreExpr
+transformDynamicGenLookupContext obj expr =
+  expr >>= (\v -> CoreLookup 0 obj v (Just (CoreVar 0 v)))
 
 
 
@@ -258,7 +278,7 @@ translateBlock loc blk = do
       popKey
       return (declMeta, k, valMeta, expr)
   b <- body dforms
-  mint2 letexp loc (bindings dforms) b
+  mint2 letblock loc (bindings dforms) b
   where
     extractKey Annotated {content = Located {locatee = decl}} =
       let name =
