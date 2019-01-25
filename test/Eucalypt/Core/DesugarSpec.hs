@@ -107,24 +107,6 @@ soupSpec =
         , Syn.lookupOp
         , Syn.corename 3 "z"
         ]
-    it "handles static generalised lookup" $
-      processStaticGenLookup
-        [ ASyn.letblock [("a", ASyn.int 1)] $
-          ASyn.block [ASyn.element "a" (ASyn.var "a")]
-        , Syn.lookupOp
-        , ASyn.soup [ASyn.corename "a", ASyn.corename "+", ASyn.corename "a"]
-        ] `shouldBe`
-      [ ASyn.letexp [("a", ASyn.int 1)] $
-        ASyn.soup [ASyn.corename "a", ASyn.corename "+", ASyn.corename "a"]
-      ]
-    it "handles simple lookup on blocks" $
-      (processStaticGenLookup . interpretForStaticBoundContext)
-        [ ASyn.letblock [("a", ASyn.int 1)] $
-          ASyn.block [ASyn.element "a" (ASyn.var "a")]
-        , Syn.lookupOp
-        , ASyn.corename "a"
-        ] `shouldBe`
-      [ASyn.letexp [("a", ASyn.int 1)] $ ASyn.var "a"]
 
 blockSpec :: Spec
 blockSpec =

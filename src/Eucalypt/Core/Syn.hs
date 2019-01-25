@@ -20,13 +20,13 @@ where
 import Bound
 import Bound.Scope
 import Control.Monad.State.Strict
-import Data.Char (isDigit)
+import Data.Bifunctor (second)
+import Data.Char (isDigit, isUpper)
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
-import Data.List (elemIndex)
+import Data.List (isPrefixOf, elemIndex)
 import Data.Maybe
 import Data.Traversable (for)
-import Data.Bifunctor (second)
 import Eucalypt.Core.Anaphora
 import Eucalypt.Core.SourceMap
 import Safe (maximumMay)
@@ -235,6 +235,7 @@ instance Monad CoreExp where
   CoreEliminated >>= _ = CoreEliminated
 
 
+
 -- | Construct a var
 var :: SMID -> a -> CoreExp a
 var = CoreVar
@@ -407,6 +408,24 @@ callOp = anon infixl_ 90 (anon bif "*CALL*")
 -- resolution phases but formed into core syntax after that.
 lookupOp :: CoreExpr
 lookupOp = anon infixl_ 90 (anon bif "*DOT*")
+
+
+-- | Names that aren't in lookup positions need to become variables or
+-- builtins as appropriate
+name2Var :: SMID -> String -> CoreExpr
+name2Var smid n
+  | "__" `isPrefixOf` n && isUpper (n !! 2) = CoreBuiltin smid (drop 2 n)
+  | otherwise = CoreVar smid n
+
+
+
+-- | In contexts where single names should become variables (evaluand
+-- rather than individual lookup elements for instance), this converts
+-- to vars.
+varify :: CoreExpr -> CoreExpr
+varify (CoreName smid n) = name2Var smid n
+varify e = e
+
 
 -- ? anaphora
 --

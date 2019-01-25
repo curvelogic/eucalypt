@@ -21,7 +21,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Eucalypt.Core.BlockAnaphora (anaphorise)
 import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
-import Eucalypt.Core.Desugar (translateExpressionToCore, varify)
+import Eucalypt.Core.Desugar (translateExpressionToCore)
 import Eucalypt.Core.Eliminate (prune, compress)
 import Eucalypt.Core.Inliner (inline)
 import Eucalypt.Core.Pretty

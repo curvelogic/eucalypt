@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving  #-}
 {-|
-Module      : Eucalypt.Core.Syn
+Module      : Eucalypt.Core.Desugar
 Description : Desugar from surface syntax to core syntax
 Copyright   : (c) Greg Hawkins, 2018
 License     :
@@ -12,11 +12,10 @@ module Eucalypt.Core.Desugar
 where
 
 import Control.Monad.State.Strict
-import Data.Char (isUpper)
-import Data.List (isPrefixOf)
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import Eucalypt.Core.Anaphora ()
+import Eucalypt.Core.GenLookup (processGenLookup)
 import Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Metadata
@@ -84,30 +83,12 @@ relativeName n =
 
 
 
--- | Names that aren't in lookup positions need to become variables or
--- builtins as appropriate
-name2Var :: SMID -> String -> CoreExpr
-name2Var smid n
-  | "__" `isPrefixOf` n && isUpper (n !! 2) = CoreBuiltin smid (drop 2 n)
-  | otherwise = CoreVar smid n
-
-
-
 -- | Ignore splices for now TODO: splice expressions
 declarations :: Block -> [Annotated DeclarationForm]
 declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
   where
     toDecl Located{locatee=(Splice _)} = Nothing
     toDecl Located{locatee=(Declaration d)} = Just d
-
-
-
--- | In contexts where single names should become variables (evaluand
--- rather than individual lookup elements for instance), this converts
--- to vars.
-varify :: CoreExpr -> CoreExpr
-varify (CoreName smid n) = name2Var smid n
-varify e = e
 
 
 
@@ -131,8 +112,8 @@ recordImports imports =
 
 -- | Process names to vars as appropriate for a context where the
 -- exprs will be statically bound
-interpretForStaticBoundContext :: [CoreExpr] -> [CoreExpr]
-interpretForStaticBoundContext exprs =
+varifyLookupTargets :: [CoreExpr] -> [CoreExpr]
+varifyLookupTargets exprs =
   zipWith toVar exprs (anon corenull : exprs)
   where
     toVar :: CoreExpr -> CoreExpr -> CoreExpr
@@ -140,46 +121,6 @@ interpretForStaticBoundContext exprs =
       n
     toVar (CoreName smid v) _ = name2Var smid v
     toVar e _ = e
-
-
-
--- | Process any static instances of generalised lookup
---
--- Works through soup identifying {..}.expr and turning expr into a
--- new body for the let representing the block. This has the effect of
--- also optimising @{ a: 1 }.a@ into @let a = 1 in a@ rather than a
--- lookup in a block.
---
---
--- This is too general, it should only be willing to rebody if the let
--- truly represents a block that would expose all the bound names.
-processStaticGenLookup :: [CoreExpr] -> [CoreExpr]
-processStaticGenLookup =
-  result . head . dropWhile (not . done) . iterate stepOne . initState
-  where
-    initState es = ([], False, es) -- (processed, in-lookup, to-process)
-    stepOne (o@(CoreLet _ _ _ DefaultBlockLet):os, False, CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):es) =
-      (o : os, True, es) -- turn in-lookup on
-    stepOne (out, False, e:es) = (e : out, False, es) -- move to processed
-    stepOne (o@(CoreLet _ _ _ DefaultBlockLet):os, True, e:es) =
-      (rebody o (varify e) : os, False, es) -- process the next
-      -- expression into a new body for the let representing the block
-    stepOne _ = error "Unhandled step while processing gen lookups"
-    done (_, _, []) = True
-    done _ = False
-    result (out, _, _) = reverse out
-
-
-
--- | When an expression appears after the '.', all free variables
--- inside it are potentially to be found within the lookup object,
--- not our wider binding environment so we need to wrap the @CoreVar@
--- in a @CoreLookup@.
---
--- TODO: this loses SMIDs!
-transformDynamicGenLookupContext :: CoreExpr -> CoreExpr -> CoreExpr
-transformDynamicGenLookupContext obj expr =
-  expr >>= (\v -> CoreLookup 0 obj v (Just (CoreVar 0 v)))
 
 
 
@@ -197,7 +138,7 @@ transformDynamicGenLookupContext obj expr =
 translateSoup :: [Expression] -> Translate CoreExpr
 translateSoup items =
   anon CoreOpSoup .
-  processStaticGenLookup . interpretForStaticBoundContext . concat <$>
+  processGenLookup . varifyLookupTargets . concat <$>
   traverse trans items
   where
     trans :: Expression -> Translate [CoreExpr]
