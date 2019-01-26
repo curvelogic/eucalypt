@@ -12,7 +12,6 @@ module Eucalypt.Core.Pretty
 
 import qualified Data.Vector as V
 import Bound.Scope
-import Data.Maybe (fromMaybe)
 import Eucalypt.Core.Syn
 import Eucalypt.Core.SourceMap
 import Prelude hiding ((<>))
@@ -32,7 +31,6 @@ import Text.PrettyPrint
   , render
   , text
   , vcat
-  -- , empty
   )
 
 renderLiteral :: Primitive -> String
@@ -61,7 +59,7 @@ prepare (CoreLet _ bs body _) =
     prettyBody = (prepare . inst) body
     bindExprs = map (prepare . inst . snd) bs
     binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
-prepare (CoreLookup _ x y d) = prepare x <+> char '.' <> text y <> fromMaybe (text "") (prepare <$> d)
+prepare (CoreLookup _ x y d) = prepare x <+> char '.' <> text y <> char '?' <> maybe (text "") prepare d
 prepare (CoreBlock _ e) = braces $ prepare e
 prepare (CoreList _ [k@(CorePrim _ (CoreSymbol _)), v]) = brackets (prepare k <> comma <> prepare v)
 prepare (CoreList _ xs) = brackets . vcat . punctuate comma $ map prepare xs
@@ -81,7 +79,7 @@ prepare (CoreApply _ f es) = prepare f <> parens ( hsep . punctuate comma $ map 
 prepare (CoreName _ n) = text n
 prepare (CoreOperator _ x p e) =
   char '^' <> text (show x) <> parens (text (show p)) <> char '^' <> prepare e
-prepare (CoreUnresolved _ v) = text $ "**********UNRESOLVED: " ++ v ++ "**********"
+prepare (CoreUnresolved _ v) = text $ "!!" ++ v ++ "!!"
 prepare CoreEliminated = text "**********GONE**********"
 
 

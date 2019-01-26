@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 module Eucalypt.Core.GenLookupSpec
   ( main
   , spec
@@ -39,14 +37,14 @@ spec =
       processGenLookup
         [ ASyn.var "opaque"
         , Syn.lookupOp
-        , ASyn.soup [ASyn.var "a", ASyn.var "+", ASyn.var "a"]
+        , Syn.soup 987 [ASyn.var "a", ASyn.var "+", ASyn.var "a"]
         ] `shouldBe`
       [ ASyn.var "opaque"
       , Syn.lookupOp
-      , ASyn.lam ["___"] $
-        ASyn.soup
-          [ ASyn.dynlookup (ASyn.var "___") "a" (ASyn.var "a")
+      , Syn.lam 987 ["___987"] $
+        Syn.soup 987
+          [ ASyn.dynlookup (ASyn.var "___987") "a" (ASyn.var "a")
           , ASyn.var "+"
-          , ASyn.dynlookup (ASyn.var "___") "a" (ASyn.var "a")
+          , ASyn.dynlookup (ASyn.var "___987") "a" (ASyn.var "a")
           ]
       ]

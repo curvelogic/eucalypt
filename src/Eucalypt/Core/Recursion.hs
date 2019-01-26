@@ -13,6 +13,7 @@ module Eucalypt.Core.Recursion where
 
 import Bound
 import Data.Bifunctor (second)
+import Data.Foldable
 import Eucalypt.Core.Syn
 
 transScope ::
@@ -40,3 +41,28 @@ walk f (CoreOperator smid x p e) = CoreOperator smid x p (f e)
 walk f (CoreArgTuple smid es) = CoreArgTuple smid (map f es)
 walk f (CoreApply smid g es) = CoreApply smid (f g) (map f es)
 walk _ expr = expr
+
+foldCoreExpr ::
+     (Show b, Monoid c)
+  => (forall a. Show a =>
+                  (CoreExp a -> c))
+  -> CoreExp b
+  -> c
+foldCoreExpr f e@(CoreLet _ bs b _) =
+  let shallow = f e
+      deep = fold (foldCoreExpr f (unscope b) : map (foldCoreExpr f . unscope . snd) bs)
+  in shallow <> deep
+foldCoreExpr f e@(CoreLambda _ _ _ b) =
+  let shallow = f e
+      deep = foldCoreExpr f (unscope b)
+   in shallow <> deep
+foldCoreExpr f e@(CoreMeta _ m expr) =
+  f e <> foldCoreExpr f m <> foldCoreExpr f expr
+foldCoreExpr f e@(CoreBlock _ expr) =
+  f e <> foldCoreExpr f expr
+foldCoreExpr f e@(CoreList _ exprs) =
+  f e <> mconcat (map (foldCoreExpr f) exprs)
+foldCoreExpr f e@(CoreArgTuple _ exprs) =
+  f e <> mconcat (map (foldCoreExpr f) exprs)
+foldCoreExpr f e@(CoreOperator _ _ _ expr) = f e <> foldCoreExpr f expr
+foldCoreExpr f e = f e

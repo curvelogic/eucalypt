@@ -10,8 +10,6 @@ Stability   : experimental
 
 module Eucalypt.Core.Verify where
 
-import Bound
-import Data.Foldable
 import Eucalypt.Core.Error
 import Eucalypt.Core.Recursion
 import Eucalypt.Core.Syn
@@ -41,36 +39,8 @@ cleanDynamicFallbacks expr = walk cleanDynamicFallbacks expr
 
 -- | Run all the check functions throughout the tree
 runChecks :: Show b => CoreExp b -> [CoreError]
-runChecks = verify cleanCore
+runChecks = foldCoreExpr cleanCore
 
-
-
--- | Apply a check function to every level in the syntax tree
-verify ::
-     Show b
-  => (forall a. Show a =>
-                  (CoreExp a -> [CoreError]))
-  -> CoreExp b
-  -> [CoreError]
-verify f e@(CoreLet _ bs b _) =
-  let shallow = f e
-      deep = fold (verify f (unscope b) : map (verify f . unscope . snd) bs)
-  in shallow ++ deep
-verify f e@(CoreLambda _ _ _ b) =
-  let shallow = f e
-      deep = verify f (unscope b)
-   in shallow ++ deep
-verify f e@(CoreMeta _ m expr) =
-  f e ++ verify f m ++ verify f expr
-verify f e@(CoreBlock _ expr) =
-  f e ++ verify f expr
-verify f e@(CoreList _ exprs) =
-  f e ++ concatMap (verify f) exprs
-verify f e@(CoreArgTuple _ exprs) =
-  f e ++ concatMap (verify f) exprs
-verify f e@(CoreOperator _ _ _ expr) =
-  f e ++ verify f expr
-verify f e = f e
 
 
 cleanCore :: Show a => CoreExp a -> [CoreError]

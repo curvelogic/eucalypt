@@ -87,7 +87,7 @@ step :: LookupTransformationState -> LookupTransformationState
 -- expression prior to dot but simple name after the dot.
 step s@LookupTransformationState { ltProcessedExprs = _
                                  , ltAction = NoLookup
-                                 , ltRemainingExprs = CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):(e@(CoreName _ _)):es
+                                 , ltRemainingExprs = CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):e@(CoreName _ _):es
                                  } =
   s {ltAction = SimpleLookup, ltRemainingExprs = e:es}
 
@@ -179,9 +179,10 @@ step _ = error "Impossible step during generalised lookup transformation."
 -- this lambda.
 --
 dynamise :: CoreExpr -> CoreExpr
-dynamise expr = lam (sourceMapId expr) [unq] $ expr >>= expand
+dynamise expr = lam exprSmid [unq] $ expr >>= expand
   where
-    unq = "___"
+    exprSmid = sourceMapId expr
+    unq = "___" ++ show exprSmid
     expand v =
       if isNonOperatorVar v
         then CoreLookup 0 (CoreVar 0 unq) v (Just (CoreVar 0 v))
