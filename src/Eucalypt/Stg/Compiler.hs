@@ -169,14 +169,26 @@ compile envSize context _metaref f@CoreLambda{} =
   $ Atom $ Local $ fromIntegral envSize
 
 -- | Compile a dot lookup or name used in a generalised lookup context
---
--- TODO: lookup-or
-compile envSize context _metaref (CoreLookup _ obj nm _default) =
-  let_
-    [compileBinding envSize context ("", obj)]
-    (appfn_
-       (Global "LOOKUP")
-       [Literal (NativeSymbol nm), Local (fromIntegral envSize)])
+compile envSize context _metaref (CoreLookup _ obj nm deft) =
+  case deft of
+    Nothing ->
+      let_
+        [compileBinding envSize context ("", obj)]
+        (appfn_
+           (Global "LOOKUP")
+           [Literal (NativeSymbol nm), Local (fromIntegral envSize)])
+    (Just expr) ->
+      let_
+        [ compileBinding envSize context ("", expr)
+        , compileBinding envSize context ("", obj)
+        ]
+        (appfn_
+           (Global "LOOKUPOR")
+           [ Literal (NativeSymbol nm)
+           , Local (fromIntegral envSize)
+           , Local (fromIntegral envSize + 1)
+           ])
+
 
 -- | Let allocate metadata and pass ref through to nested expression
 -- for embedding in appropriate 'PreClosure'
@@ -190,6 +202,7 @@ compile envSize context _ (CoreOperator _ _x _p expr) = compile envSize context 
 compile _ _ _ CoreName{} = error "Cannot compile name"
 compile _ _ _ CoreArgTuple{} = error "Cannot compile arg tuple"
 compile _ _ _ CoreOpSoup{} = error "Cannot compile op soup"
+compile _ _ _ CoreUnresolved{} = error "Cannot compile unresolved"
 compile _ _ _ CoreEliminated = error "Cannot compile eliminated code"
 
 

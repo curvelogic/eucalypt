@@ -81,6 +81,7 @@ prepare (CoreApply _ f es) = prepare f <> parens ( hsep . punctuate comma $ map 
 prepare (CoreName _ n) = text n
 prepare (CoreOperator _ x p e) =
   char '^' <> text (show x) <> parens (text (show p)) <> char '^' <> prepare e
+prepare (CoreUnresolved _ v) = text $ "**********UNRESOLVED: " ++ v ++ "**********"
 prepare CoreEliminated = text "**********GONE**********"
 
 

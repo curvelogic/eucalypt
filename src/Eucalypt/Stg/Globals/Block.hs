@@ -113,7 +113,7 @@ euLookup =
     ]
 
 
--- | __LOOKUP(symbol, default, block)
+-- | __LOOKUPOR(symbol, default, block)
 euLookupOr :: LambdaForm
 euLookupOr =
   let sym = Local 0

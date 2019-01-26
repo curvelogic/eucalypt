@@ -81,3 +81,7 @@ corebool = anon Syn.corebool
 corelookup
   :: Syn.CoreExp a -> Syn.CoreRelativeName -> Syn.CoreExp a
 corelookup = anon Syn.corelookup
+
+dynlookup ::
+     Syn.CoreExp a -> Syn.CoreRelativeName -> Syn.CoreExp a -> Syn.CoreExp a
+dynlookup = anon Syn.dynlookup

@@ -115,6 +115,7 @@ data CoreExp a
                  Fixity
                  Precedence
                  (CoreExp a)
+  | CoreUnresolved SMID String
   | CoreEliminated
   deriving (Functor, Foldable, Traversable)
 
@@ -136,6 +137,7 @@ sourceMapId (CoreLambda smid _ _ _) = smid
 sourceMapId (CoreApply smid _ _) = smid
 sourceMapId (CoreOpSoup smid _) = smid
 sourceMapId (CoreOperator smid _ _ _) = smid
+sourceMapId (CoreUnresolved smid _) = smid
 sourceMapId CoreEliminated = 0
 
 mapSourceMapId :: CoreExp a -> (SMID -> SMID) -> CoreExp a
@@ -153,6 +155,7 @@ mapSourceMapId (CoreLambda smid i ns body) f = CoreLambda (f smid) i ns body
 mapSourceMapId (CoreApply smid fn xs) f = CoreApply (f smid) fn xs
 mapSourceMapId (CoreOpSoup smid xs) f = CoreOpSoup (f smid) xs
 mapSourceMapId (CoreOperator smid x p e) f = CoreOperator (f smid) x p e
+mapSourceMapId (CoreUnresolved smid v) f = CoreUnresolved (f smid) v
 mapSourceMapId CoreEliminated _ = CoreEliminated
 
 fillSourceMapId :: CoreExp a -> SMID -> CoreExp a
@@ -232,6 +235,7 @@ instance Monad CoreExp where
   CoreArgTuple smid es >>= f = CoreArgTuple smid (map (>>= f) es)
   CoreApply smid g es >>= f = CoreApply smid (g >>= f) (map (>>= f) es)
   CoreName smid n >>= _ = CoreName smid n
+  CoreUnresolved smid v >>= _ = CoreUnresolved smid v
   CoreEliminated >>= _ = CoreEliminated
 
 
@@ -251,6 +255,13 @@ corename = CoreName
 -- | Construct a lookup
 corelookup :: SMID -> CoreExp a -> CoreRelativeName -> CoreExp a
 corelookup smid obj n = CoreLookup smid obj n Nothing
+
+
+
+-- | Construct a lookup with default (such as might result from using
+-- a name in a dynamic generalised lookup context.)
+dynlookup :: SMID -> CoreExp a -> CoreRelativeName -> CoreExp a -> CoreExp a
+dynlookup smid obj n def = CoreLookup smid obj n (Just def)
 
 
 

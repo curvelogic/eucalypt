@@ -13,12 +13,35 @@ module Eucalypt.Core.Verify where
 import Bound
 import Data.Foldable
 import Eucalypt.Core.Error
+import Eucalypt.Core.Recursion
 import Eucalypt.Core.Syn
+
+
+-- | A final pass to mark any unresolved variables and then clean out
+-- any that appear in soft contexts where they do not indicate errors.
+cleanEvaluand :: Show a => CoreExp a -> CoreExp a
+cleanEvaluand = cleanDynamicFallbacks . markUnresolved
+
+
+
+-- | Mark any unresolved variables so we can report over them
+markUnresolved :: Show a => CoreExp a -> CoreExp a
+markUnresolved expr = expr >>= CoreUnresolved 0 . show
+
+
+
+-- | Eliminate any unresolved variables which are defaults in dynamic
+-- lookups.
+cleanDynamicFallbacks :: CoreExp a -> CoreExp a
+cleanDynamicFallbacks (CoreLookup smid obj k (Just CoreUnresolved {})) =
+  CoreLookup smid obj k Nothing
+cleanDynamicFallbacks expr = walk cleanDynamicFallbacks expr
+
+
 
 -- | Run all the check functions throughout the tree
 runChecks :: Show b => CoreExp b -> [CoreError]
-runChecks expr =
-  verify cleanCore expr ++ map (VerifyUnresolvedVar . show) (toList expr)
+runChecks = verify cleanCore
 
 
 
@@ -51,7 +74,7 @@ verify f e = f e
 
 
 cleanCore :: Show a => CoreExp a -> [CoreError]
-cleanCore e = noSoup e ++ noCoreName e ++ noEliminated e
+cleanCore e = noSoup e ++ noCoreName e ++ noEliminated e ++ notUnresolved e
 
 
 
@@ -70,3 +93,8 @@ noEliminated _ = []
 noCoreName :: Show a => CoreExp a -> [CoreError]
 noCoreName o@CoreName{} = [(VerifyNamesFailed . CoreExpShow) o]
 noCoreName _ = []
+
+
+notUnresolved :: Show a => CoreExp a -> [CoreError]
+notUnresolved o@CoreUnresolved{} = [(VerifyUnresolvedVar . CoreExpShow) o]
+notUnresolved _ = []

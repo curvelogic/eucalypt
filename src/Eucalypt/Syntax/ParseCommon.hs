@@ -50,6 +50,8 @@ braces = between (symbol "{") (char '}')
 
 -- | A normal (non-operator) identifier, n.b. leading digits are legal
 -- in Eucalypt: @5v@ is an identifier.
+--
+-- (NB: maintain consistency is GenLookup.isNonOperatorVar)
 normalIdentifier :: Parser String
 normalIdentifier =
   ((:) <$> normalIdentStartChar <*> many normalIdentContinuationChar) <?>

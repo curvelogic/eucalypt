@@ -33,20 +33,31 @@ data CoreError
   | Bug String CoreExpShow
   | VerifyOperatorsFailed CoreExpShow
   | VerifyNamesFailed CoreExpShow
-  | VerifyUnresolvedVar CoreBindingName
+  | VerifyUnresolvedVar CoreExpShow
   | VerifyNoEliminated CoreExpShow
   | NoSource
 
 instance Show CoreError where
   show (MultipleErrors es) = foldl1 (++) (map ((++ "\n") . show) es)
-  show (TooFewOperands (CoreExpShow op)) = "Too few operands available for operator " ++ pprint op
-  show (InvalidOperatorOutputStack exprs) = "Invalid output stack while cooking operator soup: [" ++ intercalate "," (map (\(CoreExpShow s) -> pprint s) exprs) ++ "]"
-  show (InvalidOperatorSequence (CoreExpShow l) (CoreExpShow r)) = "Invalid sequence of operators:" ++ pprint l ++ " " ++ pprint r
-  show (VerifyOperatorsFailed (CoreExpShow expr)) = "Unresolved operator in " ++ pprint expr
-  show (VerifyNoEliminated (CoreExpShow expr)) = "Eliminated code found " ++ pprint expr
-  show (VerifyNamesFailed (CoreExpShow expr)) = "Found name nodes, not translated to vars:" ++ pprint expr
-  show (VerifyUnresolvedVar name) = "Unresolved variable in " ++ name
-  show (Bug message (CoreExpShow expr)) = "BUG! " ++ message ++ " - " ++ pprint expr
+  show (TooFewOperands (CoreExpShow op)) =
+    "Too few operands available for operator " ++ pprint op
+  show (InvalidOperatorOutputStack exprs) =
+    "Invalid output stack while cooking operator soup: [" ++
+    intercalate "," (map (\(CoreExpShow s) -> pprint s) exprs) ++ "]"
+  show (InvalidOperatorSequence (CoreExpShow l) (CoreExpShow r)) =
+    "Invalid sequence of operators:" ++ pprint l ++ " " ++ pprint r
+  show (VerifyOperatorsFailed (CoreExpShow expr)) =
+    "Unresolved operator in " ++ pprint expr
+  show (VerifyNoEliminated (CoreExpShow expr)) =
+    "Eliminated code found " ++ pprint expr
+  show (VerifyNamesFailed (CoreExpShow expr)) =
+    "Found name nodes, not translated to vars:" ++ pprint expr
+  show (VerifyUnresolvedVar (CoreExpShow (CoreUnresolved _ v))) =
+    "Unresolved variable: " ++ v
+  show (VerifyUnresolvedVar (CoreExpShow expr)) =
+    "Unresolved variable: " ++ pprint expr
+  show (Bug message (CoreExpShow expr)) =
+    "BUG! " ++ message ++ " - " ++ pprint expr
   show NoSource = "No source"
 
 instance Exception CoreError
@@ -61,6 +72,6 @@ instance HasSourceMapIds CoreError where
   toSourceMapIds (InvalidOperatorSequence l r) = concatMap toSourceMapIds [l, r]
   toSourceMapIds (VerifyOperatorsFailed expr) = toSourceMapIds expr
   toSourceMapIds (VerifyNamesFailed expr) = toSourceMapIds expr
-  toSourceMapIds (VerifyUnresolvedVar _) = []
+  toSourceMapIds (VerifyUnresolvedVar expr) = toSourceMapIds expr
   toSourceMapIds (Bug _ expr) = toSourceMapIds expr
   toSourceMapIds _ = []

@@ -27,7 +27,7 @@ spec =
       [ ASyn.letexp [("a", ASyn.int 1)] $
         ASyn.soup [ASyn.corename "a", ASyn.corename "+", ASyn.corename "a"]
       ]
-    it "handles simple lookup on blocks" $
+    it "handles simple lookup on blocks (as static lookup)" $
       (processGenLookup . varifyLookupTargets)
         [ ASyn.letblock [("a", ASyn.int 1)] $
           ASyn.block [ASyn.element "a" (ASyn.var "a")]
@@ -35,3 +35,18 @@ spec =
         , ASyn.corename "a"
         ] `shouldBe`
       [ASyn.letexp [("a", ASyn.int 1)] $ ASyn.var "a"]
+    it "handles simple dynamic transformations" $
+      processGenLookup
+        [ ASyn.var "opaque"
+        , Syn.lookupOp
+        , ASyn.soup [ASyn.var "a", ASyn.var "+", ASyn.var "a"]
+        ] `shouldBe`
+      [ ASyn.var "opaque"
+      , Syn.lookupOp
+      , ASyn.lam ["___"] $
+        ASyn.soup
+          [ ASyn.dynlookup (ASyn.var "___") "a" (ASyn.var "a")
+          , ASyn.var "+"
+          , ASyn.dynlookup (ASyn.var "___") "a" (ASyn.var "a")
+          ]
+      ]

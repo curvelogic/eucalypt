@@ -21,6 +21,7 @@ import Data.List (foldl')
 import Data.Monoid
 import Eucalypt.Core.Anaphora
 import Eucalypt.Core.Error
+import Eucalypt.Core.GenLookup (eliminateLookupOp)
 import Eucalypt.Core.Syn
 import Safe (headMay)
 
@@ -232,8 +233,7 @@ popOne =
 formApply :: CoreExp a -> [CoreExp a] -> CoreExp a
 formApply (CoreBuiltin _ "*CALL*") [f, CoreArgTuple smid as] =
   CoreApply smid f as
-formApply (CoreBuiltin _ "*DOT*") [o, CoreName smid n] =
-  CoreLookup smid o n Nothing
+formApply (CoreBuiltin _ "*DOT*") [o, x] = eliminateLookupOp o x
 formApply f as = CoreApply (sourceMapId f) f as
 
 -- | Apply the given operator to the argument(s) at the top of the
