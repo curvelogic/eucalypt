@@ -26,6 +26,8 @@ globals =
   , GlobalInfo "LETTERS" euLetters [Strict]
   , GlobalInfo "DQ" euDoubleQuote []
   , GlobalInfo "FMT" euFormat [Strict, Strict]
+  , GlobalInfo "UPPER" euUpper [Strict]
+  , GlobalInfo "LOWER" euLower [Strict]
   ]
 
 
@@ -112,3 +114,20 @@ euFormat =
   ann_ "__FMT" 0 $
   force_ (Atom (Local 0)) $
   force_ (Atom (Local 1)) $ appbif_ (intrinsicIndex "FMT") [Local 2, Local 3]
+
+
+-- | __UPPER(s) - upper case a string
+euUpper :: LambdaForm
+euUpper =
+  lam_ 0 1 $
+  ann_ "__UPPER" 0 $
+  force_ (Atom (Local 0)) $ appbif_ (intrinsicIndex "UPPER") [Local 1]
+
+
+
+-- | __LOWER(s) - lower case a string
+euLower :: LambdaForm
+euLower =
+  lam_ 0 1 $
+  ann_ "__LOWER" 0 $
+  force_ (Atom (Local 0)) $ appbif_ (intrinsicIndex "LOWER") [Local 1]

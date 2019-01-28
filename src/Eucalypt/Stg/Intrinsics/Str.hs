@@ -23,6 +23,7 @@ import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
+import Data.Char (toUpper, toLower)
 import Data.List (intercalate)
 import Data.Scientific (floatingOrInteger)
 import Data.Text (pack)
@@ -40,6 +41,8 @@ intrinsics =
   , IntrinsicInfo "STRNAT" 1 (invoke strNat)
   , IntrinsicInfo "STRSYM" 1 (invoke strSym)
   , IntrinsicInfo "FMT" 2 (invoke fmt)
+  , IntrinsicInfo "UPPER" 1 (invoke strUpper)
+  , IntrinsicInfo "LOWER" 1 (invoke strLower)
   ]
 
 
@@ -103,6 +106,19 @@ strNat ms n =
   (`ReturnLit` Nothing) $
   NativeString $ nativeToString n
 
+
+
+-- | __UPPER(s) - convert s to upper case
+strUpper :: MachineState -> String -> IO MachineState
+strUpper ms s =
+  return $ setCode ms $ (`ReturnLit` Nothing) $ NativeString (map toUpper s)
+
+
+
+-- | __LOWER(s) - convert s to lower case
+strLower :: MachineState -> String -> IO MachineState
+strLower ms s =
+  return $ setCode ms $ (`ReturnLit` Nothing) $ NativeString (map toLower s)
 
 
 

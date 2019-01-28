@@ -12,6 +12,7 @@ module Eucalypt.Stg.Intrinsics.StrSpec
   , spec
   ) where
 
+import Data.Char (toUpper, toLower)
 import Data.List (intercalate, isInfixOf)
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Compiler
@@ -68,9 +69,11 @@ splits (NonEmpty xs) (RegexSafeString sep) =
     calculatesM (splitStg components sep)
       (fmap (components ==) . readStrListReturn)
 
+stg1 :: String -> String -> StgSyn
+stg1 bif s = appbif_ (intrinsicIndex bif) [Literal $ NativeString s]
+
 letterStg :: String -> StgSyn
-letterStg s =
-  appbif_ (intrinsicIndex "LETTERS") [Literal $ NativeString s]
+letterStg = stg1 "LETTERS"
 
 lettery :: String -> Property
 lettery s =
@@ -78,9 +81,27 @@ lettery s =
     let components = map (:[]) s
     calculatesM (letterStg s) (fmap (components ==) . readStrListReturn)
 
+upperStg :: String -> StgSyn
+upperStg = stg1 "UPPER"
+
+uppers :: String -> Property
+uppers s =
+  QM.monadicIO $
+  calculates (upperStg s) $ returnsNative (NativeString (map toUpper s))
+
+lowerStg :: String -> StgSyn
+lowerStg = stg1 "LOWER"
+
+lowers :: String -> Property
+lowers s =
+  QM.monadicIO $
+  calculates (lowerStg s) $ returnsNative (NativeString (map toLower s))
+
 spec :: Spec
 spec =
   describe "string intrinsics" $ do
     it "join strings" $ property joins
     it "split strings" $ property splits
     it "extracts letters" $ property lettery
+    it "upcases" $ property uppers
+    it "downcases" $ property lowers
