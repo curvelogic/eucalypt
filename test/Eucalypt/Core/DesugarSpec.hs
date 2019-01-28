@@ -107,33 +107,15 @@ soupSpec =
         , Syn.lookupOp
         , Syn.corename 3 "z"
         ]
-    it "handles static generalised lookup" $
-      processStaticGenLookup
-        [ ASyn.letexp [("a", ASyn.int 1)] $
-          ASyn.block [ASyn.element "a" (ASyn.var "a")]
-        , Syn.lookupOp
-        , ASyn.soup [ASyn.corename "a", ASyn.corename "+", ASyn.corename "a"]
-        ] `shouldBe`
-      [ ASyn.letexp [("a", ASyn.int 1)] $
-        ASyn.soup [ASyn.corename "a", ASyn.corename "+", ASyn.corename "a"]
-      ]
-    it "handles simple lookup on blocks" $
-      (processStaticGenLookup . interpretForStaticBoundContext)
-        [ ASyn.letexp [("a", ASyn.int 1)] $
-          ASyn.block [ASyn.element "a" (ASyn.var "a")]
-        , Syn.lookupOp
-        , ASyn.corename "a"
-        ] `shouldBe`
-      [ASyn.letexp [("a", ASyn.int 1)] $ ASyn.var "a"]
 
 blockSpec :: Spec
 blockSpec =
   describe "block desugaring" $ do
     it "creates vars for lonely names" $
       testDesugarBlock (at nowhere $ Block [bare (prop "x" (normalName "y"))]) `shouldBe`
-      Syn.letexp
+      Syn.letblock
         4
-        [("x", Syn.var 1 "y")]
+        [("x", Syn.var 2 "y")]
         (Syn.block 3 [ASyn.element "x" $ ASyn.var "x"])
     it "handles built-ins" $
       testDesugarBlock
@@ -142,9 +124,9 @@ blockSpec =
            [ bare (prop "null" (normalName "__NULL"))
            , bare (prop "a" (normalName "null"))
            ]) `shouldBe`
-      Syn.letexp
+      Syn.letblock
         6
-        [("null", Syn.bif 2 "NULL"), ("a", Syn.var 0 "null")]
+        [("null", Syn.bif 2 "NULL"), ("a", Syn.var 4 "null")]
         (Syn.block
            5
            [ Syn.element 0 "null" $ ASyn.var "null"

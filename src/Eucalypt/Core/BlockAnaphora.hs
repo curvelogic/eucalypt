@@ -50,12 +50,12 @@ hasNakedBlockAnaphora _ = False
 -- | Transform any anaphoric blocks into Lambdas
 transform :: (Anaphora SymbolicAnaphora a) => Bool -> CoreExp a -> CoreExp a
 transform True expr = expr
-transform False expr@(CoreLet smid bs b) =
+transform False expr@(CoreLet smid bs b cl) =
   if any hasNakedBlockAnaphora $ map fromScope (b : map snd bs)
     then (bindAnaphora blockAnaphora . numberAnaphora blockAnaphora) expr
     else let b' = toScope $ transform False (fromScope b)
              bs' = map (second (toScope . transform False . fromScope)) bs
-          in CoreLet smid bs' b'
+          in CoreLet smid bs' b' cl
 transform False (CoreLambda smid inl ns b) =
   let b' = toScope (transform False (fromScope b))
    in CoreLambda smid inl ns b'
@@ -80,10 +80,11 @@ transform False (CoreOperator smid x p e) =
   let anaphoric = hasNakedBlockAnaphora e
       e' = transform anaphoric e
   in CoreOperator smid x p e'
-transform False (CoreLookup smid o n) =
+transform False (CoreLookup smid o n d) =
   let anaphoric = hasNakedBlockAnaphora o
       o' = transform anaphoric o
-  in CoreLookup smid o' n
+      d' = transform anaphoric <$> d
+  in CoreLookup smid o' n d'
 transform False expr@(CoreApply smid f xs) =
   let anaphoric = hasNakedBlockAnaphora expr
       f' = transform anaphoric f

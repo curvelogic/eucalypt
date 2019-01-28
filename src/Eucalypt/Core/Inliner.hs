@@ -17,16 +17,17 @@ inline :: CoreExp a -> CoreExp a
 inline = betaReduce . distribute . tagInlinables
 
 
-
+-- | Distribute the definition down the tree to all call sites.
+--
+-- Dead definitions will remain at this stage.
 distribute :: CoreExp a -> CoreExp a
-distribute (CoreLet smid bs b) =
-  CoreLet smid bindings body
+distribute (CoreLet smid bs b cl) = CoreLet smid bindings body cl
   where
     bindingsToInline = map (selectScopeForInline . snd) bs
     body = instantiateSome bindingsToInline b
     bindings = map (second $ instantiateSome bindingsToInline) bs
 distribute (CoreMeta smid m e) = CoreMeta smid (distribute m) $ distribute e
-distribute (CoreLookup smid b e) = CoreLookup smid (distribute b) e
+distribute (CoreLookup smid b e d) = CoreLookup smid (distribute b) e (distribute <$> d)
 distribute (CoreList smid xs) = CoreList smid (map distribute xs)
 distribute (CoreBlock smid l) = CoreBlock smid $ distribute l
 distribute (CoreApply smid f xs) =
@@ -99,13 +100,13 @@ tagInlinables e@(CoreLambda smid False ns body) =
     CoreLambda smid True ns body
   else
     e
-tagInlinables (CoreLet smid bs b) = CoreLet smid bs' b'
+tagInlinables (CoreLet smid bs b cl) = CoreLet smid bs' b' cl
   where
     b' = tagInlinablesScope b
     bs' = map (second tagInlinablesScope) bs
     tagInlinablesScope = Scope . tagInlinables . unscope
 tagInlinables (CoreMeta smid m e) = CoreMeta smid (tagInlinables m) $ tagInlinables e
-tagInlinables (CoreLookup smid b e) = CoreLookup smid (tagInlinables b) e
+tagInlinables (CoreLookup smid b e d) = CoreLookup smid (tagInlinables b) e (tagInlinables <$> d)
 tagInlinables (CoreList smid xs) = CoreList smid (map tagInlinables xs)
 tagInlinables (CoreBlock smid l) = CoreBlock smid $ tagInlinables l
 tagInlinables (CoreApply smid f xs) =
@@ -133,13 +134,13 @@ betaReduce (CoreApply smid f xs) =
   CoreApply smid (betaReduce f) (map betaReduce xs)
 betaReduce (CoreLambda smid i ns body) =
   CoreLambda smid i ns $ transScope betaReduce body
-betaReduce (CoreLet smid bs b) = CoreLet smid bs' b'
+betaReduce (CoreLet smid bs b cl) = CoreLet smid bs' b' cl
   where
     b' = betaReduceScope b
     bs' = map (second betaReduceScope) bs
     betaReduceScope = transScope betaReduce
 betaReduce (CoreMeta smid m e) = CoreMeta smid (betaReduce m) $ betaReduce e
-betaReduce (CoreLookup smid b e) = CoreLookup smid (betaReduce b) e
+betaReduce (CoreLookup smid b e d) = CoreLookup smid (betaReduce b) e (betaReduce <$> d)
 betaReduce (CoreList smid xs) = CoreList smid (map betaReduce xs)
 betaReduce (CoreBlock smid l) = CoreBlock smid $ betaReduce l
 betaReduce e = e

@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE ScopedTypeVariables #-}
- {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase, TemplateHaskell, DeriveFunctor,
   DeriveFoldable, DeriveTraversable, FlexibleContexts,
   FlexibleInstances, TupleSections #-}
@@ -20,13 +20,13 @@ where
 import Bound
 import Bound.Scope
 import Control.Monad.State.Strict
-import Data.Char (isDigit)
+import Data.Bifunctor (second)
+import Data.Char (isDigit, isUpper)
 import Data.Deriving (deriveEq1, deriveOrd1, deriveRead1, deriveShow1)
 import Data.Functor.Classes
-import Data.List (elemIndex)
+import Data.List (isPrefixOf, elemIndex)
 import Data.Maybe
 import Data.Traversable (for)
-import Data.Bifunctor (second)
 import Eucalypt.Core.Anaphora
 import Eucalypt.Core.SourceMap
 import Safe (maximumMay)
@@ -69,6 +69,13 @@ fixityArity _ = 2
 type Precedence = Int
 
 
+-- | A marker to track whether a @CoreLet@ represents a block that
+-- exposes all and only the bound names (i.e. the way we desugar block
+-- AST). This allows us to apply some simplification (e.g. static
+-- implementation of generalised lookup.)
+data LetClass = DefaultBlockLet | OtherLet
+  deriving (Eq, Show, Read, Ord)
+
 -- | A new bound-based implementation, with multi-arity to allow STG
 -- later.
 --
@@ -78,6 +85,7 @@ data CoreExp a
   | CoreLet SMID
             [(CoreBindingName, Scope Int CoreExp a)]
             (Scope Int CoreExp a)
+            LetClass
     -- ^ names only for pretty-printing, not binding
   | CoreBuiltin SMID CoreBuiltinName
   | CorePrim SMID Primitive
@@ -85,6 +93,8 @@ data CoreExp a
   | CoreLookup SMID
                (CoreExp a)
                CoreRelativeName
+               (Maybe (CoreExp a))
+    -- ^ from dot operator or name used in generalised lookup context
   | CoreName SMID CoreRelativeName
     -- ^ new parser - relative lookup name
   | CoreList SMID [CoreExp a]
@@ -105,16 +115,19 @@ data CoreExp a
                  Fixity
                  Precedence
                  (CoreExp a)
+  | CoreUnresolved SMID String
   | CoreEliminated
   deriving (Functor, Foldable, Traversable)
 
 
+-- ? source map identifiers
+
 sourceMapId :: CoreExp a -> SMID
 sourceMapId (CoreVar smid _) = smid
-sourceMapId (CoreLet smid _ _) = smid
+sourceMapId (CoreLet smid _ _ _) = smid
 sourceMapId (CoreBuiltin smid _) = smid
 sourceMapId (CorePrim smid _) = smid
-sourceMapId (CoreLookup smid _ _) = smid
+sourceMapId (CoreLookup smid _ _ _) = smid
 sourceMapId (CoreName smid _) = smid
 sourceMapId (CoreList smid _) = smid
 sourceMapId (CoreBlock smid _) = smid
@@ -124,7 +137,29 @@ sourceMapId (CoreLambda smid _ _ _) = smid
 sourceMapId (CoreApply smid _ _) = smid
 sourceMapId (CoreOpSoup smid _) = smid
 sourceMapId (CoreOperator smid _ _ _) = smid
+sourceMapId (CoreUnresolved smid _) = smid
 sourceMapId CoreEliminated = 0
+
+mapSourceMapId :: CoreExp a -> (SMID -> SMID) -> CoreExp a
+mapSourceMapId (CoreVar smid v) f = CoreVar (f smid) v
+mapSourceMapId (CoreLet smid bs body cl) f = CoreLet (f smid) bs body cl
+mapSourceMapId (CoreBuiltin smid n) f = CoreBuiltin (f smid) n
+mapSourceMapId (CorePrim smid v) f = CorePrim (f smid) v
+mapSourceMapId (CoreLookup smid o k d) f = CoreLookup (f smid) o k d
+mapSourceMapId (CoreName smid n) f = CoreName (f smid) n
+mapSourceMapId (CoreList smid xs) f = CoreList (f smid) xs
+mapSourceMapId (CoreBlock smid l) f = CoreBlock (f smid) l
+mapSourceMapId (CoreMeta smid m e) f = CoreMeta (f smid) m e
+mapSourceMapId (CoreArgTuple smid xs) f = CoreArgTuple (f smid) xs
+mapSourceMapId (CoreLambda smid i ns body) f = CoreLambda (f smid) i ns body
+mapSourceMapId (CoreApply smid fn xs) f = CoreApply (f smid) fn xs
+mapSourceMapId (CoreOpSoup smid xs) f = CoreOpSoup (f smid) xs
+mapSourceMapId (CoreOperator smid x p e) f = CoreOperator (f smid) x p e
+mapSourceMapId (CoreUnresolved smid v) f = CoreUnresolved (f smid) v
+mapSourceMapId CoreEliminated _ = CoreEliminated
+
+fillSourceMapId :: CoreExp a -> SMID -> CoreExp a
+fillSourceMapId expr smid = mapSourceMapId expr (\i -> if i == 0 then smid else i)
 
 instance HasSourceMapIds (CoreExp a) where
   toSourceMapIds e = [sourceMapId e]
@@ -138,10 +173,12 @@ isBlock CoreBlock{} = True
 isBlock _ = False
 
 
+
 -- | True if expression is a list
 isList :: CoreExp a -> Bool
 isList CoreList{} = True
 isList _ = False
+
 
 
 -- | Return the name of a symbol if the expression is a symbol.
@@ -184,11 +221,11 @@ instance Applicative CoreExp where
 
 instance Monad CoreExp where
   return = CoreVar 0
-  CoreVar _ a >>= f = f a
-  CoreLet smid bs b >>= f = CoreLet smid (map (second (>>>= f)) bs) (b >>>= f)
+  CoreVar smid a >>= f = fillSourceMapId (f a) smid
+  CoreLet smid bs b cl >>= f = CoreLet smid (map (second (>>>= f)) bs) (b >>>= f) cl
   CoreBuiltin smid n >>= _ = CoreBuiltin smid n
   CorePrim smid p >>= _ = CorePrim smid p
-  CoreLookup smid e n >>= f = CoreLookup smid (e >>= f) n
+  CoreLookup smid e n d >>= f = CoreLookup smid (e >>= f) n ((>>= f) <$> d)
   CoreList smid es >>= f = CoreList smid (map (>>= f) es)
   CoreBlock smid e >>= f = CoreBlock smid (e >>= f)
   CoreMeta smid m e >>= f = CoreMeta smid (m >>= f) (e >>= f) -- TODO: separate meta?
@@ -198,7 +235,9 @@ instance Monad CoreExp where
   CoreArgTuple smid es >>= f = CoreArgTuple smid (map (>>= f) es)
   CoreApply smid g es >>= f = CoreApply smid (g >>= f) (map (>>= f) es)
   CoreName smid n >>= _ = CoreName smid n
+  CoreUnresolved smid v >>= _ = CoreUnresolved smid v
   CoreEliminated >>= _ = CoreEliminated
+
 
 
 -- | Construct a var
@@ -215,7 +254,14 @@ corename = CoreName
 
 -- | Construct a lookup
 corelookup :: SMID -> CoreExp a -> CoreRelativeName -> CoreExp a
-corelookup = CoreLookup
+corelookup smid obj n = CoreLookup smid obj n Nothing
+
+
+
+-- | Construct a lookup with default (such as might result from using
+-- a name in a dynamic generalised lookup context.)
+dynlookup :: SMID -> CoreExp a -> CoreRelativeName -> CoreExp a -> CoreExp a
+dynlookup smid obj n def = CoreLookup smid obj n (Just def)
 
 
 
@@ -236,8 +282,18 @@ app = CoreApply
 -- | Construct recursive let of several bindings
 letexp :: SMID -> [(CoreBindingName, CoreExpr)] -> CoreExpr -> CoreExpr
 letexp _ [] b = b
-letexp smid bs b = CoreLet smid (map (second abstr) bs) (abstr b)
-  where abstr = abstract (`elemIndex` map fst bs)
+letexp smid bs b = CoreLet smid (map (second abstr) bs) (abstr b) OtherLet
+  where
+    abstr = abstract (`elemIndex` map fst bs)
+
+
+
+-- | Construct a recursive let that records it is a @DefaultBlockLet@
+letblock :: SMID -> [(CoreBindingName, CoreExpr)] -> CoreExpr -> CoreExpr
+letblock smid bs b =
+  CoreLet smid (map (second abstr) bs) (abstr b) DefaultBlockLet
+  where
+    abstr = abstract (`elemIndex` map fst bs)
 
 
 
@@ -364,6 +420,24 @@ callOp = anon infixl_ 90 (anon bif "*CALL*")
 lookupOp :: CoreExpr
 lookupOp = anon infixl_ 90 (anon bif "*DOT*")
 
+
+-- | Names that aren't in lookup positions need to become variables or
+-- builtins as appropriate
+name2Var :: SMID -> String -> CoreExpr
+name2Var smid n
+  | "__" `isPrefixOf` n && isUpper (n !! 2) = CoreBuiltin smid (drop 2 n)
+  | otherwise = CoreVar smid n
+
+
+
+-- | In contexts where single names should become variables (evaluand
+-- rather than individual lookup elements for instance), this converts
+-- to vars.
+varify :: CoreExpr -> CoreExpr
+varify (CoreName smid n) = name2Var smid n
+varify e = e
+
+
 -- ? anaphora
 --
 -- These are instances and functions for handling expression anaphora
@@ -483,7 +557,7 @@ instantiateBody vals = instantiate (vals !!)
 -- expressions (lazily...). This expands using bindings in top-level
 -- lets
 instantiateLet :: CoreExp a -> CoreExp a
-instantiateLet (CoreLet _ bs b) = inst b
+instantiateLet (CoreLet _ bs b _) = inst b
   where
     es = map (inst . snd) bs
     inst = instantiate (es !!)
@@ -511,9 +585,9 @@ instance ToCoreBindingName a => ToCoreBindingName (Var b a) where
 -- expressions in that body according to the bindings of the
 -- containing lets.
 rebody :: (ToCoreBindingName a, Show a) => CoreExp a -> CoreExp a -> CoreExp a
-rebody (CoreLet smid bs body) payload =
+rebody (CoreLet smid bs body _) payload =
   let payload' = rebody (fromScope body) (fmap return payload)
-   in CoreLet smid bs (bindMore'' toNameAndBinding (toScope payload'))
+   in CoreLet smid bs (bindMore'' toNameAndBinding (toScope payload')) OtherLet
   where
     toNameAndBinding :: ToCoreBindingName a => a -> Maybe (CoreBindingName, Int)
     toNameAndBinding nm =
@@ -587,7 +661,7 @@ modifyBoundVars k e =
 -- expression in tests.
 unbind :: CoreExpr -> CoreExpr
 unbind (CoreLambda _ _ _ e) = instantiate (anon var . show) e
-unbind (CoreLet _ bs body) = inst body
+unbind (CoreLet _ bs body _) = inst body
   where
     names = map fst bs
     inst = instantiate (\n -> anon var (names !! n))
@@ -601,7 +675,7 @@ unitBindingsAndBody ::
   -> ([(CoreBindingName, Scope Int CoreExp CoreBindingName)],
       Scope Int CoreExp CoreBindingName)
 unitBindingsAndBody (CoreMeta _ _ b) = unitBindingsAndBody b
-unitBindingsAndBody (CoreLet _ bs b) = (bs, b)
+unitBindingsAndBody (CoreLet _ bs b _) = (bs, b)
 unitBindingsAndBody e@CoreBlock{} = ([], abstract (const Nothing) e)
 unitBindingsAndBody CoreList{} = error "Input is a sequence and must be named."
 unitBindingsAndBody _ = error "Unsupported unit type (not block or sequence)"
@@ -626,8 +700,9 @@ mergeUnits lets = last newLets
           shift = mapBound (\i -> i + length nextBindings)
           reboundNextBindings = map (second abstr) nextBindings
           shiftedEstablishedBindings = map (second shift) establishedBindings
-      in reboundNextBindings ++ shiftedEstablishedBindings
+       in reboundNextBindings ++ shiftedEstablishedBindings
     rebindBody oldBody newBindList =
       let abstr = bindMore (`elemIndex` map fst newBindList)
        in abstr oldBody
-    newLets = zipWith (anon CoreLet) bindLists' bodies'
+    newLets = zipWith makeLet bindLists' bodies'
+    makeLet = anon (\s bs b -> CoreLet s bs b OtherLet)

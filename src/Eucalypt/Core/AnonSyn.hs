@@ -39,6 +39,9 @@ lam = anon Syn.lam
 letexp :: [(Syn.CoreBindingName, Syn.CoreExpr)] -> Syn.CoreExpr -> Syn.CoreExpr
 letexp = anon Syn.letexp
 
+letblock :: [(Syn.CoreBindingName, Syn.CoreExpr)] -> Syn.CoreExpr -> Syn.CoreExpr
+letblock = anon Syn.letblock
+
 app :: Syn.CoreExp a -> [Syn.CoreExp a] -> Syn.CoreExp a
 app = anon Syn.app
 
@@ -78,3 +81,7 @@ corebool = anon Syn.corebool
 corelookup
   :: Syn.CoreExp a -> Syn.CoreRelativeName -> Syn.CoreExp a
 corelookup = anon Syn.corelookup
+
+dynlookup ::
+     Syn.CoreExp a -> Syn.CoreRelativeName -> Syn.CoreExp a -> Syn.CoreExp a
+dynlookup = anon Syn.dynlookup

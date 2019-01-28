@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving  #-}
 {-|
-Module      : Eucalypt.Core.Syn
+Module      : Eucalypt.Core.Desugar
 Description : Desugar from surface syntax to core syntax
 Copyright   : (c) Greg Hawkins, 2018
 License     :
@@ -12,11 +12,10 @@ module Eucalypt.Core.Desugar
 where
 
 import Control.Monad.State.Strict
-import Data.Char (isUpper)
-import Data.List (isPrefixOf)
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import Eucalypt.Core.Anaphora ()
+import Eucalypt.Core.GenLookup (processGenLookup)
 import Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Metadata
@@ -84,30 +83,12 @@ relativeName n =
 
 
 
--- | Names that aren't in lookup positions need to become variables or
--- builtins as appropriate
-name2Var :: SMID -> String -> CoreExpr
-name2Var smid n
-  | "__" `isPrefixOf` n && isUpper (n !! 2) = CoreBuiltin smid (drop 2 n)
-  | otherwise = CoreVar smid n
-
-
-
 -- | Ignore splices for now TODO: splice expressions
 declarations :: Block -> [Annotated DeclarationForm]
 declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
   where
     toDecl Located{locatee=(Splice _)} = Nothing
     toDecl Located{locatee=(Declaration d)} = Just d
-
-
-
--- | In contexts where single names should become variables (evaluand
--- rather than individual lookup elements for instance), this converts
--- to vars.
-varify :: CoreExpr -> CoreExpr
-varify (CoreName smid n) = name2Var smid n
-varify e = e
 
 
 
@@ -131,8 +112,8 @@ recordImports imports =
 
 -- | Process names to vars as appropriate for a context where the
 -- exprs will be statically bound
-interpretForStaticBoundContext :: [CoreExpr] -> [CoreExpr]
-interpretForStaticBoundContext exprs =
+varifyLookupTargets :: [CoreExpr] -> [CoreExpr]
+varifyLookupTargets exprs =
   zipWith toVar exprs (anon corenull : exprs)
   where
     toVar :: CoreExpr -> CoreExpr -> CoreExpr
@@ -140,26 +121,6 @@ interpretForStaticBoundContext exprs =
       n
     toVar (CoreName smid v) _ = name2Var smid v
     toVar e _ = e
-
-
-
--- | Process static instances of generalised lookup
---
--- Assumes call operator is highest precedence
-processStaticGenLookup :: [CoreExpr] -> [CoreExpr]
-processStaticGenLookup =
-  result . head . dropWhile (not . done) . iterate stepOne . initState
-  where
-    initState es = ([], False, es)
-    stepOne (o@CoreLet {}:os, False, CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):es) =
-      (o : os, True, es)
-    stepOne (out, False, e:es) = (e : out, False, es)
-    stepOne (o@CoreLet {}:os, True, e:es) =
-      (rebody o (varify e) : os, False, es)
-    stepOne _ = error "Unhandled step while processing gen lookups"
-    done (_, _, []) = True
-    done _ = False
-    result (out, _, _) = reverse out
 
 
 
@@ -177,7 +138,7 @@ processStaticGenLookup =
 translateSoup :: [Expression] -> Translate CoreExpr
 translateSoup items =
   anon CoreOpSoup .
-  processStaticGenLookup . interpretForStaticBoundContext . concat <$>
+  processGenLookup . varifyLookupTargets . concat <$>
   traverse trans items
   where
     trans :: Expression -> Translate [CoreExpr]
@@ -258,7 +219,7 @@ translateBlock loc blk = do
       popKey
       return (declMeta, k, valMeta, expr)
   b <- body dforms
-  mint2 letexp loc (bindings dforms) b
+  mint2 letblock loc (bindings dforms) b
   where
     extractKey Annotated {content = Located {locatee = decl}} =
       let name =

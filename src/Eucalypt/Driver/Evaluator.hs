@@ -21,7 +21,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import Eucalypt.Core.BlockAnaphora (anaphorise)
 import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
-import Eucalypt.Core.Desugar (translateExpressionToCore, varify)
+import Eucalypt.Core.Desugar (translateExpressionToCore)
 import Eucalypt.Core.Eliminate (prune, compress)
 import Eucalypt.Core.Inliner (inline)
 import Eucalypt.Core.Pretty
@@ -186,8 +186,9 @@ evaluate opts = do
     -- Now some inlining
     let inlinedEvaluand = {-# SCC "Inlining" #-} prune $ prune $ inline $ inline $ inline prunedEvaluand
     let compressedEvaluand = {-# SCC "Compression" #-} compress inlinedEvaluand
+    let cleanedEvaluand = {-# SCC "Cleaning" #-} cleanEvaluand compressedEvaluand
 
-    let finalEvaluand = compressedEvaluand
+    let finalEvaluand = cleanedEvaluand
     when (cmd == DumpFinalCore)
       (putStrLn (pprint finalEvaluand) >> exitSuccess)
 

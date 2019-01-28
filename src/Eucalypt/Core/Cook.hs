@@ -21,6 +21,7 @@ import Data.List (foldl')
 import Data.Monoid
 import Eucalypt.Core.Anaphora
 import Eucalypt.Core.Error
+import Eucalypt.Core.GenLookup (eliminateLookupOp)
 import Eucalypt.Core.Syn
 import Safe (headMay)
 
@@ -44,7 +45,8 @@ throwEvalError = Interpreter . Left
 -- binding to (*) = (Lambda body)
 --
 distributeFixities :: CoreExp a -> CoreExp a
-distributeFixities (CoreLet smid bs b) = CoreLet smid prunedBindings newBody
+distributeFixities (CoreLet smid bs b _) =
+  CoreLet smid prunedBindings newBody OtherLet
   where
     newBody = modifyBoundVars bindSiteReplace $ distributeScopeFixities b
     distBindings =
@@ -137,7 +139,8 @@ cookBottomUp anaphoric (CoreApply smid f exprs) =
   traverse (cookBottomUp anaphoric) exprs
 cookBottomUp anaphoric (CoreLambda smid i n body) =
   CoreLambda smid i n <$> runInterpreter (cookScope anaphoric body)
-cookBottomUp anaphoric (CoreLet smid bs body) = CoreLet smid <$> newBindings <*> newBody
+cookBottomUp anaphoric (CoreLet smid bs body _) =
+  CoreLet smid <$> newBindings <*> newBody <*> pure OtherLet
   where
     newBody = runInterpreter (cookScope anaphoric body)
     newBindings =
@@ -230,7 +233,7 @@ popOne =
 formApply :: CoreExp a -> [CoreExp a] -> CoreExp a
 formApply (CoreBuiltin _ "*CALL*") [f, CoreArgTuple smid as] =
   CoreApply smid f as
-formApply (CoreBuiltin _ "*DOT*") [o, CoreName smid n] = CoreLookup smid o n
+formApply (CoreBuiltin _ "*DOT*") [o, x] = eliminateLookupOp o x
 formApply f as = CoreApply (sourceMapId f) f as
 
 -- | Apply the given operator to the argument(s) at the top of the

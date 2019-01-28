@@ -31,7 +31,6 @@ import Text.PrettyPrint
   , render
   , text
   , vcat
-  -- , empty
   )
 
 renderLiteral :: Primitive -> String
@@ -52,7 +51,7 @@ prepare :: Show a => CoreExp a -> Doc
 prepare (CoreBuiltin _ n) = text $ "__" ++ n
 prepare (CoreVar _ x) = (text . unquote . show) x
 prepare (CorePrim _ x) = (text . renderLiteral) x
-prepare (CoreLet _ bs body) =
+prepare (CoreLet _ bs body _) =
   text "let" <+> (vcat binds $$ hang (text "in") 2 prettyBody)
   where
     names = map fst bs
@@ -60,7 +59,7 @@ prepare (CoreLet _ bs body) =
     prettyBody = (prepare . inst) body
     bindExprs = map (prepare . inst . snd) bs
     binds = zipWith (\n b -> text n <+> char '=' <+> b) names bindExprs
-prepare (CoreLookup _ x y) = prepare x <+> char '.' <> text y
+prepare (CoreLookup _ x y d) = prepare x <+> char '.' <> text y <> char '?' <> maybe (text "") prepare d
 prepare (CoreBlock _ e) = braces $ prepare e
 prepare (CoreList _ [k@(CorePrim _ (CoreSymbol _)), v]) = brackets (prepare k <> comma <> prepare v)
 prepare (CoreList _ xs) = brackets . vcat . punctuate comma $ map prepare xs
@@ -80,6 +79,7 @@ prepare (CoreApply _ f es) = prepare f <> parens ( hsep . punctuate comma $ map 
 prepare (CoreName _ n) = text n
 prepare (CoreOperator _ x p e) =
   char '^' <> text (show x) <> parens (text (show p)) <> char '^' <> prepare e
+prepare (CoreUnresolved _ v) = text $ "!!" ++ v ++ "!!"
 prepare CoreEliminated = text "**********GONE**********"
 
 

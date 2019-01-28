@@ -47,7 +47,7 @@ processImports load expr@(CoreMeta smid m body) =
       CoreMeta smid (pruneImports m) $
       foldr (\i e -> rebody (load i) e) (processImports load body) imports
     Nothing -> expr
-processImports load (CoreLet smid bs b) = CoreLet smid bs' b'
+processImports load (CoreLet smid bs b _) = CoreLet smid bs' b' OtherLet
   where
     b' = f b
     bs' = map (second f) bs
@@ -56,8 +56,8 @@ processImports load (CoreLambda smid i ns b) = CoreLambda smid i ns b'
   where
     b' = f b
     f = transScope (processImports (liftLoad load))
-processImports load (CoreLookup smid obj n) =
-  CoreLookup smid (processImports load obj) n
+processImports load (CoreLookup smid obj n d) =
+  CoreLookup smid (processImports load obj) n (processImports load <$> d)
 processImports load (CoreList smid els) =
   CoreList smid $ map (processImports load) els
 processImports load (CoreBlock smid l) =
