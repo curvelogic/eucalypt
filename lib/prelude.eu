@@ -374,6 +374,12 @@ str: {
 
   ` "`fmt(x, spec)` - format `x` using printf-style format `spec`."
   fmt: __FMT
+
+  ` "`to-upper(s)` - convert string `s` to upper case."
+  to-upper: __UPPER
+
+  ` "`to-lower(s)` - convert string `s` to lower case."
+  to-lower: __LOWER
 }
 
 ##
