@@ -373,6 +373,10 @@ setCode ms@MachineState {} c = ms {machineCode = c}
 setRule :: String -> MachineState -> MachineState
 setRule r ms@MachineState {} = ms {machineLastStepName = r}
 
+infixl 5 //?
+(//?) :: MachineState -> String -> MachineState
+(//?) ms@MachineState {} r =  ms {machineLastStepName = r}
+
 -- | Set the current call stack
 setCallStack :: CallStack -> MachineState -> MachineState
 setCallStack cs ms = ms { machineCallStack = cs }
