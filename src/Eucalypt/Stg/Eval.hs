@@ -93,7 +93,7 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
       addr <- resolveHeapObject env ms r
       obj <- liftIO $ peek addr
       case obj of
-        Closure lf@LambdaForm {_bound = ar} le cs _meta ->
+        Closure lf@LambdaForm {_bound = ar, _body = syn} le cs _meta ->
           case compare (fromIntegral len) ar
             -- EXACT
                 of
@@ -101,10 +101,21 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
               (vals env ms xs >>= call le ms lf)
             -- CALLK
             GT ->
-              let (enough, over) = Seq.splitAt (fromIntegral ar) xs
-               in vals env ms over >>= pushApplyToArgs ms >>= \s ->
-                    setCallStack cs . setRule "CALLK" . setCode s <$>
-                    (vals env ms enough >>= call le ms lf)
+              -- special case when we're applying a data structure
+              -- like a block
+              case syn of
+                (App (Con _) _) ->
+                  if len == 1
+                    then (return . setRule "CALLBLOCK" . setCode ms)
+                           (Eval
+                              (App (Ref (Global "MERGE")) (Seq.fromList [Seq.index xs 0, r]))
+                              env)
+                    else throwIn ms AppliedDataStructureToMoreThanOneArgument
+                _ ->
+                  let (enough, over) = Seq.splitAt (fromIntegral ar) xs
+                   in vals env ms over >>= pushApplyToArgs ms >>= \s ->
+                        setCallStack cs . setRule "CALLK" . setCode s <$>
+                        (vals env ms enough >>= call le ms lf)
             -- PAP2
             LT ->
               if len == 0
@@ -185,7 +196,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon
           env <- argsToEnv ms' le branchArity xs
           return $ setCode ms' (Eval expr env)
         Nothing -> do
-          addr <- allocateForDefault ms' xs meta
+          addr <- allocateForDefault ms'
           case defaultBranch k of
             (Just expr) ->
               return $ setCode ms' (Eval expr (le <> singleton (StgAddr addr)))
@@ -195,7 +206,11 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon
       updateAddr ms' a t xs newMeta
       return . setRule "UPDATE" $
         setCode ms' (ReturnCon t xs (fromMeta newMeta))
-    (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
+    (Just (ApplyToArgs addrs)) -> do
+      addr <- allocateForDefault ms'
+      let (env', args') = extendEnv mempty $ singleton (StgAddr addr) <> addrs
+      return $ setCode ms' (Eval (App (Ref $ args' `Seq.index` 0) (Seq.drop 1 args')) env')
+
     Nothing -> return $ terminate ms'
   where
     argsToEnv ms le expectedArity args =
@@ -204,14 +219,14 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon
           e <- globalAddress ms "KEMPTYBLOCK"
           return $ le <> args <> toValVec [fromMaybe e meta]
         else return (le <> args)
-    allocateForDefault ms args md =
+    allocateForDefault ms =
       liftIO $
       allocate
         (Closure
-           (value_ (App (Con t) (locals 0 (envSize args))))
-           args
+           (value_ (App (Con t) (locals 0 (envSize xs))))
+           xs
            (machineCallStack ms) $
-         maybe MetadataPassThrough MetadataValue md)
+         maybe MetadataPassThrough MetadataValue meta)
     updateAddr ms a tag args md =
       liftIO $
       poke

@@ -411,7 +411,7 @@ compose(f, g, x): x g f
 (l @ r): l(r)
 
 ` "`apply(f, xs)` - apply function `f` to arguments in list `xs`."
-apply(f, xs): foldl(cat flip, f, xs)
+apply(f, xs): foldl(_0(_1), f, xs)
 
 ` "`flip(f)` - flip arguments of function `f`, flip(f)(x, y) == f(y, x)"
 flip(f, x, y): f(y, x)
@@ -737,7 +737,7 @@ tongue(ks, v): foldr({k: • e: •}.([[k, e]] block), v, ks)
 
 ` "merge-at(ks, v, b) - shallow merge block `v` into block value at path-of-keys `ks`"
 merge-at(ks, v, b): if(ks nil?,
-                       b v,
+                       merge(b, v),
 		       b update-value-or(ks head,
 		                         merge-at(ks tail, v),
 					 tongue(ks tail, v)))
