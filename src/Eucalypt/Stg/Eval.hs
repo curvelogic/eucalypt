@@ -22,6 +22,7 @@ import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Sequence as Seq
 import Data.Word
+import Eucalypt.Stg.Address (allocate, peek, poke)
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Intrinsics

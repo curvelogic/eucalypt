@@ -10,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Stg.StgTestUtil where
 
 import Data.Foldable (toList, traverse_)
+import Eucalypt.Stg.Address
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event

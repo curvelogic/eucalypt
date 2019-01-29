@@ -15,6 +15,7 @@ module Eucalypt.Stg.Intrinsics.Block
 
 import Control.Monad (foldM)
 import Data.Sequence ((!?))
+import Eucalypt.Stg.Address (allocate)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags

@@ -19,6 +19,7 @@ module Eucalypt.Stg.Intrinsics.Emit
 
 import qualified Data.HashMap.Strict.InsOrd as OM
 import Data.Sequence ((!?))
+import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn

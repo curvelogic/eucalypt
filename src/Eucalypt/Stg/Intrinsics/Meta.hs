@@ -13,6 +13,7 @@ module Eucalypt.Stg.Intrinsics.Meta
   ) where
 
 import Data.Sequence ((!?))
+import Eucalypt.Stg.Address (peek, allocate)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn

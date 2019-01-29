@@ -18,11 +18,11 @@ import Control.Monad.IO.Class
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
 import Data.HashMap.Strict (HashMap)
-import Data.IORef
 import Data.Semigroup
 import qualified Data.Sequence as Seq
 import Data.Word
 import Eucalypt.Core.SourceMap
+import Eucalypt.Stg.Address
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Event
@@ -32,25 +32,8 @@ import qualified Text.PrettyPrint as P
 import Text.PrettyPrint (($+$), (<+>))
 
 
--- | A mutable refence to a heap object
-newtype Address =
-  Address (IORef HeapObject)
-  deriving (Eq)
-
-instance Show Address where
-  show _ = "0x?"
-
--- | Allocate a new heap object, return address
-allocate :: MonadIO m => HeapObject -> m Address
-allocate obj = liftIO $ Address <$> newIORef obj
-
--- | Replace the heap object at this address
-poke :: MonadIO m => Address -> HeapObject -> m ()
-poke (Address r) = liftIO . writeIORef r
-
--- | Retrieve the heap object at this address
-peek :: MonadIO m => Address -> m HeapObject
-peek (Address r) = liftIO $ readIORef r
+-- | Address type where mutable heap objects are allocated
+type Address = AbstractAddress HeapObject
 
 -- | Values on the stack or in environments can be addresses or
 -- primitives. All 'Ref's are resolved to 'StgValues' within the
@@ -124,7 +107,7 @@ instance StgPretty HeapObject where
 -- resolved arguments.
 newtype ValVec =
   ValVec (Seq.Seq StgValue)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Semigroup, Monoid)
 
 toValVec :: [StgValue] -> ValVec
 toValVec = ValVec . Seq.fromList
@@ -148,13 +131,6 @@ splitVecAt :: Integral a => a -> ValVec -> (ValVec, ValVec)
 splitVecAt n (ValVec vs) =
   let (l, r) = Seq.splitAt (fromIntegral n) vs
    in (ValVec l, ValVec r)
-
-instance Semigroup ValVec where
-  (<>) (ValVec l) (ValVec r) = ValVec $ l Seq.>< r
-
-instance Monoid ValVec where
-  mempty = ValVec mempty
-  mappend = (<>)
 
 instance StgPretty ValVec where
   prettify (ValVec vs) = P.braces $ P.hcat $ map p (toList vs)

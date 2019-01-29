@@ -18,6 +18,7 @@ import Data.List (intercalate)
 import qualified Data.Sequence as Seq
 import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Sequence (Seq)
+import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags

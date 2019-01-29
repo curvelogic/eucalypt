@@ -9,6 +9,7 @@ Stability   : experimental
 module Eucalypt.Stg.MachineSpec (main, spec)
 where
 
+import Eucalypt.Stg.Address
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.StandardMachine
