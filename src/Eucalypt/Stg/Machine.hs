@@ -143,6 +143,12 @@ extendEnv env args = (env', rs)
     env' = env <> args
     rs = locals envlen (arglen + envlen)
 
+-- | Split a ValVec in two at the specified index
+splitVecAt :: Integral a => a -> ValVec -> (ValVec, ValVec)
+splitVecAt n (ValVec vs) =
+  let (l, r) = Seq.splitAt (fromIntegral n) vs
+   in (ValVec l, ValVec r)
+
 instance Semigroup ValVec where
   (<>) (ValVec l) (ValVec r) = ValVec $ l Seq.>< r
 

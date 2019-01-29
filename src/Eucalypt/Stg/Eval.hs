@@ -132,10 +132,9 @@ applyOver ms ref _arity _cs env _le LambdaForm {_body = (App (Con _) _)} xs =
     code =
       Eval (App (Ref $ Global "MERGE") (Seq.fromList [Seq.index xs 0, ref])) env
 applyOver ms _ref arity cs env le lf xs = do
-  (ValVec values) <- vals env ms xs
-  let (enough, over) = Seq.splitAt (fromIntegral arity) values
-  ms' <- pushApplyToArgs ms (ValVec over)
-  code <- call le ms' lf (ValVec enough)
+  (enough, over) <- splitVecAt arity <$> vals env ms xs
+  ms' <- pushApplyToArgs ms over
+  code <- call le ms' lf enough
   return $
     ms'
       {machineCode = code, machineCallStack = cs} //? "CALLK"
@@ -196,10 +195,9 @@ applyPartialOver ::
   -> RefVec
   -> m MachineState
 applyPartialOver ms arity cs env args le lf xs = do
-  (ValVec values) <- vals env ms xs
-  let (enough, over) = Seq.splitAt (fromIntegral arity) values
-  ms' <- pushApplyToArgs ms (ValVec over)
-  code <- call le ms' lf (args <> ValVec enough)
+  (enough, over) <- splitVecAt arity <$> vals env ms xs
+  ms' <- pushApplyToArgs ms over
+  code <- call le ms' lf (args <> enough)
   return $
     ms'
       { machineCode = code
