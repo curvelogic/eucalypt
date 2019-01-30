@@ -37,15 +37,13 @@ euStgNil = value_ $ appcon_ stgNil mempty
 euEmptyBlock :: LambdaForm
 euEmptyBlock = thunk_ $ appcon_ stgBlock [Global "KNIL"]
 
--- | __CAT(x, f)
+-- | __CAT is a "fake" builtin that should be eliminated during core
+-- phase and so this should never be called
 euCat :: LambdaForm
 euCat =
   lam_ 0 2 $
   ann_ "__CAT" 0 $
-  casedef_
-    (Atom (Local 1))
-    [(stgBlock, (1, appfn_ (Global "MERGE") [Local 0, Local 1]))] $
-  appfn_ (Local 1) [Local 0]
+  appfn_ (Global "PANIC") [Literal $ NativeString "Uneliminated call to __CAT"]
 
 
 -- | Strictly evaluate a list of natives to NF
