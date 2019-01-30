@@ -1,6 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE FlexibleContexts, LambdaCase #-}
-
 {-|
 Module      : Eucalypt.Stg.Address
 Description : Addresses and abstract memory operations for the STG machine
