@@ -25,4 +25,4 @@ simplify =
   let eliminateDeadCode = prune . prune . prune . prune
       runInlines = prune . prune . inline . inline . inline
    in eliminateDeadCode >>>
-      decatenate >>> runInlines >>> compress >>> cleanEvaluand
+      runInlines >>> compress >>> decatenate >>> cleanEvaluand
