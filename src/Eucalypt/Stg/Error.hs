@@ -56,6 +56,7 @@ data StgError
   | IOSystem IOException
   | InvalidNumber !String
   | MissingArgument
+  | AppliedDataStructureToMoreThanOneArgument
   deriving (Typeable, Show, Eq)
 
 instance Exception StgException
@@ -134,6 +135,8 @@ instance Reportable StgException where
           (InvalidNumber n) ->
             err $ "Invalid number (" ++ show n ++ ") could not be parsed."
           MissingArgument -> bug "Expected argument but none found"
+          AppliedDataStructureToMoreThanOneArgument ->
+            bug "A data structure was applied to more than one argument"
 
 
 instance HasSourceMapIds StgException where

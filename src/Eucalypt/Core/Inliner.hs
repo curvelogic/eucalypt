@@ -14,8 +14,11 @@ import Eucalypt.Core.Recursion
 import Eucalypt.Core.Syn
 
 
+-- | Tag lambdas that can be distributed out to call sites, distribute
+-- them and then beta reduce at the call site.
 inline :: CoreExp a -> CoreExp a
 inline = betaReduce . distribute . tagInlinables
+
 
 
 -- | Distribute the definition down the tree to all call sites.

@@ -13,6 +13,7 @@ module Eucalypt.Stg.Intrinsics.General
 
 import Data.Sequence ((!?))
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Machine
 
 -- | Is the heap object at the specified address a closed term?

@@ -22,14 +22,13 @@ import qualified Data.Text.IO as T
 import Eucalypt.Core.BlockAnaphora (anaphorise)
 import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
 import Eucalypt.Core.Desugar (translateExpressionToCore)
-import Eucalypt.Core.Eliminate (prune, compress)
-import Eucalypt.Core.Inliner (inline)
 import Eucalypt.Core.Pretty
+import Eucalypt.Core.Simplify (simplify)
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Target
 import Eucalypt.Core.Unit
-import Eucalypt.Core.Verify
+import Eucalypt.Core.Verify (runChecks)
 import Eucalypt.Driver.IOSource (prepareIOUnit)
 import Eucalypt.Driver.Options (Command(..), EucalyptOptions(..), finalise, mergeTargetSettingsIntoOptions)
 import qualified Eucalypt.Driver.Stg as STG
@@ -177,18 +176,9 @@ evaluate opts = do
     when (cmd == DumpCooked)
       (putStrLn (pprint cookedEvaluand) >> exitSuccess)
 
-    -- Stage 7: dead code elimination to reduce compile and make
-    -- debugging STG impelmentation a bit easier
-    let prunedEvaluand = {-# SCC "DeadCodeElimination" #-} prune $ prune $ prune $ prune cookedEvaluand
-    when (cmd == DumpPrunedCore)
-      (putStrLn (pprint prunedEvaluand) >> exitSuccess)
-
-    -- Now some inlining
-    let inlinedEvaluand = {-# SCC "Inlining" #-} prune $ prune $ inline $ inline $ inline prunedEvaluand
-    let compressedEvaluand = {-# SCC "Compression" #-} compress inlinedEvaluand
-    let cleanedEvaluand = {-# SCC "Cleaning" #-} cleanEvaluand compressedEvaluand
-
-    let finalEvaluand = cleanedEvaluand
+    -- Stage 7: simplify core to reduce compile, optimise code and
+    -- make debugging STG impelmentation a bit easier
+    let finalEvaluand = {-# SCC "Simplification" #-} simplify cookedEvaluand
     when (cmd == DumpFinalCore)
       (putStrLn (pprint finalEvaluand) >> exitSuccess)
 
