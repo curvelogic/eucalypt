@@ -14,6 +14,7 @@ module Eucalypt.Core.Recursion where
 import Bound
 import Data.Bifunctor (second)
 import Data.Foldable
+import Data.Maybe (maybeToList)
 import Eucalypt.Core.Syn
 
 transScope ::
@@ -65,4 +66,8 @@ foldCoreExpr f e@(CoreList _ exprs) =
 foldCoreExpr f e@(CoreArgTuple _ exprs) =
   f e <> mconcat (map (foldCoreExpr f) exprs)
 foldCoreExpr f e@(CoreOperator _ _ _ expr) = f e <> foldCoreExpr f expr
+foldCoreExpr f e@(CoreLookup _ t _ d) =
+  f e <> foldCoreExpr f t <> mconcat (map (foldCoreExpr f) $ maybeToList d)
+foldCoreExpr f e@(CoreOpSoup _ es) = f e <> mconcat (foldCoreExpr f <$> es)
+foldCoreExpr f e@(CoreApply _ g es) = f e <> foldCoreExpr f g <> mconcat (foldCoreExpr f <$> es)
 foldCoreExpr f e = f e

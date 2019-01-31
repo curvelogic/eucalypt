@@ -397,6 +397,12 @@ soup = CoreOpSoup
 args :: SMID -> [CoreExpr] -> CoreExpr
 args = CoreArgTuple
 
+
+-- | Unresolved marker
+unresolved :: SMID -> String -> CoreExpr
+unresolved = CoreUnresolved
+
+
 -- $ special operators
 --
 
