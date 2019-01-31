@@ -19,12 +19,12 @@ import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import Data.Text (Text, unpack)
 import Data.Text.Encoding (decodeUtf8)
-import Eucalypt.Core.Desugar (desugar)
+import Eucalypt.Core.Desugar (desugar, desugarLambda)
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn as S
 import Eucalypt.Source.Error
 import Eucalypt.Syntax.Error ()
-import Eucalypt.Syntax.ParseExpr (parseExpression)
+import Eucalypt.Syntax.ParseExpr (parseExpression, parseLambda)
 import Text.Libyaml
 import Text.Regex.PCRE
 
@@ -116,6 +116,19 @@ expressionFromString s =
     Left err -> throwM err
     Right expr -> return $ desugar expr
 
+-- | Parse and desugar a eucalypt core lambda expression from string.
+--
+--
+-- Supports the @!eu::fn@ tag
+-- @
+-- x: !eu::fn (x, y, z) x + y + z
+-- @
+lambdaExpressionFromString :: (Monad m, MonadThrow m) => String -> m CoreExpr
+lambdaExpressionFromString s =
+  case parseLambda s "YAML embedded function" of
+    Left err -> throwM err
+    Right lambda -> return $ desugarLambda lambda
+
 -- | Create metadata expressing a tag.
 tagMeta :: String -> CoreExpr
 tagMeta tag = anon S.block [anon element "tag" $ anon S.str tag]
@@ -147,6 +160,7 @@ instance YamlTranslator ActiveTranslator where
       BoolTag -> return $ anon S.corebool (parseBool s)
       NullTag -> return $ anon S.corenull
       UriTag "!eu" -> expressionFromString s
+      UriTag "!eu::fn" -> lambdaExpressionFromString s
       UriTag "!eu::suppress" -> return $ wrapAccordingToTag tag' $ anon S.sym s
       UriTag t -> return $ anon S.withMeta (tagMeta t) $ anon S.str s
       _ -> return $ anon S.str s

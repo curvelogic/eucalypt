@@ -302,9 +302,17 @@ translateUnit Located { location = l
 
 
 -- | Shim for old API
+--
+-- Used by YamlSource
 desugar :: Expression -> Syn.CoreExpr
 desugar = (`evalState` initTranslateState 1) . unTranslate . translate
 
+-- | Desugar a lambda embedded in foreign syntax
+--
+-- Used by YamlSource
+desugarLambda :: EmbeddedLambda -> Syn.CoreExpr
+desugarLambda (Located _ (EmbeddedLambda params expr)) =
+  lam 0 params $ desugar expr
 
 
 -- | Translate AST into core syntax and generate target metadata on
