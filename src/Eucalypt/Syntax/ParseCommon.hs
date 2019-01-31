@@ -42,6 +42,9 @@ colon = symbol ":"
 comma :: Parser String
 comma = symbol ","
 
+dot :: Parser String
+dot = symbol "."
+
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (char ')')
 
