@@ -17,24 +17,35 @@ spec :: Spec
 spec =
   describe "Yaml parser" $ do
     it "Parses key value" $
-      parseYamlData "<test>" "a: !!int 1234" `shouldReturn`
-      block [element "a" $ int 1234]
+      parseYamlExpr "<test>" "a: !!int 1234" `shouldReturn`
+      letexp [("a", int 1234)] (block [element "a" $ var "a"])
     it "Parses JSON data" $
-      parseYamlData "<test>" " { a: [1, 2, 3], b: {x: \"y\"} } " `shouldReturn`
-      block
-        [ element "a" $ corelist [int 1, int 2, int 3]
-        , element "b" $ block [element "x" (str "y")]
+      parseYamlExpr "<test>" " { a: [1, 2, 3], b: {x: \"y\"} } " `shouldReturn`
+      letexp
+        [ ("a", corelist [int 1, int 2, int 3])
+        , ("b", letexp [("x", str "y")] $ block [element "x" $ var "x"])
         ]
+        (block [element "a" $ var "a", element "b" $ var "b"])
     it "Parses bools" $
-      parseYamlData "<test>" "a: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE " `shouldReturn`
-      block
-        [ element "a" $ corebool True
-        , element "b" $ corebool True
-        , element "c" $ corebool True
-        , element "d" $ corebool False
-        , element "e" $ corebool False
-        , element "f" $ corebool False
+      parseYamlExpr
+        "<test>"
+        "a: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE " `shouldReturn`
+      letexp
+        [ ("a", corebool True)
+        , ("b", corebool True)
+        , ("c", corebool True)
+        , ("d", corebool False)
+        , ("e", corebool False)
+        , ("f", corebool False)
         ]
+        (block
+           [ element "a" $ var "a"
+           , element "b" $ var "b"
+           , element "c" $ var "c"
+           , element "d" $ var "d"
+           , element "e" $ var "e"
+           , element "f" $ var "f"
+           ])
     it "Resolves unknown tags" $ do
       coreTagResolve "null" `shouldBe` NullTag
       coreTagResolve "Null" `shouldBe` NullTag

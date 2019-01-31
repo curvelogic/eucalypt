@@ -15,7 +15,6 @@ import Control.Exception.Safe (catchJust)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (MonadThrow, throwM)
 import Control.Monad.Trans.Writer.Strict (WriterT, tell)
-import Data.Bifunctor (first)
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import Data.Text (Text, unpack)
@@ -39,9 +38,33 @@ data RawExpr =
 
 -- | A scheme for translating YAML into Eucalypt core syntax
 class YamlTranslator a where
-  handleScalar :: (Monad m, MonadThrow m) => a -> BS.ByteString -> Tag -> Style -> Anchor -> m CoreExpr
-  handleList :: (Monad m, MonadThrow m) => a -> [CoreExpr] -> m CoreExpr
-  handleMapping :: (Monad m, MonadThrow m) => a -> [(Text, CoreExpr)] -> m CoreExpr
+  handleScalar ::
+       (Monad m, MonadThrow m)
+    => a
+    -> BS.ByteString
+    -> Tag
+    -> Style
+    -> Anchor
+    -> m CoreExpr
+  handleList ::
+       (Monad m, MonadThrow m)
+    => a
+    -> [CoreExpr]
+    -> Tag
+    -> SequenceStyle
+    -> Anchor
+    -> m CoreExpr
+
+  -- | Called to translate a mapping, with binding names, key
+  -- expression and value expressions
+  handleMapping ::
+       (Monad m, MonadThrow m)
+    => a
+    -> [(Text, CoreExpr, CoreExpr)]
+    -> Tag
+    -> MappingStyle
+    -> Anchor
+    -> m CoreExpr
 
 -- | When types are untagged, use rules to resolve
 newtype TagResolver =
@@ -49,9 +72,6 @@ newtype TagResolver =
 
 newtype ActiveTranslator =
   ActiveTranslator TagResolver
-
-newtype InertTranslator =
-  InertTranslator TagResolver
 
 -- | Resolve tags as per "10.3.2. Tag Resolution" of the YAML 1.2 spec
 coreTagResolve :: String -> Tag
@@ -83,41 +103,41 @@ parseBool "True" = True
 parseBool "true" = True
 parseBool _ = False
 
--- | Translate as inert data - ignore eucalypt tags
-instance YamlTranslator InertTranslator where
-  handleScalar (InertTranslator (TagResolver resolve)) text tag _ _ =
-    return $
-    case tag' of
-      StrTag -> anon S.str s
-      IntTag -> anon S.int (read s)
-      FloatTag -> anon S.float (read s)
-      BoolTag -> anon S.corebool (parseBool s)
-      NullTag -> anon S.corenull
-      _ -> anon S.str s
-    where
-      s = (unpack . decodeUtf8) text
-      tag' =
-        if tag == NoTag
-          then resolve s
-          else tag
-  handleList _ = return . anon CoreList
-  handleMapping _ pairs = return $ anon CoreBlock $ anon CoreList (map kv pairs)
-    where
-      kv (t, e) = anon CoreList [anon CorePrim (S.CoreSymbol (unpack t)), e]
-
--- | Parse and desugar a eucalypt expression from string
+-- | Parse and desugar a eucalypt expression from string.
+--
+--
+-- Supports the @!eu@ tag
+-- @
+-- x: !eu 25 * 23
+-- @
 expressionFromString :: (Monad m, MonadThrow m) => String -> m CoreExpr
 expressionFromString s =
   case parseExpression s "YAML embedding" of
     Left err -> throwM err
     Right expr -> return $ desugar expr
 
+-- | Create metadata expressing a tag.
 tagMeta :: String -> CoreExpr
 tagMeta tag = anon S.block [anon element "tag" $ anon S.str tag]
 
+-- | Create metadata expressing a tag.
+suppressMeta :: CoreExpr
+suppressMeta = anon S.block [anon element "export" $ anon S.sym "suppress"]
+
+-- | Place a metadata wrapping around the specified CoreExpr if the
+-- tag dictates it
+wrapAccordingToTag :: Tag -> CoreExpr -> CoreExpr
+wrapAccordingToTag t e =
+  case t of
+    UriTag "!eu::suppress" -> anon S.withMeta suppressMeta e
+    _ -> e
+
 -- | Active translation scheme
 --
--- @!eu@ tag causes expression parse, blocks become let expressions.
+-- @!eu@ tag causes expression parse
+-- @!eu::suppress@ tag on a key causes the key / value to be
+--   suppressed from render
+-- All mappings become let expressions
 instance YamlTranslator ActiveTranslator where
   handleScalar (ActiveTranslator (TagResolver resolve)) text tag _ _ =
     case tag' of
@@ -126,10 +146,9 @@ instance YamlTranslator ActiveTranslator where
       FloatTag -> return $ anon S.float (read s)
       BoolTag -> return $ anon S.corebool (parseBool s)
       NullTag -> return $ anon S.corenull
-      UriTag u ->
-        if u == "!eu"
-          then expressionFromString s
-          else return $ anon S.withMeta (tagMeta u) $ anon S.str s
+      UriTag "!eu" -> expressionFromString s
+      UriTag "!eu::suppress" -> return $ wrapAccordingToTag tag' $ anon S.sym s
+      UriTag t -> return $ anon S.withMeta (tagMeta t) $ anon S.str s
       _ -> return $ anon S.str s
     where
       s = (unpack . decodeUtf8) text
@@ -137,12 +156,21 @@ instance YamlTranslator ActiveTranslator where
         if tag == NoTag
           then resolve s
           else tag
-  handleList _ = return . anon CoreList
-  handleMapping _ pairs = return $ anon letexp bindings body
+  handleList _ xs tag _s _a = return $ wrapAccordingToTag tag $ anon CoreList xs
+  handleMapping _ triples tag _s _a = return $ anon letexp bindings body
     where
-      bindings = map (first unpack) pairs
-      body =
-        anon block [anon element n (anon var n) | n <- map (unpack . fst) pairs]
+      binding (k, _, val) = (unpack k, val)
+      bindings = map binding triples
+      body = wrapAccordingToTag tag $ anon block $ map bodyItem triples
+      bodyItem (k, CoreMeta _ m (CorePrim _ (CoreString n)), _val)
+        | m == suppressMeta =
+          anon S.withMeta suppressMeta (anon element n $ anon var (unpack k))
+      bodyItem (k, CoreMeta _ m (CorePrim _ (CoreSymbol n)), _val)
+        | m == suppressMeta =
+          anon S.withMeta suppressMeta (anon element n $ anon var (unpack k))
+      bodyItem (k, CorePrim _ (CoreString n), _val) =
+        anon element n $ anon var (unpack k)
+      bodyItem (k, expr, _val) = anon CoreList [expr, anon var (unpack k)]
 
 -- | Track a reference to be linked up later
 coreAlias :: AnchorName -> CoreExpr
@@ -169,13 +197,13 @@ sinkExpr t = start
       case anchor of
         Nothing -> return scalar
         Just alias -> tell' anchor scalar >> return (coreAlias alias)
-    go (EventSequenceStart _tag _style anchor) = do
+    go (EventSequenceStart tag style anchor) = do
       vals <- goS id
-      val <- handleList t vals
+      val <- handleList t vals tag style anchor
       tell' anchor val
-    go (EventMappingStart _tag _style anchor) = do
+    go (EventMappingStart tag style anchor) = do
       pairs <- goM id
-      val <- handleMapping t pairs
+      val <- handleMapping t pairs tag style anchor
       tell' anchor val
     go e = throwM $ UnexpectedEvent e
     goS front = do
@@ -196,14 +224,8 @@ sinkExpr t = start
           _ <- tell' anchor expr
           let k = decodeUtf8 text
           v <- start
-          goM (front . ((k, v) :))
+          goM (front . ((k, expr, v) :))
         Just e -> throwM $ UnexpectedEvent e
-
--- | Conduit consumer that delivers a RawExpr from Yaml event stream
-sinkRawExpr :: MonadThrow m => ConduitM Event o m RawExpr
-sinkRawExpr =
-  uncurry RawExpr <$>
-  runWriterC (sinkExpr $ InertTranslator (TagResolver coreTagResolve))
 
 -- | Conduit consumer that delivers a RawExpr from Yaml event stream
 sinkActiveRawExpr :: MonadThrow m => ConduitM Event o m RawExpr
@@ -214,17 +236,6 @@ sinkActiveRawExpr =
 -- | Alter a CoreExpr to reference common values
 incorporateAliases :: RawExpr -> CoreExpr
 incorporateAliases (RawExpr e _) = e -- TODO: Yaml aliases
-
--- | Parse inert YAML data into a CoreExpr
-parseYamlData :: String -> BS.ByteString -> IO CoreExpr
-parseYamlData inputName s =
-  catchJust yamlError
-  (incorporateAliases <$> runConduitRes (decode s .| sinkRawExpr))
-  (throwM . yamlExceptionToDataParseException inputName)
-  where
-    yamlError :: YamlException -> Maybe YamlException
-    yamlError = Just
-
 
 -- | Parse eu-annotated active YAML into a CoreExpr
 parseYamlExpr :: String -> BS.ByteString -> IO CoreExpr
