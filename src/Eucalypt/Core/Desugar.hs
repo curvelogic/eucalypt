@@ -13,6 +13,7 @@ where
 
 import Control.Monad.State.Strict
 import Data.Maybe (mapMaybe)
+import Data.List (intersperse)
 import qualified Data.Set as S
 import Eucalypt.Core.Anaphora ()
 import Eucalypt.Core.GenLookup (processGenLookup)
@@ -251,19 +252,29 @@ translateBlock loc blk = do
 translateStringPattern :: SourceSpan -> [StringChunk] -> Translate CoreExpr
 translateStringPattern loc cs = do
   smid <- recordSpan loc
-  return $ processAnaphora (conc smid) >>= \(Reference v) -> anon Syn.var v
+  return $ processAnaphora (conc smid) >>= reference2Soup
   where
     sub :: StringChunk -> CoreExp Target
-    sub (Interpolation InterpolationRequest {refTarget = t, refParseOrFormat = spec}) =
+    sub (Interpolation InterpolationRequest { refTarget = t
+                                            , refParseOrFormat = spec
+                                            }) =
       case spec of
-        (Just fmt@('%':_)) -> anon Syn.app (anon Syn.bif "FMT") [anon Syn.var t, anon Syn.str fmt]
-        (Just fmt) -> anon Syn.app (anon Syn.var (Reference fmt)) [anon Syn.var t]
+        (Just fmt@('%':_)) ->
+          anon Syn.app (anon Syn.bif "FMT") [anon Syn.var t, anon Syn.str fmt]
+        (Just fmt) ->
+          anon Syn.app (anon Syn.var (Reference [fmt])) [anon Syn.var t]
         Nothing -> anon Syn.app (anon Syn.bif "STR") [anon Syn.var t]
     sub (LiteralContent s) = anon Syn.str s
     exprs = map sub cs
     conc smid =
       Syn.app smid (anon Syn.bif "JOIN") [CoreList smid exprs, anon Syn.str ""]
     processAnaphora = bindAnaphora () . numberAnaphora ()
+    reference2Soup (Reference [i]) = anon Syn.var i
+    reference2Soup (Reference (i:ids)) =
+      anon Syn.soup $
+      anon Syn.var i :
+      lookupOp : intersperse lookupOp (map (anon Syn.corename) ids)
+    reference2Soup _ = error "Untransformed anaphora"
 
 
 -- | Descend through the AST, translating to CoreExpr and recording

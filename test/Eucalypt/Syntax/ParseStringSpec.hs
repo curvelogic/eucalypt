@@ -31,11 +31,11 @@ anaphor1 =
       , refConversion = Nothing
       }
 
-refer :: String -> StringChunk
-refer v =
+refer :: [String] -> StringChunk
+refer vs =
   Interpolation
     InterpolationRequest
-      { refTarget = Reference v
+      { refTarget = Reference vs
       , refParseOrFormat = Nothing
       , refConversion = Nothing
       }
@@ -57,8 +57,10 @@ spec =
       testParse "{}" `shouldParse` [anaphor]
     it "handles numeric anaphor - \"{1}\"" $
       testParse "{1}" `shouldParse` [anaphor1]
+    it "handles numeric anaphor with spaces - \"{ 1 }\"" $
+      testParse "{ 1 }" `shouldParse` [anaphor1]
     it "handles interpolation ref - \"{foo}\"" $
-      testParse "{foo}" `shouldParse` [refer "foo"]
+      testParse "{foo}" `shouldParse` [refer ["foo"]]
     it "handles mixture - \"x{}y{}z{}a{foo}b{bar}c{baz}{{txt}}\"" $
       testParse "x{}y{}z{}a{foo}b{bar}c{baz}{{txt}}" `shouldParse`
       [ LiteralContent "x"
@@ -68,10 +70,14 @@ spec =
       , LiteralContent "z"
       , anaphor
       , LiteralContent "a"
-      , refer "foo"
+      , refer ["foo"]
       , LiteralContent "b"
-      , refer "bar"
+      , refer ["bar"]
       , LiteralContent "c"
-      , refer "baz"
+      , refer ["baz"]
       , LiteralContent "{txt}"
       ]
+    it "handles composite interpolation ref - \"{a.b.c}\"" $
+      testParse "{a.b.c}" `shouldParse` [refer ["a", "b", "c"]]
+    it "handles composite interpolation ref with spaces - \"{ a . b . c }\"" $
+      testParse "{ a . b . c }" `shouldParse` [refer ["a", "b", "c"]]

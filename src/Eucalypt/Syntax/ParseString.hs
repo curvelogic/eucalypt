@@ -16,12 +16,24 @@ import Eucalypt.Syntax.ParseCommon
 import Text.Megaparsec
 import Text.Megaparsec.Char
 
+-- | A potentially composite reference formed by a dotted sequence of
+-- normal identifiers.
+--
+-- e.g.
+-- @
+-- a.b.c
+-- @
+--
+-- String interpolation is quite restricted. No general expressions,
+-- no operators, no function calls (except via format specifier).
+dottedReference :: Parser [String]
+dottedReference = sc >> lexeme normalIdentifier `sepBy1` lexeme dot
 
 -- | Parse the target of an interpolation request (empty, 0-9 or ref)
 target :: Parser Target
 target =
-  (Reference <$> normalIdentifier) <|>
-  (Anaphor <$> optional (digitToInt <$> digitChar))
+  (Reference <$> dottedReference) <|>
+  (Anaphor <$> optional (sc >> digitToInt <$> lexeme digitChar))
 
 
 -- | Parse the format string

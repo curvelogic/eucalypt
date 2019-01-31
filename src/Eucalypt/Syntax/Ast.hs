@@ -66,7 +66,8 @@ implicit = Implicit
 -- value in appropriate block.
 data Target
   = Anaphor (Maybe Int) -- empty anaphor or indexed anaphor
-  | Reference String -- reference to value from block (or environment)
+  | Reference [String] -- reference to value from block (or
+    -- environment) as dotted path
   deriving (Eq, Show, Generic, ToJSON)
 
 instance Anaphora () Target where
