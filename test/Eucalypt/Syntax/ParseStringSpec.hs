@@ -57,6 +57,8 @@ spec =
       testParse "{}" `shouldParse` [anaphor]
     it "handles numeric anaphor - \"{1}\"" $
       testParse "{1}" `shouldParse` [anaphor1]
+    it "handles numeric anaphor with spaces - \"{ 1 }\"" $
+      testParse "{ 1 }" `shouldParse` [anaphor1]
     it "handles interpolation ref - \"{foo}\"" $
       testParse "{foo}" `shouldParse` [refer ["foo"]]
     it "handles mixture - \"x{}y{}z{}a{foo}b{bar}c{baz}{{txt}}\"" $
@@ -78,4 +80,4 @@ spec =
     it "handles composite interpolation ref - \"{a.b.c}\"" $
       testParse "{a.b.c}" `shouldParse` [refer ["a", "b", "c"]]
     it "handles composite interpolation ref with spaces - \"{ a . b . c }\"" $
-      testParse "{a.b.c}" `shouldParse` [refer ["a", "b", "c"]]
+      testParse "{ a . b . c }" `shouldParse` [refer ["a", "b", "c"]]

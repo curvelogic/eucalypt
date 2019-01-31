@@ -27,13 +27,13 @@ import Text.Megaparsec.Char
 -- String interpolation is quite restricted. No general expressions,
 -- no operators, no function calls (except via format specifier).
 dottedReference :: Parser [String]
-dottedReference = normalIdentifier `sepBy1` dot
+dottedReference = sc >> lexeme normalIdentifier `sepBy1` lexeme dot
 
 -- | Parse the target of an interpolation request (empty, 0-9 or ref)
 target :: Parser Target
 target =
   (Reference <$> dottedReference) <|>
-  (Anaphor <$> optional (digitToInt <$> digitChar))
+  (Anaphor <$> optional (sc >> digitToInt <$> lexeme digitChar))
 
 
 -- | Parse the format string
