@@ -85,3 +85,6 @@ corelookup = anon Syn.corelookup
 dynlookup ::
      Syn.CoreExp a -> Syn.CoreRelativeName -> Syn.CoreExp a -> Syn.CoreExp a
 dynlookup = anon Syn.dynlookup
+
+unresolved :: String -> Syn.CoreExp a
+unresolved = anon Syn.CoreUnresolved
