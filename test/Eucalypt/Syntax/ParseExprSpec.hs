@@ -540,3 +540,13 @@ blockSpec = do
       annUnit
         (block [bare $ prop "import" $ str "import.eu"])
         [bare $ prop "result" $ normalName "foo"]
+  describe "embedded lambda parsing" $ do
+    it "parses '(x, y) x + y'" $
+      testParse embeddedLambda "(x, y) x + y" `shouldParse`
+      embLambda ["x", "y"] (opsoup [normalName "x", operatorName "+", normalName "y"])
+    it "parses '   (x, y)    x + y   '" $
+      testParse embeddedLambda "   (x, y)    x + y   " `shouldParse`
+      embLambda ["x", "y"] (opsoup [normalName "x", operatorName "+", normalName "y"])
+    it "parses '   (x, y)x+y'" $
+      testParse embeddedLambda "   (x, y)    x + y   " `shouldParse`
+      embLambda ["x", "y"] (opsoup [normalName "x", operatorName "+", normalName "y"])

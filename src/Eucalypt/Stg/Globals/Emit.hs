@@ -89,9 +89,15 @@ renderKV =
                        (caselit_
                           (appbif_ (intrinsicIndex "CLOSED") [vval])
                           [ ( NativeBool True
-                            , seq_
-                                (appfn_ (Global "RENDER") [key])
-                                (appfn_ (Global "RENDER") [vval]))
+                            , force_
+                                (appbif_ (intrinsicIndex "META") [vval])
+                                (caselit_
+                                   (appfn_ (Global "Emit.suppresses") [valmeta])
+                                   [(NativeBool True, appcon_ stgUnit [])]
+                                   (Just $
+                                    seq_
+                                      (appfn_ (Global "RENDER") [key])
+                                      (appfn_ (Global "RENDER") [vval]))))
                           ]
                           (Just (appcon_ stgUnit [])))))
                ])))
@@ -108,6 +114,7 @@ renderKV =
     val = Local 5
     _valt = Local 6
     vval = Local 7
+    valmeta = Local 8
 
 -- | LambdaForm that Inspects the metadata argument supplied to
 -- determine if it suppresses render.

@@ -340,11 +340,23 @@ annotatedUnit =
 unit :: Parser (Located (Annotated Block))
 unit = sc >> located (unannotatedUnit <|> annotatedUnit) 
 
+embeddedLambda :: Parser EmbeddedLambda
+embeddedLambda = 
+  label "embedded function" $
+  lexeme $ located $ EmbeddedLambda <$> (sc >> lexeme parenTuple) <*> expression
+
+
 -- ? driver functions
 --
 
+-- | For parsing an .eu unit
 parseUnit :: String -> String -> Either SyntaxError (Located (Annotated Block))
 parseUnit text n  = first MegaparsecError $ parse unit n text
 
+-- | For parsing an evaluand expression or embedded expression
 parseExpression :: String -> String -> Either SyntaxError Expression
 parseExpression text n = first MegaparsecError $ parse expression n text
+
+-- | For parsing an embedded lambda expression
+parseLambda :: String -> String -> Either SyntaxError EmbeddedLambda
+parseLambda text n = first MegaparsecError $ parse embeddedLambda n text

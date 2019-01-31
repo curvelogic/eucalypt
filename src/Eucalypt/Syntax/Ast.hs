@@ -187,6 +187,22 @@ instance HasLocation DeclarationForm_ where
   stripLocation (LeftOperatorDecl n o e) = LeftOperatorDecl n o (stripLocation e)
   stripLocation (RightOperatorDecl n o e) = RightOperatorDecl n o (stripLocation e)
 
+type EmbeddedLambda = Located EmbeddedLambda_
+
+-- | Lambdas may be embedded in other syntaxes (YAML etc.) to fulfil
+-- the same role as function declarations. The function name will come
+-- from the surrounding syntax
+--
+-- @
+-- f: !eu::fn (x, y) x + y
+-- @
+data EmbeddedLambda_ = EmbeddedLambda [ParameterName] Expression
+  deriving (Eq, Show, Generic, ToJSON)
+
+instance HasLocation EmbeddedLambda_ where
+  stripLocation (EmbeddedLambda ns expr) =
+    EmbeddedLambda ns $ stripLocation expr
+
 type BlockElement = Located BlockElement_
 
 -- | Block elements may be annotated declarations or splice forms
@@ -295,3 +311,7 @@ operatorName = at nowhere . EName . OperatorName
 -- | A tuple of args for a fn call (appears in op soup and binds left)
 applyTuple :: [Expression] -> Expression
 applyTuple = at nowhere . EApplyTuple
+
+-- | A nameless embedded lambda
+embLambda :: [String] -> Expression -> EmbeddedLambda
+embLambda ns expr = at nowhere $ EmbeddedLambda ns expr
