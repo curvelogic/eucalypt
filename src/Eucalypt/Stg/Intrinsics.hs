@@ -22,6 +22,7 @@ import qualified Eucalypt.Stg.Intrinsics.Number as Number
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
 import qualified Eucalypt.Stg.Intrinsics.Set as Set
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
+import qualified Eucalypt.Stg.Intrinsics.Time as Time
 import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
 import qualified Eucalypt.Stg.Intrinsics.General as General
 import Eucalypt.Stg.Machine
@@ -42,7 +43,12 @@ intrinsics =
   , IntrinsicInfo "PRUNEMERGE" 2 Block.pruneMerge
   , IntrinsicInfo "CLOSED" 1 General.closed
   , IntrinsicInfo "NUMPARSE" 1 Number.parse
-  ] <> Set.intrinsics <> Dict.intrinsics <> Str.intrinsics <> Arith.intrinsics
+  ] <>
+  Set.intrinsics <>
+  Dict.intrinsics <>
+  Str.intrinsics <>
+  Arith.intrinsics <>
+  Time.intrinsics
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available

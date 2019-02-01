@@ -827,3 +827,10 @@ dict: {
   ` "`as-block(d)` - create a block from a dict - requires symbol keys"
   as-block: entries block
 }
+
+cal: {
+
+  ifields: __IFIELDS
+
+  now: ifields(io.epoch-time) block
+}
