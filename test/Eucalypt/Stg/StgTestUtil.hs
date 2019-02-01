@@ -15,6 +15,8 @@ import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Intrinsics.Common
+import Eucalypt.Stg.Native
+import Eucalypt.Stg.Pretty
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine

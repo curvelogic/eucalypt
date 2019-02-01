@@ -17,7 +17,7 @@ import Data.Aeson
 import qualified Data.ByteString as BS
 import Data.ByteString.Builder
 import qualified Data.ByteString.Lazy as BL
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import qualified Eucalypt.Stg.Event as E
 import Eucalypt.Render.Json
 import Test.Hspec

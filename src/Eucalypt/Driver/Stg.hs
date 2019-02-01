@@ -31,11 +31,12 @@ import Eucalypt.Stg.Error
 import Eucalypt.Stg.Eval (step)
 import Eucalypt.Stg.Event (Event(..))
 import Eucalypt.Stg.Machine (MachineState(..))
+import Eucalypt.Stg.Pretty
 import Eucalypt.Stg.StandardMachine
   ( initDebugMachineState
   , initStandardMachineState
   )
-import Eucalypt.Stg.Syn (StgPretty(..), StgSyn)
+import Eucalypt.Stg.Syn (StgSyn)
 import qualified Text.PrettyPrint as P
 
 -- | Dump STG expression to stdout

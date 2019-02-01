@@ -24,6 +24,7 @@ import Eucalypt.Core.Syn as C
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 

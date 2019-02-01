@@ -11,6 +11,7 @@ module Eucalypt.Stg.Globals.Eq
   ( euEq
   ) where
 
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)

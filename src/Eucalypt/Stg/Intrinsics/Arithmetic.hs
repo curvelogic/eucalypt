@@ -14,7 +14,7 @@ module Eucalypt.Stg.Intrinsics.Arithmetic
 
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common (IntrinsicFunction, invoke)
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Data.Fixed (mod')
 import Data.Scientific

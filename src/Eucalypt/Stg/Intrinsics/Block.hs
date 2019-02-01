@@ -17,6 +17,7 @@ import Control.Monad (foldM)
 import Data.Sequence ((!?))
 import Eucalypt.Stg.Address (allocate)
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine

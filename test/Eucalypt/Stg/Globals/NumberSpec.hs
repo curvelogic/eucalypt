@@ -13,6 +13,7 @@ module Eucalypt.Stg.Globals.NumberSpec
   ) where
 
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.StgTestUtil
 import Test.Hspec

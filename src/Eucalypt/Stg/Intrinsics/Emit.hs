@@ -22,6 +22,7 @@ import Data.Sequence ((!?))
 import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Intrinsics.Block (pruneBlockToMap)

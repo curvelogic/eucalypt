@@ -12,7 +12,7 @@ module Eucalypt.Stg.Intrinsics.Number
   ) where
 
 import Eucalypt.Stg.Error
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Eucalypt.Syntax.Ast (PrimitiveLiteral(..))
 import Eucalypt.Syntax.ParseExpr (number)

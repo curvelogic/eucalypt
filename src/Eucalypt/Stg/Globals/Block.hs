@@ -20,6 +20,7 @@ module Eucalypt.Stg.Globals.Block
   ) where
 
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 

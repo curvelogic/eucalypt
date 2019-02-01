@@ -21,7 +21,7 @@ import Eucalypt.Stg.Intrinsics.Common
   , returnNatList
   )
 import Eucalypt.Stg.Error
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Data.Char (toUpper, toLower)
 import Data.List (intercalate)

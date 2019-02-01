@@ -21,7 +21,7 @@ import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Scientific
 import qualified Eucalypt.Stg.Event as E
-import Eucalypt.Stg.Syn (Native(..))
+import Eucalypt.Stg.Native
 
 
 -- | STG implementation

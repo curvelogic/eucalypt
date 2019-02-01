@@ -14,7 +14,7 @@ module Eucalypt.Render.TextSpec
 import Conduit
 import qualified Data.ByteString as BS
 import Data.Text.Encoding (encodeUtf8)
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import qualified Eucalypt.Stg.Event as E
 import Eucalypt.Render.Text
 import Test.Hspec

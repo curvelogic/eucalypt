@@ -12,6 +12,7 @@ module Eucalypt.Stg.Intrinsics.General
   ) where
 
 import Data.Sequence ((!?))
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Machine

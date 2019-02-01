@@ -21,7 +21,7 @@ import qualified Data.Map.Strict as MS
 import Data.Maybe (maybeToList)
 import Data.Scientific
 import qualified Eucalypt.Stg.Event as E
-import Eucalypt.Stg.Syn (Native(..))
+import Eucalypt.Stg.Native
 
 
 formatScalar :: Native -> Builder

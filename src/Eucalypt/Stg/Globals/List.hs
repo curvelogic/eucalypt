@@ -17,6 +17,7 @@ module Eucalypt.Stg.Globals.List
   , euReverse
   ) where
 
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 

@@ -26,6 +26,7 @@ import qualified Eucalypt.Stg.Globals.Number as Number
 import qualified Eucalypt.Stg.Globals.Panic as Panic
 import qualified Eucalypt.Stg.Globals.Set as Set
 import qualified Eucalypt.Stg.Globals.Str as Str
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 

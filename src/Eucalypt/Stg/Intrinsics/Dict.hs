@@ -14,7 +14,7 @@ module Eucalypt.Stg.Intrinsics.Dict
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Error
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import qualified Data.Map.Strict as MS
 import Data.Sequence ((!?))

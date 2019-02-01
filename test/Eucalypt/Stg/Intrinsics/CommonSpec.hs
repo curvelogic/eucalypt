@@ -13,6 +13,7 @@ module Eucalypt.Stg.Intrinsics.CommonSpec
   ) where
 
 import Data.Sequence ((!?))
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine

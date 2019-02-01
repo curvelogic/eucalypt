@@ -16,6 +16,7 @@ import Data.Char (toUpper, toLower)
 import Data.List (intercalate, isInfixOf)
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Compiler
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.StgTestUtil

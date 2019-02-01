@@ -20,6 +20,7 @@ import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Sequence (Seq)
 import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Machine

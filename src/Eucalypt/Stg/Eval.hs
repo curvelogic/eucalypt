@@ -27,6 +27,7 @@ import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 

@@ -11,6 +11,7 @@ module Eucalypt.Stg.Globals.Emit
   ( globals
   ) where
 
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.GlobalInfo
