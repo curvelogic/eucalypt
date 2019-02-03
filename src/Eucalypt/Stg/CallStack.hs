@@ -13,7 +13,7 @@ Stability   : experimental
 module Eucalypt.Stg.CallStack where
 
 import Data.Bifunctor (second)
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Pretty
 import Eucalypt.Core.SourceMap
   ( HasSourceMapIds(..)
   , SMID

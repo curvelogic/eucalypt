@@ -13,6 +13,7 @@ import qualified Data.Sequence as Seq
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Intrinsics
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.StgTestUtil

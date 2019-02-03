@@ -13,7 +13,7 @@ module Eucalypt.Stg.Intrinsics.Set
 
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.IntrinsicInfo
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import qualified Data.Set as S
 import Data.Sequence ((!?))

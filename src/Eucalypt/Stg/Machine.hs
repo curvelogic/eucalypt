@@ -26,6 +26,8 @@ import Eucalypt.Stg.Address
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Event
+import Eucalypt.Stg.Native
+import Eucalypt.Stg.Pretty
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 import qualified Text.PrettyPrint as P

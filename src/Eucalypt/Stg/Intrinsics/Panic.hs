@@ -10,7 +10,7 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Panic where
 
 import Eucalypt.Stg.Error
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Data.Sequence ((!?))
 

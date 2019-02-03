@@ -16,6 +16,7 @@ module Eucalypt.Stg.Globals.Bool
   , euIf
   ) where
 
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 
 -- | __TRUE

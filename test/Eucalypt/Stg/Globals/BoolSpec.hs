@@ -14,6 +14,7 @@ module Eucalypt.Stg.Globals.BoolSpec
 
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.StgTestUtil
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QM

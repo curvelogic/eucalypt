@@ -9,7 +9,7 @@ Stability   : experimental
 
 module Eucalypt.Stg.Intrinsics.Eq where
 
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Data.Sequence ((!?))
 

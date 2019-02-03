@@ -16,6 +16,8 @@ import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.StgTestUtil
+import Eucalypt.Stg.Native
+import Eucalypt.Stg.Pretty
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Test.Hspec

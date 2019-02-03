@@ -14,6 +14,7 @@ module Eucalypt.Stg.Globals.Panic
   , euKeyNotFound
   ) where
 
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics
 

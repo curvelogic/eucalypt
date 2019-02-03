@@ -14,6 +14,7 @@ module Eucalypt.Stg.Globals.EmitSpec
 
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.StgTestUtil
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Test.Hspec
 

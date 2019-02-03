@@ -13,6 +13,8 @@ module Eucalypt.Stg.Error where
 import Control.Exception.Safe
 import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.CallStack
+import Eucalypt.Stg.Native
+import Eucalypt.Stg.Pretty
 import Eucalypt.Stg.Syn
 import Eucalypt.Reporting.Common
 import Eucalypt.Reporting.Classes

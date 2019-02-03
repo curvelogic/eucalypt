@@ -55,6 +55,7 @@ library:
     - split
     - strict
     - text
+    - time
     - tomland
     - transformers
     - unix

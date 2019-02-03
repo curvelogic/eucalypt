@@ -14,6 +14,7 @@ import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Pretty
 import qualified Text.PrettyPrint as P
 
 

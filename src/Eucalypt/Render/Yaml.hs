@@ -25,7 +25,7 @@ import qualified Text.Libyaml as L
 
 import Eucalypt.Stg.Event (RenderMetadata(..))
 import qualified Eucalypt.Stg.Event as E
-import Eucalypt.Stg.Syn (Native(..))
+import Eucalypt.Stg.Native
 
 tag :: RenderMetadata -> L.Tag -> L.Tag
 tag RenderMetadata {metaTag = Nothing} def = def

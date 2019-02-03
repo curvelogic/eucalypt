@@ -12,7 +12,7 @@ Stability   : experimental
 module Eucalypt.Stg.Event where
 
 import Control.DeepSeq
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Native
 import Data.ByteString as BS
 import GHC.Generics (Generic)
 

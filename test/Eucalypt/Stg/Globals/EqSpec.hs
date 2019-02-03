@@ -13,6 +13,7 @@ module Eucalypt.Stg.Globals.EqSpec
   ) where
 
 import Eucalypt.Stg.StgTestUtil
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Test.Hspec
 

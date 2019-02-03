@@ -11,6 +11,7 @@ module Eucalypt.Stg.Globals.Str
   ( globals
   ) where
 
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)

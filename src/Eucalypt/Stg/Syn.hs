@@ -1,6 +1,4 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE DeriveGeneric  #-}
 {-|
 Module      : Eucalypt.Stg.Syn
 Description : Syntax for spineless tagless G-machine execution
@@ -16,93 +14,16 @@ though now not much similarity remains.
 -}
 module Eucalypt.Stg.Syn where
 
-import Control.DeepSeq
 import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as HM
-import Data.Hashable
 import qualified Data.Map as Map
-import qualified Data.Map.Strict as MS
-import Data.Scientific
-import qualified Data.Set as S
 import qualified Data.Sequence as Seq
 import Data.Word
 import Eucalypt.Core.SourceMap (SMID)
-import GHC.Generics (Generic)
-import Test.QuickCheck (Arbitrary(..), Gen, oneof)
+import Eucalypt.Stg.Native
+import Eucalypt.Stg.Pretty
 import qualified Text.PrettyPrint as P
 
--- | Pretty printable syntax element
-class StgPretty a where
-  -- | Construct pretty print 'Doc' for a syntax element
-  prettify :: a -> P.Doc
-
--- | Primitives that can live on the stack.
---
--- Not worried about efficiency of representation for now.
-data Native
-  = NativeNumber !Scientific
-  | NativeString !String
-  | NativeSymbol !String
-  | NativeBool !Bool
-  | NativeSet !(S.Set Native)
-  | NativeDict !(MS.Map Native Native)
-  deriving (Eq, Show, Generic, Ord)
-
-instance NFData Native
-
--- | NativeBranchTable matches natives by hash map
-instance Hashable Native where
-  hashWithSalt s (NativeNumber n) = s `hashWithSalt` (0 :: Int) `hashWithSalt` n
-  hashWithSalt s (NativeString str) =
-    s `hashWithSalt` (1 :: Int) `hashWithSalt` str
-  hashWithSalt s (NativeSymbol sym) =
-    s `hashWithSalt` (2 :: Int) `hashWithSalt` sym
-  hashWithSalt s (NativeBool b) = s `hashWithSalt` (3 :: Int) `hashWithSalt` b
-  hashWithSalt s (NativeSet xs) =
-    S.foldl hashWithSalt (s `hashWithSalt` (4 :: Int)) xs
-  hashWithSalt s (NativeDict dict) =
-    MS.foldlWithKey
-      (\a k v -> a `hashWithSalt` k `hashWithSalt` v)
-      (s `hashWithSalt` (5 :: Int))
-      dict
-
-
-instance StgPretty Native where
-  prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
-  prettify (NativeString s) = P.text $ show s
-  prettify (NativeSymbol s) = P.colon <> P.text s
-  prettify (NativeBool b) =
-    if b
-      then P.text "#t"
-      else P.text "#f"
-  prettify (NativeSet xs) =
-    P.text "#{" <> P.hcat (P.punctuate P.comma (map prettify (toList xs))) <>
-    P.text "}"
-  prettify (NativeDict dict) =
-    P.text "#{" <>
-    P.hcat
-      (P.punctuate
-         P.comma
-         (map
-            (\(k, v) -> prettify k P.<+> P.text "=>" P.<+> prettify v)
-            (MS.assocs dict))) <>
-    P.text "}"
-
-instance Arbitrary Scientific where
-  arbitrary =
-    oneof
-      [fromInteger <$> arbitrary, fromFloatDigits <$> (arbitrary :: Gen Float)]
-
-instance Arbitrary Native where
-  arbitrary =
-    oneof
-      [ NativeNumber <$> arbitrary
-      , NativeString <$> arbitrary
-      , NativeSymbol <$> arbitrary
-      , NativeBool <$> arbitrary
-      , NativeSet <$> arbitrary
-      , NativeDict <$> arbitrary
-      ]
 
 -- | The various types of reference from STG code to other closures
 -- and values.

@@ -13,6 +13,7 @@ module Eucalypt.Stg.Globals.MetaSpec
   ) where
 
 import Eucalypt.Stg.StgTestUtil
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Test.Hspec
 
