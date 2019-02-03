@@ -29,7 +29,6 @@ data Native
   = NativeNumber !Scientific
   | NativeString !String
   | NativeSymbol !String
-  | NativeBool !Bool
   | NativeSet !(S.Set Native)
   | NativeDict !(MS.Map Native Native)
   deriving (Eq, Show, Generic, Ord)
@@ -43,7 +42,6 @@ instance Hashable Native where
     s `hashWithSalt` (1 :: Int) `hashWithSalt` str
   hashWithSalt s (NativeSymbol sym) =
     s `hashWithSalt` (2 :: Int) `hashWithSalt` sym
-  hashWithSalt s (NativeBool b) = s `hashWithSalt` (3 :: Int) `hashWithSalt` b
   hashWithSalt s (NativeSet xs) =
     S.foldl hashWithSalt (s `hashWithSalt` (4 :: Int)) xs
   hashWithSalt s (NativeDict dict) =
@@ -56,10 +54,6 @@ instance StgPretty Native where
   prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
   prettify (NativeString s) = P.text $ show s
   prettify (NativeSymbol s) = P.colon <> P.text s
-  prettify (NativeBool b) =
-    if b
-      then P.text "#t"
-      else P.text "#f"
   prettify (NativeSet xs) =
     P.text "#{" <> P.hcat (P.punctuate P.comma (map prettify (toList xs))) <>
     P.text "}"
@@ -84,7 +78,6 @@ instance Arbitrary Native where
       [ NativeNumber <$> arbitrary
       , NativeString <$> arbitrary
       , NativeSymbol <$> arbitrary
-      , NativeBool <$> arbitrary
       , NativeSet <$> arbitrary
       , NativeDict <$> arbitrary
       ]

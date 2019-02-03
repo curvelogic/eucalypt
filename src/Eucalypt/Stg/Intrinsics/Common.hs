@@ -259,9 +259,5 @@ nativeToString n =
         Right i -> show (i :: Integer)
     NativeString s -> s
     NativeSymbol s -> s
-    NativeBool b ->
-      if b
-        then "true"
-        else "false"
     NativeSet _ -> "#SET"
     NativeDict _ -> "#DICT"

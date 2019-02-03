@@ -99,10 +99,6 @@ formatScalar (NativeNumber n) =
     Right i -> encodeUtf8 $ pack $ show i
 formatScalar (NativeSymbol s) = jsonStr s
 formatScalar (NativeString s) = jsonStr s
-formatScalar (NativeBool b) =
-  if b
-    then "true"
-    else "false"
 formatScalar (NativeSet s) =
   jsonStr "[" <> BS.intercalate ", " (map formatScalar (toList s)) <>
   jsonStr "]"

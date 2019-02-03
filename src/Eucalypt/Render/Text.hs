@@ -31,10 +31,6 @@ formatScalar (NativeNumber n) =
     Right i -> stringUtf8 $ show i
 formatScalar (NativeSymbol s) = stringUtf8 s
 formatScalar (NativeString s) = stringUtf8 s
-formatScalar (NativeBool b) = stringUtf8 $
-  if b
-    then "true"
-    else "false"
 formatScalar (NativeSet s) =
   mconcat $ intersperse (stringUtf8 ",") $ map formatScalar $ toList s
 formatScalar (NativeDict d) =

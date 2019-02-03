@@ -52,16 +52,6 @@ renderValue (NativeString s) rm =
     textStyle str
       | length str > 60 = L.Literal
     textStyle _ = style rm L.PlainNoTag
-renderValue (NativeBool b) rm =
-  [L.EventScalar
-    (encodeUtf8 $
-     pack $
-     if b
-       then "true"
-       else "false")
-    (tag rm L.BoolTag)
-    (style rm L.PlainNoTag)
-    Nothing]
 renderValue (NativeSet s) _ =
   [L.EventSequenceStart L.NoTag L.AnySequence Nothing] ++
   concatMap (`renderValue` RenderMetadata {metaTag = Nothing}) (toList s) ++

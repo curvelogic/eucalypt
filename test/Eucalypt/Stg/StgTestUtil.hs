@@ -155,7 +155,6 @@ simpleNative =
       [ NativeNumber <$> arbitrary
       , NativeString <$> arbitrary
       , NativeSymbol <$> arbitrary
-      , NativeBool <$> arbitrary
       ]
 
 calculates :: StgSyn -> (MachineState -> Bool) -> QM.PropertyM IO ()
