@@ -17,7 +17,6 @@ import Control.Monad (zipWithM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State
 import Data.Foldable (toList)
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Sequence as Seq
@@ -27,7 +26,6 @@ import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Machine
-import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Prelude hiding (log)
 
@@ -73,12 +71,7 @@ pushUpdate ms a md = return $ push ms (Update a md)
 -- head and tail, a branch which specifies arity 3 gets head, tail and
 -- metadata.
 selectBranch :: BranchTable -> Tag -> Maybe (Word64, StgSyn)
-selectBranch (BranchTable bs _ _) t = Map.lookup t bs
-
--- | Match a native branch table alternative, return the next
--- expression to eval
-selectNativeBranch :: BranchTable -> Native -> Maybe StgSyn
-selectNativeBranch (BranchTable _ bs _) n = snd <$> HM.lookup n bs
+selectBranch (BranchTable bs _) t = Map.lookup t bs
 
 -- | Halt the machine
 terminate :: MachineState -> MachineState
@@ -350,22 +343,18 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon
 
 
 
-
--- | ReturnLit - returns a native value to a NativeBranchTable or
--- terminates if none.
+-- | ReturnLit - returns a native value to a default handler in a
+-- branch table (when forcing a value) or allocates to update.
 step ms0@MachineState {machineCode = (ReturnLit nat meta)} = {-# SCC "ReturnLit" #-} do
   ms <- prepareStep "RETURNLIT" ms0
   (entry, ms') <- pop ms
   case entry of
     (Just (Branch k le)) ->
-      case selectNativeBranch k nat of
-        (Just expr) -> return $ setCode ms' (Eval expr le)
-        Nothing ->
-          case defaultBranch k of
-            (Just expr) ->
-              return $
-              setCode ms' (Eval expr (le <> singleton (StgNat nat meta)))
-            Nothing -> throwIn ms' NoBranchFound
+      case defaultBranch k of
+        (Just expr) ->
+          return $
+          setCode ms' (Eval expr (le <> singleton (StgNat nat meta)))
+        Nothing -> throwIn ms' NoDefaultBranchForNativeReturn
     (Just (Update a storedMeta)) -> do
       let newMeta = asMeta meta <> storedMeta
       liftIO $
@@ -390,7 +379,7 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = {-# SCC "ReturnFun" #-} do
             ms'
             (Eval (App (Ref $ args' `Seq.index` 0) (Seq.drop 1 args')) env')
     -- RETFUN into case default... (for forcing lambda-valued exprs)
-    (Just (Branch (BranchTable _ _ (Just expr)) le)) ->
+    (Just (Branch (BranchTable _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
     (Just (Update a storedMeta)) -> do
       liftIO $

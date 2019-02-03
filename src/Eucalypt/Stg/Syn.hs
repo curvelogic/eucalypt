@@ -15,7 +15,6 @@ though now not much similarity remains.
 module Eucalypt.Stg.Syn where
 
 import Data.Foldable (toList)
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import Data.Word
@@ -70,23 +69,15 @@ type Tag = Word64
 
 -- | Branches of a case expression.
 --
--- Matching data structures via constructor and native scalars via
--- equality are both handled within the same case statement, enabling
--- deep tree walking of a data structure down to and including the
--- leaf scalars without having to worry about boxing the the natives
--- to signal a need for a caselit expression instead of a case.
---
--- (The scalars are after all "boxed" with the 'Native' type, there is
--- not much sense boxing them again in STG.)
+-- Matching data structures via constructor and forcing native scalars
+-- are both handled withing the same case statement, enabling deep
+-- tree walking of a data structure down to and including the leaf
+-- scalars without having to worry about boxing the the natives.
 data BranchTable = BranchTable
   { dataBranches :: Map.Map Tag (Word64, StgSyn)
     -- ^ Map constructor tags, to expression and number of variables
     -- to bind (which might be the arity of the constructor or arity
     -- of constructor + 1 to receive metadata)
-  , nativeBranches :: HM.HashMap Native (Word64, StgSyn)
-    -- ^ Map native values (compared by equality), to expressions and
-    -- number of variables to bind (which might be 1 to receive only
-    -- the value or 2 to receive value and metadata
   , defaultBranch :: Maybe StgSyn
     -- ^ Default branch only receives one binding because in each case
     -- (constructor, native, ...), the metadata is persisted through
@@ -94,14 +85,14 @@ data BranchTable = BranchTable
   } deriving (Eq, Show)
 
 instance HasRefs BranchTable where
-  refs (BranchTable brs nbrs df) =
-    foldMap (refs . snd) brs <> foldMap (refs . snd) nbrs <> foldMap refs df
+  refs (BranchTable brs df) =
+    foldMap (refs . snd) brs <> foldMap refs df
 
 instance StgPretty BranchTable where
-  prettify (BranchTable bs nbs df) =
+  prettify (BranchTable bs df) =
     case df of
       Just d ->
-        branchesDoc P.$$ nativeBranchesDoc P.$$ (P.text "_ -> " <> prettify d)
+        branchesDoc P.$$ (P.text "_ -> " <> prettify d)
       Nothing -> branchesDoc
     where
       branchesDoc = Map.foldrWithKey accBr P.empty bs
@@ -111,10 +102,6 @@ instance StgPretty BranchTable where
         P.parens (P.int $ fromIntegral binds) <>
         P.space <>
         prettify syn
-      nativeBranchesDoc = HM.foldrWithKey accNBr P.empty nbs
-      accNBr n (_, syn) doc =
-        doc P.$$
-        (prettify n <> P.space <> P.text "->" <> P.space <> prettify syn)
 
 
 -- | The type of callable
@@ -222,15 +209,15 @@ instance StgPretty StgSyn where
   prettify (Ann s _ expr) = P.char '`' <> P.text s <> P.char '`' <> P.space <> prettify expr
 
 force_ :: StgSyn -> StgSyn -> StgSyn
-force_ scrutinee df = Case scrutinee (BranchTable mempty mempty (Just df))
+force_ scrutinee df = Case scrutinee (BranchTable mempty (Just df))
 
 case_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn
 case_ scrutinee cases =
-  Case scrutinee (BranchTable (Map.fromList cases) mempty Nothing)
+  Case scrutinee (BranchTable (Map.fromList cases) Nothing)
 
 casedef_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn -> StgSyn
 casedef_ scrutinee cases df =
-  Case scrutinee (BranchTable (Map.fromList cases) mempty $ Just df)
+  Case scrutinee (BranchTable (Map.fromList cases) $ Just df)
 
 let_ :: [PreClosure] -> StgSyn -> StgSyn
 let_ pcs = Let (Seq.fromList pcs)
@@ -266,7 +253,7 @@ value_ :: StgSyn -> LambdaForm
 value_ = valuen_ 0
 
 seq_ :: StgSyn -> StgSyn -> StgSyn
-seq_ a b = Case a $ BranchTable mempty mempty (Just b)
+seq_ a b = Case a $ BranchTable mempty (Just b)
 
 seqall_ :: [StgSyn] -> StgSyn
 seqall_ = foldl1 seq_

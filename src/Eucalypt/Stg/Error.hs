@@ -31,6 +31,7 @@ data StgError
   = NonAddressStgValue
   | NonNativeStgValue
   | NoBranchFound
+  | NoDefaultBranchForNativeReturn
   | EnteredBlackHole
   | AddMetaToBlackHole
   | ArgInsteadOfBranchTable
@@ -83,6 +84,7 @@ instance Reportable StgException where
             bug "Found a native value when expecting a thunk."
           NonNativeStgValue -> err "A native value is expected here."
           NoBranchFound -> bug "No branch available to handle value."
+          NoDefaultBranchForNativeReturn -> err "No default branch to handle native return value"
           EnteredBlackHole ->
             err "Entered a black hole. This may indicate a circular definition."
           AddMetaToBlackHole -> bug "Attempted to add metadata to a black hole."
