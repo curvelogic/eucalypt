@@ -830,7 +830,8 @@ dict: {
 
 cal: {
 
-  ifields: __IFIELDS
+  ifields: block ∘__IFIELDS
 
-  now: ifields(io.epoch-time) block
+  now: io.epoch-time ifields
+  epoch: 0 ifields
 }
