@@ -35,8 +35,8 @@ euNil =
   ann_ "NIL" 0 $
   case_
     (Atom (Local 0))
-    [ (stgCons, (2, Atom (Literal (NativeBool False))))
-    , (stgNil, (0, Atom (Literal (NativeBool True))))
+    [ (stgCons, (2, appcon_ stgFalse []))
+    , (stgNil, (0, appcon_ stgTrue []))
     ]
 
 

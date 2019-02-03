@@ -165,6 +165,8 @@ putBSFragment e@E.OutputMappingStart = do
 putBSFragment e@E.OutputMappingEnd = setLast e >> popContext >> putText "}"
 putBSFragment e@(E.OutputScalar _ n) = putScalar e (formatScalar n)
 putBSFragment e@E.OutputNull = putScalar e "null"
+putBSFragment e@E.OutputTrue = putScalar e "true"
+putBSFragment e@E.OutputFalse = putScalar e "false"
 putBSFragment _ = putText ""
 
 runFormatter :: State JSONFormatState () -> BS.ByteString

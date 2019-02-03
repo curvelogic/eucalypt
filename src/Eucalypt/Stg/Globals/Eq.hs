@@ -11,7 +11,6 @@ module Eucalypt.Stg.Globals.Eq
   ( euEq
   ) where
 
-import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
@@ -26,20 +25,32 @@ euEq =
       , ( 0
         , casedef_
             (Atom (Local 1))
-            [(stgNil, (0, Atom (Literal $ NativeBool True)))]
-            (Atom $ Literal $ NativeBool False)))
+            [(stgNil, (0, trueVal))]
+            falseVal))
     , ( stgUnit
       , ( 0
         , casedef_
             (Atom (Local 1))
-            [(stgUnit, (0, Atom (Literal $ NativeBool True)))]
-            (Atom $ Literal $ NativeBool False)))
+            [(stgUnit, (0, trueVal))]
+            falseVal))
+    , ( stgTrue
+      , ( 0
+        , casedef_
+            (Atom (Local 1))
+            [(stgTrue, (0, trueVal))]
+            falseVal))
+    , ( stgFalse
+      , ( 0
+        , casedef_
+            (Atom (Local 1))
+            [(stgFalse, (0, trueVal))]
+            falseVal))
     , ( stgBlock
       , ( 1
         , casedef_
             (Atom (Local 1))
             [(stgBlock, (1, appfn_ (Global "EQ") [Local 2, Local 3]))]
-            (Atom $ Literal $ NativeBool False)))
+            falseVal))
     , ( stgCons
       , ( 1
         , casedef_
@@ -54,8 +65,10 @@ euEq =
                     ]
                     (appfn_ (Global "AND") [Local 6, Local 7])))
             ]
-            (Atom $ Literal $ NativeBool False)))
-    ]
+            falseVal))]
     (force_
        (Atom (Local 1))
        (appbif_ (intrinsicIndex "===") [Local 2, Local 3]))
+  where
+    trueVal = appcon_ stgTrue []
+    falseVal = appcon_ stgFalse []

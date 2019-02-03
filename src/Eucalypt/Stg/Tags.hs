@@ -23,6 +23,16 @@ stgBlock = 2
 stgUnit :: Tag
 stgUnit = 3
 
+stgTrue :: Tag
+stgTrue = 4
+
+stgFalse :: Tag
+stgFalse = 5
+
+boolTag :: Bool -> Tag
+boolTag True = stgTrue
+boolTag False = stgFalse
+
 nilConstructor :: LambdaForm
 nilConstructor = standardConstructor 0 stgNil
 
@@ -34,3 +44,9 @@ blockConstructor = standardConstructor 1 stgBlock
 
 unitConstructor :: LambdaForm
 unitConstructor = standardConstructor 0 stgUnit
+
+trueConstructor :: LambdaForm
+trueConstructor = standardConstructor 0 stgTrue
+
+falseConstructor :: LambdaForm
+falseConstructor = standardConstructor 0 stgFalse

@@ -66,6 +66,11 @@ block kvs =
 
 -- machine state accessors and assertions
 
+-- | Extract the native return value from the machine state
+conReturn :: MachineState -> Tag
+conReturn MachineState {machineCode = (ReturnCon tag _ _)} = tag
+conReturn ms = error $ "Expected native return, got" ++ show (machineCode ms)
+
 -- | Machine is in state with code that returns constructor
 returnsConstructor :: Tag -> MachineState -> Bool
 returnsConstructor t MachineState {machineCode = (ReturnCon tag _ _)} = t == tag
@@ -83,7 +88,7 @@ returnsNative _ _ = False
 
 -- | Machine is in stte which returns native bool true
 returnsTrue :: MachineState -> Bool
-returnsTrue = returnsNative $ NativeBool True
+returnsTrue = returnsConstructor stgTrue
 
 -- | Check that the return is a fully constructed list of pairs with
 -- fully evaled native symbol keys

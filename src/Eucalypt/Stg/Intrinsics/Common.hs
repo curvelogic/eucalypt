@@ -48,6 +48,11 @@ flipCons as a =
   allocate (Closure consConstructor (toValVec [a, as]) mempty MetadataPassThrough)
 
 
+-- | Return a bool
+returnBool :: MachineState -> Bool -> IO MachineState
+returnBool ms b = return $ setCode ms (ReturnCon (boolTag b) mempty Nothing)
+
+
 -- | Utility to return a native list from an intrinsic.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.

@@ -52,13 +52,14 @@ list_ envSize rs metaref = letrec_ pcs (Atom $ Local pcn)
 
 
 -- | Convert a core primitive into a STG Native
-convert :: C.Primitive -> Maybe Native
-convert (CoreInt n) = Just $ NativeNumber $ fromIntegral n
-convert (CoreFloat d) = Just $ NativeNumber $ fromFloatDigits d
-convert (CoreSymbol s) = Just $ NativeSymbol s
-convert (CoreString s) = Just $ NativeString s
-convert (CoreBoolean b) = Just $ NativeBool b
-convert CoreNull = Nothing
+convert :: C.Primitive -> Ref
+convert (CoreInt n) = Literal $ NativeNumber $ fromIntegral n
+convert (CoreFloat d) = Literal $ NativeNumber $ fromFloatDigits d
+convert (CoreSymbol s) = Literal $ NativeSymbol s
+convert (CoreString s) = Literal $ NativeString s
+convert (CoreBoolean True) = Global "TRUE"
+convert (CoreBoolean False) = Global "FALSE"
+convert CoreNull = Global "NULL"
 
 
 -- | Compile a let / letrec binding
@@ -122,15 +123,12 @@ compile _ context _metaref (C.CoreVar _ v) = Atom $ context v
 compile _ _ _ (C.CoreBuiltin _ n) = App (Ref (Global n)) mempty
 
 -- | Compile primitive to STG native.
-compile _ _context metaref (C.CorePrim _ p) =
-  case convert p of
-    Just n -> annotated n
-    Nothing -> Atom (Global "NULL")
+compile _ _context metaref (C.CorePrim _ p) = annotated $ convert p
   where
-    annotated n =
+    annotated rf =
       maybe
-        (Atom (Literal n))
-        (\r -> appbif_ (intrinsicIndex "WITHMETA") [r, Literal n])
+        (Atom rf)
+        (\r -> appbif_ (intrinsicIndex "WITHMETA") [r, rf])
         metaref
 
 -- | Block literals
@@ -151,7 +149,7 @@ compile envSize context metaref (C.CoreList _ els) =
   where
     elAnalyses = numberPreClosures (map classify els, 0)
     classify (CoreVar _ n) = EnvRef $ context n
-    classify (CorePrim _ p) = EnvRef $ maybe (Global "NULL") Literal (convert p)
+    classify (CorePrim _ p) = EnvRef $ convert p
     classify expr = Closure Nothing expr
     elRefs = map (toRef envSize) elAnalyses
     elBinds =
@@ -266,7 +264,7 @@ compileApply envSize context metaref (C.CoreApply _ f xs) = wrappedCall
           case strict of
             NonStrict -> [EnvRef $ context a]
             Strict -> [Scrutinee Nothing x]
-        (CorePrim _ n) -> [EnvRef $ maybe (Global "NULL") Literal (convert n)]
+        (CorePrim _ n) -> [EnvRef $ convert n]
         _ ->
           case strict of
             NonStrict -> [Closure Nothing x]

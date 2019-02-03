@@ -15,6 +15,7 @@ module Eucalypt.Stg.Globals.EqSpec
 import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Tags
 import Test.Hspec
 
 main :: IO ()
@@ -24,100 +25,100 @@ spec :: Spec
 spec =
   describe "EQ global" $ do
     it "equates equal strings" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeString "foo", Literal $ NativeString "foo"]) `shouldReturn`
-      NativeBool True
+      stgTrue
     it "equates equal symbols" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeSymbol "foo", Literal $ NativeSymbol "foo"]) `shouldReturn`
-      NativeBool True
+      stgTrue
     it "equates equal ints" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeNumber 9, Literal $ NativeNumber 9]) `shouldReturn`
-      NativeBool True
+      stgTrue
     it "equates equal floats" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeNumber 9.9, Literal $ NativeNumber 9.9]) `shouldReturn`
-      NativeBool True
+      stgTrue
     it "equates equal bools" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
-           [Literal $ NativeBool True, Literal $ NativeBool True]) `shouldReturn`
-      NativeBool True
+           [Global "TRUE", Global "TRUE"]) `shouldReturn`
+      stgTrue
     it "distinguishes distinct strings" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeString "foo", Literal $ NativeString "bar"]) `shouldReturn`
-      NativeBool False
+      stgFalse
     it "distinguishes distinct symbols" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeSymbol "foo", Literal $ NativeSymbol "bar"]) `shouldReturn`
-      NativeBool False
+      stgFalse
     it "distinguishes distinct ints" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeNumber 10, Literal $ NativeNumber 9]) `shouldReturn`
-      NativeBool False
+      stgFalse
     it "distinguishes distinct floats" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
            [Literal $ NativeNumber 10.9, Literal $ NativeNumber 9.9]) `shouldReturn`
-      NativeBool False
+      stgFalse
     it "distinguishes distinct bools" $
-      nativeReturn <$>
+      conReturn <$>
       test
         (appfn_
            (Global "EQ")
-           [Literal $ NativeBool False, Literal $ NativeBool True]) `shouldReturn`
-      NativeBool False
+           [Global "FALSE", Global "TRUE"]) `shouldReturn`
+      stgFalse
     context "handles lists" $ do
       it "agrees [:a, :b, :c] = [:a, :b, :c]" $
-        nativeReturn <$>
+        conReturn <$>
         test
           (let_
              [ pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              , pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              ]
              (appfn_ (Global "EQ") [Local 0, Local 1])) `shouldReturn`
-        NativeBool True
+        stgTrue
       it "denies [:a, :b, :c] = [:a, :b]" $
-        nativeReturn <$>
+        conReturn <$>
         test
           (let_
              [ pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              , pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b"])
              ]
              (appfn_ (Global "EQ") [Local 0, Local 1])) `shouldReturn`
-        NativeBool False
+        stgFalse
       it "denies [:a, :b] = [:a, :b, :c]" $
-        nativeReturn <$>
+        conReturn <$>
         test
           (let_
              [ pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b"])
              , pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              ]
              (appfn_ (Global "EQ") [Local 0, Local 1])) `shouldReturn`
-        NativeBool False
+        stgFalse

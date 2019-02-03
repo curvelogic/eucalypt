@@ -16,6 +16,7 @@ import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Tags
 import qualified Data.Map.Strict as MS
 import Data.Sequence ((!?))
 
@@ -57,7 +58,7 @@ emptyDict ms _ = return $ setCode ms (ReturnLit (NativeDict MS.empty) Nothing)
 dictContainsKey :: MachineState -> ValVec -> IO MachineState
 dictContainsKey ms args = do
   (d, k) <- getDictAndKey ms args
-  return $ setCode ms (ReturnLit (NativeBool $ k `MS.member` d) Nothing)
+  return $ setCode ms (ReturnCon (boolTag $ k `MS.member` d) mempty Nothing)
 
 -- | __DICTGET(d, k)
 dictGet :: MachineState -> ValVec -> IO MachineState

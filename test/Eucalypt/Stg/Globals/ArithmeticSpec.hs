@@ -132,7 +132,7 @@ ordersIntegersWithLt l r =
          value_ $ appfn_ (Global "GTE") [Literal $ nat l, Literal $ nat r]
        ]
        (appfn_ (Global "OR") [Local 0, Local 1]))
-    (returnsNative (NativeBool True))
+    returnsTrue
 
 ordersIntegersWithGt :: Integer -> Integer -> Property
 ordersIntegersWithGt l r =
@@ -144,7 +144,7 @@ ordersIntegersWithGt l r =
          value_ $ appfn_ (Global "LTE") [Literal $ nat l, Literal $ nat r]
        ]
        (appfn_ (Global "OR") [Local 0, Local 1]))
-    (returnsNative (NativeBool True))
+    returnsTrue
 
 ordersFloatsWithLt :: Double -> Double -> Property
 ordersFloatsWithLt l r =
@@ -167,7 +167,7 @@ ordersFloatsWithLt l r =
            ]
        ]
        (appfn_ (Global "OR") [Local 0, Local 1]))
-    (returnsNative (NativeBool True))
+    returnsTrue
 
 
 ordersFloatsWithGt :: Double -> Double -> Property
@@ -191,14 +191,14 @@ ordersFloatsWithGt l r =
            ]
        ]
        (appfn_ (Global "OR") [Local 0, Local 1]))
-    (returnsNative (NativeBool True))
+    returnsTrue
 
 equatesEqualInts :: Integer -> Property
 equatesEqualInts n =
   QM.monadicIO $
   calculates
     (appfn_ (Global "EQ") [Literal $ nat n, Literal $ nat n])
-    (returnsNative $ NativeBool True)
+    returnsTrue
 
 equatesEqualFloats :: Double -> Property
 equatesEqualFloats n =
@@ -209,7 +209,7 @@ equatesEqualFloats n =
        [ Literal $ NativeNumber $ fromFloatDigits n
        , Literal $ NativeNumber $ fromFloatDigits n
        ])
-    (returnsNative $ NativeBool True)
+    returnsTrue
 
 floors :: Double -> Property
 floors d =

@@ -9,12 +9,7 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Intrinsics.Emit
-  ( emitMappingStart
-  , emitMappingEnd
-  , emitNull
-  , emitSequenceStart
-  , emitSequenceEnd
-  , emitScalar
+  ( intrinsics
   ) where
 
 import qualified Data.HashMap.Strict.InsOrd as OM
@@ -25,8 +20,22 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Block (pruneBlockToMap)
 import Eucalypt.Stg.Intrinsics.Common
+
+intrinsics :: [IntrinsicInfo]
+intrinsics =
+  [ IntrinsicInfo "EMIT{" 0 emitMappingStart
+  , IntrinsicInfo "EMIT}" 0 emitMappingEnd
+  , IntrinsicInfo "EMIT[" 0 emitSequenceStart
+  , IntrinsicInfo "EMIT]" 0 emitSequenceEnd
+  , IntrinsicInfo "EMITx" 1 emitScalar
+  , IntrinsicInfo "EMIT0" 0 emitNull
+  , IntrinsicInfo "EMITT" 0 emitTrue
+  , IntrinsicInfo "EMITF" 0 emitFalse
+  ]
+
 
 emit :: MachineState -> Event -> IO MachineState
 emit s e =
@@ -49,6 +58,12 @@ emitSequenceEnd s _ = emit s OutputSequenceEnd
 
 emitNull :: MachineState -> ValVec -> IO MachineState
 emitNull s _ = emit s OutputNull
+
+emitTrue :: MachineState -> ValVec -> IO MachineState
+emitTrue s _ = emit s OutputTrue
+
+emitFalse :: MachineState -> ValVec -> IO MachineState
+emitFalse s _ = emit s OutputFalse
 
 -- | This assumes that all render-relevant metadata has been forced to
 -- native values.

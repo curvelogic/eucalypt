@@ -46,6 +46,8 @@ formatScalar (NativeDict d) =
 
 toFragment :: E.Event -> Maybe Builder
 toFragment (E.OutputScalar _ n) = Just $ formatScalar n
+toFragment E.OutputTrue = Just $ stringUtf8 "true"
+toFragment E.OutputFalse = Just $ stringUtf8 "false"
 toFragment _ = Nothing
 
 pipeline :: Monad m => ConduitT E.Event Void m BS.ByteString

@@ -42,8 +42,8 @@ spec =
       [OutputScalar (RenderMetadata Nothing) $ NativeSymbol "foo"]
     it "renders native bool" $
       emitLog <$>
-      test (appfn_ (Global "RENDER") [Literal $ NativeBool True]) `shouldReturn`
-      [OutputScalar (RenderMetadata Nothing) $ NativeBool True]
+      test (appfn_ (Global "RENDER") [Global "TRUE"]) `shouldReturn`
+      [OutputTrue]
     it "renders lists" $
       emitLog <$>
       test

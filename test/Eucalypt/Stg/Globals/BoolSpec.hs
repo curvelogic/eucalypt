@@ -16,6 +16,7 @@ import Eucalypt.Stg.Error
 import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Tags
 import Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QM
 
@@ -24,22 +25,26 @@ import Test.Hspec
 main :: IO ()
 main = hspec spec
 
+boolGlobal :: Bool -> Ref
+boolGlobal True = Global "TRUE"
+boolGlobal False = Global "FALSE"
+
 calculatesBool :: String -> (Bool -> Bool -> Bool) -> Bool -> Bool -> Property
 calculatesBool bif op l r =
   QM.monadicIO $
   calculates
-    (appfn_ (Global bif) [Literal $ NativeBool l, Literal $ NativeBool r])
-    (returnsNative (NativeBool (l `op` r)))
+    (appfn_ (Global bif) [boolGlobal l, boolGlobal r])
+    (returnsConstructor (boolTag (l `op` r)))
 
 spec :: Spec
 spec =
   describe "boolean globals" $ do
     it "has TRUE" $
-      nativeReturn <$>
-      test (Atom (Global "TRUE")) `shouldReturn` NativeBool True
+      conReturn <$>
+      test (Atom (Global "TRUE")) `shouldReturn` stgTrue
     it "has FALSE" $
-      nativeReturn <$>
-      test (Atom (Global "FALSE")) `shouldReturn` NativeBool False
+      conReturn <$>
+      test (Atom (Global "FALSE")) `shouldReturn` stgFalse
     it "fails sensibly" $
       test (Atom (Global "NONESUCH")) `shouldThrow`
       (\s -> stgExcError s == UnknownGlobal "NONESUCH")
@@ -49,7 +54,7 @@ spec =
         test
           (appfn_
              (Global "IF")
-             [ Literal $ NativeBool True
+             [ Global "TRUE"
              , Literal $ NativeSymbol "foo"
              , Global "BOMB"
              ]) `shouldReturn`
@@ -59,7 +64,7 @@ spec =
         test
           (appfn_
              (Global "IF")
-             [ Literal $ NativeBool False
+             [ Global "FALSE"
              , Global "BOMB"
              , Literal $ NativeSymbol "bar"
              ]) `shouldReturn`
@@ -68,10 +73,10 @@ spec =
       it "and" $ property $ calculatesBool "AND" (&&)
       it "or" $ property $ calculatesBool "OR" (||)
       it "and shortcuits" $
-        nativeReturn <$>
-        test (appfn_ (Global "AND") [Literal $ NativeBool False, Global "BOMB"]) `shouldReturn`
-        NativeBool False
+        conReturn <$>
+        test (appfn_ (Global "AND") [Global "FALSE", Global "BOMB"]) `shouldReturn`
+        stgFalse
       it "or shortcuits" $
-        nativeReturn <$>
-        test (appfn_ (Global "OR") [Literal $ NativeBool True, Global "BOMB"]) `shouldReturn`
-        NativeBool True
+        conReturn <$>
+        test (appfn_ (Global "OR") [Global "TRUE", Global "BOMB"]) `shouldReturn`
+        stgTrue

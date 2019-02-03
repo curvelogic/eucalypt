@@ -33,7 +33,7 @@ import Eucalypt.Stg.Tags
 
 -- | Constant: __KNIL
 euStgNil :: LambdaForm
-euStgNil = value_ $ appcon_ stgNil mempty
+euStgNil = nilConstructor
 
 -- | Constant: __KEMPTYBLOCK
 euEmptyBlock :: LambdaForm

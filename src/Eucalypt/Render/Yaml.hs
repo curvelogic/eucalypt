@@ -74,6 +74,19 @@ renderValue (NativeDict d) _ =
       renderValue k RenderMetadata {metaTag = Nothing} ++
       renderValue v RenderMetadata {metaTag = Nothing}
 
+renderBool :: Bool -> [L.Event]
+renderBool b =
+  [ L.EventScalar
+      (encodeUtf8 $
+       pack $
+       if b
+         then "true"
+         else "false")
+      L.BoolTag
+      L.PlainNoTag
+      Nothing
+  ]
+
 toYamlEvents :: E.Event -> [L.Event]
 toYamlEvents e =
   case e of
@@ -83,6 +96,8 @@ toYamlEvents e =
     E.OutputDocumentEnd -> [L.EventDocumentEnd]
     E.OutputScalar rm n -> renderValue n rm
     E.OutputNull -> [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
+    E.OutputTrue -> renderBool True
+    E.OutputFalse -> renderBool False
     E.OutputSequenceStart -> [L.EventSequenceStart L.NoTag L.AnySequence Nothing]
     E.OutputSequenceEnd -> [L.EventSequenceEnd]
     E.OutputMappingStart -> [L.EventMappingStart L.NoTag L.AnyMapping Nothing]

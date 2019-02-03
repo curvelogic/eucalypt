@@ -30,12 +30,6 @@ import Eucalypt.Stg.Machine
 intrinsics :: [IntrinsicInfo]
 intrinsics =
   [ IntrinsicInfo "===" 2 Eq.natEq
-  , IntrinsicInfo "EMIT{" 0 Emit.emitMappingStart
-  , IntrinsicInfo "EMIT}" 0 Emit.emitMappingEnd
-  , IntrinsicInfo "EMIT[" 0 Emit.emitSequenceStart
-  , IntrinsicInfo "EMIT]" 0 Emit.emitSequenceEnd
-  , IntrinsicInfo "EMITx" 1 Emit.emitScalar
-  , IntrinsicInfo "EMIT0" 0 Emit.emitNull
   , IntrinsicInfo "META" 1 Meta.meta
   , IntrinsicInfo "WITHMETA" 2 Meta.withMeta
   , IntrinsicInfo "PANIC" 1 Panic.panic
@@ -48,7 +42,8 @@ intrinsics =
   Dict.intrinsics <>
   Str.intrinsics <>
   Arith.intrinsics <>
-  Time.intrinsics
+  Time.intrinsics <>
+  Emit.intrinsics
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available
