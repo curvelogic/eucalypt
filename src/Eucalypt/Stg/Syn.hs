@@ -232,24 +232,6 @@ casedef_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn -> StgSyn
 casedef_ scrutinee cases df =
   Case scrutinee (BranchTable (Map.fromList cases) mempty $ Just df)
 
-caselit_ :: StgSyn -> [(Native, StgSyn)] -> Maybe StgSyn -> StgSyn
-caselit_ scrutinee cases df =
-  Case scrutinee (BranchTable mempty (HM.fromList cases') df)
-  where cases' = map (\(n, s) -> (n, (1, s))) cases
-
-caselitm_ :: StgSyn -> [(Native, (Word64, StgSyn))] -> Maybe StgSyn -> StgSyn
-caselitm_ scrutinee cases df =
-  Case scrutinee (BranchTable mempty (HM.fromList cases) df)
-
-polycase_ ::
-     StgSyn
-  -> [(Tag, (Word64, StgSyn))]
-  -> [(Native, (Word64, StgSyn))]
-  -> Maybe StgSyn
-  -> StgSyn
-polycase_ scrutinee bs nbs df =
-  Case scrutinee (BranchTable (Map.fromList bs) (HM.fromList nbs) df)
-
 let_ :: [PreClosure] -> StgSyn -> StgSyn
 let_ pcs = Let (Seq.fromList pcs)
 

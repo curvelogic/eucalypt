@@ -136,15 +136,16 @@ suppresses =
     (Atom (Local 0))
     [ ( stgBlock
       , ( 1
-        , caselit_
+        , force_
             (appfn_
                (Global "LOOKUPOR")
                [ Literal $ NativeSymbol "export"
                , Literal $ NativeSymbol "enable"
                , Local 0
-               ])
-            [(NativeSymbol "suppress", appcon_ stgTrue [])]
-            (Just (appcon_ stgFalse []))))
+               ]) $
+          appbif_
+            (intrinsicIndex "===")
+            [Literal $ NativeSymbol "suppress", Local 2]))
     ] $
   appcon_ stgFalse []
 
@@ -257,13 +258,10 @@ forceExportMetadataKVList =
 isRenderMetadataKey :: LambdaForm
 isRenderMetadataKey =
   lam_ 0 1 $
-  ann_ "Emit.isRenderMetadataKey" 0 $
-  caselit_
-    (Atom (Local 0))
-    [ (NativeSymbol "export", Atom (Global "TRUE"))
-    , (NativeSymbol "tag", Atom (Global "TRUE"))
-    ] $
-  Just (Atom (Global "FALSE"))
+  ann_ "Emit.isRenderMetadataKey2" 0 $
+  force_ (appbif_ (intrinsicIndex "===") [Local 0, Literal $ NativeSymbol "export"]) $
+  force_ (appbif_ (intrinsicIndex "===") [Local 0, Literal $ NativeSymbol "tag"]) $
+  appfn_ (Global "OR") [Local 1, Local 2]
 
 
 forceKVNatPair :: LambdaForm

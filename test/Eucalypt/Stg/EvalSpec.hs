@@ -46,10 +46,8 @@ addTest =
       valuen_ 2 $
       force_ (Atom (Local 0)) (force_ (Atom (Local 1)) $ add [Local 2, Local 3])
     ] $
-  caselit_
-    (Atom (Local 2))
-    [(nat 3, appcon_ stgTrue [])]
-    (Just $ appcon_ stgFalse [])
+  force_ (Atom $ Local 2) $
+  appbif_ (intrinsicIndex "===") [Literal $ nat 3, Local 3]
   where
     add = appbif_ $ intrinsicIndex "ADD"
 

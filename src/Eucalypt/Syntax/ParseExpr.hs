@@ -45,12 +45,12 @@ operatorIdentifier =
   "operator identifier"
   where
     opIdentStartChar =
-      oneOf ".!@£%^&*|></+=-~" <|>
+      oneOf (".!@£%^&*|></+=-~" :: String) <|>
       satisfy
         (\c ->
            (not . isAscii) c && (c /= '•') && (isSymbol c || isPunctuation c))
     opIdentContinuationChar =
-      oneOf ".!@£$%^&*|></?+=-~" <|>
+      oneOf (".!@£$%^&*|></?+=-~" :: String) <|>
       satisfy (\c -> (not . isAscii) c && (isSymbol c || isPunctuation c))
 
 
