@@ -9,17 +9,18 @@ Stability   : experimental
 
 module Eucalypt.Stg.Intrinsics.Eq where
 
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Data.Sequence ((!?))
 
-asNative :: StgValue -> Maybe Native
-asNative (StgNat n _) = Just n
-asNative _ = Nothing
+toNative :: StgValue -> Maybe Native
+toNative (StgNat n _) = Just n
+toNative _ = Nothing
 
 natEq :: MachineState -> ValVec -> IO MachineState
 natEq ms (ValVec xs) =
-  (return . setCode ms . (`ReturnLit` Nothing) . NativeBool) $
-  case (xs !? 0 >>= asNative, xs !? 1 >>= asNative) of
+  returnBool ms $
+  case (xs !? 0 >>= toNative, xs !? 1 >>= toNative) of
     (Just l, Just r) -> l == r
     _ -> False

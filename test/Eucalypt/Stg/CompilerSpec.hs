@@ -47,8 +47,8 @@ spec = do
         comp (C.int 2) `shouldBe` Atom (Literal (NativeNumber 2))
       it "compiles strings" $
         comp (C.str "foo") `shouldBe` Atom (Literal (NativeString "foo"))
-      it "compiles strings" $
-        comp (C.corebool False) `shouldBe` Atom (Literal (NativeBool False))
+      it "compiles bools" $
+        comp (C.corebool False) `shouldBe` Atom (Global "FALSE")
     context "compiles metadata-annotated primitives" $ do
       it "compiles metadata annotated ints" $
         compile 0 emptyContext (Just (Global "Q")) (C.int 2 :: CoreExpr) `shouldBe`

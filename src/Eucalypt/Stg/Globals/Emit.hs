@@ -66,6 +66,12 @@ emitScalar n = appbif_ (intrinsicIndex "EMITx") [n]
 emitNull :: StgSyn
 emitNull = appbif_ (intrinsicIndex "EMIT0") []
 
+emitTrue :: StgSyn
+emitTrue = appbif_ (intrinsicIndex "EMITT") []
+
+emitFalse :: StgSyn
+emitFalse = appbif_ (intrinsicIndex "EMITF") []
+
 -- | LambdaForm used in 'euRender' to render a key/value pair.
 --
 -- Require env ref for 'suppresses' function
@@ -77,30 +83,31 @@ renderKV =
     (Atom arg)
     [ ( stgCons
       , ( 3
-        , caselit_
+        , casedef_
             (appfn_ (Global "Emit.suppresses") [meta])
-            [(NativeBool True, appcon_ stgUnit [])]
-            (Just $
-             case_
+            [(stgTrue, (0, appcon_ stgUnit []))]
+            (case_
                (Atom t)
                [ ( stgCons
                  , ( 2
                    , force_
                        (Atom val)
-                       (caselit_
+                       (casedef_
                           (appbif_ (intrinsicIndex "CLOSED") [vval])
-                          [ ( NativeBool True
-                            , force_
-                                (appbif_ (intrinsicIndex "META") [vval])
-                                (caselit_
-                                   (appfn_ (Global "Emit.suppresses") [valmeta])
-                                   [(NativeBool True, appcon_ stgUnit [])]
-                                   (Just $
-                                    seq_
-                                      (appfn_ (Global "RENDER") [key])
-                                      (appfn_ (Global "RENDER") [vval]))))
+                          [ ( stgTrue
+                            , ( 0
+                              , force_
+                                  (appbif_ (intrinsicIndex "META") [vval])
+                                  (casedef_
+                                     (appfn_
+                                        (Global "Emit.suppresses")
+                                        [valmeta])
+                                     [(stgTrue, (0, appcon_ stgUnit []))]
+                                     (seq_
+                                        (appfn_ (Global "RENDER") [key])
+                                        (appfn_ (Global "RENDER") [vval])))))
                           ]
-                          (Just (appcon_ stgUnit [])))))
+                          (appcon_ stgUnit []))))
                ])))
     ]
     (appfn_
@@ -129,17 +136,18 @@ suppresses =
     (Atom (Local 0))
     [ ( stgBlock
       , ( 1
-        , caselit_
+        , force_
             (appfn_
                (Global "LOOKUPOR")
                [ Literal $ NativeSymbol "export"
                , Literal $ NativeSymbol "enable"
                , Local 0
-               ])
-            [(NativeSymbol "suppress", Atom $ Literal $ NativeBool True)]
-            (Just $ Atom $ Literal $ NativeBool False)))
+               ]) $
+          appbif_
+            (intrinsicIndex "===")
+            [Literal $ NativeSymbol "suppress", Local 2]))
     ] $
-  Atom $ Literal $ NativeBool False
+  appcon_ stgFalse []
 
 emptyList :: LambdaForm
 emptyList = value_ $ ann_ "emptyList" 0 $ seq_ emitSS emitSE
@@ -205,6 +213,8 @@ euRender =
     , (stgCons, (2, appfn_ (Global "Emit.startList") [Local 1, Local 2]))
     , (stgNil, (0, appfn_ (Global "Emit.emptyList") []))
     , (stgUnit, (0, emitNull))
+    , (stgTrue, (0, emitTrue))
+    , (stgFalse, (0, emitFalse))
     ] $
   force_ (appfn_ (Global "META") [Local 1]) $
   force_ (appfn_ (Global "Emit.forceExportMetadata") [Local 2]) $
@@ -248,13 +258,10 @@ forceExportMetadataKVList =
 isRenderMetadataKey :: LambdaForm
 isRenderMetadataKey =
   lam_ 0 1 $
-  ann_ "Emit.isRenderMetadataKey" 0 $
-  caselit_
-    (Atom (Local 0))
-    [ (NativeSymbol "export", Atom (Global "TRUE"))
-    , (NativeSymbol "tag", Atom (Global "TRUE"))
-    ] $
-  Just (Atom (Global "FALSE"))
+  ann_ "Emit.isRenderMetadataKey2" 0 $
+  force_ (appbif_ (intrinsicIndex "===") [Local 0, Literal $ NativeSymbol "export"]) $
+  force_ (appbif_ (intrinsicIndex "===") [Local 0, Literal $ NativeSymbol "tag"]) $
+  appfn_ (Global "OR") [Local 1, Local 2]
 
 
 forceKVNatPair :: LambdaForm
@@ -267,9 +274,9 @@ forceKVNatPair =
         (Atom pr)
         [ ( stgCons
           , ( 2
-            , caselit_
+            , casedef_
                 (appfn_ (Global "Emit.isRenderMetadataKey") [prh])
-                [(NativeBool True, appfn_ (Global "seqNatList") [pr])]
-                (Just (Atom pr))))
+                [(stgTrue, (0, appfn_ (Global "seqNatList") [pr]))]
+                (Atom pr)))
         ]
         (panic "Invalid pair (not cons) while evaluating render metadata")

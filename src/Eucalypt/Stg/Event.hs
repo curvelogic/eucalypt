@@ -31,6 +31,8 @@ data Event
   | OutputDocumentEnd
   | OutputScalar RenderMetadata !Native
   | OutputNull
+  | OutputTrue
+  | OutputFalse
   | OutputSequenceStart
   | OutputSequenceEnd
   | OutputMappingStart

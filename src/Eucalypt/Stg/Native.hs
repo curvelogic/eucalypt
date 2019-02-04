@@ -13,7 +13,6 @@ module Eucalypt.Stg.Native where
 
 import Control.DeepSeq (NFData)
 import Data.Foldable (toList)
-import Data.Hashable
 import qualified Data.Map.Strict as MS
 import Data.Scientific
 import qualified Data.Set as S
@@ -29,37 +28,16 @@ data Native
   = NativeNumber !Scientific
   | NativeString !String
   | NativeSymbol !String
-  | NativeBool !Bool
   | NativeSet !(S.Set Native)
   | NativeDict !(MS.Map Native Native)
   deriving (Eq, Show, Generic, Ord)
 
 instance NFData Native
 
--- | NativeBranchTable matches natives by hash map
-instance Hashable Native where
-  hashWithSalt s (NativeNumber n) = s `hashWithSalt` (0 :: Int) `hashWithSalt` n
-  hashWithSalt s (NativeString str) =
-    s `hashWithSalt` (1 :: Int) `hashWithSalt` str
-  hashWithSalt s (NativeSymbol sym) =
-    s `hashWithSalt` (2 :: Int) `hashWithSalt` sym
-  hashWithSalt s (NativeBool b) = s `hashWithSalt` (3 :: Int) `hashWithSalt` b
-  hashWithSalt s (NativeSet xs) =
-    S.foldl hashWithSalt (s `hashWithSalt` (4 :: Int)) xs
-  hashWithSalt s (NativeDict dict) =
-    MS.foldlWithKey
-      (\a k v -> a `hashWithSalt` k `hashWithSalt` v)
-      (s `hashWithSalt` (5 :: Int))
-      dict
-
 instance StgPretty Native where
   prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
   prettify (NativeString s) = P.text $ show s
   prettify (NativeSymbol s) = P.colon <> P.text s
-  prettify (NativeBool b) =
-    if b
-      then P.text "#t"
-      else P.text "#f"
   prettify (NativeSet xs) =
     P.text "#{" <> P.hcat (P.punctuate P.comma (map prettify (toList xs))) <>
     P.text "}"
@@ -84,7 +62,6 @@ instance Arbitrary Native where
       [ NativeNumber <$> arbitrary
       , NativeString <$> arbitrary
       , NativeSymbol <$> arbitrary
-      , NativeBool <$> arbitrary
       , NativeSet <$> arbitrary
       , NativeDict <$> arbitrary
       ]

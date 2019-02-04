@@ -99,10 +99,6 @@ formatScalar (NativeNumber n) =
     Right i -> encodeUtf8 $ pack $ show i
 formatScalar (NativeSymbol s) = jsonStr s
 formatScalar (NativeString s) = jsonStr s
-formatScalar (NativeBool b) =
-  if b
-    then "true"
-    else "false"
 formatScalar (NativeSet s) =
   jsonStr "[" <> BS.intercalate ", " (map formatScalar (toList s)) <>
   jsonStr "]"
@@ -165,6 +161,8 @@ putBSFragment e@E.OutputMappingStart = do
 putBSFragment e@E.OutputMappingEnd = setLast e >> popContext >> putText "}"
 putBSFragment e@(E.OutputScalar _ n) = putScalar e (formatScalar n)
 putBSFragment e@E.OutputNull = putScalar e "null"
+putBSFragment e@E.OutputTrue = putScalar e "true"
+putBSFragment e@E.OutputFalse = putScalar e "false"
 putBSFragment _ = putText ""
 
 runFormatter :: State JSONFormatState () -> BS.ByteString

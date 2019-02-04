@@ -16,78 +16,79 @@ module Eucalypt.Stg.Globals.Bool
   , euIf
   ) where
 
-import Eucalypt.Stg.Native
+import Data.Word
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Tags
+
+
+falseBranch :: (Word64, StgSyn)
+falseBranch = (0, appcon_ stgFalse [])
+
+trueBranch :: (Word64, StgSyn)
+trueBranch = (0, appcon_ stgTrue [])
 
 -- | __TRUE
 euTrue :: LambdaForm
-euTrue = value_ (Atom $ Literal $ NativeBool True)
+euTrue = trueConstructor
 
 
 
 -- | __ FALSE
 euFalse :: LambdaForm
-euFalse = value_ (Atom $ Literal $ NativeBool False)
+euFalse = falseConstructor
 
 
 
 -- | __NOT(b)
 euNot :: LambdaForm
 euNot =
-  lam_ 0 1 $ ann_ "__NOT" 0 $
-  caselit_
+  lam_ 0 1 $
+  ann_ "__NOT" 0 $
+  case_
     (Atom (Local 0))
-    [ (NativeBool True, Atom $ Literal $ NativeBool False)
-    , (NativeBool False, Atom $ Literal $ NativeBool True)
-    ] Nothing
+    [(stgTrue, falseBranch), (stgFalse, trueBranch)]
 
 
 
 -- | __AND(l, r) - shortcircuit AND
 euAnd :: LambdaForm
 euAnd =
-  lam_ 0 2 $ ann_ "__AND" 0 $
-  caselit_
+  lam_ 0 2 $
+  ann_ "__AND" 0 $
+  case_
     (Atom (Local 0))
-    [ (NativeBool False, Atom $ Literal $ NativeBool False)
-    , ( NativeBool True
-      , caselit_
-          (Atom (Local 1))
-          [ (NativeBool False, Atom $ Literal $ NativeBool False)
-          , (NativeBool True, Atom $ Literal $ NativeBool True)
-          ]
-          Nothing)
+    [ (stgFalse, falseBranch)
+    , ( stgTrue
+      , ( 0
+        , case_
+            (Atom (Local 1))
+            [(stgFalse, falseBranch), (stgTrue, trueBranch)]))
     ]
-    Nothing
 
 
 
 -- | __OR(l, r) - shortcircuit OR
 euOr :: LambdaForm
 euOr =
-  lam_ 0 2 $ ann_ "__OR" 0 $
-  caselit_
+  lam_ 0 2 $
+  ann_ "__OR" 0 $
+  case_
     (Atom (Local 0))
-    [ (NativeBool True, Atom $ Literal $ NativeBool True)
-    , ( NativeBool False
-      , caselit_
-          (Atom (Local 1))
-          [ (NativeBool True, Atom $ Literal $ NativeBool True)
-          , (NativeBool False, Atom $ Literal $ NativeBool False)
-          ]
-          Nothing)
+    [ (stgTrue, trueBranch)
+    , ( stgFalse
+      , ( 0
+        , case_
+            (Atom (Local 1))
+            [(stgTrue, trueBranch), (stgFalse, falseBranch)]))
     ]
-    Nothing
 
 
 
 -- | __IF(c, t, f)
 euIf :: LambdaForm
 euIf =
-  lam_ 0 3 $ ann_ "__IF" 0 $
-  caselit_
+  lam_ 0 3 $
+  ann_ "__IF" 0 $
+  case_
     (Atom (Local 0))
-    [ (NativeBool True, Atom $ Local 1)
-    , (NativeBool False, Atom $ Local 2)
-    ]
-    Nothing
+    [(stgTrue, (0, Atom $ Local 1)), (stgFalse, (0, Atom $ Local 2))]

@@ -16,6 +16,7 @@ import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common (IntrinsicFunction, invoke)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Tags
 import Data.Fixed (mod')
 import Data.Scientific
 
@@ -67,7 +68,7 @@ binopBool :: (Scientific -> Scientific -> Bool) -> IntrinsicFunction
 binopBool op =
   invoke
     (\ms lhs rhs ->
-       (return $ setCode ms (ReturnLit (NativeBool (op lhs rhs)) Nothing)) :: IO MachineState)
+       (return $ setCode ms (ReturnCon (boolTag (op lhs rhs)) mempty Nothing)) :: IO MachineState)
 
 lt :: IntrinsicFunction
 lt = binopBool (<)

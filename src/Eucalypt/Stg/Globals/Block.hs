@@ -153,15 +153,16 @@ euLookupList =
             [ ( stgCons
               , ( 2
                   -- compare k with
-                , caselit_
+                , case_
                     (appfn_ (Global "EQ") [Local 4, Local 1])
-                    [ (NativeBool True, appfn_ (Global "HEAD") [Local 5])
-                    , ( NativeBool False
-                      , appfn_ (Global "LOOKUPLIST") [Local 3, Local 1])
-                    ]
-                    Nothing))
+                    [ (stgTrue, (0, appfn_ (Global "HEAD") [Local 5]))
+                    , ( stgFalse
+                      , (0, appfn_ (Global "LOOKUPLIST") [Local 3, Local 1]))
+                    ]))
             ]
-            (appfn_ (Global "PANIC") [Literal $ NativeString "Key lookup error (non-pair)."])))
+            (appfn_
+               (Global "PANIC")
+               [Literal $ NativeString "Key lookup error (non-pair)."])))
     ]
     (appfn_ (Global "!KEYNOTFOUND") [Local 1])
 
@@ -186,13 +187,15 @@ euLookupListOr =
                       , ( 2
                         , let k = Local 5
                               v = Local 6
-                           in caselit_
+                           in case_
                                 (appfn_ (Global "EQ") [k, sym])
-                                [ (NativeBool True, appfn_ (Global "HEAD") [v])
-                                , ( NativeBool False
-                                  , appfn_ (Global "LOOKUPLISTOR") [t, def, sym])
-                                ]
-                                Nothing))
+                                [ (stgTrue, (0, appfn_ (Global "HEAD") [v]))
+                                , ( stgFalse
+                                  , ( 0
+                                    , appfn_
+                                        (Global "LOOKUPLISTOR")
+                                        [t, def, sym]))
+                                ]))
                     ]))
         , (stgNil, (1, Atom def))
         ]

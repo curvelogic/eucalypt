@@ -12,7 +12,7 @@ module Eucalypt.Stg.Intrinsics.General
   ) where
 
 import Data.Sequence ((!?))
-import Eucalypt.Stg.Native
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Machine
@@ -25,7 +25,7 @@ import Eucalypt.Stg.Machine
 closed :: MachineState -> ValVec -> IO MachineState
 closed ms (ValVec xs) =
   case xs !? 0 of
-    (Just (StgNat _ _)) -> return $ setCode ms (ReturnLit (NativeBool True) Nothing)
+    (Just (StgNat _ _)) -> returnBool ms True
     (Just (StgAddr a)) -> do
       obj <- peek a
       let ret =
@@ -33,5 +33,5 @@ closed ms (ValVec xs) =
               Closure {closureCode = LambdaForm {_bound = b}} -> b == 0
               PartialApplication {papArity = 0} -> True
               _ -> False
-      return $ setCode ms (ReturnLit (NativeBool ret) Nothing)
+      returnBool ms ret
     Nothing -> error "`closed` called on empty ValVec"

@@ -31,10 +31,6 @@ formatScalar (NativeNumber n) =
     Right i -> stringUtf8 $ show i
 formatScalar (NativeSymbol s) = stringUtf8 s
 formatScalar (NativeString s) = stringUtf8 s
-formatScalar (NativeBool b) = stringUtf8 $
-  if b
-    then "true"
-    else "false"
 formatScalar (NativeSet s) =
   mconcat $ intersperse (stringUtf8 ",") $ map formatScalar $ toList s
 formatScalar (NativeDict d) =
@@ -46,6 +42,8 @@ formatScalar (NativeDict d) =
 
 toFragment :: E.Event -> Maybe Builder
 toFragment (E.OutputScalar _ n) = Just $ formatScalar n
+toFragment E.OutputTrue = Just $ stringUtf8 "true"
+toFragment E.OutputFalse = Just $ stringUtf8 "false"
 toFragment _ = Nothing
 
 pipeline :: Monad m => ConduitT E.Event Void m BS.ByteString

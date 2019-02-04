@@ -44,7 +44,7 @@ emptySet ms _ = return $ setCode ms (ReturnLit (NativeSet S.empty) Nothing)
 setContains :: MachineState -> ValVec -> IO MachineState
 setContains ms args = do
   (s, n) <- getSetAndKey ms args
-  return $ setCode ms (ReturnLit (NativeBool $ n `S.member` s) Nothing)
+  returnBool ms $ n `S.member` s
 
 -- | __SETADD(s, e)
 setAdd :: MachineState -> ValVec -> IO MachineState

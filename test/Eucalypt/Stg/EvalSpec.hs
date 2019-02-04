@@ -46,8 +46,8 @@ addTest =
       valuen_ 2 $
       force_ (Atom (Local 0)) (force_ (Atom (Local 1)) $ add [Local 2, Local 3])
     ] $
-  caselit_ (Atom (Local 2)) [(nat 3, Atom (Literal (NativeBool True)))] $
-  Just (Atom (Literal (NativeBool False)))
+  force_ (Atom $ Local 2) $
+  appbif_ (intrinsicIndex "===") [Literal $ nat 3, Local 3]
   where
     add = appbif_ $ intrinsicIndex "ADD"
 
@@ -69,7 +69,7 @@ blockSpec =
     it "returns lit 1" $
       (returnsNative (nat 1) <$> test headOfList) `shouldReturn` True
     it "returns true" $
-      (returnsNative (NativeBool True) <$> test addTest) `shouldReturn` True
+      (returnsConstructor stgTrue <$> test addTest) `shouldReturn` True
     it "emits empty map" $
       (emits [OutputMappingStart, OutputMappingEnd] <$> test renderEmptyMap) `shouldReturn`
       True
