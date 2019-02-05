@@ -45,4 +45,8 @@ initDebugMachineState :: MonadIO m => StgSyn -> m MachineState
 initDebugMachineState stg = do
   ms <- initStandardMachineState stg
   return $
-    ms {machineTrace = dump, machineEmit = dumpEmission, machineDebug = True}
+    ms
+      { machineTrace = Just dump
+      , machineEmitHook = Just dumpEmission
+      , machineDebug = True
+      }

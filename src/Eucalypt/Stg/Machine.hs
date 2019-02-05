@@ -200,11 +200,11 @@ data MachineState = MachineState
     -- ^ count of steps executed so far
   , machineTerminated :: !Bool
     -- ^ whether the machine has terminated
-  , machineTrace :: MachineState -> IO ()
+  , machineTrace :: Maybe (MachineState -> IO ())
     -- ^ debug action to run prior to each step
   , machineEvents :: ![Event]
     -- ^ events fired by last step
-  , machineEmit :: MachineState -> Event -> IO MachineState
+  , machineEmitHook :: Maybe (MachineState -> Event -> IO MachineState)
     -- ^ emit function to send out events
   , machineDebug :: !Bool
     -- ^ debug checks on
@@ -223,7 +223,8 @@ instance Environments (ValVec, MachineState) StgValue where
 
 -- | Call the machine's trace function
 traceOut :: MonadIO m => MachineState -> m ()
-traceOut ms@MachineState {machineTrace = tr} = liftIO $ tr ms
+traceOut ms@MachineState {machineTrace = Just tr} = liftIO $ tr ms
+traceOut _ = return ()
 
 -- | Clear events and prepare for next step
 prepareStep :: MonadIO m => String -> MachineState -> m MachineState
@@ -255,9 +256,9 @@ initMachineState stg ge = do
       , machineStack = mempty
       , machineCounter = 0
       , machineTerminated = False
-      , machineTrace = \_ -> return ()
+      , machineTrace = Nothing
       , machineEvents = mempty
-      , machineEmit = \s _ -> return s
+      , machineEmitHook = Nothing
       , machineDebug = False
       , machineDebugEmitLog = []
       , machineLastStepName = "<INIT>"
