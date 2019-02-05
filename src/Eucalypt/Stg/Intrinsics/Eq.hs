@@ -20,4 +20,4 @@ intrinsics :: [IntrinsicInfo]
 intrinsics = [IntrinsicInfo "===" 2 (invoke natEq)]
 
 natEq :: MachineState -> Native -> Native -> IO MachineState
-natEq ms l r =  returnBool ms $ l == r
+natEq ms l r = returnBool ms $ l == r

@@ -22,33 +22,14 @@ globals = [("EQ", euEq)]
 -- | __EQ(l, r) - deep equality test in STG
 euEq :: LambdaForm
 euEq =
-  lam_ 0 2 $ ann_ "__EQ" 0 $
+  lam_ 0 2 $
+  ann_ "__EQ" 0 $
   casedef_
     (Atom (L 0))
-    [ ( stgNil
-      , ( 0
-        , casedef_
-            (Atom (L 1))
-            [(stgNil, (0, trueVal))]
-            falseVal))
-    , ( stgUnit
-      , ( 0
-        , casedef_
-            (Atom (L 1))
-            [(stgUnit, (0, trueVal))]
-            falseVal))
-    , ( stgTrue
-      , ( 0
-        , casedef_
-            (Atom (L 1))
-            [(stgTrue, (0, trueVal))]
-            falseVal))
-    , ( stgFalse
-      , ( 0
-        , casedef_
-            (Atom (L 1))
-            [(stgFalse, (0, trueVal))]
-            falseVal))
+    [ (stgNil, (0, casedef_ (Atom (L 1)) [(stgNil, (0, trueVal))] falseVal))
+    , (stgUnit, (0, casedef_ (Atom (L 1)) [(stgUnit, (0, trueVal))] falseVal))
+    , (stgTrue, (0, casedef_ (Atom (L 1)) [(stgTrue, (0, trueVal))] falseVal))
+    , (stgFalse, (0, casedef_ (Atom (L 1)) [(stgFalse, (0, trueVal))] falseVal))
     , ( stgBlock
       , ( 1
         , casedef_
@@ -62,16 +43,22 @@ euEq =
             [ ( stgCons
               , ( 1
                 , let_
-                    [ pc_ [L 2, L 4] $
-                      valuen_ 2 $ appfn_ (gref "EQ") [L 0, L 1]
-                    , pc_ [L 3, L 5] $
-                      valuen_ 2 $ appfn_ (gref "EQ") [L 0, L 1]
+                    [ pc_ [L 2, L 4] $ valuen_ 2 $ appfn_ (gref "EQ") [L 0, L 1]
+                    , pc_ [L 3, L 5] $ valuen_ 2 $ appfn_ (gref "EQ") [L 0, L 1]
                     ]
                     (appfn_ (gref "AND") [L 6, L 7])))
             ]
-            falseVal))]
-    (force_
+            falseVal))
+    ]
+    (casedef_
        (Atom (L 1))
+       [ (stgNil, (0, falseVal))
+       , (stgUnit, (0, falseVal))
+       , (stgTrue, (0, falseVal))
+       , (stgFalse, (0, falseVal))
+       , (stgCons, (0, falseVal))
+       , (stgBlock, (0, falseVal))
+       ]
        (appbif_ (intrinsicIndex "===") [L 2, L 3]))
   where
     trueVal = appcon_ stgTrue []

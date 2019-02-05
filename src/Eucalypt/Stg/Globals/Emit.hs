@@ -139,13 +139,8 @@ suppresses =
         , force_
             (appfn_
                (gref "LOOKUPOR")
-               [ V $ NativeSymbol "export"
-               , V $ NativeSymbol "enable"
-               , L 0
-               ]) $
-          appbif_
-            (intrinsicIndex "===")
-            [V $ NativeSymbol "suppress", L 2]))
+               [V $ NativeSymbol "export", V $ NativeSymbol "enable", L 0]) $
+          appfn_ (gref "EQ") [V $ NativeSymbol "suppress", L 2]))
     ] $
   appcon_ stgFalse []
 
