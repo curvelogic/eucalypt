@@ -14,6 +14,7 @@ import Eucalypt.Stg.Address
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Pretty
@@ -27,7 +28,7 @@ import qualified Test.QuickCheck.Monadic as QM
 
 -- | List of literals
 litList_ :: Int -> [Native] -> StgSyn
-litList_ envN nats = list_ envN (map Literal nats) Nothing
+litList_ envN nats = list_ envN (map V nats) Nothing
 
 nat :: Integer -> Native
 nat n = NativeNumber $ fromInteger n
@@ -36,10 +37,10 @@ kv :: String -> Native -> StgSyn
 kv k v =
   letrec_
     [ pc0_ nilConstructor
-    , pc_ [Literal v, Local 0] consConstructor
-    , pc_ [Literal $ NativeSymbol k, Local 1] consConstructor
+    , pc_ [V v, L 0] consConstructor
+    , pc_ [V $ NativeSymbol k, L 1] consConstructor
     ]
-    (Atom $ Local 2)
+    (Atom $ L 2)
 
 suppressMeta :: StgSyn
 suppressMeta = block [kv "export" (NativeSymbol "suppress")]
@@ -49,20 +50,20 @@ kv_ :: String -> Native -> StgSyn
 kv_ k v =
   letrec_
     [ pc0_ $ thunk_ suppressMeta
-    , pc_ [Literal v, Global "KNIL"] consConstructor
-    , pcm_ [Literal $ NativeSymbol k, Local 1] (Just $ Local 0) consConstructor
+    , pc_ [V v, gref "KNIL"] consConstructor
+    , pcm_ [V $ NativeSymbol k, L 1] (Just $ L 0) consConstructor
     ]
-    (Atom $ Local 2)
+    (Atom $ L 2)
 
 block :: [StgSyn] -> StgSyn
 block kvs =
   let pcs = map (pc0_ . value_) kvs
       itemCount = length pcs
-      itemRefs = [(Local . fromIntegral) n | n <- [0 .. itemCount - 1]]
+      itemRefs = [(L . fromIntegral) n | n <- [0 .. itemCount - 1]]
       l = pc_ itemRefs $ thunkn_ itemCount $ list_ itemCount itemRefs Nothing
-      bl = pc_ [Local $ fromIntegral itemCount] blockConstructor
+      bl = pc_ [L $ fromIntegral itemCount] blockConstructor
       pcs' = pcs ++ [l, bl]
-   in letrec_ pcs' (Atom $ Local (fromIntegral (itemCount + 1)))
+   in letrec_ pcs' (Atom $ L (fromIntegral (itemCount + 1)))
 
 -- machine state accessors and assertions
 
@@ -93,7 +94,7 @@ returnsTrue = returnsConstructor stgTrue
 -- | Check that the return is a fully constructed list of pairs with
 -- fully evaled native symbol keys
 returnedForcedPairList :: MachineState -> IO Bool
-returnedForcedPairList ms@MachineState {machineCode = (ReturnCon 1 (ValVec xs) _)} =
+returnedForcedPairList ms@MachineState {machineCode = (ReturnCon TagCons xs _)} =
   case toList xs of
     [h, t] -> validate h t
     _ -> return False
@@ -121,7 +122,7 @@ emitLog = machineDebugEmitLog
 -- dump / trace helpers
 
 dumpEnv :: ValVec -> IO ()
-dumpEnv (ValVec env)  = traverse_ dumpVal $ toList env
+dumpEnv env = traverse_ dumpVal $ toList env
   where
     dumpVal (StgNat n _) = putStrLn $ P.render $ prettify n
     dumpVal (StgAddr a) = peek a >>= (putStrLn . P.render . prettify)

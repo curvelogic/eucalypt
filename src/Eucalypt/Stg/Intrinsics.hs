@@ -29,21 +29,20 @@ import Eucalypt.Stg.Machine
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
-  [ IntrinsicInfo "===" 2 Eq.natEq
-  , IntrinsicInfo "META" 1 Meta.meta
-  , IntrinsicInfo "WITHMETA" 2 Meta.withMeta
-  , IntrinsicInfo "PANIC" 1 Panic.panic
-  , IntrinsicInfo "PRUNE" 1 Block.prune
-  , IntrinsicInfo "PRUNEMERGE" 2 Block.pruneMerge
-  , IntrinsicInfo "CLOSED" 1 General.closed
-  , IntrinsicInfo "NUMPARSE" 1 Number.parse
-  ] <>
-  Set.intrinsics <>
-  Dict.intrinsics <>
-  Str.intrinsics <>
-  Arith.intrinsics <>
-  Time.intrinsics <>
-  Emit.intrinsics
+  concat
+    [ Set.intrinsics
+    , Dict.intrinsics
+    , Str.intrinsics
+    , Arith.intrinsics
+    , Time.intrinsics
+    , Emit.intrinsics
+    , Panic.intrinsics
+    , Meta.intrinsics
+    , Eq.intrinsics
+    , General.intrinsics
+    , Block.intrinsics
+    , Number.intrinsics
+    ]
 
 -- | Used during compilation to find the index at which an intrinsic
 -- will be available

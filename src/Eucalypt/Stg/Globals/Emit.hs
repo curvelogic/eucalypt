@@ -18,26 +18,26 @@ import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
 
-globals :: [GlobalInfo]
+globals :: [(String, LambdaForm)]
 globals =
-  [ GlobalInfo "Emit.suppresses" suppresses [NonStrict]
-  , GlobalInfo "Emit.renderKV" renderKV [NonStrict]
-  , GlobalInfo "Emit.continueKVList" continueKVList [NonStrict]
-  , GlobalInfo "Emit.emptyList" emptyList []
-  , GlobalInfo "Emit.startList" startList [NonStrict, NonStrict]
-  , GlobalInfo "Emit.continueList" continueList [NonStrict]
-  , GlobalInfo "Emit.wrapBlock" wrapBlock [NonStrict]
-  , GlobalInfo "Emit.forceExportMetadata" forceExportMetadata [NonStrict]
-  , GlobalInfo "Emit.forceExportMetadataKVList" forceExportMetadataKVList [NonStrict]
-  , GlobalInfo "Emit.forceKVNatPair" forceKVNatPair [NonStrict]
-  , GlobalInfo "Emit.isRenderMetadataKey" isRenderMetadataKey [Strict]
-  , GlobalInfo "RENDER" euRender [NonStrict]
-  , GlobalInfo "NULL" euNull []
+  [ ("Emit.suppresses", suppresses)
+  , ("Emit.renderKV", renderKV)
+  , ("Emit.continueKVList", continueKVList)
+  , ("Emit.emptyList", emptyList)
+  , ("Emit.startList", startList)
+  , ("Emit.continueList", continueList)
+  , ("Emit.wrapBlock", wrapBlock)
+  , ("Emit.forceExportMetadata", forceExportMetadata)
+  , ("Emit.forceExportMetadataKVList", forceExportMetadataKVList)
+  , ("Emit.forceKVNatPair", forceKVNatPair)
+  , ("Emit.isRenderMetadataKey", isRenderMetadataKey)
+  , ("RENDER", euRender)
+  , ("NULL", euNull)
   ]
 
 
 panic :: String -> StgSyn
-panic msg = appfn_ (Global "PANIC") [Literal $ NativeString msg]
+panic msg = appfn_ (gref "PANIC") [V $ NativeString msg]
 
 -- | __NULL - for emitting JSON / YAML null
 euNull :: LambdaForm
@@ -84,7 +84,7 @@ renderKV =
     [ ( stgCons
       , ( 3
         , casedef_
-            (appfn_ (Global "Emit.suppresses") [meta])
+            (appfn_ (gref "Emit.suppresses") [meta])
             [(stgTrue, (0, appcon_ stgUnit []))]
             (case_
                (Atom t)
@@ -93,36 +93,36 @@ renderKV =
                    , force_
                        (Atom val)
                        (casedef_
-                          (appbif_ (intrinsicIndex "CLOSED") [vval])
+                          (appbif_ (intrinsicIndex "SATURATED") [vval])
                           [ ( stgTrue
                             , ( 0
                               , force_
                                   (appbif_ (intrinsicIndex "META") [vval])
                                   (casedef_
                                      (appfn_
-                                        (Global "Emit.suppresses")
+                                        (gref "Emit.suppresses")
                                         [valmeta])
                                      [(stgTrue, (0, appcon_ stgUnit []))]
                                      (seq_
-                                        (appfn_ (Global "RENDER") [key])
-                                        (appfn_ (Global "RENDER") [vval])))))
+                                        (appfn_ (gref "RENDER") [key])
+                                        (appfn_ (gref "RENDER") [vval])))))
                           ]
                           (appcon_ stgUnit []))))
                ])))
     ]
     (appfn_
-       (Global "PANIC")
-       [Literal $ NativeString "Bad pair in Emit.renderKV"])
+       (gref "PANIC")
+       [V $ NativeString "Bad pair in Emit.renderKV"])
   where
-    arg = Local 0
-    key = Local 1
-    t = Local 2
-    meta = Local 3
-    _suppressed = Local 4
-    val = Local 5
-    _valt = Local 6
-    vval = Local 7
-    valmeta = Local 8
+    arg = L 0
+    key = L 1
+    t = L 2
+    meta = L 3
+    _suppressed = L 4
+    val = L 5
+    _valt = L 6
+    vval = L 7
+    valmeta = L 8
 
 -- | LambdaForm that Inspects the metadata argument supplied to
 -- determine if it suppresses render.
@@ -133,19 +133,14 @@ suppresses =
   lam_ 0 1 $
   ann_ "Emit.suppresses" 0 $
   casedef_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ ( stgBlock
       , ( 1
         , force_
             (appfn_
-               (Global "LOOKUPOR")
-               [ Literal $ NativeSymbol "export"
-               , Literal $ NativeSymbol "enable"
-               , Local 0
-               ]) $
-          appbif_
-            (intrinsicIndex "===")
-            [Literal $ NativeSymbol "suppress", Local 2]))
+               (gref "LOOKUPOR")
+               [V $ NativeSymbol "export", V $ NativeSymbol "enable", L 0]) $
+          appfn_ (gref "EQ") [V $ NativeSymbol "suppress", L 2]))
     ] $
   appcon_ stgFalse []
 
@@ -158,16 +153,16 @@ continueList =
   lam_ 0 1 $
   ann_ "Emit.continueList" 0 $
   casedef_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ ( stgCons
       , ( 2
-        , seq_ (appfn_ (Global "RENDER") [Local 1]) $
-          appfn_ (Global "Emit.continueList") [Local 2]))
+        , seq_ (appfn_ (gref "RENDER") [L 1]) $
+          appfn_ (gref "Emit.continueList") [L 2]))
     , (stgNil, (0, emitSE))
     ] $
-  force_ (appfn_ (Global "META") [Local 1]) $
-  force_ (appfn_ (Global "Emit.forceExportMetadata") [Local 2]) $
-  emitScalar (Local 1) -- force is effectful
+  force_ (appfn_ (gref "META") [L 1]) $
+  force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $
+  emitScalar (L 1) -- force is effectful
 
 -- | Emit.startList(l)
 startList :: LambdaForm
@@ -177,8 +172,8 @@ startList =
   seq_
     emitSS
     (seq_
-       (appfn_ (Global "RENDER") [Local 0])
-       (appfn_ (Global "Emit.continueList") [Local 1]))
+       (appfn_ (gref "RENDER") [L 0])
+       (appfn_ (gref "Emit.continueList") [L 1]))
 
 -- | __Emit.continueKVList(l)
 continueKVList :: LambdaForm
@@ -186,11 +181,11 @@ continueKVList =
   lam_ 0 1 $
   ann_ "Emit.continueKVList" 0 $
   case_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ ( stgCons
       , ( 2
-        , seq_ (appfn_ (Global "Emit.renderKV") [Local 1]) $
-          appfn_ (Global "Emit.continueKVList") [Local 2]))
+        , seq_ (appfn_ (gref "Emit.renderKV") [L 1]) $
+          appfn_ (gref "Emit.continueKVList") [L 2]))
     , (stgNil, (0, appcon_ stgUnit []))
     ]
 
@@ -199,7 +194,7 @@ wrapBlock :: LambdaForm
 wrapBlock =
   lam_ 0 1 $
   ann_ "Emit.wrapBlock" 0 $
-  seqall_ [emitMS, appfn_ (Global "Emit.continueKVList") [Local 0], emitME]
+  seqall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 0], emitME]
 
 
 -- | __RENDER(v)
@@ -208,31 +203,31 @@ euRender =
   lam_ 0 1 $
   ann_ "__RENDER" 0 $
   casedef_
-    (Atom (Local 0))
-    [ (stgBlock, (1, appfn_ (Global "Emit.wrapBlock") [Local 1]))
-    , (stgCons, (2, appfn_ (Global "Emit.startList") [Local 1, Local 2]))
-    , (stgNil, (0, appfn_ (Global "Emit.emptyList") []))
+    (Atom (L 0))
+    [ (stgBlock, (1, appfn_ (gref "Emit.wrapBlock") [L 1]))
+    , (stgCons, (2, appfn_ (gref "Emit.startList") [L 1, L 2]))
+    , (stgNil, (0, appfn_ (gref "Emit.emptyList") []))
     , (stgUnit, (0, emitNull))
     , (stgTrue, (0, emitTrue))
     , (stgFalse, (0, emitFalse))
     ] $
-  force_ (appfn_ (Global "META") [Local 1]) $
-  force_ (appfn_ (Global "Emit.forceExportMetadata") [Local 2]) $
-  emitScalar (Local 1)
+  force_ (appfn_ (gref "META") [L 1]) $
+  force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $
+  emitScalar (L 1)
 
 -- | Single argument is the metadata (not the annotated value)
 forceExportMetadata :: LambdaForm
 forceExportMetadata =
   lam_ 0 1 $
   ann_ "Emit.forceExportMetadata" 0 $
-  let b = Local 0
-      l = Local 1
+  let b = L 0
+      l = L 1
    in case_
         (Atom b)
         [ ( stgBlock
           , ( 1
             , force_
-                (appfn_ (Global "Emit.forceExportMetadataKVList") [l])
+                (appfn_ (gref "Emit.forceExportMetadataKVList") [l])
                 (appcon_ stgUnit [])))
         ]
 
@@ -241,16 +236,16 @@ forceExportMetadataKVList :: LambdaForm
 forceExportMetadataKVList =
   lam_ 0 1 $
   ann_ "Emit.forceExportMetadataKVList" 0 $
-  let l = Local 0
-      h = Local 1
-      t = Local 2
+  let l = L 0
+      h = L 1
+      t = L 2
    in case_
         (Atom l)
-        [ (stgNil, (0, Atom (Global "KNIL")))
+        [ (stgNil, (0, Atom (gref "KNIL")))
         , ( stgCons
           , ( 2
-            , force_ (appfn_ (Global "Emit.forceKVNatPair") [h]) $
-              force_ (appfn_ (Global "Emit.forceExportMetadataKVList") [t]) $
+            , force_ (appfn_ (gref "Emit.forceKVNatPair") [h]) $
+              force_ (appfn_ (gref "Emit.forceExportMetadataKVList") [t]) $
               appcon_ stgUnit []))
         ]
 
@@ -259,24 +254,24 @@ isRenderMetadataKey :: LambdaForm
 isRenderMetadataKey =
   lam_ 0 1 $
   ann_ "Emit.isRenderMetadataKey2" 0 $
-  force_ (appbif_ (intrinsicIndex "===") [Local 0, Literal $ NativeSymbol "export"]) $
-  force_ (appbif_ (intrinsicIndex "===") [Local 0, Literal $ NativeSymbol "tag"]) $
-  appfn_ (Global "OR") [Local 1, Local 2]
+  force_ (appbif_ (intrinsicIndex "===") [L 0, V $ NativeSymbol "export"]) $
+  force_ (appbif_ (intrinsicIndex "===") [L 0, V $ NativeSymbol "tag"]) $
+  appfn_ (gref "OR") [L 1, L 2]
 
 
 forceKVNatPair :: LambdaForm
 forceKVNatPair =
   lam_ 0 1 $
   ann_ "Emit.forceKVNatPair" 0 $
-  let pr = Local 0
-      prh = Local 1
+  let pr = L 0
+      prh = L 1
    in casedef_
         (Atom pr)
         [ ( stgCons
           , ( 2
             , casedef_
-                (appfn_ (Global "Emit.isRenderMetadataKey") [prh])
-                [(stgTrue, (0, appfn_ (Global "seqNatList") [pr]))]
+                (appfn_ (gref "Emit.isRenderMetadataKey") [prh])
+                [(stgTrue, (0, appfn_ (gref "seqNatList") [pr]))]
                 (Atom pr)))
         ]
         (panic "Invalid pair (not cons) while evaluating render metadata")

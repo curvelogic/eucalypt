@@ -13,16 +13,15 @@ module Eucalypt.Stg.Intrinsics.Emit
   ) where
 
 import qualified Data.HashMap.Strict.InsOrd as OM
-import Data.Sequence ((!?))
 import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Event
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Block (pruneBlockToMap)
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
-import Eucalypt.Stg.IntrinsicInfo
-import Eucalypt.Stg.Intrinsics.Block (pruneBlockToMap)
-import Eucalypt.Stg.Intrinsics.Common
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -30,7 +29,7 @@ intrinsics =
   , IntrinsicInfo "EMIT}" 0 emitMappingEnd
   , IntrinsicInfo "EMIT[" 0 emitSequenceStart
   , IntrinsicInfo "EMIT]" 0 emitSequenceEnd
-  , IntrinsicInfo "EMITx" 1 emitScalar
+  , IntrinsicInfo "EMITx" 1 (invoke emitScalar)
   , IntrinsicInfo "EMIT0" 0 emitNull
   , IntrinsicInfo "EMITT" 0 emitTrue
   , IntrinsicInfo "EMITF" 0 emitFalse
@@ -67,9 +66,9 @@ emitFalse s _ = emit s OutputFalse
 
 -- | This assumes that all render-relevant metadata has been forced to
 -- native values.
-emitScalar :: MachineState -> ValVec -> IO MachineState
-emitScalar s (ValVec xs) = do
-  let (Just (StgNat n m)) = xs !? 0
+emitScalar :: MachineState -> StgValue -> IO MachineState
+emitScalar s x = do
+  let (StgNat n m) = x
   event <-
     case m of
       Just meta -> flip OutputScalar n <$> renderMeta s meta
@@ -79,7 +78,7 @@ emitScalar s (ValVec xs) = do
 readString :: MachineState -> Address -> IO (Maybe String)
 readString _ms addr =
   peek addr >>= \case
-    Closure {closureCode = LambdaForm {_body = (Atom (Literal (NativeString s)))}} ->
+    Closure {closureCode = LambdaForm {lamBody = (Atom (V (NativeString s)))}} ->
       return . Just $ s
     _ -> return Nothing
 

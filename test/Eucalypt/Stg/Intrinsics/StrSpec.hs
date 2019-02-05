@@ -16,6 +16,7 @@ import Data.Char (toUpper, toLower)
 import Data.List (intercalate, isInfixOf)
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Compiler
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics
@@ -44,10 +45,10 @@ main = hspec spec
 joinStg :: [String] -> String -> StgSyn
 joinStg xs sep =
   letrec_
-    [pc0_ $ thunk_ $ list_ 0 (map (Literal . NativeString) xs) Nothing]
+    [pc0_ $ thunk_ $ list_ 0 (map (V . NativeString) xs) Nothing]
     (force_
-       (appfn_ (Global "seqNatList") [Local 0])
-       (appbif_ (intrinsicIndex "JOIN") [Local 1, Literal (NativeString sep)]))
+       (appfn_ (gref "seqNatList") [L 0])
+       (appbif_ (intrinsicIndex "JOIN") [L 1, V (NativeString sep)]))
 
 joins :: [String] -> String -> Property
 joins xs sep =
@@ -59,7 +60,7 @@ splitStg :: [String] -> String -> StgSyn
 splitStg xs sep =
   appbif_
     (intrinsicIndex "SPLIT")
-    [Literal (NativeString joined), Literal (NativeString sep)]
+    [V (NativeString joined), V (NativeString sep)]
   where
     joined = intercalate sep xs
 
@@ -71,7 +72,7 @@ splits (NonEmpty xs) (RegexSafeString sep) =
       (fmap (components ==) . readStrListReturn)
 
 stg1 :: String -> String -> StgSyn
-stg1 bif s = appbif_ (intrinsicIndex bif) [Literal $ NativeString s]
+stg1 bif s = appbif_ (intrinsicIndex bif) [V $ NativeString s]
 
 letterStg :: String -> StgSyn
 letterStg = stg1 "LETTERS"

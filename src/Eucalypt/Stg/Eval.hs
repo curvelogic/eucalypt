@@ -24,6 +24,7 @@ import Data.Word
 import Eucalypt.Stg.Address (allocate, peek, poke)
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.GlobalInfo (gref)
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn
@@ -43,11 +44,11 @@ allocPartial le ms lf xs = allocate pap
         { papCode = lf
         , papEnv = le
         , papArgs = xs
-        , papArity = a
+        , papArity = fromIntegral a
         , papCallStack = machineCallStack ms
         , papMeta = MetadataPassThrough
         }
-    a = fromIntegral (_bound lf) - envSize xs
+    a = fromIntegral (lamBound lf) - envSize xs
 
 -- | Push an ApplyToArgs continuation on the stack
 pushApplyToArgs :: MonadThrow m => MachineState -> ValVec -> m MachineState
@@ -80,7 +81,7 @@ terminate ms@MachineState{} = ms {machineTerminated = True}
 -- | Call a lambda form by putting args in environment and rewiring
 -- refs then evaluating.
 call :: MonadThrow m => ValVec -> MachineState -> LambdaForm -> ValVec -> m Code
-call env _ms code addrs = return (Eval (_body code) (env <> addrs))
+call env _ms code addrs = return (Eval (lamBody code) (env <> addrs))
 
 resolveAndCall ::
      MonadThrow m
@@ -88,7 +89,7 @@ resolveAndCall ::
   -> ValVec
   -> ValVec
   -> LambdaForm
-  -> RefVec
+  -> SynVec
   -> m Code
 resolveAndCall ms resolveEnv callEnv lf xs = vals resolveEnv ms xs >>= call callEnv ms lf
 
@@ -99,7 +100,7 @@ applyExact ::
   -> ValVec
   -> ValVec
   -> LambdaForm
-  -> RefVec
+  -> SynVec
   -> m MachineState
 applyExact ms env le lf xs = do
   code <- resolveAndCall ms env le lf xs
@@ -117,22 +118,20 @@ applyOver ::
   -> ValVec
   -> ValVec
   -> LambdaForm
-  -> RefVec
+  -> SynVec
   -> m MachineState
-applyOver ms ref _arity _cs env _le LambdaForm {_body = (App (Con _) _)} xs =
-  if length xs == 1
+applyOver ms ref _arity _cs env _le LambdaForm {lamBody = (App (Con _) _)} xs =
+  if refCount xs == 1
     then return $ ms {machineCode = code} //? "CALLBLOCK"
     else throwIn ms AppliedDataStructureToMoreThanOneArgument
   where
-    code =
-      Eval (App (Ref $ Global "MERGE") (Seq.fromList [Seq.index xs 0, ref])) env
+    code = Eval (App (Ref $ gref "MERGE") (xs <> refs [ref])) env
 applyOver ms _ref arity cs env le lf xs = do
-  (enough, over) <- splitVecAt arity <$> vals env ms xs
+  let (enough, over) =
+        splitVecAt arity $ values (env, ms) (nativeToValue <$> xs)
   ms' <- pushApplyToArgs ms over
   code <- call le ms' lf enough
-  return $
-    ms'
-      {machineCode = code, machineCallStack = cs} //? "CALLK"
+  return $ ms' {machineCode = code, machineCallStack = cs} //? "CALLK"
 
 
 
@@ -144,13 +143,13 @@ applyUnder ::
   -> ValVec
   -> ValVec
   -> LambdaForm
-  -> RefVec
+  -> SynVec
   -> m MachineState
-applyUnder ms addr _env _le _lf Empty =
-  return $ ms {machineCode = ReturnFun addr} //? "PAP2-0"
+applyUnder ms addr _env _le _lf xs
+  | refCount xs == 0 = return $ ms {machineCode = ReturnFun addr} //? "PAP2-0"
 applyUnder ms _addr env le lf xs = do
-  values <- vals env ms xs
-  addr <- liftIO $ allocPartial le ms lf values
+  addr <-
+    liftIO $ allocPartial le ms lf $ values (env, ms) (nativeToValue <$> xs)
   return $ ms {machineCode = ReturnFun addr} //? "PAP2"
 
 
@@ -164,11 +163,11 @@ applyPartialExact ::
   -> ValVec
   -> ValVec
   -> LambdaForm
-  -> RefVec
+  -> SynVec
   -> m MachineState
 applyPartialExact ms cs env args le lf xs = do
-  values <- vals env ms xs
-  code <- call le ms lf (args <> values)
+  let remainder = values (env, ms) (nativeToValue <$> xs)
+  code <- call le ms lf (args <> remainder)
   return $
     ms
       { machineCode = code
@@ -187,17 +186,14 @@ applyPartialOver ::
   -> ValVec
   -> ValVec
   -> LambdaForm
-  -> RefVec
+  -> SynVec
   -> m MachineState
 applyPartialOver ms arity cs env args le lf xs = do
-  (enough, over) <- splitVecAt arity <$> vals env ms xs
+  let (enough, over) =
+        splitVecAt arity $ values (env, ms) (nativeToValue <$> xs)
   ms' <- pushApplyToArgs ms over
   code <- call le ms' lf (args <> enough)
-  return $
-    ms'
-      { machineCode = code
-      , machineCallStack = cs
-      } //? "PCALLK"
+  return $ ms' {machineCode = code, machineCallStack = cs} //? "PCALLK"
 
 
 
@@ -210,13 +206,13 @@ applyPartialUnder ::
   -> ValVec
   -> ValVec
   -> LambdaForm
-  -> RefVec
+  -> SynVec
   -> m MachineState
-applyPartialUnder ms addr _env _args _le _lf Empty =
-  return $
-  ms {machineCode = ReturnFun addr } //? "PCALL PAP2-0"
+applyPartialUnder ms addr _env _args _le _lf rs
+  | refCount rs == 0 =
+    return $ ms {machineCode = ReturnFun addr} //? "PCALL PAP2-0"
 applyPartialUnder ms _addr env args le lf xs = do
-  fresh <- vals env ms xs
+  let fresh = values (env, ms) (nativeToValue <$> xs)
   addr <- liftIO $ allocPartial le ms lf (args <> fresh)
   return $ ms {machineCode = ReturnFun addr} //? "PCALL PAP2"
 
@@ -234,13 +230,13 @@ step ms@MachineState {machineTerminated = True} =
 -- | APPLY
 step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" #-} do
   ms <- prepareStep "EVAL APP" ms0
-  let len = length xs
+  let len = refCount xs
   case f of
     Ref r -> do
       addr <- resolveHeapObject env ms r
       obj <- liftIO $ peek addr
       case obj of
-        Closure lf@LambdaForm {_bound = ar} le cs _meta ->
+        Closure lf@LambdaForm {lamBound = ar} le cs _meta ->
           case compare (fromIntegral len) ar of
             EQ -> applyExact ms env le lf xs
             GT -> applyOver ms r ar cs env le lf xs
@@ -263,10 +259,11 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
 
 
 -- | LET
-step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = {-# SCC "EvalLet" #-}do
+step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = {-# SCC "EvalLet" #-} do
   ms <- prepareStep "EVAL LET" ms0
-  addrs <- liftIO $ traverse (allocClosure env ms) pcs --TODO
-  let env' = env <> (ValVec . Seq.fromList . map StgAddr . toList) addrs
+  addrs <- liftIO $ traverse (allocClosure env ms) pcs
+  let addrVec = StgAddr <$> fromSeq addrs
+  let env' = env <> addrVec
   return $ setCode ms (Eval body env')
 
 
@@ -275,7 +272,7 @@ step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = {-# SCC "EvalL
 step ms0@MachineState {machineCode = (Eval (LetRec pcs body) env)} = {-# SCC "EvalLetRec" #-} do
   ms <- prepareStep "EVAL LETREC" ms0
   addrs <- liftIO $ sequenceA $ replicate (length pcs) (allocate BlackHole)
-  let env' = env <> (toValVec . map StgAddr) addrs
+  let env' = env <> (toVec . map StgAddr) addrs
   closures <- traverse (buildClosure env' ms) pcs
   liftIO $ zipWithM_ poke addrs (toList closures)
   return $ setCode ms (Eval body env')
@@ -297,7 +294,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon
     (Just (Branch k le)) ->
       case selectBranch k t of
         (Just (branchArity, expr)) -> do
-          env <- argsToEnv ms' le branchArity xs
+          env <- argsToEnv ms' le (fromIntegral branchArity) xs
           return $ setCode ms' (Eval expr env)
         Nothing -> do
           addr <- allocateForDefault ms'
@@ -313,21 +310,19 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon
     (Just (ApplyToArgs addrs)) -> do
       addr <- allocateForDefault ms'
       let (env', args') = extendEnv mempty $ singleton (StgAddr addr) <> addrs
-      return $ setCode ms' (Eval (App (Ref $ args' `Seq.index` 0) (Seq.drop 1 args')) env')
-
+      let (f, xs') = headAndTail args'
+      return $ setCode ms' (Eval (App (Ref f) xs') env')
     Nothing -> return $ terminate ms'
   where
     argsToEnv ms le expectedArity args =
       if envSize args < expectedArity
-        then do
-          e <- globalAddress ms "KEMPTYBLOCK"
-          return $ le <> args <> toValVec [fromMaybe e meta]
+        then return $ le <> args <> toVec [fromMaybe (retrieveGlobal ms "KEMPTYBLOCK") meta]
         else return (le <> args)
     allocateForDefault ms =
       liftIO $
       allocate
         (Closure
-           (value_ (App (Con t) (locals 0 (envSize xs))))
+           (value_ (App (Con t) (range 0 (envSize xs))))
            xs
            (machineCallStack ms) $
          maybe MetadataPassThrough MetadataValue meta)
@@ -336,7 +331,7 @@ step ms0@MachineState {machineCode = (ReturnCon t xs meta)} = {-# SCC "ReturnCon
       poke
         a
         (Closure
-           (standardConstructor (envSize args) tag)
+           (standardConstructor (fromIntegral (envSize args)) tag)
            args
            (machineCallStack ms)
            md)
@@ -358,7 +353,7 @@ step ms0@MachineState {machineCode = (ReturnLit nat meta)} = {-# SCC "ReturnLit"
     (Just (Update a storedMeta)) -> do
       let newMeta = asMeta meta <> storedMeta
       liftIO $
-        poke a (Closure (value_ (Atom (Literal nat))) mempty mempty newMeta)
+        poke a (Closure (value_ (Atom (V nat))) mempty mempty newMeta)
       return . setRule "UPDATELIT" $
         setCode ms' (ReturnLit nat (fromMeta newMeta))
     (Just (ApplyToArgs _)) -> throwIn ms' ArgInsteadOfBranchTable
@@ -374,10 +369,8 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = {-# SCC "ReturnFun" #-} do
   case entry of
     (Just (ApplyToArgs addrs)) ->
       let (env', args') = extendEnv mempty $ singleton (StgAddr r) <> addrs
-       in return $
-          setCode
-            ms'
-            (Eval (App (Ref $ args' `Seq.index` 0) (Seq.drop 1 args')) env')
+          (f, xs) = headAndTail args'
+       in return $ setCode ms' (Eval (App (Ref f) xs) env')
     -- RETFUN into case default... (for forcing lambda-valued exprs)
     (Just (Branch (BranchTable _ (Just expr)) le)) ->
       return $ setCode ms' (Eval expr (le <> singleton (StgAddr r)))
@@ -386,14 +379,14 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = {-# SCC "ReturnFun" #-} do
         poke
           a
           (Closure
-             (value_ (Atom (Local 0)))
+             (value_ (Atom (L 0)))
              (singleton (StgAddr r))
              (machineCallStack ms)
              storedMeta)
       return . setRule "UPDATEFN" $ ms'
     _ ->
       return $
-      setCode ms' (Eval (App (Ref $ Local 0) mempty) (singleton (StgAddr r)))
+      setCode ms' (Eval (App (Ref $ L 0) mempty) (singleton (StgAddr r)))
 
 
 -- TODO: Pull CON and THUNK objects out of Closure to clean this up
@@ -402,14 +395,14 @@ step ms0@MachineState {machineCode = (ReturnFun r)} = {-# SCC "ReturnFun" #-} do
 -- ReturnCon or ReturnLit when we reach a value
 step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = {-# SCC "EvalAtom" #-} do
   ms <- prepareStep "EVAL ATOM" ms0
-  v <- val env ms ref
+  let v = value (env, ms) $ nativeToValue <$> ref
   case v of
     StgAddr addr -> do
       obj <- liftIO $ peek addr
       case obj of
-        Closure LambdaForm {_update = True, _body = code} le cs meta ->
+        Closure LambdaForm {lamUpdate = True, lamBody = code} le cs meta ->
           setRule "THUNK" <$> pushAndEval ms addr code le cs meta
-        Closure LambdaForm {_bound = 0, _body = code} le cs meta ->
+        Closure LambdaForm {lamBound = 0, lamBody = code} le cs meta ->
           case meta of
             MetadataBlank ->
               setRule "BLANKMETA" <$> pushAndEval ms addr code le cs meta
@@ -417,8 +410,8 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = {-# SCC "EvalAtom"
               setRule "SETMETA" <$> pushAndEval ms addr code le cs meta
             MetadataPassThrough ->
               return $
-              setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
-        PartialApplication LambdaForm {_body = code} le _args 0 cs meta ->
+              setCode ms (Eval (App (Ref $ L 0) mempty) (singleton v))
+        PartialApplication LambdaForm {lamBody = code} le _args 0 cs meta ->
           case meta of
             MetadataBlank ->
               setRule "BLANKMETAPAP" <$> pushAndEval ms addr code le cs meta
@@ -426,7 +419,7 @@ step ms0@MachineState {machineCode = (Eval (Atom ref) env)} = {-# SCC "EvalAtom"
               setRule "SETMETAPAP" <$> pushAndEval ms addr code le cs meta
             MetadataPassThrough ->
               return $
-              setCode ms (Eval (App (Ref $ Local 0) mempty) (singleton v))
+              setCode ms (Eval (App (Ref $ L 0) mempty) (singleton v))
         Closure {} ->
           (return . setRule "RETURNFUN" . (`setCode` ReturnFun addr)) ms
         PartialApplication {} ->

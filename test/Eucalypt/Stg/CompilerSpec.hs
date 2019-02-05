@@ -13,7 +13,6 @@ import Eucalypt.Core.AnonSyn as C
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.GlobalInfo
-import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Native
@@ -35,43 +34,43 @@ spec = do
     it "creates list of natives" $ do
       let l = litList_ 0 (map (NativeNumber . fromInteger) [0, 1, 2])
       (P.render . prettify) l `shouldBe`
-        "letrec {2, G[KNIL]} \\ 2 0 -> C|1 E[0] E[1]\n       {1, E[0]} \\ 2 0 -> C|1 E[0] E[1]\n       {0, E[1]} \\ 2 0 -> C|1 E[0] E[1]\n in *E[2]"
+        "letrec {2 G[28]} \\ 2 0 -> C|1 E[0] E[1]\n       {1 E[0]} \\ 2 0 -> C|1 E[0] E[1]\n       {0 E[1]} \\ 2 0 -> C|1 E[0] E[1]\n in *E[2]"
   describe "list_" $
     it "preserves metadata" $ do
-      let l = list_ 3 [Local 0, Local 1] (Just $ Local 2)
+      let l = list_ 3 [L 0, L 1] (Just $ L 2)
       (P.render . prettify) l `shouldBe`
-        "letrec {E[1], G[KNIL]} \\ 2 0 -> C|1 E[0] E[1]\n       {E[0], E[3]}`E[2]` \\ 2 0 -> C|1 E[0] E[1]\n in *E[4]"
+        "letrec {E[1] G[28]} \\ 2 0 -> C|1 E[0] E[1]\n       {E[0] E[3]}`E[2]` \\ 2 0 -> C|1 E[0] E[1]\n in *E[4]"
   describe "compilation" $ do
     context "compiles primitives" $ do
       it "compiles ints" $
-        comp (C.int 2) `shouldBe` Atom (Literal (NativeNumber 2))
+        comp (C.int 2) `shouldBe` Atom (V (NativeNumber 2))
       it "compiles strings" $
-        comp (C.str "foo") `shouldBe` Atom (Literal (NativeString "foo"))
+        comp (C.str "foo") `shouldBe` Atom (V (NativeString "foo"))
       it "compiles bools" $
-        comp (C.corebool False) `shouldBe` Atom (Global "FALSE")
+        comp (C.corebool False) `shouldBe` Atom (gref "FALSE")
     context "compiles metadata-annotated primitives" $ do
       it "compiles metadata annotated ints" $
-        compile 0 emptyContext (Just (Global "Q")) (C.int 2 :: CoreExpr) `shouldBe`
+        compile 0 emptyContext (Just (gref "KNIL")) (C.int 2 :: CoreExpr) `shouldBe`
         appbif_
           (intrinsicIndex "WITHMETA")
-          [Global "Q", Literal (NativeNumber 2.0)]
+          [gref "KNIL", V (NativeNumber 2.0)]
       it "compiles metadata annotated symbols" $
-        compile 0 emptyContext (Just (Global "Q")) (C.sym "foo" :: CoreExpr) `shouldBe`
+        compile 0 emptyContext (Just (gref "KNIL")) (C.sym "foo" :: CoreExpr) `shouldBe`
         appbif_
           (intrinsicIndex "WITHMETA")
-          [Global "Q", Literal (NativeSymbol "foo")]
+          [gref "KNIL", V (NativeSymbol "foo")]
     context "handles simple lists" $ do
       it "compiles an empty list" $
-        comp (C.corelist []) `shouldBe` Atom (Global "KNIL")
+        comp (C.corelist []) `shouldBe` Atom (gref "KNIL")
       it "compiles an singleton list" $
         comp (C.corelist [C.int 2]) `shouldBe`
         letrec_
-          [pc_ [Literal $ NativeNumber 2, Global "KNIL"] consConstructor]
-          (Atom $ Local 0)
+          [pc_ [V $ NativeNumber 2, gref "KNIL"] consConstructor]
+          (Atom $ L 0)
     context "handles simple blocks" $ do
       it "compiles an empty block" $
         comp (C.block []) `shouldBe`
-        let_ [pc0_ nilConstructor] (appcon_ stgBlock [Local 0])
+        let_ [pc0_ nilConstructor] (appcon_ stgBlock [L 0])
       it "compiles an simple data block" $
         comp (C.block [C.element "a" $ C.str "a", C.element "b" $ C.str "b"]) `shouldBe`
         asAndBs
@@ -80,9 +79,9 @@ spec = do
       comp (C.app (C.bif "CAT") [C.int 5, C.app (C.bif "ADD") [C.int 1]]) `shouldBe`
       let_
         [ pc0_ $
-          thunk_ $ ann_ "" 0 $ appfn_ (Global "ADD") [Literal (NativeNumber 1)]
+          thunk_ $ ann_ "" 0 $ appfn_ (gref "ADD") [V (NativeNumber 1)]
         ]
-        (appfn_ (Global "CAT") [Literal (NativeNumber 5), Local 0])
+        (appfn_ (gref "CAT") [V (NativeNumber 5), L 0])
     context "handles lookup" $
       it "compiles lookup correctly" $
       comp
@@ -91,7 +90,7 @@ spec = do
            "a") `shouldBe`
       let_
         [pc0_ $ thunk_ $ ann_ "" 0 asAndBs]
-        (appfn_ (Global "LOOKUP") [Literal $ NativeSymbol "a", Local 0])
+        (appfn_ (gref "LOOKUP") [V $ NativeSymbol "a", L 0])
     context "manages envsize for subexprs" $
       it "factors both free and bound into envsize for subexprs" $
       comp
@@ -106,25 +105,25 @@ spec = do
            ]
            (C.app (C.bif "CAT") [C.int 5, C.app (var "s") [var "k", var "k"]])) `shouldBe`
       letrec_
-        [ pc0_ $ lam_ 0 2 (ann_ "k" 0 $ Atom (Local 0))
+        [ pc0_ $ lam_ 0 2 (ann_ "k" 0 $ Atom (L 0))
         , pc0_ $
           lam_
             0
             3
             (ann_ "s" 0 $
              let_
-               [ pc_ [Local 1, Local 2] $
-                 thunkn_ 2 $ ann_ "" 0 $ appfn_ (Local 0) [Local 1]
-               , pc_ [Local 0, Local 2] $
-                 thunkn_ 2 $ ann_ "" 0 $ appfn_ (Local 0) [Local 1]
+               [ pc_ [L 1, L 2] $
+                 thunkn_ 2 $ ann_ "" 0 $ appfn_ (L 0) [L 1]
+               , pc_ [L 0, L 2] $
+                 thunkn_ 2 $ ann_ "" 0 $ appfn_ (L 0) [L 1]
                ]
-               (appfn_ (Global "CAT") [Local 3, Local 4]))
+               (appfn_ (gref "CAT") [L 3, L 4]))
         ]
         (let_
-           [ pc_ [Local 1, Local 0] $
-             thunkn_ 2 $ ann_ "" 0 $ appfn_ (Local 0) [Local 1, Local 1]
+           [ pc_ [L 1, L 0] $
+             thunkn_ 2 $ ann_ "" 0 $ appfn_ (L 0) [L 1, L 1]
            ]
-           (appfn_ (Global "CAT") [Literal (NativeNumber 5), Local 2]))
+           (appfn_ (gref "CAT") [V (NativeNumber 5), L 2]))
   applySpec
 
 asAndBs :: StgSyn
@@ -132,23 +131,23 @@ asAndBs = blk
   where
     a2a =
       ann_ "<item>" 0 $
-      list_ 0 [Literal (NativeSymbol "a"), Literal (NativeString "a")] Nothing
+      list_ 0 [V (NativeSymbol "a"), V (NativeString "a")] Nothing
     b2b =
       ann_ "<item>" 0 $
-      list_ 0 [Literal (NativeSymbol "b"), Literal (NativeString "b")] Nothing
+      list_ 0 [V (NativeSymbol "b"), V (NativeString "b")] Nothing
     els =
       ann_ "<content>" 0 $
       let_
         [pc0_ $ thunk_ a2a, pc0_ $ thunk_ b2b]
-        (list_ 2 [Local 0, Local 1] Nothing)
-    blk = let_ [pc0_ $ thunk_ els] (appcon_ stgBlock [Local 0])
+        (list_ 2 [L 0, L 1] Nothing)
+    blk = let_ [pc0_ $ thunk_ els] (appcon_ stgBlock [L 0])
 
 
 applySpec :: Spec
 applySpec =
   describe "compilation of CoreApply" $ do
     it "reads strictness" $
-      standardGlobalStrictness "ADD" `shouldBe` [Strict, Strict]
+      globalSignature "ADD" `shouldBe` [Strict, Strict]
     it "uses cases for strict arguments" $
       comp
         (C.app
@@ -157,9 +156,9 @@ applySpec =
            , C.app (C.bif "SUB") [C.int 3, C.int 2]
            ]) `shouldBe`
       force_
-        (appfn_ (Global "SUB") [Literal $ nat 3, Literal $ nat 2])
-        (force_ (appfn_ (Global "SUB") [Literal $ nat 3, Literal $ nat 2]) $
-         appfn_ (Global "ADD") [Local 0, Local 1])
+        (appfn_ (gref "SUB") [V $ nat 3, V $ nat 2])
+        (force_ (appfn_ (gref "SUB") [V $ nat 3, V $ nat 2]) $
+         appfn_ (gref "ADD") [L 0, L 1])
     it "uses lets for non-strict arguments" $
       comp (C.app (C.bif "BLOCK") [C.corelist [C.sym "foo"]]) `shouldBe`
       let_
@@ -167,10 +166,10 @@ applySpec =
           thunk_ $
           ann_ "" 0 $
           letrec_
-            [pc_ [Literal $ NativeSymbol "foo", Global "KNIL"] consConstructor]
-            (Atom $ Local 0)
+            [pc_ [V $ NativeSymbol "foo", gref "KNIL"] consConstructor]
+            (Atom $ L 0)
         ]
-        (appfn_ (Global "BLOCK") [Local 0])
+        (appfn_ (gref "BLOCK") [L 0])
     it "combines cases and lets correctly" $
       comp
         (C.app
@@ -180,9 +179,9 @@ applySpec =
            , C.app (C.bif "BOMB") []
            ]) `shouldBe`
       force_
-        (appfn_ (Global "TRUE") [])
+        (appfn_ (gref "TRUE") [])
         (let_
-           [ pc0_ $ thunk_ $ ann_ "" 0 $ appfn_ (Global "BOMB") []
-           , pc0_ $ thunk_ $ ann_ "" 0 $ appfn_ (Global "BOMB") []
+           [ pc0_ $ thunk_ $ ann_ "" 0 $ appfn_ (gref "BOMB") []
+           , pc0_ $ thunk_ $ ann_ "" 0 $ appfn_ (gref "BOMB") []
            ] $
-         appfn_ (Global "IF") [Local 0, Local 1, Local 2])
+         appfn_ (gref "IF") [L 0, L 1, L 2])

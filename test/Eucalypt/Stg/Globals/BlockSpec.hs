@@ -13,6 +13,7 @@ module Eucalypt.Stg.Globals.BlockSpec
   ) where
 
 import Eucalypt.Stg.Compiler
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.StgTestUtil
@@ -25,9 +26,9 @@ blockA :: StgSyn
 blockA =
   letrec_
     [ pc0_ $ thunk_ $ kv "a" $ nat 1
-    , pc_ [Local 0] $ thunkn_ 1 $ list_ 1 [Local 0] Nothing
+    , pc_ [L 0] $ thunkn_ 1 $ list_ 1 [L 0] Nothing
     ] $
-  appcon_ stgBlock [Local 1]
+  appcon_ stgBlock [L 1]
 
 blockABC :: StgSyn
 blockABC =
@@ -35,17 +36,17 @@ blockABC =
     [ pc0_ $ thunk_ $ kv "a" $ nat 1
     , pc0_ $ thunk_ $ kv "b" $ nat 2
     , pc0_ $ thunk_ $ kv "c" $ nat 3
-    , pc_ (map Local [0 .. 2]) $ thunkn_ 3 $ list_ 3 (map Local [0 .. 2]) Nothing
+    , pc_ (map L [0 .. 2]) $ thunkn_ 3 $ list_ 3 (map L [0 .. 2]) Nothing
     ] $
-  appcon_ stgBlock [Local 3]
+  appcon_ stgBlock [L 3]
 
 mergeListTwice :: StgSyn -> StgSyn
 mergeListTwice b =
   letrec_
     [ pc0_ $ thunk_ b
-    , pc_ [Local 0] $ thunkn_ 1 $ appfn_ (Global "MERGE") [Local 0, Local 0]
+    , pc_ [L 0] $ thunkn_ 1 $ appfn_ (gref "MERGE") [L 0, L 0]
     ] $
-  appfn_ (Global "ELEMENTS") [Local 1]
+  appfn_ (gref "ELEMENTS") [L 1]
 
 spec :: Spec
 spec =

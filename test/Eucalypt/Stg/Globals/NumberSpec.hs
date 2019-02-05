@@ -13,6 +13,7 @@ module Eucalypt.Stg.Globals.NumberSpec
   ) where
 
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.StgTestUtil
@@ -22,7 +23,7 @@ main :: IO ()
 main = hspec spec
 
 parseNumber :: String -> StgSyn
-parseNumber text = appfn_ (Global "NUMPARSE") [Literal $ NativeString text]
+parseNumber text = appfn_ (gref "NUMPARSE") [V $ NativeString text]
 
 
 spec :: Spec

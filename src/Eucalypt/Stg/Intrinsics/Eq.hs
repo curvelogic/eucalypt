@@ -7,20 +7,17 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 
-module Eucalypt.Stg.Intrinsics.Eq where
+module Eucalypt.Stg.Intrinsics.Eq
+  ( intrinsics
+  ) where
 
+import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common
-import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
-import Data.Sequence ((!?))
+import Eucalypt.Stg.Native
 
-toNative :: StgValue -> Maybe Native
-toNative (StgNat n _) = Just n
-toNative _ = Nothing
+intrinsics :: [IntrinsicInfo]
+intrinsics = [IntrinsicInfo "===" 2 (invoke natEq)]
 
-natEq :: MachineState -> ValVec -> IO MachineState
-natEq ms (ValVec xs) =
-  returnBool ms $
-  case (xs !? 0 >>= toNative, xs !? 1 >>= toNative) of
-    (Just l, Just r) -> l == r
-    _ -> False
+natEq :: MachineState -> Native -> Native -> IO MachineState
+natEq ms l r = returnBool ms $ l == r

@@ -8,18 +8,22 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Intrinsics.Number
-  ( parse
+  ( intrinsics
   ) where
 
+import Data.Scientific
 import Eucalypt.Stg.Error
-import Eucalypt.Stg.Native
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Native
 import Eucalypt.Syntax.Ast (PrimitiveLiteral(..))
 import Eucalypt.Syntax.ParseExpr (number)
-import Data.Scientific
-import Data.Sequence ((!?))
 import qualified Text.Megaparsec as M
 
+
+intrinsics :: [IntrinsicInfo]
+intrinsics = [IntrinsicInfo "NUMPARSE" 1 (invoke parse)]
 
 toNative :: PrimitiveLiteral -> Maybe Native
 toNative (VInt n) = Just . NativeNumber . fromIntegral $ n
@@ -27,9 +31,8 @@ toNative (VFloat f) = Just . NativeNumber . fromFloatDigits $ f
 toNative _ = Nothing
 
 -- | Parse text into a number
-parse :: MachineState -> ValVec -> IO MachineState
-parse ms (ValVec args) = do
-  let (Just (StgNat (NativeString text) _)) = args !? 0
+parse :: MachineState -> String -> IO MachineState
+parse ms text = do
   let num = M.parseMaybe number text >>= toNative
   case num of
     (Just n) -> return $ setCode ms (ReturnLit n Nothing)

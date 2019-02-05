@@ -18,70 +18,43 @@ import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Tags
 import qualified Data.Map.Strict as MS
-import Data.Sequence ((!?))
-
-{-# ANN module ("HLint: ignore Reduce duplication" :: String) #-}
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
-  [ IntrinsicInfo "EMPTYDICT" 0 emptyDict
-  , IntrinsicInfo "DICTCONTAINSKEY" 2 dictContainsKey
-  , IntrinsicInfo "DICTGET" 2 dictGet
-  , IntrinsicInfo "DICTPUT" 2 dictPut
-  , IntrinsicInfo "DICTDEL" 2 dictDel
-  , IntrinsicInfo "DICTENTRIES" 2 dictEntries
+  [ IntrinsicInfo "EMPTYDICT" 0 (invoke emptyDict)
+  , IntrinsicInfo "DICTCONTAINSKEY" 2 (invoke dictContainsKey)
+  , IntrinsicInfo "DICTGET" 2 (invoke dictGet)
+  , IntrinsicInfo "DICTPUT" 2 (invoke dictPut)
+  , IntrinsicInfo "DICTDEL" 2 (invoke dictDel)
+  , IntrinsicInfo "DICTENTRIES" 2 (invoke dictEntries)
   ]
 
-getDictAndKey
-  :: MachineState -> ValVec -> IO (MS.Map Native Native, Native)
-getDictAndKey ms args = do
-  ns <- getNatives ms args
-  let (Just (NativeDict d)) = ns !? 0
-  let (Just k) = ns !? 1
-  return (d, k)
-
-getDictKeyAndValue
-  :: MachineState
-     -> ValVec -> IO (MS.Map Native Native, Native, Native)
-getDictKeyAndValue ms args= do
-  ns <- getNatives ms args
-  let (Just (NativeDict d)) = ns !? 0
-  let (Just k) = ns !? 1
-  let (Just v) = ns !? 2
-  return (d, k, v)
-
 -- | __EMPTYDICT
-emptyDict :: MachineState -> ValVec -> IO MachineState
-emptyDict ms _ = return $ setCode ms (ReturnLit (NativeDict MS.empty) Nothing)
+emptyDict :: MachineState -> IO MachineState
+emptyDict ms = return $ setCode ms (ReturnLit (NativeDict MS.empty) Nothing)
 
 -- | __DICTCONTAINSKEY(d, k)
-dictContainsKey :: MachineState -> ValVec -> IO MachineState
-dictContainsKey ms args = do
-  (d, k) <- getDictAndKey ms args
+dictContainsKey :: MachineState -> MS.Map Native Native -> Native -> IO MachineState
+dictContainsKey ms d k =
   return $ setCode ms (ReturnCon (boolTag $ k `MS.member` d) mempty Nothing)
 
 -- | __DICTGET(d, k)
-dictGet :: MachineState -> ValVec -> IO MachineState
-dictGet ms args = do
-  (d, k) <- getDictAndKey ms args
+dictGet :: MachineState -> MS.Map Native Native -> Native -> IO MachineState
+dictGet ms d k =
   case MS.lookup k d of
     Just n -> return $ setCode ms (ReturnLit n Nothing)
     Nothing -> throwIn ms $ DictKeyNotFound k
 
 -- | __DICTPUT(d, k, v)
-dictPut :: MachineState -> ValVec -> IO MachineState
-dictPut ms args = do
-  (d, k, v) <- getDictKeyAndValue ms args
+dictPut :: MachineState -> MS.Map Native Native -> Native -> Native -> IO MachineState
+dictPut ms d k v =
   return $ setCode ms (ReturnLit (NativeDict $ MS.insert k v d) Nothing)
 
 -- | __DICTDEL(d, k)
-dictDel :: MachineState -> ValVec -> IO MachineState
-dictDel ms args = do
-  (d, k) <- getDictAndKey ms args
+dictDel :: MachineState -> MS.Map Native Native -> Native -> IO MachineState
+dictDel ms d k =
   return $ setCode ms (ReturnLit (NativeDict $ MS.delete k d) Nothing)
 
 -- | __DICTENTRIES(d)
-dictEntries :: MachineState -> ValVec -> IO MachineState
-dictEntries ms (ValVec args) = do
-  let (Just (StgNat (NativeDict d) _)) = args !? 0
-  returnNatPairList ms (MS.assocs d)
+dictEntries :: MachineState -> MS.Map Native Native -> IO MachineState
+dictEntries ms d = returnNatPairList ms (MS.assocs d)

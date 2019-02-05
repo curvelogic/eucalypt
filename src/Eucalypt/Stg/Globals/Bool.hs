@@ -8,18 +8,22 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Globals.Bool
-  ( euTrue
-  , euFalse
-  , euNot
-  , euAnd
-  , euOr
-  , euIf
+  ( globals
   ) where
 
 import Data.Word
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
+globals :: [(String, LambdaForm)]
+globals =
+  [ ("TRUE", euTrue)
+  , ("FALSE", euFalse)
+  , ("NOT", euNot)
+  , ("AND", euAnd)
+  , ("OR", euOr)
+  , ("IF", euIf)
+  ]
 
 falseBranch :: (Word64, StgSyn)
 falseBranch = (0, appcon_ stgFalse [])
@@ -45,7 +49,7 @@ euNot =
   lam_ 0 1 $
   ann_ "__NOT" 0 $
   case_
-    (Atom (Local 0))
+    (Atom (L 0))
     [(stgTrue, falseBranch), (stgFalse, trueBranch)]
 
 
@@ -56,12 +60,12 @@ euAnd =
   lam_ 0 2 $
   ann_ "__AND" 0 $
   case_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ (stgFalse, falseBranch)
     , ( stgTrue
       , ( 0
         , case_
-            (Atom (Local 1))
+            (Atom (L 1))
             [(stgFalse, falseBranch), (stgTrue, trueBranch)]))
     ]
 
@@ -73,12 +77,12 @@ euOr =
   lam_ 0 2 $
   ann_ "__OR" 0 $
   case_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ (stgTrue, trueBranch)
     , ( stgFalse
       , ( 0
         , case_
-            (Atom (Local 1))
+            (Atom (L 1))
             [(stgTrue, trueBranch), (stgFalse, falseBranch)]))
     ]
 
@@ -90,5 +94,5 @@ euIf =
   lam_ 0 3 $
   ann_ "__IF" 0 $
   case_
-    (Atom (Local 0))
-    [(stgTrue, (0, Atom $ Local 1)), (stgFalse, (0, Atom $ Local 2))]
+    (Atom (L 0))
+    [(stgTrue, (0, Atom $ L 1)), (stgFalse, (0, Atom $ L 2))]

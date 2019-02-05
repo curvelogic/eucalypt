@@ -12,8 +12,9 @@ module Eucalypt.Stg.Globals.EqSpec
   , spec
   ) where
 
-import Eucalypt.Stg.StgTestUtil
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
+import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Test.Hspec
@@ -28,71 +29,71 @@ spec =
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeString "foo", Literal $ NativeString "foo"]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeString "foo", V $ NativeString "foo"]) `shouldReturn`
       stgTrue
     it "equates equal symbols" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeSymbol "foo", Literal $ NativeSymbol "foo"]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeSymbol "foo", V $ NativeSymbol "foo"]) `shouldReturn`
       stgTrue
     it "equates equal ints" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeNumber 9, Literal $ NativeNumber 9]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeNumber 9, V $ NativeNumber 9]) `shouldReturn`
       stgTrue
     it "equates equal floats" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeNumber 9.9, Literal $ NativeNumber 9.9]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeNumber 9.9, V $ NativeNumber 9.9]) `shouldReturn`
       stgTrue
     it "equates equal bools" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Global "TRUE", Global "TRUE"]) `shouldReturn`
+           (gref "EQ")
+           [gref "TRUE", gref "TRUE"]) `shouldReturn`
       stgTrue
     it "distinguishes distinct strings" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeString "foo", Literal $ NativeString "bar"]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeString "foo", V $ NativeString "bar"]) `shouldReturn`
       stgFalse
     it "distinguishes distinct symbols" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeSymbol "foo", Literal $ NativeSymbol "bar"]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeSymbol "foo", V $ NativeSymbol "bar"]) `shouldReturn`
       stgFalse
     it "distinguishes distinct ints" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeNumber 10, Literal $ NativeNumber 9]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeNumber 10, V $ NativeNumber 9]) `shouldReturn`
       stgFalse
     it "distinguishes distinct floats" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Literal $ NativeNumber 10.9, Literal $ NativeNumber 9.9]) `shouldReturn`
+           (gref "EQ")
+           [V $ NativeNumber 10.9, V $ NativeNumber 9.9]) `shouldReturn`
       stgFalse
     it "distinguishes distinct bools" $
       conReturn <$>
       test
         (appfn_
-           (Global "EQ")
-           [Global "FALSE", Global "TRUE"]) `shouldReturn`
+           (gref "EQ")
+           [gref "FALSE", gref "TRUE"]) `shouldReturn`
       stgFalse
     context "handles lists" $ do
       it "agrees [:a, :b, :c] = [:a, :b, :c]" $
@@ -102,7 +103,7 @@ spec =
              [ pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              , pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              ]
-             (appfn_ (Global "EQ") [Local 0, Local 1])) `shouldReturn`
+             (appfn_ (gref "EQ") [L 0, L 1])) `shouldReturn`
         stgTrue
       it "denies [:a, :b, :c] = [:a, :b]" $
         conReturn <$>
@@ -111,7 +112,7 @@ spec =
              [ pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              , pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b"])
              ]
-             (appfn_ (Global "EQ") [Local 0, Local 1])) `shouldReturn`
+             (appfn_ (gref "EQ") [L 0, L 1])) `shouldReturn`
         stgFalse
       it "denies [:a, :b] = [:a, :b, :c]" $
         conReturn <$>
@@ -120,5 +121,5 @@ spec =
              [ pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b"])
              , pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])
              ]
-             (appfn_ (Global "EQ") [Local 0, Local 1])) `shouldReturn`
+             (appfn_ (gref "EQ") [L 0, L 1])) `shouldReturn`
         stgFalse

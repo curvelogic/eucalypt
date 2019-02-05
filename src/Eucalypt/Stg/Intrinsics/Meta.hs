@@ -8,40 +8,43 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Intrinsics.Meta
-  ( meta
-  , withMeta
+  ( intrinsics
   ) where
 
-import Data.Sequence ((!?))
-import Eucalypt.Stg.Address (peek, allocate)
+import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.GlobalInfo
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn
 
+intrinsics :: [IntrinsicInfo]
+intrinsics =
+  [ IntrinsicInfo "META" 1 (invoke meta)
+  , IntrinsicInfo "WITHMETA" 2 (invoke withMeta)
+  ]
+
 -- | Extract meta from (assumed NF) value
-meta :: MachineState -> ValVec -> IO MachineState
-meta ms (ValVec xs) = do
-  metaval <- case xs !? 0 of
-    (Just (StgNat _ m)) -> return m
-    (Just (StgAddr addr)) -> objectMeta <$> peek addr
-    Nothing -> throwIn ms MissingArgument
+meta :: MachineState -> StgValue -> IO MachineState
+meta ms val = do
+  metaval <- case val of
+    (StgNat _ m) -> return m
+    (StgAddr addr) -> objectMeta <$> peek addr
   case metaval of
-    (Just v) -> return $ setCode ms (Eval (Atom $ Local 0) (singleton v))
-    Nothing -> return $ setCode ms (Eval (Atom $ Global "KEMPTYBLOCK") mempty)
+    (Just v) -> return $ setCode ms (Eval (Atom $ L 0) (singleton v))
+    Nothing -> return $ setCode ms (Eval (Atom $ gref "KEMPTYBLOCK") mempty)
 
 -- | Override the metadata of a value
-withMeta :: MachineState -> ValVec -> IO MachineState
-withMeta ms (ValVec xs) = do
-  let m = xs !? 0
-  let v = xs !? 1
+withMeta :: MachineState -> StgValue -> StgValue -> IO MachineState
+withMeta ms m v =
   case v of
-    (Just (StgNat n _)) -> return $ setCode ms (ReturnLit n m)
-    (Just (StgAddr a)) -> do
+    (StgNat n _) -> return $ setCode ms (ReturnLit n (Just m))
+    (StgAddr a) -> do
       obj <- peek a
       newAddr <-
         case obj of
-          c@Closure {} -> allocate c {closureMeta = asMeta m}
-          p@PartialApplication {} -> allocate p {papMeta = asMeta m}
+          c@Closure {} -> allocate c {closureMeta = asMeta (Just m)}
+          p@PartialApplication {} -> allocate p {papMeta = asMeta (Just m)}
           _ -> throwIn ms AddMetaToBlackHole
-      return $ setCode ms (Eval (Atom $ Local 0) (singleton (StgAddr newAddr)))
-    Nothing -> throwIn ms MissingArgument
+      return $ setCode ms (Eval (Atom $ L 0) (singleton (StgAddr newAddr)))

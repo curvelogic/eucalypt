@@ -8,20 +8,21 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Globals.Meta
-  ( euMeta
-  , euWithMeta
+  ( globals
   ) where
 
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Syn
 
+globals :: [(String, LambdaForm)]
+globals = [("META", euMeta), ("WITHMETA", euWithMeta)]
 
 -- | __META(x)
 euMeta :: LambdaForm
 euMeta =
   lam_ 0 1 $
   ann_ "__META" 0 $
-  force_ (Atom (Local 0)) (appbif_ (intrinsicIndex "META") [Local 1])
+  force_ (Atom (L 0)) (appbif_ (intrinsicIndex "META") [L 1])
 
 
 -- | __WITHMETA(m, o)
@@ -29,4 +30,4 @@ euWithMeta :: LambdaForm
 euWithMeta =
   lam_ 0 2 $
   ann_ "__WITHMETA" 0 $
-  appbif_ (intrinsicIndex "WITHMETA") [Local 0, Local 1]
+  appbif_ (intrinsicIndex "WITHMETA") [L 0, L 1]

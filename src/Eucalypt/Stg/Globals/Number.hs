@@ -12,7 +12,6 @@ module Eucalypt.Stg.Globals.Number
   , globals
   ) where
 
-import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
@@ -20,7 +19,7 @@ euNumParse :: LambdaForm
 euNumParse =
   lam_ 0 1 $
   ann_ "__NUMPARSE" 0 $
-  force_ (Atom (Local 0)) $ appbif_ (intrinsicIndex "NUMPARSE") [Local 1]
+  force_ (Atom (L 0)) $ appbif_ (intrinsicIndex "NUMPARSE") [L 1]
 
-globals :: [GlobalInfo]
-globals = [GlobalInfo "NUMPARSE" euNumParse [Strict]]
+globals :: [(String, LambdaForm)]
+globals = [("NUMPARSE", euNumParse)]

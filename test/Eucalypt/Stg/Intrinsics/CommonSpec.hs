@@ -12,7 +12,6 @@ module Eucalypt.Stg.Intrinsics.CommonSpec
   , spec
   ) where
 
-import Data.Sequence ((!?))
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -35,16 +34,14 @@ simpleNativeList = sized $ \n -> sequence [simpleNative | _ <- [1 .. n]]
 readsReturns :: [Native] -> Property
 readsReturns ns =
   monadicIO $ do
-    ms <- run $ initStandardMachineState (Atom (Literal (NativeSymbol "foo")))
+    ms <- run $ initStandardMachineState (Atom (V (NativeSymbol "foo")))
     ms' <- run $ returnNatList ms ns
     case ms' of
-      MachineState {machineCode = (ReturnCon c (ValVec xs) _)}
-        | c == stgCons -> do
-          let (Just (StgNat h _)) = xs !? 0
-          let (Just (StgAddr t)) = xs !? 1
-          r <- run $ (h :) <$> readNatList ms' t
-          assert $ r == ns
-        | c == stgNil -> assert $ null ns
+      MachineState {machineCode = (ReturnCon TagCons xs _)} -> do
+        let (StgNat h _ :< (StgAddr t :< _)) = asSeq xs
+        r <- run $ (h :) <$> readNatList ms' t
+        assert $ r == ns
+      MachineState {machineCode = (ReturnCon TagNil _ _)} -> assert $ null ns
       _ -> assert False
 
 spec :: Spec

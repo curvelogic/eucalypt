@@ -13,6 +13,7 @@ module Eucalypt.Stg.GlobalsSpec
   ) where
 
 import Eucalypt.Stg.Compiler
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.StgTestUtil
@@ -24,24 +25,24 @@ main = hspec spec
 unforcedKV :: String -> StgSyn -> StgSyn
 unforcedKV k v =
   let_
-    [ pc0_ $ value_ $ Atom (Literal $ NativeSymbol k)
+    [ pc0_ $ value_ $ Atom (V $ NativeSymbol k)
     , pc0_ $ value_ v
     ] $
-  list_ 2 (map Local [0 .. 1]) Nothing
+  list_ 2 (map L [0 .. 1]) Nothing
 
 unforcedList :: StgSyn
 unforcedList =
   let_
-    [ pc0_ $ thunk_ $ unforcedKV "a" (Atom $ Global "BOMB")
-    , pc0_ $ thunk_ $ unforcedKV "b" (Atom $ Global "BOMB")
-    , pc0_ $ thunk_ $ unforcedKV "c" (Atom $ Global "BOMB")
+    [ pc0_ $ thunk_ $ unforcedKV "a" (Atom $ gref "BOMB")
+    , pc0_ $ thunk_ $ unforcedKV "b" (Atom $ gref "BOMB")
+    , pc0_ $ thunk_ $ unforcedKV "c" (Atom $ gref "BOMB")
     ] $
-  list_ 3 (map Local [0 .. 2]) Nothing
+  list_ 3 (map L [0 .. 2]) Nothing
 
 forceUnevaledPairList :: StgSyn
 forceUnevaledPairList =
   let_ [pc0_ $ thunk_ unforcedList] $
-  force_ (appfn_ (Global "seqPairList") [Local 0]) (Atom $ Local 1)
+  force_ (appfn_ (gref "seqPairList") [L 0]) (Atom $ L 1)
 
 spec :: Spec
 spec =

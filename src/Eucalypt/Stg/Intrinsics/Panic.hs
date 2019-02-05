@@ -7,14 +7,17 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 
-module Eucalypt.Stg.Intrinsics.Panic where
+module Eucalypt.Stg.Intrinsics.Panic
+  ( intrinsics
+  ) where
 
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Error
-import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
-import Data.Sequence ((!?))
 
-panic :: MachineState -> ValVec -> IO MachineState
-panic ms (ValVec xs) = do
-  let (Just (StgNat (NativeString s) _)) = xs !? 0
-  throwIn ms $ Panic s
+intrinsics :: [IntrinsicInfo]
+intrinsics = [IntrinsicInfo "PANIC" 1 (invoke panic)]
+
+panic :: MachineState -> String -> IO MachineState
+panic ms s = throwIn ms $ Panic s

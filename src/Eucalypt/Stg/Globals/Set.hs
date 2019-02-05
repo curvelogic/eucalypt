@@ -12,16 +12,15 @@ module Eucalypt.Stg.Globals.Set
   ) where
 
 import Eucalypt.Stg.Syn
-import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
-globals :: [GlobalInfo]
+globals :: [(String, LambdaForm)]
 globals =
-  [ GlobalInfo "EMPTYSET" euEmptySet []
-  , GlobalInfo "SETCONTAINS" euSetContains [Strict, Strict]
-  , GlobalInfo "SETADD" euSetAdd [Strict, Strict]
-  , GlobalInfo "SETREMOVE" euSetRemove [Strict, Strict]
-  , GlobalInfo "SETMEMBERS" euSetMembers [Strict]
+  [ ("EMPTYSET", euEmptySet)
+  , ("SETCONTAINS", euSetContains)
+  , ("SETADD", euSetAdd)
+  , ("SETREMOVE", euSetRemove)
+  , ("SETMEMBERS", euSetMembers)
   ]
 
 euEmptySet :: LambdaForm
@@ -31,27 +30,27 @@ euSetContains :: LambdaForm
 euSetContains =
   lam_ 0 2 $
   ann_ "__SETCONTAINS" 0 $
-  force_ (Atom $ Local 0) $
-  force_ (Atom $ Local 1) $ appbif_ (intrinsicIndex "SETCONTAINS") [Local 2, Local 3]
+  force_ (Atom $ L 0) $
+  force_ (Atom $ L 1) $ appbif_ (intrinsicIndex "SETCONTAINS") [L 2, L 3]
 
 euSetAdd :: LambdaForm
 euSetAdd =
   lam_ 0 2 $
   ann_ "__SETADD" 0 $
-  force_ (Atom $ Local 0) $
-  force_ (Atom $ Local 1) $ appbif_ (intrinsicIndex "SETADD") [Local 2, Local 3]
+  force_ (Atom $ L 0) $
+  force_ (Atom $ L 1) $ appbif_ (intrinsicIndex "SETADD") [L 2, L 3]
 
 euSetRemove :: LambdaForm
 euSetRemove =
   lam_ 0 2 $
   ann_ "__SETREMOVE" 0 $
-  force_ (Atom $ Local 0) $
-  force_ (Atom $ Local 1) $
-  appbif_ (intrinsicIndex "SETREMOVE") [Local 2, Local 3]
+  force_ (Atom $ L 0) $
+  force_ (Atom $ L 1) $
+  appbif_ (intrinsicIndex "SETREMOVE") [L 2, L 3]
 
 euSetMembers :: LambdaForm
 euSetMembers =
   lam_ 0 1 $
   ann_ "__SETMEMBERS" 0 $
-  force_ (Atom $ Local 0) $
-  appbif_ (intrinsicIndex "SETMEMBERS") [Local 1]
+  force_ (Atom $ L 0) $
+  appbif_ (intrinsicIndex "SETMEMBERS") [L 1]

@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 {-|
@@ -12,7 +11,6 @@ Stability   : experimental
 -}
 module Eucalypt.Stg.Globals where
 
-import qualified Data.HashMap.Strict as HM
 import Eucalypt.Stg.GlobalInfo
 import qualified Eucalypt.Stg.Globals.Arithmetic as Arith
 import qualified Eucalypt.Stg.Globals.Block as Block
@@ -37,7 +35,7 @@ euStgNil = nilConstructor
 
 -- | Constant: __KEMPTYBLOCK
 euEmptyBlock :: LambdaForm
-euEmptyBlock = thunk_ $ appcon_ stgBlock [Global "KNIL"]
+euEmptyBlock = thunk_ $ appcon_ stgBlock [gref "KNIL"]
 
 -- | __CAT is a "fake" builtin that should be eliminated during core
 -- phase and so this should never be called
@@ -45,7 +43,7 @@ euCat :: LambdaForm
 euCat =
   lam_ 0 2 $
   ann_ "__CAT" 0 $
-  appfn_ (Global "PANIC") [Literal $ NativeString "Uneliminated call to __CAT"]
+  appfn_ (gref "PANIC") [V $ NativeString "Uneliminated call to __CAT"]
 
 
 -- | Strictly evaluate a list of natives to NF
@@ -53,15 +51,15 @@ seqNatList :: LambdaForm
 seqNatList =
   lam_ 0 1 $
   case_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ (stgNil, (0, appcon_ stgNil mempty))
     , ( stgCons
       , ( 2
         , force_
-            (Atom (Local 1))
+            (Atom (L 1))
             (force_
-               (appfn_ (Global "seqNatList") [Local 2])
-               (appcon_ stgCons [Local 3, Local 4]))))
+               (appfn_ (gref "seqNatList") [L 2])
+               (appcon_ stgCons [L 3, L 4]))))
     ]
 
 -- | Strictly evaluate a list of pairs to NF
@@ -70,18 +68,18 @@ seqPairList =
   lam_ 0 1 $
   ann_ "__seqPairList" 0 $
   case_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ (stgNil, (0, appcon_ stgNil []))
     , ( stgCons
       , ( 2
-        , let h = Local 1
-              t = Local 2
-              et = Local 3
-              k = Local 4
-              v = Local 5
-              ek = Local 6
-              eh = Local 7
-           in (force_ (appfn_ (Global "seqPairList") [t]) $
+        , let h = L 1
+              t = L 2
+              et = L 3
+              k = L 4
+              v = L 5
+              ek = L 6
+              eh = L 7
+           in (force_ (appfn_ (gref "seqPairList") [t]) $
                case_
                  (Atom h)
                  [ ( stgCons
@@ -93,65 +91,30 @@ seqPairList =
     ]
 
 
+commonGlobals :: [(String, LambdaForm)]
+commonGlobals =
+  [ ("CAT", euCat)
+  , ("KNIL", euStgNil)
+  , ("KEMPTYBLOCK", euEmptyBlock)
+  , ("seqNatList", seqNatList)
+  , ("seqPairList", seqPairList)
+  ]
 
-standardGlobals :: [GlobalInfo]
-standardGlobals =
-  [ GlobalInfo "EQ" Eq.euEq [NonStrict, NonStrict]
-  , GlobalInfo "TRUE" Bool.euTrue []
-  , GlobalInfo "FALSE" Bool.euFalse []
-  , GlobalInfo "NOT" Bool.euNot [Strict]
-  , GlobalInfo "AND" Bool.euAnd [Strict, NonStrict]
-  , GlobalInfo "OR" Bool.euOr [Strict, NonStrict]
-  , GlobalInfo "IF" Bool.euIf [Strict, NonStrict, NonStrict]
-  , GlobalInfo "CONS" List.euCons [NonStrict, NonStrict]
-  , GlobalInfo "NIL" List.euNil [NonStrict]
-  , GlobalInfo "HEAD" List.euHead [NonStrict]
-  , GlobalInfo "TAIL" List.euTail [NonStrict]
-  , GlobalInfo "CONCAT" List.euConcat [NonStrict]
-  , GlobalInfo "REVERSE" List.euReverse [NonStrict]
-  , GlobalInfo "PANIC" Panic.euPanic [Strict]
-  , GlobalInfo "!KEYNOTFOUND" Panic.euKeyNotFound [Strict]
-  , GlobalInfo "BOMB" Panic.euBomb []
-  , GlobalInfo "CAT" euCat [NonStrict, NonStrict]
-  , GlobalInfo "BLOCK" Block.euBlock [NonStrict]
-  , GlobalInfo "ELEMENTS" Block.euElements [NonStrict]
-  , GlobalInfo "MERGE" Block.euMerge [NonStrict, NonStrict]
-  , GlobalInfo "DEEPMERGE" Block.euDeepMerge [NonStrict, NonStrict]
-  , GlobalInfo
-      "DEEPMERGEIFBLOCKS"
-      Block.euDeepMergeIfBlocks
-      [NonStrict, NonStrict]
-  , GlobalInfo "LOOKUP" Block.euLookup [NonStrict, Strict]
-  , GlobalInfo "LOOKUPLIST" Block.euLookupList [NonStrict, Strict]
-  , GlobalInfo "LOOKUPOR" Block.euLookupOr [NonStrict, Strict, NonStrict]
-  , GlobalInfo
-      "LOOKUPLISTOR"
-      Block.euLookupListOr
-      [NonStrict, Strict, NonStrict]
-  , GlobalInfo "META" Meta.euMeta [Strict]
-  , GlobalInfo "WITHMETA" Meta.euWithMeta [NonStrict, NonStrict]
-  , GlobalInfo "KNIL" euStgNil []
-  , GlobalInfo "KEMPTYBLOCK" euEmptyBlock []
-  , GlobalInfo "seqNatList" seqNatList [NonStrict]
-  , GlobalInfo "seqPairList" seqPairList [NonStrict]
-  ] <>
-  Arith.globals <>
-  Emit.globals <>
-  Number.globals <>
-  Str.globals <>
-  Set.globals <>
-  Dict.globals <>
-  Time.globals
-
-standardGlobalMap :: HM.HashMap String LambdaForm
-standardGlobalMap = HM.fromList $ map toPair standardGlobals
-  where
-    toPair GlobalInfo{..} = (globalName, globalCode)
-
-standardGlobalInfoMap :: HM.HashMap String GlobalInfo
-standardGlobalInfoMap = HM.fromList $ map toPair standardGlobals
-  where
-    toPair g@GlobalInfo{..} = (globalName, g)
-
-standardGlobalStrictness :: String -> [Strictness]
-standardGlobalStrictness n = globalStrictness $ standardGlobalInfoMap HM.! n
+globals :: [(String, LambdaForm)]
+globals =
+  concat
+    [ commonGlobals
+    , Arith.globals
+    , Block.globals
+    , Bool.globals
+    , Dict.globals
+    , Emit.globals
+    , Eq.globals
+    , List.globals
+    , Meta.globals
+    , Number.globals
+    , Panic.globals
+    , Set.globals
+    , Str.globals
+    , Time.globals
+    ]
