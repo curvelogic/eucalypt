@@ -84,7 +84,7 @@ runHeadless opts expr = do
         (\(e :: IOException) ->
            throwM $ StgException (IOSystem e) (machineCallStack s))
       let events = reverse $ machineEvents s'
-          terminated = events `deepseq` (machineTerminated s')
+          terminated = events `deepseq` machineTerminated s'
         in unless terminated $ loop s'
 
 
