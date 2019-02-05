@@ -18,7 +18,6 @@ import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad.IO.Class
 import Data.Semigroup
-import Data.Word
 import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.Address
 import Eucalypt.Stg.CallStack
@@ -74,6 +73,10 @@ asMeta :: Maybe StgValue -> HeapObjectMetadata
 asMeta Nothing = MetadataBlank
 asMeta (Just v) = MetadataValue v
 
+asMetaOrPass :: Maybe StgValue -> HeapObjectMetadata
+asMetaOrPass Nothing = MetadataPassThrough
+asMetaOrPass (Just v) = MetadataValue v
+
 fromMeta :: HeapObjectMetadata -> Maybe StgValue
 fromMeta (MetadataValue v) = Just v
 fromMeta _ = Nothing
@@ -87,7 +90,7 @@ data HeapObject
   | PartialApplication { papCode :: !LambdaForm
                        , papEnv :: !ValVec
                        , papArgs :: !ValVec
-                       , papArity :: !Word64
+                       , papArity :: !Int
                        , papCallStack :: !CallStack
                        , papMeta :: !HeapObjectMetadata }
   | BlackHole
@@ -178,13 +181,12 @@ push ms@MachineState {machineStack = MachineStack st} k =
    in ms {machineStack = MachineStack (stackElement : st)}
 
 -- | Pop a continuation off the stack
-pop :: MonadThrow m => MachineState -> m (Maybe Continuation, MachineState)
-pop ms@MachineState {machineStack = MachineStack []} = return (Nothing, ms)
+pop :: MachineState -> (Maybe Continuation, MachineState)
+pop ms@MachineState {machineStack = MachineStack []} = (Nothing, ms)
 pop ms@MachineState {machineStack = MachineStack st} =
   let StackElement k cs = head st
-   in return
-        ( Just k
-        , ms {machineStack = MachineStack (tail st), machineCallStack = cs})
+   in ( Just k
+      , ms {machineStack = MachineStack (tail st), machineCallStack = cs})
 
 
 -- | Machine state.

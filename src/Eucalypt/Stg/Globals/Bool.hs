@@ -11,7 +11,6 @@ module Eucalypt.Stg.Globals.Bool
   ( globals
   ) where
 
-import Data.Word
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
@@ -25,10 +24,10 @@ globals =
   , ("IF", euIf)
   ]
 
-falseBranch :: (Word64, StgSyn)
+falseBranch :: (Int, StgSyn)
 falseBranch = (0, appcon_ stgFalse [])
 
-trueBranch :: (Word64, StgSyn)
+trueBranch :: (Int, StgSyn)
 trueBranch = (0, appcon_ stgTrue [])
 
 -- | __TRUE
