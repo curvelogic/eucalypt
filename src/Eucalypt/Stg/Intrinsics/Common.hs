@@ -15,37 +15,29 @@ module Eucalypt.Stg.Intrinsics.Common where
 import Control.Monad (foldM)
 import Data.Foldable (toList)
 import Data.List (intercalate)
-import qualified Data.Sequence as Seq
+import qualified Data.Map.Strict as MS
 import Data.Scientific (Scientific, floatingOrInteger)
-import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import qualified Data.Set as S
 import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
-import Eucalypt.Stg.Machine
 
 type IntrinsicFunction = MachineState -> ValVec -> IO MachineState
 
-isNative :: StgValue -> Bool
-isNative (StgNat _ _) = True
-isNative _ = False
+pattern Empty :: Seq.Seq a
+pattern Empty <- (Seq.viewl -> Seq.EmptyL)
 
-asNative :: StgValue -> Native
-asNative (StgNat n _) = n
-asNative _ = error "Not a native"
-
-getNatives :: MachineState -> ValVec -> IO (Seq.Seq Native)
-getNatives ms (ValVec v) =
-  if all isNative v
-    then return $ fmap asNative v
-    else throwIn ms NonNativeStgValue
-
+pattern (:<) :: a -> Seq.Seq a -> Seq.Seq a
+pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
 
 flipCons :: StgValue -> StgValue -> IO StgValue
 flipCons as a =
   StgAddr <$>
-  allocate (Closure consConstructor (toValVec [a, as]) mempty MetadataPassThrough)
+  allocate (Closure consConstructor (toVec [a, as]) mempty MetadataPassThrough)
 
 
 -- | Return a bool
@@ -65,7 +57,7 @@ returnNatList ms ns = do
     else do
       let headAddr = head natAddrs
       tailAddr <- foldM flipCons nilAddr (reverse $ tail natAddrs)
-      return $ setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]) Nothing)
+      return $ setCode ms (ReturnCon stgCons (toVec [headAddr, tailAddr]) Nothing)
 
 -- | Utility to return a list of pairs of natives from an intrinsic.
 --
@@ -80,7 +72,7 @@ returnNatPairList ms ns = do
       let headAddr = head pairAddrs
       tailAddr <- foldM flipCons nilAddr (reverse $ tail pairAddrs)
       return $
-        setCode ms (ReturnCon stgCons (toValVec [headAddr, tailAddr]) Nothing)
+        setCode ms (ReturnCon stgCons (toVec [headAddr, tailAddr]) Nothing)
   where
     allocPair nil (k, v) =
       foldM flipCons nil [StgNat v Nothing, StgNat k Nothing]
@@ -93,13 +85,11 @@ readNatList ms addr = do
   case obj of
     Closure {closureCode = lf, closureEnv = e} ->
       case lf of
-        LambdaForm {_body = (App (Con t) xs)}
-          | t == stgCons -> do
-            (StgNat h _) <- val e ms (xs `Seq.index` 0)
-            (StgAddr a) <- val e ms (xs `Seq.index` 1)
-            (h :) <$> readNatList ms a
-        LambdaForm {_body = (App (Con t) _)}
-          | t == stgNil -> return []
+        LambdaForm {lamBody = (App (Con TagCons) xs)} ->
+          let StgNat h _ :< (StgAddr a :< _) =
+                asSeq $ values (e, ms) $ nativeToValue <$> xs
+           in (h :) <$> readNatList ms a
+        LambdaForm {lamBody = (App (Con TagNil) _)} -> return []
         _ -> throwIn ms IntrinsicExpectedNativeList
     _ -> throwIn ms IntrinsicExpectedNativeList
 
@@ -109,12 +99,10 @@ readNatList ms addr = do
 readNatListReturn :: MachineState -> IO [Native]
 readNatListReturn ms =
   case ms of
-    MachineState {machineCode = (ReturnCon c (ValVec xs) Nothing)}
-      | c == stgCons -> do
-        let (Just (StgNat h _)) = xs Seq.!? 0
-        let (Just (StgAddr t)) = xs Seq.!? 1
-        (h :) <$> readNatList ms t
-      | c == stgNil -> return []
+    MachineState {machineCode = (ReturnCon TagCons xs Nothing)} ->
+      let (StgNat h _ :< (StgAddr t :< _)) = asSeq xs
+       in (h :) <$> readNatList ms t
+    MachineState {machineCode = (ReturnCon TagNil _ Nothing)} -> return []
     _ -> throwIn ms IntrinsicExpectedNativeList
 
 
@@ -161,16 +149,14 @@ readCons ms addr =
   peek addr >>= \case
     Closure {closureCode = lf, closureEnv = e} ->
       case lf of
-        LambdaForm {_body = (App (Con t) xs)}
-          | t == stgCons -> do
-            h' <- val e ms (xs `Seq.index` 0)
-            t' <- val e ms (xs `Seq.index` 1)
-            return $ Just (h', t')
-        LambdaForm {_body = (App (Con t) _)}
-          | t == stgNil -> return Nothing
-        _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (_body lf)
+        LambdaForm {lamBody = (App (Con TagCons) xs)} ->
+          let (h :< (t :< _)) = asSeq $ values (e, ms) $ nativeToValue <$> xs
+           in return $ Just (h, t)
+        LambdaForm {lamBody = (App (Con TagNil) _)} -> return Nothing
+        _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
     BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
-    PartialApplication{} -> throwIn ms IntrinsicExpectedListFoundPartialApplication
+    PartialApplication {} ->
+      throwIn ms IntrinsicExpectedListFoundPartialApplication
 
 
 -- | Assuming the specified address is a Block, return the contents list.
@@ -179,20 +165,17 @@ readBlock ms addr =
   peek addr >>= \case
     Closure {closureCode = lf, closureEnv = e} ->
       case lf of
-        LambdaForm {_body = (App (Con t) xs)}
-          | t == stgBlock -> val e ms (xs `Seq.index` 0)
-        LambdaForm {_body = (App (Con _) _)} ->
-          throwIn ms $ IntrinsicExpectedBlock (_body lf)
-        _ -> throwIn ms $ IntrinsicExpectedEvaluatedBlock (_body lf)
+        LambdaForm {lamBody = (App (Con TagBlock) xs)} ->
+          let (x :< _) = asSeq $ values (e, ms) $ nativeToValue <$> xs
+           in return x
+        LambdaForm {lamBody = (App (Con _) _)} ->
+          throwIn ms $ IntrinsicExpectedBlock (lamBody lf)
+        _ -> throwIn ms $ IntrinsicExpectedEvaluatedBlock (lamBody lf)
     BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
     PartialApplication {} ->
       throwIn ms IntrinsicExpectedBlockFoundPartialApplication
 
-pattern Empty :: Seq a
-pattern Empty <- (Seq.viewl -> Seq.EmptyL)
-
-pattern (:<) :: a -> Seq a -> Seq a
-pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
+newtype Symbol = Symbol String
 
 -- | class of Invokable intrinsic functions
 class Invokable f where
@@ -201,51 +184,114 @@ class Invokable f where
   -- | Cast args as required to invoke the typed intrinsic function
   invoke :: f -> IntrinsicFunction
 
+instance Invokable (MachineState -> IO MachineState) where
+  sig _ = ""
+  invoke f ms (asSeq -> Empty) = f ms
+  invoke f ms args = throwTypeError ms (sig f) args
+
 instance Invokable (MachineState -> Native -> IO MachineState) where
   sig _ = "*"
-  invoke f ms (ValVec (StgNat a _ :< _)) = f ms a
+  invoke f ms (asSeq -> (StgNat a _ :< _)) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Address -> IO MachineState) where
+  sig _ = "@"
+  invoke f ms (asSeq -> (StgAddr a :< _)) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> StgValue -> IO MachineState) where
+  sig _ = "."
+  invoke f ms (asSeq -> a :< _) = f ms a
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> String -> IO MachineState) where
   sig _ = "String"
-  invoke f ms (ValVec (StgNat (NativeString a) _ :< _)) = f ms a
+  invoke f ms (asSeq -> StgNat (NativeString a) _ :< _) = f ms a
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Scientific -> IO MachineState) where
   sig _ = "Number"
-  invoke f ms (ValVec (StgNat (NativeNumber a) _ :< _)) = f ms a
+  invoke f ms (asSeq -> StgNat (NativeNumber a) _ :< _) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> S.Set Native -> IO MachineState) where
+  sig _ = "Set"
+  invoke f ms (asSeq -> StgNat (NativeSet a) _ :< _) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> MS.Map Native Native -> IO MachineState) where
+  sig _ = "Dict"
+  invoke f ms (asSeq -> StgNat (NativeDict a) _ :< _) = f ms a
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> String -> String -> IO MachineState) where
   sig _ = "String, String"
-  invoke f ms (ValVec (StgNat (NativeString a) _ :< (StgNat (NativeString b) _ :< _))) =
+  invoke f ms (asSeq -> (StgNat (NativeString a) _ :< (StgNat (NativeString b) _ :< _))) =
     f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Native -> Native -> IO MachineState) where
+  sig _ = "*, *"
+  invoke f ms (asSeq -> (StgNat a _ :< (StgNat b _ :< _))) = f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Address -> Address -> IO MachineState) where
+  sig _ = "@, @"
+  invoke f ms (asSeq -> (StgAddr a :< (StgAddr b :< _))) = f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Native -> String -> IO MachineState) where
   sig _ = "*, String"
-  invoke f ms (ValVec (StgNat a _ :< (StgNat (NativeString b) _ :< _))) =
+  invoke f ms (asSeq -> (StgNat a _ :< (StgNat (NativeString b) _ :< _))) =
     f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> StgValue -> StgValue -> IO MachineState) where
+  sig _ = "., ."
+  invoke f ms (asSeq -> (a :< (b :< _))) = f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Address -> String -> IO MachineState) where
   sig _ = "@, String"
-  invoke f ms (ValVec (StgAddr a :< (StgNat (NativeString b) _ :< _))) =
+  invoke f ms (asSeq -> StgAddr a :< (StgNat (NativeString b) _ :< _)) =
     f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Scientific -> Scientific -> IO MachineState) where
   sig _ = "Number, Number"
-  invoke f ms (ValVec (StgNat (NativeNumber a) _ :< (StgNat (NativeNumber b) _ :< _))) =
+  invoke f ms (asSeq -> StgNat (NativeNumber a) _ :< (StgNat (NativeNumber b) _ :< _)) =
     f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> S.Set Native -> Native -> IO MachineState) where
+  sig _ = "Set, Set"
+  invoke f ms (asSeq -> StgNat (NativeSet a) _ :< (StgNat b _ :< _)) = f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> MS.Map Native Native -> Native -> IO MachineState) where
+  sig _ = "Dict, *"
+  invoke f ms (asSeq -> StgNat (NativeDict a) _ :< (StgNat b _ :< _)) = f ms a b
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Native -> Native -> Native -> IO MachineState) where
+  sig _ = "*, *, *"
+  invoke f ms (asSeq -> StgNat a _ :< (StgNat b _ :< (StgNat c _ :< _))) =
+    f ms a b c
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> MS.Map Native Native -> Native -> Native -> IO MachineState) where
+  sig _ = "Dict, *, *"
+  invoke f ms (asSeq -> StgNat (NativeDict a) _ :< (StgNat b _ :< (StgNat c _ :< _))) =
+    f ms a b c
+  invoke f ms args = throwTypeError ms (sig f) args
+
 
 throwTypeError :: MachineState -> String -> ValVec -> IO MachineState
 throwTypeError ms expected actual =
   throwIn ms $ IntrinsicTypeError expected $ describeActualArgs actual
 
 describeActualArgs :: ValVec -> String
-describeActualArgs (ValVec args) = intercalate ", " $ map describe $ toList args
+describeActualArgs args = intercalate ", " $ map describe $ toList args
   where
     describe (StgNat n _) = nativeToString n
     describe (StgAddr _) = "@"

@@ -12,17 +12,16 @@ module Eucalypt.Stg.Globals.Time
   ) where
 
 import Eucalypt.Stg.Syn
-import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
-globals :: [GlobalInfo]
+globals :: [(String, LambdaForm)]
 globals =
-  [ GlobalInfo "IFIELDS" euIFields [Strict]
+  [ ("IFIELDS", euIFields)
   ]
 
 euIFields :: LambdaForm
 euIFields =
   lam_ 0 1 $
   ann_ "__IFIELDS" 0 $
-  force_ (Atom (Local 0)) $
-  appbif_ (intrinsicIndex "IFIELDS") [Local 1]
+  force_ (Atom (L 0)) $
+  appbif_ (intrinsicIndex "IFIELDS") [L 1]

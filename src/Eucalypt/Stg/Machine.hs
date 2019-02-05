@@ -1,5 +1,7 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE FlexibleContexts, LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 {-|
 Module      : Eucalypt.Stg.Machine
@@ -15,17 +17,14 @@ module Eucalypt.Stg.Machine where
 import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad.IO.Class
-import Data.Foldable (toList)
-import qualified Data.HashMap.Strict as HM
-import Data.HashMap.Strict (HashMap)
 import Data.Semigroup
-import qualified Data.Sequence as Seq
 import Data.Word
 import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.Address
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Event
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Pretty
 import Eucalypt.Stg.Syn
@@ -44,6 +43,9 @@ data StgValue
   = StgAddr !Address
   | StgNat !Native !(Maybe StgValue)
   deriving (Eq, Show)
+
+nativeToValue :: Native -> StgValue
+nativeToValue n = StgNat n Nothing
 
 instance StgPretty StgValue where
   prettify (StgAddr _) = P.text "<addr>"
@@ -105,40 +107,18 @@ instance StgPretty HeapObject where
     prettify lf
   prettify BlackHole = P.text "•"
 
+
 -- | Sequence of values, used for both local environment and arrays of
 -- resolved arguments.
-newtype ValVec =
-  ValVec (Seq.Seq StgValue)
-  deriving (Eq, Show, Semigroup, Monoid)
+type ValVec = Vec StgValue
 
-toValVec :: [StgValue] -> ValVec
-toValVec = ValVec . Seq.fromList
-
-envSize :: ValVec -> Word64
-envSize (ValVec v) = fromIntegral $ Seq.length v
-
-singleton :: StgValue -> ValVec
-singleton = ValVec . Seq.singleton
-
-extendEnv :: ValVec -> ValVec -> (ValVec, RefVec)
+extendEnv :: ValVec -> ValVec -> (ValVec, SynVec)
 extendEnv env args = (env', rs)
   where
     envlen = envSize env
     arglen = envSize args
     env' = env <> args
-    rs = locals envlen (arglen + envlen)
-
--- | Split a ValVec in two at the specified index
-splitVecAt :: Integral a => a -> ValVec -> (ValVec, ValVec)
-splitVecAt n (ValVec vs) =
-  let (l, r) = Seq.splitAt (fromIntegral n) vs
-   in (ValVec l, ValVec r)
-
-instance StgPretty ValVec where
-  prettify (ValVec vs) = P.braces $ P.hcat $ map p (toList vs)
-    where
-      p (StgNat v _) = prettify v
-      p (StgAddr _) = P.char '.'
+    rs = range envlen (arglen + envlen)
 
 -- | Entry on the frame stack, encoding processing to be done later
 -- when a value is available
@@ -168,14 +148,14 @@ instance StgPretty StackElement where
 
 -- | Currently executing code
 data Code
-  = Eval !StgSyn
-         !ValVec
-  | ReturnCon !Tag
-              !ValVec
-              !(Maybe StgValue)
-  | ReturnLit !Native
-              !(Maybe StgValue)
-  | ReturnFun !Address
+  = Eval { evalCode :: !StgSyn
+         , evalEnv :: !ValVec }
+  | ReturnCon { retTag :: !Tag
+              , retArgs :: !ValVec
+              , retMeta :: !(Maybe StgValue) }
+  | ReturnLit { retNative :: !Native
+              , retMeta :: !(Maybe StgValue) }
+  | ReturnFun { retAddress :: !Address }
   deriving (Eq, Show)
 
 instance StgPretty Code where
@@ -212,7 +192,7 @@ pop ms@MachineState {machineStack = MachineStack st} =
 data MachineState = MachineState
   { machineCode :: Code
     -- ^ Next instruction to execute
-  , machineGlobals :: !(HashMap String StgValue)
+  , machineGlobals :: !ValVec
     -- ^ Global (heap allocated) objects
   , machineStack :: !MachineStack
     -- ^ stack of continuations
@@ -235,6 +215,12 @@ data MachineState = MachineState
   , machineCallStack :: !CallStack
   }
 
+
+instance Environments (ValVec, MachineState) StgValue where
+  local (le, _) = le
+  global (_, MachineState {machineGlobals = ge}) = ge
+
+
 -- | Call the machine's trace function
 traceOut :: MonadIO m => MachineState -> m ()
 traceOut ms@MachineState {machineTrace = tr} = liftIO $ tr ms
@@ -245,8 +231,8 @@ prepareStep stepName ms =
   traceOut ms >>
   return (tick $ ms {machineEvents = mempty, machineLastStepName = stepName})
 
-allocGlobal :: MonadIO m => String -> LambdaForm -> m StgValue
-allocGlobal _name impl =
+allocGlobal :: MonadIO m => LambdaForm -> m StgValue
+allocGlobal impl =
   liftIO $
   StgAddr <$>
   allocate
@@ -259,9 +245,9 @@ allocGlobal _name impl =
 
 -- | Initialise machine state.
 initMachineState ::
-     MonadIO m => StgSyn -> HashMap String LambdaForm -> m MachineState
+     MonadIO m => StgSyn -> Vec LambdaForm -> m MachineState
 initMachineState stg ge = do
-  genv <- liftIO $ HM.traverseWithKey allocGlobal ge
+  genv <- liftIO $ traverse allocGlobal ge
   return
     MachineState
       { machineCode = Eval stg mempty
@@ -305,42 +291,23 @@ instance StgPretty MachineState where
 throwIn :: MonadThrow m => MachineState -> StgError -> m a
 throwIn ms err = throwM $ StgException err (machineCallStack ms)
 
-
--- | Lookup address of global
-globalAddress :: MonadThrow m => MachineState -> String -> m StgValue
-globalAddress ms@MachineState {machineGlobals = g} nm =
-  case HM.lookup nm g of
-    Just v -> return v
-    _ -> throwIn ms $ UnknownGlobal nm
-
-
--- | Resolve environment references against local and global
--- environments.
-val :: MonadThrow m => ValVec -> MachineState -> Ref -> m StgValue
-val (ValVec le) ms (Local l) =
-  case le Seq.!? fromIntegral l of
-    Just v -> return v
-    _ -> throwIn ms $ EnvironmentIndexOutOfRange $ fromIntegral l
-val _ ms (Global nm) = globalAddress ms nm
-val _ _ (Literal n) = return $ StgNat n Nothing
-
 -- | Resolve a vector of refs against an environment to create
 -- environment
-vals :: MonadThrow m => ValVec -> MachineState -> Seq.Seq Ref -> m ValVec
-vals le ms rs = ValVec <$> traverse (val le ms) rs
+vals :: MonadThrow m => ValVec -> MachineState -> SynVec -> m ValVec
+vals le ms rs = return $ values (le, machineGlobals ms) (nativeToValue <$> rs)
 
 -- | Resolve a ref against env and machine to get address of
 -- HeapObject
 resolveHeapObject :: MonadThrow m => ValVec -> MachineState -> Ref -> m Address
 resolveHeapObject env ms ref =
-  val env ms ref >>= \case
+  case value (env, machineGlobals ms) (nativeToValue <$> ref) of
     StgAddr r -> return r
     StgNat _ _ -> throwIn ms NonAddressStgValue
 
 -- | Resolve a ref against env and machine
 resolveNative :: MonadThrow m => ValVec -> MachineState -> Ref -> m Native
 resolveNative env ms ref =
-  val env ms ref >>= \case
+  case value (env, machineGlobals ms) (nativeToValue <$> ref) of
     StgAddr _ -> throwIn ms NonNativeStgValue
     StgNat n _ -> return n
 
@@ -381,11 +348,18 @@ buildClosure ::
      MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
 buildClosure le ms (PreClosure captures metaref code) = do
   env <- vals le ms captures
-  meta <- case metaref of
-    Nothing -> return MetadataPassThrough
-    Just r -> MetadataValue <$> val le ms r
+  meta <-
+    case metaref of
+      Nothing -> return MetadataPassThrough
+      Just r ->
+        return . MetadataValue $
+        value (le, machineGlobals ms) (nativeToValue <$> r)
   return $ Closure code env (machineCallStack ms) meta
 
 -- | Allocate new closure. Validate env refs if we're in debug mode.
 allocClosure :: ValVec -> MachineState -> PreClosure -> IO Address
 allocClosure le ms cc = buildClosure le ms cc >>= allocate
+
+-- | Retrieve the address of a global by name
+retrieveGlobal :: MachineState -> String -> StgValue
+retrieveGlobal ms name = value (mempty :: ValVec, ms) (gref name)

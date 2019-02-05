@@ -11,42 +11,46 @@ module Eucalypt.Stg.Intrinsics.Block
   ( prune
   , pruneMerge
   , pruneBlockToMap
+  , intrinsics
   ) where
 
 import Control.Monad (foldM)
-import Data.Sequence ((!?))
+import qualified Data.HashMap.Strict.InsOrd as OM
 import Eucalypt.Stg.Address (allocate)
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Common
+import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
-import Eucalypt.Stg.Machine
-import qualified Data.HashMap.Strict.InsOrd as OM
-import Eucalypt.Stg.Intrinsics.Common
 
+intrinsics :: [IntrinsicInfo]
+intrinsics =
+  [ IntrinsicInfo "PRUNE" 1 (invoke prune)
+  , IntrinsicInfo "PRUNEMERGE" 2 (invoke pruneMerge)
+  ]
 
 -- | Utility to return a native list from a primitive function.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
 returnPairList :: MachineState -> OM.InsOrdHashMap String StgValue -> IO MachineState
 returnPairList ms om = do
-  nilAddr <- globalAddress ms "KNIL"
+  let nilAddr = retrieveGlobal ms "KNIL"
   let pairs = (map snd . OM.toList) om
    in case pairs of
         [] -> return $ setCode ms (ReturnCon stgNil mempty Nothing)
         (h:t) -> do
           tv <- foldM flipCons nilAddr (reverse t)
-          return $ setCode ms (ReturnCon stgCons (toValVec [h, tv]) Nothing)
+          return $ setCode ms (ReturnCon stgCons (toVec [h, tv]) Nothing)
 
 
 -- | Takes list of pairs and prunes such that later values for the
 -- same key replace previous values, maintaining order of original
 -- occurence.
 --
-prune :: MachineState -> ValVec -> IO MachineState
-prune ms (ValVec xs) =
-  let (Just (StgAddr a)) = xs !? 0
-   in pruneSub ms OM.empty a >>= returnPairList ms
+prune :: MachineState -> Address -> IO MachineState
+prune ms a = pruneSub ms OM.empty a >>= returnPairList ms
 
 
 
@@ -119,12 +123,10 @@ pruneToMap ms om a = do
 -- where the key occurs twice (resulting from left and right blocks).
 --
 -- The combination thunk is allocated but not evaluated.
-pruneMerge :: MachineState -> ValVec -> IO MachineState
-pruneMerge ms (ValVec xs) =
-  let (Just (StgAddr a)) = xs !? 0
-      (Just (StgAddr f)) = xs !? 1
-   in do om <- pruneMergeSub f OM.empty a
-         returnPairList ms om
+pruneMerge :: MachineState -> Address -> Address -> IO MachineState
+pruneMerge ms xs cmb = do
+  om <- pruneMergeSub cmb OM.empty xs
+  returnPairList ms om
   where
     pruneMergeSub ::
          Address
@@ -149,29 +151,15 @@ pruneMerge ms (ValVec xs) =
         Nothing -> return om
     combine :: String -> Address -> StgValue -> StgValue -> IO StgValue
     combine k f new old =
-      let env = toValVec [StgAddr f, old, new]
+      let env = toVec [StgAddr f, old, new]
           cs = machineCallStack ms
        in do addr <-
                StgAddr <$>
                allocate
                  (Closure
-                    (thunkn_ 3 $ appfn_ (Local 0) [Local 1, Local 2])
+                    (thunkn_ 3 $ appfn_ (L 0) [L 1, L 2])
                     env
                     cs
                     MetadataPassThrough)
-             t <-
-               do nilAddr <- globalAddress ms "KNIL"
-                  StgAddr <$>
-                    allocate
-                      (Closure
-                         consConstructor
-                         (toValVec [addr, nilAddr])
-                         cs
-                         MetadataPassThrough)
-             StgAddr <$>
-               allocate
-                 (Closure
-                    consConstructor
-                    (toValVec [StgNat (NativeSymbol k) Nothing, t])
-                    cs
-                    MetadataPassThrough)
+             t <- flipCons addr (retrieveGlobal ms "KNIL")
+             flipCons (StgNat (NativeSymbol k) Nothing) t

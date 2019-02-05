@@ -22,7 +22,7 @@ dummyStg :: LambdaForm
 dummyStg = LambdaForm 0 0 False $ App (Con 0) mempty
 
 dummyClosure :: HeapObject
-dummyClosure = Closure dummyStg (ValVec mempty) mempty MetadataPassThrough
+dummyClosure = Closure dummyStg mempty mempty MetadataPassThrough
 
 spec :: Spec
 spec = addressSpec
@@ -42,6 +42,6 @@ addressSpec = do
     it "resolves env refs" $
       (do r <- allocate dummyClosure
           ms <- initStandardMachineState (App (Con 99) mempty)
-          s <- resolveHeapObject (singleton (StgAddr r)) ms (Local 0)
+          s <- resolveHeapObject (singleton (StgAddr r)) ms (L 0)
           peek s) `shouldReturn`
       dummyClosure

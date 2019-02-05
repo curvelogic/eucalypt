@@ -14,6 +14,7 @@ module Eucalypt.Stg.Globals.ArithmeticSpec
 
 import Data.Fixed (mod')
 import Data.Scientific
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.StgTestUtil
@@ -31,7 +32,7 @@ addsIntegers :: Integer -> Integer -> Property
 addsIntegers l r =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "ADD") [Literal $ nat l, Literal $ nat r])
+    (appfn_ (gref "ADD") [V $ nat l, V $ nat r])
     (returnsNative (NativeNumber $ fromInteger (l + r)))
 
 addsFloats :: Double -> Double -> Property
@@ -39,9 +40,9 @@ addsFloats l r =
   QM.monadicIO $
   calculates
     (appfn_
-       (Global "ADD")
-       [ Literal $ NativeNumber $ fromFloatDigits l
-       , Literal $ NativeNumber $ fromFloatDigits r
+       (gref "ADD")
+       [ V $ NativeNumber $ fromFloatDigits l
+       , V $ NativeNumber $ fromFloatDigits r
        ])
     (returnsNative (NativeNumber (fromFloatDigits l + fromFloatDigits r)))
 
@@ -49,7 +50,7 @@ subtractsIntegers :: Integer -> Integer -> Property
 subtractsIntegers l r =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "SUB") [Literal $ nat l, Literal $ nat r])
+    (appfn_ (gref "SUB") [V $ nat l, V $ nat r])
     (returnsNative (NativeNumber $ fromInteger (l - r)))
 
 subtractsFloats :: Double -> Double -> Property
@@ -57,9 +58,9 @@ subtractsFloats l r =
   QM.monadicIO $
   calculates
     (appfn_
-       (Global "SUB")
-       [ Literal $ NativeNumber $ fromFloatDigits l
-       , Literal $ NativeNumber $ fromFloatDigits r
+       (gref "SUB")
+       [ V $ NativeNumber $ fromFloatDigits l
+       , V $ NativeNumber $ fromFloatDigits r
        ])
     (returnsNative (NativeNumber (fromFloatDigits l - fromFloatDigits r)))
 
@@ -67,7 +68,7 @@ multipliesIntegers :: Integer -> Integer -> Property
 multipliesIntegers l r =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "MUL") [Literal $ nat l, Literal $ nat r])
+    (appfn_ (gref "MUL") [V $ nat l, V $ nat r])
     (returnsNative (NativeNumber $ fromInteger (l * r)))
 
 multipliesFloats :: Double -> Double -> Property
@@ -75,9 +76,9 @@ multipliesFloats l r =
   QM.monadicIO $
   calculates
     (appfn_
-       (Global "MUL")
-       [ Literal $ NativeNumber $ fromFloatDigits l
-       , Literal $ NativeNumber $ fromFloatDigits r
+       (gref "MUL")
+       [ V $ NativeNumber $ fromFloatDigits l
+       , V $ NativeNumber $ fromFloatDigits r
        ])
     (returnsNative (NativeNumber (fromFloatDigits l * fromFloatDigits r)))
 
@@ -85,7 +86,7 @@ dividesIntegers :: Integer -> NonZero Integer -> Property
 dividesIntegers l (NonZero r) =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "DIV") [Literal $ nat l, Literal $ nat r])
+    (appfn_ (gref "DIV") [V $ nat l, V $ nat r])
     (returnsNative
        (NativeNumber $
         fromFloatDigits ((fromInteger l :: Double) / (fromInteger r :: Double))))
@@ -95,9 +96,9 @@ dividesFloats l (NonZero r) =
   QM.monadicIO $
   calculates
     (appfn_
-       (Global "DIV")
-       [ Literal $ NativeNumber $ fromFloatDigits l
-       , Literal $ NativeNumber $ fromFloatDigits r
+       (gref "DIV")
+       [ V $ NativeNumber $ fromFloatDigits l
+       , V $ NativeNumber $ fromFloatDigits r
        ])
     (returnsNative (NativeNumber (fromFloatDigits l / fromFloatDigits r)))
 
@@ -105,7 +106,7 @@ modulosIntegers :: Integer -> NonZero Integer -> Property
 modulosIntegers l (NonZero r) =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "MOD") [Literal $ nat l, Literal $ nat r])
+    (appfn_ (gref "MOD") [V $ nat l, V $ nat r])
     (returnsNative
        (NativeNumber $
         fromFloatDigits (mod' (fromInteger l :: Double) (fromInteger r :: Double))))
@@ -115,9 +116,9 @@ modulosFloats l (NonZero r) =
   QM.monadicIO $
   calculates
     (appfn_
-       (Global "MOD")
-       [ Literal $ NativeNumber $ fromFloatDigits l
-       , Literal $ NativeNumber $ fromFloatDigits r
+       (gref "MOD")
+       [ V $ NativeNumber $ fromFloatDigits l
+       , V $ NativeNumber $ fromFloatDigits r
        ])
     (returnsNative (NativeNumber (mod' (fromFloatDigits l) (fromFloatDigits r))))
 
@@ -127,11 +128,11 @@ ordersIntegersWithLt l r =
   QM.monadicIO $
   calculates
     (let_
-       [ pc0_ $ value_ $ appfn_ (Global "LT") [Literal $ nat l, Literal $ nat r]
+       [ pc0_ $ value_ $ appfn_ (gref "LT") [V $ nat l, V $ nat r]
        , pc0_ $
-         value_ $ appfn_ (Global "GTE") [Literal $ nat l, Literal $ nat r]
+         value_ $ appfn_ (gref "GTE") [V $ nat l, V $ nat r]
        ]
-       (appfn_ (Global "OR") [Local 0, Local 1]))
+       (appfn_ (gref "OR") [L 0, L 1]))
     returnsTrue
 
 ordersIntegersWithGt :: Integer -> Integer -> Property
@@ -139,11 +140,11 @@ ordersIntegersWithGt l r =
   QM.monadicIO $
   calculates
     (let_
-       [ pc0_ $ value_ $ appfn_ (Global "GT") [Literal $ nat l, Literal $ nat r]
+       [ pc0_ $ value_ $ appfn_ (gref "GT") [V $ nat l, V $ nat r]
        , pc0_ $
-         value_ $ appfn_ (Global "LTE") [Literal $ nat l, Literal $ nat r]
+         value_ $ appfn_ (gref "LTE") [V $ nat l, V $ nat r]
        ]
-       (appfn_ (Global "OR") [Local 0, Local 1]))
+       (appfn_ (gref "OR") [L 0, L 1]))
     returnsTrue
 
 ordersFloatsWithLt :: Double -> Double -> Property
@@ -154,19 +155,19 @@ ordersFloatsWithLt l r =
        [ pc0_ $
          value_ $
          appfn_
-           (Global "LT")
-           [ Literal $ NativeNumber $ fromFloatDigits l
-           , Literal $ NativeNumber $ fromFloatDigits r
+           (gref "LT")
+           [ V $ NativeNumber $ fromFloatDigits l
+           , V $ NativeNumber $ fromFloatDigits r
            ]
        , pc0_ $
          value_ $
          appfn_
-           (Global "GTE")
-           [ Literal $ NativeNumber $ fromFloatDigits l
-           , Literal $ NativeNumber $ fromFloatDigits r
+           (gref "GTE")
+           [ V $ NativeNumber $ fromFloatDigits l
+           , V $ NativeNumber $ fromFloatDigits r
            ]
        ]
-       (appfn_ (Global "OR") [Local 0, Local 1]))
+       (appfn_ (gref "OR") [L 0, L 1]))
     returnsTrue
 
 
@@ -178,26 +179,26 @@ ordersFloatsWithGt l r =
        [ pc0_ $
          value_ $
          appfn_
-           (Global "GT")
-           [ Literal $ NativeNumber $ fromFloatDigits l
-           , Literal $ NativeNumber $ fromFloatDigits r
+           (gref "GT")
+           [ V $ NativeNumber $ fromFloatDigits l
+           , V $ NativeNumber $ fromFloatDigits r
            ]
        , pc0_ $
          value_ $
          appfn_
-           (Global "LTE")
-           [ Literal $ NativeNumber $ fromFloatDigits l
-           , Literal $ NativeNumber $ fromFloatDigits r
+           (gref "LTE")
+           [ V $ NativeNumber $ fromFloatDigits l
+           , V $ NativeNumber $ fromFloatDigits r
            ]
        ]
-       (appfn_ (Global "OR") [Local 0, Local 1]))
+       (appfn_ (gref "OR") [L 0, L 1]))
     returnsTrue
 
 equatesEqualInts :: Integer -> Property
 equatesEqualInts n =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "EQ") [Literal $ nat n, Literal $ nat n])
+    (appfn_ (gref "EQ") [V $ nat n, V $ nat n])
     returnsTrue
 
 equatesEqualFloats :: Double -> Property
@@ -205,9 +206,9 @@ equatesEqualFloats n =
   QM.monadicIO $
   calculates
     (appfn_
-       (Global "EQ")
-       [ Literal $ NativeNumber $ fromFloatDigits n
-       , Literal $ NativeNumber $ fromFloatDigits n
+       (gref "EQ")
+       [ V $ NativeNumber $ fromFloatDigits n
+       , V $ NativeNumber $ fromFloatDigits n
        ])
     returnsTrue
 
@@ -215,14 +216,14 @@ floors :: Double -> Property
 floors d =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "FLOOR") [Literal $ NativeNumber $ fromFloatDigits d])
+    (appfn_ (gref "FLOOR") [V $ NativeNumber $ fromFloatDigits d])
     (returnsNative $ NativeNumber $ fromIntegral (floor d :: Integer))
 
 ceilings :: Double -> Property
 ceilings d =
   QM.monadicIO $
   calculates
-    (appfn_ (Global "CEILING") [Literal $ NativeNumber $ fromFloatDigits d])
+    (appfn_ (gref "CEILING") [V $ NativeNumber $ fromFloatDigits d])
     (returnsNative $ NativeNumber $ fromIntegral (ceiling d :: Integer))
 
 

@@ -9,22 +9,29 @@ Stability   : experimental
 -}
 
 module Eucalypt.Stg.Globals.List
-  ( euConcat
-  , euCons
-  , euNil
-  , euHead
-  , euTail
-  , euReverse
+  ( globals
   ) where
 
+import Eucalypt.Stg.GlobalInfo (gref)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
 
+globals :: [(String, LambdaForm)]
+globals =
+  [ ("CONS", euCons)
+  , ("NIL", euNil)
+  , ("HEAD", euHead)
+  , ("TAIL", euTail)
+  , ("CONCAT", euConcat)
+  , ("REVERSE", euReverse)
+  ]
+
+
 -- | __CONS(h, t)
 euCons :: LambdaForm
-euCons = lam_ 0 2 $ appcon_ stgCons [Local 0, Local 1]
+euCons = lam_ 0 2 $ appcon_ stgCons [L 0, L 1]
 
 
 
@@ -34,7 +41,7 @@ euNil =
   lam_ 0 1 $
   ann_ "NIL" 0 $
   case_
-    (Atom (Local 0))
+    (Atom (L 0))
     [ (stgCons, (2, appcon_ stgFalse []))
     , (stgNil, (0, appcon_ stgTrue []))
     ]
@@ -47,11 +54,10 @@ euHead =
   lam_ 0 1 $
   ann_ "__HEAD" 0 $
   case_
-    (Atom (Local 0))
-    [ (stgCons, (2, Atom (Local 1)))
+    (Atom (L 0))
+    [ (stgCons, (2, Atom (L 1)))
     , ( stgNil
-      , ( 0
-        , appfn_ (Global "PANIC") [Literal $ NativeString "Head of empty list"]))
+      , (0, appfn_ (gref "PANIC") [V $ NativeString "Head of empty list"]))
     ]
 
 
@@ -60,26 +66,26 @@ euHead =
 euTail :: LambdaForm
 euTail =
   lam_ 0 1 $ ann_ "__TAIL" 0 $
-  case_ (Atom (Local 0)) [(stgCons, (2, Atom (Local 2)))]
+  case_ (Atom (L 0)) [(stgCons, (2, Atom (L 2)))]
 
 
 -- | __CONCAT(l, r)
 euConcat :: LambdaForm
 euConcat =
-  let l = Local 0
-      r = Local 1
+  let l = L 0
+      r = L 1
    in lam_ 0 2 $
       ann_ "__CONCAT" 0 $
       case_
         (Atom l)
         [ ( stgCons
           , ( 2
-            , let h = Local 2
-                  t = Local 3
-                  recur = Local 4
+            , let h = L 2
+                  t = L 3
+                  recur = L 4
                in let_
                     [ pc_ [t, r] $
-                      value_ $ appfn_ (Global "CONCAT") [Local 0, Local 1]
+                      value_ $ appfn_ (gref "CONCAT") [L 0, L 1]
                     ]
                     (appcon_ stgCons [h, recur])))
         , (stgNil, (0, Atom r))
@@ -90,28 +96,28 @@ euConcat =
 euReverse :: LambdaForm
 euReverse =
   lam_ 0 1 $ ann_ "__REVERSE" 0 $
-  let list = Local 0
-      self = Local 1
-      empty = Local 2
+  let list = L 0
+      self = L 1
+      empty = L 2
    in letrec_
         [ pc_ [self] $
           lam_ 1 2 $
-          let recurse = Local 0
-              acc = Local 1
-              rest = Local 2
+          let recurse = L 0
+              acc = L 1
+              rest = L 2
            in casedef_
                  (Atom rest)
                  [ ( stgCons
                    , ( 2
-                     , let h = Local 3
-                           t = Local 4
-                           newacc = Local 5
+                     , let h = L 3
+                           t = L 4
+                           newacc = L 5
                         in let_
                              [pc_ [h, acc] $ standardConstructor 2 stgCons]
                              (appfn_ recurse [newacc, t])))
                  , (stgNil, (0, Atom acc))
                  ]
-                 (appfn_ (Global "PANIC") [Literal $ NativeString "Improper list in __REVERSE"])
+                 (appfn_ (gref "PANIC") [V $ NativeString "Improper list in __REVERSE"])
         , pc0_ $ standardConstructor 0 stgNil
         ]
         (appfn_ self [empty, list])

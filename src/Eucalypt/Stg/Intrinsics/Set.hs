@@ -16,50 +16,34 @@ import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import qualified Data.Set as S
-import Data.Sequence ((!?))
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
-  [ IntrinsicInfo "EMPTYSET" 0 emptySet
-  , IntrinsicInfo "SETCONTAINS" 2 setContains
-  , IntrinsicInfo "SETADD" 2 setAdd
-  , IntrinsicInfo "SETREMOVE" 2 setRemove
-  , IntrinsicInfo "SETMEMBERS" 2 setMembers
+  [ IntrinsicInfo "EMPTYSET" 0 (invoke emptySet)
+  , IntrinsicInfo "SETCONTAINS" 2 (invoke setContains)
+  , IntrinsicInfo "SETADD" 2 (invoke setAdd)
+  , IntrinsicInfo "SETREMOVE" 2 (invoke setRemove)
+  , IntrinsicInfo "SETMEMBERS" 2 (invoke setMembers)
   ]
 
-getSetAndKey
-  :: MachineState -> ValVec -> IO (S.Set Native, Native)
-getSetAndKey ms args = do
-  ns <- getNatives ms args
-  let (Just (NativeSet d)) = ns !? 0
-  let (Just k) = ns !? 1
-  return (d, k)
-
-
 -- | __EMPTYSET
-emptySet :: MachineState -> ValVec -> IO MachineState
-emptySet ms _ = return $ setCode ms (ReturnLit (NativeSet S.empty) Nothing)
+emptySet :: MachineState -> IO MachineState
+emptySet ms = return $ setCode ms (ReturnLit (NativeSet S.empty) Nothing)
 
 -- | __SETCONTAINS(s, e)
-setContains :: MachineState -> ValVec -> IO MachineState
-setContains ms args = do
-  (s, n) <- getSetAndKey ms args
-  returnBool ms $ n `S.member` s
+setContains :: MachineState -> S.Set Native -> Native -> IO MachineState
+setContains ms s n = returnBool ms $ n `S.member` s
 
 -- | __SETADD(s, e)
-setAdd :: MachineState -> ValVec -> IO MachineState
-setAdd ms args = do
-  (s, n) <- getSetAndKey ms args
+setAdd :: MachineState -> S.Set Native -> Native -> IO MachineState
+setAdd ms s n =
   return $ setCode ms (ReturnLit (NativeSet $ S.insert n s) Nothing)
 
 -- | __SETADD(s, e)
-setRemove :: MachineState -> ValVec -> IO MachineState
-setRemove ms args = do
-  (s, n) <- getSetAndKey ms args
+setRemove :: MachineState -> S.Set Native -> Native -> IO MachineState
+setRemove ms s n =
   return $ setCode ms (ReturnLit (NativeSet $ S.delete n s) Nothing)
 
 -- | __SETMEMBERS(s)
-setMembers :: MachineState -> ValVec -> IO MachineState
-setMembers ms (ValVec args) = do
-  let (Just (StgNat (NativeSet s) _)) = args !? 0
-  returnNatList ms (S.toList s)
+setMembers :: MachineState -> S.Set Native -> IO MachineState
+setMembers ms s = returnNatList ms (S.toList s)

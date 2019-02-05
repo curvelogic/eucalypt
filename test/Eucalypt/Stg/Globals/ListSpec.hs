@@ -15,6 +15,7 @@ module Eucalypt.Stg.Globals.ListSpec
 
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.StgTestUtil
 import Test.Hspec
@@ -26,62 +27,62 @@ extractsHead :: StgSyn
 extractsHead =
   let_
     [ pc0_ $
-      thunk_ $ list_ 0 [Global "TRUE", Global "FALSE", Global "FALSE"] Nothing
+      thunk_ $ list_ 0 [gref "TRUE", gref "FALSE", gref "FALSE"] Nothing
     ] $
-  appfn_ (Global "HEAD") [Local 0]
+  appfn_ (gref "HEAD") [L 0]
 
 extractsTail :: StgSyn
 extractsTail =
   letrec_
     [ pc0_ $
-      thunk_ $ list_ 0 [Global "TRUE", Global "FALSE", Global "FALSE"] Nothing
-    , pc_ [Local 0] $ thunkn_ 1 $ appfn_ (Global "TAIL") [Local 0]
-    , pc0_ $ thunk_ $ list_ 0 [Global "FALSE", Global "FALSE"] Nothing
+      thunk_ $ list_ 0 [gref "TRUE", gref "FALSE", gref "FALSE"] Nothing
+    , pc_ [L 0] $ thunkn_ 1 $ appfn_ (gref "TAIL") [L 0]
+    , pc0_ $ thunk_ $ list_ 0 [gref "FALSE", gref "FALSE"] Nothing
     ] $
-  appfn_ (Global "EQ") [Local 1, Local 2]
+  appfn_ (gref "EQ") [L 1, L 2]
 
 conses :: StgSyn
 conses =
   letrec_
     [ pc0_ $
       thunk_ $
-      list_ 0 [Literal $ nat 1, Literal $ nat 2, Literal $ nat 3] Nothing
-    , pc_ [Local 0] $
-      thunkn_ 1 $ appfn_ (Global "CONS") [Literal $ nat 0, Local 0]
+      list_ 0 [V $ nat 1, V $ nat 2, V $ nat 3] Nothing
+    , pc_ [L 0] $
+      thunkn_ 1 $ appfn_ (gref "CONS") [V $ nat 0, L 0]
     , pc0_ $
       thunk_ $
       list_
         0
-        [Literal $ nat 0, Literal $ nat 1, Literal $ nat 2, Literal $ nat 3]
+        [V $ nat 0, V $ nat 1, V $ nat 2, V $ nat 3]
         Nothing
     ] $
-  appfn_ (Global "EQ") [Local 1, Local 2]
+  appfn_ (gref "EQ") [L 1, L 2]
 
 consesWithEmpty :: StgSyn
 consesWithEmpty =
   let_
-    [ pc0_ $ thunk_ $ appfn_ (Global "CONS") [Literal $ nat 0, Global "KNIL"]
-    , pc0_ $ thunk_ $ list_ 0 [Literal $ nat 0] Nothing
+    [ pc0_ $ thunk_ $ appfn_ (gref "CONS") [V $ nat 0, gref "KNIL"]
+    , pc0_ $ thunk_ $ list_ 0 [V $ nat 0] Nothing
     ] $
-  appfn_ (Global "EQ") [Local 0, Local 1]
+  appfn_ (gref "EQ") [L 0, L 1]
 
 consesWithListValuedCall :: StgSyn
 consesWithListValuedCall =
   letrec_
     [ pc0_ $
       thunk_ $
-      list_ 0 [Literal $ nat 1, Literal $ nat 2, Literal $ nat 3] Nothing
-    , pc_ [Local 0] $ thunkn_ 1 $ appfn_ (Global "TAIL") [Local 0]
-    , pc_ [Local 1] $
-      thunkn_ 1 $ appfn_ (Global "CONS") [Literal $ nat 0, Local 0]
+      list_ 0 [V $ nat 1, V $ nat 2, V $ nat 3] Nothing
+    , pc_ [L 0] $ thunkn_ 1 $ appfn_ (gref "TAIL") [L 0]
+    , pc_ [L 1] $
+      thunkn_ 1 $ appfn_ (gref "CONS") [V $ nat 0, L 0]
     , pc0_ $
       thunk_ $
-      list_ 0 [Literal $ nat 0, Literal $ nat 2, Literal $ nat 3] Nothing
+      list_ 0 [V $ nat 0, V $ nat 2, V $ nat 3] Nothing
     ] $
-  appfn_ (Global "EQ") [Local 2, Local 3]
+  appfn_ (gref "EQ") [L 2, L 3]
 
 headEmptyList :: StgSyn
-headEmptyList = appfn_ (Global "HEAD") [Global "KNIL"]
+headEmptyList = appfn_ (gref "HEAD") [gref "KNIL"]
 
 
 spec :: Spec

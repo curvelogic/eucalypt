@@ -12,8 +12,9 @@ module Eucalypt.Stg.Globals.MetaSpec
   , spec
   ) where
 
-import Eucalypt.Stg.StgTestUtil
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
+import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Syn
 import Test.Hspec
 
@@ -28,33 +29,33 @@ metaOnBlock =
   letrec_
     [ pc0_ $ thunk_ $ block [kv "a" $ nat 1]
     , pc0_ $ thunk_ testMeta
-    , pc_ [Local 0, Local 1] $ thunkn_ 2 $ appfn_ (Global "WITHMETA") [Local 1, Local 0]
-    , pc_ [Local 2] $ thunkn_ 1 $ appfn_ (Global "META") [Local 0]
+    , pc_ [L 0, L 1] $ thunkn_ 2 $ appfn_ (gref "WITHMETA") [L 1, L 0]
+    , pc_ [L 2] $ thunkn_ 1 $ appfn_ (gref "META") [L 0]
     ]
-    (appfn_ (Global "EQ") [Local 1, Local 3])
+    (appfn_ (gref "EQ") [L 1, L 3])
 
 metaOnRef :: Int -> Ref -> StgSyn
-metaOnRef envSize r =
+metaOnRef envSz r =
   letrec_
     [ pc0_ $ thunk_ testMeta
-    , pc_ [r, Local h] $
-      thunkn_ 2 $ appfn_ (Global "WITHMETA") [Local 1, Local 0]
-    , pc_ [Local $ h + 1] $ thunkn_ 1 $ appfn_ (Global "META") [Local 0]
+    , pc_ [r, L h] $
+      thunkn_ 2 $ appfn_ (gref "WITHMETA") [L 1, L 0]
+    , pc_ [L $ h + 1] $ thunkn_ 1 $ appfn_ (gref "META") [L 0]
     ]
-    (appfn_ (Global "EQ") [Local h, Local $ h + 2])
-  where h = fromIntegral envSize
+    (appfn_ (gref "EQ") [L h, L $ h + 2])
+  where h = fromIntegral envSz
 
 metaOnEnvNat :: StgSyn
 metaOnEnvNat =
   let_
-    [pc0_ $ lam_ 0 1 $ metaOnRef 1 (Local 0)]
-    (appfn_ (Local 0) [Literal $ NativeNumber 99])
+    [pc0_ $ lam_ 0 1 $ metaOnRef 1 (L 0)]
+    (appfn_ (L 0) [V $ NativeNumber 99])
 
 metaOnEnvCon :: StgSyn
 metaOnEnvCon =
   let_
-    [pc0_ $ thunk_ $ block [], pc0_ $ lam_ 0 1 $ metaOnRef 1 (Local 0)]
-    (appfn_ (Local 1) [Local 0])
+    [pc0_ $ thunk_ $ block [], pc0_ $ lam_ 0 1 $ metaOnRef 1 (L 0)]
+    (appfn_ (L 1) [L 0])
 
 spec :: Spec
 spec =

@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms #-}
 {-|
 Module      : Eucalypt.Stg.Tags
 Description : Predefined constructor tags for STG
@@ -14,20 +15,38 @@ import Eucalypt.Stg.Syn (LambdaForm, Tag, standardConstructor)
 stgNil :: Tag
 stgNil = 0
 
+pattern TagNil :: Tag
+pattern TagNil = 0
+
 stgCons :: Tag
 stgCons = 1
+
+pattern TagCons :: Tag
+pattern TagCons = 1
 
 stgBlock :: Tag
 stgBlock = 2
 
+pattern TagBlock :: Tag
+pattern TagBlock = 2
+
 stgUnit :: Tag
 stgUnit = 3
+
+pattern TagUnit :: Tag
+pattern TagUnit = 3
 
 stgTrue :: Tag
 stgTrue = 4
 
+pattern TagTrue :: Tag
+pattern TagTrue = 4
+
 stgFalse :: Tag
 stgFalse = 5
+
+pattern TagFalse :: Tag
+pattern TagFalse = 5
 
 boolTag :: Bool -> Tag
 boolTag True = stgTrue

@@ -38,5 +38,5 @@ spec = do
     it "fmaps" $
       ('x' :) <$> refs [L 0, G 9, V "a"] `shouldBe` refs [L 0, G 9, V "xa"]
     it "resolves" $
-      vals (toVec ["a"], toVec ["b", "c", "d"]) (refs [L 0, G 2, V "z"]) `shouldBe`
+      values (toVec ["a"], toVec ["b", "c", "d"]) (refs [L 0, G 2, V "z"]) `shouldBe`
       toVec ["a", "d", "z"]

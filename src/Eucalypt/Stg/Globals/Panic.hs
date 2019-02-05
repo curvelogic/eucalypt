@@ -9,25 +9,27 @@ Stability   : experimental
 
 
 module Eucalypt.Stg.Globals.Panic
-  ( euBomb
-  , euPanic
-  , euKeyNotFound
+  ( globals
   ) where
 
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics
 
+globals :: [(String, LambdaForm)]
+globals = [("BOMB", euBomb), ("PANIC", euPanic), ("!KEYNOTFOUND", euKeyNotFound)]
+
 euBomb :: LambdaForm
-euBomb = value_ $ appbif_ (intrinsicIndex "PANIC") [Literal $ NativeString "BOMB"]
+euBomb = value_ $ appbif_ (intrinsicIndex "PANIC") [V $ NativeString "BOMB"]
 
 euPanic :: LambdaForm
 euPanic =
   lam_ 0 1 $
-  force_ (Atom (Local 0)) $ appbif_ (intrinsicIndex "PANIC") [Local 0]
+  force_ (Atom (L 0)) $ appbif_ (intrinsicIndex "PANIC") [L 0]
 
 euKeyNotFound :: LambdaForm
 euKeyNotFound =
   lam_ 0 1 $
-  force_ (appfn_ (Global "JOIN") [Literal $ NativeString "Key not found: ", Local 0]) $
-  appbif_ (intrinsicIndex "PANIC") [Local 1]
+  force_ (appfn_ (gref "JOIN") [V $ NativeString "Key not found: ", L 0]) $
+  appbif_ (intrinsicIndex "PANIC") [L 1]

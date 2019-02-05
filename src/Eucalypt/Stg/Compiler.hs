@@ -19,10 +19,8 @@ import Data.Bifunctor (first, second)
 import Data.Foldable (toList)
 import Data.List (nub, elemIndex, sortOn)
 import Data.Scientific
-import qualified Data.Sequence as Seq
 import Eucalypt.Core.Syn as C
 import Eucalypt.Stg.GlobalInfo
-import Eucalypt.Stg.Globals
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
@@ -36,30 +34,30 @@ import Eucalypt.Stg.Tags
 
 -- | Construct a list as a STG LetRec
 list_ :: Int -> [Ref] -> Maybe Ref -> StgSyn
-list_ _ [] Nothing = Atom $ Global "KNIL"
-list_ envSize [] (Just ref) =
+list_ _ [] Nothing = Atom $ gref "KNIL"
+list_ envSz [] (Just ref) =
   let_
-    [pc0m_ ref $ value_ (Atom $ Global "KNIL")]
-    (Atom $ Local $ fromIntegral envSize)
-list_ envSize rs metaref = letrec_ pcs (Atom $ Local pcn)
+    [pc0m_ ref $ value_ (Atom $ gref "KNIL")]
+    (Atom $ L $ fromIntegral envSz)
+list_ envSz rs metaref = letrec_ pcs (Atom $ L pcn)
   where
     preclose p v m = pcm_ [v, p] m consConstructor
     valrefs = reverse rs
-    prevrefs = [Global "KNIL"] <> map (Local . fromIntegral) [envSize..]
+    prevrefs = [gref "KNIL"] <> map (L . fromIntegral) [envSz..]
     metarefs = replicate (length rs - 1) Nothing <> [metaref]
     pcs = zipWith3 preclose prevrefs valrefs metarefs
-    pcn = fromIntegral $ envSize + length pcs - 1
+    pcn = fromIntegral $ envSz + length pcs - 1
 
 
 -- | Convert a core primitive into a STG Native
 convert :: C.Primitive -> Ref
-convert (CoreInt n) = Literal $ NativeNumber $ fromIntegral n
-convert (CoreFloat d) = Literal $ NativeNumber $ fromFloatDigits d
-convert (CoreSymbol s) = Literal $ NativeSymbol s
-convert (CoreString s) = Literal $ NativeString s
-convert (CoreBoolean True) = Global "TRUE"
-convert (CoreBoolean False) = Global "FALSE"
-convert CoreNull = Global "NULL"
+convert (CoreInt n) = V $ NativeNumber $ fromIntegral n
+convert (CoreFloat d) = V $ NativeNumber $ fromFloatDigits d
+convert (CoreSymbol s) = V $ NativeSymbol s
+convert (CoreString s) = V $ NativeString s
+convert (CoreBoolean True) = gref "TRUE"
+convert (CoreBoolean False) = gref "FALSE"
+convert CoreNull = gref "NULL"
 
 
 -- | Compile a let / letrec binding
@@ -75,9 +73,9 @@ compileBinding _ context (nm, expr) = pc_ free $ compileLambdaForm expr
     fvs = [(v, context v) | v <- nub . toList $ expr]
     free = map snd fvs
     context' v =
-      maybe (context v) (Local . fromIntegral) (elemIndex v (map fst fvs))
+      maybe (context v) (L . fromIntegral) (elemIndex v (map fst fvs))
     contextL' _ (Var.F v) = context' v
-    contextL' envSize (Var.B i) = Local $ envSize + fromIntegral i
+    contextL' envSz (Var.B i) = L $ envSz + fromIntegral i
     compileLambdaForm e =
       case e of
         (CoreLambda smid _ ns body) ->
@@ -105,14 +103,14 @@ compile ::
   -> StgSyn
 
 -- | Compile a let. All Core lets are potentially recursive
-compile envSize context _metaref (C.CoreLet _ bs b _) =
+compile envSz context _metaref (C.CoreLet _ bs b _) =
   letrec_ stgBindings stgBody
   where
     l = length bs
-    envSize' = envSize + l
-    stgBindings = map (compileBinding envSize' context' . second fromScope) bs
-    stgBody = compile envSize' context' _metaref $ fromScope b
-    context' = extendContextForScope envSize context l
+    envSz' = envSz + l
+    stgBindings = map (compileBinding envSz' context' . second fromScope) bs
+    stgBody = compile envSz' context' _metaref $ fromScope b
+    context' = extendContextForScope envSz context l
 
 -- | Compile a var
 compile _ context _metaref (C.CoreVar _ v) = Atom $ context v
@@ -120,7 +118,7 @@ compile _ context _metaref (C.CoreVar _ v) = Atom $ context v
 -- | Compile a builtin on its own, NB this creates a partial
 -- application, we can do better by compiling the builtin in the
 -- context of a call to it
-compile _ _ _ (C.CoreBuiltin _ n) = App (Ref (Global n)) mempty
+compile _ _ _ (C.CoreBuiltin _ n) = App (Ref (gref n)) mempty
 
 -- | Compile primitive to STG native.
 compile _ _context metaref (C.CorePrim _ p) = annotated $ convert p
@@ -132,17 +130,17 @@ compile _ _context metaref (C.CorePrim _ p) = annotated $ convert p
         metaref
 
 -- | Block literals
-compile envSize context _metaref (C.CoreBlock _ content) = let_ [c] b
+compile envSz context _metaref (C.CoreBlock _ content) = let_ [c] b
   where
-    c = compileBinding envSize context ("<content>", content)
-    cref = Local $ fromIntegral envSize
+    c = compileBinding envSz context ("<content>", content)
+    cref = L $ fromIntegral envSz
     b = appcon_ stgBlock [cref]
 
 -- | Empty list with metadata, allocate to embed metadta
-compile envSize _ metaref (C.CoreList _ []) = list_ envSize [] metaref
+compile envSz _ metaref (C.CoreList _ []) = list_ envSz [] metaref
 
 -- | List literals
-compile envSize context metaref (C.CoreList _ els) =
+compile envSz context metaref (C.CoreList _ els) =
   if null elBinds
     then buildList
     else let_ elBinds buildList
@@ -151,52 +149,52 @@ compile envSize context metaref (C.CoreList _ els) =
     classify (CoreVar _ n) = EnvRef $ context n
     classify (CorePrim _ p) = EnvRef $ convert p
     classify expr = Closure Nothing expr
-    elRefs = map (toRef envSize) elAnalyses
+    elRefs = map (toRef envSz) elAnalyses
     elBinds =
-      map (compileBinding envSize context . ("<item>", ) . closureExpr) $
+      map (compileBinding envSz context . ("<item>", ) . closureExpr) $
       filter isClosure elAnalyses
-    buildList = list_ (envSize + length elBinds) elRefs metaref
+    buildList = list_ (envSz + length elBinds) elRefs metaref
 
 -- | Compile application, ensuring all args are atoms, allocating as
 -- necessary to achieve this.
-compile envSize context _metaref expr@C.CoreApply{} =
-  compileApply envSize context  _metaref expr
+compile envSz context _metaref expr@C.CoreApply{} =
+  compileApply envSz context  _metaref expr
 
 -- | Compile lambda into let to allocate and return fn
-compile envSize context _metaref f@CoreLambda{} =
-  let_ [compileBinding envSize context ("<anon>", f)]
-  $ Atom $ Local $ fromIntegral envSize
+compile envSz context _metaref f@CoreLambda{} =
+  let_ [compileBinding envSz context ("<anon>", f)]
+  $ Atom $ L $ fromIntegral envSz
 
 -- | Compile a dot lookup or name used in a generalised lookup context
-compile envSize context _metaref (CoreLookup _ obj nm deft) =
+compile envSz context _metaref (CoreLookup _ obj nm deft) =
   case deft of
     Nothing ->
       let_
-        [compileBinding envSize context ("", obj)]
+        [compileBinding envSz context ("", obj)]
         (appfn_
-           (Global "LOOKUP")
-           [Literal (NativeSymbol nm), Local (fromIntegral envSize)])
+           (gref "LOOKUP")
+           [V (NativeSymbol nm), L (fromIntegral envSz)])
     (Just expr) ->
       let_
-        [ compileBinding envSize context ("", expr)
-        , compileBinding envSize context ("", obj)
+        [ compileBinding envSz context ("", expr)
+        , compileBinding envSz context ("", obj)
         ]
         (appfn_
-           (Global "LOOKUPOR")
-           [ Literal (NativeSymbol nm)
-           , Local (fromIntegral envSize)
-           , Local (fromIntegral envSize + 1)
+           (gref "LOOKUPOR")
+           [ V (NativeSymbol nm)
+           , L (fromIntegral envSz)
+           , L (fromIntegral envSz + 1)
            ])
 
 
 -- | Let allocate metadata and pass ref through to nested expression
 -- for embedding in appropriate 'PreClosure'
-compile envSize context _metaref (CoreMeta _ meta obj) =
-  let_ [compileBinding envSize context ("", meta)] $
-  compile (envSize + 1) context (Just (Local $ fromIntegral envSize)) obj
+compile envSz context _metaref (CoreMeta _ meta obj) =
+  let_ [compileBinding envSz context ("", meta)] $
+  compile (envSz + 1) context (Just (L $ fromIntegral envSz)) obj
 
 -- | Operator metadata no longer required by the time we hit STG, pass through
-compile envSize context _ (CoreOperator _ _x _p expr) = compile envSize context Nothing expr
+compile envSz context _ (CoreOperator _ _x _p expr) = compile envSz context Nothing expr
 
 compile _ _ _ CoreName{} = error "Cannot compile name"
 compile _ _ _ CoreArgTuple{} = error "Cannot compile arg tuple"
@@ -214,16 +212,16 @@ data ArgCase a
   deriving (Show)
 
 -- | Retrieve the index from an ArgCase (must be present)
-index :: ArgCase a -> Int
-index (Scrutinee (Just i) _) = i
-index (Closure (Just i) _) = i
-index _ = error "Unexpected argument case in CoreApply compilation"
+argCaseindex :: ArgCase a -> Int
+argCaseindex (Scrutinee (Just i) _) = i
+argCaseindex (Closure (Just i) _) = i
+argCaseindex _ = error "Unexpected argument case in CoreApply compilation"
 
 toRef :: Int -> ArgCase a -> Ref
-toRef envSize component = case component of
+toRef envSz component = case component of
   EnvRef r -> r
-  Scrutinee (Just n) _ -> Local $ fromIntegral (n + envSize)
-  Closure (Just n) _ -> Local $ fromIntegral (n + envSize)
+  Scrutinee (Just n) _ -> L $ fromIntegral (n + envSz)
+  Closure (Just n) _ -> L $ fromIntegral (n + envSz)
   _ -> error "Unexpected ArgCase during compilation"
 
 closureExpr :: ArgCase a -> CoreExp a
@@ -246,15 +244,15 @@ compileApply ::
   -> Maybe Ref -- ^ metadata as ref into environment
   -> C.CoreExp v -- ^ core expression to compile
   -> StgSyn
-compileApply envSize context metaref (C.CoreApply _ f xs) = wrappedCall
+compileApply envSz context metaref (C.CoreApply _ f xs) = wrappedCall
   where
     strictness =
       case op f of
-        (CoreBuiltin _ n) -> standardGlobalStrictness n
+        (CoreBuiltin _ n) -> globalSignature n
         _ -> replicate (length xs) NonStrict
     components0 =
       case op f of
-        (CoreBuiltin _ n) -> [EnvRef $ Global n]
+        (CoreBuiltin _ n) -> [EnvRef $ gref n]
         (CoreVar _ a) -> [EnvRef $ context a]
         _ -> [Closure Nothing f]
     acc comps (x, strict) =
@@ -270,9 +268,9 @@ compileApply envSize context metaref (C.CoreApply _ f xs) = wrappedCall
             NonStrict -> [Closure Nothing x]
             Strict -> [Scrutinee Nothing x]
     components = numberArgCases $ foldl acc components0 (zip xs strictness)
-    call = compileCall envSize components
+    call = compileCall envSz components
     wrappedCall =
-      compileWrappers envSize context metaref (wrappers components) call
+      compileWrappers envSz context metaref (wrappers components) call
     op fn =
       case fn of
         (CoreOperator _ _x _p e) -> e
@@ -310,7 +308,7 @@ numberArgCases = numberPreClosures . numberScrutinees
 -- | Sort those args which need evaluating or allocating into
 -- scrutinees then preclosures in the order dictated by numbering
 wrappers :: [ArgCase a] -> ([ArgCase a], [ArgCase a])
-wrappers = span isScrutinee . sortOn index . filter notEnvRef
+wrappers = span isScrutinee . sortOn argCaseindex . filter notEnvRef
   where
     notEnvRef (EnvRef _) = False
     notEnvRef _ = True
@@ -321,9 +319,9 @@ wrappers = span isScrutinee . sortOn index . filter notEnvRef
 
 -- | Compile the apply expression
 compileCall :: Int -> [ArgCase a] -> StgSyn
-compileCall envSize components =
-  App (Ref $ toRef envSize $ head components) $
-  Seq.fromList (map (toRef envSize) $ tail components)
+compileCall envSz components =
+  App (Ref $ toRef envSz $ head components) $
+  refs (map (toRef envSz) $ tail components)
 
 
 -- | Compile the wrappers
@@ -335,11 +333,11 @@ compileWrappers ::
   -> ([ArgCase v], [ArgCase v])
   -> StgSyn
   -> StgSyn
-compileWrappers envSize  context metaref (scrutinees, closures) call =
+compileWrappers envSz  context metaref (scrutinees, closures) call =
   foldr wrapCase allocWrappedCall scrutinees
   where
     preclosures =
-      map (compileBinding envSize context . ("", ) . closureExpr) closures
+      map (compileBinding envSz context . ("", ) . closureExpr) closures
     allocWrappedCall =
       if null preclosures
         then call
@@ -347,7 +345,7 @@ compileWrappers envSize  context metaref (scrutinees, closures) call =
     wrapCase c body =
       case c of
         (Scrutinee (Just n) expr) ->
-          force_ (compile (envSize + n) context metaref expr) body
+          force_ (compile (envSz + n) context metaref expr) body
         _ ->
           error "Unexpected component while wrapping cases in apply compilation"
 
@@ -359,18 +357,18 @@ emptyContext v  = error $ show v ++ " missing from context during compilation"
 
 -- | Extend the context to apply to Vars in Scope
 extendContextForScope :: Int -> (v -> Ref) -> Int -> (Var Int v -> Ref)
-extendContextForScope envSize context count = context'
+extendContextForScope envSz context count = context'
   where
-    context' (Var.B i) = newEnvRefs A.! fromIntegral (i + envSize)
+    context' (Var.B i) = newEnvRefs A.! fromIntegral (i + envSz)
     context' (Var.F x) = context x
     newEnvRefs =
       A.array
-        (envSize, envSize + count - 1)
-        [(i, Local $ fromIntegral i) | i <- [envSize .. envSize + count - 1]]
+        (envSz, envSz + count - 1)
+        [(i, L $ fromIntegral i) | i <- [envSz .. envSz + count - 1]]
 
 -- | Wrap in a render builtin which will NF eval and emit render events
 compileForRender :: CoreExpr -> StgSyn
 compileForRender expr =
   let_
     [pc0_ $ thunk_ (compile 0 emptyContext Nothing expr)]
-    (appfn_ (Global "RENDER") [Local 0])
+    (appfn_ (gref "RENDER") [L 0])

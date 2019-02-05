@@ -9,9 +9,9 @@ Stability   : experimental
 module Eucalypt.Stg.EvalSpec (main, spec)
 where
 
-import qualified Data.Sequence as Seq
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Event
+import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
@@ -31,23 +31,23 @@ spec = do
 headOfList :: StgSyn
 headOfList =
   let_
-    [ pc0_ $ thunk_ $ appfn_ (Global "HEAD") []
+    [ pc0_ $ thunk_ $ appfn_ (gref "HEAD") []
     , pc0_ $ thunk_ (litList_ 0 [nat 1, nat 2])
     ]
-    (App (Ref (Local 0)) $ Seq.singleton (Local 1))
+    (App (Ref (L 0)) $ refs [L 1])
 
 -- A test which adds 1 and 2...
 addTest :: StgSyn
 addTest =
   letrec_
-    [ pc0_ $ value_ (Atom (Literal $ nat 1))
-    , pc0_ $ value_ (Atom (Literal $ nat 2))
-    , pc_ [Local 0, Local 1] $
+    [ pc0_ $ value_ (Atom (V $ nat 1))
+    , pc0_ $ value_ (Atom (V $ nat 2))
+    , pc_ [L 0, L 1] $
       valuen_ 2 $
-      force_ (Atom (Local 0)) (force_ (Atom (Local 1)) $ add [Local 2, Local 3])
+      force_ (Atom (L 0)) (force_ (Atom (L 1)) $ add [L 2, L 3])
     ] $
-  force_ (Atom $ Local 2) $
-  appbif_ (intrinsicIndex "===") [Literal $ nat 3, Local 3]
+  force_ (Atom $ L 2) $
+  appbif_ (intrinsicIndex "===") [V $ nat 3, L 3]
   where
     add = appbif_ $ intrinsicIndex "ADD"
 
@@ -77,15 +77,15 @@ blockSpec =
 evalMetadata :: StgSyn
 evalMetadata =
   letrec_
-    [ pc0_ $ value_ $ Atom (Literal $ NativeNumber 99)
-    , pc_ [Local 0] $
+    [ pc0_ $ value_ $ Atom (V $ NativeNumber 99)
+    , pc_ [L 0] $
       thunkn_ 1 $
       list_
         1
-        [Literal $ NativeNumber 0, Literal $ NativeNumber 1]
-        (Just $ Local 0)
+        [V $ NativeNumber 0, V $ NativeNumber 1]
+        (Just $ L 0)
     ] $
-  case_ (Atom $ Local 1) [(stgCons, (3, Atom $ Local 4))]
+  case_ (Atom $ L 1) [(stgCons, (3, Atom $ L 4))]
 
 
 metaSpec :: Spec

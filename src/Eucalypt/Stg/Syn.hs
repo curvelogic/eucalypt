@@ -12,7 +12,10 @@ https://github.com/ermine-language/ermine/blob/master/src/Ermine/Syntax/G.hs
 (-- Copyright :  (c) Edward Kmett and Dan Doel 2014)
 though now not much similarity remains.
 -}
-module Eucalypt.Stg.Syn where
+module Eucalypt.Stg.Syn
+  ( module Eucalypt.Stg.Syn
+  , module Eucalypt.Stg.Vec
+  ) where
 
 import Data.Foldable (toList)
 import qualified Data.Map as Map
@@ -21,48 +24,15 @@ import Data.Word
 import Eucalypt.Core.SourceMap (SMID)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Pretty
+import Eucalypt.Stg.Vec
 import qualified Text.PrettyPrint as P
 
-
--- | The various types of reference from STG code to other closures
--- and values.
-data Ref
-  = Global !String
-  | Local !Word64
-  | Literal !Native
-  deriving (Eq, Show)
-
-envIndex :: Ref -> Maybe Word64
-envIndex (Local n) = Just n
-envIndex _ = Nothing
+-- | Refs in the syntax may include literal natives. (In the machine
+-- they can contain general values including addresses)
+type Ref = Reference Native
 
 -- | Vector of Ref, describing source of free variables
-type RefVec = Seq.Seq Ref
-
--- | Create a ref vec of local environments references from 'from' to
--- 'to'.
-locals :: Word64 -> Word64 -> RefVec
-locals from to =
-  Local . fromIntegral <$> Seq.iterateN (fromIntegral (to - from)) (+ 1) from
-
-localsList :: Int -> Int -> [Ref]
-localsList from to = [Local $ fromIntegral i | i <- [from .. to - 1]]
-
--- | Extract refs from a syntax expression
-class Show a =>
-      HasRefs a
-  where
-  refs :: a -> [Ref]
-
-instance StgPretty Ref where
-  prettify (Global s) = P.char 'G' <> P.brackets (P.text s)
-  prettify (Local i) = P.char 'E' <> P.brackets (P.int (fromIntegral i))
-  prettify (Literal n) = prettify n
-
--- | References to stack or env are contextual, global vars not.
-isContextualRef :: Ref -> Bool
-isContextualRef (Global _) = False
-isContextualRef _ = True
+type SynVec = RefVec Native
 
 -- | Constructor tag
 type Tag = Word64
@@ -83,10 +53,6 @@ data BranchTable = BranchTable
     -- (constructor, native, ...), the metadata is persisted through
     -- the environment
   } deriving (Eq, Show)
-
-instance HasRefs BranchTable where
-  refs (BranchTable brs df) =
-    foldMap (refs . snd) brs <> foldMap refs df
 
 instance StgPretty BranchTable where
   prettify (BranchTable bs df) =
@@ -111,10 +77,6 @@ data Func
   | Intrinsic !Int -- ^ An intrinsic function
   deriving (Eq, Show)
 
-instance HasRefs Func where
-  refs (Ref r) = [r]
-  refs _ = []
-
 instance StgPretty Func where
   prettify (Ref r) = prettify r
   prettify (Con t) = P.text "C|" <> P.int (fromIntegral t)
@@ -124,14 +86,16 @@ instance StgPretty Func where
 -- including both free and bound variable book-keeping and an
 -- updateable flag.
 data LambdaForm = LambdaForm
-  { _free :: !Word64
-  , _bound :: !Word64
-  , _update :: !Bool
-  , _body :: !StgSyn
+  { lamFree :: !Word64
+    -- ^ count of free variables (refs into environment) in the lambda
+    -- form.
+  , lamBound :: !Word64
+    -- ^ count of bound variables (i.e. arity) of the lambda form
+  , lamUpdate :: !Bool
+    -- ^ whether to update (i.e. is this a thunk)
+  , lamBody :: !StgSyn
+    -- ^ lambda body
   } deriving (Eq, Show)
-
-instance HasRefs LambdaForm where
-  refs lf = refs $ _body lf
 
 instance StgPretty LambdaForm where
   prettify (LambdaForm f b u body) =
@@ -148,7 +112,7 @@ instance StgPretty LambdaForm where
 -- | A PreClosure is a LambdaForm together with refs which will be
 -- resolved to the bindings at allocation time.
 data PreClosure = PreClosure
-  { pcFreeRefs :: !RefVec
+  { pcFreeRefs :: !SynVec
     -- ^ Refs into existing environment to use to form local
     -- environment for the closure
   , pcMetaRef :: !(Maybe Ref)
@@ -158,40 +122,30 @@ data PreClosure = PreClosure
     -- ^ 'LambdaForm' containing expression to evaluate
   } deriving (Eq, Show)
 
-instance HasRefs PreClosure where
-  refs (PreClosure rv m _) = toList rv <> toList m
-
 instance StgPretty PreClosure where
-  prettify (PreClosure rs md lf) = refDoc <> metaDoc <> P.space <> prettify lf
+  prettify (PreClosure rs md lf) =
+    P.braces (prettify rs) <> metaDoc <> P.space <> prettify lf
     where
-      refDoc =
-        P.braces $
-        P.hcat $ P.punctuate (P.comma <> P.space) (map prettify (toList rs))
-      metaDoc = case md of
-        Just r -> P.char '`' <> prettify r <> P.char '`'
-        Nothing -> P.empty
+      metaDoc =
+        case md of
+          Just r -> P.char '`' <> prettify r <> P.char '`'
+          Nothing -> P.empty
 
 -- | The STG language
 data StgSyn
-  = Atom !Ref
-  | Case !StgSyn
-         !BranchTable
-  | App !Func
-        !RefVec
-  | Let (Seq.Seq PreClosure)
-        !StgSyn
-  | LetRec (Seq.Seq PreClosure)
-           !StgSyn
-  | Ann !String !SMID !StgSyn
+  = Atom { synEvaluand :: !Ref }
+  | Case { synScrutinee :: !StgSyn
+         , synBranches :: !BranchTable }
+  | App { synCallable :: !Func
+        , synArguments :: !SynVec }
+  | Let { synBindings :: Seq.Seq PreClosure
+        , synBody :: !StgSyn }
+  | LetRec { synBindings :: Seq.Seq PreClosure
+           , synBody :: !StgSyn }
+  | Ann { synAnnotation :: !String
+        , synSmid :: !SMID
+        , synBody :: !StgSyn }
   deriving (Eq, Show)
-
-instance HasRefs StgSyn where
-  refs (Atom r) = [r]
-  refs (Case r k) = refs r <> refs k
-  refs (App f xs) = refs f <> toList xs
-  refs (Let pcs expr) = foldMap refs pcs <> refs expr
-  refs (LetRec pcs expr) = foldMap refs pcs <> refs expr
-  refs (Ann _ _ expr) = refs expr
 
 instance StgPretty StgSyn where
   prettify (Atom r) = P.char '*' <> prettify r
@@ -199,7 +153,7 @@ instance StgPretty StgSyn where
     (P.text "case" <> P.space <> prettify s <> P.space <> P.text "of") P.$$
     P.nest 2 (prettify k)
   prettify (App f xs) =
-    prettify f <> P.space <> P.hcat (P.punctuate P.space (map prettify (toList xs)))
+    prettify f <> P.space <> prettify xs
   prettify (Let pcs e) =
     P.hang (P.text "let") 4 (P.vcat (map prettify (toList pcs))) P.$$
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
@@ -207,6 +161,9 @@ instance StgPretty StgSyn where
     P.hang (P.text "letrec") 7 (P.vcat (map prettify (toList pcs))) P.$$
     P.nest 1 ( P.text "in" <> P.space <> prettify e)
   prettify (Ann s _ expr) = P.char '`' <> P.text s <> P.char '`' <> P.space <> prettify expr
+
+atom_ :: Ref -> StgSyn
+atom_ = Atom
 
 force_ :: StgSyn -> StgSyn -> StgSyn
 force_ scrutinee df = Case scrutinee (BranchTable mempty (Just df))
@@ -226,13 +183,13 @@ letrec_ :: [PreClosure] -> StgSyn -> StgSyn
 letrec_ pcs = LetRec (Seq.fromList pcs)
 
 appfn_ :: Ref -> [Ref] -> StgSyn
-appfn_ f xs = App (Ref f) $ Seq.fromList xs
+appfn_ f xs = App (Ref f) $ refs xs
 
 appbif_ :: Int -> [Ref] -> StgSyn
-appbif_ f xs = App (Intrinsic f) $ Seq.fromList xs
+appbif_ f xs = App (Intrinsic f) $ refs xs
 
 appcon_ :: Tag -> [Ref] -> StgSyn
-appcon_ t xs = App (Con t) $ Seq.fromList xs
+appcon_ t xs = App (Con t) $ refs xs
 
 lam_ :: Int -> Int -> StgSyn -> LambdaForm
 lam_ f b = LambdaForm (fromIntegral f) (fromIntegral b) False
@@ -244,7 +201,7 @@ thunk_ :: StgSyn -> LambdaForm
 thunk_ = thunkn_ 0
 
 box_ :: Native -> LambdaForm
-box_ n = LambdaForm 0 0 False (Atom (Literal n))
+box_ n = LambdaForm 0 0 False (Atom (V n))
 
 valuen_ :: Int -> StgSyn -> LambdaForm
 valuen_ n = LambdaForm (fromIntegral n) 0 False
@@ -265,10 +222,10 @@ pc0m_ :: Ref -> LambdaForm -> PreClosure
 pc0m_ meta = PreClosure mempty (Just meta)
 
 pc_ :: [Ref] -> LambdaForm -> PreClosure
-pc_ = (`PreClosure` Nothing) . Seq.fromList
+pc_ = (`PreClosure` Nothing) . refs
 
 pcm_ :: [Ref] -> Maybe Ref -> LambdaForm -> PreClosure
-pcm_ rs = PreClosure (Seq.fromList rs)
+pcm_ rs = PreClosure (refs rs)
 
 ann_ :: String -> SMID -> StgSyn -> StgSyn
 ann_ = Ann
@@ -276,6 +233,4 @@ ann_ = Ann
 -- | Standard constructor - applies saturated data constructor of tag
 -- @t@ to refs on stack.
 standardConstructor :: Word64 -> Tag -> LambdaForm
-standardConstructor f t =
-  LambdaForm f 0 False $
-  App (Con t) $ Local <$> Seq.iterateN (fromIntegral f) (+ 1) 0
+standardConstructor f t = LambdaForm f 0 False $ App (Con t) $ range 0 f

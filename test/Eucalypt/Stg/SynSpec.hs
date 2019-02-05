@@ -9,7 +9,7 @@ Stability   : experimental
 module Eucalypt.Stg.SynSpec (main, spec)
 where
 
-import Data.Sequence (fromList)
+import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Test.Hspec
 
@@ -17,10 +17,12 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = do
-  describe "isContextualRef" $
-    it "classifies" $
-    isContextualRef (Global "STR") `shouldBe` False
-  describe "refvec" $
-    it "generates from locals" $
-    locals 2 5 `shouldBe` fromList [Local 2, Local 3, Local 4]
+spec =
+  describe "dsl" $ do
+    it "creates constructor applications" $
+      synCallable (appcon_ 9 [V (NativeString "a")]) `shouldBe` Con 9
+    it "creates case statements" $
+      synScrutinee (force_ (appfn_ (L 0) [L 1, L 2]) (appfn_ (L 0) [L 4])) `shouldBe`
+      appfn_ (L 0) [L 1, L 2]
+    it "creates thunks" $
+      lamUpdate (thunk_ (appfn_ (G 0) [L 1])) `shouldBe` True

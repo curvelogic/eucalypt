@@ -10,17 +10,25 @@ Stability   : experimental
 module Eucalypt.Stg.StandardMachine where
 
 import Control.Monad.IO.Class
+import qualified Data.Map as Map
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.Syn
-import Eucalypt.Stg.Globals
+import Eucalypt.Stg.GlobalInfo (globalNames)
+import Eucalypt.Stg.Globals (globals)
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Pretty
 import qualified Text.PrettyPrint as P
 
+-- | Lambda forms representing the global environment
+globalLambdaForms :: Vec LambdaForm
+globalLambdaForms = toVec $ map (lfs Map.!) globalNames
+  where
+    lfs = foldl add Map.empty globals
+    add m (k, lf) = Map.insert k lf m
 
 -- | Initialise machine state with the standard global defs.
 initStandardMachineState :: MonadIO m => StgSyn -> m MachineState
-initStandardMachineState s = initMachineState s standardGlobalMap
+initStandardMachineState s = initMachineState s globalLambdaForms
 
 -- | A debug dump to use as machine's trace function
 dump :: MachineState -> IO ()

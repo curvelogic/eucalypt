@@ -1,3 +1,5 @@
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -18,12 +20,17 @@ module Eucalypt.Stg.Vec
   , singleton
   , index
   , splitVecAt
+  , asSeq
+  , fromSeq
   , Environments(..)
-  , Ref(..)
+  , Reference(..)
   , RefVec
+  , refCount
   , refs
-  , vals
+  , values
+  , value
   , range
+  , headAndTail
   ) where
 
 import Data.Foldable (toList)
@@ -34,10 +41,22 @@ import qualified Text.PrettyPrint as P
 -- | Vec of values
 newtype Vec a =
   Vec (Seq.Seq a)
-  deriving (Eq, Show, Semigroup, Monoid)
+  deriving ( Eq
+           , Show
+           , Semigroup
+           , Monoid
+           , Functor
+           , Applicative
+           , Monad
+           , Foldable
+           , Traversable
+           )
 
 toVec :: [a] -> Vec a
 toVec = Vec . Seq.fromList
+
+fromSeq :: Seq.Seq a -> Vec a
+fromSeq = Vec
 
 envSize :: Vec a -> Int
 envSize (Vec v) = Seq.length v
@@ -48,8 +67,11 @@ singleton = Vec . Seq.singleton
 index :: Vec a -> Word -> a
 index (Vec xs) n = xs `Seq.index` fromIntegral n
 
+asSeq :: Vec a -> Seq.Seq a
+asSeq (Vec xs) = xs
+
 -- | Split a Vec in two at the specified index
-splitVecAt :: Integral a => a -> Vec a -> (Vec a, Vec a)
+splitVecAt :: Integral n => n -> Vec a -> (Vec a, Vec a)
 splitVecAt n (Vec vs) =
   let (l, r) = Seq.splitAt (fromIntegral n) vs
    in (Vec l, Vec r)
@@ -66,41 +88,64 @@ instance Environments (Vec a, Vec a) a where
   global (_, g) = g
 
 
--- | Ref a is index into Vec a or an a override
-data Ref a = L !Word | G !Word | V !a
+-- | Reference a is index into Vec a or an a override
+data Reference a = L !Word | G !Word | V !a
   deriving (Eq, Show)
 
-instance Functor Ref where
+instance Functor Reference where
   fmap f (V x) = V (f x)
   fmap _ (L n) = L n
   fmap _ (G n) = G n
 
+instance StgPretty a => StgPretty (Reference a) where
+  prettify (G n) = P.char 'G' <> P.brackets (P.int $ fromIntegral n)
+  prettify (L n) = P.char 'E' <> P.brackets (P.int $ fromIntegral n)
+  prettify (V x) = prettify x
+
 newtype RefVec a =
-  RefVec (Seq.Seq (Ref a))
+  RefVec (Seq.Seq (Reference a))
   deriving (Eq, Show, Semigroup, Monoid)
 
 instance Functor RefVec where
   fmap f (RefVec rs) = RefVec $ fmap (fmap f) rs
 
-refs :: [Ref a] -> RefVec a
+instance StgPretty a => StgPretty (RefVec a) where
+  prettify (RefVec rs) =
+    P.hcat $ P.punctuate P.space (map prettify (toList rs))
+
+refCount :: RefVec a -> Int
+refCount (RefVec xs) = length xs
+
+refs :: [Reference a] -> RefVec a
 refs rs = RefVec $ Seq.fromList rs
 
-vals :: Environments e a => e -> RefVec a -> Vec a
-vals e r = extractVals $ resolve e r
+values :: Environments e a => e -> RefVec a -> Vec a
+values e r = extractVals $ resolveVec e r
+
+value :: Environments e a => e -> Reference a -> a
+value e r = extract $ resolve e r
+
+extract :: Reference a -> a
+extract (V a) = a
+extract _ = error "Non-value ref"
 
 extractVals :: RefVec a -> Vec a
 extractVals (RefVec rs) = Vec $ fmap extract rs
-  where
-    extract (V a) = a
-    extract _ = error "Non-value ref"
 
-resolve :: Environments e a => e -> RefVec a -> RefVec a
-resolve env (RefVec rs) = RefVec $ fmap (val env) rs
-  where
-    val e (L n) = V $ local e `index` n
-    val e (G n) = V $ global e `index` n
-    val _ (V x) = V x
+resolveVec :: Environments e a => e -> RefVec a -> RefVec a
+resolveVec env (RefVec rs) = RefVec $ fmap (resolve env) rs
+
+resolve :: Environments e a => e -> Reference a -> Reference a
+resolve e (L n) = V $ local e `index` n
+resolve e (G n) = V $ global e `index` n
+resolve _ (V x) = V x
 
 range :: Integral n => n -> n -> RefVec a
 range from to =
-  RefVec $ Seq.fromList $ map L [(fromIntegral from) .. (fromIntegral to - 1)]
+  let b = fromIntegral from :: Int
+      e = fromIntegral to :: Int
+   in refs $ map (L . fromIntegral) [b .. (e - 1)]
+
+headAndTail :: RefVec a -> (Reference a, RefVec a)
+headAndTail (RefVec (Seq.viewl -> h Seq.:< t)) = (h, RefVec t)
+headAndTail _ = error "Illegal decomposition of empty sequence"
