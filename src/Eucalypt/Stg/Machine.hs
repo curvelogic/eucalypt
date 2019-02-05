@@ -292,11 +292,6 @@ instance StgPretty MachineState where
 throwIn :: MonadThrow m => MachineState -> StgError -> m a
 throwIn ms err = throwM $ StgException err (machineCallStack ms)
 
--- | Resolve a vector of refs against an environment to create
--- environment
-vals :: MonadThrow m => ValVec -> MachineState -> SynVec -> m ValVec
-vals le ms rs = return $ values (le, machineGlobals ms) (nativeToValue <$> rs)
-
 -- | Resolve a ref against env and machine to get address of
 -- HeapObject
 resolveHeapObject :: MonadThrow m => ValVec -> MachineState -> Ref -> m Address
@@ -348,7 +343,7 @@ appendEvent e ms@MachineState {machineEvents = es0} =
 buildClosure ::
      MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
 buildClosure le ms (PreClosure captures metaref code) = do
-  env <- vals le ms captures
+  let env = values (le, ms) (nativeToValue <$> captures)
   meta <-
     case metaref of
       Nothing -> return MetadataPassThrough

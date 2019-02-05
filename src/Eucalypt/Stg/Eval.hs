@@ -91,7 +91,9 @@ resolveAndCall ::
   -> LambdaForm
   -> SynVec
   -> m Code
-resolveAndCall ms resolveEnv callEnv lf xs = vals resolveEnv ms xs >>= call callEnv ms lf
+resolveAndCall ms resolveEnv callEnv lf xs =
+  let args = values (resolveEnv, ms) (nativeToValue <$> xs)
+   in call callEnv ms lf args
 
 -- | Apply closure when we have the exact number of arguments
 applyExact ::
@@ -249,12 +251,12 @@ step ms0@MachineState {machineCode = (Eval (App f xs) env)} = {-# SCC "EvalApp" 
         BlackHole -> throwIn ms EnteredBlackHole
     -- must be saturated
     Con t -> do
-      env' <- vals env ms xs
+      let env' = values (env, ms) (nativeToValue <$> xs)
       return $ setCode ms (ReturnCon t env' Nothing)
     -- must be saturated
     Intrinsic i ->
       let mf = intrinsicFunction i
-       in liftIO $ vals env ms xs >>= mf ms
+       in liftIO $ mf ms $ values (env, ms) (nativeToValue <$> xs)
 
 
 
