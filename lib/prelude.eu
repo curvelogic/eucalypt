@@ -544,6 +544,12 @@ scanr(op, i, l): if(l nil?, [i], { scan: scanr(op, i, l tail) }.(cons(op(l head,
 ` "`iterate(f, i) - return list of `i` with subsequent repeated applications of `f` to `i`"
 iterate(f, i): cons(i, iterate(f, i) map(f))
 
+` "`ints-from(n)` - return infinite list of integers from `n` upwards"
+ints-from(n): n iterate(inc)
+
+` "range(b, e)` - return list of ints from `b` to `e` (not including `e`)"
+range(b, e): ints-from(b) take(e - b)
+
 ` "`count(l)` - return count of items in list `l`"
 count(l): foldl({ n: • el: •}.(n inc), 0, l)
 
