@@ -10,13 +10,14 @@ Stability   : experimental
 
 module Eucalypt.Driver.Stg
   ( renderConduit
+  , runHeadless
   , dumpStg
   ) where
 
 
 import Conduit hiding (throwM)
 import Control.DeepSeq
-import Control.Exception.Safe (handle, IOException, throwM, MonadCatch)
+import Control.Exception.Safe (IOException, MonadCatch, catch, handle, throwM)
 import Control.Monad (unless)
 import qualified Data.ByteString as BS
 import Data.Maybe (fromMaybe)
@@ -60,6 +61,31 @@ machine = initStandardMachineState
 -- | Instantiate the debug STG machine
 debugMachine :: MonadIO m => StgSyn -> m MachineState
 debugMachine = initDebugMachineState
+
+
+-- | Useful for comparing speed of conduit render pipelines with raw
+--  evaluation.
+runHeadless :: (MonadUnliftIO m, MonadIO m, MonadThrow m, MonadCatch m)
+  => EucalyptOptions
+  -> CoreExpr
+  -> m ()
+runHeadless opts expr = do
+  syn <- compile expr
+  ms <- newMachine syn
+  loop ms
+  where
+    newMachine =
+      if optionDebug opts
+        then debugMachine
+        else machine
+    loop s = do
+      s' <-
+        step s `catch`
+        (\(e :: IOException) ->
+           throwM $ StgException (IOSystem e) (machineCallStack s))
+      let events = reverse $ machineEvents s'
+          terminated = events `deepseq` machineTerminated s'
+        in unless terminated $ loop s'
 
 
 

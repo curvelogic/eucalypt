@@ -35,6 +35,7 @@ data Command
   | DumpCooked
   | DumpFinalCore
   | DumpStg
+  | Headless
   deriving (Show, Eq)
 
 
@@ -107,6 +108,10 @@ commandOption =
     DumpStg
     (long "dump-stg" <>
      help "Dump STG syntax prior to evaluation") <|>
+  flag'
+    Headless
+    (long "headless" <> short 'H' <>
+     help "Run evaluation without a render (for timing)") <|>
   flag
     Evaluate
     Parse

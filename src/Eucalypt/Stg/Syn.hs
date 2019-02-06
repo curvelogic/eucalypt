@@ -20,7 +20,6 @@ module Eucalypt.Stg.Syn
 import Data.Foldable (toList)
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
-import Data.Word
 import Eucalypt.Core.SourceMap (SMID)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Pretty
@@ -35,7 +34,7 @@ type Ref = Reference Native
 type SynVec = RefVec Native
 
 -- | Constructor tag
-type Tag = Word64
+type Tag = Word
 
 -- | Branches of a case expression.
 --
@@ -44,7 +43,7 @@ type Tag = Word64
 -- tree walking of a data structure down to and including the leaf
 -- scalars without having to worry about boxing the the natives.
 data BranchTable = BranchTable
-  { dataBranches :: Map.Map Tag (Word64, StgSyn)
+  { dataBranches :: Map.Map Tag (Int, StgSyn)
     -- ^ Map constructor tags, to expression and number of variables
     -- to bind (which might be the arity of the constructor or arity
     -- of constructor + 1 to receive metadata)
@@ -86,10 +85,10 @@ instance StgPretty Func where
 -- including both free and bound variable book-keeping and an
 -- updateable flag.
 data LambdaForm = LambdaForm
-  { lamFree :: !Word64
+  { lamFree :: !Int
     -- ^ count of free variables (refs into environment) in the lambda
     -- form.
-  , lamBound :: !Word64
+  , lamBound :: !Int
     -- ^ count of bound variables (i.e. arity) of the lambda form
   , lamUpdate :: !Bool
     -- ^ whether to update (i.e. is this a thunk)
@@ -168,11 +167,11 @@ atom_ = Atom
 force_ :: StgSyn -> StgSyn -> StgSyn
 force_ scrutinee df = Case scrutinee (BranchTable mempty (Just df))
 
-case_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn
+case_ :: StgSyn -> [(Tag, (Int, StgSyn))] -> StgSyn
 case_ scrutinee cases =
   Case scrutinee (BranchTable (Map.fromList cases) Nothing)
 
-casedef_ :: StgSyn -> [(Tag, (Word64, StgSyn))] -> StgSyn -> StgSyn
+casedef_ :: StgSyn -> [(Tag, (Int, StgSyn))] -> StgSyn -> StgSyn
 casedef_ scrutinee cases df =
   Case scrutinee (BranchTable (Map.fromList cases) $ Just df)
 
@@ -232,5 +231,5 @@ ann_ = Ann
 
 -- | Standard constructor - applies saturated data constructor of tag
 -- @t@ to refs on stack.
-standardConstructor :: Word64 -> Tag -> LambdaForm
+standardConstructor :: Int -> Tag -> LambdaForm
 standardConstructor f t = LambdaForm f 0 False $ App (Con t) $ range 0 f

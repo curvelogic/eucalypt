@@ -186,11 +186,16 @@ evaluate opts = do
     let failures = {-# SCC "VerifyCore" #-} runChecks finalEvaluand
     unless (null failures) $ throwM $ Multiple (map Core failures)
 
-    -- Stage 9: drive the evaluation by rendering it
-    -- Compile to STG and execute in machine
     when (cmd == DumpStg)
       (STG.dumpStg finalOptions finalEvaluand >> exitSuccess)
 
+    -- For debug / profile, allow evaluating without any renderer
+    -- attached:
+    when (cmd == Headless)
+      (STG.runHeadless finalOptions finalEvaluand >> exitSuccess)
+
+    -- Stage 9: drive the evaluation by rendering it
+    -- Compile to STG and execute in machine
     bytes <- {-# SCC "RenderBytes" #-} STG.renderConduit finalOptions finalEvaluand
     {-# SCC "OutputBytes" #-} outputBytes finalOptions bytes >> exitSuccess
 

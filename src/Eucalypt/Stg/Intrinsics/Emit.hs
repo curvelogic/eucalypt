@@ -37,11 +37,12 @@ intrinsics =
 
 
 emit :: MachineState -> Event -> IO MachineState
-emit s e =
-  send e >>= \s' ->
-    return $ (appendEvent e . setCode s') (ReturnCon stgUnit mempty Nothing)
-  where
-    send = machineEmit s s
+emit s@MachineState {machineEmitHook = hook} e = do
+  s' <-
+    case hook of
+      (Just f) -> f s e
+      Nothing -> return s
+  return $ (appendEvent e . setCode s') (ReturnCon stgUnit mempty Nothing)
 
 emitMappingStart :: MachineState -> ValVec -> IO MachineState
 emitMappingStart s _ = emit s OutputMappingStart

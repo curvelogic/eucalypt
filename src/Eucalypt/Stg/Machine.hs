@@ -18,7 +18,6 @@ import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad.IO.Class
 import Data.Semigroup
-import Data.Word
 import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.Address
 import Eucalypt.Stg.CallStack
@@ -74,6 +73,10 @@ asMeta :: Maybe StgValue -> HeapObjectMetadata
 asMeta Nothing = MetadataBlank
 asMeta (Just v) = MetadataValue v
 
+asMetaOrPass :: Maybe StgValue -> HeapObjectMetadata
+asMetaOrPass Nothing = MetadataPassThrough
+asMetaOrPass (Just v) = MetadataValue v
+
 fromMeta :: HeapObjectMetadata -> Maybe StgValue
 fromMeta (MetadataValue v) = Just v
 fromMeta _ = Nothing
@@ -87,7 +90,7 @@ data HeapObject
   | PartialApplication { papCode :: !LambdaForm
                        , papEnv :: !ValVec
                        , papArgs :: !ValVec
-                       , papArity :: !Word64
+                       , papArity :: !Int
                        , papCallStack :: !CallStack
                        , papMeta :: !HeapObjectMetadata }
   | BlackHole
@@ -178,13 +181,12 @@ push ms@MachineState {machineStack = MachineStack st} k =
    in ms {machineStack = MachineStack (stackElement : st)}
 
 -- | Pop a continuation off the stack
-pop :: MonadThrow m => MachineState -> m (Maybe Continuation, MachineState)
-pop ms@MachineState {machineStack = MachineStack []} = return (Nothing, ms)
+pop :: MachineState -> (Maybe Continuation, MachineState)
+pop ms@MachineState {machineStack = MachineStack []} = (Nothing, ms)
 pop ms@MachineState {machineStack = MachineStack st} =
   let StackElement k cs = head st
-   in return
-        ( Just k
-        , ms {machineStack = MachineStack (tail st), machineCallStack = cs})
+   in ( Just k
+      , ms {machineStack = MachineStack (tail st), machineCallStack = cs})
 
 
 -- | Machine state.
@@ -200,11 +202,11 @@ data MachineState = MachineState
     -- ^ count of steps executed so far
   , machineTerminated :: !Bool
     -- ^ whether the machine has terminated
-  , machineTrace :: MachineState -> IO ()
+  , machineTrace :: Maybe (MachineState -> IO ())
     -- ^ debug action to run prior to each step
   , machineEvents :: ![Event]
     -- ^ events fired by last step
-  , machineEmit :: MachineState -> Event -> IO MachineState
+  , machineEmitHook :: Maybe (MachineState -> Event -> IO MachineState)
     -- ^ emit function to send out events
   , machineDebug :: !Bool
     -- ^ debug checks on
@@ -223,7 +225,8 @@ instance Environments (ValVec, MachineState) StgValue where
 
 -- | Call the machine's trace function
 traceOut :: MonadIO m => MachineState -> m ()
-traceOut ms@MachineState {machineTrace = tr} = liftIO $ tr ms
+traceOut ms@MachineState {machineTrace = Just tr} = liftIO $ tr ms
+traceOut _ = return ()
 
 -- | Clear events and prepare for next step
 prepareStep :: MonadIO m => String -> MachineState -> m MachineState
@@ -255,9 +258,9 @@ initMachineState stg ge = do
       , machineStack = mempty
       , machineCounter = 0
       , machineTerminated = False
-      , machineTrace = \_ -> return ()
+      , machineTrace = Nothing
       , machineEvents = mempty
-      , machineEmit = \s _ -> return s
+      , machineEmitHook = Nothing
       , machineDebug = False
       , machineDebugEmitLog = []
       , machineLastStepName = "<INIT>"
@@ -290,11 +293,6 @@ instance StgPretty MachineState where
 -- | Throw STG error, passing in current call stack
 throwIn :: MonadThrow m => MachineState -> StgError -> m a
 throwIn ms err = throwM $ StgException err (machineCallStack ms)
-
--- | Resolve a vector of refs against an environment to create
--- environment
-vals :: MonadThrow m => ValVec -> MachineState -> SynVec -> m ValVec
-vals le ms rs = return $ values (le, machineGlobals ms) (nativeToValue <$> rs)
 
 -- | Resolve a ref against env and machine to get address of
 -- HeapObject
@@ -347,7 +345,7 @@ appendEvent e ms@MachineState {machineEvents = es0} =
 buildClosure ::
      MonadThrow m => ValVec -> MachineState -> PreClosure -> m HeapObject
 buildClosure le ms (PreClosure captures metaref code) = do
-  env <- vals le ms captures
+  let env = values (le, ms) (nativeToValue <$> captures)
   meta <-
     case metaref of
       Nothing -> return MetadataPassThrough

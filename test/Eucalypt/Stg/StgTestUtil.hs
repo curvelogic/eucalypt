@@ -137,7 +137,7 @@ machine :: StgSyn -> IO MachineState
 machine = initStandardMachineState
 
 testMachine :: StgSyn -> IO MachineState
-testMachine syn = machine syn >>= (\s -> return s{ machineEmit = dumpEmission , machineDebug = True})
+testMachine syn = machine syn >>= (\s -> return s{ machineEmitHook = Just dumpEmission , machineDebug = True})
 
 tracingMachine :: StgSyn -> IO MachineState
 tracingMachine = initDebugMachineState
