@@ -12,54 +12,7 @@ module Eucalypt.Stg.Globals.Arithmetic
   ) where
 
 import Eucalypt.Stg.Syn
-import Eucalypt.Stg.Intrinsics (intrinsicIndex)
-
-binop :: String -> LambdaForm
-binop intrinsicName =
-  lam_ 0 2 $
-  ann_ ("__" ++ intrinsicName) 0 $
-  force_ (Atom (L 0)) $
-  force_ (Atom (L 1)) $
-  appbif_ (intrinsicIndex intrinsicName) [L 2, L 3]
-
-euAdd :: LambdaForm
-euAdd = binop "ADD"
-
-euSub :: LambdaForm
-euSub = binop "SUB"
-
-euMul :: LambdaForm
-euMul = binop "MUL"
-
-euDiv :: LambdaForm
-euDiv = binop "DIV"
-
-euMod :: LambdaForm
-euMod = binop "MOD"
-
-euLt :: LambdaForm
-euLt = binop "LT"
-
-euGt :: LambdaForm
-euGt = binop "GT"
-
-euLte :: LambdaForm
-euLte = binop "LTE"
-
-euGte :: LambdaForm
-euGte = binop "GTE"
-
-unop :: String -> LambdaForm
-unop intrinsicName =
-  lam_ 0 1 $
-  ann_ ("__" ++ intrinsicName) 0 $
-  force_ (Atom (L 0)) $ appbif_ (intrinsicIndex intrinsicName) [L 1]
-
-euFloor :: LambdaForm
-euFloor = unop "FLOOR"
-
-euCeiling :: LambdaForm
-euCeiling = unop "CEILING"
+import Eucalypt.Stg.Globals.Common
 
 globals :: [(String, LambdaForm)]
 globals =
@@ -75,3 +28,36 @@ globals =
   , ("LTE", euLte)
   , ("GTE", euGte)
   ]
+
+euAdd :: LambdaForm
+euAdd = wrapBifStrict "ADD"
+
+euSub :: LambdaForm
+euSub = wrapBifStrict "SUB"
+
+euMul :: LambdaForm
+euMul = wrapBifStrict "MUL"
+
+euDiv :: LambdaForm
+euDiv = wrapBifStrict "DIV"
+
+euMod :: LambdaForm
+euMod = wrapBifStrict "MOD"
+
+euLt :: LambdaForm
+euLt = wrapBifStrict "LT"
+
+euGt :: LambdaForm
+euGt = wrapBifStrict "GT"
+
+euLte :: LambdaForm
+euLte = wrapBifStrict "LTE"
+
+euGte :: LambdaForm
+euGte = wrapBifStrict "GTE"
+
+euFloor :: LambdaForm
+euFloor = wrapBifStrict "FLOOR"
+
+euCeiling :: LambdaForm
+euCeiling = wrapBifStrict "CEILING"

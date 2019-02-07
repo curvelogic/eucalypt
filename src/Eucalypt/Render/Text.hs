@@ -15,9 +15,6 @@ import Conduit
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.ByteString.Builder (Builder, stringUtf8)
-import Data.Foldable (toList)
-import Data.List (intersperse)
-import qualified Data.Map.Strict as MS
 import Data.Maybe (maybeToList)
 import Data.Scientific
 import qualified Eucalypt.Stg.Event as E
@@ -31,14 +28,7 @@ formatScalar (NativeNumber n) =
     Right i -> stringUtf8 $ show i
 formatScalar (NativeSymbol s) = stringUtf8 s
 formatScalar (NativeString s) = stringUtf8 s
-formatScalar (NativeSet s) =
-  mconcat $ intersperse (stringUtf8 ",") $ map formatScalar $ toList s
-formatScalar (NativeDict d) =
-  mconcat $
-  intersperse (stringUtf8 "\n") $
-  map (\(k, v) -> formatScalar k <> stringUtf8 ": " <> formatScalar v) $
-  MS.assocs d
-
+formatScalar (NativeDynamic _) = "**#DYN**"
 
 toFragment :: E.Event -> Maybe Builder
 toFragment (E.OutputScalar _ n) = Just $ formatScalar n

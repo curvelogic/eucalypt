@@ -11,11 +11,8 @@ Stability   : experimental
 
 module Eucalypt.Stg.Native where
 
-import Control.DeepSeq (NFData)
-import Data.Foldable (toList)
-import qualified Data.Map.Strict as MS
+import Data.Dynamic
 import Data.Scientific
-import qualified Data.Set as S
 import Eucalypt.Stg.Pretty
 import GHC.Generics (Generic)
 import Test.QuickCheck (Arbitrary(..), Gen, oneof)
@@ -28,28 +25,20 @@ data Native
   = NativeNumber !Scientific
   | NativeString !String
   | NativeSymbol !String
-  | NativeSet !(S.Set Native)
-  | NativeDict !(MS.Map Native Native)
-  deriving (Eq, Show, Generic, Ord)
+  | NativeDynamic !Dynamic
+  deriving (Show, Generic)
 
-instance NFData Native
+instance Eq Native where
+  (==) (NativeNumber a) (NativeNumber b) = a == b
+  (==) (NativeString a) (NativeString b) = a == b
+  (==) (NativeSymbol a) (NativeSymbol b) = a == b
+  (==) _ _ = False
 
 instance StgPretty Native where
   prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
   prettify (NativeString s) = P.text $ show s
   prettify (NativeSymbol s) = P.colon <> P.text s
-  prettify (NativeSet xs) =
-    P.text "#{" <> P.hcat (P.punctuate P.comma (map prettify (toList xs))) <>
-    P.text "}"
-  prettify (NativeDict dict) =
-    P.text "#{" <>
-    P.hcat
-      (P.punctuate
-         P.comma
-         (map
-            (\(k, v) -> prettify k P.<+> P.text "=>" P.<+> prettify v)
-            (MS.assocs dict))) <>
-    P.text "}"
+  prettify (NativeDynamic _) = P.text "?"
 
 instance Arbitrary Scientific where
   arbitrary =
@@ -62,6 +51,4 @@ instance Arbitrary Native where
       [ NativeNumber <$> arbitrary
       , NativeString <$> arbitrary
       , NativeSymbol <$> arbitrary
-      , NativeSet <$> arbitrary
-      , NativeDict <$> arbitrary
       ]

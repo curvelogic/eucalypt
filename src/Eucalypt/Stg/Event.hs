@@ -40,5 +40,3 @@ data Event
   | OutputAlias
   | DebugTrace !BS.ByteString
   deriving (Show, Eq, Generic)
-
-instance NFData Event

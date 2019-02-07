@@ -15,14 +15,13 @@ import Eucalypt.Stg.GlobalInfo
 import qualified Eucalypt.Stg.Globals.Arithmetic as Arith
 import qualified Eucalypt.Stg.Globals.Block as Block
 import qualified Eucalypt.Stg.Globals.Bool as Bool
-import qualified Eucalypt.Stg.Globals.Dict as Dict
 import qualified Eucalypt.Stg.Globals.Emit as Emit
 import qualified Eucalypt.Stg.Globals.Eq as Eq
+import qualified Eucalypt.Stg.Globals.IOHMBlock as IOHM
 import qualified Eucalypt.Stg.Globals.List as List
 import qualified Eucalypt.Stg.Globals.Meta as Meta
 import qualified Eucalypt.Stg.Globals.Number as Number
 import qualified Eucalypt.Stg.Globals.Panic as Panic
-import qualified Eucalypt.Stg.Globals.Set as Set
 import qualified Eucalypt.Stg.Globals.Str as Str
 import qualified Eucalypt.Stg.Globals.Time as Time
 import Eucalypt.Stg.Native
@@ -107,14 +106,13 @@ globals =
     , Arith.globals
     , Block.globals
     , Bool.globals
-    , Dict.globals
     , Emit.globals
     , Eq.globals
+    , IOHM.globals
     , List.globals
     , Meta.globals
     , Number.globals
     , Panic.globals
-    , Set.globals
     , Str.globals
     , Time.globals
     ]

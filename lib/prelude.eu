@@ -841,3 +841,40 @@ cal: {
   now: io.epoch-time ifields
   epoch: 0 ifields
 }
+
+` :suppress
+iohm: {
+  ` "Intrinsics for working with unwrapped IOHMs"
+  Γ: {
+    empty: '__IOHM.EMPTY'
+    insert: '__IOHM.INSERT'
+    wrap: '__IOHM.WRAP'
+    unwrap: '__IOHM.UNWRAP'
+    list: '__IOHM.LIST'
+    insert-kv(k, v, m): insert(m, k, v)
+    insert-pair(m, kv): apply(insert(m), kv)
+    lookup: '__IOHM.LOOKUP'
+    merge: '__IOHM.MERGE'
+  }
+
+  ` "`iohm.empty` - the empty IOHM (insert-ordered hash map)"
+  empty: Γ.wrap(Γ.empty)
+
+  ` "`iohm.insert(k, v, m)` - insert value `v` at key symbol `k` into IOHM `m`"
+  insert(k, v, m): m Γ.unwrap Γ.insert-kv(k, v) Γ.wrap
+
+  ` "`iohm.from(xs)` - construct IOHM (insert-ordered hash map) from list `xs` of key-value pairs"
+  from(xs): xs foldl(Γ.insert-pair, Γ.empty) Γ.wrap
+
+  ` "`iohm.lookup(k, m)` - retrieve value from IOHM `m` at key symbol `k`"
+  lookup(k, m): m Γ.unwrap flip(Γ.lookup, k)
+
+  ` "`iohm.merge(l, r)` - shallow merge IOHM `r` into IOHM `l`"
+  merge(l, r): Γ.merge(Γ.unwrap(l), Γ.unwrap(r)) Γ.wrap
+
+  ` "`iohm.deep-merge(l, r)` - deep merge IOHM `r` into IOHM `l`"
+  deep-merge: '__IOHMBLOCK.DEEPMERGE'
+
+  ` "`iohm.elements(m)` - return list of key value pairs from IOHM `m`"
+  elements(m): m Γ.unwrap Γ.list 
+}

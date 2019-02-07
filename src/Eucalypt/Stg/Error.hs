@@ -51,10 +51,11 @@ data StgError
   | IntrinsicExpectedEvaluatedBlock !StgSyn
   | IntrinsicExpectedBlock !StgSyn
   | IntrinsicTypeError !String !String
+  | IntrinsicDynamicTypeMismatch !String !String
   | InvalidRegex !String
   | InvalidFormatSpecifier !String !Native
   | UnknownGlobal !String
-  | DictKeyNotFound !Native
+  | KeyNotFound !Native
   | Panic !String
   | IOSystem IOException
   | InvalidNumber !String
@@ -84,7 +85,8 @@ instance Reportable StgException where
             bug "Found a native value when expecting a thunk."
           NonNativeStgValue -> err "A native value is expected here."
           NoBranchFound -> bug "No branch available to handle value."
-          NoDefaultBranchForNativeReturn -> err "No default branch to handle native return value"
+          NoDefaultBranchForNativeReturn ->
+            err "No default branch to handle native return value"
           EnteredBlackHole ->
             err "Entered a black hole. This may indicate a circular definition."
           AddMetaToBlackHole -> bug "Attempted to add metadata to a black hole."
@@ -123,6 +125,10 @@ instance Reportable StgException where
             err "Intrinsic expected argument types:" P.$$
             P.nest 4 (P.text expected) P.$$
             (P.text " but received:" P.$$ P.nest 4 (P.text actual))
+          IntrinsicDynamicTypeMismatch expected actual ->
+            err "Intrinsic expected argument of dynamic type:" P.$$
+            P.nest 4 (P.text expected) P.$$
+            (P.text " but received:" P.$$ P.nest 4 (P.text actual))
           (InvalidRegex s) ->
             err "Regular expression was not valid:" P.$$
             P.nest 2 (P.text "-" P.<+> P.text s)
@@ -131,8 +137,8 @@ instance Reportable StgException where
             prettify n
           (UnknownGlobal s) ->
             err "Unknown global:" P.$$ P.nest 2 (P.text "-" P.<+> P.text s)
-          (DictKeyNotFound k) ->
-            err "Dict key not found :" P.$$
+          (KeyNotFound k) ->
+            err "Key not found :" P.$$
             P.nest 2 (P.text "-" P.<+> prettify k)
           (Panic s) -> err s
           (IOSystem e) -> sys $ show e

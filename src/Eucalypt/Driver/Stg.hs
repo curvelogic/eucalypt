@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Driver.Stg
@@ -16,7 +17,6 @@ module Eucalypt.Driver.Stg
 
 
 import Conduit hiding (throwM)
-import Control.DeepSeq
 import Control.Exception.Safe (IOException, MonadCatch, catch, handle, throwM)
 import Control.Monad (unless)
 import qualified Data.ByteString as BS
@@ -83,8 +83,8 @@ runHeadless opts expr = do
         step s `catch`
         (\(e :: IOException) ->
            throwM $ StgException (IOSystem e) (machineCallStack s))
-      let events = reverse $ machineEvents s'
-          terminated = events `deepseq` machineTerminated s'
+      let !_events = reverse $ machineEvents s'
+          terminated = machineTerminated s'
         in unless terminated $ loop s'
 
 
@@ -130,7 +130,7 @@ machineSource ms = do
         (\(e :: IOException) ->
            throwM $ StgException (IOSystem e) (machineCallStack s))
       let events = reverse $ machineEvents s'
-       in events `deepseq` yieldMany events
+       in yieldMany events
       unless (machineTerminated s') $ loop s'
 
 

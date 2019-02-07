@@ -49,6 +49,12 @@ euEq =
                     (appfn_ (gref "AND") [L 6, L 7])))
             ]
             falseVal))
+    , ( stgIOHMBlock
+      , ( 1
+        , casedef_
+            (Atom (L 1))
+            [(stgIOHMBlock, (1, appfn_ (gref "IOHM.EQ") [L 2, L 3]))]
+            falseVal))
     ]
     (casedef_
        (Atom (L 1))

@@ -68,13 +68,14 @@ emitFalse s _ = emit s OutputFalse
 -- | This assumes that all render-relevant metadata has been forced to
 -- native values.
 emitScalar :: MachineState -> StgValue -> IO MachineState
-emitScalar s x = do
-  let (StgNat n m) = x
-  event <-
-    case m of
-      Just meta -> flip OutputScalar n <$> renderMeta s meta
-      Nothing -> return $ OutputScalar (RenderMetadata Nothing) n
-  (`setCode` ReturnLit n Nothing) <$> emit s event
+emitScalar s x =
+  case x of
+    (StgNat n m) -> do
+      event <- case m of
+                 Just meta -> flip OutputScalar n <$> renderMeta s meta
+                 Nothing -> return $ OutputScalar (RenderMetadata Nothing) n
+      (`setCode` ReturnLit n Nothing) <$> emit s event
+    (StgAddr _) -> error "Received address in emitScalar"
 
 readString :: MachineState -> Address -> IO (Maybe String)
 readString _ms addr =

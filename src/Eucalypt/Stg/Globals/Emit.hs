@@ -152,17 +152,14 @@ continueList :: LambdaForm
 continueList =
   lam_ 0 1 $
   ann_ "Emit.continueList" 0 $
-  casedef_
+  case_
     (Atom (L 0))
     [ ( stgCons
       , ( 2
         , seq_ (appfn_ (gref "RENDER") [L 1]) $
           appfn_ (gref "Emit.continueList") [L 2]))
     , (stgNil, (0, emitSE))
-    ] $
-  force_ (appfn_ (gref "META") [L 1]) $
-  force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $
-  emitScalar (L 1) -- force is effectful
+    ]
 
 -- | Emit.startList(l)
 startList :: LambdaForm
@@ -210,10 +207,14 @@ euRender =
     , (stgUnit, (0, emitNull))
     , (stgTrue, (0, emitTrue))
     , (stgFalse, (0, emitFalse))
+    , ( stgIOHMBlock
+      , ( 1
+        , force_
+            (appfn_ (gref "IOHM.LIST") [L 1])
+            (appfn_ (gref "Emit.wrapBlock") [L 2])))
     ] $
   force_ (appfn_ (gref "META") [L 1]) $
-  force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $
-  emitScalar (L 1)
+  force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $ emitScalar (L 1)
 
 -- | Single argument is the metadata (not the annotated value)
 forceExportMetadata :: LambdaForm

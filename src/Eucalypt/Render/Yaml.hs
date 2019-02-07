@@ -16,8 +16,6 @@ module Eucalypt.Render.Yaml
 import Conduit
 import qualified Data.ByteString as BS
 import qualified Data.Conduit.Combinators as C
-import Data.Foldable (toList)
-import qualified Data.Map.Strict as MS
 import Data.Scientific
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
@@ -52,17 +50,7 @@ renderValue (NativeString s) rm =
     textStyle str
       | length str > 60 = L.Literal
     textStyle _ = style rm L.PlainNoTag
-renderValue (NativeSet s) _ =
-  [L.EventSequenceStart L.NoTag L.AnySequence Nothing] ++
-  concatMap (`renderValue` RenderMetadata {metaTag = Nothing}) (toList s) ++
-  [L.EventSequenceEnd]
-renderValue (NativeDict d) _ =
-  [L.EventMappingStart L.NoTag L.AnyMapping Nothing] ++
-  concatMap kv (MS.assocs d) ++ [L.EventMappingEnd]
-  where
-    kv (k, v) =
-      renderValue k RenderMetadata {metaTag = Nothing} ++
-      renderValue v RenderMetadata {metaTag = Nothing}
+renderValue (NativeDynamic _) rm = renderValue (NativeString "**#DYN**") rm
 
 renderBool :: Bool -> [L.Event]
 renderBool b =
