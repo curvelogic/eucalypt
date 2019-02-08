@@ -11,6 +11,7 @@ module Eucalypt.Stg.Intrinsics.IOHMBlock where
 
 import Control.Monad (liftM2, join, foldM)
 import Data.Dynamic
+import Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict.InsOrd as OM
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.IntrinsicInfo
@@ -29,6 +30,7 @@ intrinsics =
   , IntrinsicInfo "IOHM.INSERT" 3 (invoke iohmInsert)
   , IntrinsicInfo "IOHM.LIST" 1 (invoke iohmList)
   , IntrinsicInfo "IOHM.LOOKUP" 2 (invoke iohmLookup)
+  , IntrinsicInfo "IOHM.LOOKUPOR" 3 (invoke iohmLookupOr)
   , IntrinsicInfo "IOHM.MERGE" 2 (invoke iohmMerge)
   , IntrinsicInfo "IOHM.MERGEWITH" 3 (invoke iohmMergeWith)
   ]
@@ -64,6 +66,12 @@ iohmLookup ms dyn (Symbol k) = do
   case OM.lookup k om of
     (Just v) -> returnValue ms v
     Nothing -> throwIn ms $ KeyNotFound (NativeSymbol k)
+
+-- | LookupOr
+iohmLookupOr :: MachineState -> Dynamic -> Symbol -> StgValue -> IO MachineState
+iohmLookupOr ms dyn (Symbol k) dft = do
+  om <- cast ms dyn :: IO IOHM
+  returnValue ms $ fromMaybe dft (OM.lookup k om)
 
 -- | Shallow merge two IOHMs
 iohmMerge :: MachineState -> Dynamic -> Dynamic -> IO MachineState

@@ -13,6 +13,7 @@ module Eucalypt.Stg.Globals.IOHMBlock
 
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals.Common
+import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -24,6 +25,7 @@ globals =
   , ("IOHM.WRAP", euIOHMWrap)
   , ("IOHM.LIST", euIOHMList)
   , ("IOHM.LOOKUP", euIOHMLookup)
+  , ("IOHM.LOOKUPOR", euIOHMLookupOr)
   , ("IOHM.UNWRAP", euIOHMUnwrap)
   , ("IOHM.MERGE", euIOHMMerge)
   , ("IOHM.MERGEWITH", euIOHMMergeWith)
@@ -46,6 +48,14 @@ euIOHMList = wrapBifStrict "IOHM.LIST"
 
 euIOHMLookup :: LambdaForm
 euIOHMLookup = wrapBifStrict "IOHM.LOOKUP"
+
+-- Lazy in default argument
+euIOHMLookupOr :: LambdaForm
+euIOHMLookupOr =
+  lam_ 0 3 $
+  ann_ "IOHM.LOOKUPOR" 0 $
+  force_ (Atom $ L 0) $
+  force_ (Atom $ L 1) $ appbif_ (intrinsicIndex "IOHM.LOOKUPOR") [L 3, L 4, L 2]
 
 euIOHMUnwrap :: LambdaForm
 euIOHMUnwrap =

@@ -102,6 +102,7 @@ globalRegistry =
   , GlobalInfo "IOHM.WRAP" [NonStrict]
   , GlobalInfo "IOHM.LIST" [Strict]
   , GlobalInfo "IOHM.LOOKUP" [Strict, Strict]
+  , GlobalInfo "IOHM.LOOKUPOR" [Strict, Strict, NonStrict]
   , GlobalInfo "IOHM.UNWRAP" [Strict]
   , GlobalInfo "IOHM.MERGE" [Strict, Strict]
   , GlobalInfo "IOHM.MERGEWITH" [Strict, Strict, Strict]
