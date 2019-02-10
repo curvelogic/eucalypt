@@ -15,11 +15,12 @@ module Eucalypt.Stg.Compiler where
 import Bound.Var as Var
 import Bound.Scope (fromScope)
 import qualified Data.Array as A
-import Data.Bifunctor (first, second)
+import Data.Bifunctor (second)
 import Data.Foldable (toList)
-import Data.List (nub, elemIndex, sortOn)
+import Data.List (nub, elemIndex)
 import Data.Scientific
 import Eucalypt.Core.Syn as C
+import Eucalypt.Stg.Compiler.Application
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Native
@@ -145,10 +146,10 @@ compile envSz context metaref (C.CoreList _ els) =
     then buildList
     else let_ elBinds buildList
   where
-    elAnalyses = numberPreClosures (map classify els, 0)
     classify (CoreVar _ n) = EnvRef $ context n
     classify (CorePrim _ p) = EnvRef $ convert p
     classify expr = Closure Nothing expr
+    elAnalyses = fst $ numberPreClosures (map classify els, 0)
     elRefs = map (toRef envSz) elAnalyses
     elBinds =
       map (compileBinding envSz context . ("<item>", ) . closureExpr) $
@@ -203,34 +204,6 @@ compile _ _ _ CoreUnresolved{} = error "Cannot compile unresolved"
 compile _ _ _ CoreEliminated = error "Cannot compile eliminated code"
 
 
-data ArgCase a
-  = EnvRef Ref
-  | Scrutinee (Maybe Int)
-              (CoreExp a)
-  | Closure (Maybe Int)
-            (CoreExp a)
-  deriving (Show)
-
--- | Retrieve the index from an ArgCase (must be present)
-argCaseindex :: ArgCase a -> Int
-argCaseindex (Scrutinee (Just i) _) = i
-argCaseindex (Closure (Just i) _) = i
-argCaseindex _ = error "Unexpected argument case in CoreApply compilation"
-
-toRef :: Int -> ArgCase a -> Ref
-toRef envSz component = case component of
-  EnvRef r -> r
-  Scrutinee (Just n) _ -> L $ fromIntegral (n + envSz)
-  Closure (Just n) _ -> L $ fromIntegral (n + envSz)
-  _ -> error "Unexpected ArgCase during compilation"
-
-closureExpr :: ArgCase a -> CoreExp a
-closureExpr (Closure _ expr) = expr
-closureExpr _ = error "closureExpr on non-closure"
-
-isClosure :: ArgCase a -> Bool
-isClosure (Closure _ _) = True
-isClosure _ = False
 
 
 -- | All arguments to apply must be primitives or vars (no complex
@@ -246,82 +219,12 @@ compileApply ::
   -> StgSyn
 compileApply envSz context metaref (C.CoreApply _ f xs) = wrappedCall
   where
-    strictness =
-      case op f of
-        (CoreBuiltin _ n) -> globalSignature n
-        _ -> replicate (length xs) NonStrict
-    components0 =
-      case op f of
-        (CoreBuiltin _ n) -> [EnvRef $ gref n]
-        (CoreVar _ a) -> [EnvRef $ context a]
-        _ -> [Closure Nothing f]
-    acc comps (x, strict) =
-      comps ++
-      case x of
-        (CoreVar _ a) ->
-          case strict of
-            NonStrict -> [EnvRef $ context a]
-            Strict -> [Scrutinee Nothing x]
-        (CorePrim _ n) -> [EnvRef $ convert n]
-        _ ->
-          case strict of
-            NonStrict -> [Closure Nothing x]
-            Strict -> [Scrutinee Nothing x]
-    components = numberArgCases $ foldl acc components0 (zip xs strictness)
+    components = numberArgCases $ analyseCallRefs context f xs
     call = compileCall envSz components
     wrappedCall =
       compileWrappers envSz context metaref (wrappers components) call
-    op fn =
-      case fn of
-        (CoreOperator _ _x _p e) -> e
-        _ -> fn
 compileApply _ _ _ _ = error "compileApply called for non apply arg"
 
-
--- | Number the scrutinees (from 0), returning number cases plus next counter
-numberScrutinees :: [ArgCase a] -> ([ArgCase a], Int)
-numberScrutinees = first reverse . foldl acc ([], 0)
-  where
-    acc (o, n) i =
-      case i of
-        (Scrutinee Nothing x) -> (Scrutinee (Just n) x : o, n + 1)
-        _ -> (i : o, n)
-
-
-
--- | Number the pre closures (from next counter), returning numbered cases
-numberPreClosures :: ([ArgCase a], Int) -> [ArgCase a]
-numberPreClosures (cs, next) = reverse $ fst $ foldl acc ([], next) cs
-  where
-    acc (o, n) i =
-      case i of
-        (Closure Nothing x) -> (Closure (Just n) x : o, n + 1)
-        _ -> (i : o, n)
-
-
-
-numberArgCases :: [ArgCase a] -> [ArgCase a]
-numberArgCases = numberPreClosures . numberScrutinees
-
-
-
--- | Sort those args which need evaluating or allocating into
--- scrutinees then preclosures in the order dictated by numbering
-wrappers :: [ArgCase a] -> ([ArgCase a], [ArgCase a])
-wrappers = span isScrutinee . sortOn argCaseindex . filter notEnvRef
-  where
-    notEnvRef (EnvRef _) = False
-    notEnvRef _ = True
-    isScrutinee Scrutinee{} = True
-    isScrutinee _ = False
-
-
-
--- | Compile the apply expression
-compileCall :: Int -> [ArgCase a] -> StgSyn
-compileCall envSz components =
-  App (Ref $ toRef envSz $ head components) $
-  refs (map (toRef envSz) $ tail components)
 
 
 -- | Compile the wrappers
@@ -333,8 +236,8 @@ compileWrappers ::
   -> ([ArgCase v], [ArgCase v])
   -> StgSyn
   -> StgSyn
-compileWrappers envSz  context metaref (scrutinees, closures) call =
-  foldr wrapCase allocWrappedCall scrutinees
+compileWrappers envSz  context metaref (caseScrutinees, closures) call =
+  foldr wrapCase allocWrappedCall caseScrutinees
   where
     preclosures =
       map (compileBinding envSz context . ("", ) . closureExpr) closures
