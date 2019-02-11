@@ -748,91 +748,6 @@ merge-at(ks, v, b): if(ks nil?,
 		                         merge-at(ks tail, v),
 					 tongue(ks tail, v)))
 
-#
-# Set operations - sets are not intended for rendering and are a
-# mainly internal feature.
-#
-
-# ` "∅ - the empty set"
-# ∅: __EMPTYSET
-# TODO: need nullary ops
-
-` { doc: "s ∋ e - true if and only if `e` is a member of set `s`"
-    associates: :right
-    precedence: :cmp }
-(s ∋ e): __SETCONTAINS(s, e)
-
-` { doc: "e ∈ s - true if and only if `e` is a member of set `s`"
-    associates: :left
-    precedence: :cmp }
-(e ∈ s): __SETCONTAINS(s, e)
-
-set: {
-  ` "`empty` - the empty set."
-  empty: __EMPTYSET
-
-  ` "`insert(e, s) - form set by adding element `e` to set `s`"
-  insert(e, s): __SETADD(s, e)
-
-  ` "`delete(e, s) - form set by removing element `e` from set `s`"
-  delete(e, s): __SETREMOVE(s, e)
-
-  ` "`from(l) - create a set from elements of list `l`"
-  from(l): foldr(insert, empty, l)
-
-  ` "`singleton(x) - create a singleton set containing only element `x`"
-  singleton(x): empty set.insert(x)
-  
-  ` "`members(s) - convert set `s` to list"
-  members: __SETMEMBERS
-}
-
-
-#
-# Dict operations - dicts are not intended for rendering and are a
-# mainly internal feature.
-#
-
-dict: {
-  ` "`empty` - the empty dict."
-  empty: __EMPTYDICT
-
-  ` "`has-key(k, d)` - true if and only if dict `d` contains entry with key `k`"
-  has-key(k, d): __DICTCONTAINSKEY(d, k)
-
-  ` "`get(k, d) - retrieve value for key `k` in dict `d`. Panic if absent."
-  get(k, d): __DICTGET(d, k)
-
-  ` "`get(k, d) - retrieve value for key `k` in dict `d`, defaulting to `df` if absent."
-  get-or(k, df, d): if(d has-key(k), d get(k), df)
-
-  ` "`put(k, v, d) - set value for key `k` in dict `d`"
-  put(k, v, d): __DICTPUT(d, k, v)
-
-  ` "`del(k, d) - remove entry for key `k` from dict `d`"
-  del(k, d): __DICTDEL(d, k)
-
-  ` "put-into(d, [k, v]) - put value `v` for key `k` in dict `d`"
-  put-into(d): uncurry(__DICTPUT(d))
-
-  ` "`put-pair([k, v], d)` - put a pair of key and value into dict `d`"
-  put-pair: put-into flip
-
-  ` "`from-pairs(l)` - fill a new dict from list of key-value pairs `l`"
-  from-pairs(l): foldl(put-into, empty, l)
-
-  ` "`from(b)` - fill a new dict from block `b`"
-  from(b): b elements from-pairs
-
-  ` "`update-or(k, f, df, d)` - update dict `d`'s value for `k` by applying `f` unless absent when set to `df`"
-  update-or(k, f, df, d): if(d has-key(k), d put(k, d get(k) f), d put(k, df))
-
-  ` "`entries(d)` - return entries of dict `d` as list of pairs"
-  entries: __DICTENTRIES
-
-  ` "`as-block(d)` - create a block from a dict - requires symbol keys"
-  as-block: entries block
-}
 
 cal: {
 
@@ -840,4 +755,45 @@ cal: {
 
   now: io.epoch-time ifields
   epoch: 0 ifields
+}
+
+` :suppress
+iohm: {
+  ` "Intrinsics for working with unwrapped IOHMs"
+  Γ: {
+    empty: '__IOHM.EMPTY'
+    insert: '__IOHM.INSERT'
+    wrap: '__IOHM.WRAP'
+    unwrap: '__IOHM.UNWRAP'
+    list: '__IOHM.LIST'
+    insert-kv(k, v, m): insert(m, k, v)
+    insert-pair(m, kv): apply(insert(m), kv)
+    lookup: '__IOHM.LOOKUP'
+    lookup-or: '__IOHM.LOOKUPOR'
+    merge: '__IOHM.MERGE'
+  }
+
+  ` "`iohm.empty` - the empty IOHM (insert-ordered hash map)"
+  empty: Γ.wrap(Γ.empty)
+
+  ` "`iohm.insert(k, v, m)` - insert value `v` at key symbol `k` into IOHM `m`"
+  insert(k, v, m): m Γ.unwrap Γ.insert-kv(k, v) Γ.wrap
+
+  ` "`iohm.from(xs)` - construct IOHM (insert-ordered hash map) from list `xs` of key-value pairs"
+  from(xs): xs foldl(Γ.insert-pair, Γ.empty) Γ.wrap
+
+  ` "`iohm.lookup(k, m)` - retrieve value from IOHM `m` at key symbol `k`, error if none"
+  lookup(k, m): m Γ.unwrap flip(Γ.lookup, k)
+
+  ` "`iohm.lookup-or(k, v, m)` - retrieve value from IOHM `m` at key symbol `k`, default `d` if none"
+  lookup-or(k, d, m): Γ.lookup-or(m Γ.unwrap, k, d)
+
+  ` "`iohm.merge(l, r)` - shallow merge IOHM `r` into IOHM `l`"
+  merge(l, r): Γ.merge(Γ.unwrap(l), Γ.unwrap(r)) Γ.wrap
+
+  ` "`iohm.deep-merge(l, r)` - deep merge IOHM `r` into IOHM `l`"
+  deep-merge: '__IOHMBLOCK.DEEPMERGE'
+
+  ` "`iohm.elements(m)` - return list of key value pairs from IOHM `m`"
+  elements(m): m Γ.unwrap Γ.list 
 }

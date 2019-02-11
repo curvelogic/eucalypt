@@ -10,17 +10,16 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics where
 
 import qualified Data.Array as A
-import Data.List (findIndex)
+import Data.List (find, findIndex)
 import Data.Maybe (fromMaybe)
 import Eucalypt.Stg.IntrinsicInfo
 import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Block as Block
-import qualified Eucalypt.Stg.Intrinsics.Dict as Dict
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
+import qualified Eucalypt.Stg.Intrinsics.IOHMBlock as IOHM
 import qualified Eucalypt.Stg.Intrinsics.Meta as Meta
 import qualified Eucalypt.Stg.Intrinsics.Number as Number
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
-import qualified Eucalypt.Stg.Intrinsics.Set as Set
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
 import qualified Eucalypt.Stg.Intrinsics.Time as Time
 import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
@@ -30,18 +29,17 @@ import Eucalypt.Stg.Machine
 intrinsics :: [IntrinsicInfo]
 intrinsics =
   concat
-    [ Set.intrinsics
-    , Dict.intrinsics
-    , Str.intrinsics
-    , Arith.intrinsics
-    , Time.intrinsics
+    [ Arith.intrinsics
+    , Block.intrinsics
     , Emit.intrinsics
-    , Panic.intrinsics
-    , Meta.intrinsics
     , Eq.intrinsics
     , General.intrinsics
-    , Block.intrinsics
+    , IOHM.intrinsics
+    , Meta.intrinsics
     , Number.intrinsics
+    , Panic.intrinsics
+    , Str.intrinsics
+    , Time.intrinsics
     ]
 
 -- | Used during compilation to find the index at which an intrinsic
@@ -51,6 +49,16 @@ intrinsicIndex n =
   fromMaybe
     (error $ "No such intrinsic: " ++ n)
     (findIndex ((n ==) . name) intrinsics)
+
+-- | Used during compilation to find the index at which an intrinsic
+-- will be available
+intrinsicArity :: String -> Int
+intrinsicArity n =
+  maybe
+    (error $ "No such intrinsic: " ++ n)
+    arity
+    (find ((n ==) . name) intrinsics)
+
 
 -- | Intrinsics packed into an array for faster access
 intrinsicArray :: A.Array Int (MachineState -> ValVec -> IO MachineState)

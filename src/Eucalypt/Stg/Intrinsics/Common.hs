@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase, PatternSynonyms, ViewPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Common
 Description : Common utilities for intrinsics
@@ -13,12 +14,12 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Common where
 
 import Control.Monad (foldM)
+import Data.Dynamic
 import Data.Foldable (toList)
 import Data.List (intercalate)
-import qualified Data.Map.Strict as MS
 import Data.Scientific (Scientific, floatingOrInteger)
 import qualified Data.Sequence as Seq
-import qualified Data.Set as S
+import Data.Typeable (typeOf)
 import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Machine
@@ -34,16 +35,48 @@ pattern Empty <- (Seq.viewl -> Seq.EmptyL)
 pattern (:<) :: a -> Seq.Seq a -> Seq.Seq a
 pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
 
+
+consVals :: StgValue -> StgValue -> IO StgValue
+consVals a as =
+  StgAddr <$>
+  allocate (Closure consConstructor (toVec [a, as]) mempty MetadataPassThrough)
+
 flipCons :: StgValue -> StgValue -> IO StgValue
 flipCons as a =
   StgAddr <$>
   allocate (Closure consConstructor (toVec [a, as]) mempty MetadataPassThrough)
 
+-- | Return any typeable instance wrapped in a dynamic native
+returnDynamic :: Typeable a => MachineState -> a -> IO MachineState
+returnDynamic ms a =
+  return $ ms {machineCode = ReturnLit (NativeDynamic (toDyn a)) Nothing}
 
 -- | Return a bool
 returnBool :: MachineState -> Bool -> IO MachineState
-returnBool ms b = return $ setCode ms (ReturnCon (boolTag b) mempty Nothing)
+returnBool ms b =
+  return $ ms {machineCode = ReturnCon (boolTag b) mempty Nothing}
 
+-- | Return an empty list
+returnNil :: MachineState -> IO MachineState
+returnNil ms = return $ ms {machineCode = ReturnCon stgNil mempty Nothing}
+
+-- | Return a machine value
+returnValue :: MachineState -> StgValue -> IO MachineState
+returnValue ms v = return $ ms {machineCode = Eval (Atom $ L 0) (singleton v) }
+
+-- | Allocate a closure which calls f with args xs
+allocFXs :: MachineState -> Address -> ValVec -> IO Address
+allocFXs ms f xs =
+  allocate $
+  Closure
+    { closureCode =
+        thunkn_ (argc + 1) (appfn_ (L 0) [L $ fromIntegral n | n <- [1 .. argc]])
+    , closureEnv = singleton (StgAddr f) <> xs
+    , closureCallStack = machineCallStack ms
+    , closureMeta = MetadataPassThrough
+    }
+  where
+    argc = envSize xs
 
 -- | Utility to return a native list from an intrinsic.
 --
@@ -204,6 +237,11 @@ instance Invokable (MachineState -> StgValue -> IO MachineState) where
   invoke f ms (asSeq -> a :< _) = f ms a
   invoke f ms args = throwTypeError ms (sig f) args
 
+instance Invokable (MachineState -> Dynamic -> IO MachineState) where
+  sig _ = "?"
+  invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< _) = f ms a
+  invoke f ms args = throwTypeError ms (sig f) args
+
 instance Invokable (MachineState -> String -> IO MachineState) where
   sig _ = "String"
   invoke f ms (asSeq -> StgNat (NativeString a) _ :< _) = f ms a
@@ -212,16 +250,6 @@ instance Invokable (MachineState -> String -> IO MachineState) where
 instance Invokable (MachineState -> Scientific -> IO MachineState) where
   sig _ = "Number"
   invoke f ms (asSeq -> StgNat (NativeNumber a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
-
-instance Invokable (MachineState -> S.Set Native -> IO MachineState) where
-  sig _ = "Set"
-  invoke f ms (asSeq -> StgNat (NativeSet a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
-
-instance Invokable (MachineState -> MS.Map Native Native -> IO MachineState) where
-  sig _ = "Dict"
-  invoke f ms (asSeq -> StgNat (NativeDict a) _ :< _) = f ms a
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> String -> String -> IO MachineState) where
@@ -251,6 +279,12 @@ instance Invokable (MachineState -> StgValue -> StgValue -> IO MachineState) whe
   invoke f ms (asSeq -> (a :< (b :< _))) = f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
+instance Invokable (MachineState -> Dynamic -> Symbol -> IO MachineState) where
+  sig _ = "?, :"
+  invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< _)) =
+    f ms a (Symbol b)
+  invoke f ms args = throwTypeError ms (sig f) args
+
 instance Invokable (MachineState -> Address -> String -> IO MachineState) where
   sig _ = "@, String"
   invoke f ms (asSeq -> StgAddr a :< (StgNat (NativeString b) _ :< _)) =
@@ -263,14 +297,10 @@ instance Invokable (MachineState -> Scientific -> Scientific -> IO MachineState)
     f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
-instance Invokable (MachineState -> S.Set Native -> Native -> IO MachineState) where
-  sig _ = "Set, Set"
-  invoke f ms (asSeq -> StgNat (NativeSet a) _ :< (StgNat b _ :< _)) = f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
-
-instance Invokable (MachineState -> MS.Map Native Native -> Native -> IO MachineState) where
-  sig _ = "Dict, *"
-  invoke f ms (asSeq -> StgNat (NativeDict a) _ :< (StgNat b _ :< _)) = f ms a b
+instance Invokable (MachineState -> Dynamic -> Dynamic -> IO MachineState) where
+  sig _ = "?, ?"
+  invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeDynamic b) _ :< _)) =
+    f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Native -> Native -> Native -> IO MachineState) where
@@ -279,11 +309,26 @@ instance Invokable (MachineState -> Native -> Native -> Native -> IO MachineStat
     f ms a b c
   invoke f ms args = throwTypeError ms (sig f) args
 
-instance Invokable (MachineState -> MS.Map Native Native -> Native -> Native -> IO MachineState) where
-  sig _ = "Dict, *, *"
-  invoke f ms (asSeq -> StgNat (NativeDict a) _ :< (StgNat b _ :< (StgNat c _ :< _))) =
+instance Invokable (MachineState -> Dynamic -> Symbol -> StgValue -> IO MachineState) where
+  sig _ = "?, :, ."
+  invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< (c :< _))) =
+    f ms a (Symbol b) c
+  invoke f ms args = throwTypeError ms (sig f) args
+
+instance Invokable (MachineState -> Dynamic -> Dynamic -> Address -> IO MachineState) where
+  sig _ = "?, ?, @"
+  invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeDynamic b) _ :< (StgAddr c :< _))) =
     f ms a b c
   invoke f ms args = throwTypeError ms (sig f) args
+
+cast :: forall a . Typeable a => MachineState -> Dynamic -> IO a
+cast ms dyn =
+  case fromDynamic dyn of
+    (Just x) -> return x
+    Nothing ->
+      let expected = show $ typeOf (undefined :: a)
+          actual = show $ dynTypeRep dyn
+       in throwIn ms $ IntrinsicDynamicTypeMismatch expected actual
 
 
 throwTypeError :: MachineState -> String -> ValVec -> IO MachineState
@@ -305,5 +350,4 @@ nativeToString n =
         Right i -> show (i :: Integer)
     NativeString s -> s
     NativeSymbol s -> s
-    NativeSet _ -> "#SET"
-    NativeDict _ -> "#DICT"
+    NativeDynamic _ -> "#DYN"

@@ -104,6 +104,8 @@ euElements =
 
 
 -- | __LOOKUP(symbol, block)
+--
+-- TEMP: Make polymorphic to IOHM blocks too
 euLookup :: LambdaForm
 euLookup =
   lam_ 0 2 $
@@ -116,6 +118,7 @@ euLookup =
               reversed = L 3
            in let_ [pc_ [l] $ thunkn_ 1 $ appfn_ (gref "REVERSE") [L 0]] $
               appfn_ (gref "LOOKUPLIST") [reversed, L 0]))
+    , (stgIOHMBlock, (1, appfn_ (gref "IOHM.LOOKUP") [L 2, L 0]))
     ]
 
 

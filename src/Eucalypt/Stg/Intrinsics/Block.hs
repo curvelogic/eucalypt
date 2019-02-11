@@ -161,5 +161,5 @@ pruneMerge ms xs cmb = do
                     env
                     cs
                     MetadataPassThrough)
-             t <- flipCons addr (retrieveGlobal ms "KNIL")
-             flipCons (StgNat (NativeSymbol k) Nothing) t
+             t <- consVals addr (retrieveGlobal ms "KNIL")
+             consVals (StgNat (NativeSymbol k) Nothing) t
