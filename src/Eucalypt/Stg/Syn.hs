@@ -167,6 +167,9 @@ atom_ = Atom
 force_ :: StgSyn -> StgSyn -> StgSyn
 force_ scrutinee df = Case scrutinee (BranchTable mempty (Just df))
 
+forceall_ :: [StgSyn] -> StgSyn
+forceall_ = foldl1 force_
+
 case_ :: StgSyn -> [(Tag, (Int, StgSyn))] -> StgSyn
 case_ scrutinee cases =
   Case scrutinee (BranchTable (Map.fromList cases) Nothing)
@@ -207,12 +210,6 @@ valuen_ n = LambdaForm (fromIntegral n) 0 False
 
 value_ :: StgSyn -> LambdaForm
 value_ = valuen_ 0
-
-seq_ :: StgSyn -> StgSyn -> StgSyn
-seq_ a b = Case a $ BranchTable mempty (Just b)
-
-seqall_ :: [StgSyn] -> StgSyn
-seqall_ = foldl1 seq_
 
 pc0_ :: LambdaForm -> PreClosure
 pc0_ = PreClosure mempty Nothing

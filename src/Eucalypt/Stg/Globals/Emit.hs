@@ -23,14 +23,9 @@ globals =
   [ ("Emit.suppresses", suppresses)
   , ("Emit.renderKV", renderKV)
   , ("Emit.continueKVList", continueKVList)
-  , ("Emit.emptyList", emptyList)
   , ("Emit.startList", startList)
   , ("Emit.continueList", continueList)
-  , ("Emit.wrapBlock", wrapBlock)
   , ("Emit.forceExportMetadata", forceExportMetadata)
-  , ("Emit.forceExportMetadataKVList", forceExportMetadataKVList)
-  , ("Emit.forceKVNatPair", forceKVNatPair)
-  , ("Emit.isRenderMetadataKey", isRenderMetadataKey)
   , ("RENDER", euRender)
   , ("NULL", euNull)
   ]
@@ -101,7 +96,7 @@ renderKV =
                                   (casedef_
                                      (appfn_ (gref "Emit.suppresses") [valmeta])
                                      [(stgTrue, (0, appcon_ stgUnit []))]
-                                     (seq_
+                                     (force_
                                         (appfn_ (gref "RENDER") [key])
                                         (appfn_ (gref "RENDER") [vval])))))
                           ]
@@ -141,9 +136,6 @@ suppresses =
     ] $
   appcon_ stgFalse []
 
-emptyList :: LambdaForm
-emptyList = value_ $ ann_ "emptyList" 0 $ seq_ emitSS emitSE
-
 -- | Emit.continueList(l)
 continueList :: LambdaForm
 continueList =
@@ -153,7 +145,7 @@ continueList =
     (Atom (L 0))
     [ ( stgCons
       , ( 2
-        , seq_ (appfn_ (gref "RENDER") [L 1]) $
+        , force_ (appfn_ (gref "RENDER") [L 1]) $
           appfn_ (gref "Emit.continueList") [L 2]))
     , (stgNil, (0, emitSE))
     ]
@@ -163,9 +155,9 @@ startList :: LambdaForm
 startList =
   lam_ 0 2 $
   ann_ "Emit.startList" 0 $
-  seq_
+  force_
     emitSS
-    (seq_
+    (force_
        (appfn_ (gref "RENDER") [L 0])
        (appfn_ (gref "Emit.continueList") [L 1]))
 
@@ -178,18 +170,10 @@ continueKVList =
     (Atom (L 0))
     [ ( stgCons
       , ( 2
-        , seq_ (appfn_ (gref "Emit.renderKV") [L 1]) $
+        , force_ (appfn_ (gref "Emit.renderKV") [L 1]) $
           appfn_ (gref "Emit.continueKVList") [L 2]))
     , (stgNil, (0, appcon_ stgUnit []))
     ]
-
--- | __Emit.wrapBlock(b)
-wrapBlock :: LambdaForm
-wrapBlock =
-  lam_ 0 1 $
-  ann_ "Emit.wrapBlock" 0 $
-  seqall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 0], emitME]
-
 
 -- | __RENDER(v)
 euRender :: LambdaForm
@@ -198,78 +182,26 @@ euRender =
   ann_ "__RENDER" 0 $
   casedef_
     (Atom (L 0))
-    [ (stgBlock, (1, appfn_ (gref "Emit.wrapBlock") [L 1]))
+    [ ( stgBlock
+      , ( 1
+        , forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 1], emitME]))
     , (stgCons, (2, appfn_ (gref "Emit.startList") [L 1, L 2]))
-    , (stgNil, (0, appfn_ (gref "Emit.emptyList") []))
+    , (stgNil, (0, force_ emitSS emitSE))
     , (stgUnit, (0, emitNull))
     , (stgTrue, (0, emitTrue))
     , (stgFalse, (0, emitFalse))
     , ( stgIOHMBlock
       , ( 1
-        , force_
-            (appfn_ (gref "IOHM.LIST") [L 1])
-            (appfn_ (gref "Emit.wrapBlock") [L 2])))
+        , force_ (appfn_ (gref "IOHM.LIST") [L 1]) $
+          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
     ] $
   force_ (appfn_ (gref "META") [L 1]) $
   force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $ emitScalar (L 1)
+
 
 -- | Single argument is the metadata (not the annotated value)
 forceExportMetadata :: LambdaForm
 forceExportMetadata =
   lam_ 0 1 $
   ann_ "Emit.forceExportMetadata" 0 $
-  let b = L 0
-      l = L 1
-   in case_
-        (Atom b)
-        [ ( stgBlock
-          , ( 1
-            , force_
-                (appfn_ (gref "Emit.forceExportMetadataKVList") [l])
-                (appcon_ stgUnit [])))
-        ]
-
-
-forceExportMetadataKVList :: LambdaForm
-forceExportMetadataKVList =
-  lam_ 0 1 $
-  ann_ "Emit.forceExportMetadataKVList" 0 $
-  let l = L 0
-      h = L 1
-      t = L 2
-   in case_
-        (Atom l)
-        [ (stgNil, (0, Atom (gref "KNIL")))
-        , ( stgCons
-          , ( 2
-            , force_ (appfn_ (gref "Emit.forceKVNatPair") [h]) $
-              force_ (appfn_ (gref "Emit.forceExportMetadataKVList") [t]) $
-              appcon_ stgUnit []))
-        ]
-
-
-isRenderMetadataKey :: LambdaForm
-isRenderMetadataKey =
-  lam_ 0 1 $
-  ann_ "Emit.isRenderMetadataKey2" 0 $
-  force_ (appbif_ (intrinsicIndex "===") [L 0, V $ NativeSymbol "export"]) $
-  force_ (appbif_ (intrinsicIndex "===") [L 0, V $ NativeSymbol "tag"]) $
-  appfn_ (gref "OR") [L 1, L 2]
-
-
-forceKVNatPair :: LambdaForm
-forceKVNatPair =
-  lam_ 0 1 $
-  ann_ "Emit.forceKVNatPair" 0 $
-  let pr = L 0
-      prh = L 1
-   in casedef_
-        (Atom pr)
-        [ ( stgCons
-          , ( 2
-            , casedef_
-                (appfn_ (gref "Emit.isRenderMetadataKey") [prh])
-                [(stgTrue, (0, appfn_ (gref "seqNatList") [pr]))]
-                (Atom pr)))
-        ]
-        (panic "Invalid pair (not cons) while evaluating render metadata")
+  appfn_ (gref "LOOKUPOR") [V $ NativeString "render", gref "NULL", L 0]
