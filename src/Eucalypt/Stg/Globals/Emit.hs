@@ -86,7 +86,7 @@ renderKV =
         , casedef_
             (appfn_ (gref "Emit.suppresses") [meta])
             [(stgTrue, (0, appcon_ stgUnit []))]
-            (case_
+            (casedef_
                (Atom t)
                [ ( stgCons
                  , ( 2
@@ -99,20 +99,17 @@ renderKV =
                               , force_
                                   (appbif_ (intrinsicIndex "META") [vval])
                                   (casedef_
-                                     (appfn_
-                                        (gref "Emit.suppresses")
-                                        [valmeta])
+                                     (appfn_ (gref "Emit.suppresses") [valmeta])
                                      [(stgTrue, (0, appcon_ stgUnit []))]
                                      (seq_
                                         (appfn_ (gref "RENDER") [key])
                                         (appfn_ (gref "RENDER") [vval])))))
                           ]
                           (appcon_ stgUnit []))))
-               ])))
+               ]
+               (panic "Bad KV in render KV"))))
     ]
-    (appfn_
-       (gref "PANIC")
-       [V $ NativeString "Bad pair in Emit.renderKV"])
+    (panic "Bad pair in Emit.renderKV")
   where
     arg = L 0
     key = L 1
