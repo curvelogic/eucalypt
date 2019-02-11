@@ -26,7 +26,7 @@ import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Render.Json as Json
 import qualified Eucalypt.Render.Text as Text
 import qualified Eucalypt.Render.Yaml as Yaml
-import Eucalypt.Stg.Compiler (compileForRender)
+import Eucalypt.Stg.Compiler.CompileCore (compileForRender)
 import Eucalypt.Reporting.Error
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Eval (step)

@@ -158,7 +158,7 @@ compileBinding _context Nothing _name Explicit (CoreList _ []) =
 
 
 -- | Embed the list bindings in current bindings TODO: meta
-compileBinding context Nothing _name _ (CoreList _ xs) = do
+compileBinding context _metaref _name _ (CoreList _ xs) = do
   rs <- traverse (compileBinding context Nothing Nothing Implicit) xs
   linkAll rs
   where
@@ -232,6 +232,14 @@ compileBinding context _metaref _name _ (C.CoreApply _ f xs) =
         wrapCase _ body = body
 
 
+-- | Bind meta and forward on with the reference
+--
+-- TODO: metdata merge
+compileBinding context _metaref _name _ (C.CoreMeta _ meta obj) = do
+  r <- compileBinding context Nothing Nothing Implicit meta
+  compileBinding context (Just r) Nothing Implicit obj
+
+
 
 compileBinding _context _metaref _name _reason expr =  error $ "undefined compileBinding:" ++ pprint expr
 
@@ -295,6 +303,13 @@ compileBody context _metaref (C.CoreApply _ f xs) =
           call = compileCall n acs'
           wrapCase (i, expr) = force_ (compile context Nothing expr (es + i))
        in foldr wrapCase call (scrutinees acs')
+
+
+
+-- | Bind meta and forward on with the reference
+compileBody context _metaref (C.CoreMeta _ meta obj) = do
+  r <- compileBinding context Nothing Nothing Implicit meta
+  compileBody context (Just r) obj
 
 
 
