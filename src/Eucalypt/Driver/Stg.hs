@@ -26,7 +26,7 @@ import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Render.Json as Json
 import qualified Eucalypt.Render.Text as Text
 import qualified Eucalypt.Render.Yaml as Yaml
-import qualified Eucalypt.Stg.Compiler as C
+import Eucalypt.Stg.Compiler (compileForRender)
 import Eucalypt.Reporting.Error
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Eval (step)
@@ -48,7 +48,7 @@ dumpStg _opts expr = compile expr >>= putStrLn . P.render . prettify
 
 -- | Compile Core to STG
 compile :: MonadIO m => CoreExpr -> m StgSyn
-compile expr = return $ C.compileForRender expr
+compile expr = return $ compileForRender expr
 
 
 

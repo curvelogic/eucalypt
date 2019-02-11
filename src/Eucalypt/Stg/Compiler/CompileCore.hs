@@ -316,3 +316,12 @@ compile context metaref expr envBase =
    in if null pcs
         then body
         else letrec_ pcs body
+
+
+
+-- | Wrap in a render builtin which will NF eval and emit render events
+compileForRender :: CoreExpr -> StgSyn
+compileForRender expr =
+  let_
+    [pc0_ $ thunk_ (compile emptyContext Nothing expr 0)]
+    (appfn_ (gref "RENDER") [L 0])
