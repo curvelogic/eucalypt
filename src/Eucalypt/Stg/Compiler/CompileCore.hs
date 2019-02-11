@@ -141,7 +141,7 @@ compileBinding _context Nothing _name Explicit (CorePrim _ p) =
 compileBinding _context (Just metaref) _name _ (CorePrim _ p) =
   addBinding $
   pc_ [metaref] $
-  thunkn_ 1 $ appbif_ (intrinsicIndex "WITHMETA") [literal p, L 0]
+  thunkn_ 1 $ appbif_ (intrinsicIndex "WITHMETA") [L 0, literal p]
 
 
 
@@ -204,7 +204,7 @@ compileBinding context _metaref _name _ (CoreLookup _ obj nm (Just deft)) = do
   addBinding $
     pc_ env $
     thunkn_ (length env) $
-    appfn_ (gref "LOOKUPOR") [V (NativeSymbol nm), obr, dr]
+    appfn_ (gref "LOOKUPOR") [V (NativeSymbol nm), dr, obr]
 
 
 -- | Compile non-strict bindings into subsuming let, then cases inside
@@ -212,12 +212,12 @@ compileBinding context _metaref _name _ (CoreLookup _ obj nm (Just deft)) = do
 -- TODO: meta
 compileBinding context _metaref _name _ (C.CoreApply _ f xs) =
   traverse compileNonStrict (analyse2 f xs) >>=
-  deferBinding . precloseWrappedCall
+  addBinding . precloseWrappedCall
   where
     comp = compileBinding context Nothing Nothing Implicit
     compileNonStrict = mapClosureExpr $ fmap EnvRef . comp
     -- formulate case-wrapped call (once env size, 'es' is available)
-    precloseWrappedCall acs es = pc_ pcrs $ thunkn_ pcrc wrappedCall
+    precloseWrappedCall acs = pc_ pcrs $ thunkn_ pcrc wrappedCall
       where
         (acs', _) = numberScrutinees (acs, 0) -- with increments over es
         (argFreeRefs, acs'') = sortArgCaseRefs acs'
@@ -228,7 +228,7 @@ compileBinding context _metaref _name _ (C.CoreApply _ f xs) =
         call = compileCall pcrc acs''
         wrappedCall = foldr wrapCase call acs''
         wrapCase (Scrutinee (Just i) expr) body =
-          force_ (compile scrutineeContext Nothing expr (es + i)) body
+          force_ (compile scrutineeContext Nothing expr (pcrc + i)) body
         wrapCase _ body = body
 
 
@@ -238,6 +238,13 @@ compileBinding context _metaref _name _ (C.CoreApply _ f xs) =
 compileBinding context _metaref _name _ (C.CoreMeta _ meta obj) = do
   r <- compileBinding context Nothing Nothing Implicit meta
   compileBinding context (Just r) Nothing Implicit obj
+
+
+
+-- | Pass right through fixity metadata
+compileBinding context metaref name reason (CoreOperator _ _ _ expr) =
+  compileBinding context metaref name reason expr
+
 
 
 
@@ -288,7 +295,7 @@ compileBody context _metaref (CoreLookup _ obj nm Nothing) = do
 compileBody context _metaref (CoreLookup _ obj nm (Just deft)) = do
   objr <- compileBinding context Nothing Nothing Implicit obj
   deftr <- compileBinding context Nothing Nothing Implicit deft
-  return . const $ appfn_ (gref "LOOKUPOR") [V (NativeSymbol nm), objr, deftr]
+  return . const $ appfn_ (gref "LOOKUPOR") [V (NativeSymbol nm), deftr, objr]
 
 
 
@@ -299,8 +306,8 @@ compileBody context _metaref (C.CoreApply _ f xs) =
     comp = compileBinding context Nothing Nothing Implicit
     compileNonStrict = mapClosureExpr $ fmap EnvRef . comp
     wrapCall acs es =
-      let (acs', n) = numberScrutinees (acs, 0)
-          call = compileCall n acs'
+      let (acs', _) = numberScrutinees (acs, 0)
+          call = compileCall es acs'
           wrapCase (i, expr) = force_ (compile context Nothing expr (es + i))
        in foldr wrapCase call (scrutinees acs')
 
@@ -310,6 +317,12 @@ compileBody context _metaref (C.CoreApply _ f xs) =
 compileBody context _metaref (C.CoreMeta _ meta obj) = do
   r <- compileBinding context Nothing Nothing Implicit meta
   compileBody context (Just r) obj
+
+
+
+-- | Pass right through fixity metadata
+compileBody context metaref (CoreOperator _ _ _ expr) =
+  compileBody context metaref expr
 
 
 
