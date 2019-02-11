@@ -35,6 +35,12 @@ pattern Empty <- (Seq.viewl -> Seq.EmptyL)
 pattern (:<) :: a -> Seq.Seq a -> Seq.Seq a
 pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
 
+
+consVals :: StgValue -> StgValue -> IO StgValue
+consVals a as =
+  StgAddr <$>
+  allocate (Closure consConstructor (toVec [a, as]) mempty MetadataPassThrough)
+
 flipCons :: StgValue -> StgValue -> IO StgValue
 flipCons as a =
   StgAddr <$>
