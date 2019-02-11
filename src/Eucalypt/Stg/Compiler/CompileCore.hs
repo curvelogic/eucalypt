@@ -158,12 +158,23 @@ compileBinding _context Nothing _name Explicit (CoreList _ []) =
 
 
 -- | Embed the list bindings in current bindings TODO: meta
-compileBinding context _metaref _name _ (CoreList _ xs) = do
+compileBinding context Nothing _name _ (CoreList _ xs) = do
   rs <- traverse (compileBinding context Nothing Nothing Implicit) xs
   linkAll rs
   where
-    link v r = addBinding $ pc_ [v, r] consConstructor
+    link v t = addBinding $ pc_ [v, t] consConstructor
     linkAll = foldrM link (gref "KNIL")
+
+
+
+-- | Embed the list bindings in current bindings TODO: meta
+compileBinding context metaref _name _ (CoreList _ xs) = do
+  rs <- traverse (compileBinding context Nothing Nothing Implicit) xs
+  let ms = [metaref] <> repeat Nothing
+  linkAllWithMeta rs ms
+  where
+    link (v, m) t = addBinding $ pcm_ [v, t] m consConstructor
+    linkAllWithMeta rs ms = foldrM link (gref "KNIL") (zip rs ms)
 
 
 
