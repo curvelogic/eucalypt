@@ -28,7 +28,7 @@ data GlobalInfo = GlobalInfo
 
 globalRegistry :: [GlobalInfo]
 globalRegistry =
-  [ GlobalInfo "EQ" [NonStrict, NonStrict]
+  [ GlobalInfo "EQ" [Strict, Strict]
   , GlobalInfo "TRUE" []
   , GlobalInfo "FALSE" []
   , GlobalInfo "NOT" [Strict]
