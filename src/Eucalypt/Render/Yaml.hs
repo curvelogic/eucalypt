@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Render.Yaml
 Description : YAML renderer for Eucalypt
@@ -17,6 +18,7 @@ import Conduit
 import qualified Data.ByteString as BS
 import qualified Data.Conduit.Combinators as C
 import Data.Scientific
+import Data.Symbol
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Text.Libyaml as L
@@ -40,7 +42,7 @@ renderValue (NativeNumber n) rm =
     Left r -> [L.EventScalar (encodeUtf8 $ pack $ show r) (tag rm L.FloatTag) (style rm L.PlainNoTag) Nothing]
     Right i -> [L.EventScalar (encodeUtf8 $ pack $ show i) (tag rm L.IntTag) (style rm L.PlainNoTag) Nothing]
 renderValue (NativeSymbol s) rm =
-  [L.EventScalar (encodeUtf8 $ pack s) (tag rm L.StrTag) (style rm L.PlainNoTag) Nothing]
+  [L.EventScalar (encodeUtf8 $ pack $ unintern s) (tag rm L.StrTag) (style rm L.PlainNoTag) Nothing]
 renderValue (NativeString s) rm =
   [L.EventScalar (encodeUtf8 $ pack s) (tag rm L.NoTag) (textStyle s) Nothing]
   where

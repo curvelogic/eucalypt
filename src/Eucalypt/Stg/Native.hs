@@ -13,6 +13,7 @@ module Eucalypt.Stg.Native where
 
 import Data.Dynamic
 import Data.Scientific
+import Data.Symbol
 import Eucalypt.Stg.Pretty
 import GHC.Generics (Generic)
 import Test.QuickCheck (Arbitrary(..), Gen, oneof)
@@ -24,7 +25,7 @@ import qualified Text.PrettyPrint as P
 data Native
   = NativeNumber !Scientific
   | NativeString !String
-  | NativeSymbol !String
+  | NativeSymbol !Symbol
   | NativeDynamic !Dynamic
   deriving (Show, Generic)
 
@@ -37,13 +38,16 @@ instance Eq Native where
 instance StgPretty Native where
   prettify (NativeNumber i) = either P.float P.int $ floatingOrInteger i
   prettify (NativeString s) = P.text $ show s
-  prettify (NativeSymbol s) = P.colon <> P.text s
+  prettify (NativeSymbol s) = P.colon <> P.text (unintern s)
   prettify (NativeDynamic _) = P.text "?"
 
 instance Arbitrary Scientific where
   arbitrary =
     oneof
       [fromInteger <$> arbitrary, fromFloatDigits <$> (arbitrary :: Gen Float)]
+
+instance Arbitrary Symbol where
+  arbitrary = intern <$> arbitrary
 
 instance Arbitrary Native where
   arbitrary =

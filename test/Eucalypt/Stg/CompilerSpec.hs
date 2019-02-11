@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Compiler
 Description : Tests for Core -> STG compilation
@@ -9,6 +10,7 @@ Stability   : experimental
 module Eucalypt.Stg.CompilerSpec (main, spec)
 where
 
+import Data.Symbol ()
 import Eucalypt.Core.AnonSyn as C
 import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Stg.Compiler

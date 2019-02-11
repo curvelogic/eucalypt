@@ -12,6 +12,7 @@ Stability   : experimental
 module Eucalypt.Stg.Compiler.Common where
 
 import Data.Scientific
+import Data.Symbol
 import Eucalypt.Core.Syn as C
 import Eucalypt.Core.SourceMap (SMID)
 import Eucalypt.Stg.GlobalInfo
@@ -22,7 +23,7 @@ import Eucalypt.Stg.Syn
 literal :: C.Primitive -> Ref
 literal (CoreInt n) = V $ NativeNumber $ fromIntegral n
 literal (CoreFloat d) = V $ NativeNumber $ fromFloatDigits d
-literal (CoreSymbol s) = V $ NativeSymbol s
+literal (CoreSymbol s) = V $ NativeSymbol $ intern s
 literal (CoreString s) = V $ NativeString s
 literal (CoreBoolean True) = gref "TRUE"
 literal (CoreBoolean False) = gref "FALSE"

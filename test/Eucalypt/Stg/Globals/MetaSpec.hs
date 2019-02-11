@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.MetaSpec
 Description : Tests for eq globals

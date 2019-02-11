@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Compiler.CompileCore
 Description : Tests for Core -> STG compilation

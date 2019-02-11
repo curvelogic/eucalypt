@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.GlobalsSpec
 Description : Tests for block globals
@@ -12,6 +13,7 @@ module Eucalypt.Stg.GlobalsSpec
   , spec
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
@@ -25,7 +27,7 @@ main = hspec spec
 unforcedKV :: String -> StgSyn -> StgSyn
 unforcedKV k v =
   let_
-    [ pc0_ $ value_ $ Atom (V $ NativeSymbol k)
+    [ pc0_ $ value_ $ Atom (V $ NativeSymbol $ intern k)
     , pc0_ $ value_ v
     ] $
   list_ 2 (map L [0 .. 1]) Nothing

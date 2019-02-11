@@ -106,6 +106,7 @@ tests:
       - network-uri
       - pretty
       - scientific
+      - symbol
       - text
       - tomland
       - unordered-containers

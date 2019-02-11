@@ -54,7 +54,7 @@ list_ envSz rs metaref = letrec_ pcs (Atom $ L pcn)
 convert :: C.Primitive -> Ref
 convert (CoreInt n) = V $ NativeNumber $ fromIntegral n
 convert (CoreFloat d) = V $ NativeNumber $ fromFloatDigits d
-convert (CoreSymbol s) = V $ NativeSymbol s
+convert (CoreSymbol s) = V $ NativeSymbol $ intern s
 convert (CoreString s) = V $ NativeString s
 convert (CoreBoolean True) = gref "TRUE"
 convert (CoreBoolean False) = gref "FALSE"
@@ -174,7 +174,7 @@ compile envSz context _metaref (CoreLookup _ obj nm deft) =
         [compileBinding envSz context ("", obj)]
         (appfn_
            (gref "LOOKUP")
-           [V (NativeSymbol nm), L (fromIntegral envSz)])
+           [V (NativeSymbol $ intern nm), L (fromIntegral envSz)])
     (Just expr) ->
       let_
         [ compileBinding envSz context ("", expr)
@@ -182,7 +182,7 @@ compile envSz context _metaref (CoreLookup _ obj nm deft) =
         ]
         (appfn_
            (gref "LOOKUPOR")
-           [ V (NativeSymbol nm)
+           [ V (NativeSymbol $ intern nm)
            , L (fromIntegral envSz)
            , L (fromIntegral envSz + 1)
            ])

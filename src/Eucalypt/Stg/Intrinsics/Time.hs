@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Time
 Description : Time and date intrinsics
