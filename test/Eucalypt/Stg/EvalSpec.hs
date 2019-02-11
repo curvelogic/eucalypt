@@ -53,7 +53,7 @@ addTest =
 
 -- | Test sequencing emit actions
 renderEmptyMap :: StgSyn
-renderEmptyMap = seq_ emitMS emitME
+renderEmptyMap = force_ emitMS emitME
   where
     emitMS = appbif_ (intrinsicIndex "EMIT{") []
     emitME = appbif_ (intrinsicIndex "EMIT}") []
