@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Meta
 Description : Metadata fns in STG
@@ -11,10 +12,11 @@ module Eucalypt.Stg.Globals.Meta
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Syn
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals = [("META", euMeta), ("WITHMETA", euWithMeta)]
 
 -- | __META(x)

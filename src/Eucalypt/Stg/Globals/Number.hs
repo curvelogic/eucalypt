@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Number
 Description : Basic number fns in STG
@@ -12,6 +13,7 @@ module Eucalypt.Stg.Globals.Number
   , globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
@@ -21,5 +23,5 @@ euNumParse =
   ann_ "__NUMPARSE" 0 $
   force_ (Atom (L 0)) $ appbif_ (intrinsicIndex "NUMPARSE") [L 1]
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals = [("NUMPARSE", euNumParse)]

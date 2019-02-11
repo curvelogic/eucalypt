@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Str
 Description : String and regex globals for STG implementation
@@ -11,12 +12,13 @@ module Eucalypt.Stg.Globals.Str
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("MATCHES", euMatches)
   , ("MATCH", euMatch)

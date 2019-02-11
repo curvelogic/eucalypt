@@ -54,6 +54,7 @@ library:
     - scientific
     - split
     - strict
+    - symbol
     - text
     - time
     - tomland

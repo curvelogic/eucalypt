@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.GlobalInfo
 Description : GlobalInfo type for describing globals
@@ -13,16 +14,18 @@ module Eucalypt.Stg.GlobalInfo
   , gref
   , globalSignature
   , Strictness(..)
+  , module Data.Symbol
   ) where
 
-import qualified Data.HashMap.Strict as HM
+import qualified Data.Map as M
+import Data.Symbol
 import Eucalypt.Stg.Vec (Reference(..))
 
 data Strictness = Strict | NonStrict
   deriving (Show, Eq)
 
 data GlobalInfo = GlobalInfo
-  { globalName :: String
+  { globalName :: Symbol
   , globalStrictness :: [Strictness]
   }
 
@@ -74,14 +77,9 @@ globalRegistry =
   , GlobalInfo "Emit.suppresses" [NonStrict]
   , GlobalInfo "Emit.renderKV" [NonStrict]
   , GlobalInfo "Emit.continueKVList" [NonStrict]
-  , GlobalInfo "Emit.emptyList" []
   , GlobalInfo "Emit.startList" [NonStrict, NonStrict]
   , GlobalInfo "Emit.continueList" [NonStrict]
-  , GlobalInfo "Emit.wrapBlock" [NonStrict]
   , GlobalInfo "Emit.forceExportMetadata" [NonStrict]
-  , GlobalInfo "Emit.forceExportMetadataKVList" [NonStrict]
-  , GlobalInfo "Emit.forceKVNatPair" [NonStrict]
-  , GlobalInfo "Emit.isRenderMetadataKey" [Strict]
   , GlobalInfo "RENDER" [NonStrict]
   , GlobalInfo "NULL" []
   , GlobalInfo "NUMPARSE" [Strict]
@@ -111,21 +109,23 @@ globalRegistry =
   , GlobalInfo "IOHM.EQ" [Strict, Strict]
   ]
 
-globalIndexes :: HM.HashMap String Int
-globalIndexes = foldl add HM.empty $ zip globalRegistry [0 ..]
+globalIndexes :: M.Map Symbol Int
+globalIndexes = foldl add M.empty $ zip globalRegistry [0 ..]
   where
-    add m (GlobalInfo {..}, i) = HM.insert globalName i m
+    add m (GlobalInfo {..}, i) =
+      M.insert globalName i m
 
-globalNames :: [String]
+globalNames :: [Symbol]
 globalNames = map globalName globalRegistry
 
 globalSignature :: String -> [Strictness]
-globalSignature = (smap HM.!)
+globalSignature = (smap M.!) . intern
   where
-    add m GlobalInfo {..} = HM.insert globalName globalStrictness m
-    smap = foldl add HM.empty globalRegistry
+    add m GlobalInfo {..} =
+      M.insert globalName globalStrictness m
+    smap = foldl add M.empty globalRegistry
 
 -- | Retrieve a reference suitable for pointing into the runtime
 -- global environment.
 gref :: String -> Reference a
-gref name = G $ fromIntegral $ globalIndexes HM.! name
+gref name = G $ fromIntegral $ globalIndexes M.! intern name

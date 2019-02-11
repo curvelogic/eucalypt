@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Bool
 Description : Bool fns in STG
@@ -11,10 +12,11 @@ module Eucalypt.Stg.Globals.Bool
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("TRUE", euTrue)
   , ("FALSE", euFalse)

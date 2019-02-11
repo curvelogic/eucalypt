@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 {-|
 Module      : Eucalypt.Stg.Globals
@@ -11,6 +12,7 @@ Stability   : experimental
 -}
 module Eucalypt.Stg.Globals where
 
+import Data.Symbol
 import Eucalypt.Stg.GlobalInfo
 import qualified Eucalypt.Stg.Globals.Arithmetic as Arith
 import qualified Eucalypt.Stg.Globals.Block as Block
@@ -90,7 +92,7 @@ seqPairList =
     ]
 
 
-commonGlobals :: [(String, LambdaForm)]
+commonGlobals :: [(Symbol, LambdaForm)]
 commonGlobals =
   [ ("CAT", euCat)
   , ("KNIL", euStgNil)
@@ -99,7 +101,7 @@ commonGlobals =
   , ("seqPairList", seqPairList)
   ]
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   concat
     [ commonGlobals
