@@ -89,10 +89,10 @@ iohmBlockConstructor :: LambdaForm
 iohmBlockConstructor = standardConstructor 0 stgIOHMBlock
 
 stgIOSMBlock :: Tag
-stgIOSMBlock = 7
+stgIOSMBlock = 8
 
 pattern TagIOSMBlock :: Tag
-pattern TagIOSMBlock = 7
+pattern TagIOSMBlock = 8
 
 iosmBlockConstructor :: LambdaForm
 iosmBlockConstructor = standardConstructor 0 stgIOSMBlock

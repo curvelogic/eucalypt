@@ -108,7 +108,7 @@ euElements =
 
 -- | __LOOKUP(symbol, block)
 --
--- TEMP: Make polymorphic to IOHM blocks too
+-- TEMP: Make polymorphic to IOHM / IOSM blocks too
 euLookup :: LambdaForm
 euLookup =
   lam_ 0 2 $
@@ -122,10 +122,13 @@ euLookup =
            in let_ [pc_ [l] $ thunkn_ 1 $ appfn_ (gref "REVERSE") [L 0]] $
               appfn_ (gref "LOOKUPLIST") [reversed, L 0]))
     , (stgIOHMBlock, (1, appfn_ (gref "IOHM.LOOKUP") [L 2, L 0]))
+    , (stgIOSMBlock, (1, appfn_ (gref "IOSM.LOOKUP") [L 2, L 0]))
     ]
 
 
 -- | __LOOKUPOR(symbol, default, block)
+--
+-- TEMP: Make polymorphic to IOHM / IOSM blocks too
 euLookupOr :: LambdaForm
 euLookupOr =
   let sym = L 0
@@ -139,11 +142,10 @@ euLookupOr =
           , ( 1
             , let els = L 2
                   reversed = L 3
-               in let_
-                    [ pc_ [els] $
-                      thunkn_ 1 $ appfn_ (gref "REVERSE") [L 0]
-                    ] $
+               in let_ [pc_ [els] $ thunkn_ 1 $ appfn_ (gref "REVERSE") [L 0]] $
                   appfn_ (gref "LOOKUPLISTOR") [reversed, deft, sym]))
+        , (stgIOHMBlock, (1, appfn_ (gref "IOHM.LOOKUPOR") [L 3, L 0, L 1]))
+        , (stgIOSMBlock, (1, appfn_ (gref "IOSM.LOOKUPOR") [L 3, L 0, L 1]))
         ]
 
 
