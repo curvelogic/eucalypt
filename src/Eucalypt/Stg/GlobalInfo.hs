@@ -95,6 +95,8 @@ globalRegistry =
   , GlobalInfo "UPPER" [Strict]
   , GlobalInfo "LOWER" [Strict]
   , GlobalInfo "IFIELDS" [Strict]
+  , GlobalInfo "ALIST.MERGE" [Strict, Strict]
+  , GlobalInfo "ALIST.DEEPMERGE" [Strict, Strict]
   , GlobalInfo "IOHM.EMPTY" []
   , GlobalInfo "IOHM.INSERT" [Strict, Strict, Strict]
   , GlobalInfo "IOHM.WRAP" [NonStrict]

@@ -25,6 +25,8 @@ globals =
   [ ("BLOCK", euBlock)
   , ("ELEMENTS", euElements)
   , ("MERGE", euMerge)
+  , ("ALIST.MERGE", euAListMerge)
+  , ("ALIST.DEEPMERGE", euAListDeepMerge)
   , ("DEEPMERGE", euDeepMerge)
   , ("DEEPMERGEIFBLOCKS", euDeepMergeIfBlocks)
   , ("LOOKUP", euLookup)
@@ -33,46 +35,155 @@ globals =
   , ("LOOKUPLISTOR", euLookupListOr)
   ]
 
--- | Both merge builtins combined lists and the prune to handle
--- duplicates. This abstracts the common template. Provide a
--- LambdaForm that prunes the single environment entry @L 0@.
-mergeTemplate :: String -> LambdaForm -> LambdaForm
-mergeTemplate name prune =
-  lam_ 0 2 $
-  ann_ name 0 $
-  let l = L 0
-      r = L 1
-      lel = L 2
-      rel = L 3
-      els = L 4
-      evaled = L 5
-      merged = L 6
-   in letrec_
-        [ pc_ [l] $ thunkn_ 1 $ appfn_ (gref "ELEMENTS") [L 0]
-        , pc_ [r] $ thunkn_ 1 $ appfn_ (gref "ELEMENTS") [L 0]
-        , pc_ [lel, rel] $
-          thunkn_ 2 $ appfn_ (gref "CONCAT") [L 0, L 1]
-        , pc_ [els] $ thunkn_ 1 $ appfn_ (gref "seqPairList") [L 0]
-        , pc_ [evaled] prune
-        ] $
-      appcon_ stgBlock [merged]
 
-
--- | __MERGE(l, r)
+-- | Polymorphic block merge
 euMerge :: LambdaForm
 euMerge =
-  mergeTemplate "__MERGE" $
-  thunkn_ 1 $
-  force_ (Atom $ L 0) (appbif_ (intrinsicIndex "PRUNE") [L 1])
+  lam_ 0 2 $
+  ann_ "__ALIST.MERGE" 0 $
+  case_
+    (Atom $ L 0)
+    [ ( stgBlock
+      , ( 1
+        , case_
+            (Atom $ L 1)
+            [ ( stgBlock
+              , ( 1
+                , force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 3]) $
+                  appcon_ stgBlock [L 4]))
+            , ( stgIOHMBlock
+              , ( 1
+                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
+                  force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 4]) $
+                  appfn_ (gref "IOHM.WRAP") [L 5]))
+            , ( stgIOSMBlock
+              , ( 1
+                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
+                  force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 4]) $
+                  appfn_ (gref "IOSM.WRAP") [L 5]))
+            ]))
+    , ( stgIOHMBlock
+      , ( 1
+        , case_
+            (Atom $ L 1)
+            [ ( stgBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 3]) $
+                  appcon_ stgBlock [L 5]))
+            , (stgIOHMBlock, (1, appfn_ (gref "IOHM.MERGE") [L 2, L 3]))
+            , ( stgIOSMBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "IOSM.ELEMENTS") [L 3]) $
+                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 5]) $
+                  appcon_ stgBlock [L 6]))
+            ]))
+    , ( stgIOHMBlock
+      , ( 1
+        , case_
+            (Atom $ L 1)
+            [ ( stgBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 3]) $
+                  appcon_ stgBlock [L 5]))
+            , ( stgIOHMBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "IOHM.ELEMENTS") [L 3]) $
+                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 5]) $
+                  appcon_ stgBlock [L 6]))
+            , (stgIOSMBlock, (1, appfn_ (gref "IOSM.MERGE") [L 2, L 3]))
+            ]))
+    ]
 
--- | __DEEPMERGE(l, r)
+-- | Merge two association lists
+euAListMerge :: LambdaForm
+euAListMerge =
+  lam_ 0 2 $
+  ann_ "__ALIST.MERGE" 0 $
+  letrec_
+    [ pc_ [L 0, L 1] $ valuen_ 2 $ appfn_ (gref "CONCAT") [L 0, L 1]
+    , pc_ [L 2] $ thunkn_ 1 $ appfn_ (gref "seqPairList") [L 0]
+    ] $
+  force_ (Atom $ L 3) (appbif_ (intrinsicIndex "PRUNE") [L 4])
+
+
 euDeepMerge :: LambdaForm
 euDeepMerge =
-  mergeTemplate "__DEEPMERGE" $
-  thunkn_ 1 $
-  force_
+  lam_ 0 2 $
+  ann_ "__DEEPMERGE" 0 $
+  case_
     (Atom $ L 0)
-    (appbif_ (intrinsicIndex "PRUNEMERGE") [L 1, gref "DEEPMERGEIFBLOCKS"])
+    [ ( stgBlock
+      , ( 1
+        , case_
+            (Atom $ L 1)
+            [ ( stgBlock
+              , ( 1
+                , force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 2, L 3]) $
+                  appcon_ stgBlock [L 4]))
+            , ( stgIOHMBlock
+              , ( 1
+                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
+                  force_ (appfn_ (gref "ALIST.DEEPDEEPMERGE") [L 2, L 4]) $
+                  appfn_ (gref "IOHM.WRAP") [L 5]))
+            , ( stgIOSMBlock
+              , ( 1
+                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
+                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 2, L 4]) $
+                  appfn_ (gref "IOSM.WRAP") [L 5]))
+            ]))
+    , ( stgIOHMBlock
+      , ( 1
+        , case_
+            (Atom $ L 1)
+            [ ( stgBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 3]) $
+                  appcon_ stgBlock [L 5]))
+            , (stgIOHMBlock, (1, appfn_ (gref "IOHMBLOCK.DEEPMERGE") [L 0, L 1]))
+            , ( stgIOSMBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "IOSM.ELEMENTS") [L 3]) $
+                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 5]) $
+                  appcon_ stgBlock [L 6]))
+            ]))
+    , ( stgIOHMBlock
+      , ( 1
+        , case_
+            (Atom $ L 1)
+            [ ( stgBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 3]) $
+                  appcon_ stgBlock [L 5]))
+            , ( stgIOHMBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
+                  force_ (appfn_ (gref "IOHM.ELEMENTS") [L 3]) $
+                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 5]) $
+                  appcon_ stgBlock [L 6]))
+            , (stgIOSMBlock, (1, appfn_ (gref "IOSMBLOCK.DEEPMERGE") [L 0, L 1]))
+            ]))
+    ]
+
+-- | __DEEPMERGE(l, r)
+euAListDeepMerge :: LambdaForm
+euAListDeepMerge =
+  lam_ 0 2 $
+  ann_ "ALIST.DEEPMERGE" 0 $
+  letrec_
+    [ pc_ [L 0, L 1] $ valuen_ 2 $ appfn_ (gref "CONCAT") [L 0, L 1]
+    , pc_ [L 2] $ valuen_ 1 $ appfn_ (gref "seqPairList") [L 0]
+    ] $
+  force_
+    (Atom $ L 3)
+    (appbif_ (intrinsicIndex "PRUNEMERGE") [L 4, gref "DEEPMERGEIFBLOCKS"])
+
 
 -- | __DEEPMERGEIFBLOCKS
 euDeepMergeIfBlocks :: LambdaForm
@@ -85,25 +196,49 @@ euDeepMergeIfBlocks =
       , ( 1
         , casedef_
             (Atom $ L 1)
-            [(stgBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))]
+            [ (stgBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            , (stgIOHMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            , (stgIOSMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            ]
+            (Atom $ L 1)))
+    , ( stgIOHMBlock
+      , ( 1
+        , casedef_
+            (Atom $ L 1)
+            [ (stgBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            , (stgIOHMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            , (stgIOSMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            ]
+            (Atom $ L 1)))
+    , ( stgIOSMBlock
+      , ( 1
+        , casedef_
+            (Atom $ L 1)
+            [ (stgBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            , (stgIOHMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            , (stgIOSMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
+            ]
             (Atom $ L 1)))
     ]
     (Atom $ L 1)
+
 
 -- | __BLOCK(l)
 euBlock :: LambdaForm
 euBlock = lam_ 0 1 $ appcon_ stgBlock [L 0]
 
--- | __ELEMENTS(b) - return elements in order appropriate for
--- iteration (and pruned so no duplicates...)
+
 euElements :: LambdaForm
 euElements =
-  lam_ 0 1 $ ann_ "__ELEMENTS" 0 $
+  lam_ 0 1 $
+  ann_ "__ELEMENTS" 0 $
   casedef_
-    (Atom (L 0))
-    [(stgBlock, (1, Atom (L 1)))]
+    (Atom $ L 0)
+    [ (stgBlock, (1, Atom (L 1)))
+    , (stgIOHMBlock, (1, appfn_ (gref "IOHM.ELEMENTS") [L 1]))
+    , (stgIOSMBlock, (1, appfn_ (gref "IOSM.ELEMENTS") [L 1]))
+    ]
     (appfn_ (gref "PANIC") [V $ NativeString "ELEMENTS expects block"])
-
 
 
 -- | __LOOKUP(symbol, block)
