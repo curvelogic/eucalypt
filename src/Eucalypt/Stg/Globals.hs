@@ -20,6 +20,7 @@ import qualified Eucalypt.Stg.Globals.Bool as Bool
 import qualified Eucalypt.Stg.Globals.Emit as Emit
 import qualified Eucalypt.Stg.Globals.Eq as Eq
 import qualified Eucalypt.Stg.Globals.IOHMBlock as IOHM
+import qualified Eucalypt.Stg.Globals.IOSMBlock as IOSM
 import qualified Eucalypt.Stg.Globals.List as List
 import qualified Eucalypt.Stg.Globals.Meta as Meta
 import qualified Eucalypt.Stg.Globals.Number as Number
@@ -111,6 +112,7 @@ globals =
     , Emit.globals
     , Eq.globals
     , IOHM.globals
+    , IOSM.globals
     , List.globals
     , Meta.globals
     , Number.globals

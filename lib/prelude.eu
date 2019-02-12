@@ -797,3 +797,44 @@ iohm: {
   ` "`iohm.elements(m)` - return list of key value pairs from IOHM `m`"
   elements(m): m Γ.unwrap Γ.list 
 }
+
+` :suppress
+iosm: {
+  ` "Intrinsics for working with unwrapped IOHMs"
+  Γ: {
+    empty: '__IOSM.EMPTY'
+    insert: '__IOSM.INSERT'
+    wrap: '__IOSM.WRAP'
+    unwrap: '__IOSM.UNWRAP'
+    list: '__IOSM.LIST'
+    insert-kv(k, v, m): insert(m, k, v)
+    insert-pair(m, kv): apply(insert(m), kv)
+    lookup: '__IOSM.LOOKUP'
+    lookup-or: '__IOSM.LOOKUPOR'
+    merge: '__IOSM.MERGE'
+  }
+
+  ` "`iosm.empty` - the empty IOSM (insert-ordered hash map)"
+  empty: Γ.wrap(Γ.empty)
+
+  ` "`iosm.insert(k, v, m)` - insert value `v` at key symbol `k` into IOSM `m`"
+  insert(k, v, m): m Γ.unwrap Γ.insert-kv(k, v) Γ.wrap
+
+  ` "`iosm.from(xs)` - construct IOSM (insert-ordered hash map) from list `xs` of key-value pairs"
+  from(xs): xs foldl(Γ.insert-pair, Γ.empty) Γ.wrap
+
+  ` "`iosm.lookup(k, m)` - retrieve value from IOSM `m` at key symbol `k`, error if none"
+  lookup(k, m): m Γ.unwrap flip(Γ.lookup, k)
+
+  ` "`iosm.lookup-or(k, v, m)` - retrieve value from IOSM `m` at key symbol `k`, default `d` if none"
+  lookup-or(k, d, m): Γ.lookup-or(m Γ.unwrap, k, d)
+
+  ` "`iosm.merge(l, r)` - shallow merge IOSM `r` into IOSM `l`"
+  merge(l, r): Γ.merge(Γ.unwrap(l), Γ.unwrap(r)) Γ.wrap
+
+  ` "`iosm.deep-merge(l, r)` - deep merge IOSM `r` into IOSM `l`"
+  deep-merge: '__IOSMBLOCK.DEEPMERGE'
+
+  ` "`iosm.elements(m)` - return list of key value pairs from IOSM `m`"
+  elements(m): m Γ.unwrap Γ.list 
+}

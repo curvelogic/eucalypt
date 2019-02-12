@@ -107,6 +107,18 @@ globalRegistry =
   , GlobalInfo "IOHMBLOCK.DEEPMERGE" [Strict, Strict]
   , GlobalInfo "IOHMBLOCK.DEEPMERGEIFBLOCKS" [Strict, Strict]
   , GlobalInfo "IOHM.EQ" [Strict, Strict]
+  , GlobalInfo "IOSM.EMPTY" []
+  , GlobalInfo "IOSM.INSERT" [Strict, Strict, Strict]
+  , GlobalInfo "IOSM.WRAP" [NonStrict]
+  , GlobalInfo "IOSM.LIST" [Strict]
+  , GlobalInfo "IOSM.LOOKUP" [Strict, Strict]
+  , GlobalInfo "IOSM.LOOKUPOR" [Strict, Strict, NonStrict]
+  , GlobalInfo "IOSM.UNWRAP" [Strict]
+  , GlobalInfo "IOSM.MERGE" [Strict, Strict]
+  , GlobalInfo "IOSM.MERGEWITH" [Strict, Strict, Strict]
+  , GlobalInfo "IOSMBLOCK.DEEPMERGE" [Strict, Strict]
+  , GlobalInfo "IOSMBLOCK.DEEPMERGEIFBLOCKS" [Strict, Strict]
+  , GlobalInfo "IOSM.EQ" [Strict, Strict]
   ]
 
 globalIndexes :: M.Map Symbol Int

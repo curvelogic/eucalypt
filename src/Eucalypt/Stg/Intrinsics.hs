@@ -17,6 +17,7 @@ import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Block as Block
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
 import qualified Eucalypt.Stg.Intrinsics.IOHMBlock as IOHM
+import qualified Eucalypt.Stg.Intrinsics.IOSMBlock as IOSM
 import qualified Eucalypt.Stg.Intrinsics.Meta as Meta
 import qualified Eucalypt.Stg.Intrinsics.Number as Number
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
@@ -35,6 +36,7 @@ intrinsics =
     , Eq.intrinsics
     , General.intrinsics
     , IOHM.intrinsics
+    , IOSM.intrinsics
     , Meta.intrinsics
     , Number.intrinsics
     , Panic.intrinsics

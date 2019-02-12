@@ -196,6 +196,10 @@ euRender =
       , ( 1
         , force_ (appfn_ (gref "IOHM.LIST") [L 1]) $
           forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
+    , ( stgIOSMBlock
+      , ( 1
+        , force_ (appfn_ (gref "IOSM.LIST") [L 1]) $
+          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
     ] $
   force_ (appfn_ (gref "META") [L 1]) $
   force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $ emitScalar (L 1)
