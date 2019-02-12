@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.IOHMBlock
 Description : Functions for dealing with IOHMBlocks
@@ -11,6 +12,7 @@ module Eucalypt.Stg.Globals.IOHMBlock
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Globals.Common
 import Eucalypt.Stg.Intrinsics
@@ -18,7 +20,7 @@ import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("IOHM.EMPTY", euIOHMEmpty)
   , ("IOHM.INSERT", euIOHMInsert)

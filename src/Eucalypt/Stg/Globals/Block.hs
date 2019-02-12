@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 {-|
 Module      : Eucalypt.Stg.Globals.Block
 Description : Block fns in STG
@@ -11,13 +13,14 @@ module Eucalypt.Stg.Globals.Block
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.GlobalInfo (gref)
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("BLOCK", euBlock)
   , ("ELEMENTS", euElements)

@@ -54,6 +54,7 @@ library:
     - scientific
     - split
     - strict
+    - symbol
     - text
     - time
     - tomland
@@ -105,6 +106,7 @@ tests:
       - network-uri
       - pretty
       - scientific
+      - symbol
       - text
       - tomland
       - unordered-containers

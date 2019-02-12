@@ -18,6 +18,7 @@ import Data.Dynamic
 import Data.Foldable (toList)
 import Data.List (intercalate)
 import Data.Scientific (Scientific, floatingOrInteger)
+import Data.Symbol
 import qualified Data.Sequence as Seq
 import Data.Typeable (typeOf)
 import Eucalypt.Stg.Address (allocate, peek)
@@ -157,7 +158,7 @@ readStrListReturn ms = readNatListReturn ms >>= traverse convert
 
 -- | Utility to read a list of pairs from the machine into a native
 -- haskell list for an intrinsic function.
-readPairList :: MachineState -> Address -> IO [(String, StgValue)]
+readPairList :: MachineState -> Address -> IO [(Symbol, StgValue)]
 readPairList ms addr = do
   cons <- readCons ms addr
   case cons of
@@ -207,8 +208,6 @@ readBlock ms addr =
     BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
     PartialApplication {} ->
       throwIn ms IntrinsicExpectedBlockFoundPartialApplication
-
-newtype Symbol = Symbol String
 
 -- | class of Invokable intrinsic functions
 class Invokable f where
@@ -282,7 +281,7 @@ instance Invokable (MachineState -> StgValue -> StgValue -> IO MachineState) whe
 instance Invokable (MachineState -> Dynamic -> Symbol -> IO MachineState) where
   sig _ = "?, :"
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< _)) =
-    f ms a (Symbol b)
+    f ms a b
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Address -> String -> IO MachineState) where
@@ -312,7 +311,7 @@ instance Invokable (MachineState -> Native -> Native -> Native -> IO MachineStat
 instance Invokable (MachineState -> Dynamic -> Symbol -> StgValue -> IO MachineState) where
   sig _ = "?, :, ."
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< (c :< _))) =
-    f ms a (Symbol b) c
+    f ms a b c
   invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Dynamic -> Dynamic -> Address -> IO MachineState) where
@@ -349,5 +348,5 @@ nativeToString n =
         Left f -> show (f :: Double)
         Right i -> show (i :: Integer)
     NativeString s -> s
-    NativeSymbol s -> s
+    NativeSymbol s -> unintern s
     NativeDynamic _ -> "#DYN"

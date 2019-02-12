@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Emit
 Description : Built-ins for emitting events from the STG evaluator

@@ -17,6 +17,7 @@ import qualified Data.ByteString.Lazy as BL
 import Data.ByteString.Builder (Builder, stringUtf8)
 import Data.Maybe (maybeToList)
 import Data.Scientific
+import Data.Symbol
 import qualified Eucalypt.Stg.Event as E
 import Eucalypt.Stg.Native
 
@@ -26,7 +27,7 @@ formatScalar (NativeNumber n) =
   case floatingOrInteger n of
     Left r -> stringUtf8 $ show r
     Right i -> stringUtf8 $ show i
-formatScalar (NativeSymbol s) = stringUtf8 s
+formatScalar (NativeSymbol s) = stringUtf8 $ unintern s
 formatScalar (NativeString s) = stringUtf8 s
 formatScalar (NativeDynamic _) = "**#DYN**"
 

@@ -204,7 +204,7 @@ compileBinding context _metaref _name _ (CoreLookup _ obj nm Nothing) = do
   let (env, [r]) = sortRefs [objr]
   addBinding $
     pc_ env $
-    thunkn_ (length env) $ appfn_ (gref "LOOKUP") [V (NativeSymbol nm), r]
+    thunkn_ (length env) $ appfn_ (gref "LOOKUP") [V (NativeSymbol $ intern nm), r]
 
 
 -- | Lookup without default, binds object and default if necessary
@@ -215,7 +215,7 @@ compileBinding context _metaref _name _ (CoreLookup _ obj nm (Just deft)) = do
   addBinding $
     pc_ env $
     thunkn_ (length env) $
-    appfn_ (gref "LOOKUPOR") [V (NativeSymbol nm), dr, obr]
+    appfn_ (gref "LOOKUPOR") [V (NativeSymbol $ intern nm), dr, obr]
 
 
 -- | Compile non-strict bindings into subsuming let, then cases inside
@@ -299,14 +299,14 @@ compileBody context _metaref (CoreBlock _ content) = do
 
 compileBody context _metaref (CoreLookup _ obj nm Nothing) = do
   objr <- compileBinding context Nothing Nothing Implicit obj
-  return . const $ appfn_ (gref "LOOKUP") [V (NativeSymbol nm), objr]
+  return . const $ appfn_ (gref "LOOKUP") [V (NativeSymbol $ intern nm), objr]
 
 
 
 compileBody context _metaref (CoreLookup _ obj nm (Just deft)) = do
   objr <- compileBinding context Nothing Nothing Implicit obj
   deftr <- compileBinding context Nothing Nothing Implicit deft
-  return . const $ appfn_ (gref "LOOKUPOR") [V (NativeSymbol nm), deftr, objr]
+  return . const $ appfn_ (gref "LOOKUPOR") [V (NativeSymbol $ intern nm), deftr, objr]
 
 
 

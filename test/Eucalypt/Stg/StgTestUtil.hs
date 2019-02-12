@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.StgTestUtil
 Description : Testing utilities for STG machine tests
@@ -38,7 +39,7 @@ kv k v =
   letrec_
     [ pc0_ nilConstructor
     , pc_ [V v, L 0] consConstructor
-    , pc_ [V $ NativeSymbol k, L 1] consConstructor
+    , pc_ [V $ NativeSymbol $ intern k, L 1] consConstructor
     ]
     (Atom $ L 2)
 
@@ -51,7 +52,7 @@ kv_ k v =
   letrec_
     [ pc0_ $ thunk_ suppressMeta
     , pc_ [V v, gref "KNIL"] consConstructor
-    , pcm_ [V $ NativeSymbol k, L 1] (Just $ L 0) consConstructor
+    , pcm_ [V $ NativeSymbol $ intern k, L 1] (Just $ L 0) consConstructor
     ]
     (Atom $ L 2)
 

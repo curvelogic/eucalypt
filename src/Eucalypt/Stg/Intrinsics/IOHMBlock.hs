@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.IOHMBlock
 Description : Block implementation using stored insert ordered hash map
@@ -11,7 +12,9 @@ module Eucalypt.Stg.Intrinsics.IOHMBlock where
 
 import Control.Monad (liftM2, join, foldM)
 import Data.Dynamic
+import Data.Hashable
 import Data.Maybe (fromMaybe)
+import Data.Symbol
 import qualified Data.HashMap.Strict.InsOrd as OM
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.IntrinsicInfo
@@ -22,7 +25,12 @@ import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Vec
 
 -- | Insert ordered hash map of string (symbol) to STG value
-type IOHM = OM.InsOrdHashMap String StgValue
+type IOHM = OM.InsOrdHashMap Symbol StgValue
+
+-- | TODO: find an insertion sorted intmap or something...
+instance Hashable Symbol where
+  hashWithSalt i sym = hashWithSalt i (unintern sym)
+
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -41,7 +49,7 @@ emptyIohm ms = returnDynamic ms (OM.empty :: IOHM)
 
 -- | Add a single kv into the interm IOHM
 iohmInsert :: MachineState -> Dynamic -> Symbol -> StgValue -> IO MachineState
-iohmInsert ms dyn (Symbol k) v =
+iohmInsert ms dyn k v =
   cast ms dyn >>= returnDynamic ms . OM.insertWith const k v
 
 -- | Return contest as kv list
@@ -61,7 +69,7 @@ iohmList ms dyn = do
 
 -- | Lookup
 iohmLookup :: MachineState -> Dynamic -> Symbol -> IO MachineState
-iohmLookup ms dyn (Symbol k) = do
+iohmLookup ms dyn k = do
   om <- cast ms dyn :: IO IOHM
   case OM.lookup k om of
     (Just v) -> returnValue ms v
@@ -69,7 +77,7 @@ iohmLookup ms dyn (Symbol k) = do
 
 -- | LookupOr
 iohmLookupOr :: MachineState -> Dynamic -> Symbol -> StgValue -> IO MachineState
-iohmLookupOr ms dyn (Symbol k) dft = do
+iohmLookupOr ms dyn k dft = do
   om <- cast ms dyn :: IO IOHM
   returnValue ms $ fromMaybe dft (OM.lookup k om)
 

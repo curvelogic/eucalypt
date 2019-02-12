@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Panic
 Description : Various error builtins in STG
@@ -12,12 +13,13 @@ module Eucalypt.Stg.Globals.Panic
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals = [("BOMB", euBomb), ("PANIC", euPanic), ("!KEYNOTFOUND", euKeyNotFound)]
 
 euBomb :: LambdaForm

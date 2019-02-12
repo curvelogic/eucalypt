@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.BoolSpec
 Description : Tests for bool globals
@@ -12,6 +13,7 @@ module Eucalypt.Stg.Globals.BoolSpec
   , spec
   ) where
 
+import Data.Symbol ()
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.StgTestUtil

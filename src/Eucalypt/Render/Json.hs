@@ -15,6 +15,7 @@ module Eucalypt.Render.Json
 import Conduit
 import Control.Monad.State
 import qualified Data.ByteString as BS
+import Data.Symbol
 import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Scientific
@@ -95,7 +96,7 @@ formatScalar (NativeNumber n) =
   case floatingOrInteger n of
     Left r -> encodeUtf8 $ pack $ show r
     Right i -> encodeUtf8 $ pack $ show i
-formatScalar (NativeSymbol s) = jsonStr s
+formatScalar (NativeSymbol s) = jsonStr $ unintern s
 formatScalar (NativeString s) = jsonStr s
 formatScalar (NativeDynamic _) = jsonStr "**#DYN**"
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.EmitSpec
 Description : Tests for eq globals
@@ -12,6 +13,7 @@ module Eucalypt.Stg.Globals.EmitSpec
   , spec
   ) where
 
+import Data.Symbol ()
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.StgTestUtil

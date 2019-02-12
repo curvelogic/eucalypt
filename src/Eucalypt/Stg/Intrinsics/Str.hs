@@ -12,7 +12,13 @@ module Eucalypt.Stg.Intrinsics.Str
   ( intrinsics
   ) where
 
-import Safe (headMay)
+import Data.Char (toLower, toUpper)
+import Data.List (intercalate)
+import Data.Scientific (floatingOrInteger)
+import Data.Symbol
+import Data.Text (pack)
+import Data.Text.Encoding (encodeUtf8)
+import Eucalypt.Stg.Error
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common
   ( invoke
@@ -20,16 +26,11 @@ import Eucalypt.Stg.Intrinsics.Common
   , readStrList
   , returnNatList
   )
-import Eucalypt.Stg.Error
-import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
-import Data.Char (toUpper, toLower)
-import Data.List (intercalate)
-import Data.Scientific (floatingOrInteger)
-import Data.Text (pack)
-import Data.Text.Encoding (encodeUtf8)
-import qualified Text.Regex.PCRE.Heavy as R
+import Eucalypt.Stg.Native
+import Safe (headMay)
 import qualified Text.Printf as PF
+import qualified Text.Regex.PCRE.Heavy as R
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -132,7 +133,7 @@ fmt ms obj spec =
               (Left r) -> PF.printf spec (r :: Double)
               (Right i) -> PF.printf spec (i :: Integer)
           (NativeString s) -> PF.printf spec s
-          (NativeSymbol s) -> PF.printf spec s
+          (NativeSymbol s) -> PF.printf spec $ unintern s
           nat -> throwIn ms $ InvalidFormatSpecifier spec nat
    in return $ setCode ms (ReturnLit (NativeString result) Nothing)
 
@@ -140,4 +141,4 @@ fmt ms obj spec =
 
 -- | __SYM(s) - create symbol from string
 strSym :: MachineState -> String -> IO MachineState
-strSym ms nm = return $ setCode ms $ (`ReturnLit` Nothing) $ NativeSymbol nm
+strSym ms nm = return $ setCode ms $ (`ReturnLit` Nothing) $ NativeSymbol $ intern nm

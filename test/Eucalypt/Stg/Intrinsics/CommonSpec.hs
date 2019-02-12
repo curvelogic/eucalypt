@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.CommonSpec
 Description : Tests for common intrinsics utilities

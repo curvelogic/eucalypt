@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 {-|
 Module      : Eucalypt.Stg.Globals.Arithmetic
 Description : Arithmetic fns in STG
@@ -11,10 +13,11 @@ module Eucalypt.Stg.Globals.Arithmetic
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Globals.Common
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("ADD", euAdd)
   , ("SUB", euSub)

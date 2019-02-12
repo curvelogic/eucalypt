@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Time
 Description : Time and date globlas
@@ -11,10 +12,11 @@ module Eucalypt.Stg.Globals.Time
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("IFIELDS", euIFields)
   ]

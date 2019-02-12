@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Emit
 Description : Emit / render STG code
@@ -11,6 +12,7 @@ module Eucalypt.Stg.Globals.Emit
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
@@ -18,7 +20,7 @@ import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("Emit.suppresses", suppresses)
   , ("Emit.renderKV", renderKV)

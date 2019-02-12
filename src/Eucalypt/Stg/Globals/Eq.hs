@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.Eq
 Description : Global EQ implementation in STG
@@ -11,12 +12,13 @@ module Eucalypt.Stg.Globals.Eq
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Intrinsics (intrinsicIndex)
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals = [("EQ", euEq)]
 
 -- | __EQ(l, r) - deep equality test in STG

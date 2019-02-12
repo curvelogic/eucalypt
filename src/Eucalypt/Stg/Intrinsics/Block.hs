@@ -16,10 +16,12 @@ module Eucalypt.Stg.Intrinsics.Block
 
 import Control.Monad (foldM)
 import qualified Data.HashMap.Strict.InsOrd as OM
+import Data.Symbol
 import Eucalypt.Stg.Address (allocate)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common
+import Eucalypt.Stg.Intrinsics.IOHMBlock (IOHM)
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
@@ -34,7 +36,7 @@ intrinsics =
 -- | Utility to return a native list from a primitive function.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
-returnPairList :: MachineState -> OM.InsOrdHashMap String StgValue -> IO MachineState
+returnPairList :: MachineState -> IOHM -> IO MachineState
 returnPairList ms om = do
   let nilAddr = retrieveGlobal ms "KNIL"
   let pairs = (map snd . OM.toList) om
@@ -56,7 +58,7 @@ prune ms a = pruneSub ms OM.empty a >>= returnPairList ms
 
 -- | Inspect a 'StgValue' to turn it into a pair of symbol and
 -- value-tail
-kv :: MachineState -> StgValue -> IO (String, StgValue)
+kv :: MachineState -> StgValue -> IO (Symbol, StgValue)
 kv ms (StgAddr addr) = do
   pair <- readCons ms addr
   case pair of
@@ -71,9 +73,9 @@ kv ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
 -- pairs in the returned pair list.)
 pruneSub ::
      MachineState
-  -> OM.InsOrdHashMap String StgValue
+  -> IOHM
   -> Address
-  -> IO (OM.InsOrdHashMap String StgValue)
+  -> IO IOHM
 pruneSub ms om a = do
   cons <- readCons ms a
   case cons of
@@ -91,9 +93,9 @@ pruneSub ms om a = do
 -- are not evaluated.
 pruneBlockToMap ::
      MachineState
-  -> OM.InsOrdHashMap String StgValue
+  -> IOHM
   -> Address
-  -> IO (OM.InsOrdHashMap String StgValue)
+  -> IO IOHM
 pruneBlockToMap ms om a = do
   elements <- readBlock ms a
   case elements of
@@ -104,9 +106,9 @@ pruneBlockToMap ms om a = do
 
 pruneToMap ::
      MachineState
-  -> OM.InsOrdHashMap String StgValue
+  -> IOHM
   -> Address
-  -> IO (OM.InsOrdHashMap String StgValue)
+  -> IO IOHM
 pruneToMap ms om a = do
   cons <- readCons ms a
   case cons of
@@ -130,9 +132,9 @@ pruneMerge ms xs cmb = do
   where
     pruneMergeSub ::
          Address
-      -> OM.InsOrdHashMap String StgValue
+      -> IOHM
       -> Address
-      -> IO (OM.InsOrdHashMap String StgValue)
+      -> IO IOHM
     pruneMergeSub f om a = do
       cons <- readCons ms a
       case cons of
@@ -149,7 +151,7 @@ pruneMerge ms xs cmb = do
               pruneMergeSub f (OM.insert k combined om) t
         Just (_, _) -> throwIn ms IntrinsicImproperList
         Nothing -> return om
-    combine :: String -> Address -> StgValue -> StgValue -> IO StgValue
+    combine :: Symbol -> Address -> StgValue -> StgValue -> IO StgValue
     combine k f new old =
       let env = toVec [StgAddr f, old, new]
           cs = machineCallStack ms

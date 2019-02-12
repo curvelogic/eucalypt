@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Globals.List
 Description : Standard list globals for the STG implementation
@@ -12,13 +13,14 @@ module Eucalypt.Stg.Globals.List
   ( globals
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.GlobalInfo (gref)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
 
-globals :: [(String, LambdaForm)]
+globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("CONS", euCons)
   , ("NIL", euNil)
