@@ -18,6 +18,7 @@ import qualified Eucalypt.Stg.Globals.Arithmetic as Arith
 import qualified Eucalypt.Stg.Globals.Block as Block
 import qualified Eucalypt.Stg.Globals.Bool as Bool
 import qualified Eucalypt.Stg.Globals.Emit as Emit
+import qualified Eucalypt.Stg.Globals.Debug as Debug
 import qualified Eucalypt.Stg.Globals.Eq as Eq
 import qualified Eucalypt.Stg.Globals.IOHMBlock as IOHM
 import qualified Eucalypt.Stg.Globals.IOSMBlock as IOSM
@@ -79,15 +80,17 @@ seqPairList =
               et = L 3
               k = L 4
               v = L 5
-              ek = L 6
-              eh = L 7
+              m = L 6
+              ek = L 7
+              eh = L 8
            in (force_ (appfn_ (gref "seqPairList") [t]) $
                case_
                  (Atom h)
                  [ ( stgCons
-                   , ( 2
+                   , ( 3
                      , force_ (Atom k) $
-                       let_ [pc_ [ek, v] $ standardConstructor 2 stgCons] $
+                       let_
+                         [pcm_ [ek, v] (Just m) $ standardConstructor 2 stgCons] $
                        appcon_ stgCons [eh, et]))
                  ])))
     ]
@@ -109,6 +112,7 @@ globals =
     , Arith.globals
     , Block.globals
     , Bool.globals
+    , Debug.globals
     , Emit.globals
     , Eq.globals
     , IOHM.globals

@@ -23,7 +23,7 @@ import qualified Text.PrettyPrint as P
 -- | Format code evidence appropriately for region size
 format :: B.ByteString -> Int -> Int -> Int -> Int -> P.Doc
 format text startLine startCol endLine endCol =
-  if startLine == endLine then
+  if startLine == endLine || (startLine == endLine - 1 && endCol == 0) then
     if startCol == endCol then
       formatPoint text startLine startCol
     else
@@ -97,7 +97,7 @@ formatSingleLine text line from to =
 
 -- | Format code where the region of interest spans many lines
 formatRegion :: B.ByteString -> Int -> Int -> Int -> Int -> P.Doc
-formatRegion text fromLine _ toLine _ =
+formatRegion text fromLine _ endLine endCol =
   if toLine - fromLine < 4
     then againstLineNumberedMargin fromLine 1 $
          [P.empty] ++ map (selectLine text) [fromLine .. toLine] ++ [P.empty]
@@ -109,3 +109,7 @@ formatRegion text fromLine _ toLine _ =
   where
     startLineText = selectLine text fromLine
     endLineText = selectLine text toLine
+    toLine =
+      if endCol == 0
+        then endLine - 1
+        else endLine

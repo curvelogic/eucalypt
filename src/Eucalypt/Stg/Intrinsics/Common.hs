@@ -162,35 +162,36 @@ readPairList :: MachineState -> Address -> IO [(Symbol, StgValue)]
 readPairList ms addr = do
   cons <- readCons ms addr
   case cons of
-    Just (h, StgAddr t) -> do
+    Just (h, StgAddr t, _) -> do
       (k, cdr) <- kv h
       ((k, cdr) :) <$> readPairList ms t
-    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Just (_, _, _) -> throwIn ms IntrinsicImproperList
     Nothing -> return []
   where
     kv (StgAddr a) = do
       pair <- readCons ms a
       case pair of
-        Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
+        Just (StgNat (NativeSymbol s) _, t, _) -> return (s, t)
         _ -> throwIn ms IntrinsicBadPair
     kv (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
 
 
 
 -- | Assuming the specified address is a Cons cell, return head and tail.
-readCons :: MachineState -> Address -> IO (Maybe (StgValue, StgValue))
+readCons :: MachineState -> Address -> IO (Maybe (StgValue, StgValue, Maybe StgValue))
 readCons ms addr =
   peek addr >>= \case
-    Closure {closureCode = lf, closureEnv = e} ->
+    Closure {closureCode = lf, closureEnv = e, closureMeta = hom} ->
       case lf of
         LambdaForm {lamBody = (App (Con TagCons) xs)} ->
           let (h :< (t :< _)) = asSeq $ values (e, ms) $ nativeToValue <$> xs
-           in return $ Just (h, t)
+           in return $ Just (h, t, fromMeta hom)
         LambdaForm {lamBody = (App (Con TagNil) _)} -> return Nothing
         _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
     BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
     PartialApplication {} ->
       throwIn ms IntrinsicExpectedListFoundPartialApplication
+
 
 
 -- | Assuming the specified address is a Block, return the contents list.

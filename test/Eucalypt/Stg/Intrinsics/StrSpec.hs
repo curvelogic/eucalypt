@@ -15,7 +15,6 @@ module Eucalypt.Stg.Intrinsics.StrSpec
 import Data.Char (toUpper, toLower)
 import Data.List (intercalate, isInfixOf)
 import Eucalypt.Stg.Intrinsics.Common
-import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn

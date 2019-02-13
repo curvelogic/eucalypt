@@ -116,6 +116,7 @@ data CoreExp a
                  Precedence
                  (CoreExp a)
   | CoreUnresolved SMID String
+  | CoreRedeclaration SMID String
   | CoreEliminated
   deriving (Functor, Foldable, Traversable)
 
@@ -138,6 +139,7 @@ sourceMapId (CoreApply smid _ _) = smid
 sourceMapId (CoreOpSoup smid _) = smid
 sourceMapId (CoreOperator smid _ _ _) = smid
 sourceMapId (CoreUnresolved smid _) = smid
+sourceMapId (CoreRedeclaration smid _) = smid
 sourceMapId CoreEliminated = 0
 
 mapSourceMapId :: CoreExp a -> (SMID -> SMID) -> CoreExp a
@@ -156,6 +158,7 @@ mapSourceMapId (CoreApply smid fn xs) f = CoreApply (f smid) fn xs
 mapSourceMapId (CoreOpSoup smid xs) f = CoreOpSoup (f smid) xs
 mapSourceMapId (CoreOperator smid x p e) f = CoreOperator (f smid) x p e
 mapSourceMapId (CoreUnresolved smid v) f = CoreUnresolved (f smid) v
+mapSourceMapId (CoreRedeclaration smid v) f = CoreRedeclaration (f smid) v
 mapSourceMapId CoreEliminated _ = CoreEliminated
 
 fillSourceMapId :: CoreExp a -> SMID -> CoreExp a
@@ -236,6 +239,7 @@ instance Monad CoreExp where
   CoreApply smid g es >>= f = CoreApply smid (g >>= f) (map (>>= f) es)
   CoreName smid n >>= _ = CoreName smid n
   CoreUnresolved smid v >>= _ = CoreUnresolved smid v
+  CoreRedeclaration smid v >>= _ = CoreRedeclaration smid v
   CoreEliminated >>= _ = CoreEliminated
 
 

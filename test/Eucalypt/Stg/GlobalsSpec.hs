@@ -14,7 +14,6 @@ module Eucalypt.Stg.GlobalsSpec
   ) where
 
 import Data.Symbol
-import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn

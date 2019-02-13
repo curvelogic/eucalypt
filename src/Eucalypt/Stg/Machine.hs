@@ -107,7 +107,10 @@ instance StgPretty HeapObject where
   prettify (Closure lf env _ _) = prettify env <> P.space <> prettify lf
   prettify (PartialApplication lf env args arity _ _) =
     prettify env <> P.space <>
-    P.parens (prettify args <> P.text "..." <> P.int (fromIntegral arity)) <>
+    P.parens
+      (prettify args <>
+       P.hcat
+         (P.punctuate P.space (replicate (fromIntegral arity) (P.text "?")))) <>
     prettify lf
   prettify BlackHole = P.text "•"
 

@@ -58,11 +58,11 @@ prune ms a = pruneSub ms OM.empty a >>= returnPairList ms
 
 -- | Inspect a 'StgValue' to turn it into a pair of symbol and
 -- value-tail
-kv :: MachineState -> StgValue -> IO (Symbol, StgValue)
+kv :: MachineState -> StgValue -> IO (Symbol, StgValue, Maybe StgValue)
 kv ms (StgAddr addr) = do
   pair <- readCons ms addr
   case pair of
-    Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
+    Just (StgNat (NativeSymbol s) _, t, m) -> return (s, t, m)
     _ -> throwIn ms IntrinsicBadPair
 kv ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
 
@@ -79,11 +79,11 @@ pruneSub ::
 pruneSub ms om a = do
   cons <- readCons ms a
   case cons of
-    Just (h, StgAddr t) -> do
-      (k, _) <- kv ms h
+    Just (h, StgAddr t, _) -> do
+      (k, _, _) <- kv ms h
       let om' = OM.insertWith const k h om
       pruneSub ms om' t
-    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Just (_, _, _) -> throwIn ms IntrinsicImproperList
     Nothing -> return om
 
 
@@ -112,11 +112,11 @@ pruneToMap ::
 pruneToMap ms om a = do
   cons <- readCons ms a
   case cons of
-    Just (h, StgAddr t) -> do
-      (k, v) <- kv ms h
+    Just (h, StgAddr t, _) -> do
+      (k, v, _) <- kv ms h
       let om' = OM.insertWith const k v om
       pruneToMap ms om' t
-    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Just (_, _, _) -> throwIn ms IntrinsicImproperList
     Nothing -> return om
 
 
@@ -138,18 +138,18 @@ pruneMerge ms xs cmb = do
     pruneMergeSub f om a = do
       cons <- readCons ms a
       case cons of
-        Just (h, StgAddr t) -> do
-          (k, StgAddr cdr) <- kv ms h
+        Just (h, StgAddr t, _) -> do
+          (k, StgAddr cdr, _) <- kv ms h
           let old = OM.lookup k om
           case old of
             Nothing -> pruneMergeSub f (OM.insert k h om) t
             Just o -> do
-              (_, StgAddr oldcdr) <- kv ms o
-              Just (oldval, _) <- readCons ms oldcdr
-              Just (newval, _) <- readCons ms cdr
+              (_, StgAddr oldcdr, _) <- kv ms o
+              Just (oldval, _, _) <- readCons ms oldcdr
+              Just (newval, _, _) <- readCons ms cdr
               combined <- combine k f newval oldval
               pruneMergeSub f (OM.insert k combined om) t
-        Just (_, _) -> throwIn ms IntrinsicImproperList
+        Just (_, _, _) -> throwIn ms IntrinsicImproperList
         Nothing -> return om
     combine :: Symbol -> Address -> StgValue -> StgValue -> IO StgValue
     combine k f new old =

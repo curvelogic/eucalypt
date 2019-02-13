@@ -26,6 +26,7 @@ globals =
   , ("ELEMENTS", euElements)
   , ("MERGE", euMerge)
   , ("ALIST.MERGE", euAListMerge)
+  , ("ALIST.PRUNE", euAListPrune)
   , ("ALIST.DEEPMERGE", euAListDeepMerge)
   , ("DEEPMERGE", euDeepMerge)
   , ("DEEPMERGEIFBLOCKS", euDeepMergeIfBlocks)
@@ -103,12 +104,15 @@ euAListMerge :: LambdaForm
 euAListMerge =
   lam_ 0 2 $
   ann_ "__ALIST.MERGE" 0 $
-  letrec_
-    [ pc_ [L 0, L 1] $ valuen_ 2 $ appfn_ (gref "CONCAT") [L 0, L 1]
-    , pc_ [L 2] $ thunkn_ 1 $ appfn_ (gref "seqPairList") [L 0]
-    ] $
-  force_ (Atom $ L 3) (appbif_ (intrinsicIndex "PRUNE") [L 4])
+  letrec_ [pc_ [L 0, L 1] $ valuen_ 2 $ appfn_ (gref "CONCAT") [L 0, L 1]] $
+  appfn_ (gref "ALIST.PRUNE") [L 2]
 
+euAListPrune :: LambdaForm
+euAListPrune =
+  lam_ 0 1 $
+  ann_ "__ALIST.PRUNE" 0 $
+  force_ (appfn_ (gref "seqPairList") [L 0]) $
+  appbif_ (intrinsicIndex "PRUNE") [L 1]
 
 euDeepMerge :: LambdaForm
 euDeepMerge =
@@ -234,7 +238,7 @@ euElements =
   ann_ "__ELEMENTS" 0 $
   casedef_
     (Atom $ L 0)
-    [ (stgBlock, (1, Atom (L 1)))
+    [ (stgBlock, (1, appfn_ (gref "ALIST.PRUNE") [L 1]))
     , (stgIOHMBlock, (1, appfn_ (gref "IOHM.ELEMENTS") [L 1]))
     , (stgIOSMBlock, (1, appfn_ (gref "IOSM.ELEMENTS") [L 1]))
     ]

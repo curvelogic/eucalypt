@@ -44,7 +44,9 @@ runChecks = foldCoreExpr cleanCore
 
 
 cleanCore :: Show a => CoreExp a -> [CoreError]
-cleanCore e = noSoup e ++ noCoreName e ++ noEliminated e ++ notUnresolved e
+cleanCore e =
+  noSoup e ++
+  noCoreName e ++ noEliminated e ++ notUnresolved e ++ notRedeclaration e
 
 
 
@@ -68,3 +70,8 @@ noCoreName _ = []
 notUnresolved :: Show a => CoreExp a -> [CoreError]
 notUnresolved o@CoreUnresolved{} = [(VerifyUnresolvedVar . CoreExpShow) o]
 notUnresolved _ = []
+
+
+notRedeclaration :: Show a => CoreExp a -> [CoreError]
+notRedeclaration o@CoreRedeclaration{} = [(VerifyRedeclaration . CoreExpShow) o]
+notRedeclaration _ = []

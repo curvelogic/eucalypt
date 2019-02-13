@@ -42,7 +42,7 @@ globalRegistry =
   , GlobalInfo "NIL" [NonStrict]
   , GlobalInfo "HEAD" [NonStrict]
   , GlobalInfo "TAIL" [NonStrict]
-  , GlobalInfo "CONCAT" [NonStrict]
+  , GlobalInfo "CONCAT" [NonStrict, NonStrict]
   , GlobalInfo "REVERSE" [NonStrict]
   , GlobalInfo "PANIC" [Strict]
   , GlobalInfo "!KEYNOTFOUND" [Strict]
@@ -96,6 +96,7 @@ globalRegistry =
   , GlobalInfo "LOWER" [Strict]
   , GlobalInfo "IFIELDS" [Strict]
   , GlobalInfo "ALIST.MERGE" [Strict, Strict]
+  , GlobalInfo "ALIST.PRUNE" [Strict]
   , GlobalInfo "ALIST.DEEPMERGE" [Strict, Strict]
   , GlobalInfo "IOHM.EMPTY" []
   , GlobalInfo "IOHM.INSERT" [Strict, Strict, Strict]
@@ -121,6 +122,9 @@ globalRegistry =
   , GlobalInfo "IOSMBLOCK.DEEPMERGE" [Strict, Strict]
   , GlobalInfo "IOSMBLOCK.DEEPMERGEIFBLOCKS" [Strict, Strict]
   , GlobalInfo "IOSM.EQ" [Strict, Strict]
+  , GlobalInfo "SATURATED" [Strict]
+  , GlobalInfo "CONSTRUCTOR" [NonStrict]
+  , GlobalInfo "DEBUGSHOW" [Strict]
   ]
 
 globalIndexes :: M.Map Symbol Int

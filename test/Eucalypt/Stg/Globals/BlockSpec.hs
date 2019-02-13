@@ -12,7 +12,6 @@ module Eucalypt.Stg.Globals.BlockSpec
   , spec
   ) where
 
-import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags

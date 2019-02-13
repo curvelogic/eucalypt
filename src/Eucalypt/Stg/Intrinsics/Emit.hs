@@ -87,8 +87,8 @@ readString _ms addr =
 readStringFromHeapTail :: MachineState -> Address -> IO (Maybe String)
 readStringFromHeapTail ms addr =
   readCons ms addr >>= \case
-    (Just (StgNat (NativeString s) _, _)) -> return . Just $ s
-    (Just (StgAddr a, _)) -> readString ms a
+    (Just (StgNat (NativeString s) _, _, _)) -> return . Just $ s
+    (Just (StgAddr a, _, _)) -> readString ms a
     _ -> return Nothing
 
 -- | Read 'RenderMetadata' out of the machine
