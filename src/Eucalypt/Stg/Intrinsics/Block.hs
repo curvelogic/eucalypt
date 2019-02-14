@@ -10,7 +10,6 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Block
   ( prune
   , pruneMerge
-  , pruneBlockToMap
   , intrinsics
   ) where
 
@@ -73,39 +72,6 @@ pruneSub ms om a = do
       (k, _, _) <- kvtail ms h
       let om' = SM.insertWith const k h om
       pruneSub ms om' t
-    Just (_, _, _) -> throwIn ms IntrinsicImproperList
-    Nothing -> return om
-
-
-
--- | Read a block from the machine into a Haskell map. The value of
--- each pair in this ordered map is the value of the kv pair. Values
--- are not evaluated.
-pruneBlockToMap ::
-     MachineState
-  -> IOSM
-  -> Address
-  -> IO IOSM
-pruneBlockToMap ms om a = do
-  elements <- readBlock ms a
-  case elements of
-    (StgAddr e) -> pruneToMap ms om e
-    (StgNat n _) -> throwIn ms $ IntrinsicExpectedBlockFoundNative n
-
-
-
-pruneToMap ::
-     MachineState
-  -> IOSM
-  -> Address
-  -> IO IOSM
-pruneToMap ms om a = do
-  cons <- readCons ms a
-  case cons of
-    Just (h, StgAddr t, _) -> do
-      (k, v, _) <- kvtail ms h
-      let om' = SM.insertWith const k v om
-      pruneToMap ms om' t
     Just (_, _, _) -> throwIn ms IntrinsicImproperList
     Nothing -> return om
 

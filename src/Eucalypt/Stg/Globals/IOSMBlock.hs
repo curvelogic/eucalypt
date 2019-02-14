@@ -114,5 +114,7 @@ euIOSMEq :: LambdaForm
 euIOSMEq =
   lam_ 0 2 $
   ann_ "IOSM.EQ" 0 $
-  force_ (appfn_ (gref "IOSM.LIST") [L 0]) $
-  force_ (appfn_ (gref "IOSM.LIST") [L 1]) $ appfn_ (gref "EQ") [L 2, L 3]
+  force_ (Atom $ L 0) $
+  force_ (Atom $ L 1) $
+  force_ (appfn_ (gref "IOSM.LIST") [L 2]) $
+  force_ (appfn_ (gref "IOSM.LIST") [L 3]) $ appfn_ (gref "EQ") [L 4, L 5]

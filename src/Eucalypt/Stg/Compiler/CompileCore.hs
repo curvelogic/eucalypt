@@ -198,11 +198,11 @@ compileBinding context metaref _name _ (CoreBlock _ content) = do
     then do
       iosm <-
         addBinding $
-        pc_ env $ valuen_ (length env) $ appfn_ (gref "IOSM.FROMLIST") [r]
+        pc_ env $ thunkn_ (length env) $ appfn_ (gref "IOSM.FROMLIST") [r]
       let (env', [iosmr]) = sortRefs [iosm]
       addBinding $
         pcm_ env' metaref $
-        valuen_ (length env') $ appfn_ (gref "IOSM.WRAP") [iosmr]
+        valuen_ (length env') $ appcon_ stgIOSMBlock [iosmr]
     else addBinding $
          pcm_ env metaref $ valuen_ (length env) $ appcon_ stgBlock [r]
 
@@ -301,7 +301,14 @@ compileBody context metaref (C.CoreLet _ bs body _) = do
 
 compileBody context _metaref (CoreBlock _ content) = do
   lst <- compileBinding context Nothing Nothing Implicit content
-  return . const $ appcon_ stgBlock [lst]
+  if True
+    then do
+      let (env, [r]) = sortRefs [lst]
+      iosm <-
+        addBinding $
+        pc_ env $ thunkn_ (length env) $ appfn_ (gref "IOSM.FROMLIST") [r]
+      return . const $ appcon_ stgIOSMBlock [iosm]
+    else return . const $ appcon_ stgBlock [lst]
 
 
 

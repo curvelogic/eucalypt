@@ -207,4 +207,4 @@ forceExportMetadata :: LambdaForm
 forceExportMetadata =
   lam_ 0 1 $
   ann_ "Emit.forceExportMetadata" 0 $
-  appfn_ (gref "LOOKUPOR") [V $ NativeString "render", gref "NULL", L 0]
+  appfn_ (gref "LOOKUPOR") [V $ NativeSymbol "render", gref "NULL", L 0]

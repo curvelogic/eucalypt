@@ -200,22 +200,6 @@ readCons ms addr =
 
 
 
--- | Assuming the specified address is a Block, return the contents list.
-readBlock :: MachineState -> Address -> IO StgValue
-readBlock ms addr =
-  peek addr >>= \case
-    Closure {closureCode = lf, closureEnv = e} ->
-      case lf of
-        LambdaForm {lamBody = (App (Con TagBlock) xs)} ->
-          let (x :< _) = asSeq $ values (e, ms) $ nativeToValue <$> xs
-           in return x
-        LambdaForm {lamBody = (App (Con _) _)} ->
-          throwIn ms $ IntrinsicExpectedBlock (lamBody lf)
-        _ -> throwIn ms $ IntrinsicExpectedEvaluatedBlock (lamBody lf)
-    BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
-    PartialApplication {} ->
-      throwIn ms IntrinsicExpectedBlockFoundPartialApplication
-
 -- | class of Invokable intrinsic functions
 class Invokable f where
   -- | String representation of expected signature for error messages etc.
