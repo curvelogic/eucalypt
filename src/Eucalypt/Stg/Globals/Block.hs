@@ -171,7 +171,7 @@ euElements =
   ann_ "__ELEMENTS" 0 $
   casedef_
     (Atom $ L 0)
-    [ (stgBlock, (1, appfn_ (gref "ALIST.PRUNE") [L 1]))
+    [ (stgBlock, (1, Atom $ L 1))
     , (stgIOSMBlock, (1, appfn_ (gref "IOSM.ELEMENTS") [L 1]))
     ]
     (appfn_ (gref "PANIC") [V $ NativeString "ELEMENTS expects block"])
