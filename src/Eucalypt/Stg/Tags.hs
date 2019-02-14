@@ -79,20 +79,11 @@ pattern TagZDT = 6
 zdtConstructor :: LambdaForm
 zdtConstructor = standardConstructor 0 stgZDT
 
-stgIOHMBlock :: Tag
-stgIOHMBlock = 7
-
-pattern TagIOHMBlock :: Tag
-pattern TagIOHMBlock = 7
-
-iohmBlockConstructor :: LambdaForm
-iohmBlockConstructor = standardConstructor 0 stgIOHMBlock
-
 stgIOSMBlock :: Tag
-stgIOSMBlock = 8
+stgIOSMBlock = 7
 
 pattern TagIOSMBlock :: Tag
-pattern TagIOSMBlock = 8
+pattern TagIOSMBlock = 7
 
 iosmBlockConstructor :: LambdaForm
 iosmBlockConstructor = standardConstructor 0 stgIOSMBlock

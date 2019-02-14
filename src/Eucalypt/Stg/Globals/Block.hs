@@ -52,35 +52,13 @@ euMerge =
               , ( 1
                 , force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 3]) $
                   appcon_ stgBlock [L 4]))
-            , ( stgIOHMBlock
-              , ( 1
-                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
-                  force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 4]) $
-                  appfn_ (gref "IOHM.WRAP") [L 5]))
             , ( stgIOSMBlock
               , ( 1
                 , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
                   force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 4]) $
                   appfn_ (gref "IOSM.WRAP") [L 5]))
             ]))
-    , ( stgIOHMBlock
-      , ( 1
-        , case_
-            (Atom $ L 1)
-            [ ( stgBlock
-              , ( 1
-                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 3]) $
-                  appcon_ stgBlock [L 5]))
-            , (stgIOHMBlock, (1, appfn_ (gref "IOHM.MERGE") [L 2, L 3]))
-            , ( stgIOSMBlock
-              , ( 1
-                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "IOSM.ELEMENTS") [L 3]) $
-                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 5]) $
-                  appcon_ stgBlock [L 6]))
-            ]))
-    , ( stgIOHMBlock
+    , ( stgIOSMBlock
       , ( 1
         , case_
             (Atom $ L 1)
@@ -89,12 +67,6 @@ euMerge =
                 , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
                   force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 3]) $
                   appcon_ stgBlock [L 5]))
-            , ( stgIOHMBlock
-              , ( 1
-                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "IOHM.ELEMENTS") [L 3]) $
-                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 5]) $
-                  appcon_ stgBlock [L 6]))
             , (stgIOSMBlock, (1, appfn_ (gref "IOSM.MERGE") [L 2, L 3]))
             ]))
     ]
@@ -128,35 +100,13 @@ euDeepMerge =
               , ( 1
                 , force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 2, L 3]) $
                   appcon_ stgBlock [L 4]))
-            , ( stgIOHMBlock
-              , ( 1
-                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
-                  force_ (appfn_ (gref "ALIST.DEEPDEEPMERGE") [L 2, L 4]) $
-                  appfn_ (gref "IOHM.WRAP") [L 5]))
             , ( stgIOSMBlock
               , ( 1
                 , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
                   force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 2, L 4]) $
                   appfn_ (gref "IOSM.WRAP") [L 5]))
             ]))
-    , ( stgIOHMBlock
-      , ( 1
-        , case_
-            (Atom $ L 1)
-            [ ( stgBlock
-              , ( 1
-                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 3]) $
-                  appcon_ stgBlock [L 5]))
-            , (stgIOHMBlock, (1, appfn_ (gref "IOHMBLOCK.DEEPMERGE") [L 0, L 1]))
-            , ( stgIOSMBlock
-              , ( 1
-                , force_ (appfn_ (gref "IOHM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "IOSM.ELEMENTS") [L 3]) $
-                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 5]) $
-                  appcon_ stgBlock [L 6]))
-            ]))
-    , ( stgIOHMBlock
+    , ( stgIOSMBlock
       , ( 1
         , case_
             (Atom $ L 1)
@@ -165,12 +115,6 @@ euDeepMerge =
                 , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
                   force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 3]) $
                   appcon_ stgBlock [L 5]))
-            , ( stgIOHMBlock
-              , ( 1
-                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "IOHM.ELEMENTS") [L 3]) $
-                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 5]) $
-                  appcon_ stgBlock [L 6]))
             , (stgIOSMBlock, (1, appfn_ (gref "IOSMBLOCK.DEEPMERGE") [L 0, L 1]))
             ]))
     ]
@@ -201,16 +145,6 @@ euDeepMergeIfBlocks =
         , casedef_
             (Atom $ L 1)
             [ (stgBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
-            , (stgIOHMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
-            , (stgIOSMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
-            ]
-            (Atom $ L 1)))
-    , ( stgIOHMBlock
-      , ( 1
-        , casedef_
-            (Atom $ L 1)
-            [ (stgBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
-            , (stgIOHMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
             , (stgIOSMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
             ]
             (Atom $ L 1)))
@@ -219,7 +153,6 @@ euDeepMergeIfBlocks =
         , casedef_
             (Atom $ L 1)
             [ (stgBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
-            , (stgIOHMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
             , (stgIOSMBlock, (1, appfn_ (gref "DEEPMERGE") [L 0, L 1]))
             ]
             (Atom $ L 1)))
@@ -239,7 +172,6 @@ euElements =
   casedef_
     (Atom $ L 0)
     [ (stgBlock, (1, appfn_ (gref "ALIST.PRUNE") [L 1]))
-    , (stgIOHMBlock, (1, appfn_ (gref "IOHM.ELEMENTS") [L 1]))
     , (stgIOSMBlock, (1, appfn_ (gref "IOSM.ELEMENTS") [L 1]))
     ]
     (appfn_ (gref "PANIC") [V $ NativeString "ELEMENTS expects block"])
@@ -247,7 +179,7 @@ euElements =
 
 -- | __LOOKUP(symbol, block)
 --
--- TEMP: Make polymorphic to IOHM / IOSM blocks too
+-- TEMP: Make polymorphic to IOSM blocks too
 euLookup :: LambdaForm
 euLookup =
   lam_ 0 2 $
@@ -260,14 +192,13 @@ euLookup =
               reversed = L 3
            in let_ [pc_ [l] $ thunkn_ 1 $ appfn_ (gref "REVERSE") [L 0]] $
               appfn_ (gref "LOOKUPLIST") [reversed, L 0]))
-    , (stgIOHMBlock, (1, appfn_ (gref "IOHM.LOOKUP") [L 2, L 0]))
     , (stgIOSMBlock, (1, appfn_ (gref "IOSM.LOOKUP") [L 2, L 0]))
     ]
 
 
 -- | __LOOKUPOR(symbol, default, block)
 --
--- TEMP: Make polymorphic to IOHM / IOSM blocks too
+-- TEMP: Make polymorphic to IOSM blocks too
 euLookupOr :: LambdaForm
 euLookupOr =
   let sym = L 0
@@ -283,7 +214,6 @@ euLookupOr =
                   reversed = L 3
                in let_ [pc_ [els] $ thunkn_ 1 $ appfn_ (gref "REVERSE") [L 0]] $
                   appfn_ (gref "LOOKUPLISTOR") [reversed, deft, sym]))
-        , (stgIOHMBlock, (1, appfn_ (gref "IOHM.LOOKUPOR") [L 3, L 0, L 1]))
         , (stgIOSMBlock, (1, appfn_ (gref "IOSM.LOOKUPOR") [L 3, L 0, L 1]))
         ]
 

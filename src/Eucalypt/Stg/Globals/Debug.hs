@@ -31,7 +31,6 @@ euConstructor =
     , (stgCons, (0, Atom $ V $ NativeString "stgCons"))
     , (stgNil, (0, Atom $ V $ NativeString "stgNil"))
     , (stgUnit, (0, Atom $ V $ NativeString "stgUnit"))
-    , (stgIOHMBlock, (0, Atom $ V $ NativeString "stgIOHMBlock"))
     , (stgIOSMBlock, (0, Atom $ V $ NativeString "stgIOSMBlock"))
     ] $
   Atom $ V $ NativeString "(native)"

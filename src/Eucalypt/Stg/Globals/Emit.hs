@@ -193,10 +193,6 @@ euRender =
     , (stgUnit, (0, emitNull))
     , (stgTrue, (0, emitTrue))
     , (stgFalse, (0, emitFalse))
-    , ( stgIOHMBlock
-      , ( 1
-        , force_ (appfn_ (gref "IOHM.LIST") [L 1]) $
-          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
     , ( stgIOSMBlock
       , ( 1
         , force_ (appfn_ (gref "IOSM.LIST") [L 1]) $
