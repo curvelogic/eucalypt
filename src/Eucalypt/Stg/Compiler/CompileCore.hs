@@ -190,12 +190,21 @@ compileBinding _context Nothing _name Explicit (CoreBlock _ (CoreList _ [])) =
 
 
 
--- | Empbed all the data structure bindings
+-- | Embed all the data structure bindings
 compileBinding context metaref _name _ (CoreBlock _ content) = do
   lst <- compileBinding context Nothing Nothing Implicit content
   let (env, [r]) = sortRefs [lst]
-  addBinding $ pcm_ env metaref $ valuen_ (length env) $ appcon_ stgBlock [r]
-
+  if True
+    then do
+      iosm <-
+        addBinding $
+        pc_ env $ valuen_ (length env) $ appfn_ (gref "IOSM.FROMLIST") [r]
+      let (env', [iosmr]) = sortRefs [iosm]
+      addBinding $
+        pcm_ env' metaref $
+        valuen_ (length env') $ appfn_ (gref "IOSM.WRAP") [iosmr]
+    else addBinding $
+         pcm_ env metaref $ valuen_ (length env) $ appcon_ stgBlock [r]
 
 
 -- | Simple lookup without default, binds object if necessary
