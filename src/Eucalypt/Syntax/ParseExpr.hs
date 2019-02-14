@@ -324,7 +324,7 @@ anyDeclaration = label "declaration" $ lexeme $ located $ do
   return $ Declaration Annotated { annotation = a, content = d }
 
 blockContent :: Parser Block
-blockContent = sc >> located (Block <$> many anyDeclaration) <?> "block content"
+blockContent = sc >> located (Block <$> many (anyDeclaration <* optional comma)) <?> "block content"
 
 blockLiteral :: Parser Expression
 blockLiteral = located $ EBlock <$> braces blockContent

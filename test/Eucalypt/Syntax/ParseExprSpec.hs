@@ -474,6 +474,11 @@ blockSpec = do
     it "accepts '{ a: 1 b: 2 }'" $
       testParse blockLiteral "{ a: 1 b: 2 }" `shouldParse`
       block [bare $ prop "a" (int 1), bare $ prop "b" (int 2)]
+    it "accepts commas: '{ a: 1, b: 2 }'" $
+      testParse blockLiteral "{ a: 1, b: 2 }" `shouldParse`
+      block [bare $ prop "a" (int 1), bare $ prop "b" (int 2)]
+    it "rejects misplaced commas: '{ a: , 1 b: 2 }'" $
+      testParse blockLiteral `shouldFailOn` "{ a: , 1 b: 2 }"
     it "accepts empty blocks" $
       testParse blockLiteral "{}" `shouldParse` block []
     it "accepts metadata" $
