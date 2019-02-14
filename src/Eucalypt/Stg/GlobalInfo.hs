@@ -102,17 +102,18 @@ globalRegistry =
   , GlobalInfo "IOSM.INSERT" [Strict, Strict, Strict]
   , GlobalInfo "IOSM.WRAP" [NonStrict]
   , GlobalInfo "IOSM.LIST" [Strict]
+  , GlobalInfo "IOSM.FROMLIST" [Strict]
   , GlobalInfo "IOSM.LOOKUP" [Strict, Strict]
   , GlobalInfo "IOSM.LOOKUPOR" [Strict, Strict, NonStrict]
   , GlobalInfo "IOSM.UNWRAP" [Strict]
   , GlobalInfo "IOSM.MERGE" [Strict, Strict]
   , GlobalInfo "IOSM.MERGEWITH" [Strict, Strict, Strict]
+  , GlobalInfo "IOSM.DEEPMERGE" [Strict, Strict]
   , GlobalInfo "IOSMBLOCK.DEEPMERGE" [Strict, Strict]
-  , GlobalInfo "IOSMBLOCK.DEEPMERGEIFBLOCKS" [Strict, Strict]
   , GlobalInfo "IOSM.EQ" [Strict, Strict]
   , GlobalInfo "SATURATED" [Strict]
   , GlobalInfo "CONSTRUCTOR" [NonStrict]
-  , GlobalInfo "DEBUGSHOW" [Strict]
+  , GlobalInfo "INSPECT" [Strict]
   ]
 
 globalIndexes :: M.Map Symbol Int
@@ -134,4 +135,8 @@ globalSignature = (smap M.!) . intern
 -- | Retrieve a reference suitable for pointing into the runtime
 -- global environment.
 gref :: String -> Reference a
-gref name = G $ fromIntegral $ globalIndexes M.! intern name
+gref name =
+  maybe
+    (error ("No global: " ++ name))
+    (G . fromIntegral)
+    (globalIndexes M.!? intern name)

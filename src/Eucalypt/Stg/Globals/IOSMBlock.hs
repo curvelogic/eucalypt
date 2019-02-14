@@ -26,13 +26,14 @@ globals =
   , ("IOSM.INSERT", euIOSMInsert)
   , ("IOSM.WRAP", euIOSMWrap)
   , ("IOSM.LIST", euIOSMList)
+  , ("IOSM.FROMLIST", euIOSMFromList)
   , ("IOSM.LOOKUP", euIOSMLookup)
   , ("IOSM.LOOKUPOR", euIOSMLookupOr)
   , ("IOSM.UNWRAP", euIOSMUnwrap)
   , ("IOSM.MERGE", euIOSMMerge)
+  , ("IOSM.DEEPMERGE", euIOSMDeepMerge)
   , ("IOSM.MERGEWITH", euIOSMMergeWith)
   , ("IOSMBLOCK.DEEPMERGE", euDeepMerge)
-  , ("IOSMBLOCK.DEEPMERGEIFBLOCKS", euDeepMergeIfBlocks)
   , ("IOSM.EQ", euIOSMEq)
   ]
 
@@ -47,6 +48,14 @@ euIOSMWrap = lam_ 0 1 $ ann_ "IOSM.WRAP" 0 $ appcon_ stgIOSMBlock [L 0]
 
 euIOSMList :: LambdaForm
 euIOSMList = wrapBifStrict "IOSM.LIST"
+
+euIOSMFromList :: LambdaForm
+euIOSMFromList =
+  lam_ 0 1 $
+  ann_ "__IOSM.FROMLIST" 0 $
+  force_ (appfn_ (gref "seqPairList") [L 0]) $
+  appbif_ (intrinsicIndex "IOSM.FROMALIST") [L 1]
+
 
 euIOSMLookup :: LambdaForm
 euIOSMLookup = wrapBifStrict "IOSM.LOOKUP"
@@ -72,6 +81,14 @@ euIOSMMerge = wrapBifStrict "IOSM.MERGE"
 euIOSMMergeWith :: LambdaForm
 euIOSMMergeWith = wrapBifStrict "IOSM.MERGEWITH"
 
+euIOSMDeepMerge :: LambdaForm
+euIOSMDeepMerge =
+  lam_ 0 2 $
+  ann_ "IOSM.DEEPMERGE" 0 $
+  force_ (Atom $ L 0) $
+  force_ (Atom $ L 1) $
+  appfn_ (gref "IOSM.MERGEWITH") [L 2, L 3, gref "DEEPMERGEIFBLOCKS"]
+
 euDeepMerge :: LambdaForm
 euDeepMerge =
   lam_ 0 2 $
@@ -84,10 +101,7 @@ euDeepMerge =
             (Atom $ L 1)
             [ ( stgIOSMBlock
               , ( 1
-                , let_
-                    [ pc_ [L 2, L 3, gref "IOSMBLOCK.DEEPMERGEIFBLOCKS"] $
-                      thunkn_ 3 $ appfn_ (gref "IOSM.MERGEWITH") [L 0, L 1, L 2]
-                    ] $
+                , force_ (appfn_ (gref "IOSM.DEEPMERGE") [L 2, L 3]) $
                   appcon_ stgIOSMBlock [L 4]))
             ]
             (appfn_
@@ -95,21 +109,6 @@ euDeepMerge =
                [V $ NativeString "Non block argument to deep merge"])))
     ]
     (appfn_ (gref "PANIC") [V $ NativeString "Non block argument to deep merge"])
-
-euDeepMergeIfBlocks :: LambdaForm
-euDeepMergeIfBlocks =
-  lam_ 0 2 $
-  ann_ "IOSMBLOCK.DEEPMERGEIFBLOCKS" 0 $
-  casedef_
-    (Atom $ L 0)
-    [ ( stgIOSMBlock
-      , ( 1
-        , casedef_
-            (Atom $ L 1)
-            [(stgIOSMBlock, (1, appfn_ (gref "IOSMBLOCK.DEEPMERGE") [L 0, L 1]))]
-            (Atom $ L 1)))
-    ]
-    (Atom $ L 1)
 
 euIOSMEq :: LambdaForm
 euIOSMEq =

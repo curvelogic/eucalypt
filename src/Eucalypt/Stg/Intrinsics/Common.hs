@@ -156,6 +156,19 @@ readStrListReturn ms = readNatListReturn ms >>= traverse convert
     convert _ = throwIn ms IntrinsicExpectedStringList
 
 
+
+-- | Inspect a 'StgValue' to turn it into a pair of symbol and
+-- value-tail
+kvtail :: MachineState -> StgValue -> IO (Symbol, StgValue, Maybe StgValue)
+kvtail ms (StgAddr addr) = do
+  pair <- readCons ms addr
+  case pair of
+    Just (StgNat (NativeSymbol s) _, t, m) -> return (s, t, m)
+    _ -> throwIn ms IntrinsicBadPair
+kvtail ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
+
+
+
 -- | Utility to read a list of pairs from the machine into a native
 -- haskell list for an intrinsic function.
 readPairList :: MachineState -> Address -> IO [(Symbol, StgValue)]
@@ -163,17 +176,10 @@ readPairList ms addr = do
   cons <- readCons ms addr
   case cons of
     Just (h, StgAddr t, _) -> do
-      (k, cdr) <- kv h
+      (k, cdr, _) <- kvtail ms h
       ((k, cdr) :) <$> readPairList ms t
     Just (_, _, _) -> throwIn ms IntrinsicImproperList
     Nothing -> return []
-  where
-    kv (StgAddr a) = do
-      pair <- readCons ms a
-      case pair of
-        Just (StgNat (NativeSymbol s) _, t, _) -> return (s, t)
-        _ -> throwIn ms IntrinsicBadPair
-    kv (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
 
 
 

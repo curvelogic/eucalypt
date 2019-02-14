@@ -27,7 +27,7 @@ import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
 
-type IOHM = SM.InsOrdSymbolMap StgValue
+type IOSM = SM.InsOrdSymbolMap StgValue
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -38,7 +38,7 @@ intrinsics =
 -- | Utility to return a native list from a primitive function.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
-returnPairList :: MachineState -> IOHM -> IO MachineState
+returnPairList :: MachineState -> IOSM -> IO MachineState
 returnPairList ms om = do
   let nilAddr = retrieveGlobal ms "KNIL"
   let pairs = (map snd . SM.toList) om
@@ -58,31 +58,19 @@ prune ms a = pruneSub ms SM.empty a >>= returnPairList ms
 
 
 
--- | Inspect a 'StgValue' to turn it into a pair of symbol and
--- value-tail
-kv :: MachineState -> StgValue -> IO (Symbol, StgValue, Maybe StgValue)
-kv ms (StgAddr addr) = do
-  pair <- readCons ms addr
-  case pair of
-    Just (StgNat (NativeSymbol s) _, t, m) -> return (s, t, m)
-    _ -> throwIn ms IntrinsicBadPair
-kv ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
-
-
-
 -- | The value of each pair in the ordered map is the pair itself
 -- (allowing for simple reconstruction without allocation of the
 -- pairs in the returned pair list.)
 pruneSub ::
      MachineState
-  -> IOHM
+  -> IOSM
   -> Address
-  -> IO IOHM
+  -> IO IOSM
 pruneSub ms om a = do
   cons <- readCons ms a
   case cons of
     Just (h, StgAddr t, _) -> do
-      (k, _, _) <- kv ms h
+      (k, _, _) <- kvtail ms h
       let om' = SM.insertWith const k h om
       pruneSub ms om' t
     Just (_, _, _) -> throwIn ms IntrinsicImproperList
@@ -95,9 +83,9 @@ pruneSub ms om a = do
 -- are not evaluated.
 pruneBlockToMap ::
      MachineState
-  -> IOHM
+  -> IOSM
   -> Address
-  -> IO IOHM
+  -> IO IOSM
 pruneBlockToMap ms om a = do
   elements <- readBlock ms a
   case elements of
@@ -108,14 +96,14 @@ pruneBlockToMap ms om a = do
 
 pruneToMap ::
      MachineState
-  -> IOHM
+  -> IOSM
   -> Address
-  -> IO IOHM
+  -> IO IOSM
 pruneToMap ms om a = do
   cons <- readCons ms a
   case cons of
     Just (h, StgAddr t, _) -> do
-      (k, v, _) <- kv ms h
+      (k, v, _) <- kvtail ms h
       let om' = SM.insertWith const k v om
       pruneToMap ms om' t
     Just (_, _, _) -> throwIn ms IntrinsicImproperList
@@ -134,19 +122,19 @@ pruneMerge ms xs cmb = do
   where
     pruneMergeSub ::
          Address
-      -> IOHM
+      -> IOSM
       -> Address
-      -> IO IOHM
+      -> IO IOSM
     pruneMergeSub f om a = do
       cons <- readCons ms a
       case cons of
         Just (h, StgAddr t, _) -> do
-          (k, StgAddr cdr, _) <- kv ms h
+          (k, StgAddr cdr, _) <- kvtail ms h
           let old = SM.lookup k om
           case old of
             Nothing -> pruneMergeSub f (SM.insert k h om) t
             Just o -> do
-              (_, StgAddr oldcdr, _) <- kv ms o
+              (_, StgAddr oldcdr, _) <- kvtail ms o
               Just (oldval, _, _) <- readCons ms oldcdr
               Just (newval, _, _) <- readCons ms cdr
               combined <- combine k f newval oldval

@@ -32,6 +32,7 @@ intrinsics =
   [ IntrinsicInfo "IOSM.EMPTY" 0 (invoke emptyIosm)
   , IntrinsicInfo "IOSM.INSERT" 3 (invoke iosmInsert)
   , IntrinsicInfo "IOSM.LIST" 1 (invoke iosmList)
+  , IntrinsicInfo "IOSM.FROMALIST" 1 (invoke iosmFromAList)
   , IntrinsicInfo "IOSM.LOOKUP" 2 (invoke iosmLookup)
   , IntrinsicInfo "IOSM.LOOKUPOR" 3 (invoke iosmLookupOr)
   , IntrinsicInfo "IOSM.MERGE" 2 (invoke iosmMerge)
@@ -61,6 +62,33 @@ iosmList ms dyn = do
   where
     allocPair nil (k, v) =
       foldM flipCons nil [v, StgNat (NativeSymbol k) Nothing]
+
+
+
+alistToMap ::
+     MachineState
+  -> IOSM
+  -> Address
+  -> IO IOSM
+alistToMap ms om a = do
+  cons <- readCons ms a
+  case cons of
+    Just (h, StgAddr t, _) -> do
+      (k, StgAddr cdr, _) <- kvtail ms h
+      (Just (v, _, _)) <- readCons ms cdr
+      let om' = SM.insertWith const k v om
+      alistToMap ms om' t
+    Just (_, _, _) -> throwIn ms IntrinsicImproperList
+    Nothing -> return om
+
+
+-- | From an association list (forced with seqPairList or similar),
+-- return an unwrapped IOSM
+iosmFromAList :: MachineState -> Address -> IO MachineState
+iosmFromAList ms a = do
+  om <- alistToMap ms SM.empty a
+  returnDynamic ms om
+
 
 -- | Lookup
 iosmLookup :: MachineState -> Dynamic -> Symbol -> IO MachineState

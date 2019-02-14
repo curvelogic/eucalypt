@@ -771,6 +771,7 @@ iosm: {
     lookup: '__IOSM.LOOKUP'
     lookup-or: '__IOSM.LOOKUPOR'
     merge: '__IOSM.MERGE'
+    from-list: '__IOSM.FROMLIST'
   }
 
   ` "`iosm.empty` - the empty IOSM (insert-ordered hash map)"
@@ -779,10 +780,13 @@ iosm: {
   ` "`iosm.insert(k, v, m)` - insert value `v` at key symbol `k` into IOSM `m`"
   insert(k, v, m): m Γ.unwrap Γ.insert-kv(k, v) Γ.wrap
 
-  ` "`iosm.from(xs)` - construct IOSM (insert-ordered hash map) from list `xs` of key-value pairs"
-  from(xs): xs foldl(Γ.insert-pair, Γ.empty) Γ.wrap
+  ` "`iosm.from-elements(xs)` - construct IOSM (insert-ordered hash map) from list `xs` of key-value pairs"
+  from-elements(xs): xs Γ.from-list Γ.wrap
 
-  ` "`iosm.lookup(k, m)` - retrieve value from IOSM `m` at key symbol `k`, error if none"
+  ` "`iosm.from(b)` - construct IOSM (insert-ordered hash map) from block"
+  from(b): b __ELEMENTS Γ.from-list Γ.wrap
+
+` "`iosm.lookup(k, m)` - retrieve value from IOSM `m` at key symbol `k`, error if none"
   lookup(k, m): m Γ.unwrap flip(Γ.lookup, k)
 
   ` "`iosm.lookup-or(k, v, m)` - retrieve value from IOSM `m` at key symbol `k`, default `d` if none"

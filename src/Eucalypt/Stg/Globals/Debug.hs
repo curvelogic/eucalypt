@@ -35,12 +35,12 @@ euConstructor =
     ] $
   Atom $ V $ NativeString "(native)"
 
-euDebugShow :: LambdaForm
-euDebugShow = wrapBifStrict "DEBUGSHOW"
+euInspect :: LambdaForm
+euInspect = wrapBifStrict "INSPECT"
 
 globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("SATURATED", euSaturated)
   , ("CONSTRUCTOR", euConstructor)
-  , ("DEBUGSHOW", euDebugShow)
+  , ("INSPECT", euInspect)
   ]

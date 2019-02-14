@@ -54,8 +54,8 @@ euMerge =
                   appcon_ stgBlock [L 4]))
             , ( stgIOSMBlock
               , ( 1
-                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
-                  force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 4]) $
+                , force_ (appfn_ (gref "IOSM.FROMLIST") [L 0]) $
+                  force_ (appfn_ (gref "IOSM.MERGE") [L 4, L 3]) $
                   appfn_ (gref "IOSM.WRAP") [L 5]))
             ]))
     , ( stgIOSMBlock
@@ -64,9 +64,9 @@ euMerge =
             (Atom $ L 1)
             [ ( stgBlock
               , ( 1
-                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "ALIST.MERGE") [L 4, L 3]) $
-                  appcon_ stgBlock [L 5]))
+                , force_ (appfn_ (gref "IOSM.FROMLIST") [L 1]) $
+                  force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 4]) $
+                  appfn_ (gref "IOSM.WRAP") [L 5]))
             , (stgIOSMBlock, (1, appfn_ (gref "IOSM.MERGE") [L 2, L 3]))
             ]))
     ]
@@ -102,8 +102,8 @@ euDeepMerge =
                   appcon_ stgBlock [L 4]))
             , ( stgIOSMBlock
               , ( 1
-                , force_ (appfn_ (gref "ELEMENTS") [L 1]) $
-                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 2, L 4]) $
+                , force_ (appfn_ (gref "IOSM.FROMLIST") [L 2]) $
+                  force_ (appfn_ (gref "IOSM.DEEPMERGE") [L 4, L 3]) $
                   appfn_ (gref "IOSM.WRAP") [L 5]))
             ]))
     , ( stgIOSMBlock
@@ -112,9 +112,9 @@ euDeepMerge =
             (Atom $ L 1)
             [ ( stgBlock
               , ( 1
-                , force_ (appfn_ (gref "IOSM.ELEMENTS") [L 2]) $
-                  force_ (appfn_ (gref "ALIST.DEEPMERGE") [L 4, L 3]) $
-                  appcon_ stgBlock [L 5]))
+                , force_ (appfn_ (gref "IOSM.FROMLIST") [L 3]) $
+                  force_ (appfn_ (gref "IOSM.DEEPMERGE") [L 2, L 4]) $
+                  appfn_ (gref "IOSM.WRAP") [L 5]))
             , (stgIOSMBlock, (1, appfn_ (gref "IOSMBLOCK.DEEPMERGE") [L 0, L 1]))
             ]))
     ]

@@ -21,10 +21,10 @@ import qualified Text.PrettyPrint as P
 
 
 intrinsics :: [IntrinsicInfo]
-intrinsics = [IntrinsicInfo "DEBUGSHOW" 1 (invoke debugShow)]
+intrinsics = [IntrinsicInfo "INSPECT" 1 (invoke inspect)]
 
-debugShow :: MachineState -> StgValue -> IO MachineState
-debugShow ms v =
+inspect :: MachineState -> StgValue -> IO MachineState
+inspect ms v =
   case v of
     (StgAddr a) ->
       peek a >>= \ho ->
