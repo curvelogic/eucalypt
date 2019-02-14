@@ -54,7 +54,7 @@ euMerge =
                   appcon_ stgBlock [L 4]))
             , ( stgIOSMBlock
               , ( 1
-                , force_ (appfn_ (gref "IOSM.FROMLIST") [L 0]) $
+                , force_ (appfn_ (gref "IOSM.FROMLIST") [L 2]) $
                   force_ (appfn_ (gref "IOSM.MERGE") [L 4, L 3]) $
                   appfn_ (gref "IOSM.WRAP") [L 5]))
             ]))
@@ -67,7 +67,10 @@ euMerge =
                 , force_ (appfn_ (gref "IOSM.FROMLIST") [L 1]) $
                   force_ (appfn_ (gref "ALIST.MERGE") [L 2, L 4]) $
                   appfn_ (gref "IOSM.WRAP") [L 5]))
-            , (stgIOSMBlock, (1, appfn_ (gref "IOSM.MERGE") [L 2, L 3]))
+            , ( stgIOSMBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOSM.MERGE") [L 2, L 3]) $
+                  appfn_ (gref "IOSM.WRAP") [L 4]))
             ]))
     ]
 
@@ -172,7 +175,7 @@ euElements =
   casedef_
     (Atom $ L 0)
     [ (stgBlock, (1, Atom $ L 1))
-    , (stgIOSMBlock, (1, appfn_ (gref "IOSM.ELEMENTS") [L 1]))
+    , (stgIOSMBlock, (1, appfn_ (gref "IOSM.LIST") [L 1]))
     ]
     (appfn_ (gref "PANIC") [V $ NativeString "ELEMENTS expects block"])
 
