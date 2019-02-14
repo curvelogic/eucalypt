@@ -13,7 +13,6 @@ module Eucalypt.Stg.Globals.ListSpec
   , spec
   ) where
 
-import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Syn

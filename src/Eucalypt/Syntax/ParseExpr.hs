@@ -249,7 +249,7 @@ propertyDeclaration =
   lexeme $
   located
     (PropertyDecl <$> try (propertyIdentifier <* colon) <*>
-     lexeme expression <?> "property declaration")
+     expression <?> "property declaration")
   
 parenTuple :: Parser [String]
 parenTuple = parens $ normalIdentifier `sepBy1` comma

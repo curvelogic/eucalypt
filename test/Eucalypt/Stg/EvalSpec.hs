@@ -9,7 +9,6 @@ Stability   : experimental
 module Eucalypt.Stg.EvalSpec (main, spec)
 where
 
-import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics

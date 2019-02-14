@@ -24,7 +24,7 @@ result2 =
 
 result3 :: String
 result3 =
-  intercalate "\n" ["   |", " 1 | foo", " 2 | bar", " 3 | baz", "   |"]
+  intercalate "\n" ["   |", " 1 | foo", " 2 | bar", "   |"]
 
 result4 :: String
 result4 =

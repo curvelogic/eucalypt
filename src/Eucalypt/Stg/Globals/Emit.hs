@@ -186,15 +186,16 @@ euRender =
     (Atom (L 0))
     [ ( stgBlock
       , ( 1
-        , forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 1], emitME]))
+        , force_ (appfn_ (gref "ALIST.PRUNE") [L 1]) $
+          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
     , (stgCons, (2, appfn_ (gref "Emit.startList") [L 1, L 2]))
     , (stgNil, (0, force_ emitSS emitSE))
     , (stgUnit, (0, emitNull))
     , (stgTrue, (0, emitTrue))
     , (stgFalse, (0, emitFalse))
-    , ( stgIOHMBlock
+    , ( stgIOSMBlock
       , ( 1
-        , force_ (appfn_ (gref "IOHM.LIST") [L 1]) $
+        , force_ (appfn_ (gref "IOSM.LIST") [L 1]) $
           forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
     ] $
   force_ (appfn_ (gref "META") [L 1]) $

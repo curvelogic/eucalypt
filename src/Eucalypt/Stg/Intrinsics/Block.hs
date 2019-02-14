@@ -15,17 +15,19 @@ module Eucalypt.Stg.Intrinsics.Block
   ) where
 
 import Control.Monad (foldM)
-import qualified Data.HashMap.Strict.InsOrd as OM
 import Data.Symbol
 import Eucalypt.Stg.Address (allocate)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common
-import Eucalypt.Stg.Intrinsics.IOHMBlock (IOHM)
+import qualified Eucalypt.Stg.Intrinsics.SymbolMap as SM
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+
+
+type IOSM = SM.InsOrdSymbolMap StgValue
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -36,10 +38,10 @@ intrinsics =
 -- | Utility to return a native list from a primitive function.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
-returnPairList :: MachineState -> IOHM -> IO MachineState
+returnPairList :: MachineState -> IOSM -> IO MachineState
 returnPairList ms om = do
   let nilAddr = retrieveGlobal ms "KNIL"
-  let pairs = (map snd . OM.toList) om
+  let pairs = (map snd . SM.toList) om
    in case pairs of
         [] -> return $ setCode ms (ReturnCon stgNil mempty Nothing)
         (h:t) -> do
@@ -52,19 +54,7 @@ returnPairList ms om = do
 -- occurence.
 --
 prune :: MachineState -> Address -> IO MachineState
-prune ms a = pruneSub ms OM.empty a >>= returnPairList ms
-
-
-
--- | Inspect a 'StgValue' to turn it into a pair of symbol and
--- value-tail
-kv :: MachineState -> StgValue -> IO (Symbol, StgValue)
-kv ms (StgAddr addr) = do
-  pair <- readCons ms addr
-  case pair of
-    Just (StgNat (NativeSymbol s) _, t) -> return (s, t)
-    _ -> throwIn ms IntrinsicBadPair
-kv ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
+prune ms a = pruneSub ms SM.empty a >>= returnPairList ms
 
 
 
@@ -73,17 +63,17 @@ kv ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
 -- pairs in the returned pair list.)
 pruneSub ::
      MachineState
-  -> IOHM
+  -> IOSM
   -> Address
-  -> IO IOHM
+  -> IO IOSM
 pruneSub ms om a = do
   cons <- readCons ms a
   case cons of
-    Just (h, StgAddr t) -> do
-      (k, _) <- kv ms h
-      let om' = OM.insertWith const k h om
+    Just (h, StgAddr t, _) -> do
+      (k, _, _) <- kvtail ms h
+      let om' = SM.insertWith const k h om
       pruneSub ms om' t
-    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Just (_, _, _) -> throwIn ms IntrinsicImproperList
     Nothing -> return om
 
 
@@ -93,9 +83,9 @@ pruneSub ms om a = do
 -- are not evaluated.
 pruneBlockToMap ::
      MachineState
-  -> IOHM
+  -> IOSM
   -> Address
-  -> IO IOHM
+  -> IO IOSM
 pruneBlockToMap ms om a = do
   elements <- readBlock ms a
   case elements of
@@ -106,17 +96,17 @@ pruneBlockToMap ms om a = do
 
 pruneToMap ::
      MachineState
-  -> IOHM
+  -> IOSM
   -> Address
-  -> IO IOHM
+  -> IO IOSM
 pruneToMap ms om a = do
   cons <- readCons ms a
   case cons of
-    Just (h, StgAddr t) -> do
-      (k, v) <- kv ms h
-      let om' = OM.insertWith const k v om
+    Just (h, StgAddr t, _) -> do
+      (k, v, _) <- kvtail ms h
+      let om' = SM.insertWith const k v om
       pruneToMap ms om' t
-    Just (_, _) -> throwIn ms IntrinsicImproperList
+    Just (_, _, _) -> throwIn ms IntrinsicImproperList
     Nothing -> return om
 
 
@@ -127,29 +117,29 @@ pruneToMap ms om a = do
 -- The combination thunk is allocated but not evaluated.
 pruneMerge :: MachineState -> Address -> Address -> IO MachineState
 pruneMerge ms xs cmb = do
-  om <- pruneMergeSub cmb OM.empty xs
+  om <- pruneMergeSub cmb SM.empty xs
   returnPairList ms om
   where
     pruneMergeSub ::
          Address
-      -> IOHM
+      -> IOSM
       -> Address
-      -> IO IOHM
+      -> IO IOSM
     pruneMergeSub f om a = do
       cons <- readCons ms a
       case cons of
-        Just (h, StgAddr t) -> do
-          (k, StgAddr cdr) <- kv ms h
-          let old = OM.lookup k om
+        Just (h, StgAddr t, _) -> do
+          (k, StgAddr cdr, _) <- kvtail ms h
+          let old = SM.lookup k om
           case old of
-            Nothing -> pruneMergeSub f (OM.insert k h om) t
+            Nothing -> pruneMergeSub f (SM.insert k h om) t
             Just o -> do
-              (_, StgAddr oldcdr) <- kv ms o
-              Just (oldval, _) <- readCons ms oldcdr
-              Just (newval, _) <- readCons ms cdr
+              (_, StgAddr oldcdr, _) <- kvtail ms o
+              Just (oldval, _, _) <- readCons ms oldcdr
+              Just (newval, _, _) <- readCons ms cdr
               combined <- combine k f newval oldval
-              pruneMergeSub f (OM.insert k combined om) t
-        Just (_, _) -> throwIn ms IntrinsicImproperList
+              pruneMergeSub f (SM.insert k combined om) t
+        Just (_, _, _) -> throwIn ms IntrinsicImproperList
         Nothing -> return om
     combine :: Symbol -> Address -> StgValue -> StgValue -> IO StgValue
     combine k f new old =

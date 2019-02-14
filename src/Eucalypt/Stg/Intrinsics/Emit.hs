@@ -12,12 +12,12 @@ module Eucalypt.Stg.Intrinsics.Emit
   ( intrinsics
   ) where
 
-import qualified Data.HashMap.Strict.InsOrd as OM
 import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Block (pruneBlockToMap)
 import Eucalypt.Stg.Intrinsics.Common
+import qualified Eucalypt.Stg.Intrinsics.SymbolMap as SM
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
@@ -87,15 +87,15 @@ readString _ms addr =
 readStringFromHeapTail :: MachineState -> Address -> IO (Maybe String)
 readStringFromHeapTail ms addr =
   readCons ms addr >>= \case
-    (Just (StgNat (NativeString s) _, _)) -> return . Just $ s
-    (Just (StgAddr a, _)) -> readString ms a
+    (Just (StgNat (NativeString s) _, _, _)) -> return . Just $ s
+    (Just (StgAddr a, _, _)) -> readString ms a
     _ -> return Nothing
 
 -- | Read 'RenderMetadata' out of the machine
 renderMeta :: MachineState -> StgValue -> IO RenderMetadata
 renderMeta ms (StgAddr a) = do
   kvs <- pruneBlockToMap ms mempty a
-  case OM.lookup "tag" kvs of
+  case SM.lookup "tag" kvs of
     (Just (StgNat (NativeString tag) _)) -> return . RenderMetadata . Just $ tag
     (Just (StgAddr addr)) -> RenderMetadata <$> readStringFromHeapTail ms addr
     _ -> return . RenderMetadata $ Nothing

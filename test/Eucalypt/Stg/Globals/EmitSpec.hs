@@ -96,7 +96,3 @@ spec =
       , OutputScalar (RenderMetadata Nothing) $ NativeNumber 1
       , OutputMappingEnd
       ]
-    -- it "can force blocks for metadata" $
-    --   (let_
-    --      [pc0_ $ value_ $ (Atom $ V $ nat 1)]
-    --      (block [kv "a" $  L 0]))

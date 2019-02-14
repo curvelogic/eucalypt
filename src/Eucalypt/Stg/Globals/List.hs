@@ -87,7 +87,7 @@ euConcat =
                   recur = L 4
                in let_
                     [ pc_ [t, r] $
-                      value_ $ appfn_ (gref "CONCAT") [L 0, L 1]
+                      valuen_ 2 $ appfn_ (gref "CONCAT") [L 0, L 1]
                     ]
                     (appcon_ stgCons [h, recur])))
         , (stgNil, (0, Atom r))

@@ -34,6 +34,7 @@ data CoreError
   | VerifyOperatorsFailed CoreExpShow
   | VerifyNamesFailed CoreExpShow
   | VerifyUnresolvedVar CoreExpShow
+  | VerifyRedeclaration CoreExpShow
   | VerifyNoEliminated CoreExpShow
   | NoSource
 
@@ -56,6 +57,10 @@ instance Show CoreError where
     "Unresolved variable: " ++ v
   show (VerifyUnresolvedVar (CoreExpShow expr)) =
     "Unresolved variable: " ++ pprint expr
+  show (VerifyRedeclaration (CoreExpShow (CoreRedeclaration _ v))) =
+    "Redeclared variable: " ++ v
+  show (VerifyRedeclaration (CoreExpShow expr)) =
+    "Redeclared variable: " ++ pprint expr
   show (Bug message (CoreExpShow expr)) =
     "BUG! " ++ message ++ " - " ++ pprint expr
   show NoSource = "No source"
@@ -73,5 +78,6 @@ instance HasSourceMapIds CoreError where
   toSourceMapIds (VerifyOperatorsFailed expr) = toSourceMapIds expr
   toSourceMapIds (VerifyNamesFailed expr) = toSourceMapIds expr
   toSourceMapIds (VerifyUnresolvedVar expr) = toSourceMapIds expr
+  toSourceMapIds (VerifyRedeclaration expr) = toSourceMapIds expr
   toSourceMapIds (Bug _ expr) = toSourceMapIds expr
   toSourceMapIds _ = []

@@ -42,7 +42,7 @@ globalRegistry =
   , GlobalInfo "NIL" [NonStrict]
   , GlobalInfo "HEAD" [NonStrict]
   , GlobalInfo "TAIL" [NonStrict]
-  , GlobalInfo "CONCAT" [NonStrict]
+  , GlobalInfo "CONCAT" [NonStrict, NonStrict]
   , GlobalInfo "REVERSE" [NonStrict]
   , GlobalInfo "PANIC" [Strict]
   , GlobalInfo "!KEYNOTFOUND" [Strict]
@@ -95,18 +95,25 @@ globalRegistry =
   , GlobalInfo "UPPER" [Strict]
   , GlobalInfo "LOWER" [Strict]
   , GlobalInfo "IFIELDS" [Strict]
-  , GlobalInfo "IOHM.EMPTY" []
-  , GlobalInfo "IOHM.INSERT" [Strict, Strict, Strict]
-  , GlobalInfo "IOHM.WRAP" [NonStrict]
-  , GlobalInfo "IOHM.LIST" [Strict]
-  , GlobalInfo "IOHM.LOOKUP" [Strict, Strict]
-  , GlobalInfo "IOHM.LOOKUPOR" [Strict, Strict, NonStrict]
-  , GlobalInfo "IOHM.UNWRAP" [Strict]
-  , GlobalInfo "IOHM.MERGE" [Strict, Strict]
-  , GlobalInfo "IOHM.MERGEWITH" [Strict, Strict, Strict]
-  , GlobalInfo "IOHMBLOCK.DEEPMERGE" [Strict, Strict]
-  , GlobalInfo "IOHMBLOCK.DEEPMERGEIFBLOCKS" [Strict, Strict]
-  , GlobalInfo "IOHM.EQ" [Strict, Strict]
+  , GlobalInfo "ALIST.MERGE" [Strict, Strict]
+  , GlobalInfo "ALIST.PRUNE" [Strict]
+  , GlobalInfo "ALIST.DEEPMERGE" [Strict, Strict]
+  , GlobalInfo "IOSM.EMPTY" []
+  , GlobalInfo "IOSM.INSERT" [Strict, Strict, Strict]
+  , GlobalInfo "IOSM.WRAP" [NonStrict]
+  , GlobalInfo "IOSM.LIST" [Strict]
+  , GlobalInfo "IOSM.FROMLIST" [Strict]
+  , GlobalInfo "IOSM.LOOKUP" [Strict, Strict]
+  , GlobalInfo "IOSM.LOOKUPOR" [Strict, Strict, NonStrict]
+  , GlobalInfo "IOSM.UNWRAP" [Strict]
+  , GlobalInfo "IOSM.MERGE" [Strict, Strict]
+  , GlobalInfo "IOSM.MERGEWITH" [Strict, Strict, Strict]
+  , GlobalInfo "IOSM.DEEPMERGE" [Strict, Strict]
+  , GlobalInfo "IOSMBLOCK.DEEPMERGE" [Strict, Strict]
+  , GlobalInfo "IOSM.EQ" [Strict, Strict]
+  , GlobalInfo "SATURATED" [Strict]
+  , GlobalInfo "CONSTRUCTOR" [NonStrict]
+  , GlobalInfo "INSPECT" [Strict]
   ]
 
 globalIndexes :: M.Map Symbol Int
@@ -128,4 +135,8 @@ globalSignature = (smap M.!) . intern
 -- | Retrieve a reference suitable for pointing into the runtime
 -- global environment.
 gref :: String -> Reference a
-gref name = G $ fromIntegral $ globalIndexes M.! intern name
+gref name =
+  maybe
+    (error ("No global: " ++ name))
+    (G . fromIntegral)
+    (globalIndexes M.!? intern name)

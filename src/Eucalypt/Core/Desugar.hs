@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving  #-}
 {-|
 Module      : Eucalypt.Core.Desugar
@@ -12,8 +13,10 @@ module Eucalypt.Core.Desugar
 where
 
 import Control.Monad.State.Strict
+import Data.Foldable (traverse_)
 import Data.Maybe (mapMaybe)
 import Data.List (intersperse)
+import qualified Data.HashMap.Strict.InsOrd as OM
 import qualified Data.Set as S
 import Eucalypt.Core.Anaphora ()
 import Eucalypt.Core.GenLookup (processGenLookup)
@@ -31,10 +34,15 @@ import Eucalypt.Syntax.Input
 -- other data during translation
 data TranslateState = TranslateState
   { trTargets :: [TargetSpec]
+    -- ^ target specifications accumulated during translation
   , trStack :: [CoreBindingName]
+    -- ^ maintain stack of keys to calculate target "paths"
   , trImports :: [Input]
+    -- ^ imports discovered
   , trSourceMap :: SourceMap
+    -- ^ map of source map IDs to source locations
   , trBaseSMID :: SMID
+    -- ^ minimum source map id for the translation unit being created
   }
 
 newtype Translate a = Translate { unTranslate :: State TranslateState a }
@@ -81,15 +89,6 @@ relativeName n =
   case n of
     NormalName name -> name
     OperatorName name -> name
-
-
-
--- | Ignore splices for now TODO: splice expressions
-declarations :: Block -> [Annotated DeclarationForm]
-declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
-  where
-    toDecl Located{locatee=(Splice _)} = Nothing
-    toDecl Located{locatee=(Declaration d)} = Just d
 
 
 
@@ -199,28 +198,64 @@ checkTarget annot =
 checkImports :: CoreExpr -> Translate ()
 checkImports annot = forM_ (importsFromMetadata annot) recordImports
 
+-- ? block translation
+
+-- | Description of all declaration details for producing the combined
+-- core let / block which represents the AST block.
+data DeclarationFields = DeclarationFields
+  { declMeta :: Maybe CoreExpr
+    -- ^ declaration metadata for this declaration
+  , declKey :: CoreBindingName
+    -- ^ key
+  , valueMeta :: Maybe CoreExpr
+    -- ^ metadata to be shifted down to value level from the declaration
+  , valueExpr :: CoreExpr
+    -- ^ the translation of the value
+  }
+
+-- | Compare 'DeclarationFields' for equal keys, to identify illegal
+-- redeclarations
+sameKey :: DeclarationFields -> DeclarationFields -> Bool
+sameKey DeclarationFields {declKey = k1} DeclarationFields {declKey = k2} =
+  k1 == k2
+
+-- | Return the binding to use in the 'CoreLet'
+asBinding ::
+  DeclarationFields -> (CoreBindingName, CoreExp CoreBindingName)
+asBinding DeclarationFields{..} =
+  ( declKey
+  , case valueMeta of
+      Just m -> withMeta (sourceMapId m) m valueExpr
+      Nothing -> valueExpr)
+
+-- | Extract declarations from the block (ignoring unimplemented
+-- splices)
+--
+declarations :: Block -> [Annotated DeclarationForm]
+declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
+  where
+    toDecl Located{locatee=(Splice _)} = Nothing
+    toDecl Located{locatee=(Declaration d)} = Just d
 
 
--- | Translate an AST block to CoreExpr
-translateBlock :: SourceSpan -> Block -> Translate CoreExpr
-translateBlock loc blk = do
-  dforms <-
-    forM (declarations blk) $ \d -> do
-      a <- translateAnnotation d
-      let k = extractKey d
-      pushKey k
-      (declMeta, valMeta) <-
-        case a of
-          Just annot -> do
-            checkTarget annot
-            checkImports annot
-            return $ splitAnnotationMetadata annot
-          Nothing -> return (Nothing, Nothing)
-      expr <- translateDeclarationForm a k (content d)
-      popKey
-      return (declMeta, k, valMeta, expr)
-  b <- body dforms
-  mint2 letblock loc (bindings dforms) b
+-- | For each declaration translate and return a unified description
+-- gathering together key, value and metadata
+unifiedDeclarations :: Block -> Translate [DeclarationFields]
+unifiedDeclarations blk =
+  forM (declarations blk) $ \d -> do
+    a <- translateAnnotation d
+    let k = extractKey d
+    pushKey k
+    (declMeta, valMeta) <-
+      case a of
+        Just annot -> do
+          checkTarget annot
+          checkImports annot
+          return $ splitAnnotationMetadata annot
+        Nothing -> return (Nothing, Nothing)
+    expr <- translateDeclarationForm a k (content d)
+    popKey
+    return $ DeclarationFields declMeta k valMeta expr
   where
     extractKey Annotated {content = Located {locatee = decl}} =
       let name =
@@ -231,18 +266,88 @@ translateBlock loc blk = do
               (LeftOperatorDecl k _ _) -> k
               (RightOperatorDecl k _ _) -> k
        in atomicName name
-    bindings =
-      map
-        (\(_, n, vm, b) ->
-           ( n
-           , case vm of
-               Just m -> withMeta (sourceMapId m) m b
-               Nothing -> b))
-    body decls = mint Syn.block loc [ref dm name | (dm, name, _, _) <- decls]
+
+-- | Maintain a translation state as we process the declarations,
+-- allowing us to identify illegal redeclarations.
+data BlockTranslationState = BlockTranslationState
+  { declMap :: OM.InsOrdHashMap CoreBindingName DeclarationFields
+    -- ^ store decls in insert ordered map to check for dupes
+  , declRevBindings :: [(CoreBindingName, CoreExpr)]
+    -- ^ to accumulate the let bindings
+  , declRevElements :: [CoreExpr]
+    -- ^ to accumulate the block elements
+  }
+
+-- | Initial blank block translation state
+initBlockTranslationState :: BlockTranslationState
+initBlockTranslationState = BlockTranslationState OM.empty [] []
+
+-- | Add a new declaration into the accumulating state
+addNewDecl :: DeclarationFields -> State BlockTranslationState ()
+addNewDecl decl@DeclarationFields {..} =
+  modify
+    (\BlockTranslationState {..} ->
+       BlockTranslationState
+         { declMap = OM.insert declKey decl declMap
+         , declRevBindings = asBinding decl : declRevBindings
+         , declRevElements = ref declMeta declKey : declRevElements
+         })
+  where
     ref annot name =
       case annot of
         Just a -> anon withMeta a $ anon element name (anon var name)
         Nothing -> anon element name (anon var name)
+
+-- | Add a redeclaration into the accumulating state, representing the
+-- error in the core expression as a 'CoreRedeclaration'
+addRedecl :: DeclarationFields -> State BlockTranslationState ()
+addRedecl DeclarationFields {..} =
+  modify
+    (\BlockTranslationState {..} ->
+       BlockTranslationState
+         { declMap = declMap
+         , declRevBindings = declRevBindings
+         , declRevElements =
+             CoreRedeclaration (sourceMapId valueExpr) declKey :
+             declRevElements
+         })
+
+
+-- | Process a single declaration, adding a declaration or
+-- redeclaration as appropriate
+processDeclaration :: DeclarationFields -> State BlockTranslationState ()
+processDeclaration decl@DeclarationFields{..} = do
+  om <- gets declMap
+  case OM.lookup declKey om of
+    Just _ -> addRedecl decl
+    Nothing -> addNewDecl decl
+
+-- | Read bindings and elements from state and return in correct order
+bindingsAndElements ::
+     State BlockTranslationState ( [(CoreBindingName, CoreExpr)]
+                                 , [CoreExpr])
+bindingsAndElements = do
+  BlockTranslationState{..} <- get
+  return (reverse declRevBindings, reverse declRevElements)
+
+-- | Run the state monad, accumulate declarations and return the
+-- bindings and elements.
+processDeclarations ::
+     [DeclarationFields]
+  -> ([(CoreBindingName, CoreExpr)], [CoreExpr])
+processDeclarations decls =
+  flip evalState initBlockTranslationState $
+  traverse_ processDeclaration decls >> bindingsAndElements
+
+-- | Translate an AST block to CoreExpr, detecting and marking any
+-- erroneous redeclarations in the block.
+translateBlock :: SourceSpan -> Block -> Translate CoreExpr
+translateBlock loc blk = do
+  decls <- unifiedDeclarations blk
+  let (bindings, elements) = processDeclarations decls
+  b <- mint Syn.block loc elements
+  mint2 letblock loc bindings b
+
 
 
 

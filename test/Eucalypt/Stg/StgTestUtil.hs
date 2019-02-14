@@ -12,7 +12,6 @@ module Eucalypt.Stg.StgTestUtil where
 
 import Data.Foldable (toList, traverse_)
 import Eucalypt.Stg.Address
-import Eucalypt.Stg.Compiler
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.GlobalInfo
@@ -26,6 +25,24 @@ import Eucalypt.Stg.StandardMachine
 import qualified Text.PrettyPrint as P
 import Test.QuickCheck (Gen, oneof, arbitrary)
 import qualified Test.QuickCheck.Monadic as QM
+
+
+-- | Construct a list as a STG LetRec
+list_ :: Int -> [Ref] -> Maybe Ref -> StgSyn
+list_ _ [] Nothing = Atom $ gref "KNIL"
+list_ envSz [] (Just ref) =
+  let_
+    [pc0m_ ref $ value_ (Atom $ gref "KNIL")]
+    (Atom $ L $ fromIntegral envSz)
+list_ envSz rs metaref = letrec_ pcs (Atom $ L pcn)
+  where
+    preclose p v m = pcm_ [v, p] m consConstructor
+    valrefs = reverse rs
+    prevrefs = [gref "KNIL"] <> map (L . fromIntegral) [envSz..]
+    metarefs = replicate (length rs - 1) Nothing <> [metaref]
+    pcs = zipWith3 preclose prevrefs valrefs metarefs
+    pcn = fromIntegral $ envSz + length pcs - 1
+
 
 -- | List of literals
 litList_ :: Int -> [Native] -> StgSyn
@@ -103,10 +120,10 @@ returnedForcedPairList ms@MachineState {machineCode = (ReturnCon TagCons xs _)} 
     validate (StgAddr h) (StgAddr t) = do
       cons <- readCons ms h
       case cons of
-        Just (StgNat (NativeSymbol _) _, _) -> do
+        Just (StgNat (NativeSymbol _) _, _, _) -> do
           cons' <- readCons ms t
           case cons' of
-            Just (h', t') -> validate h' t'
+            Just (h', t', _) -> validate h' t'
             Nothing -> return True
         _ -> return False
     validate _ _ = return False
