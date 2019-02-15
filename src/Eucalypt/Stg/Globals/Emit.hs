@@ -126,17 +126,8 @@ suppresses :: LambdaForm
 suppresses =
   lam_ 0 1 $
   ann_ "Emit.suppresses" 0 $
-  casedef_
-    (Atom (L 0))
-    [ ( stgBlock
-      , ( 1
-        , force_
-            (appfn_
-               (gref "LOOKUPOR")
-               [V $ NativeSymbol "export", V $ NativeSymbol "enable", L 0]) $
-          appfn_ (gref "EQ") [V $ NativeSymbol "suppress", L 2]))
-    ] $
-  appcon_ stgFalse []
+  force_ (appfn_ (gref "LOOKUPOR") [V $ NativeSymbol "export", V $ NativeSymbol "enable", L 0]) $
+  appfn_ (gref "EQ") [V $ NativeSymbol "suppress", L 1]
 
 -- | Emit.continueList(l)
 continueList :: LambdaForm
@@ -207,4 +198,4 @@ forceExportMetadata :: LambdaForm
 forceExportMetadata =
   lam_ 0 1 $
   ann_ "Emit.forceExportMetadata" 0 $
-  appfn_ (gref "LOOKUPOR") [V $ NativeString "render", gref "NULL", L 0]
+  appfn_ (gref "LOOKUPOR") [V $ NativeSymbol "render", gref "NULL", L 0]

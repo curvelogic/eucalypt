@@ -48,8 +48,9 @@ nativeToValue :: Native -> StgValue
 nativeToValue n = StgNat n Nothing
 
 instance StgPretty StgValue where
-  prettify (StgAddr _) = P.text "<addr>"
-  prettify (StgNat n _) = prettify n
+  prettify (StgAddr _) = P.text "@"
+  prettify (StgNat n Nothing) = prettify n
+  prettify (StgNat n (Just m)) = prettify n <> P.char '`' <> prettify m <> P.char '`'
 
 -- | Metadata as referenced from a closure
 --

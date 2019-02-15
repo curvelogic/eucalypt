@@ -36,7 +36,12 @@ euEq =
       , ( 1
         , casedef_
             (Atom (L 1))
-            [(stgBlock, (1, appfn_ (gref "EQ") [L 2, L 3]))]
+            [ (stgBlock, (1, appfn_ (gref "EQ") [L 2, L 3]))
+            , ( stgIOSMBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOSM.LIST") [L 3]) $
+                  appfn_ (gref "EQ") [L 2, L 4]))
+            ]
             falseVal))
     , ( stgCons
       , ( 1
@@ -55,7 +60,12 @@ euEq =
       , ( 1
         , casedef_
             (Atom (L 1))
-            [(stgIOSMBlock, (1, appfn_ (gref "IOSM.EQ") [L 2, L 3]))]
+            [ ( stgBlock
+              , ( 1
+                , force_ (appfn_ (gref "IOSM.LIST") [L 2]) $
+                  appfn_ (gref "EQ") [L 4, L 3]))
+            , (stgIOSMBlock, (1, appfn_ (gref "IOSM.EQ") [L 2, L 3]))
+            ]
             falseVal))
     ]
     (casedef_

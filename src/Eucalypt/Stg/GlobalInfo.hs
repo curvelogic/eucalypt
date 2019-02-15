@@ -114,6 +114,7 @@ globalRegistry =
   , GlobalInfo "SATURATED" [Strict]
   , GlobalInfo "CONSTRUCTOR" [NonStrict]
   , GlobalInfo "INSPECT" [Strict]
+  , GlobalInfo "GLOBAL" [Strict]
   ]
 
 globalIndexes :: M.Map Symbol Int

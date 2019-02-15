@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase, OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Emit
@@ -12,10 +13,11 @@ module Eucalypt.Stg.Intrinsics.Emit
   ( intrinsics
   ) where
 
+import Data.Symbol
 import Eucalypt.Stg.Address (peek)
+import Eucalypt.Stg.Error
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.IntrinsicInfo
-import Eucalypt.Stg.Intrinsics.Block (pruneBlockToMap)
 import Eucalypt.Stg.Intrinsics.Common
 import qualified Eucalypt.Stg.Intrinsics.SymbolMap as SM
 import Eucalypt.Stg.Machine
@@ -77,26 +79,66 @@ emitScalar s x =
       (`setCode` ReturnLit n Nothing) <$> emit s event
     (StgAddr _) -> error "Received address in emitScalar"
 
-readString :: MachineState -> Address -> IO (Maybe String)
-readString _ms addr =
-  peek addr >>= \case
-    Closure {closureCode = LambdaForm {lamBody = (Atom (V (NativeString s)))}} ->
-      return . Just $ s
+readValueFromHeapTail :: MachineState -> Address -> IO (Maybe StgValue)
+readValueFromHeapTail ms addr =
+  readCons ms addr >>= \case
+    (Just (v, _, _)) -> return . Just $ v
     _ -> return Nothing
 
-readStringFromHeapTail :: MachineState -> Address -> IO (Maybe String)
-readStringFromHeapTail ms addr =
-  readCons ms addr >>= \case
-    (Just (StgNat (NativeString s) _, _, _)) -> return . Just $ s
-    (Just (StgAddr a, _, _)) -> readString ms a
+getValue :: MachineState -> Address -> Symbol -> IO (Maybe StgValue)
+getValue ms a k = do
+  cons <- readCons ms a
+  case cons of
+    (Just (StgAddr h, StgAddr t, _)) -> do
+      Just (StgNat (NativeSymbol k') _, StgAddr v', _) <- readCons ms h
+      if k' == k
+        then readValueFromHeapTail ms v'
+        else getValue ms t k
+    _ -> return Nothing
+
+-- | Assuming the address contains some form of block implementation
+-- (representing metadata) excavate out a native value for the
+-- specified key.
+--
+-- Gruesome.
+excavate :: MachineState -> Symbol -> Address -> IO (Maybe Native)
+excavate ms k a = do
+  obj <- peek a
+  val <-
+    case obj of
+      Closure { closureEnv = e
+              , closureCode = LambdaForm {lamBody = (App (Con TagBlock) xs)}
+              } -> do
+        let (StgAddr lst) = (`index` 0) $ values (e, ms) $ nativeToValue <$> xs
+        getValue ms lst k
+      Closure { closureEnv = e
+              , closureCode = LambdaForm {lamBody = (App (Con TagIOSMBlock) xs)}
+              } ->
+        case (`index` 0) $ values (e, ms) $ nativeToValue <$> xs of
+          (StgNat (NativeDynamic iosm) _) -> SM.lookup k <$> cast ms iosm
+          (StgAddr iosmAddr) -> do
+            obj' <- peek iosmAddr
+            case obj' of
+              Closure {closureCode = LambdaForm {lamBody = (Atom (V (NativeDynamic iosm)))}} ->
+                SM.lookup k <$> cast ms iosm
+              _ -> return Nothing
+          _ -> return Nothing
+      Closure {closureCode = LambdaForm {lamBody = expr@(App (Con _) _)}} ->
+        throwIn ms $ IntrinsicExpectedBlock expr
+      Closure {closureCode = LambdaForm {..}} ->
+        throwIn ms $ IntrinsicExpectedEvaluatedBlock lamBody
+      BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
+      PartialApplication {} ->
+        throwIn ms IntrinsicExpectedBlockFoundPartialApplication
+  case val of
+    (Just (StgNat n _)) -> return $ Just n
     _ -> return Nothing
 
 -- | Read 'RenderMetadata' out of the machine
 renderMeta :: MachineState -> StgValue -> IO RenderMetadata
 renderMeta ms (StgAddr a) = do
-  kvs <- pruneBlockToMap ms mempty a
-  case SM.lookup "tag" kvs of
-    (Just (StgNat (NativeString tag) _)) -> return . RenderMetadata . Just $ tag
-    (Just (StgAddr addr)) -> RenderMetadata <$> readStringFromHeapTail ms addr
+  tagValue <- excavate ms (intern "tag") a
+  case tagValue of
+    (Just  (NativeString tag)) -> return . RenderMetadata . Just $ tag
     _ -> return . RenderMetadata $ Nothing
 renderMeta _ _ = error "Native metadata in emit intrinsics"

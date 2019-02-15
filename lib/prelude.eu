@@ -749,6 +749,9 @@ merge-at(ks, v, b): if(ks nil?,
 					 tongue(ks tail, v)))
 
 
+
+` { export: :suppress
+    doc: "Function for working with a human view of time." }
 cal: {
 
   ifields: block ∘__IFIELDS
@@ -757,8 +760,15 @@ cal: {
   epoch: 0 ifields
 }
 
-` :suppress
+
+
+` { export: :suppress
+    doc: "Blocks are implemented either as association lists or as insert
+ordered maps and can be silently promoted from association list to the IOSM
+implementation. This namespace exposes some primitives for working with the 
+IOSM implementation diretly. " }
 iosm: {
+
   ` "Intrinsics for working with unwrapped insert ordered symbol maps"
   Γ: {
     empty: '__IOSM.EMPTY'

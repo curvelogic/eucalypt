@@ -101,14 +101,16 @@ compileBinding context metaref name _ (CoreLet _ bs body _) = do
 
 
 -- | Vars already have refs in the context which can be used
-compileBinding context _metaref _name Implicit (CoreVar _ v) =
+compileBinding context Nothing _name Implicit (CoreVar _ v) =
   return $ context v
 
+compileBinding context metaref _name Implicit (CoreVar _ v) =
+  addBinding $ pcm_ [context v] metaref $ valuen_ 1 $ Atom $ L 0
 
 
 -- | For explicit sharing, bind Atom
-compileBinding context _metaref _name Explicit (CoreVar _ v) =
-  addBinding $ pc_ [context v] $ valuen_ 1 $ Atom $ L 0
+compileBinding context metaref _name Explicit (CoreVar _ v) =
+  addBinding $ pcm_ [context v] metaref $ valuen_ 1 $ Atom $ L 0
 
 
 
@@ -190,12 +192,21 @@ compileBinding _context Nothing _name Explicit (CoreBlock _ (CoreList _ [])) =
 
 
 
--- | Empbed all the data structure bindings
+-- | Embed all the data structure bindings
 compileBinding context metaref _name _ (CoreBlock _ content) = do
   lst <- compileBinding context Nothing Nothing Implicit content
   let (env, [r]) = sortRefs [lst]
-  addBinding $ pcm_ env metaref $ valuen_ (length env) $ appcon_ stgBlock [r]
-
+  if True
+    then do
+      iosm <-
+        addBinding $
+        pc_ env $ thunkn_ (length env) $ appfn_ (gref "IOSM.FROMLIST") [r]
+      let (env', [iosmr]) = sortRefs [iosm]
+      addBinding $
+        pcm_ env' metaref $
+        valuen_ (length env') $ appcon_ stgIOSMBlock [iosmr]
+    else addBinding $
+         pcm_ env metaref $ valuen_ (length env) $ appcon_ stgBlock [r]
 
 
 -- | Simple lookup without default, binds object if necessary
@@ -292,7 +303,14 @@ compileBody context metaref (C.CoreLet _ bs body _) = do
 
 compileBody context _metaref (CoreBlock _ content) = do
   lst <- compileBinding context Nothing Nothing Implicit content
-  return . const $ appcon_ stgBlock [lst]
+  if True
+    then do
+      let (env, [r]) = sortRefs [lst]
+      iosm <-
+        addBinding $
+        pc_ env $ thunkn_ (length env) $ appfn_ (gref "IOSM.FROMLIST") [r]
+      return . const $ appcon_ stgIOSMBlock [iosm]
+    else return . const $ appcon_ stgBlock [lst]
 
 
 
@@ -334,7 +352,6 @@ compileBody context _metaref (C.CoreMeta _ meta obj) = do
 -- | Pass right through fixity metadata
 compileBody context metaref (CoreOperator _ _ _ expr) =
   compileBody context metaref expr
-
 
 
 -- | We can always default to generating all bindings a referencing
