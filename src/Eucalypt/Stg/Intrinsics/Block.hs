@@ -13,17 +13,15 @@ module Eucalypt.Stg.Intrinsics.Block
   , intrinsics
   ) where
 
-import Control.Monad (foldM)
 import Data.Symbol
 import Eucalypt.Stg.Address (allocate)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common
 import qualified Eucalypt.Stg.Intrinsics.SymbolMap as SM
+import Eucalypt.Stg.Loaders
 import Eucalypt.Stg.Machine
-import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
-import Eucalypt.Stg.Tags
 
 
 type IOSM = SM.InsOrdSymbolMap StgValue
@@ -38,15 +36,7 @@ intrinsics =
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
 returnPairList :: MachineState -> IOSM -> IO MachineState
-returnPairList ms om = do
-  let nilAddr = retrieveGlobal ms "KNIL"
-  let pairs = (map snd . SM.toList) om
-   in case pairs of
-        [] -> return $ setCode ms (ReturnCon stgNil mempty Nothing)
-        (h:t) -> do
-          tv <- foldM flipCons nilAddr (reverse t)
-          return $ setCode ms (ReturnCon stgCons (toVec [h, tv]) Nothing)
-
+returnPairList ms om = returnList ms $ (map snd . SM.toList) om
 
 -- | Takes list of pairs and prunes such that later values for the
 -- same key replace previous values, maintaining order of original
@@ -119,5 +109,4 @@ pruneMerge ms xs cmb = do
                     env
                     cs
                     MetadataPassThrough)
-             t <- consVals addr (retrieveGlobal ms "KNIL")
-             consVals (StgNat (NativeSymbol k) Nothing) t
+             load ms (k, addr)

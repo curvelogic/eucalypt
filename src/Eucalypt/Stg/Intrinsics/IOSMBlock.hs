@@ -10,7 +10,7 @@ Stability   : experimental
 
 module Eucalypt.Stg.Intrinsics.IOSMBlock where
 
-import Control.Monad (liftM2, join, foldM)
+import Control.Monad (liftM2, join)
 import Data.Dynamic
 import Data.Maybe (fromMaybe)
 import Data.Symbol
@@ -20,7 +20,6 @@ import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Intrinsics.SymbolMap as SM
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
-import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Vec
 
 -- | Insert ordered hash map of string (symbol) to STG value
@@ -52,17 +51,7 @@ iosmInsert ms dyn k v =
 iosmList :: MachineState -> Dynamic -> IO MachineState
 iosmList ms dyn = do
   om <- cast ms dyn :: IO IOSM
-  let nilAddr = retrieveGlobal ms "KNIL"
-  pairAddrs <- traverse (allocPair nilAddr) $ SM.toList om
-  case pairAddrs of
-    [] -> returnNil ms
-    (h:t) -> do
-      tv <- foldM flipCons nilAddr (reverse t)
-      return $ ms {machineCode = ReturnCon stgCons (toVec [h, tv]) Nothing}
-  where
-    allocPair nil (k, v) =
-      foldM flipCons nil [v, StgNat (NativeSymbol k) Nothing]
-
+  returnList ms $ SM.toList om
 
 
 alistToMap ::

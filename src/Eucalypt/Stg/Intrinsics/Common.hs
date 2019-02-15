@@ -13,7 +13,6 @@ Stability   : experimental
 
 module Eucalypt.Stg.Intrinsics.Common where
 
-import Control.Monad (foldM)
 import Data.Dynamic
 import Data.Foldable (toList)
 import Data.List (intercalate)
@@ -23,6 +22,7 @@ import qualified Data.Sequence as Seq
 import Data.Typeable (typeOf)
 import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
+import Eucalypt.Stg.Loaders
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
@@ -36,16 +36,6 @@ pattern Empty <- (Seq.viewl -> Seq.EmptyL)
 pattern (:<) :: a -> Seq.Seq a -> Seq.Seq a
 pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
 
-
-consVals :: StgValue -> StgValue -> IO StgValue
-consVals a as =
-  StgAddr <$>
-  allocate (Closure consConstructor (toVec [a, as]) mempty MetadataPassThrough)
-
-flipCons :: StgValue -> StgValue -> IO StgValue
-flipCons as a =
-  StgAddr <$>
-  allocate (Closure consConstructor (toVec [a, as]) mempty MetadataPassThrough)
 
 -- | Return any typeable instance wrapped in a dynamic native
 returnDynamic :: Typeable a => MachineState -> a -> IO MachineState
@@ -79,37 +69,18 @@ allocFXs ms f xs =
   where
     argc = envSize xs
 
--- | Utility to return a native list from an intrinsic.
---
--- Allocates all links and then 'ReturnCon's back to caller.
-returnNatList :: MachineState -> [Native] -> IO MachineState
-returnNatList ms ns = do
-  nilAddr <- StgAddr <$> allocClosure mempty ms (pc0_ nilConstructor)
-  let natAddrs = map (`StgNat` Nothing) ns
-  if null natAddrs
-    then return $ setCode ms (ReturnCon stgNil mempty Nothing)
-    else do
-      let headAddr = head natAddrs
-      tailAddr <- foldM flipCons nilAddr (reverse $ tail natAddrs)
-      return $ setCode ms (ReturnCon stgCons (toVec [headAddr, tailAddr]) Nothing)
 
--- | Utility to return a list of pairs of natives from an intrinsic.
+-- | Utility to return a list from an intrinsic.
 --
 -- Allocates all links and then 'ReturnCon's back to caller.
-returnNatPairList :: MachineState -> [(Native, Native)] -> IO MachineState
-returnNatPairList ms ns = do
-  nilAddr <- StgAddr <$> allocClosure mempty ms (pc0_ nilConstructor)
-  pairAddrs <- traverse (allocPair nilAddr) ns
-  if null pairAddrs
-    then return $ setCode ms (ReturnCon stgNil mempty Nothing)
-    else do
-      let headAddr = head pairAddrs
-      tailAddr <- foldM flipCons nilAddr (reverse $ tail pairAddrs)
-      return $
-        setCode ms (ReturnCon stgCons (toVec [headAddr, tailAddr]) Nothing)
-  where
-    allocPair nil (k, v) =
-      foldM flipCons nil [StgNat v Nothing, StgNat k Nothing]
+returnList :: Loadable a => MachineState -> [a] -> IO MachineState
+returnList ms [] = return $ setCode ms (ReturnCon stgNil mempty Nothing)
+returnList ms (n:ns) = do
+  h <- load ms n
+  t <- load ms ns
+  return $ setCode ms (ReturnCon stgCons (toVec [h, t]) Nothing)
+
+
 
 -- | Utility to read a list from the machine into a native haskell
 -- list for a primitive function.

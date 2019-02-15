@@ -24,7 +24,7 @@ import Eucalypt.Stg.Intrinsics.Common
   ( invoke
   , nativeToString
   , readStrList
-  , returnNatList
+  , returnList
   )
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
@@ -56,9 +56,9 @@ toRegex = (`R.compileM` []) . encodeUtf8 . pack
 split :: MachineState -> String -> String -> IO MachineState
 split ms target regex =
   if null regex
-    then returnNatList ms [NativeString target]
+    then returnList ms [NativeString target]
     else case toRegex regex of
-           (Right r) -> returnNatList ms $ map NativeString $ R.split r target
+           (Right r) -> returnList ms $ map NativeString $ R.split r target
            (Left s) -> throwIn ms $ InvalidRegex s
 
 
@@ -68,7 +68,7 @@ match :: MachineState -> String -> String -> IO MachineState
 match ms target regex =
   case toRegex regex of
     (Right r) ->
-      returnNatList ms $
+      returnList ms $
       case headMay $ R.scan r target of
         Just (m, gs) -> map NativeString (m : gs)
         Nothing -> []
@@ -80,7 +80,7 @@ match ms target regex =
 matches :: MachineState -> String -> String -> IO MachineState
 matches ms target regex =
   case toRegex regex of
-    (Right r) -> returnNatList ms $ map (NativeString . fst) $ R.scan r target
+    (Right r) -> returnList ms $ map (NativeString . fst) $ R.scan r target
     (Left s) -> throwIn ms $ InvalidRegex s
 
 
@@ -95,7 +95,7 @@ join ms l s = do
 
 -- | __LETTERS(s) - return letters of s as their own strings
 letters :: MachineState -> String -> IO MachineState
-letters ms s = returnNatList ms $ map (\c -> NativeString [c]) s
+letters ms s = returnList ms $ map (\c -> NativeString [c]) s
 
 
 

@@ -11,7 +11,7 @@ Stability   : experimental
 module Eucalypt.Stg.Intrinsics.Time (intrinsics) where
 
 import Eucalypt.Stg.IntrinsicInfo
-import Eucalypt.Stg.Intrinsics.Common (invoke, returnNatPairList)
+import Eucalypt.Stg.Intrinsics.Common (invoke, returnList)
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Machine
 import Data.Scientific
@@ -30,7 +30,7 @@ instantToUTCFields :: MachineState -> Scientific -> IO MachineState
 instantToUTCFields s d =
   let u = posixSecondsToUTCTime $ fromRational $ toRational d
       z = utcToZonedTime utc u
-   in returnNatPairList s $ zonedDateTimeFields z
+   in returnList s $ zonedDateTimeFields z
 
 zonedDateTimeFields :: ZonedTime -> [(Native, Native)]
 zonedDateTimeFields ZonedTime {..} =

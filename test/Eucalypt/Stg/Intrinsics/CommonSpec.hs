@@ -36,7 +36,7 @@ readsReturns :: [Native] -> Property
 readsReturns ns =
   monadicIO $ do
     ms <- run $ initStandardMachineState (Atom (V (NativeSymbol "foo")))
-    ms' <- run $ returnNatList ms ns
+    ms' <- run $ returnList ms ns
     case ms' of
       MachineState {machineCode = (ReturnCon TagCons xs _)} -> do
         let (StgNat h _ :< (StgAddr t :< _)) = asSeq xs
