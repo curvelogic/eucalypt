@@ -295,7 +295,7 @@ addNewDecl decl@DeclarationFields {..} =
   where
     ref annot name =
       case annot of
-        Just a -> anon withMeta a $ anon element name (anon var name)
+        Just a -> anon element name (anon withMeta a $ anon var name)
         Nothing -> anon element name (anon var name)
 
 -- | Add a redeclaration into the accumulating state, representing the

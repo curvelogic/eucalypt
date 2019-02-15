@@ -21,7 +21,10 @@ import qualified Text.PrettyPrint as P
 
 
 intrinsics :: [IntrinsicInfo]
-intrinsics = [IntrinsicInfo "INSPECT" 1 (invoke inspect)]
+intrinsics =
+  [ IntrinsicInfo "INSPECT" 1 (invoke inspect)
+  , IntrinsicInfo "GLOBAL" 1 (invoke global)
+  ]
 
 inspect :: MachineState -> StgValue -> IO MachineState
 inspect ms v =
@@ -33,3 +36,6 @@ inspect ms v =
     (StgNat n _) ->
       return $
       setCode ms (ReturnLit (NativeString $ P.render $ prettify n) Nothing)
+
+global :: MachineState -> String -> IO MachineState
+global ms nm = returnValue ms (retrieveGlobal ms nm)

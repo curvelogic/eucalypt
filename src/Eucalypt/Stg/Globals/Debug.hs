@@ -38,9 +38,13 @@ euConstructor =
 euInspect :: LambdaForm
 euInspect = wrapBifStrict "INSPECT"
 
+euGlobal :: LambdaForm
+euGlobal = wrapBifStrict "GLOBAL"
+
 globals :: [(Symbol, LambdaForm)]
 globals =
   [ ("SATURATED", euSaturated)
   , ("CONSTRUCTOR", euConstructor)
   , ("INSPECT", euInspect)
+  , ("GLOBAL", euGlobal)
   ]

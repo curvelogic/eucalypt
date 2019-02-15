@@ -101,14 +101,16 @@ compileBinding context metaref name _ (CoreLet _ bs body _) = do
 
 
 -- | Vars already have refs in the context which can be used
-compileBinding context _metaref _name Implicit (CoreVar _ v) =
+compileBinding context Nothing _name Implicit (CoreVar _ v) =
   return $ context v
 
+compileBinding context metaref _name Implicit (CoreVar _ v) =
+  addBinding $ pcm_ [context v] metaref $ valuen_ 1 $ Atom $ L 0
 
 
 -- | For explicit sharing, bind Atom
-compileBinding context _metaref _name Explicit (CoreVar _ v) =
-  addBinding $ pc_ [context v] $ valuen_ 1 $ Atom $ L 0
+compileBinding context metaref _name Explicit (CoreVar _ v) =
+  addBinding $ pcm_ [context v] metaref $ valuen_ 1 $ Atom $ L 0
 
 
 
@@ -350,7 +352,6 @@ compileBody context _metaref (C.CoreMeta _ meta obj) = do
 -- | Pass right through fixity metadata
 compileBody context metaref (CoreOperator _ _ _ expr) =
   compileBody context metaref expr
-
 
 
 -- | We can always default to generating all bindings a referencing
