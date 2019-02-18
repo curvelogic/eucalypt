@@ -2,10 +2,15 @@
 
 [![CircleCI](https://circleci.com/gh/curvelogic/eucalypt-hs.svg?style=svg&circle-token=97ae77777028be6a88a53b23b78d5c858a49ef33)](https://circleci.com/gh/curvelogic/eucalypt-hs)
 
-This is a Haskell implementation of the
-[eucalypt](https://curvelogic.github.io/eucalypt/) language for
-generating, templating, rendering and processing structured data
-formats like YAML and JSON.
+[eucalypt](https://curvelogic.github.io/eucalypt/) is a tool and a
+small language for generating, templating, rendering and processing
+structured data formats like YAML, JSON and TOML.
+
+# Getting started
+
+See the [documentation](https://curvelogic.github.io/eucalypt/).
+
+# Development
 
 You need stack (`brew install haskell-stack`...)
 
