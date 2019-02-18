@@ -11,31 +11,43 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 
-module Eucalypt.Stg.Intrinsics.Common where
+module Eucalypt.Stg.Intrinsics.Common
+  ( returnDynamic
+  , returnBool
+  , returnNil
+  , returnValue
+  , returnList
+  , allocFXs
+  , readList
+  , readNatList
+  , readStrList
+  , readPairList
+  , readNatListReturn
+  , readStrListReturn
+  , cast
+  , nativeToString
+  , Invokable(..)
+  , IntrinsicFunction
+  , module Eucalypt.Stg.Loaders
+  , module Eucalypt.Stg.Scrapers
+  ) where
 
 import Data.Dynamic
 import Data.Foldable (toList)
 import Data.List (intercalate)
 import Data.Scientific (Scientific, floatingOrInteger)
 import Data.Symbol
-import qualified Data.Sequence as Seq
 import Data.Typeable (typeOf)
-import Eucalypt.Stg.Address (allocate, peek)
+import Eucalypt.Stg.Address (allocate)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Loaders
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
+import Eucalypt.Stg.Scrapers
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
 type IntrinsicFunction = MachineState -> ValVec -> IO MachineState
-
-pattern Empty :: Seq.Seq a
-pattern Empty <- (Seq.viewl -> Seq.EmptyL)
-
-pattern (:<) :: a -> Seq.Seq a -> Seq.Seq a
-pattern x :< xs <- (Seq.viewl -> x Seq.:< xs)
-
 
 -- | Return any typeable instance wrapped in a dynamic native
 returnDynamic :: Typeable a => MachineState -> a -> IO MachineState
@@ -85,18 +97,10 @@ returnList ms (n:ns) = do
 -- | Utility to read a list from the machine into a native haskell
 -- list for a primitive function.
 readNatList :: MachineState -> Address -> IO [Native]
-readNatList ms addr = do
-  obj <- peek addr
-  case obj of
-    Closure {closureCode = lf, closureEnv = e} ->
-      case lf of
-        LambdaForm {lamBody = (App (Con TagCons) xs)} ->
-          let StgNat h _ :< (StgAddr a :< _) =
-                asSeq $ values (e, ms) $ nativeToValue <$> xs
-           in (h :) <$> readNatList ms a
-        LambdaForm {lamBody = (App (Con TagNil) _)} -> return []
-        _ -> throwIn ms IntrinsicExpectedNativeList
-    _ -> throwIn ms IntrinsicExpectedNativeList
+readNatList ms addr =
+  scrape ms (StgAddr addr) >>= \case
+    (Just ns) -> return ns
+    Nothing -> throwIn ms IntrinsicExpectedNativeList
 
 
 -- | Read native list from machine state where head is currently in a
@@ -126,50 +130,13 @@ readStrListReturn ms = readNatListReturn ms >>= traverse convert
     convert (NativeString s) = return s
     convert _ = throwIn ms IntrinsicExpectedStringList
 
-
-
--- | Inspect a 'StgValue' to turn it into a pair of symbol and
--- value-tail
-kvtail :: MachineState -> StgValue -> IO (Symbol, StgValue, Maybe StgValue)
-kvtail ms (StgAddr addr) = do
-  pair <- readCons ms addr
-  case pair of
-    Just (StgNat (NativeSymbol s) _, t, m) -> return (s, t, m)
-    _ -> throwIn ms IntrinsicBadPair
-kvtail ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
-
-
-
 -- | Utility to read a list of pairs from the machine into a native
 -- haskell list for an intrinsic function.
 readPairList :: MachineState -> Address -> IO [(Symbol, StgValue)]
-readPairList ms addr = do
-  cons <- readCons ms addr
-  case cons of
-    Just (h, StgAddr t, _) -> do
-      (k, cdr, _) <- kvtail ms h
-      ((k, cdr) :) <$> readPairList ms t
-    Just (_, _, _) -> throwIn ms IntrinsicImproperList
+readPairList ms addr =
+  scrape ms (StgAddr addr) >>= \case
+    Just kvs -> return kvs
     Nothing -> return []
-
-
-
--- | Assuming the specified address is a Cons cell, return head and tail.
-readCons :: MachineState -> Address -> IO (Maybe (StgValue, StgValue, Maybe StgValue))
-readCons ms addr =
-  peek addr >>= \case
-    Closure {closureCode = lf, closureEnv = e, closureMeta = hom} ->
-      case lf of
-        LambdaForm {lamBody = (App (Con TagCons) xs)} ->
-          let (h :< (t :< _)) = asSeq $ values (e, ms) $ nativeToValue <$> xs
-           in return $ Just (h, t, fromMeta hom)
-        LambdaForm {lamBody = (App (Con TagNil) _)} -> return Nothing
-        _ -> throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
-    BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
-    PartialApplication {} ->
-      throwIn ms IntrinsicExpectedListFoundPartialApplication
-
-
 
 -- | class of Invokable intrinsic functions
 class Invokable f where

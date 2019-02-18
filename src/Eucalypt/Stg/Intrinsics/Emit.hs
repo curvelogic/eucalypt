@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE LambdaCase, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Emit
 Description : Built-ins for emitting events from the STG evaluator
@@ -79,21 +79,11 @@ emitScalar s x =
       (`setCode` ReturnLit n Nothing) <$> emit s event
     (StgAddr _) -> error "Received address in emitScalar"
 
-readValueFromHeapTail :: MachineState -> Address -> IO (Maybe StgValue)
-readValueFromHeapTail ms addr =
-  readCons ms addr >>= \case
-    (Just (v, _, _)) -> return . Just $ v
-    _ -> return Nothing
-
 getValue :: MachineState -> Address -> Symbol -> IO (Maybe StgValue)
 getValue ms a k = do
-  cons <- readCons ms a
-  case cons of
-    (Just (StgAddr h, StgAddr t, _)) -> do
-      Just (StgNat (NativeSymbol k') _, StgAddr v', _) <- readCons ms h
-      if k' == k
-        then readValueFromHeapTail ms v'
-        else getValue ms t k
+  pairs <- scrape ms (StgAddr a) :: IO (Maybe [(Symbol, StgValue)])
+  case pairs of
+    (Just kvs) -> return $ lookup k kvs
     _ -> return Nothing
 
 -- | Assuming the address contains some form of block implementation

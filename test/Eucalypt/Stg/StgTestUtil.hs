@@ -11,6 +11,7 @@ Stability   : experimental
 module Eucalypt.Stg.StgTestUtil where
 
 import Data.Foldable (toList, traverse_)
+import Data.Maybe (isJust)
 import Eucalypt.Stg.Address
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Event
@@ -114,19 +115,13 @@ returnsTrue = returnsConstructor stgTrue
 returnedForcedPairList :: MachineState -> IO Bool
 returnedForcedPairList ms@MachineState {machineCode = (ReturnCon TagCons xs _)} =
   case toList xs of
-    [h, t] -> validate h t
+    (h:t:_) -> (&&) <$> isKV h <*> isKVList t
     _ -> return False
   where
-    validate (StgAddr h) (StgAddr t) = do
-      cons <- readCons ms h
-      case cons of
-        Just (StgNat (NativeSymbol _) _, _, _) -> do
-          cons' <- readCons ms t
-          case cons' of
-            Just (h', t', _) -> validate h' t'
-            Nothing -> return True
-        _ -> return False
-    validate _ _ = return False
+    isKV x = isJust <$> (scrape ms x :: IO (Maybe (Symbol, StgValue)))
+    isKVList x = isJust <$> (scrape ms x :: IO (Maybe [(Symbol, StgValue)]))
+returnedForcedPairList MachineState {machineCode = (ReturnCon TagNil _ _)} =
+  return True
 returnedForcedPairList _ = return False
 
 -- | Machine has logged events specified

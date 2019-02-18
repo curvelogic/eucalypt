@@ -44,6 +44,7 @@ data StgError
   | IntrinsicExpectedListFoundPartialApplication
   | IntrinsicExpectedNativeList
   | IntrinsicExpectedStringList
+  | IntrinsicExpectedPairList
   | IntrinsicExpectedEvaluatedList !StgSyn
   | IntrinsicExpectedBlockFoundBlackHole
   | IntrinsicExpectedBlockFoundPartialApplication
@@ -111,6 +112,7 @@ instance Reportable StgException where
             bug "Expected a block, found a partial application."
           IntrinsicExpectedNativeList -> err "Expected list of native values."
           IntrinsicExpectedStringList -> err "Expected list of strings."
+          IntrinsicExpectedPairList -> err "Expected list of key-value pairs."
           IntrinsicExpectedEvaluatedList expr ->
             bug "Expected evaluated list, found unevaluated thunks." P.$$
             prettify expr
