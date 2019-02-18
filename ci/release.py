@@ -30,7 +30,7 @@ def release(package, commit, version):
                                    body = "Prototype eu binary.",
                                    target_commitish = commit,
                                    draft = True,
-                                   prerelease = True)
+                                   prerelease = False)
 
     if release:
         print("Uploading binary {}".format(package))

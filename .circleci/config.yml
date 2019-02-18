@@ -72,12 +72,13 @@ jobs:
 
       - run:
           name: Check build metadata for generated executable
-          command: stack exec eu -- -e 'eu.build'
+          command: stack exec eu -- -e eu.build
 
       - persist_to_workspace:
           root: .stack-work
           paths:
             - dist
+            - package.yaml
 
       - run:
           name: Prepare artifacts
@@ -86,6 +87,7 @@ jobs:
             source /tmp/env.sh
             cp -R $STACK_DIST_DIR /tmp/artifacts/dist
             cp -R $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
+            cp package.yaml /tmp/artifacts
 
       - store_artifacts:
           path: /tmp/artifacts
@@ -226,10 +228,14 @@ jobs:
     environment:
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
+      - attach_workspace:
+          at: /tmp/workspace
       - run: brew install haskell-stack
       - run: brew install pcre
       - run: brew install pkg-config
+      - run: brew install curvelogic/homebrew-tap/eucalypt
       - checkout
+      - run: cp /tmp/workspace/package.yaml package.yaml
       - run: stack build --test --no-terminal --ghc-options="-O2"
 
 
