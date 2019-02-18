@@ -235,8 +235,16 @@ jobs:
       - run: brew install pkg-config
       - run: brew install curvelogic/homebrew-tap/eucalypt
       - checkout
+      - restore_cache:
+          keys:
+            - cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
+            - cache-{{ checksum "stack.yaml" }}-
       - run: cp /tmp/workspace/package.yaml package.yaml
       - run: stack build --test --no-terminal --ghc-options="-O2"
+      - save_cache:
+          paths:
+            - ~/.stack
+          key: cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
 
 
 workflows:
