@@ -24,7 +24,7 @@ import Control.Monad (forM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State.Strict
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
+-- import qualified Data.ByteString.Lazy as BL
 import Data.Either (partitionEithers, rights)
 import Data.Foldable (toList)
 import qualified Data.Map as M
