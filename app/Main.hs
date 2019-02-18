@@ -5,7 +5,7 @@ import Eucalypt.Driver.Options
 import Eucalypt.Driver.Explain (explain)
 import Eucalypt.Driver.Evaluator (evaluate)
 import System.Exit
-import Paths_eucalypt_hs (version)
+import Paths_eucalypt (version)
 import Data.Version (showVersion)
 
 -- | Primary banner for version data

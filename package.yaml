@@ -1,4 +1,4 @@
-name:                eucalypt-hs
+name:                eucalypt
 version:             0.1.1.0
 github:              "curvelogic/eucalypt"
 license:             MIT
@@ -75,7 +75,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - eucalypt-hs
+    - eucalypt
     - optparse-applicative
     - directory
     - filepath
@@ -83,7 +83,7 @@ executables:
     - network-uri
 
 tests:
-  eucalypt-hs-test:
+  eucalypt-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
@@ -98,7 +98,7 @@ tests:
       - bytestring
       - conduit
       - containers
-      - eucalypt-hs
+      - eucalypt
       - hspec
       - hspec-megaparsec
       - libyaml

@@ -24,6 +24,7 @@ import Control.Monad (forM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State.Strict
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Data.Either (partitionEithers, rights)
 import Data.Foldable (toList)
 import qualified Data.Map as M
@@ -44,6 +45,7 @@ import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import Eucalypt.Reporting.Error (EucalyptError(..))
 import Eucalypt.Source.Error (DataParseException(..))
+import Eucalypt.Source.CsvSource
 import Eucalypt.Source.TextSource
 import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
@@ -241,6 +243,7 @@ loadUnit i@(Input locator name format) = do
       "toml" -> tomlDataToCore i source
       "yaml" -> activeYamlToCore i source
       "json" -> yamlDataToCore i source
+      "csv" -> csvDataToCore i source
       "eu" -> eucalyptToCore i firstSMID source
       _ -> (return . Left . Command . InvalidInput) i
   case coreUnit of
@@ -255,7 +258,8 @@ loadUnit i@(Input locator name format) = do
         Right expr ->
           (return . Right . maybeApplyName . translateToCore input smid) expr
     yamlDataToCore input text = do
-      r <- try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
+      r <-
+        try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit input) core
@@ -266,11 +270,14 @@ loadUnit i@(Input locator name format) = do
       parseTomlData text >>=
       (return . Right . maybeApplyName <$> dataUnit input)
     activeYamlToCore input text = do
-      r <- try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
+      r <-
+        try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit input) core
-
+    csvDataToCore input text =
+      parseCsv (BL.fromStrict text) >>=
+      (return . Right . maybeApplyName <$> dataUnit input)
 
 
 -- | Parse units, reporting and exiting on error
