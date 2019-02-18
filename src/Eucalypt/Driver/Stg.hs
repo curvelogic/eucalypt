@@ -65,7 +65,7 @@ debugMachine = initDebugMachineState
 
 -- | Useful for comparing speed of conduit render pipelines with raw
 --  evaluation.
-runHeadless :: (MonadUnliftIO m, MonadIO m, MonadThrow m, MonadCatch m)
+runHeadless :: (MonadUnliftIO m, MonadCatch m)
   => EucalyptOptions
   -> CoreExpr
   -> m ()
@@ -92,7 +92,7 @@ runHeadless opts expr = do
 -- | Build a conduit streaming pipeline where the machine generates
 -- events and renderer processes them.
 renderConduit ::
-     (MonadUnliftIO m, MonadIO m, MonadThrow m, MonadCatch m)
+     (MonadUnliftIO m, MonadCatch m)
   => EucalyptOptions
   -> CoreExpr
   -> m BS.ByteString
@@ -114,7 +114,7 @@ renderConduit opts expr = handle handler $ do
 -- | Step through the machine yielding events via the conduit pipeline
 -- at each stage
 machineSource ::
-     (MonadUnliftIO m, MonadResource m, MonadIO m, MonadThrow m)
+     (MonadUnliftIO m, MonadThrow m)
   => MachineState
   -> ConduitT () Event m ()
 machineSource ms = do

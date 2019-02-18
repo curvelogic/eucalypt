@@ -274,7 +274,7 @@ loadUnit i@(Input locator name format) = do
 
 
 -- | Parse units, reporting and exiting on error
-loadUnits :: (Traversable t, Foldable t) => t Input -> CoreLoad [TranslationUnit]
+loadUnits :: Traversable t => t Input -> CoreLoad [TranslationUnit]
 loadUnits inputs = do
   asts <- traverse loadUnit inputs
   case partitionEithers (toList asts) of

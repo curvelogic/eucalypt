@@ -137,7 +137,7 @@ determineTarget meta = (, doc, format) <$> target
 
 
 
-importsFromMetadata :: ToCoreBindingName a => CoreExp a -> Maybe [Input]
+importsFromMetadata :: CoreExp a -> Maybe [Input]
 importsFromMetadata m =
   readUnevaluatedMetadata "import" m extract
   where

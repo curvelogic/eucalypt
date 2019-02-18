@@ -109,8 +109,9 @@ readNatListReturn :: MachineState -> IO [Native]
 readNatListReturn ms =
   case ms of
     MachineState {machineCode = (ReturnCon TagCons xs Nothing)} ->
-      let (StgNat h _ :< (StgAddr t :< _)) = asSeq xs
-       in (h :) <$> readNatList ms t
+      case asSeq xs of
+        (StgNat h _ :< (StgAddr t :< _)) -> (h :) <$> readNatList ms t
+        _ -> throwIn ms IntrinsicExpectedNativeList
     MachineState {machineCode = (ReturnCon TagNil _ Nothing)} -> return []
     _ -> throwIn ms IntrinsicExpectedNativeList
 

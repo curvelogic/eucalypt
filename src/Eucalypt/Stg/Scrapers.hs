@@ -56,12 +56,14 @@ instance Scrapeable a => Scrapeable [a] where
     obj <- peek addr
     case obj of
       Closure { closureEnv = e
-              , closureCode = LambdaForm {lamBody = (App (Con TagCons) xs)}
-              } -> do
-        let (h :< (t :< _)) = asSeq $ values (e, ms) $ nativeToValue <$> xs
-        h' <- scrape ms h :: IO (Maybe a)
-        t' <- scrape ms t :: IO (Maybe [a])
-        return $ (:) <$> h' <*> t'
+              , closureCode = LambdaForm {lamBody = expr@(App (Con TagCons) xs)}
+              } ->
+        case asSeq $ values (e, ms) $ nativeToValue <$> xs of
+          (h :< (t :< _)) -> do
+            h' <- scrape ms h :: IO (Maybe a)
+            t' <- scrape ms t :: IO (Maybe [a])
+            return $ (:) <$> h' <*> t'
+          _ -> throwIn ms $ IntrinsicExpectedEvaluatedList expr
       Closure {closureCode = LambdaForm {lamBody = (App (Con TagNil) _)}} ->
         return $ Just []
       Closure {closureCode = lf} ->
@@ -76,14 +78,16 @@ instance (Scrapeable k, Scrapeable v) => Scrapeable (k, v) where
     obj <- peek addr
     case obj of
       Closure { closureEnv = e
-              , closureCode = LambdaForm {lamBody = (App (Con TagCons) xs)}
-              } -> do
-        let (h :< (t :< _)) = asSeq $ values (e, ms) $ nativeToValue <$> xs
-        k <- scrape ms h :: IO (Maybe k)
-        t' <- scrape ms t :: IO (Maybe [v])
-        case t' of
-          (Just (v:_)) -> return $ (,) <$> k <*> Just v
-          _ -> throwIn ms IntrinsicBadPair
+              , closureCode = LambdaForm {lamBody = expr@(App (Con TagCons) xs)}
+              } ->
+        case asSeq $ values (e, ms) $ nativeToValue <$> xs of
+          (h :< (t :< _)) -> do
+            k <- scrape ms h :: IO (Maybe k)
+            t' <- scrape ms t :: IO (Maybe [v])
+            case t' of
+              (Just (v:_)) -> return $ (,) <$> k <*> Just v
+              _ -> throwIn ms IntrinsicBadPair
+          _ -> throwIn ms $ IntrinsicExpectedEvaluatedList expr
       Closure {closureCode = lf} ->
         throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
       BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
@@ -105,11 +109,13 @@ instance Scrapeable k => Scrapeable (BareCons k) where
     obj <- peek addr
     case obj of
       Closure { closureEnv = e
-              , closureCode = LambdaForm {lamBody = (App (Con TagCons) xs)}
-              } -> do
-        let (h :< (t :< _)) = asSeq $ values (e, ms) $ nativeToValue <$> xs
-        k <- scrape ms h
-        return $ BareCons <$> k <*> pure t
+              , closureCode = LambdaForm {lamBody = expr@(App (Con TagCons) xs)}
+              } ->
+        case asSeq $ values (e, ms) $ nativeToValue <$> xs of
+          (h :< (t :< _)) -> do
+            k <- scrape ms h
+            return $ BareCons <$> k <*> pure t
+          _ -> throwIn ms $ IntrinsicExpectedEvaluatedList expr
       Closure {closureCode = lf} ->
         throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
       BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole

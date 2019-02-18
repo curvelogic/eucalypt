@@ -39,7 +39,7 @@ data RawExpr =
 -- | A scheme for translating YAML into Eucalypt core syntax
 class YamlTranslator a where
   handleScalar ::
-       (Monad m, MonadThrow m)
+       (MonadThrow m)
     => a
     -> BS.ByteString
     -> Tag
@@ -47,7 +47,7 @@ class YamlTranslator a where
     -> Anchor
     -> m CoreExpr
   handleList ::
-       (Monad m, MonadThrow m)
+       (MonadThrow m)
     => a
     -> [CoreExpr]
     -> Tag
@@ -58,7 +58,7 @@ class YamlTranslator a where
   -- | Called to translate a mapping, with binding names, key
   -- expression and value expressions
   handleMapping ::
-       (Monad m, MonadThrow m)
+       (MonadThrow m)
     => a
     -> [(Text, CoreExpr, CoreExpr)]
     -> Tag
@@ -110,7 +110,7 @@ parseBool _ = False
 -- @
 -- x: !eu 25 * 23
 -- @
-expressionFromString :: (Monad m, MonadThrow m) => String -> m CoreExpr
+expressionFromString :: MonadThrow m => String -> m CoreExpr
 expressionFromString s =
   case parseExpression s "YAML embedding" of
     Left err -> throwM err
@@ -123,7 +123,7 @@ expressionFromString s =
 -- @
 -- x: !eu::fn (x, y, z) x + y + z
 -- @
-lambdaExpressionFromString :: (Monad m, MonadThrow m) => String -> m CoreExpr
+lambdaExpressionFromString :: MonadThrow m => String -> m CoreExpr
 lambdaExpressionFromString s =
   case parseLambda s "YAML embedded function" of
     Left err -> throwM err

@@ -517,7 +517,7 @@ isAnaphoricVar t (CoreVar _ s) = isAnaphor t s
 isAnaphoricVar _ _ = False
 
 -- | Apply a number to the unnumbered anaphor
-applyNumber :: (Anaphora t a, Eq a) => t -> a -> State Int a
+applyNumber :: (Anaphora t a) => t -> a -> State Int a
 applyNumber t s | s == unnumberedAnaphor t = do
   n <- get
   put (n + 1)

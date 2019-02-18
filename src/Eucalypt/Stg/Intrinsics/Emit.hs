@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
@@ -90,7 +91,7 @@ getValue ms a k = do
 -- (representing metadata) excavate out a native value for the
 -- specified key.
 --
--- Gruesome.
+-- Gruesome. TODO: incomplete uni patterns
 excavate :: MachineState -> Symbol -> Address -> IO (Maybe Native)
 excavate ms k a = do
   obj <- peek a

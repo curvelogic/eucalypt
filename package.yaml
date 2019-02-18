@@ -24,6 +24,7 @@ library:
     - array
     - bound
     - bytestring
+    - cassava
     - comonad
     - conduit
     - containers

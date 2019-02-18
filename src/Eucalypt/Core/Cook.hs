@@ -151,7 +151,7 @@ cookBottomUp _ e = Right e
 
 -- | Run the shunting algorithm until finished or errored
 shunt ::
-     (Show a, Anaphora SymbolicAnaphora a)
+     (Anaphora SymbolicAnaphora a)
   => State (ShuntState a) (Either CoreError (CoreExp a))
 shunt = (shunt1 `untilM_` finished) >> result
   where

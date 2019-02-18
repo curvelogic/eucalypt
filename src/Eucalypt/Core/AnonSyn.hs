@@ -7,7 +7,34 @@ Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
 
-module Eucalypt.Core.AnonSyn where
+module Eucalypt.Core.AnonSyn (
+  bif,
+  infixl_,
+  infixr_,
+  prefix_,
+  postfix_,
+  var,
+  int,
+  lam,
+  letexp,
+  letblock,
+  app,
+  soup,
+  args,
+  block,
+  str,
+  sym,
+  withMeta,
+  element,
+  corename,
+  corelist,
+  corenull,
+  corebool,
+  corelookup,
+  dynlookup,
+  unresolved,
+  Syn.CoreExpr)
+where
 
 import Eucalypt.Core.SourceMap
 import qualified Eucalypt.Core.Syn as Syn
