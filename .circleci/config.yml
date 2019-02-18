@@ -220,6 +220,18 @@ jobs:
           at: /tmp/workspace
       - run: pipenv run mkdocs gh-deploy
 
+  build-mac-binary:
+    macos:
+      xcode: "10.1.0"
+    steps:
+      - run: brew install ghc
+      - run: brew install haskell-stack
+      - run: brew install pcre
+      - run: brew install pkg-config
+      - checkout
+      - run: stack build
+
+
 workflows:
   version: 2
   build-workflow:
@@ -242,6 +254,9 @@ workflows:
           context: curvelogic-docker-hub
           requires:
             - build
+      - build-mac-binary:
+          requires:
+            - acceptance
       - release:
           context: curvelogic-github-api
           requires:
