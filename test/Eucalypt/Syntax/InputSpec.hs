@@ -15,6 +15,9 @@ spec = do
     it "recognises toml" $
       (inferFormat . URLInput . fromJust . parseRelativeReference) "data.toml" `shouldBe`
       Just "toml"
+    it "recognises csv" $
+      (inferFormat . URLInput . fromJust . parseRelativeReference) "data.csv" `shouldBe`
+      Just "csv"
   describe "parseInput" $ do
     it "parses simple.eu" $
       parseInputFromString "simple.eu" `shouldBe`
