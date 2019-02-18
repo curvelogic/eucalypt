@@ -17,7 +17,7 @@ def fetch(bindir):
         raise EnvironmentError("No Github API Token available")
 
     gh = login(token=token)
-    r = gh.repository("curvelogic", "eucalypt-hs")
+    r = gh.repository("curvelogic", "eucalypt")
 
     release = r.latest_release()
     asset = [a for a in release.assets() if "linux" in a.name][0]
