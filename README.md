@@ -1,4 +1,4 @@
-# eucalypt-hs
+# eucalypt
 
 [![CircleCI](https://circleci.com/gh/curvelogic/eucalypt/tree/master.svg?style=svg&circle-token=97ae77777028be6a88a53b23b78d5c858a49ef33)](https://circleci.com/gh/curvelogic/eucalypt/tree/master)
 
