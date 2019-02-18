@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  
+  <link rel="shortcut icon" href="../img/favicon.ico">
+  <title>Command Line - Eucalypt: liquiYAML</title>
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700|Roboto+Slab:400,700|Inconsolata:400,700' rel='stylesheet' type='text/css'>
+
+  <link rel="stylesheet" href="../css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../css/theme_extra.css" type="text/css" />
+  <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/github.min.css">
+  
+  <script>
+    // Current page data
+    var mkdocs_page_name = "Command Line";
+    var mkdocs_page_input_path = "command-line.md";
+    var mkdocs_page_url = null;
+  </script>
+  
+  <script src="../js/jquery-2.1.1.min.js" defer></script>
+  <script src="../js/modernizr-2.8.3.min.js" defer></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>hljs.initHighlightingOnLoad();</script> 
+  
+  <script>
+      (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+      (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+      m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+      })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+      ga('create', 'UA-42926869-3', 'curvelogic.co.uk');
+      ga('send', 'pageview');
+  </script>
+  
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+      <div class="wy-side-nav-search">
+        <a href=".." class="icon icon-home"> Eucalypt: liquiYAML</a>
+        <div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+	<ul class="current">
+	  
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="..">Home</a>
+	    </li>
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="../getting-started/">Getting Started</a>
+	    </li>
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="../syntax/">Syntax</a>
+	    </li>
+          
+            <li class="toctree-l1 current">
+		
+    <a class="current" href="./">Command Line</a>
+    <ul class="subnav">
+            
+    <li class="toctree-l2"><a href="#eu-command-line">eu command line</a></li>
+    
+        <ul>
+        
+            <li><a class="toctree-l3" href="#inputs">Inputs</a></li>
+        
+            <li><a class="toctree-l3" href="#outputs">Outputs</a></li>
+        
+            <li><a class="toctree-l3" href="#evaluands">Evaluands</a></li>
+        
+            <li><a class="toctree-l3" href="#suppressing-prelude">Suppressing prelude</a></li>
+        
+            <li><a class="toctree-l3" href="#debugging">Debugging</a></li>
+        
+        </ul>
+    
+
+    </ul>
+	    </li>
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+	    </li>
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="../philosophy-lang/">Philosophy</a>
+	    </li>
+          
+        </ul>
+      </div>
+      &nbsp;
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="..">Eucalypt: liquiYAML</a>
+      </nav>
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="..">Docs</a> &raquo;</li>
+    
+      
+    
+    <li>Command Line</li>
+    <li class="wy-breadcrumbs-aside">
+      
+        <a href="https://github.com/curvelogic/eucalypt-hs/edit/master/docs/command-line.md"
+          class="icon icon-github"> Edit on GitHub</a>
+      
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main">
+            <div class="section">
+              
+                <h1 id="eu-command-line"><code>eu</code> command line</h1>
+<p>Eucalypt is available as a command line tool, <code>eu</code>, which reads inputs
+and writes outputs.</p>
+<p>Everything it does in between is purely functional and there is no
+mutable state.</p>
+<p>It is intended to be simple to use in unix pipelines.</p>
+<pre><code class="sh">eu --version # shows the current eu version
+eu --help # lists command line options
+</code></pre>
+
+<h2 id="inputs">Inputs</h2>
+<h3 id="files-stdin">Files / <em>stdin</em></h3>
+<p><code>eu</code> can read several inputs, specified by command line arguments.</p>
+<p>Inputs specify text data from:</p>
+<ul>
+<li>files</li>
+<li>stdin</li>
+<li>internal resources (ignored for now)</li>
+<li>(in future) HTTPS URLS or Git refs</li>
+</ul>
+<p>...of which the first two are the common case. In the simplest case,
+file inputs are specified by file name, stdin is specified by <code>-</code>.</p>
+<p>So</p>
+<pre><code class="sh">eu a.yaml - b.eu
+</code></pre>
+
+<p>...will read input from <code>a.yaml</code>, stdin and <code>b.eu</code>.
+Each will be read into <strong>eucalypt</strong>'s core representation and merged
+before output is rendered.</p>
+<h3 id="input-format">Input format</h3>
+<p>Inputs must be one of the formats that <strong>eucalypt</strong> supports, which
+at present, are:</p>
+<ul>
+<li>YAML</li>
+<li>JSON</li>
+<li>TOML</li>
+</ul>
+<p>Usually the format is inferred from file extension but it can be
+overridden on an input by input basis using a <code>format@</code> prefix.</p>
+<p>For instance:</p>
+<pre><code class="sh">eu yaml@a.txt json@- yaml@b.txt
+</code></pre>
+
+<p>...will read YAML from <code>a.txt</code>, JSON from stdin and YAML from <code>b.txt</code>.</p>
+<h3 id="named-inputs">Named inputs</h3>
+<p>Finally inputs can be <em>named</em> using a <code>name=</code> prefix. This alters the
+way that data is merged by making the contents of an input available
+in a block or list with the specified name, instead of at the top
+level.</p>
+<p>Suppose we have two inputs:</p>
+<pre><code class="yaml">foo: bar
+</code></pre>
+
+<pre><code class="eu">x: 42
+</code></pre>
+
+<p>then</p>
+<pre><code class="sh">eu a.yaml b.eu
+</code></pre>
+
+<p>would generate:</p>
+<pre><code class="yaml">foo: bar
+x: 42
+</code></pre>
+
+<p>but</p>
+<pre><code class="sh">eu data=a.yaml b.eu
+</code></pre>
+
+<p>would generate:</p>
+<pre><code class="yaml">data:
+  foo: bar
+
+x: 42
+</code></pre>
+
+<p>This can be useful for various reasons, particularly when:</p>
+<ul>
+<li>the form of the input's content is not known in advance</li>
+<li>the input's content is a list rather than a block</li>
+</ul>
+<h3 id="full-input-syntax">Full input syntax</h3>
+<p>The full input syntax is therefore:</p>
+<pre><code>[name=][format@][URL/file]
+</code></pre>
+
+<p>This applies at the command line and also when specifying imports in
+<code>.eu</code> files.</p>
+<h3 id="stdin-defaulting"><em>stdin</em> defaulting</h3>
+<p>When no inputs are specified and <code>eu</code> is being used in a pipeline, it
+will accept input from <em>stdin</em> by default, making it easy to pipe JSON
+or YAML from other tools into eu.</p>
+<p>For example, this takes JSON from the <code>aws</code> CLI and formats it as YAML
+to stdout.</p>
+<pre><code class="sh">aws s3-api list-buckets | eu
+</code></pre>
+
+<h3 id="how-inputs-are-merged">How inputs are merged</h3>
+<p>When several inputs are listed, names from earlier inputs become
+available to later inputs, but the content that will be rendered is
+that of the final input.</p>
+<p>The common use case is a final input which contains logic to inspect
+or process data provided by the previous inputs (potentially coming in
+from previous processing on stdin).</p>
+<p>If you want to render contents of earlier inputs verbatim, you need a
+named input to provide a name for that content which you can then use.</p>
+<h2 id="outputs">Outputs</h2>
+<p>In the current version, <code>eu</code> can only generate one output.</p>
+<h3 id="output-format">Output format</h3>
+<p>Output is rendered as YAML by default. Other formats can be specified
+using the <code>-x</code> command line option:</p>
+<pre><code class="sh">eu -x json # for JSON
+eu -x text # for plain text
+</code></pre>
+
+<p>JSON is such a common case that there is a shortcut: <code>-j</code>.</p>
+<h3 id="output-targets">Output targets</h3>
+<p>By default, <strong>eucalypt</strong> renders all the content of the final input to
+output.</p>
+<p>There are various ways to override this. First, <code>:target</code> metadata can
+be specified in the final input to identify different parts for
+potential export.</p>
+<p>To list the <strong>targets</strong> found in the specified inputs, use the <code>-t</code>
+flag.</p>
+<pre><code class="sh">eu -l
+</code></pre>
+
+<p>...and a particular target can be selected for render using <code>-t</code>.</p>
+<pre><code class="sh">eu -t my-target
+</code></pre>
+
+<p>If there is a <strong>target</strong> called "main" it will be used by default
+unless another target is specified.</p>
+<h2 id="evaluands">Evaluands</h2>
+<p>In addition to inputs, an <em>evaluand</em> can be specified at the command
+line. This is a <strong>eucalypt</strong> expression which has access to all names
+defined in the inputs and replaces the input body or targets as the
+data to export.</p>
+<p>It can be used to select content or derive values from data in the
+inputs:</p>
+<pre><code class="console">$ aws s3api list-buckets | eu -e 'Buckets map(lookup(:CreationDate)) head'
+2016-12-25T14:22:30.000Z
+</code></pre>
+
+<p>...or just to test out short expressions or command line features:</p>
+<pre><code class="console">$ eu -e '{a: 1 b: 2 * 2}' -j
+{&quot;a&quot;: 1, &quot;b&quot;: 4}
+</code></pre>
+
+<h2 id="suppressing-prelude">Suppressing prelude</h2>
+<p>A standard <em>prelude</em> containing many functions and operators is
+automatically prepended to the input list.</p>
+<p>This can be suppressed using <code>-Q</code> if it is not required or if you
+would like to provide an alternative.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Many very basic facilities - like the definition of <code>true</code> and
+<code>false</code> and <code>if</code> - are provided by the prelude so suppressing it
+leaves a very bare environment.</p>
+</div>
+<h2 id="debugging">Debugging</h2>
+<p><code>eu</code> has a variety of command line switches for dumping out internal
+representations or tracing execution. <code>eu --help</code> lists them all.</p>
+              
+            </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../anaphora-and-lambdas/" class="btn btn-neutral float-right" title="Anaphora and Lambdas">Next <span class="icon icon-circle-arrow-right"></span></a>
+      
+      
+        <a href="../syntax/" class="btn btn-neutral" title="Syntax"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+    
+      <p>Copyright (C) 2018 Greg Hawkins</p>
+    
+  </div>
+
+  Built with <a href="http://www.mkdocs.org">MkDocs</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+      
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" style="cursor: pointer">
+    <span class="rst-current-version" data-toggle="rst-current-version">
+      
+          <a href="https://github.com/curvelogic/eucalypt-hs/" class="fa fa-github" style="float: left; color: #fcfcfc"> GitHub</a>
+      
+      
+        <span><a href="../syntax/" style="color: #fcfcfc;">&laquo; Previous</a></span>
+      
+      
+        <span style="margin-left: 15px"><a href="../anaphora-and-lambdas/" style="color: #fcfcfc">Next &raquo;</a></span>
+      
+    </span>
+</div>
+    <script>var base_url = '..';</script>
+    <script src="../js/theme.js" defer></script>
+      <script src="../search/main.js" defer></script>
+
+</body>
+</html>
