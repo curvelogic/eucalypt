@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
 {-# LANGUAGE RecursiveDo #-}
 {-|
 Module      : Eucalypt.Stg.Compiler.CompileCore

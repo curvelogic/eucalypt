@@ -135,7 +135,7 @@ applyOver ms _ref arity cs env le lf xs =
 
 -- | Partially apply closure when we have too few arguments
 applyUnder ::
-     (MonadIO m, MonadThrow m)
+     (MonadIO m)
   => MachineState
   -> Address
   -> ValVec
@@ -191,7 +191,7 @@ applyPartialOver ms arity cs env args le lf xs =
 
 -- | Partially apply closure when we have too few arguments
 applyPartialUnder ::
-     (MonadIO m, MonadThrow m)
+     (MonadIO m)
   => MachineState
   -> Address
   -> ValVec

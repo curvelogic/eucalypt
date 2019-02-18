@@ -60,7 +60,7 @@ def main(args):
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode('utf8').strip("'")
 
     # TGZ the exe
-    package = "eucalypt-hs-" + arch + ".tgz"
+    package = "eucalypt-" + arch + ".tgz"
     with tarfile.open(package, "w:gz") as tar:
         tar.add(exe_path)
 

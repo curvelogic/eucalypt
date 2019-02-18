@@ -1,4 +1,4 @@
 *.stack-work
 /.dir-locals.el
-/eucalypt-hs.cabal
+*.cabal
 /harness/.build

@@ -25,6 +25,7 @@ data DataParseException
   | YamlParseError !String !String !String !Int !Int
   | FromYamlException Text
   | FromTomlException Text
+  | FromCsvException Text
   deriving (Eq, Typeable)
 
 instance Show DataParseException where
@@ -34,6 +35,7 @@ instance Show DataParseException where
   show (YamlParseError msg ctxt locator _line _col)  = locator ++ ": " ++ msg ++ " " ++ ctxt
   show (FromYamlException ye) = "Error reading YAML: " ++ unpack ye
   show (FromTomlException te) = "Error reading TOML: " ++ unpack te
+  show (FromCsvException te) = "Error reading CSV: " ++ unpack te
 
 instance Exception DataParseException
 
