@@ -248,8 +248,6 @@ workflows:
               only: master
       - deploy-docs:
           context: curvelogic-github-api
-          requires:
-            - release
           filters:
             branches:
               only: master
