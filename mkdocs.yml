@@ -1,0 +1,16 @@
+site_name: "Eucalypt: liquiYAML"
+repo_url: https://github.com/curvelogic/eucalypt
+copyright: "Copyright (C) 2018 Greg Hawkins"
+docs_dir: docs
+pages:
+- Home: index.md
+- Getting Started: getting-started.md
+- Syntax: syntax.md
+- Command Line: command-line.md
+- Anaphora and Lambdas: anaphora-and-lambdas.md
+- Philosophy: philosophy-lang.md
+markdown_extensions:
+  - admonition
+  - footnotes
+theme: readthedocs
+google_analytics: ['UA-42926869-3', 'curvelogic.co.uk']
