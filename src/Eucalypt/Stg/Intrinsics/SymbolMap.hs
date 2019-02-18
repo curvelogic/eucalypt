@@ -14,6 +14,7 @@ module Eucalypt.Stg.Intrinsics.SymbolMap where
 import Prelude hiding (filter, foldr, lookup, map, null)
 import Control.Applicative (Const(..), (<**>))
 import Control.Arrow (first, second)
+import Control.Monad (join, liftM2)
 import Data.Data (Data, Typeable)
 import qualified Data.Foldable as F
 import Control.Monad.Trans.State.Strict (State, runState, state)
@@ -171,6 +172,44 @@ alter f k insm@(InsOrdSymbolMap j m) =
             Nothing   -> InsOrdSymbolMap j (Map.delete k m)
             Just u    -> InsOrdSymbolMap j (Map.insert k (P i u) m)
 {-# INLINABLE alter #-}
+
+-------------------------------------------------------------------------------
+-- Monadic versions
+-------------------------------------------------------------------------------
+
+insertM :: Monad m => Symbol -> v -> InsOrdSymbolMap v -> m (InsOrdSymbolMap v)
+insertM k v m =
+  let mM = map return m
+   in sequence $ insert k (return v) mM
+
+-- A monadic version of insertWith
+insertWithM ::
+     Monad m
+  => (v -> v -> m v)
+  -> Symbol
+  -> v
+  -> InsOrdSymbolMap v
+  -> m (InsOrdSymbolMap v)
+insertWithM f k v m =
+  let mM = map return m
+   in sequence $ insertWith fM k (return v) mM
+  where
+    fM x y = join $ liftM2 f x y
+
+-- | A monadic version of unionWith
+unionWithM ::
+     Monad m
+  => InsOrdSymbolMap v
+  -> InsOrdSymbolMap v
+  -> (v -> v -> m v)
+  -> m (InsOrdSymbolMap v)
+unionWithM l r f =
+  let lM = map return l
+      rM = map return r
+   in sequence $ unionWith fM lM rM
+  where
+    fM x y = join $ liftM2 f x y
+
 
 -------------------------------------------------------------------------------
 -- Combine

@@ -10,7 +10,6 @@ Stability   : experimental
 
 module Eucalypt.Stg.Intrinsics.IOSMBlock where
 
-import Control.Monad (liftM2, join)
 import Data.Dynamic
 import Data.Maybe (fromMaybe)
 import Data.Symbol
@@ -53,31 +52,13 @@ iosmList ms dyn = do
   om <- cast ms dyn :: IO IOSM
   returnList ms $ SM.toList om
 
-
-alistToMap ::
-     MachineState
-  -> IOSM
-  -> Address
-  -> IO IOSM
-alistToMap ms om a = do
-  cons <- readCons ms a
-  case cons of
-    Just (h, StgAddr t, _) -> do
-      (k, StgAddr cdr, _) <- kvtail ms h
-      (Just (v, _, _)) <- readCons ms cdr
-      let om' = SM.insertWith const k v om
-      alistToMap ms om' t
-    Just (_, _, _) -> throwIn ms IntrinsicImproperList
-    Nothing -> return om
-
-
 -- | From an association list (forced with seqPairList or similar),
 -- return an unwrapped IOSM
 iosmFromAList :: MachineState -> Address -> IO MachineState
 iosmFromAList ms a = do
-  om <- alistToMap ms SM.empty a
+  kvs <- scrape ms (StgAddr a) :: IO (Maybe [(Symbol, StgValue)])
+  let om = maybe SM.empty SM.fromList kvs
   returnDynamic ms om
-
 
 -- | Lookup
 iosmLookup :: MachineState -> Dynamic -> Symbol -> IO MachineState
@@ -99,15 +80,6 @@ iosmMerge ms l r = do
   xs <- cast ms l :: IO IOSM
   ys <- cast ms r :: IO IOSM
   returnDynamic ms $ SM.unionWith (flip const) xs ys
-
--- | A monadic version of SM.unionWith
-unionWithM :: IOSM -> IOSM -> (StgValue -> StgValue -> IO StgValue) -> IO IOSM
-unionWithM l r f =
-  let lM = SM.map return l
-      rM = SM.map return r
-   in sequence $ SM.unionWith fM lM rM
-  where
-    fM x y = join $ liftM2 f x y
 
 -- | Merge using combining function for duplicates
 iosmMergeWith :: MachineState -> Dynamic -> Dynamic -> Address -> IO MachineState

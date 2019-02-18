@@ -27,6 +27,14 @@ import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 
 
+-- | Whether to compile blocks as insert ordered symbol maps or
+-- a-lists.
+--
+-- TODO: compile options
+useIOSMBlocks :: Bool
+useIOSMBlocks = True
+
+
 -- | How we compile a binding may depend on whether it has been
 -- explicitly bound in Core and so may need to be shareable or whether
 -- it is an implied intermediate needed by a complex expression.
@@ -196,7 +204,7 @@ compileBinding _context Nothing _name Explicit (CoreBlock _ (CoreList _ [])) =
 compileBinding context metaref _name _ (CoreBlock _ content) = do
   lst <- compileBinding context Nothing Nothing Implicit content
   let (env, [r]) = sortRefs [lst]
-  if True
+  if useIOSMBlocks
     then do
       iosm <-
         addBinding $
@@ -303,7 +311,7 @@ compileBody context metaref (C.CoreLet _ bs body _) = do
 
 compileBody context _metaref (CoreBlock _ content) = do
   lst <- compileBinding context Nothing Nothing Implicit content
-  if True
+  if useIOSMBlocks
     then do
       let (env, [r]) = sortRefs [lst]
       iosm <-
