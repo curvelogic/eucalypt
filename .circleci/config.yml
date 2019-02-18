@@ -205,6 +205,18 @@ jobs:
               docker push "curvelogic/eucalypt-test-harness:latest"
             fi
 
+  deploy-docs:
+
+    docker:
+      - image: circleci/python:3.7.1-stretch
+
+    steps:
+      - checkout
+      - run: pipenv install mkdocs
+      - attach_workspace:
+          at: /tmp/workspace
+      - run: pipenv run mkdocs gh-deploy
+
 workflows:
   version: 2
   build-workflow:
@@ -231,6 +243,13 @@ workflows:
           context: curvelogic-github-api
           requires:
             - acceptance
+          filters:
+            branches:
+              only: master
+      - deploy-docs:
+          context: curvelogic-github-api
+          requires:
+            - release
           filters:
             branches:
               only: master
