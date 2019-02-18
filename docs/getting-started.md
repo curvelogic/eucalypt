@@ -1,7 +1,7 @@
 # Installation
 
 The current implementation of eucalypt is available in the
-[eucalypt-hs project](https://github.com/curvelogic/eucalypt-hs) and
+[eucalypt project](https://github.com/curvelogic/eucalypt) and
 can be installed as follows.
 
 ## On macOS via Homebrew
@@ -15,7 +15,7 @@ brew install curvelogic/homebrew-tap/eucalypt
 ## On Linux
 
 x86_64 binaries built in CI are available on the [releases
-page](https://github.com/curvelogic/eucalypt-hs/releases)
+page](https://github.com/curvelogic/eucalypt/releases)
 
 ## From source
 

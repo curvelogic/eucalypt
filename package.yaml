@@ -1,6 +1,6 @@
 name:                eucalypt-hs
 version:             0.1.1.0
-github:              "curvelogic/eucalypt-hs"
+github:              "curvelogic/eucalypt"
 license:             MIT
 author:              "Greg Hawkins"
 maintainer:          "greg@curvelogic.co.uk"
@@ -11,7 +11,7 @@ extra-source-files:
 - lib/prelude.eu
 
 synopsis:            Haskell implementation of Eucalypt tooling and language
-description:         Please see the README on Github at <https://github.com/curvelogic/eucalypt-hs#readme>
+description:         Please see the README on Github at <https://github.com/curvelogic/eucalypt#readme>
 
 dependencies:
 - base >= 4.7 && < 5

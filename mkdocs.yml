@@ -1,5 +1,5 @@
 site_name: "Eucalypt: liquiYAML"
-repo_url: https://github.com/curvelogic/eucalypt-hs
+repo_url: https://github.com/curvelogic/eucalypt
 copyright: "Copyright (C) 2018 Greg Hawkins"
 docs_dir: docs
 nav:
