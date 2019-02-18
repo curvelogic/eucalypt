@@ -1,0 +1,3 @@
+x: !Ref blah
+y: !eu x meta lookup(:tag) //= "!Ref"
+RESULT: !eu y then(:PASS, :FAIL)

@@ -1,0 +1,4 @@
+f(pair): [second(pair), first(pair) + second(pair)]
+fib(n): if(n = 0, 1, [1, 1] iterate(f) drop(n - 1) first first)
+
+x: fib(500)

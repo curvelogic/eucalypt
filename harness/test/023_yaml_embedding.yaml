@@ -1,0 +1,63 @@
+##############
+# Evaluation #
+##############
+
+arith:
+  x: 4.4
+  y: 5
+  z: !eu x + y
+  pass: !eu z = 9.4
+
+merging:
+  a:
+    i: 1
+    j: 2
+
+  b:
+    i: 4
+    k: 7
+
+  c: !eu a b
+
+  pass: !eu 'c = { i: 4 j: 2 k: 7 }'
+
+######################
+# Suppressing Output #
+######################
+
+!eu::suppress hidden:
+  text: this block should be hidden
+
+h2: !eu::suppress This should also be hidden
+# Ignored for now - bug with metadata and lets
+# h3: !eu::suppress { a: This should be hidden too }
+h4: !eu::suppress [ This should be hidden too ]
+
+##################
+# Simple Lambdas #
+##################
+
+lambdas:
+  f: !eu::fn (x, y) x * y
+  z: !eu f(33, 33) + f(44, 44)
+  pass: !eu z = 3025
+
+
+######################
+# Extended Embedding #
+######################
+
+block: !eu |
+  {
+    x: 99
+    (l ^^^ r): "{l} <_> {r}"
+    f(n): n ^^^ x
+  }
+
+t1: !eu 23 block.f //= "23 <_> 99"
+t2: !eu block.x "{} is 99" //= "99 is 99"
+
+RESULT: !eu |
+  if([arith.pass, merging.pass, lambdas.pass, t1, t2] all-true?,
+     :PASS,
+     :FAIL)

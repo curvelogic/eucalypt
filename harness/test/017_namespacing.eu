@@ -1,0 +1,22 @@
+(l=r): __EQ(l,r)
+
+fn: {
+  ref(label): {
+    'Fn::Ref': label
+  }
+}
+
+refs: {
+  env: fn.ref("EnvironmentName")
+}
+
+` :trace
+env: refs.env
+
+checks: {
+  trues: [
+    env = { 'Fn::Ref' : "EnvironmentName" }
+  ]
+}
+
+RESULT: if(checks.trues all-true?, :PASS, :FAIL)

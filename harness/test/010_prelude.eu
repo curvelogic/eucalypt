@@ -1,0 +1,198 @@
+#!/usr/bin/env eu
+
+tests: {
+
+  metadata: {
+    prelude: eu.prelude.version
+    eu-version: [eu.build.version, eu.build.commit, eu.build.url] str.join-on(" ")
+
+    pass: [ prelude str.matches?("\d+\.\d+\.\d+(\.\d+)?")
+	  , eu-version str.matches?(".* .* .*") ] all-true?
+  }
+
+  environment: {
+    pwd: io.env lookup(:PWD)
+    launch-time: io.epoch-time
+
+    pass: [ pwd str.matches?(".*\/.*")
+	  , launch-time str.of str.matches?("\d+") ] all-true?
+  }
+
+  basics: {
+    n: null
+    t: true
+    f: false
+
+    pass: [if(t, t, f), cat(5,identity) = 5, n = n] all-true?
+  }
+
+  list-basics: {
+    t1: cons(0, [1]) head zero?
+    t2: cons(0, [1]) tail head dec zero?
+    t3: tail([1]) nil?
+
+    pass: [t1, t2, t3] all-true?
+  }
+
+  block-basics: {
+    t1: merge({ a: 1 }, { b: 2 }) elements second head __EQ(sym("b"))
+    t2: merge({}, { x: 3 }) has(:x)
+    t3: ({ k: :k } elements block) = { k: :k }
+    t4: { dict: { a: 1 b: 2 } x: dict lookup(:a) y: dict lookup-or(:c, 1) ret: x = y }.ret
+    t5: ({ k: :k } lookup(:k)) = (:k lookup-in({ k: :k }))
+    t6: ({ k: :k } lookup-or(:x, 1234)) = lookup-or-in({ k: :k }, :x, 1234)
+    t7: ({ c: 22 } lookup-alts([:a, :b, :c], 0)) = ({ a: 22 c: 18 } lookup-alts([:a, :b, :c], 0))
+
+    pass: [t1, t2, t3, t4, t5, t6, t7] all-true?
+  }
+
+  boolean: {
+    t1: true && true
+    t2: true ∧ true
+    t3: true || false
+    t4: false ∨ true
+    t5: or(and(true, true), and(true, false))
+
+    pass: [t1, t2, t3, t4, t5] all-true?
+  }
+
+  equality: {
+    t1: 1 = 1
+    t2: 1.0 = 1.0
+    t3: "x" = "x"
+    t4: :x = :x
+    t5: true = true
+    t6: null = null
+    t7: not(null != null)
+
+    pass: [t1, t2, t3, t4, t5, t6, t7] all-true?
+  }
+
+  arithmetic: {
+    t1: 4 + 2 = 6
+    t2: 9 - 4 - 9 = -4
+    t3: 7.0 * 8.0 / 3.5 = 16.0
+    t4: (3 inc) > 3
+    t5: (3 dec) < 3
+    t6: 1 <= 1
+    t7: 100 >= 100
+    t8: 0 zero?
+
+    pass: [t1,t2,t3,t4,t5,t6,t7,t8] all-true?
+  }
+
+  strings: {
+    # "imports..."
+    join: str.join
+    join-on: str.join-on
+    split-on: str.split-on
+    match: str.match
+    match-with: str.match-with
+    matches: str.matches
+    matches-of: str.matches-of
+    matches?: str.matches?
+    suffix: str.suffix
+    prefix: str.prefix
+
+    t1: join([str.of(1), str.of(:s)], " ") = "1 s"
+    t2: ("1-2-3" split-on("-")) = ["1","2","3"]
+    t3: ([1,2,3] map(str.of) join-on("&")) = "1&2&3"
+    t4: ("12-23-32" str.match-with("(\d+)-(\d+)-(\d+)") tail) = ["12", "23", "32"]
+    t5: match("1*2", "\d.\d") = ["1*2"]
+    t6: matches("1&2", "\d") = ["1", "2"]
+    t7: "hello" matches?("he..o")
+    t8: ("hello" matches-of("l")) = ["l", "l"]
+    t9: ("x" suffix("!")) = ("!" prefix("x"))
+
+    pass: [t1, t2, t3, t4, t5, t6, t7, t8, t9] all-true?
+  }
+
+  combinators: {
+    t1: identity(4) = 4
+    t2: (:x const(9)) = 9
+    t3: (1 compose(zero?, dec)) = true
+    t4: (str.prefix("<") ∘ str.suffix(">"))("x") = "<x>"
+    t5: apply(__EQ, [2, 2]) = true
+    t6: flip(__SUB)(1, 3) = 2
+    t7: true = (2 complement(zero?))
+    t8: uncurry(__EQ)([1, 0]) = false
+    t9: curry(first)("a", "b") = "a"
+
+    pass: [t1, t2, t3, t4, t5, t6, t7, t8, t9] all-true?
+  }
+
+  lists: {
+    not-five: not ∘ __EQ(5)
+
+    t1: [] nil?
+    t2: not([1] nil?)
+    t3: ([0, 1, 2, 3] take(2)) = cons(0, cons(1, []))
+    t4: ([0, 1, 2, 3] drop(2)) = cons(2, cons(3, []))
+    t5: foldl(and, true, [true, true, true]) = foldr(or, false, [false, false, true])
+    t6: (["fish", "crest"] map(str.prefix("gold")) second) = "goldcrest"
+    t7: inc <$> [0,1,2] = [1,2,3]
+    t8: map2(__ADD, [0, 0, 2], [3, 1, 0]) = [3, 1, 2]
+    t9: filter(not-five, [1, 2, 3, 4, 5, 6, 7, 8, 9]) = [1, 2, 3, 4, 6, 7, 8, 9]
+    t10: remove(not-five, [1, 2, 3, 4, 5, 6, 7, 8, 9]) = [5]
+    t11: append([1,1], [2,2]) = [1,1,2,2]
+    t12: append([:a], [:b]) = prepend([:b], [:a])
+    t13: [1] ++ [2] = [1, 2]
+    t14: concat([[0], [:a], ["x"]]) = [0, :a, "x"]
+    t15: (zip-with(pair, [:x, :y, :z], [1, 2, 3]) block) = { x: 1 y: 2 z: 3 }
+    t16: ([true, false] all-true?) = false
+    t17: ([true, false] any-true?) = true
+    t18: ([0, 0, 0, 0] all(zero?)) = true
+    t19: ([1, 1, 1, 1] any(zero?)) = false
+    t20:  ([:a, :b, :c] reverse) = [:c, :b, :a]
+    t21: repeat(:x) take(2) //= [:x, :x]
+
+    pass: [ t1
+	  , t2
+	  , t3
+	  , t4
+	  , t5
+	  , t6
+	  , t7
+	  , t8
+	  , t9
+	  , t10
+	  , t11
+	  , t12
+	  , t13
+	  , t14
+	  , t15
+	  , t16
+	  , t17
+	  , t18
+	  , t19
+	  , t20
+	  , t21
+	  ] all-true?
+  }
+
+  block-lib: {
+    t1: ([{a: 1}, {b: 2}, {c: 3}] merge-all) = {a: 1 b: 2 c: 3}
+    t2: ({a: 1} elements first value) = 1
+    t3: ({a: 1} elements first juxt(key, value)) = [:a, 1]
+    t4: [1, 1] = ([0, 2] bimap(inc, dec))
+    t5: [[0, 1], [1, 2], [2, 3]] map-first(inc) map(apply(__EQ)) all-true?
+    t6: [[0, 1], [1, 2], [2, 3]] map-second(dec) map(apply(__EQ)) all-true?
+    t7: ({ a: 1.0 b: -1.0 } map-kv(pair) block) = { a: 1.0 b: -1.0 }
+    t8: ([pair(:a, 1), pair(:b, 2)] block) = { a: 1 b: 2 }
+    t9: zip-kv([:a, :b, :c], [1, 2, 3]) = { a: 1 b: 2 c: 3 }
+    t10: ({ a: 3 b: 2 c: 1 } map-values(__MUL(2))) = { a: 6 b: 4 c: 2 }
+    t11: ({ a: :a b: :b c: :c } map-keys(sym ∘ str.prefix("x-") ∘ str.of)) = { x-a: :a x-b: :b x-c: :c }
+    t12: { x: :foo y: :bar } alter-value(:x, :baz) //= { x: :baz y: :bar }
+    t13: { a: 2 b: 2 } update-value(:b, inc) //= { a: 2 b: 3 }
+    t14: { a: { b: { c: 3 d: 0 } } } alter([:a, :b, :c], 0) //= { a: { b: { c: 0 d: 0} } }
+    t15: { a: { b: { c: 3 d: 0 } } } update([:a, :b, :c], inc) //= { a: { b: { c: 4 d: 0} } }
+    t16: {} set-value(:x, :foo) //= { x: :foo }
+    t17: { a: 0 } set-value(:b, 1) //= { a: 0 b: 1 }
+    t18: { a: 0 } set-value(:a, 1) //= { a: 1 }
+    t19: { a: { b: { c: 0 } } } merge-at([:a, :b], { d: 0 }) //= { a: { b: { c: 0 d: 0 } } }
+    pass: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19] all-true?
+  }
+
+}
+
+RESULT: tests filter-values(has(:pass)) all(_.pass) then(:PASS, :FAIL)

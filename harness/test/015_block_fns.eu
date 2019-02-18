@@ -1,0 +1,112 @@
+block1: {
+  k: 1
+  z: "hello"
+  bibble-wibble: :a
+}
+
+block2: block1
+
+items: block2 elements
+
+block3: items block
+
+block4: cons([:x, 9999], items) block
+
+block5: [[:x, 9999], [:k, 1], [:z, "hello"], [:bibble-wibble, :a]] block
+
+checks: {
+  trues: {
+    a: block3=block2
+    b: ({ a: 1 } elements block) = { a: 1 }
+    c: block5=block5
+  }
+}
+
+merging: {
+  m: { a: 2 } { b: 3 }
+  m2: ({ a: 2 } { a: 3 })
+  a: m.a
+  a2: m2.a
+  fmerge: merge flip
+  with-tags: fmerge({tags: [:a, :b, :c]})
+
+  m-tagged: m with-tags
+  m2-tagged: m2 with-tags
+  checks: {
+    trues: [
+      ({ a: 2 } { b: 3 }) = { a: 2 b: 3 },
+      ({ a: 2 } { a: 3 }) = { a: 3 },
+      ({ a: 1 b: 2 c: 3 d: 4} { b: 1 c: 1 d: 1}) = { a: 1 b: 1 c: 1 d: 1 },
+      m-tagged = { a: 2 b: 3 tags: [:a, :b, :c]},
+      m2-tagged = { a: 3 tags: [:a, :b, :c]}
+    ]
+  }
+
+}
+
+deep-merge: {
+  tests: {
+    eq1: {} << {} = {}
+    eq2: {a: 1} << {} = {a: 1}
+    eq3: {} << {a: 1} = {a: 1}
+    eq4: {a: 1} << {a: 1} = {a: 1}
+    eq5: {a: 2} << {a: 1} = {a: 1}
+    eq6: {a: 1} << {b: 2} = {a: 1 b: 2}
+    eq7: {b: 2} << {a: 1} = {b: 2 a: 1}
+    eq8: { a: { b: 1 } } << { a: { b: 2 } } = { a: { b: 2 } }
+    eq9: {a: 1 c: { x: :x} } << {b: 1 c: {x: :y} } = {a: 1 c: {x: :y} b: 1}
+    eq10: {a: 1 c: { x: :x} } << {b: 1 c: {x: :y z: :u} } = {a: 1 c: {x: :y z: :u} b: 1}
+    eq11: {a: { b: [1, 2]}} << {a: { b: [3, 4]}} = {a: { b: [3, 4]}}
+  }
+  pass: tests elements map(value) all-true?
+}
+
+equality: {
+  tests: {
+    eq1: ([ [:a, 1] ] block) = {a: 1}
+    eq2: (({a: 1} << {a: 1}) elements) = [[:a, 1]]
+  }
+  pass: tests elements map(value) all-true?
+}
+
+lookups: {
+
+  page1: {
+    title: "page one"
+    body: "blah blah"
+  }
+
+  page2: {
+    title: "page two"
+    body: "blah blah"
+  }
+
+  page3: {
+    title: "page three"
+    body: "blah blah"
+    epilogue: "."
+  }
+
+  pages: [page1, page2, page3]
+
+  title: lookup(:title)
+  epilogue: lookup-or(:epilogue, "x")
+
+  titles: pages map(title)
+  epilogues: pages map(epilogue)
+
+  checks: {
+    trues: [
+      titles = ["page one", "page two", "page three"],
+      epilogues = ["x", "x", "."]
+      ]
+  }
+}
+
+pass: [ checks.trues values all-true?
+      , merging.checks.trues all-true?
+      , lookups.checks.trues all-true?
+      , deep-merge.pass
+      ] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

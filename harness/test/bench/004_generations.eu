@@ -1,0 +1,17 @@
+# rendering is strict and collapses thunks... if we suppress we build
+# up memory pressure
+
+` :suppress
+gen-0: foldl(+, 0, repeat(1) take(500))
+` :suppress
+gen-1: foldl(+, gen-0, repeat(1) take(500))
+gen-2: foldl(+, gen-1, repeat(1) take(500))
+gen-3: foldl(+, gen-2, repeat(1) take(500))
+gen-4: foldl(+, gen-3, repeat(1) take(500))
+gen-5: foldl(+, gen-4, repeat(1) take(500))
+` :suppress
+gen-6: foldl(+, gen-5, repeat(1) take(500))
+` :suppress
+gen-7: foldl(+, gen-6, repeat(1) take(500))
+gen-8: foldl(+, gen-7, repeat(1) take(500))
+gen-9: foldl(+, gen-8, repeat(1) take(500))

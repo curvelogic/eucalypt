@@ -1,0 +1,15 @@
+tests: {
+  α: [0, 1, 2, 3] take-while(< 3) //= [0, 1, 2]
+  β: [{ id: :a p: true}, { id: :b p: true}, { id: :c p: false }] take-while(_.p) map(_.id) //= [:a, :b]
+  γ: [] take-while(=1) //= []
+  δ: [0, 1, 2, 3] drop-while(< 3) //= [3]
+  ε: [0, 1, 2, 3] drop-while(< 5) //= []
+  ζ: [0, 1, 2, 3] drop-until(> 25) //= []
+  η: [0, 1, 2, 3] drop-until(> 2) //= [3]
+  θ: [0, 1, 2, 3] take-until(> 2) //= [0, 1, 2]
+  ι: [0, 1, 2, 3] take-until(>= 0) //= []
+  κ: [0, 1] cycle take(5) //= [0, 1, 0, 1, 0]
+  λ: [] cycle take(10) //= []
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

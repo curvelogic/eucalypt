@@ -1,0 +1,6 @@
+# requires prelude
+
+'~': io.env.HOME
+pwd: io.env.PWD
+
+RESULT: if((io.env lookup-or(:HOME, "~")) != "~", :PASS, :FAIL)

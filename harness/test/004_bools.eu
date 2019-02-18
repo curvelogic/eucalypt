@@ -1,0 +1,29 @@
+#!/usr/bin/env eu
+
+# alias the ugly builtins
+t:	 __TRUE
+f:	 __FALSE
+or:	 __OR
+and:	 __AND
+eq:	 __EQ
+not:	 __NOT
+if:      __IF
+
+trues: {
+  a: eq(or(f, and(t, t)), t)
+  b: eq(f, not(t))
+  c: or(t, t)
+  d: or(or(or(or(t, t), t), t), f)
+
+  all: and(and(a, b), and(c, d))
+}
+
+falses: {
+  a: not(eq(and(f, t), and(t, f)))
+  b: or(f, f)
+  c: and(t, f)
+
+  none: and(and(not(a), not(b)), not(c))
+}
+
+RESULT: if(and(trues.all, falses.none), :PASS, :FAIL)

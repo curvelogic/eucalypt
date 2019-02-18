@@ -1,0 +1,39 @@
+sections-as-args: {
+  fold-add: foldl(+, 0, [1, 2, 3]) = 6
+  fold-sub: foldl(-, 6, [1, 2, 3]) = 0
+  fold-add2: foldl((+), 0, [1, 2, 3]) = 6
+  fold-sub2: foldl((-), 6, [1, 2, 3]) = 0
+
+  pass: fold-add && fold-sub && fold-add2 && fold-sub2
+}
+
+sections-as-values: {
+  add: +
+  sub: -
+  add2: (+)
+  sub2: (-)
+
+  add-check: add(2, 3) = 5
+  sub-check: sub(8, 8) = 0
+  add2-check: add2(2, 3) = 5
+  sub2-check: sub2(8, 8) = 0
+
+  pass: add-check && sub-check && add2-check && sub2-check
+}
+
+lookup-on-anaphora: {
+
+  xs: [{a: 1 b: 2}, {a: 3 b: 4}]
+  x: xs filter(_.a = 1)
+  a1: xs filter(_.a = 1) first
+  a2: xs filter(_.a = 3) first
+
+  pass: [a1, a2] = xs
+}
+
+pass: [ sections-as-args.pass
+      , sections-as-values.pass
+      , lookup-on-anaphora.pass
+      ] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

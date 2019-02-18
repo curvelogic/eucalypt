@@ -1,0 +1,6 @@
+last(xs): if((xs tail) = [], xs head, xs tail last)
+
+` :suppress
+inf: cons(:a, inf)
+
+x: inf take(20000) last

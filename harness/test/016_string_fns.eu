@@ -1,0 +1,58 @@
+#!/usr/bin/env eu -B
+
+
+split: __SPLIT
+split-on(re, s): split(s, re)
+
+numbers: "1 2 3 4 5 6 7 8 9 10"
+n-1: split("1 2 3 4 5 6 7 8 9 10", "\s+")
+n-2: "1 2 3 4 5 6 7 8 9 10" split-on("\s+")
+
+version: "1.2.3.4" split-on("\.")
+
+match-with-empty: "asdf" split-on("")
+
+checks: {
+  trues: [
+    n-1 = n-2,
+    match-with-empty = ["asdf"]
+  ]
+}
+
+join: __JOIN
+join-on(sep, l): join(l, sep)
+
+items: ["9", "8", "7", "6"]
+joined: items join-on("<->")
+squished: items join-on("")
+
+checks2: {
+  trues: [
+    joined = "9<->8<->7<->6",
+    squished = "9876"
+  ]
+}
+
+
+match: __MATCH
+match-with(re, s): match(s, re)
+
+
+checks3: {
+  parse-ip: match-with("(\d+)\.(\d+)\.(\d+)\.(\d+)")
+  ip-components: "192.168.0.1" parse-ip tail
+
+  trues: [ip-components = ["192", "168", "0", "1"]]
+}
+
+matches: __MATCHES
+matches-of(re, s): matches(s, re)
+
+checks4: {
+  ip-components: "192.168.0.1" matches-of("\d+")
+  trues: [ip-components = ["192", "168", "0", "1"]]
+}
+
+pass: checks.trues ++ checks2.trues ++ checks3.trues ++ checks4.trues  all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

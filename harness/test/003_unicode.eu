@@ -1,0 +1,12 @@
+#!/usr/bin/env eu
+
+` "Unicode operators are allowed (and encouraged)."
+(f ∘ g): compose(f, g)
+
+double(x): x + x
+quadruple(y): y (double ∘ double)
+checks: {
+  trues: [ quadruple(4) = 16 ]
+}
+
+RESULT: __IF(checks.trues all-true?, :PASS, :FAIL)

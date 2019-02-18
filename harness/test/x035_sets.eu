@@ -1,0 +1,13 @@
+tests: {
+  α: set.empty //= set.empty
+  β: set.empty set.insert(1) set.insert(2) set.insert(3) //= set.from([1, 2, 3])
+  γ: set.empty set.insert(1) set.insert(1) set.insert(1) //= set.singleton(1)
+  δ: set.from([:a, :b, :c]) set.insert(:d) //= set.from([:a, :b, :c, :d])
+  ε: set.from([:a, :b, :c]) set.insert(:c) //= set.from([:a, :b, :c])
+  ζ: set.from([:a, "a", set.empty]) set.insert(set.empty) //= set.from([:a, "a", set.empty])
+  η: :a ∈ set.from([:a, :b, :c])
+  θ: set.from([:c, :b, :a]) ∋ :b
+  ι: set.from([:c, :b, :a]) set.members //= [:a, :b, :c]
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

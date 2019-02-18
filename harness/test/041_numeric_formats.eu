@@ -1,0 +1,110 @@
+# Examples from https://alvinalexander.com/programming/printf-format-cheat-sheet
+
+fmt: str.fmt
+
+int-widths: {
+  α: fmt(0, "%3d") //= "  0"
+  β: fmt(123456789, "%3d") //= "123456789"
+  γ: fmt(-10, "%3d") //= "-10"
+  δ: fmt(-123456789, "%3d") //= "-123456789"
+}
+
+int-pads: {
+  α: fmt(0, "%03d") //= "000"
+  β: fmt(1, "%03d") //= "001"
+  γ: fmt(123456789, "%03d") //= "123456789"
+  δ: fmt(-10, "%03d") //= "-10"
+  ε: fmt(-123456789, "%03d") //= "-123456789"
+}
+
+int-justs: {
+  # At least five wide
+  α: fmt(10, "%5d") //= "   10"
+  # At least five-wide, left-justified
+  β: fmt(10, "%-5d") //= "10   "
+  # At least five-wide, zero-filled
+  γ: fmt(10, "%05d") //= "00010"
+  # At least five-wide, with a plus sign
+  δ: fmt(10, "%+5d") //= "  +10"
+  # Five-wide, plus sign, left-justified
+  ε: fmt(10, "%-+5d") //= "+10  "
+}
+
+hex-ints: {
+  α: fmt(10, "%x") //= "a"
+  β: fmt(10, "%X") //= "A"
+}
+
+oct-ints: {
+  α: fmt(10, "%o") //= "12"
+}
+
+float-fmts: {
+  # Print one position after the decimal
+  α: fmt(10.3456, "%.1f") //= "10.3"
+  # Two positions after the decimal
+  β: fmt(10.3456, "%.2f") //= "10.35"
+  # Eight-wide, two positions after the decimal
+  γ: fmt(10.3456, "%8.2f") //= "   10.35"
+  # Eight-wide, four positions after the decimal
+  δ: fmt(10.3456, "%8.4f") //= " 10.3456"
+  # Eight-wide, two positions after the decimal, zero-filled
+  ε: fmt(10.3456, "%08.2f") //= "00010.35"
+  # Eight-wide, two positions after the decimal, left-justified
+  ζ: fmt(10.3456, "%-8.2f") //= "10.35   "
+  # Printing a much larger number with that same format
+  η: fmt(101234567.3456, "%-8.2f") //= "101234567.35"
+}
+
+string-fmts: {
+  # A simple string
+  α: fmt("Hello", "%s") //= "Hello"
+  # A string with a minimum length
+  β: fmt("Hello", "%10s") //= "     Hello"
+  # Minimum length, left-justified
+  γ: fmt("Hello", "%-10s") //= "Hello     "
+}
+
+symbol: {
+  # A simple string
+  α: fmt(:Hello, "%s") //= "Hello"
+  # A string with a minimum length
+  β: fmt(:Hello, "%10s") //= "     Hello"
+  # Minimum length, left-justified
+  γ: fmt(:Hello, "%-10s") //= "Hello     "
+}
+
+a: 1
+b: 1.5
+
+fmt-interpolations: {
+  α: "{a:%03d}" //= "001"
+  β: "{b:%8.2f}" //= "    1.50"
+  γ: "{a:%04d}-{b:%04f}" //= "0001-01.5"
+}
+
+x: 33
+y: 44
+badfmt(n): fmt(n, "%-8d") "***{}***"
+
+fn-interpolations: {
+  α: "{x:badfmt} -- {y:badfmt}" //= "***33      *** -- ***44      ***"
+}
+
+f: "{:%03d}{:%05x}"
+g: "{1:%3.2f}{0:%5.2f}"
+interpolations-with-anaphora: {
+  a: f(200, 100) //= "20000064"
+  b: g(1.1, 2.2) //= "2.20 1.10"
+}
+
+RESULT: [ int-widths
+        , int-pads
+        , int-justs
+        , hex-ints
+        , oct-ints
+        , float-fmts
+        , string-fmts
+        , fmt-interpolations
+        , fn-interpolations
+        , interpolations-with-anaphora] mapcat(values) all-true? then(:PASS, :FAIL)

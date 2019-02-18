@@ -1,0 +1,35 @@
+#!/usr/bin/env eu
+
+x: 8
+z: 12
+f(n): { x: n y: 10 }
+g(m, n): { r: m + n }
+
+parse(s): s str.match-with("(\d\d)-(\d\d)") tail apply({ a: • b: • })
+
+a1: { a: 1 }
+ab: { a: 1 b: 2 }
+abc: { a: 1 b: 2 c: 3 }
+
+tests: {
+  α: f(100).[x, y, z] //= [100, 10, 12]
+  β: { a: 1 b: 2 }.{ c: a + b }.{ d: c } //= { d: 3 }
+  γ: f(20).{ z: x + y }.{ r: z } //= { r: 30 }
+  δ: { a: 3 g(n): n + a }.g(2) //= 5
+  ε: { x: 1000 a: 3 g(n): n + 3 }.g(x) //= 11
+  ζ: parse("22-33").[a, b] //= ["22", "33"]
+  η: parse("11-22").{ c: "{a},{b}" }.{ r: c } //= { r: "11,22" }
+
+  # Only free vars in the name context are treated dynamically
+  ι: ab.({ a: 3 b: 4}.b) //= 4
+  κ: a1.({ c: a }.c) //= 1
+  λ: a1.({ c: a b: 1 }.[b, c]) //= [1, 1]
+  μ: abc.4 //= 4
+  ν: abc.:d //= :d
+
+  ξ: f(2).x //= 2
+  ο: g(1)(2).{ x: r } //= { x: 3 }
+  π: f(2).{ a: x }.a //= 2
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

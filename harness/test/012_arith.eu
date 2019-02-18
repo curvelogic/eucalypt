@@ -1,0 +1,120 @@
+#!/usr/bin/env eu
+
+
+(l + r): __ADD(l, r)
+(l - r): __SUB(l, r)
+(l * r): __MUL(l, r)
+(l / r): __DIV(l, r)
+
+(l > r): __GT(l, r)
+(l < r): __LT(l, r)
+(l >= r): __GTE(l, r)
+(l <= r): __LTE(l, r)
+
+integer-arithmetic: {
+  trues: {
+    a: 4 > 2
+    b: 2 < 4
+    c: 2 <= 4
+    d: 2 <= 2
+    e: 4 >= 2
+    f: 2 >= 2
+  }
+
+  falses: {
+    a: 4 < 2
+    b: 2 > 4
+    c: 2 >= 4
+    d: 3 <= 2
+    e: 4 <= 2
+    f: 1 >= 2
+  }
+
+  vals: {
+    four: 2 + 2
+    also-four: 2 * 2
+    three: 5 - 2
+    twelve: 24 / 2
+  }
+
+  pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
+}
+
+floating-point-arithmetic: {
+  trues: {
+    a: 4.0 > 2.0
+    b: 2.0 < 4.0
+    c: 2.0 <= 4.0
+    d: 2.0 <= 2.0
+    e: 4.0 >= 2.0
+    f: 2.0 >= 2.0
+  }
+
+  falses: {
+    a: 4.0 < 2.0
+    b: 2.0 > 4.0
+    c: 2.0 >= 4.0
+    d: 3.0 <= 2.0
+    e: 4.0 <= 2.0
+    f: 1.0 >= 2.0
+  }
+
+  vals: {
+    fourish: 2.01 + 2.01
+    also-fourish: 2.01 * 2.01
+    threeish: 5.01 - 2.01
+    twelveish: 24.01 / 2.01
+  }
+
+  pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
+}
+
+mixed-arithmetic: {
+  trues: {
+    a: 4 > 2.0
+    b: 2 < 4.0
+    c: 2 <= 4.0
+    d: 2 <= 2.0
+    e: 4 >= 2.0
+    f: 2 >= 2.0
+  }
+
+  falses: {
+    a: 4 < 2.0
+    b: 2 > 4.0
+    c: 2 >= 4.0
+    d: 3 <= 2.0
+    e: 4 <= 2.0
+    f: 1 >= 2.0
+  }
+
+  trues2: {
+    a: 4.0 > 2
+    b: 2.0 < 4
+    c: 2.0 <= 4
+    d: 2.0 <= 2
+    e: 4.0 >= 2
+    f: 2.0 >= 2
+  }
+
+  falses2: {
+    a: 4.0 < 2
+    b: 2.0 > 4
+    c: 2.0 >= 4
+    d: 3.0 <= 2
+    e: 4.0 <= 2
+    f: 1.0 >= 2
+  }
+
+  vals: {
+    fourish: 2.01 + 2
+    also-fourish: 2.01 * 2
+    threeish: 5.01 - 2
+    twelveish: 24.01 / 2
+  }
+
+  pass: ((trues values) ++ (trues2 values) all-true?) ∧
+	((falses values) ++ (falses2 values) map(not) all-true?)
+}
+
+RESULT: if(integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass, :PASS, :FAIL)

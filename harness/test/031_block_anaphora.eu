@@ -1,0 +1,36 @@
+xy: { x: • y: • }
+
+unnumbered: {
+  α: xy(1,2) //= { x: 1 y: 2 }
+}
+
+f321: { third: •2 second: •1 first: •0 }
+arg2: { it: •1 }
+
+numbered: {
+  α: f321(1, 2, 3) //= { third: 3 second: 2 first: 1 }
+  β: arg2(:a, :b) //= { it: :b }
+  γ: ({ it: •1 head } uncurry) <$> [[:a, [:b, :c]], [:x, [:y, :z]]]
+      //= [{ it: :b }, { it: :y }]
+}
+
+lambdas: {
+  α: [1, 2, 3] map({it: •}) //= [{it: 1}, {it: 2}, {it: 3}]
+  β: [1, 2, 3] map({x: •}.(x * x)) //= [1, 2, 3] map(_0 * _0)
+  γ: ["-", ".", "&"] map({ strings: ["a", "b", "c"] sep: • }.(strings str.join-on(sep)))
+       //= ["a-b-c", "a.b.c", "a&b&c"]
+}
+
+with-expr-anaphora: {
+  α: [1, 2, 3] map({ f: • * _ r: f(2)}) map(lookup(:r)) //= [2, 4, 6]
+  β: { f: (<< { foo: :bar }) (_ ∘ { x: •} )}.(66 f) //= { x: 66 foo: :bar }
+}
+
+# TODO: Parser needs changing to allow function calls against any expression
+# direct-apply: {
+#   α: { t: •1 * •1 }(0, 2)
+# }
+
+RESULT: [unnumbered, numbered, lambdas, with-expr-anaphora]
+	  all(all-true? ∘ values)
+	  then(:PASS, :FAIL)

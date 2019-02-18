@@ -1,0 +1,67 @@
+interpolation: {
+  x: 1
+  y: 2
+  z: 3
+
+  truths: [
+    "{x}+{y}={z}" = "1+2=3"
+  ]
+
+}
+
+lambdafied: {
+
+  zones: ["a", "b", "c"] map("eu-west-2{}")
+  triple: "{},{},{}"
+  reverse-triple: "{2},{ 1 },{0}"
+
+  truths: [
+    zones = ["eu-west-2a", "eu-west-2b", "eu-west-2c"],
+    triple(1,2,3) = "1,2,3",
+    reverse-triple(:a, :b, :c) = "c,b,a"
+  ]
+}
+
+mixed: {
+  x: "Hello"
+  greet: "{x} {}!"
+
+  truths: [
+    greet("World") = "Hello World!"
+  ]
+}
+
+escapes: {
+  braces: "{{...}}"
+  m: "01234" str.match-with("\d{{4}}")
+
+  truths: [
+    m = ["0123"]
+  ]
+}
+
+nested: {
+  data: {
+    foo: {
+      bar: 99
+    }
+  }
+
+  α: "{data.foo.bar}" //= "99"
+  β: "{data.foo.bar}" //= "99"
+  γ: "{data.foo.bar:%06d}" //= "000099"
+
+  pass: α ∧ β ∧ γ
+}
+
+
+
+` :suppress
+pass: (interpolation.truths ++
+       lambdafied.truths ++
+       mixed.truths ++
+       escapes.truths ++
+       [nested.pass])
+       all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

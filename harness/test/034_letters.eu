@@ -1,0 +1,7 @@
+tests: {
+  α: "abcd" str.letters //= ["a", "b", "c", "d"]
+  β: "" str.letters //= []
+  γ: "กႢ" str.letters //= ["ก", "Ⴂ"]
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

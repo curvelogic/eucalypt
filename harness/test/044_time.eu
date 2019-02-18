@@ -1,0 +1,8 @@
+time: cal.now."{h:%02d}:{m:%02d}:{s:%02d}"
+
+tests: {
+  α: cal.now.y > 2000 //= true
+  β: cal.now.s < 62 //= true
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

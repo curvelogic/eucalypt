@@ -1,0 +1,10 @@
+tests: {
+  α: [1, 2, 3, 4, 5] partition(2) //= [[1, 2], [3, 4]]
+  β: [1, 2, 3, 4, 5, 6] partition(2) //= [[1, 2], [3, 4], [5, 6]]
+  γ: [] partition(2) //= []
+  δ: [1, 2, 3, 4] window(2, 1) //= [[1, 2], [2, 3], [3, 4]]
+  ε: [1, 2, 3, 4] over-sliding-pairs(+) //= [3, 5, 7]
+  ζ: [1, 4, 3, 2] differences //= [3, -1, -1]
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

@@ -1,0 +1,15 @@
+tagged-sym: :blah // { tag: "!Ref" }
+
+tagged-list: ["-", [:a, :b, :c]] // { tag: "!Fn::Join" }
+
+tagged-block: { a: 1 } // { tag: "!Blah" }
+
+mblock: meta(tagged-block)
+
+tests: {
+  α: meta(tagged-sym) = { tag: "!Ref" }
+  β: meta(tagged-list) = { tag: "!Fn::Join" }
+  γ: meta(tagged-block) = { tag: "!Blah" }
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

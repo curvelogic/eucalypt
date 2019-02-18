@@ -1,0 +1,32 @@
+` { import: "test/aux/aux_import_a.eu"}
+a: { result: "{foo}&{bar}"}
+
+` { import: "test/aux/aux_import_b.eu"}
+b: { result: x + y + z}
+
+` { import: ["test/aux/aux_import_a.eu", "test/aux/aux_import_b.eu"] }
+both: {
+  ` :suppress
+  tmp: x+y+z
+  result: "{tmp}&{foo}&{bar}"
+}
+
+deep: {
+  nest: {
+    down: {
+      here: {
+	` { import: ["test/aux/aux_import_a.eu"] }
+	imp: { footoo: foo }
+      }
+    }
+  }
+}
+
+` :suppress
+pass:
+  a.result = "foo&bar" ∧
+  b.result = 6 ∧
+  both.result = "6&foo&bar" ∧
+  deep.nest.down.here.imp.footoo = "foo"
+
+RESULT: if(pass, :PASS, :FAIL)

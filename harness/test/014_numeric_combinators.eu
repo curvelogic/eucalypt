@@ -1,0 +1,52 @@
+# doesn't require prelude; uses builtins only
+
+` :suppress
+(l||r): __OR(l,r)
+` :suppress
+zero?(n): __EQ(0, n)
+` :suppress
+empty?(l): l = []
+` :suppress
+dec(n): __SUB(n, 1)
+` :suppress
+head(l): __HEAD(l)
+` :suppress
+tail(l): __TAIL(l)
+` :suppress
+take(n, l): __IF((n zero?) || (l empty?), [], cons(l head, take(n dec, l tail)))
+` :suppress
+drop(n, l): __IF((n zero?) || (l empty?), l, drop(n dec, l tail))
+` :suppress
+repeat-n(n, i): __IF((n zero?), [], cons(i, repeat-n(dec(n), i)))
+
+# TODO: Can't use this until lists are exposed to eu as cons is not
+# currently lazy enough
+` :suppress
+repeat(i): __CONS(i, repeat(i))
+
+ten-fives: repeat-n(10, 5)
+ten-hellos: repeat-n(10, "hello")
+three-fives: take(3, ten-fives)
+three-hellos: take(3, ten-hellos)
+all-fives: take(100,ten-fives)
+
+` :suppress
+temp: {
+  digits: [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]
+}
+
+
+from-six: drop(5, temp.digits)
+from-two: drop(1, temp.digits)
+none: drop(100, temp.digits)
+
+assertions: {
+  t1: from-six = [6, 7, 8, 9, 0]
+  t2: (from-two drop(4)) = from-six
+  t3: none = []
+  t4: all-fives = ten-fives
+
+  pass: [t1, t2, t3, t4] all-true?
+}
+
+RESULT: if(assertions.pass, :PASS, :FAIL)

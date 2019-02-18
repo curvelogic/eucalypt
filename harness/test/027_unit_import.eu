@@ -1,0 +1,12 @@
+{
+  import: ["test/aux/aux_import_a.eu", "test/aux/aux_import_b.eu"]
+  doc: "Unit level metadata test"
+}
+
+result: "{foo}&{bar}&{x}"
+
+` { import: "a=test/aux/aux_import_a.eu"
+    export: :suppress }
+nested: { f: a.foo b: a.bar result: "{f}&{b}"}
+
+RESULT: if(result = "foo&bar&1" ∧ nested.result = "foo&bar", :PASS, :FAIL)

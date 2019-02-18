@@ -1,0 +1,12 @@
+# A TOML source
+
+RESULT = "PASS"
+
+[foo]
+bar = 3
+
+[header]
+x.y = 8
+a.b = 9.9
+"127.0.0.1" = "localhost"
+date = 1979-05-27T00:32:00.999999-07:00
