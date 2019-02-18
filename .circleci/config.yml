@@ -251,6 +251,8 @@ workflows:
               only: master
       - deploy-docs:
           context: curvelogic-github-api
+          requires:
+            - acceptance
           filters:
             branches:
               only: master
