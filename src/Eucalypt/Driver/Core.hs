@@ -45,7 +45,7 @@ import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import Eucalypt.Reporting.Error (EucalyptError(..))
 import Eucalypt.Source.Error (DataParseException(..))
-import Eucalypt.Source.CsvSource
+-- import Eucalypt.Source.CsvSource
 import Eucalypt.Source.TextSource
 import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
@@ -243,7 +243,7 @@ loadUnit i@(Input locator name format) = do
       "toml" -> tomlDataToCore i source
       "yaml" -> activeYamlToCore i source
       "json" -> yamlDataToCore i source
-      "csv" -> csvDataToCore i source
+      -- "csv" -> csvDataToCore i source
       "eu" -> eucalyptToCore i firstSMID source
       _ -> (return . Left . Command . InvalidInput) i
   case coreUnit of
@@ -275,9 +275,9 @@ loadUnit i@(Input locator name format) = do
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit input) core
-    csvDataToCore input text =
-      parseCsv (BL.fromStrict text) >>=
-      (return . Right . maybeApplyName <$> dataUnit input)
+    -- csvDataToCore input text =
+    --   parseCsv (BL.fromStrict text) >>=
+    --   (return . Right . maybeApplyName <$> dataUnit input)
 
 
 -- | Parse units, reporting and exiting on error
