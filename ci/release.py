@@ -18,7 +18,7 @@ def release(package, commit, version):
     if not token:
         raise EnvironmentError("No Github API Token available")
     gh = login(token=token)
-    r = gh.repository("curvelogic", "eucalypt-hs")
+    r = gh.repository("curvelogic", "eucalypt")
 
     try:
         release = r.release_from_tag(version)
