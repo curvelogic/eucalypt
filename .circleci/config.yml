@@ -51,7 +51,7 @@ jobs:
           command: |
             export OSTYPE=$(uname)
             export HOSTTYPE=$(uname -m)
-            eu package=package.yaml ci/build.eu > new-package.yaml
+            eu ci/build.eu > new-package.yaml
             mv -f new-package.yaml package.yaml
             echo --- replaced package.yaml ---
             cat package.yaml
@@ -223,13 +223,14 @@ jobs:
   build-mac-binary:
     macos:
       xcode: "10.1.0"
+    environment:
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
-      - run: brew install ghc
       - run: brew install haskell-stack
       - run: brew install pcre
       - run: brew install pkg-config
       - checkout
-      - run: stack build
+      - run: stack build --test --no-terminal --ghc-options="-O2"
 
 
 workflows:
