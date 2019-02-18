@@ -1,0 +1,13 @@
+{ import: "rows=test/aux/aux_import.csv"}
+
+` { import: "blocks=csv@test/aux/aux_import.csv"}
+scoped: { pass: blocks count //= 5 }
+
+checks: {
+  α: rows map(_.a) //= ["1", "4", "z", "", "p"]
+  β: rows map(_.b) //= ["2", "5", "z", "", "q"]
+  γ: rows map(_.c) //= ["3", "6", "z", "", "r"]
+  ƍ: scoped.pass
+}
+
+PASS: checks values all-true? then(:PASS, :FAIL)

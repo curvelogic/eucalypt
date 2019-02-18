@@ -86,6 +86,7 @@ inferFormat loc =
         ".toml" -> Just "toml"
         ".yaml" -> Just "yaml"
         ".yml" -> Just "yaml"
+        ".csv" -> Just "csv"
         ".eu" -> Just "eu"
         _ -> Nothing
 

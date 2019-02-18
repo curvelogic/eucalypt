@@ -15,6 +15,7 @@ module Eucalypt.Core.AnonSyn (
   postfix_,
   var,
   int,
+  float,
   lam,
   letexp,
   letblock,
@@ -59,6 +60,9 @@ var = anon Syn.var
 
 int :: Integer -> Syn.CoreExp a
 int = anon Syn.int
+
+float :: Double -> Syn.CoreExp a
+float = anon Syn.float
 
 lam :: [Syn.CoreBindingName] -> Syn.CoreExpr -> Syn.CoreExpr
 lam = anon Syn.lam

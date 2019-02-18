@@ -318,6 +318,7 @@ inferOutputFormat opts =
         ".yaml" -> Just "yaml"
         ".yml" -> Just "yaml"
         ".eu" -> Just "eu"
+        ".csv" -> Just "csv"
         _ -> Just "yaml"
 
 

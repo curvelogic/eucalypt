@@ -76,7 +76,7 @@ sourceExplanation inputs loadPath =
       text ""
     , para $
       "Some inputs are added automatically (Eufile if it exists, ~/.eucalypt in ergonomic mode, system defined inputs, prefixed with __). " ++
-      "Input formats (eu, yaml, json, toml) are inferred by default but can be specified explicitly using this @ syntax."
+      "Input formats (eu, yaml, json, toml, text, csv) are inferred by default but can be specified explicitly using this @ syntax."
     , para
         "STDIN may be specified explicitly as \"-\" or detected and added implicitly."
     , hang
