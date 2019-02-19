@@ -329,25 +329,31 @@ workflows:
     jobs:
       - build-test-harness:
           context: curvelogic-docker-hub
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - build:
           context: curvelogic-docker-hub
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - acceptance:
           context: curvelogic-docker-hub
           requires:
             - build
             - build-test-harness
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - benchmark:
           context: curvelogic-docker-hub
           requires:
             - build
             - build-test-harness
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - profile:
           context: curvelogic-docker-hub
           requires:
             - build
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - build-mac-binary:
           requires:
             - build
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - draft-release:
           context: curvelogic-github-api
           requires:
@@ -367,7 +373,9 @@ workflows:
           type: approval
           requires:
             - draft-release
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - update-homebrew:
           requires:
             - build-mac-binary
             # - publish-release
+          filters: { branches: { ignore: [ "gh-pages" ]}}
