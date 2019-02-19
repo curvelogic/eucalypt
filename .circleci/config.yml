@@ -305,6 +305,9 @@ jobs:
           paths:
             - '*'
 
+  ################################################################
+  # Create homebrew formula for the mac binary and commit to tap #
+  ################################################################
   update-homebrew:
     macos:
       xcode: "10.1.0"
@@ -313,14 +316,27 @@ jobs:
     steps:
       - attach_workspace:
           at: /tmp/workspace
-      - run: brew install curvelogic/homebrew-tap/eucalypt
+      - run:
+          name: install the binary as /tmp/eu
+          command: |
+            cp /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz /tmp
+            tar xvzf /tmp/eucalypt-x86_64-osx.tgz
+            chmod +x /tmp/eu
+            /tmp/eu -e eu.build
       - checkout
       - run: |
           cd ci
           cp /tmp/workspace/package.yaml .
-          shasum -a 256 /tmp/workspace/eucalypt-x86_64-osx.tgz > eucalypt-x86_64-osx.tgz.sha
-          eu eucalypt.rb.eu > eucalypt.rb
+          shasum -a 256 /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz > eucalypt-x86_64-osx.tgz.sha
+          /tmp/eu eucalypt.rb.eu > eucalypt.rb
           cat eucalypt.rb
+          cp eucalypt.rb > /tmp/workspace/
+      - run:
+          name: Checkout homebrew-tap
+          command: |
+            git clone git@github.com:curvelogic/homebrew-tap.git
+            cp /tmp/workspace/eucalypt.rb homebrew-tap/Formula/eucalypt.rb
+            git status
 
 
 workflows:
