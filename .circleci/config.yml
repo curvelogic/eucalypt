@@ -276,7 +276,7 @@ jobs:
       - save_cache:
           paths:
             - ~/.stack
-          key: macoos-cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
+          key: macos-cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
       - run:
           name: prepare artifacts
           command: |
