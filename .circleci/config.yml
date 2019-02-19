@@ -356,7 +356,7 @@ jobs:
       - run:
           name: git push
           command: |
-            cd /tmp
+            cd /tmp/homebrew-tap
             git push
 
 
