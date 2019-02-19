@@ -44,18 +44,8 @@ def main(args):
 
     path = pathlib.Path(args[1])
 
-    # Determine architecture from path
-    arch_tags = [item for item in exe_path.parts if re.match('.*64.*', item)]
-    if arch_tags:
-        arch = arch_tags[0]
-    else:
-        arch = "x86_64-osx"
-
     # Determine version from args or by calling eu itself if we can
-    if len(args > 2):
-        version = args[2]
-    else:
-        version = subprocess.check_output([exe_path, "-e", "eu.build.version"]).strip().decode('utf8').strip("'")
+    version = args[2]
 
     # Determine commit from the build environment or the git repo
     commit = os.environ.get("CIRCLE_SHA1")
