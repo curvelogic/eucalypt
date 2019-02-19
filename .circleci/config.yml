@@ -1,7 +1,9 @@
 version: 2
 jobs:
 
-  # Build and unit test the eu executable
+  #######################
+  # Build and Unit Test #
+  #######################
   build:
     docker:
       - image: curvelogic/docker-circleci-haskell
@@ -9,7 +11,7 @@ jobs:
       - checkout
 
       - run:
-          name: Make a recent eu binary available to the build
+          name: make recent eu binary available
           command: |
             cd ci
             pipenv install
@@ -24,7 +26,7 @@ jobs:
       - run: stack setup
 
       - run:
-          name: Create script for setting environment
+          name: create script for setting environment
           command: |
             echo "export PATH=$(stack path --local-bin):$PATH" >> /tmp/env.sh
             echo "export STACK_DIST_DIR=$(stack path --dist-dir)" >> /tmp/env.sh
@@ -32,11 +34,12 @@ jobs:
             cat /tmp/env.sh
 
       - run:
-          name: Pull dependencies and build
-          command: stack build --fast --pedantic --no-terminal --test --coverage --no-run-tests
+          name: pull deps
+          command: |
+            stack build --fast --pedantic --no-terminal --test --coverage --no-run-tests --only-dependencies
 
       - run:
-          name: Install HLint
+          name: install HLint
           command: |
             source /tmp/env.sh
             stack install --no-terminal hlint
@@ -47,50 +50,59 @@ jobs:
           key: cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
 
       - run:
-          name: Update build / release details in package.yaml
+          name: update build metadata in package.yaml
           command: |
             export OSTYPE=$(uname)
             export HOSTTYPE=$(uname -m)
-            eu package=package.yaml ci/build.eu > new-package.yaml
+            eu ci/build.eu > new-package.yaml
             mv -f new-package.yaml package.yaml
             echo --- replaced package.yaml ---
             cat package.yaml
 
       - run:
-          name: Build, run unit tests with coverage
-          command: stack build --fast --pedantic --no-terminal --test --coverage
-
-      - run:
-          name: Run HLint
+          name: build, test and lint
           command: |
             source /tmp/env.sh
-            hlint .
+            stack build --fast --pedantic --no-terminal --test --coverage --exec "hlint ."
 
       - run:
-          name: Build without coverage
-          command: stack build --pedantic --no-terminal --ghc-options="-O2"
+          name: build release binary (optimised)
+          command: stack build --no-terminal --ghc-options="-O2"
 
       - run:
-          name: Check build metadata for generated executable
-          command: stack exec eu -- -e 'eu.build'
-
-      - persist_to_workspace:
-          root: .stack-work
-          paths:
-            - dist
+          name: check build metadata in generated executable
+          command: stack exec eu -- -e eu.build
 
       - run:
-          name: Prepare artifacts
+          name: prepare artifacts
           command: |
             mkdir -p /tmp/artifacts
             source /tmp/env.sh
-            cp -R $STACK_DIST_DIR /tmp/artifacts/dist
+            cp -R $STACK_DIST_DIR/build/eu/eu /tmp/artifacts/eu
             cp -R $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
+            cp package.yaml /tmp/artifacts
+            cd /tmp/artifacts
+            tar -cvzf eucalypt-x86_64-linux.tgz eu
+
+      - run:
+          name: prepare workspace
+          command: |
+            mkdir -p /tmp/workspace/binaries
+            cp /tmp/artifacts/eucalypt-x86_64-linux.tgz /tmp/workspace/binaries
+            cp /tmp/artifacts/eu /tmp/workspace/eu
+            cp package.yaml /tmp/workspace
+
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - '*'
 
       - store_artifacts:
           path: /tmp/artifacts
 
-  # Test against the eucalypt test suite
+  ###############################################################
+  # Test the Linux Executable against the acceptance test suite #
+  ###############################################################
   acceptance:
 
     machine: true
@@ -103,14 +115,16 @@ jobs:
       - run:
           command: "docker run -t -v /tmp/workspace:/tmp/workspace
                                -v /tmp/artifacts:/tmp/artifacts
-                               -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.4.0.1/build/eu/eu
+                               -e EXECUTABLE=/tmp/workspace/eu
                                -e GHCRTS=-N2
                                curvelogic/eucalypt-test-harness:${CIRCLE_SHA1}
                                pipenv run ./eut.py -o /tmp/artifacts"
       - store_artifacts:
           path: /tmp/artifacts
 
-  # Crude benchmarking to spot general trends
+  #############################################
+  # Crude benchmarking to spot general trends #
+  #############################################
   benchmark:
 
     machine: true
@@ -123,7 +137,7 @@ jobs:
       - run:
           command: "docker run -t -v /tmp/workspace:/tmp/workspace
                                -v /tmp/artifacts:/tmp/artifacts
-                               -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.4.0.1/build/eu/eu
+                               -e EXECUTABLE=/tmp/workspace/eu
                                -e GHCRTS=-N2
                                curvelogic/eucalypt-test-harness:${CIRCLE_SHA1}
                                pipenv run ./eut.py -b -n 25 -o /tmp/artifacts"
@@ -131,6 +145,9 @@ jobs:
       - store_artifacts:
           path: /tmp/artifacts
 
+  ###########################################
+  # Copy release binaries to GitHub release #
+  ###########################################
   release:
 
     docker:
@@ -145,9 +162,15 @@ jobs:
           at: /tmp/workspace
       - run: |
           cd ci
-          pipenv run python release.py /tmp/workspace/dist/x86_64-linux/Cabal-2.4.0.1/build/eu/eu
+          chmod +x /tmp/workspace/eu
+          VERSION=$(/tmp/workspace/eu -e eu.build.version)
+          pipenv run python release.py /tmp/workspace/binaries/eucalypt-x86_64-linux.tgz ${VERSION}
+          pipenv run python release.py /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz ${VERSION}
 
 
+  #########################################
+  # Generate some basic profiling reports #
+  #########################################
   profile:
     docker:
       - image: curvelogic/docker-circleci-haskell
@@ -186,6 +209,9 @@ jobs:
       - store_artifacts:
           path: /tmp/artifacts
 
+  ############################################################
+  # Create test harness docker image for testing executables #
+  ############################################################
   build-test-harness:
     machine: true
     steps:
@@ -205,6 +231,9 @@ jobs:
               docker push "curvelogic/eucalypt-test-harness:latest"
             fi
 
+  ###########################
+  # Deploy docs to gh-pages #
+  ###########################
   deploy-docs:
 
     docker:
@@ -219,6 +248,68 @@ jobs:
       - attach_workspace:
           at: /tmp/workspace
       - run: pipenv run mkdocs gh-deploy
+
+  ######################
+  # Build macos binary #
+  ######################
+  build-mac-binary:
+    macos:
+      xcode: "10.1.0"
+    environment:
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run: brew install ghc
+      - run: brew install haskell-stack
+      - run: brew install pcre
+      - run: brew install pkg-config
+      - run:
+          name: brew install eucalypt
+          command: brew install curvelogic/homebrew-tap/eucalypt
+          no_output_timeout: 20m
+      - checkout
+      - restore_cache:
+          keys:
+            - macos-cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
+            - macos-cache-{{ checksum "stack.yaml" }}-
+      - run: stack setup
+      - run:
+          name: Create script for setting environment
+          command: |
+            echo "export PATH=$(stack path --local-bin):$PATH" >> /tmp/env.sh
+            echo "export STACK_DIST_DIR=$(stack path --dist-dir)" >> /tmp/env.sh
+            cat /tmp/env.sh
+      - run:
+          name: use package.yaml generated by linux build for versions
+          command: cp /tmp/workspace/package.yaml package.yaml
+      - run: stack build --test --no-terminal --ghc-options="-O2"
+      - run:
+          name: check build metadata for generated executable
+          command: stack exec eu -- -e eu.build
+      - save_cache:
+          paths:
+            - ~/.stack
+          key: macos-cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
+      - run:
+          name: prepare artifacts
+          Command: |
+            mkdir -p /tmp/artifacts
+            source /tmp/env.sh
+            cp -R $STACK_DIST_DIR/build/eu/eu /tmp/artifacts/eu
+            cd /tmp/artifacts
+            tar -cvzf eucalypt-x86_64-osx.tgz eu
+      - store_artifacts:
+          path: /tmp/artifacts
+      - run:
+          name: save binary to workspace
+          command: |
+            cp /tmp/artifacts/eucalypt-x86_64-osx.tgz /tmp/workspace/binaries
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - '*'
+
 
 workflows:
   version: 2
@@ -242,10 +333,14 @@ workflows:
           context: curvelogic-docker-hub
           requires:
             - build
+      - build-mac-binary:
+          requires:
+            - build
       - release:
           context: curvelogic-github-api
           requires:
             - acceptance
+            - build-mac-binary
           filters:
             branches:
               only: master

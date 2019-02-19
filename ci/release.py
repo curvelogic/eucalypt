@@ -30,7 +30,7 @@ def release(package, commit, version):
                                    body = "Prototype eu binary.",
                                    target_commitish = commit,
                                    draft = True,
-                                   prerelease = True)
+                                   prerelease = False)
 
     if release:
         print("Uploading binary {}".format(package))
@@ -42,7 +42,7 @@ def main(args):
 
     """ Determine version details to release and then create. """
 
-    exe_path = pathlib.Path(args[1])
+    path = pathlib.Path(args[1])
 
     # Determine architecture from path
     arch_tags = [item for item in exe_path.parts if re.match('.*64.*', item)]
@@ -51,20 +51,18 @@ def main(args):
     else:
         arch = "x86_64-osx"
 
-    # Query eu itself for version details
-    version = subprocess.check_output([exe_path, "-e", "eu.build.version"]).strip().decode('utf8').strip("'")
-    # Until this whole circular thing is operational
-    # commit = subprocess.check_output([exe_path, "-e", "eu.build.commit"]).strip().decode('utf8').strip("'")
+    # Determine version from args or by calling eu itself if we can
+    if len(args > 2):
+        version = args[2]
+    else:
+        version = subprocess.check_output([exe_path, "-e", "eu.build.version"]).strip().decode('utf8').strip("'")
+
+    # Determine commit from the build environment or the git repo
     commit = os.environ.get("CIRCLE_SHA1")
     if not commit:
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode('utf8').strip("'")
 
-    # TGZ the exe
-    package = "eucalypt-" + arch + ".tgz"
-    with tarfile.open(package, "w:gz") as tar:
-        tar.add(exe_path)
-
-    release(package, commit, version)
+    release(path, commit, version)
 
 if __name__ == '__main__':
     main(sys.argv)
