@@ -340,7 +340,7 @@ workflows:
           context: curvelogic-github-api
           requires:
             - acceptance
-            - build-mac-binaryg
+            - build-mac-binary
           filters:
             branches:
               only: master
