@@ -74,23 +74,28 @@ jobs:
           command: stack exec eu -- -e eu.build
 
       - run:
-          name: copy metadata for workspace
-          command: cp package.yaml .stack-work
-
-      - persist_to_workspace:
-          root: .stack-work
-          paths:
-            - dist
-            - package.yaml
-
-      - run:
           name: prepare artifacts
           command: |
             mkdir -p /tmp/artifacts
             source /tmp/env.sh
-            cp -R $STACK_DIST_DIR /tmp/artifacts/dist
+            cp -R $STACK_DIST_DIR/build/eu/eu /tmp/artifacts/eu
             cp -R $STACK_LOCAL_HPC_ROOT /tmp/artifacts/coverage
             cp package.yaml /tmp/artifacts
+            cd /tmp/artifacts
+            tar -cvzf eucalypt-x86_64-linux.tgz eu
+
+      - run:
+          name: prepare workspace
+          command: |
+            mkdir -p /tmp/workspace/binaries
+            cp /tmp/artifacts/eucalypt-x86_64-linux.tgz /tmp/workspace/binaries
+            cp /tmp/artifacts/eu /tmp/workspace/eu
+            cp package.yaml /tmp/workspace
+
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - *
 
       - store_artifacts:
           path: /tmp/artifacts
@@ -110,7 +115,7 @@ jobs:
       - run:
           command: "docker run -t -v /tmp/workspace:/tmp/workspace
                                -v /tmp/artifacts:/tmp/artifacts
-                               -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.4.0.1/build/eu/eu
+                               -e EXECUTABLE=/tmp/workspace/eu
                                -e GHCRTS=-N2
                                curvelogic/eucalypt-test-harness:${CIRCLE_SHA1}
                                pipenv run ./eut.py -o /tmp/artifacts"
@@ -132,7 +137,7 @@ jobs:
       - run:
           command: "docker run -t -v /tmp/workspace:/tmp/workspace
                                -v /tmp/artifacts:/tmp/artifacts
-                               -e EXECUTABLE=/tmp/workspace/dist/x86_64-linux/Cabal-2.4.0.1/build/eu/eu
+                               -e EXECUTABLE=/tmp/workspace/eu
                                -e GHCRTS=-N2
                                curvelogic/eucalypt-test-harness:${CIRCLE_SHA1}
                                pipenv run ./eut.py -b -n 25 -o /tmp/artifacts"
@@ -157,7 +162,9 @@ jobs:
           at: /tmp/workspace
       - run: |
           cd ci
-          pipenv run python release.py /tmp/workspace/dist/x86_64-linux/Cabal-2.4.0.1/build/eu/eu
+          chmod +x /tmp/workspace/eu
+          VERSION=$(/tmp/workspace/eu -e eu.build.version)
+          pipenv run python release.py /tmp/workspace/binaries/eucalypt-x86_64-linux.tgz ${VERSION}
 
 
   #########################################
@@ -285,10 +292,12 @@ jobs:
           key: macos-cache-{{ checksum "stack.yaml" }}-{{ checksum "package.yaml" }}
       - run:
           name: prepare artifacts
-          command: |
+          Command: |
             mkdir -p /tmp/artifacts
             source /tmp/env.sh
-            cp -R $STACK_DIST_DIR /tmp/artifacts/dist
+            cp -R $STACK_DIST_DIR/build/eu/eu /tmp/artifacts/eu
+            cd /tmp/artifacts
+            tar -cvzf eucalypt-x86_64-osx.tgz eu
       - store_artifacts:
           path: /tmp/artifacts
 
