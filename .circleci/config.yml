@@ -335,10 +335,12 @@ jobs:
       - run:
           name: Checkout homebrew-tap
           command: |
+            cd /tmp
             git clone git@github.com:curvelogic/homebrew-tap.git
             cp /tmp/workspace/eucalypt.rb homebrew-tap/Formula/eucalypt.rb
+            cd homebrew-tap
             git status
-            git add -a
+            git add Formula/eucalypt.rb
             /tmp/eu --version | git commit -F -
             git push
       - run:
