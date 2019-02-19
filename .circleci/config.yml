@@ -337,6 +337,14 @@ jobs:
             git clone git@github.com:curvelogic/homebrew-tap.git
             cp /tmp/workspace/eucalypt.rb homebrew-tap/Formula/eucalypt.rb
             git status
+      - run:
+          name: Test formula
+          command: |
+            brew install curvelogic/homebrew-tap/eucalypt
+            eu -e eu.build
+            eu -e eu.build > a.txt
+            /tmp/eu -e eu.build > b.txt
+            diff -q a.txt b.txt
 
 
 workflows:
