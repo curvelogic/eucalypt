@@ -314,6 +314,9 @@ jobs:
     environment:
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "2d:94:c7:5f:ed:59:aa:61:e0:9c:60:64:45:b0:bc:86"
       - attach_workspace:
           at: /tmp/workspace
       - run:
