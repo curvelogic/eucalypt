@@ -331,7 +331,7 @@ jobs:
           shasum -a 256 /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz > eucalypt-x86_64-osx.tgz.sha
           /tmp/eu eucalypt.rb.eu > eucalypt.rb
           cat eucalypt.rb
-          cp eucalypt.rb > /tmp/workspace/
+          cp eucalypt.rb /tmp/workspace/
       - run:
           name: Checkout homebrew-tap
           command: |
