@@ -345,15 +345,19 @@ jobs:
             git status
             git add Formula/eucalypt.rb
             /tmp/eu --version | git commit -F -
-            git push
       - run:
           name: Test formula
           command: |
-            brew install curvelogic/homebrew-tap/eucalypt
+            brew install /tmp/homebrew-tap/Formula/eucalypt.rb
             eu -e eu.build
             eu -e eu.build > a.txt
             /tmp/eu -e eu.build > b.txt
             diff -q a.txt b.txt
+      - run:
+          name: git push
+          command: |
+            cd /tmp
+            git push
 
 
 workflows:
