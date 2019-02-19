@@ -260,14 +260,9 @@ jobs:
     steps:
       - attach_workspace:
           at: /tmp/workspace
-      - run: brew install ghc
       - run: brew install haskell-stack
       - run: brew install pcre
       - run: brew install pkg-config
-      - run:
-          name: brew install eucalypt
-          command: brew install curvelogic/homebrew-tap/eucalypt
-          no_output_timeout: 20m
       - checkout
       - restore_cache:
           keys:
