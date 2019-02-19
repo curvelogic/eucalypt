@@ -95,7 +95,7 @@ jobs:
       - persist_to_workspace:
           root: /tmp/workspace
           paths:
-            - *
+            - '*'
 
       - store_artifacts:
           path: /tmp/artifacts
@@ -165,6 +165,7 @@ jobs:
           chmod +x /tmp/workspace/eu
           VERSION=$(/tmp/workspace/eu -e eu.build.version)
           pipenv run python release.py /tmp/workspace/binaries/eucalypt-x86_64-linux.tgz ${VERSION}
+          pipenv run python release.py /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz ${VERSION}
 
 
   #########################################
@@ -300,6 +301,14 @@ jobs:
             tar -cvzf eucalypt-x86_64-osx.tgz eu
       - store_artifacts:
           path: /tmp/artifacts
+      - run:
+          name: save binary to workspace
+          command: |
+            cp /tmp/artifacts/eucalypt-x86_64-osx.tgz /tmp/workspace/binaries
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - '*'
 
 
 workflows:
@@ -331,6 +340,7 @@ workflows:
           context: curvelogic-github-api
           requires:
             - acceptance
+            - build-mac-binaryg
           filters:
             branches:
               only: master
