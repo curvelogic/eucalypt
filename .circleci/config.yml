@@ -148,7 +148,7 @@ jobs:
   ###########################################
   # Copy release binaries to GitHub release #
   ###########################################
-  release:
+  draft-release:
 
     docker:
       - image: circleci/python:3.7.1-stretch
@@ -305,6 +305,23 @@ jobs:
           paths:
             - '*'
 
+  update-homebrew:
+    macos:
+      xcode: "10.1.0"
+    environment:
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run: brew install curvelogic/homebrew-tap/eucalypt
+      - checkout
+      - run: |
+          cd ci
+          cp /tmp/workspace/package.yaml .
+          shasum -a 256 /tmp/workspace/eucalypt-x86_64-osx.tgz > eucalypt-x86_64-osx.tgz.sha
+          eu eucalypt.rb.eu > eucalypt.rb
+          cat eucalypt.rb
+
 
 workflows:
   version: 2
@@ -331,7 +348,7 @@ workflows:
       - build-mac-binary:
           requires:
             - build
-      - release:
+      - draft-release:
           context: curvelogic-github-api
           requires:
             - acceptance
@@ -346,3 +363,11 @@ workflows:
           filters:
             branches:
               only: master
+      - publish-release:
+          type: approval
+          requires:
+            - draft-release
+      - update-homebrew:
+          requires:
+            - build-mac-binary
+            # - publish-release
