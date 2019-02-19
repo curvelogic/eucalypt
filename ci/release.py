@@ -8,11 +8,11 @@ import subprocess
 import tarfile
 from github3 import login
 
-def release(package, commit, version):
+def release(path, commit, version):
 
     """ Create or update a github release for this version / commit, uploading package. """
 
-    print("Releasing {} from commit {} as version {}".format(package, commit, version))
+    print("Releasing {} from commit {} as version {}".format(path, commit, version))
 
     token = os.environ['GITHUB_API_TOKEN']
     if not token:
@@ -21,7 +21,7 @@ def release(package, commit, version):
     r = gh.repository("curvelogic", "eucalypt")
 
     try:
-        release = r.release_from_tag(version)
+        release = next(rel for rel in r.releases() if rel.name == version)
         print("Found existing release for {}".format(version))
     except:
         print("Creating release for {}".format(version))
@@ -33,10 +33,10 @@ def release(package, commit, version):
                                    prerelease = False)
 
     if release:
-        print("Uploading binary {}".format(package))
+        print("Uploading binary {}".format(path))
         release.upload_asset(content_type = "application/binary",
-                             name = package,
-                             asset = open(package, 'rb'))
+                             name = path.name,
+                             asset = open(path, 'rb'))
 
 def main(args):
 
