@@ -320,6 +320,7 @@ jobs:
           name: install the binary as /tmp/eu
           command: |
             cp /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz /tmp
+            cd /tmp
             tar xvzf /tmp/eucalypt-x86_64-osx.tgz
             chmod +x /tmp/eu
             /tmp/eu -e eu.build
@@ -337,6 +338,9 @@ jobs:
             git clone git@github.com:curvelogic/homebrew-tap.git
             cp /tmp/workspace/eucalypt.rb homebrew-tap/Formula/eucalypt.rb
             git status
+            git add -a
+            /tmp/eu --version | git commit -F -
+            git push
       - run:
           name: Test formula
           command: |
