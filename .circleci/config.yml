@@ -396,16 +396,12 @@ workflows:
           requires:
             - acceptance
             - build-mac-binary
-          filters:
-            branches:
-              only: master
+          filters: { branches: { only: [ "master" ]}}
       - deploy-docs:
           context: curvelogic-github-api
           requires:
             - acceptance
-          filters:
-            branches:
-              only: master
+          filters: { branches: { only: [ "master" ]}}
       - publish-release:
           type: approval
           requires:
@@ -414,5 +410,5 @@ workflows:
       - update-homebrew:
           requires:
             - build-mac-binary
-            # - publish-release
-          filters: { branches: { ignore: [ "gh-pages" ]}}
+            - publish-release
+          filters: { branches: { only: [ "master" ]}}
