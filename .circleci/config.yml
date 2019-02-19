@@ -148,7 +148,7 @@ jobs:
   ###########################################
   # Copy release binaries to GitHub release #
   ###########################################
-  release:
+  draft-release:
 
     docker:
       - image: circleci/python:3.7.1-stretch
@@ -305,6 +305,60 @@ jobs:
           paths:
             - '*'
 
+  ################################################################
+  # Create homebrew formula for the mac binary and commit to tap #
+  ################################################################
+  update-homebrew:
+    macos:
+      xcode: "10.1.0"
+    environment:
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "2d:94:c7:5f:ed:59:aa:61:e0:9c:60:64:45:b0:bc:86"
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: install the binary as /tmp/eu
+          command: |
+            cp /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz /tmp
+            cd /tmp
+            tar xvzf /tmp/eucalypt-x86_64-osx.tgz
+            chmod +x /tmp/eu
+            /tmp/eu -e eu.build
+      - checkout
+      - run: |
+          cd ci
+          cp /tmp/workspace/package.yaml .
+          shasum -a 256 /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz > eucalypt-x86_64-osx.tgz.sha
+          /tmp/eu eucalypt.rb.eu > eucalypt.rb
+          cat eucalypt.rb
+          cp eucalypt.rb /tmp/workspace/
+      - run:
+          name: Checkout homebrew-tap
+          command: |
+            cd /tmp
+            git clone git@github.com:curvelogic/homebrew-tap.git
+            cp /tmp/workspace/eucalypt.rb homebrew-tap/Formula/eucalypt.rb
+            cd homebrew-tap
+            git status
+            git add Formula/eucalypt.rb
+            /tmp/eu --version | git commit -F -
+      - run:
+          name: Test formula
+          command: |
+            brew install /tmp/homebrew-tap/Formula/eucalypt.rb
+            eu -e eu.build
+            eu -e eu.build > a.txt
+            /tmp/eu -e eu.build > b.txt
+            diff -q a.txt b.txt
+      - run:
+          name: git push
+          command: |
+            cd /tmp
+            git push
+
 
 workflows:
   version: 2
@@ -312,37 +366,49 @@ workflows:
     jobs:
       - build-test-harness:
           context: curvelogic-docker-hub
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - build:
           context: curvelogic-docker-hub
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - acceptance:
           context: curvelogic-docker-hub
           requires:
             - build
             - build-test-harness
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - benchmark:
           context: curvelogic-docker-hub
           requires:
             - build
             - build-test-harness
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - profile:
           context: curvelogic-docker-hub
           requires:
             - build
+          filters: { branches: { ignore: [ "gh-pages" ]}}
       - build-mac-binary:
           requires:
             - build
-      - release:
+          filters: { branches: { ignore: [ "gh-pages" ]}}
+      - draft-release:
           context: curvelogic-github-api
           requires:
             - acceptance
             - build-mac-binary
-          filters:
-            branches:
-              only: master
+          filters: { branches: { only: [ "master" ]}}
       - deploy-docs:
           context: curvelogic-github-api
           requires:
             - acceptance
-          filters:
-            branches:
-              only: master
+          filters: { branches: { only: [ "master" ]}}
+      - publish-release:
+          type: approval
+          requires:
+            - draft-release
+          filters: { branches: { ignore: [ "gh-pages" ]}}
+      - update-homebrew:
+          requires:
+            - build-mac-binary
+            - publish-release
+          filters: { branches: { only: [ "master" ]}}
