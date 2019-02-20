@@ -244,6 +244,7 @@ jobs:
           fingerprints:
             - "4a:fd:ee:26:01:f2:41:d1:71:f6:b5:a0:1a:59:9e:a0"
       - checkout
+      - run: pipenv install
       - attach_workspace:
           at: /tmp/workspace
       - run: pipenv run mkdocs gh-deploy
