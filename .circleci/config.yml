@@ -390,7 +390,7 @@ workflows:
       - build-mac-binary:
           requires:
             - build
-          filters: { branches: { ignore: [ "gh-pages" ]}}
+          filters: { branches: { only: [ "master" ]}}
       - draft-release:
           context: curvelogic-github-api
           requires:
