@@ -238,7 +238,7 @@ had to write <code>_0 * _0</code> in our squares example - it was important that
 the same parameter was reference twice.</p>
 <p>Sometime you need explicit parentheses to clarify the scope of
 expression anaphora:</p>
-<pre><code class="eu">block: { a: 1 b: 2}
+<pre><code class="eu">block: { a: 1 b: 2 }
 
 x: block (_.a) //=&gt; 1
 y: block lookup(:a) //=&gt; 1

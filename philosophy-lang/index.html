@@ -88,17 +88,15 @@
     <a class="current" href="./">Philosophy</a>
     <ul class="subnav">
             
-    <li class="toctree-l2"><a href="#accept-crypticality-for-minimal-intrusion">Accept crypticality for minimal intrusion</a></li>
-    
-
-    <li class="toctree-l2"><a href="#cohabitation-of-code-and-data">Cohabitation of code and data</a></li>
-    
-
-    <li class="toctree-l2"><a href="#simplicity">Simplicity</a></li>
+    <li class="toctree-l2"><a href="#eucalypt-the-language">eucalypt (the language)</a></li>
     
         <ul>
         
-            <li><a class="toctree-l3" href="#footnotes">Footnotes</a></li>
+            <li><a class="toctree-l3" href="#accept-crypticality-for-minimal-intrusion">Accept crypticality for minimal intrusion</a></li>
+        
+            <li><a class="toctree-l3" href="#cohabitation-of-code-and-data">Cohabitation of code and data</a></li>
+        
+            <li><a class="toctree-l3" href="#simplicity">Simplicity</a></li>
         
         </ul>
     
@@ -141,27 +139,29 @@
           <div role="main">
             <div class="section">
               
-                <p><strong>eucalypt</strong> (the language)</p>
+                <h1 id="eucalypt-the-language">eucalypt (the language)</h1>
 <p><strong>eucalypt</strong>, the language, is unorthodox in many respects - probably
-moreso than you might realise on first acquaintance.</p>
-<p>Many people have deep-seated and inflexible opinions about programming
-languages and language design <sup id="fnref:1"><a class="footnote-ref" href="#fn:1" rel="footnote">1</a></sup> and will likely find something in
-here that they have a kneejerk reaction against.</p>
+more than you might realise on first acquaintance.</p>
+<p>People tend to have deep-seated and inflexible opinions about
+programming languages and language design and will quite possibly find
+something in here that they have a kneejerk reaction against.</p>
 <p>However, the design is not unprincipled and, while it is experimental
 in some respects, I believe it's internally consistent. Several
 aspects of the design and the aesthetic are driven by the primary use
-case. Maybe by exploring some of the inspiration and philosophy behind
-the language itself, I can head off potential criticism.</p>
+case, templating and generating YAML. Maybe by exploring some of the
+inspiration and philosophy behind the language itself, I can pre-empt
+potential criticism.</p>
 <h2 id="accept-crypticality-for-minimal-intrusion">Accept crypticality for minimal intrusion</h2>
 <p><strong>eucalypt</strong> is first and foremost a <em>tool</em>, rather than a language. It is
 intended to replace generation and transformation processes on
 semi-structured data formats. Many or most uses of <strong>eucalypt</strong> the
 language should just be simple one-liner tags in YAML files, or maybe
 eucalypt files that are predominantly data rather than manipulation.</p>
-<p>The <strong>eucalypt</strong> language is the depth behind these one-liners that allows
-<strong>eucalypt</strong> to accommodate increasingly ambitious use cases without
-breaking the paradigm and reaching for a general purpose scripting
-language.</p>
+<p>The <strong>eucalypt</strong> language is the depth behind these one-liners that
+allows <strong>eucalypt</strong> to accommodate increasingly ambitious use cases
+without breaking the paradigm and reaching for a general purpose
+imperative scripting language or the lowest common denominator or
+text-based templating languages.</p>
 <p>The pre-eminence of one-liners and small annotations and "logic
 mark-up", means that <strong>eucalypt</strong> often favours concise and cryptic over
 wordy and transparent. This is a controversial approach.</p>
@@ -183,14 +183,14 @@ wordy and transparent. This is a controversial approach.</p>
   For example, it is spurious to say that <code>bind(x, f)</code> gives more
   understanding of what is going on than <code>x &gt;&gt;= f</code> - unless you
   understand the monad abstraction and the role of bind in it, you
-  gain nothing from the ideas that the word <code>bind</code> conveys when trying
-  to understand program text.</p>
+  gain nothing useful from the ideas that the word <code>bind</code> connotes
+  when you are trying to understand program text.</p>
 </li>
 <li>
-<p><strong>eucalypt</strong> just plain ignores the notion that program text should be
-  readable as English text. This (well motivated) idea has made a
+<p><strong>eucalypt</strong> just plain ignores the notion that program text should
+  be readable <em>as English text</em>. This (well motivated) idea has made a
   resurgence in recent years through the back door of internal DSLs
-  and "fluent" Java interfaces <sup id="fnref:2"><a class="footnote-ref" href="#fn:2" rel="footnote">2</a></sup>. There is much merit in languages
+  and "fluent" Java interfaces. There is much merit in languages
   supple enough to allow the APIs to approach the natural means of
   expression of the problem domain. However, problem domains
   frequently have their own technical jargon and notation which suit
@@ -216,18 +216,17 @@ wordy and transparent. This is a controversial approach.</p>
 </li>
 <li>
 <p>For absolute minimal intrusion, merely the act of placing elements
-  next to each other ("catenation"), <code>x f</code>, is meaningful in <strong>eucalypt</strong>.
-  By default this is pipeline-order function application, but blocks
-  and lists can be applied as functions to make common
+  next to each other ("catenation"), <code>x f</code>, is meaningful in
+  <strong>eucalypt</strong>. By default this is pipeline-order function
+  application, but blocks can be applied as functions to make common
   transformations, like block merge, very succinct.</p>
 </li>
 <li>
 <p>For even more power, <strong>eucalypt</strong> might soon let you alter the
-  meaning of concatenation via overloaded <em>idiot brackets</em> <sup id="fnref:3"><a class="footnote-ref" href="#fn:3" rel="footnote">3</a></sup>. (<code>[[x
-  y]]: ...</code>). This is inspired by the <em>idiom brackets</em> that can be
-  used to express applicative styles in functional programming <sup id="fnref:4"><a class="footnote-ref" href="#fn:4" rel="footnote">4</a></sup>.
-  These may also provide an acceptable proxy for ternary and other
-  operators too.</p>
+  meaning of concatenation via overloaded <em>idiot brackets</em> <sup id="fnref:1"><a class="footnote-ref" href="#fn:1" rel="footnote">1</a></sup>. (<code>«x y»: ...</code>). This is inspired by the <em>idiom brackets</em> that can be used
+  to express applicative styles in functional programming <sup id="fnref:2"><a class="footnote-ref" href="#fn:2" rel="footnote">2</a></sup>. These
+  may also provide an acceptable proxy for ternary and other operators
+  too.</p>
 </li>
 <li>
 <p>An equivalent generalisation of <strong>eucalypt</strong> block syntax to provide
@@ -256,8 +255,10 @@ stripped out before export.</p>
 similar fluidity through:</p>
 <ul>
 <li>lazy evaluation (going some way towards matching uses of Lisp macros
-  which control evaluation order - <code>if</code> is a function)</li>
-<li>economical syntax to allow for manipulation of code as data</li>
+  which control evaluation order - in eucalypt, <code>if</code> is just a
+  function)</li>
+<li>economical syntax to facilitate (future) manipulation of code as
+  data</li>
 </ul>
 <h2 id="simplicity">Simplicity</h2>
 <ul>
@@ -268,18 +269,18 @@ similar fluidity through:</p>
   not think it achieves either.</p>
 </li>
 <li>
-<p><strong>eucalypt</strong> values familiarity more in the "shallower" parts of the
-  language where it only requires a couple of mental leaps for the
-  average programmer in these areas - (ab)use of catenation being the
-  key one.</p>
+<p><strong>eucalypt</strong> values familiarity mostly in the "shallower" parts of
+  the language where it only requires a couple of mental leaps for the
+  average programmer in these areas - the (ab)use of catenation being
+  the key one.</p>
 </li>
 <li>
-<p>However, <strong>eucalypt</strong> shouldn't be ashamed of its dusty corners. Dusty
+<p>However, <strong>eucalypt</strong> isn't ashamed of its dusty corners. Dusty
   corners are areas where novices and experts alike can get trapped
   and lose time but they're also rich seams for experimentation,
-  innovation and discovery<sup id="fnref:5"><a class="footnote-ref" href="#fn:5" rel="footnote">5</a></sup>. If you have to venture too far
-  off-piste to find what you need, we'll find a way to bring it onto
-  the nursery slopes but we won't close off the mountain.</p>
+  innovation and discovery. If you have to venture too far off-piste
+  to find what you need, we'll find a way to bring it onto the nursery
+  slopes but we won't close off the mountain.</p>
 </li>
 </ul>
 <hr />
@@ -288,24 +289,12 @@ similar fluidity through:</p>
 <hr />
 <ol>
 <li id="fn:1">
-<p>...often a result of underfamiliarity with the alternatives.&#160;<a class="footnote-backref" href="#fnref:1" rev="footnote" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+<p>If I didn't call them that, someone else would.&#160;<a class="footnote-backref" href="#fnref:1" rev="footnote" title="Jump back to footnote 1 in the text">&#8617;</a></p>
 </li>
 <li id="fn:2">
-<p>Actually the real benefit of fluent interfaces in Java is they
-offer a cheap user interface for configuration of APIs by
-leveraging your IDE's autocomplete capability.&#160;<a class="footnote-backref" href="#fnref:2" rev="footnote" title="Jump back to footnote 2 in the text">&#8617;</a></p>
-</li>
-<li id="fn:3">
-<p>If I didn't call them that, someone else would.&#160;<a class="footnote-backref" href="#fnref:3" rev="footnote" title="Jump back to footnote 3 in the text">&#8617;</a></p>
-</li>
-<li id="fn:4">
 <p>Applicative Programming with Effects, Conor McBride and Ross
 Paterson. (2008)
-http://www.staff.city.ac.uk/~ross/papers/Applicative.html&#160;<a class="footnote-backref" href="#fnref:4" rev="footnote" title="Jump back to footnote 4 in the text">&#8617;</a></p>
-</li>
-<li id="fn:5">
-<p>"A man of genius makes no mistakes. His errors are volitional
-and are the portals to discovery." - James Joyce, Ulysses&#160;<a class="footnote-backref" href="#fnref:5" rev="footnote" title="Jump back to footnote 5 in the text">&#8617;</a></p>
+http://www.staff.city.ac.uk/~ross/papers/Applicative.html&#160;<a class="footnote-backref" href="#fnref:2" rev="footnote" title="Jump back to footnote 2 in the text">&#8617;</a></p>
 </li>
 </ol>
 </div>
