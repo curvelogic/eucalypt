@@ -33,9 +33,18 @@ inspect ms v =
       peek a >>= \ho ->
         return $
         setCode ms (ReturnLit (NativeString $ P.render $ prettify ho) Nothing)
-    (StgNat n _) ->
+    (StgNat n Nothing) ->
       return $
       setCode ms (ReturnLit (NativeString $ P.render $ prettify n) Nothing)
+    (StgNat n (Just m)) ->
+      return $
+      setCode
+        ms
+        (ReturnLit
+           (NativeString $
+            P.render $ prettify n P.<+> (P.char '`' <> prettify m <> P.char '`'))
+           Nothing)
+
 
 global :: MachineState -> String -> IO MachineState
 global ms nm = returnValue ms (retrieveGlobal ms nm)

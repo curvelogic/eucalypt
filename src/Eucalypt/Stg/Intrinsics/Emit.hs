@@ -122,7 +122,7 @@ excavate ms k a = do
       PartialApplication {} ->
         throwIn ms IntrinsicExpectedBlockFoundPartialApplication
   case val of
-    (Just (StgNat n _)) -> return $ Just n
+    (Just v) -> scrape ms v :: IO (Maybe Native)
     _ -> return Nothing
 
 -- | Read 'RenderMetadata' out of the machine
