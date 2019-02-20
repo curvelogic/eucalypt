@@ -1,0 +1,13 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+eucalypt-pygments = {editable = true, git = "https://github.com/curvelogic/eucalypt-pygments.git"}
+mkdocs = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.7"

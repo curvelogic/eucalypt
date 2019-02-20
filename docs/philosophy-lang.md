@@ -1,17 +1,18 @@
- **eucalypt** (the language)
+# eucalypt (the language)
 
 **eucalypt**, the language, is unorthodox in many respects - probably
-moreso than you might realise on first acquaintance.
+more than you might realise on first acquaintance.
 
-Many people have deep-seated and inflexible opinions about programming
-languages and language design [^1] and will likely find something in
-here that they have a kneejerk reaction against.
+People tend to have deep-seated and inflexible opinions about
+programming languages and language design and will quite possibly find
+something in here that they have a kneejerk reaction against.
 
 However, the design is not unprincipled and, while it is experimental
 in some respects, I believe it's internally consistent. Several
 aspects of the design and the aesthetic are driven by the primary use
-case. Maybe by exploring some of the inspiration and philosophy behind
-the language itself, I can head off potential criticism.
+case, templating and generating YAML. Maybe by exploring some of the
+inspiration and philosophy behind the language itself, I can pre-empt
+potential criticism.
 
 ## Accept crypticality for minimal intrusion
 
@@ -21,10 +22,11 @@ semi-structured data formats. Many or most uses of **eucalypt** the
 language should just be simple one-liner tags in YAML files, or maybe
 eucalypt files that are predominantly data rather than manipulation.
 
-The **eucalypt** language is the depth behind these one-liners that allows
-**eucalypt** to accommodate increasingly ambitious use cases without
-breaking the paradigm and reaching for a general purpose scripting
-language.
+The **eucalypt** language is the depth behind these one-liners that
+allows **eucalypt** to accommodate increasingly ambitious use cases
+without breaking the paradigm and reaching for a general purpose
+imperative scripting language or the lowest common denominator or
+text-based templating languages.
 
 The pre-eminence of one-liners and small annotations and "logic
 mark-up", means that **eucalypt** often favours concise and cryptic over
@@ -45,13 +47,13 @@ wordy and transparent. This is a controversial approach.
   For example, it is spurious to say that `bind(x, f)` gives more
   understanding of what is going on than `x >>= f` - unless you
   understand the monad abstraction and the role of bind in it, you
-  gain nothing from the ideas that the word `bind` conveys when trying
-  to understand program text.
+  gain nothing useful from the ideas that the word `bind` connotes
+  when you are trying to understand program text.
 
-- **eucalypt** just plain ignores the notion that program text should be
-  readable as English text. This (well motivated) idea has made a
+- **eucalypt** just plain ignores the notion that program text should
+  be readable *as English text*. This (well motivated) idea has made a
   resurgence in recent years through the back door of internal DSLs
-  and "fluent" Java interfaces [^2]. There is much merit in languages
+  and "fluent" Java interfaces. There is much merit in languages
   supple enough to allow the APIs to approach the natural means of
   expression of the problem domain. However, problem domains
   frequently have their own technical jargon and notation which suit
@@ -73,17 +75,16 @@ These stances lead directly to several slightly esoteric aspects of
   the initial parse). There are no ternary operators.
 
 - For absolute minimal intrusion, merely the act of placing elements
-  next to each other ("catenation"), `x f`, is meaningful in **eucalypt**.
-  By default this is pipeline-order function application, but blocks
-  and lists can be applied as functions to make common
+  next to each other ("catenation"), `x f`, is meaningful in
+  **eucalypt**. By default this is pipeline-order function
+  application, but blocks can be applied as functions to make common
   transformations, like block merge, very succinct.
 
 - For even more power, **eucalypt** might soon let you alter the
-  meaning of concatenation via overloaded *idiot brackets* [^3]. (`[[x
-  y]]: ...`). This is inspired by the *idiom brackets* that can be
-  used to express applicative styles in functional programming [^4].
-  These may also provide an acceptable proxy for ternary and other
-  operators too.
+  meaning of concatenation via overloaded *idiot brackets* [^1]. (`«x y»: ...`). This is inspired by the *idiom brackets* that can be used
+  to express applicative styles in functional programming [^2]. These
+  may also provide an acceptable proxy for ternary and other operators
+  too.
 
 - An equivalent generalisation of **eucalypt** block syntax to provide
   a capability similar to Haskell's `do` notation could conceivably
@@ -115,8 +116,10 @@ Nevertheless **eucalypt** is heavily inspired by Lisp and aims for a
 similar fluidity through:
 
 - lazy evaluation (going some way towards matching uses of Lisp macros
-  which control evaluation order - `if` is a function)
-- economical syntax to allow for manipulation of code as data
+  which control evaluation order - in eucalypt, `if` is just a
+  function)
+- economical syntax to facilitate (future) manipulation of code as
+  data
 
 ## Simplicity
 
@@ -125,34 +128,26 @@ similar fluidity through:
   use in the sense of offering a rich and powerful toolkit. You may
   not think it achieves either.
 
-- **eucalypt** values familiarity more in the "shallower" parts of the
-  language where it only requires a couple of mental leaps for the
-  average programmer in these areas - (ab)use of catenation being the
-  key one.
+- **eucalypt** values familiarity mostly in the "shallower" parts of
+  the language where it only requires a couple of mental leaps for the
+  average programmer in these areas - the (ab)use of catenation being
+  the key one.
 
-- However, **eucalypt** shouldn't be ashamed of its dusty corners. Dusty
+- However, **eucalypt** isn't ashamed of its dusty corners. Dusty
   corners are areas where novices and experts alike can get trapped
   and lose time but they're also rich seams for experimentation,
-  innovation and discovery[^5]. If you have to venture too far
-  off-piste to find what you need, we'll find a way to bring it onto
-  the nursery slopes but we won't close off the mountain.
+  innovation and discovery. If you have to venture too far off-piste
+  to find what you need, we'll find a way to bring it onto the nursery
+  slopes but we won't close off the mountain.
 
 
 ---
 
 #### Footnotes
 
-[^1]: ...often a result of underfamiliarity with the alternatives.
 
-[^2]: Actually the real benefit of fluent interfaces in Java is they
-	offer a cheap user interface for configuration of APIs by
-	leveraging your IDE's autocomplete capability.
+[^1]: If I didn't call them that, someone else would.
 
-[^3]: If I didn't call them that, someone else would.
-
-[^4]: Applicative Programming with Effects, Conor McBride and Ross
+[^2]: Applicative Programming with Effects, Conor McBride and Ross
 	Paterson. (2008)
 	http://www.staff.city.ac.uk/~ross/papers/Applicative.html
-
-[^5]: "A man of genius makes no mistakes. His errors are volitional
-	and are the portals to discovery." - James Joyce, Ulysses
