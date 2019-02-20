@@ -118,7 +118,7 @@ Sometime you need explicit parentheses to clarify the scope of
 expression anaphora:
 
 ```eu
-block: { a: 1 b: 2}
+block: { a: 1 b: 2 }
 
 x: block (_.a) //=> 1
 y: block lookup(:a) //=> 1

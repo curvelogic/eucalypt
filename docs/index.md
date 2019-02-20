@@ -436,3 +436,5 @@ There is much more to this story. For instance `eu` can:
   data.yaml`
 - override the default extensions: `eu yaml@info.txt`
 - automatically use `Eufile` files in the current folder hierarchy
+
+See [command line](command-line.md) for more complete documentation.
