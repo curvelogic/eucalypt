@@ -1,5 +1,3 @@
-# doesn't require prelude; uses builtins only
-
 ` :suppress
 (l||r): __OR(l,r)
 ` :suppress
@@ -17,12 +15,9 @@ take(n, l): __IF((n zero?) || (l empty?), [], cons(l head, take(n dec, l tail)))
 ` :suppress
 drop(n, l): __IF((n zero?) || (l empty?), l, drop(n dec, l tail))
 ` :suppress
-repeat-n(n, i): __IF((n zero?), [], cons(i, repeat-n(dec(n), i)))
-
-# TODO: Can't use this until lists are exposed to eu as cons is not
-# currently lazy enough
-` :suppress
 repeat(i): __CONS(i, repeat(i))
+` :suppress
+repeat-n(n, i): repeat(i) take(n)
 
 ten-fives: repeat-n(10, 5)
 ten-hellos: repeat-n(10, "hello")

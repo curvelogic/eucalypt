@@ -398,11 +398,17 @@ const(k, _): k
 ` "`compose(f,g,x)` - apply function `f` to `g(x)`."
 compose(f, g, x): x g f
 
-` { doc: "`(f ∘ g)` - return composition of `f` and `g`"
+` { doc: "`(f ∘ g)` - return composition of `f` and `g` (`g` then `f`)"
     export: :suppress
     associates: :right
     precedence: 88 }
-(f ∘ g): compose(f,g)
+(f ∘ g): compose(f, g)
+
+` { doc: "`(f ; g)` - return composition of `f` then `g`"
+    export: :suppress
+    associates: :left
+    precedence: 88 }
+(f ; g): compose(g, f)
 
 ` { doc: "(l @ r) - function application operator, for reversing catentation args and eliding parentheses"
     export: :suppress

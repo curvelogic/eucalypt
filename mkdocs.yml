@@ -1,4 +1,4 @@
-site_name: "Eucalypt: liquiYAML"
+site_name: "eucalypt"
 repo_url: https://github.com/curvelogic/eucalypt
 copyright: "Copyright (C) 2018 Greg Hawkins"
 docs_dir: docs
@@ -7,6 +7,7 @@ nav:
 - Getting Started: getting-started.md
 - Syntax: syntax.md
 - Command Line: command-line.md
+- Operators and Identifiers: operators-and-identifiers.md
 - Anaphora and Lambdas: anaphora-and-lambdas.md
 - Philosophy: philosophy-lang.md
 markdown_extensions:
