@@ -45,6 +45,8 @@ Eucalypt has two types of names:
 - operator names, which are largely symbolic (e.g. `&&&`, `∧`, `-+-|`,
   `⊚`) and are used to name operators
 
+See [Operators and Identifiers](operators-and-identifiers.md) for more.
+
 ## The block DSL
 
 A **block** is surrounded by curly braces:
@@ -86,30 +88,13 @@ c: 3
 So far all these declarations have been **property declarations** which
 contains a name and an expression, separated by a colon.
 
-There is no comma separating declarations. Nor are line endings
-significant. The following is a block of three **property
-declarations**.
+Commas are entirely optional for delimiting declarations. Line endings
+are not significant. The following is a top-level block of three
+**property declarations**.
 
 ```eu
 a: 1 b: 2 c: 3
 ```
-
-(The colon is very important.)
-
-!!! note
-
-	This is a controversial choice and might change in future. Eucalypt
-	aims to be minimal and commas would be redundant. Lacking
-	explicit delimitation makes the parsing slower and closes off
-	evolutions of the languages in which the comma would no longer be
-	redundant (as per some recent enhancements in javascript). Another
-	option would be a "commas are whitespace" approach as per Clojure
-	but that leads to confusion when commas are sometimes used,
-	sometimes not, sometimes places in the wrong place with no
-	objection from the compiler. Leaving them out keeps the
-	possibility of using them as a tupling operator in future - but
-	note that they are required for list literals in the expression
-	DSL.
 
 There are other types of declarations. By specifying a parameter list,
 you get a **function declaration**:
@@ -335,4 +320,4 @@ returns that value if they are.
 	There are no explicit lambda expressions in Eucalypt right now.
 	For simple cases, expression or string anaphora should do the job.
 	For more involved cases, you should use a named function declaration.
-	More features are coming...
+	See [Anaphora and Lambdas](anaphora-and-lambdas.md) for more.
