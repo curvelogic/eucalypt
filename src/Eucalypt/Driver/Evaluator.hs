@@ -192,12 +192,15 @@ evaluate opts = do
     -- For debug / profile, allow evaluating without any renderer
     -- attached:
     when (cmd == Headless)
-      (STG.runHeadless finalOptions finalEvaluand >> exitSuccess)
+      (STG.runHeadless finalOptions finalEvaluand)
 
     -- Stage 9: drive the evaluation by rendering it
     -- Compile to STG and execute in machine
-    bytes <- {-# SCC "RenderBytes" #-} STG.renderConduit finalOptions finalEvaluand
-    {-# SCC "OutputBytes" #-} outputBytes finalOptions bytes >> exitSuccess
+    when (cmd == Evaluate) $ do
+      bytes <- {-# SCC "RenderBytes" #-} STG.renderConduit finalOptions finalEvaluand
+      {-# SCC "OutputBytes" #-} outputBytes finalOptions bytes
+
+    return ExitSuccess
 
   where
     cmd = optionCommand opts
