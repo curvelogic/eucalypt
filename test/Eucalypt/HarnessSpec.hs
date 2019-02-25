@@ -53,6 +53,11 @@ acceptanceSpec testFile = describe testFile $
   it "exits with zero exit code" $
   run ("harness/test/" ++ testFile) `shouldReturn` ExitSuccess
 
+failureSpec :: FilePath -> Spec
+failureSpec testFile = describe testFile $
+  it "throws exception" $
+  run ("harness/test/errors/" ++ testFile) `shouldThrow` anyException
+
 spec :: Spec
 spec = do
   acceptanceSpec "001_ski.eu"
@@ -98,3 +103,23 @@ spec = do
   acceptanceSpec "043_gen_lookup_dynamic.eu"
   acceptanceSpec "044_time.eu"
   acceptanceSpec "045_csv_import.eu"
+  failureSpec "001_dot_in_metadata_key.eu"
+  failureSpec "002_lists.eu"
+  failureSpec "003_free_var_arg.eu"
+  failureSpec "004_circular.eu"
+  failureSpec "005_free_var.eu"
+  failureSpec "006_div_by_zero.eu"
+  failureSpec "008_op_spacing.eu"
+  failureSpec "009_panic.eu"
+  failureSpec "010_assert.eu"
+  failureSpec "011_assert_pred.eu"
+  failureSpec "012_bad_value.eu"
+  failureSpec "013_bad_nested_value.eu"
+  failureSpec "014_unterm_strlit.eu"
+  failureSpec "015_missing_argtuple_close.eu"
+  failureSpec "016_empty_brackets.eu"
+  failureSpec "017_too_many_args.eu"
+  failureSpec "019_no_such_key.eu"
+  failureSpec "020_no_such_key_fn.eu"
+  failureSpec "021_bad_num_parse.eu"
+  failureSpec "023_arg_types.eu"
