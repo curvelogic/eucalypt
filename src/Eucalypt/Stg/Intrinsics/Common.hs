@@ -46,6 +46,7 @@ import Eucalypt.Stg.Native
 import Eucalypt.Stg.Scrapers
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+import Eucalypt.Stg.Type
 
 type IntrinsicFunction = MachineState -> ValVec -> IO MachineState
 
@@ -142,113 +143,113 @@ readPairList ms addr =
 -- | class of Invokable intrinsic functions
 class Invokable f where
   -- | String representation of expected signature for error messages etc.
-  sig :: f -> String
+  sig :: f -> [StgType]
   -- | Cast args as required to invoke the typed intrinsic function
   invoke :: f -> IntrinsicFunction
 
 instance Invokable (MachineState -> IO MachineState) where
-  sig _ = ""
+  sig _ = []
   invoke f ms (asSeq -> Empty) = f ms
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Native -> IO MachineState) where
-  sig _ = "*"
+  sig _ = [TypeNative]
   invoke f ms (asSeq -> (StgNat a _ :< _)) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Address -> IO MachineState) where
-  sig _ = "@"
+  sig _ = [TypeHeapObj]
   invoke f ms (asSeq -> (StgAddr a :< _)) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> StgValue -> IO MachineState) where
-  sig _ = "."
+  sig _ = [TypeAny]
   invoke f ms (asSeq -> a :< _) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Dynamic -> IO MachineState) where
-  sig _ = "?"
+  sig _ = [TypeDynamic Nothing]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> String -> IO MachineState) where
-  sig _ = "String"
+  sig _ = [TypeString]
   invoke f ms (asSeq -> StgNat (NativeString a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Scientific -> IO MachineState) where
-  sig _ = "Number"
+  sig _ = [TypeNumber]
   invoke f ms (asSeq -> StgNat (NativeNumber a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> String -> String -> IO MachineState) where
-  sig _ = "String, String"
+  sig _ = [TypeString, TypeString]
   invoke f ms (asSeq -> (StgNat (NativeString a) _ :< (StgNat (NativeString b) _ :< _))) =
     f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Native -> Native -> IO MachineState) where
-  sig _ = "*, *"
+  sig _ = [TypeNative, TypeNative]
   invoke f ms (asSeq -> (StgNat a _ :< (StgNat b _ :< _))) = f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Address -> Address -> IO MachineState) where
-  sig _ = "@, @"
+  sig _ = [TypeHeapObj, TypeHeapObj]
   invoke f ms (asSeq -> (StgAddr a :< (StgAddr b :< _))) = f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Native -> String -> IO MachineState) where
-  sig _ = "*, String"
+  sig _ = [TypeNative, TypeString]
   invoke f ms (asSeq -> (StgNat a _ :< (StgNat (NativeString b) _ :< _))) =
     f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> StgValue -> StgValue -> IO MachineState) where
-  sig _ = "., ."
+  sig _ = [TypeAny, TypeAny]
   invoke f ms (asSeq -> (a :< (b :< _))) = f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Dynamic -> Symbol -> IO MachineState) where
-  sig _ = "?, :"
+  sig _ = [TypeDynamic Nothing, TypeSymbol]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Address -> String -> IO MachineState) where
-  sig _ = "@, String"
+  sig _ = [TypeHeapObj, TypeString]
   invoke f ms (asSeq -> StgAddr a :< (StgNat (NativeString b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Scientific -> Scientific -> IO MachineState) where
-  sig _ = "Number, Number"
+  sig _ = [TypeNumber, TypeNumber]
   invoke f ms (asSeq -> StgNat (NativeNumber a) _ :< (StgNat (NativeNumber b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Dynamic -> Dynamic -> IO MachineState) where
-  sig _ = "?, ?"
+  sig _ = [TypeDynamic Nothing, TypeDynamic Nothing]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeDynamic b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Native -> Native -> Native -> IO MachineState) where
-  sig _ = "*, *, *"
+  sig _ = [TypeNative, TypeNative, TypeNative]
   invoke f ms (asSeq -> StgNat a _ :< (StgNat b _ :< (StgNat c _ :< _))) =
     f ms a b c
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Dynamic -> Symbol -> StgValue -> IO MachineState) where
-  sig _ = "?, :, ."
+  sig _ = [TypeDynamic Nothing, TypeSymbol, TypeAny]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< (c :< _))) =
     f ms a b c
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 instance Invokable (MachineState -> Dynamic -> Dynamic -> Address -> IO MachineState) where
-  sig _ = "?, ?, @"
+  sig _ = [TypeDynamic Nothing, TypeDynamic Nothing, TypeHeapObj]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeDynamic b) _ :< (StgAddr c :< _))) =
     f ms a b c
-  invoke f ms args = throwTypeError ms (sig f) args
+  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
 
 cast :: forall a . Typeable a => MachineState -> Dynamic -> IO a
 cast ms dyn =
