@@ -108,6 +108,7 @@ tests:
       - network-uri
       - pretty
       - scientific
+      - silently
       - symbol
       - text
       - tomland

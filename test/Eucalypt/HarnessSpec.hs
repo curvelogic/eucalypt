@@ -14,6 +14,8 @@ import Eucalypt.Driver.Options
   )
 import Eucalypt.Syntax.Input
 import System.Exit
+import System.IO (stderr, stdout)
+import System.IO.Silently 
 import Test.Hspec
 
 main :: IO ()
@@ -41,12 +43,12 @@ run f = do
         , optionOutput = Nothing
         , optionEvaluand = Nothing
         , optionInhibitPrelude = False
-        , optionCommand = Headless
+        , optionCommand = Evaluate
         , optionInputs = catMaybes [parseInputFromString f]
         , optionDebug = False
         , optionLibPath = ["harness"]
         }
-  evaluate opts
+  hSilence [stdout, stderr] $ evaluate opts
 
 acceptanceSpec :: FilePath -> Spec
 acceptanceSpec testFile = describe testFile $
