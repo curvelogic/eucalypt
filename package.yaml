@@ -84,7 +84,7 @@ executables:
 
 tests:
   eucalypt-test:
-    main:                Spec.hs
+    main:                Main.hs
     source-dirs:         test
     ghc-options:
     - -threaded
@@ -108,6 +108,7 @@ tests:
       - network-uri
       - pretty
       - scientific
+      - silently
       - symbol
       - text
       - tomland
