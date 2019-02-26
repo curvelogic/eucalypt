@@ -17,15 +17,16 @@ import qualified Eucalypt.Stg.Intrinsics.Arithmetic as Arith
 import qualified Eucalypt.Stg.Intrinsics.Block as Block
 import qualified Eucalypt.Stg.Intrinsics.Debug as Debug
 import qualified Eucalypt.Stg.Intrinsics.Emit as Emit
+import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
+import qualified Eucalypt.Stg.Intrinsics.General as General
 import qualified Eucalypt.Stg.Intrinsics.IOSMBlock as IOSM
 import qualified Eucalypt.Stg.Intrinsics.Meta as Meta
 import qualified Eucalypt.Stg.Intrinsics.Number as Number
 import qualified Eucalypt.Stg.Intrinsics.Panic as Panic
 import qualified Eucalypt.Stg.Intrinsics.Str as Str
 import qualified Eucalypt.Stg.Intrinsics.Time as Time
-import qualified Eucalypt.Stg.Intrinsics.Eq as Eq
-import qualified Eucalypt.Stg.Intrinsics.General as General
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Value
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =

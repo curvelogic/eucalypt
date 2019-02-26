@@ -11,6 +11,11 @@ Stability   : experimental
 module Eucalypt.Stg.Tags where
 
 import Eucalypt.Stg.Syn (LambdaForm, Tag, standardConstructor)
+import Eucalypt.Stg.Type
+
+----------
+-- List --
+----------
 
 stgNil :: Tag
 stgNil = 0
@@ -29,6 +34,11 @@ pattern TagCons = 1
 
 consConstructor :: LambdaForm
 consConstructor = standardConstructor 2 stgCons
+
+listType :: StgType
+listType = TypeData [stgNil, stgCons]
+
+
 
 stgBlock :: Tag
 stgBlock = 2

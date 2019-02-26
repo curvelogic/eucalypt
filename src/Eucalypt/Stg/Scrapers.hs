@@ -20,6 +20,8 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+import Eucalypt.Stg.Type
+import Eucalypt.Stg.Value
 
 pattern Empty :: Seq.Seq a
 pattern Empty <- (Seq.viewl -> Seq.EmptyL)
@@ -51,34 +53,67 @@ instance Scrapeable Symbol where
     _ -> return Nothing
 
 instance Scrapeable a => Scrapeable [a] where
-  scrape ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
+  scrape ms n@StgNat {} =
+    throwIn ms $
+    TypeMismatch
+      { context = "Couldn't read list from memory"
+      , expected = [listType]
+      , obtained = [TypeNative]
+      , obtainedValues = [Just n]
+      }
   scrape ms (StgAddr addr) = do
     obj <- peek addr
     case obj of
       Closure { closureEnv = e
-              , closureCode = LambdaForm {lamBody = expr@(App (Con TagCons) xs)}
+              , closureCode = LambdaForm {lamBody = App (Con TagCons) xs}
               } ->
         case asSeq $ values (e, ms) $ nativeToValue <$> xs of
           (h :< (t :< _)) -> do
             h' <- scrape ms h :: IO (Maybe a)
             t' <- scrape ms t :: IO (Maybe [a])
             return $ (:) <$> h' <*> t'
-          _ -> throwIn ms $ IntrinsicExpectedEvaluatedList expr
+          _ -> throwIn ms $ BadConstructorArity stgCons (refCount xs)
       Closure {closureCode = LambdaForm {lamBody = (App (Con TagNil) _)}} ->
         return $ Just []
-      Closure {closureCode = lf} ->
-        throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
-      BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
+      Closure {} ->
+        throwIn ms $
+        TypeMismatch
+          { context = "Couldn't read list from memory"
+          , expected = [listType]
+          , obtained = [TypeClosure]
+          , obtainedValues = [Nothing]
+          }
+      BlackHole ->
+        throwIn ms $
+        TypeMismatch
+          { context = "Couldn't read list from memory"
+          , expected = [listType]
+          , obtained = [TypeBlackHole]
+          , obtainedValues = [Nothing]
+          }
       PartialApplication {} ->
-        throwIn ms IntrinsicExpectedListFoundPartialApplication
+        throwIn ms $
+        TypeMismatch
+          { context = "Couldn't read list from memory"
+          , expected = [listType]
+          , obtained = [TypePartialApplication]
+          , obtainedValues = [Nothing]
+          }
 
 instance (Scrapeable k, Scrapeable v) => Scrapeable (k, v) where
-  scrape ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
+  scrape ms n@StgNat {} =
+    throwIn ms $
+    TypeMismatch
+      { context = "Couldn't read key/value pair from memory"
+      , expected = [listType]
+      , obtained = [TypeNative]
+      , obtainedValues = [Just n]
+      }
   scrape ms (StgAddr addr) = do
     obj <- peek addr
     case obj of
       Closure { closureEnv = e
-              , closureCode = LambdaForm {lamBody = expr@(App (Con TagCons) xs)}
+              , closureCode = LambdaForm {lamBody = App (Con TagCons) xs}
               } ->
         case asSeq $ values (e, ms) $ nativeToValue <$> xs of
           (h :< (t :< _)) -> do
@@ -86,13 +121,32 @@ instance (Scrapeable k, Scrapeable v) => Scrapeable (k, v) where
             t' <- scrape ms t :: IO (Maybe [v])
             case t' of
               (Just (v:_)) -> return $ (,) <$> k <*> Just v
-              _ -> throwIn ms IntrinsicBadPair
-          _ -> throwIn ms $ IntrinsicExpectedEvaluatedList expr
-      Closure {closureCode = lf} ->
-        throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
-      BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
+              _ -> throwIn ms $ BadPair $ StgAddr addr
+          _ -> throwIn ms $ BadConstructorArity stgCons (refCount xs)
+      Closure {} ->
+        throwIn ms $
+        TypeMismatch
+          { context = "Couldn't read key/value pair from memory"
+          , expected = [listType]
+          , obtained = [TypeClosure]
+          , obtainedValues = [Nothing]
+          }
+      BlackHole ->
+        throwIn ms $
+        TypeMismatch
+          { context = "Couldn't read key/value pair from memory"
+          , expected = [listType]
+          , obtained = [TypeBlackHole]
+          , obtainedValues = [Nothing]
+          }
       PartialApplication {} ->
-        throwIn ms IntrinsicExpectedListFoundPartialApplication
+        throwIn ms $
+        TypeMismatch
+          { context = "Couldn't read key/value pair from memory"
+          , expected = [listType]
+          , obtained = [TypePartialApplication]
+          , obtainedValues = [Nothing]
+          }
 
 
 data BareCons k = BareCons
@@ -104,20 +158,46 @@ asTuple :: BareCons k -> (k, StgValue)
 asTuple BareCons{..} = (car, cdr)
 
 instance Scrapeable k => Scrapeable (BareCons k) where
-  scrape ms (StgNat n _) = throwIn ms $ IntrinsicExpectedListFoundNative n
+  scrape ms n@StgNat {} =
+    throwIn ms $
+    TypeMismatch
+      { context = "Failed to read list head from memory"
+      , expected = [listType]
+      , obtained = [TypeNative]
+      , obtainedValues = [Just n]
+      }
   scrape ms (StgAddr addr) = do
     obj <- peek addr
     case obj of
       Closure { closureEnv = e
-              , closureCode = LambdaForm {lamBody = expr@(App (Con TagCons) xs)}
+              , closureCode = LambdaForm {lamBody = App (Con TagCons) xs}
               } ->
         case asSeq $ values (e, ms) $ nativeToValue <$> xs of
           (h :< (t :< _)) -> do
             k <- scrape ms h
             return $ BareCons <$> k <*> pure t
-          _ -> throwIn ms $ IntrinsicExpectedEvaluatedList expr
-      Closure {closureCode = lf} ->
-        throwIn ms $ IntrinsicExpectedEvaluatedList (lamBody lf)
-      BlackHole -> throwIn ms IntrinsicExpectedListFoundBlackHole
+          _ -> throwIn ms $ BadConstructorArity stgCons (refCount xs)
+      Closure {} ->
+        throwIn ms $
+        TypeMismatch
+          { context = "Failed to read list head from memory"
+          , expected = [listType]
+          , obtained = [TypeClosure]
+          , obtainedValues = [Nothing]
+          }
+      BlackHole ->
+        throwIn ms $
+        TypeMismatch
+          { context = "Failed to read list head from memory"
+          , expected = [listType]
+          , obtained = [TypeBlackHole]
+          , obtainedValues = [Nothing]
+          }
       PartialApplication {} ->
-        throwIn ms IntrinsicExpectedListFoundPartialApplication
+        throwIn ms $
+        TypeMismatch
+          { context = "Failed to read list head from memory"
+          , expected = [listType]
+          , obtained = [TypePartialApplication]
+          , obtainedValues = [Nothing]
+          }

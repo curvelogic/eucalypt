@@ -13,6 +13,7 @@ import Eucalypt.Stg.Address
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.StandardMachine
+import Eucalypt.Stg.Value
 import Test.Hspec
 
 main :: IO ()

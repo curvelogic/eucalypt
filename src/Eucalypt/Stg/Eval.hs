@@ -27,6 +27,7 @@ import Eucalypt.Stg.GlobalInfo (gref)
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Value
 import Prelude hiding (log)
 
 pattern Empty :: Seq.Seq a

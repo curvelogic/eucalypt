@@ -9,6 +9,7 @@ Stability   : experimental
 
 module Eucalypt.Stg.IntrinsicInfo where
 
+import Eucalypt.Stg.Value
 import Eucalypt.Stg.Machine
 
 data IntrinsicInfo = IntrinsicInfo

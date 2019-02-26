@@ -15,7 +15,9 @@ import Eucalypt.Core.SourceMap
 import Eucalypt.Stg.CallStack
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Pretty
-import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Syn (Tag)
+import Eucalypt.Stg.Type
+import Eucalypt.Stg.Value
 import Eucalypt.Reporting.Common
 import Eucalypt.Reporting.Classes
 import qualified Text.PrettyPrint as P
@@ -28,33 +30,23 @@ data StgException = StgException
 
 -- | Types of execution error
 data StgError
-  = NonAddressStgValue
-  | NonNativeStgValue
-  | NoBranchFound
+  = NoBranchFound
   | NoDefaultBranchForNativeReturn
   | EnteredBlackHole
   | AddMetaToBlackHole
   | ArgInsteadOfBranchTable
   | EnvironmentIndexOutOfRange !Int
   | SteppingTerminated
-  | IntrinsicImproperList
-  | IntrinsicBadPair
-  | IntrinsicExpectedListFoundNative !Native
-  | IntrinsicExpectedListFoundBlackHole
-  | IntrinsicExpectedListFoundPartialApplication
-  | IntrinsicExpectedNativeList
-  | IntrinsicExpectedStringList
-  | IntrinsicExpectedPairList
-  | IntrinsicExpectedEvaluatedList !StgSyn
-  | IntrinsicExpectedBlockFoundBlackHole
-  | IntrinsicExpectedBlockFoundPartialApplication
-  | IntrinsicExpectedBlockFoundNative !Native
-  | IntrinsicExpectedEvaluatedBlock !StgSyn
-  | IntrinsicExpectedBlock !StgSyn
-  | IntrinsicTypeError !String !String
-  | IntrinsicDynamicTypeMismatch !String !String
+  | TypeMismatch { context :: !String
+                 , expected :: ![StgType]
+                 , obtained :: ![StgType]
+                 , obtainedValues :: ![Maybe StgValue] }
+  | BadConstructorArity !Tag
+                        !Int
+  | BadPair !StgValue
   | InvalidRegex !String
-  | InvalidFormatSpecifier !String !Native
+  | InvalidFormatSpecifier !String
+                           !Native
   | UnknownGlobal !String
   | KeyNotFound !Native
   | Panic !String
@@ -76,15 +68,21 @@ execError = standardReport "EXECUTION ERROR"
 ioSystemError :: String -> P.Doc
 ioSystemError = standardReport "I/O ERROR"
 
+formatTypeError :: String -> [StgType] -> [StgType] -> [Maybe StgValue] -> P.Doc
+formatTypeError msg expected obtained vals =
+  execError msg P.$$ P.text "Expected:" P.$$
+  P.nest 4 (P.text (friendlySignature expected)) P.$$
+  (P.text " Obtained:" P.$$ P.nest 4 vs <> P.text (friendlySignature obtained))
+  where
+    vs = P.hcat $ P.punctuate P.comma $ map (maybe P.empty prettify) vals
+
+
 instance Reportable StgException where
   report StgException {..} =
     let bug = execBug
         err = execError
         sys = ioSystemError
      in case stgExcError of
-          NonAddressStgValue ->
-            bug "Found a native value when expecting a thunk."
-          NonNativeStgValue -> err "A native value is expected here."
           NoBranchFound -> bug "No branch available to handle value."
           NoDefaultBranchForNativeReturn ->
             err "No default branch to handle native return value"
@@ -98,39 +96,6 @@ instance Reportable StgException where
             "Index into local environment (" ++ show i ++ ") is out of range."
           SteppingTerminated ->
             bug "Attempted to run a machine that had already terminated."
-          IntrinsicImproperList -> err "Improper list found in block."
-          IntrinsicBadPair -> err "Bad pair found in list"
-          IntrinsicExpectedListFoundNative n ->
-            err "Expected a list but found native value: " P.$$ prettify n
-          IntrinsicExpectedListFoundBlackHole ->
-            bug "Expected a list, found a black hole."
-          IntrinsicExpectedListFoundPartialApplication ->
-            bug "Expected a list, found a partial application."
-          IntrinsicExpectedBlockFoundBlackHole ->
-            bug "Expected a block, found a black hole."
-          IntrinsicExpectedBlockFoundPartialApplication ->
-            bug "Expected a block, found a partial application."
-          IntrinsicExpectedNativeList -> err "Expected list of native values."
-          IntrinsicExpectedStringList -> err "Expected list of strings."
-          IntrinsicExpectedPairList -> err "Expected list of key-value pairs."
-          IntrinsicExpectedEvaluatedList expr ->
-            bug "Expected evaluated list, found unevaluated thunks." P.$$
-            prettify expr
-          IntrinsicExpectedBlock expr ->
-            bug "Expected block, found something else." P.$$ prettify expr
-          IntrinsicExpectedEvaluatedBlock expr ->
-            bug "Expected evaluated block, found unevaluated thunks." P.$$
-            prettify expr
-          IntrinsicExpectedBlockFoundNative n ->
-            err "Expected a block but found native value:" P.$$ prettify n
-          IntrinsicTypeError expected actual ->
-            err "Intrinsic expected argument types:" P.$$
-            P.nest 4 (P.text expected) P.$$
-            (P.text " but received:" P.$$ P.nest 4 (P.text actual))
-          IntrinsicDynamicTypeMismatch expected actual ->
-            err "Intrinsic expected argument of dynamic type:" P.$$
-            P.nest 4 (P.text expected) P.$$
-            (P.text " but received:" P.$$ P.nest 4 (P.text actual))
           (InvalidRegex s) ->
             err "Regular expression was not valid:" P.$$
             P.nest 2 (P.text "-" P.<+> P.text s)
@@ -140,8 +105,7 @@ instance Reportable StgException where
           (UnknownGlobal s) ->
             err "Unknown global:" P.$$ P.nest 2 (P.text "-" P.<+> P.text s)
           (KeyNotFound k) ->
-            err "Key not found :" P.$$
-            P.nest 2 (P.text "-" P.<+> prettify k)
+            err "Key not found :" P.$$ P.nest 2 (P.text "-" P.<+> prettify k)
           (Panic s) -> err s
           (IOSystem e) -> sys $ show e
           (InvalidNumber n) ->
@@ -149,6 +113,13 @@ instance Reportable StgException where
           MissingArgument -> bug "Expected argument but none found"
           AppliedDataStructureToMoreThanOneArgument ->
             bug "A data structure was applied to more than one argument"
+          TypeMismatch {..} ->
+            formatTypeError context expected obtained obtainedValues
+          BadConstructorArity t n ->
+            bug $
+            "Constructor " ++
+            show t ++ " has incorrect number of arguments (" ++ show n ++ ")"
+          BadPair _ -> bug "Encounter bad pair"
 
 
 instance HasSourceMapIds StgException where

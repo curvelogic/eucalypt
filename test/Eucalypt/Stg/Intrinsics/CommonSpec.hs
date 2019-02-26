@@ -14,16 +14,17 @@ module Eucalypt.Stg.Intrinsics.CommonSpec
   , spec
   ) where
 
+import Eucalypt.Stg.Intrinsics.Common
+import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
+import Eucalypt.Stg.StandardMachine
+import Eucalypt.Stg.StgTestUtil
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
-import Eucalypt.Stg.Machine
-import Eucalypt.Stg.StgTestUtil
-import Eucalypt.Stg.StandardMachine
-import Eucalypt.Stg.Intrinsics.Common
-import Test.QuickCheck
-import Test.QuickCheck.Monadic (run, assert, monadicIO)
+import Eucalypt.Stg.Value
 import Test.Hspec
+import Test.QuickCheck
+import Test.QuickCheck.Monadic (assert, monadicIO, run)
 
 main :: IO ()
 main = hspec spec

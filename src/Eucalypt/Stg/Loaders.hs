@@ -19,6 +19,7 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+import Eucalypt.Stg.Value
 
 consVals :: StgValue -> StgValue -> IO StgValue
 consVals a as =

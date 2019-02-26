@@ -21,17 +21,23 @@ data StgType
   | TypeSymbol
   | TypeDynamic (Maybe TypeRep)
   | TypeHeapObj
-  | TypeData Tag
+  | TypeBlackHole
+  | TypeClosure
+  | TypePartialApplication
+  | TypeData [Tag]
   deriving (Show, Eq)
 
 shortName :: StgType -> String
-shortName TypeAny = "•"
+shortName TypeAny = "."
 shortName TypeNative = "*"
 shortName TypeString = "\"\""
 shortName TypeNumber = "#"
 shortName TypeSymbol = ":"
 shortName (TypeDynamic _) = "?"
 shortName TypeHeapObj = "@"
+shortName TypeBlackHole = "•"
+shortName TypeClosure = "λ"
+shortName TypePartialApplication = "(_)"
 shortName (TypeData t) = show t
 
 longName :: StgType -> String
@@ -44,6 +50,9 @@ longName (TypeDynamic r) = case r of
   Just tr -> show tr
   Nothing -> "Dynamic"
 longName TypeHeapObj = "HeapObject"
+longName TypeBlackHole = "BlackHole"
+longName TypeClosure = "Closure"
+longName TypePartialApplication = "PartialApplication"
 longName (TypeData t) = "DataType(" ++ show t ++ ")"
 
 friendlySignature :: [StgType] -> String

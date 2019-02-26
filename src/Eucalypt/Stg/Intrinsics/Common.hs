@@ -22,10 +22,9 @@ module Eucalypt.Stg.Intrinsics.Common
   , readNatList
   , readStrList
   , readPairList
-  , readNatListReturn
-  , readStrListReturn
   , cast
-  , nativeToString
+  , classify
+  , classifyNative
   , Invokable(..)
   , IntrinsicFunction
   , module Eucalypt.Stg.Loaders
@@ -34,11 +33,10 @@ module Eucalypt.Stg.Intrinsics.Common
 
 import Data.Dynamic
 import Data.Foldable (toList)
-import Data.List (intercalate)
-import Data.Scientific (Scientific, floatingOrInteger)
+import Data.Scientific (Scientific)
 import Data.Symbol
 import Data.Typeable (typeOf)
-import Eucalypt.Stg.Address (allocate)
+import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Loaders
 import Eucalypt.Stg.Machine
@@ -47,6 +45,7 @@ import Eucalypt.Stg.Scrapers
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
 import Eucalypt.Stg.Type
+import Eucalypt.Stg.Value
 
 type IntrinsicFunction = MachineState -> ValVec -> IO MachineState
 
@@ -93,44 +92,34 @@ returnList ms (n:ns) = do
   t <- load ms ns
   return $ setCode ms (ReturnCon stgCons (toVec [h, t]) Nothing)
 
-
-
 -- | Utility to read a list from the machine into a native haskell
 -- list for a primitive function.
 readNatList :: MachineState -> Address -> IO [Native]
 readNatList ms addr =
   scrape ms (StgAddr addr) >>= \case
     (Just ns) -> return ns
-    Nothing -> throwIn ms IntrinsicExpectedNativeList
-
-
--- | Read native list from machine state where head is currently in a
--- ReturnCon form in the code.
-readNatListReturn :: MachineState -> IO [Native]
-readNatListReturn ms =
-  case ms of
-    MachineState {machineCode = (ReturnCon TagCons xs Nothing)} ->
-      case asSeq xs of
-        (StgNat h _ :< (StgAddr t :< _)) -> (h :) <$> readNatList ms t
-        _ -> throwIn ms IntrinsicExpectedNativeList
-    MachineState {machineCode = (ReturnCon TagNil _ Nothing)} -> return []
-    _ -> throwIn ms IntrinsicExpectedNativeList
-
+    Nothing ->
+      throwIn ms $
+      TypeMismatch
+        { context = "Failed to read list of native values"
+        , expected = [listType]
+        , obtained = []
+        , obtainedValues = [Just $ StgAddr addr]
+        }
 
 -- | Read a list of strings from machine into native haskell list
 readStrList :: MachineState -> Address -> IO [String]
 readStrList ms addr = readNatList ms addr >>= traverse convert
   where
     convert (NativeString s) = return s
-    convert _ = throwIn ms IntrinsicExpectedStringList
-
--- | Read a list of strings from machine to native haskell list where
--- head of list is currently in a ReturnCon form
-readStrListReturn :: MachineState -> IO [String]
-readStrListReturn ms = readNatListReturn ms >>= traverse convert
-  where
-    convert (NativeString s) = return s
-    convert _ = throwIn ms IntrinsicExpectedStringList
+    convert _ =
+      throwIn ms $
+      TypeMismatch
+        { context = "Failed to read list of strings"
+        , expected = [listType]
+        , obtained = []
+        , obtainedValues = [Just $ StgAddr addr]
+        }
 
 -- | Utility to read a list of pairs from the machine into a native
 -- haskell list for an intrinsic function.
@@ -150,134 +139,145 @@ class Invokable f where
 instance Invokable (MachineState -> IO MachineState) where
   sig _ = []
   invoke f ms (asSeq -> Empty) = f ms
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Native -> IO MachineState) where
   sig _ = [TypeNative]
   invoke f ms (asSeq -> (StgNat a _ :< _)) = f ms a
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Address -> IO MachineState) where
   sig _ = [TypeHeapObj]
   invoke f ms (asSeq -> (StgAddr a :< _)) = f ms a
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> StgValue -> IO MachineState) where
   sig _ = [TypeAny]
   invoke f ms (asSeq -> a :< _) = f ms a
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Dynamic -> IO MachineState) where
   sig _ = [TypeDynamic Nothing]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> String -> IO MachineState) where
   sig _ = [TypeString]
   invoke f ms (asSeq -> StgNat (NativeString a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Scientific -> IO MachineState) where
   sig _ = [TypeNumber]
   invoke f ms (asSeq -> StgNat (NativeNumber a) _ :< _) = f ms a
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> String -> String -> IO MachineState) where
   sig _ = [TypeString, TypeString]
   invoke f ms (asSeq -> (StgNat (NativeString a) _ :< (StgNat (NativeString b) _ :< _))) =
     f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Native -> Native -> IO MachineState) where
   sig _ = [TypeNative, TypeNative]
   invoke f ms (asSeq -> (StgNat a _ :< (StgNat b _ :< _))) = f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Address -> Address -> IO MachineState) where
   sig _ = [TypeHeapObj, TypeHeapObj]
   invoke f ms (asSeq -> (StgAddr a :< (StgAddr b :< _))) = f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Native -> String -> IO MachineState) where
   sig _ = [TypeNative, TypeString]
   invoke f ms (asSeq -> (StgNat a _ :< (StgNat (NativeString b) _ :< _))) =
     f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> StgValue -> StgValue -> IO MachineState) where
   sig _ = [TypeAny, TypeAny]
   invoke f ms (asSeq -> (a :< (b :< _))) = f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Dynamic -> Symbol -> IO MachineState) where
   sig _ = [TypeDynamic Nothing, TypeSymbol]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Address -> String -> IO MachineState) where
   sig _ = [TypeHeapObj, TypeString]
   invoke f ms (asSeq -> StgAddr a :< (StgNat (NativeString b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Scientific -> Scientific -> IO MachineState) where
   sig _ = [TypeNumber, TypeNumber]
   invoke f ms (asSeq -> StgNat (NativeNumber a) _ :< (StgNat (NativeNumber b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Dynamic -> Dynamic -> IO MachineState) where
   sig _ = [TypeDynamic Nothing, TypeDynamic Nothing]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeDynamic b) _ :< _)) =
     f ms a b
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Native -> Native -> Native -> IO MachineState) where
   sig _ = [TypeNative, TypeNative, TypeNative]
   invoke f ms (asSeq -> StgNat a _ :< (StgNat b _ :< (StgNat c _ :< _))) =
     f ms a b c
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Dynamic -> Symbol -> StgValue -> IO MachineState) where
   sig _ = [TypeDynamic Nothing, TypeSymbol, TypeAny]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeSymbol b) _ :< (c :< _))) =
     f ms a b c
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 instance Invokable (MachineState -> Dynamic -> Dynamic -> Address -> IO MachineState) where
   sig _ = [TypeDynamic Nothing, TypeDynamic Nothing, TypeHeapObj]
   invoke f ms (asSeq -> StgNat (NativeDynamic a) _ :< (StgNat (NativeDynamic b) _ :< (StgAddr c :< _))) =
     f ms a b c
-  invoke f ms args = throwTypeError ms (friendlySignature (sig f)) args
+  invoke f ms args = throwTypeError ms (sig f) args
 
 cast :: forall a . Typeable a => MachineState -> Dynamic -> IO a
 cast ms dyn =
   case fromDynamic dyn of
     (Just x) -> return x
     Nothing ->
-      let expected = show $ typeOf (undefined :: a)
-          actual = show $ dynTypeRep dyn
-       in throwIn ms $ IntrinsicDynamicTypeMismatch expected actual
+      throwIn ms $
+      TypeMismatch
+        { context = "Failed to extract value of required type"
+        , expected = [TypeDynamic $ Just $ typeOf (undefined :: a)]
+        , obtained = [TypeDynamic $ Just $ dynTypeRep dyn]
+        , obtainedValues = [Just $ StgNat (NativeDynamic dyn) Nothing]
+        }
+
+throwTypeError :: MachineState -> [StgType] -> ValVec -> IO MachineState
+throwTypeError ms needed actual = do
+  typeVec <- traverse classify actual
+  throwIn ms $
+    TypeMismatch
+      { context = "Intrinsic received arguments of incorrect type"
+      , expected = needed
+      , obtained = toList typeVec
+      , obtainedValues = map Just $ toList actual
+      }
+
+classifyNative :: Native -> StgType
+classifyNative (NativeString _) = TypeString
+classifyNative (NativeSymbol _) = TypeSymbol
+classifyNative (NativeNumber _) = TypeNumber
+classifyNative (NativeDynamic dyn) = TypeDynamic $ Just (typeOf dyn)
 
 
-throwTypeError :: MachineState -> String -> ValVec -> IO MachineState
-throwTypeError ms expected actual =
-  throwIn ms $ IntrinsicTypeError expected $ describeActualArgs actual
-
-describeActualArgs :: ValVec -> String
-describeActualArgs args = intercalate ", " $ map describe $ toList args
-  where
-    describe (StgNat n _) = nativeToString n
-    describe (StgAddr _) = "@"
-
-nativeToString :: Native -> String
-nativeToString n =
-  case n of
-    NativeNumber sc ->
-      case floatingOrInteger sc of
-        Left f -> show (f :: Double)
-        Right i -> show (i :: Integer)
-    NativeString s -> s
-    NativeSymbol s -> unintern s
-    NativeDynamic _ -> "#DYN"
+classify :: StgValue -> IO StgType
+classify (StgNat n _) = return $ classifyNative n
+classify (StgAddr a) = do
+  obj <- peek a
+  case obj of
+    Closure {closureCode = LambdaForm {lamBody = App (Con t) _}} ->
+      return $ TypeData [t]
+    Closure {} -> return TypeClosure
+    BlackHole -> return TypeBlackHole
+    PartialApplication {} -> return TypePartialApplication
