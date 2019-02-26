@@ -39,10 +39,27 @@ style RenderMetadata {metaTag = _} _ = L.Plain
 renderValue :: Native -> E.RenderMetadata -> [L.Event]
 renderValue (NativeNumber n) rm =
   case floatingOrInteger n of
-    Left r -> [L.EventScalar (encodeUtf8 $ pack $ show r) (tag rm L.FloatTag) (style rm L.PlainNoTag) Nothing]
-    Right i -> [L.EventScalar (encodeUtf8 $ pack $ show i) (tag rm L.IntTag) (style rm L.PlainNoTag) Nothing]
+    Left r ->
+      [ L.EventScalar
+          (encodeUtf8 $ pack $ show r)
+          (tag rm L.FloatTag)
+          (style rm L.PlainNoTag)
+          Nothing
+      ]
+    Right i ->
+      [ L.EventScalar
+          (encodeUtf8 $ pack $ show i)
+          (tag rm L.IntTag)
+          (style rm L.PlainNoTag)
+          Nothing
+      ]
 renderValue (NativeSymbol s) rm =
-  [L.EventScalar (encodeUtf8 $ pack $ unintern s) (tag rm L.StrTag) (style rm L.PlainNoTag) Nothing]
+  [ L.EventScalar
+      (encodeUtf8 $ pack $ unintern s)
+      (tag rm L.StrTag)
+      (style rm L.PlainNoTag)
+      Nothing
+  ]
 renderValue (NativeString s) rm =
   [L.EventScalar (encodeUtf8 $ pack s) (tag rm L.NoTag) (textStyle s) Nothing]
   where
@@ -75,14 +92,20 @@ toYamlEvents e =
     E.OutputDocumentStart -> [L.EventDocumentStart]
     E.OutputDocumentEnd -> [L.EventDocumentEnd]
     E.OutputScalar rm n -> renderValue n rm
-    E.OutputNull -> [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
+    E.OutputNull ->
+      [L.EventScalar (encodeUtf8 $ pack "null") L.NullTag L.PlainNoTag Nothing]
     E.OutputTrue -> renderBool True
     E.OutputFalse -> renderBool False
-    E.OutputSequenceStart -> [L.EventSequenceStart L.NoTag L.AnySequence Nothing]
+    E.OutputSequenceStart rm ->
+      [L.EventSequenceStart (tag rm L.NoTag) L.AnySequence Nothing]
     E.OutputSequenceEnd -> [L.EventSequenceEnd]
-    E.OutputMappingStart -> [L.EventMappingStart L.NoTag L.AnyMapping Nothing]
+    E.OutputMappingStart rm ->
+      [L.EventMappingStart (tag rm L.NoTag) L.AnyMapping Nothing]
     E.OutputMappingEnd -> [L.EventMappingEnd]
     _ -> []
 
+renderOptions :: L.FormatOptions
+renderOptions = L.setTagRendering L.renderUriTags L.defaultFormatOptions
+
 pipeline :: (MonadIO m, MonadResource m) => ConduitT E.Event Void m BS.ByteString
-pipeline = mapC toYamlEvents .| C.concat .| L.encode
+pipeline = mapC toYamlEvents .| C.concat .| L.encodeWith renderOptions

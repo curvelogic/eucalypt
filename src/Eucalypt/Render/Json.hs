@@ -71,7 +71,7 @@ putScalar e txt = do
       putText $
         case pre of
           Nothing -> txt
-          Just E.OutputSequenceStart -> txt
+          Just (E.OutputSequenceStart _) -> txt
           _ -> BS.concat [", ", txt]
     InObject -> do
       pre <- getLast
@@ -79,7 +79,7 @@ putScalar e txt = do
       putText $
         case pre of
           Nothing -> txt
-          Just E.OutputMappingStart -> txt
+          Just (E.OutputMappingStart _) -> txt
           _ -> BS.concat [", ", txt]
   setLast e
 
@@ -102,7 +102,7 @@ formatScalar (NativeDynamic _) = jsonStr "**#DYN**"
 
 
 putBSFragment :: MonadState JSONFormatState m => E.Event -> m ()
-putBSFragment e@E.OutputSequenceStart = do
+putBSFragment e@E.OutputSequenceStart {} = do
   c <- currentContext
   case c of
     InPair -> do
@@ -113,21 +113,21 @@ putBSFragment e@E.OutputSequenceStart = do
       putText $
         case pre of
           Nothing -> "["
-          Just E.OutputSequenceStart -> "["
+          Just E.OutputSequenceStart {} -> "["
           _ -> ", ["
     InObject -> do
       pre <- getLast
       putText $
         case pre of
           Nothing -> "["
-          Just E.OutputMappingStart -> "["
+          Just E.OutputMappingStart {} -> "["
           _ -> ", ["
   setLast e
   pushContext InArray
 
 putBSFragment e@E.OutputSequenceEnd = setLast e >> popContext >> putText "]"
 
-putBSFragment e@E.OutputMappingStart = do
+putBSFragment e@E.OutputMappingStart {} = do
   c <- currentContext
   case c of
     InPair -> do
@@ -138,14 +138,14 @@ putBSFragment e@E.OutputMappingStart = do
       putText $
         case pre of
           Nothing -> "{"
-          Just E.OutputSequenceStart -> "{"
+          Just E.OutputSequenceStart {} -> "{"
           _ -> ", {"
     InObject -> do
       pre <- getLast
       putText $
         case pre of
           Nothing -> "{"
-          Just E.OutputMappingStart -> "{"
+          Just E.OutputMappingStart {} -> "{"
           _ -> ", {"
   setLast e
   pushContext InObject

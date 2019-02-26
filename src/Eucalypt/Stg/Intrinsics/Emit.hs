@@ -29,9 +29,9 @@ import Eucalypt.Stg.Value
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
-  [ IntrinsicInfo "EMIT{" 0 emitMappingStart
+  [ IntrinsicInfo "EMIT{" 0 (invoke emitMappingStart)
   , IntrinsicInfo "EMIT}" 0 emitMappingEnd
-  , IntrinsicInfo "EMIT[" 0 emitSequenceStart
+  , IntrinsicInfo "EMIT[" 0 (invoke emitSequenceStart)
   , IntrinsicInfo "EMIT]" 0 emitSequenceEnd
   , IntrinsicInfo "EMITx" 1 (invoke emitScalar)
   , IntrinsicInfo "EMIT0" 0 emitNull
@@ -48,37 +48,40 @@ emit s@MachineState {machineEmitHook = hook} e = do
       Nothing -> return s
   return $ (appendEvent e . setCode s') (ReturnCon stgUnit mempty Nothing)
 
-emitMappingStart :: MachineState -> ValVec -> IO MachineState
-emitMappingStart s _ = emit s OutputMappingStart
+-- | Emit a mapping start, using 'v' to detemine render metadata.
+emitMappingStart :: MachineState -> StgValue -> IO MachineState
+emitMappingStart ms v = renderMeta ms v >>= emit ms . OutputMappingStart
 
 emitMappingEnd :: MachineState -> ValVec -> IO MachineState
-emitMappingEnd s _ = emit s OutputMappingEnd
+emitMappingEnd ms _ = emit ms OutputMappingEnd
 
-emitSequenceStart :: MachineState -> ValVec -> IO MachineState
-emitSequenceStart s _ = emit s OutputSequenceStart
+-- | Emit a sequence start, using 'v' to detemine render metadata.
+emitSequenceStart :: MachineState -> StgValue -> IO MachineState
+emitSequenceStart ms v = renderMeta ms v >>= emit ms . OutputSequenceStart
 
 emitSequenceEnd :: MachineState -> ValVec -> IO MachineState
-emitSequenceEnd s _ = emit s OutputSequenceEnd
+emitSequenceEnd ms _ = emit ms OutputSequenceEnd
 
 emitNull :: MachineState -> ValVec -> IO MachineState
-emitNull s _ = emit s OutputNull
+emitNull ms _ = emit ms OutputNull
 
 emitTrue :: MachineState -> ValVec -> IO MachineState
-emitTrue s _ = emit s OutputTrue
+emitTrue ms _ = emit ms OutputTrue
 
 emitFalse :: MachineState -> ValVec -> IO MachineState
-emitFalse s _ = emit s OutputFalse
+emitFalse ms _ = emit ms OutputFalse
 
 -- | This assumes that all render-relevant metadata has been forced to
 -- native values.
 emitScalar :: MachineState -> StgValue -> IO MachineState
-emitScalar s x =
+emitScalar ms x =
   case x of
     (StgNat n m) -> do
-      event <- case m of
-                 Just meta -> flip OutputScalar n <$> renderMeta s meta
-                 Nothing -> return $ OutputScalar (RenderMetadata Nothing) n
-      (`setCode` ReturnLit n Nothing) <$> emit s event
+      event <-
+        case m of
+          Just meta -> flip OutputScalar n <$> renderMeta ms meta
+          Nothing -> return $ OutputScalar (RenderMetadata Nothing) n
+      (`setCode` ReturnLit n Nothing) <$> emit ms event
     (StgAddr _) -> error "Received address in emitScalar"
 
 getValue :: MachineState -> Address -> Symbol -> IO (Maybe StgValue)

@@ -33,9 +33,9 @@ data Event
   | OutputNull
   | OutputTrue
   | OutputFalse
-  | OutputSequenceStart
+  | OutputSequenceStart RenderMetadata
   | OutputSequenceEnd
-  | OutputMappingStart
+  | OutputMappingStart RenderMetadata
   | OutputMappingEnd
   | OutputAlias
   | DebugTrace !BS.ByteString
