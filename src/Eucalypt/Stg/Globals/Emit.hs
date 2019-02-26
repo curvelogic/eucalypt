@@ -173,24 +173,25 @@ euRender :: LambdaForm
 euRender =
   lam_ 0 1 $
   ann_ "__RENDER" 0 $
+  force_ (appfn_ (gref "META") [L 0]) $
+  force_ (appfn_ (gref "Emit.forceExportMetadata") [L 1]) $
   casedef_
     (Atom (L 0))
     [ ( stgBlock
       , ( 1
-        , force_ (appfn_ (gref "ALIST.PRUNE") [L 1]) $
-          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
-    , (stgCons, (2, appfn_ (gref "Emit.startList") [L 1, L 2]))
+        , force_ (appfn_ (gref "ALIST.PRUNE") [L 3]) $
+          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 4], emitME]))
+    , (stgCons, (2, appfn_ (gref "Emit.startList") [L 3, L 4]))
     , (stgNil, (0, force_ emitSS emitSE))
     , (stgUnit, (0, emitNull))
     , (stgTrue, (0, emitTrue))
     , (stgFalse, (0, emitFalse))
     , ( stgIOSMBlock
       , ( 1
-        , force_ (appfn_ (gref "IOSM.LIST") [L 1]) $
-          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 2], emitME]))
+        , force_ (appfn_ (gref "IOSM.LIST") [L 3]) $
+          forceall_ [emitMS, appfn_ (gref "Emit.continueKVList") [L 4], emitME]))
     ] $
-  force_ (appfn_ (gref "META") [L 1]) $
-  force_ (appfn_ (gref "Emit.forceExportMetadata") [L 2]) $ emitScalar (L 1)
+  emitScalar (L 3)
 
 
 -- | Single argument is the metadata (not the annotated value)
