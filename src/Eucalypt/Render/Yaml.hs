@@ -104,5 +104,8 @@ toYamlEvents e =
     E.OutputMappingEnd -> [L.EventMappingEnd]
     _ -> []
 
+renderOptions :: L.FormatOptions
+renderOptions = L.setTagRendering L.renderUriTags L.defaultFormatOptions
+
 pipeline :: (MonadIO m, MonadResource m) => ConduitT E.Event Void m BS.ByteString
-pipeline = mapC toYamlEvents .| C.concat .| L.encode
+pipeline = mapC toYamlEvents .| C.concat .| L.encodeWith renderOptions
