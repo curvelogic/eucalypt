@@ -53,7 +53,7 @@ spec =
         (let_
            [pc0_ $ thunk_ $ litList_ 0 (map NativeSymbol ["a", "b", "c"])]
            (appfn_ (gref "RENDER") [L 0])) `shouldReturn`
-      [ OutputSequenceStart
+      [ OutputSequenceStart (RenderMetadata Nothing)
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "b"
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "c"
@@ -65,7 +65,7 @@ spec =
         (let_
            [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv "b" $ nat 2]]
            (appfn_ (gref "RENDER") [L 0])) `shouldReturn`
-      [ OutputMappingStart
+      [ OutputMappingStart (RenderMetadata Nothing)
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
       , OutputScalar (RenderMetadata Nothing) $ NativeNumber 1
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "b"
@@ -78,7 +78,7 @@ spec =
         (let_
            [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv "b" $ nat 2]]
            (appfn_ (gref "RENDER") [L 0])) `shouldReturn`
-      [ OutputMappingStart
+      [ OutputMappingStart (RenderMetadata Nothing)
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
       , OutputScalar (RenderMetadata Nothing) $ NativeNumber 1
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "b"
@@ -91,7 +91,7 @@ spec =
         (let_
            [pc0_ $ thunk_ $ block [kv "a" $ nat 1, kv_ "b" $ nat 2]]
            (appfn_ (gref "RENDER") [L 0])) `shouldReturn`
-      [ OutputMappingStart
+      [ OutputMappingStart (RenderMetadata Nothing)
       , OutputScalar (RenderMetadata Nothing) $ NativeSymbol "a"
       , OutputScalar (RenderMetadata Nothing) $ NativeNumber 1
       , OutputMappingEnd

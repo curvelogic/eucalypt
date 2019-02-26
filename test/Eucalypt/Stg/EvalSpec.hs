@@ -54,7 +54,7 @@ addTest =
 renderEmptyMap :: StgSyn
 renderEmptyMap = force_ emitMS emitME
   where
-    emitMS = appbif_ (intrinsicIndex "EMIT{") []
+    emitMS = appbif_ (intrinsicIndex "EMIT{") [gref "KEMPTYBLOCK"]
     emitME = appbif_ (intrinsicIndex "EMIT}") []
 
 
@@ -70,7 +70,8 @@ blockSpec =
     it "returns true" $
       (returnsConstructor stgTrue <$> test addTest) `shouldReturn` True
     it "emits empty map" $
-      (emits [OutputMappingStart, OutputMappingEnd] <$> test renderEmptyMap) `shouldReturn`
+      (emits [OutputMappingStart (RenderMetadata Nothing), OutputMappingEnd] <$>
+       test renderEmptyMap) `shouldReturn`
       True
 
 evalMetadata :: StgSyn

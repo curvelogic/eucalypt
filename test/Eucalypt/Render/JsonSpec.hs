@@ -27,11 +27,11 @@ main = hspec spec
 
 test1 :: [E.Event]
 test1 =
-  [ E.OutputMappingStart
+  [ E.OutputMappingStart (E.RenderMetadata Nothing)
   , E.OutputScalar (E.RenderMetadata Nothing) $ NativeSymbol "a"
   , E.OutputScalar (E.RenderMetadata Nothing) $ NativeNumber 1234
   , E.OutputScalar (E.RenderMetadata Nothing) $ NativeSymbol "b"
-  , E.OutputSequenceStart
+  , E.OutputSequenceStart (E.RenderMetadata Nothing)
   , E.OutputScalar (E.RenderMetadata Nothing) $ NativeString "x"
   , E.OutputScalar (E.RenderMetadata Nothing) $ NativeString "y"
   , E.OutputScalar (E.RenderMetadata Nothing) $ NativeString "z"
@@ -41,13 +41,13 @@ test1 =
 
 test2 :: [E.Event]
 test2 =
-  [E.OutputSequenceStart] <>
+  [E.OutputSequenceStart (E.RenderMetadata Nothing)] <>
   map (E.OutputScalar (E.RenderMetadata Nothing) . NativeNumber . fromInteger) [1 .. 7] <>
   [E.OutputSequenceEnd]
 
 testNull :: [E.Event]
 testNull =
-  [ E.OutputMappingStart
+  [ E.OutputMappingStart (E.RenderMetadata Nothing)
   , E.OutputScalar (E.RenderMetadata Nothing) $ NativeSymbol "a"
   , E.OutputNull
   , E.OutputMappingEnd
