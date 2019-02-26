@@ -1,5 +1,4 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Emit
@@ -25,6 +24,8 @@ import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
+import Eucalypt.Stg.Type
+import Eucalypt.Stg.Value
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
@@ -114,16 +115,24 @@ excavate ms k a = do
                 SM.lookup k <$> cast ms iosm
               _ -> return Nothing
           _ -> return Nothing
-      Closure {closureCode = LambdaForm {lamBody = expr@(App (Con _) _)}} ->
-        throwIn ms $ IntrinsicExpectedBlock expr
-      Closure {closureCode = LambdaForm {..}} ->
-        throwIn ms $ IntrinsicExpectedEvaluatedBlock lamBody
-      BlackHole -> throwIn ms IntrinsicExpectedBlockFoundBlackHole
-      PartialApplication {} ->
-        throwIn ms IntrinsicExpectedBlockFoundPartialApplication
+      Closure {closureCode = LambdaForm {lamBody = App (Con t) _}} ->
+        notBlockBut $ TypeData [t]
+      Closure {closureCode = LambdaForm {}} -> notBlockBut TypeClosure
+      BlackHole -> notBlockBut TypeBlackHole
+      PartialApplication {} -> notBlockBut TypePartialApplication
   case val of
     (Just v) -> scrape ms v :: IO (Maybe Native)
     _ -> return Nothing
+  where
+    notBlockBut ty =
+      throwIn ms $
+      TypeMismatch
+        { context = "Failed to read block from memory"
+        , expected = [TypeData [stgBlock, stgIOSMBlock]]
+        , obtained = [ty]
+        , obtainedValues = [Just $ StgAddr a]
+        }
+
 
 -- | Read 'RenderMetadata' out of the machine
 renderMeta :: MachineState -> StgValue -> IO RenderMetadata

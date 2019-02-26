@@ -19,6 +19,7 @@ import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Intrinsics.SymbolMap as SM
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
+import Eucalypt.Stg.Value
 import Eucalypt.Stg.Vec
 
 -- | Insert ordered hash map of string (symbol) to STG value

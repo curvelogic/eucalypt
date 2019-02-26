@@ -14,18 +14,21 @@ import Data.Foldable (toList, traverse_)
 import Data.Maybe (isJust)
 import Eucalypt.Stg.Address
 import Eucalypt.Stg.Eval (run)
+import Eucalypt.Stg.Error
 import Eucalypt.Stg.Event
 import Eucalypt.Stg.GlobalInfo
 import Eucalypt.Stg.Intrinsics.Common
+import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Pretty
+import Eucalypt.Stg.StandardMachine
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Tags
-import Eucalypt.Stg.Machine
-import Eucalypt.Stg.StandardMachine
-import qualified Text.PrettyPrint as P
-import Test.QuickCheck (Gen, oneof, arbitrary)
+import Eucalypt.Stg.Type
+import Eucalypt.Stg.Value
+import Test.QuickCheck (Gen, arbitrary, oneof)
 import qualified Test.QuickCheck.Monadic as QM
+import qualified Text.PrettyPrint as P
 
 
 -- | Construct a list as a STG LetRec
@@ -85,6 +88,42 @@ block kvs =
    in letrec_ pcs' (Atom $ L (fromIntegral (itemCount + 1)))
 
 -- machine state accessors and assertions
+
+-- | Read native list from machine state where head is currently in a
+-- ReturnCon form in the code.
+readNatListReturn :: MachineState -> IO [Native]
+readNatListReturn ms =
+  case ms of
+    MachineState {machineCode = (ReturnCon TagCons xs Nothing)} ->
+      case asSeq xs of
+        (StgNat h _ :< (StgAddr t :< _)) -> (h :) <$> readNatList ms t
+        _ -> throwIn ms $ BadConstructorArity stgCons (envSize xs)
+    MachineState {machineCode = (ReturnCon TagNil _ Nothing)} -> return []
+    _ ->
+      throwIn ms $
+      TypeMismatch
+        { context =
+            "Failed to read a list of native values from function return"
+        , expected = [listType]
+        , obtained = []
+        , obtainedValues = []
+        }
+
+-- | Read a list of strings from machine to native haskell list where
+-- head of list is currently in a ReturnCon form
+readStrListReturn :: MachineState -> IO [String]
+readStrListReturn ms = readNatListReturn ms >>= traverse convert
+  where
+    convert (NativeString s) = return s
+    convert n =
+      throwIn ms $
+      TypeMismatch
+        { context = "Found non-string while reading string list"
+        , expected = [TypeString]
+        , obtained = [classifyNative n]
+        , obtainedValues = [Just $ StgNat n Nothing]
+        }
+
 
 -- | Extract the native return value from the machine state
 conReturn :: MachineState -> Tag

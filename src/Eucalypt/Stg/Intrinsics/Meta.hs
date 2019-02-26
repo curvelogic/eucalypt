@@ -18,6 +18,7 @@ import Eucalypt.Stg.IntrinsicInfo
 import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Syn
+import Eucalypt.Stg.Value
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =

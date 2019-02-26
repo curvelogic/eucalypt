@@ -17,6 +17,7 @@ import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
 import Eucalypt.Stg.Pretty
+import Eucalypt.Stg.Value
 import qualified Text.PrettyPrint as P
 
 

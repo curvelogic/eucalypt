@@ -16,6 +16,7 @@ import Eucalypt.Stg.Intrinsics.Common
 import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Address (peek)
 import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Value
 
 
 intrinsics :: [IntrinsicInfo]

@@ -20,14 +20,10 @@ import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.IntrinsicInfo
-import Eucalypt.Stg.Intrinsics.Common
-  ( invoke
-  , nativeToString
-  , readStrList
-  , returnList
-  )
+import Eucalypt.Stg.Intrinsics.Common (invoke, readStrList, returnList)
 import Eucalypt.Stg.Machine
 import Eucalypt.Stg.Native
+import Eucalypt.Stg.Value
 import Safe (headMay)
 import qualified Text.Printf as PF
 import qualified Text.Regex.PCRE.Heavy as R
@@ -97,6 +93,17 @@ join ms l s = do
 letters :: MachineState -> String -> IO MachineState
 letters ms s = returnList ms $ map (\c -> NativeString [c]) s
 
+
+nativeToString :: Native -> String
+nativeToString n =
+  case n of
+    NativeNumber sc ->
+      case floatingOrInteger sc of
+        Left f -> show (f :: Double)
+        Right i -> show (i :: Integer)
+    NativeString s -> s
+    NativeSymbol s -> unintern s
+    NativeDynamic _ -> "#DYN"
 
 
 -- | __STR(n) - convert native to string in default way
