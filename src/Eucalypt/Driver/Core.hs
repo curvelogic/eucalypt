@@ -28,7 +28,7 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Either (partitionEithers, rights)
 import Data.Foldable (toList)
 import qualified Data.Map as M
-import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
+import Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -37,12 +37,11 @@ import Data.Yaml as Y
 import Eucalypt.Core.Desugar (translateToCore)
 import Eucalypt.Core.Error
 import Eucalypt.Core.Import
-import Eucalypt.Core.Metadata
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Unit
 import Eucalypt.Driver.Error (CommandError(..))
-import Eucalypt.Driver.Git
+import Eucalypt.Driver.ImportHandler (importHandler)
 import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import Eucalypt.Reporting.Error (EucalyptError(..))
@@ -57,7 +56,6 @@ import Eucalypt.Syntax.Input
   ( Input(..)
   , Locator(..)
   , normaliseLocator
-  , parseInputFromString
   )
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
@@ -67,50 +65,6 @@ import System.Directory (getHomeDirectory)
 import System.Exit
 import System.IO
 import System.Posix.Directory
-
-
-
--- * Import handling
-
-
-
--- | Imports can be specified in a variety of ways. Simple imports are
--- resolved relative to the load path. Git imports need caching and
--- are converted into 'Input's once cached.
-data ImportSpecification
-  = SimpleImport { input :: Input }
-  | GitImport { repo :: URI
-              , commit :: String
-              , input :: Input }
-
-
-importsFromMetadata :: CoreExp a -> Maybe [ImportSpecification]
-importsFromMetadata m = readUnevaluatedMetadata "import" m extract
-  where
-    extract (CorePrim _ (CoreString s)) =
-      map SimpleImport $ maybeToList $ parseInputFromString s
-    extract (CoreList _ l) = concatMap extract l
-    extract _ = []
-
-
-
-resolveToInput :: Path Abs Dir -> ImportSpecification -> Input
-resolveToInput _ SimpleImport {input = i} = i
-resolveToInput eucalyptd GitImport {..} =
-  fromMaybe input $ inputForCachedFile eucalyptd repo commit input
-
-
-
-
-importHandler :: Path Abs Dir -> ImportHandler
-importHandler eucalyptd = ImportHandler
-      { readImports =
-          fmap (fmap (resolveToInput eucalyptd)) . importsFromMetadata
-      , pruneImports = pruneUnevaluatedMetadata "import"
-      }
-
-
--- * Loading / caching core
 
 
 
