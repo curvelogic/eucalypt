@@ -13,7 +13,6 @@ import Control.Monad (join)
 import Data.Bifunctor (bimap)
 import Data.Either (partitionEithers)
 import Data.Maybe
-import Eucalypt.Syntax.Input
 import Eucalypt.Core.Syn
 
 
@@ -134,16 +133,3 @@ determineTarget meta = (, doc, format) <$> target
     target = join $ readUnevaluatedMetadata "target" meta symbolName
     doc = fromMaybe "" $ join $ readUnevaluatedMetadata "doc" meta stringContent
     format = join $ readUnevaluatedMetadata "format" meta symbolName
-
-
-
-importsFromMetadata :: CoreExp a -> Maybe [Input]
-importsFromMetadata m =
-  readUnevaluatedMetadata "import" m extract
-  where
-    extract (CorePrim _ (CoreString s)) = maybeToList $ parseInputFromString s
-    extract (CoreList _ l) = concatMap extract l
-    extract _ = []
-
-pruneImports :: CoreExp a -> CoreExp a
-pruneImports = pruneUnevaluatedMetadata "import"

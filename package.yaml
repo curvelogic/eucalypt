@@ -61,6 +61,7 @@ library:
     - time
     - tomland
     - transformers
+    - typed-process
     - unix
     - unordered-containers
     - vector

@@ -7,8 +7,9 @@ module Eucalypt.Core.DesugarSpec
 
 import Control.Monad.State.Strict
 import Data.Foldable (toList)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, maybeToList)
 import Eucalypt.Core.Desugar
+import Eucalypt.Core.Import
 import Eucalypt.Core.Metadata
 import Eucalypt.Core.Target
 import qualified Eucalypt.Core.AnonSyn as ASyn
@@ -33,22 +34,46 @@ spec = do
   importsSpec
   interpolationSpec
 
+inputsFromMetadata :: Syn.CoreExp a -> Maybe [Input]
+inputsFromMetadata m = readUnevaluatedMetadata "import" m extract
+  where
+    extract (Syn.CorePrim _ (Syn.CoreString s)) = maybeToList $ parseInputFromString s
+    extract (Syn.CoreList _ l) = concatMap extract l
+    extract _ = []
+
+-- | An import handler for testing that reads simple input imports but
+-- doesn't handle git imports.
+testImportHandler :: ImportHandler
+testImportHandler =
+  ImportHandler
+    { readImports = inputsFromMetadata
+    , pruneImports = pruneUnevaluatedMetadata "import"
+    }
+
+
 fakeInput :: Input
 fakeInput =
   Input {inputLocator = StdInput, inputName = Nothing, inputFormat = "eu"}
 
 -- ? shims
 testDesugarSoup :: [Expression] -> Syn.CoreExpr
-testDesugarSoup = (`evalState` initTranslateState 1) . unTranslate . translateSoup
+testDesugarSoup =
+  (`evalState` initTranslateState 1 nullImportHandler) .
+  unTranslate . translateSoup
 
 testDesugarBlock :: Block -> Syn.CoreExpr
-testDesugarBlock = (`evalState` initTranslateState 1) . unTranslate . translateBlock nowhere
+testDesugarBlock =
+  (`evalState` initTranslateState 1 nullImportHandler) .
+  unTranslate . translateBlock nowhere
 
 testDesugar :: Expression -> Syn.CoreExpr
-testDesugar = (`evalState` initTranslateState 1) . unTranslate . translate
+testDesugar =
+  (`evalState` initTranslateState 1 nullImportHandler) . unTranslate . translate
 
 testDesugarLiteral :: PrimitiveLiteral -> Syn.CoreExpr
-testDesugarLiteral = (`evalState` initTranslateState 1) . unTranslate . desugarLiteral nowhere
+testDesugarLiteral =
+  (`evalState` initTranslateState 1 nullImportHandler) .
+  unTranslate . desugarLiteral nowhere
 
 coreSpec :: Spec
 coreSpec =
@@ -246,10 +271,10 @@ targetsSpec =
       (determineTarget . testDesugar) (targetAnnotation "T" "x") `shouldBe`
       Just ("T", "x", Nothing)
     it "finds T in { a: { ` {target: :T doc: \"x\"} b: _ } }" $
-      (truTargets . translateToCore fakeInput 1) targetSampleA `shouldBe`
+      (truTargets . translateToCore testImportHandler fakeInput 1) targetSampleA `shouldBe`
       [TargetSpec "T" "x" Nothing ["a", "b"]]
     it "finds T and U in larger sample " $
-      (truTargets . translateToCore fakeInput 1) targetSampleB `shouldBe`
+      (truTargets . translateToCore testImportHandler fakeInput 1) targetSampleB `shouldBe`
       [TargetSpec "T" "x" Nothing ["a", "b"], TargetSpec "U" "y" Nothing ["a", "c"]]
     it "reads annotation ` {target: :T format: :f doc: \"x\"}" $
       (determineTarget . testDesugar) (targetFormatAnnotation "T" "x" "f") `shouldBe`
@@ -268,13 +293,15 @@ importSampleA =
 
 importsSpec :: Spec
 importsSpec =
-  describe "import detection" $ do
-  it "reads annotation `{import: [\"x.eu\", \"y.eu\"]}`" $
-    (importsFromMetadata . testDesugar) (importAnnotation ["x.eu", "y.eu"]) `shouldBe`
-    traverse parseInputFromString ["x.eu", "y.eu"]
+  describe "import detection" $
+  -- TODO: move to driver.core
+  -- it "reads annotation `{import: [\"x.eu\", \"y.eu\"]}`" $
+  --   (importsFromMetadata . testDesugar) (importAnnotation ["x.eu", "y.eu"]) `shouldBe`
+  --   traverse parseInputFromString ["x.eu", "y.eu"]
   it "finds imports for nested block" $
-    (toList . truImports . translateToCore fakeInput 1) importSampleA `shouldBe`
-    fromJust (traverse parseInputFromString ["a.yaml", "b.yaml"])
+  (toList . truImports . translateToCore testImportHandler fakeInput 1)
+    importSampleA `shouldBe`
+  fromJust (traverse parseInputFromString ["a.yaml", "b.yaml"])
 
 interpolationSpec:: Spec
 interpolationSpec =

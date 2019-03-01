@@ -8,7 +8,16 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
-module Eucalypt.Core.Unit where
+module Eucalypt.Core.Unit
+  -- * Types and constructors
+  ( TranslationUnit_(..)
+  , TranslationUnit
+  , dataUnit
+  , specialUnit
+  -- * Functions
+  , applyName
+  , mergeTranslationUnits
+  ) where
 
 import qualified Data.Set as S
 import Eucalypt.Syntax.Input

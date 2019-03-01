@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 {-|
 Module      : Eucalypt.Core.Import
 Description : Importing modules and data into core
@@ -6,19 +7,53 @@ License     :
 Maintainer  : greg@curvelogic.co.uk
 Stability   : experimental
 -}
-module Eucalypt.Core.Import where
+module Eucalypt.Core.Import
+    -- * Types and smart constructors
+  ( ImportHandler(..)
+  , nullImportHandler
+  , ImportMap
+    -- * Functions
+  , applyAllImports
+    -- * Exposed for tests
+  , processImports
+  ) where
 
 import Bound
 import Control.Monad.Trans
+import Data.Bifunctor
 import Data.Foldable (toList)
 import qualified Data.Graph as G
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
-import Eucalypt.Core.Metadata
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Unit
 import Eucalypt.Syntax.Input
-import Data.Bifunctor
+
+
+
+-- | An import handler is something that can read 'Import's from
+-- metadata in core. The driver will provide one.
+data ImportHandler = ImportHandler {
+    readImports :: forall v. CoreExp v -> Maybe [Input]
+    -- ^ read an imports out of core syntax and convert to inputs
+  , pruneImports :: forall v. CoreExp v -> CoreExp v
+    -- ^ prune the import specifications from core syntax
+}
+
+
+-- | Map of input to their core expression, maintained during
+-- processing of imports
+type ImportMap = M.Map Input TranslationUnit
+
+
+
+-- | A null import handler suitable for contexts (data) that cannot
+-- contain imports.
+nullImportHandler :: ImportHandler
+nullImportHandler =
+  ImportHandler {readImports = const $ Just [], pruneImports = id}
+
+
 
 -- | Convert a function on expressions to a function on scopes
 transScope ::
@@ -32,52 +67,63 @@ transScope f = toScope . f . fromScope
 liftLoad :: (Input -> CoreExp a) -> (Input -> CoreExp (Var b a))
 liftLoad load = fromScope . lift . load
 
+
 -- | Pure import-splicing function, assumes that we have preloaded
 -- core expression for each input.
---
---
 processImports ::
      (ToCoreBindingName a, Show a)
-  => (Input -> CoreExp a)
-  -> CoreExp a
-  -> CoreExp a
-processImports load expr@(CoreMeta smid m body) =
-  case importsFromMetadata m of
-    Just imports ->
-      CoreMeta smid (pruneImports m) $
-      foldr (\i e -> rebody (load i) e) (processImports load body) imports
+  => (Input -> CoreExp a) -- ^ load input from load cache
+  -> ImportHandler        -- ^ for reading import metadata
+  -> CoreExp a            -- ^ core for import processing
+  -> CoreExp a            -- ^ core with imports inserted
+processImports load handler expr@(CoreMeta smid m body) =
+  case readImports handler m of
+    Just inputs ->
+      CoreMeta smid (pruneImports handler m) $
+      foldr
+        (\i e -> rebody (load i) e)
+        (processImports load handler body)
+        inputs
     Nothing -> expr
-processImports load (CoreLet smid bs b _) = CoreLet smid bs' b' OtherLet
+processImports load handler (CoreLet smid bs b _) = CoreLet smid bs' b' OtherLet
   where
     b' = f b
     bs' = map (second f) bs
-    f = transScope (processImports (liftLoad load))
-processImports load (CoreLambda smid i ns b) = CoreLambda smid i ns b'
+    f = transScope (processImports (liftLoad load) handler)
+processImports load handler (CoreLambda smid i ns b) = CoreLambda smid i ns b'
   where
     b' = f b
-    f = transScope (processImports (liftLoad load))
-processImports load (CoreLookup smid obj n d) =
-  CoreLookup smid (processImports load obj) n (processImports load <$> d)
-processImports load (CoreList smid els) =
-  CoreList smid $ map (processImports load) els
-processImports load (CoreBlock smid l) =
-  CoreBlock smid $ processImports load l
-processImports load (CoreArgTuple smid as) =
-  CoreArgTuple smid $ map (processImports load) as
-processImports load (CoreApply smid f xs) =
-  CoreApply smid (processImports load f) (map (processImports load) xs)
-processImports load (CoreOpSoup smid els) =
-  CoreOpSoup smid $ map (processImports load) els
-processImports  load (CoreOperator smid x p e) =
-  CoreOperator smid x p $ processImports load e
-processImports _ expr = expr
+    f = transScope (processImports (liftLoad load) handler)
+processImports load handler (CoreLookup smid obj n d) =
+  CoreLookup
+    smid
+    (processImports load handler obj)
+    n
+    (processImports load handler <$> d)
+processImports load handler (CoreList smid els) =
+  CoreList smid $ map (processImports load handler) els
+processImports load handler (CoreBlock smid l) =
+  CoreBlock smid $ processImports load handler l
+processImports load handler (CoreArgTuple smid as) =
+  CoreArgTuple smid $ map (processImports load handler) as
+processImports load handler (CoreApply smid f xs) =
+  CoreApply
+    smid
+    (processImports load handler f)
+    (map (processImports load handler) xs)
+processImports load handler (CoreOpSoup smid els) =
+  CoreOpSoup smid $ map (processImports load handler) els
+processImports load handler (CoreOperator smid x p e) =
+  CoreOperator smid x p $ processImports load handler e
+processImports _ _ expr = expr
 
 
 
 -- | Process the imports in a translation unit
-processUnit :: (Input -> CoreExpr) -> TranslationUnit -> TranslationUnit
-processUnit load u@TranslationUnit {truCore = body} =
-  u {truCore = processImports load body}
+processUnit ::
+     (Input -> CoreExpr) -> ImportHandler -> TranslationUnit -> TranslationUnit
+processUnit load handler u@TranslationUnit {truCore = body} =
+  u {truCore = processImports load handler body}
 
 
 
@@ -85,8 +131,10 @@ processUnit load u@TranslationUnit {truCore = body} =
 -- are cycles, in which case return the inputs involved in the cycles
 -- (in Left)
 applyAllImports ::
-     M.Map Input TranslationUnit -> Either [Input] (M.Map Input TranslationUnit)
-applyAllImports unitMap =
+     ImportHandler            -- ^ for reading imports
+  -> ImportMap                -- ^ of inputs to core
+  -> Either [Input] ImportMap -- ^ cyclic inputs or processed map
+applyAllImports handler unitMap =
   if (not . null) cyclicInputs
     then Left cyclicInputs
     else Right $ foldl processInput unitMap sortedInputs
@@ -99,7 +147,8 @@ applyAllImports unitMap =
         (i, _, _) -> i
     toLoadFn m k =
       truCore $ fromMaybe (error $ "no such key: " ++ show k) (M.lookup k m)
-    processInput m input = M.update (return . processUnit (toLoadFn m)) input m
+    processInput m input =
+      M.update (return . processUnit (toLoadFn m) handler) input m
     cyclicInputs =
       (map toInput . mconcat . filter isCycle . map toList . G.scc) graph
     isCycle cc = length cc > 1 || (minimum cc, minimum cc) `elem` G.edges graph
