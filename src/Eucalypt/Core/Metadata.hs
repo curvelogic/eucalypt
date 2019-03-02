@@ -52,9 +52,17 @@ splitAnnotationMetadata (CoreBlock smid (CoreList _ items)) =
         else (Just . CoreBlock smid . CoreList smid) els
 splitAnnotationMetadata m = (Just m, Nothing)
 
+
+
 -- | Read from unevaluated metadata (expanding out only an outer let
 -- to prepare a block for lookup).
-readUnevaluatedMetadata :: String -> CoreExp a -> (CoreExp a -> b) -> Maybe b
+--
+-- TODO: optimise retrieving several keys at once
+readUnevaluatedMetadata ::
+     String           -- ^ key to read
+  -> CoreExp a        -- ^ core expression for metadata
+  -> (CoreExp a -> b) -- ^ fn to extract data from value
+  -> Maybe b          -- ^ the extracted value if key exists
 readUnevaluatedMetadata key expr@CoreLet{} readVal =
   readUnevaluatedMetadata key (instantiateLet expr) readVal
 readUnevaluatedMetadata key (CoreBlock _ (CoreList _ items)) readVal =
@@ -65,6 +73,8 @@ readUnevaluatedMetadata key (CoreBlock _ (CoreList _ items)) readVal =
     kv (CoreMeta _ _ i) = kv i
     kv _ = Nothing
 readUnevaluatedMetadata _ _ _ = Nothing
+
+
 
 -- | Remove elements from an unevaluated metadata block by key
 pruneUnevaluatedMetadata :: String -> CoreExp a -> CoreExp a

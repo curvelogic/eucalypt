@@ -12,6 +12,8 @@ Stability   : experimental
 
 module Eucalypt.Driver.Git where
 
+import Debug.Trace
+
 import Control.Exception.Safe
 import Control.Monad (void)
 import Data.Maybe (fromMaybe)
@@ -46,14 +48,15 @@ inputForCachedFile ::
   -> String       -- ^ git commit
   -> Input        -- ^ input before resolving against cache dir
   -> m Input      -- ^ input resolved against cache dir
-inputForCachedFile eucalyptd repo commit input = do
-  cachedir <- formCacheDir eucalyptd repo commit
+inputForCachedFile eucalyptd repo commit input =
   case inputLocator input of
     URLInput u ->
       case uriScheme u of
         "file:" -> do
-          rel <- parseRelDir (uriPath u)
-          let uri = fromMaybe u (parseURI $ toFilePath (cachedir </> rel))
+          cachedir <- traceShowId <$> formCacheDir eucalyptd repo commit
+          rel <- parseRelFile (uriPath u)
+          let filepath = toFilePath (cachedir </> rel)
+          let uri = fromMaybe u (parseURI $ "file:" ++ filepath)
           return input {inputLocator = URLInput uri}
         sch ->
           throwM $
@@ -61,8 +64,7 @@ inputForCachedFile eucalyptd repo commit input = do
           "URL scheme " ++ sch ++ " incompatible with git import."
     _ ->
       throwM $
-      InvalidImport $
-      "Input " ++ show input ++ " incompatible with git import."
+      InvalidImport $ "Input " ++ show input ++ " incompatible with git import."
 
 
 

@@ -37,6 +37,7 @@ data ImportSpecification
   | GitImport { repo :: URI
               , commit :: String
               , input :: Input }
+  deriving (Eq, Show)
 
 
 -- | Read 'ImportSpecification's from core metadata
@@ -45,6 +46,24 @@ importsFromMetadata m = readUnevaluatedMetadata "import" m extract
   where
     extract (CorePrim _ (CoreString s)) =
       map SimpleImport $ maybeToList $ parseInputFromString s
+    extract (CoreList _ l) = concatMap extract l
+    extract b@CoreBlock {} = fromMaybe [] $ extractGitImports b
+    extract b@CoreLet {} = fromMaybe [] $ extractGitImports b
+    extract _ = []
+
+
+
+-- | Extract git import from a metadata block inside the import list
+extractGitImports :: CoreExp a -> Maybe [ImportSpecification]
+extractGitImports m = do
+  repo <- readUnevaluatedMetadata "git" m fromStr >>= parseURI
+  commit <- readUnevaluatedMetadata "commit" m fromStr
+  inputs <- readUnevaluatedMetadata "import" m extract
+  return $ map (GitImport repo commit) inputs
+  where
+    fromStr (CorePrim _ (CoreString s)) = s
+    fromStr _ = []
+    extract (CorePrim _ (CoreString s)) = maybeToList $ parseInputFromString s
     extract (CoreList _ l) = concatMap extract l
     extract _ = []
 

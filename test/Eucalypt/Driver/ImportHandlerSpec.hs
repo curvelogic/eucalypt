@@ -21,18 +21,97 @@ testIH = importHandler $ fromJust $ parseAbsDir "/"
 testRead :: CoreExp v -> Maybe [Input]
 testRead = readImports testIH
 
+testRepo :: String
+testRepo = "https://github.com/gmorpheme/eu.aws.git"
+
+testCommit :: String
+testCommit = "b230b6d4e2a9b1242806bb89c2973547a0eaf45e"
+
+testFile :: String
+testFile = "cloudformation.eu"
+
 spec :: Spec
 spec =
   describe "Import Handler" $ do
-    it "recognises imports in { import: \"a=blah\" }" $
-      testRead (block [element "import" $ str "a=blah"] :: CoreExpr) `shouldBe`
-      pure <$>
-      parseInputFromString "a=blah"
-    it "recognises imports in { import: [\"a=blah\"] }" $
-      testRead (block [element "import" $ corelist [str "a=blah"]] :: CoreExpr) `shouldBe`
-      pure <$>
-      parseInputFromString "a=blah"
-    it "recognises imports in { import: [\"a=blah\", \"b=foo\"] }" $
-      testRead
-        (block [element "import" $ corelist [str "a=blah", str "b=foo"]] :: CoreExpr) `shouldBe`
-      sequence [parseInputFromString "a=blah", parseInputFromString "b=foo"]
+    context "Simple imports" $ do
+      it "recognises imports in { import: \"a=blah\" }" $
+        testRead (block [element "import" $ str "a=blah"] :: CoreExpr) `shouldBe`
+        pure <$>
+        parseInputFromString "a=blah"
+      it "recognises imports in { import: [\"a=blah\"] }" $
+        testRead
+          (block [element "import" $ corelist [str "a=blah"]] :: CoreExpr) `shouldBe`
+        pure <$>
+        parseInputFromString "a=blah"
+      it "recognises imports in { import: [\"a=blah\", \"b=foo\"] }" $
+        testRead
+          (block [element "import" $ corelist [str "a=blah", str "b=foo"]] :: CoreExpr) `shouldBe`
+        sequence [parseInputFromString "a=blah", parseInputFromString "b=foo"]
+    context "Git imports" $ do
+      it "recognises imports in single git import" $
+        testRead
+          (block
+             [ element "import" $
+               letblock
+                 [ ("r", str testRepo)
+                 , ("c", str testCommit)
+                 , ("i", str testFile)
+                 ] $
+               block
+                 [ element "git" $ var "r"
+                 , element "commit" $ var "c"
+                 , element "import" $ var "i"
+                 ]
+             ]) `shouldBe`
+        pure <$>
+        parseInputFromString ("/.cache/" ++ testCommit ++ "/cloudformation.eu")
+      it "recognises imports in double git import" $
+        testRead
+          (block
+             [ element "import" $
+               letblock
+                 [ ("r", str testRepo)
+                 , ("c", str testCommit)
+                 , ("i", corelist [str "a=foo", str "b=bar"])
+                 ] $
+               block
+                 [ element "git" $ var "r"
+                 , element "commit" $ var "c"
+                 , element "import" $ var "i"
+                 ]
+             ]) `shouldBe`
+        sequence
+          [ parseInputFromString ("a=/.cache/" ++ testCommit ++ "/foo")
+          , parseInputFromString ("b=/.cache/" ++ testCommit ++ "/bar")
+          ]
+      it "recognises imports in two git imports" $
+        testRead
+          (block
+             [ element "import" $
+               corelist
+                 [ letblock
+                     [ ("r", str testRepo)
+                     , ("c", str testCommit)
+                     , ("i", corelist [str "a=foo"])
+                     ] $
+                   block
+                     [ element "git" $ var "r"
+                     , element "commit" $ var "c"
+                     , element "import" $ var "i"
+                     ]
+                 , letblock
+                     [ ("r", str testRepo)
+                     , ("c", str testCommit)
+                     , ("i", corelist [str "b=bar"])
+                     ] $
+                   block
+                     [ element "git" $ var "r"
+                     , element "commit" $ var "c"
+                     , element "import" $ var "i"
+                     ]
+                 ]
+             ]) `shouldBe`
+        sequence
+          [ parseInputFromString ("a=/.cache/" ++ testCommit ++ "/foo")
+          , parseInputFromString ("b=/.cache/" ++ testCommit ++ "/bar")
+          ]
