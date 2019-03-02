@@ -5,7 +5,7 @@ module Eucalypt.Core.ImportSpec
 
 import Data.Either (fromLeft, fromRight)
 import qualified Data.Map as M
-import Data.Maybe (fromJust, maybeToList)
+import Data.Maybe (fromMaybe, fromJust, maybeToList)
 import qualified Data.Set as S
 import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Import
@@ -18,8 +18,8 @@ import Test.Hspec
 main :: IO ()
 main = hspec spec
 
-inputsFromMetadata :: CoreExp a -> Maybe [Input]
-inputsFromMetadata m = readUnevaluatedMetadata "import" m extract
+inputsFromMetadata :: CoreExp a -> [Input]
+inputsFromMetadata m = fromMaybe [] $ readUnevaluatedMetadata "import" m extract
   where
     extract (CorePrim _ (CoreString s)) = maybeToList $ parseInputFromString s
     extract (CoreList _ l) = concatMap extract l
@@ -30,7 +30,7 @@ inputsFromMetadata m = readUnevaluatedMetadata "import" m extract
 testImportHandler :: ImportHandler
 testImportHandler =
   ImportHandler
-    { readImports = inputsFromMetadata
+    { readImports = \m -> zip (inputsFromMetadata m) (repeat $ return ())
     , pruneImports = pruneUnevaluatedMetadata "import"
     }
 
@@ -50,6 +50,7 @@ unitA =
     , truImports = mempty
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitBInput :: Input
@@ -82,6 +83,7 @@ unitB =
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsAB :: M.Map Input TranslationUnit
@@ -122,6 +124,7 @@ unitC =
     , truImports = S.fromList [unitBInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsABC :: M.Map Input TranslationUnit
@@ -139,6 +142,7 @@ namedUnit = applyName "name"
     , truImports = mempty
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitDInput :: Input
@@ -175,6 +179,7 @@ unitD =
     , truImports = S.fromList [namedInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsNamedAndD :: M.Map Input TranslationUnit
@@ -216,6 +221,7 @@ importUnderImport =
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
     , truSourceMap =  mempty
+    , truPendingActions = mempty
     }
 
 unitsImportUnderImportAndA :: M.Map Input TranslationUnit
@@ -242,6 +248,7 @@ circularImport =
     , truImports = S.fromList [circularImportInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsCircularImport :: M.Map Input TranslationUnit

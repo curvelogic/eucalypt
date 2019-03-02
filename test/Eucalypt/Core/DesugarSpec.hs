@@ -7,7 +7,7 @@ module Eucalypt.Core.DesugarSpec
 
 import Control.Monad.State.Strict
 import Data.Foldable (toList)
-import Data.Maybe (fromJust, maybeToList)
+import Data.Maybe (fromMaybe, fromJust, maybeToList)
 import Eucalypt.Core.Desugar
 import Eucalypt.Core.Import
 import Eucalypt.Core.Metadata
@@ -34,8 +34,8 @@ spec = do
   importsSpec
   interpolationSpec
 
-inputsFromMetadata :: Syn.CoreExp a -> Maybe [Input]
-inputsFromMetadata m = readUnevaluatedMetadata "import" m extract
+inputsFromMetadata :: Syn.CoreExp a -> [Input]
+inputsFromMetadata m = fromMaybe [] $ readUnevaluatedMetadata "import" m extract
   where
     extract (Syn.CorePrim _ (Syn.CoreString s)) = maybeToList $ parseInputFromString s
     extract (Syn.CoreList _ l) = concatMap extract l
@@ -46,7 +46,7 @@ inputsFromMetadata m = readUnevaluatedMetadata "import" m extract
 testImportHandler :: ImportHandler
 testImportHandler =
   ImportHandler
-    { readImports = inputsFromMetadata
+    { readImports = \m -> zip (inputsFromMetadata m) (repeat $ return ())
     , pruneImports = pruneUnevaluatedMetadata "import"
     }
 

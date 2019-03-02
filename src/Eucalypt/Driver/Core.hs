@@ -317,20 +317,41 @@ loadUnits inputs = do
 
 
 
+-- | Process any IO actions (repo caching...) required to make inputs
+-- valid.
+processActions :: TranslationUnit -> CoreLoad TranslationUnit
+processActions u =
+  liftIO $ sequence_ (truPendingActions u) >> return (resetActions u)
+
+
+
+-- | Load units into an import map (of input -> core)
+loadUnitsIntoMap :: [Input] -> ImportMap -> CoreLoad ImportMap
+loadUnitsIntoMap ins m = do
+  units <- loadUnits ins >>= traverse processActions
+  return $ foldl (\m' (k, v) -> M.insert k v m') m $ zip ins units
+
+
+
+-- | Identify all 'Input's required by the units in the map that have
+-- not already been loaded in to the map
+pendingImports :: ImportMap -> [Input]
+pendingImports m = toList $ S.difference (requiredInputs m) (cachedInputs m)
+  where
+    requiredInputs = foldMap truImports . M.elems
+    cachedInputs = M.keysSet
+
+
+
 -- | Parse all units in the graph of imports.
 --
 loadAllUnits :: [Input] -> CoreLoad ImportMap
 loadAllUnits inputs = do
-  unitMap <- readImportsToMap inputs mempty
+  unitMap <- loadUnitsIntoMap inputs mempty
   iterateUntilM (null . pendingImports) step unitMap
   where
-    readImportsToMap ins m = do
-      units <- loadUnits ins
-      return $ foldl (\m' (k, v) -> M.insert k v m') m $ zip ins units
-    step m = readImportsToMap (toList $ pendingImports m) m
-    requiredInputs = foldMap truImports . M.elems
-    cachedInputs = M.keysSet
-    pendingImports m = S.difference (requiredInputs m) (cachedInputs m)
+    step m = loadUnitsIntoMap (pendingImports m) m
+
 
 
 -- | Parse all units specified on command line (or inferred) to core

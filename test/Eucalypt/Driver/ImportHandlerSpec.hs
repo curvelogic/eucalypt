@@ -18,8 +18,8 @@ main = hspec spec
 testIH :: ImportHandler
 testIH = importHandler $ fromJust $ parseAbsDir "/"
 
-testRead :: CoreExp v -> Maybe [Input]
-testRead = readImports testIH
+testRead :: CoreExp v -> [Input]
+testRead = map fst . readImports testIH
 
 testRepo :: String
 testRepo = "https://github.com/gmorpheme/eu.aws.git"
@@ -36,17 +36,15 @@ spec =
     context "Simple imports" $ do
       it "recognises imports in { import: \"a=blah\" }" $
         testRead (block [element "import" $ str "a=blah"] :: CoreExpr) `shouldBe`
-        pure <$>
-        parseInputFromString "a=blah"
+        [fromJust $ parseInputFromString "a=blah"]
       it "recognises imports in { import: [\"a=blah\"] }" $
         testRead
           (block [element "import" $ corelist [str "a=blah"]] :: CoreExpr) `shouldBe`
-        pure <$>
-        parseInputFromString "a=blah"
+        [fromJust $ parseInputFromString "a=blah"]
       it "recognises imports in { import: [\"a=blah\", \"b=foo\"] }" $
         testRead
           (block [element "import" $ corelist [str "a=blah", str "b=foo"]] :: CoreExpr) `shouldBe`
-        sequence [parseInputFromString "a=blah", parseInputFromString "b=foo"]
+        map (fromJust . parseInputFromString) ["a=blah", "b=foo"]
     context "Git imports" $ do
       it "recognises imports in single git import" $
         testRead
@@ -63,8 +61,10 @@ spec =
                  , element "import" $ var "i"
                  ]
              ]) `shouldBe`
-        pure <$>
-        parseInputFromString ("/.cache/" ++ testCommit ++ "/cloudformation.eu")
+        [ fromJust $
+          parseInputFromString
+            ("/.cache/" ++ testCommit ++ "/cloudformation.eu")
+        ]
       it "recognises imports in double git import" $
         testRead
           (block
@@ -80,9 +80,10 @@ spec =
                  , element "import" $ var "i"
                  ]
              ]) `shouldBe`
-        sequence
-          [ parseInputFromString ("a=/.cache/" ++ testCommit ++ "/foo")
-          , parseInputFromString ("b=/.cache/" ++ testCommit ++ "/bar")
+        map
+          (fromJust . parseInputFromString)
+          [ "a=/.cache/" ++ testCommit ++ "/foo"
+          , "b=/.cache/" ++ testCommit ++ "/bar"
           ]
       it "recognises imports in two git imports" $
         testRead
@@ -111,7 +112,8 @@ spec =
                      ]
                  ]
              ]) `shouldBe`
-        sequence
-          [ parseInputFromString ("a=/.cache/" ++ testCommit ++ "/foo")
-          , parseInputFromString ("b=/.cache/" ++ testCommit ++ "/bar")
+        map
+          (fromJust . parseInputFromString)
+          [ "a=/.cache/" ++ testCommit ++ "/foo"
+          , "b=/.cache/" ++ testCommit ++ "/bar"
           ]

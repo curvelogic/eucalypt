@@ -55,9 +55,12 @@ data TranslateState = TranslateState
     -- ^ imports discovered
   , trSourceMap :: SourceMap
     -- ^ map of source map IDs to source locations
+  , trActions :: [IO ()]
+    -- ^ required IO actions to prepare caches etc.
   , trBaseSMID :: SMID
     -- ^ minimum source map id for the translation unit being created
   , trImportHandler :: ImportHandler
+    -- ^ import handler for reading import specifications from core
   }
 
 newtype Translate a = Translate { unTranslate :: State TranslateState a }
@@ -76,7 +79,7 @@ initTranslateState ::
      SMID           -- ^ source map ID to start from
   -> ImportHandler  -- ^ for reading imports
   -> TranslateState -- ^ initial state
-initTranslateState = TranslateState [] [] [] mempty
+initTranslateState = TranslateState [] [] [] mempty mempty
 
 -- | Push a key onto the stack to track where we are, considering
 -- statically declared blocks as namespaces
@@ -116,6 +119,14 @@ recordTarget targetName targetDoc targetFormat = do
 recordImports :: [Input] -> Translate ()
 recordImports imports =
   modify $ \s@TranslateState {trImports = old} -> s {trImports = old ++ imports}
+
+
+
+-- | Record newly found actions in the unit, these may be for example
+-- caching steps to make the import 'Input's valid.
+recordActions :: [IO ()] -> Translate ()
+recordActions actions =
+  modify $ \s@TranslateState {trActions = old} -> s {trActions = old ++ actions}
 
 
 
@@ -207,7 +218,9 @@ checkTarget annot =
 checkImports :: CoreExpr -> Translate ()
 checkImports annot = do
   handler <- gets trImportHandler
-  maybe (return ()) recordImports (readImports handler annot)
+  let imports = readImports handler annot
+  recordImports $ map fst imports
+  recordActions $ map snd imports
 
 
 
@@ -472,6 +485,7 @@ translateExpressionToCore handler baseSMID ast =
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
     , truSourceMap = trSourceMap s
+    , truPendingActions = trActions s
     }
   where
     (e, s) =
@@ -490,6 +504,7 @@ translateToCore handler i baseSMID ast =
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
     , truSourceMap = trSourceMap s
+    , truPendingActions = trActions s
     }
   where
     (e, s) =

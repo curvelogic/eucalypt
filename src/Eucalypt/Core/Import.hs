@@ -34,7 +34,7 @@ import Eucalypt.Syntax.Input
 -- | An import handler is something that can read 'Import's from
 -- metadata in core. The driver will provide one.
 data ImportHandler = ImportHandler {
-    readImports :: forall v. CoreExp v -> Maybe [Input]
+    readImports :: forall v. CoreExp v -> [(Input, IO ())]
     -- ^ read an imports out of core syntax and convert to inputs
   , pruneImports :: forall v. CoreExp v -> CoreExp v
     -- ^ prune the import specifications from core syntax
@@ -51,7 +51,7 @@ type ImportMap = M.Map Input TranslationUnit
 -- contain imports.
 nullImportHandler :: ImportHandler
 nullImportHandler =
-  ImportHandler {readImports = const $ Just [], pruneImports = id}
+  ImportHandler {readImports = const [], pruneImports = id}
 
 
 
@@ -76,15 +76,14 @@ processImports ::
   -> ImportHandler        -- ^ for reading import metadata
   -> CoreExp a            -- ^ core for import processing
   -> CoreExp a            -- ^ core with imports inserted
-processImports load handler expr@(CoreMeta smid m body) =
+processImports load handler (CoreMeta smid m body) =
   case readImports handler m of
-    Just inputs ->
+    imports ->
       CoreMeta smid (pruneImports handler m) $
       foldr
-        (\i e -> rebody (load i) e)
+        ((\i e -> rebody (load i) e) . fst)
         (processImports load handler body)
-        inputs
-    Nothing -> expr
+        imports
 processImports load handler (CoreLet smid bs b _) = CoreLet smid bs' b' OtherLet
   where
     b' = f b

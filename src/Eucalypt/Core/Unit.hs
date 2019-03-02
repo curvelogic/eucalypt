@@ -16,6 +16,7 @@ module Eucalypt.Core.Unit
   , specialUnit
   -- * Functions
   , applyName
+  , resetActions
   , mergeTranslationUnits
   ) where
 
@@ -28,10 +29,17 @@ import Eucalypt.Core.Target (TargetSpec, prefixPath)
 -- | The results of translation
 data TranslationUnit_ a = TranslationUnit
   { truCore :: a
+    -- ^ the core expression for evaluation
   , truInput :: Maybe Input
+    -- ^ the input representing this (if we have one)
   , truTargets :: [TargetSpec]
+    -- ^ targets discovered in the source
   , truImports :: S.Set Input
+    -- ^ imports yet to be resolved and processed
   , truSourceMap :: SourceMap
+    -- ^ source map of ids to locations
+  , truPendingActions :: [IO ()]
+    -- ^ IO actions required for import processing (i.e. cache repos)
   } deriving (Functor)
 
 type TranslationUnit = TranslationUnit_ CoreExpr
@@ -40,14 +48,14 @@ type TranslationUnit = TranslationUnit_ CoreExpr
 
 -- | Create a data unit (as a unit from an input with no targets or imports)
 dataUnit :: Input -> CoreExpr -> TranslationUnit
-dataUnit input expr = TranslationUnit expr (Just input) [] mempty mempty
+dataUnit input expr = TranslationUnit expr (Just input) [] mempty mempty mempty
 
 
 
 -- | Create a special unit for programatically constructed core, like
 -- the IO unit, (not from real input, no targets / imports)
 specialUnit :: CoreExpr -> TranslationUnit
-specialUnit expr = TranslationUnit expr Nothing [] mempty mempty
+specialUnit expr = TranslationUnit expr Nothing [] mempty mempty mempty
 
 
 
@@ -61,11 +69,18 @@ applyName n TranslationUnit {..} =
     , truTargets = newTargets
     , truImports = truImports
     , truSourceMap = truSourceMap
+    , truPendingActions = truPendingActions
     }
   where
     newCore =
       anon letexp [(n, truCore)] (anon block [anon element n (anon var n)])
     newTargets = map (prefixPath n) truTargets
+
+
+
+-- | Take the actions out of the unit for processing
+resetActions :: TranslationUnit -> TranslationUnit
+resetActions unit = unit {truPendingActions = mempty}
 
 
 
@@ -83,4 +98,5 @@ mergeTranslationUnits ts =
     , truTargets = concatMap truTargets ts
     , truImports = foldMap truImports ts
     , truSourceMap = mconcat $ map truSourceMap ts
+    , truPendingActions = mconcat $ map truPendingActions ts
     }
