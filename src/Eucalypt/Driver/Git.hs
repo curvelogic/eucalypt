@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -73,10 +74,11 @@ ensureCloned :: Path Abs Dir -- ^ eucalypt directory
   -> IO (Path Abs Dir)       -- ^ directory of cached repo
 ensureCloned eucalyptd repo commit = do
   cachedir <- formCacheDir eucalyptd repo commit
-  exists <- doesDirectoryExist (toFilePath cachedir)
-  unless exists $
-    void $ readProcess_ $ proc "git" ["clone", repo, toFilePath cachedir]
-  void $
-    withCurrentDirectory (toFilePath cachedir) $
-    readProcess_ $ proc "git" ["reset", "--hard", commit]
-  return cachedir
+  handleAny (throwM . BadCacheDir (toFilePath cachedir) . show) $ do
+    exists <- doesDirectoryExist (toFilePath cachedir)
+    unless exists $
+      void $ readProcess_ $ proc "git" ["clone", repo, toFilePath cachedir]
+    void $
+      withCurrentDirectory (toFilePath cachedir) $
+      readProcess_ $ proc "git" ["reset", "--hard", commit]
+    return cachedir

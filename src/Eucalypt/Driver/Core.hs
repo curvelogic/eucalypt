@@ -1,7 +1,9 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-|
 Module      : Eucalypt.Driver.Core
 Description : Facilities for loading core from inputs
@@ -19,7 +21,14 @@ module Eucalypt.Driver.Core
   , CoreLoader(..)
   ) where
 
-import Control.Exception.Safe (IOException, catchJust, throwM, try, tryIO)
+import Control.Exception.Safe
+  ( IOException
+  , catchJust
+  , handle
+  , throwM
+  , try
+  , tryIO
+  )
 import Control.Monad (forM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State.Strict
@@ -320,8 +329,9 @@ loadUnits inputs = do
 -- | Process any IO actions (repo caching...) required to make inputs
 -- valid.
 processActions :: TranslationUnit -> CoreLoad TranslationUnit
-processActions u =
-  liftIO $ sequence_ (truPendingActions u) >> return (resetActions u)
+processActions u = liftIO $
+  handle (\(e :: CommandError) -> throwM $ Command e) $
+  sequence_ (truPendingActions u) >> return (resetActions u)
 
 
 
