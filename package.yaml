@@ -61,6 +61,7 @@ library:
     - time
     - tomland
     - transformers
+    - typed-process
     - unix
     - unordered-containers
     - vector
@@ -106,6 +107,7 @@ tests:
       - monad-loops
       - mtl
       - network-uri
+      - path
       - pretty
       - scientific
       - silently

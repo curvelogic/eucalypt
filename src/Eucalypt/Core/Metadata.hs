@@ -13,7 +13,6 @@ import Control.Monad (join)
 import Data.Bifunctor (bimap)
 import Data.Either (partitionEithers)
 import Data.Maybe
-import Eucalypt.Syntax.Input
 import Eucalypt.Core.Syn
 
 
@@ -53,9 +52,17 @@ splitAnnotationMetadata (CoreBlock smid (CoreList _ items)) =
         else (Just . CoreBlock smid . CoreList smid) els
 splitAnnotationMetadata m = (Just m, Nothing)
 
+
+
 -- | Read from unevaluated metadata (expanding out only an outer let
 -- to prepare a block for lookup).
-readUnevaluatedMetadata :: String -> CoreExp a -> (CoreExp a -> b) -> Maybe b
+--
+-- TODO: optimise retrieving several keys at once
+readUnevaluatedMetadata ::
+     String           -- ^ key to read
+  -> CoreExp a        -- ^ core expression for metadata
+  -> (CoreExp a -> b) -- ^ fn to extract data from value
+  -> Maybe b          -- ^ the extracted value if key exists
 readUnevaluatedMetadata key expr@CoreLet{} readVal =
   readUnevaluatedMetadata key (instantiateLet expr) readVal
 readUnevaluatedMetadata key (CoreBlock _ (CoreList _ items)) readVal =
@@ -66,6 +73,8 @@ readUnevaluatedMetadata key (CoreBlock _ (CoreList _ items)) readVal =
     kv (CoreMeta _ _ i) = kv i
     kv _ = Nothing
 readUnevaluatedMetadata _ _ _ = Nothing
+
+
 
 -- | Remove elements from an unevaluated metadata block by key
 pruneUnevaluatedMetadata :: String -> CoreExp a -> CoreExp a
@@ -134,16 +143,3 @@ determineTarget meta = (, doc, format) <$> target
     target = join $ readUnevaluatedMetadata "target" meta symbolName
     doc = fromMaybe "" $ join $ readUnevaluatedMetadata "doc" meta stringContent
     format = join $ readUnevaluatedMetadata "format" meta symbolName
-
-
-
-importsFromMetadata :: CoreExp a -> Maybe [Input]
-importsFromMetadata m =
-  readUnevaluatedMetadata "import" m extract
-  where
-    extract (CorePrim _ (CoreString s)) = maybeToList $ parseInputFromString s
-    extract (CoreList _ l) = concatMap extract l
-    extract _ = []
-
-pruneImports :: CoreExp a -> CoreExp a
-pruneImports = pruneUnevaluatedMetadata "import"

@@ -23,8 +23,6 @@ import System.IO
 import qualified Text.Megaparsec.Pos as M
 import qualified Text.PrettyPrint as P
 
-
-
 -- | Send a pretty print doc to stderr
 consoleError :: P.Doc -> IO ()
 consoleError = hPutStr stderr . P.render

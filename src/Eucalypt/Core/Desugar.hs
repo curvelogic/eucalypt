@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving  #-}
 {-|
@@ -10,7 +11,19 @@ Stability   : experimental
 -}
 
 module Eucalypt.Core.Desugar
-where
+  ( translateToCore
+  , translateExpressionToCore
+  , desugar
+  , desugarLambda
+  -- * Exposed for tests
+  , initTranslateState
+  , translateSoup
+  , translateBlock
+  , translate
+  , unTranslate
+  , varifyLookupTargets
+  , desugarLiteral
+  ) where
 
 import Control.Monad.State.Strict
 import Data.Foldable (traverse_)
@@ -20,6 +33,7 @@ import qualified Data.HashMap.Strict.InsOrd as OM
 import qualified Data.Set as S
 import Eucalypt.Core.Anaphora ()
 import Eucalypt.Core.GenLookup (processGenLookup)
+import Eucalypt.Core.Import
 import Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Metadata
@@ -41,8 +55,12 @@ data TranslateState = TranslateState
     -- ^ imports discovered
   , trSourceMap :: SourceMap
     -- ^ map of source map IDs to source locations
+  , trActions :: [IO ()]
+    -- ^ required IO actions to prepare caches etc.
   , trBaseSMID :: SMID
     -- ^ minimum source map id for the translation unit being created
+  , trImportHandler :: ImportHandler
+    -- ^ import handler for reading import specifications from core
   }
 
 newtype Translate a = Translate { unTranslate :: State TranslateState a }
@@ -57,8 +75,11 @@ instance MonadSupplySMID Translate where
     return k
 
 -- | Initial state
-initTranslateState :: SMID -> TranslateState
-initTranslateState = TranslateState [] [] [] mempty
+initTranslateState ::
+     SMID           -- ^ source map ID to start from
+  -> ImportHandler  -- ^ for reading imports
+  -> TranslateState -- ^ initial state
+initTranslateState = TranslateState [] [] [] mempty mempty
 
 -- | Push a key onto the stack to track where we are, considering
 -- statically declared blocks as namespaces
@@ -83,15 +104,6 @@ desugarLiteral loc lit =
 
 
 
--- | Convert an atomic name (op or normal) to a relative name
-relativeName :: AtomicName -> CoreRelativeName
-relativeName n =
-  case n of
-    NormalName name -> name
-    OperatorName name -> name
-
-
-
 -- | Record the current stack as a path into the namespaces with name
 -- of target and any associated documentation
 recordTarget :: String -> String -> Maybe String -> Translate ()
@@ -107,6 +119,14 @@ recordTarget targetName targetDoc targetFormat = do
 recordImports :: [Input] -> Translate ()
 recordImports imports =
   modify $ \s@TranslateState {trImports = old} -> s {trImports = old ++ imports}
+
+
+
+-- | Record newly found actions in the unit, these may be for example
+-- caching steps to make the import 'Input's valid.
+recordActions :: [IO ()] -> Translate ()
+recordActions actions =
+  modify $ \s@TranslateState {trActions = old} -> s {trActions = old ++ actions}
 
 
 
@@ -185,7 +205,7 @@ translateDeclarationForm a _k Located {locatee = form, location = loc} = do
 
 
 
--- | Check translated metadata expression for targets
+-- | Check translated metadata expression for targets and record them
 checkTarget :: CoreExpr -> Translate ()
 checkTarget annot =
   case determineTarget annot of
@@ -194,11 +214,15 @@ checkTarget annot =
 
 
 
--- | Check translated metadata expression for imports
+-- | Check translated metadata expression for imports and record them
 checkImports :: CoreExpr -> Translate ()
-checkImports annot = forM_ (importsFromMetadata annot) recordImports
+checkImports annot = do
+  handler <- gets trImportHandler
+  let imports = readImports handler annot
+  recordImports $ map fst imports
+  recordActions $ map snd imports
 
--- ? block translation
+
 
 -- | Description of all declaration details for producing the combined
 -- core let / block which represents the AST block.
@@ -213,11 +237,7 @@ data DeclarationFields = DeclarationFields
     -- ^ the translation of the value
   }
 
--- | Compare 'DeclarationFields' for equal keys, to identify illegal
--- redeclarations
-sameKey :: DeclarationFields -> DeclarationFields -> Bool
-sameKey DeclarationFields {declKey = k1} DeclarationFields {declKey = k2} =
-  k1 == k2
+
 
 -- | Return the binding to use in the 'CoreLet'
 asBinding ::
@@ -228,6 +248,8 @@ asBinding DeclarationFields{..} =
       Just m -> withMeta (sourceMapId m) m valueExpr
       Nothing -> valueExpr)
 
+
+
 -- | Extract declarations from the block (ignoring unimplemented
 -- splices)
 --
@@ -236,6 +258,7 @@ declarations Located{locatee=(Block elements)} = mapMaybe toDecl elements
   where
     toDecl Located{locatee=(Splice _)} = Nothing
     toDecl Located{locatee=(Declaration d)} = Just d
+
 
 
 -- | For each declaration translate and return a unified description
@@ -267,6 +290,8 @@ unifiedDeclarations blk =
               (RightOperatorDecl k _ _) -> k
        in atomicName name
 
+
+
 -- | Maintain a translation state as we process the declarations,
 -- allowing us to identify illegal redeclarations.
 data BlockTranslationState = BlockTranslationState
@@ -278,9 +303,13 @@ data BlockTranslationState = BlockTranslationState
     -- ^ to accumulate the block elements
   }
 
+
+
 -- | Initial blank block translation state
 initBlockTranslationState :: BlockTranslationState
 initBlockTranslationState = BlockTranslationState OM.empty [] []
+
+
 
 -- | Add a new declaration into the accumulating state
 addNewDecl :: DeclarationFields -> State BlockTranslationState ()
@@ -298,6 +327,8 @@ addNewDecl decl@DeclarationFields {..} =
         Just a -> anon element name (anon withMeta a $ anon var name)
         Nothing -> anon element name (anon var name)
 
+
+
 -- | Add a redeclaration into the accumulating state, representing the
 -- error in the core expression as a 'CoreRedeclaration'
 addRedecl :: DeclarationFields -> State BlockTranslationState ()
@@ -313,6 +344,7 @@ addRedecl DeclarationFields {..} =
          })
 
 
+
 -- | Process a single declaration, adding a declaration or
 -- redeclaration as appropriate
 processDeclaration :: DeclarationFields -> State BlockTranslationState ()
@@ -322,6 +354,8 @@ processDeclaration decl@DeclarationFields{..} = do
     Just _ -> addRedecl decl
     Nothing -> addNewDecl decl
 
+
+
 -- | Read bindings and elements from state and return in correct order
 bindingsAndElements ::
      State BlockTranslationState ( [(CoreBindingName, CoreExpr)]
@@ -329,6 +363,8 @@ bindingsAndElements ::
 bindingsAndElements = do
   BlockTranslationState{..} <- get
   return (reverse declRevBindings, reverse declRevElements)
+
+
 
 -- | Run the state monad, accumulate declarations and return the
 -- bindings and elements.
@@ -338,6 +374,8 @@ processDeclarations ::
 processDeclarations decls =
   flip evalState initBlockTranslationState $
   traverse_ processDeclaration decls >> bindingsAndElements
+
+
 
 -- | Translate an AST block to CoreExpr, detecting and marking any
 -- erroneous redeclarations in the block.
@@ -382,6 +420,7 @@ translateStringPattern loc cs = do
     reference2Soup _ = error "Untransformed anaphora"
 
 
+
 -- | Descend through the AST, translating to CoreExpr and recording
 -- targets and other metadata in a @TargetState@ record as we go
 translate :: Expression -> Translate CoreExpr
@@ -421,7 +460,10 @@ translateUnit Located { location = l
 --
 -- Used by YamlSource
 desugar :: Expression -> Syn.CoreExpr
-desugar = (`evalState` initTranslateState 1) . unTranslate . translate
+desugar =
+  (`evalState` initTranslateState 1 nullImportHandler) . unTranslate . translate
+
+
 
 -- | Desugar a lambda embedded in foreign syntax
 --
@@ -431,32 +473,40 @@ desugarLambda (Located _ (EmbeddedLambda params expr)) =
   lam 0 params $ desugar expr
 
 
+
 -- | Translate AST into core syntax and generate target metadata on
 -- the way
-translateExpressionToCore :: SMID -> Expression -> TranslationUnit
-translateExpressionToCore baseSMID ast =
+translateExpressionToCore ::
+     ImportHandler -> SMID -> Expression -> TranslationUnit
+translateExpressionToCore handler baseSMID ast =
   TranslationUnit
     { truCore = e
     , truInput = Nothing
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
     , truSourceMap = trSourceMap s
+    , truPendingActions = trActions s
     }
   where
     (e, s) =
-      runState (unTranslate $ translate ast) $ initTranslateState baseSMID
+      runState (unTranslate $ translate ast) $
+      initTranslateState baseSMID handler
+
+
 
 -- | Translate AST into core syntax and generate target metadata on
 -- the way
-translateToCore :: Input -> SMID -> Unit -> TranslationUnit
-translateToCore i baseSMID ast =
+translateToCore :: ImportHandler -> Input -> SMID -> Unit -> TranslationUnit
+translateToCore handler i baseSMID ast =
   TranslationUnit
     { truCore = e
     , truInput = Just i
     , truTargets = (reverse . trTargets) s
     , truImports = S.fromList $ trImports s
     , truSourceMap = trSourceMap s
+    , truPendingActions = trActions s
     }
   where
     (e, s) =
-      runState (unTranslate $ translateUnit ast) $ initTranslateState baseSMID
+      runState (unTranslate $ translateUnit ast) $
+      initTranslateState baseSMID handler

@@ -1,6 +1,9 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-|
 Module      : Eucalypt.Driver.Core
 Description : Facilities for loading core from inputs
@@ -14,12 +17,18 @@ module Eucalypt.Driver.Core
   ( parseInputsAndImports
   , parseAndDumpASTs
   , loadInput
-  , loader
   , preloadInputs
   , CoreLoader(..)
   ) where
 
-import Control.Exception.Safe (IOException, catchJust, throwM, try, tryIO)
+import Control.Exception.Safe
+  ( IOException
+  , catchJust
+  , handle
+  , throwM
+  , try
+  , tryIO
+  )
 import Control.Monad (forM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State.Strict
@@ -41,21 +50,27 @@ import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Syn
 import Eucalypt.Core.Unit
 import Eucalypt.Driver.Error (CommandError(..))
+import Eucalypt.Driver.ImportHandler (importHandler)
 import Eucalypt.Driver.Lib (getResource)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import Eucalypt.Reporting.Error (EucalyptError(..))
-import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.CsvSource
+import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.TextSource
 import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
 import Eucalypt.Syntax.Ast (Unit)
 import Eucalypt.Syntax.Error (SyntaxError(..))
-import Eucalypt.Syntax.Input (Input(..), Locator(..), normaliseLocator)
+import Eucalypt.Syntax.Input
+  ( Input(..)
+  , Locator(..)
+  , normaliseLocator
+  )
 import qualified Eucalypt.Syntax.ParseExpr as PE
 import Network.URI
 import Path
 import Safe (headMay)
+import System.Directory (getHomeDirectory)
 import System.Exit
 import System.IO
 import System.Posix.Directory
@@ -66,6 +81,7 @@ import System.Posix.Directory
 data CoreLoaderOptions = CoreLoaderOptions
   { loadPath :: [FilePath] -- ^ search directories for relative paths
   , loadEvaluand :: Maybe String -- ^ maybe a command line evaluand
+  , loadEucalyptDir :: Path Abs Dir -- ^ absolute path to .eucalypt.d
   }
 
 
@@ -81,20 +97,34 @@ data CoreLoader = CoreLoader
 
 -- | Create a new core loader from command line options, this tracks
 -- state during the load of all inputs
-loader :: EucalyptOptions -> CoreLoader
-loader EucalyptOptions {..} =
-  CoreLoader
-    { clOptions =
-        CoreLoaderOptions
-          {loadPath = optionLibPath, loadEvaluand = optionEvaluand}
-    , clCache = mempty
-    , clNextSMID = 1
-    }
+loader :: EucalyptOptions -> IO CoreLoader
+loader EucalyptOptions {..} = do
+  home <- getHomeDirectory >>= parseAbsDir
+  eucalyptd <- parseRelDir ".eucalypt.d"
+  return $
+    CoreLoader
+      { clOptions =
+          CoreLoaderOptions
+            { loadPath = optionLibPath
+            , loadEvaluand = optionEvaluand
+            , loadEucalyptDir = home </> eucalyptd
+            }
+      , clCache = mempty
+      , clNextSMID = 1
+      }
 
 
+
+-- | A state wrapping monad for tracking SMID between different
+-- translations - we need to ensure unique souce map IDs in all trees
+type CoreLoad a = StateT CoreLoader IO a
+
+
+
+-- | Start by loading text for all inputs specified in the options
 preloadInputs :: EucalyptOptions -> IO CoreLoader
 preloadInputs opts@EucalyptOptions {..} =
-  execStateT (traverse readInput optionInputs) $ loader opts
+  loader opts >>= execStateT (traverse readInput optionInputs)
 
 
 
@@ -116,10 +146,10 @@ loadInput coreLoader input = evalStateT (readInput input) coreLoader
 
 
 
--- | A state wrapping monad for tracking SMID between different
--- translations - we need to ensure unique souce map IDs in all trees
-type CoreLoad a = StateT CoreLoader IO a
-
+-- | Return an import handler that reads ImportSpecification from core
+-- metadata and assume a git cache in .eucalypt.d.
+getImportHandler :: CoreLoad ImportHandler
+getImportHandler = importHandler <$> gets (loadEucalyptDir . clOptions)
 
 
 
@@ -216,7 +246,8 @@ dumpASTs _ exprs = forM_ exprs $ \e ->
 -- | Parse and dump ASTs
 parseAndDumpASTs :: EucalyptOptions -> IO ExitCode
 parseAndDumpASTs opts@EucalyptOptions {..} = do
-  texts <- evalStateT (traverse readInput euInputs) (loader opts)
+  ldr <- loader opts
+  texts <- evalStateT (traverse readInput euInputs) ldr
   let filenames = map show euInputs
   let (errs, units) = partitionEithers (zipWith parseEucalypt texts filenames)
   if null errs
@@ -232,12 +263,13 @@ parseAndDumpASTs opts@EucalyptOptions {..} = do
 --
 -- Named inputs are automatically set to suppress export as it is
 -- assumed that they will be referenced by name in subsequent source.
+--
+-- TODO: refactor
 loadUnit :: Input -> CoreLoad (Either EucalyptError TranslationUnit)
 loadUnit i@(Input locator name format) = do
   firstSMID <- getNextSMID
   source <- readInput i
   coreUnit <-
-    liftIO $
     case format of
       "text" -> textDataToCore i source
       "toml" -> tomlDataToCore i source
@@ -255,27 +287,29 @@ loadUnit i@(Input locator name format) = do
     eucalyptToCore input smid text =
       case parseEucalypt text (show locator) of
         Left e -> (return . Left . Syntax) e
-        Right expr ->
-          (return . Right . maybeApplyName . translateToCore input smid) expr
-    yamlDataToCore input text = do
+        Right expr -> do
+          importer <- getImportHandler
+          (return . Right . maybeApplyName . translateToCore importer input smid)
+            expr
+    yamlDataToCore input text = liftIO $ do
       r <-
         try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit input) core
-    textDataToCore input text =
+    textDataToCore input text = liftIO $
       parseTextLines text >>=
       (return . Right . maybeApplyName <$> dataUnit input)
-    tomlDataToCore input text =
+    tomlDataToCore input text = liftIO $
       parseTomlData text >>=
       (return . Right . maybeApplyName <$> dataUnit input)
-    activeYamlToCore input text = do
+    activeYamlToCore input text = liftIO $ do
       r <-
         try (parseYamlExpr (show locator) text) :: IO (Either DataParseException CoreExpr)
       case r of
         Left e -> (return . Left . Source) e
         Right core -> (return . Right . maybeApplyName . dataUnit input) core
-    csvDataToCore input text =
+    csvDataToCore input text = liftIO $
       parseCsv (BL.fromStrict text) >>=
       (return . Right . maybeApplyName <$> dataUnit input)
 
@@ -292,20 +326,41 @@ loadUnits inputs = do
 
 
 
+-- | Process any IO actions (repo caching...) required to make inputs
+-- valid.
+processActions :: TranslationUnit -> CoreLoad TranslationUnit
+processActions u = liftIO $
+  handle (\(e :: CommandError) -> throwM $ Command e) $
+  sequence_ (truPendingActions u) >> return (resetActions u)
+
+
+
+-- | Load units into an import map (of input -> core)
+loadUnitsIntoMap :: [Input] -> ImportMap -> CoreLoad ImportMap
+loadUnitsIntoMap ins m = do
+  units <- loadUnits ins >>= traverse processActions
+  return $ foldl (\m' (k, v) -> M.insert k v m') m $ zip ins units
+
+
+
+-- | Identify all 'Input's required by the units in the map that have
+-- not already been loaded in to the map
+pendingImports :: ImportMap -> [Input]
+pendingImports m = toList $ S.difference (requiredInputs m) (cachedInputs m)
+  where
+    requiredInputs = foldMap truImports . M.elems
+    cachedInputs = M.keysSet
+
+
+
 -- | Parse all units in the graph of imports.
 --
-loadAllUnits :: [Input] -> CoreLoad (M.Map Input TranslationUnit)
+loadAllUnits :: [Input] -> CoreLoad ImportMap
 loadAllUnits inputs = do
-  unitMap <- readImportsToMap inputs mempty
+  unitMap <- loadUnitsIntoMap inputs mempty
   iterateUntilM (null . pendingImports) step unitMap
   where
-    readImportsToMap ins m = do
-      units <- loadUnits ins
-      return $ foldl (\m' (k, v) -> M.insert k v m') m $ zip ins units
-    step m = readImportsToMap (toList $ pendingImports m) m
-    collectImports = foldMap truImports . M.elems
-    collectInputs = M.keysSet
-    pendingImports m = S.difference (collectImports m) (collectInputs m)
+    step m = loadUnitsIntoMap (pendingImports m) m
 
 
 
@@ -319,7 +374,8 @@ parseInputsAndImports ::
      CoreLoader -> [Input] -> IO ([TranslationUnit], CoreLoader)
 parseInputsAndImports coreLoader inputs = do
   (unitMap, populatedLoader) <- runStateT (loadAllUnits inputs) coreLoader
-  case applyAllImports unitMap of
+  let importer = importHandler . loadEucalyptDir . clOptions $ coreLoader
+  case applyAllImports importer unitMap of
     Right processedUnitMap ->
       return (mapMaybe (`M.lookup` processedUnitMap) inputs, populatedLoader)
     Left cyclicInputs -> throwM $ Command $ CyclicInputs cyclicInputs

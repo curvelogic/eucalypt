@@ -5,17 +5,34 @@ module Eucalypt.Core.ImportSpec
 
 import Data.Either (fromLeft, fromRight)
 import qualified Data.Map as M
-import Data.Maybe (fromJust)
+import Data.Maybe (fromMaybe, fromJust, maybeToList)
 import qualified Data.Set as S
 import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Import
-import Eucalypt.Core.Syn (CoreExpr)
+import Eucalypt.Core.Metadata
+import Eucalypt.Core.Syn (CoreExpr, CoreExp(..), Primitive(..))
 import Eucalypt.Core.Unit
 import Eucalypt.Syntax.Input
 import Test.Hspec
 
 main :: IO ()
 main = hspec spec
+
+inputsFromMetadata :: CoreExp a -> [Input]
+inputsFromMetadata m = fromMaybe [] $ readUnevaluatedMetadata "import" m extract
+  where
+    extract (CorePrim _ (CoreString s)) = maybeToList $ parseInputFromString s
+    extract (CoreList _ l) = concatMap extract l
+    extract _ = []
+
+-- | An import handler for testing that reads simple input imports but
+-- doesn't handle git imports.
+testImportHandler :: ImportHandler
+testImportHandler =
+  ImportHandler
+    { readImports = \m -> zip (inputsFromMetadata m) (repeat $ return ())
+    , pruneImports = pruneUnevaluatedMetadata "import"
+    }
 
 unitAInput :: Input
 unitAInput = fromJust $ parseInputFromString "unitA"
@@ -33,6 +50,7 @@ unitA =
     , truImports = mempty
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitBInput :: Input
@@ -65,6 +83,7 @@ unitB =
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsAB :: M.Map Input TranslationUnit
@@ -105,6 +124,7 @@ unitC =
     , truImports = S.fromList [unitBInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsABC :: M.Map Input TranslationUnit
@@ -122,6 +142,7 @@ namedUnit = applyName "name"
     , truImports = mempty
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitDInput :: Input
@@ -158,6 +179,7 @@ unitD =
     , truImports = S.fromList [namedInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsNamedAndD :: M.Map Input TranslationUnit
@@ -199,6 +221,7 @@ importUnderImport =
     , truImports = S.fromList [unitAInput]
     , truTargets = mempty
     , truSourceMap =  mempty
+    , truPendingActions = mempty
     }
 
 unitsImportUnderImportAndA :: M.Map Input TranslationUnit
@@ -225,6 +248,7 @@ circularImport =
     , truImports = S.fromList [circularImportInput]
     , truTargets = mempty
     , truSourceMap = mempty
+    , truPendingActions = mempty
     }
 
 unitsCircularImport :: M.Map Input TranslationUnit
@@ -232,14 +256,15 @@ unitsCircularImport =
   M.fromList [(circularImportInput, circularImport)]
 
 importAll :: M.Map Input TranslationUnit -> M.Map Input TranslationUnit
-importAll = fromRight mempty . applyAllImports
+importAll = fromRight mempty . applyAllImports testImportHandler
 
 spec :: Spec
 spec =
   describe "Import processing" $ do
     context "single imports" $ do
       it "processes a single import" $
-        processImports (const unitACore) unitBCore `shouldBe` unitBCoreResult
+        processImports (const unitACore) testImportHandler unitBCore `shouldBe`
+        unitBCoreResult
       it "processes single import from unit map" $
         truCore <$>
         M.lookup unitBInput (importAll unitsAB) `shouldBe` Just unitBCoreResult
@@ -252,7 +277,7 @@ spec =
         M.lookup importUnderImportInput (importAll unitsImportUnderImportAndA) `shouldBe`
         Just importUnderImportCoreResult
       it "handles circular imports gracefully" $
-        fromLeft [] (applyAllImports unitsCircularImport) `shouldBe`
+        fromLeft [] (applyAllImports testImportHandler unitsCircularImport) `shouldBe`
         [circularImportInput]
     context "transitive imports" $ do
       it "intermediates are correct" $

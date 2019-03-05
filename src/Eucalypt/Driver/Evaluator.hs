@@ -22,6 +22,7 @@ import qualified Data.Text.IO as T
 import Eucalypt.Core.BlockAnaphora (anaphorise)
 import Eucalypt.Core.Cook (cookAllSoup, distributeFixities, runInterpreter)
 import Eucalypt.Core.Desugar (translateExpressionToCore)
+import Eucalypt.Core.Import
 import Eucalypt.Core.Pretty
 import Eucalypt.Core.Simplify (simplify)
 import Eucalypt.Core.SourceMap
@@ -89,7 +90,8 @@ parseEvaluand = flip PE.parseExpression (show CLIEvaluand)
 readEvaluand :: String -> SMID -> IO CoreExpr
 readEvaluand src baseSMID =
   either (throwM . Syntax) return $
-  varify . truCore . translateExpressionToCore baseSMID <$> parseEvaluand src
+  varify . truCore . translateExpressionToCore nullImportHandler baseSMID <$>
+  parseEvaluand src
 
 
 
