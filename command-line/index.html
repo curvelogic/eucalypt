@@ -100,12 +100,27 @@
           
             <li class="toctree-l1">
 		
+    <a class="" href="../imports/">Imports</a>
+	    </li>
+          
+            <li class="toctree-l1">
+		
     <a class="" href="../operators-and-identifiers/">Operators and Identifiers</a>
 	    </li>
           
             <li class="toctree-l1">
 		
+    <a class="" href="../yaml-embedding/">YAML Embedding</a>
+	    </li>
+          
+            <li class="toctree-l1">
+		
     <a class="" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+	    </li>
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="../implementation/">Implementation</a>
 	    </li>
           
             <li class="toctree-l1">
@@ -181,10 +196,15 @@ before output is rendered.</p>
 <p>Inputs must be one of the formats that <strong>eucalypt</strong> supports, which
 at present, are:</p>
 <ul>
-<li>YAML</li>
-<li>JSON</li>
-<li>TOML</li>
+<li>yaml</li>
+<li>json</li>
+<li>toml</li>
+<li>csv</li>
+<li>text</li>
 </ul>
+<p>Of these the first three (yaml, json, toml) return blocks and the last
+two return lists. Inputs that return lists frequently to be named (see
+below) to allow them to be used.</p>
 <p>Usually the format is inferred from file extension but it can be
 overridden on an input by input basis using a <code>format@</code> prefix.</p>
 <p>For instance:</p>
@@ -234,8 +254,8 @@ x: 42
 <pre><code>[name=][format@][URL/file]
 </code></pre>
 
-<p>This applies at the command line and also when specifying imports in
-<code>.eu</code> files.</p>
+<p>This applies at the command line and also when specifying
+<a href="../imports/">imports</a> in <code>.eu</code> files.</p>
 <h3 id="stdin-defaulting"><em>stdin</em> defaulting</h3>
 <p>When no inputs are specified and <code>eu</code> is being used in a pipeline, it
 will accept input from <em>stdin</em> by default, making it easy to pipe JSON
@@ -318,7 +338,7 @@ representations or tracing execution. <code>eu --help</code> lists them all.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="../operators-and-identifiers/" class="btn btn-neutral float-right" title="Operators and Identifiers">Next <span class="icon icon-circle-arrow-right"></span></a>
+        <a href="../imports/" class="btn btn-neutral float-right" title="Imports">Next <span class="icon icon-circle-arrow-right"></span></a>
       
       
         <a href="../syntax/" class="btn btn-neutral" title="Syntax"><span class="icon icon-circle-arrow-left"></span> Previous</a>
@@ -354,7 +374,7 @@ representations or tracing execution. <code>eu --help</code> lists them all.</p>
         <span><a href="../syntax/" style="color: #fcfcfc;">&laquo; Previous</a></span>
       
       
-        <span style="margin-left: 15px"><a href="../operators-and-identifiers/" style="color: #fcfcfc">Next &raquo;</a></span>
+        <span style="margin-left: 15px"><a href="../imports/" style="color: #fcfcfc">Next &raquo;</a></span>
       
     </span>
 </div>
