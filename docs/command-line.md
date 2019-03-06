@@ -44,9 +44,15 @@ before output is rendered.
 Inputs must be one of the formats that **eucalypt** supports, which
 at present, are:
 
- - YAML
- - JSON
- - TOML
+ - yaml
+ - json
+ - toml
+ - csv
+ - text
+
+Of these the first three (yaml, json, toml) return blocks and the last
+two return lists. Inputs that return lists frequently to be named (see
+below) to allow them to be used.
 
 Usually the format is inferred from file extension but it can be
 overridden on an input by input basis using a `format@` prefix.
@@ -117,8 +123,8 @@ The full input syntax is therefore:
 [name=][format@][URL/file]
 ```
 
-This applies at the command line and also when specifying imports in
-`.eu` files.
+This applies at the command line and also when specifying
+[imports](imports.md) in `.eu` files.
 
 ### *stdin* defaulting
 

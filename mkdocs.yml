@@ -7,8 +7,11 @@ nav:
 - Getting Started: getting-started.md
 - Syntax: syntax.md
 - Command Line: command-line.md
+- Imports: imports.md
 - Operators and Identifiers: operators-and-identifiers.md
+- YAML Embedding: yaml-embedding.md
 - Anaphora and Lambdas: anaphora-and-lambdas.md
+- Implementation: implementation.md
 - Philosophy: philosophy-lang.md
 markdown_extensions:
   - admonition
