@@ -113,6 +113,7 @@ spec = do
   acceptanceSpec "043_gen_lookup_dynamic.eu"
   acceptanceSpec "044_time.eu"
   acceptanceSpec "045_csv_import.eu"
+  acceptanceSpec "046_commas.eu"
   failureSpec "001_dot_in_metadata_key.eu"
   failureSpec "002_lists.eu"
   failureSpec "003_free_var_arg.eu"

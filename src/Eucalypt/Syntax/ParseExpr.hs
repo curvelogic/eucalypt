@@ -215,7 +215,7 @@ squares = between (symbol "[") (char ']')
 
 listLiteral :: Parser Expression
 listLiteral =
-  located (EList <$> squares (expression `sepBy` comma) <?> "list literal")
+  located (EList <$> squares (expression `sepEndBy` comma) <?> "list literal")
 
 -- ? expressions
 
