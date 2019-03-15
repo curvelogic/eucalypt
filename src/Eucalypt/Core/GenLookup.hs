@@ -83,6 +83,18 @@ isNonOperatorVar _ = False
 -- | Process expression(s) from the in list and pass to the out list
 step :: LookupTransformationState -> LookupTransformationState
 
+-- As we're treat dot operators specially here, dot sections (e.g.
+-- @map(.x)@) aren't subsumed by the general handling during cooking.
+-- So we need to handle them here.
+--
+-- @.x@ becomes @_.x@
+-- @x.@ is illegal for now
+-- @x..y@ is illegal for now
+step s@LookupTransformationState { ltProcessedExprs = []
+                                 , ltAction = NoLookup
+                                 , ltRemainingExprs = (CoreOperator _ InfixLeft _ (CoreBuiltin _ "*DOT*"):_)
+                                 } = s {ltProcessedExprs = [CoreVar 0 "_"]}
+
 -- Request simple lookup transformation if we have an any other
 -- expression prior to dot but simple name after the dot.
 step s@LookupTransformationState { ltProcessedExprs = _

@@ -31,9 +31,15 @@ lookup-on-anaphora: {
   pass: [a1, a2] = xs
 }
 
-pass: [ sections-as-args.pass
-      , sections-as-values.pass
-      , lookup-on-anaphora.pass
-      ] all-true?
+dot-sections: {
+  `:suppress points: [ {x: 1 y: 2}, {x: 3 y: 4} ]
+  pass: points map(.x) //= [1, 3]
+}
+
+pass: [ sections-as-args
+      , sections-as-values
+      , lookup-on-anaphora
+      , dot-sections
+      ] all(.pass)
 
 RESULT: if(pass, :PASS, :FAIL)

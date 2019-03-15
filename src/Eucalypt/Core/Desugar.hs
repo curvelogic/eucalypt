@@ -147,8 +147,8 @@ varifyLookupTargets exprs =
 -- | Desugar Ast op soup into core op soup (to be cooked into better
 -- tree later, once fixity and precedence of all ops is resolved).
 --
--- We can insert call and subtitute lookup operators at this stage but
--- we can't identify catenation until we have the fixit of all ops.
+-- We can insert calls and dot operators at this stage but
+-- we can't identify catenation until we have the fixity of all ops.
 --
 -- HACK: This assumes that the dot operator is the highest precedence
 -- of all operators. We need this to break the circle - we can't
