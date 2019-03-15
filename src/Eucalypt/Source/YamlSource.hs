@@ -178,10 +178,10 @@ instance YamlTranslator ActiveTranslator where
       body = wrapAccordingToTag tag $ anon block $ map bodyItem triples
       bodyItem (k, CoreMeta _ m (CorePrim _ (CoreString n)), _val)
         | m == suppressMeta =
-          anon S.withMeta suppressMeta (anon element n $ anon var (unpack k))
+            anon element n $ anon S.withMeta suppressMeta $ anon var (unpack k)
       bodyItem (k, CoreMeta _ m (CorePrim _ (CoreSymbol n)), _val)
         | m == suppressMeta =
-          anon S.withMeta suppressMeta (anon element n $ anon var (unpack k))
+            anon element n $ anon S.withMeta suppressMeta $ anon var (unpack k)
       bodyItem (k, CorePrim _ (CoreString n), _val) =
         anon element n $ anon var (unpack k)
       bodyItem (k, expr, _val) = anon CoreList [expr, anon var (unpack k)]

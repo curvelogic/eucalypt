@@ -1,4 +1,4 @@
-resolver: lts-13.9
+resolver: lts-13.12
 packages:
 - '.'
 ghc-options:

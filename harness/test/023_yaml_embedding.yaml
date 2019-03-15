@@ -26,12 +26,12 @@ merging:
 ######################
 
 !eu::suppress hidden:
-  text: this block should be hidden
+  text: this block should be hidden <<FAIL>>
 
-h2: !eu::suppress This should also be hidden
+h2: !eu::suppress This should also be hidden <<FAIL>>
 # Ignored for now - bug with metadata and lets
-# h3: !eu::suppress { a: This should be hidden too }
-h4: !eu::suppress [ This should be hidden too ]
+h3: !eu::suppress { a: This should be hidden too <<FAIL>> }
+h4: !eu::suppress [ This should be hidden too <<FAIL>> ]
 
 ##################
 # Simple Lambdas #

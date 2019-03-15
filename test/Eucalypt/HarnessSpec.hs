@@ -4,6 +4,7 @@ module Eucalypt.HarnessSpec
   , spec
   ) where
 
+import Data.List (isInfixOf)
 import Data.Maybe (catMaybes)
 import Eucalypt.Driver.Evaluator
 import Eucalypt.Driver.Options
@@ -31,7 +32,7 @@ postprocessForTest :: EucalyptOptions -> EucalyptOptions
 postprocessForTest opts@EucalyptOptions {..} =
   opts {optionInputs = removeStdIn optionInputs}
 
-run :: FilePath -> IO ExitCode
+run :: FilePath -> IO (String, ExitCode)
 run f = do
   opts <-
     postprocessForTest <$>
@@ -48,12 +49,19 @@ run f = do
         , optionDebug = False
         , optionLibPath = ["harness"]
         }
-  hSilence [stdout, stderr] $ evaluate opts
+  hCapture [stdout, stderr] $ evaluate opts
+  
 
 acceptanceSpec :: FilePath -> Spec
-acceptanceSpec testFile = describe testFile $
-  it "exits with zero exit code" $
-  run ("harness/test/" ++ testFile) `shouldReturn` ExitSuccess
+acceptanceSpec testFile =
+  describe testFile $
+  it "exits with zero exit code and no fail bombs in output" $
+  test `shouldReturn` (False, ExitSuccess)
+  where
+    test = do
+      (out, rc) <- run ("harness/test/" ++ testFile)
+      let hasFailBomb = "<<FAIL>>" `isInfixOf` out
+      return (hasFailBomb, rc)      
 
 failureSpec :: FilePath -> Spec
 failureSpec testFile = describe testFile $
