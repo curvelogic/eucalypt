@@ -112,6 +112,7 @@ tests:
       - scientific
       - silently
       - symbol
+      - time
       - text
       - tomland
       - unordered-containers

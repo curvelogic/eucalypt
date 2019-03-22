@@ -47,6 +47,7 @@ data StgError
   | InvalidRegex !String
   | InvalidFormatSpecifier !String
                            !Native
+  | InvalidArgument !String
   | UnknownGlobal !String
   | KeyNotFound !Native
   | Panic !String
@@ -98,6 +99,9 @@ instance Reportable StgException where
             bug "Attempted to run a machine that had already terminated."
           (InvalidRegex s) ->
             err "Regular expression was not valid:" P.$$
+            P.nest 2 (P.text "-" P.<+> P.text s)
+          (InvalidArgument s) ->
+            err "Argument was not valid:" P.$$
             P.nest 2 (P.text "-" P.<+> P.text s)
           (InvalidFormatSpecifier s n) ->
             err ("Format specifier " ++ s ++ " invalid for value: ") P.$$

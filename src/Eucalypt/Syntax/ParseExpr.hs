@@ -149,7 +149,7 @@ stringLiteral = located $ do
     xs -> EStringPattern xs
 
 
-primitive :: Parser Expression                   
+primitive :: Parser Expression
 primitive =
   try (stringLiteral <?> "string literal") <|>
   (primitiveLiteral <?> "primitive")

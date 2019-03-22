@@ -10,8 +10,9 @@ Stability   : experimental
 
 module Eucalypt.Stg.StgTestUtil where
 
+import Data.Dynamic (Typeable, fromDynamic)
 import Data.Foldable (toList, traverse_)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, fromJust)
 import Eucalypt.Stg.Address
 import Eucalypt.Stg.Eval (run)
 import Eucalypt.Stg.Error
@@ -140,6 +141,10 @@ nativeReturn :: MachineState -> Native
 nativeReturn MachineState {machineCode = (ReturnLit ret _)} = ret
 nativeReturn ms = error $ "Expected native return, got" ++ show (machineCode ms)
 
+dynamicReturn :: (Typeable a) => MachineState -> a
+dynamicReturn MachineState {machineCode = (ReturnLit (NativeDynamic d) _)} = fromJust $ fromDynamic d
+dynamicReturn ms = error $ "Expected dynamic return, got incorrect type:" ++ show (machineCode ms)
+
 -- | Machine is in state which returns specified native
 returnsNative :: Native -> MachineState -> Bool
 returnsNative n MachineState {machineCode = (ReturnLit ret _)} = ret == n
@@ -199,6 +204,9 @@ test s = testMachine s >>= run
 
 testTracing :: StgSyn -> IO MachineState
 testTracing s = tracingMachine s >>= run
+
+inBlankMachine :: (MachineState -> IO a) -> IO a
+inBlankMachine f = machine (atom_ (gref "KNIL")) >>= f
 
 -- quickcheck helpers
 

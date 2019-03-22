@@ -240,6 +240,18 @@ instance Invokable (MachineState -> Dynamic -> Dynamic -> Address -> IO MachineS
     f ms a b c
   invoke f ms args = throwTypeError ms (sig f) args
 
+instance Invokable (MachineState -> Scientific -> Scientific -> Scientific -> Scientific -> Scientific -> Scientific -> String -> IO MachineState) where
+  sig _ = [TypeNumber, TypeNumber, TypeNumber, TypeNumber, TypeNumber, TypeNumber, TypeString]
+  invoke f ms (asSeq -> StgNat (NativeNumber a) _ :<
+                       (StgNat (NativeNumber b) _ :<
+                       (StgNat (NativeNumber c) _ :<
+                       (StgNat (NativeNumber d) _ :<
+                       (StgNat (NativeNumber e) _ :<
+                       (StgNat (NativeNumber ff) _ :<
+                       (StgNat (NativeString g) _ :< _))))))) =
+    f ms a b c d e ff g
+  invoke f ms args = throwTypeError ms (sig f) args
+
 cast :: forall a . Typeable a => MachineState -> Dynamic -> IO a
 cast ms dyn =
   case fromDynamic dyn of
