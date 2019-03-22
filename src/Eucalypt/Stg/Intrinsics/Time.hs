@@ -13,21 +13,23 @@ module Eucalypt.Stg.Intrinsics.Time
   , toZonedDateTime
   ) where
 
-import Eucalypt.Stg.Error
-import Eucalypt.Stg.IntrinsicInfo
-import Eucalypt.Stg.Intrinsics.Common (invoke, returnList, returnDynamic)
-import Eucalypt.Stg.Native
-import Eucalypt.Stg.Machine
+import Data.Dynamic
 import Data.Scientific
 import Data.Time.Calendar
 import Data.Time.Clock.POSIX
 import Data.Time.LocalTime
-import Text.Regex.PCRE.Heavy (scan, re)
+import Eucalypt.Stg.Error
+import Eucalypt.Stg.IntrinsicInfo
+import Eucalypt.Stg.Intrinsics.Common (cast, invoke, returnDynamic, returnList)
+import Eucalypt.Stg.Machine
+import Eucalypt.Stg.Native
+import Text.Regex.PCRE.Heavy (re, scan)
 
 intrinsics :: [IntrinsicInfo]
 intrinsics =
   [ IntrinsicInfo "IFIELDS" 1 (invoke instantToUTCFields)
   , IntrinsicInfo "ZDT" 7 (invoke toZonedDateTime)
+  , IntrinsicInfo "ZDT.FIELDS" 1 (invoke zdtFields)
   ]
 
 
@@ -38,6 +40,7 @@ instantToUTCFields s d =
       z = utcToZonedTime utc u
    in returnList s $ zonedDateTimeFields z
 
+-- | Represent a 'ZonedTime' as its component fields
 zonedDateTimeFields :: ZonedTime -> [(Native, Native)]
 zonedDateTimeFields ZonedTime {..} =
   let LocalTime {..} = zonedTimeToLocalTime
@@ -45,14 +48,15 @@ zonedDateTimeFields ZonedTime {..} =
       (year, month, day) = toGregorian localDay
       TimeOfDay {..} = localTimeOfDay
    in [ (NativeSymbol "y", NativeNumber $ fromIntegral year)
-      , (NativeSymbol "M", NativeNumber $ fromIntegral month)
+      , (NativeSymbol "m", NativeNumber $ fromIntegral month)
       , (NativeSymbol "d", NativeNumber $ fromIntegral day)
       , (NativeSymbol "h", NativeNumber $ fromIntegral todHour)
-      , (NativeSymbol "m", NativeNumber $ fromIntegral todMin)
+      , (NativeSymbol "M", NativeNumber $ fromIntegral todMin)
       , (NativeSymbol "s", NativeNumber $ fromRational $ toRational todSec)
       , (NativeSymbol "Z", NativeString tz)
       ]
 
+-- | Parse a time zone string into a 'TimeZone', supports numeric or "UTC"
 timeZoneFromString :: MachineState -> String -> IO TimeZone
 timeZoneFromString _ "UTC" = return utc
 timeZoneFromString _ "" = return utc
@@ -68,6 +72,7 @@ timeZoneFromString ms s =
        in return $ minutesToTimeZone $ sig * (60 * h + m)
     _ -> throwIn ms $ InvalidArgument "Time zone was not valid"
 
+-- | Create a raw zoned date time from its components
 toZonedDateTime ::
      MachineState
   -> Scientific
@@ -87,3 +92,10 @@ toZonedDateTime ms y m d h mins s tz =
       dtz <- timeZoneFromString ms tz
       returnDynamic ms $ ZonedTime locTime dtz
     _ -> throwIn ms $ InvalidArgument "Time field was invalid"
+
+-- | Split up a raw zoned date time into its components (as k-v pairs
+-- for populating a block).
+zdtFields :: MachineState -> Dynamic -> IO MachineState
+zdtFields ms zdtDyn = do
+  zdt <- cast ms zdtDyn
+  returnList ms $ zonedDateTimeFields zdt

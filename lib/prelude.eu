@@ -1,5 +1,3 @@
-# -*- mode: conf -*-
-
 # Eucalypt standard prelude
 
 ##
@@ -763,7 +761,31 @@ cal: {
   ifields: block ∘__IFIELDS
 
   now: io.epoch-time ifields
+  
   epoch: 0 ifields
+
+  ` "Intrinsics for working with unwrapped zoned date times"
+  Γ: {
+    zdt: __ZDT
+    wrap: '__ZDT.WRAP'
+    unwrap: '__ZDT.UNWRAP'
+    fields: '__ZDT.FIELDS'
+  }
+
+  ` "`cal.zdt(y, m, d, h, M, s, Z)` - create zoned date time from datetime components and timezone string (e.g. '+0100')"
+  zdt(y, m, d, h, M, s, Z): Γ.zdt(y, m, d, h, M, s, Z) Γ.wrap
+
+  ` "`cal.time(b)` - convert block of time fields to time (with 0 / UTC defaults)"
+  datetime(b): zdt(b lookup-or(:y, 0),
+                   b lookup-or(:m, 0),
+	                 b lookup-or(:d, 0),
+	                 b lookup-or(:h, 0),
+	                 b lookup-or(:M, 0),
+	                 b lookup-or(:s, 0),
+	                 b lookup-or(:Z, "UTC"))
+
+  ` "cal.fields(t) - decompose a zoned date time into a block of its component fields"
+  fields: block ∘ Γ.fields ∘ Γ.unwrap
 }
 
 
