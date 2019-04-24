@@ -25,8 +25,10 @@ import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Driver.Options (EucalyptOptions(..))
 import qualified Eucalypt.Render.Json as Json
 import qualified Eucalypt.Render.Text as Text
+import qualified Eucalypt.Render.Toml as Toml
 import qualified Eucalypt.Render.Yaml as Yaml
 import Eucalypt.Stg.Compiler.CompileCore (compileForRender)
+import Eucalypt.Render.Error
 import Eucalypt.Reporting.Error
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Eval (step)
@@ -96,7 +98,7 @@ renderConduit ::
   => EucalyptOptions
   -> CoreExpr
   -> m BS.ByteString
-renderConduit opts expr = handle handler $ do
+renderConduit opts expr = handle wrapStg $ handle wrapRender $ do
   syn <- compile expr
   ms <- newMachine syn
   runConduitRes $ machineSource ms .| renderPipeline format
@@ -106,8 +108,10 @@ renderConduit opts expr = handle handler $ do
       if optionDebug opts
         then debugMachine
         else machine
-    handler :: MonadCatch m => StgException -> m BS.ByteString
-    handler e = throwM $ Execution e
+    wrapStg :: MonadCatch m => StgException -> m BS.ByteString
+    wrapStg e = throwM $ Execution e
+    wrapRender :: MonadCatch m => RenderError -> m BS.ByteString
+    wrapRender e = throwM $ Render e
 
 
 
@@ -137,7 +141,8 @@ machineSource ms = do
 -- | Select an appropriate render pipeline based on the requested
 -- format
 renderPipeline ::
-     (MonadResource m) => String -> ConduitT Event Void m BS.ByteString
+     (MonadThrow m, MonadResource m) => String -> ConduitT Event Void m BS.ByteString
 renderPipeline "json" = Json.pipeline
 renderPipeline "text" = Text.pipeline
+renderPipeline "toml" = Toml.pipeline
 renderPipeline _ = Yaml.pipeline

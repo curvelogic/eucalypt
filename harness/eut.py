@@ -50,13 +50,17 @@ class Test:
         if self.format == "yaml":
             with open(self.outfile) as stream:
                 try:
-                    content_passes = yaml.load(stream).get("RESULT") == "PASS"
+                    content_passes = yaml.load(stream, Loader=yaml.SafeLoader).get("RESULT") == "PASS"
                 except:
                     pass
 
         if self.format == "json":
             with open(self.outfile) as stream:
                 content_passes = json.load(stream).get("RESULT") == "PASS"
+
+        if self.format == "toml":
+            with open(self.outfile) as stream:
+                content_passes = toml.load(stream).get("RESULT") == "PASS"
 
         return self.proc.returncode == 0 and content_passes
 
@@ -228,7 +232,7 @@ def find_simple_tests(testdir, outdir):
                                  testdir.glob("*.yaml"),
                                  testdir.glob("*.json"),
                                  testdir.glob("*.toml"))),
-                           ["yaml", "json"])]
+                           ["yaml", "json", "toml"])]
 
 def find_error_tests(testdir, outdir):
     return [ErrorTest(p, outdir) for p in sorted(testdir.glob("errors/*.eu"))]

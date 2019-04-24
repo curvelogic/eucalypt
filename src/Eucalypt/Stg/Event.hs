@@ -39,4 +39,5 @@ data Event
   | OutputMappingEnd
   | OutputAlias
   | DebugTrace !BS.ByteString
+  | Warning !BS.ByteString
   deriving (Show, Eq, Generic)

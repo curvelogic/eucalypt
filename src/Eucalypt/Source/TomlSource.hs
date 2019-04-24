@@ -23,15 +23,10 @@ import Eucalypt.Core.SourceMap
 import Eucalypt.Source.Error
 import qualified Toml
 
--- | Convert a TOML primitive to a core expression
---
-tomlValue :: Toml.Value t -> CoreExpr
-tomlValue (Toml.Bool b) = anon corebool b
-tomlValue (Toml.Integer n) = anon int n
-tomlValue (Toml.Double d) = anon float d
-tomlValue (Toml.Text s) = (anon str . unpack) s
-tomlValue (Toml.Date d) =
-  anon
+
+-- | For now, translate a date value as a string tagged with "date"
+taggedDate :: (Show a) => a -> CoreExpr
+taggedDate d = anon
     withMeta
     (anon
        block
@@ -39,6 +34,20 @@ tomlValue (Toml.Date d) =
          anon block [anon element "type" $ anon sym "date"]
        ])
     (anon str $ show d)
+
+
+
+-- | Convert a TOML primitive to a core expression
+--
+tomlValue :: Toml.Value t -> CoreExpr
+tomlValue (Toml.Bool b) = anon corebool b
+tomlValue (Toml.Integer n) = anon int n
+tomlValue (Toml.Double d) = anon float d
+tomlValue (Toml.Text s) = (anon str . unpack) s
+tomlValue (Toml.Zoned d) = taggedDate d
+tomlValue (Toml.Local d) = taggedDate d
+tomlValue (Toml.Day d) = taggedDate d
+tomlValue (Toml.Hours d) = taggedDate d
 tomlValue (Toml.Array a) = anon CoreList $ map tomlValue a
 
 pieceToBindingName :: Toml.Piece -> CoreBindingName
@@ -53,7 +62,7 @@ keyToBindingName (Toml.Key k) =
 translatePrefixTree :: Toml.PrefixTree Toml.TOML -> CoreExpr
 translatePrefixTree (Toml.Leaf k a) =
   inPrefixBlocks k $ translateToml a
-translatePrefixTree Toml.Branch {..} =
+translatePrefixTree (Toml.Branch bCommonPref _ bPrefixMap) =
   inPrefixBlocks bCommonPref $ translatePrefixMap bPrefixMap
 
 -- | Translate a prefix map

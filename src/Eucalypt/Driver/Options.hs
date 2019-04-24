@@ -62,7 +62,7 @@ exportOption =
   optional $
   strOption
     (long "exportType" <> short 'x' <> metavar "FORMAT" <>
-     help "Format for export (e.g. yaml, json)") <|>
+     help "Format for export (e.g. yaml, json, toml, text)") <|>
   flag'
     "json"
     (long "json" <> short 'j' <> help "JSON output (equivalent to -x json)")
@@ -317,6 +317,7 @@ inferOutputFormat opts =
         ".json" -> Just "json"
         ".yaml" -> Just "yaml"
         ".yml" -> Just "yaml"
+        ".toml" -> Just "toml"
         ".eu" -> Just "eu"
         ".csv" -> Just "csv"
         _ -> Just "yaml"
