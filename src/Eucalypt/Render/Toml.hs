@@ -14,6 +14,7 @@ module Eucalypt.Render.Toml
 
 import Conduit (ConduitT, Void, mapM_C)
 import Control.Exception.Safe (MonadThrow, throwM)
+import Data.Char
 import Data.Conduit.Lift (execStateC)
 import Control.Monad.State
 import qualified Data.ByteString as BS
@@ -21,7 +22,10 @@ import qualified Data.List.NonEmpty as NE
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Scientific
 import Data.Symbol
-import Data.Text (pack)
+import qualified Data.Text as T
+import Data.Text (Text, pack)
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Builder as TLB
 import Data.Text.Encoding (encodeUtf8)
 import Eucalypt.Render.Error
 import qualified Eucalypt.Stg.Event as E
@@ -60,6 +64,30 @@ initState = TOMLFormatState mempty mempty
 
 
 
+-- | Some keys need escaping and tomland doesn't (yet) do this
+-- automatically
+keyIsSafe :: Text -> Bool
+keyIsSafe =
+  T.all $ \c -> isAsciiLower c || isAsciiUpper c || isDigit c || c == '-'
+
+
+
+-- | Convert string to key
+asKey :: Text -> Key
+asKey s =
+  let t = safeKey s
+   in Key (Piece t :| [])
+  where
+    safeKey k =
+      if keyIsSafe k
+        then k
+        else TL.toStrict $
+             TLB.toLazyText $
+             TLB.singleton '"' <> TLB.fromText (T.replace "\"" "\\\"" k) <>
+             TLB.singleton '"'
+
+
+
 -- | Called when a scalar is encountered to incorporate into current
 -- state
 acceptScalar :: (MonadThrow m, MonadState TOMLFormatState m) => AnyValue -> m ()
@@ -78,7 +106,7 @@ incorporateScalar (AnyValue val) st@(Mapping _:_) =
   where
     key =
       case matchText val of
-        Right t -> return $ Key (Piece t :| [])
+        Right t -> return $ asKey t
         Left _ -> throwM $ Unrenderable "toml" NonTextualKey
 incorporateScalar _ _ = error "Invalid state while incorporating scalar"
 
@@ -101,7 +129,7 @@ pop =
   gets stack >>= \case
     [Mapping x] -> put $ TOMLFormatState {stack = [], result = Just x}
     [Sequence ts vs] -> do
-      toml <- arraysToTOML ts vs
+      toml <- arraysToTOML (asKey "value") ts vs mempty
       put $ TOMLFormatState {stack = [], result = Just toml}
     x:xs -> do
       newStack <- incorporateValue x xs
@@ -112,14 +140,17 @@ pop =
 
 -- | Ensure that all array elements are either values or tables and
 -- set as an array value or table array value.
-arraysToTOML :: (MonadThrow m) => [TOML] -> [AnyValue] -> m TOML
-arraysToTOML ts vs =
-  if not (null ts) && not (null vs)
-    then throwM $ Unrenderable "toml" HeterogeneousArray
-    else toArrayValue vs >>= \a ->
-           return $
-           insertTableArrays (Key (Piece "tables" :| [])) (NE.fromList ts) $
-           insertKeyAnyVal "value" a mempty
+arraysToTOML :: (MonadThrow m) => Key -> [TOML] -> [AnyValue] -> TOML -> m TOML
+arraysToTOML k ts vs toml =
+  case (null ts, null vs) of
+    (False, False) -> throwM $ Unrenderable "toml" HeterogeneousArray
+    (True, False) ->
+      toArrayValue vs >>= \a ->
+        return $ insertKeyAnyVal k a toml
+    (False, True) ->
+      return $
+      insertTableArrays k (NE.fromList ts) toml
+    (True, True) -> return toml
 
 
 
@@ -151,8 +182,7 @@ incorporateKeyValuePair :: (MonadThrow m) => Key -> Wip -> [Wip] -> m [Wip]
 incorporateKeyValuePair k (Mapping v) (Mapping m:rest) =
   return $ Mapping (insertTable k v m) : rest
 incorporateKeyValuePair k (Sequence ts vs) (Mapping m:rest) = do
-  a <- toArrayValue vs
-  let toml = insertTableArrays k (NE.fromList ts) (insertKeyAnyVal k a m)
+  toml <- arraysToTOML k ts vs m
   return $ Mapping toml : rest
 incorporateKeyValuePair k v st =
   error $

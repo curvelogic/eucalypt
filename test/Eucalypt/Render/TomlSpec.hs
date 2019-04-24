@@ -63,6 +63,15 @@ testUnicode =
   , E.OutputMappingEnd
   ]
 
+testQuoteEscaping :: [E.Event]
+testQuoteEscaping =
+  [ E.OutputMappingStart (E.RenderMetadata Nothing)
+  , E.OutputScalar (E.RenderMetadata Nothing) $ NativeSymbol "\""
+  , E.OutputScalar (E.RenderMetadata Nothing) $ NativeString "\""
+  , E.OutputMappingEnd
+  ]
+
+
 wrap :: [E.Event] -> [E.Event]
 wrap events =
   [E.OutputStreamStart, E.OutputDocumentStart] ++
@@ -82,3 +91,5 @@ spec =
       render testNull `shouldReturn` ""
     xit "Handle unicode" $
       render testUnicode `shouldReturn` encodeUtf8 (pack "α = \"أ\"\n")
+    it "Handle unicode" $
+      render testQuoteEscaping `shouldReturn` encodeUtf8 (pack "\"\\\"\" = \"\\\"\"\n")

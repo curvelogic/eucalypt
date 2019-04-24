@@ -13,6 +13,10 @@ try:
     import yaml
 except:
     print("WARNING: yaml not available")
+try:
+    import toml
+except:
+    print("WARNING: toml not available")
 import json
 from enum import Enum
 from pathlib import (Path)
