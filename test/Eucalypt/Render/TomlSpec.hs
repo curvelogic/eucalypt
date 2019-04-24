@@ -71,7 +71,6 @@ testQuoteEscaping =
   , E.OutputMappingEnd
   ]
 
-
 wrap :: [E.Event] -> [E.Event]
 wrap events =
   [E.OutputStreamStart, E.OutputDocumentStart] ++
@@ -85,11 +84,11 @@ spec =
   describe "TOML rendering" $ do
     it "Renders simple TOML snippet" $
       render test1 `shouldReturn` "a = 1234\nc = 22.22\n\n[b]\n  bar = \"z\"\n  foo = \"y\"\n"
-    xit "Handles lists" $
-      render test2 `shouldReturn` "xxx"
+    it "Handles lists" $
+      render test2 `shouldReturn` "value = [1, 2, 3, 4, 5, 6, 7]\n"
     it "Handles null" $
       render testNull `shouldReturn` ""
-    xit "Handle unicode" $
-      render testUnicode `shouldReturn` encodeUtf8 (pack "α = \"أ\"\n")
+    it "Handle unicode" $
+      render testUnicode `shouldReturn` encodeUtf8 (pack "\"α\" = \"\\1571\"\n")
     it "Handle unicode" $
       render testQuoteEscaping `shouldReturn` encodeUtf8 (pack "\"\\\"\" = \"\\\"\"\n")
