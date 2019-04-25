@@ -1,6 +1,9 @@
 tagged-sym: :blah // { tag: "!Ref" }
 
+`{ export: :suppress doc: "Heterogeneous array so can't be rendered to TOML" }
 tagged-list: ["-", [:a, :b, :c]] // { tag: "!Fn::Join" }
+
+homogeneous-tagged-list: [1, 2, 3, 4] // { tag: "!Periwabble" }
 
 tagged-block: { a: 1 } // { tag: "!Blah" }
 

@@ -6,6 +6,8 @@ block1: {
 
 block2: block1
 
+
+`{ export: :suppress doc: "Heterogeneous array so can't be rendered to TOML" }
 items: block2 elements
 
 block3: items block
