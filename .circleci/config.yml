@@ -118,7 +118,7 @@ jobs:
                                -e EXECUTABLE=/tmp/workspace/eu
                                -e GHCRTS=-N2
                                curvelogic/eucalypt-test-harness:${CIRCLE_SHA1}
-                               pipenv run ./eut.py -o /tmp/artifacts"
+                               bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/artifacts'"
       - store_artifacts:
           path: /tmp/artifacts
 

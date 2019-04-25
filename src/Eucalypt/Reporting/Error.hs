@@ -17,6 +17,7 @@ import Control.Exception.Safe
 import qualified Eucalypt.Core.Error as Core
 import qualified Eucalypt.Driver.Error as Driver
 import Eucalypt.Reporting.Classes
+import qualified Eucalypt.Render.Error as Render
 import qualified Eucalypt.Source.Error as Source
 import qualified Eucalypt.Stg.CallStack as CS
 import qualified Eucalypt.Stg.Error as Stg
@@ -32,6 +33,7 @@ data EucalyptError
   | Command Driver.CommandError
   | Execution Stg.StgException
   | Multiple [EucalyptError]
+  | Render Render.RenderError
   deriving (Show, Typeable)
 
 instance Exception EucalyptError
@@ -46,6 +48,7 @@ instance Reportable EucalyptError where
   report (Source e) = report e
   report (Command e) = report e
   report (Execution e) = report e
+  report (Render e) = report e
   report e = P.text $ show e
 
 

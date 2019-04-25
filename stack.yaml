@@ -3,3 +3,5 @@ packages:
 - '.'
 ghc-options:
   eucalypt: -Wall -Werror -Wincomplete-uni-patterns -Wredundant-constraints
+extra-deps:
+  - tomland-1.0.0
