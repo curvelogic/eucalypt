@@ -10,4 +10,4 @@ checks: {
   ƍ: scoped.pass
 }
 
-PASS: checks values all-true? then(:PASS, :FAIL)
+RESULT: checks values all-true? then(:PASS, :FAIL)
