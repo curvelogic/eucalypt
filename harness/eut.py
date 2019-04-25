@@ -64,7 +64,10 @@ class Test:
 
         if self.format == "toml":
             with open(self.outfile) as stream:
-                content_passes = toml.load(stream).get("RESULT") == "PASS"
+                try:
+                    content_passes = toml.load(stream).get("RESULT") == "PASS"
+                except:
+                    pass
 
         return self.proc.returncode == 0 and content_passes
 
