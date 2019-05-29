@@ -252,11 +252,18 @@ incorporateAliases :: RawExpr -> CoreExpr
 incorporateAliases (RawExpr e _) = e -- TODO: Yaml aliases
 
 -- | Parse eu-annotated active YAML into a CoreExpr
+--
+-- If the data is entirely blank, return an empty block (despite this
+-- being invalid yaml)
 parseYamlExpr :: String -> BS.ByteString -> IO CoreExpr
 parseYamlExpr inputName s =
-  catchJust yamlError
-  (incorporateAliases <$> runConduitRes (decode s .| sinkActiveRawExpr))
-  (throwM . yamlExceptionToDataParseException inputName)
+  if BS.null s
+  then
+    return $ anon block []
+  else
+    catchJust yamlError
+    (incorporateAliases <$> runConduitRes (decode s .| sinkActiveRawExpr))
+    (throwM . yamlExceptionToDataParseException inputName)
   where
     yamlError :: YamlException -> Maybe YamlException
     yamlError = Just

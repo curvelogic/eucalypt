@@ -16,6 +16,7 @@ main = hspec spec
 spec :: Spec
 spec =
   describe "Yaml parser" $ do
+    it "Accepts empty input" $ parseYamlExpr "<test>" "" `shouldReturn` block []
     it "Parses key value" $
       parseYamlExpr "<test>" "a: !!int 1234" `shouldReturn`
       letexp [("a", int 1234)] (block [element "a" $ var "a"])
