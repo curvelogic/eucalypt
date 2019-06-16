@@ -333,7 +333,7 @@ defaultStdInput opts = do
     else return $
          if specifiesStdIn opts
            then opts
-           else appendInputs opts [(fromJust . parseInputFromString) "yaml@-"]
+           else prependInputs opts [(fromJust . parseInputFromString) "yaml@-"]
 
 
 
