@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-|
 Module      : Eucalypt.Stg.Loaders
 Description : Utils for loading haskell values into STG machine memory

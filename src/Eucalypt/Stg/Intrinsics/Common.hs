@@ -35,7 +35,7 @@ import Data.Dynamic
 import Data.Foldable (toList)
 import Data.Scientific (Scientific)
 import Data.Symbol
-import Data.Typeable (typeOf)
+import Data.Typeable (Proxy(..), typeOf, typeRep)
 import Eucalypt.Stg.Address (allocate, peek)
 import Eucalypt.Stg.Error
 import Eucalypt.Stg.Loaders
@@ -260,7 +260,7 @@ cast ms dyn =
       throwIn ms $
       TypeMismatch
         { context = "Failed to extract value of required type"
-        , expected = [TypeDynamic $ Just $ typeOf (undefined :: a)]
+        , expected = [TypeDynamic $ Just $ typeRep (Proxy :: Proxy a)]
         , obtained = [TypeDynamic $ Just $ dynTypeRep dyn]
         , obtainedValues = [Just $ StgNat (NativeDynamic dyn) Nothing]
         }
