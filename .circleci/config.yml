@@ -184,7 +184,7 @@ jobs:
 
       - run: stack setup
 
-      - run: stack install profiterole
+      - run: stack install --profile profiterole
 
       - run:
           name: Build optimised
@@ -193,13 +193,13 @@ jobs:
       - run:
           name: Profile (optimised)
           command: |
-            stack exec eu -- -e "foldl(+, 0, repeat(1) take(1000))" +RTS -S
-            stack exec eu -- -e "foldl(+, 0, repeat(1) take(1000))" +RTS -p -L250
-            stack exec eu -- -e "foldl(+, 0, repeat(1) take(1000))" +RTS -hc -L250
+            stack exec --profile eu -- -e "foldl(+, 0, repeat(1) take(1000))" +RTS -S
+            stack exec --profile eu -- -e "foldl(+, 0, repeat(1) take(1000))" +RTS -p -L250
+            stack exec --profile eu -- -e "foldl(+, 0, repeat(1) take(1000))" +RTS -hc -L250
             mkdir -p /tmp/artifacts
             cp eu.prof /tmp/artifacts/eu-${CIRCLE_BUILD_NUM}.prof
             cp eu.hp /tmp/artifacts/eu-${CIRCLE_BUILD_NUM}.hp
-            stack exec profiterole -- /tmp/artifacts/eu-${CIRCLE_BUILD_NUM}.prof
+            stack exec --profile profiterole -- /tmp/artifacts/eu-${CIRCLE_BUILD_NUM}.prof
 
       - save_cache:
           paths:
