@@ -320,6 +320,9 @@ jobs:
       - attach_workspace:
           at: /tmp/workspace
       - run:
+          name: Set Ruby Version
+          command: echo 'chruby ruby-2.6' >> ~/.bash_profile  # Replace 2.6 with the specific version of Ruby here.
+      - run:
           name: install the binary as /tmp/eu
           command: |
             cp /tmp/workspace/binaries/eucalypt-x86_64-osx.tgz /tmp
