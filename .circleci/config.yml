@@ -254,12 +254,15 @@ jobs:
   ######################
   build-mac-binary:
     macos:
-      xcode: "10.1.0"
+      xcode: "11.3.1"
     environment:
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
       - attach_workspace:
           at: /tmp/workspace
+      - run:
+          name: Set Ruby Version
+          command: echo 'chruby ruby-2.6' >> ~/.bash_profile  # Replace 2.6 with the specific version of Ruby here.
       - run: brew install haskell-stack
       - run: brew install pcre
       - run: brew install pkg-config
