@@ -151,7 +151,7 @@ jobs:
   draft-release:
 
     docker:
-      - image: circleci/python:3.7.1-stretch
+      - image: circleci/python:3.8-buster
 
     steps:
       - checkout
@@ -237,7 +237,7 @@ jobs:
   deploy-docs:
 
     docker:
-      - image: circleci/python:3.7.1-stretch
+      - image: circleci/python:3.8-buster
 
     steps:
       - add_ssh_keys:
