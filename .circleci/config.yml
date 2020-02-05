@@ -310,7 +310,7 @@ jobs:
   ################################################################
   update-homebrew:
     macos:
-      xcode: "10.1.0"
+      xcode: "11.3.1"
     environment:
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
