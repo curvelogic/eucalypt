@@ -54,7 +54,7 @@ popContext = do
     _ -> error "Empty context during JSON render"
 
 currentContext :: MonadState JSONFormatState m => m JSONContext
-currentContext = head <$> gets context
+currentContext = gets (head . context)
 
 putText :: MonadState JSONFormatState m => BS.ByteString -> m ()
 putText t = modify $ \s -> s {output = BS.append (output s) t}

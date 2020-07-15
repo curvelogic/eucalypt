@@ -307,7 +307,7 @@ inferOutputFormat opts =
     Nothing ->
       opts
         { optionExportFormat =
-            takeExtension <$> optionOutput opts >>= extToFormat
+            optionOutput opts >>= extToFormat . takeExtension
         }
     Just _ -> opts
   where

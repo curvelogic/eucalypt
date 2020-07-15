@@ -1,9 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE LambdaCase, TemplateHaskell, DeriveFunctor,
-  DeriveFoldable, DeriveTraversable, FlexibleContexts,
-  FlexibleInstances, TupleSections #-}
+{-# LANGUAGE LambdaCase, TemplateHaskell, DeriveTraversable, FlexibleContexts, FlexibleInstances, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-missing-methods #-}
 {-|
 Module      : Eucalypt.Core.Syn
