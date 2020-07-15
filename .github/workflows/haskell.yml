@@ -24,6 +24,7 @@ jobs:
     - name: Install latest eucalypt
       run: |
           pip install pipenv
+          mkdir bin
           cd ci
           pipenv install
           pipenv run python fetch.py $GITHUB_WORKSPACE/bin
@@ -51,12 +52,15 @@ jobs:
           ${{ runner.os }}-build-
           ${{ runner.os }}-
 
+    - name: Add Stack paths to environment
+      run: |
+          echo "::set-env name=STACK_DIST_DIR::$(stack path --dist-dir)"
+
     - name: Install dependencies
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
     - name: Install HLint
       run: stack install --no-terminal hlint
-
 
     - name: Build
       run: stack build --fast --pedantic --no-terminal --test
