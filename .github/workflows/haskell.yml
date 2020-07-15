@@ -1,4 +1,4 @@
-name: Eucalypt Github Actions Pipeline
+name: Eucalypt Build Pipeline
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
         cabal-version: '3.0'
 
     - name: Install dependencies
-      run: stack build --fast --pedantic --no-terminal --install-ghc --test --bench --only-dependencies
+      run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
     - name: Cache
       uses: actions/cache@v1
@@ -45,3 +45,14 @@ jobs:
 
     - name: Build
       run: stack build --fast --pedantic --no-terminal --test
+
+  build-test-harness:
+    steps:
+    - uses: docker/build-push-action@v1
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        repository: curvelogic/eucalypt-test-harness
+        tags: latest
+        tag_with_ref: true
+        tag_with_sha: true
