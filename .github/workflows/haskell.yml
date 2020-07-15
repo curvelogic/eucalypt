@@ -62,8 +62,22 @@ jobs:
     - name: Install HLint
       run: stack install --no-terminal hlint
 
+    - name: Update build metadata in package.yaml
+      run: |
+        export OSTYPE=$(uname)
+        export HOSTTYPE=$(uname -m)
+        eu ci/build.eu > new-package.yaml
+        mv -f new-package.yaml package.yaml
+        echo --- replaced package.yaml ---
+
     - name: Build
       run: stack build --fast --pedantic --no-terminal --test
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v1
+      with:
+        name: dist
+        path: ${{ env.STACK_DIST_DIR }}
 
   build-test-harness:
     runs-on: ubuntu-latest
