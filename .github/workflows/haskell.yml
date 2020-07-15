@@ -60,7 +60,7 @@ jobs:
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
     - name: Install HLint
-      run: stack install --no-terminal hlint
+      run: stack install --fast --no-terminal hlint
 
     - name: Update build metadata in package.yaml
       run: |
