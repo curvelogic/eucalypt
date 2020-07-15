@@ -26,8 +26,9 @@ jobs:
           pip install pipenv
           cd ci
           pipenv install
-          pipenv run python fetch.py /usr/local/bin
-          eu --version
+          pipenv run python fetch.py $GITHUB_WORKSPACE/bin
+          echo "::add-path::$GITHUB_WORKSPACE/bin"
+          $GITHUB_WORKSPACE/bin/eu --version
       env:
         GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
