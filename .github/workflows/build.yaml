@@ -1,10 +1,5 @@
 name: Eucalypt Github Actions Pipeline
-
-on:
-  push:
-    branches: [ master, refactor/actions ]
-  pull_request:
-    branches: [ master, refactor/actions ]
+on: push
 
 jobs:
   build:
