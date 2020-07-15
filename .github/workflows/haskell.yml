@@ -60,9 +60,6 @@ jobs:
     - name: Install dependencies
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
-    - name: Install HLint
-      run: stack build --fast --no-terminal hlint
-
     - name: Update build metadata in package.yaml
       run: |
         export OSTYPE=$(uname)
@@ -73,6 +70,9 @@ jobs:
 
     - name: Build
       run: stack build --fast --pedantic --no-terminal --test
+
+    - name: Install HLint
+      run: stack build --fast --no-terminal hlint
 
     - name: HLint
       run: stack exec hlint .
