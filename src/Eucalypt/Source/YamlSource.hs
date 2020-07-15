@@ -12,8 +12,6 @@ module Eucalypt.Source.YamlSource where
 
 import Conduit
 import Control.Exception.Safe (catchJust)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Resource (MonadThrow, throwM)
 import Control.Monad.Trans.Writer.Strict (WriterT, tell)
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map

@@ -20,7 +20,6 @@ import Eucalypt.Stg.Syn
 import Eucalypt.Stg.Intrinsics
 import Eucalypt.Stg.StgTestUtil
 import Test.QuickCheck
-import Test.QuickCheck.Arbitrary (arbitraryPrintableChar)
 import qualified Test.QuickCheck.Monadic as QM
 import Test.Hspec
 

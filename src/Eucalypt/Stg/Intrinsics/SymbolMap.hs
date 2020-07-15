@@ -24,7 +24,6 @@ import Data.List (nub, sortOn, sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Symbol
-import Data.Semigroup (Semigroup(..))
 import Text.Read
 import Control.Lens (_1, _2)
 

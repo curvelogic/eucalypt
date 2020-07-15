@@ -10,7 +10,6 @@ Stability   : experimental
 module Eucalypt.Syntax.Input
   where
 
-import Control.Applicative ((<|>))
 import Data.Maybe (fromMaybe)
 import Data.Void
 import Eucalypt.Syntax.ParseCommon (normalIdentifier)

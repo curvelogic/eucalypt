@@ -29,7 +29,6 @@ import Control.Exception.Safe
   , try
   , tryIO
   )
-import Control.Monad (forM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State.Strict
 import qualified Data.ByteString as BS

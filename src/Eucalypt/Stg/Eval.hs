@@ -13,7 +13,6 @@ module Eucalypt.Stg.Eval where
 
 import Control.Applicative
 import Control.Exception.Safe
-import Control.Monad (zipWithM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State
 import Data.Foldable (toList)

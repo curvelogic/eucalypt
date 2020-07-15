@@ -4,7 +4,7 @@ module Eucalypt.Core.EliminateSpec
   ) where
 
 import Eucalypt.Core.Eliminate
-import Eucalypt.Core.Syn (CoreExpr, CoreExp(CoreEliminated))
+import Eucalypt.Core.Syn (CoreExp(CoreEliminated))
 import Eucalypt.Core.AnonSyn
 import Test.Hspec
 

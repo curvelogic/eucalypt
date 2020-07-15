@@ -11,7 +11,6 @@ module Eucalypt.Stg.Compiler.CompileCoreSpec (main, spec)
 where
 
 import Eucalypt.Core.AnonSyn as C
-import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Stg.Compiler.Context
 import Eucalypt.Stg.Compiler.CompileCore
 import Eucalypt.Stg.GlobalInfo
