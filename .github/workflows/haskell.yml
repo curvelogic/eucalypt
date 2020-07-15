@@ -59,6 +59,7 @@ jobs:
       run: stack build --fast --pedantic --no-terminal --test
 
   build-test-harness:
+    runs-on: ubuntu-latest
     steps:
     - uses: docker/build-push-action@v1
       with:
