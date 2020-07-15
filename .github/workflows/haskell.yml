@@ -31,6 +31,9 @@ jobs:
     - name: Install dependencies
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
+    - name: Install HLint
+      run: stack install --no-terminal hlint
+
     - name: Cache
       uses: actions/cache@v1
       env:
@@ -43,6 +46,15 @@ jobs:
           ${{ runner.os }}-build-
           ${{ runner.os }}-
 
+    - name: Install latest eucalypt
+      run: |
+          cd ci
+          pipenv install
+          pipenv run python fetch.py /usr/local/bin
+          eu --version
+      env:
+        GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Build
       run: stack build --fast --pedantic --no-terminal --test
 
@@ -53,6 +65,7 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
         repository: curvelogic/eucalypt-test-harness
+        path: harness
         tags: latest
         tag_with_ref: true
         tag_with_sha: true
