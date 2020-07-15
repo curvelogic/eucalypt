@@ -1,0 +1,47 @@
+name: Eucalypt Github Actions Pipeline
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      narrative:
+        description: 'Reason for build'
+        required: false
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/checkout@v2
+
+    - name: Setup stack
+      uses: mstksg/setup-stack@v1
+
+    - uses: actions/checkout@v2
+
+    - uses: actions/setup-haskell@v1
+      with:
+        ghc-version: '8.8.2'
+        cabal-version: '3.0'
+
+    - name: Install dependencies
+      run: stack build --fast --pedantic --no-terminal --install-ghc --test --bench --only-dependencies
+
+    - name: Cache
+      uses: actions/cache@v1
+      env:
+        cache-name: cache-stack
+      with:
+        path: ~/.stack
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('package.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Build
+      run: stack build --fast --pedantic --no-terminal --test
