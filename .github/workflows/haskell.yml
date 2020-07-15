@@ -28,12 +28,6 @@ jobs:
         ghc-version: '8.8.2'
         cabal-version: '3.0'
 
-    - name: Install dependencies
-      run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
-
-    - name: Install HLint
-      run: stack install --no-terminal hlint
-
     - name: Cache
       uses: actions/cache@v1
       env:
@@ -45,6 +39,12 @@ jobs:
           ${{ runner.os }}-build-${{ env.cache-name }}-
           ${{ runner.os }}-build-
           ${{ runner.os }}-
+
+    - name: Install dependencies
+      run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
+
+    - name: Install HLint
+      run: stack install --no-terminal hlint
 
     - name: Install latest eucalypt
       run: |
@@ -67,6 +67,5 @@ jobs:
         password: ${{ secrets.DOCKER_PASSWORD }}
         repository: curvelogic/eucalypt-test-harness
         path: harness
-        tags: latest
         tag_with_ref: true
         tag_with_sha: true
