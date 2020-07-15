@@ -28,6 +28,7 @@ jobs:
           cd ci
           pipenv install
           pipenv run python fetch.py $GITHUB_WORKSPACE/bin
+          chmod +x $GITHUB_WORKSPACE/bin
           echo "::add-path::$GITHUB_WORKSPACE/bin"
           $GITHUB_WORKSPACE/bin/eu --version
       env:
@@ -60,7 +61,7 @@ jobs:
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
     - name: Install HLint
-      run: stack install --fast --no-terminal hlint
+      run: stack build --fast --no-terminal hlint
 
     - name: Update build metadata in package.yaml
       run: |
@@ -72,6 +73,9 @@ jobs:
 
     - name: Build
       run: stack build --fast --pedantic --no-terminal --test
+
+    - name: HLint
+      run: stack exec hlint .
 
     - name: Upload binaries
       uses: actions/upload-artifact@v1

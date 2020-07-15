@@ -28,9 +28,9 @@ def fetch(bindir):
     print("Extracting {}".format(asset.name))
     with tarfile.open(asset.name, "r:gz") as tar:
         files = [f for f in tar if f.isreg()]
-        print(" - extracting {}".format(f.name for f in files))
+        print(" - extracting {}".format([f.name for f in files]))
         tar.extractall(members = files)
-        print(" - moving to ~/local/bin")
+        print(" - moving to {}".format(bindir))
         for f in files:
             os.rename(f.name,  bindir / Path(f.name).name)
     
