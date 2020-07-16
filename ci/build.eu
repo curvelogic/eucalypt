@@ -43,13 +43,13 @@ new-version: [version.major,
 	      version.patch,
 	      build.number] str.join-on(".")
 
-` :build-metadata
+` {target: :build-metadata}
 main: {
   version: new-version
   eu-build: build
 }
 
-` :package
+` {target: :package}
 new-package: package {
   version: new-version
 }
