@@ -9,9 +9,10 @@ version: package.version
 	   drop(1)
 	   with-keys([:major, :minor, :patch, :build])
 
+` "Form the github URL for this workflow run"
 build-url: [:GITHUB_SERVER_URL, :GITHUB_REPOSITORY, :GITHUB_RUN_ID]
 	   map(lookup-in(io.env))
-	   "{0}/{1}/runs/{2}"
+	   apply("{0}/{1}/runs/{2}")
 
 build: {
 
@@ -42,8 +43,13 @@ new-version: [version.major,
 	      version.patch,
 	      build.number] str.join-on(".")
 
-` :main
+` :build-metadata
 main: {
   version: new-version
   eu-build: build
+}
+
+` :package
+new-package: package {
+  version: new-version
 }

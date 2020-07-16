@@ -78,11 +78,16 @@ jobs:
       run: |
         export OSTYPE=$(uname)
         export HOSTTYPE=$(uname -m)
-        pwd
-        ls -al $GITHUB_WORKSPACE
-        $GITHUB_WORKSPACE/bin/eu ci/build.eu > build-metadata.yaml
-        echo "BUILD METADATA"
+
+        $GITHUB_WORKSPACE/bin/eu ci/build.eu -t build-metadata > build-metadata.yaml
+        echo --- BUILD METADATA ---
         cat build-metadata.yaml
+
+        $GITHUB_WORKSPACE/bin/eu ci/build.eu -t package > new-package.yaml
+        mv -f new-package.yaml package.yaml
+        echo --- REPLACED PACKAGE.YAML ---
+        cat package.yaml
+
 
     - name: Build, test, and HLint
       run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
