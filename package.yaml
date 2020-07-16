@@ -66,6 +66,8 @@ library:
     - unordered-containers
     - vector
     - yaml
+  build-tools:
+    - hlint
 
 executables:
   eu:
