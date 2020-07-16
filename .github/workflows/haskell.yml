@@ -74,6 +74,9 @@ jobs:
     - name: Install dependencies
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
+    - name: Install HLint
+      run: stack build --fast --no-terminal hlint
+
     - name: Update build metadata in package.yaml
       if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
@@ -85,14 +88,11 @@ jobs:
         mv -f new-package.yaml package.yaml
         echo --- replaced package.yaml ---
 
-    - name: Build
-      run: stack build --fast --pedantic --no-terminal --test
+    - name: Build, test, and HLint
+      run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
 
-    - name: Install HLint
-      run: stack build --fast --no-terminal hlint
-
-    - name: HLint
-      run: stack exec hlint .
+    - name: Build release binary (optimised)
+      run: stack build --no-terminal --ghc-options="-O2"
 
     - name: Upload binaries
       uses: actions/upload-artifact@v1
@@ -127,12 +127,13 @@ jobs:
           docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
       - run: |
           mkdir output
+          chmod a+x dist/build/eu/eu
           docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace \
                         -v $GITHUB_WORKSPACE/output:/tmp/output \
                         -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
                         -e GHCRTS=-N2 \
                         curvelogic/eucalypt-test-harness:${{ github.sha }} \
-                        bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/output
+                        bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/output'
 
   run-benchmarks:
     runs-on: ubuntu-latest
@@ -148,6 +149,7 @@ jobs:
           docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
       - run: |
           mkdir output
+          chmod a+x dist/build/eu/eu
           docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace \
                         -v $GITHUB_WORKSPACE/output:/tmp/output \
                         -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
