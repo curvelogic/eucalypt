@@ -36,8 +36,6 @@ jobs:
       env:
         GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - uses: actions/checkout@v2
-
     - uses: actions/setup-haskell@v1
       with:
         ghc-version: '8.8.2'
