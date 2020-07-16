@@ -97,3 +97,41 @@ jobs:
         path: harness
         tag_with_ref: true
         tag_with_sha: true
+
+  run-acceptance-tests:
+    runs-on: ubuntu-latest
+    needs: build-test-harness
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist
+          path: dist
+      - run: |
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      - run: |
+          mkdir output
+          docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace
+                        -v $GITHUB_WORKSPACE/output:/tmp/output
+                        -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu
+                        -e GHCRTS=-N2
+                        curvelogic/eucalypt-test-harness:${{ github.sha }}
+                        bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/output
+
+  run-benchmarks:
+    runs-on: ubuntu-latest
+    needs: build-test-harness
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist
+          path: dist
+      - run: |
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      - run: |
+          mkdir output
+          docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace
+                        -v $GITHUB_WORKSPACE/output:/tmp/output
+                        -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu
+                        -e GHCRTS=-N2
+                        curvelogic/eucalypt-test-harness:${{ github.sha }}
+                        pipenv run ./eut.py -b -n 25 -o /tmp/output
