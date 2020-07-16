@@ -162,21 +162,21 @@ jobs:
     steps:
       - uses: actions/download-artifact@v2
         with:
-          name: dist-ubuntu-latest
-          path: dist-ubuntu-latest
+          name: dist-Linux
+          path: dist-Linux
 
       - uses: actions/download-artifact@v2
         with:
-          name: dist-macOS-latest
-          path: dist-macOS-latest
+          name: dist-macOS
+          path: dist-macOS
 
       - name: Prepare release binaries
         run: |
           mkdir eucalypt-x86_64-linux
-          cp dist-ubuntu-latest/build/eu/eu eucalypt-x86_64-linux
+          cp dist-Linux/build/eu/eu eucalypt-x86_64-linux
           tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
           mkdir eucalypt-x86_64-osx
-          cp dist-macOS-latest/build/eu/eu eucalypt-x86_64-osx
+          cp dist-macOS/build/eu/eu eucalypt-x86_64-osx
           tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
 
       - name: Upload binaries
