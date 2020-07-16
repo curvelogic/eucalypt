@@ -89,7 +89,7 @@ jobs:
         echo --- replaced package.yaml ---
 
     - name: Build, test, and HLint
-      run: stack build --fast --pedantic --no-terminal --test # --exec "stack exec hlint -- ."
+      run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
 
     - name: Build release binary (optimised)
       run: stack build --no-terminal --ghc-options="-O2"
@@ -156,3 +156,19 @@ jobs:
                         -e GHCRTS=-N2 \
                         curvelogic/eucalypt-test-harness:${{ github.sha }} \
                         pipenv run ./eut.py -b -n 25 -o /tmp/output
+
+  prepare-release:
+    runs-on: ubuntu-latest
+    needs:
+      - run-acceptance-tests
+      - run-benchmarks
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-ubuntu-latest
+          path: dist-ubuntu-latest
+
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-macOS-latest
+          path: dist-macOS-latest
