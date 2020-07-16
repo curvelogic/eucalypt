@@ -35,7 +35,6 @@ jobs:
         brew: ${{ matrix.brew }}
 
     - name: Install latest eucalypt
-      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
           pip install pipenv
           mkdir bin
@@ -57,6 +56,10 @@ jobs:
       with:
         path: ~/.stack
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('package.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
 
     - name: Add Stack paths to environment
       run: |
@@ -69,7 +72,6 @@ jobs:
       run: stack build --fast --no-terminal hlint
 
     - name: Generate build metadata in package.yaml
-      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         export OSTYPE=$(uname)
         export HOSTTYPE=$(uname -m)
@@ -82,7 +84,6 @@ jobs:
         mv -f new-package.yaml package.yaml
         echo --- REPLACED PACKAGE.YAML ---
         cat package.yaml
-
 
     - name: Build, test, and HLint
       run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
@@ -174,9 +175,9 @@ jobs:
           mkdir eucalypt-x86_64-linux
           cp dist-ubuntu-latest/build/eu/eu eucalypt-x86_64-linux
           tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
-          mkdir eucalypt-x86_64-macOS
-          cp dist-macOS-latest/build/eu/eu eucalypt-x86_64-macOS
-          tar -cvzf eucalypt-x86_64-macOS.tgz eucalypt-x86_64-macOS
+          mkdir eucalypt-x86_64-osx
+          cp dist-macOS-latest/build/eu/eu eucalypt-x86_64-osx
+          tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
 
       - name: Upload binaries
         uses: actions/upload-artifact@v1
@@ -186,6 +187,7 @@ jobs:
 
       - name: Create release
         id: create_release
+        if: github.ref == 'refs/heads/master'
         uses: actions/create-release@v1
         with:
           tag_name: ${{ github.ref }}
@@ -196,6 +198,7 @@ jobs:
 
       - name: Upload linux release
         id: upload-linux-release-asset
+        if: github.ref == 'refs/heads/master'
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -204,10 +207,11 @@ jobs:
           asset_content_type: application/gzip
 
       - name: Upload macOS release
+        if: github.ref == 'refs/heads/master'
         id: upload-macos-release-asset
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: eucalypt-x86_64-macOS.tgz
-          asset_name: eucalypt-x86_64-macOS.tgz
+          asset_path: eucalypt-x86_64-osx.tgz
+          asset_name: eucalypt-x86_64-osx.tgz
           asset_content_type: application/gzip
