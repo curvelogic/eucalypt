@@ -89,7 +89,7 @@ jobs:
     - uses: docker/build-push-action@v1
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
-        password: incorrectpassword
+        password: "${{ secrets.DOCKER_PASSWORD }}"
         repository: curvelogic/eucalypt-test-harness
         path: harness
         tag_with_ref: true
