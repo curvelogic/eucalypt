@@ -28,7 +28,7 @@ jobs:
           cd ci
           pipenv install
           pipenv run python fetch.py $GITHUB_WORKSPACE/bin
-          chmod +x $GITHUB_WORKSPACE/bin
+          chmod +x $GITHUB_WORKSPACE/bin/eu
           echo "::add-path::$GITHUB_WORKSPACE/bin"
           $GITHUB_WORKSPACE/bin/eu --version
       env:
@@ -86,6 +86,7 @@ jobs:
   build-test-harness:
     runs-on: ubuntu-latest
     steps:
+    - uses: actions/checkout@v2
     - uses: docker/build-push-action@v1
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
