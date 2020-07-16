@@ -43,7 +43,7 @@ new-version: [version.major,
 	      build.number] str.join-on(".")
 
 ` :main
-main: package {
+main: {
   version: new-version
   eu-build: build
 }

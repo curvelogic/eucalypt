@@ -73,16 +73,16 @@ jobs:
     - name: Install HLint
       run: stack build --fast --no-terminal hlint
 
-    - name: Update build metadata in package.yaml
+    - name: Generate build metadata in package.yaml
       if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         export OSTYPE=$(uname)
         export HOSTTYPE=$(uname -m)
         pwd
         ls -al $GITHUB_WORKSPACE
-        $GITHUB_WORKSPACE/bin/eu ci/build.eu > new-package.yaml
-        mv -f new-package.yaml package.yaml
-        echo --- replaced package.yaml ---
+        $GITHUB_WORKSPACE/bin/eu ci/build.eu > build-metadata.yaml
+        echo "BUILD METADATA"
+        cat build-metadata.yaml
 
     - name: Build, test, and HLint
       run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
@@ -168,3 +168,46 @@ jobs:
         with:
           name: dist-macOS-latest
           path: dist-macOS-latest
+
+      - name: Prepare release binaries
+        run: |
+          mkdir eucalypt-x86_64-linux
+          cp dist-ubuntu-latest/build/eu/eu eucalypt-x86_64-linux
+          tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
+          mkdir eucalypt-x86_64-macOS
+          cp dist-macOS-latest/build/eu/eu eucalypt-x86_64-macOS
+          tar -cvzf eucalypt-x86_64-macOS.tgz eucalypt-x86_64-macOS
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v1
+      with:
+        name: dist-${{ runner.os }}
+        path: ${{ env.STACK_DIST_DIR }}
+
+    - name: Create release
+      id: create_release
+      uses: actions/create-release@v1
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: 0.1.2.${{ env.GITHUB_RUN_NUMBER }}
+        body: eu binary release
+        draft: true
+        prerelease: false
+
+    - name: Upload linux release
+      id: upload-linux-release-asset
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: eucalypt-x86_64-linux.tgz
+        asset_name: eucalypt-x86_64-linux.tgz
+        asset_content_type: application/gzip
+
+    - name: Upload macOS release
+      id: upload-macos-release-asset
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: eucalypt-x86_64-macOS.tgz
+        asset_name: eucalypt-x86_64-macOS.tgz
+        asset_content_type: application/gzip

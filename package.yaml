@@ -118,7 +118,3 @@ tests:
       - unordered-containers
       - vector
       - yaml
-
-eu-build:
-  commit: working-copy
-  url: (none)
