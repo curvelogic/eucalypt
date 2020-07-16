@@ -11,7 +11,18 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest]
+
+    include:
+      - os: macOS-latest
+        brew:
+          - haskell-stack
+          - pcre
+          - pkg-config
+
+    runs-on: ${{ matrix.os }}
 
     steps:
 
@@ -19,6 +30,12 @@ jobs:
 
     - name: Setup stack
       uses: mstksg/setup-stack@v1
+
+    - name: Install OS Packages
+      uses: mstksg/get-package@v1
+      with:
+        apt-get: ${{ matrix.apt-get }}
+        brew: ${{ matrix.brew }}
 
     - name: Install latest eucalypt
       run: |
@@ -116,7 +133,7 @@ jobs:
                         -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
                         -e GHCRTS=-N2 \
                         curvelogic/eucalypt-test-harness:${{ github.sha }} \
-                        bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/output \
+                        bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/output
 
   run-benchmarks:
     runs-on: ubuntu-latest
@@ -137,4 +154,4 @@ jobs:
                         -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
                         -e GHCRTS=-N2 \
                         curvelogic/eucalypt-test-harness:${{ github.sha }} \
-                        pipenv run ./eut.py -b -n 25 -o /tmp/output \
+                        pipenv run ./eut.py -b -n 25 -o /tmp/output
