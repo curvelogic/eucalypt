@@ -28,6 +28,7 @@ jobs:
           cd ci
           pipenv install
           pipenv run python fetch.py $GITHUB_WORKSPACE/bin
+          ls $GITHUB_WORKSPACE/bin
           chmod +x $GITHUB_WORKSPACE/bin/eu
           echo "::add-path::$GITHUB_WORKSPACE/bin"
           $GITHUB_WORKSPACE/bin/eu --version
@@ -64,6 +65,7 @@ jobs:
       run: |
         export OSTYPE=$(uname)
         export HOSTTYPE=$(uname -m)
+        ls $GITHUB_WORKSPACE/bin
         $GITHUB_WORKSPACE/bin/eu ci/build.eu > new-package.yaml
         mv -f new-package.yaml package.yaml
         echo --- replaced package.yaml ---
