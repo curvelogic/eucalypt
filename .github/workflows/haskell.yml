@@ -35,11 +35,11 @@ jobs:
         brew: ${{ matrix.brew }}
 
     - name: Install latest eucalypt
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
           pip install pipenv
           mkdir bin
           cd ci
-          pipenv install
           pipenv run python fetch.py $GITHUB_WORKSPACE/bin
           cd $GITHUB_WORKSPACE
           ls $GITHUB_WORKSPACE/bin
@@ -74,6 +74,7 @@ jobs:
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
     - name: Update build metadata in package.yaml
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         export OSTYPE=$(uname)
         export HOSTTYPE=$(uname -m)
