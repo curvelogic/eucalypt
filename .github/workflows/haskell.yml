@@ -15,12 +15,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest]
 
-    include:
-      - os: macOS-latest
-        brew:
-          - haskell-stack
-          - pcre
-          - pkg-config
+      include:
+        - os: macOS-latest
+          brew:
+            - haskell-stack
+            - pcre
+            - pkg-config
 
     runs-on: ${{ matrix.os }}
 
