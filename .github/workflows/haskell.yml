@@ -89,7 +89,7 @@ jobs:
         echo --- replaced package.yaml ---
 
     - name: Build, test, and HLint
-      run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
+      run: stack build --fast --pedantic --no-terminal --test # --exec "stack exec hlint -- ."
 
     - name: Build release binary (optimised)
       run: stack build --no-terminal --ghc-options="-O2"
