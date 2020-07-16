@@ -100,7 +100,9 @@ jobs:
 
   run-acceptance-tests:
     runs-on: ubuntu-latest
-    needs: build-test-harness
+    needs:
+      - build
+      - build-test-harness
     steps:
       - uses: actions/download-artifact@v2
         with:
@@ -119,7 +121,9 @@ jobs:
 
   run-benchmarks:
     runs-on: ubuntu-latest
-    needs: build-test-harness
+    needs:
+      - build
+      - build-test-harness
     steps:
       - uses: actions/download-artifact@v2
         with:
