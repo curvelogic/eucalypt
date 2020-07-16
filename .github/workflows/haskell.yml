@@ -52,7 +52,6 @@ jobs:
 
     - name: Cache
       uses: actions/cache@v1
-      if: ${{ matrix.os == 'ubuntu-latest' }}
       env:
         cache-name: cache-stack
       with:
@@ -133,7 +132,7 @@ jobs:
                         -v $GITHUB_WORKSPACE/output:/tmp/output \
                         -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
                         -e GHCRTS=-N2 \
-                        curvelogic/eucalypt-test-harness:${{ github.sha }} \
+                        curvelogic/eucalypt-test-harness:sha-${{ github.sha::7 }} \
                         bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/output'
 
   run-benchmarks:
@@ -155,7 +154,7 @@ jobs:
                         -v $GITHUB_WORKSPACE/output:/tmp/output \
                         -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
                         -e GHCRTS=-N2 \
-                        curvelogic/eucalypt-test-harness:${{ github.sha }} \
+                        curvelogic/eucalypt-test-harness:sha-${{ github.sha::7 }} \
                         pipenv run ./eut.py -b -n 25 -o /tmp/output
 
   prepare-release:
