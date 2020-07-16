@@ -9,16 +9,20 @@ version: package.version
 	   drop(1)
 	   with-keys([:major, :minor, :patch, :build])
 
+build-url: [:GITHUB_SERVER_URL, :GITHUB_REPOSITORY, :GITHUB_RUN_ID]
+	   map(lookup-in(io.env))
+	   "{0}/{1}/runs/{2}"
+
 build: {
 
-  ` "Circle build number"
-  number: io.env lookup-or(:CIRCLE_BUILD_NUM, version.patch)
+  ` "Eucalypt build number"
+  number: io.env lookup-or(:GITHUB_RUN_NUMBER, version.patch)
 
   ` "SHA1 of the repo commit we're building"
-  commit: io.env lookup-or(:CIRCLE_SHA1, "working-copy")
+  commit: io.env lookup-or(:GITHUB_SHA, "working-copy")
 
   ` "URL of build"
-  url: io.env lookup-or(:CIRCLE_BUILD_URL, "(none)")
+  url: build-url
 
   ` "Architecture of build environment"
   arch: io.env lookup-alts([:HOSTTYPE, :_system_arch], "unknown")
@@ -29,8 +33,8 @@ build: {
   ` "Seconds since epoch at eu build time"
   epoch-time: io.epoch-time
 
-  ` "CircleCI environment variables"
-  circle-env: io.env filter-items(by-key-match("^CIRCLE.*")) block
+  ` "GitHub environment variables"
+  github-env: io.env filter-items(by-key-match("^GITHUB.*")) block
 }
 
 new-version: [version.major,
