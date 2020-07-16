@@ -17,10 +17,7 @@ jobs:
 
         include:
           - os: macOS-latest
-            brew:
-              - haskell-stack
-              - pcre
-              - pkg-config
+            brew: haskell-stack pcre pkg-config
 
     runs-on: ${{ matrix.os }}
 
