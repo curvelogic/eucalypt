@@ -1,0 +1,220 @@
+name: Eucalypt Build Pipeline
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      narrative:
+        description: 'Reason for build'
+        required: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest]
+
+        include:
+          - os: macOS-latest
+            brew: haskell-stack pcre pkg-config
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+
+    - uses: actions/checkout@v2
+
+    - name: Setup stack
+      uses: mstksg/setup-stack@v1
+
+    - name: Install OS Packages
+      uses: mstksg/get-package@v1
+      with:
+        apt-get: ${{ matrix.apt-get }}
+        brew: ${{ matrix.brew }}
+
+    - name: Install latest eucalypt
+      run: |
+          pip install pipenv
+          mkdir bin
+          cd ci
+          pipenv install
+          pipenv run python fetch.py $GITHUB_WORKSPACE/bin
+          cd $GITHUB_WORKSPACE
+          ls $GITHUB_WORKSPACE/bin
+          chmod +x $GITHUB_WORKSPACE/bin/eu
+          echo "::add-path::$GITHUB_WORKSPACE/bin"
+          $GITHUB_WORKSPACE/bin/eu --version
+      env:
+        GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Generate build metadata in package.yaml
+      run: |
+        export OSTYPE=$(uname)
+        export HOSTTYPE=$(uname -m)
+
+        $GITHUB_WORKSPACE/bin/eu ci/build.eu -t build-metadata > build-metadata.yaml
+        echo --- BUILD METADATA ---
+        cat build-metadata.yaml
+
+        $GITHUB_WORKSPACE/bin/eu ci/build.eu -t package > new-package.yaml
+        mv -f new-package.yaml package.yaml
+        echo --- REPLACED PACKAGE.YAML ---
+        cat package.yaml
+
+    - name: Cache .stack
+      uses: actions/cache@v1
+      env:
+        cache-name: cache-stack
+      with:
+        path: ~/.stack
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-stacklock-${{ hashFiles('stack.yaml.lock') }}
+
+    - name: Install dependencies
+      run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
+
+    - name: Add Stack paths to environment
+      run: echo "::set-env name=STACK_DIST_DIR::$(stack path --dist-dir)"
+
+    - name: Blow away bad cached exe on macOS
+      if: ${{ matrix.os == 'macOS-latest' }}
+      run: |
+        rm -Rf ~/.stack/setup-exe-cache
+        stack setup
+
+    - name: Build, test, and HLint
+      run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
+
+    - name: Build release binary (optimised)
+      run: stack build --no-terminal --ghc-options="-O2"
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v1
+      with:
+        name: dist-${{ runner.os }}
+        path: ${{ env.STACK_DIST_DIR }}
+
+  build-test-harness:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: docker/build-push-action@v1
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        repository: curvelogic/eucalypt-test-harness
+        path: harness
+        tag_with_ref: true
+        tag_with_sha: true
+
+  run-acceptance-tests:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - build-test-harness
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-${{ runner.os }}
+          path: dist
+      - name: Docker login
+        run: |
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      - name: Run acceptance tests
+        run: |
+          mkdir output
+          chmod a+x dist/build/eu/eu
+          docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace \
+                        -v $GITHUB_WORKSPACE/output:/tmp/output \
+                        -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
+                        -e GHCRTS=-N2 \
+                        curvelogic/eucalypt-test-harness:sha-${GITHUB_SHA::7} \
+                        bash -c 'pipenv install && pipenv run ./eut.py -o /tmp/output'
+
+  run-benchmarks:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - build-test-harness
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-${{ runner.os }}
+          path: dist
+      - name: Docker login
+        run: |
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      - name: Run benchmarks
+        run: |
+          mkdir output
+          chmod a+x dist/build/eu/eu
+          docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace \
+                        -v $GITHUB_WORKSPACE/output:/tmp/output \
+                        -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
+                        -e GHCRTS=-N2 \
+                        curvelogic/eucalypt-test-harness:sha-${GITHUB_SHA::7} \
+                        pipenv run ./eut.py -b -n 10 -o /tmp/output
+
+  prepare-release:
+    runs-on: ubuntu-latest
+    needs:
+      - run-acceptance-tests
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-Linux
+          path: dist-Linux
+
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-macOS
+          path: dist-macOS
+
+      - name: Prepare release binaries
+        run: |
+          mkdir eucalypt-x86_64-linux
+          cp dist-Linux/build/eu/eu eucalypt-x86_64-linux
+          tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
+          mkdir eucalypt-x86_64-osx
+          cp dist-macOS/build/eu/eu eucalypt-x86_64-osx
+          tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
+
+      - name: Query binary for version number
+        run: |
+          chmod +x dist-Linux/build/eu/eu
+          echo "::set-env name=RELEASE_VERSION::$(dist-Linux/build/eu/eu -e eu.build.version)"
+
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ env.RELEASE_VERSION }}
+          body: eu binary release
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload linux release
+        id: upload-linux-release-asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: eucalypt-x86_64-linux.tgz
+          asset_name: eucalypt-x86_64-linux.tgz
+          asset_content_type: application/gzip
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload macOS release
+        id: upload-macos-release-asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: eucalypt-x86_64-osx.tgz
+          asset_name: eucalypt-x86_64-osx.tgz
+          asset_content_type: application/gzip
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

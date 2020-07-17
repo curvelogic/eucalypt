@@ -1,7 +1,6 @@
 #!/usr/bin/env eu
 
-{ import: ["package=package.yaml"
-          ,"sha=text@eucalypt-x86_64-osx.tgz.sha"] }
+{ import: ["sha=text@eucalypt-x86_64-osx.tgz.sha"] }
 
 nest-in(pre, post, lines):
   { content: lines map("  {}") }.(["", pre] ++ content ++ [post, ""])
@@ -11,7 +10,7 @@ q: ch.dq
 hash: sha head str.extract("^(\S+)\s.*$")
 
 metadata: {
-  version: package.version
+  version: eu.build.version
   desc: "Eucalypt (eu) tool for generating, templating and processing YAML, JSON, TOML"
   homepage: "https://curvelogic.github.io/eucalypt/"
   url: "https://github.com/curvelogic/eucalypt/releases/download/{version}/eucalypt-x86_64-osx.tgz"
@@ -22,7 +21,7 @@ bottle: ["bottle :unneeded"]
 
 install: nest-in("def install", "end", ["bin.install {q}eu{q}"])
 
-test: [ "expected = {q}Eucalypt (Haskell Impl: v#{{package.version}}){q}"
+test: [ "expected = {q}Eucalypt (Haskell Impl: v#{{eu.build.version}}){q}"
       , "assert_equal expected, `#{{bin}}/eu --version`.strip"]
       nest-in("def test", "end")
 
