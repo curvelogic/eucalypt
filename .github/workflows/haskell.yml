@@ -208,12 +208,6 @@ jobs:
           cp dist-macOS/build/eu/eu eucalypt-x86_64-osx
           tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
 
-      - name: Upload binaries
-        uses: actions/upload-artifact@v1
-        with:
-          name: dist-${{ runner.os }}
-          path: ${{ env.STACK_DIST_DIR }}
-
       - name: Create release
         id: create_release
         if: github.ref == 'refs/heads/master'
