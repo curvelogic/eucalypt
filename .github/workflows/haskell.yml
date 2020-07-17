@@ -78,6 +78,10 @@ jobs:
     - name: Install dependencies
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
+    - name: DEBUG
+      if: ${{ matrix.os == 'macOS-latest' }}
+      run: ls -al /Users/runner/.stack/setup-exe-cache/x86_64-osx/
+
     - name: Build, test, and HLint
       run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
 
