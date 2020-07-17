@@ -154,7 +154,7 @@ jobs:
                         -e EXECUTABLE=/tmp/workspace/dist/build/eu/eu \
                         -e GHCRTS=-N2 \
                         curvelogic/eucalypt-test-harness:sha-${GITHUB_SHA::7} \
-                        pipenv run ./eut.py -b -n 25 -o /tmp/output
+                        pipenv run ./eut.py -b -n 10 -o /tmp/output
 
   prepare-release:
     runs-on: ubuntu-latest
