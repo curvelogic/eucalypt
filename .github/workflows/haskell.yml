@@ -71,6 +71,10 @@ jobs:
         path: ~/.stack
         key: ${{ runner.os }}-build-${{ env.cache-name }}-stacklock-${{ hashFiles('stack.yaml.lock') }}
 
+    - name: Force good GHC mac
+      if: ${{ matrix.os == 'macOS-latest' }}
+      run: stack setup --reinstall
+
     - name: Add Stack paths to environment
       run: |
           echo "::set-env name=STACK_DIST_DIR::$(stack path --dist-dir)"
