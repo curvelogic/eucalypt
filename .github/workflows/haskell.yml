@@ -173,7 +173,6 @@ jobs:
 
       - name: Create release
         id: create_release
-        if: github.ref == 'refs/heads/master'
         uses: actions/create-release@v1
         with:
           tag_name: ${{ github.ref }}
@@ -184,7 +183,6 @@ jobs:
 
       - name: Upload linux release
         id: upload-linux-release-asset
-        if: github.ref == 'refs/heads/master'
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -193,7 +191,6 @@ jobs:
           asset_content_type: application/gzip
 
       - name: Upload macOS release
-        if: github.ref == 'refs/heads/master'
         id: upload-macos-release-asset
         uses: actions/upload-release-asset@v1
         with:
