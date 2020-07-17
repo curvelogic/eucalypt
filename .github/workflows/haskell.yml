@@ -71,16 +71,14 @@ jobs:
         path: ~/.stack
         key: ${{ runner.os }}-build-${{ env.cache-name }}-stacklock-${{ hashFiles('stack.yaml.lock') }}
 
-    - name: Force good GHC mac
-      if: ${{ matrix.os == 'macOS-latest' }}
-      run: stack setup --reinstall
-
-    - name: Add Stack paths to environment
-      run: |
-          echo "::set-env name=STACK_DIST_DIR::$(stack path --dist-dir)"
-
     - name: Install dependencies
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
+
+    - name: Blow away bad cached exe
+      if: ${{ matrix.os == 'macOS-latest' }}
+      run: |
+        rm -f ~/.stack/setup-exe-cache
+        stack setup
 
     - name: DEBUG
       if: ${{ matrix.os == 'macOS-latest' }}
