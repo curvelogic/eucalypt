@@ -181,7 +181,9 @@ jobs:
           tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
 
       - name: Query binary for version number
-        run:  echo "::set-env name=RELEASE_VERSION::$(dist-Linux/build/eu/eu -e eu.build.version)"
+        run: |
+          chmod +x dist-Linux/build/eu/eu
+          echo "::set-env name=RELEASE_VERSION::$(dist-Linux/build/eu/eu -e eu.build.version)"
 
       - name: Create release
         id: create_release
