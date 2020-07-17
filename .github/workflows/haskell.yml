@@ -49,7 +49,7 @@ jobs:
       env:
         GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Cache
+    - name: Cache .stack (with restore keys)
       if: ${{ matrix.os == 'ubuntu-latest' }}
       uses: actions/cache@v1
       env:
@@ -62,13 +62,35 @@ jobs:
           ${{ runner.os }}-build-
           ${{ runner.os }}-
 
-    - name: Cache
+    - name: Cache .stack (no restore keys)
       if: ${{ matrix.os == 'macOS-latest' }}
       uses: actions/cache@v1
       env:
         cache-name: cache-stack
       with:
         path: ~/.stack
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('package.yaml') }}
+
+    - name: Cache .stack-work (with restore keys)
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      uses: actions/cache@v1
+      env:
+        cache-name: cache-stack-work
+      with:
+        path: .stack-work
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('package.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Cache .stack-work (no restore keys)
+      if: ${{ matrix.os == 'macOS-latest' }}
+      uses: actions/cache@v1
+      env:
+        cache-name: cache-stack-work
+      with:
+        path: .stack-work
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('package.yaml') }}
 
     - name: Add Stack paths to environment
