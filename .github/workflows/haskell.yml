@@ -63,7 +63,7 @@ jobs:
         echo --- REPLACED PACKAGE.YAML ---
         cat package.yaml
 
-    - name: Cache .stack (with restore keys)
+    - name: Cache .stack
       uses: actions/cache@v1
       env:
         cache-name: cache-stack
@@ -118,9 +118,11 @@ jobs:
         with:
           name: dist-${{ runner.os }}
           path: dist
-      - run: |
+      - name: Docker login
+        run: |
           docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-      - run: |
+      - name: Run acceptance tests
+        run: |
           mkdir output
           chmod a+x dist/build/eu/eu
           docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace \
@@ -140,9 +142,11 @@ jobs:
         with:
           name: dist-${{ runner.os }}
           path: dist
-      - run: |
+      - name: Docker login
+        run: |
           docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-      - run: |
+      - name: Run benchmarks
+        run: |
           mkdir output
           chmod a+x dist/build/eu/eu
           docker run -t -v $GITHUB_WORKSPACE:/tmp/workspace \
@@ -185,7 +189,8 @@ jobs:
           body: eu binary release
           draft: true
           prerelease: false
-          token: ${{ github.token }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Upload linux release
         id: upload-linux-release-asset
@@ -195,7 +200,8 @@ jobs:
           asset_path: eucalypt-x86_64-linux.tgz
           asset_name: eucalypt-x86_64-linux.tgz
           asset_content_type: application/gzip
-          token: ${{ github.token }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Upload macOS release
         id: upload-macos-release-asset
@@ -205,4 +211,5 @@ jobs:
           asset_path: eucalypt-x86_64-osx.tgz
           asset_name: eucalypt-x86_64-osx.tgz
           asset_content_type: application/gzip
-          token: ${{ github.token }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
