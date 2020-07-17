@@ -74,6 +74,9 @@ jobs:
     - name: Install dependencies
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
+    - name: Add Stack paths to environment
+      run: echo "::set-env name=STACK_DIST_DIR::$(stack path --dist-dir)"
+
     - name: Blow away bad cached exe
       if: ${{ matrix.os == 'macOS-latest' }}
       run: |
