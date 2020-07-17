@@ -80,7 +80,7 @@ jobs:
     - name: Blow away bad cached exe
       if: ${{ matrix.os == 'macOS-latest' }}
       run: |
-        rm -f ~/.stack/setup-exe-cache
+        rm -Rf ~/.stack/setup-exe-cache
         stack setup
 
     - name: DEBUG
