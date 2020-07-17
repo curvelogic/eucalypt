@@ -77,18 +77,11 @@ jobs:
     - name: Add Stack paths to environment
       run: echo "::set-env name=STACK_DIST_DIR::$(stack path --dist-dir)"
 
-    - name: Blow away bad cached exe
+    - name: Blow away bad cached exe on macOS
       if: ${{ matrix.os == 'macOS-latest' }}
       run: |
         rm -Rf ~/.stack/setup-exe-cache
         stack setup
-
-    # - name: DEBUG
-    #   if: ${{ matrix.os == 'macOS-latest' }}
-    #   run: |
-    #     ls -al /Users/runner/.stack/setup-exe-cache/x86_64-osx/
-    #     cd /Users/runner/.stack/setup-exe-cache/x86_64-osx/
-    #     ./Cabal-simple_mPHDZzAJ_2.4.0.1_ghc-8.6.5 --help
 
     - name: Build, test, and HLint
       run: stack build --fast --pedantic --no-terminal --test --exec "stack exec hlint -- ."
@@ -192,6 +185,7 @@ jobs:
           body: eu binary release
           draft: true
           prerelease: false
+          token: ${{ github.token }}
 
       - name: Upload linux release
         id: upload-linux-release-asset
@@ -201,6 +195,7 @@ jobs:
           asset_path: eucalypt-x86_64-linux.tgz
           asset_name: eucalypt-x86_64-linux.tgz
           asset_content_type: application/gzip
+          token: ${{ github.token }}
 
       - name: Upload macOS release
         id: upload-macos-release-asset
@@ -210,3 +205,4 @@ jobs:
           asset_path: eucalypt-x86_64-osx.tgz
           asset_name: eucalypt-x86_64-osx.tgz
           asset_content_type: application/gzip
+          token: ${{ github.token }}
