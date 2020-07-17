@@ -180,12 +180,15 @@ jobs:
           cp dist-macOS/build/eu/eu eucalypt-x86_64-osx
           tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
 
+      - name: Query binary for version number
+        run:  echo "::set-env name=RELEASE_VERSION::$(dist-Linux/build/eu/eu -e eu.build.version)"
+
       - name: Create release
         id: create_release
         uses: actions/create-release@v1
         with:
           tag_name: ${{ github.ref }}
-          release_name: 0.1.2.${{ env.GITHUB_RUN_NUMBER }}
+          release_name: ${{ env.RELEASE_VERSION }}
           body: eu binary release
           draft: true
           prerelease: false
