@@ -22,7 +22,7 @@ spec = do
   describe "list literals" $
     it "represents lists" $
     locatee (list (map normalName ["x", "y", "z"])) `shouldBe`
-    (EList $ map normalName ["x", "y", "z"])
+    EList (map normalName ["x", "y", "z"])
   describe "property declaration" $
     it "represents a property declaration" $
     locatee (prop "x" (normalName "expr")) `shouldBe`
