@@ -10,7 +10,7 @@ import qualified Data.Set as S
 import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Import
 import Eucalypt.Core.Metadata
-import Eucalypt.Core.Syn (CoreExpr, CoreExp(..), Primitive(..))
+import Eucalypt.Core.Syn (CoreExp(..), Primitive(..))
 import Eucalypt.Core.Unit
 import Eucalypt.Syntax.Input
 import Test.Hspec

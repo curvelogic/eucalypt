@@ -20,11 +20,10 @@ import qualified Data.Foldable as F
 import Control.Monad.Trans.State.Strict (State, runState, state)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.List (nub, sortOn, sortBy)
+import Data.List (nub, sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Ord (comparing)
+import Data.Ord (Down(..))
 import Data.Symbol
-import Data.Semigroup (Semigroup(..))
 import Text.Read
 import Control.Lens (_1, _2)
 
@@ -432,7 +431,7 @@ toList
 toRevList :: InsOrdSymbolMap v -> [(Symbol, v)]
 toRevList
     = fmap (second getPV)
-    . sortBy (flip $ comparing (getPK . snd))
+    . sortOn (Down . getPK . snd)
     . Map.toList
     . getInsOrdSymbolMap
 

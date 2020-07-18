@@ -13,7 +13,6 @@ module Eucalypt.Core.BlockAnaphoraSpec
 
 import Eucalypt.Core.BlockAnaphora
 import Eucalypt.Core.AnonSyn
-import Eucalypt.Core.Syn (CoreExpr)
 import Test.Hspec
 
 main :: IO ()

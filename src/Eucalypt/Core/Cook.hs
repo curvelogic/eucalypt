@@ -379,7 +379,7 @@ fillGaps exprs =
   where
     sides = map Just exprs ++ [Nothing]
     anaphoricMaybe =
-      getAny . foldMap Any . fmap (isAnaphoricVar expressionAnaphora)
+      getAny . foldMap (Any . isAnaphoricVar expressionAnaphora)
     accum (l, b) e =
       let (l', b') =
             case validExprSeq (headMay l) e of

@@ -13,7 +13,6 @@ module Eucalypt.Stg.Eval where
 
 import Control.Applicative
 import Control.Exception.Safe
-import Control.Monad (zipWithM_)
 import Control.Monad.Loops (iterateUntilM)
 import Control.Monad.State
 import Data.Foldable (toList)
@@ -76,10 +75,7 @@ selectBranch :: BranchTable -> Tag -> BranchSelection
 selectBranch (BranchTable bs dft) t =
   case Map.lookup t bs of
     Just (arity, expr) -> TagBranch arity expr
-    Nothing ->
-      case dft of
-        Just expr -> DefaultBranch expr
-        Nothing -> NoBranch
+    Nothing -> maybe NoBranch DefaultBranch dft
 
 -- | Halt the machine
 terminate :: MachineState -> MachineState

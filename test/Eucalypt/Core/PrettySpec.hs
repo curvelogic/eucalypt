@@ -1,7 +1,6 @@
 module Eucalypt.Core.PrettySpec (main, spec)
 where
 
-import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Pretty
 import Test.Hspec

@@ -9,7 +9,6 @@ import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Syn
   ( CoreBindingName
   , CoreExp(..)
-  , CoreExpr
   , bindAnaphora
   , bindMore
   , isAnaphoricVar

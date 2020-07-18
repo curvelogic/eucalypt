@@ -5,7 +5,6 @@ module Eucalypt.Driver.Options
 import Control.Monad (filterM, (>=>))
 import Control.Monad.IO.Class
 import Data.Maybe (fromJust)
-import Data.Semigroup ((<>))
 import Eucalypt.Core.Target
 import Eucalypt.Syntax.Input (Input(..), Locator(..), parseInputFromString)
 import Options.Applicative

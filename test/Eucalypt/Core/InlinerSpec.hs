@@ -7,7 +7,7 @@ import Bound.Scope
 import Data.List (elemIndex)
 import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Inliner
-import Eucalypt.Core.Syn (CoreBindingName, CoreExp(..), CoreExpr)
+import Eucalypt.Core.Syn (CoreBindingName, CoreExp(..))
 import Test.Hspec
 
 main :: IO ()

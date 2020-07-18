@@ -10,7 +10,6 @@ module Eucalypt.Driver.IOSource where
 
 import Data.Time.LocalTime
 import Eucalypt.Core.AnonSyn
-import Eucalypt.Core.Syn (CoreExpr)
 import Eucalypt.Core.Unit
 import System.Posix.Time (epochTime)
 import System.Environment (getEnvironment)

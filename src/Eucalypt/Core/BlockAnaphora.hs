@@ -51,7 +51,7 @@ hasNakedBlockAnaphora _ = False
 transform :: (Anaphora SymbolicAnaphora a) => Bool -> CoreExp a -> CoreExp a
 transform True expr = expr
 transform False expr@(CoreLet smid bs b cl) =
-  if any hasNakedBlockAnaphora $ map fromScope (b : map snd bs)
+  if any (hasNakedBlockAnaphora . fromScope) (b : map snd bs)
     then (bindAnaphora blockAnaphora . numberAnaphora blockAnaphora) expr
     else let b' = toScope $ transform False (fromScope b)
              bs' = map (second (toScope . transform False . fromScope)) bs

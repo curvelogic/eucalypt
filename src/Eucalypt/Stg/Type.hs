@@ -46,9 +46,7 @@ longName TypeNative = "Native"
 longName TypeString = "String"
 longName TypeNumber = "Number"
 longName TypeSymbol = "Symbol"
-longName (TypeDynamic r) = case r of
-  Just tr -> show tr
-  Nothing -> "Dynamic"
+longName (TypeDynamic r) = maybe "Dynamic" show r
 longName TypeHeapObj = "HeapObject"
 longName TypeBlackHole = "BlackHole"
 longName TypeClosure = "Closure"

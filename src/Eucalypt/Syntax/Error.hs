@@ -15,11 +15,9 @@ import Eucalypt.Reporting.Common
 import Eucalypt.Reporting.Classes
 import Eucalypt.Reporting.Location
 import qualified Text.Megaparsec as M
-import qualified Text.Megaparsec.Error as ME
-import qualified Text.Megaparsec.Stream as MS
 
 newtype SyntaxError
-  = MegaparsecError (ME.ParseErrorBundle String Void)
+  = MegaparsecError (M.ParseErrorBundle String Void)
   deriving (Show, Eq, Typeable)
 
 instance Exception SyntaxError
@@ -31,11 +29,11 @@ toSpan p = (h, h)
 
 -- | Make SyntaxError 'Reportable'
 instance Reportable SyntaxError where
-  code (MegaparsecError peb) = Just . toSpan $ spos
+  code (MegaparsecError peb) = Just . toSpan . M.pstateSourcePos $ pstate
     where
-      pe1 = NE.head $ ME.bundleErrors peb
-      (spos, _, _) = MS.reachOffset (ME.errorOffset pe1) (ME.bundlePosState peb)
+      pe1 = NE.head $ M.bundleErrors peb
+      (_, pstate) = M.reachOffset (M.errorOffset pe1) (M.bundlePosState peb)
   report (MegaparsecError peb) = standardReport "SYNTAX ERROR" msg
     where
-      msg = ME.parseErrorTextPretty pe1
-      pe1 = NE.head $ ME.bundleErrors peb
+      msg = M.parseErrorTextPretty pe1
+      pe1 = NE.head $ M.bundleErrors peb

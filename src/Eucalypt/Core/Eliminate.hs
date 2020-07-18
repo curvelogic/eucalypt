@@ -27,7 +27,7 @@ prune (CoreLet smid bs b _) =
    in CoreLet smid (blankUnused used prunedBs) prunedB OtherLet
   where
     pruneScope = toScope . prune . fromScope
-    blankUnused u binds = map (blankNon u) (zip [0 ..] binds)
+    blankUnused u = zipWith (curry (blankNon u)) [0 .. ]
     blankNon u (i, el@(k, _)) =
       if i `Set.member` u
         then el

@@ -7,7 +7,7 @@ import Data.Either (fromRight)
 import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Cook
 import Eucalypt.Core.SourceMap
-import Eucalypt.Core.Syn (CoreExp(..), CoreExpr, Primitive(..), callOp)
+import Eucalypt.Core.Syn (CoreExp(..), Primitive(..), callOp)
 import Test.Hspec
 
 main :: IO ()
