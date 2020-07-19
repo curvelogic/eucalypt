@@ -57,6 +57,7 @@ import Eucalypt.Source.Error (DataParseException(..))
 import Eucalypt.Source.TextSource
 import Eucalypt.Source.TomlSource
 import Eucalypt.Source.YamlSource
+import Eucalypt.Source.XmlSource
 import Eucalypt.Syntax.Ast (Unit)
 import Eucalypt.Syntax.Error (SyntaxError(..))
 import Eucalypt.Syntax.Input
@@ -274,6 +275,7 @@ loadUnit i@(Input locator name format) = do
       "yaml" -> activeYamlToCore i source
       "json" -> yamlDataToCore i source
       "csv" -> csvDataToCore i source
+      "xml" -> xmlDataToCore i source
       "eu" -> eucalyptToCore i firstSMID source
       _ -> (return . Left . Command . InvalidInput) i
   case coreUnit of
@@ -309,6 +311,9 @@ loadUnit i@(Input locator name format) = do
         Right core -> (return . Right . maybeApplyName . dataUnit input) core
     csvDataToCore input text = liftIO $
       parseCsv (BL.fromStrict text) >>=
+      (return . Right . maybeApplyName <$> dataUnit input)
+    xmlDataToCore input text = liftIO $
+      parseXml text >>=
       (return . Right . maybeApplyName <$> dataUnit input)
 
 

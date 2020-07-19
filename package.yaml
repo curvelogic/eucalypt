@@ -65,6 +65,7 @@ library:
     - unix
     - unordered-containers
     - vector
+    - xml
     - yaml
   build-tools:
     - hlint
@@ -119,4 +120,5 @@ tests:
       - tomland
       - unordered-containers
       - vector
+      - xml
       - yaml
