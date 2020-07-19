@@ -14,29 +14,14 @@ main = hspec spec
 
 spec :: Spec
 spec =
-  describe "Xml parser" $ do
-    it "Parses simple xml" $
-      parseXml "<xml>blah<a>foo</a><b c=\"d\">bar</b><e/></xml>" `shouldReturn`
-      block
-        [ element "_tag" $ str "xml"
-        , element "_attrs" $ block []
-        , element "_content" $
-          corelist
-            [ str "blah"
-            , block
-                [ element "_tag" $ str "a"
-                , element "_attrs" $ block []
-                , element "_content" $ corelist [str "foo"]
-                ]
-            , block
-                [ element "_tag" $ str "b"
-                , element "_attrs" $ block [element "c" $ str "d"]
-                , element "_content" $ corelist [str "bar"]
-                ]
-            , block
-                [ element "_tag" $ str "e"
-                , element "_attrs" $ block []
-                , element "_content" $ corelist []
-                ]
-            ]
-        ]
+  describe "Xml parser" $
+  it "Parses simple xml" $
+  parseXml "<xml>blah<a>foo</a><b c=\"d\">bar</b><e/></xml>" `shouldReturn`
+  corelist
+    [ sym "xml"
+    , block []
+    , str "blah"
+    , corelist [sym "a", block [], str "foo"]
+    , corelist [sym "b", block [element "c" $ str "d"], str "bar"]
+    , corelist [sym "e", block []]
+    ]
