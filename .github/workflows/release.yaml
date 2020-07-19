@@ -14,7 +14,9 @@ jobs:
           ref: ${{ env.GITHUB_REF }}
       - uses: actions/setup-python@v1
       - uses: dschep/install-pipenv-action@v1
-      - run: pipenv run mkdocs gh-deploy
+      - run: |
+            pipenv install
+            pipenv run mkdocs gh-deploy
 
   update-homebrew:
     runs-on: macOS-latest
