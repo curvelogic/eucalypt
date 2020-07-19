@@ -133,7 +133,7 @@ parseInput = do
   locatorStr <- many anySingle
 
   -- Try and interpret the URL portion of the input
-  let locator = normaliseLocator <$> locatorFromString locatorStr >>= validateLocator
+  let locator = locatorFromString locatorStr >>= validateLocator . normaliseLocator
 
   -- If we have it, infer format
   let extensionFormat = fromMaybe "eu" (locator >>= inferFormat)

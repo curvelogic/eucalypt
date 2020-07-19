@@ -81,7 +81,7 @@ processImports load handler (CoreMeta smid m body) =
     imports ->
       CoreMeta smid (pruneImports handler m) $
       foldr
-        ((\i e -> rebody (load i) e) . fst)
+        (rebody . load . fst)
         (processImports load handler body)
         imports
 processImports load handler (CoreLet smid bs b _) = CoreLet smid bs' b' OtherLet

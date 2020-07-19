@@ -97,5 +97,5 @@ translateToml Toml.TOML {..} = foldl1 collapse (pairBlocks ++ tables)
 parseTomlData :: BS.ByteString -> IO CoreExpr
 parseTomlData src =
   case Toml.parse . decodeUtf8 $ src of
-    Left (Toml.ParseException t) -> throwM $ FromTomlException t
+    Left err -> throwM $ FromTomlException . Toml.unTomlParseError $ err
     Right val -> return . translateToml $ val

@@ -3,7 +3,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-|
 Module      : Eucalypt.Driver.Core
 Description : Facilities for loading core from inputs

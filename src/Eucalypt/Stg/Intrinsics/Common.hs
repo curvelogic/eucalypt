@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase, PatternSynonyms, ViewPatterns #-}
+{-# LANGUAGE LambdaCase, ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-|
 Module      : Eucalypt.Stg.Intrinsics.Common

@@ -30,10 +30,10 @@ import Data.Text.Encoding (encodeUtf8)
 import Eucalypt.Render.Error
 import qualified Eucalypt.Stg.Event as E
 import Eucalypt.Stg.Native
-import Toml.PrefixTree
-import Toml.Printer (pretty)
+import Toml.Type.Printer (pretty)
 import Toml.Type.AnyValue
 import Toml.Type.TOML
+import Toml.Type.Key
 import qualified Toml.Type.Value as V
 
 

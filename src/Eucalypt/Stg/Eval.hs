@@ -260,7 +260,7 @@ step ms0@MachineState {machineCode = (Eval (Let pcs body) env)} = {-# SCC "EvalL
 -- | LET (recursive)
 step ms0@MachineState {machineCode = (Eval (LetRec pcs body) env)} = {-# SCC "EvalLetRec" #-} do
   ms <- prepareStep "EVAL LETREC" ms0
-  addrs <- liftIO $ sequenceA $ replicate (length pcs) (allocate BlackHole)
+  addrs <- liftIO $ replicateM (length pcs) (allocate BlackHole)
   let env' = env <> (toVec . map StgAddr) addrs
   closures <- traverse (buildClosure env' ms) pcs
   liftIO $ zipWithM_ poke addrs (toList closures)
