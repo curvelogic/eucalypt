@@ -139,7 +139,7 @@ evaluate opts = do
     let units = {-# SCC "BlockAnaphora" #-} map (fmap anaphorise) parsedUnits
 
     -- Stage 3: prepare an IO unit to contain launch environment data
-    io <- prepareIOUnit
+    io <- prepareIOUnit opts
 
     -- Stage 4: merge all units and bind any cross unit refs
     let merged = {-# SCC "MergeUnits" #-} mergeTranslationUnits (io : units)
