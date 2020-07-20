@@ -524,7 +524,7 @@ drop-while(p?, l): if(l nil?, [], if(l head p?, drop-while(p?, l tail), l))
 drop-until(p?): drop-while(p? complement)
 
 ` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
-nth(n, l): l drop(n dec) head
+nth(n, l): l drop(n) head
 
 ` { doc: "`l !! n` - return `n`th item of list if it exists, otherwise error."
     precedence: :exp }
