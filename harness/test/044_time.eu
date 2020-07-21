@@ -1,4 +1,6 @@
-time: cal.now."{h:%02d}:{m:%02d}:{s:%02d}"
+time: cal.now."{h:%02d}:{M:%02d}:{s:%02d}"
+
+matches(expected, actual): merge(actual, expected) //= actual
 
 tests: {
   α: cal.now.y > 2000 //= true
@@ -6,6 +8,15 @@ tests: {
   γ: cal.zdt(2019, 12, 1, 11, 23, 77, "+0400") cal.fields (.h) //= 11
   δ: cal.datetime({y: 2019 m: 11 d: 21}) cal.fields (.d) //= 21
   ε: cal.datetime({h: 12 M: 12 s: 12}) cal.fields (."{h:%02d}!{M:%02d}") //= "12!12"
+  ζ: cal.parse("20081210") cal.fields matches({y: 2008 m: 12 d: 10})
+  η: cal.parse("2008-12-10") cal.fields matches({y: 2008 m: 12 d: 10})
+  θ: cal.parse("2020-01-01T10:20:00.123") cal.fields matches({y: 2020 m: 1 d: 1 h: 10 M: 20 s: 0.123})
+  ι: cal.parse("2020-01-01T10:20:00.123+01:00") cal.fields matches({y: 2020 m: 1 d: 1 h: 10 M: 20 s: 0.123 Z: "+0100"})
+  κ: cal.parse("2020-01-01T10:20:00.123Z") cal.fields matches({y: 2020 m: 1 d: 1 h: 10 M: 20 s: 0.123 Z: "+0000"})
+  λ: cal.parse("20200101T102000") cal.fields matches({y: 2020 m: 1 d: 1 h: 10 M: 20 s: 0})
+  μ: cal.parse("20200101T1020") cal.fields matches({y: 2020 m: 1 d: 1 h: 10 M: 20})
+  ν: (cal.parse("20200101T1020") cal.fields)."{d:%02d}/{m:%02d}/{y:%04d}" //= "01/01/2020"
+  ξ: cal.parse("2019-03-30") cal.format //= "2019-03-30T00:00:00+00:00"
 }
 
 RESULT: tests values all-true? then(:PASS, :FAIL)

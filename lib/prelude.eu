@@ -748,9 +748,9 @@ tongue(ks, v): foldr({k: • e: •}.([[k, e]] block), v, ks)
 ` "merge-at(ks, v, b) - shallow merge block `v` into block value at path-of-keys `ks`"
 merge-at(ks, v, b): if(ks nil?,
                        merge(b, v),
-		       b update-value-or(ks head,
-		                         merge-at(ks tail, v),
-					 tongue(ks tail, v)))
+                       b update-value-or(ks head,
+		                                        merge-at(ks tail, v),
+                                            tongue(ks tail, v)))
 
 
 
@@ -770,6 +770,8 @@ cal: {
     wrap: '__ZDT.WRAP'
     unwrap: '__ZDT.UNWRAP'
     fields: '__ZDT.FIELDS'
+    parse: '__ZDT.PARSE'
+    format: '__ZDT.FORMAT'
   }
 
   ` "`cal.zdt(y, m, d, h, M, s, Z)` - create zoned date time from datetime components and timezone string (e.g. '+0100')"
@@ -783,6 +785,12 @@ cal: {
 	                 b lookup-or(:M, 0),
 	                 b lookup-or(:s, 0),
 	                 b lookup-or(:Z, "UTC"))
+
+  ` "cal.parse(s) - parse an ISO8601 formatted date string into a zoned date time."
+  parse: Γ.wrap ∘ Γ.parse
+
+  ` "cal.format(s) - format a zoned date time as ISO8601."
+  format: Γ.format ∘ Γ.unwrap
 
   ` "cal.fields(t) - decompose a zoned date time into a block of its component fields"
   fields: block ∘ Γ.fields ∘ Γ.unwrap
