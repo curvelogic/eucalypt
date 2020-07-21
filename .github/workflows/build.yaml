@@ -25,18 +25,16 @@ jobs:
 
     - uses: actions/checkout@v2
 
-    - name: Setup stack
-      uses: mstksg/setup-stack@v1
-
     - name: Install OS Packages
       uses: mstksg/get-package@v1
       with:
         apt-get: ${{ matrix.apt-get }}
         brew: ${{ matrix.brew }}
 
+    - uses: actions/setup-python@v1
+    - uses: dschep/install-pipenv-action@v1
     - name: Install latest eucalypt
       run: |
-          pip install pipenv
           mkdir bin
           cd ci
           pipenv install
