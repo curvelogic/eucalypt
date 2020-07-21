@@ -55,9 +55,9 @@ zonedDateTimeFields ZonedTime {..} =
    in [ (NativeSymbol "y", NativeNumber $ fromIntegral year)
       , (NativeSymbol "m", NativeNumber $ fromIntegral month)
       , (NativeSymbol "d", NativeNumber $ fromIntegral day)
-      , (NativeSymbol "h", NativeNumber $ fromIntegral todHour)
+      , (NativeSymbol "H", NativeNumber $ fromIntegral todHour)
       , (NativeSymbol "M", NativeNumber $ fromIntegral todMin)
-      , (NativeSymbol "s", NativeNumber $ fromRational $ toRational todSec)
+      , (NativeSymbol "S", NativeNumber $ fromRational $ toRational todSec)
       , (NativeSymbol "Z", NativeString tz)
       ]
 
