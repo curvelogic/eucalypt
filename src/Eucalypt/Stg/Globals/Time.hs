@@ -27,6 +27,8 @@ globals =
   , ("ZDT.WRAP", euZdtWrap)
   , ("ZDT.UNWRAP", euZdtUnwrap)
   , ("ZDT.FIELDS", euZdtFields)
+  , ("ZDT.PARSE", euZdtParse)
+  , ("ZDT.FORMAT", euZdtFormat)
   ]
 
 euIFields :: LambdaForm
@@ -56,3 +58,11 @@ euZdtUnwrap =
 -- | __ZDT.FIELDS(zdt)
 euZdtFields :: LambdaForm
 euZdtFields = wrapBifStrict "ZDT.FIELDS"
+
+-- | __ZDT.PARSE(s)
+euZdtParse :: LambdaForm
+euZdtParse = wrapBifStrict "ZDT.PARSE8601"
+
+-- | __ZDT.FORMAT(zdt)
+euZdtFormat :: LambdaForm
+euZdtFormat = wrapBifStrict "ZDT.FORMAT8601"

@@ -748,9 +748,9 @@ tongue(ks, v): foldr({k: • e: •}.([[k, e]] block), v, ks)
 ` "merge-at(ks, v, b) - shallow merge block `v` into block value at path-of-keys `ks`"
 merge-at(ks, v, b): if(ks nil?,
                        merge(b, v),
-		       b update-value-or(ks head,
-		                         merge-at(ks tail, v),
-					 tongue(ks tail, v)))
+                       b update-value-or(ks head,
+		                                        merge-at(ks tail, v),
+                                            tongue(ks tail, v)))
 
 
 
@@ -770,21 +770,29 @@ cal: {
     wrap: '__ZDT.WRAP'
     unwrap: '__ZDT.UNWRAP'
     fields: '__ZDT.FIELDS'
+    parse: '__ZDT.PARSE'
+    format: '__ZDT.FORMAT'
   }
 
-  ` "`cal.zdt(y, m, d, h, M, s, Z)` - create zoned date time from datetime components and timezone string (e.g. '+0100')"
-  zdt(y, m, d, h, M, s, Z): Γ.zdt(y, m, d, h, M, s, Z) Γ.wrap
+  ` "`cal.zdt(y, m, d, H, M, S, Z)` - create zoned date time from datetime components and timezone string (e.g. '+0100')"
+  zdt(y, m, d, H, M, S, Z): Γ.zdt(y, m, d, H, M, S, Z) Γ.wrap
 
   ` "`cal.time(b)` - convert block of time fields to time (with 0 / UTC defaults)"
   datetime(b): zdt(b lookup-or(:y, 0),
                    b lookup-or(:m, 0),
 	                 b lookup-or(:d, 0),
-	                 b lookup-or(:h, 0),
+	                 b lookup-or(:H, 0),
 	                 b lookup-or(:M, 0),
-	                 b lookup-or(:s, 0),
+	                 b lookup-or(:S, 0),
 	                 b lookup-or(:Z, "UTC"))
 
-  ` "cal.fields(t) - decompose a zoned date time into a block of its component fields"
+  ` "cal.parse(s) - parse an ISO8601 formatted date string into a zoned date time."
+  parse: Γ.wrap ∘ Γ.parse
+
+  ` "cal.format(s) - format a zoned date time as ISO8601."
+  format: Γ.format ∘ Γ.unwrap
+
+  ` "cal.fields(t) - decompose a zoned date time into a block of its component fields (y,m,d,H,M,S,Z)."
   fields: block ∘ Γ.fields ∘ Γ.unwrap
 }
 

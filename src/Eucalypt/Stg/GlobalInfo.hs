@@ -99,6 +99,8 @@ globalRegistry =
   , GlobalInfo "ZDT.WRAP" [Strict]
   , GlobalInfo "ZDT.UNWRAP" [Strict]
   , GlobalInfo "ZDT.FIELDS" [Strict]
+  , GlobalInfo "ZDT.PARSE" [Strict]
+  , GlobalInfo "ZDT.FORMAT" [Strict]
   , GlobalInfo "ALIST.MERGE" [Strict, Strict]
   , GlobalInfo "ALIST.PRUNE" [Strict]
   , GlobalInfo "ALIST.DEEPMERGE" [Strict, Strict]
