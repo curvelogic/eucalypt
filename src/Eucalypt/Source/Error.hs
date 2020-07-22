@@ -26,6 +26,7 @@ data DataParseException
   | FromYamlException Text
   | FromTomlException Text
   | FromCsvException Text
+  | FromXmlException
   deriving (Eq, Typeable)
 
 instance Show DataParseException where
@@ -36,6 +37,7 @@ instance Show DataParseException where
   show (FromYamlException ye) = "Error reading YAML: " ++ unpack ye
   show (FromTomlException te) = "Error reading TOML: " ++ unpack te
   show (FromCsvException te) = "Error reading CSV: " ++ unpack te
+  show FromXmlException = "Error reading XML "
 
 instance Exception DataParseException
 

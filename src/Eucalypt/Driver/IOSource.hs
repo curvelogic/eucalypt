@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Eucalypt.Driver.IOSource
 Description : Source of environment or IO data for import
@@ -8,9 +9,11 @@ Stability   : experimental
 -}
 module Eucalypt.Driver.IOSource where
 
+import Data.Maybe (fromMaybe)
 import Data.Time.LocalTime
 import Eucalypt.Core.AnonSyn
 import Eucalypt.Core.Unit
+import Eucalypt.Driver.Options
 import System.Posix.Time (epochTime)
 import System.Environment (getEnvironment)
 
@@ -28,8 +31,23 @@ euTimeZone = do
   let offset = timeZoneOffsetString tz
   return $ block [element "name" $ str name, element "offset" $ str offset]
 
-prepareIOUnit :: IO TranslationUnit
-prepareIOUnit = do
+optionsToBlock :: EucalyptOptions -> CoreExpr
+optionsToBlock EucalyptOptions {..} =
+  block
+    [ element "optionMode" $ sym . show $ optionMode
+    , element "optionExportFormat" $ str $ fromMaybe "yaml" optionExportFormat
+    , element "optionTarget" $ str $ fromMaybe "" optionTarget
+    , element "optionOutput" $ str $ fromMaybe "yaml" optionExportFormat
+    , element "optionEvaluand" $ str $ fromMaybe "" optionExportFormat
+    , element "optionInhibitPrelude" $ corebool optionInhibitPrelude
+    , element "optionCommand" $ sym . show $ optionCommand
+    , element "optionInputs" $ corelist $ map (str . show) optionInputs
+    , element "optionDebug" $ corebool optionDebug
+    , element "optionLibPath" $ corelist $ map str optionLibPath
+    ]
+
+prepareIOUnit :: EucalyptOptions -> IO TranslationUnit
+prepareIOUnit opts = do
   env <- euEnv
   et <- euUnixTimestamp
   tz <- euTimeZone
@@ -42,6 +60,7 @@ prepareIOUnit = do
             [ element "ENV" $ var "ENV"
             , element "EPOCHTIME" $ var "EPOCHTIME"
             , element "TZ" $ var "TZ"
+            , element "OPTIONS" $ optionsToBlock opts
             ])
       ]
       (block [])

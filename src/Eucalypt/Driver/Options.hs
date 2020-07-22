@@ -319,6 +319,7 @@ inferOutputFormat opts =
         ".toml" -> Just "toml"
         ".eu" -> Just "eu"
         ".csv" -> Just "csv"
+        ".xml" -> Just "xml"
         _ -> Just "yaml"
 
 

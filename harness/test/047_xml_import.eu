@@ -1,0 +1,16 @@
+{ doc: "Test that XML import works as expected."
+  import: "root=xml@test/aux/aux_import.xml"}
+
+content: drop(2)
+tag: first
+attrs: nth(1)
+
+tests: {
+  α: root tag //= :abc
+  β: root content count //= 4
+  γ: root content map(tag) //= [:foo, :bar, :zxdrsfas, :quux]
+  δ: root content filter((_ = :quux) ∘ tag) head content //= ["a", [:b, {}], "c", [:d, {}]]
+  ε: root content second attrs //= { a: "a" b: "b" }
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)
