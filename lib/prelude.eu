@@ -61,6 +61,9 @@ then(t, f, c): if(c, t, f)
 ` "`when(p?, f, x)` - when `x` satisfies `p?` apply `f` else pass through unchanged."
 when(p?, f, x): if(x p?, x f, x)
 
+` "`coalesce(d, v)` - `v` unless null, then `d`"
+coalesce(d, v): if(v = null, d, v)
+
 ##
 ## List basics
 ##
@@ -586,6 +589,9 @@ filter(p?, l): foldr({x: • xs: • }.(if(x p?, cons(x, xs), xs)), [], l)
 
 ` "`remove(p?, l)` - return list of elements of list `l` that do not satisfy predicate `p?`."
 remove(p?, l): l filter(p? complement)
+
+` "`contains(item, l)` - return true if `l` contains `item`."
+contains(item, l): l filter(= item) nil? not
 
 ` "`append(l1, l2)` - concatenate two lists `l1` and `l2`."
 append(l1, l2): foldr(cons, l2, l1)
