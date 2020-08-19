@@ -3,6 +3,7 @@ a: { result: "{foo}&{bar}"}
 
 ` { import: "test/aux/aux_import_b.eu"}
 b: { result: x + y + z}
+# y: 7 # TODO: this would fail the test here
 
 ` { import: ["test/aux/aux_import_a.eu", "test/aux/aux_import_b.eu"] }
 both: {

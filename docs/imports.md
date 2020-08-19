@@ -7,19 +7,25 @@ Imported names can be scoped to specific declarations, they may be
 made accessible under a specific namespace, and they may be imported
 from disk or direct from git repositories.
 
-## Import scopes
+## Scope of imported names
 
 Imports are specified in declaration metadata and make the names in
 the imported unit available within the declaration that is annotated.
 
 ```eu
 
-{ import: "config.eu" }
+` { import: "config.eu" }
 data: {
   # names from config are available here
   x: config-value
 }
-
+# names from config.eu are not available here
+#
+# names are *not* re-exported
+#   i.e. `data.config-value` is invalid
+#
+# names defined in the block are visible as normal so
+result: data.x # is valid
 ```
 
 As described in [syntax](syntax.md), declaration metadata can be
@@ -29,11 +35,18 @@ very first thing in a eucalypt file:
 ```eu
 { import: "config.eu" }
 
-# names from config are available here
+# names from config are available throughout this file
 
 x: config-value
 
 ```
+
+!!! warning
+
+	There is currently ambiguity around precedence of conflicting
+	bindings which needs to be resolved. Names defined in the file
+	take precedence over imported names even in the tighter scope of the
+	import which is counter-intuitive and probably going to change.
 
 ## Import syntax
 
