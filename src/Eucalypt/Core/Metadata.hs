@@ -41,7 +41,7 @@ splitAnnotationMetadata (CoreBlock smid (CoreList _ items)) =
   bimap maybeBlock maybeBlock $ partitionEithers $ map classify items
   where
     classify item@(CoreList _ [CorePrim _ (CoreSymbol k), _]) =
-      if k == "import"
+      if k == "import" || k == "embedding"
         then Right item
         else Left item
     classify item = Left item
@@ -143,3 +143,23 @@ determineTarget meta = (, doc, format) <$> target
     target = join $ readUnevaluatedMetadata "target" meta symbolName
     doc = fromMaybe "" $ join $ readUnevaluatedMetadata "doc" meta stringContent
     format = join $ readUnevaluatedMetadata "format" meta symbolName
+
+
+-- | Check (unevaluated) metadata for parse-embed annotation
+determineParseEmbed :: CoreExpr -> Maybe String
+determineParseEmbed meta =
+  join $ readUnevaluatedMetadata "parse-embed" meta symbolName
+
+
+-- | The internal language which is quote-embedded
+data Embedding = EmbedCore | EmbedAST
+
+-- | Check (unevaluated) metadata for parse-embed annotation
+determineEmbedding :: CoreExpr -> Maybe Embedding
+determineEmbedding meta =
+   (join $ readUnevaluatedMetadata "embedding" meta symbolName)
+   >>= embedding
+   where
+     embedding "core" = Just EmbedCore
+     embedding "ast" = Just EmbedAST
+     embedding _ = Nothing
