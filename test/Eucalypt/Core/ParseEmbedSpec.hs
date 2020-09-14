@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 module Eucalypt.Core.ParseEmbedSpec
   ( main
   , spec
@@ -24,5 +22,5 @@ main = hspec spec
 spec :: Spec
 spec = describe "samples" $ do
   it "parses c-var" $
-    testParseEmbed <$> (parseExpression "[:c-var, \"x\"]" "test") `shouldBe`
+    testParseEmbed <$> parseExpression "[:c-var, \"x\"]" "test" `shouldBe`
     Right (Syn.var 1 "x")

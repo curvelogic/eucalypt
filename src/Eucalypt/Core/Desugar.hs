@@ -238,10 +238,7 @@ checkImports annot = do
 -- the unit contents with the result of consuming the embedding at the
 -- specified key.
 checkParseEmbed :: CoreExpr -> Translate ()
-checkParseEmbed annot =
-  case determineParseEmbed annot of
-    Just pe -> recordParseEmbed pe
-    Nothing -> return ()
+checkParseEmbed annot = forM_ (determineParseEmbed annot) recordParseEmbed
 
 
 

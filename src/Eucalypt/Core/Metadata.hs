@@ -157,9 +157,9 @@ data Embedding = EmbedCore | EmbedAST
 -- | Check (unevaluated) metadata for parse-embed annotation
 determineEmbedding :: CoreExpr -> Maybe Embedding
 determineEmbedding meta =
-   (join $ readUnevaluatedMetadata "embedding" meta symbolName)
-   >>= embedding
-   where
-     embedding "core" = Just EmbedCore
-     embedding "ast" = Just EmbedAST
-     embedding _ = Nothing
+  join (readUnevaluatedMetadata "embedding" meta symbolName)
+  >>= embedding
+  where
+    embedding "core" = Just EmbedCore
+    embedding "ast" = Just EmbedAST
+    embedding _ = Nothing

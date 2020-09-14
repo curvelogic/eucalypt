@@ -2,7 +2,6 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving  #-}
 {-|
 Module      : Eucalypt.Core.ParseEmbed
 Description : Parse quoted core directly into core without desugaring
@@ -28,28 +27,28 @@ translateEmbedded :: MonadSupplySMID m => Expression -> m CoreExpr
 translateEmbedded Located{..} =
   translateExpr locatee
   where
-    translateExpr (EList ((Located{locatee=(ELiteral(VSym s))}):xs)) = dispatch s xs
+    translateExpr (EList (Located{locatee=(ELiteral(VSym s))}:xs)) = dispatch s xs
     translateExpr (EOpSoup _ (x:_)) = translateEmbedded x
     translateExpr e = traceShow e $ error "bad parse-embed core content"
-    dispatch "c-var" (x:[]) = cvar x
-    dispatch "c-let" (decls:body:[]) = clet decls body
-    dispatch "c-bif" (n:[]) = cbif n
-    dispatch "c-lit" (v:[]) = clit v
-    dispatch "c-lookup" (t:n:fb:[]) = clookup t n $ Just fb
-    dispatch "c-lookup" (t:n:[]) = clookup t n Nothing
-    dispatch "c-name" (n:[]) = cname n
+    dispatch "c-var" [x] = cvar x
+    dispatch "c-let" [decls, body] = clet decls body
+    dispatch "c-bif" [n] = cbif n
+    dispatch "c-lit" [v] = clit v
+    dispatch "c-lookup" [t, n, fb] = clookup t n $ Just fb
+    dispatch "c-lookup" [t, n] = clookup t n Nothing
+    dispatch "c-name" [n] = cname n
     dispatch "c-list" xs = clist xs
-    dispatch "c-block" (b:[]) = cblock b
-    dispatch "c-meta" (e:m:[]) = cmeta e m
+    dispatch "c-block" [b] = cblock b
+    dispatch "c-meta" [e, m] = cmeta e m
     dispatch "c-args" xs = cargs xs
-    dispatch "c-lam" (xs:body:[]) = clam xs body
-    dispatch "c-app" (f:xs:[]) = capp f xs
+    dispatch "c-lam" [xs, body] = clam xs body
+    dispatch "c-app" [f, xs] = capp f xs
     dispatch "c-soup" xs = csoup xs
-    dispatch "c-op" (f:p:e:[]) = cop f p e
-    dispatch "c-bk-ana" (i:[]) = cbkana i
-    dispatch "c-ex-ana" (a:[]) = cexana a
-    dispatch "e-unresolved" (n:[]) = eunresolved n
-    dispatch "e-redeclared" (n:[]) = eredeclared n
+    dispatch "c-op" [f, p, e] = cop f p e
+    dispatch "c-bk-ana" [i] = cbkana i
+    dispatch "c-ex-ana" [a] = cexana a
+    dispatch "e-unresolved" [n] = eunresolved n
+    dispatch "e-redeclared" [n] = eredeclared n
     dispatch "e-eliminated" [] = eeliminated
     dispatch "e-pseudodot" [] = epseudodot
     dispatch "e-pseudocall" [] = epseudocall
@@ -65,12 +64,12 @@ cvar _ = error "bad c-var"
 -- | Translate embedded [:c-let {} body]
 clet :: MonadSupplySMID m => Expression -> Expression -> m CoreExpr
 clet Located{locatee = (EBlock declblock), location=loc} body = do
-  bindings <- sequenceA $ map binding $ declarations declblock
+  bindings <- traverse binding $ declarations declblock
   value <- translateEmbedded body
   mint2 Syn.letexp loc bindings value
   where
     declarations Located{locatee=Block elts} =
-      map (\ (Located{locatee=(Declaration (Annotated{content=c}))}) -> c) elts
+      map (\ Located{locatee=(Declaration Annotated{content=c})} -> c) elts
     binding Located{locatee=PropertyDecl k v} = do
       expr <- translateEmbedded v
       return (atomicName k, expr)
@@ -98,11 +97,11 @@ clit _ = error "bad c-lit"
 
 -- | Translate embedded [:c-lookup _ n _?]
 clookup :: MonadSupplySMID m => Expression -> Expression -> Maybe Expression -> m CoreExpr
-clookup target (Located{ locatee = (ELiteral (VStr n)) }) (Just fallback) = do
+clookup target Located{ locatee = (ELiteral (VStr n)) } (Just fallback) = do
   tgt <- translateEmbedded target
   fb <- translateEmbedded fallback
   return $ anon Syn.dynlookup tgt n fb
-clookup target (Located{locatee=(ELiteral (VStr n))}) Nothing = do
+clookup target Located{locatee=(ELiteral (VStr n))} Nothing = do
   tgt <- translateEmbedded target
   return $ anon Syn.corelookup tgt n
 clookup _ _ _ = error "bad c-lookup"
@@ -122,11 +121,11 @@ clist exprs = anon corelist <$> traverse translateEmbedded exprs
 
 -- | Translate embedded [:c-block {}]
 cblock :: MonadSupplySMID m => Expression -> m CoreExpr
-cblock Located{locatee=(EBlock (Located{locatee=(Block elements)}))} =
-  (anon Syn.block) <$> (sequenceA $ map toElement elements)
+cblock Located{locatee=(EBlock Located{locatee=(Block elements)})} =
+  anon Syn.block <$> traverse toElement elements
   where
     propDecl Annotated{content=Located{locatee=(PropertyDecl n expr)}} = (n, expr)
-    toElement (Located{locatee=((Declaration dform)), location=loc}) = do
+    toElement Located{locatee=((Declaration dform)), location=loc} = do
       let (n, expr) = propDecl dform
       val <- translateEmbedded expr
       mint corelist loc [anon Syn.sym $ atomicName n, val]
@@ -153,8 +152,8 @@ clam bound impl = do
   body <- translateEmbedded impl
   return $ anon lam boundVars body
   where
-    extractBoundVars (Located{locatee=EList vars}) = map varName vars
-    varName (Located{locatee=ELiteral (VStr n)}) = n
+    extractBoundVars Located{locatee=EList vars} = map varName vars
+    varName Located{locatee=ELiteral (VStr n)} = n
 
 
 -- | Translate embedded [:c-app f xs]
@@ -164,7 +163,7 @@ capp f xs = do
   arguments <- sequenceA $ extractArgs xs
   return $ anon app applicable arguments
   where
-    extractArgs (Located{locatee=EList vs}) = map translateEmbedded vs
+    extractArgs Located{locatee=EList vs} = map translateEmbedded vs
 
 
 -- | Translate embedded [:c-soup _ _ _ _ ..._]
