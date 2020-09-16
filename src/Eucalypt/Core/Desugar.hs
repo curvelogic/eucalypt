@@ -37,6 +37,7 @@ import Eucalypt.Core.Import
 import Eucalypt.Core.Syn as Syn
 import Eucalypt.Core.SourceMap
 import Eucalypt.Core.Metadata
+import Eucalypt.Core.ParseEmbed (translateEmbedded)
 import Eucalypt.Core.Target
 import Eucalypt.Core.Unit
 import Eucalypt.Reporting.Location
@@ -53,6 +54,8 @@ data TranslateState = TranslateState
     -- ^ maintain stack of keys to calculate target "paths"
   , trImports :: [Input]
     -- ^ imports discovered
+  , trParseEmbed :: Maybe CoreBindingName
+    -- ^ a parse-embed key
   , trSourceMap :: SourceMap
     -- ^ map of source map IDs to source locations
   , trActions :: [IO ()]
@@ -79,7 +82,7 @@ initTranslateState ::
      SMID           -- ^ source map ID to start from
   -> ImportHandler  -- ^ for reading imports
   -> TranslateState -- ^ initial state
-initTranslateState = TranslateState [] [] [] mempty mempty
+initTranslateState = TranslateState [] [] [] mempty mempty mempty
 
 -- | Push a key onto the stack to track where we are, considering
 -- statically declared blocks as namespaces
@@ -127,6 +130,13 @@ recordImports imports =
 recordActions :: [IO ()] -> Translate ()
 recordActions actions =
   modify $ \s@TranslateState {trActions = old} -> s {trActions = old ++ actions}
+
+
+
+-- | Record a parse-embed key read from unit metadata
+recordParseEmbed :: CoreBindingName -> Translate ()
+recordParseEmbed key =
+  modify $ \s -> s {trParseEmbed = Just key }
 
 
 
@@ -224,6 +234,14 @@ checkImports annot = do
 
 
 
+-- | Check for a parse-embed directive that indicates we must replace
+-- the unit contents with the result of consuming the embedding at the
+-- specified key.
+checkParseEmbed :: CoreExpr -> Translate ()
+checkParseEmbed annot = forM_ (determineParseEmbed annot) recordParseEmbed
+
+
+
 -- | Description of all declaration details for producing the combined
 -- core let / block which represents the AST block.
 data DeclarationFields = DeclarationFields
@@ -276,7 +294,11 @@ unifiedDeclarations blk =
           checkImports annot
           return $ splitAnnotationMetadata annot
         Nothing -> return (Nothing, Nothing)
-    expr <- translateDeclarationForm a k (content d)
+    let embedding = a >>= determineEmbedding
+    expr <- case embedding of
+      Just EmbedCore -> translateEmbedded $ extractPropValue d
+      Just EmbedAST -> undefined
+      Nothing -> translateDeclarationForm a k (content d)
     popKey
     return $ DeclarationFields declMeta k valMeta expr
   where
@@ -289,6 +311,13 @@ unifiedDeclarations blk =
               (LeftOperatorDecl k _ _) -> k
               (RightOperatorDecl k _ _) -> k
        in atomicName name
+    extractPropValue Annotated {content = Located {locatee = decl}} =
+      case decl of
+        (PropertyDecl _ v) -> v
+        (FunctionDecl _ _ v) -> v
+        (OperatorDecl _ _ _ v) -> v
+        (LeftOperatorDecl _ _ v) -> v
+        (RightOperatorDecl _ _ v) -> v
 
 
 
@@ -449,10 +478,16 @@ translateUnit Located { location = l
       m <- translate annot
       checkImports m
       checkTarget m
-      e >>= mint2 CoreMeta l m
+      checkParseEmbed m
+      parseEmbed <- gets trParseEmbed
+      case parseEmbed of
+        Nothing -> e >>= mint2 CoreMeta l m
+        Just k -> e >>= (return . selectEmbedding k)
     Nothing -> e
   where
     e = translate Located {location = l, locatee = EBlock b}
+    selectEmbedding key expr =
+      instantiateLet $ rebody expr (anon Syn.var key)
 
 
 
