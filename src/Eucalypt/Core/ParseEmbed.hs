@@ -186,22 +186,21 @@ cop f p e = do
     extractPrecedence Located{locatee=(ELiteral (VInt prec))} = fromIntegral prec
 
 
-cbkana :: Expression -> m CoreExpr
-cbkana = undefined
-
-cexana :: Expression -> m CoreExpr
-cexana = undefined
-
-eunresolved :: Expression -> m CoreExpr
-eunresolved _ = undefined
+-- | Translate embedded [:e-unresolved "x"]
+eunresolved :: MonadSupplySMID m => Expression -> m CoreExpr
+eunresolved Located{location=loc, locatee=(ELiteral (VStr n))} =
+  mint CoreUnresolved loc n
 
 
-eredeclared :: Expression -> m CoreExpr
-eredeclared _ = undefined
+-- | Translate embedded [:e-redeclared "x"]
+eredeclared :: MonadSupplySMID m => Expression -> m CoreExpr
+eredeclared Located{location=loc, locatee=(ELiteral (VStr n))} =
+  mint CoreRedeclaration loc n
 
 
-eeliminated :: m CoreExpr
-eeliminated = undefined
+-- | Translate embedded [:e-eliminated]
+eeliminated :: Monad m => m CoreExpr
+eeliminated = return CoreEliminated
 
 
 epseudocall :: m CoreExpr
@@ -214,3 +213,11 @@ epseudocat = undefined
 
 epseudodot :: m CoreExpr
 epseudodot = undefined
+
+
+cbkana :: Expression -> m CoreExpr
+cbkana = undefined
+
+
+cexana :: Expression -> m CoreExpr
+cexana = undefined
