@@ -92,6 +92,9 @@ clit Located{locatee=(ELiteral prim), location=loc} =
     VFloat f -> CoreFloat f
     VStr s -> CoreString s
     VSym s -> CoreSymbol s
+clit Located{locatee=(EStringPattern chunks), location=loc} =
+  mint CorePrim loc $ CoreString $
+  concatMap (\(LiteralContent s) -> s) chunks
 clit _ = error "bad c-lit"
 
 
