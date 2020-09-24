@@ -49,9 +49,6 @@ true: __TRUE
 ` "`false` - constant logical false"
 false: __FALSE
 
-` "`cat(a, b)` - explicit catenation, cat(a, b) = a b. Can be useful in folds etc."
-cat: __CAT
-
 ` "`if(c, t, f)` - if `c` is `true`, return `t` else `f`."
 if: __IF
 
@@ -606,7 +603,7 @@ concat(ls): foldr(append, [], ls)
 mapcat(f): concat ∘ map(f)
 
 ` "`zip-apply(fs, vs)` - apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted."
-zip-apply(fs, vs): zip-with(cat, vs, fs)
+zip-apply(fs, vs): zip-with(_0(_1), fs, vs)
 
 ` "`reverse(l) - reverse list `l`"
 reverse(l): foldl(cons flip, [], l)
