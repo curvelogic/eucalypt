@@ -92,6 +92,15 @@ clit Located{locatee=(ELiteral prim), location=loc} =
     VFloat f -> CoreFloat f
     VStr s -> CoreString s
     VSym s -> CoreSymbol s
+clit Located{locatee=(EList [
+                         Located{locatee=(ELiteral(VSym "c-bool"))},
+                           Located{locatee=(ELiteral(VSym v))}]),
+             location=loc} =
+  mint CorePrim loc $
+  case v of
+    "t" -> CoreBoolean True
+    "f" -> CoreBoolean False
+    _ -> error "bad c-bool"
 clit _ = error "bad c-lit"
 
 
