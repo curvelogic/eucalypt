@@ -23,7 +23,7 @@ tests: {
     t: true
     f: false
 
-    pass: [if(t, t, f), cat(5,identity) = 5, n = n] all-true?
+    pass: [if(t, t, f), (5 identity) = 5, n = n] all-true?
   }
 
   list-basics: {
