@@ -99,6 +99,8 @@ jobs:
       - build
     steps:
       - uses: actions/setup-python@v1
+        with:
+          python-version: '3.x'
       - uses: dschep/install-pipenv-action@v1
       - uses: actions/download-artifact@v2
         with:
@@ -117,6 +119,8 @@ jobs:
       - build
     steps:
       - uses: actions/setup-python@v1
+        with:
+          python-version: '3.x'
       - uses: dschep/install-pipenv-action@v1
       - uses: actions/download-artifact@v2
         with:
