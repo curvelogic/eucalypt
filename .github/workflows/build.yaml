@@ -97,7 +97,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
-      - build-test-harness
     steps:
       - uses: actions/download-artifact@v2
         with:
@@ -114,7 +113,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
-      - build-test-harness
     steps:
       - uses: actions/download-artifact@v2
         with:
