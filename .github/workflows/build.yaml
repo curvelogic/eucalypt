@@ -42,7 +42,7 @@ jobs:
           cd $GITHUB_WORKSPACE
           ls $GITHUB_WORKSPACE/bin
           chmod +x $GITHUB_WORKSPACE/bin/eu
-          echo "::add-path::$GITHUB_WORKSPACE/bin"
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           $GITHUB_WORKSPACE/bin/eu --version
       env:
         GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -73,7 +73,8 @@ jobs:
       run: stack build --fast --pedantic --no-terminal --install-ghc --only-dependencies
 
     - name: Add Stack paths to environment
-      run: echo "::set-env name=STACK_DIST_DIR::$(stack path --dist-dir)"
+      run: |
+        echo "STACK_DIST_DIR=$(stack path --dist-dir)" >> $GITHUB_ENV
 
     - name: Blow away bad cached exe on macOS
       if: ${{ matrix.os == 'macOS-latest' }}
@@ -181,7 +182,7 @@ jobs:
       - name: Query binary for version number
         run: |
           chmod +x dist-Linux/build/eu/eu
-          echo "::set-env name=RELEASE_VERSION::$(dist-Linux/build/eu/eu -e eu.build.version)"
+          echo "RELEASE_VERSION=$(dist-Linux/build/eu/eu -e eu.build.version)" >> $GITHUB_ENV
 
       - name: Create release
         id: create_release
