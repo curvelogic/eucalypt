@@ -82,7 +82,6 @@ spec = do
   acceptanceSpec "010_prelude.eu"
   acceptanceSpec "011_yaml.yaml"
   acceptanceSpec "012_arith.eu"
-  acceptanceSpec "013_arith_overflow.eu"
   acceptanceSpec "014_numeric_combinators.eu"
   acceptanceSpec "015_block_fns.eu"
   acceptanceSpec "016_string_fns.eu"
