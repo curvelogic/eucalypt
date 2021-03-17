@@ -14,7 +14,7 @@ tests: {
     pwd: io.env lookup(:PWD)
     launch-time: io.epoch-time
 
-    pass: [ pwd str.matches?(".*\/.*")
+    pass: [ pwd str.matches?(".*/.*")
 	  , launch-time str.of str.matches?("\d+") ] all-true?
   }
 
