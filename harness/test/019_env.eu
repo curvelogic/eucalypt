@@ -1,6 +1,6 @@
 # requires prelude
 
 '~': io.env.HOME
-pwd: io.env.PWD
+shell: io.env.SHELL
 
 RESULT: if((io.env lookup-or(:HOME, "~")) != "~", :PASS, :FAIL)
