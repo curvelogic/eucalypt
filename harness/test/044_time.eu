@@ -5,7 +5,7 @@ matches(expected, actual): merge(actual, expected) //= actual
 tests: {
   α: cal.now.y > 2000 //= true
   β: cal.now.S < 62 //= true
-  γ: cal.zdt(2019, 12, 1, 11, 23, 77, "+0400") cal.fields (.H) //= 11
+  γ: cal.zdt(2019, 12, 1, 11, 23, 37, "+0400") cal.fields (.H) //= 11
   δ: cal.datetime({y: 2019 m: 11 d: 21}) cal.fields (.d) //= 21
   ε: cal.datetime({H: 12 M: 12 S: 12}) cal.fields (."{H:%02d}!{M:%02d}") //= "12!12"
   ζ: cal.parse("20081210") cal.fields matches({y: 2008 m: 12 d: 10})
