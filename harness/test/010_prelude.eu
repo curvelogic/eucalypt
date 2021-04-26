@@ -11,7 +11,7 @@ tests: {
   }
 
   environment: {
-    pwd: io.env lookup(:PWD)
+    pwd: io.env lookup-or(:PWD, "/")
     launch-time: io.epoch-time
 
     pass: [ pwd str.matches?(".*/.*")
