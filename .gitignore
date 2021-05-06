@@ -4,3 +4,4 @@
 /target/
 **/*.rs.bk
 /.idea
+/harness/test/.result/

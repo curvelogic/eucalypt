@@ -17,8 +17,8 @@ use std::{path::PathBuf, str::FromStr};
 
 /// Common options for all tests
 pub fn opts(filename: &str) -> EucalyptOptions {
-    let lib_path = vec![PathBuf::from("eucalypt-hs/harness")];
-    let path = format!("eucalypt-hs/harness/test/{}", filename);
+    let lib_path = vec![PathBuf::from("harness")];
+    let path = format!("harness/test/{}", filename);
 
     EucalyptOptions::default()
         .with_inputs(vec![Input::from_str(&path).unwrap()])
