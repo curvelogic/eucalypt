@@ -3,7 +3,7 @@ use super::desugarable::{Content, Desugarable};
 use crate::{
     common::{
         environment::DefaultingEnvironment,
-        sourcemap::{SourceMap, Smid},
+        sourcemap::{Smid, SourceMap},
     },
     core::{
         doc::DeclarationDocumentation, error::CoreError, expr::*, target::*, unit::TranslationUnit,

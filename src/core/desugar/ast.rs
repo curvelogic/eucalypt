@@ -531,8 +531,8 @@ pub mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::{common::sourcemap::SourceMap, core::expr::acore};
     use crate::{common::sourcemap::Smid, core::expr::core, syntax::input::Locator};
+    use crate::{common::sourcemap::SourceMap, core::expr::acore};
     use crate::{core::desugar::desugarable::Content, syntax::ast};
     use crate::{driver::source::SourceLoader, syntax::input::Input};
     use codespan_reporting::files::SimpleFiles;

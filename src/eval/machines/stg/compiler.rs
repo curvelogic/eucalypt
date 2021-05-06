@@ -11,7 +11,7 @@
 use std::{convert::TryInto, rc::Rc};
 
 use crate::{
-    common::sourcemap::{HasSmid, SourceMap, Smid},
+    common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr},
     eval::intrinsics,
 };

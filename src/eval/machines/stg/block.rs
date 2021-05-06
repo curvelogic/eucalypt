@@ -5,7 +5,7 @@ use std::{mem::swap, rc::Rc};
 use indexmap::IndexMap;
 
 use crate::{
-    common::sourcemap::{SourceMap, Smid},
+    common::sourcemap::{Smid, SourceMap},
     eval::error::ExecutionError,
 };
 

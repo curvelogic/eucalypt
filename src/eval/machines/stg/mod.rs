@@ -1,4 +1,3 @@
-
 //! An implementation of a spineless tagless G-machine variant plus a
 //! compiler for core syntax that targets it.
 //!

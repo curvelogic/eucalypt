@@ -2,7 +2,7 @@
 use crate::core::{desugar::Desugarer, expr::*};
 use crate::import::error::SourceError;
 use crate::{
-    common::sourcemap::{SourceMap, Smid},
+    common::sourcemap::{Smid, SourceMap},
     syntax::parser,
 };
 use codespan::{ByteIndex, ByteOffset, Span};

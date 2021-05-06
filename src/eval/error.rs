@@ -1,5 +1,5 @@
 //! Execution errors
-use crate::common::sourcemap::{HasSmid, SourceMap, Smid};
+use crate::common::sourcemap::{HasSmid, Smid, SourceMap};
 use crate::eval::types::IntrinsicType;
 use codespan_reporting::diagnostic::Diagnostic;
 use serde_json::Number;
