@@ -1,4 +1,6 @@
 *.stack-work
-/.dir-locals.el
 *.cabal
 /harness/.build
+/target/
+**/*.rs.bk
+/.idea
