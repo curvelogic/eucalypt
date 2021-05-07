@@ -207,7 +207,7 @@ jobs:
       - name: Query binary for version number
         run: |
           chmod +x eu_amd64
-          echo "RELEASE_VERSION=$(eu_amd64 -e eu.build.version)" >> $GITHUB_ENV
+          echo "RELEASE_VERSION=$(./eu_amd64 -e eu.build.version -x text)" >> $GITHUB_ENV
 
       - name: Create release
         id: create_release
