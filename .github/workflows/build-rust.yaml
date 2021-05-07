@@ -116,10 +116,10 @@ jobs:
       - run: |
           strip target/release/eu
           mv target/release/eu target/release/eu_amd64
-      - name: run test harness with release binary
+      - name: run final test with release binary
         run: |
-          target/release/eu -v
-          target/release/eu harness -T -L harness/test
+          target/release/eu_amd64 -v
+          target/release/eu_amd64 harness -T -L harness/test
       - uses: softprops/action-gh-release@v1
         with:
           files: |
