@@ -1,11 +1,11 @@
 # eucalypt
 
 **eucalypt** is a tool, and a little language, for generating and
-transforming structured data formats like YAML and JSON.
+transforming structured data formats like YAML, JSON and TOML.
 
 If you use text-based templating to process these formats or you pipe
 this these formats through several different tools or build steps,
-eucalypt should be able to help you generate your output more cleanly
+eucalypt might be able to help you generate your output more cleanly
 and with fewer cognitive somersaults.
 
 **eucalypt** is a purely functional language that can be used quickly and
@@ -26,16 +26,14 @@ It has the following features:
   - metadata annotations and numerous extension points
   - a *prelude* of built in functions, acting like a standard library
 
-It can currently read YAML, JSON, TOML, CSV plain text and eucalypt's
-own ("eu") syntax and it can export YAML, JSON or plain text.
-
-If you're generating or processing YAML or JSON, you should give it a
-try.
+It can currently read YAML, JSON, TOML, XML, CSV and plain text and
+eucalypt's own ("eu") syntax and it can export YAML, JSON, TOML or
+plain text.
 
 !!! warning
 
-	eucalypt is in an early phase of development and highly subject to
-	change. Some features are partially implemented.
+	eucalypt is still in an early phase of development and subject to
+	change.
 
 ## A lightning tour
 
@@ -139,8 +137,8 @@ eucalypt also has *expression anaphora* and *block anaphora*
 
 	Users of Groovy or Kotlin may recognise an equivalent of the `it`
 	parameter. Seasoned Lisp hackers are familiar with anaphoric macros.
-	Clojure users will recognise the `%`, `%1`, `%2` forms usable in
-	`#(...)` contexts. Unlike Clojure's `%` repeated uses of unnumbered
+	Clojure users will recognise the `%`, `%1`, `%2` forms from
+	`#(...)` contexts. Unlike `%` repeated uses of unnumbered
 	anaphora in eucalypt refer to different parameters. `"{}{}"` is a
 	two-argument function which concatenates strings.
 
@@ -188,7 +186,7 @@ ok3: { a: 1, b: 2, c: 3, }
 
 !!! note
 
-	Unlike, for example, Clojure which makes commas optional by
+	Unlike Clojure which makes commas optional by
 	treating them as whitespace, Eucalypt demands that if you are
 	going to put commas in, they have to be in the right place, at the
 	end of declarations. So you can use them if you believe it makes
@@ -311,7 +309,7 @@ sophisticated means of combining block data are available too.
 	This merge is similar to the effect of *merge keys* in YAML, where a
 	special `<<` mapping key causes a similar merge to occur. Not all
 	YAML processors support this and nor does eucalypt at present, but
-	it will soon.
+	it probably will some day.
 
 Be aware that eucalypt has nothing like virtual functions. The
 functions in scope when an expression is created are the ones that are

@@ -1,0 +1,3 @@
+PyYAML==5.4.1
+mkdocs==0.15.3
+git+git://github.com/curvelogic/eucalypt-pygments.git@master#egg=Eucalypt-Pygments-Lexer
