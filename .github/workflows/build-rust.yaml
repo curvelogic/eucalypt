@@ -79,3 +79,55 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
+
+  release-linux:
+    needs: [check, test, fmt, clippy]
+    name: Release Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: build and install temporary eu
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path .
+      - name: prepare build files for new version
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+
+          eu -t build-meta > build-meta.yaml.new
+          eu -t cargo > Cargo.toml.new
+
+          mv -f build-meta.yaml.new build-meta.yaml
+          mv -f Cargo.toml.new Cargo.toml
+
+          echo "TAG_NAME=$(eu -e new-version -x text)" >> $GITHUB_ENV
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --all --release
+      - run: |
+          strip target/release/eu
+          mv target/release/eu target/release/eu_amd64
+      - name: run test harness with release binary
+        run: |
+          target/release/eu -v
+          target/release/eu harness -T -L harness/test
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/release/eu_amd64
+          draft: true
+          tag_name: env.TAG_NAME
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
