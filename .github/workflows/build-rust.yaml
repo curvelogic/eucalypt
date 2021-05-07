@@ -189,6 +189,7 @@ jobs:
 
   prepare-release:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
     needs:
       - release-candidate-linux
       - release-candidate-macos
