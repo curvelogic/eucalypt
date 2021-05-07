@@ -91,6 +91,10 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: git-changelog
       - name: build and install temporary eu
         uses: actions-rs/cargo@v1
         with:
@@ -120,14 +124,14 @@ jobs:
         run: |
           target/release/eu_amd64 -v
           target/release/eu_amd64 harness/test -T -L harness
-      - uses: softprops/action-gh-release@v1
+      - name: Generate changelog
+        run: |
+          echo "$(git-changelog latest...)" > CHANGELOG.md
+      - name: Upload changelog
+        uses: actions/upload-artifact@v1
         with:
-          files: |
-            target/release/eu_amd64
-          draft: true
-          tag_name: env.TAG_NAME
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: CHANGELOG.md
+          path: CHANGELOG.md
       - name: Upload binary
         uses: actions/upload-artifact@v1
         with:
@@ -187,16 +191,6 @@ jobs:
       - release-candidate-linux
       - release-candidate-macos
     steps:
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: git-changelog
 
       - uses: actions/download-artifact@v2
         with:
@@ -205,6 +199,10 @@ jobs:
       - uses: actions/download-artifact@v2
         with:
           name: eu_amd64
+
+      - uses: actions/download-artifact@v2
+        with:
+          name: CHANGELOG.md
 
       - name: Prepare release packages
         run: |
@@ -219,10 +217,6 @@ jobs:
         run: |
           chmod +x eu_amd64
           echo "RELEASE_VERSION=$(./eu_amd64 -e eu.build.version -x text)" >> $GITHUB_ENV
-
-      - name: Generate changelog
-        run: |
-          echo "$(git-changelog latest...)" > CHANGELOG.md
 
       - name: Create release
         uses: softprops/action-gh-release@v1
