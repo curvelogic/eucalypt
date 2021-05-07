@@ -1,5 +1,7 @@
 # eucalypt
 
+[![eucalypt build](https://github.com/curvelogic/eucalypt/actions/workflows/build-rust.yaml/badge.svg)](https://github.com/curvelogic/eucalypt/actions/workflows/build-rust.yaml)
+
 [eucalypt](https://curvelogic.github.io/eucalypt/) is a tool and a
 small language for generating, templating, rendering and processing
 structured data formats like YAML, JSON and TOML.
