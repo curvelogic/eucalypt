@@ -1,6 +1,6 @@
 {
   doc: "Build-related transformations for eucalypt"
-  import: "cargo=cargo.toml"
+  import: "cargo=Cargo.toml"
 }
 
 ` "eucalypt version according to Cargo.toml"
