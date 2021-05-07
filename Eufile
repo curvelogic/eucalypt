@@ -62,6 +62,7 @@ new-version: [version.major,
    doc: "build metadata to embed as resource in binary"}
 main: {
   version: new-version
+  banner: "eu - Eucalypt (Rust Impl: v{version})"
   eu-build: build
 }
 

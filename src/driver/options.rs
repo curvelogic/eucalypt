@@ -267,7 +267,6 @@ pub struct EucalyptCommandOption {
 impl EucalyptCommandOption {
     pub fn run(&self) -> bool {
         !self.explain
-            && !self.version
             && !self.list_targets
             && !self.test
             && !self.parse
@@ -401,6 +400,13 @@ impl EucalyptOptions {
     /// Insert extra items into lib path and inputs, reconcile
     /// shortcut options
     pub fn process_defaults(&mut self) -> Result<(), EucalyptError> {
+        // Version is provided by reading eu.build.banner
+        if self.show_version() {
+            self.evaluate = Some("eu.build.banner".to_string());
+            self.export_type = Some("text".to_string());
+            self.no_prelude = false;
+        }
+
         // if an output file is specified, default an export type if
         // not set
         if let Some(outfile) = self.output() {

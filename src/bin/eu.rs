@@ -23,12 +23,6 @@ pub fn main() {
         process::exit(0);
     }
 
-    // Show version
-    if opt.show_version() {
-        println!("eu - Eucalypt (Rust Impl: v{})", env!("CARGO_PKG_VERSION"));
-        process::exit(0);
-    }
-
     // Test mode is substantially different
     if opt.test() {
         if tester::test(&opt).is_ok() {
