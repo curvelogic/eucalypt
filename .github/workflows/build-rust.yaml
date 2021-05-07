@@ -187,6 +187,17 @@ jobs:
       - release-candidate-linux
       - release-candidate-macos
     steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: git-changelog
+
       - uses: actions/download-artifact@v2
         with:
           name: eu_darwin
@@ -209,12 +220,17 @@ jobs:
           chmod +x eu_amd64
           echo "RELEASE_VERSION=$(./eu_amd64 -e eu.build.version -x text)" >> $GITHUB_ENV
 
+      - name: Generate changelog
+        run: |
+          echo "$(git-changelog latest...)" > CHANGELOG.md
+
       - name: Create release
         uses: softprops/action-gh-release@v1
-        tag_name: ${{ env.RELEASE_VERSION }}
-        draft: true
-        prerelease: false
         with:
+          tag_name: ${{ env.RELEASE_VERSION }}
+          draft: true
+          prerelease: false
+          body_path: CHANGELOG.md
           files: |
             eucalypt-x86_64-linux.tgz
             eucalypt-x86_64-osx.tgz
