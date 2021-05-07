@@ -1,0 +1,77 @@
+{
+  doc: "Build-related transformations for eucalypt"
+  import: "cargo=Cargo.toml"
+}
+
+` "eucalypt version according to Cargo.toml"
+version:
+  cargo.package.version
+  str.match-with("(\d+)\.(\d+)\.([^.]+)")
+  drop(1)
+  map(num)
+  with-keys([:major, :minor, :patch])
+  merge({ build: :dev})
+
+` "Default an environment that looks close to github actions
+environment, even locally"
+env:
+  {
+    GITHUB_SERVER_URL: "https://github.com"
+    GITHUB_REPOSITORY: "curvelogic/eucalypt"
+    GITHUB_RUN_ID:     0
+    GITHUB_RUN_NUMBER: version.build
+    GITHUB_SHA:        "working-copy"
+  } io.env
+
+` "URL for this workflow run"
+workflow-url:
+     [:GITHUB_SERVER_URL, :GITHUB_REPOSITORY, :GITHUB_RUN_ID]
+     map(lookup-in(env))
+     apply("{0}/{1}/runs/{2}")
+
+build: {
+
+  ` "Eucalypt build number"
+  number: env.GITHUB_RUN_NUMBER
+
+  ` "SHA1 of the repo commit we're building"
+  commit: env.GITHUB_SHA
+
+  ` "URL of build"
+  url: workflow-url
+
+  ` "Architecture of build environment"
+  arch: env lookup-alts([:HOSTTYPE, :_system_arch], "unknown")
+
+  ` "Architecture of build environment"
+  os: env lookup-alts([:OSTYPE, :_system_name], "unknown")
+
+  ` "Seconds since epoch at eu build time"
+  epoch-time: io.epoch-time
+
+  ` "GitHub environment variables"
+  github-env: env filter-items(by-key-match("^GITHUB.*")) block
+}
+
+` {target: :version
+   format: :text
+   doc: "version number for the current build"}
+new-version: [version.major,
+              version.minor,
+              version.patch,
+              build.number] map(str.of) str.join-on(".")
+
+` {target: :build-meta
+   doc: "build metadata to embed as resource in binary"}
+main: {
+  version: new-version
+  commit: build.commit
+  url: build.url
+  banner: "eu - Eucalypt (Rust Impl: v{version})"
+  eu-build: build
+}
+
+` {target: :cargo
+   format: :toml
+   doc: "updated Cargo.toml with new version number"}
+new-package: cargo { package: { version: new-version } }

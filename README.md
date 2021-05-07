@@ -1,6 +1,6 @@
 # eucalypt
 
-[![CircleCI](https://circleci.com/gh/curvelogic/eucalypt/tree/master.svg?style=svg&circle-token=97ae77777028be6a88a53b23b78d5c858a49ef33)](https://circleci.com/gh/curvelogic/eucalypt/tree/master)
+[![eucalypt build](https://github.com/curvelogic/eucalypt/actions/workflows/build-rust.yaml/badge.svg)](https://github.com/curvelogic/eucalypt/actions/workflows/build-rust.yaml)
 
 [eucalypt](https://curvelogic.github.io/eucalypt/) is a tool and a
 small language for generating, templating, rendering and processing
@@ -12,9 +12,26 @@ See the [documentation](https://curvelogic.github.io/eucalypt/).
 
 # Development
 
-You need stack (`brew install haskell-stack`...)
+## 0.2 Versions
 
-For development, run something like:
+Since v0.2 eucalypt has been implemented in Rust and builds with cargo.
+
+```
+cargo test
+```
+
+A local `eu` binary can be installed with:
+
+```
+cargo install --path .
+```
+
+## 0.1 Versions
+
+Versions prior to v0.2 were implemented in Haskell. You need stack
+(`brew install haskell-stack`...)
+
+Then for development, run something like:
 
 ```
 stack install hlint

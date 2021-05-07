@@ -10,11 +10,7 @@ eu: {
   }
 
   ` "Metadata about this version of the eucalypt executable"
-  build: {
-    version: __build.version
-    commit: __build.eu-build.commit
-    url: __build.eu-build.url
-  }
+  build: __build
 }
 
 ` "IO related declarations"

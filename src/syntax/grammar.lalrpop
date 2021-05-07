@@ -1,0 +1,158 @@
+use std::str::FromStr;
+use serde_json::Number;
+use crate::syntax::ast::*;
+use crate::syntax::error::{SyntaxError};
+use crate::syntax::lexer::{Token};
+use crate::syntax::string;
+use codespan::{Span, ByteIndex};
+use lalrpop_util::ParseError;
+
+#[LALR]
+grammar<'input>(file_id: usize);
+
+SingleComma: () = {
+    "," => ()
+}
+
+Sep<Rule, Separator>: Vec<Rule> = {
+    <rules: (<Rule> Separator)*> <last: Rule> => {
+        let mut rules = rules;
+        rules.push(last);
+        rules
+    },
+    <rules: (<Rule> Separator)*> WsOrComment* => {
+        rules
+    },
+};
+
+CommaSep<Rule>: Vec<Rule> = {
+    Sep<Rule, SingleComma>
+};
+
+WsOrComment: () = {
+    " " => (),
+    "comment" => (),
+}
+
+Wsc<Rule>: Rule = { WsOrComment* <Rule> }
+
+pub Name: Name = {
+    <l: @L> <n:"ident"> <r: @R> => Name::Normal(Span::new(l, r), n.to_string()),
+    <l: @L> <n:"squote"> <r: @R> => Name::Normal(Span::new(l, r), n.to_string()),
+    <l: @L> <n:"oper"> <r: @R> => Name::Operator(Span::new(l, r), n.to_string())
+}
+
+pub Literal: Expression = {
+    <l: @L> <sym:"symbol"> <r: @R> =>? Ok(lit(Literal::Sym(Span::new(l, r), sym.to_string()))),
+    <l: @L> <s:"string"> <r: @R> =>? {
+	string::parse_string_literal(file_id, s, l, r).map_err(|e| ParseError::User{error: e})
+    },
+    <l: @L> <n:"number"> <r: @R> =>? {
+        match Number::from_str(n) {
+            Ok(n) => Ok(lit(Literal::Num(Span::new(l, r), n))),
+            Err(_) => Err(ParseError::User{error: SyntaxError::InvalidNumber(file_id, Span::new(l, r))})
+        }
+    }
+
+}
+
+pub Atom: Expression = {
+    Literal => <>,
+    Name => name(<>)
+}
+
+pub Tuple: Expression = {
+    <l: @L> "@(" <args:CommaSep<Expression>> ")" <r: @R> => Expression::ApplyTuple(Span::new(l, r), args)
+}
+
+pub NakedTuple: Expression = {
+    <l: @L> "(" <args:CommaSep<Expression>> ")" <r: @R> => Expression::ApplyTuple(Span::new(l, r), args)
+}
+
+pub ListExpression: Expression = {
+    <l: @L> "[" <items: CommaSep<Expression>> "]" <r: @R> => Expression::List(Span::new(l, r), items)
+}
+
+pub Soup : Vec<Expression> = {
+    <exprs:(Wsc<Element>)+> WsOrComment* => exprs
+}
+
+pub ParenExpression: Expression = {
+    <l: @L> "(" <exprs: Soup> ")" <r: @R> => Expression::OpSoup(Span::new(l, r), exprs)
+}
+
+pub BlockExpression: Expression = {
+    Block => Expression::Block(Box::new(<>))
+}
+
+pub Element: Expression = {
+    Atom,
+    ListExpression,
+    ParenExpression,
+    Tuple,
+    BlockExpression,
+}
+
+pub Expression: Expression = {
+    <l: @L> <exprs: Soup> <r: @R> => {
+        if exprs.len() > 1 {
+            Expression::OpSoup(Span::new(l, r), exprs)
+        } else {
+            exprs[0].clone()
+        }
+    }
+}
+
+pub EmbeddedLambda: (Expression, Expression) = {
+  <head: NakedTuple> <body: Expression> => (head, body)
+}
+
+pub ProtoblockElement: ProtoblockElement = {
+    <l: @L> "`" <r: @R> => ProtoblockElement::DeclarationBacktick(Span::new(l, r)),
+    <l: @L> ":" <r: @R> => ProtoblockElement::DeclarationColon(Span::new(l, r)),
+    <l: @L> "," <r: @R> => ProtoblockElement::DeclarationComma(Span::new(l, r)),
+    <element:Element> => ProtoblockElement::ExpressionElement(element),
+}
+
+pub ProtoblockElementSequence : Vec<ProtoblockElement> = {
+    <els:(Wsc<ProtoblockElement>)*> WsOrComment* => els
+}
+
+pub Block: Block = {
+    <l: @L> "{" <elements:ProtoblockElementSequence> "}" <r: @R> =>?
+        Block::from_protoblock_elements(file_id, Span::new(l, r), elements)
+        .map_err(|e| ParseError::User{error: e})
+}
+
+pub Unit: Block = {
+    <l: @L> <elements:ProtoblockElementSequence> <r: @R> =>?
+        Block::from_protoblock_elements(file_id, Span::new(l, r), elements)
+        .map_err(|e| ParseError::User{error: e})
+}
+
+extern {
+
+    type Location = ByteIndex;
+    type Error = SyntaxError;
+
+    enum Token<'input> {
+        "{" => Token::OpenBrace,
+        "}" => Token::CloseBrace,
+        ":" => Token::Colon,
+        "[" => Token::OpenSquare,
+        "]" => Token::CloseSquare,
+        "," => Token::Comma,
+        "`" => Token::Backtick,
+        " " => Token::Whitespace(<&'input str>),
+        "comment" => Token::Comment(<&'input str>),
+        "(" => Token::OpenParen,
+        "@(" => Token::OpenParenApply,
+        ")" => Token::CloseParen,
+        "ident" => Token::NormalIdentifier(<&'input str>),
+        "oper" => Token::OperatorIdentifier(<&'input str>),
+        "squote" => Token::SingleQuoteIdentifier(<&'input str>),
+        "number" => Token::Number(<&'input str>),
+        "string" => Token::String(<&'input str>),
+        "symbol" => Token::Symbol(<&'input str>),
+    }
+}

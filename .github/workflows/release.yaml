@@ -1,4 +1,4 @@
-name: Eucalypt Release Workflow
+name: eucalypt publish
 
 on:
   release:
@@ -6,69 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  update-docs:
+  update-latest-tag:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-        with:
-          ref: ${{ env.GITHUB_REF }}
-      - uses: actions/setup-python@v1
-      - uses: dschep/install-pipenv-action@v1
-      - run: |
-            pipenv install
-            pipenv run mkdocs gh-deploy
-
-  update-homebrew:
-    runs-on: macOS-latest
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          ref: ${{ env.GITHUB_REF }}
-
-      - uses: dsaltares/fetch-gh-release-asset@master
-        with:
-          repo: dsaltares/godot-wild-jam-18
-          version: ${{ env.GITHUB_REF }}
-          file: eucalypt-x86_64-osx.tgz
-          token: ${{ github.token }}
-
-      - name: Extract and run the release eu
-        run: |
-          tar xvzf eucalypt-x86_64-osx.tgz
-          chmod +x eu
-          ./eu -e eu.build
-
-      - name: Generate new formula
-        run: |
-          shasum -a 256 eucalypt-x86_64-osx.tgz > eucalypt-x86_64-osx.tgz.sha
-          ./eu ci/eucalypt.rb.eu > eucalypt.rb
-          cat eucalypt.rb
-
-      - name: Checkout homebrew-tap
-        uses: actions/checkout@v2
-        with:
-          repository: curvelogic/homebrew-tap
-          path: homebrew-tap
-
-      - name: Copy eucalypt.rb into place
-        run: |
-          cp eucalypt.rb homebrew-tap/Formula/eucalypt.rb
-          cd homebrew-tap
-          git add Formula/eucalypt.rb
-          ./eu --version | git commit -F -
-
-      - name: Test formula
-        run: |
-          brew install /tmp/homebrew-tap/Formula/eucalypt.rb
-          eu -e eu.build > brew-eu.txt
-          ./eu -e eu.build > release-eu.txt
-          echo BREW:
-          cat brew-eu.txt
-          echo RELEASE:
-          cat release-eu.txt
-          diff -q brew-eu.txt release-eu.txt
-
-      - name: Push
-        run: |
-          cd homebrew-tap
-          git push
+      - name: Move `latest` tag to last published release
+        uses: EndBug/latest-tag@latest
