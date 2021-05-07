@@ -210,35 +210,13 @@ jobs:
           echo "RELEASE_VERSION=$(./eu_amd64 -e eu.build.version -x text)" >> $GITHUB_ENV
 
       - name: Create release
-        id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
+        tag_name: ${{ env.RELEASE_VERSION }}
+        draft: true
+        prerelease: false
         with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ env.RELEASE_VERSION }}
-          body: eu release
-          draft: true
-          prerelease: false
+          files: |
+            eucalypt-x86_64-linux.tgz
+            eucalypt-x86_64-osx.tgz
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Upload linux release
-        id: upload-linux-release-asset
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: eucalypt-x86_64-linux.tgz
-          asset_name: eucalypt-x86_64-linux.tgz
-          asset_content_type: application/gzip
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Upload macOS release
-        id: upload-macos-release-asset
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: eucalypt-x86_64-osx.tgz
-          asset_name: eucalypt-x86_64-osx.tgz
-          asset_content_type: application/gzip
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
