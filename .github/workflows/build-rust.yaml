@@ -193,7 +193,7 @@ jobs:
           toolchain: stable
           override: true
 
-        uses: actions-rs/cargo@v1
+      - uses: actions-rs/cargo@v1
         with:
           command: install
           args: git-changelog
