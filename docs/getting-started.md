@@ -27,13 +27,12 @@ source.
 
 ## From source
 
-You will need [stack](https://docs.haskellstack.org/en/stable/README/)
-(which can be found in Homebrew as `haskell-stack`).
+You will need a [rust](https://rust-lang.org) installation and *cargo*.
 
 Build and install should be as simple as:
 
 ```sh
-stack install
+cargo install --path .
 ```
 
 # Testing your installation
@@ -46,7 +45,7 @@ eu --version
 
 ```shell
 $ eu --version
-eu - Eucalypt (Haskell Impl: v0.1.1.1610)
+eu - Eucalypt (Rust Impl: v0.2.0.0)
 ```
 
 ...and...
@@ -58,36 +57,40 @@ eu --help
 ...shows command line help:
 
 ```text
-eu - command line interface to Eucalypt
+reu 0.2.0
+Option to select the command actually run
 
-Usage: eu [-B|--batch] ([-x|--exportType FORMAT] | [-j|--json])
-		  [-t|--target TARGET] [-o|--output FILENAME] [-e|--evaluate EXPRESSION]
-		  [-Q|--no-prelude] ([-n|--explain] | [-v|--version] |
-		  [-l|--list-targets] | [--dump-desugared] | [--dump-eval-subbed] |
-		  [--dump-cooked] | [--dump-core] | [--dump-stg] | [-H|--headless] |
-		  [-p|--parse]) [INPUTS...] [-d|--debug] [-L|--lib-path ARG]
-  Run eucalypt transformations
+USAGE:
+	eu [FLAGS] [OPTIONS] [--] [inputs]...
 
-Available options:
-  -B,--batch               Batch (i.e. non-ergonomic) mode
-  -x,--exportType FORMAT   Format for export (e.g. yaml, json)
-  -j,--json                JSON output (equivalent to -x json)
-  -t,--target TARGET       Target name to export (must be defined in the source)
-  -o,--output FILENAME     Output file or directory to export to
-  -e,--evaluate EXPRESSION Expression to evaluate and render
-  -Q,--no-prelude          Don't include standard prelude
-  -n,--explain             Explain command line interpretation and exit
-  -v,--version             Show version information and exit
-  -l,--list-targets        List declared targets
-  --dump-desugared         Dump core syntax after desugar and merge
-  --dump-eval-subbed       Dump core syntax after evaluand substituted in
-  --dump-cooked            Dump core syntax after operator fixities have been
-						   resolved
-  --dump-core              Dump final core syntax prior to evaluation
-  --dump-stg               Dump STG syntax prior to evaluation
-  -H,--headless            Run evaluation without a render (for timing)
-  -p,--parse               Parse program text and output AST - do not evaluate
-  -d,--debug               Switch on debugging features
-  -L,--lib-path ARG        Add a directory at the front of library search path
-  -h,--help                Show this help text
+FLAGS:
+	-d, --debug             Turn on debug features
+		--dump-cooked       Dump core expression once operator soup has been analysed for precedence
+		--dump-desugared    Dump core expression as initially translated from syntax tree
+		--dump-inlined      Dump core expression once inliner pass has run
+		--dump-pruned       Dump core expression once dead ocde has been eliminated
+		--dump-runtime      Dump code for runtime globals
+		--dump-stg          Dump compiled STG syntax
+	-n, --explain           Explain command (do not run)
+	-h, --help              Prints help information
+	-j                      Shortcut for `-x json``
+	-l, --list-targets      List targets defined in the source
+	-B, --batch             Batch mode (no .eucalypt.d)
+	-Q, --no-prelude        Don't load the standard prelude
+	-p, --parse             Parse only
+		--quote-debug       When outputing AST or Core expressions, quote as debug print of structure
+		--quote-embed       When outputing AST or Core expressions, quote-embed as eucalypt
+	-S, --statistics        Print metrics to stderr before exiting
+	-T, --test              Run file as test
+	-v, --version           Explain command (do not run)
+
+OPTIONS:
+	-e, --evaluate <evaluate>          Expression to evaluate
+	-x, --export-type <export-type>    Format to export output in (e.g. yaml, json, toml, text)
+	-L, --lib-path <lib-path>...       Add directory to lib path
+	-o <output>                        Output file to export to
+	-t, --target <target>              Target to run (identified by target metadata in eucalypt source)
+
+ARGS:
+	<inputs>...    Source code / data inputs (in order)
 ```

@@ -12,7 +12,7 @@ in some respects, I believe it's internally consistent. Several
 aspects of the design and the aesthetic are driven by the primary use
 case, templating and generating YAML. Maybe by exploring some of the
 inspiration and philosophy behind the language itself, I can pre-empt
-potential criticism.
+some of the knee jerks.
 
 ## Accept crypticality for minimal intrusion
 
@@ -146,7 +146,8 @@ similar fluidity through:
 #### Footnotes
 
 
-[^1]: If I didn't call them that, someone else would.
+[^1]: Inspired by *idiom brackets*. If I didn't call them that,
+	someone else would.
 
 [^2]: Applicative Programming with Effects, Conor McBride and Ross
 	Paterson. (2008)

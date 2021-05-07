@@ -1,6 +1,6 @@
 site_name: "eucalypt"
 repo_url: https://github.com/curvelogic/eucalypt
-copyright: "Copyright (C) 2018 Greg Hawkins"
+copyright: "Copyright (C) 2018-2021 Greg Hawkins"
 docs_dir: docs
 nav:
 - Home: index.md
