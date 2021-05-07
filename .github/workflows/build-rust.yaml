@@ -80,7 +80,7 @@ jobs:
           command: clippy
           args: -- -D warnings
 
-  release-linux:
+  release-candidate-linux:
     needs: [check, test, fmt, clippy]
     name: Release Linux
     runs-on: ubuntu-latest
@@ -119,7 +119,7 @@ jobs:
       - name: run final test with release binary
         run: |
           target/release/eu_amd64 -v
-          target/release/eu_amd64 harness -T -L harness/test
+          target/release/eu_amd64 harness/test -T -L harness
       - uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -128,3 +128,119 @@ jobs:
           tag_name: env.TAG_NAME
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload binary
+        uses: actions/upload-artifact@v1
+        with:
+          name: eu_amd64
+          path: target/release/eu_amd64
+
+
+  release-candidate-macos:
+    needs: [check, test, fmt, clippy]
+    name: Release MacOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Build and install temporary eu
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path .
+      - name: Prepare build files for new version
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+
+          eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+
+          echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --all --release
+      - run: |
+          strip target/release/eu
+          mv target/release/eu target/release/eu_darwin
+      - name: Run final test with release binary
+        run: |
+          target/release/eu_darwin -v
+          target/release/eu_darwin harness/test -T -L harness
+      - name: Upload binary
+        uses: actions/upload-artifact@v1
+        with:
+          name: eu_darwin
+          path: target/release/eu_darwin
+
+  prepare-release:
+    runs-on: ubuntu-latest
+    needs:
+      - release-candidate-linux
+      - release-candidate-macos
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: eu_darwin
+          path: eu_darwin
+
+      - uses: actions/download-artifact@v2
+        with:
+          name: eu_amd64
+          path: eu_amd64
+
+      - name: Prepare release packages
+        run: |
+          mkdir eucalypt-x86_64-linux
+          cp eu_amd64 eucalypt-x86_64-linux/eu
+          tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
+          mkdir eucalypt-x86_64-osx
+          cp eu_darwin eucalypt-x86_64-osx/eu
+          tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
+
+      - name: Query binary for version number
+        run: |
+          chmod +x eu_amd64
+          echo "RELEASE_VERSION=$(eu_amd64 -e eu.build.version)" >> $GITHUB_ENV
+
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ env.RELEASE_VERSION }}
+          body: eu release
+          draft: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload linux release
+        id: upload-linux-release-asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: eucalypt-x86_64-linux.tgz
+          asset_name: eucalypt-x86_64-linux.tgz
+          asset_content_type: application/gzip
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload macOS release
+        id: upload-macos-release-asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: eucalypt-x86_64-osx.tgz
+          asset_name: eucalypt-x86_64-osx.tgz
+          asset_content_type: application/gzip
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
