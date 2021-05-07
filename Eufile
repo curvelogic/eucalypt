@@ -6,10 +6,11 @@
 ` "eucalypt version according to Cargo.toml"
 version:
   cargo.package.version
-  str.match-with("(\d+)\.(\d+)\.([^.]+)(?:\.(\d+))?")
+  str.match-with("(\d+)\.(\d+)\.([^.]+)")
   drop(1)
   map(num)
-  with-keys([:major, :minor, :patch, :build])
+  with-keys([:major, :minor, :patch])
+  merge({ build: :dev})
 
 ` "Default an environment that looks close to github actions
 environment, even locally"
