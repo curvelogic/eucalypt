@@ -1,4 +1,4 @@
-name: Eucalypt Release Workflow
+name: eucalypt publish
 
 on:
   release:
@@ -9,17 +9,5 @@ jobs:
   update-latest-tag:
     runs-on: ubuntu-latest
     steps:
-      - name: Run latest-tag
+      - name: Move `latest` tag to last published release
         uses: EndBug/latest-tag@latest
-
-  # update-docs:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #       with:
-  #         ref: ${{ env.GITHUB_REF }}
-  #     - uses: actions/setup-python@v1
-  #     - uses: dschep/install-pipenv-action@v1
-  #     - run: |
-  #           pipenv install
-  #           pipenv run mkdocs gh-deploy
