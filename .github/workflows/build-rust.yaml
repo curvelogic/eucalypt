@@ -102,12 +102,9 @@ jobs:
           export HOSTTYPE=$(uname -m)
 
           eu -t build-meta > build-meta.yaml.new
-          eu -t cargo > Cargo.toml.new
-
           mv -f build-meta.yaml.new build-meta.yaml
-          mv -f Cargo.toml.new Cargo.toml
 
-          echo "TAG_NAME=$(eu -e new-version -x text)" >> $GITHUB_ENV
+          echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
       - uses: actions-rs/cargo@v1
         with:
           command: test

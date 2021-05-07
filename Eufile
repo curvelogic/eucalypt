@@ -53,6 +53,9 @@ build: {
   github-env: env filter-items(by-key-match("^GITHUB.*")) block
 }
 
+` {target: :version
+   format: :text
+   doc: "version number for the current build"}
 new-version: [version.major,
               version.minor,
               version.patch,
@@ -62,6 +65,8 @@ new-version: [version.major,
    doc: "build metadata to embed as resource in binary"}
 main: {
   version: new-version
+  commit: build.commit
+  url: build.url
   banner: "eu - Eucalypt (Rust Impl: v{version})"
   eu-build: build
 }
