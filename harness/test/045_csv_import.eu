@@ -1,6 +1,6 @@
-{ import: "rows=test/aux/aux_import.csv"}
+{ import: "rows=aux/aux_import.csv"}
 
-` { import: "blocks=csv@test/aux/aux_import.csv"}
+` { import: "blocks=csv@aux/aux_import.csv"}
 scoped: { pass: blocks count //= 5 }
 
 checks: {

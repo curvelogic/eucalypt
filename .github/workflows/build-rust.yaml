@@ -133,7 +133,7 @@ jobs:
       - name: run final test with release binary
         run: |
           target/release/eu_amd64 -v
-          target/release/eu_amd64 harness/test -T -L harness
+          target/release/eu_amd64 harness/test -T
       - name: Generate changelog
         run: |
           echo "$(git-changelog latest...)" > CHANGELOG.md
@@ -196,7 +196,7 @@ jobs:
       - name: Run final test with release binary
         run: |
           target/release/eu_darwin -v
-          target/release/eu_darwin harness/test -T -L harness
+          target/release/eu_darwin harness/test -T
       - name: Upload binary
         uses: actions/upload-artifact@v1
         with:

@@ -74,7 +74,8 @@ pub fn run_test(opt: &EucalyptOptions, filename: &Path) -> Result<i32, EucalyptE
     tester.report(&test_plan)
 }
 
-/// Discover all tests in a directory and run
+/// Discover all tests in a directory and run, setting the directory in
+/// the library path for easy resolution of imports
 pub fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError> {
     println!("Gathering tests in {}", dir.display());
     let mut tests: Vec<_> = fs::read_dir(dir)?
@@ -92,9 +93,15 @@ pub fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError
 
     let mut exit: i32 = 0;
 
+    let mut lib_path = opt.lib_path().to_vec();
+    lib_path.push(dir.to_path_buf());
+
     for test in tests {
         let input = Input::from_str(&test.to_string_lossy())?;
-        let test_opts = opt.clone().with_inputs(vec![input]);
+        let test_opts = opt
+            .clone()
+            .with_inputs(vec![input])
+            .with_lib_path(lib_path.clone());
         if run_test(&test_opts, &test)? > 0 {
             exit = 1;
         }
