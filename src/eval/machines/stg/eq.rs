@@ -6,14 +6,12 @@ use serde_json::Number;
 
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
+use super::syntax::{tags, Ref, StgSyn};
 use super::{
-    machine::{Machine, StgIntrinsic},
+    intrinsic::StgIntrinsic,
+    machine::Machine,
     runtime::{call, machine_return_bool},
     syntax::{dsl::*, LambdaForm, Native, Tag},
-};
-use super::{
-    runtime::StgWrapper,
-    syntax::{tags, Ref, StgSyn},
 };
 
 /// Equality recurses through data structures lazily and calls the
@@ -58,7 +56,19 @@ fn binary_branch(tag: Tag) -> (Tag, Rc<StgSyn>) {
     )
 }
 
-impl StgWrapper for Eq {
+fn num_eq(x: &Number, y: &Number) -> bool {
+    if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
+        l == r
+    } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
+        l == r
+    } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
+        l == r
+    } else {
+        false
+    }
+}
+
+impl StgIntrinsic for Eq {
     fn name(&self) -> &str {
         "EQ"
     }
@@ -153,21 +163,7 @@ impl StgWrapper for Eq {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-fn num_eq(x: &Number, y: &Number) -> bool {
-    if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-        l == r
-    } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-        l == r
-    } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-        l == r
-    } else {
-        false
-    }
-}
-
-impl StgIntrinsic for Eq {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let x = machine.resolve_native(&args[0])?;
         let y = machine.resolve_native(&args[1])?;

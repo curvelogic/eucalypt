@@ -11,8 +11,9 @@ use crate::{
 
 use super::{
     env::{Closure, EnvFrame},
-    machine::{Machine, StgIntrinsic},
-    runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant, StgWrapper},
+    intrinsic::StgIntrinsic,
+    machine::Machine,
+    runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant},
     syntax::{
         dsl::{app, lref},
         Native, Ref, StgSyn,
@@ -28,7 +29,7 @@ use super::syntax::{dsl, tags, LambdaForm};
 /// LOOKUPOR.
 pub struct Block;
 
-impl StgWrapper for Block {
+impl StgIntrinsic for Block {
     fn name(&self) -> &str {
         "BLOCK"
     }
@@ -73,19 +74,13 @@ impl StgWrapper for Block {
     }
 }
 
-impl StgIntrinsic for Block {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("BLOCK is STG only")
-    }
-}
-
 /// KV
 ///
 /// KV coerces its argument into a valid block key-value either as
 /// BLOCK_PAIR or wrapping a list in a BLOCK_KV_LIST
 pub struct Kv;
 
-impl StgWrapper for Kv {
+impl StgIntrinsic for Kv {
     fn name(&self) -> &str {
         "KV"
     }
@@ -118,18 +113,12 @@ impl StgWrapper for Kv {
     }
 }
 
-impl StgIntrinsic for Kv {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("KV is STG only")
-    }
-}
-
 /// DEKV
 ///
 /// Takes a block KV element and converts it to a [k, v] list
 pub struct Dekv;
 
-impl StgWrapper for Dekv {
+impl StgIntrinsic for Dekv {
     fn name(&self) -> &str {
         "DEKV"
     }
@@ -166,18 +155,12 @@ impl StgWrapper for Dekv {
     }
 }
 
-impl StgIntrinsic for Dekv {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("DEKV is STG only")
-    }
-}
-
 /// ELEMENTS(block)
 ///
 /// Return block as list of [k, v] lists
 pub struct Elements;
 
-impl StgWrapper for Elements {
+impl StgIntrinsic for Elements {
     fn name(&self) -> &str {
         "ELEMENTS"
     }
@@ -225,18 +208,12 @@ impl StgWrapper for Elements {
     }
 }
 
-impl StgIntrinsic for Elements {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("ELEMENTS is STG only")
-    }
-}
-
 /// MATCHES_KEY(pair, unboxed_sym)
 ///
 /// Return true iff the key-value pair matches the provided key symbol
 pub struct MatchesKey;
 
-impl StgWrapper for MatchesKey {
+impl StgIntrinsic for MatchesKey {
     fn name(&self) -> &str {
         "MATCHES_KEY"
     }
@@ -274,18 +251,12 @@ impl StgWrapper for MatchesKey {
     }
 }
 
-impl StgIntrinsic for MatchesKey {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("MATCHES_KEY is STG only")
-    }
-}
-
 /// EXTRACT_VALUE
 ///
 /// If the argument is a block key value form, return the value.
 pub struct ExtractValue;
 
-impl StgWrapper for ExtractValue {
+impl StgIntrinsic for ExtractValue {
     fn name(&self) -> &str {
         "EXTRACT_VALUE"
     }
@@ -325,18 +296,12 @@ impl StgWrapper for ExtractValue {
     }
 }
 
-impl StgIntrinsic for ExtractValue {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("EXTRACT_VALUE is STG only")
-    }
-}
-
 /// EXTRACT_KEY(kv)
 ///
 /// If the argument is a block key value form, return the unboxed key symbol.
 pub struct ExtractKey;
 
-impl StgWrapper for ExtractKey {
+impl StgIntrinsic for ExtractKey {
     fn name(&self) -> &str {
         "EXTRACT_KEY"
     }
@@ -370,19 +335,13 @@ impl StgWrapper for ExtractKey {
     }
 }
 
-impl StgIntrinsic for ExtractKey {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("EXTRACT_KEY is STG only")
-    }
-}
-
 /// PACK_PAIR(kv)
 ///
 /// Packs a kv pair into an outer BLOCK_PAIR(k, kv) for processing by
 /// merge (so that the kv can be exposed again in the new block)
 pub struct PackPair;
 
-impl StgWrapper for PackPair {
+impl StgIntrinsic for PackPair {
     fn name(&self) -> &str {
         "PACK_PAIR"
     }
@@ -400,18 +359,12 @@ impl StgWrapper for PackPair {
     }
 }
 
-impl StgIntrinsic for PackPair {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("PACK_PAIR is STG only")
-    }
-}
-
 /// BLOCK_PAIR(kv)
 ///
 /// Force a KV into a block pair representation
 pub struct BlockPair;
 
-impl StgWrapper for BlockPair {
+impl StgIntrinsic for BlockPair {
     fn name(&self) -> &str {
         "BLOCK_PAIR"
     }
@@ -451,19 +404,13 @@ impl StgWrapper for BlockPair {
     }
 }
 
-impl StgIntrinsic for BlockPair {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("BLOCK_PAIR is STG only")
-    }
-}
-
 /// LOOKUPOR(key, default, obj) is lookup with default
 ///
 /// NB. The compiler creates calls to LOOKUPOR with and unboxed
 /// symbol. Is this right? No.
 pub struct LookupOr(pub NativeVariant);
 
-impl StgWrapper for LookupOr {
+impl StgIntrinsic for LookupOr {
     fn name(&self) -> &str {
         match self.0 {
             NativeVariant::Boxed => "LOOKUPOR",
@@ -535,16 +482,10 @@ impl StgWrapper for LookupOr {
     }
 }
 
-impl StgIntrinsic for LookupOr {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("LOOKUPOR is STG only")
-    }
-}
-
 /// LOOKUP(k, block)
 pub struct Lookup;
 
-impl StgWrapper for Lookup {
+impl StgIntrinsic for Lookup {
     fn name(&self) -> &str {
         "LOOKUP"
     }
@@ -568,19 +509,38 @@ impl StgWrapper for Lookup {
     }
 }
 
-impl StgIntrinsic for Lookup {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("LOOKUP is STG only")
-    }
-}
-
 /// MERGE(l, r)
 ///
 /// Merge two blocks preserving order where possible and with values
 /// from r overriding those in l
 pub struct Merge;
 
-impl StgWrapper for Merge {
+/// Items are passed to the MERGE intrinsic as block_pairs of k and
+/// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
+/// and v. The same function can deconstruct either.
+fn deconstruct(pair_closure: Closure) -> Result<(String, Closure), ExecutionError> {
+    match &**pair_closure.code() {
+        StgSyn::Cons { tag, args } if *tag == tags::BLOCK_PAIR => {
+            let k = args[0].clone();
+            let kv = args[1].clone();
+
+            let sym = if let Native::Sym(s) = pair_closure.navigate_local_native(k) {
+                s
+            } else {
+                panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
+            };
+
+            let kv_closure = pair_closure.navigate_local(kv);
+
+            Ok((sym, kv_closure))
+        }
+        _ => {
+            panic!("bad block_pair passed to merge intrinsic: non-data type")
+        }
+    }
+}
+
+impl StgIntrinsic for Merge {
     fn name(&self) -> &str {
         "MERGE"
     }
@@ -644,34 +604,7 @@ impl StgWrapper for Merge {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-/// Items are passed to the MERGE intrinsic as block_pairs of k and
-/// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
-/// and v. The same function can deconstruct either.
-fn deconstruct(pair_closure: Closure) -> Result<(String, Closure), ExecutionError> {
-    match &**pair_closure.code() {
-        StgSyn::Cons { tag, args } if *tag == tags::BLOCK_PAIR => {
-            let k = args[0].clone();
-            let kv = args[1].clone();
-
-            let sym = if let Native::Sym(s) = pair_closure.navigate_local_native(k) {
-                s
-            } else {
-                panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
-            };
-
-            let kv_closure = pair_closure.navigate_local(kv);
-
-            Ok((sym, kv_closure))
-        }
-        _ => {
-            panic!("bad block_pair passed to merge intrinsic: non-data type")
-        }
-    }
-}
-
-impl StgIntrinsic for Merge {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let l = data_list_arg(machine, args[0].clone())?;
         let r = data_list_arg(machine, args[1].clone())?;
@@ -698,7 +631,7 @@ impl StgIntrinsic for Merge {
 /// from r combined with those in l via fn(l, r)
 pub struct MergeWith;
 
-impl StgWrapper for MergeWith {
+impl StgIntrinsic for MergeWith {
     fn name(&self) -> &str {
         "MERGEWITH"
     }
@@ -762,9 +695,7 @@ impl StgWrapper for MergeWith {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-impl StgIntrinsic for MergeWith {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let l = data_list_arg(machine, args[0].clone())?;
         let r = data_list_arg(machine, args[1].clone())?;
@@ -804,7 +735,7 @@ impl StgIntrinsic for MergeWith {
 /// are not blocks then return r.
 pub struct DeepMerge;
 
-impl StgWrapper for DeepMerge {
+impl StgIntrinsic for DeepMerge {
     fn name(&self) -> &str {
         "DEEPMERGE"
     }
@@ -836,12 +767,6 @@ impl StgWrapper for DeepMerge {
             ),
             source_map.add_synthetic(self.name()),
         )
-    }
-}
-
-impl StgIntrinsic for DeepMerge {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("DEEPMERGE is STG only")
     }
 }
 

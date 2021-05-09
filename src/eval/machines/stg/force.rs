@@ -1,20 +1,20 @@
 //! Utility globals for forcing / evaluating / sequencing
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::common::sourcemap::SourceMap;
 
 use super::{
-    machine::{Machine, StgIntrinsic},
-    runtime::{call, StgWrapper},
+    intrinsic::StgIntrinsic,
+    runtime::call,
     syntax::{
         dsl::{annotated_lambda, data, force, local, lref, switch, unbox_str},
-        tags, LambdaForm, Ref,
+        tags, LambdaForm,
     },
 };
 
 /// seqStrList to evaluate and unbox lists of strings
 pub struct SeqStrList;
 
-impl StgWrapper for SeqStrList {
+impl StgIntrinsic for SeqStrList {
     fn name(&self) -> &str {
         "seqStrList"
     }
@@ -46,11 +46,5 @@ impl StgWrapper for SeqStrList {
             ),
             source_map.add_synthetic("seqStrList"),
         )
-    }
-}
-
-impl StgIntrinsic for SeqStrList {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("seqStrList is STG only")
     }
 }

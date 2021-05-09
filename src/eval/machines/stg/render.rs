@@ -3,8 +3,9 @@
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
 use super::{
-    machine::{Machine, StgIntrinsic},
-    runtime::{call, machine_return_bool, StgWrapper},
+    intrinsic::StgIntrinsic,
+    machine::Machine,
+    runtime::{call, machine_return_bool},
     syntax::{dsl::*, tags, LambdaForm, Ref},
 };
 
@@ -12,7 +13,7 @@ use super::{
 /// using the emit intrinsics
 pub struct Render;
 
-impl StgWrapper for Render {
+impl StgIntrinsic for Render {
     fn name(&self) -> &str {
         "RENDER"
     }
@@ -106,16 +107,10 @@ impl StgWrapper for Render {
     }
 }
 
-impl StgIntrinsic for Render {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER is STG only")
-    }
-}
-
 /// Render as a document
 pub struct RenderDoc;
 
-impl StgWrapper for RenderDoc {
+impl StgIntrinsic for RenderDoc {
     fn name(&self) -> &str {
         "RENDER_DOC"
     }
@@ -132,16 +127,10 @@ impl StgWrapper for RenderDoc {
     }
 }
 
-impl StgIntrinsic for RenderDoc {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_DOC is STG only")
-    }
-}
-
 /// Sequentially render items from a list and return unit
 pub struct RenderItems;
 
-impl StgWrapper for RenderItems {
+impl StgIntrinsic for RenderItems {
     fn name(&self) -> &str {
         "RENDER_ITEMS"
     }
@@ -171,16 +160,10 @@ impl StgWrapper for RenderItems {
     }
 }
 
-impl StgIntrinsic for RenderItems {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_ITEMS is STG only")
-    }
-}
-
 /// Sequentially render items from a list and return unit
 pub struct RenderBlockItems;
 
-impl StgWrapper for RenderBlockItems {
+impl StgIntrinsic for RenderBlockItems {
     fn name(&self) -> &str {
         "RENDER_BLOCK_ITEMS"
     }
@@ -210,12 +193,6 @@ impl StgWrapper for RenderBlockItems {
     }
 }
 
-impl StgIntrinsic for RenderBlockItems {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_BLOCK_ITEMS is STG only")
-    }
-}
-
 /// Determine if a reference refers to a lambda (and therefore cannot
 /// be rendered) or a value / thunk.
 ///
@@ -227,13 +204,11 @@ impl StgIntrinsic for RenderBlockItems {
 /// render of lambdas.
 pub struct Saturated;
 
-impl StgWrapper for Saturated {
+impl StgIntrinsic for Saturated {
     fn name(&self) -> &str {
         "SATURATED"
     }
-}
 
-impl StgIntrinsic for Saturated {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let closure = machine.resolve(&args[0])?;
         machine_return_bool(machine, closure.remaining_arity() == 0)
@@ -243,7 +218,7 @@ impl StgIntrinsic for Saturated {
 /// Determine whether the specified metadata suppresses render
 pub struct Suppresses;
 
-impl StgWrapper for Suppresses {
+impl StgIntrinsic for Suppresses {
     fn name(&self) -> &str {
         "SUPPRESSES"
     }
@@ -270,9 +245,7 @@ impl StgWrapper for Suppresses {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-impl StgIntrinsic for Suppresses {
     fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
         panic!("SUPPRESSES is STG only")
     }
@@ -283,7 +256,7 @@ impl StgIntrinsic for Suppresses {
 /// lambda).
 pub struct RenderKv;
 
-impl StgWrapper for RenderKv {
+impl StgIntrinsic for RenderKv {
     fn name(&self) -> &str {
         "RENDER_KV"
     }
@@ -336,12 +309,6 @@ impl StgWrapper for RenderKv {
             ),
             source_map.add_synthetic(self.name()),
         )
-    }
-}
-
-impl StgIntrinsic for RenderKv {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_KV is STG only")
     }
 }
 

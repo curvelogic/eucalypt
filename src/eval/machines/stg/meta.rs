@@ -1,20 +1,19 @@
 //! Metadata intrinsics
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::common::sourcemap::SourceMap;
 
 use super::{
-    machine::{Machine, StgIntrinsic},
-    runtime::StgWrapper,
+    intrinsic::StgIntrinsic,
     syntax::{
         dsl::{annotated_lambda, data, demeta, let_, local, lref, value, with_meta},
-        tags, LambdaForm, Ref,
+        tags, LambdaForm,
     },
 };
 
 /// META(obj) - return metadata of object or empty block
 pub struct Meta;
 
-impl StgWrapper for Meta {
+impl StgIntrinsic for Meta {
     fn name(&self) -> &str {
         "META"
     }
@@ -35,16 +34,10 @@ impl StgWrapper for Meta {
     }
 }
 
-impl StgIntrinsic for Meta {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("META is STG only")
-    }
-}
-
 /// WITHMETA(meta, obj) - add meta to obj
 pub struct WithMeta;
 
-impl StgWrapper for WithMeta {
+impl StgIntrinsic for WithMeta {
     fn name(&self) -> &str {
         "WITHMETA"
     }
@@ -55,11 +48,5 @@ impl StgWrapper for WithMeta {
             with_meta(lref(0), lref(1)),
             source_map.add_synthetic(self.name()),
         )
-    }
-}
-
-impl StgIntrinsic for WithMeta {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("WITHMETA is STG only")
     }
 }

@@ -10,6 +10,7 @@ pub mod emit;
 pub mod env;
 pub mod eq;
 pub mod force;
+pub mod intrinsic;
 pub mod list;
 pub mod machine;
 pub mod meta;

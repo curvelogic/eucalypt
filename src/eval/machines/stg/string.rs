@@ -5,11 +5,12 @@ use std::iter;
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
 use super::{
-    machine::{Machine, StgIntrinsic},
+    intrinsic::StgIntrinsic,
+    machine::Machine,
     printf::{self, PrintfError},
     runtime::{
         call, machine_return_num, machine_return_str, machine_return_str_list, machine_return_sym,
-        str_arg, str_list_arg, StgWrapper,
+        str_arg, str_list_arg,
     },
     syntax::{
         dsl::{
@@ -26,13 +27,11 @@ use serde_json::Number;
 /// SYM(str) to convert strings to symbols
 pub struct Sym;
 
-impl StgWrapper for Sym {
+impl StgIntrinsic for Sym {
     fn name(&self) -> &str {
         "SYM"
     }
-}
 
-impl StgIntrinsic for Sym {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let text = str_arg(machine, &args[0])?;
         machine_return_sym(machine, text)
@@ -42,7 +41,7 @@ impl StgIntrinsic for Sym {
 /// STR(x) to convert symbols and numbers to strings
 pub struct Str;
 
-impl StgWrapper for Str {
+impl StgIntrinsic for Str {
     fn name(&self) -> &str {
         "STR"
     }
@@ -67,9 +66,7 @@ impl StgWrapper for Str {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-impl StgIntrinsic for Str {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let nat = machine.resolve_native(&args[0])?;
         let text = match nat {
@@ -85,7 +82,7 @@ impl StgIntrinsic for Str {
 /// JOIN(list, sep)
 pub struct Join;
 
-impl StgWrapper for Join {
+impl StgIntrinsic for Join {
     fn name(&self) -> &str {
         "JOIN"
     }
@@ -108,9 +105,7 @@ impl StgWrapper for Join {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-impl StgIntrinsic for Join {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let sep = str_arg(machine, &args[1])?;
         let result = str_list_arg(machine, args[0].clone())?.join(&sep);
@@ -123,13 +118,11 @@ impl StgIntrinsic for Join {
 /// Return captures resulting from matching string with regex-string
 pub struct Match;
 
-impl StgWrapper for Match {
+impl StgIntrinsic for Match {
     fn name(&self) -> &str {
         "MATCH"
     }
-}
 
-impl StgIntrinsic for Match {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let string = str_arg(machine, &args[0])?;
         let regex = str_arg(machine, &args[1])?;
@@ -157,13 +150,11 @@ impl StgIntrinsic for Match {
 /// Return all matches of regex-string in string (with no capture information)
 pub struct Matches;
 
-impl StgWrapper for Matches {
+impl StgIntrinsic for Matches {
     fn name(&self) -> &str {
         "MATCHES"
     }
-}
 
-impl StgIntrinsic for Matches {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let string = str_arg(machine, &args[0])?;
         let regex = str_arg(machine, &args[1])?;
@@ -188,13 +179,11 @@ impl StgIntrinsic for Matches {
 /// compatibility with old haskell implementation.)
 pub struct Split;
 
-impl StgWrapper for Split {
+impl StgIntrinsic for Split {
     fn name(&self) -> &str {
         "SPLIT"
     }
-}
 
-impl StgIntrinsic for Split {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let string = str_arg(machine, &args[0])?;
         let regex = str_arg(machine, &args[1])?;
@@ -213,13 +202,11 @@ impl StgIntrinsic for Split {
 /// NUMPARSE(str) - parse a number
 pub struct NumParse;
 
-impl StgWrapper for NumParse {
+impl StgIntrinsic for NumParse {
     fn name(&self) -> &str {
         "NUMPARSE"
     }
-}
 
-impl StgIntrinsic for NumParse {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let string = str_arg(machine, &args[0])?;
 
@@ -235,7 +222,7 @@ impl StgIntrinsic for NumParse {
 /// only supports number right now
 pub struct Fmt;
 
-impl StgWrapper for Fmt {
+impl StgIntrinsic for Fmt {
     fn name(&self) -> &str {
         "FMT"
     }
@@ -317,9 +304,7 @@ impl StgWrapper for Fmt {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-impl StgIntrinsic for Fmt {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let nat = machine.resolve_native(&args[0])?;
         let fmt_string = str_arg(machine, &args[1])?;
@@ -336,13 +321,11 @@ impl StgIntrinsic for Fmt {
 /// LETTERS(string) - return list of characters in a string, each as a string
 pub struct Letters;
 
-impl StgWrapper for Letters {
+impl StgIntrinsic for Letters {
     fn name(&self) -> &str {
         "LETTERS"
     }
-}
 
-impl StgIntrinsic for Letters {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let string = str_arg(machine, &args[0])?;
         let letters: Vec<String> = string.chars().map(|c| iter::once(c).collect()).collect();

@@ -3,8 +3,8 @@
 use crate::common::sourcemap::SourceMap;
 
 use super::{
-    machine::StgIntrinsic,
-    runtime::{call, StgWrapper},
+    intrinsic::StgIntrinsic,
+    runtime::call,
     syntax::{
         dsl::{annotated_lambda, case, data, local, lref, str, value},
         tags, LambdaForm,
@@ -14,7 +14,7 @@ use super::{
 /// A constant for CONS
 pub struct Cons;
 
-impl StgWrapper for Cons {
+impl StgIntrinsic for Cons {
     fn name(&self) -> &str {
         "CONS"
     }
@@ -28,20 +28,10 @@ impl StgWrapper for Cons {
     }
 }
 
-impl StgIntrinsic for Cons {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("CONS is STG only")
-    }
-}
-
 /// A constant for NIL
 pub struct Nil;
 
-impl StgWrapper for Nil {
+impl StgIntrinsic for Nil {
     fn name(&self) -> &str {
         "NIL"
     }
@@ -51,20 +41,10 @@ impl StgWrapper for Nil {
     }
 }
 
-impl StgIntrinsic for Nil {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("NIL is STG only")
-    }
-}
-
 /// (Unsafe) list TAIL
 pub struct Tail;
 
-impl StgWrapper for Tail {
+impl StgIntrinsic for Tail {
     fn name(&self) -> &str {
         "TAIL"
     }
@@ -82,20 +62,10 @@ impl StgWrapper for Tail {
     }
 }
 
-impl StgIntrinsic for Tail {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("TAIL is STG only")
-    }
-}
-
 /// (Unsafe) list HEAD
 pub struct Head;
 
-impl StgWrapper for Head {
+impl StgIntrinsic for Head {
     fn name(&self) -> &str {
         "HEAD"
     }
@@ -110,15 +80,5 @@ impl StgWrapper for Head {
             ),
             source_map.add_synthetic("HEAD"),
         )
-    }
-}
-
-impl StgIntrinsic for Head {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("HEAD is STG only")
     }
 }
