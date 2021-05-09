@@ -409,7 +409,6 @@ pub mod call {
                 args.to_vec(),
             )
         }
-
         pub fn eq(x: Ref, y: Ref) -> Rc<StgSyn> {
             call_global("EQ", &[x, y])
         }

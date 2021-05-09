@@ -1,6 +1,6 @@
 //! The trait for intrinsic functions / constants
 
-use std::convert::TryInto;
+use std::{convert::TryInto, rc::Rc};
 
 use crate::{
     common::sourcemap::SourceMap,
@@ -11,10 +11,10 @@ use super::{
     machine::Machine,
     syntax::{
         dsl::{
-            annotated_lambda, app_bif, data, force, let_, local, lref, unbox_num, unbox_str,
-            unbox_sym, unbox_zdt, value,
+            self, annotated_lambda, app, app_bif, data, force, gref, let_, local, lref, unbox_num,
+            unbox_str, unbox_sym, unbox_zdt, value,
         },
-        tags, LambdaForm, Ref,
+        tags, LambdaForm, Ref, StgSyn,
     },
 };
 
@@ -46,6 +46,24 @@ pub trait StgIntrinsic: Sync {
     /// appropriate to constitute a return.
     fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
         panic!("{} is STG-only", self.name());
+    }
+}
+
+pub trait Const: StgIntrinsic {
+    fn global(&self) -> Rc<StgSyn> {
+        dsl::global(self.index())
+    }
+}
+
+pub trait CallGlobal1: StgIntrinsic {
+    fn global(&self, x: Ref) -> Rc<StgSyn> {
+        app(gref(self.index()), vec![x])
+    }
+}
+
+pub trait CallGlobal2: StgIntrinsic {
+    fn global(&self, x: Ref, y: Ref) -> Rc<StgSyn> {
+        app(gref(self.index()), vec![x, y])
     }
 }
 

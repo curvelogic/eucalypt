@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     env::{Closure, EnvFrame},
-    intrinsic::StgIntrinsic,
+    intrinsic::{CallGlobal2, StgIntrinsic},
     machine::Machine,
     runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant},
     syntax::{
@@ -624,6 +624,8 @@ impl StgIntrinsic for Merge {
         machine_return_closure_list(machine, merge.into_iter().map(|(_, v)| v).collect())
     }
 }
+
+impl CallGlobal2 for Merge {}
 
 /// MERGEWITH(l, r, fn)
 ///

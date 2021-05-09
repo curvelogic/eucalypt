@@ -5,7 +5,7 @@ use dsl::nil;
 use crate::common::sourcemap::SourceMap;
 
 use super::{
-    intrinsic::StgIntrinsic,
+    intrinsic::{Const, StgIntrinsic},
     syntax::{
         dsl::{self, data, let_, lref, value},
         tags, LambdaForm,
@@ -25,6 +25,8 @@ impl StgIntrinsic for KNil {
     }
 }
 
+impl Const for KNil {}
+
 /// K[] - empty list
 pub struct KEmptyList;
 
@@ -37,6 +39,8 @@ impl StgIntrinsic for KEmptyList {
         value(data(tags::LIST_NIL, vec![]))
     }
 }
+
+impl Const for KEmptyList {}
 
 /// K{} - empty block
 pub struct KEmptyBlock;
@@ -53,3 +57,5 @@ impl StgIntrinsic for KEmptyBlock {
         ))
     }
 }
+
+impl Const for KEmptyBlock {}
