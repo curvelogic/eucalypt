@@ -1,18 +1,6 @@
 //! Use tester and harness tests
-use eucalypt::{
-    core::analyse::testplan::TestPlan,
-    driver::{
-        options::EucalyptOptions, source::SourceLoader, statistics::Timings,
-        tester::InProcessTester,
-    },
-};
-use eucalypt::{
-    driver::{
-        prepare,
-        tester::{resolve_input, Tester},
-    },
-    syntax::input::Input,
-};
+use eucalypt::driver::{options::EucalyptOptions, tester};
+use eucalypt::{driver::tester::resolve_input, syntax::input::Input};
 use std::{path::PathBuf, str::FromStr};
 
 /// Common options for all tests
@@ -32,32 +20,8 @@ fn run_test(opt: &EucalyptOptions) {
     let input = opt.inputs().last().unwrap();
     let filename = resolve_input(opt, &input).unwrap();
 
-    let test_plan = {
-        let mut loader = SourceLoader::new(opt.lib_path().to_vec());
-
-        // desugar to parse out targets and docstrings
-        prepare::prepare(opt, &mut loader, &mut Timings::default()).unwrap();
-
-        // analyse into test plan
-        TestPlan::analyse(&filename, loader.core()).unwrap()
-    };
-
-    test_plan.prepare_directory().unwrap();
-
-    let tester = InProcessTester {};
-
-    let results = tester.run(&test_plan, opt).unwrap();
-
-    assert!(!results.is_empty());
-
-    for result in results {
-        println!("{}", result);
-        if let Some(n) = result.exit_code {
-            assert_eq!(n, 0);
-        } else {
-            panic!("test failed to complete");
-        }
-    }
+    let exit_code = tester::run_test(opt, &filename).unwrap();
+    assert_eq!(exit_code, 0);
 }
 
 #[test]
