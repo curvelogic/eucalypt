@@ -12,8 +12,10 @@ If you use homebrew, you can install using
 brew install curvelogic/homebrew-tap/eucalypt
 ```
 
-Otherwise binaries for macOS are available on the [releases
+Otherwise binaries for macOS x86_64 are available on the [releases
 page](https://github.com/curvelogic/eucalypt/releases).
+
+No binaries are available for Apple Silicon yet.
 
 ## On Linux
 
