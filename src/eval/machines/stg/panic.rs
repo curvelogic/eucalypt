@@ -2,7 +2,7 @@
 
 use crate::eval::error::ExecutionError;
 
-use super::{intrinsic::StgIntrinsic, machine, runtime::str_arg};
+use super::{intrinsic::{CallGlobal1, StgIntrinsic}, machine, runtime::str_arg};
 
 pub struct Panic;
 
@@ -20,3 +20,5 @@ impl StgIntrinsic for Panic {
         Err(ExecutionError::Panic(message))
     }
 }
+
+impl CallGlobal1 for Panic {}

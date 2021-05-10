@@ -3,7 +3,7 @@
 use crate::common::sourcemap::SourceMap;
 
 use super::{
-    intrinsic::StgIntrinsic,
+    intrinsic::{Const, StgIntrinsic},
     syntax::{
         dsl::{unit, value},
         LambdaForm,
@@ -22,3 +22,5 @@ impl StgIntrinsic for Null {
         value(unit())
     }
 }
+
+impl Const for Null {}

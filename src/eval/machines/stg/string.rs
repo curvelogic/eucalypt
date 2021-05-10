@@ -5,7 +5,8 @@ use std::iter;
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
 use super::{
-    intrinsic::StgIntrinsic,
+    force::SeqStrList,
+    intrinsic::{CallGlobal1, CallGlobal2, StgIntrinsic},
     machine::Machine,
     printf::{self, PrintfError},
     runtime::{
@@ -37,6 +38,8 @@ impl StgIntrinsic for Sym {
         machine_return_sym(machine, text)
     }
 }
+
+impl CallGlobal1 for Sym {}
 
 /// STR(x) to convert symbols and numbers to strings
 pub struct Str;
@@ -79,6 +82,8 @@ impl StgIntrinsic for Str {
     }
 }
 
+impl CallGlobal1 for Str {}
+
 /// JOIN(list, sep)
 pub struct Join;
 
@@ -91,7 +96,7 @@ impl StgIntrinsic for Join {
         annotated_lambda(
             2, // [list sep]
             force(
-                call::global::seq_str_list(lref(0)),
+                SeqStrList.global(lref(0)),
                 // [seqlist] [list sep]
                 unbox_str(
                     local(2),
@@ -112,6 +117,8 @@ impl StgIntrinsic for Join {
         machine_return_str(machine, result)
     }
 }
+
+impl CallGlobal2 for Join {}
 
 /// MATCH(string, regex-string)
 ///
@@ -170,6 +177,8 @@ impl StgIntrinsic for Matches {
     }
 }
 
+impl CallGlobal2 for Matches {}
+
 /// SPLIT(string, regex-string)
 ///
 /// Return all split of regex-string in string (with no capture
@@ -199,6 +208,8 @@ impl StgIntrinsic for Split {
     }
 }
 
+impl CallGlobal2 for Split {}
+
 /// NUMPARSE(str) - parse a number
 pub struct NumParse;
 
@@ -217,6 +228,8 @@ impl StgIntrinsic for NumParse {
         }
     }
 }
+
+impl CallGlobal1 for NumParse {}
 
 /// FMT(obj, fmtstring) - format an object using platform fmt
 /// only supports number right now
@@ -318,6 +331,8 @@ impl StgIntrinsic for Fmt {
     }
 }
 
+impl CallGlobal2 for Fmt {}
+
 /// LETTERS(string) - return list of characters in a string, each as a string
 pub struct Letters;
 
@@ -332,3 +347,5 @@ impl StgIntrinsic for Letters {
         machine_return_str_list(machine, letters)
     }
 }
+
+impl CallGlobal1 for Letters {}

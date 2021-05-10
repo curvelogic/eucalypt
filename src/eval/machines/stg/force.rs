@@ -3,8 +3,7 @@
 use crate::common::sourcemap::SourceMap;
 
 use super::{
-    intrinsic::StgIntrinsic,
-    runtime::call,
+    intrinsic::{CallGlobal1, StgIntrinsic},
     syntax::{
         dsl::{annotated_lambda, data, force, local, lref, switch, unbox_str},
         tags, LambdaForm,
@@ -35,7 +34,7 @@ impl StgIntrinsic for SeqStrList {
                                 local(0),
                                 // [eval] [unbox] [h t]
                                 force(
-                                    call::global::seq_str_list(lref(3)),
+                                    SeqStrList.global(lref(3)),
                                     // [stail] [evaled] [unboxed] h t]
                                     data(tags::LIST_CONS, vec![lref(1), lref(0)]),
                                 ),
@@ -48,3 +47,5 @@ impl StgIntrinsic for SeqStrList {
         )
     }
 }
+
+impl CallGlobal1 for SeqStrList {}

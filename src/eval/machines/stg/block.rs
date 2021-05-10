@@ -9,16 +9,10 @@ use crate::{
     eval::error::ExecutionError,
 };
 
-use super::{
-    env::{Closure, EnvFrame},
-    intrinsic::{CallGlobal2, StgIntrinsic},
-    machine::Machine,
-    runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant},
-    syntax::{
+use super::{env::{Closure, EnvFrame}, eq::Eq, intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, StgIntrinsic}, machine::Machine, panic::Panic, runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant}, syntax::{
         dsl::{app, lref},
         Native, Ref, StgSyn,
-    },
-};
+    }};
 
 use super::syntax::{dsl, tags, LambdaForm};
 
@@ -45,7 +39,7 @@ impl StgIntrinsic for Block {
                     (
                         tags::LIST_CONS, // [h t] [items self]
                         force(
-                            call::global::kv(lref(0)),
+                            Kv.global(lref(0)),
                             // [kv] [h t] [items self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
@@ -73,6 +67,8 @@ impl StgIntrinsic for Block {
         )
     }
 }
+
+impl CallGlobal1 for Block {}
 
 /// KV
 ///
@@ -112,6 +108,8 @@ impl StgIntrinsic for Kv {
         )
     }
 }
+
+impl CallGlobal1 for Kv {}
 
 /// DEKV
 ///
@@ -155,6 +153,8 @@ impl StgIntrinsic for Dekv {
     }
 }
 
+impl CallGlobal1 for Dekv {}
+
 /// ELEMENTS(block)
 ///
 /// Return block as list of [k, v] lists
@@ -178,7 +178,7 @@ impl StgIntrinsic for Elements {
                         letrec_(
                             // [dekv-h rest] [h t] [list self]
                             vec![
-                                thunk(call::global::dekv(lref(2))),
+                                thunk(Dekv.global(lref(2))),
                                 thunk(app(lref(5), vec![lref(3), lref(5)])),
                             ],
                             data(tags::LIST_CONS, vec![lref(0), lref(1)]),
@@ -208,6 +208,8 @@ impl StgIntrinsic for Elements {
     }
 }
 
+impl CallGlobal1 for Elements {}
+
 /// MATCHES_KEY(pair, unboxed_sym)
 ///
 /// Return true iff the key-value pair matches the provided key symbol
@@ -227,7 +229,7 @@ impl StgIntrinsic for MatchesKey {
                 vec![
                     (
                         tags::BLOCK_PAIR,
-                        call::global::eq(lref(0), lref(3)), // [k v] [pair unboxsym]
+                        Eq.global(lref(0), lref(3)), // [k v] [pair unboxsym]
                     ),
                     (
                         tags::BLOCK_KV_LIST, // [l] [pair sym]
@@ -237,7 +239,7 @@ impl StgIntrinsic for MatchesKey {
                                 tags::LIST_CONS, // [h t] [l] [pair sym]
                                 unbox_sym(
                                     local(0), // [unbox_h] [h t] [l] [pair sym]
-                                    call::global::eq(lref(0), lref(5)),
+                                    Eq.global(lref(0), lref(5)),
                                 ),
                             )],
                             f(),
@@ -250,6 +252,8 @@ impl StgIntrinsic for MatchesKey {
         )
     }
 }
+
+impl CallGlobal2 for MatchesKey {}
 
 /// EXTRACT_VALUE
 ///
@@ -296,6 +300,8 @@ impl StgIntrinsic for ExtractValue {
     }
 }
 
+impl CallGlobal1 for ExtractValue {}
+
 /// EXTRACT_KEY(kv)
 ///
 /// If the argument is a block key value form, return the unboxed key symbol.
@@ -335,6 +341,8 @@ impl StgIntrinsic for ExtractKey {
     }
 }
 
+impl CallGlobal1 for ExtractKey {}
+
 /// PACK_PAIR(kv)
 ///
 /// Packs a kv pair into an outer BLOCK_PAIR(k, kv) for processing by
@@ -351,13 +359,15 @@ impl StgIntrinsic for PackPair {
         annotated_lambda(
             1, // [kv]
             force(
-                call::global::extract_key(lref(0)), // [sym] [kv]
+                ExtractKey.global(lref(0)), // [sym] [kv]
                 data(tags::BLOCK_PAIR, vec![lref(0), lref(1)]),
             ),
             source_map.add_synthetic(self.name()),
         )
     }
 }
+
+impl CallGlobal1 for PackPair {}
 
 /// BLOCK_PAIR(kv)
 ///
@@ -404,6 +414,8 @@ impl StgIntrinsic for BlockPair {
     }
 }
 
+impl CallGlobal1 for BlockPair {}
+
 /// LOOKUPOR(key, default, obj) is lookup with default
 ///
 /// NB. The compiler creates calls to LOOKUPOR with and unboxed
@@ -429,12 +441,12 @@ impl StgIntrinsic for LookupOr {
                     (
                         tags::LIST_CONS, // [h t] [list k d find]
                         switch(
-                            call::global::matches_key(lref(0), lref(3)),
+                            MatchesKey.global(lref(0), lref(3)),
                             vec![
                                 (
                                     tags::BOOL_TRUE,
                                     // [h t] [list k d find]
-                                    call::global::extract_value(lref(0)),
+                                    ExtractValue.global(lref(0)),
                                 ),
                                 (
                                     tags::BOOL_FALSE,
@@ -482,6 +494,8 @@ impl StgIntrinsic for LookupOr {
     }
 }
 
+impl CallGlobal3 for LookupOr {}
+
 /// LOOKUP(k, block)
 pub struct Lookup;
 
@@ -501,13 +515,15 @@ impl StgIntrinsic for Lookup {
                 let_(
                     vec![value(call::bif::panic(str("key not found")))],
                     // [panic] [sym] [k block]
-                    call::global::lookup_or_unboxed(lref(1), lref(0), lref(3)),
+                    LookupOr(NativeVariant::Unboxed).global(lref(1), lref(0), lref(3)),
                 ),
             ),
             source_map.add_synthetic(self.name()),
         )
     }
 }
+
+impl CallGlobal2 for Lookup {}
 
 /// MERGE(l, r)
 ///
@@ -557,7 +573,7 @@ impl StgIntrinsic for Merge {
                     (
                         tags::LIST_CONS, // [h t] [list self]
                         force(
-                            call::global::pack_pair(lref(0)),
+                            PackPair.global(lref(0)),
                             // [pp-h] [h t] [list self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
@@ -650,7 +666,7 @@ impl StgIntrinsic for MergeWith {
                     (
                         tags::LIST_CONS, // [h t] [list self]
                         force(
-                            call::global::block_pair(lref(0)),
+                            BlockPair.global(lref(0)),
                             // [bp-h] [h t] [list self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
@@ -731,6 +747,8 @@ impl StgIntrinsic for MergeWith {
     }
 }
 
+impl CallGlobal3 for MergeWith {}
+
 /// DEEPMERGE(l, r, fn)
 ///
 /// Merge two blocks, recursing into any subblocks, if either l or r
@@ -758,7 +776,7 @@ impl StgIntrinsic for DeepMerge {
                         vec![(
                             tags::BLOCK,
                             // [rcons] [lcons] [l r]
-                            call::global::merge_with(lref(2), lref(3), gref(self.index())),
+                            MergeWith.global(lref(2), lref(3), gref(self.index())),
                         )],
                         // [r] [lcons] [l r]
                         local(0),
@@ -772,13 +790,15 @@ impl StgIntrinsic for DeepMerge {
     }
 }
 
+impl CallGlobal3 for DeepMerge {}
+
 /// Compile a panic for a missing key
 pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
     use dsl::*;
 
     let_(
         vec![value(box_str(format!("Key not found: {}", key)))],
-        call::global::panic(lref(0)),
+        Panic.global(lref(0)),
     )
 }
 
@@ -835,9 +855,9 @@ pub mod tests {
             vec![
                 value(box_str("value")),
                 value(data(tags::BLOCK_PAIR, vec![sym("key"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
             ],
-            call::global::matches_key(lref(2), sym("key")),
+            MatchesKey.global(lref(2), sym("key")),
         );
 
         let mut m = machine(syntax);
@@ -851,9 +871,9 @@ pub mod tests {
             vec![
                 value(box_str("value")),
                 value(data(tags::BLOCK_PAIR, vec![sym("key"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
             ],
-            call::global::matches_key(lref(2), sym("different")),
+            MatchesKey.global(lref(2), sym("different")),
         );
 
         let mut m = machine(syntax);
@@ -870,9 +890,9 @@ pub mod tests {
                 value(data(tags::LIST_NIL, vec![])),
                 value(data(tags::LIST_CONS, vec![lref(1), lref(2)])),
                 value(data(tags::LIST_CONS, vec![lref(0), lref(3)])),
-                value(call::global::kv(lref(4))),
+                value(Kv.global(lref(4))),
             ],
-            call::global::matches_key(lref(5), sym("key")),
+            MatchesKey.global(lref(5), sym("key")),
         );
 
         let mut m = machine(syntax);
@@ -886,10 +906,10 @@ pub mod tests {
             vec![
                 value(box_str("v1")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k1"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
                 value(box_str("v2")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k2"), lref(0)])),
-                value(call::global::kv(lref(4))),
+                value(Kv.global(lref(4))),
                 value(data(tags::LIST_NIL, vec![])),
                 value(data(tags::LIST_CONS, vec![lref(5), lref(6)])),
                 value(data(tags::LIST_CONS, vec![lref(2), lref(7)])),
@@ -897,7 +917,7 @@ pub mod tests {
                 value(box_sym("k1")),
                 value(box_str("fail")),
             ],
-            call::global::lookup_or(lref(10), lref(11), lref(9)),
+            LookupOr(NativeVariant::Boxed).global(lref(10), lref(11), lref(9)),
         );
 
         let mut m = machine(syntax);

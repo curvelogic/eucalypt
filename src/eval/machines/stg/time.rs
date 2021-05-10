@@ -19,19 +19,13 @@ use serde_json::Number;
 
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
-use super::{
-    env::{Closure, EnvFrame},
-    intrinsic::StgIntrinsic,
-    machine::Machine,
-    runtime::{
-        call, machine_return_block_pair_closure_list, machine_return_str, machine_return_zdt,
+use super::{env::{Closure, EnvFrame}, intrinsic::{CallGlobal1, CallGlobal7, StgIntrinsic}, machine::Machine, runtime::{
+        machine_return_block_pair_closure_list, machine_return_str, machine_return_zdt,
         num_arg, str_arg, zdt_arg,
-    },
-    syntax::{
+    }, syntax::{
         dsl::{annotated_lambda, box_num, box_str, force, local, lref},
         LambdaForm, Ref,
-    },
-};
+    }};
 
 /// Convert a TZ representation to a FixedOffset
 fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
@@ -145,6 +139,8 @@ impl StgIntrinsic for Zdt {
     }
 }
 
+impl CallGlobal7 for Zdt {}
+
 /// ZDT.WRAP - no-op for compatibility with old prelude
 pub struct ZdtWrap;
 
@@ -159,6 +155,8 @@ impl StgIntrinsic for ZdtWrap {
     }
 }
 
+impl CallGlobal1 for ZdtWrap {}
+
 /// ZDT.UNWRAP - no-op for compatibility with old prelude
 pub struct ZdtUnwrap;
 
@@ -172,6 +170,8 @@ impl StgIntrinsic for ZdtUnwrap {
         annotated_lambda(1, local(0), source_map.add_synthetic(self.name()))
     }
 }
+
+impl CallGlobal1 for ZdtUnwrap {}
 
 /// ZDT.FIELDS - convert ZDT to (sym, val) pairs (which can be
 /// converted to block)
@@ -211,6 +211,8 @@ impl StgIntrinsic for ZdtFields {
     }
 }
 
+impl CallGlobal1 for ZdtFields {}
+
 /// ZDT.FROM_EPOCH - convert a unix timestamp to a zoned date time
 pub struct ZdtFromEpoch;
 
@@ -231,6 +233,8 @@ impl StgIntrinsic for ZdtFromEpoch {
     }
 }
 
+impl CallGlobal1 for ZdtFromEpoch {}
+
 /// IFIELDS - compatibility with old API - epoch to fields
 pub struct ZdtIFields;
 
@@ -243,14 +247,13 @@ impl StgIntrinsic for ZdtIFields {
     fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
         annotated_lambda(
             1,
-            force(
-                call::global::zdt_from_epoch(lref(0)),
-                call::global::zdt_fields(lref(0)),
-            ),
+            force(ZdtFromEpoch.global(lref(0)), ZdtFields.global(lref(0))),
             source_map.add_synthetic(self.name()),
         )
     }
 }
+
+impl CallGlobal1 for ZdtIFields {}
 
 /// ZDT.PARSE - parse an ISO8601 date
 pub struct ZdtParse8601;
@@ -298,6 +301,8 @@ impl StgIntrinsic for ZdtParse8601 {
     }
 }
 
+impl CallGlobal1 for ZdtParse8601 {}
+
 /// ZDT.FORMAT - format date as ISO8601
 pub struct ZdtFormat8601;
 
@@ -313,6 +318,8 @@ impl StgIntrinsic for ZdtFormat8601 {
         machine_return_str(machine, repr)
     }
 }
+
+impl CallGlobal1 for ZdtFormat8601 {}
 
 #[cfg(test)]
 pub mod tests {

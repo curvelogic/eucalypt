@@ -6,7 +6,12 @@ use serde_json::Number;
 
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
-use super::syntax::{tags, Ref, StgSyn};
+use super::{
+    block::{ExtractKey, ExtractValue},
+    boolean::And,
+    intrinsic::{CallGlobal1, CallGlobal2},
+    syntax::{tags, Ref, StgSyn},
+};
 use super::{
     intrinsic::StgIntrinsic,
     machine::Machine,
@@ -29,7 +34,7 @@ fn unary_branch(tag: Tag) -> (Tag, Rc<StgSyn>) {
             local(2),
             vec![(
                 tag, // [y-content] [x-content] [x y]
-                call::global::eq(lref(1), lref(0)),
+                Eq.global(lref(1), lref(0)),
             )],
             f(),
         ),
@@ -45,10 +50,10 @@ fn binary_branch(tag: Tag) -> (Tag, Rc<StgSyn>) {
                 tag, // [yh yt] [xh xt] [x y]
                 let_(
                     vec![
-                        value(call::global::eq(lref(2), lref(0))),
-                        value(call::global::eq(lref(3), lref(1))),
+                        value(Eq.global(lref(2), lref(0))),
+                        value(Eq.global(lref(3), lref(1))),
                     ],
-                    call::global::and(lref(0), lref(1)),
+                    And.global(lref(0), lref(1)),
                 ),
             )],
             f(),
@@ -104,10 +109,10 @@ impl StgIntrinsic for Eq {
                                     // [yk yv] [xk xv] [x y]
                                     let_(
                                         vec![
-                                            value(call::global::eq(lref(2), lref(0))),
-                                            value(call::global::eq(lref(3), lref(1))),
+                                            value(Eq.global(lref(2), lref(0))),
+                                            value(Eq.global(lref(3), lref(1))),
                                         ],
-                                        call::global::and(lref(0), lref(1)),
+                                        And.global(lref(0), lref(1)),
                                     ),
                                 ),
                                 (
@@ -115,12 +120,12 @@ impl StgIntrinsic for Eq {
                                     // [. . . .] [_ycons] [xk xv] [x y]
                                     letrec_(
                                         vec![
-                                            value(call::global::extract_key(lref(8))),
-                                            value(call::global::extract_value(lref(8))),
-                                            value(call::global::eq(lref(0), lref(5))),
-                                            value(call::global::eq(lref(1), lref(6))),
+                                            value(ExtractKey.global(lref(8))),
+                                            value(ExtractValue.global(lref(8))),
+                                            value(Eq.global(lref(0), lref(5))),
+                                            value(Eq.global(lref(1), lref(6))),
                                         ],
-                                        call::global::and(lref(2), lref(3)),
+                                        And.global(lref(2), lref(3)),
                                     ),
                                 ),
                             ],
@@ -137,18 +142,18 @@ impl StgIntrinsic for Eq {
                                     // [. . . .] [yk yv] [_xcons] [x y]
                                     letrec_(
                                         vec![
-                                            value(call::global::extract_key(lref(7))),
-                                            value(call::global::extract_value(lref(7))),
-                                            value(call::global::eq(lref(0), lref(4))),
-                                            value(call::global::eq(lref(1), lref(5))),
+                                            value(ExtractKey.global(lref(7))),
+                                            value(ExtractValue.global(lref(7))),
+                                            value(Eq.global(lref(0), lref(4))),
+                                            value(Eq.global(lref(1), lref(5))),
                                         ],
-                                        call::global::and(lref(2), lref(3)),
+                                        And.global(lref(2), lref(3)),
                                     ),
                                 ),
                                 (
                                     tags::BLOCK_KV_LIST,
                                     // [ycons] [xcons] [x y]
-                                    call::global::eq(lref(1), lref(0)),
+                                    Eq.global(lref(1), lref(0)),
                                 ),
                             ],
                         ),
@@ -174,6 +179,8 @@ impl StgIntrinsic for Eq {
         machine_return_bool(machine, eq)
     }
 }
+
+impl CallGlobal2 for Eq {}
 
 #[cfg(test)]
 pub mod tests {
@@ -218,7 +225,7 @@ pub mod tests {
     pub fn test_box_syms() {
         let syntax = letrec_(
             vec![value(box_sym("foo")), value(box_sym("foo"))],
-            call::global::eq(lref(0), lref(1)),
+            Eq.global(lref(0), lref(1)),
         );
 
         let mut m = machine(syntax);
@@ -230,7 +237,7 @@ pub mod tests {
     pub fn test_box_strs() {
         let syntax = letrec_(
             vec![value(box_str("foo")), value(box_str("foo"))],
-            call::global::eq(lref(0), lref(1)),
+            Eq.global(lref(0), lref(1)),
         );
 
         let mut m = machine(syntax);
@@ -245,7 +252,7 @@ pub mod tests {
                 value(box_num(Number::from_f64(3.14159265).unwrap())),
                 value(box_num(Number::from_f64(3.14159265).unwrap())),
             ],
-            call::global::eq(lref(0), lref(1)),
+            Eq.global(lref(0), lref(1)),
         );
 
         let mut m = machine(syntax);
@@ -262,7 +269,7 @@ pub mod tests {
                 value(box_str("value")),
                 value(data(tags::BLOCK_PAIR, vec![sym("key"), lref(2)])),
             ],
-            call::global::eq(lref(1), lref(3)),
+            Eq.global(lref(1), lref(3)),
         );
 
         let mut m = machine(syntax);

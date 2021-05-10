@@ -17,12 +17,14 @@ use crate::{
 };
 use codespan_reporting::diagnostic::Diagnostic;
 use moniker::{BoundVar, Embed, Var};
-use runtime::call;
+
 use thiserror::Error;
 
 use super::{
-    block::panic_key_not_found,
-    runtime,
+    block::{panic_key_not_found, LookupOr},
+    intrinsic::{CallGlobal1, CallGlobal3},
+    render::{Render, RenderDoc},
+    runtime::NativeVariant,
     syntax::{
         dsl::{self, gref},
         LambdaForm, Ref, StgSyn,
@@ -561,11 +563,11 @@ impl Compiler {
             RenderType::Headless => self.compile_body(&mut binder, expr)?,
             RenderType::RenderDoc => {
                 let index = self.compile_binding(&mut binder, expr.clone(), expr.smid())?;
-                binder.set_body(Box::new(Holder::new(call::global::render_doc(index))))?;
+                binder.set_body(Box::new(Holder::new(RenderDoc.global(index))))?;
             }
             RenderType::RenderFragment => {
                 let index = self.compile_binding(&mut binder, expr.clone(), expr.smid())?;
-                binder.set_body(Box::new(Holder::new(call::global::render(index))))?;
+                binder.set_body(Box::new(Holder::new(Render.global(index))))?;
             }
         }
         binder.freeze();
@@ -701,7 +703,7 @@ impl Compiler {
             },
             None => binder.add(panic_key_not_found(key)),
         }?;
-        Ok(Holder::new(call::global::lookup_or_unboxed(
+        Ok(Holder::new(LookupOr(NativeVariant::Unboxed).global(
             dsl::sym(key),
             dft,
             obj,

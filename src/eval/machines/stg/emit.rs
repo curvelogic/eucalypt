@@ -3,7 +3,10 @@
 
 use crate::eval::{emit::RenderMetadata, error::ExecutionError, primitive::Primitive};
 
-use super::{intrinsic::StgIntrinsic, runtime::machine_return_unit};
+use super::{
+    intrinsic::{CallGlobal0, CallGlobal1, StgIntrinsic},
+    runtime::machine_return_unit,
+};
 
 /// EMIT0
 ///
@@ -27,6 +30,8 @@ impl StgIntrinsic for Emit0 {
     }
 }
 
+impl CallGlobal0 for Emit0 {}
+
 /// EMITT
 ///
 /// Emit a true
@@ -49,6 +54,8 @@ impl StgIntrinsic for EmitT {
     }
 }
 
+impl CallGlobal0 for EmitT {}
+
 /// EMITF
 ///
 /// Emit a false
@@ -70,6 +77,8 @@ impl StgIntrinsic for EmitF {
         machine_return_unit(machine)
     }
 }
+
+impl CallGlobal0 for EmitF {}
 
 /// EMITx
 ///
@@ -100,6 +109,8 @@ impl StgIntrinsic for EmitNative {
     }
 }
 
+impl CallGlobal1 for EmitNative {}
+
 /// EMIT[
 ///
 /// Emit a sequence start
@@ -119,6 +130,8 @@ impl StgIntrinsic for EmitSeqStart {
         machine_return_unit(machine)
     }
 }
+
+impl CallGlobal0 for EmitSeqStart {}
 
 /// EMIT]
 ///
@@ -140,6 +153,8 @@ impl StgIntrinsic for EmitSeqEnd {
     }
 }
 
+impl CallGlobal0 for EmitSeqEnd {}
+
 /// EMIT{
 ///
 /// Emit a block start
@@ -159,6 +174,8 @@ impl StgIntrinsic for EmitBlockStart {
         machine_return_unit(machine)
     }
 }
+
+impl CallGlobal0 for EmitBlockStart {}
 
 /// EMIT}
 ///
@@ -180,6 +197,8 @@ impl StgIntrinsic for EmitBlockEnd {
     }
 }
 
+impl CallGlobal0 for EmitBlockEnd {}
+
 /// EMIT<
 ///
 /// Emit a doc start
@@ -200,6 +219,8 @@ impl StgIntrinsic for EmitDocStart {
     }
 }
 
+impl CallGlobal0 for EmitDocStart {}
+
 /// EMIT>
 ///
 /// Emit a doc end
@@ -219,3 +240,5 @@ impl StgIntrinsic for EmitDocEnd {
         machine_return_unit(machine)
     }
 }
+
+impl CallGlobal0 for EmitDocEnd {}

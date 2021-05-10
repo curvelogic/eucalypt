@@ -3,8 +3,8 @@
 use crate::common::sourcemap::SourceMap;
 
 use super::{
-    intrinsic::StgIntrinsic,
-    runtime::call,
+    intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
+    panic::Panic,
     syntax::{
         dsl::{annotated_lambda, case, data, local, lref, str, value},
         tags, LambdaForm,
@@ -28,6 +28,8 @@ impl StgIntrinsic for Cons {
     }
 }
 
+impl CallGlobal2 for Cons {}
+
 /// A constant for NIL
 pub struct Nil;
 
@@ -40,6 +42,8 @@ impl StgIntrinsic for Nil {
         value(data(tags::LIST_NIL, vec![]))
     }
 }
+
+impl Const for Nil {}
 
 /// (Unsafe) list TAIL
 pub struct Tail;
@@ -55,12 +59,14 @@ impl StgIntrinsic for Tail {
             case(
                 local(0),
                 vec![(tags::LIST_CONS, local(1))],
-                call::global::panic(str("TAIL on empty list")),
+                Panic.global(str("TAIL on empty list")),
             ),
             source_map.add_synthetic("TAIL"),
         )
     }
 }
+
+impl CallGlobal1 for Tail {}
 
 /// (Unsafe) list HEAD
 pub struct Head;
@@ -76,9 +82,11 @@ impl StgIntrinsic for Head {
             case(
                 local(0),
                 vec![(tags::LIST_CONS, local(0))],
-                call::global::panic(str("HEAD on empty list")),
+                Panic.global(str("HEAD on empty list")),
             ),
             source_map.add_synthetic("HEAD"),
         )
     }
 }
+
+impl CallGlobal1 for Head {}

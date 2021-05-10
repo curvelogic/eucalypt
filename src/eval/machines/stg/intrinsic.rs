@@ -55,6 +55,12 @@ pub trait Const: StgIntrinsic {
     }
 }
 
+pub trait CallGlobal0: StgIntrinsic {
+    fn global(&self) -> Rc<StgSyn> {
+        app(gref(self.index()), vec![])
+    }
+}
+
 pub trait CallGlobal1: StgIntrinsic {
     fn global(&self, x: Ref) -> Rc<StgSyn> {
         app(gref(self.index()), vec![x])
@@ -64,6 +70,18 @@ pub trait CallGlobal1: StgIntrinsic {
 pub trait CallGlobal2: StgIntrinsic {
     fn global(&self, x: Ref, y: Ref) -> Rc<StgSyn> {
         app(gref(self.index()), vec![x, y])
+    }
+}
+
+pub trait CallGlobal3: StgIntrinsic {
+    fn global(&self, x: Ref, y: Ref, z: Ref) -> Rc<StgSyn> {
+        app(gref(self.index()), vec![x, y, z])
+    }
+}
+
+pub trait CallGlobal7: StgIntrinsic {
+    fn global(&self, x0: Ref, x1: Ref, x2: Ref, x3: Ref, x4: Ref, x5: Ref, x6: Ref) -> Rc<StgSyn> {
+        app(gref(self.index()), vec![x0, x1, x2, x3, x4, x5, x6])
     }
 }
 

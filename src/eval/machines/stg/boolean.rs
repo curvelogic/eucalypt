@@ -2,7 +2,7 @@
 
 use crate::common::sourcemap::SourceMap;
 
-use super::intrinsic::StgIntrinsic;
+use super::intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic};
 use super::syntax::{dsl::*, tags, LambdaForm};
 
 /// A constant for TRUE
@@ -18,6 +18,8 @@ impl StgIntrinsic for True {
     }
 }
 
+impl Const for True {}
+
 /// A constant for FALSE
 pub struct False;
 
@@ -30,6 +32,8 @@ impl StgIntrinsic for False {
         value(f())
     }
 }
+
+impl Const for False {}
 
 /// A constant for NOT
 pub struct Not;
@@ -50,6 +54,8 @@ impl StgIntrinsic for Not {
         )
     }
 }
+
+impl CallGlobal1 for Not {}
 
 /// Boolean AND
 pub struct And;
@@ -80,6 +86,8 @@ impl StgIntrinsic for And {
     }
 }
 
+impl CallGlobal2 for And {}
+
 /// Boolean OR
 pub struct Or;
 
@@ -109,6 +117,8 @@ impl StgIntrinsic for Or {
     }
 }
 
+impl CallGlobal2 for Or {}
+
 /// Boolean IF
 pub struct If;
 
@@ -128,3 +138,5 @@ impl StgIntrinsic for If {
         )
     }
 }
+
+impl CallGlobal3 for If {}
