@@ -1,6 +1,3 @@
-*.stack-work
-*.cabal
-/harness/.build
 /target/
 **/*.rs.bk
 /.idea
