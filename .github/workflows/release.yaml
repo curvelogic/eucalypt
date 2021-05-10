@@ -9,5 +9,6 @@ jobs:
   update-latest-tag:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
       - name: Move `latest` tag to last published release
         uses: EndBug/latest-tag@latest
