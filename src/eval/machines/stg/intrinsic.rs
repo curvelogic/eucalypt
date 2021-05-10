@@ -47,6 +47,11 @@ pub trait StgIntrinsic: Sync {
     fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
         panic!("{} is STG-only", self.name());
     }
+
+    /// A Ref to this global
+    fn gref(&self) -> Ref {
+        gref(self.index())
+    }
 }
 
 pub trait Const: StgIntrinsic {
@@ -57,31 +62,31 @@ pub trait Const: StgIntrinsic {
 
 pub trait CallGlobal0: StgIntrinsic {
     fn global(&self) -> Rc<StgSyn> {
-        app(gref(self.index()), vec![])
+        app(self.gref(), vec![])
     }
 }
 
 pub trait CallGlobal1: StgIntrinsic {
     fn global(&self, x: Ref) -> Rc<StgSyn> {
-        app(gref(self.index()), vec![x])
+        app(self.gref(), vec![x])
     }
 }
 
 pub trait CallGlobal2: StgIntrinsic {
     fn global(&self, x: Ref, y: Ref) -> Rc<StgSyn> {
-        app(gref(self.index()), vec![x, y])
+        app(self.gref(), vec![x, y])
     }
 }
 
 pub trait CallGlobal3: StgIntrinsic {
     fn global(&self, x: Ref, y: Ref, z: Ref) -> Rc<StgSyn> {
-        app(gref(self.index()), vec![x, y, z])
+        app(self.gref(), vec![x, y, z])
     }
 }
 
 pub trait CallGlobal7: StgIntrinsic {
     fn global(&self, x0: Ref, x1: Ref, x2: Ref, x3: Ref, x4: Ref, x5: Ref, x6: Ref) -> Rc<StgSyn> {
-        app(gref(self.index()), vec![x0, x1, x2, x3, x4, x5, x6])
+        app(self.gref(), vec![x0, x1, x2, x3, x4, x5, x6])
     }
 }
 

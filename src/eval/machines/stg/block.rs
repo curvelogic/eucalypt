@@ -9,10 +9,18 @@ use crate::{
     eval::error::ExecutionError,
 };
 
-use super::{env::{Closure, EnvFrame}, eq::Eq, intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, StgIntrinsic}, machine::Machine, panic::Panic, runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant}, syntax::{
+use super::{
+    env::{Closure, EnvFrame},
+    eq::Eq,
+    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, StgIntrinsic},
+    machine::Machine,
+    panic::Panic,
+    runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant},
+    syntax::{
         dsl::{app, lref},
         Native, Ref, StgSyn,
-    }};
+    },
+};
 
 use super::syntax::{dsl, tags, LambdaForm};
 
@@ -812,6 +820,7 @@ pub mod tests {
     use crate::eval::{
         emit::DebugEmitter,
         machines::stg::{
+            constant::KEmptyList,
             env,
             eq::Eq,
             machine::Machine,
@@ -887,12 +896,11 @@ pub mod tests {
             vec![
                 value(box_sym("key")),
                 value(box_str("value")),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(1), lref(2)])),
-                value(data(tags::LIST_CONS, vec![lref(0), lref(3)])),
-                value(Kv.global(lref(4))),
+                value(data(tags::LIST_CONS, vec![lref(1), KEmptyList.gref()])),
+                value(data(tags::LIST_CONS, vec![lref(0), lref(2)])),
+                value(Kv.global(lref(3))),
             ],
-            MatchesKey.global(lref(5), sym("key")),
+            MatchesKey.global(lref(4), sym("key")),
         );
 
         let mut m = machine(syntax);
@@ -910,14 +918,13 @@ pub mod tests {
                 value(box_str("v2")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k2"), lref(0)])),
                 value(Kv.global(lref(4))),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(5), lref(6)])),
-                value(data(tags::LIST_CONS, vec![lref(2), lref(7)])),
-                value(data(tags::BLOCK, vec![lref(8)])),
+                value(data(tags::LIST_CONS, vec![lref(5), KEmptyList.gref()])),
+                value(data(tags::LIST_CONS, vec![lref(2), lref(6)])),
+                value(data(tags::BLOCK, vec![lref(7)])),
                 value(box_sym("k1")),
                 value(box_str("fail")),
             ],
-            LookupOr(NativeVariant::Boxed).global(lref(10), lref(11), lref(9)),
+            LookupOr(NativeVariant::Boxed).global(lref(9), lref(10), lref(8)),
         );
 
         let mut m = machine(syntax);
