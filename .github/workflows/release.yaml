@@ -10,5 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Move `latest` tag to last published release
-        uses: EndBug/latest-tag@latest
+      - name: FF merge to move `latest` to latest release
+        uses: alexrogalskiy/github-action-git-operation@master
+        with:
+          mode: 'merge-fast-forward'
+          sourceBranch: ${{ github.event.tag_name }}
+          targetBranch: 'latest'
