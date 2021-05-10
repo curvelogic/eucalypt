@@ -85,6 +85,7 @@ pub trait CallGlobal3: StgIntrinsic {
 }
 
 pub trait CallGlobal7: StgIntrinsic {
+    #[allow(clippy::too_many_arguments)]
     fn global(&self, x0: Ref, x1: Ref, x2: Ref, x3: Ref, x4: Ref, x5: Ref, x6: Ref) -> Rc<StgSyn> {
         app(self.gref(), vec![x0, x1, x2, x3, x4, x5, x6])
     }

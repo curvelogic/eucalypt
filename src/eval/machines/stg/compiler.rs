@@ -1,13 +1,5 @@
 //! This module contains a compiler for translating core expressions
 //! to STG syntax for evaluation in the machine.
-//!
-//! - [x] intrinsic & global infra
-//! - [x] lookup
-//! - [ ] metadata
-//! - [x] annotations
-//!
-//! ? optimise natives
-//! ? alternative natives
 use std::{convert::TryInto, rc::Rc};
 
 use crate::{

@@ -19,13 +19,19 @@ use serde_json::Number;
 
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
-use super::{env::{Closure, EnvFrame}, intrinsic::{CallGlobal1, CallGlobal7, StgIntrinsic}, machine::Machine, runtime::{
-        machine_return_block_pair_closure_list, machine_return_str, machine_return_zdt,
-        num_arg, str_arg, zdt_arg,
-    }, syntax::{
+use super::{
+    env::{Closure, EnvFrame},
+    intrinsic::{CallGlobal1, CallGlobal7, StgIntrinsic},
+    machine::Machine,
+    runtime::{
+        machine_return_block_pair_closure_list, machine_return_str, machine_return_zdt, num_arg,
+        str_arg, zdt_arg,
+    },
+    syntax::{
         dsl::{annotated_lambda, box_num, box_str, force, local, lref},
         LambdaForm, Ref,
-    }};
+    },
+};
 
 /// Convert a TZ representation to a FixedOffset
 fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {

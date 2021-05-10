@@ -2,7 +2,11 @@
 
 use crate::eval::error::ExecutionError;
 
-use super::{intrinsic::{CallGlobal1, StgIntrinsic}, machine, runtime::str_arg};
+use super::{
+    intrinsic::{CallGlobal1, StgIntrinsic},
+    machine,
+    runtime::str_arg,
+};
 
 pub struct Panic;
 
