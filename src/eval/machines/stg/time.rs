@@ -21,10 +21,11 @@ use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
 use super::{
     env::{Closure, EnvFrame},
-    machine::{Machine, StgIntrinsic},
+    intrinsic::{CallGlobal1, CallGlobal7, StgIntrinsic},
+    machine::Machine,
     runtime::{
-        call, machine_return_block_pair_closure_list, machine_return_str, machine_return_zdt,
-        num_arg, str_arg, zdt_arg, StgWrapper,
+        machine_return_block_pair_closure_list, machine_return_str, machine_return_zdt, num_arg,
+        str_arg, zdt_arg,
     },
     syntax::{
         dsl::{annotated_lambda, box_num, box_str, force, local, lref},
@@ -73,13 +74,11 @@ fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
 /// ZDT(y, m, d, h, M, s, Z) - create a zoned date time
 pub struct Zdt;
 
-impl StgWrapper for Zdt {
+impl StgIntrinsic for Zdt {
     fn name(&self) -> &str {
         "ZDT"
     }
-}
 
-impl StgIntrinsic for Zdt {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let y = num_arg(machine, &args[0])?;
         let m = num_arg(machine, &args[1])?;
@@ -146,10 +145,12 @@ impl StgIntrinsic for Zdt {
     }
 }
 
+impl CallGlobal7 for Zdt {}
+
 /// ZDT.WRAP - no-op for compatibility with old prelude
 pub struct ZdtWrap;
 
-impl StgWrapper for ZdtWrap {
+impl StgIntrinsic for ZdtWrap {
     fn name(&self) -> &str {
         "ZDT.WRAP"
     }
@@ -160,16 +161,12 @@ impl StgWrapper for ZdtWrap {
     }
 }
 
-impl StgIntrinsic for ZdtWrap {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("ZDT.WRAP is STG only")
-    }
-}
+impl CallGlobal1 for ZdtWrap {}
 
 /// ZDT.UNWRAP - no-op for compatibility with old prelude
 pub struct ZdtUnwrap;
 
-impl StgWrapper for ZdtUnwrap {
+impl StgIntrinsic for ZdtUnwrap {
     fn name(&self) -> &str {
         "ZDT.UNWRAP"
     }
@@ -180,11 +177,7 @@ impl StgWrapper for ZdtUnwrap {
     }
 }
 
-impl StgIntrinsic for ZdtUnwrap {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("ZDT.UNWRAP is STG only")
-    }
-}
+impl CallGlobal1 for ZdtUnwrap {}
 
 /// ZDT.FIELDS - convert ZDT to (sym, val) pairs (which can be
 /// converted to block)
@@ -192,13 +185,11 @@ impl StgIntrinsic for ZdtUnwrap {
 /// Timezone is always rendered as colon-less string e.g. "+0100"
 pub struct ZdtFields;
 
-impl StgWrapper for ZdtFields {
+impl StgIntrinsic for ZdtFields {
     fn name(&self) -> &str {
         "ZDT.FIELDS"
     }
-}
 
-impl StgIntrinsic for ZdtFields {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let dt = zdt_arg(machine, &args[0])?;
         let y = dt.year();
@@ -226,16 +217,16 @@ impl StgIntrinsic for ZdtFields {
     }
 }
 
+impl CallGlobal1 for ZdtFields {}
+
 /// ZDT.FROM_EPOCH - convert a unix timestamp to a zoned date time
 pub struct ZdtFromEpoch;
 
-impl StgWrapper for ZdtFromEpoch {
+impl StgIntrinsic for ZdtFromEpoch {
     fn name(&self) -> &str {
         "ZDT.FROM_EPOCH"
     }
-}
 
-impl StgIntrinsic for ZdtFromEpoch {
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let unix = num_arg(machine, &args[0])?;
@@ -248,10 +239,12 @@ impl StgIntrinsic for ZdtFromEpoch {
     }
 }
 
+impl CallGlobal1 for ZdtFromEpoch {}
+
 /// IFIELDS - compatibility with old API - epoch to fields
 pub struct ZdtIFields;
 
-impl StgWrapper for ZdtIFields {
+impl StgIntrinsic for ZdtIFields {
     fn name(&self) -> &str {
         "IFIELDS"
     }
@@ -260,29 +253,16 @@ impl StgWrapper for ZdtIFields {
     fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
         annotated_lambda(
             1,
-            force(
-                call::global::zdt_from_epoch(lref(0)),
-                call::global::zdt_fields(lref(0)),
-            ),
+            force(ZdtFromEpoch.global(lref(0)), ZdtFields.global(lref(0))),
             source_map.add_synthetic(self.name()),
         )
     }
 }
 
-impl StgIntrinsic for ZdtIFields {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("IFIELDS is STG only")
-    }
-}
+impl CallGlobal1 for ZdtIFields {}
 
 /// ZDT.PARSE - parse an ISO8601 date
 pub struct ZdtParse8601;
-
-impl StgWrapper for ZdtParse8601 {
-    fn name(&self) -> &str {
-        "ZDT.PARSE"
-    }
-}
 
 fn zdt_from_str(repr: &str) -> Option<DateTime<FixedOffset>> {
     // first try parsing a full datetime
@@ -312,6 +292,10 @@ fn zdt_from_str(repr: &str) -> Option<DateTime<FixedOffset>> {
 }
 
 impl StgIntrinsic for ZdtParse8601 {
+    fn name(&self) -> &str {
+        "ZDT.PARSE"
+    }
+
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let repr = str_arg(machine, &args[0])?;
@@ -323,16 +307,16 @@ impl StgIntrinsic for ZdtParse8601 {
     }
 }
 
+impl CallGlobal1 for ZdtParse8601 {}
+
 /// ZDT.FORMAT - format date as ISO8601
 pub struct ZdtFormat8601;
 
-impl StgWrapper for ZdtFormat8601 {
+impl StgIntrinsic for ZdtFormat8601 {
     fn name(&self) -> &str {
         "ZDT.FORMAT"
     }
-}
 
-impl StgIntrinsic for ZdtFormat8601 {
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let zdt = zdt_arg(machine, &args[0])?;
@@ -340,6 +324,8 @@ impl StgIntrinsic for ZdtFormat8601 {
         machine_return_str(machine, repr)
     }
 }
+
+impl CallGlobal1 for ZdtFormat8601 {}
 
 #[cfg(test)]
 pub mod tests {

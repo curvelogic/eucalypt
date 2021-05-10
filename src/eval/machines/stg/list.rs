@@ -3,8 +3,8 @@
 use crate::common::sourcemap::SourceMap;
 
 use super::{
-    machine::StgIntrinsic,
-    runtime::{call, StgWrapper},
+    intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
+    panic::Panic,
     syntax::{
         dsl::{annotated_lambda, case, data, local, lref, str, value},
         tags, LambdaForm,
@@ -14,7 +14,7 @@ use super::{
 /// A constant for CONS
 pub struct Cons;
 
-impl StgWrapper for Cons {
+impl StgIntrinsic for Cons {
     fn name(&self) -> &str {
         "CONS"
     }
@@ -28,20 +28,12 @@ impl StgWrapper for Cons {
     }
 }
 
-impl StgIntrinsic for Cons {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("CONS is STG only")
-    }
-}
+impl CallGlobal2 for Cons {}
 
 /// A constant for NIL
 pub struct Nil;
 
-impl StgWrapper for Nil {
+impl StgIntrinsic for Nil {
     fn name(&self) -> &str {
         "NIL"
     }
@@ -51,20 +43,12 @@ impl StgWrapper for Nil {
     }
 }
 
-impl StgIntrinsic for Nil {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("NIL is STG only")
-    }
-}
+impl Const for Nil {}
 
 /// (Unsafe) list TAIL
 pub struct Tail;
 
-impl StgWrapper for Tail {
+impl StgIntrinsic for Tail {
     fn name(&self) -> &str {
         "TAIL"
     }
@@ -75,27 +59,19 @@ impl StgWrapper for Tail {
             case(
                 local(0),
                 vec![(tags::LIST_CONS, local(1))],
-                call::global::panic(str("TAIL on empty list")),
+                Panic.global(str("TAIL on empty list")),
             ),
             source_map.add_synthetic("TAIL"),
         )
     }
 }
 
-impl StgIntrinsic for Tail {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("TAIL is STG only")
-    }
-}
+impl CallGlobal1 for Tail {}
 
 /// (Unsafe) list HEAD
 pub struct Head;
 
-impl StgWrapper for Head {
+impl StgIntrinsic for Head {
     fn name(&self) -> &str {
         "HEAD"
     }
@@ -106,19 +82,11 @@ impl StgWrapper for Head {
             case(
                 local(0),
                 vec![(tags::LIST_CONS, local(0))],
-                call::global::panic(str("HEAD on empty list")),
+                Panic.global(str("HEAD on empty list")),
             ),
             source_map.add_synthetic("HEAD"),
         )
     }
 }
 
-impl StgIntrinsic for Head {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("HEAD is STG only")
-    }
-}
+impl CallGlobal1 for Head {}

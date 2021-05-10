@@ -436,10 +436,7 @@ pub mod tests {
 
     #[test]
     fn test_desugar_tests() {
-        let mut loader = SourceLoader::new(vec![
-            std::env::current_dir().unwrap(),
-            Path::new("./harness").to_path_buf(),
-        ]);
+        let mut loader = SourceLoader::new(vec![Path::new("./harness/test").to_path_buf()]);
 
         for f in eu_paths() {
             let loc = Locator::Fs(f.clone());

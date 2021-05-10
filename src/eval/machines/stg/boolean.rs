@@ -2,13 +2,13 @@
 
 use crate::common::sourcemap::SourceMap;
 
+use super::intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic};
 use super::syntax::{dsl::*, tags, LambdaForm};
-use super::{machine::StgIntrinsic, runtime::StgWrapper};
 
 /// A constant for TRUE
 pub struct True;
 
-impl StgWrapper for True {
+impl StgIntrinsic for True {
     fn name(&self) -> &str {
         "TRUE"
     }
@@ -18,20 +18,12 @@ impl StgWrapper for True {
     }
 }
 
-impl StgIntrinsic for True {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("TRUE is STG only")
-    }
-}
+impl Const for True {}
 
 /// A constant for FALSE
 pub struct False;
 
-impl StgWrapper for False {
+impl StgIntrinsic for False {
     fn name(&self) -> &str {
         "FALSE"
     }
@@ -41,20 +33,12 @@ impl StgWrapper for False {
     }
 }
 
-impl StgIntrinsic for False {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("FALSE is STG only")
-    }
-}
+impl Const for False {}
 
 /// A constant for NOT
 pub struct Not;
 
-impl StgWrapper for Not {
+impl StgIntrinsic for Not {
     fn name(&self) -> &str {
         "NOT"
     }
@@ -71,20 +55,12 @@ impl StgWrapper for Not {
     }
 }
 
-impl StgIntrinsic for Not {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("NOT is STG only")
-    }
-}
+impl CallGlobal1 for Not {}
 
 /// Boolean AND
 pub struct And;
 
-impl StgWrapper for And {
+impl StgIntrinsic for And {
     fn name(&self) -> &str {
         "AND"
     }
@@ -110,20 +86,12 @@ impl StgWrapper for And {
     }
 }
 
-impl StgIntrinsic for And {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("AND is STG only")
-    }
-}
+impl CallGlobal2 for And {}
 
 /// Boolean OR
 pub struct Or;
 
-impl StgWrapper for Or {
+impl StgIntrinsic for Or {
     fn name(&self) -> &str {
         "OR"
     }
@@ -149,20 +117,12 @@ impl StgWrapper for Or {
     }
 }
 
-impl StgIntrinsic for Or {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("OR is STG only")
-    }
-}
+impl CallGlobal2 for Or {}
 
 /// Boolean IF
 pub struct If;
 
-impl StgWrapper for If {
+impl StgIntrinsic for If {
     fn name(&self) -> &str {
         "IF"
     }
@@ -179,12 +139,4 @@ impl StgWrapper for If {
     }
 }
 
-impl StgIntrinsic for If {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("IF is STG only")
-    }
-}
+impl CallGlobal3 for If {}

@@ -4,23 +4,18 @@ use serde_json::Number;
 
 use crate::eval::error::ExecutionError;
 
-use super::runtime::{machine_return_num, num_arg, StgWrapper};
+use super::runtime::{machine_return_num, num_arg};
 use super::syntax::Ref;
-use super::{
-    machine::{Machine, StgIntrinsic},
-    runtime::machine_return_bool,
-};
+use super::{intrinsic::StgIntrinsic, machine::Machine, runtime::machine_return_bool};
 
 /// ADD(l, r) - add l to r
 pub struct Add;
 
-impl StgWrapper for Add {
+impl StgIntrinsic for Add {
     fn name(&self) -> &str {
         "ADD"
     }
-}
 
-impl StgIntrinsic for Add {
     fn execute(
         &self,
         machine: &mut Machine,
@@ -54,13 +49,11 @@ impl StgIntrinsic for Add {
 /// SUB(l, r) - sub r from l
 pub struct Sub;
 
-impl StgWrapper for Sub {
+impl StgIntrinsic for Sub {
     fn name(&self) -> &str {
         "SUB"
     }
-}
 
-impl StgIntrinsic for Sub {
     fn execute(
         &self,
         machine: &mut Machine,
@@ -94,13 +87,11 @@ impl StgIntrinsic for Sub {
 /// MUL(l, r) - mul r from l
 pub struct Mul;
 
-impl StgWrapper for Mul {
+impl StgIntrinsic for Mul {
     fn name(&self) -> &str {
         "MUL"
     }
-}
 
-impl StgIntrinsic for Mul {
     fn execute(
         &self,
         machine: &mut Machine,
@@ -134,13 +125,11 @@ impl StgIntrinsic for Mul {
 /// DIV(l, r) - div l by r
 pub struct Div;
 
-impl StgWrapper for Div {
+impl StgIntrinsic for Div {
     fn name(&self) -> &str {
         "DIV"
     }
-}
 
-impl StgIntrinsic for Div {
     fn execute(
         &self,
         machine: &mut Machine,
@@ -174,13 +163,11 @@ impl StgIntrinsic for Div {
 /// GT(l, r) l > r
 pub struct Gt;
 
-impl StgWrapper for Gt {
+impl StgIntrinsic for Gt {
     fn name(&self) -> &str {
         "GT"
     }
-}
 
-impl StgIntrinsic for Gt {
     fn execute(
         &self,
         machine: &mut Machine,
@@ -204,13 +191,11 @@ impl StgIntrinsic for Gt {
 /// GTE(l, r) l >= r
 pub struct Gte;
 
-impl StgWrapper for Gte {
+impl StgIntrinsic for Gte {
     fn name(&self) -> &str {
         "GTE"
     }
-}
 
-impl StgIntrinsic for Gte {
     fn execute(
         &self,
         machine: &mut Machine,
@@ -234,13 +219,11 @@ impl StgIntrinsic for Gte {
 /// LT(l, r) l > r
 pub struct Lt;
 
-impl StgWrapper for Lt {
+impl StgIntrinsic for Lt {
     fn name(&self) -> &str {
         "LT"
     }
-}
 
-impl StgIntrinsic for Lt {
     fn execute(
         &self,
         machine: &mut Machine,
@@ -264,13 +247,11 @@ impl StgIntrinsic for Lt {
 /// LTE(l, r) l <= r
 pub struct Lte;
 
-impl StgWrapper for Lte {
+impl StgIntrinsic for Lte {
     fn name(&self) -> &str {
         "LTE"
     }
-}
 
-impl StgIntrinsic for Lte {
     fn execute(
         &self,
         machine: &mut Machine,

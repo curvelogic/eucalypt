@@ -13,7 +13,7 @@ use std::{fmt, fs};
 
 use super::statistics::{Statistics, Timings};
 
-pub fn test(opt: &EucalyptOptions) -> Result<(), EucalyptError> {
+pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let input = opt.inputs().last().unwrap_or(&cwd);
     let path = resolve_input(opt, input)?;
@@ -46,7 +46,7 @@ pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, Eu
 }
 
 /// Run tests for a single file
-pub fn run_test(opt: &EucalyptOptions, filename: &Path) -> Result<(), EucalyptError> {
+pub fn run_test(opt: &EucalyptOptions, filename: &Path) -> Result<i32, EucalyptError> {
     print!("{}...", filename.file_stem().unwrap().to_string_lossy());
 
     let mut timings = Timings::default();
@@ -71,11 +71,12 @@ pub fn run_test(opt: &EucalyptOptions, filename: &Path) -> Result<(), EucalyptEr
 
     tester.validate(&test_plan, results)?;
 
-    tester.display(&test_plan)
+    tester.report(&test_plan)
 }
 
-/// Discover all tests in a directory and run
-pub fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<(), EucalyptError> {
+/// Discover all tests in a directory and run, setting the directory in
+/// the library path for easy resolution of imports
+pub fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError> {
     println!("Gathering tests in {}", dir.display());
     let mut tests: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
@@ -90,13 +91,23 @@ pub fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<(), EucalyptError>
 
     tests.sort();
 
+    let mut exit: i32 = 0;
+
+    let mut lib_path = opt.lib_path().to_vec();
+    lib_path.push(dir.to_path_buf());
+
     for test in tests {
         let input = Input::from_str(&test.to_string_lossy())?;
-        let test_opts = opt.clone().with_inputs(vec![input]);
-        run_test(&test_opts, &test)?;
+        let test_opts = opt
+            .clone()
+            .with_inputs(vec![input])
+            .with_lib_path(lib_path.clone());
+        if run_test(&test_opts, &test)? > 0 {
+            exit = 1;
+        }
     }
 
-    Ok(())
+    Ok(exit)
 }
 
 /// A test result
@@ -140,8 +151,8 @@ pub trait Tester {
     /// Process plan and results to generate a report
     fn validate(&self, plan: &TestPlan, results: Vec<TestResult>) -> Result<(), EucalyptError>;
 
-    /// Summarise the report to stdout
-    fn display(&self, plan: &TestPlan) -> Result<(), EucalyptError>;
+    /// Summarise the report to stdout and return an exit code
+    fn report(&self, plan: &TestPlan) -> Result<i32, EucalyptError>;
 }
 
 pub struct InProcessTester {}
@@ -294,8 +305,8 @@ impl Tester for InProcessTester {
     }
 
     /// Process the report file to establish a headline pass / file
-    /// and report to stdout
-    fn display(&self, plan: &TestPlan) -> Result<(), EucalyptError> {
+    /// and report to stdout and return an exit code
+    fn report(&self, plan: &TestPlan) -> Result<i32, EucalyptError> {
         let script = r#"tests.default-yaml.result __LOOKUPOR(:RESULT, :FAIL)"#;
 
         // Then finally, one more to check for success
@@ -307,7 +318,26 @@ impl Tester for InProcessTester {
             .build();
         let mut check_loader = SourceLoader::new(vec![]);
         prepare::prepare(&check_opts, &mut check_loader, &mut Timings::default())?;
-        eval::run(&check_opts, check_loader)?;
-        Ok(())
+
+        let mut outbuf = Vec::new();
+        let mut errbuf = Vec::new();
+
+        {
+            let out = Box::new(&mut outbuf);
+            let err = Box::new(&mut errbuf);
+            let mut executor = eval::Executor::from(check_loader);
+            let mut stats = Statistics::default();
+            executor.capture_output(out, err);
+            executor.execute(&check_opts, &mut stats, "text".to_string())?;
+        }
+        let output = std::str::from_utf8(outbuf.as_slice()).unwrap().to_string();
+
+        print!("{}", output);
+
+        if output.trim().eq_ignore_ascii_case("pass") {
+            Ok(0)
+        } else {
+            Ok(1)
+        }
     }
 }

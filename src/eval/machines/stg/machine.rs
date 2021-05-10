@@ -11,6 +11,7 @@
 use super::syntax::{dsl::global, tags, Native, Ref, StgSyn, Tag};
 use super::{
     env::{Closure, EnvFrame},
+    intrinsic::StgIntrinsic,
     syntax::dsl,
 };
 use crate::{
@@ -99,27 +100,6 @@ impl fmt::Display for Continuation {
                 write!(f, "ƒ(`,•)")
             }
         }
-    }
-}
-
-/// An intrinsic has mutable access to the machine
-///
-/// A call to an intrinsic may assume that its strict arguments are
-/// already evaluated (by the corresponding global wrapper) but must
-/// take care of updating the machine's closure and stack as
-/// appropriate to constitute a return.
-pub trait StgIntrinsic: Sync {
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError>;
-}
-
-/// Support simple upcasting to intrinsic
-pub trait AsStgIntrinsic {
-    fn as_intrinsic(&self) -> &dyn StgIntrinsic;
-}
-
-impl<T: StgIntrinsic> AsStgIntrinsic for T {
-    fn as_intrinsic(&self) -> &dyn StgIntrinsic {
-        self
     }
 }
 

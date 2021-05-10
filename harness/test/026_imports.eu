@@ -1,10 +1,10 @@
-` { import: "test/aux/aux_import_a.eu"}
+` { import: "aux/aux_import_a.eu"}
 a: { result: "{foo}&{bar}"}
 
-` { import: "test/aux/aux_import_b.eu"}
+` { import: "aux/aux_import_b.eu"}
 b: { result: x + y + z}
 
-` { import: ["test/aux/aux_import_a.eu", "test/aux/aux_import_b.eu"] }
+` { import: ["aux/aux_import_a.eu", "aux/aux_import_b.eu"] }
 both: {
   ` :suppress
   tmp: x+y+z
@@ -15,7 +15,7 @@ deep: {
   nest: {
     down: {
       here: {
-	` { import: ["test/aux/aux_import_a.eu"] }
+	` { import: ["aux/aux_import_a.eu"] }
 	imp: { footoo: foo }
       }
     }

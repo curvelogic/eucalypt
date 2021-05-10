@@ -458,6 +458,21 @@ lazy_static! {
             ty: function(vec![record(), bool_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 83
+            name: "KNIL",
+            ty: unit(),
+            strict: vec![],
+    },
+    Intrinsic { // 84
+            name: "K[]",
+            ty: list(),
+            strict: vec![],
+    },
+    Intrinsic { // 85
+            name: "K{}",
+            ty: record(),
+            strict: vec![],
+    },
     ];
 }
 

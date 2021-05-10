@@ -3,8 +3,7 @@
 use crate::common::sourcemap::SourceMap;
 
 use super::{
-    machine::StgIntrinsic,
-    runtime::StgWrapper,
+    intrinsic::{Const, StgIntrinsic},
     syntax::{
         dsl::{unit, value},
         LambdaForm,
@@ -14,7 +13,7 @@ use super::{
 /// A constant for NULL
 pub struct Null;
 
-impl StgWrapper for Null {
+impl StgIntrinsic for Null {
     fn name(&self) -> &str {
         "NULL"
     }
@@ -24,12 +23,4 @@ impl StgWrapper for Null {
     }
 }
 
-impl StgIntrinsic for Null {
-    fn execute(
-        &self,
-        _machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
-    ) -> Result<(), crate::eval::error::ExecutionError> {
-        panic!("NULL is STG only")
-    }
-}
+impl Const for Null {}

@@ -5,10 +5,12 @@ pub mod arith;
 pub mod block;
 pub mod boolean;
 pub mod compiler;
+pub mod constant;
 pub mod emit;
 pub mod env;
 pub mod eq;
 pub mod force;
+pub mod intrinsic;
 pub mod list;
 pub mod machine;
 pub mod meta;
@@ -113,6 +115,9 @@ lazy_static! {
         rt.add(Box::new(time::ZdtIFields));
         rt.add(Box::new(time::ZdtParse8601));
         rt.add(Box::new(time::ZdtFormat8601));
+        rt.add(Box::new(constant::KNil));
+        rt.add(Box::new(constant::KEmptyList));
+        rt.add(Box::new(constant::KEmptyBlock));
         Box::new(rt)
     };
 }

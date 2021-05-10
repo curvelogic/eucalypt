@@ -4,8 +4,8 @@
 use crate::eval::{emit::RenderMetadata, error::ExecutionError, primitive::Primitive};
 
 use super::{
-    machine::StgIntrinsic,
-    runtime::{machine_return_unit, StgWrapper},
+    intrinsic::{CallGlobal0, CallGlobal1, StgIntrinsic},
+    runtime::machine_return_unit,
 };
 
 /// EMIT0
@@ -13,13 +13,11 @@ use super::{
 /// Emit a "null"
 pub struct Emit0;
 
-impl StgWrapper for Emit0 {
+impl StgIntrinsic for Emit0 {
     fn name(&self) -> &str {
         "EMIT0"
     }
-}
 
-impl StgIntrinsic for Emit0 {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -32,18 +30,18 @@ impl StgIntrinsic for Emit0 {
     }
 }
 
+impl CallGlobal0 for Emit0 {}
+
 /// EMITT
 ///
 /// Emit a true
 pub struct EmitT;
 
-impl StgWrapper for EmitT {
+impl StgIntrinsic for EmitT {
     fn name(&self) -> &str {
         "EMITT"
     }
-}
 
-impl StgIntrinsic for EmitT {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -56,18 +54,18 @@ impl StgIntrinsic for EmitT {
     }
 }
 
+impl CallGlobal0 for EmitT {}
+
 /// EMITF
 ///
 /// Emit a false
 pub struct EmitF;
 
-impl StgWrapper for EmitF {
+impl StgIntrinsic for EmitF {
     fn name(&self) -> &str {
         "EMITF"
     }
-}
 
-impl StgIntrinsic for EmitF {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -80,18 +78,18 @@ impl StgIntrinsic for EmitF {
     }
 }
 
+impl CallGlobal0 for EmitF {}
+
 /// EMITx
 ///
 /// Emit a native
 pub struct EmitNative;
 
-impl StgWrapper for EmitNative {
+impl StgIntrinsic for EmitNative {
     fn name(&self) -> &str {
         "EMITx"
     }
-}
 
-impl StgIntrinsic for EmitNative {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -111,18 +109,18 @@ impl StgIntrinsic for EmitNative {
     }
 }
 
+impl CallGlobal1 for EmitNative {}
+
 /// EMIT[
 ///
 /// Emit a sequence start
 pub struct EmitSeqStart;
 
-impl StgWrapper for EmitSeqStart {
+impl StgIntrinsic for EmitSeqStart {
     fn name(&self) -> &str {
         "EMIT["
     }
-}
 
-impl StgIntrinsic for EmitSeqStart {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -133,18 +131,18 @@ impl StgIntrinsic for EmitSeqStart {
     }
 }
 
+impl CallGlobal0 for EmitSeqStart {}
+
 /// EMIT]
 ///
 /// Emit a sequence end
 pub struct EmitSeqEnd;
 
-impl StgWrapper for EmitSeqEnd {
+impl StgIntrinsic for EmitSeqEnd {
     fn name(&self) -> &str {
         "EMIT]"
     }
-}
 
-impl StgIntrinsic for EmitSeqEnd {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -155,18 +153,18 @@ impl StgIntrinsic for EmitSeqEnd {
     }
 }
 
+impl CallGlobal0 for EmitSeqEnd {}
+
 /// EMIT{
 ///
 /// Emit a block start
 pub struct EmitBlockStart;
 
-impl StgWrapper for EmitBlockStart {
+impl StgIntrinsic for EmitBlockStart {
     fn name(&self) -> &str {
         "EMIT{"
     }
-}
 
-impl StgIntrinsic for EmitBlockStart {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -177,18 +175,18 @@ impl StgIntrinsic for EmitBlockStart {
     }
 }
 
+impl CallGlobal0 for EmitBlockStart {}
+
 /// EMIT}
 ///
 /// Emit a block end
 pub struct EmitBlockEnd;
 
-impl StgWrapper for EmitBlockEnd {
+impl StgIntrinsic for EmitBlockEnd {
     fn name(&self) -> &str {
         "EMIT}"
     }
-}
 
-impl StgIntrinsic for EmitBlockEnd {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -199,18 +197,18 @@ impl StgIntrinsic for EmitBlockEnd {
     }
 }
 
+impl CallGlobal0 for EmitBlockEnd {}
+
 /// EMIT<
 ///
 /// Emit a doc start
 pub struct EmitDocStart;
 
-impl StgWrapper for EmitDocStart {
+impl StgIntrinsic for EmitDocStart {
     fn name(&self) -> &str {
         "EMIT<"
     }
-}
 
-impl StgIntrinsic for EmitDocStart {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -221,18 +219,18 @@ impl StgIntrinsic for EmitDocStart {
     }
 }
 
+impl CallGlobal0 for EmitDocStart {}
+
 /// EMIT>
 ///
 /// Emit a doc end
 pub struct EmitDocEnd;
 
-impl StgWrapper for EmitDocEnd {
+impl StgIntrinsic for EmitDocEnd {
     fn name(&self) -> &str {
         "EMIT>"
     }
-}
 
-impl StgIntrinsic for EmitDocEnd {
     fn execute(
         &self,
         machine: &mut super::machine::Machine,
@@ -242,3 +240,5 @@ impl StgIntrinsic for EmitDocEnd {
         machine_return_unit(machine)
     }
 }
+
+impl CallGlobal0 for EmitDocEnd {}

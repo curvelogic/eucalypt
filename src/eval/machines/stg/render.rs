@@ -3,8 +3,14 @@
 use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
 
 use super::{
-    machine::{Machine, StgIntrinsic},
-    runtime::{call, machine_return_bool, StgWrapper},
+    block::LookupOr,
+    boolean::{And, Not},
+    emit::EmitNative,
+    eq::Eq,
+    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, StgIntrinsic},
+    machine::Machine,
+    panic::Panic,
+    runtime::{call, machine_return_bool, NativeVariant},
     syntax::{dsl::*, tags, LambdaForm, Ref},
 };
 
@@ -12,7 +18,7 @@ use super::{
 /// using the emit intrinsics
 pub struct Render;
 
-impl StgWrapper for Render {
+impl StgIntrinsic for Render {
     fn name(&self) -> &str {
         "RENDER"
     }
@@ -24,7 +30,7 @@ impl StgWrapper for Render {
             demeta(
                 local(0),
                 // [meta body] [arg]
-                call::global::suppresses(lref(0)),
+                Suppresses.global(lref(0)),
                 // no meta
                 f(),
             ),
@@ -40,28 +46,25 @@ impl StgWrapper for Render {
                     (tags::BOOL_FALSE, call::bif::emitf()),
                     (
                         tags::BOXED_NUMBER, // [num] [boxnum]
-                        force(call::global::emitx(lref(0)), unit()),
+                        force(EmitNative.global(lref(0)), unit()),
                     ),
                     (
                         tags::BOXED_SYMBOL, // [sym] [boxsym]
-                        call::global::emitx(lref(0)),
+                        EmitNative.global(lref(0)),
                     ),
                     (
                         tags::BOXED_STRING, // [str] [boxstr]
-                        call::global::emitx(lref(0)),
+                        EmitNative.global(lref(0)),
                     ),
                     (
                         tags::BOXED_ZDT, // [zdt] [boxzdt]
-                        call::global::emitx(lref(0)),
+                        EmitNative.global(lref(0)),
                     ),
                     (
                         tags::LIST_CONS,
                         force(
                             call::bif::emit_seq_start(), // [()] [h t] [arg]
-                            force(
-                                call::global::render_items(lref(3)),
-                                call::bif::emit_seq_end(),
-                            ),
+                            force(RenderItems.global(lref(3)), call::bif::emit_seq_end()),
                         ),
                     ),
                     (
@@ -76,7 +79,7 @@ impl StgWrapper for Render {
                         force(
                             call::bif::emit_block_start(), // [()] [cons] [arg]
                             force(
-                                call::global::render_block_items(lref(1)),
+                                RenderBlockItems.global(lref(1)),
                                 call::bif::emit_block_end(),
                             ),
                         ),
@@ -106,16 +109,12 @@ impl StgWrapper for Render {
     }
 }
 
-impl StgIntrinsic for Render {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER is STG only")
-    }
-}
+impl CallGlobal1 for Render {}
 
 /// Render as a document
 pub struct RenderDoc;
 
-impl StgWrapper for RenderDoc {
+impl StgIntrinsic for RenderDoc {
     fn name(&self) -> &str {
         "RENDER_DOC"
     }
@@ -125,23 +124,19 @@ impl StgWrapper for RenderDoc {
             1, // [renderee]
             force(
                 call::bif::emit_doc_start(), // [()] [renderee]
-                force(call::global::render(lref(1)), call::bif::emit_doc_end()),
+                force(Render.global(lref(1)), call::bif::emit_doc_end()),
             ),
             source_map.add_synthetic(self.name()),
         )
     }
 }
 
-impl StgIntrinsic for RenderDoc {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_DOC is STG only")
-    }
-}
+impl CallGlobal1 for RenderDoc {}
 
 /// Sequentially render items from a list and return unit
 pub struct RenderItems;
 
-impl StgWrapper for RenderItems {
+impl StgIntrinsic for RenderItems {
     fn name(&self) -> &str {
         "RENDER_ITEMS"
     }
@@ -155,8 +150,8 @@ impl StgWrapper for RenderItems {
                     (
                         tags::LIST_CONS, // [h t] [cons]
                         force(
-                            call::global::render(lref(0)),
-                            call::global::render_items(lref(2)), // [()] [h t] [cons]
+                            Render.global(lref(0)),
+                            RenderItems.global(lref(2)), // [()] [h t] [cons]
                         ),
                     ),
                     (
@@ -171,16 +166,12 @@ impl StgWrapper for RenderItems {
     }
 }
 
-impl StgIntrinsic for RenderItems {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_ITEMS is STG only")
-    }
-}
+impl CallGlobal1 for RenderItems {}
 
 /// Sequentially render items from a list and return unit
 pub struct RenderBlockItems;
 
-impl StgWrapper for RenderBlockItems {
+impl StgIntrinsic for RenderBlockItems {
     fn name(&self) -> &str {
         "RENDER_BLOCK_ITEMS"
     }
@@ -194,8 +185,8 @@ impl StgWrapper for RenderBlockItems {
                     (
                         tags::LIST_CONS, // [h t] [cons]
                         force(
-                            call::global::render_kv(lref(0)),
-                            call::global::render_block_items(lref(2)), // [()] [h t] [cons]
+                            RenderKv.global(lref(0)),
+                            RenderBlockItems.global(lref(2)), // [()] [h t] [cons]
                         ),
                     ),
                     (
@@ -203,18 +194,14 @@ impl StgWrapper for RenderBlockItems {
                         unit(),
                     ),
                 ],
-                call::global::panic(str("improper list")),
+                Panic.global(str("improper list")),
             ),
             source_map.add_synthetic(self.name()),
         )
     }
 }
 
-impl StgIntrinsic for RenderBlockItems {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_BLOCK_ITEMS is STG only")
-    }
-}
+impl CallGlobal1 for RenderBlockItems {}
 
 /// Determine if a reference refers to a lambda (and therefore cannot
 /// be rendered) or a value / thunk.
@@ -227,23 +214,23 @@ impl StgIntrinsic for RenderBlockItems {
 /// render of lambdas.
 pub struct Saturated;
 
-impl StgWrapper for Saturated {
+impl StgIntrinsic for Saturated {
     fn name(&self) -> &str {
         "SATURATED"
     }
-}
 
-impl StgIntrinsic for Saturated {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let closure = machine.resolve(&args[0])?;
         machine_return_bool(machine, closure.remaining_arity() == 0)
     }
 }
 
+impl CallGlobal1 for Saturated {}
+
 /// Determine whether the specified metadata suppresses render
 pub struct Suppresses;
 
-impl StgWrapper for Suppresses {
+impl StgIntrinsic for Suppresses {
     fn name(&self) -> &str {
         "SUPPRESSES"
     }
@@ -259,9 +246,13 @@ impl StgWrapper for Suppresses {
                         tags::BLOCK,
                         // [xs] [:normal] [arg]
                         unbox_sym(
-                            call::global::lookup_or_unboxed(sym("export"), lref(1), lref(2)),
+                            LookupOr(NativeVariant::Unboxed).global(
+                                sym("export"),
+                                lref(1),
+                                lref(2),
+                            ),
                             // [boxsym] [xs] [:normal] [arg]
-                            call::global::eq(lref(0), sym("suppress")),
+                            Eq.global(lref(0), sym("suppress")),
                         ),
                     )],
                     f(),
@@ -270,20 +261,20 @@ impl StgWrapper for Suppresses {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-impl StgIntrinsic for Suppresses {
     fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
         panic!("SUPPRESSES is STG only")
     }
 }
+
+impl CallGlobal1 for Suppresses {}
 
 /// Render a key and a value from the provided "pair", so long as
 /// output is not suppressed and the value is renderable (i.e. not a
 /// lambda).
 pub struct RenderKv;
 
-impl StgWrapper for RenderKv {
+impl StgIntrinsic for RenderKv {
     fn name(&self) -> &str {
         "RENDER_KV"
     }
@@ -294,11 +285,11 @@ impl StgWrapper for RenderKv {
             letrec_(
                 // [saturated suppresses unsuppressed] [v]
                 vec![
-                    value(call::global::saturated(lref(3))),
-                    value(demeta(local(3), call::global::suppresses(lref(0)), f())),
-                    value(call::global::not(lref(1))),
+                    value(Saturated.global(lref(3))),
+                    value(demeta(local(3), Suppresses.global(lref(0)), f())),
+                    value(Not.global(lref(1))),
                 ],
-                call::global::and(lref(0), lref(2)),
+                And.global(lref(0), lref(2)),
             ),
         );
 
@@ -320,7 +311,7 @@ impl StgWrapper for RenderKv {
                                     tags::BOOL_TRUE,
                                     force(
                                         call::bif::emit_native(lref(0)), // [()] [k v] [kv]
-                                        call::global::render(lref(2)),
+                                        Render.global(lref(2)),
                                     ),
                                 ),
                                 (tags::BOOL_FALSE, unit()),
@@ -329,7 +320,7 @@ impl StgWrapper for RenderKv {
                     ),
                     (
                         tags::BLOCK_KV_LIST, // [cons] [kv]
-                        call::global::render_items(lref(0)),
+                        RenderItems.global(lref(0)),
                     ),
                 ],
                 unit(),
@@ -339,11 +330,7 @@ impl StgWrapper for RenderKv {
     }
 }
 
-impl StgIntrinsic for RenderKv {
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("RENDER_KV is STG only")
-    }
-}
+impl CallGlobal1 for RenderKv {}
 
 #[cfg(test)]
 pub mod tests {
@@ -356,7 +343,11 @@ pub mod tests {
     use crate::eval::{
         emit::{CapturingEmitter, Event, RenderMetadata},
         machines::stg::{
-            block, boolean, emit, env, eq, machine::Machine, panic, runtime, syntax::StgSyn,
+            block::{self, Kv},
+            boolean, emit, env, eq,
+            machine::Machine,
+            panic, runtime,
+            syntax::StgSyn,
         },
         primitive::Primitive,
     };
@@ -405,7 +396,7 @@ pub mod tests {
 
     #[test]
     pub fn test_render_num() {
-        let syntax = letrec_(vec![value(box_num(42))], call::global::render(lref(0)));
+        let syntax = letrec_(vec![value(box_num(42))], Render.global(lref(0)));
 
         let mut m = machine(syntax);
         m.safe_run(100).unwrap();
@@ -414,7 +405,7 @@ pub mod tests {
 
     #[test]
     pub fn test_render_str() {
-        let syntax = letrec_(vec![value(box_str("foo"))], call::global::render(lref(0)));
+        let syntax = letrec_(vec![value(box_str("foo"))], Render.global(lref(0)));
 
         let mut m = machine(syntax);
         m.safe_run(100).unwrap();
@@ -423,7 +414,7 @@ pub mod tests {
 
     #[test]
     pub fn test_render_sym() {
-        let syntax = letrec_(vec![value(box_sym("bar"))], call::global::render(lref(0)));
+        let syntax = letrec_(vec![value(box_sym("bar"))], Render.global(lref(0)));
 
         let mut m = machine(syntax);
         m.safe_run(100).unwrap();
@@ -436,12 +427,12 @@ pub mod tests {
             vec![
                 value(box_sym("suppress")),
                 value(data(tags::BLOCK_PAIR, vec![sym("export"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
                 value(data(tags::LIST_NIL, vec![])),
                 value(data(tags::LIST_CONS, vec![lref(2), lref(3)])),
                 value(data(tags::BLOCK, vec![lref(4)])),
             ],
-            call::global::suppresses(lref(5)),
+            Suppresses.global(lref(5)),
         );
 
         let mut m = machine(syntax);
@@ -455,12 +446,12 @@ pub mod tests {
             vec![
                 value(box_sym("suppress")),
                 value(data(tags::BLOCK_PAIR, vec![sym("normal"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
                 value(data(tags::LIST_NIL, vec![])),
                 value(data(tags::LIST_CONS, vec![lref(2), lref(3)])),
                 value(data(tags::BLOCK, vec![lref(4)])),
             ],
-            call::global::suppresses(lref(5)),
+            Suppresses.global(lref(5)),
         );
 
         let mut m = machine(syntax);
@@ -475,7 +466,7 @@ pub mod tests {
                 value(data(tags::LIST_NIL, vec![])),
                 value(data(tags::BLOCK, vec![lref(0)])),
             ],
-            call::global::suppresses(lref(1)),
+            Suppresses.global(lref(1)),
         );
 
         let mut m = machine(syntax);
@@ -493,7 +484,7 @@ pub mod tests {
                 value(data(tags::LIST_CONS, vec![lref(1), lref(2)])),
                 value(data(tags::LIST_CONS, vec![lref(0), lref(3)])),
             ],
-            call::global::render(lref(4)),
+            Render.global(lref(4)),
         );
 
         let mut m = machine(syntax);
@@ -516,16 +507,16 @@ pub mod tests {
             vec![
                 value(box_str("v1")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k1"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
                 value(box_str("v2")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k2"), lref(0)])),
-                value(call::global::kv(lref(4))),
+                value(Kv.global(lref(4))),
                 value(data(tags::LIST_NIL, vec![])),
                 value(data(tags::LIST_CONS, vec![lref(5), lref(6)])),
                 value(data(tags::LIST_CONS, vec![lref(2), lref(7)])),
                 value(data(tags::BLOCK, vec![lref(8)])),
             ],
-            call::global::render(lref(9)),
+            Render.global(lref(9)),
         );
         let mut m = machine(syntax);
         m.safe_run(300).unwrap();
@@ -538,12 +529,12 @@ pub mod tests {
             vec![
                 value(box_str("v1")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k1"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
                 value(data(tags::LIST_NIL, vec![])),
                 value(data(tags::LIST_CONS, vec![lref(2), lref(3)])),
                 value(data(tags::BLOCK, vec![lref(4)])),
             ],
-            call::global::render(lref(5)),
+            Render.global(lref(5)),
         );
 
         let mut m = machine(syntax);

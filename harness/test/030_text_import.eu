@@ -1,8 +1,8 @@
-{ import: "lines=test/aux/aux_import.txt" }
+{ import: "lines=aux/aux_import.txt" }
 
 unit-import-matches: lines map(str.split-on(",\s")) map(first) //= [1, 2, 3] map("line {}")
 
-` { import: "xs=test/aux/aux_import.txt" }
+` { import: "xs=aux/aux_import.txt" }
 scoped-import-matches: xs map(str.split-on(",\s")) map(first) //= [1, 2, 3] map("line {}")
 
 RESULT: and(unit-import-matches, scoped-import-matches) then(:PASS, :FAIL)

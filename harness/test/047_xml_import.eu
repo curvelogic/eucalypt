@@ -1,5 +1,5 @@
 { doc: "Test that XML import works as expected."
-  import: "root=xml@test/aux/aux_import.xml"}
+  import: "root=xml@aux/aux_import.xml"}
 
 content: drop(2)
 tag: first

@@ -23,12 +23,12 @@ pub fn main() {
         process::exit(0);
     }
 
-    // Test mode is substantially different
+    // Test mode is substantially different, delegate everything to
+    // the tester
     if opt.test() {
-        if tester::test(&opt).is_ok() {
-            process::exit(0);
-        } else {
-            process::exit(1);
+        match tester::test(&opt) {
+            Ok(exit) => process::exit(exit),
+            _ => process::exit(2),
         }
     }
 

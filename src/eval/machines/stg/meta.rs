@@ -1,20 +1,21 @@
 //! Metadata intrinsics
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::common::sourcemap::SourceMap;
 
 use super::{
-    machine::{Machine, StgIntrinsic},
-    runtime::StgWrapper,
+    block::Merge,
+    constant::KEmptyBlock,
+    intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
     syntax::{
-        dsl::{annotated_lambda, data, demeta, let_, local, lref, value, with_meta},
-        tags, LambdaForm, Ref,
+        dsl::{annotated_lambda, demeta, let_, local, lref, value, with_meta},
+        LambdaForm,
     },
 };
 
 /// META(obj) - return metadata of object or empty block
 pub struct Meta;
 
-impl StgWrapper for Meta {
+impl StgIntrinsic for Meta {
     fn name(&self) -> &str {
         "META"
     }
@@ -24,27 +25,26 @@ impl StgWrapper for Meta {
             1,
             demeta(
                 local(0),
-                local(0), // [meta body] [...]
+                // careful: body itself may have more metadata so merge...
                 let_(
-                    vec![value(data(tags::LIST_NIL, vec![]))],
-                    data(tags::BLOCK, vec![lref(0)]),
+                    // [meta body] [...]
+                    vec![value(Meta.global(lref(1)))],
+                    // [inner-meta] [meta body] [...]
+                    Merge.global(lref(0), lref(1)),
                 ),
+                KEmptyBlock.global(),
             ),
             source_map.add_synthetic(self.name()),
         )
     }
 }
 
-impl StgIntrinsic for Meta {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("META is STG only")
-    }
-}
+impl CallGlobal1 for Meta {}
 
 /// WITHMETA(meta, obj) - add meta to obj
 pub struct WithMeta;
 
-impl StgWrapper for WithMeta {
+impl StgIntrinsic for WithMeta {
     fn name(&self) -> &str {
         "WITHMETA"
     }
@@ -58,8 +58,4 @@ impl StgWrapper for WithMeta {
     }
 }
 
-impl StgIntrinsic for WithMeta {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("WITHMETA is STG only")
-    }
-}
+impl CallGlobal2 for WithMeta {}

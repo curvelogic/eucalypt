@@ -3,19 +3,18 @@
 use crate::eval::error::ExecutionError;
 
 use super::{
-    machine::{self, StgIntrinsic},
-    runtime::{str_arg, StgWrapper},
+    intrinsic::{CallGlobal1, StgIntrinsic},
+    machine,
+    runtime::str_arg,
 };
 
 pub struct Panic;
 
-impl StgWrapper for Panic {
+impl StgIntrinsic for Panic {
     fn name(&self) -> &str {
         "PANIC"
     }
-}
 
-impl StgIntrinsic for Panic {
     fn execute(
         &self,
         machine: &mut machine::Machine,
@@ -25,3 +24,5 @@ impl StgIntrinsic for Panic {
         Err(ExecutionError::Panic(message))
     }
 }
+
+impl CallGlobal1 for Panic {}

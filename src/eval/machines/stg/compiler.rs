@@ -1,13 +1,5 @@
 //! This module contains a compiler for translating core expressions
 //! to STG syntax for evaluation in the machine.
-//!
-//! - [x] intrinsic & global infra
-//! - [x] lookup
-//! - [ ] metadata
-//! - [x] annotations
-//!
-//! ? optimise natives
-//! ? alternative natives
 use std::{convert::TryInto, rc::Rc};
 
 use crate::{
@@ -17,12 +9,15 @@ use crate::{
 };
 use codespan_reporting::diagnostic::Diagnostic;
 use moniker::{BoundVar, Embed, Var};
-use runtime::call;
+
 use thiserror::Error;
 
 use super::{
-    block::panic_key_not_found,
-    runtime,
+    block::{panic_key_not_found, LookupOr},
+    constant::KEmptyList,
+    intrinsic::{CallGlobal1, CallGlobal3, Const, StgIntrinsic},
+    render::{Render, RenderDoc},
+    runtime::NativeVariant,
     syntax::{
         dsl::{self, gref},
         LambdaForm, Ref, StgSyn,
@@ -561,11 +556,11 @@ impl Compiler {
             RenderType::Headless => self.compile_body(&mut binder, expr)?,
             RenderType::RenderDoc => {
                 let index = self.compile_binding(&mut binder, expr.clone(), expr.smid())?;
-                binder.set_body(Box::new(Holder::new(call::global::render_doc(index))))?;
+                binder.set_body(Box::new(Holder::new(RenderDoc.global(index))))?;
             }
             RenderType::RenderFragment => {
                 let index = self.compile_binding(&mut binder, expr.clone(), expr.smid())?;
-                binder.set_body(Box::new(Holder::new(call::global::render(index))))?;
+                binder.set_body(Box::new(Holder::new(Render.global(index))))?;
             }
         }
         binder.freeze();
@@ -701,7 +696,7 @@ impl Compiler {
             },
             None => binder.add(panic_key_not_found(key)),
         }?;
-        Ok(Holder::new(call::global::lookup_or_unboxed(
+        Ok(Holder::new(LookupOr(NativeVariant::Unboxed).global(
             dsl::sym(key),
             dft,
             obj,
@@ -725,15 +720,21 @@ impl Compiler {
         smid: Smid,
         members: &[RcExpr],
     ) -> Result<Holder, CompileError> {
-        let mut last_cons = dsl::nil();
+        let mut last_cons = None;
 
         for item in members.iter().rev() {
-            let last_index = binder.add(last_cons)?;
+            let last_index = match last_cons {
+                Some(data) => binder.add(data)?,
+                None => KEmptyList.gref(),
+            };
             let item_index = self.compile_binding(binder, item.clone(), smid)?;
-            last_cons = dsl::cons(item_index, last_index);
+            last_cons = Some(dsl::cons(item_index, last_index));
         }
 
-        Ok(Holder::new(last_cons))
+        match last_cons {
+            Some(data) => Ok(Holder::new(data)),
+            None => Ok(Holder::new(KEmptyList.global())),
+        }
     }
 
     pub fn compile_block(
@@ -742,7 +743,7 @@ impl Compiler {
         smid: Smid,
         block_map: &BlockMap<RcExpr>,
     ) -> Result<Holder, CompileError> {
-        let mut index = binder.add(dsl::nil())?; // TODO: to CAF
+        let mut index = KEmptyList.gref(); // binder.add(dsl::nil())?; // TODO: to CAF
         for (k, v) in block_map.iter().rev() {
             let v_index = self.compile_binding(binder, v.clone(), smid)?;
             let kv_index = binder.add(dsl::pair(&k, v_index))?;
@@ -906,14 +907,13 @@ pub mod tests {
         let core = acore::list(vec![acore::sym("x"), acore::sym("y"), acore::sym("z")]);
         let syntax = dsl::letrec_(
             vec![
-                dsl::value(dsl::nil()),
                 dsl::value(dsl::box_sym("z")),
-                dsl::value(dsl::cons(dsl::lref(1), dsl::lref(0))),
+                dsl::value(dsl::cons(dsl::lref(0), KEmptyList.gref())),
                 dsl::value(dsl::box_sym("y")),
-                dsl::value(dsl::cons(dsl::lref(3), dsl::lref(2))),
+                dsl::value(dsl::cons(dsl::lref(2), dsl::lref(1))),
                 dsl::value(dsl::box_sym("x")),
             ],
-            dsl::cons(dsl::lref(5), dsl::lref(4)),
+            dsl::cons(dsl::lref(4), dsl::lref(3)),
         );
         assert_eq!(compile(core).unwrap(), syntax);
     }
@@ -926,15 +926,14 @@ pub mod tests {
         ]);
         let syntax = dsl::letrec_(
             vec![
-                dsl::value(dsl::nil()),
                 dsl::value(dsl::box_num(30)),
-                dsl::value(dsl::pair("y", dsl::lref(1))),
-                dsl::value(dsl::cons(dsl::lref(2), dsl::lref(0))),
+                dsl::value(dsl::pair("y", dsl::lref(0))),
+                dsl::value(dsl::cons(dsl::lref(1), KEmptyList.gref())),
                 dsl::value(dsl::box_num(20)),
-                dsl::value(dsl::pair("x", dsl::lref(4))),
-                dsl::value(dsl::cons(dsl::lref(5), dsl::lref(3))),
+                dsl::value(dsl::pair("x", dsl::lref(3))),
+                dsl::value(dsl::cons(dsl::lref(4), dsl::lref(2))),
             ],
-            dsl::block(dsl::lref(6)),
+            dsl::block(dsl::lref(5)),
         );
 
         assert_eq!(compile(core).unwrap(), syntax);

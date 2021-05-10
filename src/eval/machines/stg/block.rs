@@ -11,8 +11,11 @@ use crate::{
 
 use super::{
     env::{Closure, EnvFrame},
-    machine::{Machine, StgIntrinsic},
-    runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant, StgWrapper},
+    eq::Eq,
+    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, StgIntrinsic},
+    machine::Machine,
+    panic::Panic,
+    runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant},
     syntax::{
         dsl::{app, lref},
         Native, Ref, StgSyn,
@@ -28,7 +31,7 @@ use super::syntax::{dsl, tags, LambdaForm};
 /// LOOKUPOR.
 pub struct Block;
 
-impl StgWrapper for Block {
+impl StgIntrinsic for Block {
     fn name(&self) -> &str {
         "BLOCK"
     }
@@ -44,7 +47,7 @@ impl StgWrapper for Block {
                     (
                         tags::LIST_CONS, // [h t] [items self]
                         force(
-                            call::global::kv(lref(0)),
+                            Kv.global(lref(0)),
                             // [kv] [h t] [items self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
@@ -73,11 +76,7 @@ impl StgWrapper for Block {
     }
 }
 
-impl StgIntrinsic for Block {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("BLOCK is STG only")
-    }
-}
+impl CallGlobal1 for Block {}
 
 /// KV
 ///
@@ -85,7 +84,7 @@ impl StgIntrinsic for Block {
 /// BLOCK_PAIR or wrapping a list in a BLOCK_KV_LIST
 pub struct Kv;
 
-impl StgWrapper for Kv {
+impl StgIntrinsic for Kv {
     fn name(&self) -> &str {
         "KV"
     }
@@ -118,18 +117,14 @@ impl StgWrapper for Kv {
     }
 }
 
-impl StgIntrinsic for Kv {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("KV is STG only")
-    }
-}
+impl CallGlobal1 for Kv {}
 
 /// DEKV
 ///
 /// Takes a block KV element and converts it to a [k, v] list
 pub struct Dekv;
 
-impl StgWrapper for Dekv {
+impl StgIntrinsic for Dekv {
     fn name(&self) -> &str {
         "DEKV"
     }
@@ -166,18 +161,14 @@ impl StgWrapper for Dekv {
     }
 }
 
-impl StgIntrinsic for Dekv {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("DEKV is STG only")
-    }
-}
+impl CallGlobal1 for Dekv {}
 
 /// ELEMENTS(block)
 ///
 /// Return block as list of [k, v] lists
 pub struct Elements;
 
-impl StgWrapper for Elements {
+impl StgIntrinsic for Elements {
     fn name(&self) -> &str {
         "ELEMENTS"
     }
@@ -195,7 +186,7 @@ impl StgWrapper for Elements {
                         letrec_(
                             // [dekv-h rest] [h t] [list self]
                             vec![
-                                thunk(call::global::dekv(lref(2))),
+                                thunk(Dekv.global(lref(2))),
                                 thunk(app(lref(5), vec![lref(3), lref(5)])),
                             ],
                             data(tags::LIST_CONS, vec![lref(0), lref(1)]),
@@ -225,18 +216,14 @@ impl StgWrapper for Elements {
     }
 }
 
-impl StgIntrinsic for Elements {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("ELEMENTS is STG only")
-    }
-}
+impl CallGlobal1 for Elements {}
 
 /// MATCHES_KEY(pair, unboxed_sym)
 ///
 /// Return true iff the key-value pair matches the provided key symbol
 pub struct MatchesKey;
 
-impl StgWrapper for MatchesKey {
+impl StgIntrinsic for MatchesKey {
     fn name(&self) -> &str {
         "MATCHES_KEY"
     }
@@ -250,7 +237,7 @@ impl StgWrapper for MatchesKey {
                 vec![
                     (
                         tags::BLOCK_PAIR,
-                        call::global::eq(lref(0), lref(3)), // [k v] [pair unboxsym]
+                        Eq.global(lref(0), lref(3)), // [k v] [pair unboxsym]
                     ),
                     (
                         tags::BLOCK_KV_LIST, // [l] [pair sym]
@@ -260,7 +247,7 @@ impl StgWrapper for MatchesKey {
                                 tags::LIST_CONS, // [h t] [l] [pair sym]
                                 unbox_sym(
                                     local(0), // [unbox_h] [h t] [l] [pair sym]
-                                    call::global::eq(lref(0), lref(5)),
+                                    Eq.global(lref(0), lref(5)),
                                 ),
                             )],
                             f(),
@@ -274,18 +261,14 @@ impl StgWrapper for MatchesKey {
     }
 }
 
-impl StgIntrinsic for MatchesKey {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("MATCHES_KEY is STG only")
-    }
-}
+impl CallGlobal2 for MatchesKey {}
 
 /// EXTRACT_VALUE
 ///
 /// If the argument is a block key value form, return the value.
 pub struct ExtractValue;
 
-impl StgWrapper for ExtractValue {
+impl StgIntrinsic for ExtractValue {
     fn name(&self) -> &str {
         "EXTRACT_VALUE"
     }
@@ -325,18 +308,14 @@ impl StgWrapper for ExtractValue {
     }
 }
 
-impl StgIntrinsic for ExtractValue {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("EXTRACT_VALUE is STG only")
-    }
-}
+impl CallGlobal1 for ExtractValue {}
 
 /// EXTRACT_KEY(kv)
 ///
 /// If the argument is a block key value form, return the unboxed key symbol.
 pub struct ExtractKey;
 
-impl StgWrapper for ExtractKey {
+impl StgIntrinsic for ExtractKey {
     fn name(&self) -> &str {
         "EXTRACT_KEY"
     }
@@ -370,11 +349,7 @@ impl StgWrapper for ExtractKey {
     }
 }
 
-impl StgIntrinsic for ExtractKey {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("EXTRACT_KEY is STG only")
-    }
-}
+impl CallGlobal1 for ExtractKey {}
 
 /// PACK_PAIR(kv)
 ///
@@ -382,7 +357,7 @@ impl StgIntrinsic for ExtractKey {
 /// merge (so that the kv can be exposed again in the new block)
 pub struct PackPair;
 
-impl StgWrapper for PackPair {
+impl StgIntrinsic for PackPair {
     fn name(&self) -> &str {
         "PACK_PAIR"
     }
@@ -392,7 +367,7 @@ impl StgWrapper for PackPair {
         annotated_lambda(
             1, // [kv]
             force(
-                call::global::extract_key(lref(0)), // [sym] [kv]
+                ExtractKey.global(lref(0)), // [sym] [kv]
                 data(tags::BLOCK_PAIR, vec![lref(0), lref(1)]),
             ),
             source_map.add_synthetic(self.name()),
@@ -400,18 +375,14 @@ impl StgWrapper for PackPair {
     }
 }
 
-impl StgIntrinsic for PackPair {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("PACK_PAIR is STG only")
-    }
-}
+impl CallGlobal1 for PackPair {}
 
 /// BLOCK_PAIR(kv)
 ///
 /// Force a KV into a block pair representation
 pub struct BlockPair;
 
-impl StgWrapper for BlockPair {
+impl StgIntrinsic for BlockPair {
     fn name(&self) -> &str {
         "BLOCK_PAIR"
     }
@@ -451,11 +422,7 @@ impl StgWrapper for BlockPair {
     }
 }
 
-impl StgIntrinsic for BlockPair {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("BLOCK_PAIR is STG only")
-    }
-}
+impl CallGlobal1 for BlockPair {}
 
 /// LOOKUPOR(key, default, obj) is lookup with default
 ///
@@ -463,7 +430,7 @@ impl StgIntrinsic for BlockPair {
 /// symbol. Is this right? No.
 pub struct LookupOr(pub NativeVariant);
 
-impl StgWrapper for LookupOr {
+impl StgIntrinsic for LookupOr {
     fn name(&self) -> &str {
         match self.0 {
             NativeVariant::Boxed => "LOOKUPOR",
@@ -482,12 +449,12 @@ impl StgWrapper for LookupOr {
                     (
                         tags::LIST_CONS, // [h t] [list k d find]
                         switch(
-                            call::global::matches_key(lref(0), lref(3)),
+                            MatchesKey.global(lref(0), lref(3)),
                             vec![
                                 (
                                     tags::BOOL_TRUE,
                                     // [h t] [list k d find]
-                                    call::global::extract_value(lref(0)),
+                                    ExtractValue.global(lref(0)),
                                 ),
                                 (
                                     tags::BOOL_FALSE,
@@ -535,16 +502,12 @@ impl StgWrapper for LookupOr {
     }
 }
 
-impl StgIntrinsic for LookupOr {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("LOOKUPOR is STG only")
-    }
-}
+impl CallGlobal3 for LookupOr {}
 
 /// LOOKUP(k, block)
 pub struct Lookup;
 
-impl StgWrapper for Lookup {
+impl StgIntrinsic for Lookup {
     fn name(&self) -> &str {
         "LOOKUP"
     }
@@ -560,7 +523,7 @@ impl StgWrapper for Lookup {
                 let_(
                     vec![value(call::bif::panic(str("key not found")))],
                     // [panic] [sym] [k block]
-                    call::global::lookup_or_unboxed(lref(1), lref(0), lref(3)),
+                    LookupOr(NativeVariant::Unboxed).global(lref(1), lref(0), lref(3)),
                 ),
             ),
             source_map.add_synthetic(self.name()),
@@ -568,11 +531,7 @@ impl StgWrapper for Lookup {
     }
 }
 
-impl StgIntrinsic for Lookup {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("LOOKUP is STG only")
-    }
-}
+impl CallGlobal2 for Lookup {}
 
 /// MERGE(l, r)
 ///
@@ -580,7 +539,32 @@ impl StgIntrinsic for Lookup {
 /// from r overriding those in l
 pub struct Merge;
 
-impl StgWrapper for Merge {
+/// Items are passed to the MERGE intrinsic as block_pairs of k and
+/// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
+/// and v. The same function can deconstruct either.
+fn deconstruct(pair_closure: Closure) -> Result<(String, Closure), ExecutionError> {
+    match &**pair_closure.code() {
+        StgSyn::Cons { tag, args } if *tag == tags::BLOCK_PAIR => {
+            let k = args[0].clone();
+            let kv = args[1].clone();
+
+            let sym = if let Native::Sym(s) = pair_closure.navigate_local_native(k) {
+                s
+            } else {
+                panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
+            };
+
+            let kv_closure = pair_closure.navigate_local(kv);
+
+            Ok((sym, kv_closure))
+        }
+        _ => {
+            panic!("bad block_pair passed to merge intrinsic: non-data type")
+        }
+    }
+}
+
+impl StgIntrinsic for Merge {
     fn name(&self) -> &str {
         "MERGE"
     }
@@ -597,7 +581,7 @@ impl StgWrapper for Merge {
                     (
                         tags::LIST_CONS, // [h t] [list self]
                         force(
-                            call::global::pack_pair(lref(0)),
+                            PackPair.global(lref(0)),
                             // [pp-h] [h t] [list self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
@@ -644,34 +628,7 @@ impl StgWrapper for Merge {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-/// Items are passed to the MERGE intrinsic as block_pairs of k and
-/// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
-/// and v. The same function can deconstruct either.
-fn deconstruct(pair_closure: Closure) -> Result<(String, Closure), ExecutionError> {
-    match &**pair_closure.code() {
-        StgSyn::Cons { tag, args } if *tag == tags::BLOCK_PAIR => {
-            let k = args[0].clone();
-            let kv = args[1].clone();
-
-            let sym = if let Native::Sym(s) = pair_closure.navigate_local_native(k) {
-                s
-            } else {
-                panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
-            };
-
-            let kv_closure = pair_closure.navigate_local(kv);
-
-            Ok((sym, kv_closure))
-        }
-        _ => {
-            panic!("bad block_pair passed to merge intrinsic: non-data type")
-        }
-    }
-}
-
-impl StgIntrinsic for Merge {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let l = data_list_arg(machine, args[0].clone())?;
         let r = data_list_arg(machine, args[1].clone())?;
@@ -692,13 +649,15 @@ impl StgIntrinsic for Merge {
     }
 }
 
+impl CallGlobal2 for Merge {}
+
 /// MERGEWITH(l, r, fn)
 ///
 /// Merge two blocks preserving order where possible and with values
 /// from r combined with those in l via fn(l, r)
 pub struct MergeWith;
 
-impl StgWrapper for MergeWith {
+impl StgIntrinsic for MergeWith {
     fn name(&self) -> &str {
         "MERGEWITH"
     }
@@ -715,7 +674,7 @@ impl StgWrapper for MergeWith {
                     (
                         tags::LIST_CONS, // [h t] [list self]
                         force(
-                            call::global::block_pair(lref(0)),
+                            BlockPair.global(lref(0)),
                             // [bp-h] [h t] [list self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
@@ -762,9 +721,7 @@ impl StgWrapper for MergeWith {
             source_map.add_synthetic(self.name()),
         )
     }
-}
 
-impl StgIntrinsic for MergeWith {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let l = data_list_arg(machine, args[0].clone())?;
         let r = data_list_arg(machine, args[1].clone())?;
@@ -798,13 +755,15 @@ impl StgIntrinsic for MergeWith {
     }
 }
 
+impl CallGlobal3 for MergeWith {}
+
 /// DEEPMERGE(l, r, fn)
 ///
 /// Merge two blocks, recursing into any subblocks, if either l or r
 /// are not blocks then return r.
 pub struct DeepMerge;
 
-impl StgWrapper for DeepMerge {
+impl StgIntrinsic for DeepMerge {
     fn name(&self) -> &str {
         "DEEPMERGE"
     }
@@ -825,7 +784,7 @@ impl StgWrapper for DeepMerge {
                         vec![(
                             tags::BLOCK,
                             // [rcons] [lcons] [l r]
-                            call::global::merge_with(lref(2), lref(3), gref(self.index())),
+                            MergeWith.global(lref(2), lref(3), gref(self.index())),
                         )],
                         // [r] [lcons] [l r]
                         local(0),
@@ -839,11 +798,7 @@ impl StgWrapper for DeepMerge {
     }
 }
 
-impl StgIntrinsic for DeepMerge {
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("DEEPMERGE is STG only")
-    }
-}
+impl CallGlobal3 for DeepMerge {}
 
 /// Compile a panic for a missing key
 pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
@@ -851,7 +806,7 @@ pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
 
     let_(
         vec![value(box_str(format!("Key not found: {}", key)))],
-        call::global::panic(lref(0)),
+        Panic.global(lref(0)),
     )
 }
 
@@ -865,6 +820,7 @@ pub mod tests {
     use crate::eval::{
         emit::DebugEmitter,
         machines::stg::{
+            constant::KEmptyList,
             env,
             eq::Eq,
             machine::Machine,
@@ -908,9 +864,9 @@ pub mod tests {
             vec![
                 value(box_str("value")),
                 value(data(tags::BLOCK_PAIR, vec![sym("key"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
             ],
-            call::global::matches_key(lref(2), sym("key")),
+            MatchesKey.global(lref(2), sym("key")),
         );
 
         let mut m = machine(syntax);
@@ -924,9 +880,9 @@ pub mod tests {
             vec![
                 value(box_str("value")),
                 value(data(tags::BLOCK_PAIR, vec![sym("key"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
             ],
-            call::global::matches_key(lref(2), sym("different")),
+            MatchesKey.global(lref(2), sym("different")),
         );
 
         let mut m = machine(syntax);
@@ -940,12 +896,11 @@ pub mod tests {
             vec![
                 value(box_sym("key")),
                 value(box_str("value")),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(1), lref(2)])),
-                value(data(tags::LIST_CONS, vec![lref(0), lref(3)])),
-                value(call::global::kv(lref(4))),
+                value(data(tags::LIST_CONS, vec![lref(1), KEmptyList.gref()])),
+                value(data(tags::LIST_CONS, vec![lref(0), lref(2)])),
+                value(Kv.global(lref(3))),
             ],
-            call::global::matches_key(lref(5), sym("key")),
+            MatchesKey.global(lref(4), sym("key")),
         );
 
         let mut m = machine(syntax);
@@ -959,18 +914,17 @@ pub mod tests {
             vec![
                 value(box_str("v1")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k1"), lref(0)])),
-                value(call::global::kv(lref(1))),
+                value(Kv.global(lref(1))),
                 value(box_str("v2")),
                 value(data(tags::BLOCK_PAIR, vec![sym("k2"), lref(0)])),
-                value(call::global::kv(lref(4))),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(5), lref(6)])),
-                value(data(tags::LIST_CONS, vec![lref(2), lref(7)])),
-                value(data(tags::BLOCK, vec![lref(8)])),
+                value(Kv.global(lref(4))),
+                value(data(tags::LIST_CONS, vec![lref(5), KEmptyList.gref()])),
+                value(data(tags::LIST_CONS, vec![lref(2), lref(6)])),
+                value(data(tags::BLOCK, vec![lref(7)])),
                 value(box_sym("k1")),
                 value(box_str("fail")),
             ],
-            call::global::lookup_or(lref(10), lref(11), lref(9)),
+            LookupOr(NativeVariant::Boxed).global(lref(9), lref(10), lref(8)),
         );
 
         let mut m = machine(syntax);
