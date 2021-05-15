@@ -306,6 +306,10 @@ impl EucalyptCommandOption {
 }
 
 impl EucalyptOptions {
+    pub fn evaluand(&self) -> Option<&String> {
+        self.evaluate.as_ref()
+    }
+
     pub fn explain(&self) -> bool {
         self.command.explain
     }
