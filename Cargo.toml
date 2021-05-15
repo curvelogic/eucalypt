@@ -34,3 +34,4 @@ chrono-tz = "0.5.3"
 toml = { version = "0.5.8", features = ["preserve_order"] }
 dirs = "3.0.2"
 gcmodule = "0.3.3"
+html5ever = "0.25.1"
