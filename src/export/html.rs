@@ -6,7 +6,7 @@ use super::{
 };
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use html5ever::{namespace_url, ns, LocalName, QualName};
-use itertools;
+
 use std::io::{Error, Write};
 
 /// Serialise a markup element and its descendants to HTML

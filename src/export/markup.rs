@@ -91,19 +91,15 @@ impl Expectation {
 
     /// Feed an attribute block to the current expectation
     pub fn feed_block(&mut self, block: Vec<(String, String)>) {
-        match self {
-            Expectation::TaggedElement(tag) => {
-                *self = Expectation::OpenElement(Element::new(tag.clone(), block, vec![]))
-            }
-            _ => {}
+        if let Expectation::TaggedElement(tag) = self {
+            *self = Expectation::OpenElement(Element::new(tag.clone(), block, vec![]))
         }
     }
 
-    /// Feed a childe element to the current expectation
+    /// Feed a child element to the current expectation
     pub fn feed_element(&mut self, element: Element) {
-        match self {
-            Expectation::OpenElement(e) => e.content.push(Item::Element(element)),
-            _ => {}
+        if let Expectation::OpenElement(e) = self {
+            e.content.push(Item::Element(element))
         }
     }
 }
