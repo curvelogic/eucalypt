@@ -24,7 +24,7 @@ pub mod string;
 pub mod syntax;
 pub mod time;
 
-use gcmodule::Cc;
+use bacon_rajan_cc::Cc;
 use std::rc::Rc;
 
 use crate::{

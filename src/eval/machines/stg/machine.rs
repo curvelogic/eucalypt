@@ -22,7 +22,7 @@ use crate::{
         intrinsics,
     },
 };
-use gcmodule::{collect_thread_cycles, Cc};
+use bacon_rajan_cc::{collect_cycles, Cc};
 use itertools::Itertools;
 use std::{cmp::Ordering, convert::TryInto, fmt, mem::swap, rc::Rc};
 
@@ -303,7 +303,7 @@ impl<'a> Machine<'a> {
 
         // GC cycles
         if self.collect_garbage() {
-            collect_thread_cycles();
+            collect_cycles();
         }
 
         let code = self.closure.code().clone();

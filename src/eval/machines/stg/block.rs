@@ -813,7 +813,7 @@ pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
 #[cfg(test)]
 pub mod tests {
 
-    use gcmodule::Cc;
+    use bacon_rajan_cc::Cc;
     use std::rc::Rc;
 
     use super::*;
