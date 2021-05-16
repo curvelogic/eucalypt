@@ -71,7 +71,7 @@ pub fn prepare(
 
         if let Some(target) = opt.target() {
             loader.retarget(target)?;
-        } else if loader.core().has_target("main") {
+        } else if loader.core().has_target("main") && opt.evaluand().is_none() {
             loader.retarget("main")?;
         }
 
