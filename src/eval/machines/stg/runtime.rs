@@ -6,8 +6,8 @@ use crate::common::{
 };
 use std::rc::Rc;
 
+use bacon_rajan_cc::Cc;
 use chrono::{DateTime, FixedOffset};
-use gcmodule::Cc;
 use indexmap::IndexMap;
 use pretty::{DocAllocator, DocBuilder};
 use serde_json::Number;

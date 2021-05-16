@@ -335,7 +335,7 @@ impl CallGlobal1 for RenderKv {}
 #[cfg(test)]
 pub mod tests {
 
-    use gcmodule::Cc;
+    use bacon_rajan_cc::Cc;
     use std::rc::Rc;
 
     use super::*;

@@ -7,12 +7,12 @@
 
 use std::convert::TryInto;
 
+use bacon_rajan_cc::Cc;
 use chrono::{
     DateTime, Datelike, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, Offset,
     TimeZone, Timelike, Utc,
 };
 use chrono_tz::Tz;
-use gcmodule::Cc;
 use indexmap::IndexMap;
 use regex::Regex;
 use serde_json::Number;

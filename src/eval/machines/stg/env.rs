@@ -1,7 +1,7 @@
 //! The cactus environment heap used by the STG machine.
 use super::syntax::{dsl, LambdaForm, Native, Ref, StgSyn};
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
-use gcmodule::{Cc, Trace, Tracer};
+use bacon_rajan_cc::{Cc, Trace, Tracer};
 use std::{cell::RefCell, fmt, rc::Rc};
 
 /// Closure as stored in an environment
@@ -356,7 +356,7 @@ impl EnvFrame {
 pub mod tests {
 
     use super::*;
-    use gcmodule::collect_thread_cycles;
+    use bacon_rajan_cc::collect_cycles;
 
     #[test]
     pub fn test_collect_letrec() {
@@ -377,11 +377,11 @@ pub mod tests {
                     Smid::default(),
                 );
 
-                collect_thread_cycles();
+                collect_cycles();
             }
-            collect_thread_cycles();
+            collect_cycles();
         }
-        collect_thread_cycles();
+        collect_cycles();
     }
 
     #[test]
@@ -399,9 +399,9 @@ pub mod tests {
             let _letrec =
                 EnvFrame::from_let(&[dsl::value(dsl::box_num(99))], &null_env, Smid::default());
 
-            collect_thread_cycles();
+            collect_cycles();
         }
-        collect_thread_cycles();
+        collect_cycles();
     }
 
     #[test]
@@ -419,12 +419,12 @@ pub mod tests {
                 //      •<----------------/
                 let _env = EnvFrame::from_args(&[dsl::gref(99)], &null_env, Smid::default());
 
-                collect_thread_cycles();
+                collect_cycles();
             }
-            collect_thread_cycles();
+            collect_cycles();
         }
 
-        collect_thread_cycles();
+        collect_cycles();
     }
 
     #[test]
@@ -451,12 +451,12 @@ pub mod tests {
                 let _env =
                     EnvFrame::from_combined_args(existing, fresh, &null_env, Smid::default());
 
-                collect_thread_cycles();
+                collect_cycles();
             }
-            collect_thread_cycles();
+            collect_cycles();
         }
 
-        collect_thread_cycles();
+        collect_cycles();
     }
 
     #[test]
@@ -476,13 +476,13 @@ pub mod tests {
                 //      •<---------------/
                 let _env = EnvFrame::from_closures(&[closure], &null_env, Smid::default());
 
-                collect_thread_cycles();
+                collect_cycles();
             }
 
-            collect_thread_cycles();
+            collect_cycles();
         }
 
-        collect_thread_cycles();
+        collect_cycles();
     }
 
     #[test]
@@ -536,15 +536,15 @@ pub mod tests {
 
             drop(base_env); // don't need the stack ref
             drop(env_a); // don't need the stack ref
-            collect_thread_cycles();
+            collect_cycles();
 
             drop(circular_env); // cycle root
-            collect_thread_cycles(); // <- incorrectly? frees env_a.
-                                     // mark_gray decrements env_a and does
-                                     // not reinstate (it's the root of the
-                                     // black region). collect_white frees
-                                     // circular_env, which decrements env_a
-                                     // again - to zero and frees it...
+            collect_cycles(); // <- incorrectly? frees env_a.
+                              // mark_gray decrements env_a and does
+                              // not reinstate (it's the root of the
+                              // black region). collect_white frees
+                              // circular_env, which decrements env_a
+                              // again - to zero and frees it...
 
             live_env
         };

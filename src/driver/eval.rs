@@ -182,6 +182,7 @@ impl<'a> Executor<'a> {
                     stats.timings_mut().record("stg-execute", t.elapsed());
                     stats.set_ticks(machine.metrics().ticks());
                     stats.set_allocs(machine.metrics().allocs());
+                    stats.set_max_stack(machine.metrics().max_stack());
                     ret
                 };
 
