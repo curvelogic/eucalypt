@@ -309,7 +309,7 @@ impl<'a> Machine<'a> {
 
     /// Whether to collect garbage
     fn collect_garbage(&self) -> bool {
-        number_of_roots_buffered() > 200
+        self.metrics.allocs() > 15_000 && self.metrics.ticks % 100_000 == 0
     }
 
     /// Execute one step
