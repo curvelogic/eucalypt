@@ -22,9 +22,15 @@ use crate::{
         intrinsics,
     },
 };
-use bacon_rajan_cc::{collect_cycles, Cc};
+use bacon_rajan_cc::{collect_cycles, number_of_roots_buffered, Cc};
 use itertools::Itertools;
-use std::{cmp::Ordering, convert::TryInto, fmt, mem::swap, rc::Rc};
+use std::{
+    cmp::{max, Ordering},
+    convert::TryInto,
+    fmt,
+    mem::swap,
+    rc::Rc,
+};
 
 /// Continuations used on the stack to record how to handle returns
 ///
@@ -108,6 +114,7 @@ impl fmt::Display for Continuation {
 pub struct Metrics {
     ticks: u64,
     allocs: u64,
+    max_stack: usize,
 }
 
 impl Metrics {
@@ -125,6 +132,14 @@ impl Metrics {
 
     pub fn allocs(&self) -> u64 {
         self.allocs
+    }
+
+    pub fn stack(&mut self, size: usize) {
+        self.max_stack = max(self.max_stack, size);
+    }
+
+    pub fn max_stack(&self) -> usize {
+        self.max_stack
     }
 }
 
@@ -294,12 +309,13 @@ impl<'a> Machine<'a> {
 
     /// Whether to collect garbage
     fn collect_garbage(&self) -> bool {
-        self.metrics.allocs() > 15_000 && self.metrics.ticks % 100_000 == 0
+        number_of_roots_buffered() > 200
     }
 
     /// Execute one step
     pub fn step(&mut self) -> Result<(), ExecutionError> {
         self.metrics.tick();
+        self.metrics.stack(self.stack.len());
 
         // GC cycles
         if self.collect_garbage() {

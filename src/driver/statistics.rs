@@ -1,6 +1,6 @@
 //! Capture and report statistics for optimisation
 
-use std::{fmt::Display, time::Duration};
+use std::{cmp::max, fmt::Display, time::Duration};
 
 use indexmap::IndexMap;
 
@@ -35,6 +35,7 @@ impl Display for Timings {
 pub struct Statistics {
     machine_ticks: u64,
     machine_allocs: u64,
+    machine_max_stack: usize,
     timings: Timings,
 }
 
@@ -47,6 +48,10 @@ impl Statistics {
         self.machine_allocs = allocs;
     }
 
+    pub fn set_max_stack(&mut self, max_stack: usize) {
+        self.machine_max_stack = max_stack;
+    }
+
     pub fn timings_mut(&mut self) -> &mut Timings {
         &mut self.timings
     }
@@ -54,14 +59,16 @@ impl Statistics {
     pub fn merge(&mut self, other: Statistics) {
         self.machine_ticks += other.machine_ticks;
         self.machine_allocs += other.machine_allocs;
+        self.machine_max_stack = max(self.machine_max_stack, other.machine_max_stack);
         self.timings.merge(other.timings);
     }
 }
 
 impl Display for Statistics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Machine Ticks  : {:10}", self.machine_ticks)?;
-        writeln!(f, "Machine Allocs : {:10}", self.machine_allocs)?;
+        writeln!(f, "Machine Ticks      : {:10}", self.machine_ticks)?;
+        writeln!(f, "Machine Allocs     : {:10}", self.machine_allocs)?;
+        writeln!(f, "Machine Max Stack  : {:10}", self.machine_max_stack)?;
         writeln!(f)?;
         writeln!(f, "{}", self.timings)
     }
