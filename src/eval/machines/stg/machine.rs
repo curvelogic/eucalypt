@@ -22,7 +22,7 @@ use crate::{
         intrinsics,
     },
 };
-use bacon_rajan_cc::{collect_cycles, number_of_roots_buffered, Cc};
+use bacon_rajan_cc::{collect_cycles, Cc};
 use itertools::Itertools;
 use std::{
     cmp::{max, Ordering},
