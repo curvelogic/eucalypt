@@ -24,6 +24,8 @@ use crate::{
 };
 use bacon_rajan_cc::{collect_cycles, Cc};
 use itertools::Itertools;
+use lru::LruCache;
+use regex::Regex;
 use std::{
     cmp::{max, Ordering},
     convert::TryInto,
@@ -164,6 +166,8 @@ pub struct Machine<'a> {
     trace_steps: bool,
     /// Metrics
     metrics: Metrics,
+    /// Cache compiled regexes
+    rcache: LruCache<String, Regex>,
 }
 
 impl<'a> Machine<'a> {
@@ -186,6 +190,7 @@ impl<'a> Machine<'a> {
             emitter,
             trace_steps,
             metrics: Metrics::default(),
+            rcache: LruCache::new(100),
         }
     }
 
@@ -261,7 +266,7 @@ impl<'a> Machine<'a> {
     fn get(&self, index: usize) -> Result<Closure, ExecutionError> {
         self.env()
             .get(index)
-            .map(|cell| cell.borrow().clone())
+            .map(|cell| cell.borrow().clone()) // TODO: profiling hotspot
             .ok_or(ExecutionError::BadEnvironmentIndex(index))
     }
 
@@ -276,6 +281,11 @@ impl<'a> Machine<'a> {
     /// Has the machine terminated?
     pub fn terminated(&self) -> bool {
         self.terminated
+    }
+
+    /// Return regex cache
+    pub fn rcache(&mut self) -> &mut LruCache<String, Regex> {
+        &mut self.rcache
     }
 
     /// Determine an exit code if the machine is terminated
