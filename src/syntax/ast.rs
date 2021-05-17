@@ -490,6 +490,19 @@ pub enum Declaration {
     PostfixOperatorDeclaration(Span, Option<Expression>, Name, Name, Expression),
 }
 
+impl HasSpan for Declaration {
+    fn span(&self) -> Span {
+        use self::Declaration::*;
+        match self {
+            PropertyDeclaration(s, _, _, _) => *s,
+            FunctionDeclaration(s, _, _, _, _) => *s,
+            InfixOperatorDeclaration(s, _, _, _, _, _) => *s,
+            PrefixOperatorDeclaration(s, _, _, _, _) => *s,
+            PostfixOperatorDeclaration(s, _, _, _, _) => *s,
+        }
+    }
+}
+
 impl Declaration {
     /// Get the name declared by the declaration
     pub fn name(&self) -> &Name {
