@@ -35,3 +35,4 @@ toml = { version = "0.5.8", features = ["preserve_order"] }
 dirs = "3.0.2"
 html5ever = "0.25.1"
 bacon_rajan_cc = "0.3.2"
+lru = "0.6.5"

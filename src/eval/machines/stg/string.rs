@@ -25,6 +25,24 @@ use itertools::Itertools;
 use regex::Regex;
 use serde_json::Number;
 
+/// Get (or store and get) regex from machine rcache
+///
+/// (NB. not threadsafe but we're single threaded anyway for now)
+fn cached_regex<'a, T: AsRef<str>>(
+    machine: &'a mut Machine,
+    text: T,
+) -> Result<&'a Regex, ExecutionError> {
+    let rcache = machine.rcache();
+    let key = text.as_ref().to_string();
+
+    if !rcache.contains(&key) {
+        let re = Regex::new(text.as_ref()).map_err(|_| ExecutionError::BadRegex(key.clone()))?;
+        rcache.put(key.clone(), re);
+    }
+
+    Ok(rcache.get(&key).unwrap())
+}
+
 /// SYM(str) to convert strings to symbols
 pub struct Sym;
 
@@ -133,22 +151,19 @@ impl StgIntrinsic for Match {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let string = str_arg(machine, &args[0])?;
         let regex = str_arg(machine, &args[1])?;
-        if let Ok(re) = Regex::new(&regex) {
-            let v: Vec<_> = if let Some(captures) = re.captures(&string) {
-                captures
-                    .iter()
-                    .map(|m| match m {
-                        Some(mch) => mch.as_str().to_string(),
-                        None => "".to_string(),
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
-            machine_return_str_list(machine, v)
+        let re = cached_regex(machine, regex)?;
+        let v: Vec<_> = if let Some(captures) = re.captures(&string) {
+            captures
+                .iter()
+                .map(|m| match m {
+                    Some(mch) => mch.as_str().to_string(),
+                    None => "".to_string(),
+                })
+                .collect()
         } else {
-            Err(ExecutionError::BadRegex(regex.to_string()))
-        }
+            vec![]
+        };
+        machine_return_str_list(machine, v)
     }
 }
 
@@ -165,15 +180,13 @@ impl StgIntrinsic for Matches {
     fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
         let string = str_arg(machine, &args[0])?;
         let regex = str_arg(machine, &args[1])?;
-        if let Ok(re) = Regex::new(&regex) {
-            let matches = re
-                .find_iter(&string)
-                .map(|m| m.as_str().to_string())
-                .collect();
-            machine_return_str_list(machine, matches)
-        } else {
-            Err(ExecutionError::BadRegex(regex.to_string()))
-        }
+        let re = cached_regex(machine, regex)?;
+
+        let matches = re
+            .find_iter(&string)
+            .map(|m| m.as_str().to_string())
+            .collect();
+        machine_return_str_list(machine, matches)
     }
 }
 
@@ -199,11 +212,10 @@ impl StgIntrinsic for Split {
 
         if regex.is_empty() {
             machine_return_str_list(machine, vec![string])
-        } else if let Ok(re) = Regex::new(&regex) {
+        } else {
+            let re = cached_regex(machine, regex)?;
             let split = re.split(&string).map(|it| it.to_string()).collect();
             machine_return_str_list(machine, split)
-        } else {
-            Err(ExecutionError::BadRegex(regex.to_string()))
         }
     }
 }
