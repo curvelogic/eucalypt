@@ -53,7 +53,6 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "import"
                             | "embedding"
                             | "parse-embed"
-                            | "doc"
                     )
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
