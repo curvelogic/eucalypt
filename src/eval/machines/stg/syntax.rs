@@ -175,6 +175,7 @@ impl StgSyn {
         matches!(
             &*self,
             StgSyn::Cons { .. }
+                | StgSyn::Meta { .. }
                 | StgSyn::Atom {
                     evaluand: Reference::V(_)
                 }

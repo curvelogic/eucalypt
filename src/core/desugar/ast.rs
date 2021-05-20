@@ -140,7 +140,14 @@ fn declaration_to_binding(
     }
 
     if let Some(m) = core_meta {
-        expr = acore::meta(expr, m);
+        let stripped_meta = strip_desugar_phase_metadata(&m);
+        if !matches!(&*stripped_meta.inner, Expr::ErrEliminated) {
+            expr = RcExpr::from(Expr::Meta(
+                desugarer.new_smid(decl.span()),
+                expr,
+                stripped_meta,
+            ));
+        }
     }
 
     let declared_var = desugarer
