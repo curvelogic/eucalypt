@@ -84,7 +84,15 @@ jobs:
     needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'pull_request' }}
+    continue-on-error: true
     steps:
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+            ${{ runner.os }}-cargo
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
