@@ -80,6 +80,41 @@ jobs:
           command: clippy
           args: -- -D warnings
 
+  benchmark:
+    needs: [check, test, fmt, clippy]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    continue-on-error: true
+    steps:
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+            ${{ runner.os }}-cargo
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - run: |
+           cargo bench -- --save-baseline base
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: |
+           cargo bench -- --baseline base
+      - name: Save HTML report
+        uses: actions/upload-artifact@v2
+        with:
+          name: benchmark-report
+          path: |
+            target/criterion
+
   release-candidate-linux:
     needs: [check, test, fmt, clippy]
     name: Release Linux
