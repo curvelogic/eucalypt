@@ -123,7 +123,9 @@ pub fn prepare(
     {
         let t = Instant::now();
 
-        // loader.inline()?;
+        for _ in 0..5 {
+            loader.inline()?;
+        }
 
         stats.record("inline", t.elapsed());
     }

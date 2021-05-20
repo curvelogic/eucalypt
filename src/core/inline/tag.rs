@@ -25,7 +25,9 @@ fn combinator(lam_scope: &Scope<Vec<Binder<String>>, RcExpr>) -> bool {
     match &*body.inner {
         Expr::Var(_, _) => true,
         Expr::App(_, f, xs) => {
-            let transposition = xs.iter().all(|e| matches!(&*e.inner, Expr::Var(_, _)));
+            let transposition = xs
+                .iter()
+                .all(|e| matches!(&*e.inner, Expr::Var(_, _) | Expr::Literal(_, _)));
             let simple = matches!(&*f.inner, Expr::Intrinsic(_, _) | Expr::Var(_, _));
             transposition && simple
         }
