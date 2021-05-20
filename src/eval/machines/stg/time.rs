@@ -5,9 +5,8 @@
 //! with the existing prelude.eu for now we'll implement them as
 //! no-ops.
 
-use std::convert::TryInto;
+use std::{convert::TryInto, rc::Rc};
 
-use bacon_rajan_cc::Cc;
 use chrono::{
     DateTime, Datelike, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, Offset,
     TimeZone, Timelike, Utc,
@@ -201,7 +200,7 @@ impl StgIntrinsic for ZdtFields {
         let tz = dt.offset().to_string().replace(":", "");
 
         let mut fields = IndexMap::new();
-        let env = Cc::new(EnvFrame::empty());
+        let env = Rc::new(EnvFrame::empty());
         fields.insert("y".to_string(), Closure::new(box_num(y), env.clone()));
         fields.insert("m".to_string(), Closure::new(box_num(m), env.clone()));
         fields.insert("d".to_string(), Closure::new(box_num(d), env.clone()));

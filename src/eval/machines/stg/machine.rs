@@ -22,7 +22,6 @@ use crate::{
         intrinsics,
     },
 };
-use bacon_rajan_cc::{collect_cycles, Cc};
 use itertools::Itertools;
 use lru::LruCache;
 use regex::Regex;
@@ -55,11 +54,11 @@ pub enum Continuation {
         /// Fallback for unmatched data or native
         fallback: Option<Rc<StgSyn>>,
         /// Environment of case statement
-        environment: Cc<EnvFrame>,
+        environment: Rc<EnvFrame>,
     },
     /// Update thunk in environment at index i
     Update {
-        environment: Cc<EnvFrame>,
+        environment: Rc<EnvFrame>,
         index: usize,
     },
     /// Once callable is evaluated, apply to args
@@ -71,7 +70,7 @@ pub enum Continuation {
         /// or_else receives the body as a bound arg
         or_else: Rc<StgSyn>,
         /// Environment of handlers
-        environment: Cc<EnvFrame>,
+        environment: Rc<EnvFrame>,
     },
 }
 
@@ -151,7 +150,7 @@ pub struct Machine<'a> {
     /// Current closure
     closure: Closure,
     /// Globals (primarily STG wrappers for intrinsics)
-    globals: Cc<EnvFrame>,
+    globals: Rc<EnvFrame>,
     /// Intrinsics (actions with access into machine)
     intrinsics: Vec<&'a dyn StgIntrinsic>,
     /// Stack of continuations
@@ -174,8 +173,8 @@ impl<'a> Machine<'a> {
     /// Construct a machine to evaluate `code`
     pub fn new(
         code: Rc<StgSyn>,
-        environment: Cc<EnvFrame>,
-        globals: Cc<EnvFrame>,
+        environment: Rc<EnvFrame>,
+        globals: Rc<EnvFrame>,
         intrinsics: Vec<&'a dyn StgIntrinsic>,
         emitter: Box<dyn Emitter + 'a>,
         trace_steps: bool,
@@ -195,7 +194,7 @@ impl<'a> Machine<'a> {
     }
 
     /// The current environment
-    pub fn env(&self) -> &Cc<EnvFrame> {
+    pub fn env(&self) -> &Rc<EnvFrame> {
         self.closure.env()
     }
 
@@ -230,7 +229,7 @@ impl<'a> Machine<'a> {
             Ref::G(index) => self.global(*index),
             Ref::V(_) => Ok(Closure::new(
                 dsl::atom(r.clone()),
-                Cc::new(EnvFrame::default()),
+                Rc::new(EnvFrame::default()),
             )),
         }
     }
@@ -317,20 +316,10 @@ impl<'a> Machine<'a> {
         }
     }
 
-    /// Whether to collect garbage
-    fn collect_garbage(&self) -> bool {
-        self.metrics.allocs() > 15_000 && self.metrics.ticks % 100_000 == 0
-    }
-
     /// Execute one step
     pub fn step(&mut self) -> Result<(), ExecutionError> {
         self.metrics.tick();
         self.metrics.stack(self.stack.len());
-
-        // GC cycles
-        if self.collect_garbage() {
-            collect_cycles();
-        }
 
         let code = self.closure.code().clone();
 
@@ -763,8 +752,8 @@ pub mod tests {
         let globals = EnvFrame::empty();
         let mut machine = Machine::new(
             syn,
-            Cc::new(env),
-            Cc::new(globals),
+            Rc::new(env),
+            Rc::new(globals),
             EMPTY_INTRINSICS.iter().map(|b| b.as_ref()).collect(),
             Box::new(DebugEmitter::default()),
             true,
@@ -778,8 +767,8 @@ pub mod tests {
         let globals = EnvFrame::empty();
         Machine::new(
             syn,
-            Cc::new(env),
-            Cc::new(globals),
+            Rc::new(env),
+            Rc::new(globals),
             EMPTY_INTRINSICS.iter().map(|b| b.as_ref()).collect(),
             Box::new(DebugEmitter::default()),
             true,
