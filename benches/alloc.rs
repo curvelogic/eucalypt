@@ -41,6 +41,12 @@ fn access(env: &Rc<EnvFrame>, depth: usize) -> Option<&RefCell<Closure>> {
     env.get(depth)
 }
 
+/// Update deep closure with a new value
+fn update(env: &Rc<EnvFrame>, depth: usize) {
+    let value = Closure::new(dsl::box_num(1), Rc::new(EnvFrame::empty()));
+    env.update(depth, value).unwrap();
+}
+
 /// Create an identity lambda and saturate it
 fn create_and_saturate_lambda() {
     let mut lambda = Closure::close(&dsl::lambda(1, dsl::local(0)), &Rc::new(EnvFrame::empty()));
@@ -66,12 +72,15 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("deep_env_access", |b| {
         b.iter(|| access(&env_stack, black_box(73)))
     });
+    c.bench_function("deep_env_update", |b| {
+        b.iter(|| update(&env_stack, black_box(73)))
+    });
 
     c.bench_function("create_and_saturate_lambda", |b| {
-        b.iter(|| create_and_saturate_lambda())
+        b.iter(create_and_saturate_lambda)
     });
     c.bench_function("create_partially_apply_and_saturate_lambda", |b| {
-        b.iter(|| create_partially_apply_and_saturate_lambda())
+        b.iter(create_partially_apply_and_saturate_lambda)
     });
 }
 
