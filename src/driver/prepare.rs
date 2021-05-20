@@ -119,11 +119,20 @@ pub fn prepare(
         return Ok(Command::Exit);
     }
 
+    // Prune unused bindings to reduce inline overhead
+    {
+        let t = Instant::now();
+
+        loader.eliminate()?;
+
+        stats.record("eliminate-1", t.elapsed());
+    }
+
     // Run inline pass
     {
         let t = Instant::now();
 
-        for _ in 0..5 {
+        for _ in 0..2 {
             loader.inline()?;
         }
 
@@ -142,7 +151,7 @@ pub fn prepare(
 
         loader.eliminate()?;
 
-        stats.record("eliminate", t.elapsed());
+        stats.record("eliminate-2", t.elapsed());
     }
 
     if opt.dump_pruned() {
