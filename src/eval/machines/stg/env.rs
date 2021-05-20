@@ -1,7 +1,6 @@
 //! The cactus environment heap used by the STG machine.
 use super::syntax::{dsl, LambdaForm, Native, Ref, StgSyn};
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
-use bacon_rajan_cc::{Cc, Trace, Tracer};
 use std::{cell::RefCell, fmt, rc::Rc};
 
 /// Closure as stored in an environment
@@ -16,9 +15,9 @@ pub struct Closure {
     /// Code
     code: Rc<StgSyn>,
     /// Environment
-    env: Cc<EnvFrame>,
+    env: Rc<EnvFrame>,
     /// Pending arguments (for a partial application)
-    pap_args: Vec<Cc<RefCell<Closure>>>,
+    pap_args: Vec<Rc<RefCell<Closure>>>,
     /// Total arity (subtract pap_args for remaining)
     arity: u8,
     /// Whether to update
@@ -27,16 +26,9 @@ pub struct Closure {
     annotation: Smid,
 }
 
-impl Trace for Closure {
-    fn trace(&self, tracer: &mut Tracer) {
-        self.env.trace(tracer);
-        self.pap_args.trace(tracer);
-    }
-}
-
 impl Closure {
     /// A new non-callable closure of `code` over environment `env`
-    pub fn new(code: Rc<StgSyn>, env: Cc<EnvFrame>) -> Self {
+    pub fn new(code: Rc<StgSyn>, env: Rc<EnvFrame>) -> Self {
         Closure {
             code,
             env,
@@ -48,7 +40,7 @@ impl Closure {
     }
 
     /// Construct a closure from a lambda form
-    pub fn close(lambda_form: &LambdaForm, env: &Cc<EnvFrame>) -> Self {
+    pub fn close(lambda_form: &LambdaForm, env: &Rc<EnvFrame>) -> Self {
         Closure {
             code: lambda_form.body().clone(),
             env: env.clone(),
@@ -60,7 +52,7 @@ impl Closure {
     }
 
     /// Reference to the closure's environment
-    pub fn env(&self) -> &Cc<EnvFrame> {
+    pub fn env(&self) -> &Rc<EnvFrame> {
         &self.env
     }
 
@@ -83,7 +75,7 @@ impl Closure {
     pub fn partially_apply(&mut self, mut args: Vec<Closure>) {
         self.pap_args.reserve_exact(self.arity as usize);
         self.pap_args
-            .extend(args.drain(..).map(|c| Cc::new(RefCell::new(c))));
+            .extend(args.drain(..).map(|c| Rc::new(RefCell::new(c))));
     }
 
     /// Saturate a lambda by creating a new bound argument environment
@@ -175,18 +167,11 @@ impl fmt::Display for Closure {
 #[derive(Default)]
 pub struct EnvFrame {
     /// Indexed bindings
-    bindings: Vec<Cc<RefCell<Closure>>>,
+    bindings: Vec<Rc<RefCell<Closure>>>,
     /// Source code annotation
     annotation: Smid,
     /// Reference to next environment
-    next: Option<Cc<EnvFrame>>,
-}
-
-impl Trace for EnvFrame {
-    fn trace(&self, tracer: &mut Tracer) {
-        self.next.trace(tracer);
-        self.bindings.trace(tracer);
-    }
+    next: Option<Rc<EnvFrame>>,
 }
 
 impl fmt::Display for EnvFrame {
@@ -266,12 +251,12 @@ impl EnvFrame {
     }
 
     /// From data constructor or lambda args
-    pub fn from_args(args: &[Ref], next: &Cc<EnvFrame>, annotation: Smid) -> Cc<Self> {
-        Cc::new(EnvFrame {
+    pub fn from_args(args: &[Ref], next: &Rc<EnvFrame>, annotation: Smid) -> Rc<Self> {
+        Rc::new(EnvFrame {
             bindings: args
                 .iter()
                 .map(|r| {
-                    Cc::new(RefCell::new(Closure::new(
+                    Rc::new(RefCell::new(Closure::new(
                         dsl::atom(r.clone()),
                         next.clone(),
                     )))
@@ -283,11 +268,11 @@ impl EnvFrame {
     }
 
     /// From closures (to be clonded, expensive?)
-    pub fn from_closures(closures: &[Closure], next: &Cc<EnvFrame>, annotation: Smid) -> Cc<Self> {
-        Cc::new(EnvFrame {
+    pub fn from_closures(closures: &[Closure], next: &Rc<EnvFrame>, annotation: Smid) -> Rc<Self> {
+        Rc::new(EnvFrame {
             bindings: closures
                 .iter()
-                .map(|cl| Cc::new(RefCell::new(cl.clone())))
+                .map(|cl| Rc::new(RefCell::new(cl.clone())))
                 .collect(),
             annotation,
             next: Some(next.clone()),
@@ -296,15 +281,15 @@ impl EnvFrame {
 
     /// From mixture of partially applied args and fresh args
     pub fn from_combined_args(
-        mut existing: Vec<Cc<RefCell<Closure>>>,
+        mut existing: Vec<Rc<RefCell<Closure>>>,
         mut fresh: Vec<Closure>,
-        next: &Cc<EnvFrame>,
+        next: &Rc<EnvFrame>,
         annotation: Smid,
-    ) -> Cc<Self> {
+    ) -> Rc<Self> {
         existing.reserve_exact(existing.len() + fresh.len());
-        existing.extend(fresh.drain(..).map(|c| Cc::new(RefCell::new(c))));
+        existing.extend(fresh.drain(..).map(|c| Rc::new(RefCell::new(c))));
 
-        Cc::new(EnvFrame {
+        Rc::new(EnvFrame {
             bindings: existing,
             annotation,
             next: Some(next.clone()),
@@ -312,11 +297,11 @@ impl EnvFrame {
     }
 
     /// "Allocate" let bindings in a new env
-    pub fn from_let(bindings: &[LambdaForm], next: &Cc<EnvFrame>, annotation: Smid) -> Cc<Self> {
-        Cc::new(EnvFrame {
+    pub fn from_let(bindings: &[LambdaForm], next: &Rc<EnvFrame>, annotation: Smid) -> Rc<Self> {
+        Rc::new(EnvFrame {
             bindings: bindings
                 .iter()
-                .map(|pc| Cc::new(RefCell::new(Closure::close(pc, next))))
+                .map(|pc| Rc::new(RefCell::new(Closure::close(pc, next))))
                 .collect(),
             annotation,
             next: Some(next.clone()),
@@ -326,11 +311,11 @@ impl EnvFrame {
     /// "Allocate" let bindings in a new env
     ///
     /// NB this is where we're currently creating Rc cycles
-    pub fn from_letrec(bindings: &[LambdaForm], next: &Cc<EnvFrame>, annotation: Smid) -> Cc<Self> {
-        let frame = Cc::new(EnvFrame {
+    pub fn from_letrec(bindings: &[LambdaForm], next: &Rc<EnvFrame>, annotation: Smid) -> Rc<Self> {
+        let frame = Rc::new(EnvFrame {
             bindings: vec![RefCell::new(Closure::default()); bindings.len()]
                 .into_iter()
-                .map(Cc::new)
+                .map(Rc::new)
                 .collect(),
             annotation,
             next: Some(next.clone()),
@@ -349,208 +334,5 @@ impl EnvFrame {
         }
 
         frame
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-
-    use super::*;
-    use bacon_rajan_cc::collect_cycles;
-
-    #[test]
-    pub fn test_collect_letrec() {
-        {
-            let null_env = Cc::new(EnvFrame::default());
-
-            {
-                // |----------|
-                // |          |->[ 99 ]--\
-                // |----------|          |
-                //      |   ^            |
-                //      |   \------------/
-                //      v
-                //      •
-                let _letrec = EnvFrame::from_letrec(
-                    &[dsl::value(dsl::box_num(99))],
-                    &null_env,
-                    Smid::default(),
-                );
-
-                collect_cycles();
-            }
-            collect_cycles();
-        }
-        collect_cycles();
-    }
-
-    #[test]
-    pub fn test_collect_let() {
-        let null_env = Cc::new(EnvFrame::default());
-
-        {
-            // |----------|
-            // |          |->[ 99 ]--\
-            // |----------|          |
-            //      |                |
-            //      |	             |
-            //      v                |
-            //      •<---------------/
-            let _letrec =
-                EnvFrame::from_let(&[dsl::value(dsl::box_num(99))], &null_env, Smid::default());
-
-            collect_cycles();
-        }
-        collect_cycles();
-    }
-
-    #[test]
-    pub fn test_collect_from_args() {
-        {
-            let null_env = Cc::new(EnvFrame::default());
-
-            {
-                // |----------|
-                // |          |->[ *99 ]--\
-                // |----------|           |
-                //      |                 |
-                //      |	              |
-                //      v                 |
-                //      •<----------------/
-                let _env = EnvFrame::from_args(&[dsl::gref(99)], &null_env, Smid::default());
-
-                collect_cycles();
-            }
-            collect_cycles();
-        }
-
-        collect_cycles();
-    }
-
-    #[test]
-    pub fn test_collect_from_combined_args() {
-        {
-            let null_env = Cc::new(EnvFrame::default());
-
-            let existing = vec![Closure::new(dsl::box_num(99), null_env.clone())]
-                .into_iter()
-                .map(|c| Cc::new(RefCell::new(c)))
-                .collect();
-
-            let fresh = vec![Closure::new(dsl::box_num(100), null_env.clone())];
-
-            {
-                // |----------|
-                // |          |->[ 99 ]---\
-                // |----------|->[100 ]---|
-                //      |                 |
-                //      |	          |
-                //      v                 |
-                //      •<----------------/
-                //
-                let _env =
-                    EnvFrame::from_combined_args(existing, fresh, &null_env, Smid::default());
-
-                collect_cycles();
-            }
-            collect_cycles();
-        }
-
-        collect_cycles();
-    }
-
-    #[test]
-    pub fn test_collect_from_closures() {
-        let null_env = Cc::new(EnvFrame::default());
-
-        {
-            let closure = Closure::new(dsl::box_num(99), null_env.clone());
-
-            {
-                // |----------|
-                // |          |->[ 99 ]--\
-                // |----------|          |
-                //      |                |
-                //      |	         |
-                //      v                |
-                //      •<---------------/
-                let _env = EnvFrame::from_closures(&[closure], &null_env, Smid::default());
-
-                collect_cycles();
-            }
-
-            collect_cycles();
-        }
-
-        collect_cycles();
-    }
-
-    #[test]
-    pub fn test_counterexample() {
-        struct Env {
-            pub closures: Vec<Cc<RefCell<Clos>>>,
-            pub next: Option<Cc<Env>>,
-        }
-        impl Trace for Env {
-            fn trace(&self, tracer: &mut Tracer) {
-                self.closures.trace(tracer);
-                self.next.trace(tracer);
-            }
-        }
-        struct Clos {
-            pub env: Cc<Env>,
-        }
-        impl Trace for Clos {
-            fn trace(&self, tracer: &mut Tracer) {
-                self.env.trace(tracer);
-            }
-        }
-
-        let live_env = {
-            let base_env = Cc::new(Env {
-                closures: vec![],
-                next: None,
-            });
-
-            let env_a = Cc::new(Env {
-                closures: vec![Cc::new(RefCell::new(Clos {
-                    env: base_env.clone(),
-                }))],
-                next: Some(base_env.clone()),
-            });
-
-            let circular_env = Cc::new(Env {
-                closures: vec![Cc::new(RefCell::new(Clos {
-                    env: base_env.clone(),
-                }))],
-                next: Some(env_a.clone()),
-            });
-            circular_env.closures[0].replace(Clos {
-                env: circular_env.clone(),
-            });
-
-            let live_env = Cc::new(Env {
-                closures: vec![],
-                next: Some(env_a.clone()),
-            });
-
-            drop(base_env); // don't need the stack ref
-            drop(env_a); // don't need the stack ref
-            collect_cycles();
-
-            drop(circular_env); // cycle root
-            collect_cycles(); // <- incorrectly? frees env_a.
-                              // mark_gray decrements env_a and does
-                              // not reinstate (it's the root of the
-                              // black region). collect_white frees
-                              // circular_env, which decrements env_a
-                              // again - to zero and frees it...
-
-            live_env
-        };
-
-        if let Some(a) = &live_env.next {
-            assert_eq!(a.closures.len(), 1);
-        }
     }
 }

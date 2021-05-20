@@ -274,7 +274,6 @@ impl StgIntrinsic for Lte {
 
 #[cfg(test)]
 pub mod tests {
-    use bacon_rajan_cc::Cc;
     use std::rc::Rc;
 
     use super::*;
@@ -307,7 +306,7 @@ pub mod tests {
         let env = env::EnvFrame::default();
         Machine::new(
             syntax,
-            Cc::new(env),
+            Rc::new(env),
             RUNTIME.globals(&mut SourceMap::default()),
             RUNTIME.intrinsics(),
             Box::new(DebugEmitter::default()),

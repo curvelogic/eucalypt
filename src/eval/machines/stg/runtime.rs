@@ -6,7 +6,6 @@ use crate::common::{
 };
 use std::rc::Rc;
 
-use bacon_rajan_cc::Cc;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use pretty::{DocAllocator, DocBuilder};
@@ -34,7 +33,7 @@ pub trait Runtime: Sync {
     ///
     /// NB. these contain RefCells and can be evaluated and mutated in
     /// place
-    fn globals(&self, source_map: &mut SourceMap) -> Cc<EnvFrame>;
+    fn globals(&self, source_map: &mut SourceMap) -> Rc<EnvFrame>;
 
     /// Provide the (immutable) intrinsic implementations
     fn intrinsics(&self) -> Vec<&dyn StgIntrinsic>;
@@ -99,12 +98,12 @@ impl ToPretty for StandardRuntime {
 
 impl Runtime for StandardRuntime {
     /// Provide all global STG wrappers for the machine
-    fn globals(&self, source_map: &mut SourceMap) -> Cc<EnvFrame> {
+    fn globals(&self, source_map: &mut SourceMap) -> Rc<EnvFrame> {
         let lambda_forms: Vec<LambdaForm> =
             self.impls.iter().map(|g| g.wrapper(source_map)).collect();
         EnvFrame::from_let(
             lambda_forms.as_slice(),
-            &Cc::new(EnvFrame::default()),
+            &Rc::new(EnvFrame::default()),
             Smid::default(),
         )
     }
@@ -256,7 +255,7 @@ pub fn str_list_arg(machine: &mut Machine, arg: Ref) -> Result<StrListIterator, 
 
 /// What to return when the return should be ignored
 pub fn machine_return_unit(machine: &mut Machine) -> Result<(), ExecutionError> {
-    machine.set_closure(Closure::new(dsl::unit(), Cc::new(EnvFrame::default())))
+    machine.set_closure(Closure::new(dsl::unit(), Rc::new(EnvFrame::default())))
 }
 
 /// Return number from intrinsic
@@ -265,7 +264,7 @@ pub fn machine_return_num(machine: &mut Machine, n: Number) -> Result<(), Execut
         Rc::new(StgSyn::Atom {
             evaluand: Reference::V(Native::Num(n)),
         }),
-        Cc::new(EnvFrame::default()),
+        Rc::new(EnvFrame::default()),
     ))
 }
 
@@ -275,7 +274,7 @@ pub fn machine_return_str(machine: &mut Machine, s: String) -> Result<(), Execut
         Rc::new(StgSyn::Atom {
             evaluand: Reference::V(Native::Str(s)),
         }),
-        Cc::new(EnvFrame::default()),
+        Rc::new(EnvFrame::default()),
     ))
 }
 
@@ -285,7 +284,7 @@ pub fn machine_return_sym(machine: &mut Machine, s: String) -> Result<(), Execut
         Rc::new(StgSyn::Atom {
             evaluand: Reference::V(Native::Sym(s)),
         }),
-        Cc::new(EnvFrame::default()),
+        Rc::new(EnvFrame::default()),
     ))
 }
 
@@ -298,7 +297,7 @@ pub fn machine_return_zdt(
         Rc::new(StgSyn::Atom {
             evaluand: Reference::V(Native::Zdt(zdt)),
         }),
-        Cc::new(EnvFrame::default()),
+        Rc::new(EnvFrame::default()),
     ))
 }
 
@@ -306,7 +305,7 @@ pub fn machine_return_zdt(
 pub fn machine_return_bool(machine: &mut Machine, b: bool) -> Result<(), ExecutionError> {
     machine.set_closure(Closure::new(
         if b { dsl::t() } else { dsl::f() },
-        Cc::new(EnvFrame::default()),
+        Rc::new(EnvFrame::default()),
     ))
 }
 
@@ -329,7 +328,7 @@ pub fn machine_return_str_list(
     }
     let list_index = bindings.len() - 1;
     let syn = letrec_(bindings, local(list_index));
-    machine.set_closure(Closure::new(syn, Cc::new(EnvFrame::empty())))
+    machine.set_closure(Closure::new(syn, Rc::new(EnvFrame::empty())))
 }
 
 /// Return a list of closures from intrinsic

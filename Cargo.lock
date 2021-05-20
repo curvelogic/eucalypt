@@ -63,12 +63,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
-name = "bacon_rajan_cc"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d5d07ba5abbf5c92b6ff96028fcb366877e7c4e194a1226a64555bd6122112c"
-
-[[package]]
 name = "base64"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -289,7 +283,6 @@ name = "eucalypt"
 version = "0.2.0"
 dependencies = [
  "atty",
- "bacon_rajan_cc",
  "bitflags",
  "chrono",
  "chrono-tz",

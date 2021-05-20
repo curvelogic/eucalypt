@@ -24,7 +24,6 @@ pub mod string;
 pub mod syntax;
 pub mod time;
 
-use bacon_rajan_cc::Cc;
 use std::rc::Rc;
 
 use crate::{
@@ -173,7 +172,7 @@ pub fn standard_machine<'a>(
     let env = env::EnvFrame::default();
     Ok(machine::Machine::new(
         syntax,
-        Cc::new(env),
+        Rc::new(env),
         STANDARD_RUNTIME.globals(source_map),
         STANDARD_RUNTIME.intrinsics(),
         emitter,
