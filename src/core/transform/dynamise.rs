@@ -91,7 +91,7 @@ impl Dynamiser {
         if self.wrap_lambda {
             Ok(RcExpr::from(Expr::Lam(
                 smid,
-                true,
+                false, // might be arbitrarily complex - not inlinable
                 Scope::new(vec![Binder(self.param.clone())], succ::succ(&expr)?),
             )))
         } else {
@@ -130,7 +130,7 @@ pub mod tests {
         let implicit = free("implicit");
 
         let original = var(x.clone());
-        let expected = inline(
+        let expected = lam(
             vec![implicit.clone()],
             lookup(var(implicit.clone()), "x", Some(var(x.clone()))),
         );
@@ -154,7 +154,7 @@ pub mod tests {
 
         if let Expr::Let(_, scope, _) = &*original.inner {
             let sublet = scope.unsafe_body.clone();
-            let expected = inline(
+            let expected = lam(
                 vec![implicit.clone()],
                 let_(
                     vec![(z.clone(), num(24))],
