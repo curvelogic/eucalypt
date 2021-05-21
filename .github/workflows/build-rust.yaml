@@ -83,7 +83,8 @@ jobs:
   benchmark:
     needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
+    # if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ false }}
     continue-on-error: true
     steps:
       - uses: actions/cache@v1
