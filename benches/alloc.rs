@@ -67,7 +67,7 @@ fn create_partially_apply_and_saturate_lambda() {
 fn criterion_benchmark(c: &mut Criterion) {
     let bindings = fake_bindings(10);
     let env_stack = fake_env_stack(20, 4);
-    c.bench_function("alloc_let", |b| b.iter(|| alloc_letrec(&bindings)));
+    c.bench_function("alloc_let", |b| b.iter(|| alloc_let(&bindings)));
     c.bench_function("alloc_letrec", |b| b.iter(|| alloc_letrec(&bindings)));
     c.bench_function("deep_env_access", |b| {
         b.iter(|| access(&env_stack, black_box(73)))
