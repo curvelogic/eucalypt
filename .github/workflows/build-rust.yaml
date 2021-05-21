@@ -102,12 +102,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
       - run: |
-           cargo bench -- --save-baseline base
+           cargo bench --bench alloc -- --save-baseline base
       - uses: actions/checkout@v2
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: |
-           cargo bench -- --baseline base
+           cargo bench --bench alloc -- --baseline base
       - name: Save HTML report
         uses: actions/upload-artifact@v2
         with:
