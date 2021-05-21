@@ -39,8 +39,6 @@ pub struct TestPlan {
     file: PathBuf,
     /// Test title
     title: String,
-    /// Header documentation
-    doc: String,
     /// Test targets to run and formats for each
     targets: Vec<(Target, Vec<String>)>,
     /// Expectations
@@ -56,11 +54,6 @@ impl TestPlan {
     /// A test title
     pub fn title(&self) -> &String {
         &self.title
-    }
-
-    /// Test documentation
-    pub fn doc(&self) -> &String {
-        &self.doc
     }
 
     /// Test targets to run
@@ -132,7 +125,6 @@ impl TestPlan {
         Ok(TestPlan {
             file: filename.to_path_buf(),
             title: header.title.unwrap_or_else(|| "".to_string()),
-            doc: header.doc.unwrap_or_else(|| "".to_string()),
             targets,
             expectations,
         })
@@ -161,19 +153,12 @@ pub mod tests {
     pub fn test_simple() {
         let plan = source_to_test_plan("RESULT: :PASS");
         assert_eq!(plan.title(), "");
-        assert_eq!(plan.doc(), "");
     }
 
     #[test]
     pub fn test_title() {
         let plan = source_to_test_plan(" { title: \"A test\" } RESULT: :PASS");
         assert_eq!(plan.title(), "A test");
-    }
-
-    #[test]
-    pub fn test_doc() {
-        let plan = source_to_test_plan(" { doc: \"This tests something.\" } RESULT: :PASS");
-        assert_eq!(plan.doc(), "This tests something.");
     }
 
     // #[test] TODO: work out how this should work

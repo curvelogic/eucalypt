@@ -53,6 +53,7 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "import"
                             | "embedding"
                             | "parse-embed"
+                            | "doc"
                     )
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -186,8 +187,6 @@ fn named_precedence(name: String) -> Option<i32> {
 pub struct TestHeaderMetadata {
     /// Title for the test
     pub title: Option<String>,
-    /// Header level documentation
-    pub doc: Option<String>,
     /// Formats to output for each test target
     pub formats: Vec<String>,
     /// Shell process to run prior to test expection
@@ -203,7 +202,6 @@ impl ReadMetadata<TestHeaderMetadata> for RcExpr {
         match &*self.inner {
             Expr::Block(_, imap) => Ok(TestHeaderMetadata {
                 title: imap.get("title").and_then(|e| e.extract()),
-                doc: imap.get("doc").and_then(|e| e.extract()),
                 formats: imap
                     .get("test-formats")
                     .and_then(|e| e.extract())

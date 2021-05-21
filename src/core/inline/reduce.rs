@@ -10,7 +10,7 @@ pub fn inline_pass(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 
 /// True iff `expr` is an inlinable lambda
 fn inlinable(expr: &RcExpr) -> bool {
-    matches!(&*expr.inner, Expr::Lam(_, true, _))
+    matches!(&*expr.inner, Expr::Lam(_, true, _) | Expr::Intrinsic(_, _))
 }
 
 /// Distribute inline lambdas to call site
@@ -28,18 +28,29 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                 .map(|(Binder(k), Embed(v))| (k, v))
                 .collect();
 
-            let bindings = open_binders
-                .iter()
-                .map(|(b, Embed(v))| (b.clone(), Embed(v.substs(&inlines))))
-                .collect();
+            if inlines.is_empty() {
+                Ok(expr.clone())
+                // expr.walk_safe(&mut |e| distribute(&e))
+            } else {
+                let bindings = open_binders
+                    .iter()
+                    .map(|(b, Embed(v))| {
+                        let substituted = v.substs(&inlines);
+                        match distribute(&substituted) {
+                            Ok(e) => Ok((b.clone(), Embed(e))),
+                            Err(e) => Err(e),
+                        }
+                    })
+                    .collect::<Result<Vec<(_, _)>, CoreError>>()?;
 
-            let body = body.substs(&inlines);
+                let body = distribute(&body.substs(&inlines))?;
 
-            Ok(RcExpr::from(Expr::Let(
-                *s,
-                Scope::new(Rec::new(bindings), body),
-                LetType::OtherLet,
-            )))
+                Ok(RcExpr::from(Expr::Let(
+                    *s,
+                    Scope::new(Rec::new(bindings), body),
+                    LetType::OtherLet,
+                )))
+            }
         }
         _ => expr.walk_safe(&mut |e| distribute(&e)),
     }
@@ -50,7 +61,9 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
         Expr::App(_, f, xs) => {
             match &*f.inner {
-                Expr::Lam(_, _, scope) => {
+                // as substs doesn't succ, we can only handle
+                // inlinable lambdas here
+                Expr::Lam(_, true, scope) => {
                     let (binders, body) = scope.clone().unbind();
 
                     // body may not be fully open so handle any bound

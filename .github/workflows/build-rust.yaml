@@ -83,7 +83,8 @@ jobs:
   benchmark:
     needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
+    # if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ false }}
     continue-on-error: true
     steps:
       - uses: actions/cache@v1
@@ -102,12 +103,13 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
       - run: |
-           cargo bench -- --save-baseline base
+           cargo bench --bench alloc -- --save-baseline base
       - uses: actions/checkout@v2
         with:
+          clean: false
           ref: ${{ github.event.pull_request.head.sha }}
       - run: |
-           cargo bench -- --baseline base
+           cargo bench --bench alloc -- --baseline base
       - name: Save HTML report
         uses: actions/upload-artifact@v2
         with:
