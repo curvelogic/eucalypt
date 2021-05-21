@@ -141,6 +141,12 @@ pub struct Compiler {
 /// Each Proto form should implement at least one of `take_lambda_form`
 /// and `take_syntax`
 pub trait ProtoSyntax {
+    /// This syntax is used only once and therefore probably will not
+    /// benefit from a thunk. Default false.
+    fn single_use(&self) -> bool {
+        false
+    }
+
     /// Convert into lambda form (destroying the proto form)
     ///
     /// Default wraps the `take_syntax` result in value or thunk
@@ -150,7 +156,7 @@ pub trait ProtoSyntax {
         context: &Context,
     ) -> Result<LambdaForm, CompileError> {
         let syntax = self.take_syntax(compiler, context)?;
-        if syntax.is_whnf() || compiler.suppress_updates {
+        if self.single_use() || syntax.is_whnf() || compiler.suppress_updates {
             Ok(dsl::value(syntax))
         } else {
             Ok(dsl::thunk(syntax))
@@ -340,7 +346,7 @@ impl ProtoSyntax for ProtoLet {
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
         for (_, Embed(ref value)) in scope.unsafe_pattern.unsafe_pattern.iter() {
             let annotation = value.smid();
-            let index = compiler.compile_binding(&mut binder, value.clone(), annotation)?;
+            let index = compiler.compile_binding(&mut binder, value.clone(), annotation, false)?;
             binder.add_var_index(index);
         }
 
@@ -555,11 +561,11 @@ impl Compiler {
         match self.render_type {
             RenderType::Headless => self.compile_body(&mut binder, expr)?,
             RenderType::RenderDoc => {
-                let index = self.compile_binding(&mut binder, expr.clone(), expr.smid())?;
+                let index = self.compile_binding(&mut binder, expr.clone(), expr.smid(), false)?;
                 binder.set_body(Box::new(Holder::new(RenderDoc.global(index))))?;
             }
             RenderType::RenderFragment => {
-                let index = self.compile_binding(&mut binder, expr.clone(), expr.smid())?;
+                let index = self.compile_binding(&mut binder, expr.clone(), expr.smid(), false)?;
                 binder.set_body(Box::new(Holder::new(Render.global(index))))?;
             }
         }
@@ -598,8 +604,8 @@ impl Compiler {
                 binder.set_body(Box::new(lookup))
             }
             Expr::Meta(s, body, meta) => {
-                let m = self.compile_binding(binder, meta.clone(), *s)?;
-                let b = self.compile_binding(binder, body.clone(), *s)?;
+                let m = self.compile_binding(binder, meta.clone(), *s, false)?;
+                let b = self.compile_binding(binder, body.clone(), *s, false)?;
                 binder.set_body(Box::new(Holder::new(dsl::with_meta(m, b))))
             }
             Expr::Operator(_, _, _, body) => self.compile_body(binder, body.clone()),
@@ -611,13 +617,12 @@ impl Compiler {
 
     /// Compile an expression as a binding, returning index in the binder
     /// that the final expression is located at
-    ///
-    /// TODO: single-use flag to avoid unnecessary updates?
     pub fn compile_binding(
         &self,
         binder: &mut LetBinder,
         expr: RcExpr,
         annotation: Smid,
+        single_use: bool,
     ) -> Result<Ref, CompileError> {
         match &*expr.inner {
             Expr::Var(s, v) => {
@@ -662,13 +667,13 @@ impl Compiler {
                 todo!()
             }
             Expr::Meta(s, body, meta) => {
-                let m = self.compile_binding(binder, meta.clone(), *s)?;
-                let b = self.compile_binding(binder, body.clone(), *s)?;
+                let m = self.compile_binding(binder, meta.clone(), *s, false)?;
+                let b = self.compile_binding(binder, body.clone(), *s, false)?;
                 binder.add(dsl::with_meta(m, b))
             }
             Expr::ArgTuple(s, _) => Err(CompileError::BadArgTupleExpression(*s)),
             Expr::Soup(s, _) => Err(CompileError::BadSoupExpression(*s)),
-            Expr::Operator(s, _, _, body) => self.compile_binding(binder, body.clone(), *s),
+            Expr::Operator(s, _, _, body) => self.compile_binding(binder, body.clone(), *s, false),
             _ => {
                 panic!("bad core syntax during compile")
             }
@@ -684,12 +689,12 @@ impl Compiler {
         dft: &Option<RcExpr>,
         annotation: Smid,
     ) -> Result<Holder, CompileError> {
-        let obj = self.compile_binding(binder, obj.clone(), obj.smid())?;
+        let obj = self.compile_binding(binder, obj.clone(), obj.smid(), false)?;
         let dft = match dft {
             // Tolerate free vars in lookup default for dynamic gen
             // lookup
             // HACK: get this right in desugar phase instead
-            Some(expr) => match self.compile_binding(binder, expr.clone(), annotation) {
+            Some(expr) => match self.compile_binding(binder, expr.clone(), annotation, false) {
                 Ok(expr) => Ok(expr),
                 Err(CompileError::FreeVar(_)) => binder.add(panic_key_not_found(key)),
                 Err(e) => Err(e),
@@ -727,7 +732,7 @@ impl Compiler {
                 Some(data) => binder.add(data)?,
                 None => KEmptyList.gref(),
             };
-            let item_index = self.compile_binding(binder, item.clone(), smid)?;
+            let item_index = self.compile_binding(binder, item.clone(), smid, false)?;
             last_cons = Some(dsl::cons(item_index, last_index));
         }
 
@@ -745,7 +750,7 @@ impl Compiler {
     ) -> Result<Holder, CompileError> {
         let mut index = KEmptyList.gref(); // binder.add(dsl::nil())?; // TODO: to CAF
         for (k, v) in block_map.iter().rev() {
-            let v_index = self.compile_binding(binder, v.clone(), smid)?;
+            let v_index = self.compile_binding(binder, v.clone(), smid, false)?;
             let kv_index = binder.add(dsl::pair(&k, v_index))?;
             index = binder.add(dsl::cons(kv_index, index))?;
         }
@@ -770,6 +775,7 @@ impl Compiler {
                 binder,
                 f.clone(),
                 smid,
+                false,
             )?))
         };
 
@@ -778,8 +784,12 @@ impl Compiler {
         for arg in args {
             if let Expr::Var(s, v) = &*arg.inner {
                 arg_indexes.push(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
+            } else if let Expr::Intrinsic(s, bif) = &*arg.inner {
+                let index = intrinsics::index(bif)
+                    .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
+                arg_indexes.push(Box::new(ProtoRef::new(gref(index))))
             } else {
-                let index = self.compile_binding(binder, arg.clone(), smid)?;
+                let index = self.compile_binding(binder, arg.clone(), smid, false)?;
                 arg_indexes.push(Box::new(ProtoRef::new(index)));
             }
         }
