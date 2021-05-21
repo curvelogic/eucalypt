@@ -417,21 +417,37 @@ impl ProtoSyntax for ProtoRef {
 
 /// Holder just wraps up the StgSyn that will be delivered later when
 /// the context is available
-pub struct Holder(Option<Rc<StgSyn>>);
+pub struct Holder {
+    syntax: Option<Rc<StgSyn>>,
+    single_use: bool,
+}
 
 impl Holder {
     pub fn new(syntax: Rc<StgSyn>) -> Self {
-        Holder(Some(syntax))
+        Holder {
+            syntax: Some(syntax),
+            single_use: false,
+        }
+    }
+
+    pub fn new_single_use(syntax: Rc<StgSyn>) -> Self {
+        Holder {
+            syntax: Some(syntax),
+            single_use: true,
+        }
     }
 }
 
 impl ProtoSyntax for Holder {
+    fn single_use(&self) -> bool {
+        self.single_use
+    }
     fn take_syntax(
         &mut self,
         _compiler: &Compiler,
         _context: &Context,
     ) -> Result<Rc<StgSyn>, CompileError> {
-        Ok(self.0.take().unwrap())
+        Ok(self.syntax.take().unwrap())
     }
 }
 
@@ -592,7 +608,7 @@ impl Compiler {
             Expr::Literal(_, n) => binder.set_body(Box::new(Holder::new(compile_boxed_literal(n)))),
             Expr::Lam(s, _, _) => binder.set_body(Box::new(self.compile_lambda(&expr, *s)?)),
             Expr::List(s, xs) => {
-                let list = self.compile_list(binder, *s, xs)?;
+                let list = self.compile_list_body(binder, *s, xs)?;
                 binder.set_body(Box::new(list))
             }
             Expr::Block(s, map) => {
@@ -651,10 +667,7 @@ impl Compiler {
                 binder.add_deferred(Box::new(proto_app))
             }
             Expr::Literal(_, n) => binder.add(compile_boxed_literal(n)),
-            Expr::List(s, xs) => {
-                let list = self.compile_list(binder, *s, xs)?;
-                binder.add_deferred(Box::new(list))
-            }
+            Expr::List(s, xs) => self.compile_list_binding(binder, *s, xs),
             Expr::Block(s, map) => {
                 let block = self.compile_block(binder, *s, map)?;
                 binder.add_deferred(Box::new(block))
@@ -724,7 +737,7 @@ impl Compiler {
 
     /// Compile a list into a chain of cons cells in the environment
     /// together with the compiled contents
-    pub fn compile_list(
+    pub fn compile_list_body(
         &self,
         binder: &mut LetBinder,
         smid: Smid,
@@ -744,6 +757,31 @@ impl Compiler {
         match last_cons {
             Some(data) => Ok(Holder::new(data)),
             None => Ok(Holder::new(KEmptyList.global())),
+        }
+    }
+
+    /// Compile a list into a chain of cons cells in the environment
+    /// together with the compiled contents
+    pub fn compile_list_binding(
+        &self,
+        binder: &mut LetBinder,
+        smid: Smid,
+        members: &[RcExpr],
+    ) -> Result<Ref, CompileError> {
+        let mut last_cons = None;
+
+        for item in members.iter().rev() {
+            let last_index = match last_cons {
+                Some(data) => binder.add(data)?,
+                None => KEmptyList.gref(),
+            };
+            let item_index = self.compile_binding(binder, item.clone(), smid, false)?;
+            last_cons = Some(dsl::cons(item_index, last_index));
+        }
+
+        match last_cons {
+            Some(data) => binder.add(data),
+            None => Ok(KEmptyList.gref()),
         }
     }
 
