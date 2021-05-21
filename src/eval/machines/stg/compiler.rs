@@ -439,9 +439,14 @@ impl ProtoSyntax for Holder {
 pub struct ProtoApp {
     f: Box<dyn ProtoReference>,
     args: Vec<Box<dyn ProtoReference>>,
+    single_use: bool,
 }
 
 impl ProtoSyntax for ProtoApp {
+    fn single_use(&self) -> bool {
+        self.single_use
+    }
+
     fn take_syntax(
         &mut self,
         _compiler: &Compiler,
@@ -581,7 +586,7 @@ impl Compiler {
                 binder.set_body(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
             }
             Expr::App(s, f, args) => {
-                let proto_app = self.compile_application(binder, *s, f, args)?;
+                let proto_app = self.compile_application(binder, *s, f, args, false)?;
                 binder.set_body(Box::new(proto_app))
             }
             Expr::Literal(_, n) => binder.set_body(Box::new(Holder::new(compile_boxed_literal(n)))),
@@ -642,7 +647,7 @@ impl Compiler {
                 binder.add_deferred(Box::new(self.compile_lambda(&expr, annotation)?))
             }
             Expr::App(s, f, args) => {
-                let proto_app = self.compile_application(binder, *s, f, args)?;
+                let proto_app = self.compile_application(binder, *s, f, args, single_use)?;
                 binder.add_deferred(Box::new(proto_app))
             }
             Expr::Literal(_, n) => binder.add(compile_boxed_literal(n)),
@@ -767,36 +772,54 @@ impl Compiler {
         smid: Smid,
         f: &RcExpr,
         args: &[RcExpr],
+        single_use: bool,
     ) -> Result<ProtoApp, CompileError> {
-        let f_index: Box<dyn ProtoReference> = if let Expr::Var(s, v) = &*f.inner {
-            Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone()))
-        } else {
-            Box::new(ProtoRef::new(self.compile_binding(
+        let mut strict_args = &vec![];
+
+        let f_index: Box<dyn ProtoReference> = match &*f.inner {
+            Expr::Var(s, v) => Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())),
+            Expr::Intrinsic(_, bif) => {
+                let global_index = intrinsics::index(bif)
+                    .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
+                let info = intrinsics::intrinsic(global_index);
+                strict_args = info.strict_args();
+                Box::new(ProtoRef::new(gref(global_index)))
+            }
+            _ => Box::new(ProtoRef::new(self.compile_binding(
                 binder,
                 f.clone(),
                 smid,
                 false,
-            )?))
+            )?)),
         };
 
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
 
-        for arg in args {
-            if let Expr::Var(s, v) = &*arg.inner {
-                arg_indexes.push(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
-            } else if let Expr::Intrinsic(s, bif) = &*arg.inner {
-                let index = intrinsics::index(bif)
-                    .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                arg_indexes.push(Box::new(ProtoRef::new(gref(index))))
-            } else {
-                let index = self.compile_binding(binder, arg.clone(), smid, false)?;
-                arg_indexes.push(Box::new(ProtoRef::new(index)));
+        for (i, arg) in args.iter().enumerate() {
+            match &*arg.inner {
+                Expr::Var(s, v) => {
+                    arg_indexes.push(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
+                }
+                Expr::Intrinsic(_, bif) => {
+                    let global_index = intrinsics::index(bif)
+                        .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
+                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
+                }
+                _ => {
+                    // if the argument position is strict, assume
+                    // it'll be evaluated once only and so won't
+                    // benefit from a thunk
+                    let index =
+                        self.compile_binding(binder, arg.clone(), smid, strict_args.contains(&i))?;
+                    arg_indexes.push(Box::new(ProtoRef::new(index)));
+                }
             }
         }
 
         Ok(ProtoApp {
             f: f_index,
             args: arg_indexes,
+            single_use,
         })
     }
 }
