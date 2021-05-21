@@ -105,6 +105,7 @@ jobs:
            cargo bench --bench alloc -- --save-baseline base
       - uses: actions/checkout@v2
         with:
+          clean: false
           ref: ${{ github.event.pull_request.head.sha }}
       - run: |
            cargo bench --bench alloc -- --baseline base
