@@ -350,7 +350,8 @@ impl ProtoSyntax for ProtoLet {
             binder.add_var_index(index);
         }
 
-        compiler.compile_body(&mut binder, scope.unsafe_body.clone())?;
+        let body = compiler.compile_body(&mut binder, scope.unsafe_body.clone())?;
+        binder.set_body(body)?;
         binder.freeze();
 
         binder.into_stg(compiler)
@@ -542,7 +543,8 @@ impl ProtoSyntax for ProtoLambda {
 
         let mut binder = LetBinder::synthetic(&lambda_context);
 
-        compiler.compile_body(&mut binder, scope.unsafe_body.clone())?;
+        let body = compiler.compile_body(&mut binder, scope.unsafe_body.clone())?;
+        binder.set_body(body)?;
         binder.freeze();
         let mut body = binder.into_stg(compiler)?;
 
@@ -580,7 +582,10 @@ impl Compiler {
     pub fn compile(&self, expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
         let mut binder = LetBinder::default();
         match self.render_type {
-            RenderType::Headless => self.compile_body(&mut binder, expr)?,
+            RenderType::Headless => {
+                let body = self.compile_body(&mut binder, expr)?;
+                binder.set_body(body)?;
+            }
             RenderType::RenderDoc => {
                 let index = self.compile_binding(&mut binder, expr.clone(), expr.smid(), false)?;
                 binder.set_body(Box::new(Holder::new(RenderDoc.global(index))))?;
@@ -595,39 +600,41 @@ impl Compiler {
     }
 
     /// Compile a let body or standalone expression
-    pub fn compile_body(&self, binder: &mut LetBinder, expr: RcExpr) -> Result<(), CompileError> {
+    pub fn compile_body(
+        &self,
+        binder: &mut LetBinder,
+        expr: RcExpr,
+    ) -> Result<Box<dyn ProtoSyntax>, CompileError> {
         match &*expr.inner {
-            Expr::Let(_, _, _) => binder.set_body(Box::new(ProtoLet::new(expr))),
-            Expr::Var(s, v) => {
-                binder.set_body(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
-            }
+            Expr::Let(_, _, _) => Ok(Box::new(ProtoLet::new(expr))),
+            Expr::Var(s, v) => Ok(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone()))),
             Expr::App(s, f, args) => {
                 let proto_app = self.compile_application(binder, *s, f, args, false)?;
-                binder.set_body(Box::new(proto_app))
+                Ok(Box::new(proto_app))
             }
-            Expr::Literal(_, n) => binder.set_body(Box::new(Holder::new(compile_boxed_literal(n)))),
-            Expr::Lam(s, _, _) => binder.set_body(Box::new(self.compile_lambda(&expr, *s)?)),
+            Expr::Literal(_, n) => Ok(Box::new(Holder::new(compile_boxed_literal(n)))),
+            Expr::Lam(s, _, _) => Ok(Box::new(self.compile_lambda(&expr, *s)?)),
             Expr::List(s, xs) => {
                 let list = self.compile_list_body(binder, *s, xs)?;
-                binder.set_body(Box::new(list))
+                Ok(Box::new(list))
             }
             Expr::Block(s, map) => {
                 let block = self.compile_block(binder, *s, map)?;
-                binder.set_body(Box::new(block))
+                Ok(Box::new(block))
             }
             Expr::Intrinsic(_, name) => {
                 let index = intrinsics::index(&name)
                     .ok_or_else(|| CompileError::UnknownIntrinsic(name.clone()))?;
-                binder.set_body(Box::new(Holder::new(dsl::atom(gref(index)))))
+                Ok(Box::new(Holder::new(dsl::atom(gref(index)))))
             }
             Expr::Lookup(s, obj, k, d) => {
                 let lookup = self.compile_lookup(binder, obj, k, d, *s)?;
-                binder.set_body(Box::new(lookup))
+                Ok(Box::new(lookup))
             }
             Expr::Meta(s, body, meta) => {
                 let m = self.compile_binding(binder, meta.clone(), *s, false)?;
                 let b = self.compile_binding(binder, body.clone(), *s, false)?;
-                binder.set_body(Box::new(Holder::new(dsl::with_meta(m, b))))
+                Ok(Box::new(Holder::new(dsl::with_meta(m, b))))
             }
             Expr::Operator(_, _, _, body) => self.compile_body(binder, body.clone()),
             x => {
