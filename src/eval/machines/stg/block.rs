@@ -4,10 +4,7 @@ use std::{mem::swap, rc::Rc};
 
 use indexmap::IndexMap;
 
-use crate::{
-    common::sourcemap::{Smid, SourceMap},
-    eval::error::ExecutionError,
-};
+use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     env::{Closure, EnvFrame},
@@ -36,7 +33,7 @@ impl StgIntrinsic for Block {
         "BLOCK"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let kv_items = lambda(
@@ -71,7 +68,7 @@ impl StgIntrinsic for Block {
                 ],
                 data(tags::BLOCK, vec![lref(1)]),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -89,7 +86,7 @@ impl StgIntrinsic for Kv {
         "KV"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -112,7 +109,7 @@ impl StgIntrinsic for Kv {
                 ],
                 call::bif::panic(str("invalid key-value element in block")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -129,7 +126,7 @@ impl StgIntrinsic for Dekv {
         "DEKV"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -156,7 +153,7 @@ impl StgIntrinsic for Dekv {
                 ],
                 call::bif::panic(str("invalid key-value element in block")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -173,7 +170,7 @@ impl StgIntrinsic for Elements {
         "ELEMENTS"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let map_list = lambda(
@@ -211,7 +208,7 @@ impl StgIntrinsic for Elements {
                     call::bif::panic(str("elements called on non-block")),
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -228,7 +225,7 @@ impl StgIntrinsic for MatchesKey {
         "MATCHES_KEY"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             2, // [pair unboxsym]
@@ -256,7 +253,7 @@ impl StgIntrinsic for MatchesKey {
                 ],
                 call::bif::panic(str("bad key-value pair in MATCHES_KEY")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -273,7 +270,7 @@ impl StgIntrinsic for ExtractValue {
         "EXTRACT_VALUE"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [pair]
@@ -303,7 +300,7 @@ impl StgIntrinsic for ExtractValue {
                 ],
                 call::bif::panic(str("bad key-value pair in EXTRACT_VALUE")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -320,7 +317,7 @@ impl StgIntrinsic for ExtractKey {
         "EXTRACT_KEY"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [pair]
@@ -344,7 +341,7 @@ impl StgIntrinsic for ExtractKey {
                 ],
                 call::bif::panic(str("bad key-value pair in EXTRACT_KEY")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -362,7 +359,7 @@ impl StgIntrinsic for PackPair {
         "PACK_PAIR"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [kv]
@@ -370,7 +367,7 @@ impl StgIntrinsic for PackPair {
                 ExtractKey.global(lref(0)), // [sym] [kv]
                 data(tags::BLOCK_PAIR, vec![lref(0), lref(1)]),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -387,7 +384,7 @@ impl StgIntrinsic for BlockPair {
         "BLOCK_PAIR"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [kv]
@@ -417,7 +414,7 @@ impl StgIntrinsic for BlockPair {
                     ),
                 ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -438,10 +435,10 @@ impl StgIntrinsic for LookupOr {
         }
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        let find = annotated_lambda(
+        let find = lambda(
             4, // [list k d find]
             case(
                 local(0),
@@ -470,7 +467,6 @@ impl StgIntrinsic for LookupOr {
                 ],
                 call::bif::panic(str("bad block content")),
             ),
-            source_map.add_synthetic("LookupOr.find"),
         );
 
         annotated_lambda(
@@ -497,7 +493,7 @@ impl StgIntrinsic for LookupOr {
                     ),
                 )],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -512,7 +508,7 @@ impl StgIntrinsic for Lookup {
         "LOOKUP"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -526,7 +522,7 @@ impl StgIntrinsic for Lookup {
                     LookupOr(NativeVariant::Unboxed).global(lref(1), lref(0), lref(3)),
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -570,7 +566,7 @@ impl StgIntrinsic for Merge {
     }
 
     /// Expose the two lists to the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let pack_items = lambda(
@@ -625,7 +621,7 @@ impl StgIntrinsic for Merge {
                     ),
                 )],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -663,7 +659,7 @@ impl StgIntrinsic for MergeWith {
     }
 
     /// Expose the two lists to the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let pair_items = lambda(
@@ -718,7 +714,7 @@ impl StgIntrinsic for MergeWith {
                     ),
                 )],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -769,7 +765,7 @@ impl StgIntrinsic for DeepMerge {
     }
 
     ///
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -793,7 +789,7 @@ impl StgIntrinsic for DeepMerge {
                 // [l] [l r]
                 local(2),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -816,18 +812,7 @@ pub mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use crate::eval::{
-        emit::DebugEmitter,
-        machines::stg::{
-            constant::KEmptyList,
-            env,
-            eq::Eq,
-            machine::Machine,
-            panic::Panic,
-            runtime,
-            syntax::{dsl::*, StgSyn},
-        },
-    };
+    use crate::{common::sourcemap::SourceMap, eval::{emit::DebugEmitter, machines::stg::{constant::KEmptyList, env, eq::Eq, machine::Machine, panic::Panic, runtime::{self, Runtime}, syntax::{dsl::*, StgSyn}}}};
 
     lazy_static! {
         static ref RUNTIME: Box<dyn runtime::Runtime> = {
@@ -840,6 +825,7 @@ pub mod tests {
             rt.add(Box::new(LookupOr(NativeVariant::Unboxed)));
             rt.add(Box::new(Panic));
             rt.add(Box::new(Eq));
+            rt.prepare(&mut SourceMap::default());
             Box::new(rt)
         };
     }
@@ -850,7 +836,7 @@ pub mod tests {
         Machine::new(
             syntax,
             Rc::new(env),
-            RUNTIME.globals(&mut SourceMap::default()),
+            RUNTIME.globals(),
             RUNTIME.intrinsics(),
             Box::new(DebugEmitter::default()),
             true,

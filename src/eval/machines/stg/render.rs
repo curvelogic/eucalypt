@@ -1,6 +1,6 @@
 //! The top-level render intrinsics
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     block::LookupOr,
@@ -24,7 +24,7 @@ impl StgIntrinsic for Render {
     }
 
     /// Evaluate inspect and recur
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         let suppressed = lambda(
             1,
             demeta(
@@ -104,7 +104,7 @@ impl StgIntrinsic for Render {
                     ],
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -119,14 +119,14 @@ impl StgIntrinsic for RenderDoc {
         "RENDER_DOC"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1, // [renderee]
             force(
                 call::bif::emit_doc_start(), // [()] [renderee]
                 force(Render.global(lref(1)), call::bif::emit_doc_end()),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -141,7 +141,7 @@ impl StgIntrinsic for RenderItems {
         "RENDER_ITEMS"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1, // [cons]
             case(
@@ -161,7 +161,7 @@ impl StgIntrinsic for RenderItems {
                 ],
                 call::bif::panic(str("improper list")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -176,7 +176,7 @@ impl StgIntrinsic for RenderBlockItems {
         "RENDER_BLOCK_ITEMS"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1, // [cons]
             case(
@@ -196,7 +196,7 @@ impl StgIntrinsic for RenderBlockItems {
                 ],
                 Panic.global(str("improper list")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -235,7 +235,7 @@ impl StgIntrinsic for Suppresses {
         "SUPPRESSES"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             let_(
@@ -258,7 +258,7 @@ impl StgIntrinsic for Suppresses {
                     f(),
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -279,7 +279,7 @@ impl StgIntrinsic for RenderKv {
         "RENDER_KV"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         let value_renderable = lambda(
             1,
             letrec_(
@@ -325,7 +325,7 @@ impl StgIntrinsic for RenderKv {
                 ],
                 unit(),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -339,16 +339,20 @@ pub mod tests {
 
     use super::*;
 
-    use crate::eval::{
-        emit::{CapturingEmitter, Event, RenderMetadata},
-        machines::stg::{
-            block::{self, Kv},
-            boolean, emit, env, eq,
-            machine::Machine,
-            panic, runtime,
-            syntax::StgSyn,
+    use crate::{
+        common::sourcemap::SourceMap,
+        eval::{
+            emit::{CapturingEmitter, Event, RenderMetadata},
+            machines::stg::{
+                block::{self, Kv},
+                boolean, emit, env, eq,
+                machine::Machine,
+                panic,
+                runtime::{self, Runtime},
+                syntax::StgSyn,
+            },
+            primitive::Primitive,
         },
-        primitive::Primitive,
     };
 
     lazy_static! {
@@ -376,6 +380,7 @@ pub mod tests {
             rt.add(Box::new(panic::Panic));
             rt.add(Box::new(boolean::And));
             rt.add(Box::new(boolean::Not));
+            rt.prepare(&mut SourceMap::default());
             Box::new(rt)
         };
     }
@@ -386,7 +391,7 @@ pub mod tests {
         Machine::new(
             syntax,
             Rc::new(env),
-            RUNTIME.globals(&mut SourceMap::default()),
+            RUNTIME.globals(),
             RUNTIME.intrinsics(),
             Box::new(CapturingEmitter::default()),
             true,

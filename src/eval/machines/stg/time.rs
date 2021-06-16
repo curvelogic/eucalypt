@@ -16,7 +16,7 @@ use indexmap::IndexMap;
 use regex::Regex;
 use serde_json::Number;
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     env::{Closure, EnvFrame},
@@ -155,8 +155,8 @@ impl StgIntrinsic for ZdtWrap {
     }
 
     /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
-        annotated_lambda(1, local(0), source_map.add_synthetic(self.name()))
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        annotated_lambda(1, local(0), annotation)
     }
 }
 
@@ -171,8 +171,8 @@ impl StgIntrinsic for ZdtUnwrap {
     }
 
     /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
-        annotated_lambda(1, local(0), source_map.add_synthetic(self.name()))
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        annotated_lambda(1, local(0), annotation)
     }
 }
 
@@ -249,11 +249,11 @@ impl StgIntrinsic for ZdtIFields {
     }
 
     /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             force(ZdtFromEpoch.global(lref(0)), ZdtFields.global(lref(0))),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use serde_json::Number;
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     block::{ExtractKey, ExtractValue},
@@ -80,7 +80,7 @@ impl StgIntrinsic for Eq {
 
     /// Switch on data type and recur or fallback to intrinsic for
     /// natives.
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2,
             case(
@@ -165,7 +165,7 @@ impl StgIntrinsic for Eq {
                     call::bif::eq(lref(0), lref(1)), // [y-eval] [x-eval] [x y]
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -190,10 +190,19 @@ pub mod tests {
     use serde_json::Number;
 
     use super::*;
-    use crate::eval::{
-        emit::DebugEmitter,
-        machines::stg::{
-            boolean::And, env, eq::Eq, machine::Machine, panic::Panic, runtime, syntax::StgSyn,
+    use crate::{
+        common::sourcemap::SourceMap,
+        eval::{
+            emit::DebugEmitter,
+            machines::stg::{
+                boolean::And,
+                env,
+                eq::Eq,
+                machine::Machine,
+                panic::Panic,
+                runtime::{self, Runtime},
+                syntax::StgSyn,
+            },
         },
     };
 
@@ -203,6 +212,7 @@ pub mod tests {
             rt.add(Box::new(Panic));
             rt.add(Box::new(Eq));
             rt.add(Box::new(And));
+            rt.prepare(&mut SourceMap::default());
             Box::new(rt)
         };
     }
@@ -213,7 +223,7 @@ pub mod tests {
         Machine::new(
             syntax,
             Rc::new(env),
-            RUNTIME.globals(&mut SourceMap::default()),
+            RUNTIME.globals(),
             RUNTIME.intrinsics(),
             Box::new(DebugEmitter::default()),
             true,

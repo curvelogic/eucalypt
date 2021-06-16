@@ -29,11 +29,12 @@ use crate::{
 /// available (mainly for testing). A runtime packages together the
 /// intrinsics and their STG-syntax wrappers.
 pub trait Runtime: Sync {
-    /// Provide the globals wrappers
-    ///
-    /// NB. these contain RefCells and can be evaluated and mutated in
-    /// place
-    fn globals(&self, source_map: &mut SourceMap) -> Rc<EnvFrame>;
+    /// Initialise a runtime, registering source map info for any
+    /// annotations
+    fn prepare(&mut self, source_map: &mut SourceMap);
+
+    /// Provide an environment of globals wrappers
+    fn globals(&self) -> Rc<EnvFrame>;
 
     /// Provide the (immutable) intrinsic implementations
     fn intrinsics(&self) -> Vec<&dyn StgIntrinsic>;
@@ -45,7 +46,10 @@ pub enum NativeVariant {
 }
 
 pub struct StandardRuntime {
+    /// Intrinsic implementations
     impls: Vec<Box<dyn StgIntrinsic>>,
+    /// Annotation SMIDs to apply to globals
+    annotations: Option<Vec<Smid>>,
 }
 
 impl Default for StandardRuntime {
@@ -54,7 +58,10 @@ impl Default for StandardRuntime {
             .iter()
             .map(|i| -> Box<dyn StgIntrinsic> { Box::new(Unimplemented::new(i.name())) })
             .collect();
-        StandardRuntime { impls }
+        StandardRuntime {
+            impls,
+            annotations: None,
+        }
     }
 }
 
@@ -72,14 +79,7 @@ impl ToPretty for StandardRuntime {
         D::Doc: Clone,
         A: Clone,
     {
-        let mut source_map = SourceMap::default();
-        let lambdas: Vec<_> = self
-            .impls
-            .iter()
-            .map(|g| g.wrapper(&mut source_map))
-            .collect();
-
-        let docs = lambdas.iter().enumerate().map(|(i, lam)| {
+        let docs = self.lambdas().into_iter().enumerate().map(|(i, lam)| {
             let name = intrinsics::intrinsic(i).name();
 
             allocator
@@ -88,7 +88,7 @@ impl ToPretty for StandardRuntime {
                 .append(":")
                 .append(allocator.space())
                 .append(allocator.line())
-                .append(allocator.text(prettify(lam)))
+                .append(allocator.text(prettify(&lam)))
                 .append(allocator.line())
         });
 
@@ -96,13 +96,36 @@ impl ToPretty for StandardRuntime {
     }
 }
 
+impl StandardRuntime {
+    /// Generate the wrappers to populate the global environment
+    fn lambdas(&self) -> Vec<LambdaForm> {
+        let smids = self.annotations.as_ref().expect("runtime not initialised");
+
+        self.impls
+            .iter()
+            .zip(smids)
+            .map(|(g, ann)| g.wrapper(*ann))
+            .collect()
+    }
+}
+
 impl Runtime for StandardRuntime {
+    /// Generate the STG wrappers for all the intrinsics
+    fn prepare(&mut self, source_map: &mut SourceMap) {
+        self.annotations = Some(
+            self.impls
+                .iter()
+                .map(|bif| source_map.add_synthetic(bif.name()))
+                .collect(),
+        )
+    }
+
     /// Provide all global STG wrappers for the machine
-    fn globals(&self, source_map: &mut SourceMap) -> Rc<EnvFrame> {
-        let lambda_forms: Vec<LambdaForm> =
-            self.impls.iter().map(|g| g.wrapper(source_map)).collect();
+    ///
+    /// Must not be called until globals have been generated
+    fn globals(&self) -> Rc<EnvFrame> {
         EnvFrame::from_let(
-            lambda_forms.as_slice(),
+            self.lambdas().as_slice(),
             &Rc::new(EnvFrame::default()),
             Smid::default(),
         )
@@ -130,7 +153,7 @@ impl StgIntrinsic for Unimplemented {
         &self.name
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         dsl::value(call::bif::panic(dsl::str(&format!(
             "unimplemented intrinsic wrapper {}",
             self.name()

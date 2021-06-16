@@ -1,6 +1,6 @@
 //! Boolean constants and functions
 
-use crate::common::sourcemap::SourceMap;
+use crate::common::sourcemap::Smid;
 
 use super::intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic};
 use super::syntax::{dsl::*, tags, LambdaForm};
@@ -13,7 +13,7 @@ impl StgIntrinsic for True {
         "TRUE"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(t())
     }
 }
@@ -28,7 +28,7 @@ impl StgIntrinsic for False {
         "FALSE"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(f())
     }
 }
@@ -43,14 +43,14 @@ impl StgIntrinsic for Not {
         "NOT"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             switch(
                 local(0),
                 vec![(tags::BOOL_FALSE, t()), (tags::BOOL_TRUE, f())],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -65,7 +65,7 @@ impl StgIntrinsic for And {
         "AND"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2,
             switch(
@@ -81,7 +81,7 @@ impl StgIntrinsic for And {
                     (tags::BOOL_FALSE, f()),
                 ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -96,7 +96,7 @@ impl StgIntrinsic for Or {
         "OR"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2,
             switch(
@@ -112,7 +112,7 @@ impl StgIntrinsic for Or {
                     (tags::BOOL_TRUE, t()),
                 ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -127,14 +127,14 @@ impl StgIntrinsic for If {
         "IF"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             3,
             switch(
                 local(0),
                 vec![(tags::BOOL_TRUE, local(1)), (tags::BOOL_FALSE, local(2))],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }

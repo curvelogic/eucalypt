@@ -8,7 +8,7 @@ use crate::{
     driver::{error::EucalyptError, options::EucalyptOptions, source::SourceLoader},
     eval::{
         error::ExecutionError,
-        machines::stg::{self, dump_runtime, RenderType, StgSettings},
+        machines::stg::{self, make_standard_runtime, RenderType, StgSettings},
     },
     export,
 };
@@ -157,13 +157,15 @@ impl<'a> Executor<'a> {
             }
         };
 
+        let rt = make_standard_runtime(&mut self.source_map);
+
         if opt.dump_runtime() {
-            println!("{}", dump_runtime());
+            println!("{}", prettify::prettify(rt.as_ref()));
             Ok(None)
         } else {
             let syn = {
                 let t = Instant::now();
-                let syn = stg::compile(&settings, self.evaluand.clone())?;
+                let syn = stg::compile(&settings, self.evaluand.clone(), rt.as_ref())?;
                 stats.timings_mut().record("stg-compile", t.elapsed());
                 syn
             };
@@ -173,8 +175,7 @@ impl<'a> Executor<'a> {
                 Ok(None)
             } else {
                 emitter.stream_start();
-                let mut machine =
-                    stg::standard_machine(&settings, syn, emitter, &mut self.source_map)?;
+                let mut machine = stg::standard_machine(&settings, syn, emitter, rt.as_ref())?;
 
                 let ret = {
                     let t = Instant::now();

@@ -127,13 +127,18 @@ impl<'a> Context<'a> {
     }
 }
 
-pub struct Compiler {
+/// Compiler for translating core to STG
+///
+/// References intrinsics to support inlining
+pub struct Compiler<'rt> {
     /// Whether to generate source annotations in let bindings
     generate_annotations: bool,
     /// Whether to wrap a render
     render_type: RenderType,
     /// Suppress updates by generating values instead of thunks
     suppress_updates: bool,
+    /// Intrinsics
+    intrinsics: Vec<&'rt dyn StgIntrinsic>,
 }
 
 /// An item which can be converted to STG syntax once the context in known
@@ -559,17 +564,56 @@ impl ProtoSyntax for ProtoLambda {
     }
 }
 
-impl Compiler {
+pub struct ProtoInline {
+    args: Vec<Box<dyn ProtoReference>>,
+    body: Rc<StgSyn>,
+}
+
+impl ProtoInline {
+    pub fn new(args: Vec<Box<dyn ProtoReference>>, body: Rc<StgSyn>) -> Self {
+        ProtoInline { args, body }
+    }
+}
+
+impl ProtoSyntax for ProtoInline {
+    /// Inline an application by creating a let binding to hold the
+    /// args then substituting the lambda body.
+    ///
+    /// We need an optimisation pass to eliminate needless lets as
+    /// they're only refs to elsewhere
+
+    fn take_syntax(
+        &mut self,
+        _compiler: &Compiler,
+        context: &Context,
+    ) -> Result<Rc<StgSyn>, CompileError> {
+        let body = self.body.clone();
+
+        let refs = self
+            .args
+            .drain(..)
+            .map(|mut pr| pr.take_reference(context))
+            .collect::<Result<Vec<Ref>, CompileError>>()?;
+
+        let bindings = refs.into_iter().map(|r| dsl::value(dsl::atom(r))).collect();
+
+        Ok(Rc::new(StgSyn::LetRec { bindings, body }))
+    }
+}
+
+impl<'rt> Compiler<'rt> {
     /// Temporary pending a builder pattern....
     pub fn new(
         generate_annotations: bool,
         render_type: RenderType,
         suppress_updates: bool,
+        intrinsics: Vec<&'rt dyn StgIntrinsic>,
     ) -> Self {
         Compiler {
             generate_annotations,
             render_type,
             suppress_updates,
+            intrinsics,
         }
     }
 
@@ -610,7 +654,7 @@ impl Compiler {
             Expr::Var(s, v) => Ok(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone()))),
             Expr::App(s, f, args) => {
                 let proto_app = self.compile_application(binder, *s, f, args, false)?;
-                Ok(Box::new(proto_app))
+                Ok(proto_app)
             }
             Expr::Literal(_, n) => Ok(Box::new(Holder::new(compile_boxed_literal(n)))),
             Expr::Lam(s, _, _) => Ok(Box::new(self.compile_lambda(&expr, *s)?)),
@@ -671,7 +715,7 @@ impl Compiler {
             }
             Expr::App(s, f, args) => {
                 let proto_app = self.compile_application(binder, *s, f, args, single_use)?;
-                binder.add_deferred(Box::new(proto_app))
+                binder.add_deferred(proto_app)
             }
             Expr::Literal(_, n) => binder.add(compile_boxed_literal(n)),
             Expr::List(s, xs) => self.compile_list_binding(binder, *s, xs),
@@ -792,6 +836,7 @@ impl Compiler {
         }
     }
 
+    /// Compile a block
     pub fn compile_block(
         &self,
         binder: &mut LetBinder,
@@ -818,17 +863,20 @@ impl Compiler {
         f: &RcExpr,
         args: &[RcExpr],
         single_use: bool,
-    ) -> Result<ProtoApp, CompileError> {
+    ) -> Result<Box<dyn ProtoSyntax>, CompileError> {
+        let mut intrinsic_index = None;
         let mut strict_args = &vec![];
 
+        // Find a reference for the function
         let f_index: Box<dyn ProtoReference> = match &*f.inner {
             Expr::Var(s, v) => Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())),
             Expr::Intrinsic(_, bif) => {
-                let global_index = intrinsics::index(bif)
-                    .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                let info = intrinsics::intrinsic(global_index);
+                intrinsic_index = intrinsics::index(bif);
+                let n =
+                    intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
+                let info = intrinsics::intrinsic(n);
                 strict_args = info.strict_args();
-                Box::new(ProtoRef::new(gref(global_index)))
+                Box::new(ProtoRef::new(gref(n)))
             }
             _ => Box::new(ProtoRef::new(self.compile_binding(
                 binder,
@@ -838,8 +886,8 @@ impl Compiler {
             )?)),
         };
 
+        // Otherwise compile the application
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
-
         for (i, arg) in args.iter().enumerate() {
             match &*arg.inner {
                 Expr::Var(s, v) => {
@@ -861,11 +909,27 @@ impl Compiler {
             }
         }
 
-        Ok(ProtoApp {
+        // If it's an intrinsic, check whether we should inline the wrapper
+        if let Some(index) = intrinsic_index {
+            if self
+                .intrinsics
+                .get(index)
+                .map(|bif| bif.inlinable())
+                .unwrap_or(false)
+            {
+                let body = self.intrinsics[index]
+                    .wrapper(Smid::default())
+                    .body()
+                    .clone();
+                return Ok(Box::new(ProtoInline::new(arg_indexes, body)));
+            }
+        }
+
+        Ok(Box::new(ProtoApp {
             f: f_index,
             args: arg_indexes,
             single_use,
-        })
+        }))
     }
 }
 #[cfg(test)]
@@ -877,7 +941,7 @@ pub mod tests {
     };
 
     fn compile(expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
-        Compiler::new(true, RenderType::Headless, false).compile(expr)
+        Compiler::new(true, RenderType::Headless, false, vec![]).compile(expr)
     }
 
     #[test]

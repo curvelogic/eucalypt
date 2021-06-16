@@ -1,6 +1,6 @@
 //! The NULL built-in for exporting null
 
-use crate::common::sourcemap::SourceMap;
+use crate::common::sourcemap::Smid;
 
 use super::{
     intrinsic::{Const, StgIntrinsic},
@@ -18,7 +18,7 @@ impl StgIntrinsic for Null {
         "NULL"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(unit())
     }
 }

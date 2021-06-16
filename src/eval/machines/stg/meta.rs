@@ -1,6 +1,6 @@
 //! Metadata intrinsics
 
-use crate::common::sourcemap::SourceMap;
+use crate::common::sourcemap::Smid;
 
 use super::{
     block::Merge,
@@ -20,7 +20,7 @@ impl StgIntrinsic for Meta {
         "META"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             demeta(
@@ -34,7 +34,7 @@ impl StgIntrinsic for Meta {
                 ),
                 KEmptyBlock.global(),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -49,12 +49,8 @@ impl StgIntrinsic for WithMeta {
         "WITHMETA"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
-        annotated_lambda(
-            2,
-            with_meta(lref(0), lref(1)),
-            source_map.add_synthetic(self.name()),
-        )
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        annotated_lambda(2, with_meta(lref(0), lref(1)), annotation)
     }
 }
 

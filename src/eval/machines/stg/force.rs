@@ -1,6 +1,6 @@
 //! Utility globals for forcing / evaluating / sequencing
 
-use crate::common::sourcemap::SourceMap;
+use crate::common::sourcemap::Smid;
 
 use super::{
     intrinsic::{CallGlobal1, StgIntrinsic},
@@ -18,7 +18,7 @@ impl StgIntrinsic for SeqStrList {
         "seqStrList"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             switch(
@@ -43,7 +43,7 @@ impl StgIntrinsic for SeqStrList {
                     ),
                 ],
             ),
-            source_map.add_synthetic("seqStrList"),
+            annotation,
         )
     }
 }

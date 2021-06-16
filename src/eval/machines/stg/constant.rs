@@ -2,7 +2,7 @@
 
 use dsl::nil;
 
-use crate::common::sourcemap::SourceMap;
+use crate::common::sourcemap::Smid;
 
 use super::{
     intrinsic::{Const, StgIntrinsic},
@@ -20,7 +20,7 @@ impl StgIntrinsic for KNil {
         "KNIL"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(nil())
     }
 }
@@ -35,7 +35,7 @@ impl StgIntrinsic for KEmptyList {
         "K[]"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(data(tags::LIST_NIL, vec![]))
     }
 }
@@ -50,7 +50,7 @@ impl StgIntrinsic for KEmptyBlock {
         "K{}"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(let_(
             vec![value(data(tags::LIST_NIL, vec![]))],
             data(tags::BLOCK, vec![lref(0)]),

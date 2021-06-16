@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     force::SeqStrList,
@@ -67,7 +67,7 @@ impl StgIntrinsic for Str {
         "STR"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             let_(
@@ -84,7 +84,7 @@ impl StgIntrinsic for Str {
                 ))],
                 data(tags::BOXED_STRING, vec![lref(0)]),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -110,7 +110,7 @@ impl StgIntrinsic for Join {
         "JOIN"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2, // [list sep]
             force(
@@ -125,7 +125,7 @@ impl StgIntrinsic for Join {
                     ),
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -252,7 +252,7 @@ impl StgIntrinsic for Fmt {
         "FMT"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2, // [x fmtstring]
             let_(
@@ -326,7 +326,7 @@ impl StgIntrinsic for Fmt {
                 ))],
                 data(tags::BOXED_STRING, vec![lref(0)]),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 

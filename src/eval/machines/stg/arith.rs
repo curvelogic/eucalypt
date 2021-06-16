@@ -286,7 +286,7 @@ pub mod tests {
                 env,
                 machine::Machine,
                 panic::Panic,
-                runtime,
+                runtime::{self, Runtime},
                 syntax::{dsl::*, StgSyn},
             },
         },
@@ -297,6 +297,7 @@ pub mod tests {
             let mut rt = runtime::StandardRuntime::default();
             rt.add(Box::new(Add));
             rt.add(Box::new(Panic));
+            rt.prepare(&mut SourceMap::default());
             Box::new(rt)
         };
     }
@@ -307,7 +308,7 @@ pub mod tests {
         Machine::new(
             syntax,
             Rc::new(env),
-            RUNTIME.globals(&mut SourceMap::default()),
+            RUNTIME.globals(),
             RUNTIME.intrinsics(),
             Box::new(DebugEmitter::default()),
             true,
