@@ -942,7 +942,7 @@ pub mod tests {
     };
 
     fn compile(expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
-        Compiler::new(true, RenderType::Headless, false, vec![]).compile(expr)
+        Compiler::new(true, RenderType::Headless, false, false, vec![]).compile(expr)
     }
 
     #[test]
