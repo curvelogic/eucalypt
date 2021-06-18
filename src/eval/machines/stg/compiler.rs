@@ -137,6 +137,8 @@ pub struct Compiler<'rt> {
     render_type: RenderType,
     /// Suppress updates by generating values instead of thunks
     suppress_updates: bool,
+    /// Turn inlining off
+    suppress_inlining: bool,
     /// Intrinsics
     intrinsics: Vec<&'rt dyn StgIntrinsic>,
 }
@@ -607,12 +609,14 @@ impl<'rt> Compiler<'rt> {
         generate_annotations: bool,
         render_type: RenderType,
         suppress_updates: bool,
+        suppress_inlining: bool,
         intrinsics: Vec<&'rt dyn StgIntrinsic>,
     ) -> Self {
         Compiler {
             generate_annotations,
             render_type,
             suppress_updates,
+            suppress_inlining,
             intrinsics,
         }
     }
@@ -909,12 +913,15 @@ impl<'rt> Compiler<'rt> {
             }
         }
 
-        // If it's an intrinsic, check whether we should inline the wrapper
-        if let Some(index) = intrinsic_index {
-            if let Some(bif) = self.intrinsics.get(index) {
-                if bif.inlinable() && bif.info().arity() == arg_indexes.len() {
-                    let body = bif.wrapper(Smid::default()).body().clone();
-                    return Ok(Box::new(ProtoInline::new(arg_indexes, body)));
+        // If it's an intrinsic, check whether we should inline the
+        // wrapper
+        if !self.suppress_inlining {
+            if let Some(index) = intrinsic_index {
+                if let Some(bif) = self.intrinsics.get(index) {
+                    if bif.inlinable() && bif.info().arity() == arg_indexes.len() {
+                        let body = bif.wrapper(Smid::default()).body().clone();
+                        return Ok(Box::new(ProtoInline::new(arg_indexes, body)));
+                    }
                 }
             }
         }

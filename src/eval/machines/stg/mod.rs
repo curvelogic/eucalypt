@@ -141,6 +141,8 @@ pub struct StgSettings {
     pub render_type: RenderType,
     /// Suppress thunks and updates (i.e call-by-name)
     pub suppress_updates: bool,
+    /// Suppress inlining of intrinsic wrappers
+    pub suppress_inlining: bool,
 }
 
 /// Compile core syntax to STG ready for execution
@@ -155,6 +157,7 @@ pub fn compile(
         settings.generate_annotations,
         settings.render_type,
         settings.suppress_updates,
+        settings.suppress_inlining,
         runtime.intrinsics(),
     );
     compiler.compile(expr)

@@ -51,7 +51,6 @@ fn determine_format(opt: &EucalyptOptions, loader: &SourceLoader) -> String {
     opt_format
         .or(target_format)
         .or(main_format)
-        .clone()
         .unwrap_or(&"yaml".to_string())
         .to_string()
 }
@@ -147,6 +146,7 @@ impl<'a> Executor<'a> {
                 render_type,
                 trace_steps: true,
                 suppress_updates: false,
+                suppress_inlining: false,
             }
         } else {
             StgSettings {
@@ -154,6 +154,7 @@ impl<'a> Executor<'a> {
                 render_type,
                 trace_steps: false,
                 suppress_updates: false,
+                suppress_inlining: false,
             }
         };
 
