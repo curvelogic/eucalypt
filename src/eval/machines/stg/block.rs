@@ -812,7 +812,21 @@ pub mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use crate::{common::sourcemap::SourceMap, eval::{emit::DebugEmitter, machines::stg::{constant::KEmptyList, env, eq::Eq, machine::Machine, panic::Panic, runtime::{self, Runtime}, syntax::{dsl::*, StgSyn}}}};
+    use crate::{
+        common::sourcemap::SourceMap,
+        eval::{
+            emit::DebugEmitter,
+            machines::stg::{
+                constant::KEmptyList,
+                env,
+                eq::Eq,
+                machine::Machine,
+                panic::Panic,
+                runtime::{self, Runtime},
+                syntax::{dsl::*, StgSyn},
+            },
+        },
+    };
 
     lazy_static! {
         static ref RUNTIME: Box<dyn runtime::Runtime> = {
