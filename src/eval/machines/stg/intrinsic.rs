@@ -30,7 +30,7 @@ pub trait StgIntrinsic: Sync {
 
     /// Whether the compiler should inline the wrapper
     fn inlinable(&self) -> bool {
-        false
+        true
     }
 
     /// Index of the intrinsic

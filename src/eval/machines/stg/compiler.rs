@@ -597,7 +597,7 @@ impl ProtoSyntax for ProtoInline {
 
         let bindings = refs.into_iter().map(|r| dsl::value(dsl::atom(r))).collect();
 
-        Ok(Rc::new(StgSyn::LetRec { bindings, body }))
+        Ok(Rc::new(StgSyn::Let { bindings, body }))
     }
 }
 
@@ -911,17 +911,11 @@ impl<'rt> Compiler<'rt> {
 
         // If it's an intrinsic, check whether we should inline the wrapper
         if let Some(index) = intrinsic_index {
-            if self
-                .intrinsics
-                .get(index)
-                .map(|bif| bif.inlinable())
-                .unwrap_or(false)
-            {
-                let body = self.intrinsics[index]
-                    .wrapper(Smid::default())
-                    .body()
-                    .clone();
-                return Ok(Box::new(ProtoInline::new(arg_indexes, body)));
+            if let Some(bif) = self.intrinsics.get(index) {
+                if bif.inlinable() && bif.info().arity() == arg_indexes.len() {
+                    let body = bif.wrapper(Smid::default()).body().clone();
+                    return Ok(Box::new(ProtoInline::new(arg_indexes, body)));
+                }
             }
         }
 
