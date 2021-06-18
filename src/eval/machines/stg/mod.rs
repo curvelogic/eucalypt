@@ -15,6 +15,7 @@ pub mod list;
 pub mod machine;
 pub mod meta;
 pub mod null;
+pub mod optimiser;
 pub mod panic;
 pub mod pretty;
 pub mod printf;
