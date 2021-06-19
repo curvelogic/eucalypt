@@ -14,8 +14,9 @@ use super::{
             self, annotated_lambda, app, app_bif, data, force, gref, let_, local, lref, unbox_num,
             unbox_str, unbox_sym, unbox_zdt, value,
         },
-        tags, LambdaForm, Ref, StgSyn,
+        LambdaForm, Ref, StgSyn,
     },
+    tags::DataConstructor,
 };
 
 /// All intrinsics have an STG syntax wrapper
@@ -160,16 +161,28 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> Lam
     // using let_ for boxing leaves indexes undisturbed
     match return_type {
         Some(IntrinsicType::Number) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_NUMBER, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedNumber.tag(), vec![lref(0)]),
+            );
         }
         Some(IntrinsicType::String) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_STRING, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+            );
         }
         Some(IntrinsicType::Symbol) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_SYMBOL, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedSymbol.tag(), vec![lref(0)]),
+            );
         }
         Some(IntrinsicType::ZonedDateTime) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_ZDT, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedZdt.tag(), vec![lref(0)]),
+            );
         }
         _ => {}
     }
@@ -247,7 +260,7 @@ pub mod tests {
                             local(0),
                             let_(
                                 vec![value(app_bif(99, vec![lref(2), lref(0)]))],
-                                data(tags::BOXED_NUMBER, vec![lref(0)]),
+                                data(DataConstructor::BoxedNumber.tag(), vec![lref(0)]),
                             ),
                         ),
                     ),

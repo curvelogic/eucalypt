@@ -4,7 +4,7 @@ use crate::common::{
     prettify::{prettify, ToPretty},
     sourcemap::SourceMap,
 };
-use std::rc::Rc;
+use std::{convert::TryInto, rc::Rc};
 
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -17,8 +17,9 @@ use super::{
     machine::Machine,
     syntax::{
         dsl::{self, data, letrec_, local, lref, nil, sym, value, vref},
-        tags, LambdaForm, Native, Ref, Reference, StgSyn,
+        LambdaForm, Native, Ref, Reference, StgSyn,
     },
+    tags::DataConstructor,
 };
 use crate::{
     common::sourcemap::Smid,
@@ -218,9 +219,9 @@ impl Iterator for DataIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (h, t) = match &**self.closure.code() {
-            StgSyn::Cons { tag, args } => match *tag {
-                tags::LIST_CONS => (args[0].clone(), args[1].clone()),
-                tags::LIST_NIL => return None,
+            StgSyn::Cons { tag, args } => match (*tag).try_into() {
+                Ok(DataConstructor::ListCons) => (args[0].clone(), args[1].clone()),
+                Ok(DataConstructor::ListNil) => return None,
                 _ => panic!("Non-list data after force"),
             },
             _ => panic!("Non-list after force"),
@@ -251,9 +252,9 @@ impl Iterator for StrListIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (h, t) = match &**self.closure.code() {
-            StgSyn::Cons { tag, args } => match *tag {
-                tags::LIST_CONS => (args[0].clone(), args[1].clone()),
-                tags::LIST_NIL => return None,
+            StgSyn::Cons { tag, args } => match (*tag).try_into() {
+                Ok(DataConstructor::ListCons) => (args[0].clone(), args[1].clone()),
+                Ok(DataConstructor::ListNil) => return None,
                 _ => panic!("Non-list data after seqStrList"),
             },
             _ => panic!("Non-list after seqStrList"),
@@ -340,12 +341,12 @@ pub fn machine_return_str_list(
     let mut bindings = vec![value(nil())];
     for item in list.into_iter().rev() {
         bindings.push(value(data(
-            tags::BOXED_STRING,
+            DataConstructor::BoxedString.tag(),
             vec![vref(Native::Str(item))],
         )));
         let len = bindings.len();
         bindings.push(value(data(
-            tags::LIST_CONS,
+            DataConstructor::ListCons.tag(),
             vec![lref(len - 1), lref(len - 2)],
         )));
     }
@@ -367,7 +368,7 @@ pub fn machine_return_closure_list(
     let mut bindings = vec![value(nil())];
     for i in (0..len + 1).rev() {
         bindings.push(value(data(
-            tags::LIST_CONS,
+            DataConstructor::ListCons.tag(),
             vec![lref(len + i + 1), lref(len - i)],
         )));
     }
@@ -390,7 +391,7 @@ pub fn machine_return_block_pair_closure_list(
     let mut pairs = vec![];
     for (i, k) in block.keys().enumerate() {
         pairs.push(Closure::new(
-            data(tags::BLOCK_PAIR, vec![sym(k), lref(i)]),
+            data(DataConstructor::BlockPair.tag(), vec![sym(k), lref(i)]),
             value_frame.clone(),
         ));
     }
@@ -400,7 +401,7 @@ pub fn machine_return_block_pair_closure_list(
     let mut bindings = vec![value(nil())];
     for i in (0..len + 1).rev() {
         bindings.push(value(data(
-            tags::LIST_CONS,
+            DataConstructor::ListCons.tag(),
             vec![lref(len + i + 1), lref(len - i)],
         )));
     }

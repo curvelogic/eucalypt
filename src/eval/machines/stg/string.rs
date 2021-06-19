@@ -17,8 +17,9 @@ use super::{
         dsl::{
             annotated_lambda, atom, data, force, let_, local, lref, str, switch, unbox_str, value,
         },
-        tags, LambdaForm, Native, Ref,
+        LambdaForm, Native, Ref,
     },
+    tags::DataConstructor,
 };
 
 use itertools::Itertools;
@@ -74,15 +75,21 @@ impl StgIntrinsic for Str {
                 vec![value(switch(
                     local(0),
                     vec![
-                        (tags::BOXED_NUMBER, force(local(0), call::bif::str(lref(0)))),
-                        (tags::BOXED_SYMBOL, force(local(0), call::bif::str(lref(0)))),
-                        (tags::BOXED_STRING, local(0)),
-                        (tags::BOOL_FALSE, atom(str("false"))),
-                        (tags::BOOL_TRUE, atom(str("true"))),
-                        (tags::UNIT, atom(str("null"))),
+                        (
+                            DataConstructor::BoxedNumber.tag(),
+                            force(local(0), call::bif::str(lref(0))),
+                        ),
+                        (
+                            DataConstructor::BoxedSymbol.tag(),
+                            force(local(0), call::bif::str(lref(0))),
+                        ),
+                        (DataConstructor::BoxedString.tag(), local(0)),
+                        (DataConstructor::BoolFalse.tag(), atom(str("false"))),
+                        (DataConstructor::BoolTrue.tag(), atom(str("true"))),
+                        (DataConstructor::Unit.tag(), atom(str("null"))),
                     ],
                 ))],
-                data(tags::BOXED_STRING, vec![lref(0)]),
+                data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
             ),
             annotation,
         )
@@ -121,7 +128,7 @@ impl StgIntrinsic for Join {
                     // [unbox-sep] [sl] [l] [s]
                     let_(
                         vec![value(call::bif::join(lref(1), lref(0)))],
-                        data(tags::BOXED_STRING, vec![lref(0)]),
+                        data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
                     ),
                 ),
             ),
@@ -260,7 +267,7 @@ impl StgIntrinsic for Fmt {
                     local(0),
                     vec![
                         (
-                            tags::BOXED_NUMBER,
+                            DataConstructor::BoxedNumber.tag(),
                             // [n] [x fmtstring]
                             force(
                                 local(0),
@@ -268,7 +275,7 @@ impl StgIntrinsic for Fmt {
                                 switch(
                                     local(3),
                                     vec![(
-                                        tags::BOXED_STRING,
+                                        DataConstructor::BoxedString.tag(),
                                         // [fmt] [n'] [n] [x fmtstring]
                                         force(
                                             local(0),
@@ -280,7 +287,7 @@ impl StgIntrinsic for Fmt {
                             ),
                         ),
                         (
-                            tags::BOXED_SYMBOL,
+                            DataConstructor::BoxedSymbol.tag(),
                             // [k] [x fmtstring]
                             force(
                                 local(0),
@@ -288,7 +295,7 @@ impl StgIntrinsic for Fmt {
                                 switch(
                                     local(3),
                                     vec![(
-                                        tags::BOXED_STRING,
+                                        DataConstructor::BoxedString.tag(),
                                         // [fmt] [k'] [k] [x fmtstring]
                                         force(
                                             local(0),
@@ -300,7 +307,7 @@ impl StgIntrinsic for Fmt {
                             ),
                         ),
                         (
-                            tags::BOXED_STRING,
+                            DataConstructor::BoxedString.tag(),
                             // [k] [x fmtstring]
                             force(
                                 local(0),
@@ -308,7 +315,7 @@ impl StgIntrinsic for Fmt {
                                 switch(
                                     local(3),
                                     vec![(
-                                        tags::BOXED_STRING,
+                                        DataConstructor::BoxedString.tag(),
                                         // [fmt] [s'] [s] [x fmtstring]
                                         force(
                                             local(0),
@@ -319,12 +326,12 @@ impl StgIntrinsic for Fmt {
                                 ),
                             ),
                         ),
-                        (tags::BOOL_FALSE, atom(str("false"))),
-                        (tags::BOOL_TRUE, atom(str("true"))),
-                        (tags::UNIT, atom(str("null"))),
+                        (DataConstructor::BoolFalse.tag(), atom(str("false"))),
+                        (DataConstructor::BoolTrue.tag(), atom(str("true"))),
+                        (DataConstructor::Unit.tag(), atom(str("null"))),
                     ],
                 ))],
-                data(tags::BOXED_STRING, vec![lref(0)]),
+                data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
             ),
             annotation,
         )

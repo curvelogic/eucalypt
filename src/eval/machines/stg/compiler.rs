@@ -16,6 +16,7 @@ use super::{
     block::{panic_key_not_found, LookupOr},
     constant::KEmptyList,
     intrinsic::{CallGlobal1, CallGlobal3, Const, StgIntrinsic},
+    optimiser,
     render::{Render, RenderDoc},
     runtime::NativeVariant,
     syntax::{
@@ -139,6 +140,8 @@ pub struct Compiler<'rt> {
     suppress_updates: bool,
     /// Turn inlining off
     suppress_inlining: bool,
+    /// Turn optimisations off
+    suppress_optimiser: bool,
     /// Intrinsics
     intrinsics: Vec<&'rt dyn StgIntrinsic>,
 }
@@ -610,6 +613,7 @@ impl<'rt> Compiler<'rt> {
         render_type: RenderType,
         suppress_updates: bool,
         suppress_inlining: bool,
+        suppress_optimiser: bool,
         intrinsics: Vec<&'rt dyn StgIntrinsic>,
     ) -> Self {
         Compiler {
@@ -617,6 +621,7 @@ impl<'rt> Compiler<'rt> {
             render_type,
             suppress_updates,
             suppress_inlining,
+            suppress_optimiser,
             intrinsics,
         }
     }
@@ -644,7 +649,13 @@ impl<'rt> Compiler<'rt> {
             }
         }
         binder.freeze();
-        binder.into_stg(&self)
+        let compiled = binder.into_stg(&self);
+
+        if self.suppress_optimiser {
+            compiled
+        } else {
+            compiled.map(|c| optimiser::AllocationPruner::default().apply(c))
+        }
     }
 
     /// Compile a let body or standalone expression
@@ -938,18 +949,18 @@ pub mod tests {
     use super::*;
     use crate::{
         core::expr::{acore, free},
-        eval::machines::stg::syntax::tags,
+        eval::machines::stg::tags::DataConstructor,
     };
 
     fn compile(expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
-        Compiler::new(true, RenderType::Headless, false, false, vec![]).compile(expr)
+        Compiler::new(true, RenderType::Headless, false, false, false, vec![]).compile(expr)
     }
 
     #[test]
     pub fn test_compile_literal() {
         assert_eq!(
             compile(acore::num(99)).unwrap(),
-            dsl::data(tags::BOXED_NUMBER, vec![dsl::num(99)])
+            dsl::data(DataConstructor::BoxedNumber.tag(), vec![dsl::num(99)])
         );
     }
 

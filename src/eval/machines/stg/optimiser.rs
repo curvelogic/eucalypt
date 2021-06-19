@@ -1,14 +1,18 @@
 //! Tighten up compiled STG by removing superfluous allocations etc.
 
-use std::rc::Rc;
+use std::{convert::TryInto, rc::Rc};
 
-use super::syntax::{dsl, LambdaForm, Ref, StgSyn};
+use super::{
+    syntax::{dsl, LambdaForm, Ref, StgSyn},
+    tags::DataConstructor,
+};
 
 pub trait IndexTransformation {
-    fn apply(&self, r: &Ref) -> Ref;
+    fn apply(&self, r: &Ref, outer: &dyn Fn(&Ref) -> Ref) -> Ref;
 }
 
-/// A transformation of indexes
+/// A transformation of indexes to apply when eliminating a
+/// superfluous let
 pub struct LetIndexTransformation {
     mapping: Vec<usize>,
 }
@@ -44,15 +48,40 @@ impl LetIndexTransformation {
 impl IndexTransformation for LetIndexTransformation {
     /// Apply the transformation to a Ref, updating locals and leaving
     /// globals and values intact
-    fn apply(&self, r: &Ref) -> Ref {
+    fn apply(&self, r: &Ref, outer: &dyn Fn(&Ref) -> Ref) -> Ref {
         match r {
-            Ref::L(n) => Ref::L(
-                self.mapping
-                    .get(*n)
-                    .cloned()
-                    .unwrap_or_else(|| *n - self.mapping.len()),
-            ),
+            Ref::L(n) => match self.mapping.get(*n) {
+                Some(i) => Ref::L(*i),
+                None => outer(&Ref::L(*n - self.mapping.len())),
+            },
             x => x.clone(),
+        }
+    }
+}
+
+/// Modify transformations when going inside case or lambda which
+/// shunt indexes by one or the arity respectively
+pub struct ShiftIndexTransformation {
+    shift: usize,
+}
+
+impl ShiftIndexTransformation {
+    pub fn new(shift: usize) -> Self {
+        Self { shift }
+    }
+}
+
+impl IndexTransformation for ShiftIndexTransformation {
+    fn apply(&self, r: &Ref, outer: &dyn Fn(&Ref) -> Ref) -> Ref {
+        match r {
+            Ref::L(n) => {
+                if *n < self.shift {
+                    r.clone()
+                } else {
+                    outer(&Ref::L(*n - self.shift)).bump(self.shift)
+                }
+            }
+            _ => r.clone(),
         }
     }
 }
@@ -65,34 +94,119 @@ pub struct AllocationPruner {
 
 impl AllocationPruner {
     pub fn transform(&self, r: &Ref) -> Ref {
-        let mut r = r.clone();
-        for t in self.transform_stack.iter().rev() {
-            r = t.apply(&r);
+        let f: Box<dyn Fn(&Ref) -> Ref> = self
+            .transform_stack
+            .iter()
+            .fold(Box::new(|r: &Ref| -> Ref { r.clone() }), |e, t| {
+                Box::new(move |r: &Ref| -> Ref { t.apply(r, e.as_ref()) })
+            });
+
+        f(r)
+    }
+
+    /// Apply transformations to let bindings
+    fn transform_bindings(&mut self, bindings: &[LambdaForm]) -> Vec<LambdaForm> {
+        let mut new_bindings = vec![];
+        for b in bindings {
+            let transformed = match b {
+                LambdaForm::Lambda {
+                    bound,
+                    body,
+                    annotation,
+                } => {
+                    self.transform_stack
+                        .push(Box::new(ShiftIndexTransformation::new(*bound as usize)));
+                    let body = self.apply(body.clone());
+                    self.transform_stack.pop();
+                    LambdaForm::Lambda {
+                        bound: *bound,
+                        body,
+                        annotation: *annotation,
+                    }
+                }
+                LambdaForm::Thunk { body } => LambdaForm::Thunk {
+                    body: self.apply(body.clone()),
+                },
+                LambdaForm::Value { body } => LambdaForm::Value {
+                    body: self.apply(body.clone()),
+                },
+            };
+
+            new_bindings.push(transformed);
         }
-        r
+        new_bindings
     }
 
     pub fn apply(&mut self, stg: Rc<StgSyn>) -> Rc<StgSyn> {
         match &*stg {
             StgSyn::Atom { evaluand } => dsl::atom(self.transform(evaluand)),
-            StgSyn::LetRec { bindings, body } | StgSyn::Let { bindings, body } => {
-                if let Some(t) = LetIndexTransformation::from_let_bindings(&bindings) {
-                    self.transform_stack.push(Box::new(t));
+            StgSyn::Let { bindings, body } => {
+                match LetIndexTransformation::from_let_bindings(&bindings) {
+                    Some(t) => {
+                        // we can strip	the let
+                        self.transform_stack.push(Box::new(t));
+                        let body = self.apply(body.clone());
+                        self.transform_stack.pop();
+                        body
+                    }
+                    None => {
+                        let bindings = self.transform_bindings(bindings);
+                        self.transform_stack
+                            .push(Box::new(ShiftIndexTransformation::new(bindings.len())));
+                        let body = self.apply(body.clone());
+                        self.transform_stack.pop();
+                        Rc::new(StgSyn::Let { bindings, body })
+                    }
                 }
-                self.apply(body.clone())
+            }
+            StgSyn::LetRec { bindings, body } => {
+                match LetIndexTransformation::from_let_bindings(&bindings) {
+                    Some(t) => {
+                        // we can strip	the let
+                        self.transform_stack.push(Box::new(t));
+                        let body = self.apply(body.clone());
+                        self.transform_stack.pop();
+                        body
+                    }
+                    None => {
+                        self.transform_stack
+                            .push(Box::new(ShiftIndexTransformation::new(bindings.len())));
+                        let bindings = self.transform_bindings(bindings);
+                        let body = self.apply(body.clone());
+                        self.transform_stack.pop();
+                        Rc::new(StgSyn::LetRec { bindings, body })
+                    }
+                }
             }
             StgSyn::Case {
                 scrutinee,
                 branches,
                 fallback,
-            } => Rc::new(StgSyn::Case {
-                scrutinee: self.apply(scrutinee.clone()),
-                branches: branches
+            } => {
+                let scrutinee = self.apply(scrutinee.clone());
+                let branches = branches
                     .iter()
-                    .map(|(t, b)| (*t, self.apply(b.clone())))
-                    .collect(),
-                fallback: fallback.as_ref().map(|s| self.apply(s.clone())),
-            }),
+                    .map(|(t, b)| {
+                        let cons: DataConstructor = (*t).try_into().unwrap();
+                        self.transform_stack
+                            .push(Box::new(ShiftIndexTransformation::new(cons.arity())));
+                        let branch = self.apply(b.clone());
+                        self.transform_stack.pop();
+                        (*t, branch)
+                    })
+                    .collect();
+
+                self.transform_stack
+                    .push(Box::new(ShiftIndexTransformation::new(1)));
+                let fallback = fallback.as_ref().map(|s| self.apply(s.clone()));
+                self.transform_stack.pop();
+
+                Rc::new(StgSyn::Case {
+                    scrutinee,
+                    branches,
+                    fallback,
+                })
+            }
             StgSyn::Cons { tag, args } => Rc::new(StgSyn::Cons {
                 tag: *tag,
                 args: args.iter().map(|s| self.transform(s)).collect(),
@@ -117,11 +231,25 @@ impl AllocationPruner {
                 scrutinee,
                 handler,
                 or_else,
-            } => Rc::new(StgSyn::DeMeta {
-                scrutinee: self.apply(scrutinee.clone()),
-                handler: self.apply(handler.clone()),
-                or_else: self.apply(or_else.clone()),
-            }),
+            } => {
+                let scrutinee = self.apply(scrutinee.clone());
+
+                self.transform_stack
+                    .push(Box::new(ShiftIndexTransformation::new(2)));
+                let handler = self.apply(handler.clone());
+                self.transform_stack.pop();
+
+                self.transform_stack
+                    .push(Box::new(ShiftIndexTransformation::new(1)));
+                let or_else = self.apply(or_else.clone());
+                self.transform_stack.pop();
+
+                Rc::new(StgSyn::DeMeta {
+                    scrutinee,
+                    handler,
+                    or_else,
+                })
+            }
             _ => stg.clone(),
         }
     }

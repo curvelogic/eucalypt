@@ -8,8 +8,9 @@ use super::{
     intrinsic::{Const, StgIntrinsic},
     syntax::{
         dsl::{self, data, let_, lref, value},
-        tags, LambdaForm,
+        LambdaForm,
     },
+    tags::DataConstructor,
 };
 
 /// KNIL - unit
@@ -36,7 +37,7 @@ impl StgIntrinsic for KEmptyList {
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
-        value(data(tags::LIST_NIL, vec![]))
+        value(data(DataConstructor::ListNil.tag(), vec![]))
     }
 }
 
@@ -52,8 +53,8 @@ impl StgIntrinsic for KEmptyBlock {
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(let_(
-            vec![value(data(tags::LIST_NIL, vec![]))],
-            data(tags::BLOCK, vec![lref(0)]),
+            vec![value(data(DataConstructor::ListNil.tag(), vec![]))],
+            data(DataConstructor::Block.tag(), vec![lref(0)]),
         ))
     }
 }

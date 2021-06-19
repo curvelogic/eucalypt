@@ -147,6 +147,7 @@ impl<'a> Executor<'a> {
                 trace_steps: true,
                 suppress_updates: false,
                 suppress_inlining: false,
+                suppress_optimiser: false,
             }
         } else {
             StgSettings {
@@ -155,6 +156,7 @@ impl<'a> Executor<'a> {
                 trace_steps: false,
                 suppress_updates: false,
                 suppress_inlining: false,
+                suppress_optimiser: false,
             }
         };
 

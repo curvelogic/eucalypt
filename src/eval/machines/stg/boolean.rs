@@ -2,8 +2,11 @@
 
 use crate::common::sourcemap::Smid;
 
-use super::intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic};
-use super::syntax::{dsl::*, tags, LambdaForm};
+use super::{
+    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic},
+    syntax::{dsl::*, LambdaForm},
+    tags::DataConstructor,
+};
 
 /// A constant for TRUE
 pub struct True;
@@ -48,7 +51,10 @@ impl StgIntrinsic for Not {
             1,
             switch(
                 local(0),
-                vec![(tags::BOOL_FALSE, t()), (tags::BOOL_TRUE, f())],
+                vec![
+                    (DataConstructor::BoolFalse.tag(), t()),
+                    (DataConstructor::BoolTrue.tag(), f()),
+                ],
             ),
             annotation,
         )
@@ -72,13 +78,16 @@ impl StgIntrinsic for And {
                 local(0),
                 vec![
                     (
-                        tags::BOOL_TRUE,
+                        DataConstructor::BoolTrue.tag(),
                         switch(
                             local(1),
-                            vec![(tags::BOOL_TRUE, t()), (tags::BOOL_FALSE, f())],
+                            vec![
+                                (DataConstructor::BoolTrue.tag(), t()),
+                                (DataConstructor::BoolFalse.tag(), f()),
+                            ],
                         ),
                     ),
-                    (tags::BOOL_FALSE, f()),
+                    (DataConstructor::BoolFalse.tag(), f()),
                 ],
             ),
             annotation,
@@ -103,13 +112,16 @@ impl StgIntrinsic for Or {
                 local(0),
                 vec![
                     (
-                        tags::BOOL_FALSE,
+                        DataConstructor::BoolFalse.tag(),
                         switch(
                             local(1),
-                            vec![(tags::BOOL_TRUE, t()), (tags::BOOL_FALSE, f())],
+                            vec![
+                                (DataConstructor::BoolTrue.tag(), t()),
+                                (DataConstructor::BoolFalse.tag(), f()),
+                            ],
                         ),
                     ),
-                    (tags::BOOL_TRUE, t()),
+                    (DataConstructor::BoolTrue.tag(), t()),
                 ],
             ),
             annotation,
@@ -132,7 +144,10 @@ impl StgIntrinsic for If {
             3,
             switch(
                 local(0),
-                vec![(tags::BOOL_TRUE, local(1)), (tags::BOOL_FALSE, local(2))],
+                vec![
+                    (DataConstructor::BoolTrue.tag(), local(1)),
+                    (DataConstructor::BoolFalse.tag(), local(2)),
+                ],
             ),
             annotation,
         )

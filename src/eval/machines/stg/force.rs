@@ -6,8 +6,9 @@ use super::{
     intrinsic::{CallGlobal1, StgIntrinsic},
     syntax::{
         dsl::{annotated_lambda, data, force, local, lref, switch, unbox_str},
-        tags, LambdaForm,
+        LambdaForm,
     },
+    tags::DataConstructor,
 };
 
 /// seqStrList to evaluate and unbox lists of strings
@@ -24,9 +25,9 @@ impl StgIntrinsic for SeqStrList {
             switch(
                 local(0),
                 vec![
-                    (tags::LIST_NIL, local(0)),
+                    (DataConstructor::ListNil.tag(), local(0)),
                     (
-                        tags::LIST_CONS, // [h t]
+                        DataConstructor::ListCons.tag(), // [h t]
                         unbox_str(
                             local(0),
                             // [unboxed] [h t]
@@ -36,7 +37,7 @@ impl StgIntrinsic for SeqStrList {
                                 force(
                                     SeqStrList.global(lref(3)),
                                     // [stail] [evaled] [unboxed] h t]
-                                    data(tags::LIST_CONS, vec![lref(1), lref(0)]),
+                                    data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
                                 ),
                             ),
                         ),

@@ -8,11 +8,14 @@
 //!   syntax
 //! - eliminate the heap in favour of a mutable cactus stack approach
 //! - box all natives for cleaner handling
-use super::syntax::{dsl::global, tags, Native, Ref, StgSyn, Tag};
 use super::{
     env::{Closure, EnvFrame},
     intrinsic::StgIntrinsic,
-    syntax::dsl,
+    syntax::{
+        dsl::{self, global},
+        Native, Ref, StgSyn,
+    },
+    tags::{DataConstructor, Tag},
 };
 use crate::{
     common::sourcemap::Smid,
@@ -550,7 +553,7 @@ impl<'a> Machine<'a> {
                     //
                     // TODO: a more generic mechanism for applying
                     // data structures
-                    if tag == tags::BLOCK {
+                    if tag == DataConstructor::Block.tag() {
                         let call = Closure::new(
                             global(intrinsics::index("MERGE").unwrap()),
                             self.env().clone(),

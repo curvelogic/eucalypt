@@ -7,8 +7,9 @@ use super::{
     panic::Panic,
     syntax::{
         dsl::{annotated_lambda, case, data, local, lref, str, value},
-        tags, LambdaForm,
+        LambdaForm,
     },
+    tags::DataConstructor,
 };
 
 /// A constant for CONS
@@ -22,7 +23,7 @@ impl StgIntrinsic for Cons {
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2, // [h t]
-            data(tags::LIST_CONS, vec![lref(0), lref(1)]),
+            data(DataConstructor::ListCons.tag(), vec![lref(0), lref(1)]),
             annotation,
         )
     }
@@ -39,7 +40,7 @@ impl StgIntrinsic for Nil {
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
-        value(data(tags::LIST_NIL, vec![]))
+        value(data(DataConstructor::ListNil.tag(), vec![]))
     }
 }
 
@@ -58,7 +59,7 @@ impl StgIntrinsic for Tail {
             1,
             case(
                 local(0),
-                vec![(tags::LIST_CONS, local(1))],
+                vec![(DataConstructor::ListCons.tag(), local(1))],
                 Panic.global(str("TAIL on empty list")),
             ),
             annotation,
@@ -81,7 +82,7 @@ impl StgIntrinsic for Head {
             1,
             case(
                 local(0),
-                vec![(tags::LIST_CONS, local(0))],
+                vec![(DataConstructor::ListCons.tag(), local(0))],
                 Panic.global(str("HEAD on empty list")),
             ),
             annotation,

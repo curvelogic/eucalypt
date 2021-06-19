@@ -23,6 +23,7 @@ pub mod render;
 pub mod runtime;
 pub mod string;
 pub mod syntax;
+pub mod tags;
 pub mod time;
 
 use std::rc::Rc;
@@ -144,6 +145,8 @@ pub struct StgSettings {
     pub suppress_updates: bool,
     /// Suppress inlining of intrinsic wrappers
     pub suppress_inlining: bool,
+    /// Suppress optimiser
+    pub suppress_optimiser: bool,
 }
 
 /// Compile core syntax to STG ready for execution
@@ -159,6 +162,7 @@ pub fn compile(
         settings.render_type,
         settings.suppress_updates,
         settings.suppress_inlining,
+        settings.suppress_optimiser,
         runtime.intrinsics(),
     );
     compiler.compile(expr)
