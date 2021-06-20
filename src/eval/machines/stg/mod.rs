@@ -26,7 +26,8 @@ pub mod syntax;
 pub mod tags;
 pub mod time;
 
-use std::rc::Rc;
+use std::{fmt, rc::Rc, str::FromStr};
+use structopt::StructOpt;
 
 use crate::{
     common::sourcemap::SourceMap,
@@ -123,7 +124,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
 }
 
 /// What type of render-wrapping to apply to the compiled code
-#[derive(Copy, Debug, Clone)]
+#[derive(StructOpt, Copy, Debug, Clone, PartialEq)]
 pub enum RenderType {
     /// No rendering - calculate only
     Headless,
@@ -133,19 +134,55 @@ pub enum RenderType {
     RenderDoc,
 }
 
+impl Default for RenderType {
+    fn default() -> Self {
+        RenderType::RenderDoc
+    }
+}
+
+impl FromStr for RenderType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "headless" => Ok(RenderType::Headless),
+            "fragment" => Ok(RenderType::RenderFragment),
+            "doc" => Ok(RenderType::RenderDoc),
+            _ => Err("unknown STG render type".to_string()),
+        }
+    }
+}
+
+impl fmt::Display for RenderType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Headless => write!(f, "headless"),
+            Self::RenderFragment => write!(f, "fragment"),
+            Self::RenderDoc => write!(f, "doc"),
+        }
+    }
+}
+
 /// Settings to control compilation and execution of STG code
+#[derive(StructOpt, Debug, Clone, Default)]
 pub struct StgSettings {
     /// Generate annotations for stack traces in compiled output
+    #[structopt(long = "stg-stack-trace")]
     pub generate_annotations: bool,
     /// Trace steps during execution
+    #[structopt(long = "stg-trace-steps")]
     pub trace_steps: bool,
     /// Whether to generate a top-level render / render-doc call
+    #[structopt(long = "stg-render-type", default_value)]
     pub render_type: RenderType,
     /// Suppress thunks and updates (i.e call-by-name)
+    #[structopt(long = "stg-suppress-updates")]
     pub suppress_updates: bool,
     /// Suppress inlining of intrinsic wrappers
+    #[structopt(long = "stg-suppress-inlining")]
     pub suppress_inlining: bool,
     /// Suppress optimiser
+    #[structopt(long = "stg-suppress-optimiser")]
     pub suppress_optimiser: bool,
 }
 
