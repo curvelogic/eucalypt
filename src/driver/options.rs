@@ -1,6 +1,9 @@
 //! Command line argument handling.
-use crate::driver::error::EucalyptError;
-use crate::syntax::input::{Input, Locator};
+use crate::{driver::error::EucalyptError, eval::machines::stg::StgSettings};
+use crate::{
+    eval::machines::stg::RenderType,
+    syntax::input::{Input, Locator},
+};
 use atty::Stream;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -85,6 +88,9 @@ pub struct EucalyptOptions {
     /// Format to export output in (e.g. yaml, json, toml, text)
     #[structopt(short = "x", long)]
     export_type: Option<String>,
+
+    #[structopt(flatten)]
+    stg_settings: StgSettings,
 
     /// Source code / data inputs (in order)
     inputs: Vec<Input>,
@@ -394,6 +400,10 @@ impl EucalyptOptions {
         self.statistics
     }
 
+    pub fn stg_settings(&self) -> &StgSettings {
+        &self.stg_settings
+    }
+
     /// Prepend an input if it is not already in the input list
     fn prepend_input(&mut self, input: Input) {
         if !self.inputs.iter().any(|i| i == &input) {
@@ -477,6 +487,15 @@ impl EucalyptOptions {
             self.inputs.push(Input::from(Locator::Cli(
                 self.evaluate.as_ref().unwrap().to_string(),
             )));
+        }
+
+        // Set default STG settings based on debug & other settings
+        self.stg_settings.generate_annotations = true;
+        if self.debug() {
+            self.stg_settings.trace_steps = true;
+        }
+        if self.is_fragment() && self.stg_settings.render_type != RenderType::Headless {
+            self.stg_settings.render_type = RenderType::RenderFragment;
         }
 
         Ok(())

@@ -4,10 +4,7 @@ use std::{mem::swap, rc::Rc};
 
 use indexmap::IndexMap;
 
-use crate::{
-    common::sourcemap::{Smid, SourceMap},
-    eval::error::ExecutionError,
-};
+use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     env::{Closure, EnvFrame},
@@ -17,12 +14,11 @@ use super::{
     panic::Panic,
     runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant},
     syntax::{
-        dsl::{app, lref},
-        Native, Ref, StgSyn,
+        dsl::{self, app, lref},
+        LambdaForm, Native, Ref, StgSyn,
     },
+    tags::DataConstructor,
 };
-
-use super::syntax::{dsl, tags, LambdaForm};
 
 /// BLOCK
 ///
@@ -36,7 +32,7 @@ impl StgIntrinsic for Block {
         "BLOCK"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let kv_items = lambda(
@@ -45,18 +41,18 @@ impl StgIntrinsic for Block {
                 local(0),
                 vec![
                     (
-                        tags::LIST_CONS, // [h t] [items self]
+                        DataConstructor::ListCons.tag(), // [h t] [items self]
                         force(
                             Kv.global(lref(0)),
                             // [kv] [h t] [items self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
                                 // [tt] [kv] [h t] [itesm self]
-                                data(tags::LIST_CONS, vec![lref(1), lref(0)]),
+                                data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
                             ),
                         ),
                     ),
-                    (tags::LIST_NIL, local(0)),
+                    (DataConstructor::ListNil.tag(), local(0)),
                 ],
             ),
         );
@@ -69,9 +65,9 @@ impl StgIntrinsic for Block {
                     kv_items,
                     value(app(lref(0), vec![lref(2), lref(0)])),
                 ],
-                data(tags::BLOCK, vec![lref(1)]),
+                data(DataConstructor::Block.tag(), vec![lref(1)]),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -89,7 +85,7 @@ impl StgIntrinsic for Kv {
         "KV"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -98,21 +94,21 @@ impl StgIntrinsic for Kv {
                 local(0),
                 vec![
                     (
-                        tags::BLOCK_PAIR, // [k v] [pair]
+                        DataConstructor::BlockPair.tag(), // [k v] [pair]
                         local(2),
                     ),
                     (
-                        tags::LIST_CONS, // [h t] [list]
-                        data(tags::BLOCK_KV_LIST, vec![lref(2)]),
+                        DataConstructor::ListCons.tag(), // [h t] [list]
+                        data(DataConstructor::BlockKvList.tag(), vec![lref(2)]),
                     ),
                     (
-                        tags::BLOCK_KV_LIST, // [l] [kvl]
+                        DataConstructor::BlockKvList.tag(), // [l] [kvl]
                         local(1),
                     ),
                 ],
                 call::bif::panic(str("invalid key-value element in block")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -129,7 +125,7 @@ impl StgIntrinsic for Dekv {
         "DEKV"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -138,25 +134,28 @@ impl StgIntrinsic for Dekv {
                 local(0),
                 vec![
                     (
-                        tags::BLOCK_PAIR, // [k v] [pair]
+                        DataConstructor::BlockPair.tag(), // [k v] [pair]
                         letrec_(
                             vec![
                                 // [nil boxk [v]] [k v] [pair]
                                 value(nil()),
-                                thunk(data(tags::BOXED_SYMBOL, vec![lref(3)])),
-                                value(data(tags::LIST_CONS, vec![lref(4), lref(0)])),
+                                thunk(data(DataConstructor::BoxedSymbol.tag(), vec![lref(3)])),
+                                value(data(
+                                    DataConstructor::ListCons.tag(),
+                                    vec![lref(4), lref(0)],
+                                )),
                             ],
-                            data(tags::LIST_CONS, vec![lref(1), lref(2)]),
+                            data(DataConstructor::ListCons.tag(), vec![lref(1), lref(2)]),
                         ),
                     ),
                     (
-                        tags::BLOCK_KV_LIST, // [cons] [pair]
+                        DataConstructor::BlockKvList.tag(), // [cons] [pair]
                         local(0),
                     ),
                 ],
                 call::bif::panic(str("invalid key-value element in block")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -173,7 +172,7 @@ impl StgIntrinsic for Elements {
         "ELEMENTS"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let map_list = lambda(
@@ -182,17 +181,17 @@ impl StgIntrinsic for Elements {
                 local(0),
                 vec![
                     (
-                        tags::LIST_CONS, // [h t] [list self]
+                        DataConstructor::ListCons.tag(), // [h t] [list self]
                         letrec_(
                             // [dekv-h rest] [h t] [list self]
                             vec![
                                 thunk(Dekv.global(lref(2))),
                                 thunk(app(lref(5), vec![lref(3), lref(5)])),
                             ],
-                            data(tags::LIST_CONS, vec![lref(0), lref(1)]),
+                            data(DataConstructor::ListCons.tag(), vec![lref(0), lref(1)]),
                         ),
                     ),
-                    (tags::LIST_NIL, local(0)),
+                    (DataConstructor::ListNil.tag(), local(0)),
                 ],
                 call::bif::panic(str("bad element in block")),
             ),
@@ -205,13 +204,13 @@ impl StgIntrinsic for Elements {
                 case(
                     local(1),
                     vec![(
-                        tags::BLOCK, // [list]  [map_list] [block]
+                        DataConstructor::Block.tag(), // [list]  [map_list] [block]
                         app(lref(1), vec![lref(0), lref(1)]),
                     )],
                     call::bif::panic(str("elements called on non-block")),
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -228,7 +227,7 @@ impl StgIntrinsic for MatchesKey {
         "MATCHES_KEY"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             2, // [pair unboxsym]
@@ -236,15 +235,15 @@ impl StgIntrinsic for MatchesKey {
                 local(0),
                 vec![
                     (
-                        tags::BLOCK_PAIR,
+                        DataConstructor::BlockPair.tag(),
                         Eq.global(lref(0), lref(3)), // [k v] [pair unboxsym]
                     ),
                     (
-                        tags::BLOCK_KV_LIST, // [l] [pair sym]
+                        DataConstructor::BlockKvList.tag(), // [l] [pair sym]
                         case(
                             local(0),
                             vec![(
-                                tags::LIST_CONS, // [h t] [l] [pair sym]
+                                DataConstructor::ListCons.tag(), // [h t] [l] [pair sym]
                                 unbox_sym(
                                     local(0), // [unbox_h] [h t] [l] [pair sym]
                                     Eq.global(lref(0), lref(5)),
@@ -256,7 +255,7 @@ impl StgIntrinsic for MatchesKey {
                 ],
                 call::bif::panic(str("bad key-value pair in MATCHES_KEY")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -273,7 +272,7 @@ impl StgIntrinsic for ExtractValue {
         "EXTRACT_VALUE"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [pair]
@@ -281,19 +280,19 @@ impl StgIntrinsic for ExtractValue {
                 local(0),
                 vec![
                     (
-                        tags::BLOCK_PAIR, // [k v] [pair]
+                        DataConstructor::BlockPair.tag(), // [k v] [pair]
                         local(1),
                     ),
                     (
-                        tags::BLOCK_KV_LIST, // [l] [pair]
+                        DataConstructor::BlockKvList.tag(), // [l] [pair]
                         switch(
                             local(0),
                             vec![(
-                                tags::LIST_CONS, // [h t] [l] [pair]
+                                DataConstructor::ListCons.tag(), // [h t] [l] [pair]
                                 switch(
                                     local(1),
                                     vec![(
-                                        tags::LIST_CONS, // [h t] [h t] [l] [pair]
+                                        DataConstructor::ListCons.tag(), // [h t] [h t] [l] [pair]
                                         local(0),
                                     )],
                                 ),
@@ -303,7 +302,7 @@ impl StgIntrinsic for ExtractValue {
                 ],
                 call::bif::panic(str("bad key-value pair in EXTRACT_VALUE")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -320,7 +319,7 @@ impl StgIntrinsic for ExtractKey {
         "EXTRACT_KEY"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [pair]
@@ -328,15 +327,15 @@ impl StgIntrinsic for ExtractKey {
                 local(0),
                 vec![
                     (
-                        tags::BLOCK_PAIR, // [k v] [pair]
+                        DataConstructor::BlockPair.tag(), // [k v] [pair]
                         local(0),
                     ),
                     (
-                        tags::BLOCK_KV_LIST, // [l] [pair]
+                        DataConstructor::BlockKvList.tag(), // [l] [pair]
                         switch(
                             local(0),
                             vec![(
-                                tags::LIST_CONS, // [h t] [l] [pair]
+                                DataConstructor::ListCons.tag(), // [h t] [l] [pair]
                                 unbox_sym(local(0), local(0)),
                             )],
                         ),
@@ -344,7 +343,7 @@ impl StgIntrinsic for ExtractKey {
                 ],
                 call::bif::panic(str("bad key-value pair in EXTRACT_KEY")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -362,15 +361,15 @@ impl StgIntrinsic for PackPair {
         "PACK_PAIR"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [kv]
             force(
                 ExtractKey.global(lref(0)), // [sym] [kv]
-                data(tags::BLOCK_PAIR, vec![lref(0), lref(1)]),
+                data(DataConstructor::BlockPair.tag(), vec![lref(0), lref(1)]),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -387,7 +386,7 @@ impl StgIntrinsic for BlockPair {
         "BLOCK_PAIR"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
         annotated_lambda(
             1, // [kv]
@@ -395,21 +394,24 @@ impl StgIntrinsic for BlockPair {
                 local(0),
                 vec![
                     (
-                        tags::BLOCK_PAIR,
+                        DataConstructor::BlockPair.tag(),
                         // [k v] [kv]
                         local(2),
                     ),
                     (
-                        tags::BLOCK_KV_LIST, // [lcons] [kv]
+                        DataConstructor::BlockKvList.tag(), // [lcons] [kv]
                         switch(
                             local(0),
                             vec![(
-                                tags::LIST_CONS, // [k t] [lcons] [kv]
+                                DataConstructor::ListCons.tag(), // [k t] [lcons] [kv]
                                 switch(
                                     local(1),
                                     vec![(
-                                        tags::LIST_CONS, // [v .] [k t] [lcons] [kv]
-                                        data(tags::BLOCK_PAIR, vec![lref(2), lref(0)]),
+                                        DataConstructor::ListCons.tag(), // [v .] [k t] [lcons] [kv]
+                                        data(
+                                            DataConstructor::BlockPair.tag(),
+                                            vec![lref(2), lref(0)],
+                                        ),
                                     )],
                                 ),
                             )],
@@ -417,7 +419,7 @@ impl StgIntrinsic for BlockPair {
                     ),
                 ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -438,39 +440,38 @@ impl StgIntrinsic for LookupOr {
         }
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        let find = annotated_lambda(
+        let find = lambda(
             4, // [list k d find]
             case(
                 local(0),
                 vec![
                     (
-                        tags::LIST_CONS, // [h t] [list k d find]
+                        DataConstructor::ListCons.tag(), // [h t] [list k d find]
                         switch(
                             MatchesKey.global(lref(0), lref(3)),
                             vec![
                                 (
-                                    tags::BOOL_TRUE,
+                                    DataConstructor::BoolTrue.tag(),
                                     // [h t] [list k d find]
                                     ExtractValue.global(lref(0)),
                                 ),
                                 (
-                                    tags::BOOL_FALSE,
+                                    DataConstructor::BoolFalse.tag(),
                                     app(lref(5), vec![lref(1), lref(3), lref(4), lref(5)]),
                                 ),
                             ],
                         ),
                     ),
                     (
-                        tags::LIST_NIL, // [list k d] [find]
+                        DataConstructor::ListNil.tag(), // [list k d] [find]
                         local(2),
                     ),
                 ],
                 call::bif::panic(str("bad block content")),
             ),
-            source_map.add_synthetic("LookupOr.find"),
         );
 
         annotated_lambda(
@@ -478,7 +479,7 @@ impl StgIntrinsic for LookupOr {
             switch(
                 local(2),
                 vec![(
-                    tags::BLOCK,
+                    DataConstructor::Block.tag(),
                     // [blocklist] [k d block]
                     letrec_(
                         vec![find], // [find] [blocklist] [k d block]
@@ -497,7 +498,7 @@ impl StgIntrinsic for LookupOr {
                     ),
                 )],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -512,7 +513,7 @@ impl StgIntrinsic for Lookup {
         "LOOKUP"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -526,7 +527,7 @@ impl StgIntrinsic for Lookup {
                     LookupOr(NativeVariant::Unboxed).global(lref(1), lref(0), lref(3)),
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -544,7 +545,7 @@ pub struct Merge;
 /// and v. The same function can deconstruct either.
 fn deconstruct(pair_closure: Closure) -> Result<(String, Closure), ExecutionError> {
     match &**pair_closure.code() {
-        StgSyn::Cons { tag, args } if *tag == tags::BLOCK_PAIR => {
+        StgSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
             let k = args[0].clone();
             let kv = args[1].clone();
 
@@ -570,7 +571,7 @@ impl StgIntrinsic for Merge {
     }
 
     /// Expose the two lists to the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let pack_items = lambda(
@@ -579,18 +580,18 @@ impl StgIntrinsic for Merge {
                 local(0),
                 vec![
                     (
-                        tags::LIST_CONS, // [h t] [list self]
+                        DataConstructor::ListCons.tag(), // [h t] [list self]
                         force(
                             PackPair.global(lref(0)),
                             // [pp-h] [h t] [list self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
                                 // [p-t] [pp-h] [h t] [list self]
-                                data(tags::LIST_CONS, vec![lref(1), lref(0)]),
+                                data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
                             ),
                         ),
                     ),
-                    (tags::LIST_NIL, local(0)),
+                    (DataConstructor::ListNil.tag(), local(0)),
                 ],
             ),
         );
@@ -600,11 +601,11 @@ impl StgIntrinsic for Merge {
             switch(
                 local(0),
                 vec![(
-                    tags::BLOCK, // [lcons] [l r]
+                    DataConstructor::Block.tag(), // [lcons] [l r]
                     switch(
                         local(2),
                         vec![(
-                            tags::BLOCK, // [rcons] [lcons] [l r]
+                            DataConstructor::Block.tag(), // [rcons] [lcons] [l r]
                             let_(
                                 vec![pack_items],
                                 // [pack] [rcons] [lcons]
@@ -616,7 +617,7 @@ impl StgIntrinsic for Merge {
                                         // [p-r] [p-l] [pack] [rcons] [lcons]
                                         force(
                                             call::bif::merge(lref(1), lref(0)),
-                                            data(tags::BLOCK, vec![lref(0)]),
+                                            data(DataConstructor::Block.tag(), vec![lref(0)]),
                                         ),
                                     ),
                                 ),
@@ -625,7 +626,7 @@ impl StgIntrinsic for Merge {
                     ),
                 )],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -663,7 +664,7 @@ impl StgIntrinsic for MergeWith {
     }
 
     /// Expose the two lists to the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let pair_items = lambda(
@@ -672,18 +673,18 @@ impl StgIntrinsic for MergeWith {
                 local(0),
                 vec![
                     (
-                        tags::LIST_CONS, // [h t] [list self]
+                        DataConstructor::ListCons.tag(), // [h t] [list self]
                         force(
                             BlockPair.global(lref(0)),
                             // [bp-h] [h t] [list self]
                             force(
                                 app(lref(4), vec![lref(2), lref(4)]),
                                 // [p-t] [bp-h] [h t] [list self]
-                                data(tags::LIST_CONS, vec![lref(1), lref(0)]),
+                                data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
                             ),
                         ),
                     ),
-                    (tags::LIST_NIL, local(0)),
+                    (DataConstructor::ListNil.tag(), local(0)),
                 ],
             ),
         );
@@ -693,11 +694,11 @@ impl StgIntrinsic for MergeWith {
             switch(
                 local(0),
                 vec![(
-                    tags::BLOCK, // [lcons] [l r f]
+                    DataConstructor::Block.tag(), // [lcons] [l r f]
                     switch(
                         local(2),
                         vec![(
-                            tags::BLOCK, // [rcons] [lcons] [l r f]
+                            DataConstructor::Block.tag(), // [rcons] [lcons] [l r f]
                             let_(
                                 vec![pair_items],
                                 // [pack] [rcons] [lcons] [l r f]
@@ -709,7 +710,7 @@ impl StgIntrinsic for MergeWith {
                                         // [p-r] [p-l] [pack] [rcons] [lcons] [l r f]
                                         force(
                                             call::bif::merge_with(lref(1), lref(0), lref(7)),
-                                            data(tags::BLOCK, vec![lref(0)]),
+                                            data(DataConstructor::Block.tag(), vec![lref(0)]),
                                         ),
                                     ),
                                 ),
@@ -718,7 +719,7 @@ impl StgIntrinsic for MergeWith {
                     ),
                 )],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -769,7 +770,7 @@ impl StgIntrinsic for DeepMerge {
     }
 
     ///
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         annotated_lambda(
@@ -777,12 +778,12 @@ impl StgIntrinsic for DeepMerge {
             case(
                 local(0),
                 vec![(
-                    tags::BLOCK,
+                    DataConstructor::Block.tag(),
                     // [lcons] [l r]
                     case(
                         local(2),
                         vec![(
-                            tags::BLOCK,
+                            DataConstructor::Block.tag(),
                             // [rcons] [lcons] [l r]
                             MergeWith.global(lref(2), lref(3), gref(self.index())),
                         )],
@@ -793,7 +794,7 @@ impl StgIntrinsic for DeepMerge {
                 // [l] [l r]
                 local(2),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -816,16 +817,19 @@ pub mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use crate::eval::{
-        emit::DebugEmitter,
-        machines::stg::{
-            constant::KEmptyList,
-            env,
-            eq::Eq,
-            machine::Machine,
-            panic::Panic,
-            runtime,
-            syntax::{dsl::*, StgSyn},
+    use crate::{
+        common::sourcemap::SourceMap,
+        eval::{
+            emit::DebugEmitter,
+            machines::stg::{
+                constant::KEmptyList,
+                env,
+                eq::Eq,
+                machine::Machine,
+                panic::Panic,
+                runtime::{self, Runtime},
+                syntax::{dsl::*, StgSyn},
+            },
         },
     };
 
@@ -840,6 +844,7 @@ pub mod tests {
             rt.add(Box::new(LookupOr(NativeVariant::Unboxed)));
             rt.add(Box::new(Panic));
             rt.add(Box::new(Eq));
+            rt.prepare(&mut SourceMap::default());
             Box::new(rt)
         };
     }
@@ -850,7 +855,7 @@ pub mod tests {
         Machine::new(
             syntax,
             Rc::new(env),
-            RUNTIME.globals(&mut SourceMap::default()),
+            RUNTIME.globals(),
             RUNTIME.intrinsics(),
             Box::new(DebugEmitter::default()),
             true,
@@ -862,7 +867,10 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(box_str("value")),
-                value(data(tags::BLOCK_PAIR, vec![sym("key"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("key"), lref(0)],
+                )),
                 value(Kv.global(lref(1))),
             ],
             MatchesKey.global(lref(2), sym("key")),
@@ -878,7 +886,10 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(box_str("value")),
-                value(data(tags::BLOCK_PAIR, vec![sym("key"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("key"), lref(0)],
+                )),
                 value(Kv.global(lref(1))),
             ],
             MatchesKey.global(lref(2), sym("different")),
@@ -895,8 +906,14 @@ pub mod tests {
             vec![
                 value(box_sym("key")),
                 value(box_str("value")),
-                value(data(tags::LIST_CONS, vec![lref(1), KEmptyList.gref()])),
-                value(data(tags::LIST_CONS, vec![lref(0), lref(2)])),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(1), KEmptyList.gref()],
+                )),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(0), lref(2)],
+                )),
                 value(Kv.global(lref(3))),
             ],
             MatchesKey.global(lref(4), sym("key")),
@@ -912,14 +929,26 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(box_str("v1")),
-                value(data(tags::BLOCK_PAIR, vec![sym("k1"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("k1"), lref(0)],
+                )),
                 value(Kv.global(lref(1))),
                 value(box_str("v2")),
-                value(data(tags::BLOCK_PAIR, vec![sym("k2"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("k2"), lref(0)],
+                )),
                 value(Kv.global(lref(4))),
-                value(data(tags::LIST_CONS, vec![lref(5), KEmptyList.gref()])),
-                value(data(tags::LIST_CONS, vec![lref(2), lref(6)])),
-                value(data(tags::BLOCK, vec![lref(7)])),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(5), KEmptyList.gref()],
+                )),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(2), lref(6)],
+                )),
+                value(data(DataConstructor::Block.tag(), vec![lref(7)])),
                 value(box_sym("k1")),
                 value(box_str("fail")),
             ],

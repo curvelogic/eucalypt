@@ -8,7 +8,7 @@ use crate::{
     driver::{error::EucalyptError, options::EucalyptOptions, source::SourceLoader},
     eval::{
         error::ExecutionError,
-        machines::stg::{self, dump_runtime, RenderType, StgSettings},
+        machines::stg::{self, make_standard_runtime},
     },
     export,
 };
@@ -51,7 +51,6 @@ fn determine_format(opt: &EucalyptOptions, loader: &SourceLoader) -> String {
     opt_format
         .or(target_format)
         .or(main_format)
-        .clone()
         .unwrap_or(&"yaml".to_string())
         .to_string()
 }
@@ -134,36 +133,15 @@ impl<'a> Executor<'a> {
         let mut emitter = export::create_emitter(&format, output.as_mut())
             .ok_or_else(|| ExecutionError::UnknownFormat(format.to_string()))?;
 
-        let render_type = if opt.is_fragment() {
-            RenderType::RenderFragment
-        } else {
-            RenderType::RenderDoc
-        };
-
-        let settings = if opt.debug() {
-            eprintln!("Running in DEBUG mode");
-            StgSettings {
-                generate_annotations: true,
-                render_type,
-                trace_steps: true,
-                suppress_updates: false,
-            }
-        } else {
-            StgSettings {
-                generate_annotations: true,
-                render_type,
-                trace_steps: false,
-                suppress_updates: false,
-            }
-        };
+        let rt = make_standard_runtime(&mut self.source_map);
 
         if opt.dump_runtime() {
-            println!("{}", dump_runtime());
+            println!("{}", prettify::prettify(rt.as_ref()));
             Ok(None)
         } else {
             let syn = {
                 let t = Instant::now();
-                let syn = stg::compile(&settings, self.evaluand.clone())?;
+                let syn = stg::compile(opt.stg_settings(), self.evaluand.clone(), rt.as_ref())?;
                 stats.timings_mut().record("stg-compile", t.elapsed());
                 syn
             };
@@ -174,7 +152,7 @@ impl<'a> Executor<'a> {
             } else {
                 emitter.stream_start();
                 let mut machine =
-                    stg::standard_machine(&settings, syn, emitter, &mut self.source_map)?;
+                    stg::standard_machine(opt.stg_settings(), syn, emitter, rt.as_ref())?;
 
                 let ret = {
                     let t = Instant::now();

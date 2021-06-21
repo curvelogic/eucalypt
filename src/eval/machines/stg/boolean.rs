@@ -1,9 +1,12 @@
 //! Boolean constants and functions
 
-use crate::common::sourcemap::SourceMap;
+use crate::common::sourcemap::Smid;
 
-use super::intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic};
-use super::syntax::{dsl::*, tags, LambdaForm};
+use super::{
+    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic},
+    syntax::{dsl::*, LambdaForm},
+    tags::DataConstructor,
+};
 
 /// A constant for TRUE
 pub struct True;
@@ -13,7 +16,7 @@ impl StgIntrinsic for True {
         "TRUE"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(t())
     }
 }
@@ -28,7 +31,7 @@ impl StgIntrinsic for False {
         "FALSE"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(f())
     }
 }
@@ -43,14 +46,17 @@ impl StgIntrinsic for Not {
         "NOT"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             switch(
                 local(0),
-                vec![(tags::BOOL_FALSE, t()), (tags::BOOL_TRUE, f())],
+                vec![
+                    (DataConstructor::BoolFalse.tag(), t()),
+                    (DataConstructor::BoolTrue.tag(), f()),
+                ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -65,23 +71,26 @@ impl StgIntrinsic for And {
         "AND"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2,
             switch(
                 local(0),
                 vec![
                     (
-                        tags::BOOL_TRUE,
+                        DataConstructor::BoolTrue.tag(),
                         switch(
                             local(1),
-                            vec![(tags::BOOL_TRUE, t()), (tags::BOOL_FALSE, f())],
+                            vec![
+                                (DataConstructor::BoolTrue.tag(), t()),
+                                (DataConstructor::BoolFalse.tag(), f()),
+                            ],
                         ),
                     ),
-                    (tags::BOOL_FALSE, f()),
+                    (DataConstructor::BoolFalse.tag(), f()),
                 ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -96,23 +105,26 @@ impl StgIntrinsic for Or {
         "OR"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2,
             switch(
                 local(0),
                 vec![
                     (
-                        tags::BOOL_FALSE,
+                        DataConstructor::BoolFalse.tag(),
                         switch(
                             local(1),
-                            vec![(tags::BOOL_TRUE, t()), (tags::BOOL_FALSE, f())],
+                            vec![
+                                (DataConstructor::BoolTrue.tag(), t()),
+                                (DataConstructor::BoolFalse.tag(), f()),
+                            ],
                         ),
                     ),
-                    (tags::BOOL_TRUE, t()),
+                    (DataConstructor::BoolTrue.tag(), t()),
                 ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -127,14 +139,17 @@ impl StgIntrinsic for If {
         "IF"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             3,
             switch(
                 local(0),
-                vec![(tags::BOOL_TRUE, local(1)), (tags::BOOL_FALSE, local(2))],
+                vec![
+                    (DataConstructor::BoolTrue.tag(), local(1)),
+                    (DataConstructor::BoolFalse.tag(), local(2)),
+                ],
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }

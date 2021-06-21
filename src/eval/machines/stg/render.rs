@@ -1,6 +1,6 @@
 //! The top-level render intrinsics
 
-use crate::{common::sourcemap::SourceMap, eval::error::ExecutionError};
+use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     block::LookupOr,
@@ -11,7 +11,8 @@ use super::{
     machine::Machine,
     panic::Panic,
     runtime::{call, machine_return_bool, NativeVariant},
-    syntax::{dsl::*, tags, LambdaForm, Ref},
+    syntax::{dsl::*, LambdaForm, Ref},
+    tags::DataConstructor,
 };
 
 /// The main entrypoint wrapper which renders the program's value
@@ -24,7 +25,7 @@ impl StgIntrinsic for Render {
     }
 
     /// Evaluate inspect and recur
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         let suppressed = lambda(
             1,
             demeta(
@@ -41,41 +42,41 @@ impl StgIntrinsic for Render {
             case(
                 local(0),
                 vec![
-                    (tags::UNIT, call::bif::emit0()),
-                    (tags::BOOL_TRUE, call::bif::emitt()),
-                    (tags::BOOL_FALSE, call::bif::emitf()),
+                    (DataConstructor::Unit.tag(), call::bif::emit0()),
+                    (DataConstructor::BoolTrue.tag(), call::bif::emitt()),
+                    (DataConstructor::BoolFalse.tag(), call::bif::emitf()),
                     (
-                        tags::BOXED_NUMBER, // [num] [boxnum]
+                        DataConstructor::BoxedNumber.tag(), // [num] [boxnum]
                         force(EmitNative.global(lref(0)), unit()),
                     ),
                     (
-                        tags::BOXED_SYMBOL, // [sym] [boxsym]
+                        DataConstructor::BoxedSymbol.tag(), // [sym] [boxsym]
                         EmitNative.global(lref(0)),
                     ),
                     (
-                        tags::BOXED_STRING, // [str] [boxstr]
+                        DataConstructor::BoxedString.tag(), // [str] [boxstr]
                         EmitNative.global(lref(0)),
                     ),
                     (
-                        tags::BOXED_ZDT, // [zdt] [boxzdt]
+                        DataConstructor::BoxedZdt.tag(), // [zdt] [boxzdt]
                         EmitNative.global(lref(0)),
                     ),
                     (
-                        tags::LIST_CONS,
+                        DataConstructor::ListCons.tag(),
                         force(
                             call::bif::emit_seq_start(), // [()] [h t] [arg]
                             force(RenderItems.global(lref(3)), call::bif::emit_seq_end()),
                         ),
                     ),
                     (
-                        tags::LIST_NIL,
+                        DataConstructor::ListNil.tag(),
                         force(
                             call::bif::emit_seq_start(), // [()] [h t] [arg]
                             call::bif::emit_seq_end(),
                         ),
                     ),
                     (
-                        tags::BLOCK,
+                        DataConstructor::Block.tag(),
                         force(
                             call::bif::emit_block_start(), // [()] [cons] [arg]
                             force(
@@ -97,14 +98,14 @@ impl StgIntrinsic for Render {
                     app(lref(0), vec![lref(2)]),
                     vec![
                         (
-                            tags::BOOL_FALSE, // [] [s r] [arg]
+                            DataConstructor::BoolFalse.tag(), // [] [s r] [arg]
                             app(lref(1), vec![lref(2)]),
                         ),
-                        (tags::BOOL_TRUE, unit()),
+                        (DataConstructor::BoolTrue.tag(), unit()),
                     ],
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -119,14 +120,14 @@ impl StgIntrinsic for RenderDoc {
         "RENDER_DOC"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1, // [renderee]
             force(
                 call::bif::emit_doc_start(), // [()] [renderee]
                 force(Render.global(lref(1)), call::bif::emit_doc_end()),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -141,27 +142,27 @@ impl StgIntrinsic for RenderItems {
         "RENDER_ITEMS"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1, // [cons]
             case(
                 local(0),
                 vec![
                     (
-                        tags::LIST_CONS, // [h t] [cons]
+                        DataConstructor::ListCons.tag(), // [h t] [cons]
                         force(
                             Render.global(lref(0)),
                             RenderItems.global(lref(2)), // [()] [h t] [cons]
                         ),
                     ),
                     (
-                        tags::LIST_NIL, // [cons]
+                        DataConstructor::ListNil.tag(), // [cons]
                         unit(),
                     ),
                 ],
                 call::bif::panic(str("improper list")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -176,27 +177,27 @@ impl StgIntrinsic for RenderBlockItems {
         "RENDER_BLOCK_ITEMS"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1, // [cons]
             case(
                 local(0),
                 vec![
                     (
-                        tags::LIST_CONS, // [h t] [cons]
+                        DataConstructor::ListCons.tag(), // [h t] [cons]
                         force(
                             RenderKv.global(lref(0)),
                             RenderBlockItems.global(lref(2)), // [()] [h t] [cons]
                         ),
                     ),
                     (
-                        tags::LIST_NIL, // [cons]
+                        DataConstructor::ListNil.tag(), // [cons]
                         unit(),
                     ),
                 ],
                 Panic.global(str("improper list")),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -235,7 +236,7 @@ impl StgIntrinsic for Suppresses {
         "SUPPRESSES"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             let_(
@@ -243,7 +244,7 @@ impl StgIntrinsic for Suppresses {
                 case(
                     local(1), // [:normal] [arg]
                     vec![(
-                        tags::BLOCK,
+                        DataConstructor::Block.tag(),
                         // [xs] [:normal] [arg]
                         unbox_sym(
                             LookupOr(NativeVariant::Unboxed).global(
@@ -258,7 +259,7 @@ impl StgIntrinsic for Suppresses {
                     f(),
                 ),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 
@@ -279,7 +280,7 @@ impl StgIntrinsic for RenderKv {
         "RENDER_KV"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         let value_renderable = lambda(
             1,
             letrec_(
@@ -299,7 +300,7 @@ impl StgIntrinsic for RenderKv {
                 local(0),
                 vec![
                     (
-                        tags::BLOCK_PAIR, // [k v] [kv]
+                        DataConstructor::BlockPair.tag(), // [k v] [kv]
                         switch(
                             let_(
                                 vec![value_renderable],
@@ -308,24 +309,24 @@ impl StgIntrinsic for RenderKv {
                             ),
                             vec![
                                 (
-                                    tags::BOOL_TRUE,
+                                    DataConstructor::BoolTrue.tag(),
                                     force(
                                         call::bif::emit_native(lref(0)), // [()] [k v] [kv]
                                         Render.global(lref(2)),
                                     ),
                                 ),
-                                (tags::BOOL_FALSE, unit()),
+                                (DataConstructor::BoolFalse.tag(), unit()),
                             ],
                         ),
                     ),
                     (
-                        tags::BLOCK_KV_LIST, // [cons] [kv]
+                        DataConstructor::BlockKvList.tag(), // [cons] [kv]
                         RenderItems.global(lref(0)),
                     ),
                 ],
                 unit(),
             ),
-            source_map.add_synthetic(self.name()),
+            annotation,
         )
     }
 }
@@ -339,16 +340,20 @@ pub mod tests {
 
     use super::*;
 
-    use crate::eval::{
-        emit::{CapturingEmitter, Event, RenderMetadata},
-        machines::stg::{
-            block::{self, Kv},
-            boolean, emit, env, eq,
-            machine::Machine,
-            panic, runtime,
-            syntax::StgSyn,
+    use crate::{
+        common::sourcemap::SourceMap,
+        eval::{
+            emit::{CapturingEmitter, Event, RenderMetadata},
+            machines::stg::{
+                block::{self, Kv},
+                boolean, emit, env, eq,
+                machine::Machine,
+                panic,
+                runtime::{self, Runtime},
+                syntax::StgSyn,
+            },
+            primitive::Primitive,
         },
-        primitive::Primitive,
     };
 
     lazy_static! {
@@ -376,6 +381,7 @@ pub mod tests {
             rt.add(Box::new(panic::Panic));
             rt.add(Box::new(boolean::And));
             rt.add(Box::new(boolean::Not));
+            rt.prepare(&mut SourceMap::default());
             Box::new(rt)
         };
     }
@@ -386,7 +392,7 @@ pub mod tests {
         Machine::new(
             syntax,
             Rc::new(env),
-            RUNTIME.globals(&mut SourceMap::default()),
+            RUNTIME.globals(),
             RUNTIME.intrinsics(),
             Box::new(CapturingEmitter::default()),
             true,
@@ -425,11 +431,17 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(box_sym("suppress")),
-                value(data(tags::BLOCK_PAIR, vec![sym("export"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("export"), lref(0)],
+                )),
                 value(Kv.global(lref(1))),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(2), lref(3)])),
-                value(data(tags::BLOCK, vec![lref(4)])),
+                value(data(DataConstructor::ListNil.tag(), vec![])),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(2), lref(3)],
+                )),
+                value(data(DataConstructor::Block.tag(), vec![lref(4)])),
             ],
             Suppresses.global(lref(5)),
         );
@@ -444,11 +456,17 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(box_sym("suppress")),
-                value(data(tags::BLOCK_PAIR, vec![sym("normal"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("normal"), lref(0)],
+                )),
                 value(Kv.global(lref(1))),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(2), lref(3)])),
-                value(data(tags::BLOCK, vec![lref(4)])),
+                value(data(DataConstructor::ListNil.tag(), vec![])),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(2), lref(3)],
+                )),
+                value(data(DataConstructor::Block.tag(), vec![lref(4)])),
             ],
             Suppresses.global(lref(5)),
         );
@@ -462,8 +480,8 @@ pub mod tests {
     pub fn test_suppresses_false_by_default() {
         let syntax = letrec_(
             vec![
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::BLOCK, vec![lref(0)])),
+                value(data(DataConstructor::ListNil.tag(), vec![])),
+                value(data(DataConstructor::Block.tag(), vec![lref(0)])),
             ],
             Suppresses.global(lref(1)),
         );
@@ -479,9 +497,15 @@ pub mod tests {
             vec![
                 value(box_sym("foo")),
                 value(box_sym("bar")),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(1), lref(2)])),
-                value(data(tags::LIST_CONS, vec![lref(0), lref(3)])),
+                value(data(DataConstructor::ListNil.tag(), vec![])),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(1), lref(2)],
+                )),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(0), lref(3)],
+                )),
             ],
             Render.global(lref(4)),
         );
@@ -505,15 +529,27 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(box_str("v1")),
-                value(data(tags::BLOCK_PAIR, vec![sym("k1"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("k1"), lref(0)],
+                )),
                 value(Kv.global(lref(1))),
                 value(box_str("v2")),
-                value(data(tags::BLOCK_PAIR, vec![sym("k2"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("k2"), lref(0)],
+                )),
                 value(Kv.global(lref(4))),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(5), lref(6)])),
-                value(data(tags::LIST_CONS, vec![lref(2), lref(7)])),
-                value(data(tags::BLOCK, vec![lref(8)])),
+                value(data(DataConstructor::ListNil.tag(), vec![])),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(5), lref(6)],
+                )),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(2), lref(7)],
+                )),
+                value(data(DataConstructor::Block.tag(), vec![lref(8)])),
             ],
             Render.global(lref(9)),
         );
@@ -527,11 +563,17 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(box_str("v1")),
-                value(data(tags::BLOCK_PAIR, vec![sym("k1"), lref(0)])),
+                value(data(
+                    DataConstructor::BlockPair.tag(),
+                    vec![sym("k1"), lref(0)],
+                )),
                 value(Kv.global(lref(1))),
-                value(data(tags::LIST_NIL, vec![])),
-                value(data(tags::LIST_CONS, vec![lref(2), lref(3)])),
-                value(data(tags::BLOCK, vec![lref(4)])),
+                value(data(DataConstructor::ListNil.tag(), vec![])),
+                value(data(
+                    DataConstructor::ListCons.tag(),
+                    vec![lref(2), lref(3)],
+                )),
+                value(data(DataConstructor::Block.tag(), vec![lref(4)])),
             ],
             Render.global(lref(5)),
         );
@@ -547,7 +589,7 @@ pub mod tests {
             vec![value(unit())],
             switch(
                 letrec_(vec![value(unit())], local(0)),
-                vec![(tags::UNIT, local(0))],
+                vec![(DataConstructor::Unit.tag(), local(0))],
             ),
         );
         let mut m = machine(syntax);

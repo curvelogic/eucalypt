@@ -1,4 +1,5 @@
 //! Compiled syntax of the STG machine which is executed directly
+use super::tags::Tag;
 use crate::common::sourcemap::Smid;
 use chrono::{DateTime, FixedOffset};
 use std::{fmt, rc::Rc};
@@ -77,37 +78,6 @@ where
 }
 
 pub type Ref = Reference<Native>;
-
-/// Datatype tag
-pub type Tag = u8;
-
-/// Predefined data type tags
-pub mod tags {
-    use super::Tag;
-
-    pub const UNIT: Tag = 0;
-    pub const BOOL_TRUE: Tag = 1;
-    pub const BOOL_FALSE: Tag = 2;
-    pub const BOXED_NUMBER: Tag = 3;
-    pub const BOXED_SYMBOL: Tag = 4;
-    pub const BOXED_STRING: Tag = 5;
-    /// Empty list
-    pub const LIST_NIL: Tag = 6;
-    /// Propert list cons cell
-    pub const LIST_CONS: Tag = 7;
-    /// Default blocks are constructed as, but LOOKUP is polymorphic
-    /// and works on alternative structures too.
-    ///
-    /// BLOCK (LIST_CONS (BLOCK_PAIR x y) (LIST_CONS (BLOCK_PAIR x y) LIST_NIL))
-    pub const BLOCK: Tag = 8;
-    /// BLOCK_PAIR is a pair of *unboxed* symbol and value
-    pub const BLOCK_PAIR: Tag = 9;
-    /// BLOCK_KV_LIST marks a list of which the first two elements are
-    /// interpreted as KV
-    pub const BLOCK_KV_LIST: Tag = 10;
-    /// Boxed zoned datetime
-    pub const BOXED_ZDT: Tag = 11;
-}
 
 /// Compiled STG syntax
 #[derive(Debug, PartialEq, Eq)]
@@ -314,9 +284,9 @@ pub mod dsl {
     use chrono::{DateTime, FixedOffset};
     use serde_json::Number;
 
-    use crate::common::sourcemap::Smid;
+    use crate::{common::sourcemap::Smid, eval::machines::stg::tags::DataConstructor};
 
-    use super::{tags, LambdaForm, Native, Ref, Reference, StgSyn, Tag};
+    use super::{LambdaForm, Native, Ref, Reference, StgSyn, Tag};
 
     pub fn atom(r: Ref) -> Rc<StgSyn> {
         Rc::new(StgSyn::Atom { evaluand: r })
@@ -376,7 +346,7 @@ pub mod dsl {
     where
         N: Into<Number>,
     {
-        data(tags::BOXED_NUMBER, vec![num(n)])
+        data(DataConstructor::BoxedNumber.tag(), vec![num(n)])
     }
 
     /// Create a string
@@ -386,7 +356,7 @@ pub mod dsl {
 
     /// Create a string
     pub fn box_str<T: AsRef<str>>(s: T) -> Rc<StgSyn> {
-        data(tags::BOXED_STRING, vec![str(s)])
+        data(DataConstructor::BoxedString.tag(), vec![str(s)])
     }
 
     /// Create a symbol
@@ -396,7 +366,7 @@ pub mod dsl {
 
     /// Create a symbol
     pub fn box_sym<T: AsRef<str>>(s: T) -> Rc<StgSyn> {
-        data(tags::BOXED_SYMBOL, vec![sym(s)])
+        data(DataConstructor::BoxedSymbol.tag(), vec![sym(s)])
     }
 
     /// Create a zoned datetime
@@ -406,17 +376,17 @@ pub mod dsl {
 
     /// Create a boxed zoned datetime
     pub fn box_zdt(dt: DateTime<FixedOffset>) -> Rc<StgSyn> {
-        data(tags::BOXED_ZDT, vec![zdt(dt)])
+        data(DataConstructor::BoxedZdt.tag(), vec![zdt(dt)])
     }
 
     /// Boolean true
     pub fn t() -> Rc<StgSyn> {
-        data(tags::BOOL_TRUE, vec![])
+        data(DataConstructor::BoolTrue.tag(), vec![])
     }
 
     /// Boolean false
     pub fn f() -> Rc<StgSyn> {
-        data(tags::BOOL_FALSE, vec![])
+        data(DataConstructor::BoolFalse.tag(), vec![])
     }
 
     /// To STG boolean
@@ -430,30 +400,30 @@ pub mod dsl {
 
     /// Unit / null
     pub fn unit() -> Rc<StgSyn> {
-        data(tags::UNIT, vec![])
+        data(DataConstructor::Unit.tag(), vec![])
     }
 
     /// Empty list
     pub fn nil() -> Rc<StgSyn> {
-        data(tags::LIST_NIL, vec![])
+        data(DataConstructor::ListNil.tag(), vec![])
     }
 
     /// List cons
     pub fn cons(h: Ref, t: Ref) -> Rc<StgSyn> {
-        data(tags::LIST_CONS, vec![h, t])
+        data(DataConstructor::ListCons.tag(), vec![h, t])
     }
 
     /// Block pair
     pub fn pair<T: AsRef<str>>(k: T, v: Ref) -> Rc<StgSyn> {
         data(
-            tags::BLOCK_PAIR,
+            DataConstructor::BlockPair.tag(),
             vec![vref(Native::Sym(k.as_ref().to_string())), v],
         )
     }
 
     /// Block wrapper
     pub fn block(inner: Ref) -> Rc<StgSyn> {
-        data(tags::BLOCK, vec![inner])
+        data(DataConstructor::Block.tag(), vec![inner])
     }
 
     /// Simple let
@@ -515,22 +485,22 @@ pub mod dsl {
 
     /// Unbox a number
     pub fn unbox_num(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
-        switch(scrutinee, vec![(tags::BOXED_NUMBER, then)])
+        switch(scrutinee, vec![(DataConstructor::BoxedNumber.tag(), then)])
     }
 
     /// Unbox a string
     pub fn unbox_str(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
-        switch(scrutinee, vec![(tags::BOXED_STRING, then)])
+        switch(scrutinee, vec![(DataConstructor::BoxedString.tag(), then)])
     }
 
     /// Unbox a symbol
     pub fn unbox_sym(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
-        switch(scrutinee, vec![(tags::BOXED_SYMBOL, then)])
+        switch(scrutinee, vec![(DataConstructor::BoxedSymbol.tag(), then)])
     }
 
     /// Unbox a symbol
     pub fn unbox_zdt(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
-        switch(scrutinee, vec![(tags::BOXED_ZDT, then)])
+        switch(scrutinee, vec![(DataConstructor::BoxedZdt.tag(), then)])
     }
 
     /// Add metadata to an expression
@@ -556,8 +526,10 @@ pub mod dsl {
 /// Example STG expression for use in tests
 #[cfg(test)]
 pub mod ex {
+    use crate::eval::machines::stg::tags::DataConstructor;
+
+    use super::dsl::*;
     use super::LambdaForm;
-    use super::{dsl::*, tags};
 
     pub fn i() -> LambdaForm {
         lambda(1, local(0))
@@ -595,7 +567,10 @@ pub mod ex {
             1,
             switch(
                 local(0),
-                vec![(tags::BOOL_FALSE, t()), (tags::BOOL_TRUE, f())],
+                vec![
+                    (DataConstructor::BoolFalse.tag(), t()),
+                    (DataConstructor::BoolTrue.tag(), f()),
+                ],
             ),
         )
     }

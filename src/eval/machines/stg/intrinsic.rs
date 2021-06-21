@@ -3,7 +3,7 @@
 use std::{convert::TryInto, rc::Rc};
 
 use crate::{
-    common::sourcemap::SourceMap,
+    common::sourcemap::Smid,
     eval::{error::ExecutionError, intrinsics, types::IntrinsicType},
 };
 
@@ -14,8 +14,9 @@ use super::{
             self, annotated_lambda, app, app_bif, data, force, gref, let_, local, lref, unbox_num,
             unbox_str, unbox_sym, unbox_zdt, value,
         },
-        tags, LambdaForm, Ref, StgSyn,
+        LambdaForm, Ref, StgSyn,
     },
+    tags::DataConstructor,
 };
 
 /// All intrinsics have an STG syntax wrapper
@@ -24,8 +25,13 @@ pub trait StgIntrinsic: Sync {
     fn name(&self) -> &str;
 
     /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
-        wrap(self.index(), self.info(), source_map)
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        wrap(self.index(), self.info(), annotation)
+    }
+
+    /// Whether the compiler should inline the wrapper
+    fn inlinable(&self) -> bool {
+        true
     }
 
     /// Index of the intrinsic
@@ -94,7 +100,7 @@ pub trait CallGlobal7: StgIntrinsic {
 /// Basic intrinsic wrapper that evals and unboxes strict arguments
 ///
 /// Type checks? Unbox?
-pub fn wrap(index: usize, info: &intrinsics::Intrinsic, source_map: &mut SourceMap) -> LambdaForm {
+pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> LambdaForm {
     let arity = info.arity();
 
     // nullaries can go direct to the intrinsic
@@ -155,16 +161,28 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, source_map: &mut SourceM
     // using let_ for boxing leaves indexes undisturbed
     match return_type {
         Some(IntrinsicType::Number) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_NUMBER, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedNumber.tag(), vec![lref(0)]),
+            );
         }
         Some(IntrinsicType::String) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_STRING, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
+            );
         }
         Some(IntrinsicType::Symbol) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_SYMBOL, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedSymbol.tag(), vec![lref(0)]),
+            );
         }
         Some(IntrinsicType::ZonedDateTime) => {
-            syntax = let_(vec![value(syntax)], data(tags::BOXED_ZDT, vec![lref(0)]));
+            syntax = let_(
+                vec![value(syntax)],
+                data(DataConstructor::BoxedZdt.tag(), vec![lref(0)]),
+            );
         }
         _ => {}
     }
@@ -211,11 +229,7 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, source_map: &mut SourceM
         }
     }
 
-    annotated_lambda(
-        arity.try_into().unwrap(),
-        syntax,
-        source_map.add_synthetic(info.name()),
-    )
+    annotated_lambda(arity.try_into().unwrap(), syntax, annotation)
 }
 
 #[cfg(test)]
@@ -233,7 +247,7 @@ pub mod tests {
             types::function(vec![types::num(), types::num(), types::num()]).unwrap(),
             vec![0, 1],
         );
-        let wrapper = wrap(99, &intrinsic, &mut SourceMap::default());
+        let wrapper = wrap(99, &intrinsic, Smid::fake(0));
         let syntax = annotated_lambda(
             2,
             unbox_num(
@@ -246,7 +260,7 @@ pub mod tests {
                             local(0),
                             let_(
                                 vec![value(app_bif(99, vec![lref(2), lref(0)]))],
-                                data(tags::BOXED_NUMBER, vec![lref(0)]),
+                                data(DataConstructor::BoxedNumber.tag(), vec![lref(0)]),
                             ),
                         ),
                     ),

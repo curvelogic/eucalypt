@@ -4,7 +4,7 @@ use crate::common::{
     prettify::{prettify, ToPretty},
     sourcemap::SourceMap,
 };
-use std::rc::Rc;
+use std::{convert::TryInto, rc::Rc};
 
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -17,8 +17,9 @@ use super::{
     machine::Machine,
     syntax::{
         dsl::{self, data, letrec_, local, lref, nil, sym, value, vref},
-        tags, LambdaForm, Native, Ref, Reference, StgSyn,
+        LambdaForm, Native, Ref, Reference, StgSyn,
     },
+    tags::DataConstructor,
 };
 use crate::{
     common::sourcemap::Smid,
@@ -29,11 +30,12 @@ use crate::{
 /// available (mainly for testing). A runtime packages together the
 /// intrinsics and their STG-syntax wrappers.
 pub trait Runtime: Sync {
-    /// Provide the globals wrappers
-    ///
-    /// NB. these contain RefCells and can be evaluated and mutated in
-    /// place
-    fn globals(&self, source_map: &mut SourceMap) -> Rc<EnvFrame>;
+    /// Initialise a runtime, registering source map info for any
+    /// annotations
+    fn prepare(&mut self, source_map: &mut SourceMap);
+
+    /// Provide an environment of globals wrappers
+    fn globals(&self) -> Rc<EnvFrame>;
 
     /// Provide the (immutable) intrinsic implementations
     fn intrinsics(&self) -> Vec<&dyn StgIntrinsic>;
@@ -45,7 +47,10 @@ pub enum NativeVariant {
 }
 
 pub struct StandardRuntime {
+    /// Intrinsic implementations
     impls: Vec<Box<dyn StgIntrinsic>>,
+    /// Annotation SMIDs to apply to globals
+    annotations: Option<Vec<Smid>>,
 }
 
 impl Default for StandardRuntime {
@@ -54,7 +59,10 @@ impl Default for StandardRuntime {
             .iter()
             .map(|i| -> Box<dyn StgIntrinsic> { Box::new(Unimplemented::new(i.name())) })
             .collect();
-        StandardRuntime { impls }
+        StandardRuntime {
+            impls,
+            annotations: None,
+        }
     }
 }
 
@@ -72,14 +80,7 @@ impl ToPretty for StandardRuntime {
         D::Doc: Clone,
         A: Clone,
     {
-        let mut source_map = SourceMap::default();
-        let lambdas: Vec<_> = self
-            .impls
-            .iter()
-            .map(|g| g.wrapper(&mut source_map))
-            .collect();
-
-        let docs = lambdas.iter().enumerate().map(|(i, lam)| {
+        let docs = self.lambdas().into_iter().enumerate().map(|(i, lam)| {
             let name = intrinsics::intrinsic(i).name();
 
             allocator
@@ -88,7 +89,7 @@ impl ToPretty for StandardRuntime {
                 .append(":")
                 .append(allocator.space())
                 .append(allocator.line())
-                .append(allocator.text(prettify(lam)))
+                .append(allocator.text(prettify(&lam)))
                 .append(allocator.line())
         });
 
@@ -96,13 +97,36 @@ impl ToPretty for StandardRuntime {
     }
 }
 
+impl StandardRuntime {
+    /// Generate the wrappers to populate the global environment
+    fn lambdas(&self) -> Vec<LambdaForm> {
+        let smids = self.annotations.as_ref().expect("runtime not initialised");
+
+        self.impls
+            .iter()
+            .zip(smids)
+            .map(|(g, ann)| g.wrapper(*ann))
+            .collect()
+    }
+}
+
 impl Runtime for StandardRuntime {
+    /// Generate the STG wrappers for all the intrinsics
+    fn prepare(&mut self, source_map: &mut SourceMap) {
+        self.annotations = Some(
+            self.impls
+                .iter()
+                .map(|bif| source_map.add_synthetic(bif.name()))
+                .collect(),
+        )
+    }
+
     /// Provide all global STG wrappers for the machine
-    fn globals(&self, source_map: &mut SourceMap) -> Rc<EnvFrame> {
-        let lambda_forms: Vec<LambdaForm> =
-            self.impls.iter().map(|g| g.wrapper(source_map)).collect();
+    ///
+    /// Must not be called until globals have been generated
+    fn globals(&self) -> Rc<EnvFrame> {
         EnvFrame::from_let(
-            lambda_forms.as_slice(),
+            self.lambdas().as_slice(),
             &Rc::new(EnvFrame::default()),
             Smid::default(),
         )
@@ -130,7 +154,7 @@ impl StgIntrinsic for Unimplemented {
         &self.name
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         dsl::value(call::bif::panic(dsl::str(&format!(
             "unimplemented intrinsic wrapper {}",
             self.name()
@@ -195,9 +219,9 @@ impl Iterator for DataIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (h, t) = match &**self.closure.code() {
-            StgSyn::Cons { tag, args } => match *tag {
-                tags::LIST_CONS => (args[0].clone(), args[1].clone()),
-                tags::LIST_NIL => return None,
+            StgSyn::Cons { tag, args } => match (*tag).try_into() {
+                Ok(DataConstructor::ListCons) => (args[0].clone(), args[1].clone()),
+                Ok(DataConstructor::ListNil) => return None,
                 _ => panic!("Non-list data after force"),
             },
             _ => panic!("Non-list after force"),
@@ -228,9 +252,9 @@ impl Iterator for StrListIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (h, t) = match &**self.closure.code() {
-            StgSyn::Cons { tag, args } => match *tag {
-                tags::LIST_CONS => (args[0].clone(), args[1].clone()),
-                tags::LIST_NIL => return None,
+            StgSyn::Cons { tag, args } => match (*tag).try_into() {
+                Ok(DataConstructor::ListCons) => (args[0].clone(), args[1].clone()),
+                Ok(DataConstructor::ListNil) => return None,
                 _ => panic!("Non-list data after seqStrList"),
             },
             _ => panic!("Non-list after seqStrList"),
@@ -317,12 +341,12 @@ pub fn machine_return_str_list(
     let mut bindings = vec![value(nil())];
     for item in list.into_iter().rev() {
         bindings.push(value(data(
-            tags::BOXED_STRING,
+            DataConstructor::BoxedString.tag(),
             vec![vref(Native::Str(item))],
         )));
         let len = bindings.len();
         bindings.push(value(data(
-            tags::LIST_CONS,
+            DataConstructor::ListCons.tag(),
             vec![lref(len - 1), lref(len - 2)],
         )));
     }
@@ -344,7 +368,7 @@ pub fn machine_return_closure_list(
     let mut bindings = vec![value(nil())];
     for i in (0..len + 1).rev() {
         bindings.push(value(data(
-            tags::LIST_CONS,
+            DataConstructor::ListCons.tag(),
             vec![lref(len + i + 1), lref(len - i)],
         )));
     }
@@ -367,7 +391,7 @@ pub fn machine_return_block_pair_closure_list(
     let mut pairs = vec![];
     for (i, k) in block.keys().enumerate() {
         pairs.push(Closure::new(
-            data(tags::BLOCK_PAIR, vec![sym(k), lref(i)]),
+            data(DataConstructor::BlockPair.tag(), vec![sym(k), lref(i)]),
             value_frame.clone(),
         ));
     }
@@ -377,7 +401,7 @@ pub fn machine_return_block_pair_closure_list(
     let mut bindings = vec![value(nil())];
     for i in (0..len + 1).rev() {
         bindings.push(value(data(
-            tags::LIST_CONS,
+            DataConstructor::ListCons.tag(),
             vec![lref(len + i + 1), lref(len - i)],
         )));
     }

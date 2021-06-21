@@ -1,14 +1,15 @@
 //! List intrinsics
 
-use crate::common::sourcemap::SourceMap;
+use crate::common::sourcemap::Smid;
 
 use super::{
     intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
     panic::Panic,
     syntax::{
         dsl::{annotated_lambda, case, data, local, lref, str, value},
-        tags, LambdaForm,
+        LambdaForm,
     },
+    tags::DataConstructor,
 };
 
 /// A constant for CONS
@@ -19,11 +20,11 @@ impl StgIntrinsic for Cons {
         "CONS"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             2, // [h t]
-            data(tags::LIST_CONS, vec![lref(0), lref(1)]),
-            source_map.add_synthetic(self.name()),
+            data(DataConstructor::ListCons.tag(), vec![lref(0), lref(1)]),
+            annotation,
         )
     }
 }
@@ -38,8 +39,8 @@ impl StgIntrinsic for Nil {
         "NIL"
     }
 
-    fn wrapper(&self, _source_map: &mut SourceMap) -> LambdaForm {
-        value(data(tags::LIST_NIL, vec![]))
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        value(data(DataConstructor::ListNil.tag(), vec![]))
     }
 }
 
@@ -53,15 +54,15 @@ impl StgIntrinsic for Tail {
         "TAIL"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             case(
                 local(0),
-                vec![(tags::LIST_CONS, local(1))],
+                vec![(DataConstructor::ListCons.tag(), local(1))],
                 Panic.global(str("TAIL on empty list")),
             ),
-            source_map.add_synthetic("TAIL"),
+            annotation,
         )
     }
 }
@@ -76,15 +77,15 @@ impl StgIntrinsic for Head {
         "HEAD"
     }
 
-    fn wrapper(&self, source_map: &mut SourceMap) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             1,
             case(
                 local(0),
-                vec![(tags::LIST_CONS, local(0))],
+                vec![(DataConstructor::ListCons.tag(), local(0))],
                 Panic.global(str("HEAD on empty list")),
             ),
-            source_map.add_synthetic("HEAD"),
+            annotation,
         )
     }
 }
