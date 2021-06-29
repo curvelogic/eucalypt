@@ -73,15 +73,14 @@ impl ShiftIndexTransformation {
 
 impl IndexTransformation for ShiftIndexTransformation {
     fn apply(&self, r: &Ref, outer: &dyn Fn(&Ref) -> Ref) -> Ref {
-        match r {
-            Ref::L(n) => {
-                if *n < self.shift {
-                    r.clone()
-                } else {
-                    outer(&Ref::L(*n - self.shift)).bump(self.shift)
-                }
+        if let Ref::L(n) = r {
+            if *n < self.shift {
+                r.clone()
+            } else {
+                outer(&Ref::L(*n - self.shift)).bump(self.shift)
             }
-            _ => r.clone(),
+        } else {
+            r.clone()
         }
     }
 }
@@ -164,7 +163,10 @@ impl AllocationPruner {
                     Some(t) => {
                         // we can strip	the let
                         self.transform_stack.push(Box::new(t));
+                        self.transform_stack
+                            .push(Box::new(ShiftIndexTransformation::new(bindings.len())));
                         let body = self.apply(body.clone());
+                        self.transform_stack.pop();
                         self.transform_stack.pop();
                         body
                     }

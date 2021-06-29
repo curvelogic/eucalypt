@@ -73,7 +73,11 @@ pub struct Context<'a> {
     /// What offset we need to count back to cross this scope
     size: usize,
 
-    /// Next context frame
+    /// Next context frame.
+    ///
+    /// Note that this may not be the enclosing, if we are embedded in
+    /// the binding of a non-recursive let, that let is skipped as it
+    /// does not contribute bindings to our context.
     next: Option<&'a Context<'a>>,
 }
 
@@ -207,6 +211,8 @@ pub trait ProtoReference {
 pub struct LetBinder<'a> {
     /// If this context scope has arisen from
     scope: Option<RcExpr>,
+    /// Whether this should compile to LETREC as opposed to LET
+    recursive: bool,
     /// Bindings in construction
     bindings: Vec<Box<dyn ProtoSyntax>>,
     /// If this corresponds to a Core let (i.e. has a scope), track
@@ -224,11 +230,25 @@ pub struct LetBinder<'a> {
 }
 
 impl<'a> LetBinder<'a> {
-    /// A let scope to catch any required intermediate bindings without a
-    /// corresponding Core scope
-    pub fn synthetic(context: &'a Context) -> Self {
+    /// A letrec scope for the root context
+    pub fn root() -> Self {
         LetBinder {
             scope: None,
+            recursive: true,
+            bindings: vec![],
+            var_refs: vec![],
+            body: None,
+            size: None,
+            context: None,
+        }
+    }
+
+    /// A let scope to catch any required intermediate bindings
+    /// without a corresponding Core scope
+    pub fn synthetic_let(context: &'a Context) -> Self {
+        LetBinder {
+            scope: None,
+            recursive: false,
             bindings: vec![],
             var_refs: vec![],
             body: None,
@@ -237,10 +257,25 @@ impl<'a> LetBinder<'a> {
         }
     }
 
-    /// A new let binder
+    /// A recursive let binder to catch any required intermediate
+    /// bindings without a corresponding Core scope
+    pub fn synthetic_letrec(context: &'a Context) -> Self {
+        LetBinder {
+            scope: None,
+            recursive: true,
+            bindings: vec![],
+            var_refs: vec![],
+            body: None,
+            size: None,
+            context: Some(context),
+        }
+    }
+
+    /// A new letrec binder corresponding to a scope in the Core syntax
     pub fn for_scope(expr: RcExpr, context: &'a Context) -> Self {
         LetBinder {
             scope: Some(expr),
+            recursive: true,
             bindings: vec![],
             var_refs: vec![],
             body: None,
@@ -253,7 +288,11 @@ impl<'a> LetBinder<'a> {
     /// corresponds to, we can generate a ref right away and optimise
     /// away a binding.
     pub fn running_ref(&self, index: usize) -> Option<Ref> {
-        self.var_refs.get(index).cloned()
+        if self.recursive {
+            self.var_refs.get(index).cloned()
+        } else {
+            None
+        }
     }
 
     /// Stop accepting bindings and crystalise size
@@ -261,9 +300,20 @@ impl<'a> LetBinder<'a> {
         self.size = Some(self.bindings.len())
     }
 
+    /// Ensure that this binder will now generate a LETREC.
+    ///
+    /// If we're adding inter-referring bindings we need to ensure
+    /// that however the binder was created, it will generate a
+    /// LETREC.
+    pub fn ensure_recursive(&mut self) {
+        self.recursive = true;
+    }
+
     /// Once a let binder has been frozen, so the size of the bindings
     /// is known and it has a body, it can be converted into an STG LetRec
     pub fn into_stg(mut self, compiler: &Compiler) -> Result<Rc<StgSyn>, CompileError> {
+        let recursive_let = self.recursive;
+
         if self.size.is_none() {
             panic!("attempt to realise an unfrozen let binder");
         }
@@ -272,26 +322,34 @@ impl<'a> LetBinder<'a> {
             panic!("attempt to realise let binder with no body")
         }
 
-        let context = Context {
+        let body_context = Context {
             scope: self.scope,
             var_refs: self.var_refs,
             size: self.size.unwrap(),
             next: self.context,
         };
 
+        let binding_context = if recursive_let {
+            &body_context
+        } else {
+            self.context.as_ref().unwrap()
+        };
+
         let bindings: Vec<LambdaForm> = self
             .bindings
             .drain(0..)
-            .map(|mut b| b.take_lambda_form(compiler, &context))
+            .map(|mut b| b.take_lambda_form(compiler, binding_context))
             .collect::<Result<Vec<LambdaForm>, CompileError>>()?;
 
         let mut proto_body = self.body.take().unwrap();
-        let body = proto_body.take_syntax(compiler, &context)?;
+        let body = proto_body.take_syntax(compiler, &body_context)?;
 
         if bindings.is_empty() {
             Ok(body)
-        } else {
+        } else if recursive_let {
             Ok(Rc::new(StgSyn::LetRec { bindings, body }))
+        } else {
+            Ok(Rc::new(StgSyn::Let { bindings, body }))
         }
     }
 
@@ -462,11 +520,125 @@ impl ProtoSyntax for Holder {
     }
 }
 
+/// A function application using local let bindings
+pub struct ProtoAppGroup {
+    f: RcExpr,
+    args: Vec<RcExpr>,
+    single_use: bool,
+    smid: Smid,
+}
+
+impl ProtoAppGroup {
+    pub fn new(f: RcExpr, args: Vec<RcExpr>, single_use: bool, smid: Smid) -> Self {
+        Self {
+            f,
+            args,
+            single_use,
+            smid,
+        }
+    }
+}
+
+impl ProtoSyntax for ProtoAppGroup {
+    fn single_use(&self) -> bool {
+        self.single_use
+    }
+
+    fn take_syntax(
+        &mut self,
+        compiler: &Compiler,
+        context: &Context,
+    ) -> Result<Rc<StgSyn>, CompileError> {
+        let mut intrinsic_index = None;
+        let mut strict_args = &vec![];
+        let mut local_binder = LetBinder::synthetic_let(context);
+
+        // Find a reference for the function
+        let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
+            Expr::Var(s, v) => Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())),
+            Expr::Intrinsic(_, bif) => {
+                intrinsic_index = intrinsics::index(bif);
+                let n =
+                    intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
+                let info = intrinsics::intrinsic(n);
+                strict_args = info.strict_args();
+                Box::new(ProtoRef::new(gref(n)))
+            }
+            _ => Box::new(ProtoRef::new(compiler.compile_binding(
+                &mut local_binder,
+                self.f.clone(),
+                self.smid,
+                false,
+            )?)),
+        };
+
+        // Get references for args, compiling into the local binder if necessary
+        let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
+        for (i, arg) in self.args.iter().enumerate() {
+            match &*arg.inner {
+                Expr::Var(s, v) => {
+                    arg_indexes.push(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
+                }
+                Expr::Intrinsic(_, bif) => {
+                    let global_index = intrinsics::index(bif)
+                        .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
+                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
+                }
+                _ => {
+                    // if the argument position is strict, assume
+                    // it'll be evaluated once only and so won't
+                    // benefit from a thunk
+                    let index = compiler.compile_binding(
+                        &mut local_binder,
+                        arg.clone(),
+                        self.smid,
+                        strict_args.contains(&i),
+                    )?;
+                    arg_indexes.push(Box::new(ProtoRef::new(index)));
+                }
+            }
+        }
+
+        // If it's an intrinsic, check whether we should inline the
+        // wrapper
+        match intrinsic_index.and_then(|index| compiler.intrinsics.get(index)) {
+            Some(bif)
+                if !compiler.suppress_inlining
+                    && bif.inlinable()
+                    && bif.info().arity() == arg_indexes.len() =>
+            {
+                let inline_body = bif.wrapper(Smid::default()).body().clone();
+                local_binder.set_body(Box::new(ProtoInline::new(arg_indexes, inline_body)))?;
+            }
+            _ => {
+                local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.single_use))?;
+            }
+        }
+
+        local_binder.freeze();
+        local_binder.into_stg(compiler)
+    }
+}
+
 /// A function application that resolves all locals when context is available
 pub struct ProtoApp {
     f: Box<dyn ProtoReference>,
     args: Vec<Box<dyn ProtoReference>>,
     single_use: bool,
+}
+
+impl ProtoApp {
+    pub fn boxed(
+        f: Box<dyn ProtoReference>,
+        args: Vec<Box<dyn ProtoReference>>,
+        single_use: bool,
+    ) -> Box<dyn ProtoSyntax> {
+        Box::new(ProtoApp {
+            f,
+            args,
+            single_use,
+        })
+    }
 }
 
 impl ProtoSyntax for ProtoApp {
@@ -551,7 +723,7 @@ impl ProtoSyntax for ProtoLambda {
             next: Some(context),
         };
 
-        let mut binder = LetBinder::synthetic(&lambda_context);
+        let mut binder = LetBinder::synthetic_let(&lambda_context);
 
         let body = compiler.compile_body(&mut binder, scope.unsafe_body.clone())?;
         binder.set_body(body)?;
@@ -633,7 +805,7 @@ impl<'rt> Compiler<'rt> {
 
     /// Compile a core expression into STG syntax
     pub fn compile(&self, expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {
-        let mut binder = LetBinder::default();
+        let mut binder = LetBinder::root();
         match self.render_type {
             RenderType::Headless => {
                 let body = self.compile_body(&mut binder, expr)?;
@@ -773,6 +945,8 @@ impl<'rt> Compiler<'rt> {
         dft: &Option<RcExpr>,
         annotation: Smid,
     ) -> Result<Holder, CompileError> {
+        binder.ensure_recursive();
+
         let obj = self.compile_binding(binder, obj.clone(), obj.smid(), false)?;
         let dft = match dft {
             // Tolerate free vars in lookup default for dynamic gen
@@ -809,6 +983,8 @@ impl<'rt> Compiler<'rt> {
         smid: Smid,
         members: &[RcExpr],
     ) -> Result<Holder, CompileError> {
+        binder.ensure_recursive();
+
         let mut last_cons = None;
 
         for item in members.iter().rev() {
@@ -834,6 +1010,8 @@ impl<'rt> Compiler<'rt> {
         smid: Smid,
         members: &[RcExpr],
     ) -> Result<Ref, CompileError> {
+        binder.ensure_recursive();
+
         let mut last_cons = None;
 
         for item in members.iter().rev() {
@@ -858,6 +1036,8 @@ impl<'rt> Compiler<'rt> {
         smid: Smid,
         block_map: &BlockMap<RcExpr>,
     ) -> Result<Holder, CompileError> {
+        binder.ensure_recursive();
+
         let mut index = KEmptyList.gref(); // binder.add(dsl::nil())?; // TODO: to CAF
         for (k, v) in block_map.iter().rev() {
             let v_index = self.compile_binding(binder, v.clone(), smid, false)?;
@@ -869,79 +1049,22 @@ impl<'rt> Compiler<'rt> {
 
     /// Compile a function application
     ///
-    /// Any of the function and arguments which aren't already trivially
-    /// resolvable in the environment will be allocated as new bindings.
+    /// This may create a let binding for temporaries in function or
+    /// argument position
     pub fn compile_application(
         &self,
-        binder: &mut LetBinder,
+        _binder: &mut LetBinder,
         smid: Smid,
         f: &RcExpr,
         args: &[RcExpr],
         single_use: bool,
     ) -> Result<Box<dyn ProtoSyntax>, CompileError> {
-        let mut intrinsic_index = None;
-        let mut strict_args = &vec![];
-
-        // Find a reference for the function
-        let f_index: Box<dyn ProtoReference> = match &*f.inner {
-            Expr::Var(s, v) => Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())),
-            Expr::Intrinsic(_, bif) => {
-                intrinsic_index = intrinsics::index(bif);
-                let n =
-                    intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                let info = intrinsics::intrinsic(n);
-                strict_args = info.strict_args();
-                Box::new(ProtoRef::new(gref(n)))
-            }
-            _ => Box::new(ProtoRef::new(self.compile_binding(
-                binder,
-                f.clone(),
-                smid,
-                false,
-            )?)),
-        };
-
-        // Otherwise compile the application
-        let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
-        for (i, arg) in args.iter().enumerate() {
-            match &*arg.inner {
-                Expr::Var(s, v) => {
-                    arg_indexes.push(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())))
-                }
-                Expr::Intrinsic(_, bif) => {
-                    let global_index = intrinsics::index(bif)
-                        .ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
-                    arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
-                }
-                _ => {
-                    // if the argument position is strict, assume
-                    // it'll be evaluated once only and so won't
-                    // benefit from a thunk
-                    let index =
-                        self.compile_binding(binder, arg.clone(), smid, strict_args.contains(&i))?;
-                    arg_indexes.push(Box::new(ProtoRef::new(index)));
-                }
-            }
-        }
-
-        // If it's an intrinsic, check whether we should inline the
-        // wrapper
-        if !self.suppress_inlining {
-            if let Some(index) = intrinsic_index {
-                if let Some(bif) = self.intrinsics.get(index) {
-                    if bif.inlinable() && bif.info().arity() == arg_indexes.len() {
-                        let body = bif.wrapper(Smid::default()).body().clone();
-                        return Ok(Box::new(ProtoInline::new(arg_indexes, body)));
-                    }
-                }
-            }
-        }
-
-        Ok(Box::new(ProtoApp {
-            f: f_index,
-            args: arg_indexes,
+        Ok(Box::new(ProtoAppGroup::new(
+            f.clone(),
+            args.to_vec(),
             single_use,
-        }))
+            smid,
+        )))
     }
 }
 #[cfg(test)]
@@ -1043,17 +1166,21 @@ pub mod tests {
             acore::var(z.clone()),
         );
 
-        let syntax = dsl::letrec_(
+        let expected = dsl::letrec_(
             vec![
                 dsl::lambda(2, dsl::ann(Smid::default(), dsl::local(0))),
-                dsl::value(compile_boxed_literal(&Primitive::Num(999.into()))),
-                dsl::value(compile_boxed_literal(&Primitive::Num((-999).into()))),
-                dsl::thunk(dsl::app(dsl::lref(0), vec![dsl::lref(1), dsl::lref(2)])),
+                dsl::thunk(dsl::let_(
+                    vec![
+                        dsl::value(compile_boxed_literal(&Primitive::Num(999.into()))),
+                        dsl::value(compile_boxed_literal(&Primitive::Num((-999).into()))),
+                    ],
+                    dsl::app(dsl::lref(2), vec![dsl::lref(0), dsl::lref(1)]),
+                )),
             ],
-            dsl::local(3),
+            dsl::local(1),
         );
 
-        assert_eq!(compile(core).unwrap(), syntax);
+        assert_eq!(compile(core).unwrap(), expected);
     }
 
     #[test]
