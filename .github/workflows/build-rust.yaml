@@ -171,9 +171,12 @@ jobs:
         run: |
           target/release/eu_amd64 -v
           target/release/eu_amd64 harness/test -T
+      - name: Ensure we have the latest tag
+        run: |
+          git fetch origin latest:latest
       - name: Generate changelog
         run: |
-          echo "$(git-changelog latest...)" > CHANGELOG.md
+          echo "$(git-changelog latest...$TAG_NAME)" > CHANGELOG.md
       - name: Upload changelog
         uses: actions/upload-artifact@v1
         with:
