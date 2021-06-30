@@ -4,23 +4,10 @@ use std::iter;
 
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
-use super::{
-    force::SeqStrList,
-    intrinsic::{CallGlobal1, CallGlobal2, StgIntrinsic},
-    machine::Machine,
-    printf::{self, PrintfError},
-    runtime::{
+use super::{force::SeqStrList, intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, StgIntrinsic}, machine::Machine, printf::{self, PrintfError}, runtime::{
         call, machine_return_num, machine_return_str, machine_return_str_list, machine_return_sym,
         str_arg, str_list_arg,
-    },
-    syntax::{
-        dsl::{
-            annotated_lambda, atom, data, force, let_, local, lref, str, switch, unbox_str, value,
-        },
-        LambdaForm, Native, Ref,
-    },
-    tags::DataConstructor,
-};
+    }, syntax::{LambdaForm, Native, Ref, dsl::{annotated_lambda, atom, box_str, data, force, let_, local, lref, str, switch, unbox_str, value}}, tags::DataConstructor};
 
 use itertools::Itertools;
 use regex::Regex;
@@ -368,3 +355,18 @@ impl StgIntrinsic for Letters {
 }
 
 impl CallGlobal1 for Letters {}
+
+/// __DQ - constant for the double quote character
+pub struct Dq;
+
+impl StgIntrinsic for Dq {
+    fn name(&self) -> &str {
+        "DQ"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        value(box_str("\""))
+    }
+}
+
+impl CallGlobal0 for Dq {}
