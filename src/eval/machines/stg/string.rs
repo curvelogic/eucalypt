@@ -4,10 +4,24 @@ use std::iter;
 
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
-use super::{force::SeqStrList, intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, StgIntrinsic}, machine::Machine, printf::{self, PrintfError}, runtime::{
+use super::{
+    force::SeqStrList,
+    intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, StgIntrinsic},
+    machine::Machine,
+    printf::{self, PrintfError},
+    runtime::{
         call, machine_return_num, machine_return_str, machine_return_str_list, machine_return_sym,
         str_arg, str_list_arg,
-    }, syntax::{LambdaForm, Native, Ref, dsl::{annotated_lambda, atom, box_str, data, force, let_, local, lref, str, switch, unbox_str, value}}, tags::DataConstructor};
+    },
+    syntax::{
+        dsl::{
+            annotated_lambda, atom, box_str, data, force, let_, local, lref, str, switch,
+            unbox_str, value,
+        },
+        LambdaForm, Native, Ref,
+    },
+    tags::DataConstructor,
+};
 
 use itertools::Itertools;
 use regex::Regex;
