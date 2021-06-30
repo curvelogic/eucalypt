@@ -110,8 +110,6 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(meta::Meta));
     rt.add(Box::new(meta::WithMeta));
     rt.add(Box::new(time::Zdt));
-    rt.add(Box::new(time::ZdtWrap));
-    rt.add(Box::new(time::ZdtUnwrap));
     rt.add(Box::new(time::ZdtFromEpoch));
     rt.add(Box::new(time::ZdtFields));
     rt.add(Box::new(time::ZdtIFields));
