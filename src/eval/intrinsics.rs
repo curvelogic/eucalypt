@@ -419,56 +419,46 @@ lazy_static! {
             strict: vec![0, 1, 2, 3, 4, 5, 6],
     },
     Intrinsic { // 75
-            name: "ZDT.WRAP",
-            ty: function(vec![zdt(), zdt()]).unwrap(),
-            strict: vec![0],
-    },
-    Intrinsic { // 76
-            name: "ZDT.UNWRAP",
-            ty: function(vec![zdt(), zdt()]).unwrap(),
-            strict: vec![0],
-    },
-    Intrinsic { // 77
             name: "ZDT.FROM_EPOCH",
             ty: function(vec![num(), zdt()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 78
+    Intrinsic { // 76
             name: "ZDT.FIELDS",
             ty: function(vec![zdt(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 79
+    Intrinsic { // 77
             name: "IFIELDS",
             ty: function(vec![num(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 80
+    Intrinsic { // 78
             name: "ZDT.PARSE",
             ty: function(vec![str_(), zdt()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 81
+    Intrinsic { // 79
             name: "ZDT.FORMAT",
             ty: function(vec![zdt(), str_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 82
+    Intrinsic { // 80
             name: "SUPPRESSES",
             ty: function(vec![record(), bool_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 83
+    Intrinsic { // 81
             name: "KNIL",
             ty: unit(),
             strict: vec![],
     },
-    Intrinsic { // 84
+    Intrinsic { // 82
             name: "K[]",
             ty: list(),
             strict: vec![],
     },
-    Intrinsic { // 85
+    Intrinsic { // 83
             name: "K{}",
             ty: record(),
             strict: vec![],

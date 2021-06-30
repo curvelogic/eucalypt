@@ -757,18 +757,8 @@ cal: {
   
   epoch: 0 ifields
 
-  ` "Intrinsics for working with unwrapped zoned date times"
-  Γ: {
-    zdt: __ZDT
-    wrap: '__ZDT.WRAP'
-    unwrap: '__ZDT.UNWRAP'
-    fields: '__ZDT.FIELDS'
-    parse: '__ZDT.PARSE'
-    format: '__ZDT.FORMAT'
-  }
-
   ` "`cal.zdt(y, m, d, H, M, S, Z)` - create zoned date time from datetime components and timezone string (e.g. '+0100')"
-  zdt(y, m, d, H, M, S, Z): Γ.zdt(y, m, d, H, M, S, Z) Γ.wrap
+  zdt: __ZDT
 
   ` "`cal.time(b)` - convert block of time fields to time (with 0 / UTC defaults)"
   datetime(b): zdt(b lookup-or(:y, 0),
@@ -780,13 +770,13 @@ cal: {
 	                 b lookup-or(:Z, "UTC"))
 
   ` "cal.parse(s) - parse an ISO8601 formatted date string into a zoned date time."
-  parse: Γ.wrap ∘ Γ.parse
+  parse: '__ZDT.PARSE'
 
   ` "cal.format(s) - format a zoned date time as ISO8601."
-  format: Γ.format ∘ Γ.unwrap
+  format: '__ZDT.FORMAT'
 
   ` "cal.fields(t) - decompose a zoned date time into a block of its component fields (y,m,d,H,M,S,Z)."
-  fields: block ∘ Γ.fields ∘ Γ.unwrap
+  fields: block ∘ '__ZDT.FIELDS'
 }
 
 

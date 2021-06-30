@@ -1,9 +1,4 @@
 //! Intrinsics for working with time and date
-//!
-//! TODO: The haskell implementation had an ugly and pointless wrap / unwrap
-//! paradigm going on which we can eliminate but to keep comptibility
-//! with the existing prelude.eu for now we'll implement them as
-//! no-ops.
 
 use std::{convert::TryInto, rc::Rc};
 
@@ -27,7 +22,7 @@ use super::{
         str_arg, zdt_arg,
     },
     syntax::{
-        dsl::{annotated_lambda, box_num, box_str, force, local, lref},
+        dsl::{annotated_lambda, box_num, box_str, force, lref},
         LambdaForm, Ref,
     },
 };
@@ -145,38 +140,6 @@ impl StgIntrinsic for Zdt {
 }
 
 impl CallGlobal7 for Zdt {}
-
-/// ZDT.WRAP - no-op for compatibility with old prelude
-pub struct ZdtWrap;
-
-impl StgIntrinsic for ZdtWrap {
-    fn name(&self) -> &str {
-        "ZDT.WRAP"
-    }
-
-    /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(1, local(0), annotation)
-    }
-}
-
-impl CallGlobal1 for ZdtWrap {}
-
-/// ZDT.UNWRAP - no-op for compatibility with old prelude
-pub struct ZdtUnwrap;
-
-impl StgIntrinsic for ZdtUnwrap {
-    fn name(&self) -> &str {
-        "ZDT.UNWRAP"
-    }
-
-    /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(1, local(0), annotation)
-    }
-}
-
-impl CallGlobal1 for ZdtUnwrap {}
 
 /// ZDT.FIELDS - convert ZDT to (sym, val) pairs (which can be
 /// converted to block)
