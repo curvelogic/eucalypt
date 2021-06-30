@@ -6,7 +6,7 @@ use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use super::{
     force::SeqStrList,
-    intrinsic::{CallGlobal1, CallGlobal2, StgIntrinsic},
+    intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, StgIntrinsic},
     machine::Machine,
     printf::{self, PrintfError},
     runtime::{
@@ -15,7 +15,8 @@ use super::{
     },
     syntax::{
         dsl::{
-            annotated_lambda, atom, data, force, let_, local, lref, str, switch, unbox_str, value,
+            annotated_lambda, atom, box_str, data, force, let_, local, lref, str, switch,
+            unbox_str, value,
         },
         LambdaForm, Native, Ref,
     },
@@ -368,3 +369,18 @@ impl StgIntrinsic for Letters {
 }
 
 impl CallGlobal1 for Letters {}
+
+/// __DQ - constant for the double quote character
+pub struct Dq;
+
+impl StgIntrinsic for Dq {
+    fn name(&self) -> &str {
+        "DQ"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        value(box_str("\""))
+    }
+}
+
+impl CallGlobal0 for Dq {}

@@ -9,5 +9,34 @@ jobs:
   update-latest-tag:
     runs-on: ubuntu-latest
     steps:
-      - name: Move `latest` tag to last published release
-        uses: EndBug/latest-tag@latest
+      - uses: actions/checkout@v2
+      - name: update branch latest to point at ${{GITHUB_REF}}
+        run:
+          |
+            git checkout latest
+            git merge --ff-only ${GITHUB_REF}
+            git push origin latest
+  generate-homebrew-formula:
+    needs: [update-latest-tag]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: build and install temporary eu
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path .
+      - name: generate homebrew formula
+        run: |
+          eu -t formula-sh > generate.sh
+          chmod +x generate.sh
+          ./generate.sh > eucalypt.rb
+      - name: upload formula
+        uses: actions/upload-artifact@v1
+        with:
+          name: eucalypt.rb
+          path: eucalypt.rb

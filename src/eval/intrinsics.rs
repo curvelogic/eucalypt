@@ -473,6 +473,11 @@ lazy_static! {
             ty: record(),
             strict: vec![],
     },
+    Intrinsic { // 86
+            name: "DQ",
+            ty: str_(),
+            strict: vec![],
+    },
     ];
 }
 

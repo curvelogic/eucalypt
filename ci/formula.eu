@@ -1,0 +1,36 @@
+"Homebrew formula generation"
+
+brew-formula(version, sha256): ch."
+class Eucalypt < Formula
+  version {dq}{version}{dq}
+  desc {dq}Eucalypt (eu) tool for generating, templating and processing YAML, JSON, TOML{dq}
+  homepage {dq}https://curvelogic.github.io/eucalypt/{dq}
+  url {dq}https://github.com/curvelogic/eucalypt/releases/download/{version}/eucalypt-x86_64-osx.tgz{dq}
+  sha256 {dq}{sha256}{dq}
+  bottle :unneeded
+
+  def install
+    bin.install {dq}eu{dq}
+  end
+
+
+  def test
+    expected = {dq}Eucalypt (Rust Impl: v#{{package.version}}){dq}
+    assert_equal expected, `#{{bin}}/eu --version`.strip
+  end
+
+end
+"
+
+` { target: :latest-asset-url
+    format: :text
+    doc: "`curl https://api.github.com/repos/curvelogic/eucalypt/releases/latest | eu -t formula`" }
+latest-asset-url:  assets filter(str.matches?(".*osx.*") ∘ lookup(:name)) head lookup(:browser_download_url)
+
+` { target: :formula
+    format: :text
+    doc: "Generate a homebrew formula from shasum.txt and latest.json files"}
+formula: {
+  sha: shasum head str.match-with("([0-9a-f]+)\s.*") nth(1)
+  tag: latest.tag_name
+}.(brew-formula(tag, sha))
