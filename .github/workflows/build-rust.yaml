@@ -176,7 +176,7 @@ jobs:
           git fetch origin latest:latest
       - name: Generate changelog
         run: |
-          echo "$(git-changelog latest...$TAG_NAME)" > CHANGELOG.md
+          echo "$(git-changelog latest...)" > CHANGELOG.md
       - name: Upload changelog
         uses: actions/upload-artifact@v1
         with:
