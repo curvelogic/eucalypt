@@ -18,4 +18,4 @@ jobs:
       - name: generate and push docs
         run: |
           python -m pip install -r docs/requirements.txt
-          python -m mkdocs gh-deploy -v -m $GITHUB_REF
+          python -m mkdocs gh-deploy -v -m $GITHUB_REF --force
