@@ -1,7 +1,7 @@
 # Eucalypt implementation
 
 Since **v0.2**, Eucalypt has been written in [Rust](https://rust-lang.org).
-This replaced a previous **0.1.x** implementation in Haskell.
+This replaces a previous **0.1.x** implementation in Haskell.
 
 When you run `eu`, execution proceeds in several phases:
 
@@ -21,13 +21,14 @@ blocks in Eucalypt (name binding and data structuring) are peeled
 apart into separate elements (a recursive let and a data structure).
 
 The interpreter is modeled on an eval-apply STG (spineless tagless
-G-machine) implementation simply to have a well defined reference
+G-machine) implementation just to have a well-defined reference
 point in view for a lazy functional language abstract machine, not for
-any other reason (concurrency etc.) Ultimately it could well be
+any other reason (concurrency etc.) Ultimately it might well be
 quicker and clearer to tree-walk the core representation.
 
-The implementation currently uses a crude cycle-collector to manage
-memory and is single-threaded only right now.
+After some experimentation with cycle collectors, the current
+implementation deliberately leaks memory until a custom allocator and
+GC can be implemented. This suits most current uses just fine.
 
 ## Diagnostics
 
