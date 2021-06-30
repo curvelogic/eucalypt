@@ -9,5 +9,10 @@ jobs:
   update-latest-tag:
     runs-on: ubuntu-latest
     steps:
-      - name: Move `latest` tag to last published release
-        uses: EndBug/latest-tag@latest
+      - uses: actions/checkout@v2
+      - name: update branch latest to point at ${{GITHUB_REF}}
+        run:
+          |
+            git checkout latest
+            git merge --ff-only ${GITHUB_REF}
+            git push origin latest
