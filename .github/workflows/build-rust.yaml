@@ -84,7 +84,7 @@ jobs:
     needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
     # if: ${{ github.event_name == 'pull_request' }}
-    if: ${{ false }}
+    # if: ${{ false }}
     continue-on-error: true
     steps:
       - uses: actions/cache@v1
@@ -121,7 +121,7 @@ jobs:
     needs: [check, test, fmt, clippy]
     name: Release Linux
     runs-on: ubuntu-latest
-    # if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master'
     steps:
       - uses: actions/checkout@v2
         with:
