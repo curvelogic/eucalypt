@@ -59,6 +59,12 @@ pub struct EucalyptOptions {
     #[structopt(short, long)]
     evaluate: Option<String>,
 
+    #[structopt(short = "c", long)]
+    collect_as: Option<String>,
+
+    #[structopt(short = "N", long)]
+    name_inputs: bool,
+
     /// Turn on debug features
     #[structopt(short, long)]
     debug: bool,
@@ -92,8 +98,16 @@ pub struct EucalyptOptions {
     #[structopt(flatten)]
     stg_settings: StgSettings,
 
-    /// Source code / data inputs (in order)
-    inputs: Vec<Input>,
+    /// Explicit source code / data inputs (in order)
+    explicit_inputs: Vec<Input>,
+
+    /// Prologue inputs (inputs added prior to explicit inputs)
+    #[structopt(skip)]
+    prologue_inputs: Vec<Input>,
+
+    /// Epilogue inputs (inputs added after explicit inputs)
+    #[structopt(skip)]
+    epilogue_inputs: Vec<Input>,
 }
 
 impl EucalyptOptions {
@@ -114,8 +128,8 @@ impl EucalyptOptions {
         self
     }
 
-    pub fn with_inputs(mut self, inputs: Vec<Input>) -> Self {
-        self.inputs = inputs;
+    pub fn with_explicit_inputs(mut self, inputs: Vec<Input>) -> Self {
+        self.explicit_inputs = inputs;
         self
     }
 
@@ -193,7 +207,19 @@ impl EucalyptOptions {
 
         // inputs
         explanation.push_str("Inputs:\n");
-        for i in &self.inputs {
+        for i in &self.prologue_inputs {
+            explanation.push_str(&format!(" • {}\n", i));
+        }
+        if let Some(name) = self.collection() {
+            explanation.push_str(&format!(" • {}=\n", name));
+        }
+        for i in &self.explicit_inputs {
+            if self.collection().is_some() {
+                explanation.push_str("  ");
+            }
+            explanation.push_str(&format!(" • {}\n", i));
+        }
+        for i in &self.epilogue_inputs {
             explanation.push_str(&format!(" • {}\n", i));
         }
         explanation.push('\n');
@@ -316,6 +342,14 @@ impl EucalyptOptions {
         self.evaluate.as_ref()
     }
 
+    pub fn collection(&self) -> Option<&String> {
+        self.collect_as.as_ref()
+    }
+
+    pub fn name_inputs(&self) -> bool {
+        self.name_inputs
+    }
+
     pub fn explain(&self) -> bool {
         self.command.explain
     }
@@ -372,8 +406,24 @@ impl EucalyptOptions {
         self.debug
     }
 
-    pub fn inputs(&self) -> &[Input] {
-        &self.inputs
+    pub fn prologue_inputs(&self) -> &[Input] {
+        &self.prologue_inputs
+    }
+
+    pub fn explicit_inputs(&self) -> &[Input] {
+        &self.explicit_inputs
+    }
+
+    pub fn epilogue_inputs(&self) -> &[Input] {
+        &self.epilogue_inputs
+    }
+
+    pub fn inputs(&self) -> Vec<Input> {
+        let mut inputs = vec![];
+        inputs.extend_from_slice(&self.prologue_inputs.as_slice());
+        inputs.extend_from_slice(&self.explicit_inputs.as_slice());
+        inputs.extend_from_slice(&self.epilogue_inputs.as_slice());
+        inputs
     }
 
     pub fn lib_path(&self) -> &[PathBuf] {
@@ -406,8 +456,8 @@ impl EucalyptOptions {
 
     /// Prepend an input if it is not already in the input list
     fn prepend_input(&mut self, input: Input) {
-        if !self.inputs.iter().any(|i| i == &input) {
-            self.inputs.insert(0, input);
+        if !self.explicit_inputs.iter().any(|i| i == &input) {
+            self.prologue_inputs.insert(0, input);
         }
     }
 
@@ -445,7 +495,7 @@ impl EucalyptOptions {
         self.lib_path.insert(0, std::env::current_dir()?);
 
         // For pipes, default json stdin
-        if self.inputs.is_empty() && !atty::is(Stream::Stdin) {
+        if self.explicit_inputs.is_empty() && !atty::is(Stream::Stdin) {
             self.prepend_input(Input::from_str("-").unwrap());
         }
 
@@ -484,7 +534,7 @@ impl EucalyptOptions {
 
         // Add CLI evaluand as final input if it exists
         if self.evaluate.is_some() {
-            self.inputs.push(Input::from(Locator::Cli(
+            self.epilogue_inputs.push(Input::from(Locator::Cli(
                 self.evaluate.as_ref().unwrap().to_string(),
             )));
         }

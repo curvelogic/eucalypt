@@ -66,4 +66,14 @@ impl Target {
     pub fn path(&self) -> &Vec<String> {
         &self.path
     }
+
+    /// Return a version of the target where the path is
+    pub fn under(&self, root: &str) -> Self {
+        let mut path = vec![root.to_string()];
+        path.extend(self.path.clone());
+        Self {
+            path,
+            ..self.clone()
+        }
+    }
 }

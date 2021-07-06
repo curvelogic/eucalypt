@@ -21,10 +21,10 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::emit;
 use codespan_reporting::term::termcolor::{ColorChoice, NoColor, StandardStream};
 use codespan_reporting::{diagnostic::Diagnostic, files::Files};
-use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::{collections::HashMap, path::Path};
+use std::{fs, iter};
 
 use super::io::create_io_pseudoblock;
 
@@ -322,6 +322,49 @@ impl SourceLoader {
             .iter()
             .map(|i| self.units.get(&i).expect("merging unknown unit"));
         self.core = TranslationUnit::merge(units.cloned())?;
+        Ok(())
+    }
+
+    /// Collect all explicit inputs into a named collection then merge
+    pub fn collect_and_merge_units(
+        &mut self,
+        collection_name: &str,
+        name_inputs: bool,
+        prologue_inputs: &[Input],
+        explicit_inputs: &[Input],
+        epilogue_inputs: &[Input],
+    ) -> Result<(), EucalyptError> {
+        let prologue_units = prologue_inputs
+            .iter()
+            .map(|i| self.units.get(&i).expect("merging unknown unit"));
+        let explicit_units = explicit_inputs
+            .iter()
+            .map(|i| self.units.get(&i).expect("merging unknown unit"));
+        let epilogue_units = epilogue_inputs
+            .iter()
+            .map(|i| self.units.get(&i).expect("merging unknown unit"));
+
+        let mut collection_unit = if name_inputs {
+            let names: Vec<String> = explicit_inputs
+                .iter()
+                .map(|i| i.name().clone().unwrap_or(format!("{}", i.locator())))
+                .collect();
+            TranslationUnit::blockify(&names, explicit_units)?
+        } else {
+            TranslationUnit::listify(explicit_units)?
+        };
+
+        collection_unit.expr = collection_unit
+            .expr
+            .apply_name(Smid::default(), collection_name);
+
+        self.core = TranslationUnit::merge(
+            prologue_units
+                .chain(iter::once(&collection_unit))
+                .chain(epilogue_units)
+                .cloned(),
+        )?;
+
         Ok(())
     }
 

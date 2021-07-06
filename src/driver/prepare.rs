@@ -26,10 +26,12 @@ pub fn prepare(
     loader: &mut SourceLoader,
     stats: &mut Timings,
 ) -> Result<Command, EucalyptError> {
+    let inputs = opt.inputs();
+
     {
         let t = Instant::now();
 
-        for i in opt.inputs() {
+        for i in &inputs {
             loader.load(i)?;
         }
 
@@ -49,18 +51,28 @@ pub fn prepare(
     {
         let t = Instant::now();
 
-        for i in opt.inputs() {
+        for i in &inputs {
             loader.translate(i)?;
         }
 
         stats.record("translate", t.elapsed());
     }
 
-    // Merge into a single core - before or after cooking?
+    // Optionally collect explicit inputs together
     {
         let t = Instant::now();
 
-        loader.merge_units(opt.inputs())?;
+        if let Some(collection_name) = opt.collection() {
+            loader.collect_and_merge_units(
+                &collection_name,
+                opt.name_inputs(),
+                opt.prologue_inputs(),
+                opt.explicit_inputs(),
+                opt.epilogue_inputs(),
+            )?;
+        } else {
+            loader.merge_units(&inputs)?;
+        }
 
         stats.record("merge", t.elapsed());
     }
@@ -86,7 +98,7 @@ pub fn prepare(
         }
 
         println!("\nFrom inputs\n");
-        for i in opt.inputs() {
+        for i in &inputs {
             println!("  - {}", i);
         }
         return Ok(Command::Exit);

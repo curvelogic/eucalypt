@@ -42,6 +42,45 @@ impl TranslationUnit {
         })
     }
 
+    /// Combine the units as a unit containing a single list
+    ///
+    /// No targets or
+    pub fn listify<'a, I>(units: I) -> Result<Self, CoreError>
+    where
+        I: Iterator<Item = &'a Self>,
+    {
+        Ok(TranslationUnit {
+            expr: acore::list(units.map(|u| u.expr.clone()).collect()),
+            ..Default::default()
+        })
+    }
+
+    /// Combine the units as a unit containing a single block with
+    /// each units keys derived from existing name or generated name
+    /// if required
+    pub fn blockify<'a, I, S>(keys: &'a [S], units: I) -> Result<Self, CoreError>
+    where
+        I: Iterator<Item = &'a Self>,
+        S: AsRef<str>,
+    {
+        let mut targets = HashSet::new();
+        let mut docs = vec![];
+        let mut entries = vec![];
+
+        for (k, u) in keys.iter().zip(units) {
+            let key = k.as_ref();
+            targets.extend(u.targets.iter().map(|t| t.under(key)));
+            docs.extend(u.docs.iter().map(|d| d.under(key)));
+            entries.push((key.to_string(), u.expr.clone()));
+        }
+
+        Ok(TranslationUnit {
+            expr: acore::block(entries),
+            targets,
+            docs,
+        })
+    }
+
     /// Return a new unit which merges the expression and targets etc.
     /// of the specified units.
     pub fn merge<I>(units: I) -> Result<Self, CoreError>

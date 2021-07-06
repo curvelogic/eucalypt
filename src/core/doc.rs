@@ -12,3 +12,16 @@ pub struct DeclarationDocumentation {
     /// Documentation metadata
     pub doc: String,
 }
+
+impl DeclarationDocumentation {
+    /// Construct a documentation item one level deeper under a named
+    /// root
+    pub fn under(&self, root: &str) -> Self {
+        let mut path = vec![root.to_string()];
+        path.extend(self.path.clone());
+        Self {
+            path,
+            ..self.clone()
+        }
+    }
+}

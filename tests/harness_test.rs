@@ -9,7 +9,7 @@ pub fn opts(filename: &str) -> EucalyptOptions {
     let path = format!("harness/test/{}", filename);
 
     EucalyptOptions::default()
-        .with_inputs(vec![Input::from_str(&path).unwrap()])
+        .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
         .with_lib_path(lib_path)
         .build()
 }
@@ -17,7 +17,7 @@ pub fn opts(filename: &str) -> EucalyptOptions {
 /// Parse and desugar the test files and analyse for expectations,
 /// then run and assert success.
 fn run_test(opt: &EucalyptOptions) {
-    let input = opt.inputs().last().unwrap();
+    let input = opt.explicit_inputs().last().unwrap();
     let filename = resolve_input(opt, &input).unwrap();
 
     let exit_code = tester::run_test(opt, &filename).unwrap();
