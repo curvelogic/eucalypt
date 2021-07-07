@@ -145,12 +145,107 @@ When several inputs are listed, names from earlier inputs become
 available to later inputs, but the content that will be rendered is
 that of the final input.
 
-The common use case is a final input which contains logic to inspect
-or process data provided by the previous inputs (potentially coming in
-from previous processing on stdin).
+So for instance:
 
-If you want to render contents of earlier inputs verbatim, you need a
-named input to provide a name for that content which you can then use.
+a.eu
+```eu
+x: 4
+y: 8
+```
+
+b.eu
+
+```eu
+z: x + y
+```
+
+```sh
+eu a.eu b.eu
+```
+
+will output
+
+```yaml
+z: 12
+```
+
+The common use cases are:
+- a final input containing logic to inspect or process data
+  provided by previous inputs
+- a final input which uses functions defined in earlier inputs to
+  process data provided in previous inputs
+
+If you want to __render_ contents of earlier inputs, you need a named
+input to provide a name for that content which you can then use.
+
+For instance:
+
+```sh
+eu r=a.eu b.eu -e r
+```
+
+will render:
+
+```yaml
+x: 4
+y: 8
+```
+
+#### `--collect-as` and `--name-inputs`
+
+Occasionally it is useful to aggregate data from an arbitrary number
+of sources files, typically specified by shell wildcards. To refer to
+this data we need to introduce a name for the collection of data.
+
+This is what the command line switch `--collect-as` / `-C` is for.
+
+```sh
+eu --collect-as inputs *.eu
+```
+
+...will render:
+
+```yaml
+inputs:
+  - x: 4
+	y: 8
+  - z: 12
+```
+
+It is common to use `-e` to select an item to render:
+
+```sh
+eu -C *.eu -e 'inputs head'
+```
+
+...renders:
+
+```yaml
+x: 4
+y: 8
+```
+
+If you are likely to need to refer to inputs by name, you can add
+`--name-inputs` / `-N` to pass inputs as a block instead of a list:
+
+```sh
+eu --collect-as inputs *.eu
+```
+
+...renders:
+
+```yaml
+inputs:
+  a.eu:
+	x: 4
+	y: 8
+  b.eu:
+	z: 12
+```
+
+This makes it possible to easier to invoke specific functions from
+named inputs although you will need single-quote name syntax to use
+the generated names which contain '.'s.
 
 ## Outputs
 

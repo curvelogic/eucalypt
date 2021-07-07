@@ -15,7 +15,7 @@ use super::statistics::{Statistics, Timings};
 
 pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
-    let input = opt.inputs().last().unwrap_or(&cwd);
+    let input = opt.explicit_inputs().last().unwrap_or(&cwd);
     let path = resolve_input(opt, input)?;
 
     if path.is_dir() {
@@ -100,7 +100,7 @@ pub fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError
         let input = Input::from_str(&test.to_string_lossy())?;
         let test_opts = opt
             .clone()
-            .with_inputs(vec![input])
+            .with_explicit_inputs(vec![input])
             .with_lib_path(lib_path.clone());
         if run_test(&test_opts, &test)? > 0 {
             exit = 1;
@@ -294,7 +294,7 @@ impl Tester for InProcessTester {
         // An invocation to run the validation and generate yaml report
         let report_file = plan.report_file_name();
         let report_opts = EucalyptOptions::default()
-            .with_inputs(inputs)
+            .with_explicit_inputs(inputs)
             .with_output(report_file)
             .build();
         let mut loader = SourceLoader::new(vec![]);
@@ -312,7 +312,7 @@ impl Tester for InProcessTester {
         // Then finally, one more to check for success
         let report_input = Input::from(Locator::Fs(plan.report_file_name()));
         let check_opts = EucalyptOptions::default()
-            .with_inputs(vec![report_input])
+            .with_explicit_inputs(vec![report_input])
             .with_export_type("text".to_string())
             .to_evaluate(script)
             .build();
