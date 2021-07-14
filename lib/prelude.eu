@@ -1,4 +1,4 @@
-# Eucalypt standard prelude
+"eucalypt standard prelude"
 
 ##
 ## Prelude versioning and run metadata
@@ -130,6 +130,9 @@ lookup-or-in(b, s, d): lookup-or(s, d, b)
 
 ` "`lookup-alts(syms, d)` - look up symbols `syms` in turn in block `b` until a value is found, default `d` if none."
 lookup-alts(syms, d, b): foldr(lookup-or-in(b), d, syms)
+
+` "`lookup-path(ks, b)` - look up value at key path `ks` in block `b`"
+lookup-path(ks, b): foldl(lookup-in, b, ks)
 
 ##
 ## Boolean

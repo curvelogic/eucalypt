@@ -28,7 +28,10 @@ pub fn main() {
     if opt.test() {
         match tester::test(&opt) {
             Ok(exit) => process::exit(exit),
-            _ => process::exit(2),
+            Err(e) => {
+                eprintln!("{}", e);
+                process::exit(2)
+            }
         }
     }
 

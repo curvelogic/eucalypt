@@ -72,7 +72,14 @@ impl TestPlan {
         directory
     }
 
-    pub fn report_file_name(&self) -> PathBuf {
+    pub fn evidence_file_name(&self) -> PathBuf {
+        let mut name = self.result_directory();
+        name.push(self.file().file_name().unwrap());
+        name.set_extension("evidence.yaml");
+        name
+    }
+
+    pub fn result_file_name(&self) -> PathBuf {
         let mut name = self.result_directory();
         name.push(self.file().file_name().unwrap());
         name.set_extension("report.yaml");
@@ -118,13 +125,21 @@ impl TestPlan {
         // For now, only one expectation, RESULT, but will allow
         // metadata to select
         let expectations = vec![TestExpectation {
-            doc: "RESULT".to_string(),
-            path: vec!["RESULT".to_string()],
+            doc: "result".to_string(),
+            path: vec!["result.RESULT".to_string()],
         }];
 
         Ok(TestPlan {
             file: filename.to_path_buf(),
-            title: header.title.unwrap_or_else(|| "".to_string()),
+            title: header
+                .title
+                .or_else(|| {
+                    filename
+                        .to_path_buf()
+                        .file_stem()
+                        .map(|os| os.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| "untitled".to_string()),
             targets,
             expectations,
         })
@@ -152,7 +167,7 @@ pub mod tests {
     #[test]
     pub fn test_simple() {
         let plan = source_to_test_plan("RESULT: :PASS");
-        assert_eq!(plan.title(), "");
+        assert_eq!(plan.title(), "test");
     }
 
     #[test]
