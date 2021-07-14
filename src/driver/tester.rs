@@ -13,6 +13,7 @@ use std::{fmt, fs};
 
 use super::statistics::{Statistics, Timings};
 
+/// Main entry point for `eu -T` - analyse for test plan, execute and report
 pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let input = opt.explicit_inputs().last().unwrap_or(&cwd);
@@ -45,38 +46,39 @@ pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, Eu
     }
 }
 
+/// Load the test subject file to analyse and extra a test plan
+fn load_plan(opt: &EucalyptOptions, filename: &Path) -> Result<TestPlan, EucalyptError> {
+    let mut timings = Timings::default();
+    let mut loader = SourceLoader::new(opt.lib_path().to_vec());
+
+    // desugar to parse out targets and docstrings
+    prepare::prepare(opt, &mut loader, &mut timings)?;
+
+    // analyse into test plan
+    let test_plan = TestPlan::analyse(filename, loader.core())?;
+    Ok(test_plan)
+}
+
 /// Run tests for a single file
 pub fn run_test(opt: &EucalyptOptions, filename: &Path) -> Result<i32, EucalyptError> {
     print!("{}...", filename.file_stem().unwrap().to_string_lossy());
 
-    let mut timings = Timings::default();
-
-    let test_plan = {
-        let mut loader = SourceLoader::new(opt.lib_path().to_vec());
-
-        // desugar to parse out targets and docstrings
-        prepare::prepare(opt, &mut loader, &mut timings)?;
-
-        // analyse into test plan
-        TestPlan::analyse(filename, loader.core())?
-    };
-
+    let test_plan = load_plan(opt, filename)?;
     test_plan.prepare_directory()?;
 
     // TODO: select tester implementation
     let tester = InProcessTester {};
 
     let execution_opts = opt.clone().without_test_flag();
-    let results = tester.run(&test_plan, &execution_opts)?;
-
-    tester.validate(&test_plan, results)?;
-
-    tester.report(&test_plan)
+    tester.run(&test_plan, &execution_opts)?;
+    let ret = tester.validate(&test_plan)?;
+    print!("{}", tester.summary(&test_plan)?);
+    Ok(ret)
 }
 
 /// Discover all tests in a directory and run, setting the directory in
 /// the library path for easy resolution of imports
-pub fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError> {
+fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError> {
     println!("Gathering tests in {}", dir.display());
     let mut tests: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
@@ -123,6 +125,8 @@ pub struct TestResult {
     pub stdout: String,
     /// Captured stderr
     pub stderr: String,
+    /// Execution statistics
+    pub statistics: Statistics,
 }
 
 impl fmt::Display for TestResult {
@@ -144,74 +148,46 @@ impl fmt::Display for TestResult {
 
 /// A tester runs all the planned tests, gathers output and reports
 pub trait Tester {
-    /// Run each of the tests, returning results
-    fn run(&self, plan: &TestPlan, opt: &EucalyptOptions)
-        -> Result<Vec<TestResult>, EucalyptError>;
+    /// Run all the tests in the plan and create an evidence.yaml output
+    fn run(&self, plan: &TestPlan, opt: &EucalyptOptions) -> Result<(), EucalyptError>;
 
-    /// Process plan and results to generate a report
-    fn validate(&self, plan: &TestPlan, results: Vec<TestResult>) -> Result<(), EucalyptError>;
+    /// Process the evidence to create a result.yaml output
+    fn validate(&self, plan: &TestPlan) -> Result<i32, EucalyptError>;
 
-    /// Summarise the report to stdout and return an exit code
-    fn report(&self, plan: &TestPlan) -> Result<i32, EucalyptError>;
+    /// Read the result summary (PASS/FAIL) from the result.yaml output
+    fn summary(&self, plan: &TestPlan) -> Result<String, EucalyptError>;
+
+    /// Aggregate result.yamls and generate output report
+    fn report(&self, plan: &[TestPlan]) -> Result<(), EucalyptError>;
 }
 
 pub struct InProcessTester {}
 
-impl Tester for InProcessTester {
-    /// Invoke the engine many times for each target / format
-    /// combination and capture stdout / stderr for processing
-    fn run(
+/// TODO: eu escaping
+fn quote<T: AsRef<str>>(text: T) -> String {
+    format!("\"{}\"", text.as_ref().replace("\"", "\\\""))
+}
+
+impl InProcessTester {
+    /// Takes plan and test output and creates an evidence.yaml
+    ///
+    /// The evidence does not as yet constitute a pass or a fail as
+    /// assertions might have been specified which validate the
+    /// outputs recorded in evidence.yaml - e.g. the stderr or stdout.
+    fn create_evidence_yaml(
         &self,
         plan: &TestPlan,
-        opt: &EucalyptOptions,
-    ) -> Result<Vec<TestResult>, EucalyptError> {
-        let mut results = vec![];
-
-        for (t, fs) in plan.targets() {
-            for f in fs {
-                let test_opts = opt
-                    .clone()
-                    .for_test(t.name().to_string(), f.to_string())
-                    .build();
-
-                let mut loader = SourceLoader::new(test_opts.lib_path().to_vec());
-                let mut statistics = Statistics::default();
-
-                prepare::prepare(&test_opts, &mut loader, statistics.timings_mut())?;
-
-                let mut outbuf = Vec::new();
-                let mut errbuf = Vec::new();
-
-                let exit_code = {
-                    let out = Box::new(&mut outbuf);
-                    let err = Box::new(&mut errbuf);
-                    let mut executor = eval::Executor::from(loader);
-                    executor.capture_output(out, err);
-                    executor.execute(&test_opts, &mut statistics, f.clone())
-                };
-
-                results.push(TestResult {
-                    target: t.name().to_string(),
-                    format: f.to_string(),
-                    exit_code: exit_code.unwrap_or(None),
-                    stdout: std::str::from_utf8(outbuf.as_slice()).unwrap().to_string(),
-                    stderr: std::str::from_utf8(errbuf.as_slice()).unwrap().to_string(),
-                });
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Another invocation of eucalypt to gather the test output and
-    /// validate that expectations have passed.
-    fn validate(&self, plan: &TestPlan, results: Vec<TestResult>) -> Result<(), EucalyptError> {
-        // prepare named inputs to the report for each test result
-        // each must be provided as source and as the format
-        // and index them
+        results: Vec<TestResult>,
+    ) -> Result<(), EucalyptError> {
         let mut inputs = vec![];
         let mut validator = Vec::new();
 
+        writeln!(&mut validator, "title: {}", quote(plan.title()))?;
+        writeln!(
+            &mut validator,
+            "filename: {}",
+            quote(plan.file().to_string_lossy())
+        )?;
         writeln!(&mut validator, "tests: {{")?;
         for result in results {
             let target = if result.target.is_empty() {
@@ -245,12 +221,7 @@ impl Tester for InProcessTester {
                 .iter()
                 .map(|e| {
                     let path = e.path().as_slice().join(".");
-                    format!(
-                        "{{ name: \"{}\" doc: \"{}\" value: result __LOOKUPOR(:{}, :FAIL) }}",
-                        path,
-                        e.doc(),
-                        path
-                    )
+                    format!("{{ name: \"{}\" value: \"{}\" }}", e.doc(), path)
                 })
                 .collect();
 
@@ -292,7 +263,7 @@ impl Tester for InProcessTester {
         inputs.push(validator_input);
 
         // An invocation to run the validation and generate yaml report
-        let report_file = plan.report_file_name();
+        let report_file = plan.evidence_file_name();
         let report_opts = EucalyptOptions::default()
             .with_explicit_inputs(inputs)
             .with_output(report_file)
@@ -303,18 +274,83 @@ impl Tester for InProcessTester {
 
         Ok(())
     }
+}
 
-    /// Process the report file to establish a headline pass / file
-    /// and report to stdout and return an exit code
-    fn report(&self, plan: &TestPlan) -> Result<i32, EucalyptError> {
-        let script = r#"tests.default-yaml.result __LOOKUPOR(:RESULT, :FAIL)"#;
+impl Tester for InProcessTester {
+    /// Invoke the engine for each target / format / invocation and
+    /// capture outputs in evidence.yaml
+    fn run(&self, plan: &TestPlan, opt: &EucalyptOptions) -> Result<(), EucalyptError> {
+        let mut results = vec![];
 
+        for (t, fs) in plan.targets() {
+            for f in fs {
+                let test_opts = opt
+                    .clone()
+                    .for_test(t.name().to_string(), f.to_string())
+                    .build();
+
+                let mut loader = SourceLoader::new(test_opts.lib_path().to_vec());
+                let mut statistics = Statistics::default();
+
+                prepare::prepare(&test_opts, &mut loader, statistics.timings_mut())?;
+
+                let mut outbuf = Vec::new();
+                let mut errbuf = Vec::new();
+
+                let exit_code = {
+                    let out = Box::new(&mut outbuf);
+                    let err = Box::new(&mut errbuf);
+                    let mut executor = eval::Executor::from(loader);
+                    executor.capture_output(out, err);
+                    executor.execute(&test_opts, &mut statistics, f.clone())
+                };
+
+                results.push(TestResult {
+                    target: t.name().to_string(),
+                    format: f.to_string(),
+                    exit_code: exit_code.unwrap_or(None),
+                    stdout: std::str::from_utf8(outbuf.as_slice()).unwrap().to_string(),
+                    stderr: std::str::from_utf8(errbuf.as_slice()).unwrap().to_string(),
+                    statistics,
+                });
+            }
+        }
+
+        self.create_evidence_yaml(plan, results)
+    }
+
+    /// Validates the evidence.yaml which was written during the run stage
+    ///
+    fn validate(&self, plan: &TestPlan) -> Result<i32, EucalyptError> {
+        let validate_opts = EucalyptOptions::default()
+            .with_explicit_inputs(vec![
+                Input::new(
+                    Locator::Fs(plan.evidence_file_name()),
+                    Some("evidence".to_string()),
+                    "yaml",
+                ),
+                Input::from(Locator::Resource("verify".to_string())),
+            ])
+            .with_export_type("yaml".to_string())
+            .with_output(plan.result_file_name())
+            .build();
+        let mut check_loader = SourceLoader::new(vec![]);
+
+        prepare::prepare(&validate_opts, &mut check_loader, &mut Timings::default())?;
+        eval::run(&validate_opts, check_loader)?;
+
+        Ok(0)
+    }
+
+    /// Read the result YAML to return a PASS / FAIL summary for
+    /// stdout reporting
+    fn summary(&self, plan: &TestPlan) -> Result<String, EucalyptError> {
         // Then finally, one more to check for success
-        let report_input = Input::from(Locator::Fs(plan.report_file_name()));
+        let report_input = Input::from(Locator::Fs(plan.result_file_name()));
         let check_opts = EucalyptOptions::default()
             .with_explicit_inputs(vec![report_input])
             .with_export_type("text".to_string())
-            .to_evaluate(script)
+            .to_evaluate("overall")
             .build();
         let mut check_loader = SourceLoader::new(vec![]);
         prepare::prepare(&check_opts, &mut check_loader, &mut Timings::default())?;
@@ -331,13 +367,11 @@ impl Tester for InProcessTester {
             executor.execute(&check_opts, &mut stats, "text".to_string())?;
         }
         let output = std::str::from_utf8(outbuf.as_slice()).unwrap().to_string();
+        Ok(output)
+    }
 
-        print!("{}", output);
-
-        if output.trim().eq_ignore_ascii_case("pass") {
-            Ok(0)
-        } else {
-            Ok(1)
-        }
+    /// Generate a combined HTML test report for all specified tests
+    fn report(&self, _plan: &[TestPlan]) -> Result<(), EucalyptError> {
+        todo!()
     }
 }
