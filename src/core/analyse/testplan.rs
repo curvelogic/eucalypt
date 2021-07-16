@@ -66,6 +66,10 @@ impl TestPlan {
         &self.expectations
     }
 
+    pub fn test_directory(&self) -> &Path {
+        self.file().parent().unwrap()
+    }
+
     pub fn result_directory(&self) -> PathBuf {
         let mut directory = PathBuf::from(self.file().parent().unwrap());
         directory.push(".result");

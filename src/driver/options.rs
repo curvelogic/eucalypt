@@ -138,6 +138,11 @@ impl EucalyptOptions {
         self
     }
 
+    pub fn with_collect_as(mut self, collect_as: Option<String>) -> Self {
+        self.collect_as = collect_as;
+        self
+    }
+
     pub fn with_lib_path(mut self, lib_path: Vec<PathBuf>) -> Self {
         self.lib_path = lib_path;
         self

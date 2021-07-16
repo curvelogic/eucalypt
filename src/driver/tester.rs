@@ -19,11 +19,13 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let input = opt.explicit_inputs().last().unwrap_or(&cwd);
     let path = resolve_input(opt, input)?;
 
-    if path.is_dir() {
-        run_suite(&opt, &path)
+    let plans = if path.is_dir() {
+        directory_plans(&opt, &path)?
     } else {
-        run_test(&opt, &path)
-    }
+        vec![load_plan(&opt, &path)?]
+    };
+
+    run_plans(&opt, plans.as_slice())
 }
 
 /// Resolve the one and only input to determine if we are running a
@@ -49,7 +51,11 @@ pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, Eu
 /// Load the test subject file to analyse and extra a test plan
 fn load_plan(opt: &EucalyptOptions, filename: &Path) -> Result<TestPlan, EucalyptError> {
     let mut timings = Timings::default();
-    let mut loader = SourceLoader::new(opt.lib_path().to_vec());
+
+    let mut analysis_lib_path = opt.lib_path().to_vec();
+    analysis_lib_path.push(filename.parent().unwrap().to_path_buf());
+
+    let mut loader = SourceLoader::new(analysis_lib_path);
 
     // desugar to parse out targets and docstrings
     prepare::prepare(opt, &mut loader, &mut timings)?;
@@ -59,26 +65,44 @@ fn load_plan(opt: &EucalyptOptions, filename: &Path) -> Result<TestPlan, Eucalyp
     Ok(test_plan)
 }
 
-/// Run tests for a single file
-pub fn run_test(opt: &EucalyptOptions, filename: &Path) -> Result<i32, EucalyptError> {
-    print!("{}...", filename.file_stem().unwrap().to_string_lossy());
-
-    let test_plan = load_plan(opt, filename)?;
-    test_plan.prepare_directory()?;
-
-    // TODO: select tester implementation
+/// Run the specified plans and generate report
+pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, EucalyptError> {
     let tester = InProcessTester {};
+    let mut exit: i32 = 0;
 
-    let execution_opts = opt.clone().without_test_flag();
-    tester.run(&test_plan, &execution_opts)?;
-    let ret = tester.validate(&test_plan)?;
-    print!("{}", tester.summary(&test_plan)?);
-    Ok(ret)
+    for test in tests {
+        let mut lib_path = opt.lib_path().to_vec();
+        lib_path.push(test.test_directory().to_path_buf());
+
+        let input = Input::from_str(&test.file().to_string_lossy())?;
+        let test_opts = opt
+            .clone()
+            .with_explicit_inputs(vec![input])
+            .with_lib_path(lib_path.clone());
+
+        test.prepare_directory()?;
+
+        print!("{}...", test.title());
+
+        let execution_opts = test_opts.clone().without_test_flag();
+        tester.run(&test, &execution_opts)?;
+        let ret = tester.validate(&test)?;
+        print!("{}", tester.summary(&test)?);
+
+        if ret > 0 {
+            exit = 1;
+        }
+    }
+
+    let report = tester.report(tests)?;
+    println!("Report generated at {}", report.to_string_lossy());
+
+    Ok(exit)
 }
 
 /// Discover all tests in a directory and run, setting the directory in
 /// the library path for easy resolution of imports
-fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError> {
+fn directory_plans(opt: &EucalyptOptions, dir: &Path) -> Result<Vec<TestPlan>, EucalyptError> {
     println!("Gathering tests in {}", dir.display());
     let mut tests: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
@@ -93,23 +117,17 @@ fn run_suite(opt: &EucalyptOptions, dir: &Path) -> Result<i32, EucalyptError> {
 
     tests.sort();
 
-    let mut exit: i32 = 0;
-
-    let mut lib_path = opt.lib_path().to_vec();
-    lib_path.push(dir.to_path_buf());
-
-    for test in tests {
-        let input = Input::from_str(&test.to_string_lossy())?;
-        let test_opts = opt
-            .clone()
-            .with_explicit_inputs(vec![input])
-            .with_lib_path(lib_path.clone());
-        if run_test(&test_opts, &test)? > 0 {
-            exit = 1;
-        }
-    }
-
-    Ok(exit)
+    tests
+        .iter()
+        .map(|t| {
+            load_plan(
+                &opt.clone()
+                    .with_explicit_inputs(vec![Input::from(Locator::from(t.as_path()))])
+                    .build(),
+                t,
+            )
+        })
+        .collect()
 }
 
 /// A test result
@@ -158,7 +176,7 @@ pub trait Tester {
     fn summary(&self, plan: &TestPlan) -> Result<String, EucalyptError>;
 
     /// Aggregate result.yamls and generate output report
-    fn report(&self, plan: &[TestPlan]) -> Result<(), EucalyptError>;
+    fn report(&self, plan: &[TestPlan]) -> Result<PathBuf, EucalyptError>;
 }
 
 pub struct InProcessTester {}
@@ -262,15 +280,14 @@ impl InProcessTester {
         let validator_input = Input::new(Locator::Literal(validator_text), None, "eu".to_string());
         inputs.push(validator_input);
 
-        // An invocation to run the validation and generate yaml report
-        let report_file = plan.evidence_file_name();
-        let report_opts = EucalyptOptions::default()
+        let evidence_file = plan.evidence_file_name();
+        let evidence_opts = EucalyptOptions::default()
             .with_explicit_inputs(inputs)
-            .with_output(report_file)
+            .with_output(evidence_file)
             .build();
         let mut loader = SourceLoader::new(vec![]);
-        prepare::prepare(&report_opts, &mut loader, &mut Timings::default())?;
-        eval::run(&report_opts, loader)?;
+        prepare::prepare(&evidence_opts, &mut loader, &mut Timings::default())?;
+        eval::run(&evidence_opts, loader)?;
 
         Ok(())
     }
@@ -371,7 +388,42 @@ impl Tester for InProcessTester {
     }
 
     /// Generate a combined HTML test report for all specified tests
-    fn report(&self, _plan: &[TestPlan]) -> Result<(), EucalyptError> {
-        todo!()
+    ///
+    /// Return path to generated report
+    fn report(&self, plans: &[TestPlan]) -> Result<PathBuf, EucalyptError> {
+        let test_dir = plans.first().unwrap().result_directory();
+
+        // first combine all the result.yamls into one
+        let inputs: Vec<Input> = plans
+            .iter()
+            .map(|p| Input::from(Locator::from(p.result_file_name().as_path())))
+            .collect();
+        let mut result_file = test_dir.clone();
+        result_file.push("results.yaml");
+        let result_opts = EucalyptOptions::default()
+            .with_explicit_inputs(inputs)
+            .with_collect_as(Some("results".to_string()))
+            .with_output(result_file.clone())
+            .build();
+        let mut loader = SourceLoader::new(vec![]);
+        prepare::prepare(&result_opts, &mut loader, &mut Timings::default())?;
+        eval::run(&result_opts, loader)?;
+
+        // then process using report.eu
+        let mut report_file = test_dir;
+        report_file.push("report.html");
+        let report_opts = EucalyptOptions::default()
+            .with_explicit_inputs(vec![
+                Input::new(Locator::Fs(result_file), None, "yaml"),
+                Input::from(Locator::Resource("report".to_string())),
+            ])
+            .with_output(report_file.clone())
+            .build();
+
+        let mut loader = SourceLoader::new(vec![]);
+        prepare::prepare(&report_opts, &mut loader, &mut Timings::default())?;
+        eval::run(&report_opts, loader)?;
+
+        Ok(report_file)
     }
 }

@@ -20,6 +20,10 @@ impl Default for Resources {
             String::from_utf8(include_bytes!("../../lib/verify.eu").to_vec()).unwrap(),
         );
         content.insert(
+            "report".to_string(),
+            String::from_utf8(include_bytes!("../../lib/report.eu").to_vec()).unwrap(),
+        );
+        content.insert(
             "package".to_string(),
             String::from_utf8(include_bytes!("../../Cargo.lock").to_vec()).unwrap(),
         );

@@ -15,11 +15,11 @@ impl Serialize for Element {
     where
         S: Serializer,
     {
-        let tag_name = QualName::new(None, ns!(html), LocalName::from(self.tag()));
+        let tag_name = QualName::new(None, ns!(), LocalName::from(self.tag()));
         let keys: Vec<_> = self
             .attrs()
             .iter()
-            .map(|(k, _)| QualName::new(None, ns!(html), LocalName::from(k.as_str())))
+            .map(|(k, _)| QualName::new(None, ns!(), LocalName::from(k.as_str())))
             .collect();
 
         let attrs = itertools::zip(keys.iter(), self.attrs().iter().map(|(_, v)| v.as_str()));
