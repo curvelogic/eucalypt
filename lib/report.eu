@@ -63,6 +63,7 @@ page(contents):
         th,
         td {{
             border: 1px solid #888;
+            padding: 2px;
         }}
 
        .pill {{
@@ -108,6 +109,12 @@ page(contents):
           padding-left: 8px;
         }}
 
+        section.stats {{
+          border-left: 3px solid rgb(224,202,60);
+          padding-left: 8px;
+        }}
+
+
 "]],
     [:body, {}, [:div, { class: "body" }]  ++ contents]]
 
@@ -132,12 +139,21 @@ stderr(test-data):
 assertions(test-data):
   [:section, { class: "assertions"}, [:h4, {}, "assertions"], [:ul, {}]] ++ (test-data.validation map(detail-test-validation))
 
+stats(test-data):
+  [:section, { class: "stats" },
+    [:h4, {}, "stats"],
+    [:table, {},
+    [:tr, {}, [:th, {}, "ticks"], [:td, {}, "{test-data.stats.ticks}"]],
+    [:tr, {}, [:th, {}, "allocs"], [:td, {}, "{test-data.stats.allocs}"]],
+    [:tr, {}, [:th, {}, "max-stack"], [:td, {}, "{test-data.stats.max-stack}"]]]]
+
 detail-test(name, test-data):
   [:section, { class: "test" },
     [:h2, {}, "{name}"],
     stdout(test-data),
     stderr(test-data),
     assertions(test-data),
+    stats(test-data),
     ]
 
 detail-test-validation(validation):

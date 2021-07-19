@@ -186,6 +186,16 @@ fn quote<T: AsRef<str>>(text: T) -> String {
     format!("\"{}\"", text.as_ref().replace("\"", "\\\""))
 }
 
+/// Convert stats to a core expression for output
+fn stats_to_eu(stats: &Statistics) -> String {
+    format!(
+        "{{ ticks: {} allocs: {} max-stack: {} }}",
+        stats.ticks(),
+        stats.allocs(),
+        stats.max_stack()
+    )
+}
+
 impl InProcessTester {
     /// Takes plan and test output and creates an evidence.yaml
     ///
@@ -251,6 +261,7 @@ impl InProcessTester {
     stderr: {}
     result: {}
     expectations: [{}]
+    stats: {}
   }}"#,
                 &target,
                 &format,
@@ -262,7 +273,8 @@ impl InProcessTester {
                 } else {
                     "{ RESULT: :FAIL }"
                 },
-                expectations.as_slice().join(",")
+                expectations.as_slice().join(","),
+                stats_to_eu(&result.statistics)
             );
 
             // Gather all the outputs together
