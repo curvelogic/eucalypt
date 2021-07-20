@@ -1,6 +1,6 @@
 //! Use tester and harness tests
 use eucalypt::driver::{options::EucalyptOptions, tester};
-use eucalypt::{syntax::input::Input};
+use eucalypt::syntax::input::Input;
 use std::{path::PathBuf, str::FromStr};
 
 /// Common options for all tests
