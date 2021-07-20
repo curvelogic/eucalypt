@@ -35,6 +35,8 @@ impl TestExpectation {
 /// and a set of expectations to be validated against each run.
 #[derive(Debug, PartialEq, Clone)]
 pub struct TestPlan {
+    /// Run ID string for disambiguating repeated runs
+    run_id: String,
     /// Test filename
     file: PathBuf,
     /// Test title
@@ -73,6 +75,7 @@ impl TestPlan {
     pub fn result_directory(&self) -> PathBuf {
         let mut directory = PathBuf::from(self.file().parent().unwrap());
         directory.push(".result");
+        directory.push(&self.run_id);
         directory
     }
 
@@ -95,7 +98,11 @@ impl TestPlan {
     }
 
     /// Analyse a translation unit to determine test plan
-    pub fn analyse(filename: &Path, unit: &TranslationUnit) -> Result<Self, CoreError> {
+    pub fn analyse(
+        run_id: &str,
+        filename: &Path,
+        unit: &TranslationUnit,
+    ) -> Result<Self, CoreError> {
         // parse head metadata
         let header = if let Expr::Meta(_, _, m) = &*unit.expr.inner {
             m.clone().read_metadata()?
@@ -134,6 +141,7 @@ impl TestPlan {
         }];
 
         Ok(TestPlan {
+            run_id: run_id.to_string(),
             file: filename.to_path_buf(),
             title: header
                 .title
@@ -165,7 +173,8 @@ pub mod tests {
         loader.load(&sample_input).unwrap();
         loader.translate(&sample_input).unwrap();
         loader.merge_units(&[sample_input]).unwrap();
-        TestPlan::analyse(&PathBuf::from("test"), loader.core()).unwrap()
+        let run_id = format!("{}", chrono::offset::Utc::now().timestamp_millis());
+        TestPlan::analyse(&run_id, &PathBuf::from("test"), loader.core()).unwrap()
     }
 
     #[test]

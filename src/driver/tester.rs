@@ -10,6 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fmt, fs};
+use uuid::Uuid;
 
 use super::statistics::{Statistics, Timings};
 
@@ -18,11 +19,12 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let input = opt.explicit_inputs().last().unwrap_or(&cwd);
     let path = resolve_input(opt, input)?;
+    let run_id = Uuid::new_v4().to_hyphenated().to_string();
 
     let plans = if path.is_dir() {
-        directory_plans(&opt, &path)?
+        directory_plans(&opt, &run_id, &path)?
     } else {
-        vec![load_plan(&opt, &path)?]
+        vec![load_plan(&opt, &run_id, &path)?]
     };
 
     run_plans(&opt, plans.as_slice())
@@ -49,7 +51,11 @@ pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, Eu
 }
 
 /// Load the test subject file to analyse and extra a test plan
-fn load_plan(opt: &EucalyptOptions, filename: &Path) -> Result<TestPlan, EucalyptError> {
+fn load_plan(
+    opt: &EucalyptOptions,
+    run_id: &str,
+    filename: &Path,
+) -> Result<TestPlan, EucalyptError> {
     let mut timings = Timings::default();
 
     let mut analysis_lib_path = opt.lib_path().to_vec();
@@ -61,7 +67,7 @@ fn load_plan(opt: &EucalyptOptions, filename: &Path) -> Result<TestPlan, Eucalyp
     prepare::prepare(opt, &mut loader, &mut timings)?;
 
     // analyse into test plan
-    let test_plan = TestPlan::analyse(filename, loader.core())?;
+    let test_plan = TestPlan::analyse(run_id, filename, loader.core())?;
     Ok(test_plan)
 }
 
@@ -102,7 +108,11 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
 
 /// Discover all tests in a directory and run, setting the directory in
 /// the library path for easy resolution of imports
-fn directory_plans(opt: &EucalyptOptions, dir: &Path) -> Result<Vec<TestPlan>, EucalyptError> {
+fn directory_plans(
+    opt: &EucalyptOptions,
+    run_id: &str,
+    dir: &Path,
+) -> Result<Vec<TestPlan>, EucalyptError> {
     println!("Gathering tests in {}", dir.display());
     let mut tests: Vec<_> = fs::read_dir(dir)?
         .filter_map(Result::ok)
@@ -124,6 +134,7 @@ fn directory_plans(opt: &EucalyptOptions, dir: &Path) -> Result<Vec<TestPlan>, E
                 &opt.clone()
                     .with_explicit_inputs(vec![Input::from(Locator::from(t.as_path()))])
                     .build(),
+                run_id,
                 t,
             )
         })
