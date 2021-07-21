@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fmt, fs};
 use uuid::Uuid;
+use webbrowser;
 
 use super::statistics::{Statistics, Timings};
 
@@ -102,6 +103,10 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
 
     let report = tester.report(tests)?;
     println!("Report generated at {}", report.to_string_lossy());
+
+    if opt.open_browser() {
+        let _ = report.to_str().and_then(|s| webbrowser::open(s).ok());
+    }
 
     Ok(exit)
 }
@@ -369,9 +374,10 @@ impl Tester for InProcessTester {
                     Some("evidence".to_string()),
                     "yaml",
                 ),
-                Input::from(Locator::Resource("verify".to_string())),
+                Input::from(Locator::Resource("test".to_string())),
             ])
             .with_export_type("yaml".to_string())
+            .with_target(Some("verify".to_string()))
             .with_output(plan.result_file_name())
             .build();
         let mut check_loader = SourceLoader::new(vec![]);
@@ -432,14 +438,15 @@ impl Tester for InProcessTester {
         prepare::prepare(&result_opts, &mut loader, &mut Timings::default())?;
         eval::run(&result_opts, loader)?;
 
-        // then process using report.eu
+        // then process using test.eu:generate-report
         let mut report_file = test_dir;
         report_file.push("report.html");
         let report_opts = EucalyptOptions::default()
             .with_explicit_inputs(vec![
                 Input::new(Locator::Fs(result_file), None, "yaml"),
-                Input::from(Locator::Resource("report".to_string())),
+                Input::from(Locator::Resource("test".to_string())),
             ])
+            .with_target(Some("generate-report".to_string()))
             .with_output(report_file.clone())
             .build();
 

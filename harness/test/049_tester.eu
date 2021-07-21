@@ -1,0 +1,29 @@
+{
+  title: "049 tester"
+  test-formats: [:yaml, :json]
+}
+
+test-true(bool): bool then(:PASS, :FAIL)
+
+func(x, y): x + y
+
+` { target: :test-func
+    doc: "`func` correctly adds two numbers"
+    verify: [:all-values-true] }
+tests: {
+  α: func(2, 3) //= 5
+  β: func(-1, -1) //= -2
+  RESULT: (α ∧ β) test-true
+}
+
+
+all-values-true(result): result values all-true? then(:PASS, :FAIL)
+
+
+` { target: :test-fail
+    verify: [:all-values-true]}
+failures: {
+  α: func(2, 2) //= 5
+  β: func(1, 1) //= 3
+  RESULT: ¬(α ∧ β) test-true
+}

@@ -83,6 +83,11 @@ pub struct EucalyptOptions {
     #[structopt(long)]
     quote_debug: bool,
 
+    /// Open a browser window on the result or test report if
+    /// appropriate
+    #[structopt(short = "O", long)]
+    open_browser: bool,
+
     /// Print metrics to stderr before exiting
     #[structopt(short = "S", long)]
     statistics: bool,
@@ -454,6 +459,10 @@ impl EucalyptOptions {
 
     pub fn quote_debug(&self) -> bool {
         self.quote_debug
+    }
+
+    pub fn open_browser(&self) -> bool {
+        self.open_browser
     }
 
     pub fn statistics(&self) -> bool {

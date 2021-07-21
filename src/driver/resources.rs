@@ -16,12 +16,8 @@ impl Default for Resources {
             String::from_utf8(include_bytes!("../../lib/prelude.eu").to_vec()).unwrap(),
         );
         content.insert(
-            "verify".to_string(),
-            String::from_utf8(include_bytes!("../../lib/verify.eu").to_vec()).unwrap(),
-        );
-        content.insert(
-            "report".to_string(),
-            String::from_utf8(include_bytes!("../../lib/report.eu").to_vec()).unwrap(),
+            "test".to_string(),
+            String::from_utf8(include_bytes!("../../lib/test.eu").to_vec()).unwrap(),
         );
         content.insert(
             "package".to_string(),

@@ -39,6 +39,7 @@ dirs = "3.0.2"
 html5ever = "0.25.1"
 lru = "0.6.5"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
+webbrowser = "0.5.5"
 
 [[bench]]
 harness = false
