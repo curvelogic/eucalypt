@@ -7,9 +7,41 @@ Used by the in-built test framework invoked by `eu -T`
 - test report generation (to generate `report.html` from `results.yaml`)
 "
 
+` "Validation functions that are available by default
+
+A validation function accepts an evidence context with the following keys:
+- `stdout`
+- `stderr`
+- `result`
+- `stats`
+- `validation`
+
+as described below and must return :PASS or :FAIL.
+"
+validation: {
+  ` "By default we expect a RESULT key which should be either :PASS or :FAIL"
+  default-expectation(context): context.result.RESULT
+}
+
+
+` "Test execution generates evidence consisting of the following top level keys:
+
+- `stdout` - text as list of strings
+- `stderr` - text as list of strings
+- `result` - output reparsed into eucalypt data structures
+- `stats` - metrics collected during execution
+- `validation` - the validations that verification must apply
+
+These validations typically assert something about `result` but in
+principle can access other fields too. In particular, `stderr` may be
+useful for testing error messages.
+
+Validations must identify single argument functions which can be
+applied to result. These may be defined in the test subject itself or
+in this library.
+
+"
 verification: {
-  ` "`evidence` should be a top-level key"
-  _require: evidence
 
   ` { target: :verify
       doc: "Process test evidence into result.yaml"}
@@ -26,8 +58,8 @@ verification: {
 
   ` "apply an expectation to the evidence content for a test"
   apply-to-content(content, expectation): {
-      path: expectation.value str.split-on("\.") map(sym)
-      val: content lookup-path(path)
+      f: [validation, subject] lookup-across(expectation.function-key sym, const(:FAIL))
+      val: f(content)
     }.(expectation << { result: val })
 
   ` "a single top-level pass / fail for all targets and expectations"
@@ -42,11 +74,15 @@ verification: {
 
 }
 
-` "HTML test report generation"
-reporting: {
+` "HTML test report generation
 
-    ` "`results` should be a list of result.yaml contents, e.g. gathered using `--collect-as`"
-  _require: results
+HTML reports are single page reports, written to `report.html` which
+transform the contents of `results.yaml` for viewing in a browser.
+They can be automatically opened in a browser at the end of a test run
+using the `-O` switch.
+
+ "
+reporting: {
 
   ` "the main report page wrapping and styles"
   page(contents):

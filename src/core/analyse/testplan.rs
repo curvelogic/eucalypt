@@ -7,14 +7,14 @@ use crate::core::target::Target;
 use crate::core::unit::TranslationUnit;
 use std::path::{Path, PathBuf};
 
-/// A key under which we will expect :pass result and fail if they are
-/// not found
+/// A key under which we will find a single-argument validation
+/// function to process the test results
 #[derive(Debug, PartialEq, Clone)]
 pub struct TestExpectation {
     /// Documentation for the test
     doc: String,
-    /// Key path under which pass must be found
-    path: Vec<String>,
+    /// Key for lookup of validation function
+    key: String,
 }
 
 impl TestExpectation {
@@ -23,9 +23,9 @@ impl TestExpectation {
         &self.doc
     }
 
-    /// Path of test expectation
-    pub fn path(&self) -> &Vec<String> {
-        &self.path
+    /// Key for lookup of validation function
+    pub fn path(&self) -> &str {
+        &self.key
     }
 }
 
@@ -41,10 +41,8 @@ pub struct TestPlan {
     file: PathBuf,
     /// Test title
     title: String,
-    /// Test targets to run and formats for each
+    /// Test targets to run (and their validations) and formats for each
     targets: Vec<(Target, Vec<String>)>,
-    /// Expectations
-    expectations: Vec<TestExpectation>,
 }
 
 impl TestPlan {
@@ -61,11 +59,6 @@ impl TestPlan {
     /// Test targets to run
     pub fn targets(&self) -> &Vec<(Target, Vec<String>)> {
         &self.targets
-    }
-
-    /// Expectations to validate
-    pub fn expectations(&self) -> &Vec<TestExpectation> {
-        &self.expectations
     }
 
     pub fn test_directory(&self) -> &Path {
@@ -119,7 +112,7 @@ impl TestPlan {
         // run all targets begining with test
         let mut targets: Vec<(Target, Vec<String>)> = vec![];
         for t in &unit.targets {
-            if t.name().starts_with("test") || t.name() == "main" {
+            if t.name().starts_with("test") || t.name() == "main" || !t.validations().is_empty() {
                 if let Some(f) = t.format() {
                     targets.push((t.clone(), vec![f.to_string()]))
                 } else {
@@ -132,13 +125,6 @@ impl TestPlan {
         if targets.is_empty() {
             targets.push((Target::default(), formats));
         }
-
-        // For now, only one expectation, RESULT, but will allow
-        // metadata to select
-        let expectations = vec![TestExpectation {
-            doc: "result".to_string(),
-            path: vec!["result.RESULT".to_string()],
-        }];
 
         Ok(TestPlan {
             run_id: run_id.to_string(),
@@ -153,7 +139,6 @@ impl TestPlan {
                 })
                 .unwrap_or_else(|| "untitled".to_string()),
             targets,
-            expectations,
         })
     }
 }
@@ -205,11 +190,11 @@ subtraction: passes(4 - 1 = 2)
             &[
                 TestExpectation {
                     doc: "Test sums".to_string(),
-                    path: vec!["addition".to_string()]
+                    key: vec!["addition".to_string()]
                 },
                 TestExpectation {
                     doc: "Test that might fail".to_string(),
-                    path: vec!["subtraction".to_string()]
+                    key: vec!["subtraction".to_string()]
                 },
             ]
         );

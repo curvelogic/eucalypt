@@ -3,27 +3,33 @@
   test-formats: [:yaml, :json]
 }
 
-test-true(bool): bool then(:PASS, :FAIL)
+(x ⊕ y): x + y
 
-func(x, y): x + y
-
-` { target: :test-func
-    doc: "`func` correctly adds two numbers"
-    verify: [:all-values-true] }
+` { target: :'test-⊕'
+    doc: "`⊕` correctly adds two numbers"
+    verify: [:all-values-true, :beta-specifically-is-true] }
 tests: {
-  α: func(2, 3) //= 5
-  β: func(-1, -1) //= -2
-  RESULT: (α ∧ β) test-true
+  α: 2 ⊕ 3 //= 5
+  β: -1 ⊕ -1 //= -2
 }
 
+` "all equalities evaluate to true"
+all-values-true(context): context.result values all-true? then(:PASS, :FAIL)
 
-all-values-true(result): result values all-true? then(:PASS, :FAIL)
-
+` "beta calculation evaluates to true"
+beta-specifically-is-true(context): context.result.β then(:PASS, :FAIL)
 
 ` { target: :test-fail
-    verify: [:all-values-true]}
+    verify: [:all-values-false] }
 failures: {
-  α: func(2, 2) //= 5
-  β: func(1, 1) //= 3
-  RESULT: ¬(α ∧ β) test-true
+  α: 2 ⊕ 2 //= 5
+  β: 1 ⊕ 1 //= 3
+}
+
+` "all equalities evaluate to false"
+all-values-false(context): context.result values all(= false) then(:PASS, :FAIL)
+
+` { target: :test-default-expectation }
+test-default-expectation: {
+  RESULT: :PASS
 }

@@ -42,6 +42,7 @@ tests: {
     t5: ({ k: :k } lookup(:k)) = (:k lookup-in({ k: :k }))
     t6: ({ k: :k } lookup-or(:x, 1234)) = lookup-or-in({ k: :k }, :x, 1234)
     t7: ({ c: 22 } lookup-alts([:a, :b, :c], 0)) = ({ a: 22 c: 18 } lookup-alts([:a, :b, :c], 0))
+    t8: [{}, {}, {foo: 66}] lookup-across(:foo, 77) //= 66
 
     pass: [t1, t2, t3, t4, t5, t6, t7] all-true?
   }

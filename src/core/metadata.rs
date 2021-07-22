@@ -83,6 +83,8 @@ pub struct DesugarPhaseDeclarationMetadata {
     pub target: Option<String>,
     /// Target format
     pub format: Option<String>,
+    /// Target validations
+    pub validations: Option<Vec<String>>,
     /// Import specification
     pub imports: Option<Vec<Input>>,
     /// Documentation
@@ -103,6 +105,7 @@ impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
                 precedence: imap.get("precedence").and_then(extract_precedence),
                 target: imap.get("target").and_then(|e| e.extract()),
                 format: imap.get("format").and_then(|e| e.extract()),
+                validations: imap.get("verify").and_then(|e| e.extract()),
                 imports: imap.get("import").and_then(|e| e.extract()),
                 doc: imap.get("doc").and_then(|e| e.extract()),
                 embedding: imap.get("embedding").and_then(|e| e.extract()),

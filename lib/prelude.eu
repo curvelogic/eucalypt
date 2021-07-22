@@ -128,8 +128,13 @@ lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 ` "`lookup-or-in(b, s, d)` - look up symbol `s` in block `b`, default `d` if not found."
 lookup-or-in(b, s, d): lookup-or(s, d, b)
 
-` "`lookup-alts(syms, d)` - look up symbols `syms` in turn in block `b` until a value is found, default `d` if none."
+` "`lookup-alts(syms, d, b)` - look up symbols `syms` in turn in block `b` until a value is found, default `d` if none."
 lookup-alts(syms, d, b): foldr(lookup-or-in(b), d, syms)
+
+` "`lookup-in-alts(bs, s, d)` - look up symbol `s` in turn in each of blocks `bs` until a value is found, default `d` if none."
+lookup-across(s, d, bs): {
+  f(b, acc): lookup-or(s, acc, b)
+}.(foldr(f, d, bs))
 
 ` "`lookup-path(ks, b)` - look up value at key path `ks` in block `b`"
 lookup-path(ks, b): foldl(lookup-in, b, ks)
@@ -610,13 +615,13 @@ reverse(l): foldl(cons flip, [], l)
 ` "`all-true?(l)` - true if and only if all items in list `l` are true."
 all-true?(l): foldl(and, true, l)
 
-` "`all-true?(l)` - true if and only if all items in list `l` satisfy predicate `p?`."
+` "`all(p?, l)` - true if and only if all items in list `l` satisfy predicate `p?`."
 all(p?, l): l map(p?) all-true?
 
 ` "`any-true?(l)` - true if and only if any items in list `l` are true."
 any-true?(l): foldr(or, false, l)
 
-` "`any-true?(l)` - true if and only if any items in list `l` satisfy predicate `p?`."
+` "`any(p?, l)` - true if and only if any items in list `l` satisfy predicate `p?`."
 any(p?, l): l map(p?) any-true?
 
 ` "`window(n, step, l)` - list of lists of sliding windows over list `l` of size `n` and offest `step`"

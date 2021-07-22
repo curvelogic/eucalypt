@@ -194,12 +194,19 @@ impl<'smap> Desugarer<'smap> {
     }
 
     /// Record a target discovered in the desugaring process
-    pub fn record_target(&mut self, target: String, doc: String, fmt: Option<String>) {
+    pub fn record_target(
+        &mut self,
+        target: String,
+        doc: String,
+        fmt: Option<String>,
+        validations: Vec<String>,
+    ) {
         let tgt = Target::new(
             target,
             doc,
             fmt,
             self.stack.iter().map(String::clone).collect(),
+            validations,
         );
         self.targets.insert(tgt);
     }

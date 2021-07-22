@@ -9,7 +9,6 @@ use codespan::Span;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use thiserror::Error;
 
-
 /// An error forming the AST in semantic action, often wrapped by
 /// LALRPOP parse error
 #[derive(Debug, Error)]

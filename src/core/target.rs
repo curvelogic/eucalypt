@@ -22,6 +22,8 @@ pub struct Target {
     format: Option<String>,
     /// Name components
     path: Vec<String>,
+    /// Validations
+    validations: Vec<String>,
 }
 
 impl fmt::Display for Target {
@@ -39,12 +41,19 @@ impl fmt::Display for Target {
 
 impl Target {
     /// Create a Target from information in metadata
-    pub fn new(name: String, doc: String, format: Option<String>, path: Vec<String>) -> Target {
+    pub fn new(
+        name: String,
+        doc: String,
+        format: Option<String>,
+        path: Vec<String>,
+        validations: Vec<String>,
+    ) -> Target {
         Target {
             name,
             doc,
             format,
             path,
+            validations,
         }
     }
 
@@ -63,8 +72,14 @@ impl Target {
         &self.format
     }
 
+    /// Path of the target within the source structure
     pub fn path(&self) -> &Vec<String> {
         &self.path
+    }
+
+    /// Validations to apply to the target in test mode
+    pub fn validations(&self) -> &Vec<String> {
+        &self.validations
     }
 
     /// Return a version of the target where the path is

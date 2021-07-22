@@ -1,5 +1,5 @@
 //! Running test scripts
-use crate::core::analyse::testplan::TestPlan;
+use crate::core::{analyse::testplan::TestPlan, target::Target};
 use crate::driver::error::EucalyptError;
 use crate::driver::eval;
 use crate::driver::options::EucalyptOptions;
@@ -148,9 +148,9 @@ fn directory_plans(
 
 /// A test result
 #[derive(Debug)]
-pub struct TestResult {
+pub struct TestResult<'t> {
     /// Target used
-    pub target: String,
+    pub target: &'t Target,
     /// Format used
     pub format: String,
     /// Exit code (zero success - None incomplete)
@@ -163,9 +163,9 @@ pub struct TestResult {
     pub statistics: Statistics,
 }
 
-impl fmt::Display for TestResult {
+impl<'t> fmt::Display for TestResult<'t> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Target: {}", self.target)?;
+        writeln!(f, "Target: {}", self.target.name())?;
         writeln!(f, "Format: {}", self.format)?;
         writeln!(
             f,
@@ -218,68 +218,72 @@ impl InProcessTester {
     /// The evidence does not as yet constitute a pass or a fail as
     /// assertions might have been specified which validate the
     /// outputs recorded in evidence.yaml - e.g. the stderr or stdout.
-    fn create_evidence_yaml(
+    fn create_evidence_yaml<'t>(
         &self,
         plan: &TestPlan,
-        results: Vec<TestResult>,
+        results: Vec<TestResult<'t>>,
     ) -> Result<(), EucalyptError> {
         let mut inputs = vec![];
-        let mut validator = Vec::new();
+        let mut evidence_script = Vec::new();
 
-        writeln!(&mut validator, "title: {}", quote(plan.title()))?;
+        writeln!(&mut evidence_script, "title: {}", quote(plan.title()))?;
         writeln!(
-            &mut validator,
+            &mut evidence_script,
             "filename: {}",
             quote(plan.file().to_string_lossy())
         )?;
-        writeln!(&mut validator, "tests: {{")?;
+        writeln!(&mut evidence_script, "tests: {{")?;
         for result in results {
-            let target = if result.target.is_empty() {
-                "default".to_string()
+            let target_name = if result.target.name().is_empty() {
+                "default"
             } else {
-                result.target
+                result.target.name()
             };
+
             let format = result.format;
             // The tests output parsed as the output format end
             // embedded for testing expectations against
             let output = Input::new(
                 Locator::Literal(result.stdout.clone()),
-                Some(format!("{}-{}-result", &target, &format)),
+                Some(format!("{}-{}-result", &target_name, &format)),
                 format.clone(),
             );
             // Literal stdout
             let stdout = Input::new(
                 Locator::Literal(result.stdout.clone()),
-                Some(format!("{}-{}-stdout-text", &target, &format)),
+                Some(format!("{}-{}-stdout-text", &target_name, &format)),
                 "text".to_string(),
             );
             // Literal stderr
             let stderr = Input::new(
                 Locator::Literal(result.stderr),
-                Some(format!("{}-{}-stderr-text", &target, &format)),
+                Some(format!("{}-{}-stderr-text", &target_name, &format)),
                 "text".to_string(),
             );
 
-            let expectations: Vec<String> = plan
-                .expectations()
+            let mut expectations: Vec<String> = result
+                .target
+                .validations()
                 .iter()
-                .map(|e| {
-                    let path = e.path().as_slice().join(".");
-                    format!("{{ name: \"{}\" value: \"{}\" }}", e.doc(), path)
-                })
+                .map(|v| format!("{{ name: \"{}\" function-key: \"{}\" }}", v, v))
                 .collect();
+
+            if expectations.is_empty() {
+                expectations
+                    .push("{ name: \"default\" function-key: \"default-expectation\"}".to_string());
+            }
 
             let test_template = format!(
                 r#"
-  {}-{}: {{
+  '{}-{}': {{
     exit: {}
-    stdout: {}
-    stderr: {}
-    result: {}
+    stdout: '{}'
+    stderr: '{}'
+    result: '{}'
     expectations: [{}]
     stats: {}
   }}"#,
-                &target,
+                &target_name,
                 &format,
                 result.exit_code.unwrap_or(1),
                 stdout.name().as_ref().unwrap(),
@@ -300,13 +304,17 @@ impl InProcessTester {
                 inputs.push(output);
             }
 
-            writeln!(&mut validator, "{}", test_template)?;
+            writeln!(&mut evidence_script, "{}", test_template)?;
         }
-        writeln!(&mut validator, "}}\n")?;
+        writeln!(&mut evidence_script, "}}\n")?;
 
-        let validator_text = std::str::from_utf8(&validator).unwrap().to_string();
-        let validator_input = Input::new(Locator::Literal(validator_text), None, "eu".to_string());
-        inputs.push(validator_input);
+        let evidence_script_text = std::str::from_utf8(&evidence_script).unwrap().to_string();
+        let evidence_input = Input::new(
+            Locator::Literal(evidence_script_text),
+            None,
+            "eu".to_string(),
+        );
+        inputs.push(evidence_input);
 
         let evidence_file = plan.evidence_file_name();
         let evidence_opts = EucalyptOptions::default()
@@ -351,7 +359,7 @@ impl Tester for InProcessTester {
                 };
 
                 results.push(TestResult {
-                    target: t.name().to_string(),
+                    target: &t,
                     format: f.to_string(),
                     exit_code: exit_code.unwrap_or(None),
                     stdout: std::str::from_utf8(outbuf.as_slice()).unwrap().to_string(),
@@ -373,6 +381,13 @@ impl Tester for InProcessTester {
                     Locator::Fs(plan.evidence_file_name()),
                     Some("evidence".to_string()),
                     "yaml",
+                ),
+                // add the test subject again for availability of validations
+                // TODO: parse / compile failures...
+                Input::new(
+                    Locator::Fs(plan.file().to_path_buf()),
+                    Some("subject".to_string()),
+                    "eu",
                 ),
                 Input::from(Locator::Resource("test".to_string())),
             ])
