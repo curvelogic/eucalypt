@@ -9,11 +9,12 @@ use codespan::Span;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use thiserror::Error;
 
+
 /// An error forming the AST in semantic action, often wrapped by
 /// LALRPOP parse error
 #[derive(Debug, Error)]
 pub enum SourceError {
-    #[error("invalid yaml syntax {0}")]
+    #[error("invalid yaml or json syntax {0}")]
     InvalidYaml(String, usize, Span),
     #[error("invalid xml syntax {0}")]
     InvalidXml(String, usize, Span),
