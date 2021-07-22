@@ -174,37 +174,11 @@ pub mod tests {
         assert_eq!(plan.title(), "A test");
     }
 
-    // #[test] TODO: work out how this should work
-    pub fn test_expectations() {
-        let plan = source_to_test_plan(
-            "
-` \"Test sums\"
-addition: passes(2 + 2 = 4)
-
-` \"Test that might fail\"
-subtraction: passes(4 - 1 = 2)
-",
-        );
-        assert_eq!(
-            plan.expectations(),
-            &[
-                TestExpectation {
-                    doc: "Test sums".to_string(),
-                    key: vec!["addition".to_string()]
-                },
-                TestExpectation {
-                    doc: "Test that might fail".to_string(),
-                    key: vec!["subtraction".to_string()]
-                },
-            ]
-        );
-    }
-
     #[test]
     pub fn test_targets() {
         let plan = source_to_test_plan(
             "
-` { target: :test-addition }
+` { target: :test-addition verify: [:validate-something] }
 addition: passes(2 + 2 = 4)
 
 ` { target: :test-subtraction }
@@ -227,6 +201,13 @@ result: :pass
                 ]
                 .iter()
             )
+        );
+        assert_eq!(
+            plan.targets()
+                .iter()
+                .flat_map(|t| t.0.validations())
+                .collect::<Vec<&String>>(),
+            vec![&"validate-something".to_string()]
         );
     }
 }

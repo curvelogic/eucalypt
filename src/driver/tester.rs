@@ -375,6 +375,10 @@ impl Tester for InProcessTester {
     /// Validates the evidence.yaml which was written during the run stage
     ///
     fn validate(&self, plan: &TestPlan) -> Result<i32, EucalyptError> {
+        // Adding test subject back in, we may need to set the lib
+        // path for imports again
+        let lib_path = vec![plan.file().parent().unwrap().to_path_buf()];
+
         let validate_opts = EucalyptOptions::default()
             .with_explicit_inputs(vec![
                 Input::new(
@@ -384,18 +388,15 @@ impl Tester for InProcessTester {
                 ),
                 // add the test subject again for availability of validations
                 // TODO: parse / compile failures...
-                Input::new(
-                    Locator::Fs(plan.file().to_path_buf()),
-                    Some("subject".to_string()),
-                    "eu",
-                ),
+                Input::from(Locator::Fs(plan.file().to_path_buf())).with_name("subject"),
                 Input::from(Locator::Resource("test".to_string())),
             ])
+            .with_lib_path(lib_path.clone())
             .with_export_type("yaml".to_string())
             .with_target(Some("verify".to_string()))
             .with_output(plan.result_file_name())
             .build();
-        let mut check_loader = SourceLoader::new(vec![]);
+        let mut check_loader = SourceLoader::new(lib_path);
 
         prepare::prepare(&validate_opts, &mut check_loader, &mut Timings::default())?;
         eval::run(&validate_opts, check_loader)?;

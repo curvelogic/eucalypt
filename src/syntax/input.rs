@@ -176,6 +176,14 @@ impl Input {
     pub fn format(&self) -> &str {
         &self.format
     }
+
+    pub fn with_name(self, name: &str) -> Self {
+        Input {
+            locator: self.locator,
+            name: Some(name.to_string()),
+            format: self.format,
+        }
+    }
 }
 
 impl From<Locator> for Input {
