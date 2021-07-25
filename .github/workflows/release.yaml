@@ -9,11 +9,11 @@ jobs:
   update-latest-tag:
     runs-on: ubuntu-latest
     steps:
-      - name: update branch latest
+      - uses: actions/checkout@v2
         with:
           fetch-depth: 0
-        run:
-          |
+      - name: update branch latest
+        run: |
             git checkout latest
             git merge --ff-only ${GITHUB_REF}
             git push origin latest
