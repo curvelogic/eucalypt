@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: update branch latest to point at ${{GITHUB_REF}}
+      - name: update branch latest
         run:
           |
             git checkout latest
