@@ -17,6 +17,7 @@ jobs:
             git merge --ff-only ${GITHUB_REF}
             git push origin latest
   generate-homebrew-formula:
+    runs-on: ubuntu-latest
     needs: [update-latest-tag]
     steps:
       - uses: actions/checkout@v2
