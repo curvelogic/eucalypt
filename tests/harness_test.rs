@@ -1,6 +1,6 @@
 //! Use tester and harness tests
 use eucalypt::driver::{options::EucalyptOptions, tester};
-use eucalypt::{driver::tester::resolve_input, syntax::input::Input};
+use eucalypt::syntax::input::Input;
 use std::{path::PathBuf, str::FromStr};
 
 /// Common options for all tests
@@ -17,10 +17,7 @@ pub fn opts(filename: &str) -> EucalyptOptions {
 /// Parse and desugar the test files and analyse for expectations,
 /// then run and assert success.
 fn run_test(opt: &EucalyptOptions) {
-    let input = opt.explicit_inputs().last().unwrap();
-    let filename = resolve_input(opt, &input).unwrap();
-
-    let exit_code = tester::run_test(opt, &filename).unwrap();
+    let exit_code = tester::test(opt).unwrap();
     assert_eq!(exit_code, 0);
 }
 

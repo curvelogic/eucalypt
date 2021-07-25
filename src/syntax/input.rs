@@ -57,6 +57,13 @@ impl From<&str> for Locator {
     }
 }
 
+/// Convert to Locator from Path or PathBuf
+impl From<&Path> for Locator {
+    fn from(p: &Path) -> Self {
+        Locator::Fs(p.to_path_buf())
+    }
+}
+
 impl Display for Locator {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         match self {
@@ -168,6 +175,14 @@ impl Input {
 
     pub fn format(&self) -> &str {
         &self.format
+    }
+
+    pub fn with_name(self, name: &str) -> Self {
+        Input {
+            locator: self.locator,
+            name: Some(name.to_string()),
+            format: self.format,
+        }
     }
 }
 

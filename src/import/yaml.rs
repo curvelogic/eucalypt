@@ -9,8 +9,8 @@ use codespan::{ByteIndex, ByteOffset, Span};
 use codespan_reporting::files::SimpleFiles;
 use moniker::FreeVar;
 use regex::RegexSet;
-use std::str::FromStr;
 use std::{collections::HashMap, iter};
+use std::{convert::TryInto, str::FromStr};
 use yaml_rust::parser::{Event, MarkedEventReceiver, Parser};
 use yaml_rust::scanner::{Marker, TScalarStyle, TokenType};
 
@@ -26,7 +26,11 @@ pub fn read_yaml<'smap>(
     let mut receiver = Receiver::new(files, source_map, file_id);
     Parser::new(text.chars())
         .load(&mut receiver, false)
-        .unwrap();
+        .map_err(|scan_error| {
+            let i = ByteIndex(scan_error.marker().index().try_into().unwrap());
+            SourceError::InvalidYaml(scan_error.to_string(), file_id, Span::new(i, i))
+        })?;
+
     Ok(receiver.core())
 }
 

@@ -40,12 +40,24 @@ pub struct Statistics {
 }
 
 impl Statistics {
+    pub fn ticks(&self) -> u64 {
+        self.machine_ticks
+    }
+
     pub fn set_ticks(&mut self, ticks: u64) {
         self.machine_ticks = ticks;
     }
 
+    pub fn allocs(&self) -> u64 {
+        self.machine_allocs
+    }
+
     pub fn set_allocs(&mut self, allocs: u64) {
         self.machine_allocs = allocs;
+    }
+
+    pub fn max_stack(&self) -> usize {
+        self.machine_max_stack
     }
 
     pub fn set_max_stack(&mut self, max_stack: usize) {

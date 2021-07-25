@@ -79,6 +79,7 @@ fn declaration_to_binding(
             target.to_string(),
             metadata.doc.unwrap_or_else(|| "".to_string()),
             metadata.format,
+            metadata.validations.unwrap_or_default(),
         );
     }
 

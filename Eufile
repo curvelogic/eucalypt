@@ -63,7 +63,7 @@ new-version: [version.major,
 
 ` {target: :build-meta
    doc: "build metadata to embed as resource in binary"}
-main: {
+build-meta: {
   version: new-version
   commit: build.commit
   url: build.url

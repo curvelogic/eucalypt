@@ -83,6 +83,11 @@ pub struct EucalyptOptions {
     #[structopt(long)]
     quote_debug: bool,
 
+    /// Open a browser window on the result or test report if
+    /// appropriate
+    #[structopt(short = "O", long)]
+    open_browser: bool,
+
     /// Print metrics to stderr before exiting
     #[structopt(short = "S", long)]
     statistics: bool,
@@ -130,6 +135,16 @@ impl EucalyptOptions {
 
     pub fn with_explicit_inputs(mut self, inputs: Vec<Input>) -> Self {
         self.explicit_inputs = inputs;
+        self
+    }
+
+    pub fn with_target(mut self, target: Option<String>) -> Self {
+        self.target = target;
+        self
+    }
+
+    pub fn with_collect_as(mut self, collect_as: Option<String>) -> Self {
+        self.collect_as = collect_as;
         self
     }
 
@@ -444,6 +459,10 @@ impl EucalyptOptions {
 
     pub fn quote_debug(&self) -> bool {
         self.quote_debug
+    }
+
+    pub fn open_browser(&self) -> bool {
+        self.open_browser
     }
 
     pub fn statistics(&self) -> bool {

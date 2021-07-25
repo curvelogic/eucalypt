@@ -7,14 +7,14 @@ use crate::core::target::Target;
 use crate::core::unit::TranslationUnit;
 use std::path::{Path, PathBuf};
 
-/// A key under which we will expect :pass result and fail if they are
-/// not found
+/// A key under which we will find a single-argument validation
+/// function to process the test results
 #[derive(Debug, PartialEq, Clone)]
 pub struct TestExpectation {
     /// Documentation for the test
     doc: String,
-    /// Key path under which pass must be found
-    path: Vec<String>,
+    /// Key for lookup of validation function
+    key: String,
 }
 
 impl TestExpectation {
@@ -23,9 +23,9 @@ impl TestExpectation {
         &self.doc
     }
 
-    /// Path of test expectation
-    pub fn path(&self) -> &Vec<String> {
-        &self.path
+    /// Key for lookup of validation function
+    pub fn path(&self) -> &str {
+        &self.key
     }
 }
 
@@ -35,14 +35,14 @@ impl TestExpectation {
 /// and a set of expectations to be validated against each run.
 #[derive(Debug, PartialEq, Clone)]
 pub struct TestPlan {
+    /// Run ID string for disambiguating repeated runs
+    run_id: String,
     /// Test filename
     file: PathBuf,
     /// Test title
     title: String,
-    /// Test targets to run and formats for each
+    /// Test targets to run (and their validations) and formats for each
     targets: Vec<(Target, Vec<String>)>,
-    /// Expectations
-    expectations: Vec<TestExpectation>,
 }
 
 impl TestPlan {
@@ -61,18 +61,25 @@ impl TestPlan {
         &self.targets
     }
 
-    /// Expectations to validate
-    pub fn expectations(&self) -> &Vec<TestExpectation> {
-        &self.expectations
+    pub fn test_directory(&self) -> &Path {
+        self.file().parent().unwrap()
     }
 
     pub fn result_directory(&self) -> PathBuf {
         let mut directory = PathBuf::from(self.file().parent().unwrap());
         directory.push(".result");
+        directory.push(&self.run_id);
         directory
     }
 
-    pub fn report_file_name(&self) -> PathBuf {
+    pub fn evidence_file_name(&self) -> PathBuf {
+        let mut name = self.result_directory();
+        name.push(self.file().file_name().unwrap());
+        name.set_extension("evidence.yaml");
+        name
+    }
+
+    pub fn result_file_name(&self) -> PathBuf {
         let mut name = self.result_directory();
         name.push(self.file().file_name().unwrap());
         name.set_extension("report.yaml");
@@ -84,7 +91,11 @@ impl TestPlan {
     }
 
     /// Analyse a translation unit to determine test plan
-    pub fn analyse(filename: &Path, unit: &TranslationUnit) -> Result<Self, CoreError> {
+    pub fn analyse(
+        run_id: &str,
+        filename: &Path,
+        unit: &TranslationUnit,
+    ) -> Result<Self, CoreError> {
         // parse head metadata
         let header = if let Expr::Meta(_, _, m) = &*unit.expr.inner {
             m.clone().read_metadata()?
@@ -101,7 +112,7 @@ impl TestPlan {
         // run all targets begining with test
         let mut targets: Vec<(Target, Vec<String>)> = vec![];
         for t in &unit.targets {
-            if t.name().starts_with("test") || t.name() == "main" {
+            if t.name().starts_with("test") || t.name() == "main" || !t.validations().is_empty() {
                 if let Some(f) = t.format() {
                     targets.push((t.clone(), vec![f.to_string()]))
                 } else {
@@ -115,18 +126,19 @@ impl TestPlan {
             targets.push((Target::default(), formats));
         }
 
-        // For now, only one expectation, RESULT, but will allow
-        // metadata to select
-        let expectations = vec![TestExpectation {
-            doc: "RESULT".to_string(),
-            path: vec!["RESULT".to_string()],
-        }];
-
         Ok(TestPlan {
+            run_id: run_id.to_string(),
             file: filename.to_path_buf(),
-            title: header.title.unwrap_or_else(|| "".to_string()),
+            title: header
+                .title
+                .or_else(|| {
+                    filename
+                        .to_path_buf()
+                        .file_stem()
+                        .map(|os| os.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| "untitled".to_string()),
             targets,
-            expectations,
         })
     }
 }
@@ -146,13 +158,14 @@ pub mod tests {
         loader.load(&sample_input).unwrap();
         loader.translate(&sample_input).unwrap();
         loader.merge_units(&[sample_input]).unwrap();
-        TestPlan::analyse(&PathBuf::from("test"), loader.core()).unwrap()
+        let run_id = format!("{}", chrono::offset::Utc::now().timestamp_millis());
+        TestPlan::analyse(&run_id, &PathBuf::from("test"), loader.core()).unwrap()
     }
 
     #[test]
     pub fn test_simple() {
         let plan = source_to_test_plan("RESULT: :PASS");
-        assert_eq!(plan.title(), "");
+        assert_eq!(plan.title(), "test");
     }
 
     #[test]
@@ -161,37 +174,11 @@ pub mod tests {
         assert_eq!(plan.title(), "A test");
     }
 
-    // #[test] TODO: work out how this should work
-    pub fn test_expectations() {
-        let plan = source_to_test_plan(
-            "
-` \"Test sums\"
-addition: passes(2 + 2 = 4)
-
-` \"Test that might fail\"
-subtraction: passes(4 - 1 = 2)
-",
-        );
-        assert_eq!(
-            plan.expectations(),
-            &[
-                TestExpectation {
-                    doc: "Test sums".to_string(),
-                    path: vec!["addition".to_string()]
-                },
-                TestExpectation {
-                    doc: "Test that might fail".to_string(),
-                    path: vec!["subtraction".to_string()]
-                },
-            ]
-        );
-    }
-
     #[test]
     pub fn test_targets() {
         let plan = source_to_test_plan(
             "
-` { target: :test-addition }
+` { target: :test-addition verify: [:validate-something] }
 addition: passes(2 + 2 = 4)
 
 ` { target: :test-subtraction }
@@ -214,6 +201,13 @@ result: :pass
                 ]
                 .iter()
             )
+        );
+        assert_eq!(
+            plan.targets()
+                .iter()
+                .flat_map(|t| t.0.validations())
+                .collect::<Vec<&String>>(),
+            vec![&"validate-something".to_string()]
         );
     }
 }

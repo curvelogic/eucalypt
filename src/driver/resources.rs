@@ -16,6 +16,10 @@ impl Default for Resources {
             String::from_utf8(include_bytes!("../../lib/prelude.eu").to_vec()).unwrap(),
         );
         content.insert(
+            "test".to_string(),
+            String::from_utf8(include_bytes!("../../lib/test.eu").to_vec()).unwrap(),
+        );
+        content.insert(
             "package".to_string(),
             String::from_utf8(include_bytes!("../../Cargo.lock").to_vec()).unwrap(),
         );
