@@ -1072,7 +1072,7 @@ pub mod tests {
     use super::*;
     use crate::{
         core::expr::{acore, free},
-        eval::machines::stg::tags::DataConstructor,
+        eval::stg::tags::DataConstructor,
     };
 
     fn compile(expr: RcExpr) -> Result<Rc<StgSyn>, CompileError> {

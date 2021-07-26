@@ -416,7 +416,7 @@ pub mod call {
 
         use crate::eval::{
             intrinsics,
-            machines::stg::syntax::{dsl::app_bif, Ref, StgSyn},
+            stg::syntax::{dsl::app_bif, Ref, StgSyn},
         };
 
         /// A call to a STG intrinsic function

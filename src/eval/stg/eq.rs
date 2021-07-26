@@ -196,7 +196,7 @@ pub mod tests {
         common::sourcemap::SourceMap,
         eval::{
             emit::DebugEmitter,
-            machines::stg::{
+            stg::{
                 boolean::And,
                 env,
                 eq::Eq,

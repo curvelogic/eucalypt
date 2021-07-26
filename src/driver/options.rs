@@ -1,7 +1,7 @@
 //! Command line argument handling.
-use crate::{driver::error::EucalyptError, eval::machines::stg::StgSettings};
+use crate::{driver::error::EucalyptError, eval::stg::StgSettings};
 use crate::{
-    eval::machines::stg::RenderType,
+    eval::stg::RenderType,
     syntax::input::{Input, Locator},
 };
 use atty::Stream;

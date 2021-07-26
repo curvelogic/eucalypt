@@ -8,7 +8,7 @@ use crate::{
     driver::{error::EucalyptError, options::EucalyptOptions, source::SourceLoader},
     eval::{
         error::ExecutionError,
-        machines::stg::{self, make_standard_runtime},
+        stg::{self, make_standard_runtime},
     },
     export,
 };

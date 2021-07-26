@@ -260,7 +260,7 @@ impl AllocationPruner {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::eval::machines::stg::syntax::dsl;
+    use crate::eval::stg::syntax::dsl;
 
     #[test]
     pub fn test_simple() {

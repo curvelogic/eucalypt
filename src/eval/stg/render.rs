@@ -344,7 +344,8 @@ pub mod tests {
         common::sourcemap::SourceMap,
         eval::{
             emit::{CapturingEmitter, Event, RenderMetadata},
-            machines::stg::{
+            primitive::Primitive,
+            stg::{
                 block::{self, Kv},
                 boolean, emit, env, eq,
                 machine::Machine,
@@ -352,7 +353,6 @@ pub mod tests {
                 runtime::{self, Runtime},
                 syntax::StgSyn,
             },
-            primitive::Primitive,
         },
     };
 

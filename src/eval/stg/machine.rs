@@ -743,8 +743,8 @@ impl<'a> fmt::Display for Machine<'a> {
 pub mod tests {
 
     use super::*;
-    use crate::eval::machines::stg::syntax::ex::*;
-    use crate::eval::{emit::DebugEmitter, machines::stg::syntax::dsl::*};
+    use crate::eval::stg::syntax::ex::*;
+    use crate::eval::{emit::DebugEmitter, stg::syntax::dsl::*};
 
     lazy_static! {
         static ref EMPTY_INTRINSICS: Vec<Box<dyn StgIntrinsic>> = vec![];

@@ -821,7 +821,7 @@ pub mod tests {
         common::sourcemap::SourceMap,
         eval::{
             emit::DebugEmitter,
-            machines::stg::{
+            stg::{
                 constant::KEmptyList,
                 env,
                 eq::Eq,

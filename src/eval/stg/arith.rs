@@ -282,7 +282,7 @@ pub mod tests {
         eval::{
             emit::DebugEmitter,
             intrinsics,
-            machines::stg::{
+            stg::{
                 env,
                 machine::Machine,
                 panic::Panic,

@@ -6,7 +6,7 @@ use serde_json::Number;
 use std::io;
 use thiserror::Error;
 
-use super::machines::stg::compiler::CompileError;
+use super::stg::compiler::CompileError;
 
 #[derive(Debug, Error)]
 pub enum ExecutionError {

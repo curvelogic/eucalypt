@@ -284,7 +284,7 @@ pub mod dsl {
     use chrono::{DateTime, FixedOffset};
     use serde_json::Number;
 
-    use crate::{common::sourcemap::Smid, eval::machines::stg::tags::DataConstructor};
+    use crate::{common::sourcemap::Smid, eval::stg::tags::DataConstructor};
 
     use super::{LambdaForm, Native, Ref, Reference, StgSyn, Tag};
 
@@ -526,7 +526,7 @@ pub mod dsl {
 /// Example STG expression for use in tests
 #[cfg(test)]
 pub mod ex {
-    use crate::eval::machines::stg::tags::DataConstructor;
+    use crate::eval::stg::tags::DataConstructor;
 
     use super::dsl::*;
     use super::LambdaForm;
