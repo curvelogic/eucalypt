@@ -25,7 +25,7 @@ end
 ` { target: :latest-asset-url
     format: :text
     doc: "`curl https://api.github.com/repos/curvelogic/eucalypt/releases/latest | eu -t formula`" }
-latest-asset-url:  assets filter(str.matches?(".*osx.*") ∘ lookup(:name)) head lookup(:browser_download_url)
+latest-asset-url:  latest.assets filter(str.matches?(".*osx.*") ∘ lookup(:name)) head lookup(:browser_download_url)
 
 ` { target: :formula
     format: :text
