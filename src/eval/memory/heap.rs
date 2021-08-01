@@ -90,6 +90,14 @@ pub struct Heap {
     state: UnsafeCell<HeapState>,
 }
 
+impl Heap {
+    pub fn new() -> Self {
+        Heap {
+            state: UnsafeCell::new(HeapState::new()),
+        }
+    }
+}
+
 impl Allocator for Heap {
     /// Allocate an object into the backing bump blocks
     fn alloc<T>(&self, object: T) -> Result<std::ptr::NonNull<T>, super::bump::AllocError>
@@ -136,12 +144,18 @@ impl Allocator for Heap {
     }
 
     /// Get header from object pointer
-    fn get_header<T>(object: std::ptr::NonNull<T>) -> std::ptr::NonNull<super::alloc::AllocHeader> {
+    fn get_header<T>(
+        &self,
+        object: std::ptr::NonNull<T>,
+    ) -> std::ptr::NonNull<super::alloc::AllocHeader> {
         unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) }
     }
 
     /// Get object from header pointer
-    fn get_object(header: std::ptr::NonNull<super::alloc::AllocHeader>) -> std::ptr::NonNull<()> {
+    fn get_object(
+        &self,
+        header: std::ptr::NonNull<super::alloc::AllocHeader>,
+    ) -> std::ptr::NonNull<()> {
         unsafe { NonNull::new_unchecked(header.as_ptr().offset(1).cast::<()>()) }
     }
 }
@@ -187,9 +201,29 @@ impl Heap {
     }
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 pub mod tests {
+    use crate::eval::stg::syntax::dsl;
+
     use super::*;
 
-    pub fn test_simple_allocations() {}
+    #[test]
+    pub fn test_simple_allocations() {
+        let heap = Heap::new();
+
+        let ptr = heap.alloc(dsl::num(99)).unwrap();
+        unsafe { assert_eq!(*ptr.as_ref(), dsl::num(99)) };
+
+        heap.get_header(ptr);
+    }
+
+    #[test]
+    pub fn test_several_blocks() {
+        let heap = Heap::new();
+
+        for i in 0..32000 {
+            let ptr = heap.alloc(dsl::num(i)).unwrap();
+            unsafe { assert_eq!(*ptr.as_ref(), dsl::num(i)) };
+        }
+    }
 }

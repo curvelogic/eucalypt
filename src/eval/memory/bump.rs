@@ -115,7 +115,7 @@ pub struct BumpBlock {
     /// Pointer to move as regions are allocated
     cursor: usize,
     /// Block map to store mark flags
-    _line_map: LineMap,
+    line_map: LineMap,
 }
 
 impl BumpBlock {
@@ -125,7 +125,7 @@ impl BumpBlock {
             block: Block::new(BLOCK_SIZE).unwrap_or_else(|_| abort()),
             cursor: BLOCK_SIZE,
             lower: 0,
-            _line_map: LineMap::default(),
+            line_map: LineMap::default(),
         }
     }
 
@@ -137,7 +137,13 @@ impl BumpBlock {
             let next = self.cursor - size;
             if next < self.lower {
                 // find next hole
-                todo!();
+                if let Some((lower, cursor)) = self.line_map.find_hole(self.cursor) {
+                    self.lower = lower;
+                    self.cursor = cursor;
+                    self.bump(size)
+                } else {
+                    None
+                }
             } else {
                 self.cursor = next;
                 unsafe { Some(self.block.as_ptr().add(next) as *const u8) }
@@ -147,7 +153,7 @@ impl BumpBlock {
 
     /// Size in bytes of the hole we're currently allocating into
     pub fn current_hole_size(&self) -> usize {
-        todo!()
+        self.cursor - self.lower
     }
 }
 
