@@ -5,13 +5,14 @@
 //! with storage allocated in the STG heap. It panics on allocation
 //! failure (as Vec does...)
 
-use std::{cmp::min, mem::size_of, ptr::NonNull};
+use std::{cmp::min, mem::size_of, ptr::NonNull, slice::from_raw_parts};
 
 use super::{alloc::Allocator, bump::AllocError};
 
 /// Simple growable backing array
 ///
 /// Provides memory for [`Array<T>`]
+#[derive(Debug)]
 pub struct RawArray<T: Sized> {
     capacity: usize,
     ptr: Option<NonNull<T>>,
@@ -28,6 +29,12 @@ impl<T: Sized> Clone for RawArray<T> {
 
 impl<T: Sized> Copy for RawArray<T> {}
 
+impl<T: Sized> Default for RawArray<T> {
+    fn default() -> Self {
+        RawArray::new()
+    }
+}
+
 impl<T: Sized> RawArray<T> {
     /// New empty backing array
     pub fn new() -> Self {
@@ -38,8 +45,8 @@ impl<T: Sized> RawArray<T> {
     }
 
     /// Construct with capacity
-    pub fn with_capacity<'scope, A: Allocator>(
-        mem: &'scope A,
+    pub fn with_capacity<A: Allocator>(
+        mem: &A,
         capacity: usize,
     ) -> Result<RawArray<T>, AllocError> {
         Ok(RawArray {
@@ -48,12 +55,23 @@ impl<T: Sized> RawArray<T> {
         })
     }
 
+    /// Initialise by copying from a slice
+    pub fn with_data<A: Allocator>(mem: &A, data: &[T]) -> Result<RawArray<T>, AllocError> {
+        let new_ptr = Self::alloc(mem, data.len())?;
+        if let Some(new) = new_ptr {
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.as_ptr(), new.as_ptr(), data.len());
+            }
+        }
+
+        Ok(RawArray {
+            capacity: data.len(),
+            ptr: new_ptr,
+        })
+    }
+
     /// Resize to new capacity, copying data if required
-    pub fn resize<'scope, A: Allocator>(
-        &mut self,
-        mem: &'scope A,
-        new_capacity: usize,
-    ) -> Result<(), AllocError> {
+    pub fn resize<A: Allocator>(&mut self, mem: &A, new_capacity: usize) -> Result<(), AllocError> {
         let new_ptr = Self::alloc(mem, new_capacity)?;
 
         if let Some(old) = self.ptr {
@@ -78,10 +96,7 @@ impl<T: Sized> RawArray<T> {
         self.capacity
     }
 
-    fn alloc<'scope, A: Allocator>(
-        mem: &'scope A,
-        capacity: usize,
-    ) -> Result<Option<NonNull<T>>, AllocError> {
+    fn alloc<A: Allocator>(mem: &A, capacity: usize) -> Result<Option<NonNull<T>>, AllocError> {
         if capacity == 0 {
             Ok(None)
         } else {
@@ -107,7 +122,7 @@ impl<T: Sized> RawArray<T> {
 ///
 /// A simple vector-like array with very limited functionality.
 /// Panics on allocation failure.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Array<T: Sized + Clone> {
     /// Number of items in the array
     length: usize,
@@ -127,10 +142,19 @@ impl<T: Sized + Clone> Default for Array<T> {
 
 impl<T: Sized + Clone> Array<T> {
     /// Construct an Array with a known capacity
-    pub fn with_capacity<'guard, A: Allocator>(mem: &'guard A, capacity: usize) -> Self {
+    pub fn with_capacity<A: Allocator>(mem: &A, capacity: usize) -> Self {
         Array {
             length: 0,
-            data: RawArray::with_capacity(mem, capacity).expect("allocation failure"),
+            data: RawArray::with_capacity(mem, capacity)
+                .expect("with_capacity: allocation failure"),
+        }
+    }
+
+    /// Construct an Array with a known capacity
+    pub fn from_slice<A: Allocator>(mem: &A, slice: &[T]) -> Self {
+        Array {
+            length: slice.len(),
+            data: RawArray::with_data(mem, slice).expect("from_slice: allocation failure"),
         }
     }
 
@@ -139,8 +163,13 @@ impl<T: Sized + Clone> Array<T> {
         self.length
     }
 
+    /// True if the array is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Add an item at the end
-    pub fn push<'guard, A: Allocator>(&mut self, mem: &'guard A, item: T) {
+    pub fn push<A: Allocator>(&mut self, mem: &A, item: T) {
         if self.length == self.data.capacity {
             self.data
                 .resize(mem, Self::default_array_growth(self.data.capacity))
@@ -186,16 +215,32 @@ impl<T: Sized + Clone> Array<T> {
         self.write(index, item);
     }
 
+    /// As immutable slice
+    pub fn as_slice(&self) -> &[T] {
+        if let Some(ptr) = self.data.as_ptr() {
+            unsafe { from_raw_parts(ptr, self.length) }
+        } else {
+            &[]
+        }
+    }
+
+    /// Read only iterator
+    pub fn iter(&self) -> std::slice::Iter<T> {
+        self.as_slice().iter()
+    }
+
+    /// Return pointer for index
     fn get_offset(&self, index: usize) -> Option<*mut T> {
         if index < self.length {
             self.data
                 .as_ptr()
-                .map(|p| unsafe { p.offset(index as isize) as *mut T })
+                .map(|p| unsafe { p.add(index) as *mut T })
         } else {
             None
         }
     }
 
+    /// Determine size to grow to
     fn default_array_growth(existing_capacity: usize) -> usize {
         if existing_capacity == 0 {
             8

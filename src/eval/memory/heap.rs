@@ -42,6 +42,12 @@ pub struct HeapState {
     rest: Vec<BumpBlock>,
 }
 
+impl Default for HeapState {
+    fn default() -> Self {
+        HeapState::new()
+    }
+}
+
 impl HeapState {
     pub fn new() -> Self {
         HeapState {
@@ -90,6 +96,12 @@ pub struct Heap {
     state: UnsafeCell<HeapState>,
 }
 
+impl Default for Heap {
+    fn default() -> Self {
+        Heap::new()
+    }
+}
+
 impl Heap {
     pub fn new() -> Self {
         Heap {
@@ -114,7 +126,7 @@ impl Allocator for Heap {
 
         unsafe {
             write(space as *mut AllocHeader, header);
-            let object_space = space.offset(header_size as isize);
+            let object_space = space.add(header_size);
             write(object_space as *mut T, object);
             Ok(NonNull::new_unchecked(object_space as *mut T))
         }
@@ -134,7 +146,7 @@ impl Allocator for Heap {
 
         unsafe {
             write(space as *mut AllocHeader, header);
-            let array_space = space.offset(header_size as isize);
+            let array_space = space.add(header_size);
             let array = from_raw_parts_mut(array_space as *mut u8, size_bytes);
             for byte in array {
                 *byte = 0
@@ -203,7 +215,7 @@ impl Heap {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::eval::stg::syntax::dsl;
+    use crate::eval::memory::syntax::Ref;
 
     use super::*;
 
@@ -211,8 +223,8 @@ pub mod tests {
     pub fn test_simple_allocations() {
         let heap = Heap::new();
 
-        let ptr = heap.alloc(dsl::num(99)).unwrap();
-        unsafe { assert_eq!(*ptr.as_ref(), dsl::num(99)) };
+        let ptr = heap.alloc(Ref::num(99)).unwrap();
+        unsafe { assert_eq!(*ptr.as_ref(), Ref::num(99)) };
 
         heap.get_header(ptr);
     }
@@ -222,8 +234,8 @@ pub mod tests {
         let heap = Heap::new();
 
         for i in 0..32000 {
-            let ptr = heap.alloc(dsl::num(i)).unwrap();
-            unsafe { assert_eq!(*ptr.as_ref(), dsl::num(i)) };
+            let ptr = heap.alloc(Ref::num(i)).unwrap();
+            unsafe { assert_eq!(*ptr.as_ref(), Ref::num(i)) };
         }
     }
 }

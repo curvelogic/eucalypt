@@ -2,23 +2,11 @@
 //!
 //! Based on "Writing interpreters in Rust" but simpler.
 
+use super::bump::AllocError;
+use std::ops::Deref;
 use std::ptr::NonNull;
 
-use crate::eval::stg::{
-    env::{Closure, EnvFrame},
-    machine::Continuation,
-    syntax::{Native, Ref},
-};
-
-use super::bump::AllocError;
-
 pub trait StgObject {}
-
-impl StgObject for Ref {}
-impl StgObject for Native {}
-impl StgObject for EnvFrame {}
-impl StgObject for Closure {}
-impl StgObject for Continuation {}
 
 pub struct AllocHeader {}
 
@@ -42,10 +30,6 @@ pub trait Allocator {
 /// Anything that can be used as a mutator scope
 pub trait MutatorScope {}
 
-pub trait ScopedRef<T> {
-    fn scoped_ref<'scope>(&self, guard: &'scope dyn MutatorScope) -> &'scope T;
-}
-
 pub struct ScopedPtr<'guard, T: Sized> {
     value: &'guard T,
 }
@@ -53,5 +37,17 @@ pub struct ScopedPtr<'guard, T: Sized> {
 impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     pub fn new(_guard: &'guard dyn MutatorScope, value: &'guard T) -> ScopedPtr<'guard, T> {
         ScopedPtr { value }
+    }
+
+    pub fn as_ptr(&self) -> NonNull<T> {
+        unsafe { NonNull::new_unchecked(&*self.value as *const T as *mut T) }
+    }
+}
+
+impl<'guard, T: Sized> Deref for ScopedPtr<'guard, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.value
     }
 }

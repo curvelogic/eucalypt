@@ -4,3 +4,4 @@ pub mod array;
 pub mod block;
 pub mod bump;
 pub mod heap;
+pub mod syntax;

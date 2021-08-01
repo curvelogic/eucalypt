@@ -118,6 +118,12 @@ pub struct BumpBlock {
     line_map: LineMap,
 }
 
+impl Default for BumpBlock {
+    fn default() -> Self {
+        BumpBlock::new()
+    }
+}
+
 impl BumpBlock {
     /// Initialise a fresh new block ready to start bumping downwards
     pub fn new() -> Self {
