@@ -4,6 +4,8 @@
 //! This module defines the canonical form, prelude functions can
 //! provide shorthands and abbreviations.
 
+use std::cell::RefCell;
+
 use crate::{
     eval::emit::{Emitter, Event},
     eval::primitive::Primitive,
@@ -104,18 +106,21 @@ impl Expectation {
     }
 }
 
-pub struct MarkupEmitter<S: MarkupSerialiser> {
+/// An internal emitter requiring mutable state
+///
+/// Wrapped as interior of MarkupEmitter
+pub struct MarkupEmitterInternal<S: MarkupSerialiser> {
     stack: Vec<Expectation>,
     result: Option<Element>,
     markup_serialiser: S,
 }
 
-impl<S> MarkupEmitter<S>
+impl<S> MarkupEmitterInternal<S>
 where
     S: MarkupSerialiser,
 {
     pub fn new(markup_serialiser: S) -> Self {
-        MarkupEmitter {
+        MarkupEmitterInternal {
             stack: Vec::new(),
             result: None,
             markup_serialiser,
@@ -125,12 +130,7 @@ where
     pub fn serialiser(&self) -> &S {
         &self.markup_serialiser
     }
-}
 
-impl<S> Emitter for MarkupEmitter<S>
-where
-    S: MarkupSerialiser,
-{
     fn emit(&mut self, event: Event) {
         match event {
             Event::OutputScalar(_, prim) => {
@@ -193,6 +193,33 @@ where
     }
 }
 
+pub struct MarkupEmitter<S>
+where
+    S: MarkupSerialiser,
+{
+    internal: RefCell<MarkupEmitterInternal<S>>,
+}
+
+impl<S> MarkupEmitter<S>
+where
+    S: MarkupSerialiser,
+{
+    pub fn new(markup_serialiser: S) -> Self {
+        MarkupEmitter {
+            internal: RefCell::new(MarkupEmitterInternal::new(markup_serialiser)),
+        }
+    }
+}
+
+impl<S> Emitter for MarkupEmitter<S>
+where
+    S: MarkupSerialiser,
+{
+    fn emit(&mut self, event: Event) {
+        self.internal.borrow_mut().emit(event)
+    }
+}
+
 /// Render value as text for tag, content or attribute key / value.
 fn as_text(prim: &Primitive) -> String {
     match prim {
@@ -245,7 +272,7 @@ pub mod tests {
         ];
 
         let serialiser = TestSerialiser::default();
-        let mut emitter = MarkupEmitter::new(serialiser);
+        let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
             emitter.emit(e);
@@ -277,7 +304,7 @@ pub mod tests {
         ];
 
         let serialiser = TestSerialiser::default();
-        let mut emitter = MarkupEmitter::new(serialiser);
+        let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
             emitter.emit(e);
@@ -314,7 +341,7 @@ pub mod tests {
         ];
 
         let serialiser = TestSerialiser::default();
-        let mut emitter = MarkupEmitter::new(serialiser);
+        let mut emitter = MarkupEmitterInternal::new(serialiser);
 
         for e in events {
             emitter.emit(e);

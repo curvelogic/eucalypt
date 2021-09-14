@@ -2,10 +2,12 @@
 
 use dsl::nil;
 
-use crate::common::sourcemap::Smid;
+use crate::{
+    common::sourcemap::Smid,
+    eval::machine::intrinsic::{Const, StgIntrinsic},
+};
 
 use super::{
-    intrinsic::{Const, StgIntrinsic},
     syntax::{
         dsl::{self, data, let_, lref, value},
         LambdaForm,

@@ -4,20 +4,28 @@ use std::rc::Rc;
 
 use serde_json::Number;
 
-use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
+        memory::{
+            mutator::MutatorHeapView,
+            syntax::{Native, Ref},
+        },
+    },
+};
 
 use super::{
     block::{ExtractKey, ExtractValue},
     boolean::And,
-    intrinsic::{CallGlobal1, CallGlobal2},
-    syntax::{Ref, StgSyn},
+    support::machine_return_bool,
+    syntax::StgSyn,
     tags::DataConstructor,
 };
 use super::{
-    intrinsic::StgIntrinsic,
-    machine::Machine,
-    runtime::{call, machine_return_bool},
-    syntax::{dsl::*, LambdaForm, Native},
+    syntax::{dsl::*, LambdaForm},
     tags::Tag,
 };
 
@@ -163,22 +171,28 @@ impl StgIntrinsic for Eq {
                 ],
                 // native and unknown tags
                 force(
-                    local(2),                        // [x-eval] [x y]
-                    call::bif::eq(lref(0), lref(1)), // [y-eval] [x-eval] [x y]
+                    local(2),                                            // [x-eval] [x y]
+                    app_bif(self.index() as u8, vec![lref(0), lref(1)]), // [y-eval] [x-eval] [x y]
                 ),
             ),
             annotation,
         )
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let x = machine.resolve_native(&args[0])?;
-        let y = machine.resolve_native(&args[1])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = machine.nav(view).resolve_native(&args[0])?;
+        let y = machine.nav(view).resolve_native(&args[1])?;
         let eq = match (x, y) {
             (Native::Num(ref nx), Native::Num(ref ny)) => num_eq(nx, ny),
             (l, r) => l == r,
         };
-        machine_return_bool(machine, eq)
+        machine_return_bool(machine, view, eq)
     }
 }
 
@@ -187,49 +201,13 @@ impl CallGlobal2 for Eq {}
 #[cfg(test)]
 pub mod tests {
 
-    use std::rc::Rc;
-
     use serde_json::Number;
 
     use super::*;
-    use crate::{
-        common::sourcemap::SourceMap,
-        eval::{
-            emit::DebugEmitter,
-            stg::{
-                boolean::And,
-                env,
-                eq::Eq,
-                machine::Machine,
-                panic::Panic,
-                runtime::{self, Runtime},
-                syntax::StgSyn,
-            },
-        },
-    };
+    use crate::eval::stg::{boolean::And, eq::Eq, panic::Panic, runtime::Runtime, testing};
 
-    lazy_static! {
-        static ref RUNTIME: Box<dyn runtime::Runtime> = {
-            let mut rt = runtime::StandardRuntime::default();
-            rt.add(Box::new(Panic));
-            rt.add(Box::new(Eq));
-            rt.add(Box::new(And));
-            rt.prepare(&mut SourceMap::default());
-            Box::new(rt)
-        };
-    }
-
-    /// Construct a machine with the arithmetic intrinsics
-    pub fn machine(syntax: Rc<StgSyn>) -> Machine<'static> {
-        let env = env::EnvFrame::default();
-        Machine::new(
-            syntax,
-            Rc::new(env),
-            RUNTIME.globals(),
-            RUNTIME.intrinsics(),
-            Box::new(DebugEmitter::default()),
-            true,
-        )
+    pub fn runtime() -> Box<dyn Runtime> {
+        testing::runtime(vec![Box::new(Eq), Box::new(And), Box::new(Panic)])
     }
 
     #[test]
@@ -239,9 +217,10 @@ pub mod tests {
             Eq.global(lref(0), lref(1)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), t());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(true));
     }
 
     #[test]
@@ -251,9 +230,10 @@ pub mod tests {
             Eq.global(lref(0), lref(1)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), t());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(true));
     }
 
     #[test]
@@ -266,9 +246,10 @@ pub mod tests {
             Eq.global(lref(0), lref(1)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), t());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(true));
     }
 
     #[test]
@@ -289,8 +270,9 @@ pub mod tests {
             Eq.global(lref(1), lref(3)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), t());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(true));
     }
 }

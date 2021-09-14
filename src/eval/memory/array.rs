@@ -5,9 +5,11 @@
 //! with storage allocated in the STG heap. It panics on allocation
 //! failure (as Vec does...)
 
-use std::{cmp::min, mem::size_of, ptr::NonNull, slice::from_raw_parts};
+use std::{cmp::min, mem::size_of, slice::from_raw_parts};
 
-use super::{alloc::Allocator, bump::AllocError};
+use crate::eval::error::ExecutionError;
+
+use super::{alloc::ScopedAllocator, syntax::RefPtr};
 
 /// Simple growable backing array
 ///
@@ -15,7 +17,7 @@ use super::{alloc::Allocator, bump::AllocError};
 #[derive(Debug)]
 pub struct RawArray<T: Sized> {
     capacity: usize,
-    ptr: Option<NonNull<T>>,
+    ptr: Option<RefPtr<T>>,
 }
 
 impl<T: Sized> Clone for RawArray<T> {
@@ -45,10 +47,10 @@ impl<T: Sized> RawArray<T> {
     }
 
     /// Construct with capacity
-    pub fn with_capacity<A: Allocator>(
+    pub fn with_capacity<'guard, A: ScopedAllocator<'guard>>(
         mem: &A,
         capacity: usize,
-    ) -> Result<RawArray<T>, AllocError> {
+    ) -> Result<RawArray<T>, ExecutionError> {
         Ok(RawArray {
             capacity,
             ptr: Self::alloc(mem, capacity)?,
@@ -56,7 +58,10 @@ impl<T: Sized> RawArray<T> {
     }
 
     /// Initialise by copying from a slice
-    pub fn with_data<A: Allocator>(mem: &A, data: &[T]) -> Result<RawArray<T>, AllocError> {
+    pub fn with_data<'guard, A: ScopedAllocator<'guard>>(
+        mem: &A,
+        data: &[T],
+    ) -> Result<RawArray<T>, ExecutionError> {
         let new_ptr = Self::alloc(mem, data.len())?;
         if let Some(new) = new_ptr {
             unsafe {
@@ -71,7 +76,11 @@ impl<T: Sized> RawArray<T> {
     }
 
     /// Resize to new capacity, copying data if required
-    pub fn resize<A: Allocator>(&mut self, mem: &A, new_capacity: usize) -> Result<(), AllocError> {
+    pub fn resize<'guard, A: ScopedAllocator<'guard>>(
+        &mut self,
+        mem: &A,
+        new_capacity: usize,
+    ) -> Result<(), ExecutionError> {
         let new_ptr = Self::alloc(mem, new_capacity)?;
 
         if let Some(old) = self.ptr {
@@ -96,14 +105,17 @@ impl<T: Sized> RawArray<T> {
         self.capacity
     }
 
-    fn alloc<A: Allocator>(mem: &A, capacity: usize) -> Result<Option<NonNull<T>>, AllocError> {
+    fn alloc<'guard, A: ScopedAllocator<'guard>>(
+        mem: &A,
+        capacity: usize,
+    ) -> Result<Option<RefPtr<T>>, ExecutionError> {
         if capacity == 0 {
             Ok(None)
         } else {
             let capacity_bytes = capacity
                 .checked_mul(size_of::<T>() as usize)
-                .ok_or(AllocError::BadRequest)?;
-            Ok(NonNull::new(
+                .ok_or(ExecutionError::AllocationError)?;
+            Ok(RefPtr::new(
                 mem.alloc_bytes(capacity_bytes)?.as_ptr() as *mut T
             ))
         }
@@ -142,7 +154,7 @@ impl<T: Sized + Clone> Default for Array<T> {
 
 impl<T: Sized + Clone> Array<T> {
     /// Construct an Array with a known capacity
-    pub fn with_capacity<A: Allocator>(mem: &A, capacity: usize) -> Self {
+    pub fn with_capacity<'guard, A: ScopedAllocator<'guard>>(mem: &A, capacity: usize) -> Self {
         Array {
             length: 0,
             data: RawArray::with_capacity(mem, capacity)
@@ -151,7 +163,7 @@ impl<T: Sized + Clone> Array<T> {
     }
 
     /// Construct an Array with a known capacity
-    pub fn from_slice<A: Allocator>(mem: &A, slice: &[T]) -> Self {
+    pub fn from_slice<'guard, A: ScopedAllocator<'guard>>(mem: &A, slice: &[T]) -> Self {
         Array {
             length: slice.len(),
             data: RawArray::with_data(mem, slice).expect("from_slice: allocation failure"),
@@ -169,7 +181,7 @@ impl<T: Sized + Clone> Array<T> {
     }
 
     /// Add an item at the end
-    pub fn push<A: Allocator>(&mut self, mem: &A, item: T) {
+    pub fn push<'guard, A: ScopedAllocator<'guard>>(&mut self, mem: &A, item: T) {
         if self.length == self.data.capacity {
             self.data
                 .resize(mem, Self::default_array_growth(self.data.capacity))
@@ -253,7 +265,7 @@ impl<T: Sized + Clone> Array<T> {
 
     fn write(&mut self, index: usize, item: T) -> &T {
         unsafe {
-            let dest = self.get_offset(dbg!(index)).expect("write: bounds error");
+            let dest = self.get_offset(index).expect("write: bounds error");
             std::ptr::write(dest, item);
             &*dest as &T
         }
@@ -261,7 +273,7 @@ impl<T: Sized + Clone> Array<T> {
 
     fn read(&self, index: usize) -> T {
         unsafe {
-            let dest = self.get_offset(dbg!(index)).expect("bounds error");
+            let dest = self.get_offset(index).expect("bounds error");
             std::ptr::read(dest)
         }
     }
@@ -270,16 +282,17 @@ impl<T: Sized + Clone> Array<T> {
 #[cfg(test)]
 pub mod tests {
 
-    use crate::eval::memory::heap::Heap;
+    use crate::eval::memory::{heap::Heap, mutator::MutatorHeapView};
 
     use super::*;
 
     #[test]
     pub fn test_simple_array_ops() {
         let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
         let mut arr = Array::default();
         for i in 0..128 {
-            arr.push(&heap, i);
+            arr.push(&view, i);
         }
         assert_eq!(arr.len(), 128);
 

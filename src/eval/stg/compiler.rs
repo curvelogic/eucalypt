@@ -5,7 +5,10 @@ use std::{convert::TryInto, rc::Rc};
 use crate::{
     common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr},
-    eval::intrinsics,
+    eval::{
+        intrinsics,
+        machine::intrinsic::{CallGlobal1, CallGlobal3, Const, StgIntrinsic},
+    },
 };
 use codespan_reporting::diagnostic::Diagnostic;
 use moniker::{BoundVar, Embed, Var};
@@ -15,7 +18,6 @@ use thiserror::Error;
 use super::{
     block::{panic_key_not_found, LookupOr},
     constant::KEmptyList,
-    intrinsic::{CallGlobal1, CallGlobal3, Const, StgIntrinsic},
     optimiser,
     render::{Render, RenderDoc},
     runtime::NativeVariant,

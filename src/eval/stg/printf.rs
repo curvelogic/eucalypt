@@ -17,7 +17,7 @@ use std::fmt::{self, Write};
 use bitflags::bitflags;
 use serde_json::Number;
 
-use super::syntax::Native;
+use crate::eval::memory::syntax::Native;
 
 bitflags! {
     /// Flags field.

@@ -1,9 +1,11 @@
 //! Utility globals for forcing / evaluating / sequencing
 
-use crate::common::sourcemap::Smid;
+use crate::{
+    common::sourcemap::Smid,
+    eval::machine::intrinsic::{CallGlobal1, StgIntrinsic},
+};
 
 use super::{
-    intrinsic::{CallGlobal1, StgIntrinsic},
     syntax::{
         dsl::{annotated_lambda, data, force, local, lref, switch, unbox_str},
         LambdaForm,

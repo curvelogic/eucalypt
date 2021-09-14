@@ -146,7 +146,6 @@ impl ToPretty for StgSyn {
                     .append("⑂")
                     .append(branch_doc)
             }
-            StgSyn::Pragma {} => allocator.text("PRAG"),
             StgSyn::BlackHole => allocator.text("HOLE"),
         }
     }

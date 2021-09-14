@@ -3,6 +3,7 @@
 use std::{cell::UnsafeCell, mem::size_of, ptr::NonNull};
 use std::{ptr::write, slice::from_raw_parts_mut};
 
+use super::alloc::MutatorScope;
 use super::{
     alloc::{AllocHeader, Allocator},
     bump::{self, AllocError, BumpBlock},
@@ -95,6 +96,8 @@ impl HeapState {
 pub struct Heap {
     state: UnsafeCell<HeapState>,
 }
+
+impl MutatorScope for Heap {}
 
 impl Default for Heap {
     fn default() -> Self {

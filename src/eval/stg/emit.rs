@@ -1,12 +1,15 @@
 //! Intrinsics for emitting data format events and debug / error
 //! tracing
 
-use crate::eval::{emit::RenderMetadata, error::ExecutionError, primitive::Primitive};
-
-use super::{
-    intrinsic::{CallGlobal0, CallGlobal1, StgIntrinsic},
-    runtime::machine_return_unit,
+use crate::eval::{
+    emit::{Emitter, RenderMetadata},
+    error::ExecutionError,
+    machine::intrinsic::{CallGlobal0, CallGlobal1, IntrinsicMachine, StgIntrinsic},
+    memory::{self, mutator::MutatorHeapView, syntax::Ref},
+    primitive::Primitive,
 };
+
+use super::support::machine_return_unit;
 
 /// EMIT0
 ///
@@ -18,15 +21,15 @@ impl StgIntrinsic for Emit0 {
         "EMIT0"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine
-            .emitter()
-            .scalar(&RenderMetadata::empty(), &Primitive::Null);
-        machine_return_unit(machine)
+        emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
+        machine_return_unit(machine, view)
     }
 }
 
@@ -42,15 +45,15 @@ impl StgIntrinsic for EmitT {
         "EMITT"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine
-            .emitter()
-            .scalar(&RenderMetadata::empty(), &Primitive::Bool(true));
-        machine_return_unit(machine)
+        emitter.scalar(&RenderMetadata::empty(), &Primitive::Bool(true));
+        machine_return_unit(machine, view)
     }
 }
 
@@ -66,15 +69,15 @@ impl StgIntrinsic for EmitF {
         "EMITF"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine
-            .emitter()
-            .scalar(&RenderMetadata::empty(), &Primitive::Bool(false));
-        machine_return_unit(machine)
+        emitter.scalar(&RenderMetadata::empty(), &Primitive::Bool(false));
+        machine_return_unit(machine, view)
     }
 }
 
@@ -90,22 +93,22 @@ impl StgIntrinsic for EmitNative {
         "EMITx"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let native = machine.resolve_native(&args[0])?;
+        let native = machine.nav(view).resolve_native(&args[0])?;
         let primitive = match native {
-            super::syntax::Native::Sym(s) => Primitive::Sym(s),
-            super::syntax::Native::Str(s) => Primitive::Str(s),
-            super::syntax::Native::Num(n) => Primitive::Num(n),
-            super::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
+            memory::syntax::Native::Sym(s) => Primitive::Sym(s),
+            memory::syntax::Native::Str(s) => Primitive::Str(s),
+            memory::syntax::Native::Num(n) => Primitive::Num(n),
+            memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
         };
-        machine
-            .emitter()
-            .scalar(&RenderMetadata::empty(), &primitive);
-        machine_return_unit(machine)
+        emitter.scalar(&RenderMetadata::empty(), &primitive);
+        machine_return_unit(machine, view)
     }
 }
 
@@ -121,13 +124,15 @@ impl StgIntrinsic for EmitSeqStart {
         "EMIT["
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine.emitter().sequence_start(&RenderMetadata::empty());
-        machine_return_unit(machine)
+        emitter.sequence_start(&RenderMetadata::empty());
+        machine_return_unit(machine, view)
     }
 }
 
@@ -143,13 +148,15 @@ impl StgIntrinsic for EmitSeqEnd {
         "EMIT]"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine.emitter().sequence_end();
-        machine_return_unit(machine)
+        emitter.sequence_end();
+        machine_return_unit(machine, view)
     }
 }
 
@@ -165,13 +172,15 @@ impl StgIntrinsic for EmitBlockStart {
         "EMIT{"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine.emitter().block_start(&RenderMetadata::empty());
-        machine_return_unit(machine)
+        emitter.block_start(&RenderMetadata::empty());
+        machine_return_unit(machine, view)
     }
 }
 
@@ -187,13 +196,15 @@ impl StgIntrinsic for EmitBlockEnd {
         "EMIT}"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine.emitter().block_end();
-        machine_return_unit(machine)
+        emitter.block_end();
+        machine_return_unit(machine, view)
     }
 }
 
@@ -209,13 +220,15 @@ impl StgIntrinsic for EmitDocStart {
         "EMIT<"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine.emitter().doc_start();
-        machine_return_unit(machine)
+        emitter.doc_start();
+        machine_return_unit(machine, view)
     }
 }
 
@@ -231,13 +244,15 @@ impl StgIntrinsic for EmitDocEnd {
         "EMIT>"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut super::machine::Machine,
-        _args: &[super::syntax::Ref],
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        _args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        machine.emitter().doc_end();
-        machine_return_unit(machine)
+        emitter.doc_end();
+        machine_return_unit(machine, view)
     }
 }
 

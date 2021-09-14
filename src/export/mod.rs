@@ -2,6 +2,7 @@ pub mod error;
 pub mod html;
 pub mod json;
 pub mod markup;
+pub mod table;
 pub mod text;
 pub mod toml;
 pub mod yaml;

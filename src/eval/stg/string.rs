@@ -2,15 +2,27 @@
 
 use std::iter;
 
-use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{
+            CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
+        },
+        memory::{
+            mutator::MutatorHeapView,
+            syntax::{Native, Ref},
+        },
+        stg::support::call,
+    },
+};
 
 use super::{
     force::SeqStrList,
-    intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, StgIntrinsic},
-    machine::Machine,
     printf::{self, PrintfError},
-    runtime::{
-        call, machine_return_num, machine_return_str, machine_return_str_list, machine_return_sym,
+    support::{
+        machine_return_num, machine_return_str, machine_return_str_list, machine_return_sym,
         str_arg, str_list_arg,
     },
     syntax::{
@@ -18,7 +30,7 @@ use super::{
             annotated_lambda, atom, box_str, data, force, let_, local, lref, str, switch,
             unbox_str, value,
         },
-        LambdaForm, Native, Ref,
+        LambdaForm,
     },
     tags::DataConstructor,
 };
@@ -31,7 +43,7 @@ use serde_json::Number;
 ///
 /// (NB. not threadsafe but we're single threaded anyway for now)
 fn cached_regex<'a, T: AsRef<str>>(
-    machine: &'a mut Machine,
+    machine: &'a mut dyn IntrinsicMachine,
     text: T,
 ) -> Result<&'a Regex, ExecutionError> {
     let rcache = machine.rcache();
@@ -53,9 +65,15 @@ impl StgIntrinsic for Sym {
         "SYM"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let text = str_arg(machine, &args[0])?;
-        machine_return_sym(machine, text)
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let text = str_arg(machine, view, &args[0])?;
+        machine_return_sym(machine, view, text)
     }
 }
 
@@ -96,15 +114,21 @@ impl StgIntrinsic for Str {
         )
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let nat = machine.resolve_native(&args[0])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let nat = machine.nav(view).resolve_native(&args[0])?;
         let text = match nat {
             Native::Sym(s) => s,
             Native::Str(s) => s,
             Native::Num(n) => format!("{}", n),
             Native::Zdt(d) => format!("{}", d),
         };
-        machine_return_str(machine, text)
+        machine_return_str(machine, view, text)
     }
 }
 
@@ -137,10 +161,16 @@ impl StgIntrinsic for Join {
         )
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let sep = str_arg(machine, &args[1])?;
-        let result = str_list_arg(machine, args[0].clone())?.join(&sep);
-        machine_return_str(machine, result)
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let sep = str_arg(machine, view, &args[1])?;
+        let result = str_list_arg(machine, view, args[0].clone())?.join(&sep);
+        machine_return_str(machine, view, result)
     }
 }
 
@@ -156,9 +186,15 @@ impl StgIntrinsic for Match {
         "MATCH"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, &args[0])?;
-        let regex = str_arg(machine, &args[1])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
+        let regex = str_arg(machine, view, &args[1])?;
         let re = cached_regex(machine, regex)?;
         let v: Vec<_> = if let Some(captures) = re.captures(&string) {
             captures
@@ -171,7 +207,7 @@ impl StgIntrinsic for Match {
         } else {
             vec![]
         };
-        machine_return_str_list(machine, v)
+        machine_return_str_list(machine, view, v)
     }
 }
 
@@ -185,16 +221,22 @@ impl StgIntrinsic for Matches {
         "MATCHES"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, &args[0])?;
-        let regex = str_arg(machine, &args[1])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
+        let regex = str_arg(machine, view, &args[1])?;
         let re = cached_regex(machine, regex)?;
 
         let matches = re
             .find_iter(&string)
             .map(|m| m.as_str().to_string())
             .collect();
-        machine_return_str_list(machine, matches)
+        machine_return_str_list(machine, view, matches)
     }
 }
 
@@ -214,16 +256,22 @@ impl StgIntrinsic for Split {
         "SPLIT"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, &args[0])?;
-        let regex = str_arg(machine, &args[1])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
+        let regex = str_arg(machine, view, &args[1])?;
 
         if regex.is_empty() {
-            machine_return_str_list(machine, vec![string])
+            machine_return_str_list(machine, view, vec![string])
         } else {
             let re = cached_regex(machine, regex)?;
             let split = re.split(&string).map(|it| it.to_string()).collect();
-            machine_return_str_list(machine, split)
+            machine_return_str_list(machine, view, split)
         }
     }
 }
@@ -238,11 +286,17 @@ impl StgIntrinsic for NumParse {
         "NUMPARSE"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, &args[0])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
 
         if let Ok(num) = str::parse::<Number>(&string) {
-            machine_return_num(machine, num)
+            machine_return_num(machine, view, num)
         } else {
             Err(ExecutionError::BadNumberFormat(string))
         }
@@ -338,12 +392,18 @@ impl StgIntrinsic for Fmt {
         )
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let nat = machine.resolve_native(&args[0])?;
-        let fmt_string = str_arg(machine, &args[1])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let nat = machine.nav(view).resolve_native(&args[0])?;
+        let fmt_string = str_arg(machine, view, &args[1])?;
 
         match printf::fmt(&fmt_string, &nat) {
-            Ok(text) => machine_return_str(machine, text),
+            Ok(text) => machine_return_str(machine, view, text),
             Err(PrintfError::InvalidFormatString(s)) => Err(ExecutionError::BadFormatString(s)),
             Err(PrintfError::FmtError(_)) => Err(ExecutionError::FormatFailure),
             Err(PrintfError::ConversionError) => Err(ExecutionError::BadNumericTypeForFormat),
@@ -361,10 +421,16 @@ impl StgIntrinsic for Letters {
         "LETTERS"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, &args[0])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
         let letters: Vec<String> = string.chars().map(|c| iter::once(c).collect()).collect();
-        machine_return_str_list(machine, letters)
+        machine_return_str_list(machine, view, letters)
     }
 }
 

@@ -1,11 +1,13 @@
 //! Metadata intrinsics
 
-use crate::common::sourcemap::Smid;
+use crate::{
+    common::sourcemap::Smid,
+    eval::machine::intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
+};
 
 use super::{
     block::Merge,
     constant::KEmptyBlock,
-    intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
     syntax::{
         dsl::{annotated_lambda, demeta, let_, local, lref, value, with_meta},
         LambdaForm,

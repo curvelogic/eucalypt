@@ -1,17 +1,26 @@
 //! The top-level render intrinsics
 
-use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{
+            CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
+        },
+        memory::{mutator::MutatorHeapView, syntax::Ref},
+        stg::{runtime::NativeVariant, support::call},
+    },
+};
 
 use super::{
     block::LookupOr,
     boolean::{And, Not},
     emit::EmitNative,
     eq::Eq,
-    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, StgIntrinsic},
-    machine::Machine,
     panic::Panic,
-    runtime::{call, machine_return_bool, NativeVariant},
-    syntax::{dsl::*, LambdaForm, Ref},
+    support::machine_return_bool,
+    syntax::{dsl::*, LambdaForm},
     tags::DataConstructor,
 };
 
@@ -220,9 +229,16 @@ impl StgIntrinsic for Saturated {
         "SATURATED"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let closure = machine.resolve(&args[0])?;
-        machine_return_bool(machine, closure.remaining_arity() == 0)
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let closure_ptr = machine.nav(view).resolve(&args[0])?;
+        let arity = (*view.scoped(closure_ptr)).remaining_arity();
+        machine_return_bool(machine, view, arity == 0)
     }
 }
 
@@ -261,10 +277,6 @@ impl StgIntrinsic for Suppresses {
             ),
             annotation,
         )
-    }
-
-    fn execute(&self, _machine: &mut Machine, _argss: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("SUPPRESSES is STG only")
     }
 }
 
@@ -336,94 +348,74 @@ impl CallGlobal1 for RenderKv {}
 #[cfg(test)]
 pub mod tests {
 
-    use std::rc::Rc;
-
     use super::*;
 
-    use crate::{
-        common::sourcemap::SourceMap,
-        eval::{
-            emit::{CapturingEmitter, Event, RenderMetadata},
-            primitive::Primitive,
-            stg::{
-                block::{self, Kv},
-                boolean, emit, env, eq,
-                machine::Machine,
-                panic,
-                runtime::{self, Runtime},
-                syntax::StgSyn,
-            },
+    use crate::eval::{
+        emit::{Event, RenderMetadata},
+        primitive::Primitive,
+        stg::{
+            block::{self, Kv},
+            boolean, emit, eq, panic,
+            runtime::{self, Runtime},
+            testing,
         },
     };
 
-    lazy_static! {
-        static ref RUNTIME: Box<dyn runtime::Runtime> = {
-            let mut rt = runtime::StandardRuntime::default();
-            rt.add(Box::new(emit::Emit0));
-            rt.add(Box::new(emit::EmitT));
-            rt.add(Box::new(emit::EmitF));
-            rt.add(Box::new(emit::EmitNative));
-            rt.add(Box::new(emit::EmitSeqStart));
-            rt.add(Box::new(emit::EmitSeqEnd));
-            rt.add(Box::new(emit::EmitBlockStart));
-            rt.add(Box::new(emit::EmitBlockEnd));
-            rt.add(Box::new(Render));
-            rt.add(Box::new(RenderItems));
-            rt.add(Box::new(RenderBlockItems));
-            rt.add(Box::new(RenderKv));
-            rt.add(Box::new(Saturated));
-            rt.add(Box::new(Suppresses));
-            rt.add(Box::new(block::Kv));
-            rt.add(Box::new(block::LookupOr(runtime::NativeVariant::Unboxed)));
-            rt.add(Box::new(block::MatchesKey));
-            rt.add(Box::new(block::ExtractValue));
-            rt.add(Box::new(eq::Eq));
-            rt.add(Box::new(panic::Panic));
-            rt.add(Box::new(boolean::And));
-            rt.add(Box::new(boolean::Not));
-            rt.prepare(&mut SourceMap::default());
-            Box::new(rt)
-        };
-    }
-
-    /// Construct a machine with the arithmetic intrinsics
-    pub fn machine(syntax: Rc<StgSyn>) -> Machine<'static> {
-        let env = env::EnvFrame::default();
-        Machine::new(
-            syntax,
-            Rc::new(env),
-            RUNTIME.globals(),
-            RUNTIME.intrinsics(),
-            Box::new(CapturingEmitter::default()),
-            true,
-        )
+    pub fn runtime() -> Box<dyn Runtime> {
+        testing::runtime(vec![
+            Box::new(emit::Emit0),
+            Box::new(emit::EmitT),
+            Box::new(emit::EmitF),
+            Box::new(emit::EmitNative),
+            Box::new(emit::EmitSeqStart),
+            Box::new(emit::EmitSeqEnd),
+            Box::new(emit::EmitBlockStart),
+            Box::new(emit::EmitBlockEnd),
+            Box::new(Render),
+            Box::new(RenderItems),
+            Box::new(RenderBlockItems),
+            Box::new(RenderKv),
+            Box::new(Saturated),
+            Box::new(Suppresses),
+            Box::new(block::Kv),
+            Box::new(block::LookupOr(runtime::NativeVariant::Unboxed)),
+            Box::new(block::MatchesKey),
+            Box::new(block::ExtractValue),
+            Box::new(eq::Eq),
+            Box::new(panic::Panic),
+            Box::new(boolean::And),
+            Box::new(boolean::Not),
+        ])
     }
 
     #[test]
     pub fn test_render_num() {
         let syntax = letrec_(vec![value(box_num(42))], Render.global(lref(0)));
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), unit());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert!(m.unit_return());
     }
 
     #[test]
     pub fn test_render_str() {
         let syntax = letrec_(vec![value(box_str("foo"))], Render.global(lref(0)));
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), unit());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert!(m.unit_return());
     }
 
     #[test]
     pub fn test_render_sym() {
         let syntax = letrec_(vec![value(box_sym("bar"))], Render.global(lref(0)));
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), unit());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert!(m.unit_return());
     }
 
     #[test]
@@ -446,9 +438,10 @@ pub mod tests {
             Suppresses.global(lref(5)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), t());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(true));
     }
 
     #[test]
@@ -471,9 +464,10 @@ pub mod tests {
             Suppresses.global(lref(5)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), f());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(false));
     }
 
     #[test]
@@ -486,9 +480,10 @@ pub mod tests {
             Suppresses.global(lref(1)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), f());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(false));
     }
 
     #[test]
@@ -510,10 +505,11 @@ pub mod tests {
             Render.global(lref(4)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(200).unwrap();
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
         assert_eq!(
-            m.emitter().captures(),
+            m.captures(),
             &[
                 Event::OutputSequenceStart(RenderMetadata::empty()),
                 Event::OutputScalar(RenderMetadata::empty(), Primitive::Sym("foo".to_string())),
@@ -521,7 +517,7 @@ pub mod tests {
                 Event::OutputSequenceEnd
             ]
         );
-        assert_eq!(*m.closure().code(), unit());
+        assert!(m.unit_return());
     }
 
     #[test]
@@ -553,9 +549,10 @@ pub mod tests {
             ],
             Render.global(lref(9)),
         );
-        let mut m = machine(syntax);
-        m.safe_run(300).unwrap();
-        assert_eq!(*m.closure().code(), unit());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(300)).unwrap();
+        assert!(m.unit_return());
     }
 
     #[test]
@@ -578,9 +575,10 @@ pub mod tests {
             Render.global(lref(5)),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(200).unwrap();
-        assert_eq!(*m.closure().code(), unit());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert!(m.unit_return());
     }
 
     #[test]
@@ -592,7 +590,8 @@ pub mod tests {
                 vec![(DataConstructor::Unit.tag(), local(0))],
             ),
         );
-        let mut m = machine(syntax);
-        m.safe_run(300).unwrap();
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(300)).unwrap();
     }
 }

@@ -1,12 +1,13 @@
 //! The panic intrinsic
 
-use crate::eval::error::ExecutionError;
-
-use super::{
-    intrinsic::{CallGlobal1, StgIntrinsic},
-    machine,
-    runtime::str_arg,
+use crate::eval::{
+    emit::Emitter,
+    error::ExecutionError,
+    machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+    memory::{mutator::MutatorHeapView, syntax::Ref},
 };
+
+use super::support::str_arg;
 
 pub struct Panic;
 
@@ -15,12 +16,14 @@ impl StgIntrinsic for Panic {
         "PANIC"
     }
 
-    fn execute(
+    fn execute<'guard>(
         &self,
-        machine: &mut machine::Machine,
-        args: &[super::syntax::Ref],
-    ) -> Result<(), ExecutionError> {
-        let message = str_arg(machine, &args[0])?;
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), crate::eval::error::ExecutionError> {
+        let message = str_arg(machine, view, &args[0])?;
         Err(ExecutionError::Panic(message))
     }
 }

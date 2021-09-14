@@ -1,9 +1,11 @@
 //! Boolean constants and functions
 
-use crate::common::sourcemap::Smid;
+use crate::{
+    common::sourcemap::Smid,
+    eval::machine::intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic},
+};
 
 use super::{
-    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, Const, StgIntrinsic},
     syntax::{dsl::*, LambdaForm},
     tags::DataConstructor,
 };

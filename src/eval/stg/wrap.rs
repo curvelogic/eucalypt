@@ -1,101 +1,22 @@
-//! The trait for intrinsic functions / constants
+//! Default STG wrapper for intrinsic implementations
 
-use std::{convert::TryInto, rc::Rc};
+use std::convert::TryInto;
 
 use crate::{
     common::sourcemap::Smid,
-    eval::{error::ExecutionError, intrinsics, types::IntrinsicType},
+    eval::{intrinsics, types::IntrinsicType},
 };
 
 use super::{
-    machine::Machine,
     syntax::{
         dsl::{
-            self, annotated_lambda, app, app_bif, data, force, gref, let_, local, lref, unbox_num,
-            unbox_str, unbox_sym, unbox_zdt, value,
+            annotated_lambda, app_bif, data, force, let_, local, lref, unbox_num, unbox_str,
+            unbox_sym, unbox_zdt, value,
         },
-        LambdaForm, Ref, StgSyn,
+        LambdaForm,
     },
     tags::DataConstructor,
 };
-
-/// All intrinsics have an STG syntax wrapper
-pub trait StgIntrinsic: Sync {
-    /// The name of the intrinsic
-    fn name(&self) -> &str;
-
-    /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        wrap(self.index(), self.info(), annotation)
-    }
-
-    /// Whether the compiler should inline the wrapper
-    fn inlinable(&self) -> bool {
-        true
-    }
-
-    /// Index of the intrinsic
-    fn index(&self) -> usize {
-        intrinsics::index(self.name()).unwrap()
-    }
-
-    /// Type and arity information for the intrinsic
-    fn info(&self) -> &intrinsics::Intrinsic {
-        intrinsics::intrinsic(self.index())
-    }
-
-    /// An intrinsic has mutable access to the machine
-    ///
-    /// A call to an intrinsic may assume that its strict arguments are
-    /// already evaluated (by the corresponding global wrapper) but must
-    /// take care of updating the machine's closure and stack as
-    /// appropriate to constitute a return.
-    fn execute(&self, _machine: &mut Machine, _args: &[Ref]) -> Result<(), ExecutionError> {
-        panic!("{} is STG-only", self.name());
-    }
-
-    /// A Ref to this global
-    fn gref(&self) -> Ref {
-        gref(self.index())
-    }
-}
-
-pub trait Const: StgIntrinsic {
-    fn global(&self) -> Rc<StgSyn> {
-        dsl::global(self.index())
-    }
-}
-
-pub trait CallGlobal0: StgIntrinsic {
-    fn global(&self) -> Rc<StgSyn> {
-        app(self.gref(), vec![])
-    }
-}
-
-pub trait CallGlobal1: StgIntrinsic {
-    fn global(&self, x: Ref) -> Rc<StgSyn> {
-        app(self.gref(), vec![x])
-    }
-}
-
-pub trait CallGlobal2: StgIntrinsic {
-    fn global(&self, x: Ref, y: Ref) -> Rc<StgSyn> {
-        app(self.gref(), vec![x, y])
-    }
-}
-
-pub trait CallGlobal3: StgIntrinsic {
-    fn global(&self, x: Ref, y: Ref, z: Ref) -> Rc<StgSyn> {
-        app(self.gref(), vec![x, y, z])
-    }
-}
-
-pub trait CallGlobal7: StgIntrinsic {
-    #[allow(clippy::too_many_arguments)]
-    fn global(&self, x0: Ref, x1: Ref, x2: Ref, x3: Ref, x4: Ref, x5: Ref, x6: Ref) -> Rc<StgSyn> {
-        app(self.gref(), vec![x0, x1, x2, x3, x4, x5, x6])
-    }
-}
 
 /// Basic intrinsic wrapper that evals and unboxes strict arguments
 ///

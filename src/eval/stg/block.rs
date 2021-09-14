@@ -4,18 +4,35 @@ use std::{mem::swap, rc::Rc};
 
 use indexmap::IndexMap;
 
-use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::{
+            env::Closure,
+            env_builder::EnvBuilder,
+            intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic},
+        },
+        memory::{
+            alloc::ScopedAllocator,
+            array::Array,
+            mutator::MutatorHeapView,
+            syntax::{Ref, RefPtr, StgBuilder},
+        },
+    },
+};
 
 use super::{
-    env::{Closure, EnvFrame},
     eq::Eq,
-    intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, StgIntrinsic},
-    machine::Machine,
     panic::Panic,
-    runtime::{call, data_list_arg, machine_return_closure_list, NativeVariant},
+    runtime::NativeVariant,
+    support::{
+        call, data_list_arg, machine_return_block_pair_closure_list, machine_return_closure_list,
+    },
     syntax::{
-        dsl::{self, app, lref},
-        LambdaForm, Native, Ref, StgSyn,
+        dsl::{self},
+        LambdaForm, StgSyn,
     },
     tags::DataConstructor,
 };
@@ -543,19 +560,25 @@ pub struct Merge;
 /// Items are passed to the MERGE intrinsic as block_pairs of k and
 /// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
 /// and v. The same function can deconstruct either.
-fn deconstruct(pair_closure: Closure) -> Result<(String, Closure), ExecutionError> {
-    match &**pair_closure.code() {
-        StgSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
-            let k = args[0].clone();
-            let kv = args[1].clone();
+fn deconstruct<'guard>(
+    view: MutatorHeapView<'guard>,
+    pair_closure: &Closure,
+) -> Result<(String, RefPtr<Closure>), ExecutionError> {
+    use crate::eval::memory::syntax;
 
-            let sym = if let Native::Sym(s) = pair_closure.navigate_local_native(k) {
+    let code = view.scoped(pair_closure.code());
+    match &*code {
+        syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
+            let k = args.get(0).unwrap();
+            let kv = args.get(1).unwrap();
+
+            let sym = if let syntax::Native::Sym(s) = pair_closure.navigate_local_native(&view, k) {
                 s
             } else {
                 panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
             };
 
-            let kv_closure = pair_closure.navigate_local(kv);
+            let kv_closure = pair_closure.navigate_local(&view, kv);
 
             Ok((sym, kv_closure))
         }
@@ -630,23 +653,31 @@ impl StgIntrinsic for Merge {
         )
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let l = data_list_arg(machine, args[0].clone())?;
-        let r = data_list_arg(machine, args[1].clone())?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let l = data_list_arg(machine, view, args[0].clone())?;
+        let r = data_list_arg(machine, view, args[1].clone())?;
 
-        let mut merge: IndexMap<String, Closure> = IndexMap::new();
+        let mut merge: IndexMap<String, RefPtr<Closure>> = IndexMap::new();
 
         for item in l {
-            let (k, kv) = deconstruct(item)?;
+            let item = &*(view.scoped(item));
+            let (k, kv) = deconstruct(view, item)?;
             merge.insert(k, kv);
         }
 
         for item in r {
-            let (k, kv) = deconstruct(item)?;
+            let item = &*(view.scoped(item));
+            let (k, kv) = deconstruct(view, item)?;
             merge.insert(k, kv);
         }
 
-        machine_return_closure_list(machine, merge.into_iter().map(|(_, v)| v).collect())
+        machine_return_closure_list(machine, view, merge.into_iter().map(|(_, v)| v).collect())
     }
 }
 
@@ -723,36 +754,48 @@ impl StgIntrinsic for MergeWith {
         )
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let l = data_list_arg(machine, args[0].clone())?;
-        let r = data_list_arg(machine, args[1].clone())?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let l = data_list_arg(machine, view, args[0].clone())?;
+        let r = data_list_arg(machine, view, args[1].clone())?;
         let f = args[2].clone();
 
-        let mut merge: IndexMap<String, Closure> = IndexMap::new();
+        let mut merge: IndexMap<String, RefPtr<Closure>> = IndexMap::new();
 
         for item in l {
-            let (key, value) = deconstruct(item)?;
+            let item = &*(view.scoped(item));
+            let (key, value) = deconstruct(view, item)?;
             merge.insert(key, value);
         }
 
         for item in r {
-            let (key, nv) = deconstruct(item)?;
+            let item = &*(view.scoped(item));
+            let (key, nv) = deconstruct(view, item)?;
             if let Some(ov) = merge.get_mut(&key) {
-                let mut combined = Closure::new(
-                    app(f.bump(2), vec![lref(0), lref(1)]),
-                    EnvFrame::from_closures(
-                        &[ov.clone(), nv.clone()],
-                        machine.env(),
-                        Smid::default(),
-                    ),
-                );
+                let mut combined = view
+                    .alloc(Closure::new(
+                        view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
+                            .as_ptr(),
+                        view.from_closures(
+                            [*ov, nv].iter().cloned(),
+                            2,
+                            machine.env(view),
+                            Smid::default(),
+                        ),
+                    ))?
+                    .as_ptr();
                 swap(ov, &mut combined);
             } else {
                 merge.insert(key, nv);
             }
         }
 
-        super::runtime::machine_return_block_pair_closure_list(machine, merge)
+        machine_return_block_pair_closure_list(machine, view, merge)
     }
 }
 
@@ -814,52 +857,25 @@ pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
 #[cfg(test)]
 pub mod tests {
 
-    use std::rc::Rc;
-
     use super::*;
-    use crate::{
-        common::sourcemap::SourceMap,
-        eval::{
-            emit::DebugEmitter,
-            stg::{
-                constant::KEmptyList,
-                env,
-                eq::Eq,
-                machine::Machine,
-                panic::Panic,
-                runtime::{self, Runtime},
-                syntax::{dsl::*, StgSyn},
-            },
+    use crate::eval::{
+        memory::syntax::Native,
+        stg::{
+            constant::KEmptyList, eq::Eq, panic::Panic, runtime::Runtime, syntax::dsl::*, testing,
         },
     };
 
-    lazy_static! {
-        static ref RUNTIME: Box<dyn runtime::Runtime> = {
-            let mut rt = runtime::StandardRuntime::default();
-            rt.add(Box::new(Block));
-            rt.add(Box::new(Kv));
-            rt.add(Box::new(MatchesKey));
-            rt.add(Box::new(ExtractValue));
-            rt.add(Box::new(LookupOr(NativeVariant::Boxed)));
-            rt.add(Box::new(LookupOr(NativeVariant::Unboxed)));
-            rt.add(Box::new(Panic));
-            rt.add(Box::new(Eq));
-            rt.prepare(&mut SourceMap::default());
-            Box::new(rt)
-        };
-    }
-
-    /// Construct a machine with the arithmetic intrinsics
-    pub fn machine(syntax: Rc<StgSyn>) -> Machine<'static> {
-        let env = env::EnvFrame::default();
-        Machine::new(
-            syntax,
-            Rc::new(env),
-            RUNTIME.globals(),
-            RUNTIME.intrinsics(),
-            Box::new(DebugEmitter::default()),
-            true,
-        )
+    pub fn runtime() -> Box<dyn Runtime> {
+        testing::runtime(vec![
+            Box::new(Block),
+            Box::new(Kv),
+            Box::new(MatchesKey),
+            Box::new(ExtractValue),
+            Box::new(LookupOr(NativeVariant::Boxed)),
+            Box::new(LookupOr(NativeVariant::Unboxed)),
+            Box::new(Panic),
+            Box::new(Eq),
+        ])
     }
 
     #[test]
@@ -876,9 +892,10 @@ pub mod tests {
             MatchesKey.global(lref(2), sym("key")),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), t());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(true));
     }
 
     #[test]
@@ -895,9 +912,10 @@ pub mod tests {
             MatchesKey.global(lref(2), sym("different")),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), f());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(false));
     }
 
     #[test]
@@ -919,9 +937,10 @@ pub mod tests {
             MatchesKey.global(lref(4), sym("key")),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), t());
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.bool_return(), Some(true));
     }
 
     #[test]
@@ -951,12 +970,18 @@ pub mod tests {
                 value(data(DataConstructor::Block.tag(), vec![lref(7)])),
                 value(box_sym("k1")),
                 value(box_str("fail")),
+                value(LookupOr(NativeVariant::Boxed).global(lref(9), lref(10), lref(8))),
             ],
-            LookupOr(NativeVariant::Boxed).global(lref(9), lref(10), lref(8)),
+            case(
+                local(11),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
         );
 
-        let mut m = machine(syntax);
-        m.safe_run(100).unwrap();
-        assert_eq!(*m.closure().code(), box_str("v1"));
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.native_return(), Some(Native::Str("v1".to_string())));
     }
 }

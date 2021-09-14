@@ -127,8 +127,6 @@ pub enum StgSyn {
         handler: Rc<StgSyn>,
         or_else: Rc<StgSyn>,
     },
-    /// Machine instruction
-    Pragma {},
     /// Blackhole - invalid / uninitialised code
     BlackHole,
 }
@@ -194,9 +192,6 @@ impl fmt::Display for StgSyn {
             }
             StgSyn::DeMeta { .. } => {
                 write!(f, "ƒ(`,•)")
-            }
-            StgSyn::Pragma {} => {
-                write!(f, "PRAG")
             }
             StgSyn::BlackHole => {
                 write!(f, "⊙")

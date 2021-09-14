@@ -7,12 +7,9 @@ pub mod boolean;
 pub mod compiler;
 pub mod constant;
 pub mod emit;
-pub mod env;
 pub mod eq;
 pub mod force;
-pub mod intrinsic;
 pub mod list;
-pub mod machine;
 pub mod meta;
 pub mod null;
 pub mod optimiser;
@@ -22,18 +19,17 @@ pub mod printf;
 pub mod render;
 pub mod runtime;
 pub mod string;
+pub mod support;
 pub mod syntax;
 pub mod tags;
+mod testing;
 pub mod time;
+pub mod wrap;
 
 use std::{fmt, rc::Rc, str::FromStr};
 use structopt::StructOpt;
 
-use crate::{
-    common::sourcemap::SourceMap,
-    core::expr::RcExpr,
-    eval::{emit::Emitter, error::ExecutionError},
-};
+use crate::{common::sourcemap::SourceMap, core::expr::RcExpr};
 
 use self::{
     compiler::CompileError,
@@ -202,25 +198,4 @@ pub fn compile(
         runtime.intrinsics(),
     );
     compiler.compile(expr)
-}
-
-/// Create a standard machine for evaluating the provided STG syntax.
-///
-/// Use source_map for annotating synthetic runtime source
-/// Use emitter for output events
-pub fn standard_machine<'a>(
-    settings: &StgSettings,
-    syntax: Rc<StgSyn>,
-    emitter: Box<dyn Emitter + 'a>,
-    runtime: &'a dyn Runtime,
-) -> Result<machine::Machine<'a>, ExecutionError> {
-    let env = env::EnvFrame::default();
-    Ok(machine::Machine::new(
-        syntax,
-        Rc::new(env),
-        runtime.globals(),
-        runtime.intrinsics(),
-        emitter,
-        settings.trace_steps,
-    ))
 }

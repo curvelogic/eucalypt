@@ -1,6 +1,6 @@
 //! Intrinsics for working with time and date
 
-use std::{convert::TryInto, rc::Rc};
+use std::convert::TryInto;
 
 use chrono::{
     DateTime, Datelike, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, Offset,
@@ -11,20 +11,29 @@ use indexmap::IndexMap;
 use regex::Regex;
 use serde_json::Number;
 
-use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::{
+            env_builder::EnvBuilder,
+            intrinsic::{CallGlobal1, CallGlobal7, IntrinsicMachine, StgIntrinsic},
+        },
+        memory::{
+            array::Array,
+            mutator::MutatorHeapView,
+            syntax::{Ref, StgBuilder},
+        },
+    },
+};
 
 use super::{
-    env::{Closure, EnvFrame},
-    intrinsic::{CallGlobal1, CallGlobal7, StgIntrinsic},
-    machine::Machine,
-    runtime::{
+    support::{
         machine_return_block_pair_closure_list, machine_return_str, machine_return_zdt, num_arg,
         str_arg, zdt_arg,
     },
-    syntax::{
-        dsl::{annotated_lambda, box_num, box_str, force, lref},
-        LambdaForm, Ref,
-    },
+    tags::DataConstructor,
 };
 
 /// Convert a TZ representation to a FixedOffset
@@ -73,14 +82,20 @@ impl StgIntrinsic for Zdt {
         "ZDT"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let y = num_arg(machine, &args[0])?;
-        let m = num_arg(machine, &args[1])?;
-        let d = num_arg(machine, &args[2])?;
-        let hour = num_arg(machine, &args[3])?;
-        let min = num_arg(machine, &args[4])?;
-        let sec = num_arg(machine, &args[5])?;
-        let tz = str_arg(machine, &args[6])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let y = num_arg(machine, view, &args[0])?;
+        let m = num_arg(machine, view, &args[1])?;
+        let d = num_arg(machine, view, &args[2])?;
+        let hour = num_arg(machine, view, &args[3])?;
+        let min = num_arg(machine, view, &args[4])?;
+        let sec = num_arg(machine, view, &args[5])?;
+        let tz = str_arg(machine, view, &args[6])?;
 
         let err = || {
             ExecutionError::BadDateTimeComponents(
@@ -129,7 +144,7 @@ impl StgIntrinsic for Zdt {
             let datetime = NaiveDateTime::new(date, time);
             let offset = offset_from_tz_str(&tz)?;
             if let LocalResult::Single(zdt) = offset.from_local_datetime(&datetime) {
-                machine_return_zdt(machine, zdt)
+                machine_return_zdt(machine, view, zdt)
             } else {
                 Err(err())
             }
@@ -152,8 +167,14 @@ impl StgIntrinsic for ZdtFields {
         "ZDT.FIELDS"
     }
 
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let dt = zdt_arg(machine, &args[0])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let dt = zdt_arg(machine, view, &args[0])?;
         let y = dt.year();
         let m = dt.month();
         let d = dt.day();
@@ -163,19 +184,85 @@ impl StgIntrinsic for ZdtFields {
         let tz = dt.offset().to_string().replace(":", "");
 
         let mut fields = IndexMap::new();
-        let env = Rc::new(EnvFrame::empty());
-        fields.insert("y".to_string(), Closure::new(box_num(y), env.clone()));
-        fields.insert("m".to_string(), Closure::new(box_num(m), env.clone()));
-        fields.insert("d".to_string(), Closure::new(box_num(d), env.clone()));
-        fields.insert("H".to_string(), Closure::new(box_num(hour), env.clone()));
-        fields.insert("M".to_string(), Closure::new(box_num(min), env.clone()));
+        fields.insert(
+            "y".to_string(),
+            view.new_closure(
+                view.data(
+                    DataConstructor::BoxedNumber.tag(),
+                    Array::from_slice(&view, &[Ref::num(y)]),
+                )?
+                .as_ptr(),
+                machine.root_env(),
+            )?,
+        );
+        fields.insert(
+            "m".to_string(),
+            view.new_closure(
+                view.data(
+                    DataConstructor::BoxedNumber.tag(),
+                    Array::from_slice(&view, &[Ref::num(m)]),
+                )?
+                .as_ptr(),
+                machine.root_env(),
+            )?,
+        );
+        fields.insert(
+            "d".to_string(),
+            view.new_closure(
+                view.data(
+                    DataConstructor::BoxedNumber.tag(),
+                    Array::from_slice(&view, &[Ref::num(d)]),
+                )?
+                .as_ptr(),
+                machine.root_env(),
+            )?,
+        );
+        fields.insert(
+            "H".to_string(),
+            view.new_closure(
+                view.data(
+                    DataConstructor::BoxedNumber.tag(),
+                    Array::from_slice(&view, &[Ref::num(hour)]),
+                )?
+                .as_ptr(),
+                machine.root_env(),
+            )?,
+        );
+        fields.insert(
+            "M".to_string(),
+            view.new_closure(
+                view.data(
+                    DataConstructor::BoxedNumber.tag(),
+                    Array::from_slice(&view, &[Ref::num(min)]),
+                )?
+                .as_ptr(),
+                machine.root_env(),
+            )?,
+        );
         fields.insert(
             "S".to_string(),
-            Closure::new(box_num(Number::from_f64(sec).unwrap()), env.clone()),
+            view.new_closure(
+                view.data(
+                    DataConstructor::BoxedNumber.tag(),
+                    Array::from_slice(&view, &[Ref::num(Number::from_f64(sec).unwrap())]),
+                )?
+                .as_ptr(),
+                machine.root_env(),
+            )?,
         );
-        fields.insert("Z".to_string(), Closure::new(box_str(tz), env));
+        fields.insert(
+            "Z".to_string(),
+            view.new_closure(
+                view.data(
+                    DataConstructor::BoxedString.tag(),
+                    Array::from_slice(&view, &[Ref::str(tz)]),
+                )?
+                .as_ptr(),
+                machine.root_env(),
+            )?,
+        );
 
-        machine_return_block_pair_closure_list(machine, fields)
+        machine_return_block_pair_closure_list(machine, view, fields)
     }
 }
 
@@ -190,11 +277,17 @@ impl StgIntrinsic for ZdtFromEpoch {
     }
 
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let unix = num_arg(machine, &args[0])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let unix = num_arg(machine, view, &args[0])?;
         if let Some(ts) = unix.as_i64() {
             let zdt = DateTime::from(Utc.timestamp(ts, 0));
-            machine_return_zdt(machine, zdt)
+            machine_return_zdt(machine, view, zdt)
         } else {
             Err(ExecutionError::BadTimestamp(unix))
         }
@@ -212,7 +305,8 @@ impl StgIntrinsic for ZdtIFields {
     }
 
     /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, annotation: Smid) -> super::syntax::LambdaForm {
+        use super::syntax::dsl::*;
         annotated_lambda(
             1,
             force(ZdtFromEpoch.global(lref(0)), ZdtFields.global(lref(0))),
@@ -259,10 +353,16 @@ impl StgIntrinsic for ZdtParse8601 {
     }
 
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let repr = str_arg(machine, &args[0])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let repr = str_arg(machine, view, &args[0])?;
         if let Some(zdt) = zdt_from_str(&repr) {
-            machine_return_zdt(machine, zdt)
+            machine_return_zdt(machine, view, zdt)
         } else {
             Err(ExecutionError::BadDateTimeString(repr))
         }
@@ -280,10 +380,16 @@ impl StgIntrinsic for ZdtFormat8601 {
     }
 
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
-    fn execute(&self, machine: &mut Machine, args: &[Ref]) -> Result<(), ExecutionError> {
-        let zdt = zdt_arg(machine, &args[0])?;
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let zdt = zdt_arg(machine, view, &args[0])?;
         let repr = zdt.to_rfc3339();
-        machine_return_str(machine, repr)
+        machine_return_str(machine, view, repr)
     }
 }
 

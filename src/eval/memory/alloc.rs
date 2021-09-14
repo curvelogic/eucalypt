@@ -2,11 +2,16 @@
 //!
 //! Based on "Writing interpreters in Rust" but simpler.
 
+use crate::eval::error::ExecutionError;
+
 use super::bump::AllocError;
-use std::ops::Deref;
 use std::ptr::NonNull;
+use std::{cell::RefCell, ops::Deref};
 
 pub trait StgObject {}
+
+impl<T> StgObject for RefCell<T> {}
+impl<T> StgObject for NonNull<T> {}
 
 pub struct AllocHeader {}
 
@@ -30,13 +35,20 @@ pub trait Allocator {
 /// Anything that can be used as a mutator scope
 pub trait MutatorScope {}
 
+/// A scoped pointer is a pointer valid only during a lifetime
 pub struct ScopedPtr<'guard, T: Sized> {
     value: &'guard T,
 }
 
+impl<'guard, T: Sized> MutatorScope for ScopedPtr<'guard, T> {}
+
 impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     pub fn new(_guard: &'guard dyn MutatorScope, value: &'guard T) -> ScopedPtr<'guard, T> {
         ScopedPtr { value }
+    }
+
+    pub fn from_non_null(guard: &'guard dyn MutatorScope, ptr: NonNull<T>) -> ScopedPtr<'guard, T> {
+        ScopedPtr::new(guard, unsafe { &*ptr.as_ptr() })
     }
 
     pub fn as_ptr(&self) -> NonNull<T> {
@@ -50,4 +62,15 @@ impl<'guard, T: Sized> Deref for ScopedPtr<'guard, T> {
     fn deref(&self) -> &T {
         self.value
     }
+}
+
+/// Scoped Allocator requires guard and returns scoped pointers
+pub trait ScopedAllocator<'guard> {
+    ///	Allocate and return a scoped pointer
+    fn alloc<T>(&'guard self, object: T) -> Result<ScopedPtr<'guard, T>, ExecutionError>
+    where
+        T: StgObject;
+
+    /// Allocate a region of bytes
+    fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, ExecutionError>;
 }

@@ -1,9 +1,11 @@
 //! List intrinsics
 
-use crate::common::sourcemap::Smid;
+use crate::{
+    common::sourcemap::Smid,
+    eval::machine::intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
+};
 
 use super::{
-    intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
     panic::Panic,
     syntax::{
         dsl::{annotated_lambda, case, data, local, lref, str, value},

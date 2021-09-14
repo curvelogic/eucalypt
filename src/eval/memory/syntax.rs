@@ -1,16 +1,22 @@
 //! Compiled syntax of the STG machine represented in
 //! eucalypt-allocated memory
 
-use crate::eval::stg::tags::Tag;
-use crate::{common::sourcemap::Smid, eval::stg::tags::DataConstructor};
+use crate::common::sourcemap::Smid;
+use crate::eval::{error::ExecutionError, stg::tags::Tag};
 use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
-use std::{fmt, ptr::NonNull};
+use std::{fmt, ptr::NonNull, rc::Rc};
 
 use super::{
-    alloc::{Allocator, MutatorScope, ScopedPtr, StgObject},
+    alloc::{ScopedPtr, StgObject},
     array::Array,
 };
+
+/// Convert in-heap representation back into language syntax (for
+/// display and debug purposes).
+pub trait Repr {
+    fn repr(&self) -> Rc<crate::eval::stg::syntax::StgSyn>;
+}
 
 /// References between allocated objects use RefPtr
 pub type RefPtr<T> = NonNull<T>;
@@ -140,18 +146,18 @@ impl Ref {
 }
 
 /// Compiled STG syntax
-#[derive(Debug)]
-pub enum StgSyn {
+#[derive(Debug, Clone)]
+pub enum HeapSyn {
     /// A single thing - either a reference into env or a native
     Atom { evaluand: Ref },
     /// Case - the only form which actually evaluates
     Case {
         /// Form to be evaluated
-        scrutinee: RefPtr<StgSyn>,
+        scrutinee: RefPtr<HeapSyn>,
         /// Data type handlers
-        branches: Array<(Tag, RefPtr<StgSyn>)>,
+        branches: Array<(Tag, RefPtr<HeapSyn>)>,
         /// Default handler
-        fallback: Option<RefPtr<StgSyn>>,
+        fallback: Option<RefPtr<HeapSyn>>,
     },
     /// Saturated data constructor
     Cons { tag: Tag, args: Array<Ref> },
@@ -162,15 +168,15 @@ pub enum StgSyn {
     /// Let bindings
     Let {
         bindings: Array<LambdaForm>,
-        body: RefPtr<StgSyn>,
+        body: RefPtr<HeapSyn>,
     },
     /// Recursive let bindings -
     LetRec {
         bindings: Array<LambdaForm>,
-        body: RefPtr<StgSyn>,
+        body: RefPtr<HeapSyn>,
     },
     /// Call-stack / source location annotation
-    Ann { smid: Smid, body: RefPtr<StgSyn> },
+    Ann { smid: Smid, body: RefPtr<HeapSyn> },
     /// Wrap metadata around an expression
     ///
     /// Transparency: immediately check stack, if its a demeta,
@@ -179,116 +185,33 @@ pub enum StgSyn {
     /// Destructure metadata into a lambda form which receives two
     /// args, meta and body
     DeMeta {
-        scrutinee: RefPtr<StgSyn>,
-        handler: RefPtr<StgSyn>,
-        or_else: RefPtr<StgSyn>,
+        scrutinee: RefPtr<HeapSyn>,
+        handler: RefPtr<HeapSyn>,
+        or_else: RefPtr<HeapSyn>,
     },
-    /// Machine instruction
-    Pragma {},
     /// Blackhole - invalid / uninitialised code
     BlackHole,
 }
 
-impl StgObject for StgSyn {}
+impl StgObject for HeapSyn {}
 
-impl Default for StgSyn {
+impl Default for HeapSyn {
     fn default() -> Self {
-        StgSyn::BlackHole
+        HeapSyn::BlackHole
     }
 }
 
-impl StgSyn {
+impl HeapSyn {
     /// Used to determine when to create thunks and when not
     pub fn is_whnf(&self) -> bool {
         matches!(
             &*self,
-            StgSyn::Cons { .. }
-                | StgSyn::Meta { .. }
-                | StgSyn::Atom {
+            HeapSyn::Cons { .. }
+                | HeapSyn::Meta { .. }
+                | HeapSyn::Atom {
                     evaluand: Reference::V(_)
                 }
         )
-    }
-}
-
-/// Provides access to memory for displaying allocated STG syntax
-pub struct StgSynDisplayer<'scope> {
-    syntax: &'scope StgSyn,
-    view: &'scope dyn MutatorScope,
-}
-
-impl<'scope> StgSynDisplayer<'scope> {
-    pub fn scoped<T>(&self, ptr: &RefPtr<T>) -> ScopedPtr<'scope, T> {
-        ScopedPtr::new(self.view, unsafe { &*ptr.as_ptr() })
-    }
-
-    pub fn syn(&'scope self, synptr: &'scope StgSyn) -> Self {
-        StgSynDisplayer {
-            syntax: &*synptr,
-            view: self.view,
-        }
-    }
-}
-
-impl<'scope> fmt::Display for StgSynDisplayer<'scope> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self.syntax {
-            StgSyn::Atom { evaluand } => {
-                write!(f, "{}", evaluand)
-            }
-            StgSyn::Case {
-                scrutinee,
-                branches,
-                fallback,
-            } => {
-                let mut tags: Vec<String> = branches.iter().map(|b| format!("{}", b.0)).collect();
-                if fallback.is_some() {
-                    tags.push("…".to_string());
-                }
-                let desc = &tags.join(",");
-                write!(f, "CASE({}⑂<{}>)", self.syn(&*self.scoped(scrutinee)), desc)
-            }
-            StgSyn::Cons { tag, args } => {
-                write!(f, "DATA[{}](×{})", tag, args.len())
-            }
-            StgSyn::App { callable, args } => {
-                write!(f, "{}(×{})", callable, args.len())
-            }
-            StgSyn::Bif { intrinsic, args } => {
-                write!(f, "BIF[{}](×{})", intrinsic, args.len())
-            }
-            StgSyn::Let { bindings, body } => {
-                write!(
-                    f,
-                    "LET[×{}]({})",
-                    bindings.len(),
-                    self.syn(&*self.scoped(body))
-                )
-            }
-            StgSyn::LetRec { bindings, body } => {
-                write!(
-                    f,
-                    "LETREC[×{}]({})",
-                    bindings.len(),
-                    self.syn(&*self.scoped(body))
-                )
-            }
-            StgSyn::Ann { smid, body } => {
-                write!(f, "♪{}:{}", smid, self.syn(&*self.scoped(body)))
-            }
-            StgSyn::Meta { meta, body } => {
-                write!(f, "`{}{}", meta, body)
-            }
-            StgSyn::DeMeta { .. } => {
-                write!(f, "ƒ(`,•)")
-            }
-            StgSyn::Pragma {} => {
-                write!(f, "PRAG")
-            }
-            StgSyn::BlackHole => {
-                write!(f, "⊙")
-            }
-        }
     }
 }
 
@@ -303,20 +226,20 @@ impl<'scope> fmt::Display for StgSynDisplayer<'scope> {
 pub enum LambdaForm {
     Lambda {
         bound: u8,
-        body: RefPtr<StgSyn>,
+        body: RefPtr<HeapSyn>,
         annotation: Smid,
     },
     Thunk {
-        body: RefPtr<StgSyn>,
+        body: RefPtr<HeapSyn>,
     },
     Value {
-        body: RefPtr<StgSyn>,
+        body: RefPtr<HeapSyn>,
     },
 }
 
 impl LambdaForm {
     /// Create new lambda form - local vars < `bound` are bound vars.
-    pub fn new(bound: u8, body: RefPtr<StgSyn>, annotation: Smid) -> Self {
+    pub fn new(bound: u8, body: RefPtr<HeapSyn>, annotation: Smid) -> Self {
         LambdaForm::Lambda {
             bound,
             body,
@@ -325,21 +248,21 @@ impl LambdaForm {
     }
 
     /// A lambda form that will be updated after evaluation
-    pub fn thunk(body: RefPtr<StgSyn>) -> Self {
+    pub fn thunk(body: RefPtr<HeapSyn>) -> Self {
         LambdaForm::Thunk { body }
     }
 
     /// A lambda form that is effectively a value - not worth updating
-    pub fn value(body: RefPtr<StgSyn>) -> Self {
+    pub fn value(body: RefPtr<HeapSyn>) -> Self {
         LambdaForm::Value { body }
     }
 
     /// Reference the body of the lambda form
-    pub fn body(&self) -> &RefPtr<StgSyn> {
+    pub fn body(&self) -> RefPtr<HeapSyn> {
         match *self {
             LambdaForm::Lambda { ref body, .. }
             | LambdaForm::Thunk { ref body, .. }
-            | LambdaForm::Value { ref body } => &body,
+            | LambdaForm::Value { ref body } => *body,
         }
     }
 
@@ -365,408 +288,353 @@ impl LambdaForm {
     }
 }
 
-/// A reference to the allocator and the means to express STG
-pub struct StgDsl<'scope, A: Allocator> {
-    heap: &'scope A,
+/// Support for representing in-heap code as STG language syntax for
+/// debugging / display
+pub mod repr {
+
+    use std::rc::Rc;
+
+    use crate::eval::{
+        memory::{
+            self,
+            alloc::{MutatorScope, ScopedPtr},
+            array::Array,
+        },
+        stg::{self, syntax::StgSyn},
+    };
+
+    use super::{HeapSyn, RefPtr, Repr};
+
+    /// Convert heap representation of reference to syntax representation
+    pub fn heap_to_stg(r: &memory::syntax::Ref) -> stg::syntax::Ref {
+        match r {
+            memory::syntax::Ref::L(n) => stg::syntax::Ref::L(*n),
+            memory::syntax::Ref::G(n) => stg::syntax::Ref::G(*n),
+            memory::syntax::Ref::V(memory::syntax::Native::Sym(s)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym(s.clone()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::Str(s)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Str(s.clone()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::Num(n)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Num(n.clone()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::Zdt(d)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Zdt(d.clone()))
+            }
+        }
+    }
+
+    /// Represent in-heap branch table in syntax form
+    pub fn repr_branches<'guard>(
+        guard: &'guard dyn MutatorScope,
+        branches: Array<(u8, RefPtr<HeapSyn>)>,
+    ) -> Vec<(u8, Rc<StgSyn>)> {
+        branches
+            .iter()
+            .map(|(t, ptr)| (*t, ScopedPtr::from_non_null(guard, *ptr).repr()))
+            .collect()
+    }
+
+    /// Represent in-heap ref vector in syntax form
+    pub fn repr_refarray(refs: Array<memory::syntax::Ref>) -> Vec<stg::syntax::Ref> {
+        refs.iter().map(|r| heap_to_stg(r)).collect()
+    }
+
+    /// Represent in-heap bindingn vector in syntax form
+    pub fn repr_bindings<'guard>(
+        guard: &'guard dyn MutatorScope,
+        bindings: Array<memory::syntax::LambdaForm>,
+    ) -> Vec<stg::syntax::LambdaForm> {
+        let mut v = Vec::with_capacity(bindings.len());
+        for pc in bindings.iter() {
+            let binding = match pc {
+                memory::syntax::LambdaForm::Lambda {
+                    bound,
+                    body,
+                    annotation,
+                } => stg::syntax::LambdaForm::Lambda {
+                    bound: *bound,
+                    body: ScopedPtr::from_non_null(guard, *body).repr(),
+                    annotation: *annotation,
+                },
+                memory::syntax::LambdaForm::Thunk { body } => stg::syntax::LambdaForm::Thunk {
+                    body: ScopedPtr::from_non_null(guard, *body).repr(),
+                },
+                memory::syntax::LambdaForm::Value { body } => stg::syntax::LambdaForm::Value {
+                    body: ScopedPtr::from_non_null(guard, *body).repr(),
+                },
+            };
+            v.push(binding);
+        }
+        v
+    }
 }
 
-impl<'scope, A: Allocator> MutatorScope for StgDsl<'scope, A> {}
+/// Convert in-heap HeapSyn back to StgSyn for debugging
+impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
+    fn repr(&self) -> Rc<crate::eval::stg::syntax::StgSyn> {
+        use crate::eval::stg::syntax::StgSyn;
 
-impl<'scope, A: Allocator> StgDsl<'scope, A> {
-    /// Wrap an allocator in a StgDsl for scoped access to allocate
-    /// new expressions
-    pub fn new(heap: &'scope A) -> Self {
-        StgDsl { heap }
+        match &**self {
+            HeapSyn::Atom { evaluand } => Rc::new(StgSyn::Atom {
+                evaluand: repr::heap_to_stg(evaluand),
+            }),
+            HeapSyn::Case {
+                scrutinee,
+                branches,
+                fallback,
+            } => Rc::new(StgSyn::Case {
+                scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
+                branches: repr::repr_branches(self, branches.clone()),
+                fallback: match fallback {
+                    Some(f) => Some(ScopedPtr::from_non_null(self, *f).repr()),
+                    None => None,
+                },
+            }),
+            HeapSyn::Cons { tag, args } => Rc::new(StgSyn::Cons {
+                tag: *tag,
+                args: repr::repr_refarray(args.clone()),
+            }),
+            HeapSyn::App { callable, args } => Rc::new(StgSyn::App {
+                callable: repr::heap_to_stg(callable),
+                args: repr::repr_refarray(args.clone()),
+            }),
+            HeapSyn::Bif { intrinsic, args } => Rc::new(StgSyn::Bif {
+                intrinsic: *intrinsic,
+                args: repr::repr_refarray(args.clone()),
+            }),
+            HeapSyn::Let { bindings, body } => Rc::new(StgSyn::Let {
+                bindings: repr::repr_bindings(self, bindings.clone()),
+                body: ScopedPtr::from_non_null(self, *body).repr(),
+            }),
+            HeapSyn::LetRec { bindings, body } => Rc::new(StgSyn::LetRec {
+                bindings: repr::repr_bindings(self, bindings.clone()),
+                body: ScopedPtr::from_non_null(self, *body).repr(),
+            }),
+            HeapSyn::Ann { smid, body } => Rc::new(StgSyn::Ann {
+                smid: *smid,
+                body: ScopedPtr::from_non_null(self, *body).repr(),
+            }),
+            HeapSyn::Meta { meta, body } => Rc::new(StgSyn::Meta {
+                meta: repr::heap_to_stg(&*meta),
+                body: repr::heap_to_stg(&*body),
+            }),
+            HeapSyn::DeMeta {
+                scrutinee,
+                handler,
+                or_else,
+            } => Rc::new(StgSyn::DeMeta {
+                scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
+                handler: ScopedPtr::from_non_null(self, *handler).repr(),
+                or_else: ScopedPtr::from_non_null(self, *or_else).repr(),
+            }),
+            HeapSyn::BlackHole => Rc::new(StgSyn::BlackHole {}),
+        }
     }
+}
 
-    /// Allocate and return a scoped pointer
-    pub fn alloc_scoped<T: StgObject>(&'scope self, object: T) -> ScopedPtr<'scope, T> {
-        let ptr = self.heap.alloc(object).expect("allocation error");
-        ScopedPtr::new(self, unsafe { &*ptr.as_ptr() })
+impl<'guard> fmt::Display for ScopedPtr<'guard, HeapSyn> {
+    /// Defer to STG syntax implementation
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.repr().fmt(f)
     }
+}
 
-    /// Allocate a single item array
-    pub fn singleton<T: Sized + Clone>(&'scope self, object: T) -> Array<T> {
-        let mut array = Array::with_capacity(self.heap, 1);
-        array.push(self.heap, object);
-        array
-    }
-
-    pub fn array<T: Sized + Clone>(&'scope self, data: &[T]) -> Array<T> {
-        Array::from_slice(self.heap, data)
-    }
-
+/// A reference to the allocator and the means to express STG
+pub trait StgBuilder<'scope> {
     /// Allocate a reference as an atom
-    pub fn atom(&'scope self, r: Ref) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::Atom { evaluand: r })
-    }
+    fn atom(&'scope self, r: Ref) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Allocate a function application
-    pub fn app(&'scope self, r: Ref, args: Array<Ref>) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::App { callable: r, args })
-    }
+    fn app(
+        &'scope self,
+        r: Ref,
+        args: Array<Ref>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Allocate an intrinsic application
-    pub fn app_bif(&'scope self, index: u8, args: Array<Ref>) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::Bif {
-            intrinsic: index,
-            args,
-        })
-    }
+    fn app_bif(
+        &'scope self,
+        index: u8,
+        args: Array<Ref>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Allocate a data node
-    pub fn data(&'scope self, tag: Tag, args: Array<Ref>) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::Cons { tag, args })
-    }
+    fn data(
+        &'scope self,
+        tag: Tag,
+        args: Array<Ref>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
-    /// Allocate a local ref in an atom
-    pub fn local(&'scope self, index: usize) -> ScopedPtr<'scope, StgSyn> {
-        self.atom(Ref::lref(index))
-    }
+    // /// Allocate a local ref in an atom
+    // fn local(&'scope self, index: usize) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
-    /// Allocate a global ref in an atom
-    pub fn global(&'scope self, index: usize) -> ScopedPtr<'scope, StgSyn> {
-        self.atom(Ref::gref(index))
-    }
+    // /// Allocate a global ref in an atom
+    // fn global(&'scope self, index: usize) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
-    /// A boxed number
-    pub fn box_num<N>(&'scope self, n: N) -> ScopedPtr<'scope, StgSyn>
-    where
-        N: Into<Number>,
-    {
-        self.data(
-            DataConstructor::BoxedNumber.tag(),
-            self.singleton(Ref::num(n)),
-        )
-    }
+    // /// A boxed number
+    // fn box_num<N>(&'scope self, n: N) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>
+    // where
+    //     N: Into<Number>;
+    // /// Create a string
+    // fn box_str<T: AsRef<str>>(
+    //     &'scope self,
+    //     s: T,
+    // ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
-    /// Create a string
-    pub fn box_str<T: AsRef<str>>(&'scope self, s: T) -> ScopedPtr<'scope, StgSyn> {
-        self.data(
-            DataConstructor::BoxedString.tag(),
-            self.singleton(Ref::str(s)),
-        )
-    }
+    // /// Create a symbol
+    // fn box_sym<T: AsRef<str>>(
+    //     &'scope self,
+    //     s: T,
+    // ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
-    /// Create a symbol
-    pub fn box_sym<T: AsRef<str>>(&'scope self, s: T) -> ScopedPtr<'scope, StgSyn> {
-        self.data(
-            DataConstructor::BoxedSymbol.tag(),
-            self.singleton(Ref::sym(s)),
-        )
-    }
-
-    /// Create a boxed zoned datetime
-    pub fn box_zdt(&'scope self, dt: DateTime<FixedOffset>) -> ScopedPtr<'scope, StgSyn> {
-        self.data(
-            DataConstructor::BoxedZdt.tag(),
-            self.singleton(Ref::zdt(dt)),
-        )
-    }
+    // /// Create a boxed zoned datetime
+    // fn box_zdt(
+    //     &'scope self,
+    //     dt: DateTime<FixedOffset>,
+    // ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Boolean true
-    pub fn t(&'scope self) -> ScopedPtr<'scope, StgSyn> {
-        self.data(DataConstructor::BoolTrue.tag(), Array::default())
-    }
+    fn t(&'scope self) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Boolean false
-    pub fn f(&'scope self) -> ScopedPtr<'scope, StgSyn> {
-        self.data(DataConstructor::BoolFalse.tag(), Array::default())
-    }
+    fn f(&'scope self) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// To STG boolean
-    pub fn bool_(&'scope self, b: bool) -> ScopedPtr<'scope, StgSyn> {
-        if b {
-            self.t()
-        } else {
-            self.f()
-        }
-    }
+    fn bool_(&'scope self, b: bool) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Unit / null
-    pub fn unit(&'scope self) -> ScopedPtr<'scope, StgSyn> {
-        self.data(DataConstructor::Unit.tag(), Array::default())
-    }
+    fn unit(&'scope self) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Empty list
-    pub fn nil(&'scope self) -> ScopedPtr<'scope, StgSyn> {
-        self.data(DataConstructor::ListNil.tag(), Array::default())
-    }
+    fn nil(&'scope self) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// List cons
-    pub fn cons(&'scope self, h: Ref, t: Ref) -> ScopedPtr<'scope, StgSyn> {
-        self.data(DataConstructor::ListCons.tag(), self.array(&[h, t]))
-    }
+    fn cons(&'scope self, h: Ref, t: Ref) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Block pair
-    pub fn pair<T: AsRef<str>>(&'scope self, k: T, v: Ref) -> ScopedPtr<'scope, StgSyn> {
-        self.data(
-            DataConstructor::BlockPair.tag(),
-            self.array(&[Ref::sym(k.as_ref()), v]),
-        )
-    }
+    fn pair<T: AsRef<str>>(
+        &'scope self,
+        k: T,
+        v: Ref,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Block wrapper
-    pub fn block(&'scope self, inner: Ref) -> ScopedPtr<'scope, StgSyn> {
-        self.data(DataConstructor::Block.tag(), self.singleton(inner))
-    }
+    fn block(&'scope self, inner: Ref) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
-    /// A lambda form
-    pub fn lambda(&'scope self, bound: u8, body: ScopedPtr<'scope, StgSyn>) -> LambdaForm {
-        LambdaForm::new(bound, body.as_ptr(), Smid::default())
-    }
+    // /// A lambda form
+    // fn lambda(&'scope self, bound: u8, body: ScopedPtr<'scope, HeapSyn>) -> LambdaForm;
 
-    /// An annotated lambda form
-    pub fn annotated_lambda(
-        &'scope self,
-        bound: u8,
-        body: ScopedPtr<'scope, StgSyn>,
-        annotation: Smid,
-    ) -> LambdaForm {
-        LambdaForm::new(bound, body.as_ptr(), annotation)
-    }
+    // /// An annotated lambda form
+    // fn annotated_lambda(
+    //     &'scope self,
+    //     bound: u8,
+    //     body: ScopedPtr<'scope, HeapSyn>,
+    //     annotation: Smid,
+    // ) -> LambdaForm;
 
-    /// A thunk lambda form
-    pub fn thunk(&'scope self, body: ScopedPtr<'scope, StgSyn>) -> LambdaForm {
-        LambdaForm::thunk(body.as_ptr())
-    }
+    // /// A thunk lambda form
+    // fn thunk(&'scope self, body: ScopedPtr<'scope, HeapSyn>) -> LambdaForm;
 
-    /// A value lambda form
-    pub fn value(&'scope self, body: ScopedPtr<'scope, StgSyn>) -> LambdaForm {
-        LambdaForm::value(body.as_ptr())
-    }
+    // /// A value lambda form
+    // fn value(&'scope self, body: ScopedPtr<'scope, HeapSyn>) -> LambdaForm;
 
     /// Simple let
-    pub fn let_(
+    fn let_(
         &'scope self,
         bindings: Array<LambdaForm>,
-        body: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::Let {
-            bindings,
-            body: body.as_ptr(),
-        })
-    }
+        body: ScopedPtr<'scope, HeapSyn>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Recursive let
-    pub fn letrec_(
+    fn letrec(
         &'scope self,
         bindings: Array<LambdaForm>,
-        body: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::LetRec {
-            bindings,
-            body: body.as_ptr(),
-        })
-    }
+        body: ScopedPtr<'scope, HeapSyn>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Case statement, evaluate scrutinee then branch
-    pub fn case(
+    fn case(
         &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        branches: &[(Tag, ScopedPtr<'scope, StgSyn>)],
-        fallback: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        let mut array = Array::with_capacity(self.heap, branches.len());
-        for (t, p) in branches {
-            array.push(self.heap, (*t, p.as_ptr()));
-        }
-        self.alloc_scoped(StgSyn::Case {
-            scrutinee: scrutinee.as_ptr(),
-            branches: array,
-            fallback: Some(fallback.as_ptr()),
-        })
-    }
+        scrutinee: ScopedPtr<'scope, HeapSyn>,
+        branches: &[(Tag, ScopedPtr<'scope, HeapSyn>)],
+        fallback: ScopedPtr<'scope, HeapSyn>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Case statement without default
-    pub fn switch(
+    fn switch(
         &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        branches: &[(Tag, ScopedPtr<'scope, StgSyn>)],
-    ) -> ScopedPtr<'scope, StgSyn> {
-        let mut array = Array::with_capacity(self.heap, branches.len());
-        for (t, p) in branches {
-            array.push(self.heap, (*t, p.as_ptr()));
-        }
-        self.alloc_scoped(StgSyn::Case {
-            scrutinee: scrutinee.as_ptr(),
-            branches: array,
-            fallback: None,
-        })
-    }
+        scrutinee: ScopedPtr<'scope, HeapSyn>,
+        branches: &[(Tag, ScopedPtr<'scope, HeapSyn>)],
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Force evaluation of scrutinee then continue
-    pub fn force(
+    fn force(
         &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        then: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.case(scrutinee, &[], then)
-    }
+        scrutinee: ScopedPtr<'scope, HeapSyn>,
+        then: ScopedPtr<'scope, HeapSyn>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Add metadata to an expression
-    pub fn with_meta(&'scope self, meta: Ref, body: Ref) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::Meta { meta, body })
-    }
+    fn with_meta(
+        &'scope self,
+        meta: Ref,
+        body: Ref,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Retrieve metadata from an expression (or unit)
-    pub fn demeta(
+    fn demeta(
         &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        handler: ScopedPtr<'scope, StgSyn>,
-        or_else: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::DeMeta {
-            scrutinee: scrutinee.as_ptr(),
-            handler: handler.as_ptr(),
-            or_else: or_else.as_ptr(),
-        })
-    }
+        scrutinee: ScopedPtr<'scope, HeapSyn>,
+        handler: ScopedPtr<'scope, HeapSyn>,
+        or_else: ScopedPtr<'scope, HeapSyn>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
     /// Add a source code annotation around an expression
-    pub fn ann(
+    fn ann(
         &'scope self,
         smid: Smid,
-        body: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.alloc_scoped(StgSyn::Ann {
-            smid,
-            body: body.as_ptr(),
-        })
-    }
-
-    /// Unbox a number
-    pub fn unbox_num(
-        &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        then: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.switch(scrutinee, &[(DataConstructor::BoxedNumber.tag(), then)])
-    }
-
-    /// Unbox a string
-    pub fn unbox_str(
-        &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        then: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.switch(scrutinee, &[(DataConstructor::BoxedString.tag(), then)])
-    }
-
-    /// Unbox a symbol
-    pub fn unbox_sym(
-        &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        then: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.switch(scrutinee, &[(DataConstructor::BoxedSymbol.tag(), then)])
-    }
-
-    /// Unbox a symbol
-    pub fn unbox_zdt(
-        &'scope self,
-        scrutinee: ScopedPtr<'scope, StgSyn>,
-        then: ScopedPtr<'scope, StgSyn>,
-    ) -> ScopedPtr<'scope, StgSyn> {
-        self.switch(scrutinee, &[(DataConstructor::BoxedZdt.tag(), then)])
-    }
+        body: ScopedPtr<'scope, HeapSyn>,
+    ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 }
 
 #[cfg(test)]
 pub mod tests {
 
-    use crate::eval::memory::heap::Heap;
+    use crate::eval::memory::{heap::Heap, mutator::MutatorHeapView};
 
     use super::*;
 
     #[test]
     pub fn test_atom() {
         let heap = Heap::new();
-        let dsl = StgDsl::new(&heap);
+        let view = MutatorHeapView::new(&heap);
 
-        dsl.atom(Ref::lref(4));
-        dsl.app(Ref::lref(1), dsl.array(&[Ref::lref(2)]));
-        dsl.app_bif(77, dsl.array(&[Ref::lref(2)]));
-        dsl.local(2);
-        dsl.global(3);
-        dsl.box_num(99);
-        dsl.box_str("hello");
-        dsl.box_sym("foo");
-        dsl.t();
-        dsl.f();
-        dsl.bool_(false);
-        dsl.nil();
-        let id = dsl.lambda(1, dsl.local(0));
-        dsl.let_(
-            dsl.singleton(id.clone()),
-            dsl.app(Ref::lref(0), dsl.singleton(Ref::sym("foo"))),
-        );
-        dsl.letrec_(
-            dsl.singleton(id.clone()),
-            dsl.app(Ref::lref(0), dsl.singleton(Ref::sym("foo"))),
-        );
-    }
-}
-
-/// Example STG expression for use in tests
-#[cfg(test)]
-pub mod ex {
-
-    use super::*;
-
-    pub fn i<'a, T: Allocator>(dsl: &StgDsl<'a, T>) -> LambdaForm {
-        dsl.lambda(1, dsl.local(0))
-    }
-
-    pub fn k<'a, T: Allocator>(dsl: &StgDsl<'a, T>) -> LambdaForm {
-        dsl.lambda(2, dsl.local(0))
-    }
-
-    pub fn s<'a, T: Allocator>(dsl: &StgDsl<'a, T>) -> LambdaForm {
-        dsl.lambda(
-            3, // f, g, x
-            dsl.let_(
-                dsl.array(&[
-                    dsl.value(dsl.app(Ref::lref(1), dsl.singleton(Ref::lref(2)))), // g(x)
-                    dsl.value(dsl.app(Ref::lref(0), dsl.singleton(Ref::lref(2)))), // f(x)
-                ]),
-                dsl.app(Ref::lref(0), dsl.singleton(Ref::lref(1))),
-            ),
+        view.atom(Ref::lref(4)).unwrap();
+        view.app(Ref::lref(1), view.array(&[Ref::lref(2)])).unwrap();
+        view.app_bif(77, view.array(&[Ref::lref(2)])).unwrap();
+        // dsl.local(2);
+        // dsl.global(3);
+        // dsl.box_num(99);
+        // dsl.box_str("hello");
+        // dsl.box_sym("foo");
+        view.t().unwrap();
+        view.f().unwrap();
+        view.bool_(false).unwrap();
+        view.nil().unwrap();
+        let id = LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default());
+        view.let_(
+            view.singleton(id.clone()),
+            view.app(Ref::L(0), view.singleton(Ref::sym("foo")))
+                .unwrap(),
         )
-    }
-
-    pub fn compose<'a, T: Allocator>(dsl: &StgDsl<'a, T>) -> LambdaForm {
-        dsl.lambda(
-            2, // [f g]
-            dsl.let_(
-                dsl.array(&[dsl.lambda(1, dsl.app(Ref::lref(2), dsl.singleton(Ref::lref(0))))]), // [x] [f g]
-                dsl.app(Ref::lref(1), dsl.singleton(Ref::lref(0))), // [gx] [f g]
-            ),
+        .unwrap();
+        view.letrec(
+            view.singleton(id.clone()),
+            view.app(Ref::L(0), view.singleton(Ref::sym("foo")))
+                .unwrap(),
         )
-    }
-
-    pub fn not<'a, T: Allocator>(dsl: &StgDsl<'a, T>) -> LambdaForm {
-        dsl.lambda(
-            1,
-            dsl.switch(
-                dsl.local(0),
-                &[
-                    (DataConstructor::BoolFalse.tag(), dsl.t()),
-                    (DataConstructor::BoolTrue.tag(), dsl.f()),
-                ],
-            ),
-        )
-    }
-
-    /// A LambdaForm which retrieves metadata of its argument or ()
-    pub fn meta<'a, T: Allocator>(dsl: &StgDsl<'a, T>) -> LambdaForm {
-        dsl.lambda(
-            1,
-            dsl.demeta(
-                dsl.local(0),
-                dsl.local(0), // [meta body] [...]
-                dsl.unit(),
-            ),
-        )
+        .unwrap();
     }
 }

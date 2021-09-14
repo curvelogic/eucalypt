@@ -1,13 +1,13 @@
 //! The NULL built-in for exporting null
 
-use crate::common::sourcemap::Smid;
+use crate::{
+    common::sourcemap::Smid,
+    eval::machine::intrinsic::{Const, StgIntrinsic},
+};
 
-use super::{
-    intrinsic::{Const, StgIntrinsic},
-    syntax::{
-        dsl::{unit, value},
-        LambdaForm,
-    },
+use super::syntax::{
+    dsl::{unit, value},
+    LambdaForm,
 };
 
 /// A constant for NULL
