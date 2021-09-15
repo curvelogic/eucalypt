@@ -9,6 +9,7 @@ use stg::syntax::StgSyn;
 use crate::eval::stg;
 use crate::eval::{error::ExecutionError, memory};
 
+use super::string::HeapString;
 use super::{alloc::ScopedAllocator, array::Array, syntax::RefPtr};
 
 /// Load branch table into heap
@@ -31,7 +32,7 @@ fn load_refvec<'scope, T: ScopedAllocator<'scope>>(
 ) -> Result<Array<memory::syntax::Ref>, ExecutionError> {
     let mut array = Array::with_capacity(mem, refs.len());
     for r in refs {
-        array.push(mem, stg_to_heap(r));
+        array.push(mem, stg_to_heap(mem, r));
     }
     Ok(array)
 }
@@ -69,15 +70,26 @@ pub fn load_lambdavec<'scope, T: ScopedAllocator<'scope>>(
 ///
 /// These type duplicates look crazy now but the intention is to alter
 /// the in-heap representation but not the compile representation.
-fn stg_to_heap(r: &stg::syntax::Ref) -> memory::syntax::Ref {
+fn stg_to_heap<'scope, T: ScopedAllocator<'scope>>(
+    mem: &'scope T,
+    r: &stg::syntax::Ref,
+) -> memory::syntax::Ref {
     match r {
         stg::syntax::Ref::L(n) => memory::syntax::Ref::L(*n),
         stg::syntax::Ref::G(n) => memory::syntax::Ref::G(*n),
         stg::syntax::Ref::V(stg::syntax::Native::Sym(s)) => {
-            memory::syntax::Ref::V(memory::syntax::Native::Sym(s.clone()))
+            let ptr = mem
+                .alloc(HeapString::from_str(mem, s.as_str()))
+                .expect("alloc heap sym failure")
+                .as_ptr();
+            memory::syntax::Ref::V(memory::syntax::Native::Sym(ptr))
         }
         stg::syntax::Ref::V(stg::syntax::Native::Str(s)) => {
-            memory::syntax::Ref::V(memory::syntax::Native::Str(s.clone()))
+            let ptr = mem
+                .alloc(HeapString::from_str(mem, s.as_str()))
+                .expect("alloc heap str failure")
+                .as_ptr();
+            memory::syntax::Ref::V(memory::syntax::Native::Str(ptr))
         }
         stg::syntax::Ref::V(stg::syntax::Native::Num(n)) => {
             memory::syntax::Ref::V(memory::syntax::Native::Num(n.clone()))
@@ -96,7 +108,7 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
 ) -> Result<RefPtr<HeapSyn>, ExecutionError> {
     match &*syntax {
         StgSyn::Atom { evaluand } => view.alloc(HeapSyn::Atom {
-            evaluand: stg_to_heap(evaluand),
+            evaluand: stg_to_heap(view, evaluand),
         }),
         StgSyn::Case {
             scrutinee,
@@ -115,7 +127,7 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             args: load_refvec(view, args)?.clone(),
         }),
         StgSyn::App { callable, args } => view.alloc(HeapSyn::App {
-            callable: stg_to_heap(callable),
+            callable: stg_to_heap(view, callable),
             args: load_refvec(view, args)?.clone(),
         }),
         StgSyn::Bif { intrinsic, args } => view.alloc(HeapSyn::Bif {
@@ -135,8 +147,8 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             body: load(view, body.clone())?,
         }),
         StgSyn::Meta { meta, body } => view.alloc(HeapSyn::Meta {
-            meta: stg_to_heap(meta),
-            body: stg_to_heap(body),
+            meta: stg_to_heap(view, meta),
+            body: stg_to_heap(view, body),
         }),
         StgSyn::DeMeta {
             scrutinee,

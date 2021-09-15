@@ -807,12 +807,6 @@ impl<'a> Machine<'a> {
         self.state.terminated()
     }
 
-    // /// Exit immediately
-    // pub fn panic(&mut self, message: &str) -> Result<(), ExecutionError> {
-    //     self.terminated = true;
-    //     panic!("{}", message); // TODO: implement panic
-    // }
-
     /// Assertion helper for machine unit tests
     #[cfg(test)]
     pub fn native_return(&self) -> Option<Native> {
@@ -824,6 +818,33 @@ impl<'a> Machine<'a> {
         if self.state.terminated() {
             if let HeapSyn::Atom { evaluand: r } = &*code {
                 self.nav().resolve_native(&r).ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Retrieve native string return value if it exists
+    #[cfg(test)]
+    pub fn string_return(&self) -> Option<String> {
+        let view = self.view();
+
+        let closure = view.scoped(self.state.closure);
+        let code = view.scoped(closure.code());
+
+        if self.state.terminated() {
+            if let HeapSyn::Atom { evaluand: r } = &*code {
+                if let Ok(n) = self.nav().resolve_native(&r) {
+                    if let Native::Str(rp) = n {
+                        Some((*view.scoped(rp)).as_str().to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -997,7 +1018,7 @@ pub mod tests {
 
         let mut m = machine(syn);
         m.run(Some(20)).unwrap();
-        assert_eq!(m.native_return(), Some(Native::Str("foo".to_string())));
+        assert_eq!(m.string_return(), Some("foo".to_string()));
     }
 
     #[test]

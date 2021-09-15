@@ -15,6 +15,8 @@ use crate::{
     },
 };
 
+use super::{string::HeapString, syntax::Native};
+
 /// A view onto the heap for code that needs mutator access (as
 /// opposed to collector access)
 ///
@@ -105,50 +107,27 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
         self.alloc(HeapSyn::Cons { tag, args })
     }
 
-    // /// Allocate a local ref in an atom
-    // fn local(&'guard self, index: usize) -> ScopedPtr<'guard, HeapSyn> {
-    //     self.atom(Ref::lref(index))
-    // }
+    fn sym<T: AsRef<str>>(
+        &'guard self,
+        s: T,
+    ) -> Result<ScopedPtr<'guard, memory::string::HeapString>, ExecutionError> {
+        self.alloc(HeapString::from_str(self, s.as_ref()))
+    }
 
-    // /// Allocate a global ref in an atom
-    // fn global(&'guard self, index: usize) -> ScopedPtr<'guard, HeapSyn> {
-    //     self.atom(Ref::gref(index))
-    // }
+    fn sym_ref<T: AsRef<str>>(&'guard self, s: T) -> Result<Ref, ExecutionError> {
+        Ok(Ref::V(Native::Sym(self.sym(s)?.as_ptr())))
+    }
 
-    // /// A boxed number
-    // fn box_num<N>(&'guard self, n: N) -> ScopedPtr<'guard, HeapSyn>
-    // where
-    //     N: Into<Number>,
-    // {
-    //     self.data(
-    //         DataConstructor::BoxedNumber.tag(),
-    //         self.singleton(Ref::num(n)),
-    //     )
-    // }
+    fn str<T: AsRef<str>>(
+        &'guard self,
+        s: T,
+    ) -> Result<ScopedPtr<'guard, memory::string::HeapString>, ExecutionError> {
+        self.alloc(HeapString::from_str(self, s.as_ref()))
+    }
 
-    // /// Create a string
-    // fn box_str<T: AsRef<str>>(&'guard self, s: T) -> ScopedPtr<'guard, HeapSyn> {
-    //     self.data(
-    //         DataConstructor::BoxedString.tag(),
-    //         self.singleton(Ref::str(s)),
-    //     )
-    // }
-
-    // /// Create a symbol
-    // fn box_sym<T: AsRef<str>>(&'guard self, s: T) -> ScopedPtr<'guard, HeapSyn> {
-    //     self.data(
-    //         DataConstructor::BoxedSymbol.tag(),
-    //         self.singleton(Ref::sym(s)),
-    //     )
-    // }
-
-    // /// Create a boxed zoned datetime
-    // fn box_zdt(&'guard self, dt: DateTime<FixedOffset>) -> ScopedPtr<'guard, HeapSyn> {
-    //     self.data(
-    //         DataConstructor::BoxedZdt.tag(),
-    //         self.singleton(Ref::zdt(dt)),
-    //     )
-    // }
+    fn str_ref<T: AsRef<str>>(&'guard self, s: T) -> Result<Ref, ExecutionError> {
+        Ok(Ref::V(Native::Str(self.str(s)?.as_ptr())))
+    }
 
     /// Boolean true
     fn t(&'guard self) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
@@ -192,7 +171,7 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
     ) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
         self.data(
             DataConstructor::BlockPair.tag(),
-            self.array(&[Ref::sym(k.as_ref()), v]),
+            self.array(&[self.sym_ref(k.as_ref())?, v]),
         )
     }
 
@@ -200,31 +179,6 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
     fn block(&'guard self, inner: Ref) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
         self.data(DataConstructor::Block.tag(), self.singleton(inner))
     }
-
-    // /// A lambda form
-    // fn lambda(&'guard self, bound: u8, body: ScopedPtr<'guard, HeapSyn>) -> LambdaForm {
-    //     LambdaForm::new(bound, body.as_ptr(), Smid::default())
-    // }
-
-    // /// An annotated lambda form
-    // fn annotated_lambda(
-    //     &'guard self,
-    //     bound: u8,
-    //     body: ScopedPtr<'guard, HeapSyn>,
-    //     annotation: Smid,
-    // ) -> LambdaForm {
-    //     LambdaForm::new(bound, body.as_ptr(), annotation)
-    // }
-
-    // /// A thunk lambda form
-    // fn thunk(&'guard self, body: ScopedPtr<'guard, HeapSyn>) -> LambdaForm {
-    //     LambdaForm::thunk(body.as_ptr())
-    // }
-
-    // /// A value lambda form
-    // fn value(&'guard self, body: ScopedPtr<'guard, HeapSyn>) -> LambdaForm {
-    //     LambdaForm::value(body.as_ptr())
-    // }
 
     /// Simple let
     fn let_(

@@ -29,6 +29,7 @@ pub fn num_arg<'guard>(
 }
 
 /// Helper for intrinsics to access a str arg
+/// TODO: use &str
 pub fn str_arg<'guard>(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'guard>,
@@ -36,13 +37,14 @@ pub fn str_arg<'guard>(
 ) -> Result<String, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
     if let Native::Str(s) = native {
-        Ok(s)
+        Ok((*view.scoped(s)).as_str().to_string())
     } else {
         Err(ExecutionError::NotEvaluatedString(Smid::default()))
     }
 }
 
 /// Helper for intrinsics to access a sym arg
+/// TODO: use &str
 pub fn sym_arg<'guard>(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'guard>,
@@ -50,7 +52,7 @@ pub fn sym_arg<'guard>(
 ) -> Result<String, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
     if let Native::Sym(s) = native {
-        Ok(s)
+        Ok((*view.scoped(s)).as_str().to_string())
     } else {
         Err(ExecutionError::NotEvaluatedString(Smid::default()))
     }
@@ -154,8 +156,8 @@ impl<'scope> Iterator for StrListIterator<'scope> {
             panic!("bad cons cell (t)");
         }
 
-        if let Native::Str(ref s) = native {
-            Some(s.clone())
+        if let Native::Str(s) = native {
+            Some((*self.view.scoped(s)).as_str().to_string())
         } else {
             panic!("Non-string item after seqStrList")
         }
@@ -212,7 +214,7 @@ pub fn machine_return_str<'guard>(
     machine.set_closure(
         view.alloc(Closure::new(
             view.alloc(HeapSyn::Atom {
-                evaluand: Ref::V(Native::Str(s)),
+                evaluand: view.str_ref(s)?,
             })?
             .as_ptr(),
             machine.root_env(),
@@ -230,7 +232,7 @@ pub fn machine_return_sym<'guard>(
     machine.set_closure(
         view.alloc(Closure::new(
             view.alloc(HeapSyn::Atom {
-                evaluand: Ref::V(Native::Sym(s)),
+                evaluand: view.sym_ref(s)?,
             })?
             .as_ptr(),
             machine.root_env(),
@@ -284,7 +286,7 @@ pub fn machine_return_str_list<'guard>(
         bindings.push(LambdaForm::value(
             view.data(
                 DataConstructor::BoxedString.tag(),
-                Array::from_slice(&view, &[Ref::V(Native::Str(item))]),
+                Array::from_slice(&view, &[view.str_ref(item)?]),
             )?
             .as_ptr(),
         ));
@@ -363,7 +365,7 @@ pub fn machine_return_block_pair_closure_list<'guard>(
             view.new_closure(
                 view.data(
                     DataConstructor::BlockPair.tag(),
-                    Array::from_slice(&view, &[Ref::sym(k), Ref::L(i)]),
+                    Array::from_slice(&view, &[view.sym_ref(k)?, Ref::L(i)]),
                 )?
                 .as_ptr(),
                 value_frame.clone(),

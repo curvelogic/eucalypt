@@ -573,7 +573,7 @@ fn deconstruct<'guard>(
             let kv = args.get(1).unwrap();
 
             let sym = if let syntax::Native::Sym(s) = pair_closure.navigate_local_native(&view, k) {
-                s
+                view.scoped(s).as_str().to_string()
             } else {
                 panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
             };
@@ -804,7 +804,7 @@ impl CallGlobal3 for MergeWith {}
 /// DEEPMERGE(l, r, fn)
 ///
 /// Merge two blocks, recursing into any subblocks, if either l or r
-/// are not blocks then return r.
+/// are not blocks then return r. (TODO: Really?)
 pub struct DeepMerge;
 
 impl StgIntrinsic for DeepMerge {
@@ -858,11 +858,8 @@ pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
 pub mod tests {
 
     use super::*;
-    use crate::eval::{
-        memory::syntax::Native,
-        stg::{
-            constant::KEmptyList, eq::Eq, panic::Panic, runtime::Runtime, syntax::dsl::*, testing,
-        },
+    use crate::eval::stg::{
+        constant::KEmptyList, eq::Eq, panic::Panic, runtime::Runtime, syntax::dsl::*, testing,
     };
 
     pub fn runtime() -> Box<dyn Runtime> {
@@ -982,6 +979,6 @@ pub mod tests {
         let rt = runtime();
         let mut m = testing::machine(rt.as_ref(), syntax);
         m.run(Some(100)).unwrap();
-        assert_eq!(m.native_return(), Some(Native::Str("v1".to_string())));
+        assert_eq!(m.string_return(), Some("v1".to_string()));
     }
 }

@@ -123,8 +123,8 @@ impl StgIntrinsic for Str {
     ) -> Result<(), ExecutionError> {
         let nat = machine.nav(view).resolve_native(&args[0])?;
         let text = match nat {
-            Native::Sym(s) => s,
-            Native::Str(s) => s,
+            Native::Sym(s) => (*view.scoped(s)).as_str().to_string(),
+            Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
             Native::Num(n) => format!("{}", n),
             Native::Zdt(d) => format!("{}", d),
         };
@@ -402,7 +402,7 @@ impl StgIntrinsic for Fmt {
         let nat = machine.nav(view).resolve_native(&args[0])?;
         let fmt_string = str_arg(machine, view, &args[1])?;
 
-        match printf::fmt(&fmt_string, &nat) {
+        match printf::fmt(view, &fmt_string, &nat) {
             Ok(text) => machine_return_str(machine, view, text),
             Err(PrintfError::InvalidFormatString(s)) => Err(ExecutionError::BadFormatString(s)),
             Err(PrintfError::FmtError(_)) => Err(ExecutionError::FormatFailure),

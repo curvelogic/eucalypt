@@ -102,8 +102,8 @@ impl StgIntrinsic for EmitNative {
     ) -> Result<(), ExecutionError> {
         let native = machine.nav(view).resolve_native(&args[0])?;
         let primitive = match native {
-            memory::syntax::Native::Sym(s) => Primitive::Sym(s),
-            memory::syntax::Native::Str(s) => Primitive::Str(s),
+            memory::syntax::Native::Sym(s) => Primitive::Sym(view.scoped(s).as_str().to_string()),
+            memory::syntax::Native::Str(s) => Primitive::Str(view.scoped(s).as_str().to_string()),
             memory::syntax::Native::Num(n) => Primitive::Num(n),
             memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
         };

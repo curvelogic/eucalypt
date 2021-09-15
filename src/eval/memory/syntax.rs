@@ -7,6 +7,7 @@ use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
 use std::{fmt, ptr::NonNull, rc::Rc};
 
+use super::string::HeapString;
 use super::{
     alloc::{ScopedPtr, StgObject},
     array::Array,
@@ -28,9 +29,9 @@ pub type RefPtr<T> = NonNull<T>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Native {
     /// A symbol
-    Sym(String),
+    Sym(RefPtr<HeapString>),
     /// A string
-    Str(String),
+    Str(RefPtr<HeapString>),
     /// A number
     Num(Number),
     /// A zoned datetime
@@ -43,10 +44,10 @@ impl fmt::Display for Native {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &*self {
             Native::Sym(s) => {
-                write!(f, ":{}", s)
+                write!(f, ":<{:p}>", s)
             }
             Native::Str(s) => {
-                write!(f, "\"{}\"", s)
+                write!(f, "\"<{:p}>\"", s)
             }
             Native::Num(n) => {
                 write!(f, "{}", n)
@@ -68,7 +69,7 @@ pub enum Reference<T: Clone> {
     L(usize),
     /// Global index
     G(usize),
-    /// Value
+    /// Value (TODO: next this becomes a heap ref)
     V(T),
 }
 
@@ -129,15 +130,15 @@ impl Ref {
         Self::vref(Native::Num(n.into()))
     }
 
-    /// Create a string
-    pub fn str<T: AsRef<str>>(s: T) -> Ref {
-        Self::vref(Native::Str(s.as_ref().into()))
-    }
+    // /// Create a string
+    // pub fn str<T: AsRef<str>>(s: T) -> Ref {
+    //     Self::vref(Native::Str(s.as_ref().into()))
+    // }
 
-    /// Create a symbol
-    pub fn sym<T: AsRef<str>>(s: T) -> Ref {
-        Self::vref(Native::Sym(s.as_ref().into()))
-    }
+    // /// Create a symbol
+    // pub fn sym<T: AsRef<str>>(s: T) -> Ref {
+    //     Self::vref(Native::Sym(s.as_ref().into()))
+    // }
 
     /// Create a zoned datetime
     pub fn zdt(dt: DateTime<FixedOffset>) -> Ref {
@@ -306,15 +307,20 @@ pub mod repr {
     use super::{HeapSyn, RefPtr, Repr};
 
     /// Convert heap representation of reference to syntax representation
-    pub fn heap_to_stg(r: &memory::syntax::Ref) -> stg::syntax::Ref {
+    pub fn heap_to_stg<'guard>(
+        guard: &'guard dyn MutatorScope,
+        r: &memory::syntax::Ref,
+    ) -> stg::syntax::Ref {
         match r {
             memory::syntax::Ref::L(n) => stg::syntax::Ref::L(*n),
             memory::syntax::Ref::G(n) => stg::syntax::Ref::G(*n),
             memory::syntax::Ref::V(memory::syntax::Native::Sym(s)) => {
-                stg::syntax::Ref::V(stg::syntax::Native::Sym(s.clone()))
+                let ptr = ScopedPtr::from_non_null(guard, *s);
+                stg::syntax::Ref::V(stg::syntax::Native::Sym((*ptr).as_str().to_string()))
             }
             memory::syntax::Ref::V(memory::syntax::Native::Str(s)) => {
-                stg::syntax::Ref::V(stg::syntax::Native::Str(s.clone()))
+                let ptr = ScopedPtr::from_non_null(guard, *s);
+                stg::syntax::Ref::V(stg::syntax::Native::Str((*ptr).as_str().to_string()))
             }
             memory::syntax::Ref::V(memory::syntax::Native::Num(n)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Num(n.clone()))
@@ -337,8 +343,11 @@ pub mod repr {
     }
 
     /// Represent in-heap ref vector in syntax form
-    pub fn repr_refarray(refs: Array<memory::syntax::Ref>) -> Vec<stg::syntax::Ref> {
-        refs.iter().map(|r| heap_to_stg(r)).collect()
+    pub fn repr_refarray<'guard>(
+        guard: &'guard dyn MutatorScope,
+        refs: Array<memory::syntax::Ref>,
+    ) -> Vec<stg::syntax::Ref> {
+        refs.iter().map(|r| heap_to_stg(guard, r)).collect()
     }
 
     /// Represent in-heap bindingn vector in syntax form
@@ -378,7 +387,7 @@ impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
 
         match &**self {
             HeapSyn::Atom { evaluand } => Rc::new(StgSyn::Atom {
-                evaluand: repr::heap_to_stg(evaluand),
+                evaluand: repr::heap_to_stg(self, evaluand),
             }),
             HeapSyn::Case {
                 scrutinee,
@@ -394,15 +403,15 @@ impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
             }),
             HeapSyn::Cons { tag, args } => Rc::new(StgSyn::Cons {
                 tag: *tag,
-                args: repr::repr_refarray(args.clone()),
+                args: repr::repr_refarray(self, args.clone()),
             }),
             HeapSyn::App { callable, args } => Rc::new(StgSyn::App {
-                callable: repr::heap_to_stg(callable),
-                args: repr::repr_refarray(args.clone()),
+                callable: repr::heap_to_stg(self, callable),
+                args: repr::repr_refarray(self, args.clone()),
             }),
             HeapSyn::Bif { intrinsic, args } => Rc::new(StgSyn::Bif {
                 intrinsic: *intrinsic,
-                args: repr::repr_refarray(args.clone()),
+                args: repr::repr_refarray(self, args.clone()),
             }),
             HeapSyn::Let { bindings, body } => Rc::new(StgSyn::Let {
                 bindings: repr::repr_bindings(self, bindings.clone()),
@@ -417,8 +426,8 @@ impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
                 body: ScopedPtr::from_non_null(self, *body).repr(),
             }),
             HeapSyn::Meta { meta, body } => Rc::new(StgSyn::Meta {
-                meta: repr::heap_to_stg(&*meta),
-                body: repr::heap_to_stg(&*body),
+                meta: repr::heap_to_stg(self, &*meta),
+                body: repr::heap_to_stg(self, &*body),
             }),
             HeapSyn::DeMeta {
                 scrutinee,
@@ -466,6 +475,24 @@ pub trait StgBuilder<'scope> {
         tag: Tag,
         args: Array<Ref>,
     ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
+
+    /// Allocate a symbol in the heap
+    fn sym<T: AsRef<str>>(
+        &'scope self,
+        s: T,
+    ) -> Result<ScopedPtr<'scope, HeapString>, ExecutionError>;
+
+    /// Allocate a symbol in the heap and wrap as ref
+    fn sym_ref<T: AsRef<str>>(&'scope self, s: T) -> Result<Ref, ExecutionError>;
+
+    /// Allocate a string in the heap
+    fn str<T: AsRef<str>>(
+        &'scope self,
+        s: T,
+    ) -> Result<ScopedPtr<'scope, HeapString>, ExecutionError>;
+
+    /// Allocate a string in the heap and wrap as ref
+    fn str_ref<T: AsRef<str>>(&'scope self, s: T) -> Result<Ref, ExecutionError>;
 
     // /// Allocate a local ref in an atom
     // fn local(&'scope self, index: usize) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
@@ -626,13 +653,13 @@ pub mod tests {
         let id = LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default());
         view.let_(
             view.singleton(id.clone()),
-            view.app(Ref::L(0), view.singleton(Ref::sym("foo")))
+            view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
                 .unwrap(),
         )
         .unwrap();
         view.letrec(
             view.singleton(id.clone()),
-            view.app(Ref::L(0), view.singleton(Ref::sym("foo")))
+            view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
                 .unwrap(),
         )
         .unwrap();

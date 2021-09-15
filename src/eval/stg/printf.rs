@@ -12,12 +12,15 @@
 //! Only a single argument is passed and available and no dynamic
 //! arguments may be specified.
 
+// TODO: Move Native out of here - this should be testable without
+// heap representation
+
 use std::fmt::{self, Write};
 
 use bitflags::bitflags;
 use serde_json::Number;
 
-use crate::eval::memory::syntax::Native;
+use crate::eval::memory::{mutator::MutatorHeapView, syntax::Native};
 
 bitflags! {
     /// Flags field.
@@ -410,17 +413,25 @@ fn write_numeric(
 }
 
 /// Format a single value according to a printf-style % spec
-pub fn fmt(fmt_string: &str, nat: &Native) -> Result<String, PrintfError> {
+pub fn fmt<'guard>(
+    view: MutatorHeapView<'guard>,
+    fmt_string: &str,
+    nat: &Native,
+) -> Result<String, PrintfError> {
     let mut output = String::new();
     if let Some(printf_spec) = parse_format(fmt_string) {
         match nat {
-            Native::Sym(s) | Native::Str(s) => write_str(
-                &mut output,
-                printf_spec.flags,
-                printf_spec.width,
-                printf_spec.precision,
-                s,
-            )?,
+            Native::Sym(s) | Native::Str(s) => {
+                let string = (*view.scoped(*s)).as_str().to_string();
+
+                write_str(
+                    &mut output,
+                    printf_spec.flags,
+                    printf_spec.width,
+                    printf_spec.precision,
+                    string.as_str(),
+                )?
+            }
             Native::Num(num) => write_numeric(
                 &mut output,
                 printf_spec.flags,
@@ -434,19 +445,5 @@ pub fn fmt(fmt_string: &str, nat: &Native) -> Result<String, PrintfError> {
         Ok(output)
     } else {
         Err(PrintfError::InvalidFormatString(fmt_string.to_string()))
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use std::str::FromStr;
-
-    use super::*;
-
-    #[test]
-    pub fn test_numerics() {
-        let pi = Native::Num(Number::from_str("3.14159265").unwrap());
-        assert_eq!(fmt("%.5e", &pi).unwrap(), "3.14159e0");
-        assert_eq!(fmt("%.3f", &pi).unwrap(), "3.142");
     }
 }

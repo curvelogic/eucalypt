@@ -12,7 +12,8 @@ use crate::{
         machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
         memory::{
             mutator::MutatorHeapView,
-            syntax::{Native, Ref},
+            string::HeapString,
+            syntax::{Native, Ref, RefPtr},
         },
     },
 };
@@ -71,6 +72,7 @@ fn binary_branch(tag: Tag) -> (Tag, Rc<StgSyn>) {
     )
 }
 
+/// Compare two numbers for equality
 fn num_eq(x: &Number, y: &Number) -> bool {
     if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
         l == r
@@ -81,6 +83,17 @@ fn num_eq(x: &Number, y: &Number) -> bool {
     } else {
         false
     }
+}
+
+/// Compare two heap strings for equality
+fn str_eq<'guard>(
+    view: MutatorHeapView<'guard>,
+    x: RefPtr<HeapString>,
+    y: RefPtr<HeapString>,
+) -> bool {
+    let sx = &*view.scoped(x);
+    let sy = &*view.scoped(y);
+    sx.as_str() == sy.as_str()
 }
 
 impl StgIntrinsic for Eq {
@@ -190,6 +203,8 @@ impl StgIntrinsic for Eq {
         let y = machine.nav(view).resolve_native(&args[1])?;
         let eq = match (x, y) {
             (Native::Num(ref nx), Native::Num(ref ny)) => num_eq(nx, ny),
+            (Native::Str(sx), Native::Str(sy)) => str_eq(view, sx, sy),
+            (Native::Sym(sx), Native::Sym(sy)) => str_eq(view, sx, sy), // TODO: interning
             (l, r) => l == r,
         };
         machine_return_bool(machine, view, eq)

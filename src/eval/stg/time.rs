@@ -255,7 +255,7 @@ impl StgIntrinsic for ZdtFields {
             view.new_closure(
                 view.data(
                     DataConstructor::BoxedString.tag(),
-                    Array::from_slice(&view, &[Ref::str(tz)]),
+                    Array::from_slice(&view, &[view.str_ref(tz)?]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
