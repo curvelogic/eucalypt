@@ -96,7 +96,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame> {
-        self.alloc(EnvFrame::new(args, annotation, Some(next.clone())))
+        self.alloc(EnvFrame::new(args, annotation, Some(next)))
             .expect("failed to allocate env frame from saturation")
             .as_ptr()
     }
