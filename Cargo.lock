@@ -1652,8 +1652,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "yaml-rust"
 version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56c1936c4cc7a1c9ab21a1ebb602eb942ba868cbd44a99cb7cdc5892335e1c85"
+source = "git+https://github.com/curvelogic/yaml-rust?rev=966f2a26245dda59daf605be1983d318db5e46f5#966f2a26245dda59daf605be1983d318db5e46f5"
 dependencies = [
  "linked-hash-map",
 ]
