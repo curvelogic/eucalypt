@@ -396,6 +396,7 @@ dependencies = [
  "moniker",
  "petgraph",
  "pretty",
+ "pretty-hex",
  "quick-xml",
  "regex",
  "serde_json",
@@ -855,6 +856,12 @@ dependencies = [
  "arrayvec",
  "typed-arena",
 ]
+
+[[package]]
+name = "pretty-hex"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5c99d529f0d30937f6f4b8a86d988047327bb88d04d2c4afc356de74722131"
 
 [[package]]
 name = "proc-macro-error"

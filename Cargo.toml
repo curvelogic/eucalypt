@@ -41,6 +41,7 @@ lru = "0.6.5"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 webbrowser = "0.5.5"
 bitmaps = "3.1.0"
+pretty-hex = "0.2.1"
 
 [[bench]]
 harness = false
