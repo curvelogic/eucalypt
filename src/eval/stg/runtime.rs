@@ -145,7 +145,7 @@ impl Unimplemented {
 
 impl StgIntrinsic for Unimplemented {
     fn name(&self) -> &str {
-        &self.name
+        self.name
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {

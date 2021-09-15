@@ -50,19 +50,19 @@ impl ScopeTracker {
     pub fn verify(&mut self, expr: &RcExpr) -> Result<RcExpr, CoreError> {
         match &*expr.inner {
             Expr::Let(_, _, _) => {
-                self.enter(&expr);
+                self.enter(expr);
                 let ret = expr.walk_safe(&mut |e| self.verify(&e));
                 self.exit();
                 ret
             }
             Expr::Lam(_, _, _) => {
-                self.enter(&expr);
+                self.enter(expr);
                 let ret = expr.walk_safe(&mut |e| self.verify(&e));
                 self.exit();
                 ret
             }
             Expr::Var(_, Var::Bound(bv)) => {
-                self.encounter(&bv);
+                self.encounter(bv);
                 Ok(expr.clone())
             }
             _ => expr.walk_safe(&mut |e| self.verify(&e)),

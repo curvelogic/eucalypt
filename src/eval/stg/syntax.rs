@@ -247,7 +247,7 @@ impl LambdaForm {
         match *self {
             LambdaForm::Lambda { ref body, .. }
             | LambdaForm::Thunk { ref body, .. }
-            | LambdaForm::Value { ref body } => &body,
+            | LambdaForm::Value { ref body } => body,
         }
     }
 

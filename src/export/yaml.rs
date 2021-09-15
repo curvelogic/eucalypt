@@ -71,7 +71,7 @@ impl<'a> Emitter for YamlEmitter<'a> {
         if let Some(result) = self.accum.result() {
             let mut output = String::new();
             yaml_rust::YamlEmitter::new(&mut output)
-                .dump(&result)
+                .dump(result)
                 .unwrap();
             writeln!(self.out, "{}", output).unwrap();
         }

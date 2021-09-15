@@ -66,7 +66,7 @@ impl<'guard, T: Sized> Deref for ScopedPtr<'guard, T> {
 
 /// Scoped Allocator requires guard and returns scoped pointers
 pub trait ScopedAllocator<'guard> {
-    ///	Allocate and return a scoped pointer
+    /// Allocate and return a scoped pointer
     fn alloc<T>(&'guard self, object: T) -> Result<ScopedPtr<'guard, T>, ExecutionError>
     where
         T: StgObject;

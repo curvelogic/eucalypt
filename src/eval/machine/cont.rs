@@ -60,7 +60,7 @@ impl StgObject for Continuation {}
 pub fn match_tag(tag: Tag, branches: &[(Tag, RefPtr<HeapSyn>)]) -> Option<RefPtr<HeapSyn>> {
     for (t, body) in branches {
         if *t == tag {
-            return Some(body.clone());
+            return Some(*body);
         }
     }
     None

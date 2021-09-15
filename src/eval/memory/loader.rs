@@ -95,7 +95,7 @@ fn stg_to_heap<'scope, T: ScopedAllocator<'scope>>(
             memory::syntax::Ref::V(memory::syntax::Native::Num(n.clone()))
         }
         stg::syntax::Ref::V(stg::syntax::Native::Zdt(d)) => {
-            memory::syntax::Ref::V(memory::syntax::Native::Zdt(d.clone()))
+            memory::syntax::Ref::V(memory::syntax::Native::Zdt(*d))
         }
     }
 }
@@ -116,7 +116,7 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
             fallback,
         } => view.alloc(HeapSyn::Case {
             scrutinee: load(view, scrutinee.clone())?,
-            branches: load_branches(view, branches)?.clone(),
+            branches: load_branches(view, branches)?,
             fallback: match fallback {
                 Some(f) => Some(load(view, f.clone())?),
                 None => None,
@@ -124,22 +124,22 @@ pub fn load<'scope, T: ScopedAllocator<'scope>>(
         }),
         StgSyn::Cons { tag, args } => view.alloc(HeapSyn::Cons {
             tag: *tag,
-            args: load_refvec(view, args)?.clone(),
+            args: load_refvec(view, args)?,
         }),
         StgSyn::App { callable, args } => view.alloc(HeapSyn::App {
             callable: stg_to_heap(view, callable),
-            args: load_refvec(view, args)?.clone(),
+            args: load_refvec(view, args)?,
         }),
         StgSyn::Bif { intrinsic, args } => view.alloc(HeapSyn::Bif {
             intrinsic: *intrinsic,
-            args: load_refvec(view, args)?.clone(),
+            args: load_refvec(view, args)?,
         }),
         StgSyn::Let { bindings, body } => view.alloc(HeapSyn::Let {
-            bindings: load_lambdavec(view, bindings.as_slice())?.clone(),
+            bindings: load_lambdavec(view, bindings.as_slice())?,
             body: load(view, body.clone())?,
         }),
         StgSyn::LetRec { bindings, body } => view.alloc(HeapSyn::LetRec {
-            bindings: load_lambdavec(view, bindings.as_slice())?.clone(),
+            bindings: load_lambdavec(view, bindings.as_slice())?,
             body: load(view, body.clone())?,
         }),
         StgSyn::Ann { smid, body } => view.alloc(HeapSyn::Ann {

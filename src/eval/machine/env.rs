@@ -115,15 +115,11 @@ impl Closure {
     ///
     /// Used when read values of native lists that have been force
     /// evaluated ahead of time. Panics at the drop of a hat
-    pub fn navigate_local<'guard>(
-        &self,
-        guard: &'guard dyn MutatorScope,
-        arg: Ref,
-    ) -> RefPtr<Closure> {
+    pub fn navigate_local(&self, guard: &dyn MutatorScope, arg: Ref) -> RefPtr<Closure> {
         if let Ref::L(i) = arg {
             let env = &*ScopedPtr::from_non_null(guard, self.env);
             if let Some(closure) = env.get(guard, i) {
-                closure.clone()
+                closure
             } else {
                 panic!("invalid ref")
             }
@@ -136,11 +132,7 @@ impl Closure {
     ///
     /// Used when read values of native lists that have been force
     /// evaluated ahead of time. Panics at the drop of a hat
-    pub fn navigate_local_native<'guard>(
-        &self,
-        guard: &'guard dyn MutatorScope,
-        arg: Ref,
-    ) -> Native {
+    pub fn navigate_local_native(&self, guard: &dyn MutatorScope, arg: Ref) -> Native {
         let mut closure = match arg {
             Ref::L(_) => self.navigate_local(guard, arg),
             Ref::G(_) => panic!("cannot navigate global"),
@@ -236,9 +228,9 @@ impl EnvFrame {
     }
 
     /// Navigate down the environment stack to find the referenced cell
-    fn cell<'guard>(
+    fn cell(
         &self,
-        guard: &'guard dyn MutatorScope,
+        guard: &dyn MutatorScope,
         idx: usize,
     ) -> Option<(Array<RefPtr<Closure>>, usize)> {
         let len = self.bindings.len();
@@ -258,11 +250,7 @@ impl EnvFrame {
     /// copies simple ref pointer out of RefCell for return. Therefore
     /// the returned value is not affected by subsequent updates and
     /// is useful mainly for immediate evaluation.
-    pub fn get<'guard>(
-        &self,
-        guard: &'guard dyn MutatorScope,
-        idx: usize,
-    ) -> Option<RefPtr<Closure>> {
+    pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<RefPtr<Closure>> {
         if let Some((arr, i)) = self.cell(guard, idx) {
             arr.get(i)
         } else {
@@ -271,14 +259,15 @@ impl EnvFrame {
     }
 
     /// Update in place
-    pub fn update<'guard>(
+    pub fn update(
         &self,
-        guard: &'guard dyn MutatorScope,
+        guard: &dyn MutatorScope,
         idx: usize,
         closure: RefPtr<Closure>,
     ) -> Result<(), ExecutionError> {
         if let Some((mut arr, i)) = self.cell(guard, idx) {
-            Ok(arr.set(i, closure))
+            arr.set(i, closure);
+            Ok(())
         } else {
             Err(ExecutionError::BadEnvironmentIndex(idx))
         }
@@ -295,7 +284,7 @@ impl EnvFrame {
     }
 
     /// Gather trace of annotations from top to bottom
-    pub fn annotation_trace<'guard>(&self, guard: &'guard dyn MutatorScope) -> Vec<Smid> {
+    pub fn annotation_trace(&self, guard: &dyn MutatorScope) -> Vec<Smid> {
         let mut trace = vec![];
         let mut frame = ScopedPtr::from_non_null(guard, unsafe {
             RefPtr::new_unchecked(self as *const EnvFrame as *mut EnvFrame)

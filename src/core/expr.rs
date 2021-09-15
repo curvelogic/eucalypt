@@ -1111,23 +1111,20 @@ pub mod core {
     pub fn default_let(smid: Smid, bindings: Vec<(FreeVar<String>, RcExpr)>) -> RcExpr {
         let free_vars: Vec<FreeVar<String>> = bindings.iter().map(|(k, _)| k.clone()).collect();
 
-        let block_map: Vec<_> = free_vars
-            .iter()
-            .map(|fv| {
-                (
-                    fv.pretty_name.as_ref().unwrap().clone(),
-                    RcExpr::from(Expr::Var(Smid::default(), Var::Free(fv.clone()))),
-                )
-            })
-            .collect();
+        let block_map = free_vars.iter().map(|fv| {
+            (
+                fv.pretty_name.as_ref().unwrap().clone(),
+                RcExpr::from(Expr::Var(Smid::default(), Var::Free(fv.clone()))),
+            )
+        });
+
+        let body_block = block(smid, block_map);
 
         let binders = bindings
             .iter()
             .zip(free_vars)
             .map(|((_, v), ref fv)| (Binder(fv.clone()), Embed(v.clone())))
             .collect();
-
-        let body_block = block(smid, block_map.into_iter());
 
         RcExpr::from(Expr::Let(
             smid,
@@ -1219,7 +1216,7 @@ pub mod core {
     pub fn path(smid: Smid, path: &[String]) -> Option<RcExpr> {
         let mut it = path.iter();
         if let Some(base) = it.next() {
-            let body = var(smid, free(&base));
+            let body = var(smid, free(base));
             Some(it.fold(body, |e, n| lookup(smid, e, n, None)))
         } else {
             None

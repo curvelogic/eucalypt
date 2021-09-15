@@ -799,7 +799,7 @@ impl StringChunk {
 
     pub fn literal_content(&self) -> &str {
         if let StringChunk::LiteralContent(_, c) = self {
-            &c
+            c
         } else {
             panic!("taking literal content of interpolation")
         }

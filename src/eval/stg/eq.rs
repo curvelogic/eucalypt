@@ -86,11 +86,7 @@ fn num_eq(x: &Number, y: &Number) -> bool {
 }
 
 /// Compare two heap strings for equality
-fn str_eq<'guard>(
-    view: MutatorHeapView<'guard>,
-    x: RefPtr<HeapString>,
-    y: RefPtr<HeapString>,
-) -> bool {
+fn str_eq(view: MutatorHeapView, x: RefPtr<HeapString>, y: RefPtr<HeapString>) -> bool {
     let sx = &*view.scoped(x);
     let sy = &*view.scoped(y);
     sx.as_str() == sy.as_str()

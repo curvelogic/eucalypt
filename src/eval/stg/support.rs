@@ -177,9 +177,9 @@ pub fn str_list_arg<'guard>(
 }
 
 /// What to return when the return should be ignored
-pub fn machine_return_unit<'guard>(
+pub fn machine_return_unit(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
 ) -> Result<(), ExecutionError> {
     machine.set_closure(
         view.alloc(Closure::new(view.unit()?.as_ptr(), machine.root_env()))?
@@ -188,9 +188,9 @@ pub fn machine_return_unit<'guard>(
 }
 
 /// Return number from intrinsic
-pub fn machine_return_num<'guard>(
+pub fn machine_return_num(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     n: Number,
 ) -> Result<(), ExecutionError> {
     machine.set_closure(
@@ -206,9 +206,9 @@ pub fn machine_return_num<'guard>(
 }
 
 /// Return string from intrinsic
-pub fn machine_return_str<'guard>(
+pub fn machine_return_str(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
     machine.set_closure(
@@ -224,9 +224,9 @@ pub fn machine_return_str<'guard>(
 }
 
 /// Return symbol from intrinsic
-pub fn machine_return_sym<'guard>(
+pub fn machine_return_sym(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
     machine.set_closure(
@@ -242,9 +242,9 @@ pub fn machine_return_sym<'guard>(
 }
 
 /// Return zoned date time from intrinsic
-pub fn machine_return_zdt<'guard>(
+pub fn machine_return_zdt(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     zdt: DateTime<FixedOffset>,
 ) -> Result<(), ExecutionError> {
     machine.set_closure(
@@ -260,9 +260,9 @@ pub fn machine_return_zdt<'guard>(
 }
 
 /// Return boolean from intrinsic
-pub fn machine_return_bool<'guard>(
+pub fn machine_return_bool(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     b: bool,
 ) -> Result<(), ExecutionError> {
     machine.set_closure(view.new_closure(
@@ -276,9 +276,9 @@ pub fn machine_return_bool<'guard>(
 }
 
 /// Return a string list from intrinsic
-pub fn machine_return_str_list<'guard>(
+pub fn machine_return_str_list(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     list: Vec<String>,
 ) -> Result<(), ExecutionError> {
     let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
@@ -310,9 +310,9 @@ pub fn machine_return_str_list<'guard>(
 }
 
 /// Return a list of closures from intrinsic
-pub fn machine_return_closure_list<'guard>(
+pub fn machine_return_closure_list(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     list: Vec<RefPtr<Closure>>,
 ) -> Result<(), ExecutionError> {
     // env of items
@@ -343,9 +343,9 @@ pub fn machine_return_closure_list<'guard>(
 }
 
 /// Return a list of closures from intrinsic
-pub fn machine_return_block_pair_closure_list<'guard>(
+pub fn machine_return_block_pair_closure_list(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView,
     block: IndexMap<String, RefPtr<Closure>>,
 ) -> Result<(), ExecutionError> {
     // env of values
@@ -368,7 +368,7 @@ pub fn machine_return_block_pair_closure_list<'guard>(
                     Array::from_slice(&view, &[view.sym_ref(k)?, Ref::L(i)]),
                 )?
                 .as_ptr(),
-                value_frame.clone(),
+                value_frame,
             )?,
         );
     }

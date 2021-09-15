@@ -251,8 +251,8 @@ impl SourceLoader {
     /// into a core expression.
     pub fn translate(&mut self, input: &Input) -> Result<&TranslationUnit, EucalyptError> {
         // If we already have a translation, we're done.
-        if self.units.contains_key(&input) {
-            return Ok(self.units.get(&input).unwrap());
+        if self.units.contains_key(input) {
+            return Ok(self.units.get(input).unwrap());
         }
 
         // Retrieve the ASTs and Core exprs contributing to the unit
@@ -320,7 +320,7 @@ impl SourceLoader {
     pub fn merge_units(&mut self, inputs: &[Input]) -> Result<(), EucalyptError> {
         let units = inputs
             .iter()
-            .map(|i| self.units.get(&i).expect("merging unknown unit"));
+            .map(|i| self.units.get(i).expect("merging unknown unit"));
         self.core = TranslationUnit::merge(units.cloned())?;
         Ok(())
     }
@@ -336,13 +336,13 @@ impl SourceLoader {
     ) -> Result<(), EucalyptError> {
         let prologue_units = prologue_inputs
             .iter()
-            .map(|i| self.units.get(&i).expect("merging unknown unit"));
+            .map(|i| self.units.get(i).expect("merging unknown unit"));
         let explicit_units = explicit_inputs
             .iter()
-            .map(|i| self.units.get(&i).expect("merging unknown unit"));
+            .map(|i| self.units.get(i).expect("merging unknown unit"));
         let epilogue_units = epilogue_inputs
             .iter()
-            .map(|i| self.units.get(&i).expect("merging unknown unit"));
+            .map(|i| self.units.get(i).expect("merging unknown unit"));
 
         let mut collection_unit = if name_inputs {
             let names: Vec<String> = explicit_inputs

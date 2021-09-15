@@ -40,7 +40,7 @@ pub trait IntrinsicMachine {
     fn root_env(&self) -> RefPtr<EnvFrame>;
 
     /// Environment of current closure
-    fn env<'guard>(&self, view: MutatorHeapView<'guard>) -> RefPtr<EnvFrame>;
+    fn env(&self, view: MutatorHeapView) -> RefPtr<EnvFrame>;
 }
 
 /// All intrinsics have an STG syntax wrapper

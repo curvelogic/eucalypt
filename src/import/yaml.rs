@@ -89,7 +89,7 @@ impl<'smap> Receiver<'smap> {
             // TODO: performance - repeated walks which are only
             // necessary if there is embedded eucalypt
             let fvs: HashMap<String, FreeVar<String>> =
-                entries.iter().map(|(k, _)| (k.clone(), free(&k))).collect();
+                entries.iter().map(|(k, _)| (k.clone(), free(k))).collect();
             let kvs = entries
                 .iter()
                 .map(|(k, v)| {

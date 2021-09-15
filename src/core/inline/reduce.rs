@@ -77,7 +77,7 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                     } else {
                         let args =
                             xs.iter()
-                                .map(|arg| beta_reduce(&arg))
+                                .map(|arg| beta_reduce(arg))
                                 .collect::<Result<Vec<RcExpr>, CoreError>>()?;
 
                         let mappings = <_>::zip(binders.into_iter(), args).collect::<Vec<_>>();

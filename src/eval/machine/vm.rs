@@ -43,7 +43,7 @@ pub struct HeapNavigator<'scope> {
 
 impl<'scope> HeapNavigator<'scope> {
     /// Resolve a ref (creating atom closure if it resolves to native)
-    pub fn resolve<'guard>(&self, r: &Ref) -> Result<RefPtr<Closure>, ExecutionError> {
+    pub fn resolve(&self, r: &Ref) -> Result<RefPtr<Closure>, ExecutionError> {
         match r {
             Ref::L(index) => self.get(*index),
             Ref::G(index) => self.global(*index),
@@ -69,7 +69,7 @@ impl<'scope> HeapNavigator<'scope> {
     }
 
     /// Index into globals
-    pub fn global<'guard>(&self, index: usize) -> Result<RefPtr<Closure>, ExecutionError> {
+    pub fn global(&self, index: usize) -> Result<RefPtr<Closure>, ExecutionError> {
         (*self.globals)
             .get(&self.view, index)
             .ok_or(ExecutionError::BadGlobalIndex(index))
@@ -167,13 +167,10 @@ impl MachineState {
     }
 
     /// Push a new continuation onto the stack
-    fn push<'guard>(
-        &mut self,
-        view: MutatorHeapView<'guard>,
-        cont: Continuation,
-    ) -> Result<(), ExecutionError> {
+    fn push(&mut self, view: MutatorHeapView, cont: Continuation) -> Result<(), ExecutionError> {
         let ptr = view.alloc(cont)?.as_ptr();
-        Ok(self.stack.push(ptr))
+        self.stack.push(ptr);
+        Ok(())
     }
 
     /// Handle an instruction
@@ -287,9 +284,9 @@ impl MachineState {
     }
 
     /// Update environment index to point to current closure
-    fn update<'guard>(
+    fn update(
         &mut self,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView,
         environment: RefPtr<EnvFrame>,
         index: usize,
     ) -> Result<(), ExecutionError> {
@@ -482,7 +479,7 @@ impl MachineState {
     }
 
     /// Return function to either apply to args or default case branch
-    fn return_fun<'guard>(&mut self, view: MutatorHeapView<'guard>) -> Result<(), ExecutionError> {
+    fn return_fun(&mut self, view: MutatorHeapView) -> Result<(), ExecutionError> {
         if let Some(cont) = self.stack.pop() {
             let continuation = (*(view.scoped(cont))).clone();
             let closure = &*(view.scoped(self.closure));
@@ -493,15 +490,15 @@ impl MachineState {
 
                     match excess.cmp(&0) {
                         Ordering::Equal => {
-                            self.closure = view.saturate(&closure, args.as_slice())?;
+                            self.closure = view.saturate(closure, args.as_slice())?;
                         }
                         Ordering::Less => {
-                            self.closure = view.partially_apply(&closure, args.as_slice())?;
+                            self.closure = view.partially_apply(closure, args.as_slice())?;
                         }
                         Ordering::Greater => {
                             let (quorum, surplus) =
                                 args.as_slice().split_at(args.len() - excess as usize);
-                            self.closure = view.saturate(&closure, quorum)?;
+                            self.closure = view.saturate(closure, quorum)?;
                             self.push(
                                 view,
                                 Continuation::ApplyTo {
@@ -611,7 +608,7 @@ impl IntrinsicMachine for MachineState {
     }
 
     /// The current environment
-    fn env<'guard>(&self, view: MutatorHeapView<'guard>) -> RefPtr<EnvFrame> {
+    fn env(&self, view: MutatorHeapView) -> RefPtr<EnvFrame> {
         let closure = view.scoped(self.closure);
         (*closure).env()
     }
@@ -671,15 +668,15 @@ impl<'a> Machine<'a> {
     }
 
     /// Split reference into separate facilities (state, heap)
-    fn facilities<'b>(
-        &'b mut self,
+    fn facilities(
+        &mut self,
     ) -> (
-        &'b mut MachineState,
-        MutatorHeapView<'b>,
-        &'b mut dyn Emitter,
-        &'b mut Metrics,
-        &'b MachineSettings,
-        &'b [&'b dyn StgIntrinsic],
+        &mut MachineState,
+        MutatorHeapView,
+        &mut dyn Emitter,
+        &mut Metrics,
+        &MachineSettings,
+        &[&dyn StgIntrinsic],
     ) {
         (
             &mut self.state,
@@ -692,7 +689,7 @@ impl<'a> Machine<'a> {
     }
 
     /// Get a navigator for resolving references
-    fn nav<'scope>(&'scope self) -> HeapNavigator<'scope> {
+    fn nav(&self) -> HeapNavigator {
         self.state.nav(MutatorHeapView::new(&self.heap))
     }
 
@@ -776,7 +773,7 @@ impl<'a> Machine<'a> {
 
         if self.state.terminated() {
             Some(match &*code {
-                HeapSyn::Atom { evaluand: r } => match self.nav().resolve_native(&r) {
+                HeapSyn::Atom { evaluand: r } => match self.nav().resolve_native(r) {
                     Ok(Native::Num(n)) => {
                         if let Some(integer) = n.as_i64() {
                             let rc: Result<u8, _> = integer.try_into();

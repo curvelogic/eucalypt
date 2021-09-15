@@ -48,10 +48,10 @@ fn declaration_to_binding(
     decl: &Declaration,
     desugarer: &mut Desugarer,
 ) -> Result<(Binder<String>, Embed<RcExpr>), CoreError> {
-    desugarer.push(&decl.name().name());
+    desugarer.push(decl.name().name());
 
     let is_op = decl.is_operator();
-    let unary_fixity = static_fixity(&decl);
+    let unary_fixity = static_fixity(decl);
     let components = DeclarationComponents::from(decl);
 
     // Read metadata up front as it might affect translation of the
@@ -275,17 +275,17 @@ fn desugar_name(name: &Name, desugarer: &mut Desugarer) -> RcExpr {
         Name::Normal(s, n) => {
             if n.starts_with("__") && n.chars().nth(2).map_or(false, |c| c.is_uppercase()) {
                 RcExpr::from(Expr::Intrinsic(desugarer.new_smid(*s), n[2..].to_string()))
-            } else if BLOCK_ANAPHORA.is_anaphor(&n) {
+            } else if BLOCK_ANAPHORA.is_anaphor(n) {
                 let smid = desugarer.new_smid(*s);
                 RcExpr::from(Expr::BlockAnaphor(
                     smid,
-                    BLOCK_ANAPHORA.to_explicit_anaphor(smid, &n),
+                    BLOCK_ANAPHORA.to_explicit_anaphor(smid, n),
                 ))
-            } else if EXPR_ANAPHORA.is_anaphor(&n) {
+            } else if EXPR_ANAPHORA.is_anaphor(n) {
                 let smid = desugarer.new_smid(*s);
                 RcExpr::from(Expr::ExprAnaphor(
                     smid,
-                    EXPR_ANAPHORA.to_explicit_anaphor(smid, &n),
+                    EXPR_ANAPHORA.to_explicit_anaphor(smid, n),
                 ))
             } else {
                 RcExpr::from(Expr::Name(desugarer.new_smid(*s), n.to_string()))
@@ -328,7 +328,7 @@ fn desugar_soup(
                     // simple static lookup
                     soup.pop();
                     if let Some(dlet) = soup.pop() {
-                        soup.push(dlet.rebody(core::var(*s, desugarer.var(&n))));
+                        soup.push(dlet.rebody(core::var(*s, desugarer.var(n))));
                     } else {
                         panic!("Expected default let");
                     }
@@ -338,7 +338,7 @@ fn desugar_soup(
                     soup.push(expr.clone());
                     lookup = PendingLookup::None;
                 } else {
-                    soup.push(core::var(*s, desugarer.var(&n)))
+                    soup.push(core::var(*s, desugarer.var(n)))
                 }
             }
             Expr::Operator(s, _, _, ref body) => {
@@ -495,7 +495,7 @@ pub fn desugar_string_pattern(
 
     // if there are any anaphora wrap into a lambda
     if desugarer.has_pending_string_anaphora() {
-        let binders = anaphora::to_binding_pattern(&desugarer.pending_string_anaphora())?;
+        let binders = anaphora::to_binding_pattern(desugarer.pending_string_anaphora())?;
         desugarer.clear_pending_string_anaphora();
         expr = core::lam(expr.smid(), binders, succ::succ(&expr)?);
     }

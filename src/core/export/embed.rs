@@ -48,7 +48,7 @@ impl Embed for CoreExpr {
             }
             Expr::Intrinsic(_, n) => {
                 elements.push(lit(sym("c-bif")));
-                elements.push(lit(sym(&n)));
+                elements.push(lit(sym(n)));
             }
             Expr::Literal(_, x) => {
                 elements.push(lit(sym("c-lit")));
@@ -176,7 +176,7 @@ impl Embed for Primitive {
     fn embed(&self) -> Expression {
         match &*self {
             Primitive::Str(s) => lit(str(&s)),
-            Primitive::Sym(s) => lit(sym(&s)),
+            Primitive::Sym(s) => lit(sym(s)),
             Primitive::Num(n) => lit(num(n.clone())),
             Primitive::Bool(b) => list(vec![
                 lit(sym("c-bool")),

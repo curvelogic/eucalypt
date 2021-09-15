@@ -42,10 +42,10 @@ use serde_json::Number;
 /// Get (or store and get) regex from machine rcache
 ///
 /// (NB. not threadsafe but we're single threaded anyway for now)
-fn cached_regex<'a, T: AsRef<str>>(
-    machine: &'a mut dyn IntrinsicMachine,
+fn cached_regex<T: AsRef<str>>(
+    machine: &mut dyn IntrinsicMachine,
     text: T,
-) -> Result<&'a Regex, ExecutionError> {
+) -> Result<&Regex, ExecutionError> {
     let rcache = machine.rcache();
     let key = text.as_ref().to_string();
 

@@ -653,11 +653,11 @@ impl ProtoSyntax for ProtoApp {
         _compiler: &Compiler,
         context: &Context,
     ) -> Result<Rc<StgSyn>, CompileError> {
-        let callable = self.f.take_reference(&context)?;
+        let callable = self.f.take_reference(context)?;
         let args = self
             .args
             .drain(0..)
-            .map(|mut a| a.take_reference(&context))
+            .map(|mut a| a.take_reference(context))
             .collect::<Result<Vec<Ref>, CompileError>>()?;
         Ok(Rc::new(StgSyn::App { callable, args }))
     }
@@ -823,7 +823,7 @@ impl<'rt> Compiler<'rt> {
             }
         }
         binder.freeze();
-        let compiled = binder.into_stg(&self);
+        let compiled = binder.into_stg(self);
 
         if self.suppress_optimiser {
             compiled
@@ -856,7 +856,7 @@ impl<'rt> Compiler<'rt> {
                 Ok(Box::new(block))
             }
             Expr::Intrinsic(_, name) => {
-                let index = intrinsics::index(&name)
+                let index = intrinsics::index(name)
                     .ok_or_else(|| CompileError::UnknownIntrinsic(name.clone()))?;
                 Ok(Box::new(Holder::new(dsl::atom(gref(index)))))
             }
@@ -913,7 +913,7 @@ impl<'rt> Compiler<'rt> {
                 binder.add_deferred(Box::new(block))
             }
             Expr::Intrinsic(_, name) => {
-                let index = intrinsics::index(&name)
+                let index = intrinsics::index(name)
                     .ok_or_else(|| CompileError::UnknownIntrinsic(name.clone()))?;
                 Ok(dsl::gref(index))
             }

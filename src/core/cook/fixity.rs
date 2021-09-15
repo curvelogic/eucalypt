@@ -96,7 +96,7 @@ impl Distributor {
                 Ok(ret)
             }
             Expr::Var(_, Free(fv)) => {
-                if let Some((smid, fixity, precedence)) = self.env.get(&fv) {
+                if let Some((smid, fixity, precedence)) = self.env.get(fv) {
                     Ok(RcExpr::from(Expr::Operator(
                         *smid,
                         *fixity,

@@ -560,8 +560,8 @@ pub struct Merge;
 /// Items are passed to the MERGE intrinsic as block_pairs of k and
 /// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
 /// and v. The same function can deconstruct either.
-fn deconstruct<'guard>(
-    view: MutatorHeapView<'guard>,
+fn deconstruct(
+    view: MutatorHeapView,
     pair_closure: &Closure,
 ) -> Result<(String, RefPtr<Closure>), ExecutionError> {
     use crate::eval::memory::syntax;

@@ -435,9 +435,9 @@ impl EucalyptOptions {
 
     pub fn inputs(&self) -> Vec<Input> {
         let mut inputs = vec![];
-        inputs.extend_from_slice(&self.prologue_inputs.as_slice());
-        inputs.extend_from_slice(&self.explicit_inputs.as_slice());
-        inputs.extend_from_slice(&self.epilogue_inputs.as_slice());
+        inputs.extend_from_slice(self.prologue_inputs.as_slice());
+        inputs.extend_from_slice(self.explicit_inputs.as_slice());
+        inputs.extend_from_slice(self.epilogue_inputs.as_slice());
         inputs
     }
 

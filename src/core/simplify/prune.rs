@@ -220,7 +220,7 @@ impl<'expr> ScopeTracker<'expr> {
 
         match &*expr.inner {
             Expr::Var(_, Var::Bound(bound_var)) => {
-                self.encounter(&bound_var);
+                self.encounter(bound_var);
             }
             Expr::Let(_, scope, _) => {
                 self.enter(expr);
@@ -299,7 +299,7 @@ impl<'expr> ScopeTracker<'expr> {
                                 if value.unseen() {
                                     (n.clone(), Embed(RcExpr::from(Expr::ErrEliminated)))
                                 } else {
-                                    (n.clone(), Embed(Self::blank_unseen(&value)))
+                                    (n.clone(), Embed(Self::blank_unseen(value)))
                                 }
                             })
                             .collect(),

@@ -140,7 +140,7 @@ impl AllocationPruner {
         match &*stg {
             StgSyn::Atom { evaluand } => dsl::atom(self.transform(evaluand)),
             StgSyn::Let { bindings, body } => {
-                match LetIndexTransformation::from_let_bindings(&bindings) {
+                match LetIndexTransformation::from_let_bindings(bindings) {
                     Some(t) => {
                         // we can strip	the let
                         self.transform_stack.push(Box::new(t));
@@ -159,7 +159,7 @@ impl AllocationPruner {
                 }
             }
             StgSyn::LetRec { bindings, body } => {
-                match LetIndexTransformation::from_let_bindings(&bindings) {
+                match LetIndexTransformation::from_let_bindings(bindings) {
                     Some(t) => {
                         // we can strip	the let
                         self.transform_stack.push(Box::new(t));

@@ -307,10 +307,7 @@ pub mod repr {
     use super::{HeapSyn, RefPtr, Repr};
 
     /// Convert heap representation of reference to syntax representation
-    pub fn heap_to_stg<'guard>(
-        guard: &'guard dyn MutatorScope,
-        r: &memory::syntax::Ref,
-    ) -> stg::syntax::Ref {
+    pub fn heap_to_stg(guard: &dyn MutatorScope, r: &memory::syntax::Ref) -> stg::syntax::Ref {
         match r {
             memory::syntax::Ref::L(n) => stg::syntax::Ref::L(*n),
             memory::syntax::Ref::G(n) => stg::syntax::Ref::G(*n),
@@ -326,14 +323,14 @@ pub mod repr {
                 stg::syntax::Ref::V(stg::syntax::Native::Num(n.clone()))
             }
             memory::syntax::Ref::V(memory::syntax::Native::Zdt(d)) => {
-                stg::syntax::Ref::V(stg::syntax::Native::Zdt(d.clone()))
+                stg::syntax::Ref::V(stg::syntax::Native::Zdt(*d))
             }
         }
     }
 
     /// Represent in-heap branch table in syntax form
-    pub fn repr_branches<'guard>(
-        guard: &'guard dyn MutatorScope,
+    pub fn repr_branches(
+        guard: &dyn MutatorScope,
         branches: Array<(u8, RefPtr<HeapSyn>)>,
     ) -> Vec<(u8, Rc<StgSyn>)> {
         branches
@@ -343,16 +340,16 @@ pub mod repr {
     }
 
     /// Represent in-heap ref vector in syntax form
-    pub fn repr_refarray<'guard>(
-        guard: &'guard dyn MutatorScope,
+    pub fn repr_refarray(
+        guard: &dyn MutatorScope,
         refs: Array<memory::syntax::Ref>,
     ) -> Vec<stg::syntax::Ref> {
         refs.iter().map(|r| heap_to_stg(guard, r)).collect()
     }
 
     /// Represent in-heap bindingn vector in syntax form
-    pub fn repr_bindings<'guard>(
-        guard: &'guard dyn MutatorScope,
+    pub fn repr_bindings(
+        guard: &dyn MutatorScope,
         bindings: Array<memory::syntax::LambdaForm>,
     ) -> Vec<stg::syntax::LambdaForm> {
         let mut v = Vec::with_capacity(bindings.len());
@@ -396,10 +393,9 @@ impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
             } => Rc::new(StgSyn::Case {
                 scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
                 branches: repr::repr_branches(self, branches.clone()),
-                fallback: match fallback {
-                    Some(f) => Some(ScopedPtr::from_non_null(self, *f).repr()),
-                    None => None,
-                },
+                fallback: fallback
+                    .as_ref()
+                    .map(|f| ScopedPtr::from_non_null(self, *f).repr()),
             }),
             HeapSyn::Cons { tag, args } => Rc::new(StgSyn::Cons {
                 tag: *tag,
