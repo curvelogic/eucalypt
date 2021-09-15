@@ -19,7 +19,7 @@ pub fn fill_gaps(xs: &[RcExpr]) -> (Vec<RcExpr>, AnaphorSet) {
 
     for window in xs.windows(2) {
         if let [ref l, ref r] = window {
-            naked_anaphora.extend(anaphora::naked_anaphora(&l));
+            naked_anaphora.extend(anaphora::naked_anaphora(l));
             out.push(l.clone());
             if let Some(fill) = filler(Some(l), Some(r)) {
                 naked_anaphora.extend(anaphora::naked_anaphora(&fill));
@@ -29,7 +29,7 @@ pub fn fill_gaps(xs: &[RcExpr]) -> (Vec<RcExpr>, AnaphorSet) {
     }
 
     if let Some(end) = xs.last() {
-        naked_anaphora.extend(anaphora::naked_anaphora(&end));
+        naked_anaphora.extend(anaphora::naked_anaphora(end));
         out.push(end.clone());
         if let Some(suffix) = filler(Some(end), None) {
             naked_anaphora.extend(anaphora::naked_anaphora(&suffix));

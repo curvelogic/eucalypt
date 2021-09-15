@@ -42,7 +42,7 @@ pub fn prepare(
     if opt.parse_only() {
         for (loc, ast) in loader.asts() {
             println!("--- {} ---\n", loc);
-            dump_ast(&ast, &opt);
+            dump_ast(ast, opt);
         }
         return Ok(Command::Exit);
     }
@@ -64,7 +64,7 @@ pub fn prepare(
 
         if let Some(collection_name) = opt.collection() {
             loader.collect_and_merge_units(
-                &collection_name,
+                collection_name,
                 opt.name_inputs(),
                 opt.prologue_inputs(),
                 opt.explicit_inputs(),
@@ -107,7 +107,7 @@ pub fn prepare(
     // Prior to further processing, dump?
     if opt.dump_desugared() {
         let c = loader.core();
-        dump_core(c.expr.clone(), &opt);
+        dump_core(c.expr.clone(), opt);
         return Ok(Command::Exit);
     }
 
@@ -127,7 +127,7 @@ pub fn prepare(
 
     if opt.dump_cooked() {
         let c = loader.core();
-        dump_core(c.expr.clone(), &opt);
+        dump_core(c.expr.clone(), opt);
         return Ok(Command::Exit);
     }
 
@@ -153,7 +153,7 @@ pub fn prepare(
 
     if opt.dump_inlined() {
         let c = loader.core();
-        dump_core(c.expr.clone(), &opt);
+        dump_core(c.expr.clone(), opt);
         return Ok(Command::Exit);
     }
 
@@ -168,7 +168,7 @@ pub fn prepare(
 
     if opt.dump_pruned() {
         let c = loader.core();
-        dump_core(c.expr.clone(), &opt);
+        dump_core(c.expr.clone(), opt);
         return Ok(Command::Exit);
     }
 

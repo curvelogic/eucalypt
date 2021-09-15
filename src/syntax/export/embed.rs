@@ -10,7 +10,7 @@ pub trait Embed {
 impl Embed for Literal {
     fn embed(&self) -> Expression {
         match &*self {
-            Literal::Sym(_, s) => lit(sym(&s)),
+            Literal::Sym(_, s) => lit(sym(s)),
             Literal::Str(_, s) => lit(str(&s)),
             Literal::Num(_, n) => lit(num(n.clone())),
         }
@@ -66,14 +66,14 @@ impl Embed for Declaration {
                 lit(sym("a-prop")),
                 n.embed(),
                 expr.embed(),
-                embed_meta(&meta),
+                embed_meta(meta),
             ]),
             Declaration::FunctionDeclaration(_, meta, n, args, expr) => list(vec![
                 lit(sym("a-prop")),
                 n.embed(),
                 args.embed(),
                 expr.embed(),
-                embed_meta(&meta),
+                embed_meta(meta),
             ]),
             Declaration::InfixOperatorDeclaration(_, meta, l, op, r, expr) => list(vec![
                 lit(sym("a-infix")),
@@ -81,21 +81,21 @@ impl Embed for Declaration {
                 op.embed(),
                 r.embed(),
                 expr.embed(),
-                embed_meta(&meta),
+                embed_meta(meta),
             ]),
             Declaration::PrefixOperatorDeclaration(_, meta, op, r, expr) => list(vec![
                 lit(sym("a-infix")),
                 op.embed(),
                 r.embed(),
                 expr.embed(),
-                embed_meta(&meta),
+                embed_meta(meta),
             ]),
             Declaration::PostfixOperatorDeclaration(_, meta, l, op, expr) => list(vec![
                 lit(sym("a-infix")),
                 l.embed(),
                 op.embed(),
                 expr.embed(),
-                embed_meta(&meta),
+                embed_meta(meta),
             ]),
         }
     }

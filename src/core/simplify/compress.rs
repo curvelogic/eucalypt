@@ -42,7 +42,7 @@ impl ScopeCompressor {
     pub fn compress(&mut self, expr: &RcExpr) -> Result<RcExpr, CoreError> {
         match &*expr.inner {
             Expr::Let(s, scope, t) => {
-                self.enter(permutation_from_let_scope(&scope));
+                self.enter(permutation_from_let_scope(scope));
 
                 let new_bindings: Vec<_> = scope
                     .unsafe_pattern
@@ -82,7 +82,7 @@ impl ScopeCompressor {
                 Ok(ret)
             }
             Expr::Lam(s, inl, scope) => {
-                self.enter(permutation_from_lam_scope(&scope));
+                self.enter(permutation_from_lam_scope(scope));
                 let ret = RcExpr::from(Expr::Lam(
                     *s,
                     *inl,

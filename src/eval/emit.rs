@@ -19,7 +19,7 @@ impl RenderMetadata {
 }
 
 /// Machine events for rendering output
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Event {
     /// Emitted before all output
     OutputStreamStart,
@@ -129,6 +129,6 @@ impl Emitter for CapturingEmitter {
     }
 
     fn captures(&self) -> &[Event] {
-        &self.events
+        self.events.as_slice()
     }
 }

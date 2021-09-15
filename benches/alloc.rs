@@ -1,86 +1,174 @@
 //! STG allocation benchmarks
 
-use eucalypt::common::sourcemap::Smid;
-use eucalypt::eval::machines::stg::env::*;
-use eucalypt::eval::machines::stg::syntax::dsl;
-use eucalypt::eval::machines::stg::syntax::LambdaForm;
+use std::iter;
+
+use eucalypt::{
+    common::sourcemap::Smid,
+    eval::{
+        machine::{
+            env::{Closure, EnvFrame},
+            env_builder::EnvBuilder,
+        },
+        memory::{
+            alloc::ScopedAllocator,
+            array::Array,
+            heap::Heap,
+            mutator::MutatorHeapView,
+            syntax::{LambdaForm, Native, Ref, RefPtr, StgBuilder},
+        },
+        stg::tags::DataConstructor,
+    },
+};
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use std::{cell::RefCell, iter, rc::Rc};
-
-fn fake_bindings(width: usize) -> Vec<LambdaForm> {
-    iter::repeat_with(|| dsl::lambda(1, dsl::local(0)))
-        .take(width)
-        .collect()
+fn box_one<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> RefPtr<Closure> {
+    view.alloc(Closure::new(
+        view.data(
+            DataConstructor::BoxedString.tag(),
+            Array::from_slice(&view, &[Ref::V(Native::Num(1.into()))]),
+        )
+        .unwrap()
+        .as_ptr(),
+        empty,
+    ))
+    .unwrap()
+    .as_ptr()
 }
 
-fn fake_env_stack(width: usize, height: usize) -> Rc<EnvFrame> {
-    let mut base = Rc::new(EnvFrame::empty());
+fn identity<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> RefPtr<Closure> {
+    view.alloc(Closure::close(
+        &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
+        empty,
+    ))
+    .unwrap()
+    .as_ptr()
+}
+
+fn fake_bindings<'guard>(view: MutatorHeapView<'guard>, width: usize) -> Vec<LambdaForm> {
+    iter::repeat_with(|| {
+        LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+    })
+    .take(width)
+    .collect()
+}
+
+fn fake_env_stack<'guard>(
+    view: MutatorHeapView<'guard>,
+    empty: RefPtr<EnvFrame>,
+    width: usize,
+    height: usize,
+) -> RefPtr<EnvFrame> {
+    let mut base = empty;
 
     for _ in 0..height {
-        let bindings = fake_bindings(width);
-        base = EnvFrame::from_letrec(&bindings, &base, Smid::default());
+        let bindings = fake_bindings(view, width);
+        base = view.from_letrec(&bindings, base, Smid::default());
     }
 
     base
 }
 
 /// Allocate a letrec of identify function bindings
-fn alloc_let(bindings: &[LambdaForm]) -> Rc<EnvFrame> {
-    EnvFrame::from_let(bindings, &Rc::new(EnvFrame::empty()), Smid::default())
+fn alloc_let<'guard>(
+    view: MutatorHeapView<'guard>,
+    empty: RefPtr<EnvFrame>,
+    bindings: &[LambdaForm],
+) -> RefPtr<EnvFrame> {
+    view.from_let(bindings, empty, Smid::default())
 }
 
 /// Allocate a letrec of identify function bindings
-fn alloc_letrec(bindings: &[LambdaForm]) -> Rc<EnvFrame> {
-    EnvFrame::from_letrec(bindings, &Rc::new(EnvFrame::empty()), Smid::default())
+fn alloc_letrec<'guard>(
+    view: MutatorHeapView<'guard>,
+    empty: RefPtr<EnvFrame>,
+    bindings: &[LambdaForm],
+) -> RefPtr<EnvFrame> {
+    view.from_letrec(bindings, empty, Smid::default())
 }
 
 /// Access deep closure
-fn access(env: &Rc<EnvFrame>, depth: usize) -> Option<&RefCell<Closure>> {
-    env.get(depth)
+fn access<'guard>(
+    view: MutatorHeapView<'guard>,
+    env: RefPtr<EnvFrame>,
+    depth: usize,
+) -> Option<RefPtr<Closure>> {
+    let e = view.scoped(env);
+    (*e).get(&view, depth)
 }
 
 /// Update deep closure with a new value
-fn update(env: &Rc<EnvFrame>, depth: usize) {
-    let value = Closure::new(dsl::box_num(1), Rc::new(EnvFrame::empty()));
-    env.update(depth, value).unwrap();
+fn update<'guard>(
+    view: MutatorHeapView<'guard>,
+    empty: RefPtr<EnvFrame>,
+    env: RefPtr<EnvFrame>,
+    depth: usize,
+) {
+    let e = view.scoped(env);
+    let value = box_one(view, empty);
+    (*e).update(&view, depth, value).unwrap();
 }
 
 /// Create an identity lambda and saturate it
-fn create_and_saturate_lambda() {
-    let mut lambda = Closure::close(&dsl::lambda(1, dsl::local(0)), &Rc::new(EnvFrame::empty()));
-    let args = vec![Closure::new(dsl::box_num(1), Rc::new(EnvFrame::empty()))];
-    lambda.saturate(args)
+fn create_and_saturate_lambda<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) {
+    let mut lambda = view
+        .alloc(Closure::close(
+            &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
+            empty,
+        ))
+        .unwrap()
+        .as_ptr();
+    let args = vec![box_one(view, empty)];
+    view.saturate(&*view.scoped(lambda), args.as_slice())
+        .unwrap();
 }
 
 /// Create an identity lambda and saturate it
-fn create_partially_apply_and_saturate_lambda() {
-    let mut lambda = Closure::close(&dsl::lambda(2, dsl::local(0)), &Rc::new(EnvFrame::empty()));
-    let first_arg = vec![Closure::new(dsl::box_num(1), Rc::new(EnvFrame::empty()))];
-    let second_arg = vec![Closure::new(dsl::box_num(2), Rc::new(EnvFrame::empty()))];
+fn create_partially_apply_and_saturate_lambda<'guard>(
+    view: MutatorHeapView<'guard>,
+    empty: RefPtr<EnvFrame>,
+) {
+    let mut lambda = view
+        .alloc(Closure::close(
+            &LambdaForm::new(2, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
+            empty,
+        ))
+        .unwrap()
+        .as_ptr();
+    let first_arg = vec![box_one(view, empty)];
+    let second_arg = vec![box_one(view, empty)];
 
-    lambda.partially_apply(first_arg);
-    lambda.saturate(second_arg);
+    let lambda = view
+        .partially_apply(&*view.scoped(lambda), first_arg.as_slice())
+        .unwrap();
+    view.saturate(&*view.scoped(lambda), second_arg.as_slice())
+        .unwrap();
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let bindings = fake_bindings(10);
-    let env_stack = fake_env_stack(20, 4);
-    c.bench_function("alloc_let", |b| b.iter(|| alloc_let(&bindings)));
-    c.bench_function("alloc_letrec", |b| b.iter(|| alloc_letrec(&bindings)));
+    let heap = Heap::new();
+    let view = MutatorHeapView::new(&heap);
+    let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();
+    let bindings = fake_bindings(view, 10);
+    let env_stack = fake_env_stack(view, empty, 20, 4);
+    c.bench_function("alloc_let", |b| {
+        b.iter(|| alloc_let(view, empty, &bindings))
+    });
+    c.bench_function("alloc_letrec", |b| {
+        b.iter(|| alloc_letrec(view, empty, &bindings))
+    });
     c.bench_function("deep_env_access", |b| {
-        b.iter(|| access(&env_stack, black_box(73)))
+        b.iter(|| access(view, env_stack, black_box(73)))
     });
     c.bench_function("deep_env_update", |b| {
-        b.iter(|| update(&env_stack, black_box(73)))
+        b.iter(|| update(view, empty, env_stack, black_box(73)))
     });
 
     c.bench_function("create_and_saturate_lambda", |b| {
-        b.iter(create_and_saturate_lambda)
+        b.iter(|| create_and_saturate_lambda(view, empty))
     });
     c.bench_function("create_partially_apply_and_saturate_lambda", |b| {
-        b.iter(create_partially_apply_and_saturate_lambda)
+        b.iter(|| create_partially_apply_and_saturate_lambda(view, empty))
     });
 }
 

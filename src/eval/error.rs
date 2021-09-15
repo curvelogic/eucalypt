@@ -6,13 +6,15 @@ use serde_json::Number;
 use std::io;
 use thiserror::Error;
 
-use super::machines::stg::compiler::CompileError;
+use super::{memory::bump, stg::compiler::CompileError};
 
 #[derive(Debug, Error)]
 pub enum ExecutionError {
     /// wrapped, env trace and stack trace
     #[error("{0}")]
     Traced(Box<ExecutionError>, Vec<Smid>, Vec<Smid>),
+    #[error("allocation error")]
+    AllocationError,
     #[error("expected {1} received {2}")]
     ArityMismatch(Smid, usize, usize),
     #[error("binding missing from environment")]
@@ -89,6 +91,12 @@ pub enum ExecutionError {
     Compile(#[from] CompileError),
     #[error(transparent)]
     Io(#[from] io::Error),
+}
+
+impl From<bump::AllocError> for ExecutionError {
+    fn from(_: bump::AllocError) -> Self {
+        ExecutionError::AllocationError
+    }
 }
 
 impl HasSmid for ExecutionError {

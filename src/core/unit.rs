@@ -111,7 +111,7 @@ impl TranslationUnit {
             .ok_or_else(|| CoreError::TargetNotFound(target.to_string()))?
             .path();
 
-        let body = acore::path(&path).ok_or_else(|| CoreError::BadTarget(target.to_string()))?;
+        let body = acore::path(path).ok_or_else(|| CoreError::BadTarget(target.to_string()))?;
 
         Ok(TranslationUnit {
             expr: self.expr.clone().rebody(body),

@@ -92,6 +92,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 
 [[package]]
+name = "bitmaps"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "303cec55cd9c5fde944b061b902f142b52a8bb5438cc822481ea1e3ebc96bbcb"
+
+[[package]]
 name = "blake2b_simd"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -371,6 +377,7 @@ version = "0.2.0"
 dependencies = [
  "atty",
  "bitflags",
+ "bitmaps",
  "chrono",
  "chrono-tz",
  "codespan",
@@ -389,6 +396,7 @@ dependencies = [
  "moniker",
  "petgraph",
  "pretty",
+ "pretty-hex",
  "quick-xml",
  "regex",
  "serde_json",
@@ -848,6 +856,12 @@ dependencies = [
  "arrayvec",
  "typed-arena",
 ]
+
+[[package]]
+name = "pretty-hex"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5c99d529f0d30937f6f4b8a86d988047327bb88d04d2c4afc356de74722131"
 
 [[package]]
 name = "proc-macro-error"

@@ -1,7 +1,7 @@
 //! Command line argument handling.
-use crate::{driver::error::EucalyptError, eval::machines::stg::StgSettings};
+use crate::{driver::error::EucalyptError, eval::stg::StgSettings};
 use crate::{
-    eval::machines::stg::RenderType,
+    eval::stg::RenderType,
     syntax::input::{Input, Locator},
 };
 use atty::Stream;
@@ -435,9 +435,9 @@ impl EucalyptOptions {
 
     pub fn inputs(&self) -> Vec<Input> {
         let mut inputs = vec![];
-        inputs.extend_from_slice(&self.prologue_inputs.as_slice());
-        inputs.extend_from_slice(&self.explicit_inputs.as_slice());
-        inputs.extend_from_slice(&self.epilogue_inputs.as_slice());
+        inputs.extend_from_slice(self.prologue_inputs.as_slice());
+        inputs.extend_from_slice(self.explicit_inputs.as_slice());
+        inputs.extend_from_slice(self.epilogue_inputs.as_slice());
         inputs
     }
 

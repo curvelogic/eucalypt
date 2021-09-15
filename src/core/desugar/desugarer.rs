@@ -175,7 +175,7 @@ impl<'smap> Desugarer<'smap> {
     pub fn varify(&mut self, expr: RcExpr) -> RcExpr {
         match &*expr.inner {
             Expr::Name(smid, name) => {
-                let var = self.var(&name);
+                let var = self.var(name);
                 RcExpr::from(Expr::Var(*smid, moniker::Var::Free(var)))
             }
             _ => expr,

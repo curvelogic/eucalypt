@@ -23,12 +23,12 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let run_id = Uuid::new_v4().to_hyphenated().to_string();
 
     let plans = if path.is_dir() {
-        directory_plans(&opt, &run_id, &path)?
+        directory_plans(opt, &run_id, &path)?
     } else {
-        vec![load_plan(&opt, &run_id, &path)?]
+        vec![load_plan(opt, &run_id, &path)?]
     };
 
-    run_plans(&opt, plans.as_slice())
+    run_plans(opt, plans.as_slice())
 }
 
 /// Resolve the one and only input to determine if we are running a
@@ -92,9 +92,9 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         print!("{}...", test.title());
 
         let execution_opts = test_opts.clone().without_test_flag();
-        tester.run(&test, &execution_opts)?;
-        let ret = tester.validate(&test)?;
-        print!("{}", tester.summary(&test)?);
+        tester.run(test, &execution_opts)?;
+        let ret = tester.validate(test)?;
+        print!("{}", tester.summary(test)?);
 
         if ret > 0 {
             exit = 1;
@@ -359,7 +359,7 @@ impl Tester for InProcessTester {
                 };
 
                 results.push(TestResult {
-                    target: &t,
+                    target: t,
                     format: f.to_string(),
                     exit_code: exit_code.unwrap_or(None),
                     stdout: std::str::from_utf8(outbuf.as_slice()).unwrap().to_string(),

@@ -8,7 +8,8 @@ use crate::{
     driver::{error::EucalyptError, options::EucalyptOptions, source::SourceLoader},
     eval::{
         error::ExecutionError,
-        machines::stg::{self, make_standard_runtime},
+        machine::standard_machine,
+        stg::{self, make_standard_runtime},
     },
     export,
 };
@@ -30,7 +31,7 @@ pub fn run(opt: &EucalyptOptions, loader: SourceLoader) -> Result<Statistics, Eu
     let format = determine_format(opt, &loader);
     let mut stats = Statistics::default();
     let mut executor = Executor::from(loader);
-    executor.execute(&opt, &mut stats, format)?;
+    executor.execute(opt, &mut stats, format)?;
     Ok(stats)
 }
 
@@ -151,12 +152,11 @@ impl<'a> Executor<'a> {
                 Ok(None)
             } else {
                 emitter.stream_start();
-                let mut machine =
-                    stg::standard_machine(opt.stg_settings(), syn, emitter, rt.as_ref())?;
+                let mut machine = standard_machine(opt.stg_settings(), syn, emitter, rt.as_ref())?;
 
                 let ret = {
                     let t = Instant::now();
-                    let ret = machine.run();
+                    let ret = machine.run(None);
                     stats.timings_mut().record("stg-execute", t.elapsed());
                     stats.set_ticks(machine.metrics().ticks());
                     stats.set_allocs(machine.metrics().allocs());
