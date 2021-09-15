@@ -1,4 +1,7 @@
 //! A variation of the STG machine
+//!
+//! This is in the process of morphing from something that is clearly
+//! an interpreter to something more like a VM
 
 use std::{cmp::Ordering, convert::TryInto};
 

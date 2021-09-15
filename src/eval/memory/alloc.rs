@@ -5,12 +5,11 @@
 use crate::eval::error::ExecutionError;
 
 use super::bump::AllocError;
+use std::ops::Deref;
 use std::ptr::NonNull;
-use std::{cell::RefCell, ops::Deref};
 
 pub trait StgObject {}
 
-impl<T> StgObject for RefCell<T> {}
 impl<T> StgObject for NonNull<T> {}
 
 pub struct AllocHeader {}
