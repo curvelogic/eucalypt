@@ -1,7 +1,5 @@
 //! Helpers for constructing environments on the heap
 
-use std::cell::RefCell;
-
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -21,7 +19,7 @@ use super::env::{Closure, EnvFrame};
 pub trait EnvBuilder {
     fn from_saturation(
         &self,
-        args: Array<RefCell<RefPtr<Closure>>>,
+        args: Array<RefPtr<Closure>>,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame>;
@@ -94,7 +92,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
     /// argument list
     fn from_saturation(
         &self,
-        args: Array<RefCell<RefPtr<Closure>>>,
+        args: Array<RefPtr<Closure>>,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame> {
@@ -114,18 +112,16 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         for r in args {
             array.push(
                 self,
-                RefCell::new(
-                    self.alloc(Closure::new(
-                        self.alloc(HeapSyn::Atom {
-                            evaluand: r.clone(),
-                        })
-                        .expect("allocation failure")
-                        .as_ptr(),
-                        next,
-                    ))
+                self.alloc(Closure::new(
+                    self.alloc(HeapSyn::Atom {
+                        evaluand: r.clone(),
+                    })
                     .expect("allocation failure")
                     .as_ptr(),
-                ),
+                    next,
+                ))
+                .expect("allocation failure")
+                .as_ptr(),
             )
         }
 
@@ -141,7 +137,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         annotation: Smid,
     ) -> RefPtr<EnvFrame> {
         let mut array = Array::with_capacity(self, 1);
-        array.push(self, RefCell::new(closure));
+        array.push(self, closure);
 
         self.from_saturation(array, next, annotation)
     }
@@ -156,7 +152,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
     ) -> RefPtr<EnvFrame> {
         let mut array = Array::with_capacity(self, len);
         for c in closures {
-            array.push(self, RefCell::new(c))
+            array.push(self, c)
         }
 
         self.from_saturation(array, next, annotation)
@@ -186,7 +182,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
     ) -> RefPtr<EnvFrame> {
         let mut array = Array::with_capacity(self, bindings.len());
         for _ in 0..bindings.len() {
-            array.push(self, RefCell::new(RefPtr::dangling()));
+            array.push(self, RefPtr::dangling());
         }
 
         let frame = self
@@ -197,11 +193,9 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         for (i, pc) in bindings.iter().enumerate() {
             array.set(
                 i,
-                RefCell::new(
-                    self.alloc(Closure::close(pc, frame))
-                        .expect("allocation failure")
-                        .as_ptr(),
-                ),
+                self.alloc(Closure::close(pc, frame))
+                    .expect("allocation failure")
+                    .as_ptr(),
             )
         }
 
@@ -223,12 +217,12 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         closure: &Closure,
         args: &[RefPtr<Closure>],
     ) -> Result<RefPtr<Closure>, ExecutionError> {
-        let mut all_args: Array<RefCell<RefPtr<Closure>>> = Array::default();
+        let mut all_args: Array<RefPtr<Closure>> = Array::default();
         for c in closure.pap_args().iter() {
-            all_args.push(self, RefCell::new(*c));
+            all_args.push(self, *c);
         }
         for a in args {
-            all_args.push(self, RefCell::new(*a));
+            all_args.push(self, *a);
         }
         Ok(self
             .alloc(Closure::new_annotated(

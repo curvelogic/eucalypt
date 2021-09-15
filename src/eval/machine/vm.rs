@@ -188,7 +188,6 @@ impl MachineState {
         let closure = view.scoped(self.closure);
         let code = (*view.scoped(closure.code())).clone();
         let environment = closure.env();
-        let updateable = closure.updateable();
         let remaining_arity = closure.remaining_arity();
 
         // Set annotation to stamp on any allocations
@@ -203,6 +202,7 @@ impl MachineState {
                 match evaluand {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
+                        let updateable = (*view.scoped(self.closure)).updateable();
                         if updateable {
                             self.push(
                                 view,

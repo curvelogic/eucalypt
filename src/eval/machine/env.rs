@@ -1,6 +1,6 @@
 //! The cactus environment heap used by the STG machine.
 
-use std::{cell::RefCell, fmt};
+use std::fmt;
 
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
@@ -213,7 +213,7 @@ impl<'guard> fmt::Display for ScopedPtr<'guard, Closure> {
 #[derive(Default)]
 pub struct EnvFrame {
     /// Indexed bindings
-    bindings: Array<RefCell<RefPtr<Closure>>>,
+    bindings: Array<RefPtr<Closure>>,
     /// Source code annotation
     annotation: Smid,
     /// Reference to next environment
@@ -224,7 +224,7 @@ impl StgObject for EnvFrame {}
 
 impl EnvFrame {
     pub fn new(
-        bindings: Array<RefCell<RefPtr<Closure>>>,
+        bindings: Array<RefPtr<Closure>>,
         annotation: Smid,
         next: Option<RefPtr<EnvFrame>>,
     ) -> Self {
@@ -240,10 +240,10 @@ impl EnvFrame {
         &self,
         guard: &'guard dyn MutatorScope,
         idx: usize,
-    ) -> Option<RefCell<RefPtr<Closure>>> {
+    ) -> Option<(Array<RefPtr<Closure>>, usize)> {
         let len = self.bindings.len();
         if idx < len {
-            self.bindings.get(idx)
+            Some((self.bindings.clone(), idx))
         } else {
             match self.next {
                 Some(ref env) => (*ScopedPtr::from_non_null(guard, *env)).cell(guard, idx - len),
@@ -263,22 +263,24 @@ impl EnvFrame {
         guard: &'guard dyn MutatorScope,
         idx: usize,
     ) -> Option<RefPtr<Closure>> {
-        self.cell(guard, idx).map(|cell| cell.borrow().clone())
+        if let Some((arr, i)) = self.cell(guard, idx) {
+            arr.get(i)
+        } else {
+            None
+        }
     }
 
     /// Update in place
     pub fn update<'guard>(
         &self,
         guard: &'guard dyn MutatorScope,
-        index: usize,
+        idx: usize,
         closure: RefPtr<Closure>,
     ) -> Result<(), ExecutionError> {
-        match self.cell(guard, index) {
-            Some(cell) => {
-                cell.replace(closure);
-                Ok(())
-            }
-            None => Err(ExecutionError::BadEnvironmentIndex(index)),
+        if let Some((mut arr, i)) = self.cell(guard, idx) {
+            Ok(arr.set(i, closure))
+        } else {
+            Err(ExecutionError::BadEnvironmentIndex(idx))
         }
     }
 
