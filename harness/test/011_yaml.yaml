@@ -3,4 +3,6 @@ y:
   - z: 1
   - z: 2
 
+z: "escaping\/slashes\/works"
+
 RESULT: PASS
