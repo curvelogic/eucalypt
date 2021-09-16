@@ -81,6 +81,6 @@ new-package: cargo { package: { version: new-version } }
     doc: "Shell incantation to generate homebrew forumula for latest release"}
 formula-sh: "
 curl https://api.github.com/repos/curvelogic/eucalypt/releases/latest > latest.json
-curl -L $(cat latest.json | eu ci/formula.eu -t latest-asset-url) | shasum -a 256 > shasum.txt
+curl -L $(cat latest.json | eu - ci/formula.eu -t latest-asset-url) | shasum -a 256 > shasum.txt
 eu -t formula shasum=shasum.txt latest=latest.json ci/formula.eu
 "
