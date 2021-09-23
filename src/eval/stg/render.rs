@@ -46,56 +46,120 @@ impl StgIntrinsic for Render {
             ),
         );
 
+        let tagfn = lambda(
+            1,
+            demeta(
+                local(0),
+                // [meta body] [arg]
+                Tag.global(lref(0)),
+                // no meta
+                unit(),
+            ),
+        );
+
         let render = lambda(
             1,
-            case(
-                local(0),
-                vec![
-                    (DataConstructor::Unit.tag(), call::bif::emit0()),
-                    (DataConstructor::BoolTrue.tag(), call::bif::emitt()),
-                    (DataConstructor::BoolFalse.tag(), call::bif::emitf()),
-                    (
-                        DataConstructor::BoxedNumber.tag(), // [num] [boxnum]
-                        force(EmitNative.global(lref(0)), unit()),
-                    ),
-                    (
-                        DataConstructor::BoxedSymbol.tag(), // [sym] [boxsym]
-                        EmitNative.global(lref(0)),
-                    ),
-                    (
-                        DataConstructor::BoxedString.tag(), // [str] [boxstr]
-                        EmitNative.global(lref(0)),
-                    ),
-                    (
-                        DataConstructor::BoxedZdt.tag(), // [zdt] [boxzdt]
-                        EmitNative.global(lref(0)),
-                    ),
-                    (
-                        DataConstructor::ListCons.tag(),
-                        force(
-                            call::bif::emit_seq_start(), // [()] [h t] [arg]
-                            force(RenderItems.global(lref(3)), call::bif::emit_seq_end()),
-                        ),
-                    ),
-                    (
-                        DataConstructor::ListNil.tag(),
-                        force(
-                            call::bif::emit_seq_start(), // [()] [h t] [arg]
-                            call::bif::emit_seq_end(),
-                        ),
-                    ),
-                    (
-                        DataConstructor::Block.tag(),
-                        force(
-                            call::bif::emit_block_start(), // [()] [cons] [arg]
-                            force(
-                                RenderBlockItems.global(lref(1)),
-                                call::bif::emit_block_end(),
+            letrec_(
+                vec![tagfn, value(app(lref(0), vec![lref(2)]))], // [tagfn tag] [x]
+                case(
+                    local(2),
+                    vec![
+                        (DataConstructor::Unit.tag(), call::bif::emit0()),
+                        (DataConstructor::BoolTrue.tag(), call::bif::emitt()),
+                        (DataConstructor::BoolFalse.tag(), call::bif::emitf()),
+                        (
+                            DataConstructor::BoxedNumber.tag(), // [num] [tagfn tag] [boxnum]
+                            case(
+                                local(2),
+                                vec![(
+                                    DataConstructor::BoxedString.tag(), // [tag] [num] [tagfn tag] [boxnum]
+                                    force(call::bif::emit_tag_native(lref(0), lref(1)), unit()),
+                                )],
+                                force(EmitNative.global(lref(1)), unit()), // [()] [num] [tagfn tag] [boxnum]
                             ),
                         ),
-                    ),
-                ],
-                call::bif::panic(str("unrenderable")),
+                        (
+                            DataConstructor::BoxedSymbol.tag(), // [sym] [tagfn tag] [boxsym]
+                            case(
+                                local(2),
+                                vec![(
+                                    DataConstructor::BoxedString.tag(), // [tag] [sym] [tagfn tag] [boxsym]
+                                    force(call::bif::emit_tag_native(lref(0), lref(1)), unit()),
+                                )],
+                                force(EmitNative.global(lref(1)), unit()), // [()] [sym] [tagfn tag] [boxsym]
+                            ),
+                        ),
+                        (
+                            DataConstructor::BoxedString.tag(), // [str] [tagfn tag] [boxstr]
+                            case(
+                                local(2),
+                                vec![(
+                                    DataConstructor::BoxedString.tag(), // [tagstr] [str] [tagfn tag] [boxstr]
+                                    force(call::bif::emit_tag_native(lref(0), lref(1)), unit()),
+                                )],
+                                force(EmitNative.global(lref(1)), unit()), // [()] [str] [boxstr] [tagfn tag]
+                            ),
+                        ),
+                        (
+                            DataConstructor::BoxedZdt.tag(), // [zdt] [tagfn tag] [boxzdt]
+                            case(
+                                local(2),
+                                vec![(
+                                    DataConstructor::BoxedString.tag(), // [tag] [zdt] [tagfn tag] [boxzdt]
+                                    force(call::bif::emit_tag_native(lref(0), lref(1)), unit()),
+                                )],
+                                force(EmitNative.global(lref(1)), unit()), // [()] [zdt] [tagfn tag] [boxzdt]
+                            ),
+                        ),
+                        (
+                            DataConstructor::ListCons.tag(), // [h t] [tagfn tag],
+                            force(
+                                // [h t] [lcons] [tagfn tag]
+                                case(
+                                    local(3),
+                                    vec![(
+                                        DataConstructor::BoxedString.tag(), // [tagstr] [h t] [tagfn tag]
+                                        force(call::bif::emit_tag_seq_start(lref(0)), unit()),
+                                    )],
+                                    call::bif::emit_seq_start(),
+                                ), // [()] [h t] [tagfn tag] [cons],
+                                force(RenderItems.global(lref(5)), call::bif::emit_seq_end()),
+                            ),
+                        ),
+                        (
+                            DataConstructor::ListNil.tag(), // [] [lcons] [tagfn tag]
+                            force(
+                                case(
+                                    local(2),
+                                    vec![(
+                                        DataConstructor::BoxedString.tag(), // // [tagstr] [] [lcons] [tagfn tag]
+                                        force(call::bif::emit_tag_seq_start(lref(0)), unit()),
+                                    )],
+                                    call::bif::emit_seq_start(),
+                                ),
+                                call::bif::emit_seq_end(),
+                            ),
+                        ),
+                        (
+                            DataConstructor::Block.tag(),
+                            force(
+                                case(
+                                    local(3),
+                                    vec![(
+                                        DataConstructor::BoxedString.tag(), // [tagstr] [cons] [tagfn tag] [block]
+                                        force(call::bif::emit_tag_block_start(lref(0)), unit()),
+                                    )],
+                                    call::bif::emit_block_start(), // [()] [cons] [tagfn tag] [block]
+                                ),
+                                force(
+                                    RenderBlockItems.global(lref(1)),
+                                    call::bif::emit_block_end(),
+                                ),
+                            ),
+                        ),
+                    ],
+                    call::bif::panic(str("unrenderable")),
+                ),
             ),
         );
 
@@ -281,6 +345,37 @@ impl StgIntrinsic for Suppresses {
 
 impl CallGlobal1 for Suppresses {}
 
+/// Determine whether the specified metadata suppresses render
+pub struct Tag;
+
+impl StgIntrinsic for Tag {
+    fn name(&self) -> &str {
+        "TAG"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        annotated_lambda(
+            1,
+            let_(
+                vec![value(box_sym(""))],
+                case(
+                    local(1), // [:""] [arg]
+                    vec![(
+                        DataConstructor::Block.tag(),
+                        // [xs] [:""] [arg]
+                        LookupOr(NativeVariant::Unboxed).global(sym("tag"), lref(1), lref(2)),
+                    )],
+                    // [arg] [:""] [arg]
+                    local(1),
+                ),
+            ),
+            annotation,
+        )
+    }
+}
+
+impl CallGlobal1 for Tag {}
+
 /// Render a key and a value from the provided "pair", so long as
 /// output is not suppressed and the value is renderable (i.e. not a
 /// lambda).
@@ -366,9 +461,12 @@ pub mod tests {
             Box::new(emit::EmitT),
             Box::new(emit::EmitF),
             Box::new(emit::EmitNative),
+            Box::new(emit::EmitTagNative),
             Box::new(emit::EmitSeqStart),
+            Box::new(emit::EmitTagSeqStart),
             Box::new(emit::EmitSeqEnd),
             Box::new(emit::EmitBlockStart),
+            Box::new(emit::EmitTagBlockStart),
             Box::new(emit::EmitBlockEnd),
             Box::new(Render),
             Box::new(RenderItems),
@@ -388,7 +486,7 @@ pub mod tests {
     }
 
     #[test]
-    pub fn test_render_num() {
+    pub fn test_render_zdt() {
         let syntax = letrec_(vec![value(box_num(42))], Render.global(lref(0)));
 
         let rt = runtime();

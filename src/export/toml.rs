@@ -1,6 +1,6 @@
 //! TOML export
 
-use crate::eval::emit::{Emitter, Event};
+use crate::eval::emit::{Emitter, Event, RenderMetadata};
 use crate::eval::primitive::Primitive;
 use std::io::Write;
 
@@ -16,7 +16,7 @@ impl AsKey<String> for Value {
 }
 
 impl FromPrimitive for Value {
-    fn from_primitive(primitive: &Primitive) -> Self {
+    fn from_primitive(_metadata: RenderMetadata, primitive: &Primitive) -> Self {
         match primitive {
             Primitive::Null => Value::String("".to_string()),
             Primitive::Bool(b) => Value::Boolean(*b),
@@ -39,13 +39,13 @@ impl FromPrimitive for Value {
 }
 
 impl FromVec<Value> for Value {
-    fn from_vec(slice: Vec<Value>) -> Self {
+    fn from_vec(_metadata: RenderMetadata, slice: Vec<Value>) -> Self {
         Value::Array(slice)
     }
 }
 
 impl FromPairs<String, Value> for Value {
-    fn from_pairs(pairs: Vec<(String, Value)>) -> Self {
+    fn from_pairs(_metadata: RenderMetadata, pairs: Vec<(String, Value)>) -> Self {
         Value::Table(pairs.into_iter().collect())
     }
 }

@@ -74,9 +74,12 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(emit::EmitT));
     rt.add(Box::new(emit::EmitF));
     rt.add(Box::new(emit::EmitNative));
+    rt.add(Box::new(emit::EmitTagNative));
     rt.add(Box::new(emit::EmitSeqStart));
+    rt.add(Box::new(emit::EmitTagSeqStart));
     rt.add(Box::new(emit::EmitSeqEnd));
     rt.add(Box::new(emit::EmitBlockStart));
+    rt.add(Box::new(emit::EmitTagBlockStart));
     rt.add(Box::new(emit::EmitBlockEnd));
     rt.add(Box::new(emit::EmitDocStart));
     rt.add(Box::new(emit::EmitDocEnd));
@@ -87,6 +90,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(render::RenderDoc));
     rt.add(Box::new(render::Saturated));
     rt.add(Box::new(render::Suppresses));
+    rt.add(Box::new(render::Tag));
     rt.add(Box::new(null::Null));
     rt.add(Box::new(list::Cons));
     rt.add(Box::new(list::Tail));

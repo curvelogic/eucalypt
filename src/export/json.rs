@@ -1,6 +1,6 @@
 //! JSON export
 
-use crate::eval::emit::{Emitter, Event};
+use crate::eval::emit::{Emitter, Event, RenderMetadata};
 use crate::eval::primitive::Primitive;
 use std::io::Write;
 
@@ -13,7 +13,7 @@ impl AsKey<String> for serde_json::Value {
 }
 
 impl FromPrimitive for serde_json::Value {
-    fn from_primitive(primitive: &Primitive) -> Self {
+    fn from_primitive(_metadata: RenderMetadata, primitive: &Primitive) -> Self {
         match primitive {
             Primitive::Null => serde_json::Value::Null,
             Primitive::Bool(b) => serde_json::Value::Bool(*b),
@@ -26,13 +26,13 @@ impl FromPrimitive for serde_json::Value {
 }
 
 impl FromVec<serde_json::Value> for serde_json::Value {
-    fn from_vec(slice: Vec<serde_json::Value>) -> Self {
+    fn from_vec(_metadata: RenderMetadata, slice: Vec<serde_json::Value>) -> Self {
         serde_json::Value::Array(slice)
     }
 }
 
 impl FromPairs<String, serde_json::Value> for serde_json::Value {
-    fn from_pairs(pairs: Vec<(String, serde_json::Value)>) -> Self {
+    fn from_pairs(_metadata: RenderMetadata, pairs: Vec<(String, serde_json::Value)>) -> Self {
         serde_json::Value::Object(pairs.into_iter().collect())
     }
 }

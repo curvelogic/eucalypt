@@ -412,12 +412,20 @@ pub mod call {
             call_bif("EMIT[", &[])
         }
 
+        pub fn emit_tag_seq_start(tag: Ref) -> Rc<StgSyn> {
+            call_bif("EMITTAG[", &[tag])
+        }
+
         pub fn emit_seq_end() -> Rc<StgSyn> {
             call_bif("EMIT]", &[])
         }
 
         pub fn emit_block_start() -> Rc<StgSyn> {
             call_bif("EMIT{", &[])
+        }
+
+        pub fn emit_tag_block_start(tag: Ref) -> Rc<StgSyn> {
+            call_bif("EMITTAG{", &[tag])
         }
 
         pub fn emit_block_end() -> Rc<StgSyn> {
@@ -434,6 +442,10 @@ pub mod call {
 
         pub fn emit_native(x: Ref) -> Rc<StgSyn> {
             call_bif("EMITx", &[x])
+        }
+
+        pub fn emit_tag_native(tag: Ref, x: Ref) -> Rc<StgSyn> {
+            call_bif("EMITTAGx", &[tag, x])
         }
 
         pub fn saturated(x: Ref) -> Rc<StgSyn> {

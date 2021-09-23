@@ -9,6 +9,10 @@ pub struct RenderMetadata {
 }
 
 impl RenderMetadata {
+    pub fn new(tag: Option<String>) -> Self {
+        RenderMetadata { tag }
+    }
+
     pub fn empty() -> Self {
         RenderMetadata { tag: None }
     }

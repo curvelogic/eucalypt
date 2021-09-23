@@ -93,10 +93,11 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
 
         let execution_opts = test_opts.clone().without_test_flag();
         tester.run(test, &execution_opts)?;
-        let ret = tester.validate(test)?;
-        print!("{}", tester.summary(test)?);
+        tester.validate(test)?;
+        let summary = tester.summary(test)?.to_string();
+        print!("{}", summary);
 
-        if ret > 0 {
+        if !summary.starts_with("PASS") {
             exit = 1;
         }
     }
@@ -186,7 +187,7 @@ pub trait Tester {
     fn run(&self, plan: &TestPlan, opt: &EucalyptOptions) -> Result<(), EucalyptError>;
 
     /// Process the evidence to create a result.yaml output
-    fn validate(&self, plan: &TestPlan) -> Result<i32, EucalyptError>;
+    fn validate(&self, plan: &TestPlan) -> Result<(), EucalyptError>;
 
     /// Read the result summary (PASS/FAIL) from the result.yaml output
     fn summary(&self, plan: &TestPlan) -> Result<String, EucalyptError>;
@@ -279,7 +280,7 @@ impl InProcessTester {
     exit: {}
     stdout: '{}'
     stderr: '{}'
-    result: '{}'
+    result: {}
     expectations: [{}]
     stats: {}
   }}"#,
@@ -289,9 +290,9 @@ impl InProcessTester {
                 stdout.name().as_ref().unwrap(),
                 stderr.name().as_ref().unwrap(),
                 if result.exit_code.is_some() {
-                    output.name().as_ref().unwrap()
+                    format!("'{}'", output.name().as_ref().unwrap())
                 } else {
-                    "{ RESULT: :FAIL }"
+                    "{ RESULT: :FAIL }".to_string()
                 },
                 expectations.as_slice().join(","),
                 stats_to_eu(&result.statistics)
@@ -373,8 +374,8 @@ impl Tester for InProcessTester {
     }
 
     /// Validates the evidence.yaml which was written during the run stage
-    ///
-    fn validate(&self, plan: &TestPlan) -> Result<i32, EucalyptError> {
+    /// and writes the results file.
+    fn validate(&self, plan: &TestPlan) -> Result<(), EucalyptError> {
         // Adding test subject back in, we may need to set the lib
         // path for imports again
         let lib_path = vec![plan.file().parent().unwrap().to_path_buf()];
@@ -400,8 +401,7 @@ impl Tester for InProcessTester {
 
         prepare::prepare(&validate_opts, &mut check_loader, &mut Timings::default())?;
         eval::run(&validate_opts, check_loader)?;
-
-        Ok(0)
+        Ok(())
     }
 
     /// Read the result YAML to return a PASS / FAIL summary for

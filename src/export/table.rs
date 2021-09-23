@@ -1,6 +1,9 @@
 //! Table/object/block structured output use a common emitter state
 
-use crate::eval::{emit::Event, primitive::Primitive};
+use crate::eval::{
+    emit::{Event, RenderMetadata},
+    primitive::Primitive,
+};
 
 /// Convert an object / hash value into a key
 pub trait AsKey<K> {
@@ -9,17 +12,17 @@ pub trait AsKey<K> {
 
 /// Construct a value from a primitive
 pub trait FromPrimitive {
-    fn from_primitive(primitive: &Primitive) -> Self;
+    fn from_primitive(metadata: RenderMetadata, primitive: &Primitive) -> Self;
 }
 
 /// Construct a value from a list of values
 pub trait FromVec<V> {
-    fn from_vec(v: Vec<V>) -> Self;
+    fn from_vec(metadata: RenderMetadata, v: Vec<V>) -> Self;
 }
 
 /// Construct a value from a list of key / value pairs
 pub trait FromPairs<K, V> {
-    fn from_pairs(pairs: Vec<(K, V)>) -> Self;
+    fn from_pairs(metadata: RenderMetadata, pairs: Vec<(K, V)>) -> Self;
 }
 
 /// Represent core conversion state and what we're expecting next
@@ -33,11 +36,11 @@ where
     /// Holding a value a ready to feed it
     Value(V),
     /// Building a list and prepared to accept another value
-    ListAccumulation(Vec<V>),
+    ListAccumulation(RenderMetadata, Vec<V>),
     /// At a potentially complete state building a table
-    EvenBlockAccumulation(Vec<(K, V)>),
+    EvenBlockAccumulation(RenderMetadata, Vec<(K, V)>),
     /// Holding an 'unsatisfied' key that still needs a value
-    OddBlockAccumulation(Vec<(K, V)>, K),
+    OddBlockAccumulation(RenderMetadata, Vec<(K, V)>, K),
 }
 
 impl<K, V> Expectation<K, V>
@@ -49,13 +52,17 @@ where
     fn feed(&mut self, val: V) {
         match self {
             Expectation::Value(_) => *self = Expectation::Value(val),
-            Expectation::ListAccumulation(ref mut items) => items.push(val),
-            Expectation::EvenBlockAccumulation(items) => {
-                *self = Expectation::OddBlockAccumulation(items.to_vec(), val.as_key())
+            Expectation::ListAccumulation(_, ref mut items) => items.push(val),
+            Expectation::EvenBlockAccumulation(metadata, items) => {
+                *self = Expectation::OddBlockAccumulation(
+                    metadata.clone(),
+                    items.to_vec(),
+                    val.as_key(),
+                )
             }
-            Expectation::OddBlockAccumulation(items, key) => {
+            Expectation::OddBlockAccumulation(metadata, items, key) => {
                 items.push((key.clone(), val));
-                *self = Expectation::EvenBlockAccumulation(items.to_vec())
+                *self = Expectation::EvenBlockAccumulation(metadata.clone(), items.to_vec())
             }
         }
     }
@@ -115,25 +122,31 @@ where
     /// Emit TOML events
     pub fn consume(&mut self, event: Event) {
         match event {
-            Event::OutputScalar(_, prim) => {
-                self.feed(V::from_primitive(&prim));
+            Event::OutputScalar(metadata, prim) => {
+                self.feed(V::from_primitive(metadata, &prim));
             }
-            Event::OutputSequenceStart(_) => self.stack.push(Expectation::ListAccumulation(vec![])),
+            Event::OutputSequenceStart(metadata) => self
+                .stack
+                .push(Expectation::ListAccumulation(metadata, vec![])),
             Event::OutputSequenceEnd => {
-                if let Some(Expectation::ListAccumulation(items)) = self.stack.pop() {
-                    self.feed(V::from_vec(items))
+                if let Some(Expectation::ListAccumulation(metadata, items)) = self.stack.pop() {
+                    self.feed(V::from_vec(metadata, items))
                 }
             }
-            Event::OutputBlockStart(_) => {
-                self.stack.push(Expectation::EvenBlockAccumulation(vec![]))
-            }
+            Event::OutputBlockStart(metadata) => self
+                .stack
+                .push(Expectation::EvenBlockAccumulation(metadata, vec![])),
             Event::OutputBlockEnd => {
-                if let Some(Expectation::EvenBlockAccumulation(items)) = self.stack.pop() {
-                    self.feed(V::from_pairs(items))
+                if let Some(Expectation::EvenBlockAccumulation(metadata, items)) = self.stack.pop()
+                {
+                    self.feed(V::from_pairs(metadata, items))
                 }
             }
             Event::OutputDocumentStart => {
-                self.stack.push(Expectation::Value(V::from_pairs(vec![])));
+                self.stack.push(Expectation::Value(V::from_pairs(
+                    RenderMetadata::empty(),
+                    vec![],
+                )));
             }
             Event::OutputDocumentEnd => {} // leave for now
             Event::OutputStreamStart => {}
