@@ -1,3 +1,8 @@
+{
+  title: "039 tags"
+  test-formats: [:yaml]
+}
+
 tagged-sym: :blah // { tag: "!Ref" }
 
 `{ export: :suppress doc: "Heterogeneous array so can't be rendered to TOML" }
@@ -9,10 +14,25 @@ tagged-block: { a: 1 } // { tag: "!Blah" }
 
 mblock: meta(tagged-block)
 
-tests: {
+` { target: :test-metadata }
+test-meta: {
   α: meta(tagged-sym).tag = "!Ref"
   β: meta(tagged-list).tag = "!Fn::Join"
   γ: meta(tagged-block).tag = "!Blah"
+  RESULT: (α ∧ β ∧ γ) then(:PASS, :FAIL)
 }
 
-RESULT: tests values all-true? then(:PASS, :FAIL)
+` { target: :test-render
+  verify: [:renders-ref, :renders-join, :renders-periwabble, :renders-blah]}
+test-render: {
+  sym: tagged-sym
+  lsa: tagged-list
+  lsb: homogeneous-tagged-list
+  blk: tagged-block
+}
+
+renders-tag(tag, context): context.stdout filter(str.matches?(".*{tag}.*")) nil? then(:FAIL, :PASS)
+renders-ref: renders-tag("!Ref")
+renders-blah: renders-tag("!Blah")
+renders-join: renders-tag("!Fn::Join")
+renders-periwabble: renders-tag("!Periwabble")
