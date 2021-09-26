@@ -496,7 +496,7 @@ impl MachineState {
                             self.closure = view.saturate(closure, args.as_slice())?;
                         }
                         Ordering::Less => {
-                            self.closure = view.partially_apply(closure, args.as_slice())?;
+                            self.closure = view.partially_apply(&self.closure, args.as_slice())?;
                         }
                         Ordering::Greater => {
                             let (quorum, surplus) =
@@ -1017,7 +1017,7 @@ pub mod tests {
         );
 
         let mut m = machine(syn);
-        m.run(Some(20)).unwrap();
+        m.run(Some(30)).unwrap();
         assert_eq!(m.string_return(), Some("foo".to_string()));
     }
 

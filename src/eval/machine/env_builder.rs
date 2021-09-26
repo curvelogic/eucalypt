@@ -75,7 +75,7 @@ pub trait EnvBuilder {
     /// Create a new closure with extra partial arguments
     fn partially_apply(
         &self,
-        closure: &Closure,
+        closure: &RefPtr<Closure>,
         args: &[RefPtr<Closure>],
     ) -> Result<RefPtr<Closure>, ExecutionError>;
 
@@ -233,20 +233,30 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
             .as_ptr())
     }
 
-    /// Create a new closure with extra partial arguments
+    /// Create a new closure with extra partial arguments available in
+    /// an env frame
     fn partially_apply(
         &self,
-        closure: &Closure,
+        closure: &RefPtr<Closure>,
         args: &[RefPtr<Closure>],
     ) -> Result<RefPtr<Closure>, ExecutionError> {
-        let mut pap_args = Array::with_capacity(self, closure.pap_args().len() + args.len());
-        for a in closure.pap_args().iter() {
-            pap_args.push(self, *a)
-        }
-        for a in args {
-            pap_args.push(self, *a)
-        }
-        Ok(self.alloc(closure.with_pap_args(pap_args))?.as_ptr())
+        let cl = &*(self.scoped(*closure));
+        let arity = cl.remaining_arity() - (args.len() as u8);
+        let env = self.from_closures(
+            std::iter::once(*closure).chain(args.iter().cloned()),
+            args.len() + 1,
+            cl.env(),
+            cl.annotation(),
+        );
+        let syn = pap_syn(*self, args.len(), arity.into())?;
+        Ok(self
+            .alloc(Closure::new_annotated_lambda(
+                syn,
+                arity,
+                env,
+                cl.annotation(),
+            ))?
+            .as_ptr())
     }
 
     /// Create an array of argument closures from refs to build apply call
@@ -266,4 +276,23 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
 
         Ok(array)
     }
+}
+
+/// Return the code of a closure which acts as the partial application
+/// of f to xs where the top frame in its environment is f:xs and it
+/// expects pending to be passed as arguments.
+fn pap_syn<'scope>(
+    view: MutatorHeapView<'scope>,
+    supplied: usize,
+    pending: usize,
+) -> Result<RefPtr<HeapSyn>, ExecutionError> {
+    let mut args = Vec::with_capacity(supplied + pending);
+    for i in 0..supplied {
+        args.push(Ref::L(pending + i + 1));
+    }
+    for i in 0..pending {
+        args.push(Ref::L(i));
+    }
+    let arg_array = Array::from_slice(&view, args.as_slice());
+    Ok(view.app(Ref::L(pending), arg_array)?.as_ptr())
 }

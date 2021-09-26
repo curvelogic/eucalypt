@@ -60,6 +60,23 @@ impl Closure {
         }
     }
 
+    /// A new non-callable closure of `code` over environment `env`
+    pub fn new_annotated_lambda(
+        code: RefPtr<HeapSyn>,
+        arity: u8,
+        env: RefPtr<EnvFrame>,
+        annotation: Smid,
+    ) -> Self {
+        Closure {
+            code,
+            env,
+            pap_args: Array::default(),
+            arity,
+            update: false,
+            annotation,
+        }
+    }
+
     /// Construct a closure from a lambda form
     pub fn close(lambda_form: &LambdaForm, env: RefPtr<EnvFrame>) -> Self {
         Closure {
