@@ -21,7 +21,20 @@ impl Default for Smid {
 
 impl From<u32> for Smid {
     fn from(n: u32) -> Self {
-        Smid(Some(NonZeroU32::new(n).unwrap()))
+        if n == 0 {
+            Smid(None)
+        } else {
+            Smid(Some(NonZeroU32::new(n).unwrap()))
+        }
+    }
+}
+
+impl From<Smid> for u32 {
+    fn from(val: Smid) -> Self {
+        match val.0 {
+            None => 0,
+            Some(i) => i.into(),
+        }
     }
 }
 
