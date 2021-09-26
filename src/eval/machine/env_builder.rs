@@ -217,17 +217,11 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         closure: &Closure,
         args: &[RefPtr<Closure>],
     ) -> Result<RefPtr<Closure>, ExecutionError> {
-        let mut all_args: Array<RefPtr<Closure>> = Array::default();
-        for c in closure.pap_args().iter() {
-            all_args.push(self, *c);
-        }
-        for a in args {
-            all_args.push(self, *a);
-        }
+        let arg_array: Array<RefPtr<Closure>> = Array::from_slice(self, args);
         Ok(self
             .alloc(Closure::new_annotated(
                 closure.code(),
-                self.from_saturation(all_args, closure.env(), closure.annotation()),
+                self.from_saturation(arg_array, closure.env(), closure.annotation()),
                 closure.annotation(),
             ))?
             .as_ptr())
@@ -241,7 +235,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         args: &[RefPtr<Closure>],
     ) -> Result<RefPtr<Closure>, ExecutionError> {
         let cl = &*(self.scoped(*closure));
-        let arity = cl.remaining_arity() - (args.len() as u8);
+        let arity = cl.arity() - (args.len() as u8);
         let env = self.from_closures(
             std::iter::once(*closure).chain(args.iter().cloned()),
             args.len() + 1,
@@ -281,8 +275,8 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
 /// Return the code of a closure which acts as the partial application
 /// of f to xs where the top frame in its environment is f:xs and it
 /// expects pending to be passed as arguments.
-fn pap_syn<'scope>(
-    view: MutatorHeapView<'scope>,
+fn pap_syn(
+    view: MutatorHeapView,
     supplied: usize,
     pending: usize,
 ) -> Result<RefPtr<HeapSyn>, ExecutionError> {

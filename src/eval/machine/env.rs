@@ -23,8 +23,6 @@ pub struct Closure {
     code: RefPtr<HeapSyn>,
     /// Environment
     env: RefPtr<EnvFrame>,
-    /// Pending arguments (for a partial application)
-    pap_args: Array<RefPtr<Closure>>,
     /// Total arity (subtract pap_args for remaining)
     arity: u8,
     /// Whether to update
@@ -41,7 +39,6 @@ impl Closure {
         Closure {
             code,
             env,
-            pap_args: Array::default(),
             arity: 0,
             update: false,
             annotation: Smid::default(),
@@ -53,7 +50,6 @@ impl Closure {
         Closure {
             code,
             env,
-            pap_args: Array::default(),
             arity: 0,
             update: false,
             annotation,
@@ -70,7 +66,6 @@ impl Closure {
         Closure {
             code,
             env,
-            pap_args: Array::default(),
             arity,
             update: false,
             annotation,
@@ -82,21 +77,9 @@ impl Closure {
         Closure {
             code: lambda_form.body(),
             env,
-            pap_args: Array::default(),
             arity: lambda_form.arity(),
             update: lambda_form.update(),
             annotation: lambda_form.annotation(),
-        }
-    }
-
-    pub fn with_pap_args(&self, pap_args: Array<RefPtr<Closure>>) -> Self {
-        Closure {
-            code: self.code,
-            env: self.env,
-            pap_args,
-            arity: self.arity,
-            update: self.update,
-            annotation: self.annotation,
         }
     }
 
@@ -111,17 +94,13 @@ impl Closure {
     }
 
     /// Arity when partially applied args are taken into account
-    pub fn remaining_arity(&self) -> u8 {
-        self.arity - (self.pap_args.len() as u8)
+    pub fn arity(&self) -> u8 {
+        self.arity
     }
 
     /// Whether to update after evaluation
     pub fn updateable(&self) -> bool {
         self.update
-    }
-
-    pub fn pap_args(&self) -> Array<RefPtr<Closure>> {
-        self.pap_args.clone()
     }
 
     pub fn annotation(&self) -> Smid {
@@ -181,14 +160,7 @@ impl<'guard> fmt::Display for ScopedPtr<'guard, Closure> {
         if self.update {
             write!(f, "Th({}|{})", code, env)
         } else if self.arity > 0 {
-            write!(
-                f,
-                "λ{{{}-{}}}({}|⒳→{})",
-                self.arity,
-                self.pap_args.len(),
-                code,
-                env
-            )
+            write!(f, "λ{{{}}}({}|⒳→{})", self.arity, code, env)
         } else {
             write!(f, "({}|{})", code, env)
         }

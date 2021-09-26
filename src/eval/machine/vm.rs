@@ -188,7 +188,7 @@ impl MachineState {
         let closure = view.scoped(self.closure);
         let code = (*view.scoped(closure.code())).clone();
         let environment = closure.env();
-        let remaining_arity = closure.remaining_arity();
+        let remaining_arity = closure.arity();
 
         // Set annotation to stamp on any allocations
         self.annotation = closure.annotation();
@@ -489,7 +489,7 @@ impl MachineState {
 
             match continuation {
                 Continuation::ApplyTo { args } => {
-                    let excess = args.len() as isize - closure.remaining_arity() as isize;
+                    let excess = args.len() as isize - closure.arity() as isize;
 
                     match excess.cmp(&0) {
                         Ordering::Equal => {
