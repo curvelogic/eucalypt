@@ -138,9 +138,7 @@ fn create_partially_apply_and_saturate_lambda<'guard>(
     let first_arg = vec![box_one(view, empty)];
     let second_arg = vec![box_one(view, empty)];
 
-    let lambda = view
-        .partially_apply(&*view.scoped(lambda), first_arg.as_slice())
-        .unwrap();
+    let lambda = view.partially_apply(&lambda, first_arg.as_slice()).unwrap();
     view.saturate(&*view.scoped(lambda), second_arg.as_slice())
         .unwrap();
 }
