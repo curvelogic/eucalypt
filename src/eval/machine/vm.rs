@@ -15,6 +15,7 @@ use crate::{
         emit::{Emitter, NullEmitter},
         error::ExecutionError,
         intrinsics,
+        machine::env::ScopeAndClosure,
         memory::{
             alloc::{ScopedAllocator, ScopedPtr},
             array::Array,
@@ -46,40 +47,37 @@ pub struct HeapNavigator<'scope> {
 
 impl<'scope> HeapNavigator<'scope> {
     /// Resolve a ref (creating atom closure if it resolves to native)
-    pub fn resolve(&self, r: &Ref) -> Result<RefPtr<Closure>, ExecutionError> {
+    pub fn resolve(&self, r: &Ref) -> Result<Closure, ExecutionError> {
         match r {
-            Ref::L(index) => self.get(*index),
-            Ref::G(index) => self.global(*index),
-            Ref::V(_) => Ok(self
-                .view
-                .alloc(Closure::new(
-                    self.view
-                        .alloc(HeapSyn::Atom {
-                            evaluand: r.clone(),
-                        })?
-                        .as_ptr(),
-                    self.view.alloc(EnvFrame::default())?.as_ptr(),
-                ))?
-                .as_ptr()),
+            Ref::L(index) => Ok(self.get(*index)?.clone()),
+            Ref::G(index) => Ok(self.global(*index)?.clone()),
+            Ref::V(_) => Ok(Closure::new(
+                self.view
+                    .alloc(HeapSyn::Atom {
+                        evaluand: r.clone(),
+                    })?
+                    .as_ptr(),
+                self.view.alloc(EnvFrame::default())?.as_ptr(),
+            )),
         }
     }
 
     /// Index into current environment, retrieving pointer
-    pub fn get(&self, index: usize) -> Result<RefPtr<Closure>, ExecutionError> {
+    pub fn get(&self, index: usize) -> Result<Closure, ExecutionError> {
         (*self.locals)
             .get(&self.view, index)
             .ok_or(ExecutionError::BadEnvironmentIndex(index))
     }
 
     /// Index into globals
-    pub fn global(&self, index: usize) -> Result<RefPtr<Closure>, ExecutionError> {
+    pub fn global(&self, index: usize) -> Result<Closure, ExecutionError> {
         (*self.globals)
             .get(&self.view, index)
             .ok_or(ExecutionError::BadGlobalIndex(index))
     }
 
     /// Resolve a ref to a closure
-    pub fn resolve_callable(&self, r: &Ref) -> Result<RefPtr<Closure>, ExecutionError> {
+    pub fn resolve_callable(&self, r: &Ref) -> Result<Closure, ExecutionError> {
         match r {
             Ref::L(index) => self.get(*index),
             Ref::G(index) => self.global(*index),
@@ -98,13 +96,12 @@ impl<'scope> HeapNavigator<'scope> {
             Ref::V(n) => return Ok(n.clone()),
         };
 
-        let mut scoped_closure = self.view.scoped(closure);
-        let mut scoped_code = self.view.scoped(scoped_closure.code());
+        let mut scoped_code = self.view.scoped(closure.code());
 
         while let HeapSyn::Atom { evaluand: r } = &*scoped_code {
             closure = match r {
                 Ref::L(index) => {
-                    let env = self.view.scoped(scoped_closure.env());
+                    let env = self.view.scoped(closure.env());
                     (*env)
                         .get(&self.view, *index)
                         .ok_or(ExecutionError::BadEnvironmentIndex(*index))?
@@ -113,8 +110,7 @@ impl<'scope> HeapNavigator<'scope> {
                 Ref::V(n) => return Ok(n.clone()),
             };
 
-            scoped_closure = self.view.scoped(closure);
-            scoped_code = self.view.scoped(scoped_closure.code());
+            scoped_code = self.view.scoped(closure.code());
         }
 
         Err(ExecutionError::NotValue(Smid::default(), "".to_string()))
@@ -130,7 +126,7 @@ pub struct MachineState {
     /// Root (empty) environment
     root_env: RefPtr<EnvFrame>,
     /// Current closure
-    closure: RefPtr<Closure>,
+    closure: Closure,
     /// Globals (primarily STG wrappers for intrinsics)
     globals: RefPtr<EnvFrame>,
     /// Stack of continuations (outside heap)
@@ -147,7 +143,7 @@ impl Default for MachineState {
     fn default() -> Self {
         Self {
             root_env: RefPtr::dangling(),
-            closure: RefPtr::dangling(),
+            closure: Closure::new(RefPtr::dangling(), RefPtr::dangling()),
             globals: RefPtr::dangling(),
             stack: Default::default(),
             terminated: Default::default(),
@@ -185,13 +181,12 @@ impl MachineState {
         metrics: &mut Metrics,
     ) -> Result<(), ExecutionError> {
         // Load "op code"
-        let closure = view.scoped(self.closure);
-        let code = (*view.scoped(closure.code())).clone();
-        let environment = closure.env();
-        let remaining_arity = closure.arity();
+        let code = (*view.scoped(self.closure.code())).clone();
+        let environment = self.closure.env();
+        let remaining_arity = self.closure.arity();
 
         // Set annotation to stamp on any allocations
-        self.annotation = closure.annotation();
+        self.annotation = self.closure.annotation();
 
         if remaining_arity > 0 {
             return self.return_fun(view);
@@ -201,8 +196,8 @@ impl MachineState {
             HeapSyn::Atom { evaluand } => {
                 match evaluand {
                     Ref::L(i) => {
-                        self.closure = self.nav(view).get(i)?;
-                        let updateable = (*view.scoped(self.closure)).updateable();
+                        self.closure = self.nav(view).get(i)?.clone();
+                        let updateable = self.closure.updateable();
                         if updateable {
                             self.push(
                                 view,
@@ -214,7 +209,7 @@ impl MachineState {
                         }
                     }
                     Ref::G(i) => {
-                        self.closure = self.nav(view).global(i)?; // TODO: update globals?
+                        self.closure = self.nav(view).global(i)?.clone(); // TODO: update globals?
                     }
                     Ref::V(v) => {
                         self.return_native(view, &v)?;
@@ -234,7 +229,7 @@ impl MachineState {
                         environment,
                     },
                 )?;
-                self.closure = view.new_closure(scrutinee, environment)?;
+                self.closure = Closure::new(scrutinee, environment);
             }
             HeapSyn::Cons { tag, args } => {
                 self.return_data(view, tag, args.as_slice())?;
@@ -242,7 +237,7 @@ impl MachineState {
             HeapSyn::App { callable, args } => {
                 let array = view.create_arg_array(args.as_slice(), environment)?;
                 self.push(view, Continuation::ApplyTo { args: array })?;
-                self.closure = self.nav(view).resolve_callable(&callable)?;
+                self.closure = self.nav(view).resolve_callable(&callable)?.clone();
             }
             HeapSyn::Bif { intrinsic, args } => {
                 let bif = intrinsics[intrinsic as usize];
@@ -251,16 +246,16 @@ impl MachineState {
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
                 let new_env = view.from_let(bindings.as_slice(), environment, self.annotation);
-                self.closure = view.new_closure(body, new_env)?;
+                self.closure = Closure::new(body, new_env);
             }
             HeapSyn::LetRec { bindings, body } => {
                 metrics.alloc(bindings.len());
                 let new_env = view.from_letrec(bindings.as_slice(), environment, self.annotation);
-                self.closure = view.new_closure(body, new_env)?;
+                self.closure = Closure::new(body, new_env);
             }
             HeapSyn::Ann { smid, body } => {
                 self.annotation = smid;
-                self.closure = view.new_closure(body, environment)?;
+                self.closure = Closure::new(body, environment);
             }
             HeapSyn::Meta { meta, body } => {
                 self.return_meta(view, &meta, &body)?;
@@ -278,7 +273,7 @@ impl MachineState {
                         environment,
                     },
                 )?;
-                self.closure = view.new_closure(scrutinee, environment)?;
+                self.closure = Closure::new(scrutinee, environment);
             }
             HeapSyn::BlackHole => return Err(ExecutionError::BlackHole),
         }
@@ -294,7 +289,7 @@ impl MachineState {
         index: usize,
     ) -> Result<(), ExecutionError> {
         let cont_env = view.scoped(environment);
-        cont_env.update(&view, index, self.closure)
+        cont_env.update(&view, index, self.closure.clone())
     }
 
     /// Return meta into a demeta destructuring or just strip metadata
@@ -314,7 +309,7 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    self.closure = view.new_closure(
+                    self.closure = Closure::new(
                         handler,
                         view.from_closures(
                             [self.nav(view).resolve(meta)?, self.nav(view).resolve(body)?]
@@ -324,7 +319,7 @@ impl MachineState {
                             environment,
                             self.annotation,
                         ),
-                    )?;
+                    );
                 }
                 Continuation::Update { environment, index } => {
                     self.update(view, environment, index)?;
@@ -359,14 +354,14 @@ impl MachineState {
                 } => {
                     // case fallbacks can handle natives
                     if let Some(fb) = fallback {
-                        self.closure = view.new_closure(
+                        self.closure = Closure::new(
                             fb,
                             view.from_args(
                                 &[Ref::vref(value.clone())],
                                 environment,
                                 self.annotation,
                             ),
-                        )?;
+                        );
                     } else {
                         return Err(ExecutionError::NoBranchForNative);
                     }
@@ -383,10 +378,10 @@ impl MachineState {
                     ..
                 } => {
                     // demeta or_else can accept natives
-                    self.closure = view.new_closure(
+                    self.closure = Closure::new(
                         or_else,
                         view.from_args(&[Ref::vref(value.clone())], environment, self.annotation),
-                    )?;
+                    );
                 }
             }
         } else {
@@ -419,9 +414,9 @@ impl MachineState {
                         let closures = args
                             .iter()
                             .map(|r| self.nav(view).resolve(r))
-                            .collect::<Result<Vec<RefPtr<Closure>>, ExecutionError>>()?;
+                            .collect::<Result<Vec<Closure>, ExecutionError>>()?;
                         let len = closures.len();
-                        self.closure = view.new_closure(
+                        self.closure = Closure::new(
                             body,
                             // TODO: skip empty frames
                             view.from_closures(
@@ -430,12 +425,12 @@ impl MachineState {
                                 environment,
                                 self.annotation,
                             ),
-                        )?;
+                        );
                     } else if let Some(body) = fallback {
-                        self.closure = view.new_closure(
+                        self.closure = Closure::new(
                             body,
-                            view.from_closure(self.closure, environment, self.annotation),
-                        )?;
+                            view.from_closure(self.closure.clone(), environment, self.annotation),
+                        );
                     } else {
                         return Err(ExecutionError::NoBranchForDataTag(tag as u8));
                     }
@@ -452,13 +447,13 @@ impl MachineState {
                     // data structures
                     if tag == DataConstructor::Block.tag() {
                         let mut args = Array::from_slice(&view, args.as_slice());
-                        args.push(&view, self.closure);
+                        args.push(&view, self.closure.clone());
                         self.push(view, Continuation::ApplyTo { args })?;
-                        self.closure = view.new_closure(
+                        self.closure = Closure::new(
                             view.atom(Ref::G(intrinsics::index("MERGE").unwrap()))?
                                 .as_ptr(),
                             self.env(view),
-                        )?;
+                        );
                     } else {
                         return Err(ExecutionError::NotCallable(Smid::default()));
                     }
@@ -468,10 +463,10 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    self.closure = view.new_closure(
+                    self.closure = Closure::new(
                         or_else,
-                        view.from_closure(self.closure, environment, self.annotation),
-                    )?;
+                        view.from_closure(self.closure.clone(), environment, self.annotation),
+                    );
                 }
             }
         } else {
@@ -485,15 +480,14 @@ impl MachineState {
     fn return_fun(&mut self, view: MutatorHeapView) -> Result<(), ExecutionError> {
         if let Some(cont) = self.stack.pop() {
             let continuation = (*(view.scoped(cont))).clone();
-            let closure = &*(view.scoped(self.closure));
 
             match continuation {
                 Continuation::ApplyTo { args } => {
-                    let excess = args.len() as isize - closure.arity() as isize;
+                    let excess = args.len() as isize - self.closure.arity() as isize;
 
                     match excess.cmp(&0) {
                         Ordering::Equal => {
-                            self.closure = view.saturate(closure, args.as_slice())?;
+                            self.closure = view.saturate(&self.closure, args.as_slice())?;
                         }
                         Ordering::Less => {
                             self.closure = view.partially_apply(&self.closure, args.as_slice())?;
@@ -501,7 +495,7 @@ impl MachineState {
                         Ordering::Greater => {
                             let (quorum, surplus) =
                                 args.as_slice().split_at(args.len() - excess as usize);
-                            self.closure = view.saturate(closure, quorum)?;
+                            self.closure = view.saturate(&self.closure, quorum)?;
                             self.push(
                                 view,
                                 Continuation::ApplyTo {
@@ -533,10 +527,10 @@ impl MachineState {
                     // already omit primitive handlers from the
                     // standard STG machine.)
                     if let Some(body) = fallback {
-                        self.closure = view.new_closure(
+                        self.closure = Closure::new(
                             body,
-                            view.from_closure(self.closure, environment, self.annotation),
-                        )?;
+                            view.from_closure(self.closure.clone(), environment, self.annotation),
+                        );
                     } else {
                         return Err(ExecutionError::CannotReturnFunToCase);
                     }
@@ -549,10 +543,10 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    self.closure = view.new_closure(
+                    self.closure = Closure::new(
                         or_else,
-                        view.from_closure(self.closure, environment, self.annotation),
-                    )?;
+                        view.from_closure(self.closure.clone(), environment, self.annotation),
+                    );
                 }
             }
         } else {
@@ -591,7 +585,7 @@ impl IntrinsicMachine for MachineState {
     }
 
     /// Used by intrinsics to update the closure after execution
-    fn set_closure(&mut self, closure: RefPtr<Closure>) -> Result<(), ExecutionError> {
+    fn set_closure(&mut self, closure: Closure) -> Result<(), ExecutionError> {
         self.closure = closure;
         Ok(())
     }
@@ -611,9 +605,8 @@ impl IntrinsicMachine for MachineState {
     }
 
     /// The current environment
-    fn env(&self, view: MutatorHeapView) -> RefPtr<EnvFrame> {
-        let closure = view.scoped(self.closure);
-        (*closure).env()
+    fn env(&self, _view: MutatorHeapView) -> RefPtr<EnvFrame> {
+        self.closure.env()
     }
 }
 
@@ -712,7 +705,7 @@ impl<'a> Machine<'a> {
         &mut self,
         root_env: RefPtr<EnvFrame>,
         globals: RefPtr<EnvFrame>,
-        closure: RefPtr<Closure>,
+        closure: Closure,
         intrinsics: Vec<&'a dyn StgIntrinsic>,
     ) -> Result<(), ExecutionError> {
         self.intrinsics = intrinsics.clone();
@@ -732,7 +725,7 @@ impl<'a> Machine<'a> {
                 .rev()
                 .map(|p| (*(view.scoped(*p))).to_string())
                 .format(":");
-            eprintln!("M ⟪{}⟫ <{}>", view.scoped(state.closure), stack);
+            eprintln!("M ⟪{}⟫ <{}>", ScopeAndClosure(&view, &state.closure), stack);
         }
 
         metrics.tick();
@@ -771,8 +764,7 @@ impl<'a> Machine<'a> {
         // A view for mutable heap access
         let view = self.view();
 
-        let closure = view.scoped(self.state.closure);
-        let code = view.scoped(closure.code());
+        let code = view.scoped(self.state.closure.code());
 
         if self.state.terminated() {
             Some(match &*code {
@@ -812,8 +804,7 @@ impl<'a> Machine<'a> {
     pub fn native_return(&self) -> Option<Native> {
         let view = self.view();
 
-        let closure = view.scoped(self.state.closure);
-        let code = view.scoped(closure.code());
+        let code = view.scoped(self.state.closure.code());
 
         if self.state.terminated() {
             if let HeapSyn::Atom { evaluand: r } = &*code {
@@ -831,8 +822,7 @@ impl<'a> Machine<'a> {
     pub fn string_return(&self) -> Option<String> {
         let view = self.view();
 
-        let closure = view.scoped(self.state.closure);
-        let code = view.scoped(closure.code());
+        let code = view.scoped(self.state.closure.code());
 
         if self.state.terminated() {
             if let HeapSyn::Atom { evaluand: r } = &*code {
@@ -857,8 +847,7 @@ impl<'a> Machine<'a> {
     pub fn bool_return(&self) -> Option<bool> {
         let view = self.view();
 
-        let closure = view.scoped(self.state.closure);
-        let code = view.scoped(closure.code());
+        let code = view.scoped(self.state.closure.code());
 
         if self.state.terminated() {
             if let HeapSyn::Cons { tag, .. } = &*code {
@@ -881,8 +870,7 @@ impl<'a> Machine<'a> {
     pub fn unit_return(&self) -> bool {
         let view = self.view();
 
-        let closure = view.scoped(self.state.closure);
-        let code = view.scoped(closure.code());
+        let code = view.scoped(self.state.closure.code());
 
         if self.state.terminated() {
             if let HeapSyn::Cons { tag, .. } = &*code {
@@ -948,16 +936,14 @@ pub mod tests {
 
     impl Mutator for Load {
         type Input = RefPtr<EnvFrame>;
-        type Output = RefPtr<Closure>;
+        type Output = Closure;
 
         fn run(
             &self,
             view: &MutatorHeapView,
             input: Self::Input,
         ) -> Result<Self::Output, crate::eval::error::ExecutionError> {
-            Ok(view
-                .alloc(Closure::new(load(view, self.syntax.clone())?, input))?
-                .as_ptr())
+            Ok(Closure::new(load(view, self.syntax.clone())?, input))
         }
     }
 

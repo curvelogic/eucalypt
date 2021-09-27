@@ -31,7 +31,7 @@ pub trait IntrinsicMachine {
     fn rcache(&mut self) -> &mut LruCache<String, Regex>;
 
     /// Update closure after completion
-    fn set_closure(&mut self, closure: RefPtr<Closure>) -> Result<(), ExecutionError>;
+    fn set_closure(&mut self, closure: Closure) -> Result<(), ExecutionError>;
 
     /// Get a navigator for resolving references
     fn nav<'guard>(&'guard self, view: MutatorHeapView<'guard>) -> HeapNavigator<'guard>;

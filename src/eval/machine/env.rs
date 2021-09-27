@@ -20,6 +20,14 @@ pub struct Closing<T>(InfoTable<T>, RefPtr<EnvironmentFrame<T>>)
 where
     T: Copy;
 
+impl<T> StgObject for Closing<T> where T: Copy {}
+
+impl<T: Copy + Default> Default for Closing<T> {
+    fn default() -> Self {
+        Self(Default::default(), RefPtr::dangling())
+    }
+}
+
 impl<T: Copy> Closing<T> {
     /// A new non-callable closure of `code` over environment `env`
     pub fn new(code: T, env: RefPtr<EnvironmentFrame<T>>) -> Self {
@@ -74,7 +82,11 @@ impl<T: Copy> Closing<T> {
     ///
     /// Used when read values of native lists that have been force
     /// evaluated ahead of time. Panics at the drop of a hat
-    pub fn navigate_local(&self, guard: &dyn MutatorScope, arg: Ref) -> RefPtr<Closing<T>> {
+    pub fn navigate_local<'guard>(
+        &'guard self,
+        guard: &'guard dyn MutatorScope,
+        arg: Ref,
+    ) -> Closing<T> {
         if let Ref::L(i) = arg {
             let env = &*ScopedPtr::from_non_null(guard, self.env());
             if let Some(closure) = env.get(guard, i) {
@@ -100,35 +112,41 @@ impl Closing<RefPtr<HeapSyn>> {
             Ref::V(n) => return n,
         };
 
-        let mut scoped_closure = ScopedPtr::from_non_null(guard, closure);
-        let mut code_ptr = ScopedPtr::from_non_null(guard, scoped_closure.code());
+        let mut code_ptr = ScopedPtr::from_non_null(guard, closure.code());
 
         while let HeapSyn::Atom { evaluand: r } = &*code_ptr {
             closure = match r {
-                Ref::L(_) => (*scoped_closure).navigate_local(guard, r.clone()),
+                Ref::L(_) => closure.navigate_local(guard, r.clone()),
                 Ref::G(_) => panic!("cannot navigate global"),
                 Ref::V(n) => return n.clone(),
             };
 
-            scoped_closure = ScopedPtr::from_non_null(guard, closure);
-            code_ptr = ScopedPtr::from_non_null(guard, scoped_closure.code());
+            code_ptr = ScopedPtr::from_non_null(guard, closure.code());
         }
         panic!("could not navigate to native")
     }
 }
 
-impl<'guard> fmt::Display for ScopedPtr<'guard, Closure> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let code = ScopedPtr::from_non_null(self, self.code());
-        let env = ScopedPtr::from_non_null(self, self.env());
+pub struct ScopeAndClosure<'guard>(pub &'guard dyn MutatorScope, pub &'guard Closure);
 
-        if self.updateable() {
+impl<'guard> fmt::Display for ScopeAndClosure<'guard> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let code = ScopedPtr::from_non_null(self.0, self.1.code());
+        let env = ScopedPtr::from_non_null(self.0, self.1.env());
+
+        if self.1.updateable() {
             write!(f, "Th({}|{})", code, env)
-        } else if self.arity() > 0 {
-            write!(f, "λ{{{}}}({}|⒳→{})", self.arity(), code, env)
+        } else if self.1.arity() > 0 {
+            write!(f, "λ{{{}}}({}|⒳→{})", self.1.arity(), code, env)
         } else {
             write!(f, "({}|{})", code, env)
         }
+    }
+}
+
+impl<'guard> fmt::Display for ScopedPtr<'guard, Closure> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        ScopeAndClosure(self, self).fmt(f)
     }
 }
 
@@ -161,7 +179,7 @@ where
     T: Copy,
 {
     /// Indexed bindings
-    bindings: Array<RefPtr<Closing<T>>>,
+    bindings: Array<Closing<T>>,
     /// Source code annotation
     annotation: Smid,
     /// Reference to next environment
@@ -185,11 +203,7 @@ impl<T> EnvironmentFrame<T>
 where
     T: Copy,
 {
-    pub fn new(
-        bindings: Array<RefPtr<Closing<T>>>,
-        annotation: Smid,
-        next: Option<RefPtr<Self>>,
-    ) -> Self {
+    pub fn new(bindings: Array<Closing<T>>, annotation: Smid, next: Option<RefPtr<Self>>) -> Self {
         Self {
             bindings,
             annotation,
@@ -198,11 +212,7 @@ where
     }
 
     /// Navigate down the environment stack to find the referenced cell
-    fn cell(
-        &self,
-        guard: &dyn MutatorScope,
-        idx: usize,
-    ) -> Option<(Array<RefPtr<Closing<T>>>, usize)> {
+    fn cell(&self, guard: &dyn MutatorScope, idx: usize) -> Option<(Array<Closing<T>>, usize)> {
         let len = self.bindings.len();
         if idx < len {
             Some((self.bindings.clone(), idx))
@@ -220,7 +230,7 @@ where
     /// copies simple ref pointer out of RefCell for return. Therefore
     /// the returned value is not affected by subsequent updates and
     /// is useful mainly for immediate evaluation.
-    pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<RefPtr<Closing<T>>> {
+    pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<Closing<T>> {
         if let Some((arr, i)) = self.cell(guard, idx) {
             arr.get(i)
         } else {
@@ -233,7 +243,7 @@ where
         &self,
         guard: &dyn MutatorScope,
         idx: usize,
-        closure: RefPtr<Closing<T>>,
+        closure: Closing<T>,
     ) -> Result<(), ExecutionError> {
         if let Some((mut arr, i)) = self.cell(guard, idx) {
             arr.set(i, closure);
@@ -298,7 +308,6 @@ where
 
 /// For now, a Closure is closing HeapSyn over an environment
 pub type Closure = Closing<RefPtr<HeapSyn>>;
-impl StgObject for Closure {}
 /// For now, an EnvFrame is an environment frame with HeapSyn Closures
 pub type EnvFrame = EnvironmentFrame<RefPtr<HeapSyn>>;
 impl StgObject for EnvFrame {}

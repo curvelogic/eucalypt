@@ -29,6 +29,12 @@ impl InfoFlags {
     }
 }
 
+impl Default for InfoFlags {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
 /// The static part of a closure which combines with an environment to
 /// become a closure.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -38,6 +44,19 @@ where
 {
     info: InfoFlags,
     body: L,
+}
+
+impl<L> Default for InfoTable<L>
+where
+    L: Default,
+    L: Copy,
+{
+    fn default() -> Self {
+        Self {
+            info: Default::default(),
+            body: Default::default(),
+        }
+    }
 }
 
 impl<L> InfoTable<L>

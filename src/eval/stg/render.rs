@@ -236,9 +236,8 @@ impl StgIntrinsic for Saturated {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let closure_ptr = machine.nav(view).resolve(&args[0])?;
-        let arity = (*view.scoped(closure_ptr)).arity();
-        machine_return_bool(machine, view, arity == 0)
+        let closure = machine.nav(view).resolve(&args[0])?;
+        machine_return_bool(machine, view, closure.arity() == 0)
     }
 }
 

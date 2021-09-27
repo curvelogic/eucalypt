@@ -17,7 +17,7 @@ use crate::{
         emit::Emitter,
         error::ExecutionError,
         machine::{
-            env_builder::EnvBuilder,
+            env::Closure,
             intrinsic::{CallGlobal1, CallGlobal7, IntrinsicMachine, StgIntrinsic},
         },
         memory::{
@@ -186,80 +186,80 @@ impl StgIntrinsic for ZdtFields {
         let mut fields = IndexMap::new();
         fields.insert(
             "y".to_string(),
-            view.new_closure(
+            Closure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(y)]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
-            )?,
+            ),
         );
         fields.insert(
             "m".to_string(),
-            view.new_closure(
+            Closure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(m)]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
-            )?,
+            ),
         );
         fields.insert(
             "d".to_string(),
-            view.new_closure(
+            Closure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(d)]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
-            )?,
+            ),
         );
         fields.insert(
             "H".to_string(),
-            view.new_closure(
+            Closure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(hour)]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
-            )?,
+            ),
         );
         fields.insert(
             "M".to_string(),
-            view.new_closure(
+            Closure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(min)]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
-            )?,
+            ),
         );
         fields.insert(
             "S".to_string(),
-            view.new_closure(
+            Closure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(Number::from_f64(sec).unwrap())]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
-            )?,
+            ),
         );
         fields.insert(
             "Z".to_string(),
-            view.new_closure(
+            Closure::new(
                 view.data(
                     DataConstructor::BoxedString.tag(),
                     Array::from_slice(&view, &[view.str_ref(tz)?]),
                 )?
                 .as_ptr(),
                 machine.root_env(),
-            )?,
+            ),
         );
 
         machine_return_block_pair_closure_list(machine, view, fields)
