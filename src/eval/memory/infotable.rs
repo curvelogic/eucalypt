@@ -31,7 +31,7 @@ impl InfoFlags {
 
 /// The static part of a closure which combines with an environment to
 /// become a closure.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct InfoTable<L>
 where
     L: Copy,

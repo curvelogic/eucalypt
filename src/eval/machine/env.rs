@@ -10,50 +10,24 @@ use crate::eval::memory::{
     syntax::{HeapSyn, LambdaForm, Native, Ref, RefPtr},
 };
 
-/// Closure as stored in an environment
+/// Closure as stored in an environment frame
 ///
-/// Closures are intended to be moved and replaced in refcells so
-/// carry partially applied arguments inside them (as refcells ready
-/// to drain into an EnvFrame on saturation). However, retrieval from
-/// enviroments into the machine is done by clone so may be expensive
-/// if partially applied closures are often stored and retrieved.
+/// A closure consist of a static part (InfoTable) that can be
+/// statically compiled, and a pointer to an environment
 #[derive(Clone)]
-pub struct Closure {
-    /// Code
-    code: RefPtr<HeapSyn>,
-    /// Environment
-    env: RefPtr<EnvFrame>,
-    /// Total arity (subtract pap_args for remaining)
-    arity: u8,
-    /// Whether to update
-    update: bool,
-    /// Annotation to stamp on environment when saturated
-    annotation: Smid,
-}
+pub struct Closure(LambdaForm, RefPtr<EnvFrame>);
 
 impl StgObject for Closure {}
 
 impl Closure {
     /// A new non-callable closure of `code` over environment `env`
     pub fn new(code: RefPtr<HeapSyn>, env: RefPtr<EnvFrame>) -> Self {
-        Closure {
-            code,
-            env,
-            arity: 0,
-            update: false,
-            annotation: Smid::default(),
-        }
+        Closure(LambdaForm::new(0, code, Smid::default()), env)
     }
 
     /// A new non-callable closure of `code` over environment `env`
     pub fn new_annotated(code: RefPtr<HeapSyn>, env: RefPtr<EnvFrame>, annotation: Smid) -> Self {
-        Closure {
-            code,
-            env,
-            arity: 0,
-            update: false,
-            annotation,
-        }
+        Closure(LambdaForm::new(0, code, annotation), env)
     }
 
     /// A new non-callable closure of `code` over environment `env`
@@ -63,48 +37,36 @@ impl Closure {
         env: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> Self {
-        Closure {
-            code,
-            env,
-            arity,
-            update: false,
-            annotation,
-        }
+        Closure(LambdaForm::new(arity, code, annotation), env)
     }
 
     /// Construct a closure from a lambda form
     pub fn close(lambda_form: &LambdaForm, env: RefPtr<EnvFrame>) -> Self {
-        Closure {
-            code: lambda_form.body(),
-            env,
-            arity: lambda_form.arity(),
-            update: lambda_form.update(),
-            annotation: lambda_form.annotation(),
-        }
+        Closure(*lambda_form, env)
     }
 
     /// Reference to the closure's environment
     pub fn env(&self) -> RefPtr<EnvFrame> {
-        self.env
+        self.1
     }
 
     /// Reference to the closure's code
     pub fn code(&self) -> RefPtr<HeapSyn> {
-        self.code
+        self.0.body()
     }
 
     /// Arity when partially applied args are taken into account
     pub fn arity(&self) -> u8 {
-        self.arity
+        self.0.arity()
     }
 
     /// Whether to update after evaluation
     pub fn updateable(&self) -> bool {
-        self.update
+        self.0.update()
     }
 
     pub fn annotation(&self) -> Smid {
-        self.annotation
+        self.0.annotation()
     }
 
     /// Unsafe means of navigating through closures by local Refs
@@ -113,7 +75,7 @@ impl Closure {
     /// evaluated ahead of time. Panics at the drop of a hat
     pub fn navigate_local(&self, guard: &dyn MutatorScope, arg: Ref) -> RefPtr<Closure> {
         if let Ref::L(i) = arg {
-            let env = &*ScopedPtr::from_non_null(guard, self.env);
+            let env = &*ScopedPtr::from_non_null(guard, self.env());
             if let Some(closure) = env.get(guard, i) {
                 closure
             } else {
@@ -154,13 +116,13 @@ impl Closure {
 
 impl<'guard> fmt::Display for ScopedPtr<'guard, Closure> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let code = ScopedPtr::from_non_null(self, self.code);
-        let env = ScopedPtr::from_non_null(self, self.env);
+        let code = ScopedPtr::from_non_null(self, self.code());
+        let env = ScopedPtr::from_non_null(self, self.env());
 
-        if self.update {
+        if self.updateable() {
             write!(f, "Th({}|{})", code, env)
-        } else if self.arity > 0 {
-            write!(f, "λ{{{}}}({}|⒳→{})", self.arity, code, env)
+        } else if self.arity() > 0 {
+            write!(f, "λ{{{}}}({}|⒳→{})", self.arity(), code, env)
         } else {
             write!(f, "({}|{})", code, env)
         }
