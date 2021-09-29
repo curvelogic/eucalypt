@@ -237,7 +237,7 @@ impl StgIntrinsic for Saturated {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let closure_ptr = machine.nav(view).resolve(&args[0])?;
-        let arity = (*view.scoped(closure_ptr)).remaining_arity();
+        let arity = (*view.scoped(closure_ptr)).arity();
         machine_return_bool(machine, view, arity == 0)
     }
 }

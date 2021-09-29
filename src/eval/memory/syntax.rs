@@ -7,6 +7,7 @@ use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
 use std::{fmt, ptr::NonNull, rc::Rc};
 
+use super::infotable::InfoTable;
 use super::string::HeapString;
 use super::{
     alloc::{ScopedPtr, StgObject},
@@ -146,6 +147,9 @@ impl Ref {
     }
 }
 
+/// Add arity, update flag etc. to HeapSyn to make LambdaForm
+pub type LambdaForm = InfoTable<RefPtr<HeapSyn>>;
+
 /// Compiled STG syntax
 #[derive(Debug, Clone)]
 pub enum HeapSyn {
@@ -216,79 +220,6 @@ impl HeapSyn {
     }
 }
 
-/// The code form of a lambda - which becomes a pure StgSyn against an
-/// environment when "allocated" in an environment frame.
-///
-/// When "allocated" as an environment value, the bound references
-/// become refs into the top environment frame which represents
-/// args and the free references become refs that point deeper
-/// into the environment stack
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum LambdaForm {
-    Lambda {
-        bound: u8,
-        body: RefPtr<HeapSyn>,
-        annotation: Smid,
-    },
-    Thunk {
-        body: RefPtr<HeapSyn>,
-    },
-    Value {
-        body: RefPtr<HeapSyn>,
-    },
-}
-
-impl LambdaForm {
-    /// Create new lambda form - local vars < `bound` are bound vars.
-    pub fn new(bound: u8, body: RefPtr<HeapSyn>, annotation: Smid) -> Self {
-        LambdaForm::Lambda {
-            bound,
-            body,
-            annotation,
-        }
-    }
-
-    /// A lambda form that will be updated after evaluation
-    pub fn thunk(body: RefPtr<HeapSyn>) -> Self {
-        LambdaForm::Thunk { body }
-    }
-
-    /// A lambda form that is effectively a value - not worth updating
-    pub fn value(body: RefPtr<HeapSyn>) -> Self {
-        LambdaForm::Value { body }
-    }
-
-    /// Reference the body of the lambda form
-    pub fn body(&self) -> RefPtr<HeapSyn> {
-        match *self {
-            LambdaForm::Lambda { ref body, .. }
-            | LambdaForm::Thunk { ref body, .. }
-            | LambdaForm::Value { ref body } => *body,
-        }
-    }
-
-    /// Source annotation to stamp on environment
-    pub fn annotation(&self) -> Smid {
-        match *self {
-            LambdaForm::Lambda { annotation, .. } => annotation,
-            _ => Smid::default(),
-        }
-    }
-
-    /// The arity of the the lambda form
-    pub fn arity(&self) -> u8 {
-        match *self {
-            LambdaForm::Lambda { ref bound, .. } => *bound,
-            _ => 0,
-        }
-    }
-
-    /// Whether lambda form is a thunk to be updated in place
-    pub fn update(&self) -> bool {
-        matches!(*self, LambdaForm::Thunk { .. })
-    }
-}
-
 /// Support for representing in-heap code as STG language syntax for
 /// debugging / display
 pub mod repr {
@@ -354,22 +285,20 @@ pub mod repr {
     ) -> Vec<stg::syntax::LambdaForm> {
         let mut v = Vec::with_capacity(bindings.len());
         for pc in bindings.iter() {
-            let binding = match pc {
-                memory::syntax::LambdaForm::Lambda {
-                    bound,
-                    body,
-                    annotation,
-                } => stg::syntax::LambdaForm::Lambda {
-                    bound: *bound,
-                    body: ScopedPtr::from_non_null(guard, *body).repr(),
-                    annotation: *annotation,
-                },
-                memory::syntax::LambdaForm::Thunk { body } => stg::syntax::LambdaForm::Thunk {
-                    body: ScopedPtr::from_non_null(guard, *body).repr(),
-                },
-                memory::syntax::LambdaForm::Value { body } => stg::syntax::LambdaForm::Value {
-                    body: ScopedPtr::from_non_null(guard, *body).repr(),
-                },
+            let binding = if pc.arity() > 0 {
+                stg::syntax::LambdaForm::Lambda {
+                    bound: pc.arity(),
+                    body: ScopedPtr::from_non_null(guard, pc.body()).repr(),
+                    annotation: pc.annotation(),
+                }
+            } else if pc.update() {
+                stg::syntax::LambdaForm::Thunk {
+                    body: ScopedPtr::from_non_null(guard, pc.body()).repr(),
+                }
+            } else {
+                stg::syntax::LambdaForm::Value {
+                    body: ScopedPtr::from_non_null(guard, pc.body()).repr(),
+                }
             };
             v.push(binding);
         }

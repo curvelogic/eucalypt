@@ -49,17 +49,13 @@ pub fn load_lambdavec<'scope, T: ScopedAllocator<'scope>>(
                 bound,
                 body,
                 annotation,
-            } => memory::syntax::LambdaForm::Lambda {
-                bound: *bound,
-                body: load(mem, body.clone())?,
-                annotation: *annotation,
-            },
-            stg::syntax::LambdaForm::Thunk { body } => memory::syntax::LambdaForm::Thunk {
-                body: load(mem, body.clone())?,
-            },
-            stg::syntax::LambdaForm::Value { body } => memory::syntax::LambdaForm::Value {
-                body: load(mem, body.clone())?,
-            },
+            } => memory::syntax::LambdaForm::new(*bound, load(mem, body.clone())?, *annotation),
+            stg::syntax::LambdaForm::Thunk { body } => {
+                memory::syntax::LambdaForm::thunk(load(mem, body.clone())?)
+            }
+            stg::syntax::LambdaForm::Value { body } => {
+                memory::syntax::LambdaForm::value(load(mem, body.clone())?)
+            }
         };
         array.push(mem, binding);
     }

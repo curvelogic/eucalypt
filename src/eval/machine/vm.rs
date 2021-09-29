@@ -188,7 +188,7 @@ impl MachineState {
         let closure = view.scoped(self.closure);
         let code = (*view.scoped(closure.code())).clone();
         let environment = closure.env();
-        let remaining_arity = closure.remaining_arity();
+        let remaining_arity = closure.arity();
 
         // Set annotation to stamp on any allocations
         self.annotation = closure.annotation();
@@ -489,14 +489,14 @@ impl MachineState {
 
             match continuation {
                 Continuation::ApplyTo { args } => {
-                    let excess = args.len() as isize - closure.remaining_arity() as isize;
+                    let excess = args.len() as isize - closure.arity() as isize;
 
                     match excess.cmp(&0) {
                         Ordering::Equal => {
                             self.closure = view.saturate(closure, args.as_slice())?;
                         }
                         Ordering::Less => {
-                            self.closure = view.partially_apply(closure, args.as_slice())?;
+                            self.closure = view.partially_apply(&self.closure, args.as_slice())?;
                         }
                         Ordering::Greater => {
                             let (quorum, surplus) =
@@ -1017,7 +1017,7 @@ pub mod tests {
         );
 
         let mut m = machine(syn);
-        m.run(Some(20)).unwrap();
+        m.run(Some(30)).unwrap();
         assert_eq!(m.string_return(), Some("foo".to_string()));
     }
 
