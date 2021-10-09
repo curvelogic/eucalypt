@@ -93,14 +93,14 @@ impl<'scope> Iterator for DataIterator<'scope> {
         };
 
         let head = match h_ref {
-            Some(h) => self.closure.navigate_local(&self.view, h).clone(),
+            Some(h) => self.closure.navigate_local(&self.view, h),
             None => {
                 panic!("Bad cons cell (h)")
             } // error
         };
 
         if let Some(t) = t_ref {
-            self.closure = self.closure.navigate_local(&self.view, t).clone();
+            self.closure = self.closure.navigate_local(&self.view, t);
         } else {
             panic!("Bad cons cell (t)")
         }
@@ -144,12 +144,12 @@ impl<'scope> Iterator for StrListIterator<'scope> {
         };
 
         let native = match h_ref {
-            Some(h) => self.closure.navigate_local_native(&self.view, h).clone(),
+            Some(h) => self.closure.navigate_local_native(&self.view, h),
             None => panic!("bad cons cell (h)"),
         };
 
         if let Some(t) = t_ref {
-            self.closure = self.closure.navigate_local(&self.view, t).clone();
+            self.closure = self.closure.navigate_local(&self.view, t);
         } else {
             panic!("bad cons cell (t)");
         }

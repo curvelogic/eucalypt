@@ -49,8 +49,8 @@ impl<'scope> HeapNavigator<'scope> {
     /// Resolve a ref (creating atom closure if it resolves to native)
     pub fn resolve(&self, r: &Ref) -> Result<Closure, ExecutionError> {
         match r {
-            Ref::L(index) => Ok(self.get(*index)?.clone()),
-            Ref::G(index) => Ok(self.global(*index)?.clone()),
+            Ref::L(index) => Ok(self.get(*index)?),
+            Ref::G(index) => Ok(self.global(*index)?),
             Ref::V(_) => Ok(Closure::new(
                 self.view
                     .alloc(HeapSyn::Atom {
@@ -196,7 +196,7 @@ impl MachineState {
             HeapSyn::Atom { evaluand } => {
                 match evaluand {
                     Ref::L(i) => {
-                        self.closure = self.nav(view).get(i)?.clone();
+                        self.closure = self.nav(view).get(i)?;
                         let updateable = self.closure.updateable();
                         if updateable {
                             self.push(
@@ -209,7 +209,7 @@ impl MachineState {
                         }
                     }
                     Ref::G(i) => {
-                        self.closure = self.nav(view).global(i)?.clone(); // TODO: update globals?
+                        self.closure = self.nav(view).global(i)?; // TODO: update globals?
                     }
                     Ref::V(v) => {
                         self.return_native(view, &v)?;
@@ -237,7 +237,7 @@ impl MachineState {
             HeapSyn::App { callable, args } => {
                 let array = view.create_arg_array(args.as_slice(), environment)?;
                 self.push(view, Continuation::ApplyTo { args: array })?;
-                self.closure = self.nav(view).resolve_callable(&callable)?.clone();
+                self.closure = self.nav(view).resolve_callable(&callable)?;
             }
             HeapSyn::Bif { intrinsic, args } => {
                 let bif = intrinsics[intrinsic as usize];

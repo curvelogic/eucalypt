@@ -577,7 +577,7 @@ fn deconstruct(
                 panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
             };
 
-            let kv_closure = pair_closure.navigate_local(&view, kv).clone();
+            let kv_closure = pair_closure.navigate_local(&view, kv);
 
             Ok((sym, kv_closure))
         }
