@@ -43,7 +43,7 @@ pub enum Continuation {
         index: usize,
     },
     /// Once callable is evaluated, apply to args
-    ApplyTo { args: Array<RefPtr<Closure>> },
+    ApplyTo { args: Array<Closure> },
     /// Catch metadata and pass it (with body) to handler
     DeMeta {
         /// handler receives metdata and body as bound args

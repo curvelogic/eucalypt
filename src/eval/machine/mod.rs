@@ -36,7 +36,7 @@ pub struct Initialiser<'a> {
 
 impl<'a> Mutator for Initialiser<'a> {
     type Input = ();
-    type Output = (RefPtr<EnvFrame>, RefPtr<EnvFrame>, RefPtr<Closure>);
+    type Output = (RefPtr<EnvFrame>, RefPtr<EnvFrame>, Closure);
 
     fn run(
         &self,
@@ -54,13 +54,7 @@ impl<'a> Mutator for Initialiser<'a> {
             Smid::default(),
         );
 
-        let closure = view
-            .alloc(Closure::new(
-                load(view, self.syntax.clone()).unwrap(),
-                root_env,
-            ))
-            .unwrap()
-            .as_ptr();
+        let closure = Closure::new(load(view, self.syntax.clone()).unwrap(), root_env);
         Ok((root_env, globals, closure))
     }
 }

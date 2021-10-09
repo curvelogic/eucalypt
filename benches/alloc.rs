@@ -22,8 +22,8 @@ use eucalypt::{
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-fn box_one<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> RefPtr<Closure> {
-    view.alloc(Closure::new(
+fn box_one<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> Closure {
+    Closure::new(
         view.data(
             DataConstructor::BoxedString.tag(),
             Array::from_slice(&view, &[Ref::V(Native::Num(1.into()))]),
@@ -31,9 +31,7 @@ fn box_one<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> Re
         .unwrap()
         .as_ptr(),
         empty,
-    ))
-    .unwrap()
-    .as_ptr()
+    )
 }
 
 fn identity<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> RefPtr<Closure> {
@@ -92,7 +90,7 @@ fn access<'guard>(
     view: MutatorHeapView<'guard>,
     env: RefPtr<EnvFrame>,
     depth: usize,
-) -> Option<RefPtr<Closure>> {
+) -> Option<Closure> {
     let e = view.scoped(env);
     (*e).get(&view, depth)
 }
@@ -111,16 +109,12 @@ fn update<'guard>(
 
 /// Create an identity lambda and saturate it
 fn create_and_saturate_lambda<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) {
-    let mut lambda = view
-        .alloc(Closure::close(
-            &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
-            empty,
-        ))
-        .unwrap()
-        .as_ptr();
+    let mut lambda = Closure::close(
+        &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
+        empty,
+    );
     let args = vec![box_one(view, empty)];
-    view.saturate(&*view.scoped(lambda), args.as_slice())
-        .unwrap();
+    view.saturate(&lambda, args.as_slice()).unwrap();
 }
 
 /// Create an identity lambda and saturate it
@@ -128,19 +122,15 @@ fn create_partially_apply_and_saturate_lambda<'guard>(
     view: MutatorHeapView<'guard>,
     empty: RefPtr<EnvFrame>,
 ) {
-    let mut lambda = view
-        .alloc(Closure::close(
-            &LambdaForm::new(2, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
-            empty,
-        ))
-        .unwrap()
-        .as_ptr();
+    let mut lambda = Closure::close(
+        &LambdaForm::new(2, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
+        empty,
+    );
     let first_arg = vec![box_one(view, empty)];
     let second_arg = vec![box_one(view, empty)];
 
     let lambda = view.partially_apply(&lambda, first_arg.as_slice()).unwrap();
-    view.saturate(&*view.scoped(lambda), second_arg.as_slice())
-        .unwrap();
+    view.saturate(&lambda, second_arg.as_slice()).unwrap();
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

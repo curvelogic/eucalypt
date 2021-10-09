@@ -73,16 +73,15 @@ pub fn zdt_arg<'guard>(
 }
 
 pub struct DataIterator<'scope> {
-    closure: RefPtr<Closure>,
+    closure: Closure,
     view: MutatorHeapView<'scope>,
 }
 
 impl<'scope> Iterator for DataIterator<'scope> {
-    type Item = RefPtr<Closure>;
+    type Item = Closure;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let closure = self.view.scoped(self.closure);
-        let code = self.view.scoped((*closure).code());
+        let code = self.view.scoped(self.closure.code());
 
         let (h_ref, t_ref) = match &*code {
             HeapSyn::Cons { tag, args } => match (*tag).try_into() {
@@ -94,14 +93,14 @@ impl<'scope> Iterator for DataIterator<'scope> {
         };
 
         let head = match h_ref {
-            Some(h) => (*closure).navigate_local(&self.view, h),
+            Some(h) => self.closure.navigate_local(&self.view, h),
             None => {
                 panic!("Bad cons cell (h)")
             } // error
         };
 
         if let Some(t) = t_ref {
-            self.closure = (*closure).navigate_local(&self.view, t);
+            self.closure = self.closure.navigate_local(&self.view, t);
         } else {
             panic!("Bad cons cell (t)")
         }
@@ -125,7 +124,7 @@ pub fn data_list_arg<'scope>(
 /// An iterator for tracing through the list of string values as
 /// established by SeqStrList
 pub struct StrListIterator<'scope> {
-    closure: RefPtr<Closure>,
+    closure: Closure,
     view: MutatorHeapView<'scope>,
 }
 
@@ -133,8 +132,7 @@ impl<'scope> Iterator for StrListIterator<'scope> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let closure = self.view.scoped(self.closure);
-        let code = self.view.scoped((*closure).code());
+        let code = self.view.scoped(self.closure.code());
 
         let (h_ref, t_ref) = match &*code {
             HeapSyn::Cons { tag, args } => match (*tag).try_into() {
@@ -146,12 +144,12 @@ impl<'scope> Iterator for StrListIterator<'scope> {
         };
 
         let native = match h_ref {
-            Some(h) => (*closure).navigate_local_native(&self.view, h),
+            Some(h) => self.closure.navigate_local_native(&self.view, h),
             None => panic!("bad cons cell (h)"),
         };
 
         if let Some(t) = t_ref {
-            self.closure = (*closure).navigate_local(&self.view, t);
+            self.closure = self.closure.navigate_local(&self.view, t);
         } else {
             panic!("bad cons cell (t)");
         }
@@ -181,10 +179,7 @@ pub fn machine_return_unit(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(
-        view.alloc(Closure::new(view.unit()?.as_ptr(), machine.root_env()))?
-            .as_ptr(),
-    )
+    machine.set_closure(Closure::new(view.unit()?.as_ptr(), machine.root_env()))
 }
 
 /// Return number from intrinsic
@@ -193,16 +188,13 @@ pub fn machine_return_num(
     view: MutatorHeapView,
     n: Number,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(
-        view.alloc(Closure::new(
-            view.alloc(HeapSyn::Atom {
-                evaluand: Ref::V(Native::Num(n)),
-            })?
-            .as_ptr(),
-            machine.root_env(),
-        ))?
+    machine.set_closure(Closure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: Ref::V(Native::Num(n)),
+        })?
         .as_ptr(),
-    )
+        machine.root_env(),
+    ))
 }
 
 /// Return string from intrinsic
@@ -211,16 +203,13 @@ pub fn machine_return_str(
     view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(
-        view.alloc(Closure::new(
-            view.alloc(HeapSyn::Atom {
-                evaluand: view.str_ref(s)?,
-            })?
-            .as_ptr(),
-            machine.root_env(),
-        ))?
+    machine.set_closure(Closure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: view.str_ref(s)?,
+        })?
         .as_ptr(),
-    )
+        machine.root_env(),
+    ))
 }
 
 /// Return symbol from intrinsic
@@ -229,16 +218,13 @@ pub fn machine_return_sym(
     view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(
-        view.alloc(Closure::new(
-            view.alloc(HeapSyn::Atom {
-                evaluand: view.sym_ref(s)?,
-            })?
-            .as_ptr(),
-            machine.root_env(),
-        ))?
+    machine.set_closure(Closure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: view.sym_ref(s)?,
+        })?
         .as_ptr(),
-    )
+        machine.root_env(),
+    ))
 }
 
 /// Return zoned date time from intrinsic
@@ -247,16 +233,13 @@ pub fn machine_return_zdt(
     view: MutatorHeapView,
     zdt: DateTime<FixedOffset>,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(
-        view.alloc(Closure::new(
-            view.alloc(HeapSyn::Atom {
-                evaluand: Ref::V(Native::Zdt(zdt)),
-            })?
-            .as_ptr(),
-            machine.root_env(),
-        ))?
+    machine.set_closure(Closure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: Ref::V(Native::Zdt(zdt)),
+        })?
         .as_ptr(),
-    )
+        machine.root_env(),
+    ))
 }
 
 /// Return boolean from intrinsic
@@ -265,14 +248,14 @@ pub fn machine_return_bool(
     view: MutatorHeapView,
     b: bool,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(view.new_closure(
+    machine.set_closure(Closure::new(
         if b {
             view.t()?.as_ptr()
         } else {
             view.f()?.as_ptr()
         },
         machine.root_env(),
-    )?)
+    ))
 }
 
 /// Return a string list from intrinsic
@@ -306,14 +289,14 @@ pub fn machine_return_str_list(
             view.atom(Ref::L(list_index))?,
         )?
         .as_ptr();
-    machine.set_closure(view.alloc(Closure::new(syn, machine.root_env()))?.as_ptr())
+    machine.set_closure(Closure::new(syn, machine.root_env()))
 }
 
 /// Return a list of closures from intrinsic
 pub fn machine_return_closure_list(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    list: Vec<RefPtr<Closure>>,
+    list: Vec<Closure>,
 ) -> Result<(), ExecutionError> {
     // env of items
     let item_frame = view.from_closures(
@@ -339,14 +322,14 @@ pub fn machine_return_closure_list(
     let syn = view
         .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
         .as_ptr();
-    machine.set_closure(view.alloc(Closure::new(syn, item_frame))?.as_ptr())
+    machine.set_closure(Closure::new(syn, item_frame))
 }
 
 /// Return a list of closures from intrinsic
 pub fn machine_return_block_pair_closure_list(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    block: IndexMap<String, RefPtr<Closure>>,
+    block: IndexMap<String, Closure>,
 ) -> Result<(), ExecutionError> {
     // env of values
     let values: Vec<_> = block.values().cloned().collect();
@@ -361,16 +344,14 @@ pub fn machine_return_block_pair_closure_list(
     // env of pairs
     let mut pairs = vec![];
     for (i, k) in block.keys().enumerate() {
-        pairs.push(
-            view.new_closure(
-                view.data(
-                    DataConstructor::BlockPair.tag(),
-                    Array::from_slice(&view, &[view.sym_ref(k)?, Ref::L(i)]),
-                )?
-                .as_ptr(),
-                value_frame,
-            )?,
-        );
+        pairs.push(Closure::new(
+            view.data(
+                DataConstructor::BlockPair.tag(),
+                Array::from_slice(&view, &[view.sym_ref(k)?, Ref::L(i)]),
+            )?
+            .as_ptr(),
+            value_frame,
+        ));
     }
     let pair_frame = view.from_closures(
         pairs.iter().cloned(),
@@ -394,7 +375,7 @@ pub fn machine_return_block_pair_closure_list(
     let syn = view
         .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
         .as_ptr();
-    machine.set_closure(view.new_closure(syn, pair_frame)?)
+    machine.set_closure(Closure::new(syn, pair_frame))
 }
 
 pub mod call {

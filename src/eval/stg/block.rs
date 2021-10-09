@@ -15,10 +15,9 @@ use crate::{
             intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic},
         },
         memory::{
-            alloc::ScopedAllocator,
             array::Array,
             mutator::MutatorHeapView,
-            syntax::{Ref, RefPtr, StgBuilder},
+            syntax::{Ref, StgBuilder},
         },
     },
 };
@@ -563,7 +562,7 @@ pub struct Merge;
 fn deconstruct(
     view: MutatorHeapView,
     pair_closure: &Closure,
-) -> Result<(String, RefPtr<Closure>), ExecutionError> {
+) -> Result<(String, Closure), ExecutionError> {
     use crate::eval::memory::syntax;
 
     let code = view.scoped(pair_closure.code());
@@ -663,17 +662,15 @@ impl StgIntrinsic for Merge {
         let l = data_list_arg(machine, view, args[0].clone())?;
         let r = data_list_arg(machine, view, args[1].clone())?;
 
-        let mut merge: IndexMap<String, RefPtr<Closure>> = IndexMap::new();
+        let mut merge: IndexMap<String, Closure> = IndexMap::new();
 
         for item in l {
-            let item = &*(view.scoped(item));
-            let (k, kv) = deconstruct(view, item)?;
+            let (k, kv) = deconstruct(view, &item)?;
             merge.insert(k, kv);
         }
 
         for item in r {
-            let item = &*(view.scoped(item));
-            let (k, kv) = deconstruct(view, item)?;
+            let (k, kv) = deconstruct(view, &item)?;
             merge.insert(k, kv);
         }
 
@@ -765,30 +762,22 @@ impl StgIntrinsic for MergeWith {
         let r = data_list_arg(machine, view, args[1].clone())?;
         let f = args[2].clone();
 
-        let mut merge: IndexMap<String, RefPtr<Closure>> = IndexMap::new();
+        let mut merge: IndexMap<String, Closure> = IndexMap::new();
 
         for item in l {
-            let item = &*(view.scoped(item));
-            let (key, value) = deconstruct(view, item)?;
+            let (key, value) = deconstruct(view, &item)?;
             merge.insert(key, value);
         }
 
         for item in r {
-            let item = &*(view.scoped(item));
-            let (key, nv) = deconstruct(view, item)?;
+            let (key, nv) = deconstruct(view, &item)?;
             if let Some(ov) = merge.get_mut(&key) {
-                let mut combined = view
-                    .alloc(Closure::new(
-                        view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
-                            .as_ptr(),
-                        view.from_closures(
-                            [*ov, nv].iter().cloned(),
-                            2,
-                            machine.env(view),
-                            Smid::default(),
-                        ),
-                    ))?
-                    .as_ptr();
+                let args = [ov.clone(), nv];
+                let mut combined = Closure::new(
+                    view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
+                        .as_ptr(),
+                    view.from_closures(args.iter().cloned(), 2, machine.env(view), Smid::default()),
+                );
                 swap(ov, &mut combined);
             } else {
                 merge.insert(key, nv);
