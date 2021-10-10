@@ -463,11 +463,32 @@ lazy_static! {
             ty: record(),
             strict: vec![],
     },
-    Intrinsic { // 86
+    Intrinsic { // 84
             name: "DQ",
             ty: str_(),
             strict: vec![],
     },
+    Intrinsic { // 85
+            name: "EMITTAGx",
+            ty: function(vec![str_(), any(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 86
+            name: "EMITTAG[",
+            ty: function(vec![str_(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 87
+            name: "EMITTAG{",
+            ty: function(vec![str_(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 88
+            name: "TAG",
+            ty: function(vec![record(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+
     ];
 }
 

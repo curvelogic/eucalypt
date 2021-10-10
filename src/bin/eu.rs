@@ -51,7 +51,7 @@ pub fn main() {
         Ok(Command::Continue) => {}
     }
 
-    if opt.run() || opt.dump_stg() {
+    if opt.run() || opt.dump_stg() || opt.dump_runtime() {
         // run manages error reporting
         match eval::run(&opt, loader) {
             Ok(run_stats) => {

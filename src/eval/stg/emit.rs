@@ -4,12 +4,27 @@
 use crate::eval::{
     emit::{Emitter, RenderMetadata},
     error::ExecutionError,
-    machine::intrinsic::{CallGlobal0, CallGlobal1, IntrinsicMachine, StgIntrinsic},
+    machine::intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{self, mutator::MutatorHeapView, syntax::Ref},
     primitive::Primitive,
 };
 
 use super::support::machine_return_unit;
+
+/// Interpret arg as tag if it exists otherwise None
+fn tag_from_arg(
+    arg: &Ref,
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+) -> Option<String> {
+    let tag_nat = machine.nav(view).resolve_native(arg).ok();
+    match tag_nat {
+        Some(memory::syntax::Native::Sym(s)) | Some(memory::syntax::Native::Str(s)) => {
+            Some(view.scoped(s).as_str().to_string())
+        }
+        _ => None,
+    }
+}
 
 /// EMIT0
 ///
@@ -114,6 +129,38 @@ impl StgIntrinsic for EmitNative {
 
 impl CallGlobal1 for EmitNative {}
 
+/// EMITTAGx(tag, native)
+///
+/// Emit a native
+pub struct EmitTagNative;
+
+impl StgIntrinsic for EmitTagNative {
+    fn name(&self) -> &str {
+        "EMITTAGx"
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let tag = tag_from_arg(&args[0], machine, view);
+        let native = machine.nav(view).resolve_native(&args[1])?;
+        let primitive = match native {
+            memory::syntax::Native::Sym(s) => Primitive::Sym(view.scoped(s).as_str().to_string()),
+            memory::syntax::Native::Str(s) => Primitive::Str(view.scoped(s).as_str().to_string()),
+            memory::syntax::Native::Num(n) => Primitive::Num(n),
+            memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
+        };
+        emitter.scalar(&RenderMetadata::new(tag), &primitive);
+        machine_return_unit(machine, view)
+    }
+}
+
+impl CallGlobal2 for EmitTagNative {}
+
 /// EMIT[
 ///
 /// Emit a sequence start
@@ -137,6 +184,31 @@ impl StgIntrinsic for EmitSeqStart {
 }
 
 impl CallGlobal0 for EmitSeqStart {}
+
+/// EMITTAG[
+///
+/// Emit a sequence start
+pub struct EmitTagSeqStart;
+
+impl StgIntrinsic for EmitTagSeqStart {
+    fn name(&self) -> &str {
+        "EMITTAG["
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let tag = tag_from_arg(&args[0], machine, view);
+        emitter.sequence_start(&RenderMetadata::new(tag));
+        machine_return_unit(machine, view)
+    }
+}
+
+impl CallGlobal1 for EmitTagSeqStart {}
 
 /// EMIT]
 ///
@@ -185,6 +257,31 @@ impl StgIntrinsic for EmitBlockStart {
 }
 
 impl CallGlobal0 for EmitBlockStart {}
+
+/// EMITTAG{
+///
+/// Emit a block start
+pub struct EmitTagBlockStart;
+
+impl StgIntrinsic for EmitTagBlockStart {
+    fn name(&self) -> &str {
+        "EMITTAG{"
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let tag = tag_from_arg(&args[0], machine, view);
+        emitter.block_start(&RenderMetadata::new(tag));
+        machine_return_unit(machine, view)
+    }
+}
+
+impl CallGlobal1 for EmitTagBlockStart {}
 
 /// EMIT}
 ///
