@@ -53,6 +53,11 @@ checks4: {
   trues: [ip-components = ["192", "168", "0", "1"]]
 }
 
-pass: checks.trues ++ checks2.trues ++ checks3.trues ++ checks4.trues  all-true?
+case-tests: {
+  α: "hello" str.to-upper //= "HELLO"
+  β: "GOODBYE" str.to-lower //= "goodbye"
+}
 
-RESULT: if(pass, :PASS, :FAIL)
+RESULT: checks.trues ++ checks2.trues ++ checks3.trues ++ checks4.trues ++ (case-tests values)
+        all-true?
+        then(:PASS, :FAIL)

@@ -450,3 +450,43 @@ impl StgIntrinsic for Dq {
 }
 
 impl CallGlobal0 for Dq {}
+
+/// __UPPER(s) - convert to upper case
+pub struct Upper;
+
+impl StgIntrinsic for Upper {
+    fn name(&self) -> &str {
+        "UPPER"
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
+        machine_return_str(machine, view, string.to_uppercase())
+    }
+}
+
+/// __LOWER(s) - convert to lower case
+pub struct Lower;
+
+impl StgIntrinsic for Lower {
+    fn name(&self) -> &str {
+        "LOWER"
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
+        machine_return_str(machine, view, string.to_lowercase())
+    }
+}
