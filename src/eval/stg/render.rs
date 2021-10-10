@@ -114,7 +114,7 @@ impl StgIntrinsic for Render {
                         (
                             DataConstructor::ListCons.tag(), // [h t] [tagfn tag],
                             force(
-                                // [h t] [lcons] [tagfn tag]
+                                // [h t] [tagfn tag]
                                 case(
                                     local(3),
                                     vec![(
@@ -127,10 +127,10 @@ impl StgIntrinsic for Render {
                             ),
                         ),
                         (
-                            DataConstructor::ListNil.tag(), // [] [lcons] [tagfn tag]
+                            DataConstructor::ListNil.tag(), // [tagfn tag]
                             force(
                                 case(
-                                    local(2),
+                                    local(1),
                                     vec![(
                                         DataConstructor::BoxedString.tag(), // // [tagstr] [] [lcons] [tagfn tag]
                                         force(call::bif::emit_tag_seq_start(lref(0)), unit()),
@@ -141,10 +141,10 @@ impl StgIntrinsic for Render {
                             ),
                         ),
                         (
-                            DataConstructor::Block.tag(),
+                            DataConstructor::Block.tag(), // [items] [tagfn tag]
                             force(
                                 case(
-                                    local(3),
+                                    local(2),
                                     vec![(
                                         DataConstructor::BoxedString.tag(), // [tagstr] [cons] [tagfn tag] [block]
                                         force(call::bif::emit_tag_block_start(lref(0)), unit()),

@@ -26,7 +26,7 @@ test-meta: {
   verify: [:renders-ref, :renders-join, :renders-periwabble, :renders-blah]}
 test-render: {
   sym: tagged-sym
-  lsa: tagged-list
+  lsa: tagged-list //<< { export: :display }
   lsb: homogeneous-tagged-list
   blk: tagged-block
 }

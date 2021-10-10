@@ -441,7 +441,7 @@ juxt(f, g, x): [x f, x g]
 # Metadata basics
 #
 
-` "`with-meta m e` - add metadata block `m` to expression `e`."
+` "`with-meta(m, e)` - add metadata block `m` to expression `e`."
 with-meta: __WITHMETA
 
 ` { doc: "`e // m` - add metadata block `m` to expression `e`."
@@ -450,8 +450,17 @@ with-meta: __WITHMETA
     precedence: :meta }
 (e // m): e with-meta(m)
 
-` "`meta e` - retrieve expression metadata for e."
+` "`meta(e)` - retrieve expression metadata for e."
 meta: __META
+
+` "`merge-meta(m, e)` - merge block `m` into `e`'s metadata."
+merge-meta(m, e): e // (meta(e) m)
+
+` { doc: "`e //<< m` - merge metadata block `m` into expression `e`'s metadata."
+    export: :suppress
+    associates: :left
+    precedence: :meta }
+(e //<< m): e merge-meta(m)
 
 assertions: {
   # In debug mode maybe the machine checks every return value against
