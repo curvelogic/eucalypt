@@ -20,7 +20,6 @@ impl LargeObjectBlock {
     /// of any object headers is assumed to be already included.
     pub fn new(required_size: usize) -> Self {
         // TODO: extraordinarily wasteful!
-        dbg!(required_size);
         let size = required_size.next_power_of_two();
         LargeObjectBlock {
             block: Block::new(size).unwrap_or_else(|_| abort()),
@@ -29,6 +28,6 @@ impl LargeObjectBlock {
 
     /// Pointer to the writeable memory area
     pub fn space(&self) -> *const u8 {
-        dbg!(self.block.as_ptr())
+        self.block.as_ptr()
     }
 }
