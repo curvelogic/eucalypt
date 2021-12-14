@@ -4,20 +4,29 @@ use std::{cell::UnsafeCell, mem::size_of, ptr::NonNull};
 use std::{ptr::write, slice::from_raw_parts_mut};
 
 use super::alloc::MutatorScope;
+use super::lob::LargeObjectBlock;
 use super::{
     alloc::{AllocHeader, Allocator},
     bump::{self, AllocError, BumpBlock},
 };
 
+#[derive(Debug)]
+pub struct HeapStats {
+    /// Number of standard blocks allocated
+    pub blocks_allocated: usize,
+    /// Number of large objects allocated
+    pub lobs_allocated: usize,
+}
+
 /// Object size class.
-/// - Small objects fit inside a line
-/// - Medium objects span more than one line
-/// - Large objects span multiple blocks
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SizeClass {
+    /// Small objects fit inside a line
     Small,
+    /// Medium objects span lines inside a block
     Medium,
+    /// Large objects are larger than a normal block
     Large,
 }
 
@@ -41,6 +50,8 @@ pub struct HeapState {
     overflow: Option<BumpBlock>,
     /// Part used - not yet reclaimed
     rest: Vec<BumpBlock>,
+    /// Large object blocks - each contains single object
+    lobs: Vec<LargeObjectBlock>,
 }
 
 impl Default for HeapState {
@@ -55,6 +66,7 @@ impl HeapState {
             head: None,
             overflow: None,
             rest: vec![],
+            lobs: vec![],
         }
     }
 
@@ -91,8 +103,26 @@ impl HeapState {
         });
         self.overflow.as_mut().unwrap()
     }
+
+    /// Create and return a new large object block able to store data
+    /// of the specified size
+    pub fn lob(&mut self, size: usize) -> &mut LargeObjectBlock {
+        self.lobs.push(LargeObjectBlock::new(size));
+        self.lobs.last_mut().unwrap()
+    }
+
+    /// Statistics
+    pub fn stats(&self) -> HeapStats {
+        HeapStats {
+            blocks_allocated: self.rest.len()
+                + self.head.iter().count()
+                + self.overflow.iter().count(),
+            lobs_allocated: self.lobs.len(),
+        }
+    }
 }
 
+/// A heap (with interior mutability)
 pub struct Heap {
     state: UnsafeCell<HeapState>,
 }
@@ -110,6 +140,10 @@ impl Heap {
         Heap {
             state: UnsafeCell::new(HeapState::new()),
         }
+    }
+
+    pub fn stats(&self) -> HeapStats {
+        unsafe { (*self.state.get()).stats() }
     }
 }
 
@@ -178,26 +212,23 @@ impl Allocator for Heap {
 impl Heap {
     /// Allocate space
     fn find_space(&self, size_bytes: usize) -> Result<*const u8, AllocError> {
-        let class = SizeClass::for_size(size_bytes);
-
-        if class == SizeClass::Large {
-            return Err(AllocError::BadRequest); // can't do it yet
-        }
-
         let heap_state = unsafe { &mut *self.state.get() };
-
         let head = heap_state.head();
 
-        let space = if class == SizeClass::Medium && size_bytes > head.current_hole_size() {
-            heap_state
+        let space = match SizeClass::for_size(size_bytes) {
+            SizeClass::Large => {
+                let lob = heap_state.lob(size_bytes);
+                lob.space()
+            }
+            SizeClass::Medium if size_bytes > head.current_hole_size() => heap_state
                 .overflow()
                 .bump(size_bytes)
                 .or_else(|| heap_state.replace_overflow().bump(size_bytes))
-                .expect("aargh")
-        } else {
-            head.bump(size_bytes)
+                .expect("aargh"),
+            _ => head
+                .bump(size_bytes)
                 .or_else(|| heap_state.replace_head().bump(size_bytes))
-                .expect("aarrgh")
+                .expect("aarrgh"),
         };
 
         Ok(space)
@@ -218,7 +249,15 @@ impl Heap {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::eval::memory::syntax::Ref;
+    use std::iter::repeat_with;
+
+    use crate::{
+        common::sourcemap::Smid,
+        eval::memory::{
+            mutator::MutatorHeapView,
+            syntax::{LambdaForm, Ref, StgBuilder},
+        },
+    };
 
     use super::*;
 
@@ -240,5 +279,27 @@ pub mod tests {
             let ptr = heap.alloc(Ref::num(i)).unwrap();
             unsafe { assert_eq!(*ptr.as_ref(), Ref::num(i)) };
         }
+    }
+
+    #[test]
+    pub fn test_large_object_block() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+
+        let ids = repeat_with(|| -> LambdaForm {
+            LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+        })
+        .take(32000)
+        .collect::<Vec<_>>();
+        let idarray = view.array(ids.as_slice());
+
+        view.let_(
+            idarray,
+            view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(heap.stats().lobs_allocated, 1);
     }
 }

@@ -4,6 +4,7 @@ use crate::core::expr::*;
 use crate::core::transform::succ;
 use moniker::*;
 
+#[allow(clippy::redundant_closure)]
 pub fn inline_pass(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     distribute(expr).and_then(|ref e| beta_reduce(e))
 }
@@ -75,10 +76,10 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                         // args for now
                         expr.walk_safe(&mut |e| beta_reduce(&e))
                     } else {
-                        let args =
-                            xs.iter()
-                                .map(|arg| beta_reduce(arg))
-                                .collect::<Result<Vec<RcExpr>, CoreError>>()?;
+                        let args = xs
+                            .iter()
+                            .map(beta_reduce)
+                            .collect::<Result<Vec<RcExpr>, CoreError>>()?;
 
                         let mappings = <_>::zip(binders.into_iter(), args).collect::<Vec<_>>();
 

@@ -9,14 +9,9 @@ pub fn verify(expr: RcExpr) -> Result<Vec<CoreError>, CoreError> {
     Ok(verifier.errors)
 }
 
+#[derive(Default)]
 pub struct Verifier {
     errors: Vec<CoreError>,
-}
-
-impl Default for Verifier {
-    fn default() -> Self {
-        Verifier { errors: Vec::new() }
-    }
 }
 
 impl Verifier {

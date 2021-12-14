@@ -20,6 +20,7 @@ pub fn cook(expr: RcExpr) -> Result<RcExpr, CoreError> {
 ///
 /// Needs to track whether we are within the scope of an
 /// expression-anaophoric lambda.
+#[derive(Default)]
 pub struct Cooker {
     /// True when we have traversed into the scope of expression anaphora
     in_expr_anaphor_scope: bool,
@@ -29,16 +30,6 @@ pub struct Cooker {
     /// While in the scope of anaphoric lambda, collect all the
     /// anaphora for processing at the boundary of the scope
     pending_block_anaphora: HashMap<Anaphor<Smid, i32>, FreeVar<String>>,
-}
-
-impl Default for Cooker {
-    fn default() -> Self {
-        Cooker {
-            in_expr_anaphor_scope: false,
-            pending_expr_anaphora: HashMap::new(),
-            pending_block_anaphora: HashMap::new(),
-        }
-    }
 }
 
 impl Cooker {

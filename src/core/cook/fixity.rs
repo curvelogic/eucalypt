@@ -21,16 +21,9 @@ type Env = SimpleEnvironment<FreeVar<String>, OpMeta>;
 
 /// Distribute maintains state as we traverse through the tree
 /// accumulating correspondence between names and operator metadata
+#[derive(Default)]
 pub struct Distributor {
     env: Env,
-}
-
-impl Default for Distributor {
-    fn default() -> Self {
-        Distributor {
-            env: Env::default(),
-        }
-    }
 }
 
 impl Distributor {

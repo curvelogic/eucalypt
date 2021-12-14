@@ -3,7 +3,7 @@
 
 use crate::common::sourcemap::Smid;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 struct InfoFlags(u64);
 
 impl InfoFlags {
@@ -26,12 +26,6 @@ impl InfoFlags {
 
     pub fn annotation(&self) -> Smid {
         Smid::from((self.0 >> 32) as u32)
-    }
-}
-
-impl Default for InfoFlags {
-    fn default() -> Self {
-        Self(0)
     }
 }
 
