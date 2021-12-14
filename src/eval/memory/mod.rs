@@ -6,6 +6,7 @@ pub mod bump;
 pub mod heap;
 pub mod infotable;
 pub mod loader;
+pub mod lob;
 pub mod mutator;
 pub mod string;
 pub mod syntax;
