@@ -116,21 +116,11 @@ impl RcMarkExpr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ScopeTracker<'expr> {
     scopes: VecDeque<&'expr RcMarkExpr>,
     reachable: bool,
     marked_count: usize,
-}
-
-impl<'expr> Default for ScopeTracker<'expr> {
-    fn default() -> Self {
-        ScopeTracker {
-            scopes: VecDeque::new(),
-            reachable: false,
-            marked_count: 0,
-        }
-    }
 }
 
 impl<'expr> ScopeTracker<'expr> {
@@ -320,9 +310,9 @@ impl<'expr> ScopeTracker<'expr> {
                 *s,
                 Self::blank_unseen(e),
                 n.clone(),
-                fb.as_ref().map(|x| Self::blank_unseen(x)),
+                fb.as_ref().map(Self::blank_unseen),
             ),
-            Expr::List(s, xs) => Expr::List(*s, xs.iter().map(|x| Self::blank_unseen(x)).collect()),
+            Expr::List(s, xs) => Expr::List(*s, xs.iter().map(Self::blank_unseen).collect()),
             Expr::Block(s, block_map) => Expr::Block(
                 *s,
                 block_map
@@ -332,14 +322,14 @@ impl<'expr> ScopeTracker<'expr> {
             ),
             Expr::Meta(s, e, m) => Expr::Meta(*s, Self::blank_unseen(e), Self::blank_unseen(m)),
             Expr::ArgTuple(s, xs) => {
-                Expr::ArgTuple(*s, xs.iter().map(|x| Self::blank_unseen(x)).collect())
+                Expr::ArgTuple(*s, xs.iter().map(Self::blank_unseen).collect())
             }
             Expr::App(s, f, xs) => Expr::App(
                 *s,
                 Self::blank_unseen(f),
-                xs.iter().map(|x| Self::blank_unseen(x)).collect(),
+                xs.iter().map(Self::blank_unseen).collect(),
             ),
-            Expr::Soup(s, xs) => Expr::Soup(*s, xs.iter().map(|x| Self::blank_unseen(x)).collect()),
+            Expr::Soup(s, xs) => Expr::Soup(*s, xs.iter().map(Self::blank_unseen).collect()),
             Expr::Operator(s, fx, p, e) => Expr::Operator(*s, *fx, *p, Self::blank_unseen(e)),
             _ => fmap(&*expr.inner),
         })

@@ -110,14 +110,9 @@ pub struct SourceInfo {
 }
 
 /// Store all source info...
+#[derive(Default)]
 pub struct SourceMap {
     source: Vec<SourceInfo>,
-}
-
-impl Default for SourceMap {
-    fn default() -> Self {
-        Self { source: vec![] }
-    }
 }
 
 impl SourceMap {
