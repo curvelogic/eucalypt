@@ -161,6 +161,9 @@ impl<'a> Executor<'a> {
                     stats.set_ticks(machine.metrics().ticks());
                     stats.set_allocs(machine.metrics().allocs());
                     stats.set_max_stack(machine.metrics().max_stack());
+                    let heap_stats = machine.heap_stats();
+                    stats.set_blocks_allocated(heap_stats.blocks_allocated);
+                    stats.set_lobs_allocated(heap_stats.lobs_allocated);
                     ret
                 };
 

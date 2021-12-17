@@ -19,7 +19,7 @@ use crate::{
         memory::{
             alloc::{ScopedAllocator, ScopedPtr},
             array::Array,
-            heap::Heap,
+            heap::{Heap, HeapStats},
             mutator::{Mutator, MutatorHeapView},
             syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
         },
@@ -656,6 +656,11 @@ impl<'a> Machine<'a> {
     /// Access the metrics (ticks, allocs, etc.)
     pub fn metrics(&self) -> &Metrics {
         &self.metrics
+    }
+
+    /// Get heap statistics
+    pub fn heap_stats(&self) -> HeapStats {
+        self.heap.stats()
     }
 
     /// Create a mutator heap view for heap access
