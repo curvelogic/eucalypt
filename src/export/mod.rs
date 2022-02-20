@@ -1,3 +1,4 @@
+pub mod edn;
 pub mod error;
 pub mod html;
 pub mod json;
@@ -11,6 +12,7 @@ use self::html::HtmlMarkupSerialiser;
 
 use super::export::toml::TomlEmitter;
 use crate::eval::emit::Emitter;
+use edn::EdnEmitter;
 use html::HtmlEmitter;
 use json::JsonEmitter;
 use std::io::Write;
@@ -29,6 +31,7 @@ pub fn create_emitter<'a, S: AsRef<str>>(
         "toml" => Some(Box::new(TomlEmitter::new(output))),
         "json" => Some(Box::new(JsonEmitter::new(output))),
         "text" => Some(Box::new(TextEmitter::new(output))),
+        "edn" => Some(Box::new(EdnEmitter::new(output))),
         "html" => Some(Box::new(HtmlEmitter::new(HtmlMarkupSerialiser::new(
             output,
         )))),
