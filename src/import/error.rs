@@ -6,7 +6,10 @@ use crate::{
     syntax::{error::ParserError, span::HasSpan},
 };
 use codespan::Span;
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label},
+    files,
+};
 use thiserror::Error;
 
 /// An error forming the AST in semantic action, often wrapped by
@@ -19,6 +22,8 @@ pub enum SourceError {
     InvalidXml(String, usize, Span),
     #[error("invalid toml syntax {0}")]
     InvalidToml(String, usize),
+    #[error("invalid edn: {0}")]
+    InvalidEdn(edn_format::ParserErrorWithContext, usize),
     #[error("character set error after {0}")]
     CharSetError(String, usize),
     #[error("invalid key {0}")]
@@ -31,6 +36,10 @@ pub enum SourceError {
     EmbeddedCoreError(CoreError, usize, Span),
     #[error("embedded eucalypt parse error {0}")]
     EmbeddedParserError(ParserError, usize, Span),
+    #[error("unknown source format {0}")]
+    UnknownSourceFormat(String, usize),
+    #[error(transparent)]
+    Files(#[from] files::Error),
 }
 
 impl HasSpan for SourceError {
@@ -45,6 +54,9 @@ impl HasSpan for SourceError {
             SourceError::InvalidSource(_, _) => Span::default(),
             SourceError::EmbeddedCoreError(_, _, s) => s,
             SourceError::EmbeddedParserError(_, _, s) => s,
+            SourceError::Files(_) => Span::default(),
+            SourceError::UnknownSourceFormat(_, _) => Span::default(),
+            SourceError::InvalidEdn(_, _) => Span::default(),
         }
     }
 }
@@ -61,6 +73,9 @@ impl SourceError {
             SourceError::InvalidSource(_, f) => f,
             SourceError::EmbeddedCoreError(_, f, _) => f,
             SourceError::EmbeddedParserError(_, f, _) => f,
+            SourceError::Files(_) => unreachable!(),
+            SourceError::UnknownSourceFormat(_, f) => f,
+            SourceError::InvalidEdn(_, f) => f,
         }
     }
 

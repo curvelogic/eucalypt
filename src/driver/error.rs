@@ -7,7 +7,6 @@ use crate::syntax::error::ParserError;
 use crate::syntax::error::SyntaxError;
 use crate::syntax::import::ImportError;
 use codespan_reporting::diagnostic::Diagnostic;
-use codespan_reporting::files;
 use std::fmt::Display;
 use std::io;
 use thiserror::Error;
@@ -28,8 +27,6 @@ pub enum EucalyptError {
     Execution(#[from] ExecutionError),
     #[error(transparent)]
     Io(#[from] io::Error),
-    #[error(transparent)]
-    Files(#[from] files::Error),
     #[error("unknown resource {0}")]
     UnknownResource(String),
     #[error("path {0} could not be read")]

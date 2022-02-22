@@ -230,3 +230,18 @@ pub fn test_harness_046() {
 pub fn test_harness_047() {
     run_test(&opts("047_xml_import.eu"));
 }
+
+#[test]
+pub fn test_harness_048() {
+    run_test(&opts("048_parse_embed_core.eu"));
+}
+
+#[test]
+pub fn test_harness_049() {
+    run_test(&opts("049_tester.eu"));
+}
+
+#[test]
+pub fn test_harness_050() {
+    run_test(&opts("050_edn.edn"));
+}

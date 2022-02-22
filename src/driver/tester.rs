@@ -125,7 +125,7 @@ fn directory_plans(
         .filter(|f| {
             matches!(
                 f.path().extension().and_then(|s| s.to_str()),
-                Some("eu") | Some("yaml") | Some("json")
+                Some("eu") | Some("yaml") | Some("json") | Some("toml") | Some("edn")
             )
         })
         .map(|f| f.path())
