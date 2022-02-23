@@ -427,12 +427,9 @@ pub mod tests {
         ]);
 
         for f in eu_paths() {
-            match loader.load_eucalypt(&Locator::Fs(f.clone())) {
-                Err(e) => {
-                    let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
-                    panic!("Failed to parse {:?}.\n{}", &f, diag);
-                }
-                Ok(_) => {}
+            if let Err(e) = loader.load_eucalypt(&Locator::Fs(f.clone())) {
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                panic!("Failed to parse {:?}.\n{}", &f, diag);
             }
         }
     }
@@ -444,20 +441,14 @@ pub mod tests {
         for f in eu_paths() {
             let loc = Locator::Fs(f.clone());
 
-            match loader.load_tree(&Input::from(loc.clone())) {
-                Err(e) => {
-                    let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
-                    panic!("Failed to parse {:?}.\n{}", &f, diag);
-                }
-                Ok(_) => {}
+            if let Err(e) = loader.load_tree(&Input::from(loc.clone())) {
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                panic!("Failed to parse {:?}.\n{}", &f, diag);
             }
 
-            match loader.translate(&Input::from(loc.clone())) {
-                Err(e) => {
-                    let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
-                    panic!("Failed to desugar {:?}.\n{}", &f, diag);
-                }
-                Ok(_) => {}
+            if let Err(e) = loader.translate(&Input::from(loc.clone())) {
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                panic!("Failed to desugar {:?}.\n{}", &f, diag);
             };
         }
     }

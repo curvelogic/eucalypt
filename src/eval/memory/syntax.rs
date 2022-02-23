@@ -577,13 +577,13 @@ pub mod tests {
         view.nil().unwrap();
         let id = LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default());
         view.let_(
-            view.singleton(id.clone()),
+            view.singleton(id),
             view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
                 .unwrap(),
         )
         .unwrap();
         view.letrec(
-            view.singleton(id.clone()),
+            view.singleton(id),
             view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
                 .unwrap(),
         )

@@ -159,7 +159,7 @@ pub mod tests {
 
         assert_term_eq!(
             soup(fill(&[ana.clone(), plus.clone(), var(x.clone())])),
-            soup(vec![ana.clone(), plus.clone(), var(x.clone())])
+            soup(vec![ana, plus, var(x)])
         );
     }
 }

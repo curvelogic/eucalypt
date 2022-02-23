@@ -115,13 +115,7 @@ pub mod tests {
             app(var(f.clone()), vec![num(22), num(23)]),
         );
 
-        let expected = let_(
-            vec![(
-                f.clone(),
-                inline(vec![x.clone(), y.clone()], var(y.clone())),
-            )],
-            num(23),
-        );
+        let expected = let_(vec![(f, inline(vec![x, y.clone()], var(y)))], num(23));
 
         assert_term_eq!(inline_pass(&original).unwrap(), expected);
     }
@@ -167,12 +161,9 @@ pub mod tests {
         );
         let expected = let_(
             vec![
+                (z.clone(), app(var(compose.clone()), vec![var(n), var(m)])),
                 (
-                    z.clone(),
-                    app(var(compose.clone()), vec![var(n.clone()), var(m.clone())]),
-                ),
-                (
-                    compose.clone(),
+                    compose,
                     inline(
                         vec![f.clone(), g.clone(), x.clone()],
                         app(
@@ -182,23 +173,20 @@ pub mod tests {
                     ),
                 ),
                 (
-                    r.clone(),
+                    r,
                     inline(
                         vec![j.clone(), k.clone()],
                         app(
                             inline(
                                 vec![f.clone(), g.clone(), x.clone()],
-                                app(
-                                    var(f.clone()),
-                                    vec![app(var(g.clone()), vec![var(x.clone())])],
-                                ),
+                                app(var(f), vec![app(var(g), vec![var(x)])]),
                             ),
-                            vec![var(j.clone()), var(k.clone())],
+                            vec![var(j), var(k)],
                         ),
                     ),
                 ),
             ],
-            var(z.clone()),
+            var(z),
         );
 
         assert_term_eq!(inline_pass(&original).unwrap(), expected);
@@ -281,22 +269,19 @@ pub mod tests {
                                     let_(
                                         vec![(
                                             d.clone(),
-                                            app(
-                                                var(compose.clone()),
-                                                vec![var(n.clone()), var(m.clone())],
-                                            ),
+                                            app(var(compose.clone()), vec![var(n), var(m)]),
                                         )],
-                                        block(iter::once(("d".to_string(), var(d.clone())))),
+                                        block(iter::once(("d".to_string(), var(d)))),
                                     ),
                                 )],
-                                block(iter::once(("c".to_string(), var(c.clone())))),
+                                block(iter::once(("c".to_string(), var(c)))),
                             ),
                         )],
-                        block(iter::once(("b".to_string(), var(b.clone())))),
+                        block(iter::once(("b".to_string(), var(b)))),
                     ),
                 ),
                 (
-                    compose.clone(),
+                    compose,
                     inline(
                         vec![f.clone(), g.clone(), x.clone()],
                         app(
@@ -306,23 +291,20 @@ pub mod tests {
                     ),
                 ),
                 (
-                    r.clone(),
+                    r,
                     inline(
                         vec![j.clone(), k.clone()],
                         app(
                             inline(
                                 vec![f.clone(), g.clone(), x.clone()],
-                                app(
-                                    var(f.clone()),
-                                    vec![app(var(g.clone()), vec![var(x.clone())])],
-                                ),
+                                app(var(f), vec![app(var(g), vec![var(x)])]),
                             ),
-                            vec![var(j.clone()), var(k.clone())],
+                            vec![var(j), var(k)],
                         ),
                     ),
                 ),
             ],
-            var(a.clone()),
+            var(a),
         );
 
         let inlined = inline_pass(&original).unwrap();

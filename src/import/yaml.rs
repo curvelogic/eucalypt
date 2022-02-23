@@ -413,7 +413,7 @@ z: !!int 1234232353
                 ),
             ),
             (free("x"), acore::str("y")),
-            (free("z"), acore::num(12342323535 as u64)),
+            (free("z"), acore::num(12342323535_u64)),
         ]);
 
         assert_term_eq!(parsed, expected);

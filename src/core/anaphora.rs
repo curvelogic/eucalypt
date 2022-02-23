@@ -227,15 +227,12 @@ pub mod tests {
 
     #[test]
     pub fn test_to_binding_pattern() {
-        let _0 = free("_0");
-        let _1 = free("_1");
+        let ana0 = free("_0");
+        let ana1 = free("_1");
 
         let mut hm: HashMap<Anaphor<Smid, i32>, FreeVar<String>> = HashMap::new();
-        hm.insert(Anaphor::ExplicitNumbered(0), _0.clone());
-        hm.insert(Anaphor::ExplicitNumbered(1), _1.clone());
-        assert_eq!(
-            to_binding_pattern(&hm).unwrap(),
-            vec![_0.clone(), _1.clone()]
-        );
+        hm.insert(Anaphor::ExplicitNumbered(0), ana0.clone());
+        hm.insert(Anaphor::ExplicitNumbered(1), ana1.clone());
+        assert_eq!(to_binding_pattern(&hm).unwrap(), vec![ana0, ana1]);
     }
 }

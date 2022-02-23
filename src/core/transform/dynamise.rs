@@ -132,7 +132,7 @@ pub mod tests {
         let original = var(x.clone());
         let expected = lam(
             vec![implicit.clone()],
-            lookup(var(implicit.clone()), "x", Some(var(x.clone()))),
+            lookup(var(implicit), "x", Some(var(x))),
         );
 
         assert_term_eq!(dynamise(&original).unwrap(), expected);
@@ -146,8 +146,8 @@ pub mod tests {
         let implicit = free("implicit");
 
         let original = let_(
-            vec![(x.clone(), num(22)), (y.clone(), num(23))],
-            let_(vec![(z.clone(), num(24))], var(x.clone())),
+            vec![(x.clone(), num(22)), (y, num(23))],
+            let_(vec![(z.clone(), num(24))], var(x)),
         );
 
         assert_term_eq!(dynamise(&original).unwrap(), original);
@@ -157,9 +157,9 @@ pub mod tests {
             let expected = lam(
                 vec![implicit.clone()],
                 let_(
-                    vec![(z.clone(), num(24))],
+                    vec![(z, num(24))],
                     lookup(
-                        var(implicit.clone()),
+                        var(implicit),
                         "x",
                         Some(RcExpr::from(Expr::Var(
                             Smid::default(),

@@ -153,23 +153,20 @@ pub mod tests {
                 (
                     a.clone(),
                     let_(
-                        vec![
-                            (d.clone(), RcExpr::from(Expr::ErrEliminated)),
-                            (e.clone(), num(2)),
-                        ],
+                        vec![(d, RcExpr::from(Expr::ErrEliminated)), (e.clone(), num(2))],
                         var(e.clone()),
                     ),
                 ),
-                (b.clone(), RcExpr::from(Expr::ErrEliminated)),
+                (b, RcExpr::from(Expr::ErrEliminated)),
             ],
             var(a.clone()),
         );
 
         let expected = let_(
-            vec![(a.clone(), let_(vec![(e.clone(), num(2))], var(e.clone())))],
-            var(a.clone()),
+            vec![(a.clone(), let_(vec![(e.clone(), num(2))], var(e)))],
+            var(a),
         );
 
-        assert_term_eq!(compress(&sample.clone()).unwrap(), expected);
+        assert_term_eq!(compress(&sample).unwrap(), expected);
     }
 }

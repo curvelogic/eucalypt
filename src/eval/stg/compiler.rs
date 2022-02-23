@@ -1095,8 +1095,8 @@ pub mod tests {
         let y = free("y");
 
         let core = acore::let_(
-            vec![(x.clone(), acore::num(2)), (y.clone(), acore::num(3))],
-            acore::var(x.clone()),
+            vec![(x.clone(), acore::num(2)), (y, acore::num(3))],
+            acore::var(x),
         );
 
         assert_eq!(
@@ -1121,11 +1121,11 @@ pub mod tests {
             vec![
                 (
                     x.clone(),
-                    acore::let_(vec![(z.clone(), acore::num(2))], acore::var(y.clone())),
+                    acore::let_(vec![(z, acore::num(2))], acore::var(y.clone())),
                 ),
-                (y.clone(), acore::num(3)),
+                (y, acore::num(3)),
             ],
-            acore::var(x.clone()),
+            acore::var(x),
         );
 
         assert_eq!(
@@ -1153,19 +1153,13 @@ pub mod tests {
 
         let core = acore::let_(
             vec![
-                (
-                    f.clone(),
-                    acore::lam(vec![x.clone(), y.clone()], acore::var(x.clone())),
-                ),
+                (f.clone(), acore::lam(vec![x.clone(), y], acore::var(x))),
                 (
                     z.clone(),
-                    acore::app(
-                        acore::var(f.clone()),
-                        vec![acore::num(999), acore::num(-999)],
-                    ),
+                    acore::app(acore::var(f), vec![acore::num(999), acore::num(-999)]),
                 ),
             ],
-            acore::var(z.clone()),
+            acore::var(z),
         );
 
         let expected = dsl::letrec_(

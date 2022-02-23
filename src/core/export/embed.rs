@@ -217,9 +217,9 @@ pub mod tests {
         let x = FreeVar::fresh_named("x");
 
         let core_expr = acore::soup(vec![
-            acore::var(f.clone()),
+            acore::var(f),
             acore::call(),
-            acore::arg_tuple(vec![acore::var(x.clone())]),
+            acore::arg_tuple(vec![acore::var(x)]),
             acore::dot(),
             acore::name("v"),
         ]);
@@ -247,7 +247,7 @@ pub mod tests {
             acore::soup(vec![
                 acore::var(x.clone()),
                 acore::op(Fixity::InfixLeft, 40, acore::bif("__ADD")),
-                acore::var(x.clone()),
+                acore::var(x),
             ]),
         );
 
