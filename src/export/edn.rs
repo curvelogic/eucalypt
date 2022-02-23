@@ -18,7 +18,7 @@ impl FromPrimitive for Value {
         match primitive {
             Primitive::Null => Value::Nil,
             Primitive::Bool(b) => Value::Boolean(*b),
-            Primitive::Sym(s) => Value::Keyword(Keyword::from_name(&s)),
+            Primitive::Sym(s) => Value::Keyword(Keyword::from_name(s)),
             Primitive::Str(s) => Value::String(s.clone()),
             Primitive::Num(n) => {
                 if let Some(i) = n.as_i64() {
@@ -65,7 +65,7 @@ impl<'a> Emitter for EdnEmitter<'a> {
     fn emit(&mut self, event: Event) {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(self.out, "{}", emit_str(&result)).unwrap();
+            writeln!(self.out, "{}", emit_str(result)).unwrap();
         }
     }
 }

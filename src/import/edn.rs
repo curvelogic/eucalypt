@@ -94,7 +94,7 @@ fn value_to_core(edn: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
         Value::Inst(dt) => Ok(acore::app(
             acore::bif("ZDT.PARSE"),
             vec![acore::str(dt.to_string())],
-        )), // TODO core representation of datetime
+        )), // NB. no core primitive for datetime right now
         Value::Uuid(uuid) => Ok(acore::meta(
             acore::str(uuid.to_string()),
             acore::block(iter::once((

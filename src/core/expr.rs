@@ -345,7 +345,7 @@ where
     /// Block (in contrast to the haskell implementation we're storing
     /// an ordered record right here)
     Block(Smid, BlockMap<T>),
-    /// Metadata annotation (span, expr, meta) - TODO: struct?
+    /// Metadata annotation (span, expr, meta)
     Meta(Smid, T, T),
     /// Tuple of arguments to apply
     ArgTuple(Smid, Vec<T>),
@@ -880,10 +880,12 @@ where
     }
 }
 
-/// Extract data from an expression using only basic inline /
+/// Extract data from a core expression.
+///
+/// Implementations are used to read processing-time metadata from
+/// core representations and therefore using only basic inline /
 /// substitution techniques such as are available during core
-/// processing and transformation. These require mutable self as
-/// transformations applied are kept.
+/// processing and transformation.
 pub trait Extract<T> {
     fn extract(&self) -> Option<T>;
 }

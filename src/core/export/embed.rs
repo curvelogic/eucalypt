@@ -5,9 +5,12 @@ use crate::syntax::ast::*;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty;
 
-/// Embed the core expression as AST then render as parse-embed unit.
+/// Embed a representation of the core expression in an AST then
+/// render as parse-embed unit.
 ///
-/// The core emitted can be consumed by `parse-embed` functionality.
+/// The core emitted can be consumed by `parse-embed` functionality
+/// which reads such a representation out of the AST to build core,
+/// instead of using the normal translation process.
 pub fn quote_embed_core_unit(expr: &RcExpr) -> String {
     format!(
         " {{ parse-embed: :CORE }}
