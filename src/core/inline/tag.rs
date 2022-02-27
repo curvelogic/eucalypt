@@ -64,10 +64,10 @@ pub mod tests {
                 f.clone(),
                 inline(
                     vec![y.clone(), z.clone()],
-                    app(bif("F"), vec![var(y.clone()), var(z.clone())]),
+                    app(bif("F"), vec![var(y), var(z)]),
                 ),
             )],
-            app(var(f.clone()), vec![num(22), num(23)]),
+            app(var(f), vec![num(22), num(23)]),
         );
 
         assert_term_eq!(tag_combinators(&original).unwrap(), expected);

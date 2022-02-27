@@ -354,14 +354,11 @@ pub mod tests {
         );
 
         let expected = let_(
-            vec![
-                (x.clone(), num(1)),
-                (y.clone(), RcExpr::from(Expr::ErrEliminated)),
-            ],
-            var(x.clone()),
+            vec![(x.clone(), num(1)), (y, RcExpr::from(Expr::ErrEliminated))],
+            var(x),
         );
 
-        assert_term_eq!(prune(&simple.clone()), expected)
+        assert_term_eq!(prune(&simple), expected)
     }
 
     #[test]
@@ -380,20 +377,17 @@ pub mod tests {
         );
 
         let expected = let_(
-            vec![
-                (x.clone(), num(1)),
-                (y.clone(), RcExpr::from(Expr::ErrEliminated)),
-            ],
+            vec![(x.clone(), num(1)), (y, RcExpr::from(Expr::ErrEliminated))],
             let_(
                 vec![
-                    (z.clone(), RcExpr::from(Expr::ErrEliminated)),
-                    (v.clone(), RcExpr::from(Expr::ErrEliminated)),
+                    (z, RcExpr::from(Expr::ErrEliminated)),
+                    (v, RcExpr::from(Expr::ErrEliminated)),
                 ],
-                var(x.clone()),
+                var(x),
             ),
         );
 
-        assert_term_eq!(prune(&nested.clone()), expected)
+        assert_term_eq!(prune(&nested), expected)
     }
 
     #[test]
@@ -417,7 +411,7 @@ pub mod tests {
                 (b.clone(), num(2)),
                 (c, RcExpr::from(Expr::ErrEliminated)),
             ],
-            app(bif("BLAH"), vec![var(a), var(b.clone())]),
+            app(bif("BLAH"), vec![var(a), var(b)]),
         );
 
         assert_term_eq!(prune(&expr), expected)
@@ -453,9 +447,9 @@ pub mod tests {
                         var(e),
                     ),
                 ),
-                (b.clone(), RcExpr::from(Expr::ErrEliminated)),
+                (b, RcExpr::from(Expr::ErrEliminated)),
             ],
-            var(a.clone()),
+            var(a),
         );
 
         assert_term_eq!(prune(&expr), expected)

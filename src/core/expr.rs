@@ -345,7 +345,7 @@ where
     /// Block (in contrast to the haskell implementation we're storing
     /// an ordered record right here)
     Block(Smid, BlockMap<T>),
-    /// Metadata annotation (span, expr, meta) - TODO: struct?
+    /// Metadata annotation (span, expr, meta)
     Meta(Smid, T, T),
     /// Tuple of arguments to apply
     ArgTuple(Smid, Vec<T>),
@@ -880,10 +880,12 @@ where
     }
 }
 
-/// Extract data from an expression using only basic inline /
+/// Extract data from a core expression.
+///
+/// Implementations are used to read processing-time metadata from
+/// core representations and therefore using only basic inline /
 /// substitution techniques such as are available during core
-/// processing and transformation. These require mutable self as
-/// transformations applied are kept.
+/// processing and transformation.
 pub trait Extract<T> {
     fn extract(&self) -> Option<T>;
 }
@@ -1403,8 +1405,8 @@ pub mod tests {
 
         assert_term_eq!(
             lam(vec![a.clone(), b.clone(), c.clone()], var(d.clone()))
-                .substs(&[(d.clone(), var(e.clone()))]),
-            lam(vec![a.clone(), b.clone(), c.clone()], var(e.clone())),
+                .substs(&[(d, var(e.clone()))]),
+            lam(vec![a, b, c], var(e)),
         );
     }
 
@@ -1421,8 +1423,8 @@ pub mod tests {
         let sub = |n: &str| if n == "d" { Some(var(e.clone())) } else { None };
 
         assert_term_eq!(
-            lam(vec![a.clone(), b.clone(), c.clone()], var(d.clone())).substs_free(&sub),
-            lam(vec![a.clone(), b.clone(), c.clone()], var(e.clone())),
+            lam(vec![a.clone(), b.clone(), c.clone()], var(d)).substs_free(&sub),
+            lam(vec![a, b, c], var(e)),
         );
     }
 
@@ -1434,12 +1436,9 @@ pub mod tests {
         let y = free("y");
 
         let original = default_let(vec![(x.clone(), num(22)), (y.clone(), num(23))]);
-        let expected = let_(
-            vec![(x.clone(), num(22)), (y.clone(), num(23))],
-            var(y.clone()),
-        );
+        let expected = let_(vec![(x, num(22)), (y.clone(), num(23))], var(y.clone()));
 
-        assert_term_eq!(original.rebody(var(y.clone())), expected);
+        assert_term_eq!(original.rebody(var(y)), expected);
     }
 
     #[test]
@@ -1455,11 +1454,11 @@ pub mod tests {
             default_let(vec![(z.clone(), num(24))]),
         );
         let expected = let_(
-            vec![(x.clone(), num(22)), (y.clone(), num(23))],
-            let_(vec![(z.clone(), num(24))], var(x.clone())),
+            vec![(x.clone(), num(22)), (y, num(23))],
+            let_(vec![(z, num(24))], var(x.clone())),
         );
 
-        assert_term_eq!(original.rebody(var(x.clone())), expected);
+        assert_term_eq!(original.rebody(var(x)), expected);
     }
 
     #[test]
@@ -1530,9 +1529,9 @@ pub mod tests {
             vec![
                 (a.clone(), num(1)),
                 (b.clone(), var(a.clone())),
-                (c.clone(), var(y_other.clone())),
+                (c.clone(), var(y_other)),
             ],
-            var(x_other.clone()),
+            var(x_other),
         );
 
         let unit_c = unit_a.merge_in(unit_b);
@@ -1540,15 +1539,8 @@ pub mod tests {
         let expected = let_(
             vec![(x.clone(), num(22)), (y.clone(), var(x.clone()))],
             let_(
-                vec![(z.clone(), num(24))],
-                let_(
-                    vec![
-                        (a.clone(), num(1)),
-                        (b.clone(), var(a.clone())),
-                        (c.clone(), var(y.clone())),
-                    ],
-                    var(x.clone()),
-                ),
+                vec![(z, num(24))],
+                let_(vec![(a.clone(), num(1)), (b, var(a)), (c, var(y))], var(x)),
             ),
         );
 
@@ -1579,25 +1571,18 @@ pub mod tests {
             vec![
                 (a.clone(), num(1)),
                 (b.clone(), var(a.clone())),
-                (c.clone(), var(y_other.clone())),
+                (c.clone(), var(y_other)),
             ],
-            var(x_other.clone()),
+            var(x_other),
         );
 
         let unit_c = unit_a.merge_in(unit_b);
 
         let expected = let_(
-            vec![(x.clone(), num(22)), (y.clone(), var(a_other.clone()))],
+            vec![(x.clone(), num(22)), (y.clone(), var(a_other))],
             let_(
-                vec![(z.clone(), num(24))],
-                let_(
-                    vec![
-                        (a.clone(), num(1)),
-                        (b.clone(), var(a.clone())),
-                        (c.clone(), var(y.clone())),
-                    ],
-                    var(x.clone()),
-                ),
+                vec![(z, num(24))],
+                let_(vec![(a.clone(), num(1)), (b, var(a)), (c, var(y))], var(x)),
             ),
         );
 
@@ -1626,23 +1611,20 @@ pub mod tests {
         );
 
         let unit_b = let_(
-            vec![(a.clone(), num(2)), (b.clone(), var(x_other.clone()))],
+            vec![(a.clone(), num(2)), (b.clone(), var(x_other))],
             var(a.clone()),
         );
 
         let unit_c = let_(
-            vec![(m.clone(), num(3)), (n.clone(), var(b_other.clone()))],
-            var(y_other.clone()),
+            vec![(m.clone(), num(3)), (n.clone(), var(b_other))],
+            var(y_other),
         );
 
         let expected = let_(
             vec![(x.clone(), num(1)), (y.clone(), var(x.clone()))],
             let_(
-                vec![(a.clone(), num(2)), (b.clone(), var(x.clone()))],
-                let_(
-                    vec![(m.clone(), num(3)), (n.clone(), var(b.clone()))],
-                    var(y.clone()),
-                ),
+                vec![(a, num(2)), (b.clone(), var(x))],
+                let_(vec![(m, num(3)), (n, var(b))], var(y)),
             ),
         );
 

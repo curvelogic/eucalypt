@@ -498,6 +498,8 @@ impl EucalyptOptions {
                     Some("yaml") | Some("yml") => Some("yaml".to_string()),
                     Some("json") => Some("json".to_string()),
                     Some("txt") => Some("text".to_string()),
+                    Some("edn") => Some("edn".to_string()),
+                    Some("toml") => Some("toml".to_string()),
                     _ => None,
                 };
                 self.export_type = format;

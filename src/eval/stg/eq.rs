@@ -251,8 +251,8 @@ pub mod tests {
     pub fn test_box_nums() {
         let syntax = letrec_(
             vec![
-                value(box_num(Number::from_f64(3.14159265).unwrap())),
-                value(box_num(Number::from_f64(3.14159265).unwrap())),
+                value(box_num(Number::from_f64(std::f64::consts::PI).unwrap())),
+                value(box_num(Number::from_f64(std::f64::consts::PI).unwrap())),
             ],
             Eq.global(lref(0), lref(1)),
         );

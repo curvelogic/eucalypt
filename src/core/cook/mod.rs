@@ -163,7 +163,7 @@ pub mod tests {
     use moniker::assert_term_eq;
 
     fn cook_soup(exprs: &[RcExpr]) -> RcExpr {
-        cook(RcExpr::from(soup(exprs.to_vec()))).unwrap()
+        cook(soup(exprs.to_vec())).unwrap()
     }
 
     #[test]
@@ -178,8 +178,8 @@ pub mod tests {
         let post100 = core::postfix(Smid::fake(8), 100, bif("POST100"));
         let pre10 = core::prefix(Smid::fake(9), 10, bif("PRE10"));
         let post10 = core::postfix(Smid::fake(10), 10, bif("POST10"));
-        let _0 = free("_0");
-        let _1 = free("_1");
+        let ana0 = free("_0");
+        let ana1 = free("_1");
 
         assert_term_eq!(
             cook_soup(&[num(5), l50.clone(), num(7)]),
@@ -191,7 +191,7 @@ pub mod tests {
 
         assert_term_eq!(
             cook_soup(&[var(x.clone()), var(f.clone())]),
-            app(var(f.clone()), vec![var(x.clone())])
+            app(var(f), vec![var(x)])
         );
 
         // associates left
@@ -214,15 +214,7 @@ pub mod tests {
 
         // respects precedence in left
         assert_term_eq!(
-            cook_soup(&[
-                num(1),
-                l40.clone(),
-                num(2),
-                l50.clone(),
-                num(3),
-                l60.clone(),
-                num(4)
-            ]),
+            cook_soup(&[num(1), l40, num(2), l50.clone(), num(3), l60, num(4)]),
             app(
                 bif("L40"),
                 vec![
@@ -237,15 +229,7 @@ pub mod tests {
 
         // respects precedence in right
         assert_term_eq!(
-            cook_soup(&[
-                num(1),
-                r60.clone(),
-                num(2),
-                r50.clone(),
-                num(3),
-                r40.clone(),
-                num(4)
-            ]),
+            cook_soup(&[num(1), r60, num(2), r50, num(3), r40, num(4)]),
             app(
                 bif("R40"),
                 vec![
@@ -322,8 +306,8 @@ pub mod tests {
         assert_term_eq!(
             cook_soup(&[l50.clone(), num(20)]),
             lam(
-                vec![_0.clone()],
-                app(bif("L50"), vec![var(_0.clone()), num(20)])
+                vec![ana0.clone()],
+                app(bif("L50"), vec![var(ana0.clone()), num(20)])
             )
         );
 
@@ -331,8 +315,8 @@ pub mod tests {
         assert_term_eq!(
             cook_soup(&[num(20), l50.clone()]),
             lam(
-                vec![_0.clone()],
-                app(bif("L50"), vec![num(20), var(_0.clone())])
+                vec![ana0.clone()],
+                app(bif("L50"), vec![num(20), var(ana0.clone())])
             )
         );
 
@@ -340,12 +324,12 @@ pub mod tests {
         assert_term_eq!(
             cook_soup(&[pre10.clone(), l50.clone(), num(30), post10.clone()]),
             lam(
-                vec![_0.clone()],
+                vec![ana0.clone()],
                 app(
                     bif("PRE10"),
                     vec![app(
                         bif("POST10"),
-                        vec![app(bif("L50"), vec![var(_0.clone()), num(30)])]
+                        vec![app(bif("L50"), vec![var(ana0.clone()), num(30)])]
                     )]
                 )
             )
@@ -354,20 +338,14 @@ pub mod tests {
         // fills ... (binary) (unary post) ... with anaphor and
         // abstracts
         assert_term_eq!(
-            cook_soup(&[
-                num(30),
-                l50.clone(),
-                post100.clone(),
-                pre100.clone(),
-                num(20)
-            ]),
+            cook_soup(&[num(30), l50.clone(), post100, pre100, num(20)]),
             lam(
-                vec![_0.clone()],
+                vec![ana0.clone()],
                 app(
                     app(bif("PRE100"), vec![num(20)]),
                     vec![app(
                         bif("L50"),
-                        vec![num(30), app(bif("POST100"), vec![var(_0.clone())])]
+                        vec![num(30), app(bif("POST100"), vec![var(ana0.clone())])]
                     )]
                 )
             )
@@ -377,14 +355,14 @@ pub mod tests {
         assert_term_eq!(
             cook_soup(&[pre10.clone(), pre10.clone(), pre10.clone(), pre10.clone()]),
             lam(
-                vec![_0.clone()],
+                vec![ana0.clone()],
                 app(
                     bif("PRE10"),
                     vec![app(
                         bif("PRE10"),
                         vec![app(
                             bif("PRE10"),
-                            vec![app(bif("PRE10"), vec![var(_0.clone())])]
+                            vec![app(bif("PRE10"), vec![var(ana0.clone())])]
                         )]
                     )]
                 )
@@ -393,9 +371,9 @@ pub mod tests {
 
         // fills pre10 l50 post10
         assert_term_eq!(
-            cook_soup(&[pre10.clone(), l50.clone(), post10.clone()]),
+            cook_soup(&[pre10, l50, post10]),
             lam(
-                vec![_0.clone(), _1.clone()],
+                vec![ana0.clone(), ana1.clone()],
                 app(
                     bif("PRE10"),
                     vec![app(
@@ -403,8 +381,8 @@ pub mod tests {
                         vec![app(
                             bif("L50"),
                             vec![
-                                core::var(Smid::fake(11), _0.clone()),
-                                core::var(Smid::fake(12), _1.clone())
+                                core::var(Smid::fake(11), ana0),
+                                core::var(Smid::fake(12), ana1)
                             ]
                         )]
                     )]
@@ -444,17 +422,17 @@ pub mod tests {
     #[test]
     pub fn test_anaphoric_operation() {
         let l50 = core::infixl(Smid::fake(1), 50, bif("MUL"));
-        let _0 = free("_e_n0");
+        let ana0 = free("_e_n0");
 
         assert_term_eq!(
             cook_soup(&[
                 core::expr_anaphor(Smid::fake(2), Some(0)),
-                l50.clone(),
+                l50,
                 core::expr_anaphor(Smid::fake(2), Some(0))
             ]),
             lam(
-                vec![_0.clone()],
-                app(bif("MUL"), vec![var(_0.clone()), var(_0.clone())])
+                vec![ana0.clone()],
+                app(bif("MUL"), vec![var(ana0.clone()), var(ana0)])
             )
         );
     }

@@ -1,3 +1,4 @@
+use crate::common::sourcemap::*;
 use crate::core::cook;
 use crate::core::desugar::{Content, Desugarer};
 use crate::core::error::CoreError;
@@ -10,17 +11,16 @@ use crate::core::unit::TranslationUnit;
 use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
 use crate::driver::resources::Resources;
-use crate::import::{csv, text, xml, yaml};
+use crate::import::read_to_core;
 use crate::syntax::ast::*;
 use crate::syntax::import::ImportGraph;
 use crate::syntax::input::Input;
 use crate::syntax::input::Locator;
 use crate::syntax::parser;
-use crate::{common::sourcemap::*, import::toml};
+use codespan_reporting::diagnostic::Diagnostic;
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::emit;
 use codespan_reporting::term::termcolor::{ColorChoice, NoColor, StandardStream};
-use codespan_reporting::{diagnostic::Diagnostic, files::Files};
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::{collections::HashMap, path::Path};
@@ -104,15 +104,29 @@ impl SourceLoader {
 
     /// Load an input (and transitive imports)
     pub fn load(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        match input.format() {
-            "yaml" | "json" => self.load_yaml(input), // direct to core
-            "toml" => self.load_toml(input),
-            "text" => self.load_text(input),
-            "csv" => self.load_csv(input),
-            "xml" => self.load_xml(input),
-            "core" => self.load_core(input), // load pseudoblock
-            _ => self.load_tree(input),      // to ASTs needing desugaring
+        let fmt = input.format();
+
+        if fmt == "eu" {
+            self.load_tree(input)
+        } else if fmt == "core" {
+            self.load_core(input)
+        } else {
+            self.load_simple(input)
         }
+    }
+
+    /// Loads from a data format that does not support imports
+    fn load_simple(&mut self, input: &Input) -> Result<usize, EucalyptError> {
+        let file_id = self.load_source(input.locator())?;
+        let core = read_to_core(
+            input.format(),
+            &mut self.files,
+            &mut self.source_map,
+            file_id,
+        )?;
+        self.imports.add_leaf(input.clone())?;
+        self.cores.insert(input.clone(), core);
+        Ok(file_id)
     }
 
     /// Load and parse import-graph of eucalypt files starting with the one
@@ -150,60 +164,6 @@ impl SourceLoader {
         };
         self.asts.insert(id, ast);
         Ok(id)
-    }
-
-    /// Load YAML
-    ///
-    /// YAML is a special case because of available eu embeddings.
-    fn load_yaml(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        let file_id = self.load_source(input.locator())?;
-        // the copy is necessary as yaml needs a mutable files db for
-        // adding embeddings so cannot have immutable ref into it at
-        // the same time
-        let text = self.files.source(file_id)?.to_string();
-        let core = yaml::read_yaml(&mut self.files, &mut self.source_map, file_id, &text)?;
-        self.imports.add_leaf(input.clone())?;
-        self.cores.insert(input.clone(), core);
-        Ok(file_id)
-    }
-
-    /// Load TOML
-    fn load_toml(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        let file_id = self.load_source(input.locator())?;
-        let text = self.files.source(file_id)?;
-        let core = toml::read_toml(&mut self.source_map, file_id, text)?;
-        self.imports.add_leaf(input.clone())?;
-        self.cores.insert(input.clone(), core);
-        Ok(file_id)
-    }
-
-    /// Load text as list of lines
-    fn load_text(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        let file_id = self.load_source(input.locator())?;
-        let text = self.files.source(file_id)?;
-        let core = text::read_text(&mut self.source_map, file_id, text)?;
-        self.imports.add_leaf(input.clone())?;
-        self.cores.insert(input.clone(), core);
-        Ok(file_id)
-    }
-
-    /// Load text as list of lines
-    fn load_csv(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        let file_id = self.load_source(input.locator())?;
-        let text = self.files.source(file_id)?;
-        let core = csv::read_csv(&mut self.source_map, file_id, text)?;
-        self.imports.add_leaf(input.clone())?;
-        self.cores.insert(input.clone(), core);
-        Ok(file_id)
-    }
-
-    fn load_xml(&mut self, input: &Input) -> Result<usize, EucalyptError> {
-        let file_id = self.load_source(input.locator())?;
-        let text = self.files.source(file_id)?;
-        let core = xml::read_xml(&mut self.source_map, file_id, text)?;
-        self.imports.add_leaf(input.clone())?;
-        self.cores.insert(input.clone(), core);
-        Ok(file_id)
     }
 
     /// Load __io pseudoblock as core
@@ -467,12 +427,9 @@ pub mod tests {
         ]);
 
         for f in eu_paths() {
-            match loader.load_eucalypt(&Locator::Fs(f.clone())) {
-                Err(e) => {
-                    let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
-                    panic!("Failed to parse {:?}.\n{}", &f, diag);
-                }
-                Ok(_) => {}
+            if let Err(e) = loader.load_eucalypt(&Locator::Fs(f.clone())) {
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                panic!("Failed to parse {:?}.\n{}", &f, diag);
             }
         }
     }
@@ -484,20 +441,14 @@ pub mod tests {
         for f in eu_paths() {
             let loc = Locator::Fs(f.clone());
 
-            match loader.load_tree(&Input::from(loc.clone())) {
-                Err(e) => {
-                    let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
-                    panic!("Failed to parse {:?}.\n{}", &f, diag);
-                }
-                Ok(_) => {}
+            if let Err(e) = loader.load_tree(&Input::from(loc.clone())) {
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                panic!("Failed to parse {:?}.\n{}", &f, diag);
             }
 
-            match loader.translate(&Input::from(loc.clone())) {
-                Err(e) => {
-                    let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
-                    panic!("Failed to desugar {:?}.\n{}", &f, diag);
-                }
-                Ok(_) => {}
+            if let Err(e) = loader.translate(&Input::from(loc.clone())) {
+                let diag = loader.diagnose_to_string(&e.to_diagnostic(loader.source_map()));
+                panic!("Failed to desugar {:?}.\n{}", &f, diag);
             };
         }
     }

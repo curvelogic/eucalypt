@@ -813,7 +813,7 @@ impl<'a> Machine<'a> {
 
         if self.state.terminated() {
             if let HeapSyn::Atom { evaluand: r } = &*code {
-                self.nav().resolve_native(&r).ok()
+                self.nav().resolve_native(r).ok()
             } else {
                 None
             }
@@ -831,12 +831,8 @@ impl<'a> Machine<'a> {
 
         if self.state.terminated() {
             if let HeapSyn::Atom { evaluand: r } = &*code {
-                if let Ok(n) = self.nav().resolve_native(&r) {
-                    if let Native::Str(rp) = n {
-                        Some((*view.scoped(rp)).as_str().to_string())
-                    } else {
-                        None
-                    }
+                if let Ok(Native::Str(rp)) = self.nav().resolve_native(r) {
+                    Some((*view.scoped(rp)).as_str().to_string())
                 } else {
                     None
                 }
@@ -879,11 +875,7 @@ impl<'a> Machine<'a> {
 
         if self.state.terminated() {
             if let HeapSyn::Cons { tag, .. } = &*code {
-                if *tag == DataConstructor::Unit.tag() {
-                    true
-                } else {
-                    false
-                }
+                *tag == DataConstructor::Unit.tag()
             } else {
                 false
             }
@@ -955,14 +947,7 @@ pub mod tests {
     fn machine(syn: Rc<StgSyn>) -> Machine<'static> {
         let mut m = Machine::new(Box::new(DebugEmitter::default()), true);
         let blank = m.mutate(Init, ()).unwrap();
-        let closure = m
-            .mutate(
-                Load {
-                    syntax: syn.clone(),
-                },
-                blank,
-            )
-            .unwrap();
+        let closure = m.mutate(Load { syntax: syn }, blank).unwrap();
         m.initialise(blank, blank, closure, vec![]).unwrap();
         m
     }

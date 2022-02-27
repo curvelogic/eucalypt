@@ -1,0 +1,5 @@
+{:k "foo"
+ :k1 "bar"
+ :α :blah
+ :quux [:x :y :z]
+ :RESULT :PASS}

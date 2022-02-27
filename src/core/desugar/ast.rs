@@ -552,13 +552,6 @@ pub mod tests {
     }
 
     impl Fixture {
-        pub fn new() -> Self {
-            let source_map = SourceMap::new();
-            let files = SimpleFiles::<String, String>::new();
-
-            Fixture { source_map, files }
-        }
-
         pub fn desugar(mut self, ast: impl Desugarable) -> RcExpr {
             let file_id = self.files.add("<test>".to_string(), "".into());
             let mut hm: HashMap<Input, Content> = HashMap::new();
@@ -571,25 +564,34 @@ pub mod tests {
         }
     }
 
+    impl Default for Fixture {
+        fn default() -> Self {
+            let source_map = SourceMap::new();
+            let files = SimpleFiles::<String, String>::new();
+
+            Fixture { source_map, files }
+        }
+    }
+
     #[test]
     pub fn test_literals() {
         assert_eq!(
-            Fixture::new().desugar(ast::str("blah")),
+            Fixture::default().desugar(ast::str("blah")),
             core::str(Smid::from(1), "blah")
         );
         assert_eq!(
-            Fixture::new().desugar(ast::sym("blah")),
+            Fixture::default().desugar(ast::sym("blah")),
             core::sym(Smid::from(1), "blah")
         );
         assert_eq!(
-            Fixture::new().desugar(ast::num(900)),
+            Fixture::default().desugar(ast::num(900)),
             core::num(Smid::from(1), 900)
         );
     }
 
     #[test]
     pub fn test_inserts_call_operator() {
-        let fixture = Fixture::new();
+        let fixture = Fixture::default();
 
         let soup = vec![
             ast::lit(ast::num(5)),
@@ -617,7 +619,7 @@ pub mod tests {
 
     #[test]
     pub fn test_handles_iterated_calls() {
-        let fixture = Fixture::new();
+        let fixture = Fixture::default();
 
         let soup = vec![
             ast::name(ast::normal("f")),
@@ -638,7 +640,7 @@ pub mod tests {
 
     #[test]
     pub fn test_handles_relative_names() {
-        let fixture = Fixture::new();
+        let fixture = Fixture::default();
 
         let soup = vec![
             ast::name(ast::normal("x")),
@@ -661,7 +663,7 @@ pub mod tests {
 
     #[test]
     pub fn test_creates_var_for_lonely_names() {
-        let fixture = Fixture::new();
+        let fixture = Fixture::default();
 
         let block = ast::block(
             None,
@@ -679,7 +681,7 @@ pub mod tests {
 
     #[test]
     pub fn test_handles_built_ins() {
-        let fixture = Fixture::new();
+        let fixture = Fixture::default();
 
         let block = ast::block(
             None,
@@ -694,7 +696,7 @@ pub mod tests {
 
         let core_block = acore::default_let(vec![
             (null.clone(), acore::bif("NULL")),
-            (a.clone(), acore::var(null.clone())),
+            (a, acore::var(null)),
         ]);
 
         assert_term_eq!(bound(fixture.desugar(block)), bound(core_block));
@@ -715,22 +717,22 @@ pub mod tests {
         let t = free("t");
 
         let core_expr = acore::soup(vec![
-            acore::var(eq.clone()),
+            acore::var(eq),
             acore::call(),
             acore::arg_tuple(vec![
                 acore::soup(vec![
-                    acore::var(or.clone()),
+                    acore::var(or),
                     acore::call(),
                     acore::arg_tuple(vec![
-                        acore::var(f.clone()),
+                        acore::var(f),
                         acore::soup(vec![
-                            acore::var(and.clone()),
+                            acore::var(and),
                             acore::call(),
                             acore::arg_tuple(vec![acore::var(t.clone()), acore::var(t.clone())]),
                         ]),
                     ]),
                 ]),
-                acore::var(t.clone()),
+                acore::var(t),
             ]),
         ]);
 
@@ -796,9 +798,9 @@ pub mod tests {
         let x = FreeVar::fresh_named("x");
 
         let core_expr = acore::soup(vec![
-            acore::var(f.clone()),
+            acore::var(f),
             acore::call(),
-            acore::arg_tuple(vec![acore::var(x.clone())]),
+            acore::arg_tuple(vec![acore::var(x)]),
             acore::dot(),
             acore::name("v"),
         ]);

@@ -271,7 +271,7 @@ pub mod tests {
                         vec![list(vec![num(1), num(2), num(3)]), bif("HEAD")],
                     ),
                     app(
-                        pseudocat.clone(),
+                        pseudocat,
                         vec![list(vec![num(1), num(2), num(3)]), bif("TAIL")],
                     ),
                 ],

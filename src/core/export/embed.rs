@@ -5,9 +5,12 @@ use crate::syntax::ast::*;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty;
 
-/// Embed the core expression as AST then render as parse-embed unit.
+/// Embed a representation of the core expression in an AST then
+/// render as parse-embed unit.
 ///
-/// The core emitted can be consumed by `parse-embed` functionality.
+/// The core emitted can be consumed by `parse-embed` functionality
+/// which reads such a representation out of the AST to build core,
+/// instead of using the normal translation process.
 pub fn quote_embed_core_unit(expr: &RcExpr) -> String {
     format!(
         " {{ parse-embed: :CORE }}
@@ -217,9 +220,9 @@ pub mod tests {
         let x = FreeVar::fresh_named("x");
 
         let core_expr = acore::soup(vec![
-            acore::var(f.clone()),
+            acore::var(f),
             acore::call(),
-            acore::arg_tuple(vec![acore::var(x.clone())]),
+            acore::arg_tuple(vec![acore::var(x)]),
             acore::dot(),
             acore::name("v"),
         ]);
@@ -247,7 +250,7 @@ pub mod tests {
             acore::soup(vec![
                 acore::var(x.clone()),
                 acore::op(Fixity::InfixLeft, 40, acore::bif("__ADD")),
-                acore::var(x.clone()),
+                acore::var(x),
             ]),
         );
 

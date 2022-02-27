@@ -126,8 +126,8 @@ pub mod tests {
         );
 
         let expected = let_(
-            vec![(plus.clone(), bif("FOO")), (minus.clone(), bif("BAR"))],
-            soup(vec![num(1), infixl(50, var(plus.clone())), num(2)]),
+            vec![(plus.clone(), bif("FOO")), (minus, bif("BAR"))],
+            soup(vec![num(1), infixl(50, var(plus)), num(2)]),
         );
 
         assert_term_eq!(distribute(expr).unwrap(), expected);
@@ -149,8 +149,8 @@ pub mod tests {
         let expected = let_(
             vec![(plus.clone(), bif("FOO"))],
             let_(
-                vec![(minus.clone(), bif("BAR"))],
-                soup(vec![num(1), infixl(50, var(plus.clone())), num(2)]),
+                vec![(minus, bif("BAR"))],
+                soup(vec![num(1), infixl(50, var(plus)), num(2)]),
             ),
         );
 
@@ -171,8 +171,8 @@ pub mod tests {
         );
 
         let expected = let_(
-            vec![(plus.clone(), bif("FOO")), (minus.clone(), bif("BAR"))],
-            soup(vec![num(1), infixr(90, var(minus.clone())), num(2)]),
+            vec![(plus, bif("FOO")), (minus.clone(), bif("BAR"))],
+            soup(vec![num(1), infixr(90, var(minus)), num(2)]),
         );
 
         assert_term_eq!(distribute(expr).unwrap(), expected);

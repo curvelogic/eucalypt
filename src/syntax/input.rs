@@ -108,6 +108,7 @@ impl Locator {
             "json" => Some(String::from("json")),
             "txt" => Some(String::from("text")),
             "toml" => Some(String::from("toml")),
+            "edn" => Some(String::from("edn")),
             "yaml" => Some(String::from("yaml")),
             "yml" => Some(String::from("yaml")),
             "csv" => Some(String::from("csv")),

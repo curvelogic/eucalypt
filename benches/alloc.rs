@@ -22,7 +22,7 @@ use eucalypt::{
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-fn box_one<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> Closure {
+fn box_one(view: MutatorHeapView, empty: RefPtr<EnvFrame>) -> Closure {
     Closure::new(
         view.data(
             DataConstructor::BoxedString.tag(),
@@ -34,16 +34,7 @@ fn box_one<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> Cl
     )
 }
 
-fn identity<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) -> RefPtr<Closure> {
-    view.alloc(Closure::close(
-        &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
-        empty,
-    ))
-    .unwrap()
-    .as_ptr()
-}
-
-fn fake_bindings<'guard>(view: MutatorHeapView<'guard>, width: usize) -> Vec<LambdaForm> {
+fn fake_bindings(view: MutatorHeapView, width: usize) -> Vec<LambdaForm> {
     iter::repeat_with(|| {
         LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
     })
@@ -51,8 +42,8 @@ fn fake_bindings<'guard>(view: MutatorHeapView<'guard>, width: usize) -> Vec<Lam
     .collect()
 }
 
-fn fake_env_stack<'guard>(
-    view: MutatorHeapView<'guard>,
+fn fake_env_stack(
+    view: MutatorHeapView,
     empty: RefPtr<EnvFrame>,
     width: usize,
     height: usize,
@@ -68,8 +59,8 @@ fn fake_env_stack<'guard>(
 }
 
 /// Allocate a letrec of identify function bindings
-fn alloc_let<'guard>(
-    view: MutatorHeapView<'guard>,
+fn alloc_let(
+    view: MutatorHeapView,
     empty: RefPtr<EnvFrame>,
     bindings: &[LambdaForm],
 ) -> RefPtr<EnvFrame> {
@@ -77,8 +68,8 @@ fn alloc_let<'guard>(
 }
 
 /// Allocate a letrec of identify function bindings
-fn alloc_letrec<'guard>(
-    view: MutatorHeapView<'guard>,
+fn alloc_letrec(
+    view: MutatorHeapView,
     empty: RefPtr<EnvFrame>,
     bindings: &[LambdaForm],
 ) -> RefPtr<EnvFrame> {
@@ -86,30 +77,21 @@ fn alloc_letrec<'guard>(
 }
 
 /// Access deep closure
-fn access<'guard>(
-    view: MutatorHeapView<'guard>,
-    env: RefPtr<EnvFrame>,
-    depth: usize,
-) -> Option<Closure> {
+fn access(view: MutatorHeapView, env: RefPtr<EnvFrame>, depth: usize) -> Option<Closure> {
     let e = view.scoped(env);
     (*e).get(&view, depth)
 }
 
 /// Update deep closure with a new value
-fn update<'guard>(
-    view: MutatorHeapView<'guard>,
-    empty: RefPtr<EnvFrame>,
-    env: RefPtr<EnvFrame>,
-    depth: usize,
-) {
+fn update(view: MutatorHeapView, empty: RefPtr<EnvFrame>, env: RefPtr<EnvFrame>, depth: usize) {
     let e = view.scoped(env);
     let value = box_one(view, empty);
     (*e).update(&view, depth, value).unwrap();
 }
 
 /// Create an identity lambda and saturate it
-fn create_and_saturate_lambda<'guard>(view: MutatorHeapView<'guard>, empty: RefPtr<EnvFrame>) {
-    let mut lambda = Closure::close(
+fn create_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
+    let lambda = Closure::close(
         &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
         empty,
     );
@@ -118,11 +100,8 @@ fn create_and_saturate_lambda<'guard>(view: MutatorHeapView<'guard>, empty: RefP
 }
 
 /// Create an identity lambda and saturate it
-fn create_partially_apply_and_saturate_lambda<'guard>(
-    view: MutatorHeapView<'guard>,
-    empty: RefPtr<EnvFrame>,
-) {
-    let mut lambda = Closure::close(
+fn create_partially_apply_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
+    let lambda = Closure::close(
         &LambdaForm::new(2, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
         empty,
     );

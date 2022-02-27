@@ -41,7 +41,7 @@ pub fn runtime(mut bifs: Vec<Box<dyn StgIntrinsic>>) -> Box<dyn Runtime> {
 
 /// Create a machine for standard unit tests equipped with the
 /// specified runtime
-pub fn machine<'r>(runtime: &'r dyn Runtime, syntax: Rc<StgSyn>) -> Machine<'r> {
+pub fn machine(runtime: &dyn Runtime, syntax: Rc<StgSyn>) -> Machine {
     standard_machine(
         &SETTINGS,
         syntax,
