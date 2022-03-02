@@ -310,11 +310,7 @@ impl InProcessTester {
         writeln!(&mut evidence_script, "}}\n")?;
 
         let evidence_script_text = std::str::from_utf8(&evidence_script).unwrap().to_string();
-        let evidence_input = Input::new(
-            Locator::Literal(evidence_script_text),
-            None,
-            "eu",
-        );
+        let evidence_input = Input::new(Locator::Literal(evidence_script_text), None, "eu");
         inputs.push(evidence_input);
 
         let evidence_file = plan.evidence_file_name();

@@ -97,10 +97,7 @@ fn value_to_core(edn: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
         )), // NB. no core primitive for datetime right now
         Value::Uuid(uuid) => Ok(acore::meta(
             acore::str(uuid.to_string()),
-            acore::block(iter::once((
-                "tag".to_string(),
-                acore::str("uuid"),
-            ))),
+            acore::block(iter::once(("tag".to_string(), acore::str("uuid")))),
         )),
         Value::TaggedElement(t, e) => Ok(acore::meta(
             value_to_core(e, file_id)?,
