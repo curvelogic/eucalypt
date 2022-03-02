@@ -200,7 +200,7 @@ pub struct InProcessTester {}
 
 /// TODO: eu escaping
 fn quote<T: AsRef<str>>(text: T) -> String {
-    format!("\"{}\"", text.as_ref().replace("\"", "\\\""))
+    format!("\"{}\"", text.as_ref().replace('\"', "\\\""))
 }
 
 /// Convert stats to a core expression for output
@@ -253,13 +253,13 @@ impl InProcessTester {
             let stdout = Input::new(
                 Locator::Literal(result.stdout.clone()),
                 Some(format!("{}-{}-stdout-text", &target_name, &format)),
-                "text".to_string(),
+                "text",
             );
             // Literal stderr
             let stderr = Input::new(
                 Locator::Literal(result.stderr),
                 Some(format!("{}-{}-stderr-text", &target_name, &format)),
-                "text".to_string(),
+                "text",
             );
 
             let mut expectations: Vec<String> = result
@@ -313,7 +313,7 @@ impl InProcessTester {
         let evidence_input = Input::new(
             Locator::Literal(evidence_script_text),
             None,
-            "eu".to_string(),
+            "eu",
         );
         inputs.push(evidence_input);
 

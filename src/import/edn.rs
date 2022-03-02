@@ -99,7 +99,7 @@ fn value_to_core(edn: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
             acore::str(uuid.to_string()),
             acore::block(iter::once((
                 "tag".to_string(),
-                acore::str("uuid".to_string()),
+                acore::str("uuid"),
             ))),
         )),
         Value::TaggedElement(t, e) => Ok(acore::meta(
