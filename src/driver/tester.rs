@@ -200,7 +200,7 @@ pub struct InProcessTester {}
 
 /// TODO: eu escaping
 fn quote<T: AsRef<str>>(text: T) -> String {
-    format!("\"{}\"", text.as_ref().replace("\"", "\\\""))
+    format!("\"{}\"", text.as_ref().replace('\"', "\\\""))
 }
 
 /// Convert stats to a core expression for output
@@ -253,13 +253,13 @@ impl InProcessTester {
             let stdout = Input::new(
                 Locator::Literal(result.stdout.clone()),
                 Some(format!("{}-{}-stdout-text", &target_name, &format)),
-                "text".to_string(),
+                "text",
             );
             // Literal stderr
             let stderr = Input::new(
                 Locator::Literal(result.stderr),
                 Some(format!("{}-{}-stderr-text", &target_name, &format)),
-                "text".to_string(),
+                "text",
             );
 
             let mut expectations: Vec<String> = result
@@ -310,11 +310,7 @@ impl InProcessTester {
         writeln!(&mut evidence_script, "}}\n")?;
 
         let evidence_script_text = std::str::from_utf8(&evidence_script).unwrap().to_string();
-        let evidence_input = Input::new(
-            Locator::Literal(evidence_script_text),
-            None,
-            "eu".to_string(),
-        );
+        let evidence_input = Input::new(Locator::Literal(evidence_script_text), None, "eu");
         inputs.push(evidence_input);
 
         let evidence_file = plan.evidence_file_name();

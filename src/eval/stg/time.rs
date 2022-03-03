@@ -181,7 +181,7 @@ impl StgIntrinsic for ZdtFields {
         let hour = dt.hour();
         let min = dt.minute();
         let sec = (dt.second() as f64) + (dt.timestamp_subsec_millis() as f64) / 1000f64;
-        let tz = dt.offset().to_string().replace(":", "");
+        let tz = dt.offset().to_string().replace(':', "");
 
         let mut fields = IndexMap::new();
         fields.insert(

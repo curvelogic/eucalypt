@@ -32,7 +32,7 @@ pub trait ToSourceDoc {
 }
 
 fn escape_string_literal(s: &str) -> String {
-    s.replace("{", "{{").replace("}", "}}")
+    s.replace('{', "{{").replace('}', "}}")
 }
 
 impl ToSourceDoc for Literal {
