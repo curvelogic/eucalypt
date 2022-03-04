@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  
+  
+  <link rel="shortcut icon" href="../img/favicon.ico">
+  <title>Imports - eucalypt</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lato:400,700|Roboto+Slab:400,700|Inconsolata:400,700" />
+
+  <link rel="stylesheet" href="../css/theme.css" />
+  <link rel="stylesheet" href="../css/theme_extra.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/github.min.css" />
+  
+  <script>
+    // Current page data
+    var mkdocs_page_name = "Imports";
+    var mkdocs_page_input_path = "imports.md";
+    var mkdocs_page_url = null;
+  </script>
+  
+  <script src="../js/jquery-2.1.1.min.js" defer></script>
+  <script src="../js/modernizr-2.8.3.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+  <script>hljs.initHighlightingOnLoad();</script> 
+  <script>
+      (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+      (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+      m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+      })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+      ga('create', 'UA-42926869-3', 'curvelogic.co.uk');
+      ga('send', 'pageview');
+  </script>
+  
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+        <a href=".." class="icon icon-home"> eucalypt</a>
+        <div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                    </li>
+                </ul>
+                <ul class="current">
+                    <li class="toctree-l1 current"><a class="reference internal current" href="./">Imports</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#import-scopes">Import scopes</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#import-syntax">Import syntax</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#simple-imports">Simple imports</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#git-imports">Git imports</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../implementation/">Implementation</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                    </li>
+                </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="..">eucalypt</a>
+      </nav>
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="..">Docs</a> &raquo;</li>
+    
+      
+    
+    <li>Imports</li>
+    <li class="wy-breadcrumbs-aside">
+      
+        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/imports.md"
+          class="icon icon-github"> Edit on GitHub</a>
+      
+    </li>
+  </ul>
+  
+  <hr/>
+</div>
+
+          <div role="main">
+            <div class="section">
+              
+                <h1 id="imports">Imports</h1>
+<p>Eucalypt supports importing content from other units in a variety of
+ways.</p>
+<p>Imported names can be scoped to specific declarations, they may be
+made accessible under a specific namespace, and they may be imported
+from disk or direct from git repositories.</p>
+<h2 id="import-scopes">Import scopes</h2>
+<p>Imports are specified in declaration metadata and make the names in
+the imported unit available within the declaration that is annotated.</p>
+<pre><code class="language-eu">
+{ import: &quot;config.eu&quot; }
+data: {
+  # names from config are available here
+  x: config-value
+}
+
+</code></pre>
+<p>As described in <a href="../syntax/">syntax</a>, declaration metadata can be
+applied at a unit level simply by including a metadata block as the
+very first thing in a eucalypt file:</p>
+<pre><code class="language-eu">{ import: &quot;config.eu&quot; }
+
+# names from config are available here
+
+x: config-value
+
+</code></pre>
+<h2 id="import-syntax">Import syntax</h2>
+<p>Imports are specified using the key <code>import</code> in a declaration metadata
+block. The value may be a single import specification:</p>
+<pre><code class="language-eu">{ import: &quot;dep-a.eu&quot;}
+</code></pre>
+<p>or a list of import specifications:</p>
+<pre><code class="language-eu">{ import: [&quot;dep-a.eu&quot;, &quot;dep-b.eu&quot;]}
+</code></pre>
+<p>The import specification itself can be either a <em>simple import</em> or a
+<em>git import</em>.</p>
+<h3 id="simple-imports">Simple imports</h3>
+<p>Simple imports are specified in exactly the same way as <em>inputs</em> are
+specified at the command line (see <a href="../command-line/">command line</a>).</p>
+<p>So you can override the format of the imported file when the file
+extension is misleading:</p>
+<pre><code class="language-eu">{ import: &quot;yaml@dep.txt&quot; }
+</code></pre>
+<p>...and provide a name under which the imported names will be
+available:</p>
+<pre><code class="language-eu">{ import: &quot;cfg=config.eu&quot; }
+
+# names in config.eu are available by lookup in cfg:
+
+x: cfg.x
+</code></pre>
+<p>In cases, where the import format delivers a list rather than a block
+("text", "csv", ...) a name is mandatory:</p>
+<pre><code class="language-eu">{ import: &quot;txns=transactions.csv&quot; }
+</code></pre>
+<p>Simple imports support exactly the same inputs as the command line,
+with the proviso that the stdin input ("-") will not be consumable if
+it has already been specified in the command line or another unit.</p>
+<h3 id="git-imports">Git imports</h3>
+<p>Git imports allow you to import eucalypt direct from a git repository
+at a specified commit, combining the convenience of not having to
+explicitly manage a git working copy and a library path with the
+repeatability of a git SHA. A git import is specified as a block with
+the keys "git", "commit" and "import", all of which are mandatory:</p>
+<pre><code class="language-eu">{ import: { git: &quot;https://github.com/gmorpheme/eu.aws&quot;
+            commit: &quot;0140232cf882a922bdd67b520ed56f0cddbd0637&quot;
+            import: &quot;aws/cloudformation.eu&quot; } }
+</code></pre>
+<p>The <code>git</code> URL may be any format that the git command line expects.</p>
+<p><code>commit</code> is required and should be a SHA. It is intended to ensure the
+import is repeatable and cacheable.</p>
+<p><code>import</code> identifies the file within the repository to import.</p>
+<p>Just as with simple imports, several git imports may be listed:</p>
+<pre><code class="language-eu">{ import: [{ git: ... }, { git: ... }]}
+</code></pre>
+<p>...and simple imports and git imports may be freely mixed.</p>
+              
+            </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../operators-and-identifiers/" class="btn btn-neutral float-right" title="Operators and Identifiers">Next <span class="icon icon-circle-arrow-right"></span></a>
+      
+      
+        <a href="../command-line/" class="btn btn-neutral" title="Command Line"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+    
+      <p>Copyright (C) 2018-2021 Greg Hawkins</p>
+    
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+      
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt/" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../command-line/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../operators-and-identifiers/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script>var base_url = '..';</script>
+    <script src="../js/theme_extra.js" defer></script>
+    <script src="../js/theme.js" defer></script>
+      <script src="../search/main.js" defer></script>
+    <script defer>
+        window.onload = function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        };
+    </script>
+
+</body>
+</html>

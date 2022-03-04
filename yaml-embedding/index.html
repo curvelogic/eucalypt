@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  
+  
+  <link rel="shortcut icon" href="../img/favicon.ico">
+  <title>YAML Embedding - eucalypt</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lato:400,700|Roboto+Slab:400,700|Inconsolata:400,700" />
+
+  <link rel="stylesheet" href="../css/theme.css" />
+  <link rel="stylesheet" href="../css/theme_extra.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/github.min.css" />
+  
+  <script>
+    // Current page data
+    var mkdocs_page_name = "YAML Embedding";
+    var mkdocs_page_input_path = "yaml-embedding.md";
+    var mkdocs_page_url = null;
+  </script>
+  
+  <script src="../js/jquery-2.1.1.min.js" defer></script>
+  <script src="../js/modernizr-2.8.3.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+  <script>hljs.initHighlightingOnLoad();</script> 
+  <script>
+      (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+      (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+      m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+      })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+      ga('create', 'UA-42926869-3', 'curvelogic.co.uk');
+      ga('send', 'pageview');
+  </script>
+  
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+        <a href=".." class="icon icon-home"> eucalypt</a>
+        <div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                    </li>
+                </ul>
+                <ul class="current">
+                    <li class="toctree-l1 current"><a class="reference internal current" href="./">YAML Embedding</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#evaluating-eucalypt-expressions">Evaluating eucalypt expressions</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#suppressing-rendering">Suppressing rendering</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#defining-functions">Defining functions</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-escape-hatch">The escape hatch</a>
+    </li>
+    </ul>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../implementation/">Implementation</a>
+                    </li>
+                </ul>
+                <ul>
+                    <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                    </li>
+                </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="..">eucalypt</a>
+      </nav>
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="..">Docs</a> &raquo;</li>
+    
+      
+    
+    <li>YAML Embedding</li>
+    <li class="wy-breadcrumbs-aside">
+      
+        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/yaml-embedding.md"
+          class="icon icon-github"> Edit on GitHub</a>
+      
+    </li>
+  </ul>
+  
+  <hr/>
+</div>
+
+          <div role="main">
+            <div class="section">
+              
+                <h1 id="yaml-embedding">YAML Embedding</h1>
+<p>Eucalypt can be embedded in YAML files via the following tags:</p>
+<ul>
+<li><code>eu</code></li>
+<li><code>eu::suppress</code></li>
+<li><code>eu::fn</code></li>
+</ul>
+<p>The YAML embedding is not as capable as the native Eucalypt syntax but
+it is rich enough to be used for many YAML templating use cases,
+particularly when combined with the ability to specify several inputs
+on the command line.</p>
+<h2 id="evaluating-eucalypt-expressions">Evaluating eucalypt expressions</h2>
+<p>As you would expect, YAML mappings correspond to Eucalypt blocks and
+bind names just as Eucalypt blocks do and YAML sequences correspond to
+Eucalypt lists.</p>
+<p>YAML allow a wide variety of forms of expressing these (block styles
+and flow styles), to the extent that JSON is valid YAML.</p>
+<p>Eucalypt expressions can be evaluated using the <code>!eu</code> tag and have
+access to all the names defined in the YAML unit and any others
+brought into scope by specifying inputs on the command line.</p>
+<pre><code class="language-yaml">values:
+  x: world
+  y: hello
+
+result: !eu &quot;{values.y} {values.x}!&quot;
+</code></pre>
+<p>...will render as:</p>
+<pre><code class="language-yaml">values:
+  x: world
+  y: hello
+
+result: Hello World!
+</code></pre>
+<h2 id="suppressing-rendering">Suppressing rendering</h2>
+<p>Items can be hidden using the <code>eu::suppress</code> tag. This is equivalent
+to <code>:suppress</code> metadata in the eucalypt syntax.</p>
+<pre><code class="language-yaml">values: !eu::suppress
+  x: world
+  y: hello
+
+result: !eu &quot;{values.y} {values.x}!&quot;
+</code></pre>
+<p>...will render as:</p>
+<pre><code class="language-yaml">result: Hello World!
+</code></pre>
+<h2 id="defining-functions">Defining functions</h2>
+<p>Functions can be defined using <code>eu::fn</code> and supplying an argument
+list:</p>
+<pre><code class="language-yaml">values: !eu::suppress
+  x: world
+  y: hello
+  greet: !eu::fn (h, w) &quot;{h} {w}!&quot;
+
+result: !eu values.greet(values.y, values.x)
+</code></pre>
+<p>...will render as:</p>
+<pre><code class="language-yaml">result: Hello World!
+</code></pre>
+<h2 id="the-escape-hatch">The escape hatch</h2>
+<p>Larger chunks of eucalypt syntax can be embedded using YAML's support
+for larger chunks of text, combined with <code>!eu</code>. Using this workaround
+you can access capabilities of eucalypt that are not yet available in
+the YAML embedding. (Although operators cannot be made available in
+YAML blocks because of the way that operator names are bound - see
+<a href="../operators-and-identifiers/">Operators and Identifiers</a>.</p>
+<pre><code class="language-yaml">block: !eu |
+  {
+    x: 99
+    (l ^^^ r): &quot;{l} &lt;_&gt; {r}&quot;
+    f(n): n ^^^ x
+  }
+
+result: block.f(99)
+</code></pre>
+              
+            </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../anaphora-and-lambdas/" class="btn btn-neutral float-right" title="Anaphora and Lambdas">Next <span class="icon icon-circle-arrow-right"></span></a>
+      
+      
+        <a href="../operators-and-identifiers/" class="btn btn-neutral" title="Operators and Identifiers"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+    
+      <p>Copyright (C) 2018-2021 Greg Hawkins</p>
+    
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+      
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt/" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../operators-and-identifiers/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../anaphora-and-lambdas/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script>var base_url = '..';</script>
+    <script src="../js/theme_extra.js" defer></script>
+    <script src="../js/theme.js" defer></script>
+      <script src="../search/main.js" defer></script>
+    <script defer>
+        window.onload = function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        };
+    </script>
+
+</body>
+</html>
