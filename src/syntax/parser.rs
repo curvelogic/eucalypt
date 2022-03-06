@@ -464,7 +464,7 @@ pub mod tests {
     fn test_units() {
         let mut p = ParseTester::new();
         assert!(p.accepts_unit(
-            r#"#!/usr/bin/env reu
+            r#"#!/usr/bin/env eu
 
 { doc: "unit meta" }
 

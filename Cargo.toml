@@ -44,7 +44,8 @@ bitmaps = "3.1.0"
 pretty-hex = "0.2.1"
 edn-format = "3.2.2"
 ordered-float = "2.10.0"
+rowan = "0.15.3"
 
 [[bench]]
 harness = false
-name = "alloc"
+name = "benches"
