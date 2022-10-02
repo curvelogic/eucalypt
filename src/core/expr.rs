@@ -39,7 +39,7 @@ macro_rules! impl_bound_term_ignore {
 ///
 /// NB. Boolean and Unit ("null") are primitive in Core but user types
 /// in STG.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Primitive {
     Str(String),
     Sym(String),
@@ -51,7 +51,7 @@ pub enum Primitive {
 impl_bound_term_ignore!(Primitive);
 
 /// Fixity of operator
-#[derive(Debug, Clone, BoundTerm, Copy, PartialEq)]
+#[derive(Debug, Clone, BoundTerm, Copy, PartialEq, Eq)]
 pub enum Fixity {
     UnaryPrefix,
     UnaryPostfix,
@@ -83,7 +83,7 @@ impl Display for Fixity {
 pub type Precedence = i32;
 
 /// Blocks are implemented as insert-ordered hash map
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockMap<T: BoundTerm<String>>(IndexMap<String, T>);
 
 impl<T: BoundTerm<String>> BoundTerm<String> for BlockMap<T> {
@@ -117,7 +117,7 @@ impl<T: BoundTerm<String>> BoundTerm<String> for BlockMap<T> {
     }
 }
 
-impl<'a, T: BoundTerm<String>> FromIterator<(String, T)> for BlockMap<T> {
+impl<T: BoundTerm<String>> FromIterator<(String, T)> for BlockMap<T> {
     fn from_iter<U>(iter: U) -> Self
     where
         U: IntoIterator<Item = (String, T)>,
@@ -182,7 +182,7 @@ impl<T: BoundTerm<String> + Clone> IntoIterator for BlockMap<T> {
 
 /// Used to tag lets that have a default block as body, to support
 /// optimisations that don't then need to work with the body.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LetType {
     DefaultBlockLet,
     OtherLet,
@@ -256,7 +256,7 @@ where
     N: Hash + Eq + Clone + Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match (&*self, other) {
+        match (self, other) {
             (Anaphor::ExplicitNumbered(n), Anaphor::ExplicitNumbered(p)) => n.cmp(p),
             (Anaphor::ExplicitAnonymous(smid_a), Anaphor::ExplicitAnonymous(smid_b)) => {
                 smid_a.cmp(smid_b)
@@ -291,7 +291,7 @@ where
     N: Display + Hash + Eq + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self {
+        match self {
             Anaphor::ExplicitAnonymous(smid) => write!(f, "_a{}", smid),
             Anaphor::ExplicitNumbered(n) => write!(f, "_n{}", n),
             Anaphor::Implicit(smid, ImplicitAnaphorSide::Left) => write!(f, "_il{}", smid),
@@ -319,7 +319,7 @@ pub type LetScope<T> = Scope<Rec<Vec<(Binder<String>, Embed<T>)>>, T>;
 pub type LamScope<T> = Scope<Vec<Binder<String>>, T>;
 
 /// The main core expression type
-#[derive(Debug, Clone, BoundTerm, PartialEq)]
+#[derive(Debug, Clone, BoundTerm, PartialEq, Eq)]
 pub enum Expr<T>
 where
     T: BoundTerm<String>,

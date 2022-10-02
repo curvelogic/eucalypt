@@ -268,7 +268,7 @@ impl HasSpan for ProtoblockElement {
 }
 
 /// A `Protoblock_` is a sequence of protoblock elements
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Protoblock(Span, Vec<ProtoblockElement>);
 
 impl Protoblock {

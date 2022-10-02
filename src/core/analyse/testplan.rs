@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// A key under which we will find a single-argument validation
 /// function to process the test results
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TestExpectation {
     /// Documentation for the test
     doc: String,
@@ -33,7 +33,7 @@ impl TestExpectation {
 ///
 /// A test plan consists of combinations of targets and formats to run
 /// and a set of expectations to be validated against each run.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TestPlan {
     /// Run ID string for disambiguating repeated runs
     run_id: String,

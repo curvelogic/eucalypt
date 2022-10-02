@@ -75,12 +75,7 @@ impl ImportGraph {
 
     /// Find the node index for the specified input
     fn find_index(&self, input: &Input) -> Option<NodeIndex> {
-        for i in self.graph.node_indices() {
-            if &self.graph[i] == input {
-                return Some(i);
-            }
-        }
-        None
+        self.graph.node_indices().find(|&i| &self.graph[i] == input)
     }
 
     /// Add locator to the graph if it isn't already there and return

@@ -20,7 +20,7 @@ pub enum IntrinsicType {
 
 impl fmt::Display for IntrinsicType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self {
+        match self {
             IntrinsicType::Unknown => write!(f, "?"),
             IntrinsicType::Any => write!(f, "⊤"),
             IntrinsicType::Unit => write!(f, "()"),

@@ -28,7 +28,7 @@ impl Embed for CoreExpr {
         // All expressions are represented as a list with a leading
         // symbol tag identifying the element type.
         let mut elements: Vec<Expression> = Vec::new();
-        match &*self {
+        match self {
             Expr::Var(_, v) => {
                 elements.push(lit(sym("c-var")));
                 elements.push(lit(str(v.pretty_name().unwrap_or(&"?".to_string()))));
@@ -177,7 +177,7 @@ impl Embed for CoreExpr {
 
 impl Embed for Primitive {
     fn embed(&self) -> Expression {
-        match &*self {
+        match self {
             Primitive::Str(s) => lit(str(&s)),
             Primitive::Sym(s) => lit(sym(s)),
             Primitive::Num(n) => lit(num(n.clone())),

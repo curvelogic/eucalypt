@@ -80,7 +80,7 @@ impl SourceError {
     }
 
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
-        match &*self {
+        match self {
             SourceError::EmbeddedCoreError(e, _, _) => e.to_diagnostic(source_map),
             SourceError::EmbeddedParserError(e, _, _) => e.to_diagnostic(),
             _ => Diagnostic::error()

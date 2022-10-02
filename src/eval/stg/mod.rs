@@ -125,7 +125,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
 }
 
 /// What type of render-wrapping to apply to the compiled code
-#[derive(StructOpt, Copy, Debug, Clone, PartialEq)]
+#[derive(StructOpt, Copy, Debug, Clone, PartialEq, Eq)]
 pub enum RenderType {
     /// No rendering - calculate only
     Headless,

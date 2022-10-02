@@ -6,7 +6,7 @@ use std::alloc::{alloc, dealloc, Layout};
 use std::ptr::NonNull;
 
 /// A block of memory allocated by the OS / upstream allocator
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Block {
     /// Pointer to memory
     ptr: NonNull<u8>,
