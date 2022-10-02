@@ -3,7 +3,7 @@
 //! This is in the process of morphing from something that is clearly
 //! an interpreter to something more like a VM
 
-use std::{cmp::Ordering, convert::TryInto};
+use std::{cmp::Ordering, convert::TryInto, num::NonZeroUsize};
 
 use itertools::Itertools;
 use lru::LruCache;
@@ -148,7 +148,7 @@ impl Default for MachineState {
             stack: Default::default(),
             terminated: Default::default(),
             annotation: Default::default(),
-            rcache: LruCache::new(100),
+            rcache: LruCache::new(NonZeroUsize::new(100).unwrap()),
         }
     }
 }

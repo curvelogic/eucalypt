@@ -20,7 +20,7 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let input = opt.explicit_inputs().last().unwrap_or(&cwd);
     let path = resolve_input(opt, input)?;
-    let run_id = Uuid::new_v4().to_hyphenated().to_string();
+    let run_id = Uuid::new_v4().hyphenated().to_string();
 
     let plans = if path.is_dir() {
         directory_plans(opt, &run_id, &path)?
