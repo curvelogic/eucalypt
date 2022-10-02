@@ -9,7 +9,7 @@ pub trait Embed {
 
 impl Embed for Literal {
     fn embed(&self) -> Expression {
-        match &*self {
+        match self {
             Literal::Sym(_, s) => lit(sym(s)),
             Literal::Str(_, s) => lit(str(&s)),
             Literal::Num(_, n) => lit(num(n.clone())),
@@ -19,7 +19,7 @@ impl Embed for Literal {
 
 impl Embed for Name {
     fn embed(&self) -> Expression {
-        match &*self {
+        match self {
             Name::Normal(_, s) => list(vec![lit(sym("a-norm")), lit(str(s))]),
             Name::Operator(_, s) => list(vec![lit(sym("a-oper")), lit(str(s))]),
         }
@@ -34,7 +34,7 @@ fn list_elements(tag: &str, xs: &[impl Embed]) -> Expression {
 
 impl Embed for Expression {
     fn embed(&self) -> Expression {
-        match &*self {
+        match self {
             Expression::Lit(x) => list(vec![lit(sym("a-lit")), x.embed()]),
             Expression::Block(b) => list(vec![lit(sym("a-block")), b.embed()]),
             Expression::List(_, xs) => list_elements("a-list", xs),
@@ -61,7 +61,7 @@ impl Embed for ArgTuple {
 
 impl Embed for Declaration {
     fn embed(&self) -> Expression {
-        match &*self {
+        match self {
             Declaration::PropertyDeclaration(_, meta, n, expr) => list(vec![
                 lit(sym("a-prop")),
                 n.embed(),

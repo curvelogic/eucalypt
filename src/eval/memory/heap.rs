@@ -20,7 +20,7 @@ pub struct HeapStats {
 
 /// Object size class.
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SizeClass {
     /// Small objects fit inside a line
     Small,

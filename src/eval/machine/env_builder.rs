@@ -16,6 +16,7 @@ use crate::{
 use super::env::{Closure, EnvFrame};
 
 /// For building environments in the heap
+#[allow(clippy::wrong_self_convention)]
 pub trait EnvBuilder {
     fn from_saturation(
         &self,

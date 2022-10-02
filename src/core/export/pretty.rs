@@ -45,7 +45,7 @@ impl ToPretty for Primitive {
         D::Doc: Clone,
         A: Clone,
     {
-        match &*self {
+        match self {
             Primitive::Str(s) => allocator
                 .text("\"")
                 .append(allocator.text(s)) //TODO: escape quotes

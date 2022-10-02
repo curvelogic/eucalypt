@@ -21,7 +21,7 @@ pub enum Native {
 
 impl fmt::Display for Native {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self {
+        match self {
             Native::Sym(s) => {
                 write!(f, ":{}", s)
             }
@@ -63,7 +63,7 @@ where
     T: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self {
+        match self {
             Reference::L(i) => {
                 write!(f, "✳{}", i)
             }
@@ -141,7 +141,7 @@ impl StgSyn {
     /// Used to determine when to create thunks and when not
     pub fn is_whnf(&self) -> bool {
         matches!(
-            &*self,
+            self,
             StgSyn::Cons { .. }
                 | StgSyn::Meta { .. }
                 | StgSyn::Atom {
@@ -153,7 +153,7 @@ impl StgSyn {
 
 impl fmt::Display for StgSyn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self {
+        match self {
             StgSyn::Atom { evaluand } => {
                 write!(f, "{}", evaluand)
             }

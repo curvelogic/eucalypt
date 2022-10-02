@@ -5,7 +5,7 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 /// Tokens in the eucalypt syntax
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Token<'text> {
     EscapedOpenBrace,
     EscapedCloseBrace,
@@ -124,7 +124,7 @@ impl<'text> StringLexer<'text> {
     }
 
     fn i_number(&mut self, b: ByteIndex) -> (ByteIndex, Token<'text>, ByteIndex) {
-        let e = self.consume(|c| c.is_digit(10));
+        let e = self.consume(|c| c.is_ascii_digit());
         (b, Token::Number(self.slice(b, e)), e)
     }
 
@@ -179,7 +179,7 @@ impl<'text> Iterator for StringLexer<'text> {
                     Some((i, ':')) => Some(Ok(self.i_colon(i))),
                     Some((i, '}')) => Some(Ok(self.i_close(i))),
                     Some((i, '{')) => Some(Ok(self.open(i))),
-                    Some((i, c)) if c.is_digit(10) => Some(Ok(self.i_number(i))),
+                    Some((i, c)) if c.is_ascii_digit() => Some(Ok(self.i_number(i))),
                     Some((i, _)) => Some(Ok(self.i_text(i))),
                     None => None,
                 }

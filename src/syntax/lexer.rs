@@ -7,7 +7,7 @@ use std::{fmt::Display, iter::Peekable, str::Chars};
 use unic_ucd_category::GeneralCategory;
 
 /// Tokens in the eucalypt syntax
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Token<'text> {
     OpenBrace,
     CloseBrace,
@@ -115,7 +115,7 @@ fn is_oper_start(c: char) -> bool {
         _ => match GeneralCategory::of(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
-            cat => (cat.is_symbol() || cat.is_punctuation()),
+            cat => cat.is_symbol() || cat.is_punctuation(),
         },
     }
 }
@@ -150,7 +150,7 @@ fn is_oper_continuation(c: char) -> bool {
         _ => match GeneralCategory::of(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
-            cat => (cat.is_symbol() || cat.is_punctuation()),
+            cat => cat.is_symbol() || cat.is_punctuation(),
         },
     }
 }
@@ -300,7 +300,7 @@ where
 
     /// '-' can introduce a signed literal or be an operator start
     fn minus(&mut self, i: ByteIndex) -> (ByteIndex, Token<'text>, ByteIndex) {
-        if self.lookahead(|c| c.is_digit(10)) {
+        if self.lookahead(|c| c.is_ascii_digit()) {
             self.number(i)
         } else {
             self.oper(i)
@@ -309,10 +309,10 @@ where
 
     /// read int or float (currently no hex or sci notation)
     fn number(&mut self, i: ByteIndex) -> (ByteIndex, Token<'text>, ByteIndex) {
-        let e = self.consume(|c| c.is_digit(10));
+        let e = self.consume(|c| c.is_ascii_digit());
         if self.lookahead(|c| c == '.') {
             self.bump();
-            let e = self.consume(|c| c.is_digit(10));
+            let e = self.consume(|c| c.is_ascii_digit());
             (i, Token::Number(self.slice(i, e)), e)
         } else {
             (i, Token::Number(self.slice(i, e)), e)
@@ -404,7 +404,7 @@ where
             Some((i, '\'')) => Some(self.squote(i)),
             Some((i, '"')) => Some(self.dquote(i)),
             Some((i, '-')) => Some(Ok(self.minus(i))),
-            Some((i, c)) if c.is_digit(10) => Some(Ok(self.number(i))),
+            Some((i, c)) if c.is_ascii_digit() => Some(Ok(self.number(i))),
             Some((i, c)) if is_normal_start(c) => Some(Ok(self.normal(i))),
             Some((i, c)) if is_oper_start(c) => Some(Ok(self.oper(i))),
             Some((i, c)) if c.is_whitespace() => Some(Ok(self.whitespace(i))),
@@ -425,7 +425,7 @@ pub mod tests {
     use super::Token::*;
     use super::*;
 
-    fn test_parse<'a>(input: &'a str, tokens: Vec<Spanned<Token<'_>, ByteIndex, SyntaxError>>) {
+    pub fn test_parse(input: &str, tokens: Vec<Spanned<Token<'_>, ByteIndex, SyntaxError>>) {
         let mut files = SimpleFiles::new();
         let file_id = files.add("test".to_string(), input.to_string());
         assert_eq!(

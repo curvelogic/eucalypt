@@ -307,7 +307,7 @@ impl<'smap> MarkedEventReceiver for Receiver<'smap> {
 }
 
 /// YAML tags
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Tag {
     Null,
     Bool,

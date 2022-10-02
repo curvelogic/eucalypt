@@ -51,7 +51,7 @@ impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     }
 
     pub fn as_ptr(&self) -> NonNull<T> {
-        unsafe { NonNull::new_unchecked(&*self.value as *const T as *mut T) }
+        unsafe { NonNull::new_unchecked(self.value as *const T as *mut T) }
     }
 }
 

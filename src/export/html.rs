@@ -7,7 +7,10 @@ use super::{
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use html5ever::{namespace_url, ns, LocalName, QualName};
 
-use std::io::{Error, Write};
+use std::{
+    io::{Error, Write},
+    iter,
+};
 
 /// Serialise a markup element and its descendants to HTML
 impl Serialize for Element {
@@ -22,7 +25,7 @@ impl Serialize for Element {
             .map(|(k, _)| QualName::new(None, ns!(), LocalName::from(k.as_str())))
             .collect();
 
-        let attrs = itertools::zip(keys.iter(), self.attrs().iter().map(|(_, v)| v.as_str()));
+        let attrs = iter::zip(keys.iter(), self.attrs().iter().map(|(_, v)| v.as_str()));
 
         if traversal_scope == TraversalScope::IncludeNode {
             serializer.start_elem(tag_name.clone(), attrs)?;

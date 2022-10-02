@@ -69,7 +69,7 @@ impl<'src> XmlImporter<'src> {
         let mut stack: VecDeque<ProtoElement> = VecDeque::new();
 
         loop {
-            match self.reader.read_event(&mut buf) {
+            match self.reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref event)) => {
                     stack.push_back(self.to_proto_element(event)?);
                 }
@@ -92,11 +92,9 @@ impl<'src> XmlImporter<'src> {
                     }
                 }
                 Ok(Event::Text(event)) => {
-                    let text = event
-                        .unescape_and_decode(&self.reader)
-                        .map_err(|e| self.to_source_error(e))?;
+                    let text = event.unescape().map_err(|e| self.to_source_error(e))?;
                     if let Some(top) = stack.back_mut() {
-                        top.add(acore::str(text));
+                        top.add(acore::str(&text));
                     } else {
                         return Err(SourceError::InvalidXml(
                             "No top-level element".to_string(),
@@ -133,14 +131,14 @@ impl<'src> XmlImporter<'src> {
 
     /// Create a proto element from an open / empty tag
     fn to_proto_element<'a>(&self, e: &BytesStart<'a>) -> Result<ProtoElement, SourceError> {
-        let name = acore::sym(self.to_str(e.name())?);
+        let name = acore::sym(self.to_str(e.name().local_name().as_ref())?);
         let mut attrs = Vec::new();
 
         for a in e.attributes() {
-            let attr = a.map_err(|e| self.to_source_error(e))?;
-            let k = self.to_str(attr.key)?;
+            let attr = a.map_err(|e| self.to_source_error(quick_xml::Error::InvalidAttr(e)))?;
+            let k = self.to_str(attr.key.local_name().as_ref())?;
             let v = acore::str(
-                attr.unescape_and_decode_value(&self.reader)
+                attr.decode_and_unescape_value(&self.reader)
                     .map_err(|e| self.to_source_error(e))?,
             );
             attrs.push((k, v));

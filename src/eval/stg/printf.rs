@@ -85,7 +85,7 @@ pub enum DoubleFormat {
 }
 
 /// A [format specifier](https://en.wikipedia.org/wiki/Printf_format_string#Type_field).
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Specifier {
     /// `d`, `i`
@@ -128,7 +128,7 @@ fn next_char(sub: &[u8]) -> &[u8] {
 /// Parse the [Flags field](https://en.wikipedia.org/wiki/Printf_format_string#Flags_field).
 fn parse_flags(mut sub: &[u8]) -> (Flags, &[u8]) {
     let mut flags: Flags = Flags::empty();
-    while let Some(&ch) = sub.get(0) {
+    while let Some(&ch) = sub.first() {
         flags.insert(match ch {
             b'-' => Flags::LEFT_ALIGN,
             b'+' => Flags::PREPEND_PLUS,
@@ -149,7 +149,7 @@ fn parse_flags(mut sub: &[u8]) -> (Flags, &[u8]) {
 /// Does not support the dynamic argument '*' specifier
 fn parse_width(mut sub: &[u8]) -> (usize, &[u8]) {
     let mut width: usize = 0;
-    while let Some(&ch) = sub.get(0) {
+    while let Some(&ch) = sub.first() {
         match ch {
             // https://rust-malaysia.github.io/code/2020/07/11/faster-integer-parsing.html#the-bytes-solution
             b'0'..=b'9' => width = width * 10 + (ch & 0x0f) as usize,
@@ -165,7 +165,7 @@ fn parse_width(mut sub: &[u8]) -> (usize, &[u8]) {
 ///
 /// Does not support the dynamic argument '*' specifier.
 fn parse_precision(sub: &[u8]) -> (Option<usize>, &[u8]) {
-    match sub.get(0) {
+    match sub.first() {
         Some(&b'.') => {
             let (prec, sub) = parse_width(next_char(sub));
             (Some(prec), sub)
@@ -193,7 +193,7 @@ enum Length {
 
 /// Parse the [Length field](https://en.wikipedia.org/wiki/Printf_format_string#Length_field).
 fn parse_length(sub: &[u8]) -> (Length, &[u8]) {
-    match sub.get(0).copied() {
+    match sub.first().copied() {
         Some(b'h') => match sub.get(1).copied() {
             Some(b'h') => (Length::Char, sub.get(2..).unwrap_or(&[])),
             _ => (Length::Short, next_char(sub)),
@@ -218,7 +218,7 @@ fn parse_format(format: &str) -> Option<Argument> {
     let (width, sub) = parse_width(sub);
     let (precision, sub) = parse_precision(sub);
     let (length, sub) = parse_length(sub);
-    let ch = sub.get(0).unwrap_or(&0);
+    let ch = sub.first().unwrap_or(&0);
 
     let specifier = match ch {
         b'd' | b'i' => Specifier::Int,

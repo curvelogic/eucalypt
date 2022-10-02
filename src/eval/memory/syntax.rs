@@ -43,7 +43,7 @@ impl StgObject for Native {}
 
 impl fmt::Display for Native {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self {
+        match self {
             Native::Sym(s) => {
                 write!(f, ":<{:p}>", s)
             }
@@ -106,7 +106,7 @@ where
     T: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &*self {
+        match self {
             Reference::L(i) => {
                 write!(f, "✳{}", i)
             }
@@ -210,7 +210,7 @@ impl HeapSyn {
     /// Used to determine when to create thunks and when not
     pub fn is_whnf(&self) -> bool {
         matches!(
-            &*self,
+            self,
             HeapSyn::Cons { .. }
                 | HeapSyn::Meta { .. }
                 | HeapSyn::Atom {
@@ -351,8 +351,8 @@ impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
                 body: ScopedPtr::from_non_null(self, *body).repr(),
             }),
             HeapSyn::Meta { meta, body } => Rc::new(StgSyn::Meta {
-                meta: repr::heap_to_stg(self, &*meta),
-                body: repr::heap_to_stg(self, &*body),
+                meta: repr::heap_to_stg(self, meta),
+                body: repr::heap_to_stg(self, body),
             }),
             HeapSyn::DeMeta {
                 scrutinee,
