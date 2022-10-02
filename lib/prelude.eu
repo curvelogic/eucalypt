@@ -68,7 +68,7 @@ head: __HEAD
 nil?: = []
 
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
-head-or(d, xs): xs nil? then(xs head, d)
+head-or(d, xs): xs nil? then(d, xs head)
 
 ` "`tail(xs)` - return list `xs` without the head item. [] causes error."
 tail: __TAIL

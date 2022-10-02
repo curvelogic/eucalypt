@@ -245,3 +245,8 @@ pub fn test_harness_049() {
 pub fn test_harness_050() {
     run_test(&opts("050_edn.edn"));
 }
+
+#[test]
+pub fn test_harness_051() {
+    run_test(&opts("051_head_or.eu"));
+}
