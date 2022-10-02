@@ -94,7 +94,7 @@ impl<'src> XmlImporter<'src> {
                 Ok(Event::Text(event)) => {
                     let text = event.unescape().map_err(|e| self.to_source_error(e))?;
                     if let Some(top) = stack.back_mut() {
-                        top.add(acore::str(text.into_owned()));
+                        top.add(acore::str(&text));
                     } else {
                         return Err(SourceError::InvalidXml(
                             "No top-level element".to_string(),
