@@ -247,6 +247,11 @@ pub fn test_harness_050() {
 }
 
 #[test]
+pub fn test_harness_051() {
+    run_test(&opts("051_head_or.eu"));
+}
+
+#[test]
 pub fn test_harness_052() {
     run_test(&opts("052_group_by.eu"));
 }
