@@ -436,6 +436,11 @@ cond(l, d): l foldr(uncurry(if), d)
 ` "`juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)`."
 juxt(f, g, x): [x f, x g]
 
+#
+# Utilities
+#
+` "`fnil(f, v, x)` - return a function equivalent to f except it sees `x` instead of `null` when null is passed."
+fnil(f, v, x): if(x = null, f(v), f(x))
 
 #
 # Metadata basics
@@ -644,6 +649,28 @@ over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
 
 ` "differences(l) - calculate difference between each overlapping pair in list of numbers `l`"
 differences: over-sliding-pairs(_1 - _0)
+
+` "`discriminate(pred, xs)` - return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false."
+discriminate(pred, xs): {
+  acc(a, e): a if(e pred, bimap(cons(e), identity), bimap(identity, cons(e)))
+}.(xs foldl(acc, [[], []]) bimap(reverse, reverse))
+
+` "`group-by(k, xs)` - group xs by key function returning block of key to subgroups, maintains order."
+group-by(k, xs): {
+  acc(a, e): a update-value-or(e._k, cons(e._v), [e._v])
+}.(xs map({ _k: k(•0), _v: •0 }) foldl(acc, {}) map-values(reverse))
+
+` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`"
+qsort(lt, xs): if(xs nil?,
+                  xs,
+                  {
+                    h: xs head
+                    t: xs tail
+                    less(x): lt(x, h)
+                    partitions: t discriminate(less)
+                    smaller: partitions first qsort(lt)
+                    bigger: partitions second qsort(lt)
+                  }.(smaller ++ [h] ++ bigger))
 
 #
 # Block library functions

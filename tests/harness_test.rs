@@ -250,3 +250,18 @@ pub fn test_harness_050() {
 pub fn test_harness_051() {
     run_test(&opts("051_head_or.eu"));
 }
+
+#[test]
+pub fn test_harness_052() {
+    run_test(&opts("052_group_by.eu"));
+}
+
+#[test]
+pub fn test_harness_053() {
+    run_test(&opts("053_discriminate.eu"));
+}
+
+#[test]
+pub fn test_harness_054() {
+    run_test(&opts("054_qsort.eu"));
+}

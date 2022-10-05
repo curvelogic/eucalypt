@@ -1,0 +1,12 @@
+"Tests for prelude `qsort`."
+
+tests: {
+  α: [7,3,4,7,1,9] qsort(<) //= [1, 3, 4, 7, 7, 9]
+  β: [] qsort(<) //= []
+  γ: null fnil(qsort(<), []) //= []
+  δ: ["one", "two", "three", "four", "five", "six"]
+     qsort({ lhs: • rhs: • }.( (lhs str.letters count) < (rhs str.letters count) ))
+     //= ["one", "two", "six", "four", "five", "three"]
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)
