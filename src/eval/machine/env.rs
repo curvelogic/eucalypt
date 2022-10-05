@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::eval::memory::infotable::InfoTable;
+use crate::eval::memory::infotable::InfoTagged;
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use crate::eval::memory::{
@@ -16,7 +16,7 @@ use crate::eval::memory::{
 /// A closure consist of a static part (InfoTable) that can be
 /// statically compiled, and a pointer to an environment
 #[derive(Clone)]
-pub struct Closing<T>(InfoTable<T>, RefPtr<EnvironmentFrame<T>>)
+pub struct Closing<T>(InfoTagged<T>, RefPtr<EnvironmentFrame<T>>)
 where
     T: Copy;
 
@@ -31,12 +31,12 @@ impl<T: Copy + Default> Default for Closing<T> {
 impl<T: Copy> Closing<T> {
     /// A new non-callable closure of `code` over environment `env`
     pub fn new(code: T, env: RefPtr<EnvironmentFrame<T>>) -> Self {
-        Closing(InfoTable::new(0, code, Smid::default()), env)
+        Closing(InfoTagged::new(0, code, Smid::default()), env)
     }
 
     /// A new non-callable closure of `code` over environment `env`
     pub fn new_annotated(code: T, env: RefPtr<EnvironmentFrame<T>>, annotation: Smid) -> Self {
-        Closing(InfoTable::new(0, code, annotation), env)
+        Closing(InfoTagged::new(0, code, annotation), env)
     }
 
     /// A new non-callable closure of `code` over environment `env`
@@ -46,11 +46,11 @@ impl<T: Copy> Closing<T> {
         env: RefPtr<EnvironmentFrame<T>>,
         annotation: Smid,
     ) -> Self {
-        Closing(InfoTable::new(arity, code, annotation), env)
+        Closing(InfoTagged::new(arity, code, annotation), env)
     }
 
     /// Construct a closure from a lambda form
-    pub fn close(lambda_form: &InfoTable<T>, env: RefPtr<EnvironmentFrame<T>>) -> Self {
+    pub fn close(lambda_form: &InfoTagged<T>, env: RefPtr<EnvironmentFrame<T>>) -> Self {
         Closing(*lambda_form, env)
     }
 

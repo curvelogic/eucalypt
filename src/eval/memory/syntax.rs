@@ -7,7 +7,7 @@ use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
 use std::{fmt, ptr::NonNull, rc::Rc};
 
-use super::infotable::InfoTable;
+use super::infotable::InfoTagged;
 use super::string::HeapString;
 use super::{
     alloc::{ScopedPtr, StgObject},
@@ -148,7 +148,7 @@ impl Ref {
 }
 
 /// Add arity, update flag etc. to HeapSyn to make LambdaForm
-pub type LambdaForm = InfoTable<RefPtr<HeapSyn>>;
+pub type LambdaForm = InfoTagged<RefPtr<HeapSyn>>;
 
 /// Compiled STG syntax
 #[derive(Debug, Clone)]
