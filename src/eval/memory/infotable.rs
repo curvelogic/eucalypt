@@ -32,7 +32,7 @@ impl InfoFlags {
 /// The static part of a closure which combines with an environment to
 /// become a closure.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct InfoTable<L>
+pub struct InfoTagged<L>
 where
     L: Copy,
 {
@@ -40,7 +40,7 @@ where
     body: L,
 }
 
-impl<L> Default for InfoTable<L>
+impl<L> Default for InfoTagged<L>
 where
     L: Default,
     L: Copy,
@@ -53,13 +53,13 @@ where
     }
 }
 
-impl<L> InfoTable<L>
+impl<L> InfoTagged<L>
 where
     L: Copy,
 {
     /// Create new lambda form - local vars < `bound` are bound vars.
     pub fn new(bound: u8, body: L, annotation: Smid) -> Self {
-        InfoTable {
+        InfoTagged {
             info: InfoFlags::new(false, bound, annotation),
             body,
         }
@@ -67,7 +67,7 @@ where
 
     /// A lambda form that will be updated after evaluation
     pub fn thunk(body: L) -> Self {
-        InfoTable {
+        InfoTagged {
             info: InfoFlags::new(true, 0, Smid::default()),
             body,
         }
@@ -75,7 +75,7 @@ where
 
     /// A lambda form that is effectively a value - not worth updating
     pub fn value(body: L) -> Self {
-        InfoTable {
+        InfoTagged {
             info: InfoFlags::new(false, 0, Smid::default()),
             body,
         }
