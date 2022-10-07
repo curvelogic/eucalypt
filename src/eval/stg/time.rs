@@ -17,7 +17,7 @@ use crate::{
         emit::Emitter,
         error::ExecutionError,
         machine::{
-            env::Closure,
+            env::SynClosure,
             intrinsic::{CallGlobal1, CallGlobal7, IntrinsicMachine, StgIntrinsic},
         },
         memory::{
@@ -186,7 +186,7 @@ impl StgIntrinsic for ZdtFields {
         let mut fields = IndexMap::new();
         fields.insert(
             "y".to_string(),
-            Closure::new(
+            SynClosure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(y)]),
@@ -197,7 +197,7 @@ impl StgIntrinsic for ZdtFields {
         );
         fields.insert(
             "m".to_string(),
-            Closure::new(
+            SynClosure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(m)]),
@@ -208,7 +208,7 @@ impl StgIntrinsic for ZdtFields {
         );
         fields.insert(
             "d".to_string(),
-            Closure::new(
+            SynClosure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(d)]),
@@ -219,7 +219,7 @@ impl StgIntrinsic for ZdtFields {
         );
         fields.insert(
             "H".to_string(),
-            Closure::new(
+            SynClosure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(hour)]),
@@ -230,7 +230,7 @@ impl StgIntrinsic for ZdtFields {
         );
         fields.insert(
             "M".to_string(),
-            Closure::new(
+            SynClosure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(min)]),
@@ -241,7 +241,7 @@ impl StgIntrinsic for ZdtFields {
         );
         fields.insert(
             "S".to_string(),
-            Closure::new(
+            SynClosure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
                     Array::from_slice(&view, &[Ref::num(Number::from_f64(sec).unwrap())]),
@@ -252,7 +252,7 @@ impl StgIntrinsic for ZdtFields {
         );
         fields.insert(
             "Z".to_string(),
-            Closure::new(
+            SynClosure::new(
                 view.data(
                     DataConstructor::BoxedString.tag(),
                     Array::from_slice(&view, &[view.str_ref(tz)?]),

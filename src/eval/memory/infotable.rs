@@ -3,8 +3,14 @@
 
 use crate::common::sourcemap::Smid;
 
+pub trait InfoTable {
+    fn update(&self) -> bool;
+    fn arity(&self) -> u8;
+    fn annotation(&self) -> Smid;
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
-struct InfoFlags(u64);
+pub struct InfoFlags(u64);
 
 impl InfoFlags {
     pub fn new(update: bool, arity: u8, annotation: Smid) -> Self {
@@ -15,16 +21,18 @@ impl InfoFlags {
         }
         InfoFlags(value)
     }
+}
 
-    pub fn update(&self) -> bool {
+impl InfoTable for InfoFlags {
+    fn update(&self) -> bool {
         self.0 & 1 == 1
     }
 
-    pub fn arity(&self) -> u8 {
+    fn arity(&self) -> u8 {
         ((self.0 & 0xff000000) >> 24) as u8
     }
 
-    pub fn annotation(&self) -> Smid {
+    fn annotation(&self) -> Smid {
         Smid::from((self.0 >> 32) as u32)
     }
 }
@@ -50,6 +58,26 @@ where
             info: Default::default(),
             body: Default::default(),
         }
+    }
+}
+
+impl<L> InfoTable for InfoTagged<L>
+where
+    L: Copy,
+{
+    /// Source annotation to stamp on environment
+    fn annotation(&self) -> Smid {
+        self.info.annotation()
+    }
+
+    /// The arity of the the lambda form
+    fn arity(&self) -> u8 {
+        self.info.arity()
+    }
+
+    /// Whether lambda form is a thunk to be updated in place
+    fn update(&self) -> bool {
+        self.info.update()
     }
 }
 
@@ -85,26 +113,14 @@ where
     pub fn body(&self) -> L {
         self.body
     }
-
-    /// Source annotation to stamp on environment
-    pub fn annotation(&self) -> Smid {
-        self.info.annotation()
-    }
-
-    /// The arity of the the lambda form
-    pub fn arity(&self) -> u8 {
-        self.info.arity()
-    }
-
-    /// Whether lambda form is a thunk to be updated in place
-    pub fn update(&self) -> bool {
-        self.info.update()
-    }
 }
 
 #[cfg(test)]
 pub mod tests {
-    use crate::{common::sourcemap::Smid, eval::memory::infotable::InfoFlags};
+    use crate::{
+        common::sourcemap::Smid,
+        eval::memory::infotable::{InfoFlags, InfoTable},
+    };
 
     #[test]
     pub fn test_info_flags() {
