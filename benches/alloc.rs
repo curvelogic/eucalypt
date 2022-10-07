@@ -6,7 +6,7 @@ use eucalypt::{
     common::sourcemap::Smid,
     eval::{
         machine::{
-            env::{Closure, EnvFrame},
+            env::{EnvFrame, SynClosure},
             env_builder::EnvBuilder,
         },
         memory::{
@@ -22,8 +22,8 @@ use eucalypt::{
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-fn box_one(view: MutatorHeapView, empty: RefPtr<EnvFrame>) -> Closure {
-    Closure::new(
+fn box_one(view: MutatorHeapView, empty: RefPtr<EnvFrame>) -> SynClosure {
+    SynClosure::new(
         view.data(
             DataConstructor::BoxedString.tag(),
             Array::from_slice(&view, &[Ref::V(Native::Num(1.into()))]),
@@ -77,7 +77,7 @@ fn alloc_letrec(
 }
 
 /// Access deep closure
-fn access(view: MutatorHeapView, env: RefPtr<EnvFrame>, depth: usize) -> Option<Closure> {
+fn access(view: MutatorHeapView, env: RefPtr<EnvFrame>, depth: usize) -> Option<SynClosure> {
     let e = view.scoped(env);
     (*e).get(&view, depth)
 }
@@ -91,7 +91,7 @@ fn update(view: MutatorHeapView, empty: RefPtr<EnvFrame>, env: RefPtr<EnvFrame>,
 
 /// Create an identity lambda and saturate it
 fn create_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
-    let lambda = Closure::close(
+    let lambda = SynClosure::close(
         &LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
         empty,
     );
@@ -101,7 +101,7 @@ fn create_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
 
 /// Create an identity lambda and saturate it
 fn create_partially_apply_and_saturate_lambda(view: MutatorHeapView, empty: RefPtr<EnvFrame>) {
-    let lambda = Closure::close(
+    let lambda = SynClosure::close(
         &LambdaForm::new(2, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default()),
         empty,
     );

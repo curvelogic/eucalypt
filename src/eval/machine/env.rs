@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::eval::memory::infotable::InfoTagged;
+use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
 use crate::eval::memory::{
@@ -16,66 +16,75 @@ use crate::eval::memory::{
 /// A closure consist of a static part (InfoTable) that can be
 /// statically compiled, and a pointer to an environment
 #[derive(Clone)]
-pub struct Closing<T>(InfoTagged<T>, RefPtr<EnvironmentFrame<T>>)
+pub struct Closing<S>(InfoTagged<S>, RefPtr<EnvironmentFrame<Closing<S>>>)
 where
-    T: Copy;
+    S: Copy;
 
-impl<T> StgObject for Closing<T> where T: Copy {}
+impl<S> StgObject for Closing<S> where S: Copy {}
 
-impl<T: Copy + Default> Default for Closing<T> {
+impl<S: Copy + Default> Default for Closing<S> {
     fn default() -> Self {
         Self(Default::default(), RefPtr::dangling())
     }
 }
 
-impl<T: Copy> Closing<T> {
+impl<S> InfoTable for Closing<S>
+where
+    S: Copy,
+{
+    /// Arity when partially applied args are taken into account
+    fn arity(&self) -> u8 {
+        self.0.arity()
+    }
+
+    /// Whether to update after evaluation
+    fn update(&self) -> bool {
+        self.0.update()
+    }
+
+    fn annotation(&self) -> Smid {
+        self.0.annotation()
+    }
+}
+
+impl<S: Copy> Closing<S> {
     /// A new non-callable closure of `code` over environment `env`
-    pub fn new(code: T, env: RefPtr<EnvironmentFrame<T>>) -> Self {
+    pub fn new(code: S, env: RefPtr<EnvironmentFrame<Closing<S>>>) -> Self {
         Closing(InfoTagged::new(0, code, Smid::default()), env)
     }
 
     /// A new non-callable closure of `code` over environment `env`
-    pub fn new_annotated(code: T, env: RefPtr<EnvironmentFrame<T>>, annotation: Smid) -> Self {
+    pub fn new_annotated(
+        code: S,
+        env: RefPtr<EnvironmentFrame<Closing<S>>>,
+        annotation: Smid,
+    ) -> Self {
         Closing(InfoTagged::new(0, code, annotation), env)
     }
 
     /// A new non-callable closure of `code` over environment `env`
     pub fn new_annotated_lambda(
-        code: T,
+        code: S,
         arity: u8,
-        env: RefPtr<EnvironmentFrame<T>>,
+        env: RefPtr<EnvironmentFrame<Closing<S>>>,
         annotation: Smid,
     ) -> Self {
         Closing(InfoTagged::new(arity, code, annotation), env)
     }
 
     /// Construct a closure from a lambda form
-    pub fn close(lambda_form: &InfoTagged<T>, env: RefPtr<EnvironmentFrame<T>>) -> Self {
+    pub fn close(lambda_form: &InfoTagged<S>, env: RefPtr<EnvironmentFrame<Closing<S>>>) -> Self {
         Closing(*lambda_form, env)
     }
 
     /// Reference to the closure's environment
-    pub fn env(&self) -> RefPtr<EnvironmentFrame<T>> {
+    pub fn env(&self) -> RefPtr<EnvironmentFrame<Closing<S>>> {
         self.1
     }
 
     /// Reference to the closure's code
-    pub fn code(&self) -> T {
+    pub fn code(&self) -> S {
         self.0.body()
-    }
-
-    /// Arity when partially applied args are taken into account
-    pub fn arity(&self) -> u8 {
-        self.0.arity()
-    }
-
-    /// Whether to update after evaluation
-    pub fn updateable(&self) -> bool {
-        self.0.update()
-    }
-
-    pub fn annotation(&self) -> Smid {
-        self.0.annotation()
     }
 
     /// Unsafe means of navigating through closures by local Refs
@@ -86,7 +95,7 @@ impl<T: Copy> Closing<T> {
         &'guard self,
         guard: &'guard dyn MutatorScope,
         arg: Ref,
-    ) -> Closing<T> {
+    ) -> Closing<S> {
         if let Ref::L(i) = arg {
             let env = &*ScopedPtr::from_non_null(guard, self.env());
             if let Some(closure) = env.get(guard, i) {
@@ -127,14 +136,14 @@ impl Closing<RefPtr<HeapSyn>> {
     }
 }
 
-pub struct ScopeAndClosure<'guard>(pub &'guard dyn MutatorScope, pub &'guard Closure);
+pub struct ScopeAndClosure<'guard>(pub &'guard dyn MutatorScope, pub &'guard SynClosure);
 
 impl<'guard> fmt::Display for ScopeAndClosure<'guard> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let code = ScopedPtr::from_non_null(self.0, self.1.code());
         let env = ScopedPtr::from_non_null(self.0, self.1.env());
 
-        if self.1.updateable() {
+        if self.1.update() {
             write!(f, "Th({}|{})", code, env)
         } else if self.1.arity() > 0 {
             write!(f, "λ{{{}}}({}|⒳→{})", self.1.arity(), code, env)
@@ -144,7 +153,7 @@ impl<'guard> fmt::Display for ScopeAndClosure<'guard> {
     }
 }
 
-impl<'guard> fmt::Display for ScopedPtr<'guard, Closure> {
+impl<'guard> fmt::Display for ScopedPtr<'guard, SynClosure> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         ScopeAndClosure(self, self).fmt(f)
     }
@@ -174,21 +183,21 @@ impl<'guard> fmt::Display for ScopedPtr<'guard, Closure> {
 /// The compiler has to juggle these indexes and closures have no
 /// record of the free variables they reference as in the standard
 /// STG.
-pub struct EnvironmentFrame<T>
+pub struct EnvironmentFrame<C>
 where
-    T: Copy,
+    C: Clone,
 {
     /// Indexed bindings
-    bindings: Array<Closing<T>>,
+    bindings: Array<C>,
     /// Source code annotation
     annotation: Smid,
     /// Reference to next environment
-    next: Option<RefPtr<EnvironmentFrame<T>>>,
+    next: Option<RefPtr<EnvironmentFrame<C>>>,
 }
 
-impl<T> Default for EnvironmentFrame<T>
+impl<C> Default for EnvironmentFrame<C>
 where
-    T: Copy,
+    C: Clone,
 {
     fn default() -> Self {
         Self {
@@ -199,11 +208,11 @@ where
     }
 }
 
-impl<T> EnvironmentFrame<T>
+impl<C> EnvironmentFrame<C>
 where
-    T: Copy,
+    C: Clone,
 {
-    pub fn new(bindings: Array<Closing<T>>, annotation: Smid, next: Option<RefPtr<Self>>) -> Self {
+    pub fn new(bindings: Array<C>, annotation: Smid, next: Option<RefPtr<Self>>) -> Self {
         Self {
             bindings,
             annotation,
@@ -212,7 +221,7 @@ where
     }
 
     /// Navigate down the environment stack to find the referenced cell
-    fn cell(&self, guard: &dyn MutatorScope, idx: usize) -> Option<(Array<Closing<T>>, usize)> {
+    fn cell(&self, guard: &dyn MutatorScope, idx: usize) -> Option<(Array<C>, usize)> {
         let len = self.bindings.len();
         if idx < len {
             Some((self.bindings.clone(), idx))
@@ -230,7 +239,7 @@ where
     /// copies simple ref pointer out of RefCell for return. Therefore
     /// the returned value is not affected by subsequent updates and
     /// is useful mainly for immediate evaluation.
-    pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<Closing<T>> {
+    pub fn get(&self, guard: &dyn MutatorScope, idx: usize) -> Option<C> {
         if let Some((arr, i)) = self.cell(guard, idx) {
             arr.get(i)
         } else {
@@ -243,7 +252,7 @@ where
         &self,
         guard: &dyn MutatorScope,
         idx: usize,
-        closure: Closing<T>,
+        closure: C,
     ) -> Result<(), ExecutionError> {
         if let Some((mut arr, i)) = self.cell(guard, idx) {
             arr.set(i, closure);
@@ -283,9 +292,9 @@ where
     }
 }
 
-impl<'guard, T> fmt::Display for ScopedPtr<'guard, EnvironmentFrame<T>>
+impl<'guard, C> fmt::Display for ScopedPtr<'guard, EnvironmentFrame<C>>
 where
-    T: Copy,
+    C: Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.bindings.len();
@@ -307,7 +316,7 @@ where
 }
 
 /// For now, a Closure is closing HeapSyn over an environment
-pub type Closure = Closing<RefPtr<HeapSyn>>;
+pub type SynClosure = Closing<RefPtr<HeapSyn>>;
 /// For now, an EnvFrame is an environment frame with HeapSyn Closures
-pub type EnvFrame = EnvironmentFrame<RefPtr<HeapSyn>>;
+pub type EnvFrame = EnvironmentFrame<Closing<RefPtr<HeapSyn>>>;
 impl StgObject for EnvFrame {}

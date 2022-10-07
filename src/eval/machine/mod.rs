@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::common::sourcemap::Smid;
 
 use self::{
-    env::{Closure, EnvFrame},
+    env::{EnvFrame, SynClosure},
     env_builder::EnvBuilder,
     vm::Machine,
 };
@@ -36,7 +36,7 @@ pub struct Initialiser<'a> {
 
 impl<'a> Mutator for Initialiser<'a> {
     type Input = ();
-    type Output = (RefPtr<EnvFrame>, RefPtr<EnvFrame>, Closure);
+    type Output = (RefPtr<EnvFrame>, RefPtr<EnvFrame>, SynClosure);
 
     fn run(
         &self,
@@ -54,7 +54,7 @@ impl<'a> Mutator for Initialiser<'a> {
             Smid::default(),
         );
 
-        let closure = Closure::new(load(view, self.syntax.clone()).unwrap(), root_env);
+        let closure = SynClosure::new(load(view, self.syntax.clone()).unwrap(), root_env);
         Ok((root_env, globals, closure))
     }
 }

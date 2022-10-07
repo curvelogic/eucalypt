@@ -8,7 +8,7 @@ use crate::{
         machine::intrinsic::{
             CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
         },
-        memory::{mutator::MutatorHeapView, syntax::Ref},
+        memory::{infotable::InfoTable, mutator::MutatorHeapView, syntax::Ref},
         stg::{runtime::NativeVariant, support::call},
     },
 };

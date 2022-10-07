@@ -20,6 +20,7 @@ use crate::{
             alloc::{ScopedAllocator, ScopedPtr},
             array::Array,
             heap::{Heap, HeapStats},
+            infotable::InfoTable,
             mutator::{Mutator, MutatorHeapView},
             syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
         },
@@ -30,7 +31,7 @@ use crate::{
 use super::env_builder::EnvBuilder;
 use super::{
     cont::{match_tag, Continuation},
-    env::{Closure, EnvFrame},
+    env::{EnvFrame, SynClosure},
     intrinsic::{IntrinsicMachine, StgIntrinsic},
     metrics::Metrics,
 };
@@ -47,11 +48,11 @@ pub struct HeapNavigator<'scope> {
 
 impl<'scope> HeapNavigator<'scope> {
     /// Resolve a ref (creating atom closure if it resolves to native)
-    pub fn resolve(&self, r: &Ref) -> Result<Closure, ExecutionError> {
+    pub fn resolve(&self, r: &Ref) -> Result<SynClosure, ExecutionError> {
         match r {
             Ref::L(index) => Ok(self.get(*index)?),
             Ref::G(index) => Ok(self.global(*index)?),
-            Ref::V(_) => Ok(Closure::new(
+            Ref::V(_) => Ok(SynClosure::new(
                 self.view
                     .alloc(HeapSyn::Atom {
                         evaluand: r.clone(),
@@ -63,21 +64,21 @@ impl<'scope> HeapNavigator<'scope> {
     }
 
     /// Index into current environment, retrieving pointer
-    pub fn get(&self, index: usize) -> Result<Closure, ExecutionError> {
+    pub fn get(&self, index: usize) -> Result<SynClosure, ExecutionError> {
         (*self.locals)
             .get(&self.view, index)
             .ok_or(ExecutionError::BadEnvironmentIndex(index))
     }
 
     /// Index into globals
-    pub fn global(&self, index: usize) -> Result<Closure, ExecutionError> {
+    pub fn global(&self, index: usize) -> Result<SynClosure, ExecutionError> {
         (*self.globals)
             .get(&self.view, index)
             .ok_or(ExecutionError::BadGlobalIndex(index))
     }
 
     /// Resolve a ref to a closure
-    pub fn resolve_callable(&self, r: &Ref) -> Result<Closure, ExecutionError> {
+    pub fn resolve_callable(&self, r: &Ref) -> Result<SynClosure, ExecutionError> {
         match r {
             Ref::L(index) => self.get(*index),
             Ref::G(index) => self.global(*index),
@@ -126,7 +127,7 @@ pub struct MachineState {
     /// Root (empty) environment
     root_env: RefPtr<EnvFrame>,
     /// Current closure
-    closure: Closure,
+    closure: SynClosure,
     /// Globals (primarily STG wrappers for intrinsics)
     globals: RefPtr<EnvFrame>,
     /// Stack of continuations (outside heap)
@@ -143,7 +144,7 @@ impl Default for MachineState {
     fn default() -> Self {
         Self {
             root_env: RefPtr::dangling(),
-            closure: Closure::new(RefPtr::dangling(), RefPtr::dangling()),
+            closure: SynClosure::new(RefPtr::dangling(), RefPtr::dangling()),
             globals: RefPtr::dangling(),
             stack: Default::default(),
             terminated: Default::default(),
@@ -197,7 +198,7 @@ impl MachineState {
                 match evaluand {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
-                        let updateable = self.closure.updateable();
+                        let updateable = self.closure.update();
                         if updateable {
                             self.push(
                                 view,
@@ -229,7 +230,7 @@ impl MachineState {
                         environment,
                     },
                 )?;
-                self.closure = Closure::new(scrutinee, environment);
+                self.closure = SynClosure::new(scrutinee, environment);
             }
             HeapSyn::Cons { tag, args } => {
                 self.return_data(view, tag, args.as_slice())?;
@@ -246,16 +247,16 @@ impl MachineState {
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
                 let new_env = view.from_let(bindings.as_slice(), environment, self.annotation);
-                self.closure = Closure::new(body, new_env);
+                self.closure = SynClosure::new(body, new_env);
             }
             HeapSyn::LetRec { bindings, body } => {
                 metrics.alloc(bindings.len());
                 let new_env = view.from_letrec(bindings.as_slice(), environment, self.annotation);
-                self.closure = Closure::new(body, new_env);
+                self.closure = SynClosure::new(body, new_env);
             }
             HeapSyn::Ann { smid, body } => {
                 self.annotation = smid;
-                self.closure = Closure::new(body, environment);
+                self.closure = SynClosure::new(body, environment);
             }
             HeapSyn::Meta { meta, body } => {
                 self.return_meta(view, &meta, &body)?;
@@ -273,7 +274,7 @@ impl MachineState {
                         environment,
                     },
                 )?;
-                self.closure = Closure::new(scrutinee, environment);
+                self.closure = SynClosure::new(scrutinee, environment);
             }
             HeapSyn::BlackHole => return Err(ExecutionError::BlackHole),
         }
@@ -309,7 +310,7 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    self.closure = Closure::new(
+                    self.closure = SynClosure::new(
                         handler,
                         view.from_closures(
                             [self.nav(view).resolve(meta)?, self.nav(view).resolve(body)?]
@@ -354,7 +355,7 @@ impl MachineState {
                 } => {
                     // case fallbacks can handle natives
                     if let Some(fb) = fallback {
-                        self.closure = Closure::new(
+                        self.closure = SynClosure::new(
                             fb,
                             view.from_args(
                                 &[Ref::vref(value.clone())],
@@ -378,7 +379,7 @@ impl MachineState {
                     ..
                 } => {
                     // demeta or_else can accept natives
-                    self.closure = Closure::new(
+                    self.closure = SynClosure::new(
                         or_else,
                         view.from_args(&[Ref::vref(value.clone())], environment, self.annotation),
                     );
@@ -414,9 +415,9 @@ impl MachineState {
                         let closures = args
                             .iter()
                             .map(|r| self.nav(view).resolve(r))
-                            .collect::<Result<Vec<Closure>, ExecutionError>>()?;
+                            .collect::<Result<Vec<SynClosure>, ExecutionError>>()?;
                         let len = closures.len();
-                        self.closure = Closure::new(
+                        self.closure = SynClosure::new(
                             body,
                             // TODO: skip empty frames
                             view.from_closures(
@@ -427,7 +428,7 @@ impl MachineState {
                             ),
                         );
                     } else if let Some(body) = fallback {
-                        self.closure = Closure::new(
+                        self.closure = SynClosure::new(
                             body,
                             view.from_closure(self.closure.clone(), environment, self.annotation),
                         );
@@ -449,7 +450,7 @@ impl MachineState {
                         let mut args = Array::from_slice(&view, args.as_slice());
                         args.push(&view, self.closure.clone());
                         self.push(view, Continuation::ApplyTo { args })?;
-                        self.closure = Closure::new(
+                        self.closure = SynClosure::new(
                             view.atom(Ref::G(intrinsics::index("MERGE").unwrap()))?
                                 .as_ptr(),
                             self.env(view),
@@ -463,7 +464,7 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    self.closure = Closure::new(
+                    self.closure = SynClosure::new(
                         or_else,
                         view.from_closure(self.closure.clone(), environment, self.annotation),
                     );
@@ -527,7 +528,7 @@ impl MachineState {
                     // already omit primitive handlers from the
                     // standard STG machine.)
                     if let Some(body) = fallback {
-                        self.closure = Closure::new(
+                        self.closure = SynClosure::new(
                             body,
                             view.from_closure(self.closure.clone(), environment, self.annotation),
                         );
@@ -543,7 +544,7 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    self.closure = Closure::new(
+                    self.closure = SynClosure::new(
                         or_else,
                         view.from_closure(self.closure.clone(), environment, self.annotation),
                     );
@@ -585,7 +586,7 @@ impl IntrinsicMachine for MachineState {
     }
 
     /// Used by intrinsics to update the closure after execution
-    fn set_closure(&mut self, closure: Closure) -> Result<(), ExecutionError> {
+    fn set_closure(&mut self, closure: SynClosure) -> Result<(), ExecutionError> {
         self.closure = closure;
         Ok(())
     }
@@ -710,7 +711,7 @@ impl<'a> Machine<'a> {
         &mut self,
         root_env: RefPtr<EnvFrame>,
         globals: RefPtr<EnvFrame>,
-        closure: Closure,
+        closure: SynClosure,
         intrinsics: Vec<&'a dyn StgIntrinsic>,
     ) -> Result<(), ExecutionError> {
         self.intrinsics = intrinsics.clone();
@@ -896,7 +897,7 @@ pub mod tests {
 
     use std::rc::Rc;
 
-    use crate::eval::machine::env::{Closure, EnvFrame};
+    use crate::eval::machine::env::{EnvFrame, SynClosure};
     use crate::eval::machine::intrinsic::StgIntrinsic;
 
     use crate::eval::memory::alloc::ScopedAllocator;
@@ -933,14 +934,14 @@ pub mod tests {
 
     impl Mutator for Load {
         type Input = RefPtr<EnvFrame>;
-        type Output = Closure;
+        type Output = SynClosure;
 
         fn run(
             &self,
             view: &MutatorHeapView,
             input: Self::Input,
         ) -> Result<Self::Output, crate::eval::error::ExecutionError> {
-            Ok(Closure::new(load(view, self.syntax.clone())?, input))
+            Ok(SynClosure::new(load(view, self.syntax.clone())?, input))
         }
     }
 

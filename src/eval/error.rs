@@ -91,6 +91,10 @@ pub enum ExecutionError {
     Compile(#[from] CompileError),
     #[error(transparent)]
     Io(#[from] io::Error),
+    #[error("expected label on stack")]
+    ExpectedLabel,
+    #[error("expected closure on stack")]
+    ExpectedClosure,
 }
 
 impl From<bump::AllocError> for ExecutionError {

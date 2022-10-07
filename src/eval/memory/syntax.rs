@@ -231,6 +231,7 @@ pub mod repr {
             self,
             alloc::{MutatorScope, ScopedPtr},
             array::Array,
+            infotable::InfoTable,
         },
         stg::{self, syntax::StgSyn},
     };

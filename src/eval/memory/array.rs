@@ -9,7 +9,10 @@ use std::{cmp::min, mem::size_of, slice::from_raw_parts};
 
 use crate::eval::error::ExecutionError;
 
-use super::{alloc::ScopedAllocator, syntax::RefPtr};
+use super::{
+    alloc::{MutatorScope, ScopedAllocator},
+    syntax::RefPtr,
+};
 
 /// Simple growable backing array
 ///
@@ -192,6 +195,7 @@ impl<T: Sized + Clone> Array<T> {
         self.write(self.length - 1, item);
     }
 
+    // TODO: needs guard
     /// Remove and return the final item (if any)
     pub fn pop(&mut self) -> Option<T> {
         if self.length > 0 {
@@ -202,6 +206,14 @@ impl<T: Sized + Clone> Array<T> {
         } else {
             None
         }
+    }
+
+    pub fn pop_n<'guard, G, V, F>(&mut self, _scope: &'guard G, _n: usize, _consumer: F) -> V
+    where
+        F: Fn(&[T]) -> V,
+        G: MutatorScope,
+    {
+        todo!();
     }
 
     /// Return the final item
@@ -222,11 +234,13 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     /// Set item at index
     pub fn set(&mut self, index: usize, item: T) {
         self.write(index, item);
     }
 
+    // TODO: needs guard
     /// As immutable slice
     pub fn as_slice(&self) -> &[T] {
         if let Some(ptr) = self.data.as_ptr() {
@@ -236,6 +250,7 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     /// Read only iterator
     pub fn iter(&self) -> std::slice::Iter<T> {
         self.as_slice().iter()
@@ -263,6 +278,7 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     fn write(&mut self, index: usize, item: T) -> &T {
         unsafe {
             let dest = self.get_offset(index).expect("write: bounds error");
@@ -271,6 +287,7 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     fn read(&self, index: usize) -> T {
         unsafe {
             let dest = self.get_offset(index).expect("bounds error");

@@ -11,7 +11,7 @@ use crate::eval::{
     stg::tags::Tag,
 };
 
-use super::env::{Closure, EnvFrame};
+use super::env::{EnvFrame, SynClosure};
 
 /// Continuations used on the stack to record how to handle returns
 ///
@@ -43,7 +43,7 @@ pub enum Continuation {
         index: usize,
     },
     /// Once callable is evaluated, apply to args
-    ApplyTo { args: Array<Closure> },
+    ApplyTo { args: Array<SynClosure> },
     /// Catch metadata and pass it (with body) to handler
     DeMeta {
         /// handler receives metdata and body as bound args
