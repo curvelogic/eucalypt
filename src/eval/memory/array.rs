@@ -294,6 +294,12 @@ impl<T: Sized + Clone> Array<T> {
             std::ptr::read(dest)
         }
     }
+
+    // Return pointer to allocated data for navigating to header (and
+    // marking during GC)
+    pub fn allocated_data(&self) -> Option<RefPtr<T>> {
+        self.data.ptr
+    }
 }
 
 #[cfg(test)]

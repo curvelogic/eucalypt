@@ -19,6 +19,7 @@ use crate::{
         memory::{
             alloc::{ScopedAllocator, ScopedPtr},
             array::Array,
+            collect::{self, CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
             heap::{Heap, HeapStats},
             infotable::InfoTable,
             mutator::{Mutator, MutatorHeapView},
@@ -611,6 +612,29 @@ impl IntrinsicMachine for MachineState {
     }
 }
 
+/// MachineState contains all the garbage collection roots
+impl GcScannable for MachineState {
+    fn scan<'a, 'b>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &'b mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+
+        marker.mark(self.globals);
+        grey.push(ScanPtr::from_non_null(scope, self.globals));
+
+        grey.push(ScanPtr::new(scope, &self.closure));
+
+        for cont in &self.stack {
+            marker.mark(*cont);
+            grey.push(ScanPtr::from_non_null(scope, *cont));
+        }
+
+        grey
+    }
+}
+
 pub struct MachineSettings {
     pub trace_steps: bool,
 }
@@ -750,6 +774,10 @@ impl<'a> Machine<'a> {
 
     /// Run the machine until termination or step limit
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
+        collect::collect(&self.state, &mut self.heap);
+
+        eprintln!("{:?}", self.heap);
+
         while !self.state.terminated {
             if let Some(limit) = limit {
                 if self.metrics.ticks() as usize >= limit {
@@ -758,6 +786,13 @@ impl<'a> Machine<'a> {
             }
             self.step()?;
         }
+
+        eprintln!("{:?}", self.heap);
+
+        collect::collect(&self.state, &mut self.heap);
+
+        eprintln!("{:?}", self.heap);
+
         Ok(self.exit_code())
     }
 

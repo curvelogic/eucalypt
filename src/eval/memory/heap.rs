@@ -1,13 +1,15 @@
 //! The STG heap implementation
 
-use std::{cell::UnsafeCell, mem::size_of, ptr::NonNull};
+use std::fmt::Debug;
+use std::ptr::NonNull;
+use std::{cell::UnsafeCell, mem::size_of};
 use std::{ptr::write, slice::from_raw_parts_mut};
 
-use super::alloc::MutatorScope;
-use super::lob::LargeObjectBlock;
 use super::{
-    alloc::{AllocHeader, Allocator},
+    alloc::{Allocator, MutatorScope},
     bump::{self, AllocError, BumpBlock},
+    header::AllocHeader,
+    lob::LargeObjectBlock,
 };
 
 #[derive(Debug)]
@@ -32,9 +34,9 @@ pub enum SizeClass {
 
 impl SizeClass {
     pub fn for_size(object_size: usize) -> SizeClass {
-        if object_size < bump::LINE_SIZE {
+        if object_size < bump::LINE_SIZE_BYTES {
             SizeClass::Small
-        } else if object_size < bump::BLOCK_SIZE {
+        } else if object_size < bump::BLOCK_SIZE_BYTES {
             SizeClass::Medium
         } else {
             SizeClass::Large
@@ -57,6 +59,28 @@ pub struct HeapState {
 impl Default for HeapState {
     fn default() -> Self {
         HeapState::new()
+    }
+}
+
+impl std::fmt::Debug for HeapState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for block in &self.rest {
+            writeln!(f, "{:?}", block)?;
+        }
+
+        if let Some(head) = &self.head {
+            writeln!(f, "(Hd) {:?}", head)?;
+        }
+
+        if let Some(of) = &self.overflow {
+            writeln!(f, "(Ov) Overflow:\n\n{:?}", of)?;
+        }
+
+        for lob in &self.lobs {
+            writeln!(f, "{:?}", lob)?;
+        }
+
+        writeln!(f, "\n")
     }
 }
 
@@ -129,6 +153,12 @@ pub struct Heap {
 
 impl MutatorScope for Heap {}
 
+impl Debug for Heap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unsafe { (*self.state.get()).fmt(f) }
+    }
+}
+
 impl Default for Heap {
     fn default() -> Self {
         Heap::new()
@@ -149,7 +179,7 @@ impl Heap {
 
 impl Allocator for Heap {
     /// Allocate an object into the backing bump blocks
-    fn alloc<T>(&self, object: T) -> Result<std::ptr::NonNull<T>, super::bump::AllocError>
+    fn alloc<T>(&self, object: T) -> Result<NonNull<T>, super::bump::AllocError>
     where
         T: super::alloc::StgObject,
     {
@@ -159,7 +189,7 @@ impl Allocator for Heap {
 
         let space = self.find_space(alloc_size)?;
 
-        let header = AllocHeader {};
+        let header = AllocHeader::default();
 
         unsafe {
             write(space as *mut AllocHeader, header);
@@ -170,16 +200,17 @@ impl Allocator for Heap {
     }
 
     /// Allocate a region of bytes (for array / vector implementations)
-    fn alloc_bytes(
-        &self,
-        size_bytes: usize,
-    ) -> Result<std::ptr::NonNull<u8>, super::bump::AllocError> {
+    fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, super::bump::AllocError> {
+        if size_bytes > u32::MAX as usize {
+            return Err(AllocError::BadRequest);
+        }
+
         let header_size = size_of::<AllocHeader>();
         let alloc_size = Self::alloc_size_of(header_size + size_bytes);
 
         let space = self.find_space(alloc_size)?;
 
-        let header = AllocHeader {};
+        let header = AllocHeader::new(alloc_size as u32);
 
         unsafe {
             write(space as *mut AllocHeader, header);
@@ -193,19 +224,13 @@ impl Allocator for Heap {
     }
 
     /// Get header from object pointer
-    fn get_header<T>(
-        &self,
-        _object: std::ptr::NonNull<T>,
-    ) -> std::ptr::NonNull<super::alloc::AllocHeader> {
-        todo!()
+    fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader> {
+        unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) }
     }
 
     /// Get object from header pointer
-    fn get_object(
-        &self,
-        _header: std::ptr::NonNull<super::alloc::AllocHeader>,
-    ) -> std::ptr::NonNull<()> {
-        todo!()
+    fn get_object(&self, header: NonNull<AllocHeader>) -> NonNull<()> {
+        unsafe { NonNull::new_unchecked(header.as_ptr().offset(1)).cast::<()>() }
     }
 }
 
@@ -244,6 +269,82 @@ impl Heap {
     pub fn alloc_size_of(object_size: usize) -> usize {
         let align = size_of::<usize>(); // * 2;
         (object_size + (align - 1)) & !(align - 1)
+    }
+
+    // GC functions
+
+    /// Reset all region marks ready for a fresh GC
+    pub fn reset_region_marks(&self) {
+        let heap_state = unsafe { &mut *self.state.get() };
+
+        if let Some(head) = &mut heap_state.head {
+            head.reset_region_marks();
+        }
+
+        for block in &mut heap_state.rest {
+            block.reset_region_marks();
+        }
+    }
+
+    /// Check wither an object is marked
+    pub fn is_marked<T>(&self, ptr: NonNull<T>) -> bool {
+        let header: NonNull<AllocHeader> = self.get_header(ptr);
+        unsafe { (*header.as_ptr()).is_marked() }
+    }
+
+    /// Mark an object as live
+    pub fn mark_object<T>(&self, ptr: NonNull<T>) {
+        let header: NonNull<AllocHeader> = self.get_header(ptr);
+        unsafe {
+            (*header.as_ptr()).mark();
+        }
+    }
+
+    /// Unmark object
+    pub fn unmark_object<T>(&self, ptr: NonNull<T>) {
+        let header = self.get_header(ptr);
+        unsafe { (*header.as_ptr()).unmark() }
+    }
+
+    /// Mark lines for and object (array) that uses untyped backing
+    /// store of bytes.
+    ///
+    /// We need to consult the header for size.
+    pub fn mark_lines_for_bytes(&mut self, ptr: NonNull<u8>) {
+        let header = unsafe { self.get_header(ptr).as_mut() };
+        let heap_state = unsafe { &mut *self.state.get() };
+
+        let bytes = header.length() as usize;
+        // TODO: fix
+        if let Some(head) = &mut heap_state.head {
+            head.mark_region(ptr, bytes);
+        }
+
+        for block in &mut heap_state.rest {
+            block.mark_region(ptr, bytes);
+        }
+    }
+
+    /// Mark the line in the appropriate block map
+    pub fn mark_line<T>(&mut self, ptr: NonNull<T>) {
+        // depending on size of object + header, mark line or lines
+        let heap_state = unsafe { &mut *self.state.get() };
+
+        // TODO: fix
+        if let Some(head) = &mut heap_state.head {
+            head.mark_line(ptr);
+        }
+
+        for block in &mut heap_state.rest {
+            block.mark_line(ptr);
+        }
+    }
+
+    /// Unmark the line in the appropriate block map
+    pub fn unmark_line<T>(&mut self, ptr: NonNull<T>) {
+        // depending on size of object + header, unmark line or lines
+        let _header = self.get_header(ptr);
+        todo!();
     }
 }
 

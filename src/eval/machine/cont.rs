@@ -6,6 +6,7 @@ use crate::eval::{
     memory::{
         alloc::StgObject,
         array::Array,
+        collect::{CollectorHeapView, GcScannable, ScanPtr},
         syntax::{HeapSyn, RefPtr},
     },
     stg::tags::Tag,
@@ -90,5 +91,69 @@ impl fmt::Display for Continuation {
                 write!(f, "ƒ(`,•)")
             }
         }
+    }
+}
+
+impl GcScannable for Continuation {
+    fn scan<'a, 'b>(
+        &'a self,
+        scope: &'a dyn crate::eval::memory::collect::CollectorScope,
+        marker: &'b mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+        dbg!("cont");
+        match self {
+            Continuation::Branch {
+                branches,
+                fallback,
+                environment,
+            } => {
+                if let Some(data) = branches.allocated_data() {
+                    marker.mark(data);
+                    for (_tag, branch) in branches.iter() {
+                        marker.mark(*branch);
+                        grey.push(ScanPtr::from_non_null(scope, *branch));
+                    }
+                }
+
+                if let Some(fb) = fallback {
+                    marker.mark(*fb);
+                    grey.push(ScanPtr::from_non_null(scope, *fb));
+                }
+                marker.mark(*environment);
+                grey.push(ScanPtr::from_non_null(scope, *environment));
+            }
+            Continuation::Update {
+                environment,
+                index: _,
+            } => {
+                marker.mark(*environment);
+                grey.push(ScanPtr::from_non_null(scope, *environment));
+            }
+            Continuation::ApplyTo { args } => {
+                if let Some(data) = args.allocated_data() {
+                    marker.mark(data);
+                    for arg in args.iter() {
+                        grey.push(ScanPtr::new(scope, arg));
+                    }
+                }
+            }
+            Continuation::DeMeta {
+                handler,
+                or_else,
+                environment,
+            } => {
+                marker.mark(*handler);
+                grey.push(ScanPtr::from_non_null(scope, *handler));
+
+                marker.mark(*or_else);
+                grey.push(ScanPtr::from_non_null(scope, *or_else));
+
+                marker.mark(*environment);
+                grey.push(ScanPtr::from_non_null(scope, *environment));
+            }
+        }
+
+        grey
     }
 }
