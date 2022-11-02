@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use crate::eval::memory::collect::{GcScannable, ScanPtr};
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
@@ -213,6 +214,7 @@ where
     C: Clone,
 {
     pub fn new(bindings: Array<C>, annotation: Smid, next: Option<RefPtr<Self>>) -> Self {
+        debug_assert!(next.is_none() || (next.unwrap() != RefPtr::dangling()));
         Self {
             bindings,
             annotation,
@@ -260,11 +262,6 @@ where
         } else {
             Err(ExecutionError::BadEnvironmentIndex(idx))
         }
-    }
-
-    /// Create an empty environment
-    pub fn empty() -> Self {
-        Self::default()
     }
 
     /// Access any annotation
@@ -315,8 +312,74 @@ where
     }
 }
 
+impl<'guard, C> fmt::Debug for ScopedPtr<'guard, EnvironmentFrame<C>>
+where
+    C: Clone,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let len = self.bindings.len();
+
+        match (*self).next {
+            None => {
+                write!(f, "[{:p} × {}]→•", self.as_ptr(), len)
+            }
+            Some(env) => {
+                let env = ScopedPtr::from_non_null(self, env);
+                write!(f, "[{:p} × {}]→{:?}", self.as_ptr(), len, env)
+            }
+        }
+    }
+}
+
 /// For now, a Closure is closing HeapSyn over an environment
 pub type SynClosure = Closing<RefPtr<HeapSyn>>;
+
+impl GcScannable for SynClosure {
+    fn scan<'a, 'b>(
+        &'a self,
+        scope: &'a dyn crate::eval::memory::collect::CollectorScope,
+        marker: &'b mut crate::eval::memory::collect::CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+
+        let code = self.code();
+        marker.mark(code);
+        grey.push(ScanPtr::from_non_null(scope, code));
+
+        let env = self.env();
+        marker.mark(env);
+        grey.push(ScanPtr::from_non_null(scope, env));
+
+        grey
+    }
+}
+
 /// For now, an EnvFrame is an environment frame with HeapSyn Closures
-pub type EnvFrame = EnvironmentFrame<Closing<RefPtr<HeapSyn>>>;
+pub type EnvFrame = EnvironmentFrame<SynClosure>;
 impl StgObject for EnvFrame {}
+
+impl GcScannable for EnvFrame {
+    fn scan<'a, 'b>(
+        &'a self,
+        scope: &'a dyn crate::eval::memory::collect::CollectorScope,
+        marker: &'b mut crate::eval::memory::collect::CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+
+        let bindings = &self.bindings;
+
+        if let Some(data) = bindings.allocated_data() {
+            marker.mark(data);
+            for binding in bindings.iter() {
+                grey.push(ScanPtr::new(scope, binding));
+            }
+        }
+
+        if let Some(next) = self.next {
+            marker.mark(next);
+            grey.push(ScanPtr::from_non_null(scope, next));
+        }
+
+        grey
+    }
+}

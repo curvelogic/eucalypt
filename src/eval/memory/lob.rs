@@ -9,6 +9,7 @@ use super::block::Block;
 /// A memory allocation containing a single large object with its
 /// header, this differs from Block in that it needn't be a power of
 /// two.
+#[derive(Debug)]
 pub struct LargeObjectBlock {
     /// Block
     block: Block,

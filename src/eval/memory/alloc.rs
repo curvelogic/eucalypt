@@ -5,6 +5,7 @@
 use crate::eval::error::ExecutionError;
 
 use super::bump::AllocError;
+use super::header::AllocHeader;
 use std::ops::Deref;
 use std::ptr::NonNull;
 
@@ -12,9 +13,10 @@ pub trait StgObject {}
 
 impl<T> StgObject for NonNull<T> {}
 
-pub struct AllocHeader {}
-
-/// Allocator for STG
+/// Fundamental allocation trait
+///
+/// Heap implementations provide this and then controlled access to it
+/// is forwarded to mutators and collectors by ScopedPtr.
 pub trait Allocator {
     /// Allocate a T
     fn alloc<T>(&self, object: T) -> Result<NonNull<T>, AllocError>

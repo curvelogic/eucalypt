@@ -5,6 +5,8 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::ptr::NonNull;
 
+use super::bump::BLOCK_SIZE_BYTES;
+
 /// A block of memory allocated by the OS / upstream allocator
 #[derive(Debug, PartialEq, Eq)]
 pub struct Block {
@@ -53,6 +55,17 @@ impl Block {
 
     fn dealloc_block(ptr: NonNull<u8>, size: usize) {
         unsafe { dealloc(ptr.as_ptr(), Layout::from_size_align_unchecked(size, size)) }
+    }
+
+    pub fn byte_offset_of<T>(&self, ptr: NonNull<T>) -> Option<usize> {
+        // TODO: efficiency
+        if ptr.cast() > self.ptr {
+            let offset = (ptr.as_ptr() as usize).abs_diff(self.ptr.as_ptr() as usize);
+            if offset < BLOCK_SIZE_BYTES {
+                return Some(offset);
+            }
+        }
+        None
     }
 }
 

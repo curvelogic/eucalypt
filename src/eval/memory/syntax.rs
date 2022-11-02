@@ -2,11 +2,13 @@
 //! eucalypt-allocated memory
 
 use crate::common::sourcemap::Smid;
+
 use crate::eval::{error::ExecutionError, stg::tags::Tag};
 use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
 use std::{fmt, ptr::NonNull, rc::Rc};
 
+use super::collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr};
 use super::infotable::InfoTagged;
 use super::string::HeapString;
 use super::{
@@ -217,6 +219,105 @@ impl HeapSyn {
                     evaluand: Reference::V(_)
                 }
         )
+    }
+}
+
+impl GcScannable for LambdaForm {
+    fn scan<'a, 'b>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &'b mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let body = self.body();
+        marker.mark(body);
+        vec![ScanPtr::from_non_null(scope, body)]
+    }
+}
+
+impl GcScannable for HeapSyn {
+    fn scan<'a, 'b>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &'b mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+
+        match self {
+            HeapSyn::Atom { evaluand: _ } => {}
+            HeapSyn::Case {
+                scrutinee,
+                branches,
+                fallback,
+            } => {
+                marker.mark(*scrutinee);
+                grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                for (_, b) in branches.iter() {
+                    marker.mark(*b);
+                    grey.push(ScanPtr::from_non_null(scope, *b));
+                }
+                if let Some(f) = fallback {
+                    marker.mark(*f);
+                    grey.push(ScanPtr::from_non_null(scope, *f));
+                }
+            }
+            HeapSyn::Cons { tag: _, args } => {
+                if let Some(data) = args.allocated_data() {
+                    marker.mark(data);
+                }
+            }
+            HeapSyn::App { callable: _, args } => {
+                if let Some(data) = args.allocated_data() {
+                    marker.mark(data);
+                }
+            }
+            HeapSyn::Bif { intrinsic: _, args } => {
+                if let Some(data) = args.allocated_data() {
+                    marker.mark(data);
+                }
+            }
+            HeapSyn::Let { bindings, body } => {
+                if let Some(data) = bindings.allocated_data() {
+                    marker.mark(data);
+                    for bindings in bindings.iter() {
+                        grey.push(ScanPtr::new(scope, bindings));
+                    }
+                }
+
+                marker.mark(*body);
+                grey.push(ScanPtr::from_non_null(scope, *body));
+            }
+            HeapSyn::LetRec { bindings, body } => {
+                if let Some(data) = bindings.allocated_data() {
+                    marker.mark(data);
+                    for bindings in bindings.iter() {
+                        grey.push(ScanPtr::new(scope, bindings));
+                    }
+                }
+
+                marker.mark(*body);
+                grey.push(ScanPtr::from_non_null(scope, *body));
+            }
+            HeapSyn::Ann { smid: _, body } => {
+                marker.mark(*body);
+                grey.push(ScanPtr::from_non_null(scope, *body));
+            }
+            HeapSyn::Meta { meta: _, body: _ } => {}
+            HeapSyn::DeMeta {
+                scrutinee,
+                handler,
+                or_else,
+            } => {
+                marker.mark(*scrutinee);
+                grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                marker.mark(*handler);
+                grey.push(ScanPtr::from_non_null(scope, *handler));
+                marker.mark(*or_else);
+                grey.push(ScanPtr::from_non_null(scope, *or_else));
+            }
+            HeapSyn::BlackHole => {}
+        }
+
+        grey
     }
 }
 
