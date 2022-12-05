@@ -10,6 +10,13 @@ tests: {
   ι: [0, 1, 2, 3] take-until(>= 0) //= []
   κ: [0, 1] cycle take(5) //= [0, 1, 0, 1, 0]
   λ: [] cycle take(10) //= []
+  μ: ints-from(0) split-at(4) first //= [0, 1, 2, 3]
+  ν: range(0, 10) split-at(5) //= [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]
+  ξ: ints-from(0) take-while(_ < 5) //= [0, 1, 2, 3, 4]
+  ο: range(0, 8) split-after(_ < 5) //= [[0, 1, 2, 3, 4], [5, 6, 7]]
+  π: range(0, 8) split-when(_ > 5) //= [[0, 1, 2, 3, 4, 5], [6, 7]]
+  ρ: ints-from(0) split-after(_ < 5) first //= [0, 1, 2, 3, 4]
+  σ: ints-from(0) split-after(_ < 5) second take(2) //= [5, 6]
 }
 
 RESULT: tests values all-true? then(:PASS, :FAIL)

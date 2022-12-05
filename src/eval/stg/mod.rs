@@ -43,6 +43,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(arith::Sub));
     rt.add(Box::new(arith::Mul));
     rt.add(Box::new(arith::Div));
+    rt.add(Box::new(arith::Mod));
     rt.add(Box::new(arith::Gt));
     rt.add(Box::new(arith::Lt));
     rt.add(Box::new(arith::Gte));

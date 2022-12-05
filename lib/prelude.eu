@@ -526,8 +526,15 @@ take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
 ` "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
 
+` "'split-at(n, l) - split list in to at `n`th item and return pair."
+split-at(n, l): {
+  aux(n, xs, prefix): if((xs nil?) ∨ (n zero?), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
+}.aux(n, l, [])
+
 ` "`take-while(p?, l)` - initial elements of list `l` while `p?` is true."
-take-while(p?, l): if(l nil?, [], if(l head p?, cons(l head, take-while(p?, l tail)), take-while(p?, l tail)))
+take-while(p?, l): {
+  aux(xs, prefix): if(not(xs nil?) ∧ (xs head p?), aux(xs tail, cons(xs head, prefix)), prefix reverse)
+}.aux(l, [])
 
 ` "`take-until(p?, l)` - initial elements of list `l` while `p?` is false."
 take-until(p?): take-while(p? complement)
@@ -537,6 +544,16 @@ drop-while(p?, l): if(l nil?, [], if(l head p?, drop-while(p?, l tail), l))
 
 ` "`drop-until(p?, l)` - skip initial elements of list `l` while `p?` is false."
 drop-until(p?): drop-while(p? complement)
+
+` "`split-after(p?, l) - split list where `p?` becomes false and return pair."
+split-after(p?, l): {
+  aux(xs, prefix): if((xs nil?) ∨ (xs head p?),
+                        aux(xs tail, cons(xs head, prefix)),
+                        [prefix reverse, xs])
+}.aux(l, [])
+
+` "`split-when(p?, l) - split list where `p?` becomes true and return pair."
+split-when(p?, l): split-after(p? complement, l)
 
 ` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
 nth(n, l): l drop(n) head

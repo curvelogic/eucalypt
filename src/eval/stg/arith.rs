@@ -179,6 +179,48 @@ impl StgIntrinsic for Div {
 
 impl CallGlobal2 for Div {}
 
+/// MOD(l, r) - mod r from l
+pub struct Mod;
+
+impl StgIntrinsic for Mod {
+    fn name(&self) -> &str {
+        "MOD"
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), crate::eval::error::ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+
+        if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
+            let product = l
+                .checked_rem(r)
+                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+            machine_return_num(machine, view, Number::from(product))
+        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
+            let product = l
+                .checked_rem(r)
+                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+            machine_return_num(machine, view, Number::from(product))
+        } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
+            if let Some(ret) = Number::from_f64(l % r) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, y))
+            }
+        } else {
+            Err(ExecutionError::NumericDomainError(x, y))
+        }
+    }
+}
+
+impl CallGlobal2 for Mod {}
+
 /// GT(l, r) l > r
 pub struct Gt;
 
