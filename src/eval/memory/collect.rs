@@ -63,6 +63,7 @@ impl<'guard> CollectorHeapView<'guard> {
     /// Mark object if not already marked and return whether marked
     pub fn mark<T>(&mut self, obj: NonNull<T>) -> bool {
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
+            dbg!(obj);
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
             true
@@ -91,13 +92,69 @@ pub fn collect(roots: &dyn GcScannable, heap: &mut Heap) {
 
     // find and queue the roots
     queue.extend(roots.scan(&scope, &mut heap_view).drain(..));
+    dbg!("scanned roots");
 
     while let Some(scanptr) = queue.pop_front() {
+        dbg!(&scanptr);
         queue.extend(scanptr.as_ref().scan(&scope, &mut heap_view).drain(..));
     }
 
     // sweep to region
 
+    dbg!("flipping mark state");
     // After collection, flip mark state ready for next collection
     flip_mark_state();
+}
+
+#[cfg(test)]
+pub mod tests {
+    use std::iter::repeat_with;
+
+    use crate::{
+        common::sourcemap::Smid,
+        eval::memory::{
+            mutator::MutatorHeapView,
+            syntax::{LambdaForm, Ref, StgBuilder},
+        },
+    };
+
+    use super::*;
+
+    #[test]
+    pub fn test_simple_collection() {
+        let mut heap = Heap::new();
+
+        let ptr = {
+            let view = MutatorHeapView::new(&heap);
+
+            // A bunch of garbage...
+
+            let ids = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(10)
+            .collect::<Vec<_>>();
+            let idarray = view.array(ids.as_slice());
+
+            view.let_(
+                idarray,
+                view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
+                    .unwrap(),
+            )
+            .unwrap();
+
+            // and a "root"
+
+            let scoped_ptr = view.app_bif(13, view.array(&[])).unwrap();
+
+            scoped_ptr.as_ptr()
+        };
+
+        {
+            let guard = Scope {};
+
+            let app_bif = ScanPtr::from_non_null(&guard, ptr).as_ref();
+            collect(app_bif, &mut heap);
+        }
+    }
 }

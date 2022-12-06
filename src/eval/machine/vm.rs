@@ -22,6 +22,7 @@ use crate::{
             collect::{self, CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
             heap::{Heap, HeapStats},
             infotable::InfoTable,
+            mark::mark_state,
             mutator::{Mutator, MutatorHeapView},
             syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
         },
@@ -774,7 +775,10 @@ impl<'a> Machine<'a> {
 
     /// Run the machine until termination or step limit
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
+        dbg!(mark_state());
+
         collect::collect(&self.state, &mut self.heap);
+        dbg!(mark_state());
 
         eprintln!("{:?}", self.heap);
 
@@ -789,7 +793,9 @@ impl<'a> Machine<'a> {
 
         eprintln!("{:?}", self.heap);
 
+        dbg!(mark_state());
         collect::collect(&self.state, &mut self.heap);
+        dbg!(mark_state());
 
         eprintln!("{:?}", self.heap);
 

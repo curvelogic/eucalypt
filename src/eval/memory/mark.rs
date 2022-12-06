@@ -11,12 +11,7 @@ pub static MARK_STATE: AtomicBool = AtomicBool::new(false);
 
 /// Flip the boolean value that represents marked live objects.
 pub fn flip_mark_state() {
-    let mark_state = MARK_STATE.load(SeqCst);
-    if mark_state {
-        MARK_STATE.store(false, SeqCst);
-    } else {
-        MARK_STATE.store(true, SeqCst);
-    }
+    MARK_STATE.fetch_xor(true, SeqCst);
 }
 
 /// Current boolean value that represents marked live objects.
