@@ -6,6 +6,7 @@ use codespan_reporting::diagnostic::Diagnostic;
 use thiserror::Error;
 
 #[derive(Eq, PartialEq, Debug, Clone, Error)]
+#[allow(clippy::result_large_err)]
 pub enum CoreError {
     #[error("invalid metadata")]
     InvalidMetadataDesugarPhase(Smid),
