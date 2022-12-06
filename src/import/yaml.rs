@@ -342,7 +342,7 @@ impl Tag {
 /// If tags aren't explicit, infer from value
 #[allow(clippy::trivial_regex)]
 fn infer_tag_for_plain_scalar(text: &str) -> Tag {
-    let set = RegexSet::new(&[
+    let set = RegexSet::new([
         r"^[nN]ull$",
         r"^NULL$",
         r"^~$",

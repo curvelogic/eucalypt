@@ -5,6 +5,7 @@
 (l - r): __SUB(l, r)
 (l * r): __MUL(l, r)
 (l / r): __DIV(l, r)
+(l % r): __MOD(l, r)
 
 (l > r): __GT(l, r)
 (l < r): __LT(l, r)
@@ -30,14 +31,15 @@ integer-arithmetic: {
     f: 1 >= 2
   }
 
-  vals: {
-    four: 2 + 2
-    also-four: 2 * 2
-    three: 5 - 2
-    twelve: 24 / 2
+  true-calcs: {
+    four: 2 + 2 //= 4
+    also-four: 2 * 2 //= 4
+    three: 5 - 2 //= 3
+    twelve: 24 / 2 //= 12
+    two: 5 % 3 //= 2
   }
 
-  pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
+  pass: (trues values all-true?) ∧ (falses values map(not) all-true?) ∧ (true-calcs values all-true?)
 }
 
 floating-point-arithmetic: {
@@ -60,10 +62,11 @@ floating-point-arithmetic: {
   }
 
   vals: {
-    fourish: 2.01 + 2.01
-    also-fourish: 2.01 * 2.01
-    threeish: 5.01 - 2.01
-    twelveish: 24.01 / 2.01
+    fourish: (2.01 + 2.01) - 4 < 0.1
+    also-fourish: (2.01 * 2.01) - 4 < 0.1
+    threeish: (5.01 - 2.01) - 3 < 0.1
+    twelveish: (24.01 / 2.01) - 12 < 0.1
+    twoish: (5.01 % 3) - 2 < 0.1
   }
 
   pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
@@ -107,10 +110,11 @@ mixed-arithmetic: {
   }
 
   vals: {
-    fourish: 2.01 + 2
-    also-fourish: 2.01 * 2
-    threeish: 5.01 - 2
-    twelveish: 24.01 / 2
+    fourish: (2.01 + 2) - 4 < 0.1
+    also-fourish: (2.01 * 2) - 4 < 0.1
+    threeish: (5.01 - 2) - 3 < 0.1
+    twelveish: (24.01 / 2) - 12 < 0.1
+    twoish: (5.01 % 3) - 2 < 0.1
   }
 
   pass: ((trues values) ++ (trues2 values) all-true?) ∧

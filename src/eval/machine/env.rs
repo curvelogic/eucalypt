@@ -275,7 +275,7 @@ where
             if smid != Smid::default() {
                 trace.push(smid);
             }
-            match (*frame).next {
+            match frame.next {
                 Some(f) => frame = ScopedPtr::from_non_null(guard, f),
                 None => return trace,
             }
@@ -290,7 +290,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.bindings.len();
 
-        match (*self).next {
+        match self.next {
             None => {
                 if len > 0 {
                     write!(f, "[×{}]→•", len)

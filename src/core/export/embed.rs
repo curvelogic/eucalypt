@@ -60,14 +60,14 @@ impl Embed for CoreExpr {
             Expr::Lookup(_, e, n, fb) => {
                 elements.push(lit(sym("c-lookup")));
                 elements.push(e.embed());
-                elements.push(lit(str(&n)));
+                elements.push(lit(str(n)));
                 if let Some(x) = fb {
                     elements.push(x.embed());
                 }
             }
             Expr::Name(_, n) => {
                 elements.push(lit(sym("c-name")));
-                elements.push(lit(str(&n)));
+                elements.push(lit(str(n)));
             }
             Expr::BlockAnaphor(_, anaphor) => {
                 elements.push(lit(sym("c-bk-ana")));
@@ -151,11 +151,11 @@ impl Embed for CoreExpr {
             }
             Expr::ErrUnresolved(_, x) => {
                 elements.push(lit(sym("e-unresolved")));
-                elements.push(lit(str(&x)));
+                elements.push(lit(str(x)));
             }
             Expr::ErrRedeclaration(_, x) => {
                 elements.push(lit(sym("e-redeclaration")));
-                elements.push(lit(str(&x)));
+                elements.push(lit(str(x)));
             }
             Expr::ErrEliminated => {
                 elements.push(lit(sym("e-eliminated")));
@@ -178,7 +178,7 @@ impl Embed for CoreExpr {
 impl Embed for Primitive {
     fn embed(&self) -> Expression {
         match self {
-            Primitive::Str(s) => lit(str(&s)),
+            Primitive::Str(s) => lit(str(s)),
             Primitive::Sym(s) => lit(sym(s)),
             Primitive::Num(n) => lit(num(n.clone())),
             Primitive::Bool(b) => list(vec![

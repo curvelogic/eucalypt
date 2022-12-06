@@ -11,7 +11,7 @@ impl Embed for Literal {
     fn embed(&self) -> Expression {
         match self {
             Literal::Sym(_, s) => lit(sym(s)),
-            Literal::Str(_, s) => lit(str(&s)),
+            Literal::Str(_, s) => lit(str(s)),
             Literal::Num(_, n) => lit(num(n.clone())),
         }
     }

@@ -77,7 +77,7 @@ fn declaration_to_binding(
     if let Some(target) = &metadata.target {
         desugarer.record_target(
             target.to_string(),
-            metadata.doc.unwrap_or_else(|| "".to_string()),
+            metadata.doc.unwrap_or_default(),
             metadata.format,
             metadata.validations.unwrap_or_default(),
         );

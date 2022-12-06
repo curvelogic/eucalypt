@@ -233,7 +233,7 @@ where
 
     /// consume a normal identifer
     fn normal(&mut self, i: ByteIndex) -> (ByteIndex, Token<'text>, ByteIndex) {
-        let e = self.consume(&is_normal_continuation);
+        let e = self.consume(is_normal_continuation);
         (i, Token::NormalIdentifier(self.slice(i, e)), e)
     }
 
@@ -253,7 +253,7 @@ where
 
     /// consume an operator identifer
     fn oper(&mut self, i: ByteIndex) -> (ByteIndex, Token<'text>, ByteIndex) {
-        let e = self.consume(&is_oper_continuation);
+        let e = self.consume(is_oper_continuation);
         (i, Token::OperatorIdentifier(self.slice(i, e)), e)
     }
 
@@ -278,7 +278,7 @@ where
 
         if is_normal_start(c) {
             if let Some((b, _)) = self.bump() {
-                let e = self.consume(&is_normal_continuation);
+                let e = self.consume(is_normal_continuation);
                 return (i, Token::Symbol(self.slice(b, e)), e);
             } else {
                 panic!("peek and next disagree");

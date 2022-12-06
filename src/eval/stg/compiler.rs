@@ -1043,7 +1043,7 @@ impl<'rt> Compiler<'rt> {
         let mut index = KEmptyList.gref(); // binder.add(dsl::nil())?; // TODO: to CAF
         for (k, v) in block_map.iter().rev() {
             let v_index = self.compile_binding(binder, v.clone(), smid, false)?;
-            let kv_index = binder.add(dsl::pair(&k, v_index))?;
+            let kv_index = binder.add(dsl::pair(k, v_index))?;
             index = binder.add(dsl::cons(kv_index, index))?;
         }
         Ok(Holder::new(dsl::block(index)))
