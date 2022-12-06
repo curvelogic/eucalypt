@@ -343,12 +343,14 @@ impl GcScannable for SynClosure {
         let mut grey = vec![];
 
         let code = self.code();
-        marker.mark(code);
-        grey.push(ScanPtr::from_non_null(scope, code));
+        if marker.mark(code) {
+            grey.push(ScanPtr::from_non_null(scope, code));
+        }
 
         let env = self.env();
-        marker.mark(env);
-        grey.push(ScanPtr::from_non_null(scope, env));
+        if marker.mark(env) {
+            grey.push(ScanPtr::from_non_null(scope, env));
+        }
 
         grey
     }
@@ -369,15 +371,17 @@ impl GcScannable for EnvFrame {
         let bindings = &self.bindings;
 
         if let Some(data) = bindings.allocated_data() {
-            marker.mark(data);
-            for binding in bindings.iter() {
-                grey.push(ScanPtr::new(scope, binding));
+            if marker.mark(data) {
+                for binding in bindings.iter() {
+                    grey.push(ScanPtr::new(scope, binding));
+                }
             }
         }
 
         if let Some(next) = self.next {
-            marker.mark(next);
-            grey.push(ScanPtr::from_non_null(scope, next));
+            if marker.mark(next) {
+                grey.push(ScanPtr::from_non_null(scope, next));
+            }
         }
 
         grey

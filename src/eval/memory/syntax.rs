@@ -229,8 +229,11 @@ impl GcScannable for LambdaForm {
         marker: &'b mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let body = self.body();
-        marker.mark(body);
-        vec![ScanPtr::from_non_null(scope, body)]
+        if marker.mark(body) {
+            vec![ScanPtr::from_non_null(scope, body)]
+        } else {
+            vec![]
+        }
     }
 }
 
@@ -249,15 +252,18 @@ impl GcScannable for HeapSyn {
                 branches,
                 fallback,
             } => {
-                marker.mark(*scrutinee);
-                grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                if marker.mark(*scrutinee) {
+                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                }
                 for (_, b) in branches.iter() {
-                    marker.mark(*b);
-                    grey.push(ScanPtr::from_non_null(scope, *b));
+                    if marker.mark(*b) {
+                        grey.push(ScanPtr::from_non_null(scope, *b));
+                    }
                 }
                 if let Some(f) = fallback {
-                    marker.mark(*f);
-                    grey.push(ScanPtr::from_non_null(scope, *f));
+                    if marker.mark(*f) {
+                        grey.push(ScanPtr::from_non_null(scope, *f));
+                    }
                 }
             }
             HeapSyn::Cons { tag: _, args } => {
@@ -277,29 +283,34 @@ impl GcScannable for HeapSyn {
             }
             HeapSyn::Let { bindings, body } => {
                 if let Some(data) = bindings.allocated_data() {
-                    marker.mark(data);
-                    for bindings in bindings.iter() {
-                        grey.push(ScanPtr::new(scope, bindings));
+                    if marker.mark(data) {
+                        for bindings in bindings.iter() {
+                            grey.push(ScanPtr::new(scope, bindings));
+                        }
                     }
                 }
 
-                marker.mark(*body);
-                grey.push(ScanPtr::from_non_null(scope, *body));
+                if marker.mark(*body) {
+                    grey.push(ScanPtr::from_non_null(scope, *body));
+                }
             }
             HeapSyn::LetRec { bindings, body } => {
                 if let Some(data) = bindings.allocated_data() {
-                    marker.mark(data);
-                    for bindings in bindings.iter() {
-                        grey.push(ScanPtr::new(scope, bindings));
+                    if marker.mark(data) {
+                        for bindings in bindings.iter() {
+                            grey.push(ScanPtr::new(scope, bindings));
+                        }
                     }
                 }
 
-                marker.mark(*body);
-                grey.push(ScanPtr::from_non_null(scope, *body));
+                if marker.mark(*body) {
+                    grey.push(ScanPtr::from_non_null(scope, *body));
+                }
             }
             HeapSyn::Ann { smid: _, body } => {
-                marker.mark(*body);
-                grey.push(ScanPtr::from_non_null(scope, *body));
+                if marker.mark(*body) {
+                    grey.push(ScanPtr::from_non_null(scope, *body));
+                }
             }
             HeapSyn::Meta { meta: _, body: _ } => {}
             HeapSyn::DeMeta {
@@ -307,12 +318,15 @@ impl GcScannable for HeapSyn {
                 handler,
                 or_else,
             } => {
-                marker.mark(*scrutinee);
-                grey.push(ScanPtr::from_non_null(scope, *scrutinee));
-                marker.mark(*handler);
-                grey.push(ScanPtr::from_non_null(scope, *handler));
-                marker.mark(*or_else);
-                grey.push(ScanPtr::from_non_null(scope, *or_else));
+                if marker.mark(*scrutinee) {
+                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                }
+                if marker.mark(*handler) {
+                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                }
+                if marker.mark(*or_else) {
+                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                }
             }
             HeapSyn::BlackHole => {}
         }

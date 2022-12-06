@@ -109,32 +109,38 @@ impl GcScannable for Continuation {
                 environment,
             } => {
                 if let Some(data) = branches.allocated_data() {
-                    marker.mark(data);
-                    for (_tag, branch) in branches.iter() {
-                        marker.mark(*branch);
-                        grey.push(ScanPtr::from_non_null(scope, *branch));
+                    if marker.mark(data) {
+                        for (_tag, branch) in branches.iter() {
+                            marker.mark(*branch);
+                            grey.push(ScanPtr::from_non_null(scope, *branch));
+                        }
                     }
                 }
 
                 if let Some(fb) = fallback {
-                    marker.mark(*fb);
-                    grey.push(ScanPtr::from_non_null(scope, *fb));
+                    if marker.mark(*fb) {
+                        grey.push(ScanPtr::from_non_null(scope, *fb));
+                    }
                 }
-                marker.mark(*environment);
-                grey.push(ScanPtr::from_non_null(scope, *environment));
+
+                if marker.mark(*environment) {
+                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                }
             }
             Continuation::Update {
                 environment,
                 index: _,
             } => {
-                marker.mark(*environment);
-                grey.push(ScanPtr::from_non_null(scope, *environment));
+                if marker.mark(*environment) {
+                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                }
             }
             Continuation::ApplyTo { args } => {
                 if let Some(data) = args.allocated_data() {
-                    marker.mark(data);
-                    for arg in args.iter() {
-                        grey.push(ScanPtr::new(scope, arg));
+                    if marker.mark(data) {
+                        for arg in args.iter() {
+                            grey.push(ScanPtr::new(scope, arg));
+                        }
                     }
                 }
             }
@@ -143,14 +149,17 @@ impl GcScannable for Continuation {
                 or_else,
                 environment,
             } => {
-                marker.mark(*handler);
-                grey.push(ScanPtr::from_non_null(scope, *handler));
+                if marker.mark(*handler) {
+                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                }
 
-                marker.mark(*or_else);
-                grey.push(ScanPtr::from_non_null(scope, *or_else));
+                if marker.mark(*or_else) {
+                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                }
 
-                marker.mark(*environment);
-                grey.push(ScanPtr::from_non_null(scope, *environment));
+                if marker.mark(*environment) {
+                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                }
             }
         }
 
