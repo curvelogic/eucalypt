@@ -1,4 +1,5 @@
 //! The core expression representation and various processing phases
+#![allow(clippy::result_large_err)]
 pub mod analyse;
 pub mod anaphora;
 pub mod cook;
