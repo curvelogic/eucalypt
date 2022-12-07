@@ -22,7 +22,6 @@ use crate::{
             collect::{self, CollectorHeapView, CollectorScope, GcScannable, ScanPtr},
             heap::{Heap, HeapStats},
             infotable::InfoTable,
-            mark::mark_state,
             mutator::{Mutator, MutatorHeapView},
             syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
         },
@@ -30,13 +29,13 @@ use crate::{
     },
 };
 
-use super::env_builder::EnvBuilder;
 use super::{
     cont::{match_tag, Continuation},
     env::{EnvFrame, SynClosure},
     intrinsic::{IntrinsicMachine, StgIntrinsic},
-    metrics::Metrics,
+    metrics::{Metrics, ThreadOccupation},
 };
+use super::{env_builder::EnvBuilder, metrics::Clock};
 
 /// A utility for navigating chains of refs / pointers through the heap
 pub struct HeapNavigator<'scope> {
@@ -659,6 +658,8 @@ pub struct Machine<'a> {
     settings: MachineSettings,
     /// Metrics
     metrics: Metrics,
+    /// Clock
+    clock: Clock,
 }
 
 impl<'a> Machine<'a> {
@@ -671,6 +672,7 @@ impl<'a> Machine<'a> {
             emitter,
             settings: MachineSettings { trace_steps },
             metrics: Metrics::default(),
+            clock: Clock::default(),
         }
     }
 
@@ -687,6 +689,11 @@ impl<'a> Machine<'a> {
     /// Get heap statistics
     pub fn heap_stats(&self) -> HeapStats {
         self.heap.stats()
+    }
+
+    /// Return clock for access to GC timings
+    pub fn clock(&self) -> &Clock {
+        &self.clock
     }
 
     /// Create a mutator heap view for heap access
@@ -739,6 +746,7 @@ impl<'a> Machine<'a> {
         closure: SynClosure,
         intrinsics: Vec<&'a dyn StgIntrinsic>,
     ) -> Result<(), ExecutionError> {
+        self.clock.switch(ThreadOccupation::Initialisation);
         self.intrinsics = intrinsics.clone();
         self.state.root_env = root_env;
         self.state.set_globals(globals)?;
@@ -775,9 +783,7 @@ impl<'a> Machine<'a> {
 
     /// Run the machine until termination or step limit
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
-        collect::collect(&self.state, &mut self.heap);
-
-        eprintln!("{:?}", self.heap);
+        self.clock.switch(ThreadOccupation::Mutator);
 
         while !self.state.terminated {
             if let Some(limit) = limit {
@@ -788,13 +794,9 @@ impl<'a> Machine<'a> {
             self.step()?;
         }
 
-        eprintln!("{:?}", self.heap);
+        collect::collect(&self.state, &mut self.heap, &mut self.clock);
 
-        dbg!(mark_state());
-        collect::collect(&self.state, &mut self.heap);
-        dbg!(mark_state());
-
-        eprintln!("{:?}", self.heap);
+        self.clock.stop();
 
         Ok(self.exit_code())
     }

@@ -158,12 +158,25 @@ impl<'a> Executor<'a> {
                     let t = Instant::now();
                     let ret = machine.run(None);
                     stats.timings_mut().record("stg-execute", t.elapsed());
+
+                    // copy finer grained GC timings
+                    for (k, v) in machine.clock().report() {
+                        stats.timings_mut().record(k, v);
+                    }
+
+                    // copy machine stats
+
                     stats.set_ticks(machine.metrics().ticks());
                     stats.set_allocs(machine.metrics().allocs());
                     stats.set_max_stack(machine.metrics().max_stack());
+
+                    // copy heap stats
+
                     let heap_stats = machine.heap_stats();
                     stats.set_blocks_allocated(heap_stats.blocks_allocated);
                     stats.set_lobs_allocated(heap_stats.lobs_allocated);
+                    stats.set_blocks_used(heap_stats.used);
+                    stats.set_blocks_recycled(heap_stats.recycled);
                     ret
                 };
 

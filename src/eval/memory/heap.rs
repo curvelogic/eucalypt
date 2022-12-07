@@ -148,7 +148,7 @@ impl HeapState {
         let mut i = 0;
         while i < self.rest.len() {
             let (holes, _, _) = self.rest[i].stats();
-            if dbg!(holes) > 0 {
+            if holes > 0 {
                 if let Some(b) = self.rest.get_mut(i) {
                     if b.recycle() {
                         self.recycled.push(self.rest.remove(i));

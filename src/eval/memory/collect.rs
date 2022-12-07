@@ -6,6 +6,8 @@
 
 use std::{collections::VecDeque, ptr::NonNull};
 
+use crate::eval::machine::metrics::{Clock, ThreadOccupation};
+
 use super::{heap::Heap, mark::flip_mark_state};
 
 pub struct ScanPtr<'scope> {
@@ -99,7 +101,9 @@ impl<'guard> CollectorHeapView<'guard> {
 pub struct Scope();
 impl CollectorScope for Scope {}
 
-pub fn collect(roots: &dyn GcScannable, heap: &mut Heap) {
+pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock) {
+    clock.switch(ThreadOccupation::CollectorMark);
+
     let mut heap_view = CollectorHeapView { heap };
 
     // clear line maps
@@ -115,6 +119,8 @@ pub fn collect(roots: &dyn GcScannable, heap: &mut Heap) {
     while let Some(scanptr) = queue.pop_front() {
         queue.extend(scanptr.as_ref().scan(&scope, &mut heap_view).drain(..));
     }
+
+    clock.switch(ThreadOccupation::CollectorSweep);
 
     // sweep to region
     heap_view.sweep();
@@ -140,6 +146,9 @@ pub mod tests {
     #[test]
     pub fn test_simple_collection() {
         let mut heap = Heap::new();
+        let mut clock = Clock::default();
+
+        clock.switch(ThreadOccupation::Mutator);
 
         let let_ptr = {
             let view = MutatorHeapView::new(&heap);
@@ -162,6 +171,8 @@ pub mod tests {
             .as_ptr()
         };
 
+        clock.switch(ThreadOccupation::Mutator);
+
         let bif_ptr = {
             let view = MutatorHeapView::new(&heap);
 
@@ -173,7 +184,7 @@ pub mod tests {
         eprintln!("{:?}", &heap);
 
         {
-            collect(&vec![let_ptr, bif_ptr], &mut heap);
+            collect(&vec![let_ptr, bif_ptr], &mut heap, &mut clock);
         }
 
         eprintln!("{:?}", &heap);
@@ -183,7 +194,7 @@ pub mod tests {
             let guard = Scope {};
 
             let app_bif = ScanPtr::from_non_null(&guard, bif_ptr).as_ref();
-            collect(app_bif, &mut heap);
+            collect(app_bif, &mut heap, &mut clock);
         }
 
         eprintln!("{:?}", &heap);
