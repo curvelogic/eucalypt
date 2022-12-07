@@ -25,7 +25,8 @@ lazy_static! {
         render_type: Default::default(),
         suppress_updates: false,
         suppress_inlining: false,
-        suppress_optimiser: false
+        suppress_optimiser: false,
+        heap_limit_mib: Some(256),
     };
 }
 

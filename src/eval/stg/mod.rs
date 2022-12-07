@@ -186,6 +186,9 @@ pub struct StgSettings {
     /// Suppress optimiser
     #[structopt(long = "stg-suppress-optimiser")]
     pub suppress_optimiser: bool,
+    /// Limit managed heap to SIZE MiB
+    #[structopt(long)]
+    pub heap_limit_mib: Option<usize>,
 }
 
 /// Compile core syntax to STG ready for execution
