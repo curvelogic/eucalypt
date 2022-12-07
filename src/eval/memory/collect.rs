@@ -50,6 +50,22 @@ pub trait GcScannable {
     ) -> Vec<ScanPtr<'a>>;
 }
 
+impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {
+    fn scan<'a, 'b>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &'b mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+        for p in self {
+            if marker.mark(*p) {
+                grey.push(ScanPtr::from_non_null(scope, *p))
+            }
+        }
+        grey
+    }
+}
+
 /// View of the heap available to the collector
 pub struct CollectorHeapView<'guard> {
     heap: &'guard mut Heap,
@@ -63,7 +79,6 @@ impl<'guard> CollectorHeapView<'guard> {
     /// Mark object if not already marked and return whether marked
     pub fn mark<T>(&mut self, obj: NonNull<T>) -> bool {
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
-            dbg!(obj);
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
             true
@@ -74,6 +89,10 @@ impl<'guard> CollectorHeapView<'guard> {
 
     pub fn is_marked<T>(&self, obj: NonNull<T>) -> bool {
         self.heap.is_marked(obj)
+    }
+
+    pub fn sweep(&mut self) {
+        self.heap.sweep();
     }
 }
 
@@ -92,16 +111,14 @@ pub fn collect(roots: &dyn GcScannable, heap: &mut Heap) {
 
     // find and queue the roots
     queue.extend(roots.scan(&scope, &mut heap_view).drain(..));
-    dbg!("scanned roots");
 
     while let Some(scanptr) = queue.pop_front() {
-        dbg!(&scanptr);
         queue.extend(scanptr.as_ref().scan(&scope, &mut heap_view).drain(..));
     }
 
     // sweep to region
+    heap_view.sweep();
 
-    dbg!("flipping mark state");
     // After collection, flip mark state ready for next collection
     flip_mark_state();
 }
@@ -124,7 +141,7 @@ pub mod tests {
     pub fn test_simple_collection() {
         let mut heap = Heap::new();
 
-        let ptr = {
+        let let_ptr = {
             let view = MutatorHeapView::new(&heap);
 
             // A bunch of garbage...
@@ -132,7 +149,7 @@ pub mod tests {
             let ids = repeat_with(|| -> LambdaForm {
                 LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
             })
-            .take(10)
+            .take(1024)
             .collect::<Vec<_>>();
             let idarray = view.array(ids.as_slice());
 
@@ -141,20 +158,37 @@ pub mod tests {
                 view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
                     .unwrap(),
             )
-            .unwrap();
+            .unwrap()
+            .as_ptr()
+        };
 
-            // and a "root"
+        let bif_ptr = {
+            let view = MutatorHeapView::new(&heap);
 
             let scoped_ptr = view.app_bif(13, view.array(&[])).unwrap();
 
             scoped_ptr.as_ptr()
         };
 
+        eprintln!("{:?}", &heap);
+
+        {
+            collect(&vec![let_ptr, bif_ptr], &mut heap);
+        }
+
+        eprintln!("{:?}", &heap);
+        let stats_a = dbg!(heap.stats());
+
         {
             let guard = Scope {};
 
-            let app_bif = ScanPtr::from_non_null(&guard, ptr).as_ref();
+            let app_bif = ScanPtr::from_non_null(&guard, bif_ptr).as_ref();
             collect(app_bif, &mut heap);
         }
+
+        eprintln!("{:?}", &heap);
+        let stats_b = dbg!(heap.stats());
+
+        assert!(stats_a.recycled < stats_b.recycled);
     }
 }

@@ -18,6 +18,10 @@ pub struct HeapStats {
     pub blocks_allocated: usize,
     /// Number of large objects allocated
     pub lobs_allocated: usize,
+    /// Number of blocks used and not reclaimed
+    pub used: usize,
+    /// Number of blocks used and recycled
+    pub recycled: usize,
 }
 
 /// Object size class.
@@ -50,6 +54,8 @@ pub struct HeapState {
     head: Option<BumpBlock>,
     /// For allocating medium objects
     overflow: Option<BumpBlock>,
+    /// Recycled - part used but reclaimed
+    recycled: Vec<BumpBlock>,
     /// Part used - not yet reclaimed
     rest: Vec<BumpBlock>,
     /// Large object blocks - each contains single object
@@ -89,6 +95,7 @@ impl HeapState {
         HeapState {
             head: None,
             overflow: None,
+            recycled: vec![],
             rest: vec![],
             lobs: vec![],
         }
@@ -135,13 +142,42 @@ impl HeapState {
         self.lobs.last_mut().unwrap()
     }
 
+    /// Look for reclaimable blocks and move to recycled list
+    pub fn sweep(&mut self) {
+        // move any recyclable blocks to
+        let mut i = 0;
+        while i < self.rest.len() {
+            let (holes, _, _) = self.rest[i].stats();
+            if dbg!(holes) > 0 {
+                if let Some(b) = self.rest.get_mut(i) {
+                    if b.recycle() {
+                        self.recycled.push(self.rest.remove(i));
+                    } else {
+                        i += 1;
+                    }
+                } else {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+
+        // order rest and recycled
+        self.rest.sort();
+        self.recycled.sort();
+    }
+
     /// Statistics
     pub fn stats(&self) -> HeapStats {
         HeapStats {
             blocks_allocated: self.rest.len()
+                + self.recycled.len()
                 + self.head.iter().count()
                 + self.overflow.iter().count(),
             lobs_allocated: self.lobs.len(),
+            used: self.rest.len(),
+            recycled: self.recycled.len(),
         }
     }
 }
@@ -345,6 +381,10 @@ impl Heap {
         // depending on size of object + header, unmark line or lines
         let _header = self.get_header(ptr);
         todo!();
+    }
+
+    pub fn sweep(&mut self) {
+        self.state.get_mut().sweep()
     }
 }
 

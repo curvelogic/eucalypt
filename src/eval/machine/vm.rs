@@ -775,10 +775,7 @@ impl<'a> Machine<'a> {
 
     /// Run the machine until termination or step limit
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
-        dbg!(mark_state());
-
         collect::collect(&self.state, &mut self.heap);
-        dbg!(mark_state());
 
         eprintln!("{:?}", self.heap);
 
