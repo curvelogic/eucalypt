@@ -5,6 +5,7 @@ use std::ptr::NonNull;
 use std::{cell::UnsafeCell, mem::size_of};
 use std::{ptr::write, slice::from_raw_parts_mut};
 
+use super::bump::BLOCK_SIZE_BYTES;
 use super::{
     alloc::{Allocator, MutatorScope},
     bump::{self, AllocError, BumpBlock},
@@ -185,6 +186,7 @@ impl HeapState {
 /// A heap (with interior mutability)
 pub struct Heap {
     state: UnsafeCell<HeapState>,
+    limit: Option<usize>,
 }
 
 impl MutatorScope for Heap {}
@@ -205,6 +207,16 @@ impl Heap {
     pub fn new() -> Self {
         Heap {
             state: UnsafeCell::new(HeapState::new()),
+            limit: None,
+        }
+    }
+
+    pub fn with_limit(limit_mib: usize) -> Self {
+        let block_limit = (limit_mib * 1_048_576) / BLOCK_SIZE_BYTES;
+        println!("block limit {:?}", block_limit);
+        Heap {
+            state: UnsafeCell::new(HeapState::new()),
+            limit: Some(block_limit),
         }
     }
 

@@ -664,9 +664,13 @@ pub struct Machine<'a> {
 
 impl<'a> Machine<'a> {
     /// Construct a machine to evaluate `code`
-    pub fn new(emitter: Box<dyn Emitter + 'a>, trace_steps: bool) -> Self {
+    pub fn new(
+        emitter: Box<dyn Emitter + 'a>,
+        trace_steps: bool,
+        heap_limit_mib: Option<usize>,
+    ) -> Self {
         Machine {
-            heap: Heap::new(),
+            heap: Heap::with_limit(heap_limit_mib.unwrap_or(256)),
             state: Default::default(),
             intrinsics: vec![],
             emitter,
