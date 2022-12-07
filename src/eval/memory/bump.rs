@@ -108,6 +108,27 @@ impl LineMap {
 
         None
     }
+
+    /// Calculate stats
+    pub fn stats(&self) -> (usize, usize, usize) {
+        let mut count_holes = 0;
+        let mut free = 0;
+        let mut marked = 0;
+        let mut last = true;
+        for i in 0..LINE_COUNT {
+            let current = self.marked(i);
+            if current {
+                marked += 1
+            } else {
+                free += 1
+            }
+            if last && !current {
+                count_holes += 1
+            }
+            last = current;
+        }
+        (count_holes, free, marked)
+    }
 }
 
 impl Debug for LineMap {
@@ -138,6 +159,26 @@ pub struct BumpBlock {
 impl Default for BumpBlock {
     fn default() -> Self {
         BumpBlock::new()
+    }
+}
+
+impl PartialEq for BumpBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.block.as_ptr() == other.block.as_ptr()
+    }
+}
+
+impl Eq for BumpBlock {}
+
+impl PartialOrd for BumpBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.block.as_ptr().partial_cmp(&other.block.as_ptr())
+    }
+}
+
+impl Ord for BumpBlock {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.block.as_ptr().cmp(&other.block.as_ptr())
     }
 }
 
@@ -188,6 +229,19 @@ impl BumpBlock {
         }
     }
 
+    /// Recycle partially used block; reset cursor etc.
+    pub fn recycle(&mut self) -> bool {
+        if let Some((lower, cursor)) = self.line_map.find_hole(BLOCK_SIZE_BYTES) {
+            self.cursor = cursor;
+            self.lower = lower;
+            true
+        } else {
+            self.cursor = 0;
+            self.lower = 0;
+            false
+        }
+    }
+
     /// Size in bytes of the hole we're currently allocating into
     pub fn current_hole_size(&self) -> usize {
         self.cursor - self.lower
@@ -220,6 +274,11 @@ impl BumpBlock {
             }
         }
     }
+
+    /// Returns (count holes, count free, count marked)
+    pub fn stats(&self) -> (usize, usize, usize) {
+        self.line_map.stats()
+    }
 }
 
 #[cfg(test)]
@@ -236,5 +295,20 @@ pub mod tests {
             map.find_hole(10 * LINE_SIZE_BYTES),
             Some((2 * LINE_SIZE_BYTES, 10 * LINE_SIZE_BYTES))
         );
+    }
+
+    #[test]
+    pub fn test_count_holes() {
+        let mut map = LineMap::default();
+        map.mark(5);
+        map.mark(10);
+        map.mark(100);
+        map.mark(200);
+        map.mark(201);
+        map.mark(202);
+        let (count_holes, free, marked) = map.stats();
+        assert_eq!(free, 250);
+        assert_eq!(marked, 6);
+        assert_eq!(count_holes, 5);
     }
 }
