@@ -48,6 +48,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(arith::Lt));
     rt.add(Box::new(arith::Gte));
     rt.add(Box::new(arith::Lte));
+    rt.add(Box::new(arith::Floor));
+    rt.add(Box::new(arith::Ceil));
     rt.add(Box::new(eq::Eq));
     rt.add(Box::new(boolean::True));
     rt.add(Box::new(boolean::False));

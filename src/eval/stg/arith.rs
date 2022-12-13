@@ -5,7 +5,7 @@ use serde_json::Number;
 use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
-    machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
+    machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{mutator::MutatorHeapView, syntax::Ref},
 };
 
@@ -348,6 +348,72 @@ impl StgIntrinsic for Lte {
 }
 
 impl CallGlobal2 for Lte {}
+
+/// CEIL(x)
+pub struct Ceil;
+
+impl StgIntrinsic for Ceil {
+    fn name(&self) -> &str {
+        "CEILING"
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), crate::eval::error::ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+
+        if x.is_i64() || x.is_u64() {
+            machine_return_num(machine, view, x)
+        } else if let Some(val) = x.as_f64() {
+            if let Some(ret) = Number::from_f64(val.ceil()) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, Number::from(0)))
+            }
+        } else {
+            unreachable!();
+        }
+    }
+}
+
+impl CallGlobal1 for Ceil {}
+
+/// FLOOR(x)
+pub struct Floor;
+
+impl StgIntrinsic for Floor {
+    fn name(&self) -> &str {
+        "FLOOR"
+    }
+
+    fn execute<'guard>(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'guard>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), crate::eval::error::ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+
+        if x.is_i64() || x.is_u64() {
+            machine_return_num(machine, view, x)
+        } else if let Some(val) = x.as_f64() {
+            if let Some(ret) = Number::from_f64(val.floor()) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, Number::from(0)))
+            }
+        } else {
+            unreachable!();
+        }
+    }
+}
+
+impl CallGlobal1 for Floor {}
 
 #[cfg(test)]
 pub mod tests {
