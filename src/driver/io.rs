@@ -28,7 +28,7 @@ fn epoch_time() -> RcExpr {
 
 /// Current timezone information
 fn tz() -> RcExpr {
-    let offset = format!("{}", Local.timestamp(0, 0).offset());
+    let offset = format!("{}", Local.timestamp_opt(0, 0).unwrap().offset());
     acore::block(vec![("offset".to_string(), acore::str(&offset))])
 }
 

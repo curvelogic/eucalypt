@@ -58,17 +58,19 @@ fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
 
         if let Some(sign) = captures.get(1) {
             if sign.as_str() == "-" {
-                Ok(FixedOffset::east(secs))
+                FixedOffset::east_opt(secs)
+                    .ok_or_else(|| ExecutionError::BadTimeZone(format!("-{secs}")))
             } else {
-                Ok(FixedOffset::west(secs))
+                FixedOffset::west_opt(secs)
+                    .ok_or_else(|| ExecutionError::BadTimeZone(format!("{secs}")))
             }
         } else {
-            Ok(FixedOffset::east(0))
+            FixedOffset::east_opt(0).ok_or_else(|| ExecutionError::BadTimeZone(format!("{secs}")))
         }
     } else if let Ok(zone) = tz_str.parse::<Tz>() {
         Ok(zone.ymd(2000, 1, 1).offset().fix())
     } else if tz_str == "Z" {
-        Ok(FixedOffset::east(0))
+        FixedOffset::east_opt(0).ok_or_else(|| ExecutionError::BadTimeZone(tz_str.to_string()))
     } else {
         Err(ExecutionError::BadTimeZone(tz_str.to_string()))
     }
