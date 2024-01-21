@@ -8,7 +8,7 @@ use std::{collections::VecDeque, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{heap::Heap, mark::flip_mark_state};
+use super::{array::Array, heap::Heap, mark::flip_mark_state};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
@@ -80,10 +80,29 @@ impl<'guard> CollectorHeapView<'guard> {
 
     /// Mark object if not already marked and return whether marked
     pub fn mark<T>(&mut self, obj: NonNull<T>) -> bool {
+        debug_assert!(obj != NonNull::dangling());
+        debug_assert!(obj.as_ptr() as usize != 0xffffffffffffffff);
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
             true
+        } else {
+            false
+        }
+    }
+
+    /// Mark object if not already marked and return whether marked
+    pub fn mark_array<T: Clone>(&mut self, arr: &Array<T>) -> bool {
+        if let Some(ptr) = arr.allocated_data() {
+            debug_assert!(ptr != NonNull::dangling());
+            debug_assert!(ptr.as_ptr() as usize != 0xffffffffffffffff);
+            if !self.heap.is_marked(ptr) {
+                self.heap.mark_object(ptr);
+                self.heap.mark_lines_for_bytes(ptr);
+                true
+            } else {
+                false
+            }
         } else {
             false
         }
@@ -101,7 +120,11 @@ impl<'guard> CollectorHeapView<'guard> {
 pub struct Scope();
 impl CollectorScope for Scope {}
 
-pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock) {
+pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock, dump_heap: bool) {
+    if dump_heap {
+        eprintln!("GC!");
+    }
+
     clock.switch(ThreadOccupation::CollectorMark);
 
     let mut heap_view = CollectorHeapView { heap };
@@ -120,10 +143,18 @@ pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock) {
         queue.extend(scanptr.as_ref().scan(&scope, &mut heap_view).drain(..));
     }
 
+    if dump_heap {
+        eprintln!("Heap after mark:\n\n{:?}", &heap_view.heap)
+    }
+
     clock.switch(ThreadOccupation::CollectorSweep);
 
     // sweep to region
     heap_view.sweep();
+
+    if dump_heap {
+        eprintln!("Heap after sweep:\n\n{:?}", &heap_view.heap)
+    }
 
     // After collection, flip mark state ready for next collection
     flip_mark_state();
@@ -181,24 +212,47 @@ pub mod tests {
             scoped_ptr.as_ptr()
         };
 
-        eprintln!("{:?}", &heap);
-
         {
-            collect(&vec![let_ptr, bif_ptr], &mut heap, &mut clock);
+            collect(&vec![let_ptr, bif_ptr], &mut heap, &mut clock, true);
         }
 
-        eprintln!("{:?}", &heap);
-        let stats_a = dbg!(heap.stats());
+        let stats_a = heap.stats();
 
         {
-            let guard = Scope {};
-
-            let app_bif = ScanPtr::from_non_null(&guard, bif_ptr).as_ref();
-            collect(app_bif, &mut heap, &mut clock);
+            collect(&vec![bif_ptr], &mut heap, &mut clock, true);
         }
 
-        eprintln!("{:?}", &heap);
-        let stats_b = dbg!(heap.stats());
+        let stats_b = heap.stats();
+
+        clock.switch(ThreadOccupation::Mutator);
+
+        let let_ptr2 = {
+            let view = MutatorHeapView::new(&heap);
+
+            // A bunch of garbage...
+
+            let ids = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(256)
+            .collect::<Vec<_>>();
+            let idarray = view.array(ids.as_slice());
+
+            view.let_(
+                idarray,
+                view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
+                    .unwrap(),
+            )
+            .unwrap()
+            .as_ptr()
+        };
+
+        {
+            collect(&vec![let_ptr2], &mut heap, &mut clock, true);
+        }
+
+        let stats_c = heap.stats();
+        eprintln!("Final stats: {:?}", &stats_c);
 
         assert!(stats_a.recycled < stats_b.recycled);
     }

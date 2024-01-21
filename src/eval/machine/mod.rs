@@ -69,7 +69,12 @@ pub fn standard_machine<'a>(
     emitter: Box<dyn Emitter + 'a>,
     runtime: &'a dyn Runtime,
 ) -> Result<Machine<'a>, ExecutionError> {
-    let mut machine = Machine::new(emitter, settings.trace_steps, settings.heap_limit_mib);
+    let mut machine = Machine::new(
+        emitter,
+        settings.trace_steps,
+        settings.heap_limit_mib,
+        settings.heap_dump_at_gc,
+    );
     let (root_env, globals, closure) = { machine.mutate(Initialiser { syntax, runtime }, ())? };
 
     machine.initialise(root_env, globals, closure, runtime.intrinsics())?;

@@ -4,6 +4,9 @@ version = "0.2.0"
 authors = ["gmorpheme <github@gmorpheme.net>"]
 edition = "2021"
 
+[unstable]
+feature="core_intrinsics"
+
 [build-dependencies]
 lalrpop = { version = "0.19.8", features = ["lexer"] }
 

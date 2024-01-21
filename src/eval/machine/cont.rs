@@ -101,19 +101,16 @@ impl GcScannable for Continuation {
         marker: &'b mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
-        dbg!("cont");
         match self {
             Continuation::Branch {
                 branches,
                 fallback,
                 environment,
             } => {
-                if let Some(data) = branches.allocated_data() {
-                    if marker.mark(data) {
-                        for (_tag, branch) in branches.iter() {
-                            marker.mark(*branch);
-                            grey.push(ScanPtr::from_non_null(scope, *branch));
-                        }
+                if marker.mark_array(branches) {
+                    for (_tag, branch) in branches.iter() {
+                        marker.mark(*branch);
+                        grey.push(ScanPtr::from_non_null(scope, *branch));
                     }
                 }
 
@@ -136,11 +133,9 @@ impl GcScannable for Continuation {
                 }
             }
             Continuation::ApplyTo { args } => {
-                if let Some(data) = args.allocated_data() {
-                    if marker.mark(data) {
-                        for arg in args.iter() {
-                            grey.push(ScanPtr::new(scope, arg));
-                        }
+                if marker.mark_array(args) {
+                    for arg in args.iter() {
+                        grey.push(ScanPtr::new(scope, arg));
                     }
                 }
             }

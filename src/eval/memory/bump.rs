@@ -71,7 +71,7 @@ impl LineMap {
     /// "conservative marking" that means we need two clear lines to
     /// recognise a gap.
     ///
-    /// Returns memory offsets (within the block) of the next hole.
+    /// Returns memory byte offsets (within the block) of the next hole.
     pub fn find_hole(&self, below_offset: usize) -> Option<(usize, usize)> {
         let limit_line = below_offset / LINE_SIZE_BYTES;
         let mut count = 0;
@@ -96,7 +96,13 @@ impl LineMap {
                     if lower > 0 {
                         lower += 1; // conservative mark
                     }
-                    return Some((lower * LINE_SIZE_BYTES, upper * LINE_SIZE_BYTES));
+
+                    let lower_bytes = lower * LINE_SIZE_BYTES;
+                    let upper_bytes = upper * LINE_SIZE_BYTES;
+
+                    debug_assert!(upper_bytes <= BLOCK_SIZE_BYTES);
+
+                    return Some((lower_bytes, upper_bytes));
                 }
             }
 
@@ -135,8 +141,8 @@ impl Debug for LineMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let dwords: [u128; 2] = self.0.into();
         for dword in dwords {
-            let lo = dword as u64;
-            let hi = (dword >> 64) as u64;
+            let lo = (dword as u64).reverse_bits();
+            let hi = ((dword >> 64) as u64).reverse_bits();
             writeln!(f, "{:#018x} {:#018x}", lo, hi)?;
         }
         Ok(())
@@ -192,7 +198,32 @@ impl Debug for BumpBlock {
             self.cursor,
             self.lower
         )?;
-        writeln!(f, "{:?}", self.line_map)
+
+        // decorate line map with cursor range
+        let upper_char = (self.cursor / LINE_SIZE_BYTES) / 4;
+        let lower_char = (self.lower / LINE_SIZE_BYTES) / 4;
+        let length = (self.block.size() / LINE_SIZE_BYTES) / 4;
+        let cursor_map: Vec<bool> = (0..length)
+            .map(|i| i >= lower_char && i <= upper_char)
+            .collect();
+
+        let above: String = cursor_map[0..(length / 2)]
+            .iter()
+            .map(|b| if *b { '_' } else { ' ' })
+            .collect();
+        let below: String = cursor_map[(length / 2)..]
+            .iter()
+            .map(|b| if *b { '‾' } else { ' ' })
+            .collect();
+
+        let halfway = below.char_indices().take(1 + (length / 4)).last().unwrap();
+
+        let (q1, q2) = above.split_at(length / 4);
+        let (q3, q4) = below.split_at(halfway.0);
+
+        writeln!(f, "  {}   {}", q1, q2)?;
+        write!(f, "{:?}", self.line_map)?;
+        writeln!(f, "  {}   {}", q3, q4)
     }
 }
 
@@ -216,6 +247,10 @@ impl BumpBlock {
             if next < self.lower {
                 // find next hole
                 if let Some((lower, cursor)) = self.line_map.find_hole(self.cursor) {
+                    if cfg!(debug_assertions) {
+                        self.block.fill(lower, cursor - lower);
+                    }
+
                     self.lower = lower;
                     self.cursor = cursor;
                     self.bump(size)
@@ -284,6 +319,8 @@ impl BumpBlock {
 #[cfg(test)]
 pub mod tests {
 
+    use regex::Regex;
+
     use super::*;
 
     #[test]
@@ -293,7 +330,70 @@ pub mod tests {
         map.mark(10);
         assert_eq!(
             map.find_hole(10 * LINE_SIZE_BYTES),
-            Some((2 * LINE_SIZE_BYTES, 10 * LINE_SIZE_BYTES))
+            Some((LINE_SIZE_BYTES, 9 * LINE_SIZE_BYTES))
+        );
+    }
+
+    #[test]
+    pub fn test_find_hole2() {
+        let mut map = LineMap::default();
+        map.mark(0);
+        map.mark(10);
+        map.mark(11);
+        map.mark(12);
+        map.mark(13);
+        map.mark(14);
+        map.mark(20);
+        assert_eq!(
+            map.find_hole(20 * LINE_SIZE_BYTES),
+            Some((15 * LINE_SIZE_BYTES, 19 * LINE_SIZE_BYTES))
+        );
+    }
+
+    #[test]
+    pub fn test_find_hole3() {
+        let mut map = LineMap::default();
+        map.mark(0);
+        map.mark(10);
+        map.mark(11);
+        map.mark(12);
+        map.mark(13);
+        map.mark(14);
+        map.mark(18);
+        map.mark(19);
+        map.mark(20);
+        assert_eq!(
+            map.find_hole(20 * LINE_SIZE_BYTES),
+            Some((15 * LINE_SIZE_BYTES, 17 * LINE_SIZE_BYTES))
+        );
+    }
+
+    #[test]
+    pub fn test_find_hole4() {
+        let mut map = LineMap::default();
+        map.mark(0);
+        map.mark(10);
+        map.mark(11);
+        map.mark(12);
+        map.mark(13);
+        map.mark(14);
+        map.mark(18);
+        assert_eq!(
+            map.find_hole(20 * LINE_SIZE_BYTES),
+            Some((15 * LINE_SIZE_BYTES, 17 * LINE_SIZE_BYTES))
+        );
+    }
+
+    #[test]
+    pub fn test_find_hole5() {
+        let mut map = LineMap::default();
+        map.mark(124);
+        map.mark(125);
+        map.mark(126);
+        map.mark(127);
+        assert_eq!(
+            map.find_hole(128 * LINE_SIZE_BYTES),
+            Some((0, 123 * LINE_SIZE_BYTES))
         );
     }
 
@@ -310,5 +410,39 @@ pub mod tests {
         assert_eq!(free, 250);
         assert_eq!(marked, 6);
         assert_eq!(count_holes, 5);
+    }
+
+    /// Parse a line map from a dump like
+    ///
+    /// 0xfffffff8ef8c0007 0xfffffffdfdffffff
+    /// 0xe1ffffffffffffff 0xffffffffffffffff
+    ///
+    pub fn linemap_from_dump(dump: &str) -> LineMap {
+        let re = Regex::new(r#"0x(\S+) 0x(\S+)\n0x(\S+) 0x(\S+)"#).unwrap();
+        if let Some(caps) = re.captures(dump) {
+            let components: Vec<_> = caps
+                .iter()
+                .skip(1)
+                .map(|s| u64::from_str_radix(s.unwrap().as_str(), 16).unwrap())
+                .map(|u| u.reverse_bits())
+                .collect();
+            let dword1 = components[0] as u128 | ((components[1] as u128) << 64);
+            let dword2 = components[2] as u128 | ((components[3] as u128) << 64);
+            LineMap(Bitmap::from([dword1, dword2]))
+        } else {
+            panic!("can't parse linemap");
+        }
+    }
+
+    #[test]
+    pub fn test_real_linemap() {
+        let m = linemap_from_dump(
+            "0xe00031f71fffffff 0xffffffbfbfffffff\n0xffffffffffffff87 0xffffffffffffffff",
+        );
+
+        if let Some((lo, hi)) = m.find_hole(BLOCK_SIZE_BYTES) {
+            assert_eq!(lo, 23680);
+            assert_eq!(hi, 24064);
+        }
     }
 }

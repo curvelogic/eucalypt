@@ -23,6 +23,7 @@ pub enum BlockError {
 }
 
 impl Block {
+    /// Defer to global allocatore to create new block of given size
     pub fn new(size: usize) -> Result<Self, BlockError> {
         if !size.is_power_of_two() {
             Err(BlockError::BadSize)
@@ -48,8 +49,23 @@ impl Block {
             if ptr.is_null() {
                 Err(BlockError::OOM)
             } else {
+                if cfg!(debug_assertions) {
+                    // fill memory with 0xff to aid debugging
+                    let mem = std::slice::from_raw_parts_mut(ptr, size);
+                    mem.fill(0xff);
+                }
                 Ok(NonNull::new_unchecked(ptr))
             }
+        }
+    }
+
+    /// Fill areas that are meant to be dead with 0xff to aid debugging
+    #[cfg(debug_assertions)]
+    pub fn fill(&self, offset_bytes: usize, size_bytes: usize) {
+        unsafe {
+            let start = self.ptr.as_ptr().add(offset_bytes);
+            let mem = std::slice::from_raw_parts_mut(start, size_bytes);
+            mem.fill(0xff);
         }
     }
 

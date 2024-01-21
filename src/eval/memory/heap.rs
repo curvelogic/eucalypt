@@ -1,5 +1,6 @@
 //! The STG heap implementation
 
+use std::collections::LinkedList;
 use std::fmt::Debug;
 use std::ptr::NonNull;
 use std::{cell::UnsafeCell, mem::size_of};
@@ -56,9 +57,9 @@ pub struct HeapState {
     /// For allocating medium objects
     overflow: Option<BumpBlock>,
     /// Recycled - part used but reclaimed
-    recycled: Vec<BumpBlock>,
+    recycled: LinkedList<BumpBlock>,
     /// Part used - not yet reclaimed
-    rest: Vec<BumpBlock>,
+    rest: LinkedList<BumpBlock>,
     /// Large object blocks - each contains single object
     lobs: Vec<LargeObjectBlock>,
 }
@@ -72,7 +73,11 @@ impl Default for HeapState {
 impl std::fmt::Debug for HeapState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for block in &self.rest {
-            writeln!(f, "{:?}", block)?;
+            writeln!(f, "(XX) {:?}", block)?;
+        }
+
+        for block in &self.recycled {
+            writeln!(f, "(Cy) {:?}", block)?;
         }
 
         if let Some(head) = &self.head {
@@ -96,8 +101,8 @@ impl HeapState {
         HeapState {
             head: None,
             overflow: None,
-            recycled: vec![],
-            rest: vec![],
+            recycled: LinkedList::default(),
+            rest: LinkedList::default(),
             lobs: vec![],
         }
     }
@@ -121,8 +126,14 @@ impl HeapState {
     }
 
     pub fn replace_head(&mut self) -> &mut BumpBlock {
-        self.head.replace(BumpBlock::new()).and_then(|old| {
-            self.rest.push(old);
+        let replacement = if let Some(block) = self.recycled.pop_front() {
+            block
+        } else {
+            BumpBlock::new()
+        };
+
+        self.head.replace(replacement).and_then(|old| {
+            self.rest.push_back(old);
             None as Option<BumpBlock>
         });
         self.head.as_mut().unwrap()
@@ -130,7 +141,7 @@ impl HeapState {
 
     pub fn replace_overflow(&mut self) -> &mut BumpBlock {
         self.overflow.replace(BumpBlock::new()).and_then(|old| {
-            self.rest.push(old);
+            self.rest.push_back(old);
             None as Option<BumpBlock>
         });
         self.overflow.as_mut().unwrap()
@@ -145,28 +156,17 @@ impl HeapState {
 
     /// Look for reclaimable blocks and move to recycled list
     pub fn sweep(&mut self) {
-        // move any recyclable blocks to
-        let mut i = 0;
-        while i < self.rest.len() {
-            let (holes, _, _) = self.rest[i].stats();
-            if holes > 0 {
-                if let Some(b) = self.rest.get_mut(i) {
-                    if b.recycle() {
-                        self.recycled.push(self.rest.remove(i));
-                    } else {
-                        i += 1;
-                    }
-                } else {
-                    i += 1;
-                }
+        let mut unusable: LinkedList<BumpBlock> = LinkedList::default();
+
+        while let Some(mut block) = self.rest.pop_front() {
+            if block.recycle() {
+                self.recycled.push_back(block);
             } else {
-                i += 1;
+                unusable.push_back(block);
             }
         }
 
-        // order rest and recycled
-        self.rest.sort();
-        self.recycled.sort();
+        self.rest.append(&mut unusable);
     }
 
     /// Statistics
@@ -223,6 +223,16 @@ impl Heap {
     pub fn stats(&self) -> HeapStats {
         unsafe { (*self.state.get()).stats() }
     }
+
+    pub fn policy_requires_collection(&self) -> bool {
+        if let Some(limit) = self.limit {
+            let stats = self.stats();
+            stats.blocks_allocated >= limit
+                && (stats.recycled as f32 / stats.blocks_allocated as f32) < 0.25
+        } else {
+            false
+        }
+    }
 }
 
 impl Allocator for Heap {
@@ -273,7 +283,10 @@ impl Allocator for Heap {
 
     /// Get header from object pointer
     fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader> {
-        unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) }
+        let header_ptr =
+            unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) };
+        debug_assert!(header_ptr.as_ptr() as usize > 0);
+        header_ptr
     }
 
     /// Get object from header pointer
@@ -337,11 +350,13 @@ impl Heap {
     /// Check wither an object is marked
     pub fn is_marked<T>(&self, ptr: NonNull<T>) -> bool {
         let header: NonNull<AllocHeader> = self.get_header(ptr);
+        debug_assert!(header.as_ptr() as usize > 0);
         unsafe { (*header.as_ptr()).is_marked() }
     }
 
     /// Mark an object as live
     pub fn mark_object<T>(&self, ptr: NonNull<T>) {
+        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
         let header: NonNull<AllocHeader> = self.get_header(ptr);
         unsafe {
             (*header.as_ptr()).mark();
@@ -350,6 +365,7 @@ impl Heap {
 
     /// Unmark object
     pub fn unmark_object<T>(&self, ptr: NonNull<T>) {
+        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
         let header = self.get_header(ptr);
         unsafe { (*header.as_ptr()).unmark() }
     }
@@ -378,13 +394,24 @@ impl Heap {
         // depending on size of object + header, mark line or lines
         let heap_state = unsafe { &mut *self.state.get() };
 
-        // TODO: fix
-        if let Some(head) = &mut heap_state.head {
-            head.mark_line(ptr);
-        }
+        let size = size_of::<T>();
+        // TODO: fix this - go directly to the right block!
+        if SizeClass::for_size(size) == SizeClass::Medium {
+            if let Some(head) = &mut heap_state.head {
+                head.mark_region(ptr.cast(), size);
+            }
 
-        for block in &mut heap_state.rest {
-            block.mark_line(ptr);
+            for block in &mut heap_state.rest {
+                block.mark_region(ptr.cast(), size);
+            }
+        } else {
+            if let Some(head) = &mut heap_state.head {
+                head.mark_line(ptr);
+            }
+
+            for block in &mut heap_state.rest {
+                block.mark_line(ptr);
+            }
         }
     }
 
@@ -421,7 +448,13 @@ pub mod tests {
         let ptr = heap.alloc(Ref::num(99)).unwrap();
         unsafe { assert_eq!(*ptr.as_ref(), Ref::num(99)) };
 
-        // TODO: heap.get_header(ptr);
+        let header_ptr = heap.get_header(ptr);
+        let difference = ptr.as_ptr() as usize - header_ptr.as_ptr() as usize;
+        assert_eq!(difference, size_of::<AllocHeader>());
+
+        unsafe {
+            assert!(!(*header_ptr.as_ptr()).is_marked());
+        }
     }
 
     #[test]
