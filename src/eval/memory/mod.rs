@@ -9,7 +9,7 @@ pub mod heap;
 pub mod infotable;
 pub mod loader;
 pub mod lob;
+pub mod mark;
 pub mod mutator;
 pub mod string;
 pub mod syntax;
-pub mod mark;

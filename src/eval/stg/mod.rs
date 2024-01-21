@@ -191,6 +191,9 @@ pub struct StgSettings {
     /// Limit managed heap to SIZE MiB
     #[structopt(long)]
     pub heap_limit_mib: Option<usize>,
+    /// Dump heap to stderr at GC time for debugging
+    #[structopt(long)]
+    pub heap_dump_at_gc: bool,
 }
 
 /// Compile core syntax to STG ready for execution

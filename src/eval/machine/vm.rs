@@ -621,14 +621,16 @@ impl GcScannable for MachineState {
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
 
-        marker.mark(self.globals);
-        grey.push(ScanPtr::from_non_null(scope, self.globals));
+        if marker.mark(self.globals) {
+            grey.push(ScanPtr::from_non_null(scope, self.globals));
+        }
 
         grey.push(ScanPtr::new(scope, &self.closure));
 
         for cont in &self.stack {
-            marker.mark(*cont);
-            grey.push(ScanPtr::from_non_null(scope, *cont));
+            if marker.mark(*cont) {
+                grey.push(ScanPtr::from_non_null(scope, *cont));
+            }
         }
 
         grey
@@ -637,6 +639,7 @@ impl GcScannable for MachineState {
 
 pub struct MachineSettings {
     pub trace_steps: bool,
+    pub dump_heap: bool,
 }
 
 /// An STG machine variant using cactus environment
@@ -668,13 +671,19 @@ impl<'a> Machine<'a> {
         emitter: Box<dyn Emitter + 'a>,
         trace_steps: bool,
         heap_limit_mib: Option<usize>,
+        dump_heap: bool,
     ) -> Self {
         Machine {
-            heap: Heap::with_limit(heap_limit_mib.unwrap_or(256)),
+            heap: heap_limit_mib
+                .map(Heap::with_limit)
+                .unwrap_or_else(|| Heap::new()),
             state: Default::default(),
             intrinsics: vec![],
             emitter,
-            settings: MachineSettings { trace_steps },
+            settings: MachineSettings {
+                trace_steps,
+                dump_heap,
+            },
             metrics: Metrics::default(),
             clock: Clock::default(),
         }
@@ -789,16 +798,36 @@ impl<'a> Machine<'a> {
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
         self.clock.switch(ThreadOccupation::Mutator);
 
+        let gc_check_freq = 500;
+
         while !self.state.terminated {
             if let Some(limit) = limit {
                 if self.metrics.ticks() as usize >= limit {
                     return Err(ExecutionError::DidntTerminate(limit));
                 }
             }
+
+            if self.metrics.ticks() % gc_check_freq == 0 {
+                if self.heap().policy_requires_collection() {
+                    collect::collect(
+                        &self.state,
+                        &mut self.heap,
+                        &mut self.clock,
+                        self.settings.dump_heap,
+                    );
+                    self.clock.switch(ThreadOccupation::Mutator);
+                }
+            }
+
             self.step()?;
         }
 
-        collect::collect(&self.state, &mut self.heap, &mut self.clock);
+        collect::collect(
+            &self.state,
+            &mut self.heap,
+            &mut self.clock,
+            self.settings.dump_heap,
+        );
 
         self.clock.stop();
 
@@ -990,7 +1019,7 @@ pub mod tests {
     }
 
     fn machine(syn: Rc<StgSyn>) -> Machine<'static> {
-        let mut m = Machine::new(Box::new(DebugEmitter::default()), true);
+        let mut m = Machine::new(Box::new(DebugEmitter::default()), true, None, false);
         let blank = m.mutate(Init, ()).unwrap();
         let closure = m.mutate(Load { syntax: syn }, blank).unwrap();
         m.initialise(blank, blank, closure, vec![]).unwrap();

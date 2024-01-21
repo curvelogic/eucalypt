@@ -253,6 +253,8 @@ impl<T: Sized + Clone> Array<T> {
     // TODO: needs guard
     /// Read only iterator
     pub fn iter(&self) -> std::slice::Iter<T> {
+        debug_assert_ne!(self.length, usize::MAX);
+        debug_assert!(self.length < u32::MAX as usize);
         self.as_slice().iter()
     }
 
@@ -297,8 +299,8 @@ impl<T: Sized + Clone> Array<T> {
 
     // Return pointer to allocated data for navigating to header (and
     // marking during GC)
-    pub fn allocated_data(&self) -> Option<RefPtr<T>> {
-        self.data.ptr
+    pub fn allocated_data(&self) -> Option<RefPtr<u8>> {
+        self.data.ptr.map(|p| p.cast())
     }
 }
 

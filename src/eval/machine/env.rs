@@ -23,12 +23,6 @@ where
 
 impl<S> StgObject for Closing<S> where S: Copy {}
 
-impl<S: Copy + Default> Default for Closing<S> {
-    fn default() -> Self {
-        Self(Default::default(), RefPtr::dangling())
-    }
-}
-
 impl<S> InfoTable for Closing<S>
 where
     S: Copy,
@@ -370,11 +364,9 @@ impl GcScannable for EnvFrame {
 
         let bindings = &self.bindings;
 
-        if let Some(data) = bindings.allocated_data() {
-            if marker.mark(data) {
-                for binding in bindings.iter() {
-                    grey.push(ScanPtr::new(scope, binding));
-                }
+        if marker.mark_array(bindings) {
+            for binding in bindings.iter() {
+                grey.push(ScanPtr::new(scope, binding));
             }
         }
 

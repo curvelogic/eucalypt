@@ -255,9 +255,11 @@ impl GcScannable for HeapSyn {
                 if marker.mark(*scrutinee) {
                     grey.push(ScanPtr::from_non_null(scope, *scrutinee));
                 }
-                for (_, b) in branches.iter() {
-                    if marker.mark(*b) {
-                        grey.push(ScanPtr::from_non_null(scope, *b));
+                if marker.mark_array(branches) {
+                    for (_, b) in branches.iter() {
+                        if marker.mark(*b) {
+                            grey.push(ScanPtr::from_non_null(scope, *b));
+                        }
                     }
                 }
                 if let Some(f) = fallback {
@@ -267,26 +269,18 @@ impl GcScannable for HeapSyn {
                 }
             }
             HeapSyn::Cons { tag: _, args } => {
-                if let Some(data) = args.allocated_data() {
-                    marker.mark(data);
-                }
+                marker.mark_array(args);
             }
             HeapSyn::App { callable: _, args } => {
-                if let Some(data) = args.allocated_data() {
-                    marker.mark(data);
-                }
+                marker.mark_array(args);
             }
             HeapSyn::Bif { intrinsic: _, args } => {
-                if let Some(data) = args.allocated_data() {
-                    marker.mark(data);
-                }
+                marker.mark_array(args);
             }
             HeapSyn::Let { bindings, body } => {
-                if let Some(data) = bindings.allocated_data() {
-                    if marker.mark(data) {
-                        for bindings in bindings.iter() {
-                            grey.push(ScanPtr::new(scope, bindings));
-                        }
+                if marker.mark_array(bindings) {
+                    for bindings in bindings.iter() {
+                        grey.push(ScanPtr::new(scope, bindings));
                     }
                 }
 
@@ -295,11 +289,9 @@ impl GcScannable for HeapSyn {
                 }
             }
             HeapSyn::LetRec { bindings, body } => {
-                if let Some(data) = bindings.allocated_data() {
-                    if marker.mark(data) {
-                        for bindings in bindings.iter() {
-                            grey.push(ScanPtr::new(scope, bindings));
-                        }
+                if marker.mark_array(bindings) {
+                    for bindings in bindings.iter() {
+                        grey.push(ScanPtr::new(scope, bindings));
                     }
                 }
 
