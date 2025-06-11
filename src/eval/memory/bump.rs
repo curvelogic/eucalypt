@@ -83,32 +83,60 @@ impl LineMap {
 
             if !marked {
                 count += 1;
+                lower = line;
 
                 if upper.is_none() {
-                    upper = Some(line + 1);
+                    // Set upper boundary to the line above the current unmarked sequence
+                    upper = Some(line + count);
                 }
+            } else {
+                // Hit a marked line - check if we have a sufficient hole
+                if count > 1 && upper.is_some() {
+                    let hole_upper = upper.unwrap();
+                    let hole_lower = lower;
 
-                lower = line;
-            }
+                    // Apply conservative marking: exclude one line from upper end only
+                    let conservative_upper = if hole_upper > hole_lower + 1 {
+                        hole_upper - 1
+                    } else {
+                        hole_upper
+                    };
 
-            if count > 1 && (marked || lower == 0) {
-                if let Some(upper) = upper {
-                    if lower > 0 {
-                        lower += 1; // conservative mark
+                    if conservative_upper > hole_lower {
+                        let lower_bytes = hole_lower * LINE_SIZE_BYTES;
+                        let upper_bytes = conservative_upper * LINE_SIZE_BYTES;
+
+                        debug_assert!(upper_bytes <= BLOCK_SIZE_BYTES);
+
+                        return Some((lower_bytes, upper_bytes));
                     }
-
-                    let lower_bytes = lower * LINE_SIZE_BYTES;
-                    let upper_bytes = upper * LINE_SIZE_BYTES;
-
-                    debug_assert!(upper_bytes <= BLOCK_SIZE_BYTES);
-
-                    return Some((lower_bytes, upper_bytes));
                 }
-            }
 
-            if marked {
+                // Reset for next potential hole
                 count = 0;
                 upper = None;
+            }
+        }
+
+        // Check for hole at the beginning of the block
+        if count > 1 && upper.is_some() {
+            let hole_upper = upper.unwrap();
+            let hole_lower = lower;
+
+            // Apply conservative marking: exclude one line from upper end only
+            let conservative_upper = if hole_upper > hole_lower + 1 {
+                hole_upper - 1
+            } else {
+                hole_upper
+            };
+
+            if conservative_upper > hole_lower {
+                let lower_bytes = hole_lower * LINE_SIZE_BYTES;
+                let upper_bytes = conservative_upper * LINE_SIZE_BYTES;
+
+                debug_assert!(upper_bytes <= BLOCK_SIZE_BYTES);
+
+                return Some((lower_bytes, upper_bytes));
             }
         }
 

@@ -807,16 +807,14 @@ impl<'a> Machine<'a> {
                 }
             }
 
-            if self.metrics.ticks() % gc_check_freq == 0 {
-                if self.heap().policy_requires_collection() {
-                    collect::collect(
-                        &self.state,
-                        &mut self.heap,
-                        &mut self.clock,
-                        self.settings.dump_heap,
-                    );
-                    self.clock.switch(ThreadOccupation::Mutator);
-                }
+            if self.metrics.ticks() % gc_check_freq == 0 && self.heap().policy_requires_collection() {
+                collect::collect(
+                    &self.state,
+                    &mut self.heap,
+                    &mut self.clock,
+                    self.settings.dump_heap,
+                );
+                self.clock.switch(ThreadOccupation::Mutator);
             }
 
             self.step()?;

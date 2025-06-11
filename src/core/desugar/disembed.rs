@@ -30,7 +30,7 @@ fn dispatch(
     items: &[Expression],
 ) -> Result<RcExpr, CoreError> {
     let head = items
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("empty embedding list".to_string(), smid))?;
     if let Expression::Lit(Literal::Sym(_, tag)) = head {
         match tag.as_str() {
@@ -72,7 +72,7 @@ fn dispatch(
 /// [:c-var "x"]
 fn c_var(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let name = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing variable name".to_string(), smid))?;
     if let Expression::Lit(Literal::Str(_, n)) = name {
         let fv = desugarer
@@ -91,7 +91,7 @@ fn c_var(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<R
 /// [:c-let {x: binding ...} body]
 fn c_let(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let bindings = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing bindings".to_string(), smid))?;
     let body = args
         .get(1)
