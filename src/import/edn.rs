@@ -20,7 +20,7 @@ pub fn read_edn<'smap>(
     file_id: usize,
     text: &'smap str,
 ) -> Result<RcExpr, SourceError> {
-    let edn = parse_str(text).map_err(|e| SourceError::InvalidEdn(e, file_id))?;
+    let edn = parse_str(text).map_err(|e| SourceError::InvalidEdn(Box::new(e), file_id))?;
     value_to_core(&edn, file_id)
 }
 

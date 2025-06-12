@@ -23,7 +23,7 @@ pub enum SourceError {
     #[error("invalid toml syntax {0}")]
     InvalidToml(String, usize),
     #[error("invalid edn: {0}")]
-    InvalidEdn(edn_format::ParserErrorWithContext, usize),
+    InvalidEdn(Box<edn_format::ParserErrorWithContext>, usize),
     #[error("character set error after {0}")]
     CharSetError(String, usize),
     #[error("invalid key {0}")]
