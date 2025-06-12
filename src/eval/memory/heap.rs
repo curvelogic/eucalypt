@@ -126,11 +126,7 @@ impl HeapState {
     }
 
     pub fn replace_head(&mut self) -> &mut BumpBlock {
-        let replacement = if let Some(block) = self.recycled.pop_front() {
-            block
-        } else {
-            BumpBlock::new()
-        };
+        let replacement = self.recycled.pop_front().unwrap_or_default();
 
         self.head.replace(replacement).and_then(|old| {
             self.rest.push_back(old);
