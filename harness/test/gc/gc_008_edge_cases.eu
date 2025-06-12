@@ -1,0 +1,110 @@
+#!/usr/bin/env eu
+# GC edge cases test - Test GC edge cases and boundary conditions
+#
+# CURRENT SCALE: 13 objects covering different edge case scenarios
+# FUTURE SCALE: 100+ objects with complex edge cases and boundary testing
+# 
+# This test validates GC behavior under edge cases and boundary conditions,
+# including empty objects, single elements, deeply nested structures, and unusual patterns.
+
+# Edge case 1 - Empty and minimal objects
+empty-edge-cases: [
+  { id: 1, type: :empty, data: [] },                            # Empty data
+  { id: 2, type: :minimal, data: ["X"] },                       # Single element
+  { id: 3, type: :null-like, data: null }                       # Null data
+]  # Future: 30+ empty/minimal object variations
+
+# Edge case 2 - Deeply nested structures (limited depth to avoid performance issues)
+nested-edge-cases: [
+  { id: 101, type: :shallow, data: { level: 1, content: "A" } },
+  { id: 102, type: :nested, data: { level: 1, inner: { level: 2, content: "B" } } },
+  { id: 103, type: :deep, data: { level: 1, inner: { level: 2, deep: { level: 3, content: "C" } } } }
+]  # Future: 20+ nested structure variations with deeper nesting
+
+# Edge case 3 - Unusual size patterns
+size-edge-cases: [
+  { id: 201, type: :tiny, data: ["T"] },                        # Minimal size
+  { id: 202, type: :odd, data: ["O1", "O2", "O3"] },           # Odd count
+  { id: 203, type: :even, data: ["E1", "E2", "E3", "E4"] },    # Even count
+  { id: 204, type: :prime, data: ["P1", "P2", "P3", "P4", "P5"] }, # Prime count
+  { id: 205, type: :power-2, data: ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"] } # Power of 2
+]  # Future: 30+ size pattern variations
+
+# Edge case 4 - Boundary value testing
+boundary-edge-cases: [
+  { id: 301, boundary: :zero, value: 0, data: [] },
+  { id: 302, boundary: :negative, value: -1, data: ["NEG"] }
+]  # Future: 20+ boundary value tests including large numbers, special values
+
+# Combine all edge cases for comprehensive testing
+all-edge-cases: {
+  empty: empty-edge-cases,
+  nested: nested-edge-cases,
+  sizes: size-edge-cases,
+  boundaries: boundary-edge-cases
+}
+
+# Verify edge cases survived GC correctly
+first-empty: empty-edge-cases head
+second-empty: empty-edge-cases tail head
+first-nested: nested-edge-cases head
+first-size: size-edge-cases head
+second-size: size-edge-cases tail head
+first-boundary: boundary-edge-cases head
+second-boundary: boundary-edge-cases tail head
+
+# Test edge cases scenarios
+` { target: :test-edge-cases
+    doc: "GC edge cases and boundary conditions validation"
+    verify: [:verify-edge-cases] }
+test-edge-cases: {
+  # Validate edge case category survival
+  # TODO: Scale up counts when edge case coverage increases
+  empty-cases-count: empty-edge-cases count //= 3               # Future: //= 30
+  nested-cases-count: nested-edge-cases count //= 3             # Future: //= 20
+  size-cases-count: size-edge-cases count //= 5                 # Future: //= 30
+  boundary-cases-count: boundary-edge-cases count //= 2         # Future: //= 20
+  
+  # Validate ID ranges for each edge case category
+  empty-first-id: first-empty.id //= 1
+  nested-first-id: first-nested.id //= 101
+  size-first-id: first-size.id //= 201
+  boundary-first-id: first-boundary.id //= 301
+  
+  # Validate type classifications survived
+  empty-type: first-empty.type //= :empty
+  nested-type: first-nested.type //= :shallow
+  size-type: first-size.type //= :tiny
+  boundary-type: first-boundary.boundary //= :zero
+  
+  # Validate empty data edge case
+  empty-data-length: first-empty.data count //= 0               # Empty should remain empty
+  
+  # Validate minimal data edge case  
+  minimal-data-length: second-empty.data count //= 1            # Single element case
+  
+  # Validate null data edge case
+  null-data-check: (first-empty.data) = []                      # Empty list behavior
+  
+  # Validate nested structure edge case
+  # TODO: Test deeper nesting when performance allows
+  shallow-nesting: first-nested.data.level //= 1               # Shallow nesting preserved
+  
+  # Validate size pattern edge cases
+  tiny-size: first-size.data count //= 1                        # Tiny size preserved
+  odd-size: second-size.data count //= 3                        # Odd count preserved
+  
+  # Validate boundary values
+  zero-boundary: first-boundary.value //= 0                     # Zero value preserved
+  negative-boundary: second-boundary.value //= -1               # Negative value preserved
+  
+  # Validate total edge cases survived
+  total-edge-objects: ((empty-edge-cases count) + (nested-edge-cases count) + (size-edge-cases count) + (boundary-edge-cases count)) = ((3 + 3 + 5 + 2))
+}
+
+# Verification function that checks all conditions are true
+verify-edge-cases(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)

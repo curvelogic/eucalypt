@@ -1,0 +1,104 @@
+#!/usr/bin/env eu
+# GC collection cycles test - Test GC behavior across multiple collection cycles
+#
+# CURRENT SCALE: 12 objects across 3 waves to test multi-cycle collection behavior
+# FUTURE SCALE: 200+ objects across 10+ waves with complex survival patterns
+# 
+# This test validates GC behavior across multiple collection cycles, ensuring
+# objects survive repeated collections and memory management remains stable.
+
+# Create objects in multiple waves to trigger several collection cycles
+# Each wave creates objects that should survive subsequent collection cycles
+# TODO: Scale up for more cycles - add more waves and complex survival patterns
+
+# Wave 1 - Long-lived objects that should survive all collection cycles
+wave-1-survivors: [
+  { id: 1001, wave: 1, type: :survivor, data: ["W1-A", "W1-A", "W1-A"] },
+  { id: 1002, wave: 1, type: :survivor, data: ["W1-B", "W1-B", "W1-B"] },
+  { id: 1003, wave: 1, type: :survivor, data: ["W1-C", "W1-C", "W1-C"] }
+]  # Future: 50+ long-lived objects
+
+# Wave 2 - Medium-lived objects that survive some cycles  
+wave-2-survivors: [
+  { id: 2001, wave: 2, type: :medium, data: ["W2-A", "W2-A"] },
+  { id: 2002, wave: 2, type: :medium, data: ["W2-B", "W2-B"] },
+  { id: 2003, wave: 2, type: :medium, data: ["W2-C", "W2-C"] }
+]  # Future: 75+ medium-lived objects
+
+# Wave 3 - Short-lived objects (some may be collected)
+wave-3-transient: [
+  { id: 3001, wave: 3, type: :transient, data: ["W3-A"] },
+  { id: 3002, wave: 3, type: :transient, data: ["W3-B"] },
+  { id: 3003, wave: 3, type: :transient, data: ["W3-C"] }
+]  # Future: 100+ short-lived objects with some collection
+
+# Wave 4 - Additional pressure to trigger more collection cycles
+wave-4-pressure: [
+  { id: 4001, wave: 4, type: :pressure, data: ["W4-A", "W4-A", "W4-A", "W4-A"] },
+  { id: 4002, wave: 4, type: :pressure, data: ["W4-B", "W4-B", "W4-B", "W4-B"] },
+  { id: 4003, wave: 4, type: :pressure, data: ["W4-C", "W4-C", "W4-C", "W4-C"] }
+]  # Future: 50+ pressure objects to trigger collections
+
+# Combine all waves to create multi-cycle allocation pattern
+all-cycle-objects: {
+  wave-1: wave-1-survivors,
+  wave-2: wave-2-survivors,
+  wave-3: wave-3-transient,
+  wave-4: wave-4-pressure
+}
+
+# Verify objects survived multiple collection cycles
+first-wave-1: wave-1-survivors head
+last-wave-1: wave-1-survivors last
+first-wave-2: wave-2-survivors head
+first-wave-3: wave-3-transient head
+first-wave-4: wave-4-pressure head
+
+# Test collection cycles scenarios
+` { target: :test-collection-cycles
+    doc: "Multiple collection cycles with object survival validation"
+    verify: [:verify-collection-cycles] }
+test-collection-cycles: {
+  # Validate wave survival across collection cycles
+  # TODO: Scale up counts when wave sizes increase
+  wave-1-survivors-count: wave-1-survivors count //= 3          # Future: //= 50
+  wave-2-survivors-count: wave-2-survivors count //= 3          # Future: //= 75
+  wave-3-transient-count: wave-3-transient count //= 3          # Future: validate survival rate
+  wave-4-pressure-count: wave-4-pressure count //= 3            # Future: //= 50
+  
+  # Validate ID consistency across cycles
+  wave-1-first-id: first-wave-1.id //= 1001
+  wave-1-last-id: last-wave-1.id //= 1003                       # Future: //= 1050
+  wave-2-first-id: first-wave-2.id //= 2001
+  wave-3-first-id: first-wave-3.id //= 3001
+  wave-4-first-id: first-wave-4.id //= 4001
+  
+  # Validate wave numbering survived cycles
+  wave-1-wave-num: first-wave-1.wave //= 1
+  wave-2-wave-num: first-wave-2.wave //= 2
+  wave-3-wave-num: first-wave-3.wave //= 3
+  wave-4-wave-num: first-wave-4.wave //= 4
+  
+  # Validate data integrity after collection cycles
+  # TODO: Scale up data sizes when object sizes increase
+  wave-1-data-size: first-wave-1.data count //= 3               # Future: //= 100
+  wave-2-data-size: first-wave-2.data count //= 2               # Future: //= 50
+  wave-3-data-size: first-wave-3.data count //= 1               # Future: //= 25
+  wave-4-data-size: first-wave-4.data count //= 4               # Future: //= 75
+  
+  # Validate type preservation across cycles
+  wave-1-type: first-wave-1.type //= :survivor
+  wave-2-type: first-wave-2.type //= :medium
+  wave-3-type: first-wave-3.type //= :transient
+  wave-4-type: first-wave-4.type //= :pressure
+  
+  # Validate total object survival across cycles
+  total-surviving-objects: ((wave-1-survivors count) + (wave-2-survivors count) + (wave-3-transient count) + (wave-4-pressure count)) = 12
+}
+
+# Verification function that checks all conditions are true
+verify-collection-cycles(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)

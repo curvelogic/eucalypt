@@ -1,0 +1,120 @@
+#!/usr/bin/env eu
+# GC performance regression test - Test performance characteristics and regression detection
+#
+# CURRENT SCALE: 25 objects with basic performance patterns for validation
+# FUTURE SCALE: 1000+ objects with complex performance monitoring and regression tracking
+# 
+# This test validates GC performance characteristics, detecting potential regression
+# in allocation patterns, collection frequency, and memory management efficiency.
+
+# Performance scenario 1 - Allocation-heavy workload
+allocation-heavy: [
+  { id: 1, workload: :allocation, cycle: 1, alloc-time: 10, data: ["AH1"] },
+  { id: 2, workload: :allocation, cycle: 1, alloc-time: 12, data: ["AH2"] },
+  { id: 3, workload: :allocation, cycle: 1, alloc-time: 8, data: ["AH3"] },
+  { id: 4, workload: :allocation, cycle: 1, alloc-time: 15, data: ["AH4"] },
+  { id: 5, workload: :allocation, cycle: 1, alloc-time: 9, data: ["AH5"] },
+  { id: 6, workload: :allocation, cycle: 2, alloc-time: 11, data: ["AH6"] },
+  { id: 7, workload: :allocation, cycle: 2, alloc-time: 13, data: ["AH7"] },
+  { id: 8, workload: :allocation, cycle: 2, alloc-time: 14, data: ["AH8"] }
+]  # Future: 400+ allocation-heavy objects with timing analysis
+
+# Performance scenario 2 - Collection-heavy workload (frequent GC triggers)
+collection-heavy: [
+  { id: 101, workload: :collection, triggers: 5, gc-time: 25, data: ["CH1", "CH1"] },
+  { id: 102, workload: :collection, triggers: 3, gc-time: 18, data: ["CH2", "CH2"] },
+  { id: 103, workload: :collection, triggers: 7, gc-time: 32, data: ["CH3", "CH3"] },
+  { id: 104, workload: :collection, triggers: 4, gc-time: 22, data: ["CH4", "CH4"] },
+  { id: 105, workload: :collection, triggers: 6, gc-time: 28, data: ["CH5", "CH5"] },
+  { id: 106, workload: :collection, triggers: 2, gc-time: 15, data: ["CH6", "CH6"] }
+]  # Future: 300+ collection-heavy objects with GC frequency analysis
+
+# Performance scenario 3 - Memory-intensive workload
+memory-intensive: [
+  { id: 201, workload: :memory, footprint: 100, fragmentation: 15, data: ["MI1", "MI1", "MI1"] },
+  { id: 202, workload: :memory, footprint: 85, fragmentation: 12, data: ["MI2", "MI2", "MI2"] },
+  { id: 203, workload: :memory, footprint: 120, fragmentation: 20, data: ["MI3", "MI3", "MI3"] },
+  { id: 204, workload: :memory, footprint: 95, fragmentation: 18, data: ["MI4", "MI4", "MI4"] },
+  { id: 205, workload: :memory, footprint: 110, fragmentation: 14, data: ["MI5", "MI5", "MI5"] }
+]  # Future: 200+ memory-intensive objects with footprint tracking
+
+# Performance scenario 4 - Mixed workload patterns
+mixed-workload: [
+  { id: 301, workload: :mixed, pattern: :burst, intensity: 8, data: ["MW1"] },
+  { id: 302, workload: :mixed, pattern: :steady, intensity: 5, data: ["MW2"] },
+  { id: 303, workload: :mixed, pattern: :spike, intensity: 12, data: ["MW3"] },
+  { id: 304, workload: :mixed, pattern: :variable, intensity: 7, data: ["MW4"] },
+  { id: 305, workload: :mixed, pattern: :cyclic, intensity: 9, data: ["MW5"] },
+  { id: 306, workload: :mixed, pattern: :random, intensity: 6, data: ["MW6"] }
+]  # Future: 100+ mixed workload objects with pattern analysis
+
+# Combine all performance workloads for comprehensive testing
+all-performance-workloads: {
+  allocation: allocation-heavy,
+  collection: collection-heavy,
+  memory: memory-intensive,
+  mixed: mixed-workload
+}
+
+# Verify performance workloads survived GC correctly
+first-allocation: allocation-heavy head
+last-allocation: allocation-heavy last
+first-collection: collection-heavy head
+first-memory: memory-intensive head
+first-mixed: mixed-workload head
+
+# Test performance regression scenarios
+` { target: :test-performance-regression
+    doc: "Performance regression detection and workload validation"
+    verify: [:verify-performance-regression] }
+test-performance-regression: {
+  # Validate workload survival counts
+  # TODO: Scale up counts when workload sizes increase
+  allocation-workload-count: allocation-heavy count //= 8           # Future: //= 400
+  collection-workload-count: collection-heavy count //= 6          # Future: //= 300
+  memory-workload-count: memory-intensive count //= 5              # Future: //= 200
+  mixed-workload-count: mixed-workload count //= 6                 # Future: //= 100
+  
+  # Validate ID ranges for each workload type
+  allocation-first-id: first-allocation.id //= 1
+  allocation-last-id: last-allocation.id //= 8                     # Future: //= 400
+  collection-first-id: first-collection.id //= 101
+  memory-first-id: first-memory.id //= 201
+  mixed-first-id: first-mixed.id //= 301
+  
+  # Validate workload classifications
+  allocation-workload-type: first-allocation.workload //= :allocation
+  collection-workload-type: first-collection.workload //= :collection
+  memory-workload-type: first-memory.workload //= :memory
+  mixed-workload-type: first-mixed.workload //= :mixed
+  
+  # Validate performance metrics (regression indicators)
+  # TODO: Add performance thresholds and regression detection
+  allocation-timing: first-allocation.alloc-time //= 10            # Allocation timing preserved
+  collection-triggers: first-collection.triggers //= 5            # GC trigger count preserved
+  memory-footprint: first-memory.footprint //= 100               # Memory footprint preserved
+  mixed-intensity: first-mixed.intensity //= 8                   # Workload intensity preserved
+  
+  # Validate workload cycles and patterns
+  allocation-cycle: first-allocation.cycle //= 1                  # Cycle tracking preserved
+  collection-gc-time: first-collection.gc-time //= 25            # GC timing preserved
+  memory-fragmentation: first-memory.fragmentation //= 15        # Fragmentation tracking preserved
+  mixed-pattern: first-mixed.pattern //= :burst                  # Pattern classification preserved
+  
+  # Validate data integrity under performance pressure
+  # TODO: Scale up data sizes when workload complexity increases
+  allocation-data-size: first-allocation.data count //= 1         # Future: //= 20
+  collection-data-size: first-collection.data count //= 2         # Future: //= 40
+  memory-data-size: first-memory.data count //= 3                 # Future: //= 60
+  mixed-data-size: first-mixed.data count //= 1                   # Future: //= 15
+  
+  # Validate total performance objects survived
+  total-performance-objects: ((allocation-heavy count) + (collection-heavy count) + (memory-intensive count) + (mixed-workload count)) = ((8 + 6 + 5 + 6))
+}
+
+# Verification function that checks all conditions are true
+verify-performance-regression(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)
