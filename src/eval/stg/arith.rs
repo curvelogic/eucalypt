@@ -32,12 +32,12 @@ impl StgIntrinsic for Add {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let total = l
                 .checked_add(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let total = l
                 .checked_add(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l + r) {
@@ -74,12 +74,12 @@ impl StgIntrinsic for Sub {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let result = l
                 .checked_sub(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l
                 .checked_sub(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l - r) {
@@ -116,12 +116,12 @@ impl StgIntrinsic for Mul {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let product = l
                 .checked_mul(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let product = l
                 .checked_mul(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l * r) {
@@ -158,12 +158,12 @@ impl StgIntrinsic for Div {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let result = l
                 .checked_div(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l
                 .checked_div(r)
-.ok_or(ExecutionError::NumericRangeError(x, y))?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l / r) {

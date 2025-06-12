@@ -31,7 +31,9 @@ pub fn run(opt: &EucalyptOptions, loader: SourceLoader) -> Result<Statistics, Eu
     let format = determine_format(opt, &loader);
     let mut stats = Statistics::default();
     let mut executor = Executor::from(loader);
-    executor.execute(opt, &mut stats, format)?;
+    executor
+        .execute(opt, &mut stats, format)
+        .map_err(|e| EucalyptError::Execution(Box::new(e)))?;
     Ok(stats)
 }
 

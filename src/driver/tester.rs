@@ -422,7 +422,9 @@ impl Tester for InProcessTester {
             let mut executor = eval::Executor::from(check_loader);
             let mut stats = Statistics::default();
             executor.capture_output(out, err);
-            executor.execute(&check_opts, &mut stats, "text".to_string())?;
+            executor
+                .execute(&check_opts, &mut stats, "text".to_string())
+                .map_err(|e| EucalyptError::Execution(Box::new(e)))?;
         }
         let output = std::str::from_utf8(outbuf.as_slice()).unwrap().to_string();
         Ok(output)

@@ -22,9 +22,9 @@ pub enum EucalyptError {
     #[error(transparent)]
     Import(#[from] ImportError),
     #[error(transparent)]
-    Source(#[from] SourceError),
+    Source(#[from] Box<SourceError>),
     #[error(transparent)]
-    Execution(#[from] ExecutionError),
+    Execution(#[from] Box<ExecutionError>),
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("unknown resource {0}")]
