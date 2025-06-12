@@ -270,3 +270,8 @@ pub fn test_harness_054() {
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
+
+#[test]
+pub fn test_gc_002() {
+    run_test(&opts("gc/gc_002_stress_allocation.eu"));
+}

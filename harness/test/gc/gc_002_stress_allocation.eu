@@ -1,0 +1,74 @@
+#!/usr/bin/env eu
+# GC stress allocation test - Rapid allocation patterns with varying object sizes
+#
+# CURRENT SCALE: 70 objects total (20+10+15+25) with reduced object sizes
+# FUTURE SCALE: 500 objects total (200+50+100+150) with large object sizes
+# 
+# This test has been scaled down from the original ambitious target to ensure
+# reasonable test execution time. The TODO comments throughout indicate where
+# to scale up for more comprehensive stress testing once GC performance
+# is optimized.
+
+# Helper to create objects of varying sizes
+create-object(size-factor): {
+  id: size-factor,
+  # TODO: Scale up for more stress - originally 10x, 50x, 100x multipliers
+  small-data: repeat("x") take(size-factor * 2),    # Future: * 10
+  medium-data: repeat(size-factor) take(size-factor * 5),  # Future: * 50
+  large-data: range(0, size-factor * 10) map(str.of)      # Future: * 100
+}
+
+# Rapid allocation in tight loops - this should trigger multiple collections
+# TODO: Scale up for more stress - originally 200 objects
+rapid-small-allocs: range(0, 20) map(create-object)  # Future: range(0, 200)
+
+# Allocate progressively larger objects to test different allocation patterns
+# TODO: Scale up for more stress - originally 50 objects
+progressive-allocs: range(1, 11) map(create-object)  # Future: range(1, 51)
+
+# Create a mixed pattern
+# TODO: Scale up for more stress - originally 100 objects with complex lambda patterns
+mixed-pattern: range(0, 15) map(create-object)  # Future: range(0, 100) with conditional sizing
+
+# Create many temporary objects that should be collected quickly
+# TODO: Scale up for more stress - originally 150 objects with nested structures
+temp-objects: range(0, 25) map(create-object)  # Future: range(0, 150) with variable nesting
+
+# Verify we can still access the data after potential GC
+first-rapid: rapid-small-allocs head
+last-rapid: rapid-small-allocs last
+first-progressive: progressive-allocs head
+last-progressive: progressive-allocs last
+
+# Test that objects contain expected data
+rapid-first-id: first-rapid.id
+rapid-last-id: last-rapid.id
+progressive-first-id: first-progressive.id
+progressive-last-id: last-progressive.id
+
+# Test data integrity after potential collection
+` { target: :test-stress-allocation
+    doc: "Stress allocation patterns under GC pressure works correctly"
+    verify: [:verify-stress-allocation] }
+test-stress-allocation: {
+  # TODO: Scale up expectations when object counts increase
+  rapid-count-correct: rapid-small-allocs count //= 20      # Future: //= 200
+  rapid-first-id-correct: rapid-first-id //= 0
+  rapid-last-id-correct: rapid-last-id //= 19               # Future: //= 199
+  progressive-count-correct: progressive-allocs count //= 10 # Future: //= 50
+  progressive-first-id-correct: progressive-first-id //= 1
+  progressive-last-id-correct: progressive-last-id //= 10   # Future: //= 50
+  mixed-count-correct: mixed-pattern count //= 15           # Future: //= 100
+  temp-count-correct: temp-objects count //= 25             # Future: //= 150
+  # Verify some data integrity - TODO: Scale up when object sizes increase
+  first-small-size: first-rapid.small-data count //= 0
+  first-medium-size: first-progressive.medium-data count //= 5   # Future: //= 50
+  first-large-size: first-progressive.large-data count //= 10   # Future: //= 100
+}
+
+# Verification function that checks all conditions are true
+verify-stress-allocation(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)
