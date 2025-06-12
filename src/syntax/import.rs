@@ -57,7 +57,7 @@ impl ImportGraph {
     pub fn check_for_cycles(&self) -> Result<(), ImportError> {
         match algo::toposort(&self.graph, None) {
             Ok(_) => Ok(()),
-            Err(c) => Err(ImportError::Cycle(self.graph[c.node_id()].clone())),
+            Err(c) => Err(ImportError::Cycle(Box::new(self.graph[c.node_id()].clone()))),
         }
     }
 
@@ -69,7 +69,7 @@ impl ImportGraph {
                 .map(|id| &self.graph[id])
                 .collect())
         } else {
-            Err(ImportError::UnknownInput(input.clone()))
+            Err(ImportError::UnknownInput(Box::new(input.clone())))
         }
     }
 
@@ -103,9 +103,9 @@ pub enum ImportError {
     #[error("load failure in test")]
     LoadFailure(),
     #[error("detected cycle involving {0}")]
-    Cycle(Input),
+    Cycle(Box<Input>),
     #[error("unknown input {0}")]
-    UnknownInput(Input),
+    UnknownInput(Box<Input>),
 }
 
 /// Read all imports specified in the expression and add them to imports

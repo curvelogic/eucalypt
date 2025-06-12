@@ -130,7 +130,7 @@ impl<'src> XmlImporter<'src> {
     }
 
     /// Create a proto element from an open / empty tag
-    fn to_proto_element<'a>(&self, e: &BytesStart<'a>) -> Result<ProtoElement, SourceError> {
+    fn to_proto_element(&self, e: &BytesStart<'_>) -> Result<ProtoElement, SourceError> {
         let name = acore::sym(self.to_str(e.name().local_name().as_ref())?);
         let mut attrs = Vec::new();
 
@@ -144,7 +144,7 @@ impl<'src> XmlImporter<'src> {
             attrs.push((k, v));
         }
 
-        Ok(ProtoElement::new(name, acore::block(attrs.into_iter())))
+        Ok(ProtoElement::new(name, acore::block(attrs)))
     }
 
     /// Map quick_xml errors to SourceError

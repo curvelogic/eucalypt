@@ -282,14 +282,14 @@ fn write_str(
     precision: Option<usize>,
     string: &str,
 ) -> Result<(), PrintfError> {
-    let precision = precision.unwrap_or(string.len() as usize);
+    let precision = precision.unwrap_or(string.len());
     if flags.contains(Flags::LEFT_ALIGN) {
         write!(
             w,
             "{:1$.prec$}",
             string,
-            width as usize,
-            prec = precision as usize
+            width,
+            prec = precision
         )
         .map_err(PrintfError::FmtError)
     } else {
@@ -297,8 +297,8 @@ fn write_str(
             w,
             "{:>1$.prec$}",
             string,
-            width as usize,
-            prec = precision as usize
+            width,
+            prec = precision
         )
         .map_err(PrintfError::FmtError)
     }
@@ -413,8 +413,8 @@ fn write_numeric(
 }
 
 /// Format a single value according to a printf-style % spec
-pub fn fmt<'guard>(
-    view: MutatorHeapView<'guard>,
+pub fn fmt(
+    view: MutatorHeapView<'_>,
     fmt_string: &str,
     nat: &Native,
 ) -> Result<String, PrintfError> {

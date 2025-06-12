@@ -65,10 +65,10 @@ impl StgIntrinsic for Sym {
         "SYM"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -114,10 +114,10 @@ impl StgIntrinsic for Str {
         )
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -161,10 +161,10 @@ impl StgIntrinsic for Join {
         )
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -186,10 +186,10 @@ impl StgIntrinsic for Match {
         "MATCH"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -221,10 +221,10 @@ impl StgIntrinsic for Matches {
         "MATCHES"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -256,10 +256,10 @@ impl StgIntrinsic for Split {
         "SPLIT"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -286,10 +286,10 @@ impl StgIntrinsic for NumParse {
         "NUMPARSE"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -392,10 +392,10 @@ impl StgIntrinsic for Fmt {
         )
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -421,10 +421,10 @@ impl StgIntrinsic for Letters {
         "LETTERS"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -459,10 +459,10 @@ impl StgIntrinsic for Upper {
         "UPPER"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -479,10 +479,10 @@ impl StgIntrinsic for Lower {
         "LOWER"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {

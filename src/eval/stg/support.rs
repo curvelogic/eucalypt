@@ -15,9 +15,9 @@ use crate::eval::{
 use crate::{common::sourcemap::Smid, eval::memory::syntax::*};
 
 /// Helper for intrinsics to access a numeric arg
-pub fn num_arg<'guard>(
+pub fn num_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<Number, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -30,9 +30,9 @@ pub fn num_arg<'guard>(
 
 /// Helper for intrinsics to access a str arg
 /// TODO: use &str
-pub fn str_arg<'guard>(
+pub fn str_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<String, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -45,9 +45,9 @@ pub fn str_arg<'guard>(
 
 /// Helper for intrinsics to access a sym arg
 /// TODO: use &str
-pub fn sym_arg<'guard>(
+pub fn sym_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<String, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -59,9 +59,9 @@ pub fn sym_arg<'guard>(
 }
 
 /// Helper for intrinsics to access a zoned date time arg
-pub fn zdt_arg<'guard>(
+pub fn zdt_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<DateTime<FixedOffset>, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -77,7 +77,7 @@ pub struct DataIterator<'scope> {
     view: MutatorHeapView<'scope>,
 }
 
-impl<'scope> Iterator for DataIterator<'scope> {
+impl Iterator for DataIterator<'_> {
     type Item = SynClosure;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -128,7 +128,7 @@ pub struct StrListIterator<'scope> {
     view: MutatorHeapView<'scope>,
 }
 
-impl<'scope> Iterator for StrListIterator<'scope> {
+impl Iterator for StrListIterator<'_> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {

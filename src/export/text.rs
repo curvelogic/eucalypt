@@ -16,7 +16,7 @@ impl<'a> TextEmitter<'a> {
     }
 }
 
-impl<'a> Emitter for TextEmitter<'a> {
+impl Emitter for TextEmitter<'_> {
     /// Emit text scalars
     fn emit(&mut self, event: Event) {
         if let Event::OutputScalar(_, prim) = event {

@@ -48,6 +48,6 @@ fn to_core(value: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
             .iter()
             .map(|(k, v)| to_core(v, file_id).map(|expr| (k.clone(), expr)))
             .collect::<Result<Vec<(String, RcExpr)>, SourceError>>()
-            .map(|entries| acore::block(entries.into_iter())),
+            .map(acore::block),
     }
 }

@@ -80,7 +80,7 @@ where
 pub type Ref = Reference<Native>;
 
 /// Compiled STG syntax
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub enum StgSyn {
     /// A single thing - either a reference into env or a native
     Atom { evaluand: Ref },
@@ -128,13 +128,8 @@ pub enum StgSyn {
         or_else: Rc<StgSyn>,
     },
     /// Blackhole - invalid / uninitialised code
+    #[default]
     BlackHole,
-}
-
-impl Default for StgSyn {
-    fn default() -> Self {
-        StgSyn::BlackHole
-    }
 }
 
 impl StgSyn {

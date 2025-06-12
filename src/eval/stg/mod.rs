@@ -128,20 +128,15 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
 }
 
 /// What type of render-wrapping to apply to the compiled code
-#[derive(StructOpt, Copy, Debug, Clone, PartialEq, Eq)]
+#[derive(StructOpt, Copy, Debug, Clone, PartialEq, Eq, Default)]
 pub enum RenderType {
     /// No rendering - calculate only
     Headless,
     /// Render a fragment (suitable for -e flag)
     RenderFragment,
     /// Render an entire document (source must be a block)
+    #[default]
     RenderDoc,
-}
-
-impl Default for RenderType {
-    fn default() -> Self {
-        RenderType::RenderDoc
-    }
 }
 
 impl FromStr for RenderType {

@@ -97,9 +97,11 @@ The project includes a sophisticated garbage collector:
 
 ## Code Quality Rules
 
-- **NEVER allow clippy warnings unless explicitly permitted by the user**
-- All clippy issues must be fixed, not suppressed with `#[allow()]` attributes
+- **ABSOLUTELY NEVER allow clippy warnings unless explicitly permitted by the user**
+- **ALL clippy issues must be fixed, not suppressed with `#[allow()]` attributes**
+- **Fix EVERY SINGLE clippy warning without exception**
 - Maintain strict code quality standards throughout the codebase
+- When asked to fix clippy issues, fix ALL of them systematically, not selectively
 
 ## Project Management
 

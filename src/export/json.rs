@@ -52,7 +52,7 @@ impl<'a> JsonEmitter<'a> {
     }
 }
 
-impl<'a> Emitter for JsonEmitter<'a> {
+impl Emitter for JsonEmitter<'_> {
     fn emit(&mut self, event: Event) {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {

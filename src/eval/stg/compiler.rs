@@ -83,7 +83,7 @@ pub struct Context<'a> {
     next: Option<&'a Context<'a>>,
 }
 
-impl<'a> Context<'a> {
+impl Context<'_> {
     /// The core expression representing an underlying scope, if not synthetic
     pub fn scope(&self) -> Option<&RcExpr> {
         self.scope.as_ref()

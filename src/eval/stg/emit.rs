@@ -36,10 +36,10 @@ impl StgIntrinsic for Emit0 {
         "EMIT0"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -60,10 +60,10 @@ impl StgIntrinsic for EmitT {
         "EMITT"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -84,10 +84,10 @@ impl StgIntrinsic for EmitF {
         "EMITF"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -108,10 +108,10 @@ impl StgIntrinsic for EmitNative {
         "EMITx"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -139,10 +139,10 @@ impl StgIntrinsic for EmitTagNative {
         "EMITTAGx"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -171,10 +171,10 @@ impl StgIntrinsic for EmitSeqStart {
         "EMIT["
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -195,10 +195,10 @@ impl StgIntrinsic for EmitTagSeqStart {
         "EMITTAG["
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -220,10 +220,10 @@ impl StgIntrinsic for EmitSeqEnd {
         "EMIT]"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -244,10 +244,10 @@ impl StgIntrinsic for EmitBlockStart {
         "EMIT{"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -268,10 +268,10 @@ impl StgIntrinsic for EmitTagBlockStart {
         "EMITTAG{"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -293,10 +293,10 @@ impl StgIntrinsic for EmitBlockEnd {
         "EMIT}"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -317,10 +317,10 @@ impl StgIntrinsic for EmitDocStart {
         "EMIT<"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -341,10 +341,10 @@ impl StgIntrinsic for EmitDocEnd {
         "EMIT>"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {

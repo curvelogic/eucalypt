@@ -84,10 +84,10 @@ impl StgIntrinsic for Zdt {
         "ZDT"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -169,10 +169,10 @@ impl StgIntrinsic for ZdtFields {
         "ZDT.FIELDS"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -279,10 +279,10 @@ impl StgIntrinsic for ZdtFromEpoch {
     }
 
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -355,10 +355,10 @@ impl StgIntrinsic for ZdtParse8601 {
     }
 
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -382,10 +382,10 @@ impl StgIntrinsic for ZdtFormat8601 {
     }
 
     /// Simply compose ZDT.FROM_EPOCH and ZDT.FIELDS
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {

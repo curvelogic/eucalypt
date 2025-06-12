@@ -85,7 +85,7 @@ fn value_to_core(edn: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
                 },
             )
             .collect::<Result<Vec<(String, RcExpr)>, SourceError>>()
-            .map(|entries| acore::block(entries.into_iter())),
+            .map(acore::block),
         Value::Set(xs) => xs
             .iter()
             .map(|v| value_to_core(v, file_id))
