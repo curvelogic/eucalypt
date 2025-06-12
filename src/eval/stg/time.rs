@@ -68,7 +68,7 @@ fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
             FixedOffset::east_opt(0).ok_or_else(|| ExecutionError::BadTimeZone(format!("{secs}")))
         }
     } else if let Ok(zone) = tz_str.parse::<Tz>() {
-        Ok(zone.ymd(2000, 1, 1).offset().fix())
+        Ok(zone.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap().offset().fix())
     } else if tz_str == "Z" {
         FixedOffset::east_opt(0).ok_or_else(|| ExecutionError::BadTimeZone(tz_str.to_string()))
     } else {
@@ -288,7 +288,7 @@ impl StgIntrinsic for ZdtFromEpoch {
     ) -> Result<(), ExecutionError> {
         let unix = num_arg(machine, view, &args[0])?;
         if let Some(ts) = unix.as_i64() {
-            let zdt = DateTime::from(Utc.timestamp(ts, 0));
+            let zdt = DateTime::from(Utc.timestamp_opt(ts, 0).unwrap());
             machine_return_zdt(machine, view, zdt)
         } else {
             Err(ExecutionError::BadTimestamp(unix))
@@ -328,23 +328,23 @@ fn zdt_from_str(repr: &str) -> Option<DateTime<FixedOffset>> {
         .or_else(|_| DateTime::parse_from_str(repr, "%Y%m%dT%H%M%S"))
         .or_else(|_| {
             repr.parse::<NaiveDateTime>()
-                .map(|dt| DateTime::from_utc(dt, FixedOffset::east(0)))
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, FixedOffset::east_opt(0).unwrap()))
         })
         .or_else(|_| {
             repr.parse::<NaiveDate>()
-                .map(|d| DateTime::from_utc(d.and_hms(0, 0, 0), FixedOffset::east(0)))
+                .map(|d| DateTime::from_naive_utc_and_offset(d.and_hms_opt(0, 0, 0).unwrap(), FixedOffset::east_opt(0).unwrap()))
         })
         .or_else(|_| {
             NaiveDateTime::parse_from_str(repr, "%Y%m%dT%H%M%S")
-                .map(|dt| DateTime::from_utc(dt, FixedOffset::east(0)))
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, FixedOffset::east_opt(0).unwrap()))
         })
         .or_else(|_| {
             NaiveDateTime::parse_from_str(repr, "%Y%m%dT%H%M")
-                .map(|dt| DateTime::from_utc(dt, FixedOffset::east(0)))
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, FixedOffset::east_opt(0).unwrap()))
         })
         .or_else(|_| {
             NaiveDate::parse_from_str(repr, "%Y%m%d")
-                .map(|d| DateTime::from_utc(d.and_hms(0, 0, 0), FixedOffset::east(0)))
+                .map(|d| DateTime::from_naive_utc_and_offset(d.and_hms_opt(0, 0, 0).unwrap(), FixedOffset::east_opt(0).unwrap()))
         })
         .ok()
 }
