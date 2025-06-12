@@ -265,3 +265,8 @@ pub fn test_harness_053() {
 pub fn test_harness_054() {
     run_test(&opts("054_qsort.eu"));
 }
+
+#[test]
+pub fn test_gc_001() {
+    run_test(&opts("gc/gc_001_basic_collection.eu"));
+}
