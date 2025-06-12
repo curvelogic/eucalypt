@@ -103,6 +103,21 @@ The project includes a sophisticated garbage collector:
 - Maintain strict code quality standards throughout the codebase
 - When asked to fix clippy issues, fix ALL of them systematically, not selectively
 
+## Development Workflow
+
+### Pre-Commit Checklist
+**ALWAYS run these commands before committing to avoid CI failures:**
+1. `cargo fmt` - Fix formatting issues
+2. `cargo clippy --lib -- -D warnings` - Fix all lint warnings
+3. `cargo test --lib` - Verify tests pass (when appropriate)
+4. `git commit` and `git push`
+
+### Security and Dependencies
+- Monitor dependabot alerts and fix security vulnerabilities promptly
+- Use `cargo update` to update dependencies within semver constraints
+- Replace deprecated dependencies with modern alternatives (e.g., `atty` → `std::io::IsTerminal`)
+- Fix deprecation warnings to maintain compatibility with newer dependency versions
+
 ## Project Management
 
 ### GitHub Project
@@ -112,5 +127,8 @@ The project includes a sophisticated garbage collector:
 
 ### GC Implementation
 - See `docs/gc-implementation.md` for comprehensive garbage collector documentation
-- Current implementation is feature-complete but requires production hardening
-- Key areas: error handling, long-running stability, performance monitoring
+- **Phase 1 COMPLETE**: Comprehensive GC test suite with 10 test scenarios covering all major functionality
+- **GC Tests Location**: `harness/test/gc/gc_001_*.eu` through `gc_010_*.eu`
+- **Test Integration**: Added to `tests/harness_test.rs` with functions `test_gc_001()` through `test_gc_010()`
+- **Current Status**: Feature-complete implementation, all tests passing, ready for production hardening
+- **Next Phase**: Error handling, long-running stability, performance monitoring
