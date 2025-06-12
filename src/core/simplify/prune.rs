@@ -15,9 +15,10 @@ pub fn prune(expr: &RcExpr) -> RcExpr {
     ScopeTracker::blank_unseen(&markable_expression)
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub enum SeenState {
     /// A node not yet seen or explored
+    #[default]
     Unseen,
     /// A node in the expression that has been traced to from a marked node
     Seen,
@@ -27,12 +28,6 @@ pub enum SeenState {
     /// A node that is seen and considered fully explored so all
     /// internal propagations have been done
     Traversed,
-}
-
-impl Default for SeenState {
-    fn default() -> Self {
-        SeenState::Unseen
-    }
 }
 
 /// Tracking data to keep track of which bindings are used and which

@@ -95,10 +95,10 @@ impl fmt::Display for Continuation {
 }
 
 impl GcScannable for Continuation {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
-        marker: &'b mut CollectorHeapView<'a>,
+        marker: &mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
         match self {

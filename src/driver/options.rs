@@ -11,16 +11,11 @@ use structopt::StructOpt;
 
 use super::project;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum CommandLineMode {
+    #[default]
     Ergonomic,
     Batch,
-}
-
-impl Default for CommandLineMode {
-    fn default() -> Self {
-        CommandLineMode::Ergonomic
-    }
 }
 
 impl CommandLineMode {

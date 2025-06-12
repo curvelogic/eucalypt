@@ -34,7 +34,7 @@ pub struct Initialiser<'a> {
     runtime: &'a dyn Runtime,
 }
 
-impl<'a> Mutator for Initialiser<'a> {
+impl Mutator for Initialiser<'_> {
     type Input = ();
     type Output = (RefPtr<EnvFrame>, RefPtr<EnvFrame>, SynClosure);
 

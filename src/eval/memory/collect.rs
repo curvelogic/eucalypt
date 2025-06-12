@@ -29,12 +29,12 @@ impl<'scope> ScanPtr<'scope> {
         ScanPtr::new(guard, unsafe { &*ptr.as_ptr() })
     }
 
-    pub fn as_ref(&self) -> &'scope dyn GcScannable {
+    pub fn get(&self) -> &'scope dyn GcScannable {
         self.value
     }
 }
 
-impl<'scope> std::fmt::Debug for ScanPtr<'scope> {
+impl std::fmt::Debug for ScanPtr<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:p}", self.value)
     }
@@ -45,18 +45,18 @@ pub trait CollectorScope {}
 
 /// A heap object that scanned for references to other heap objects
 pub trait GcScannable {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn CollectorScope,
-        marker: &'b mut CollectorHeapView<'a>,
+        marker: &mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>>;
 }
 
 impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn CollectorScope,
-        marker: &'b mut CollectorHeapView<'a>,
+        marker: &mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
         for p in self {
@@ -73,7 +73,7 @@ pub struct CollectorHeapView<'guard> {
     heap: &'guard mut Heap,
 }
 
-impl<'guard> CollectorHeapView<'guard> {
+impl CollectorHeapView<'_> {
     pub fn reset(&mut self) {
         self.heap.reset_region_marks();
     }
@@ -140,7 +140,7 @@ pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock, dump
     queue.extend(roots.scan(&scope, &mut heap_view).drain(..));
 
     while let Some(scanptr) = queue.pop_front() {
-        queue.extend(scanptr.as_ref().scan(&scope, &mut heap_view).drain(..));
+        queue.extend(scanptr.get().scan(&scope, &mut heap_view).drain(..));
     }
 
     if dump_heap {

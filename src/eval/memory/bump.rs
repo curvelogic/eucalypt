@@ -35,7 +35,7 @@ pub const LINE_SIZE_BYTES: usize = 1 << LINE_SIZE_BITS;
 pub const LINE_COUNT: usize = BLOCK_SIZE_BYTES / LINE_SIZE_BYTES;
 
 /// Maximum allocation size
-pub const MAX_ALLOC_SIZE: usize = std::u32::MAX as usize;
+pub const MAX_ALLOC_SIZE: usize = u32::MAX as usize;
 
 /// LineMap contains mark flags for each line
 #[derive(Default)]
@@ -206,7 +206,7 @@ impl Eq for BumpBlock {}
 
 impl PartialOrd for BumpBlock {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.block.as_ptr().partial_cmp(&other.block.as_ptr())
+        Some(self.cmp(other))
     }
 }
 
@@ -287,7 +287,7 @@ impl BumpBlock {
                 }
             } else {
                 self.cursor = next;
-                unsafe { Some(self.block.as_ptr().add(next) as *const u8) }
+                unsafe { Some(self.block.as_ptr().add(next)) }
             }
         }
     }

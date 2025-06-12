@@ -153,7 +153,7 @@ impl Ref {
 pub type LambdaForm = InfoTagged<RefPtr<HeapSyn>>;
 
 /// Compiled STG syntax
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum HeapSyn {
     /// A single thing - either a reference into env or a native
     Atom { evaluand: Ref },
@@ -197,16 +197,11 @@ pub enum HeapSyn {
         or_else: RefPtr<HeapSyn>,
     },
     /// Blackhole - invalid / uninitialised code
+    #[default]
     BlackHole,
 }
 
 impl StgObject for HeapSyn {}
-
-impl Default for HeapSyn {
-    fn default() -> Self {
-        HeapSyn::BlackHole
-    }
-}
 
 impl HeapSyn {
     /// Used to determine when to create thunks and when not
@@ -223,10 +218,10 @@ impl HeapSyn {
 }
 
 impl GcScannable for LambdaForm {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn CollectorScope,
-        marker: &'b mut CollectorHeapView<'a>,
+        marker: &mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let body = self.body();
         if marker.mark(body) {
@@ -238,10 +233,10 @@ impl GcScannable for LambdaForm {
 }
 
 impl GcScannable for HeapSyn {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn CollectorScope,
-        marker: &'b mut CollectorHeapView<'a>,
+        marker: &mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
 
@@ -415,7 +410,7 @@ pub mod repr {
 }
 
 /// Convert in-heap HeapSyn back to StgSyn for debugging
-impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
+impl Repr for ScopedPtr<'_, HeapSyn> {
     fn repr(&self) -> Rc<crate::eval::stg::syntax::StgSyn> {
         use crate::eval::stg::syntax::StgSyn;
 
@@ -476,7 +471,7 @@ impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
     }
 }
 
-impl<'guard> fmt::Display for ScopedPtr<'guard, HeapSyn> {
+impl fmt::Display for ScopedPtr<'_, HeapSyn> {
     /// Defer to STG syntax implementation
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.repr().fmt(f)

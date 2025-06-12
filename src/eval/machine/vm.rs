@@ -47,7 +47,7 @@ pub struct HeapNavigator<'scope> {
     view: MutatorHeapView<'scope>,
 }
 
-impl<'scope> HeapNavigator<'scope> {
+impl HeapNavigator<'_> {
     /// Resolve a ref (creating atom closure if it resolves to native)
     pub fn resolve(&self, r: &Ref) -> Result<SynClosure, ExecutionError> {
         match r {
@@ -296,9 +296,9 @@ impl MachineState {
 
     /// Return meta into a demeta destructuring or just strip metadata
     /// and continue
-    fn return_meta<'guard>(
+    fn return_meta(
         &mut self,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         meta: &Ref,
         body: &Ref,
     ) -> Result<(), ExecutionError> {
@@ -340,9 +340,9 @@ impl MachineState {
     }
 
     /// Return a native value into continuation or terminate
-    fn return_native<'guard>(
+    fn return_native(
         &mut self,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         value: &Native,
     ) -> Result<(), ExecutionError> {
         if let Some(cont) = self.stack.pop() {
@@ -397,9 +397,9 @@ impl MachineState {
     ///
     /// Data is destructured for tag handlers but not for the default
     /// handler which is used for natives and unknown data constructors.
-    fn return_data<'guard>(
+    fn return_data(
         &mut self,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         tag: Tag,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -434,7 +434,7 @@ impl MachineState {
                             view.from_closure(self.closure.clone(), environment, self.annotation),
                         );
                     } else {
-                        return Err(ExecutionError::NoBranchForDataTag(tag as u8));
+                        return Err(ExecutionError::NoBranchForDataTag(tag));
                     }
                 }
                 Continuation::Update { environment, index } => {
@@ -559,7 +559,7 @@ impl MachineState {
     }
 
     /// Trace of annotations in execution stack
-    pub fn stack_trace<'guard>(&self, view: &'guard MutatorHeapView) -> Vec<Smid> {
+    pub fn stack_trace(&self, view: &MutatorHeapView) -> Vec<Smid> {
         self.stack
             .iter()
             .rev()
@@ -614,10 +614,10 @@ impl IntrinsicMachine for MachineState {
 
 /// MachineState contains all the garbage collection roots
 impl GcScannable for MachineState {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn CollectorScope,
-        marker: &'b mut CollectorHeapView<'a>,
+        marker: &mut CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
 
@@ -674,9 +674,7 @@ impl<'a> Machine<'a> {
         dump_heap: bool,
     ) -> Self {
         Machine {
-            heap: heap_limit_mib
-                .map(Heap::with_limit)
-                .unwrap_or_else(|| Heap::new()),
+            heap: heap_limit_mib.map(Heap::with_limit).unwrap_or_default(),
             state: Default::default(),
             intrinsics: vec![],
             emitter,
@@ -807,7 +805,8 @@ impl<'a> Machine<'a> {
                 }
             }
 
-            if self.metrics.ticks() % gc_check_freq == 0 && self.heap().policy_requires_collection() {
+            if self.metrics.ticks() % gc_check_freq == 0 && self.heap().policy_requires_collection()
+            {
                 collect::collect(
                     &self.state,
                     &mut self.heap,

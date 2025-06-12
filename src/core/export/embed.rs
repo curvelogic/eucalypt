@@ -113,7 +113,7 @@ impl Embed for CoreExpr {
                 let mut args: Vec<Expression> = vec![];
                 for binder in binders {
                     let name = binder.0.pretty_name;
-                    args.push(lit(str(&name.unwrap())));
+                    args.push(lit(str(name.unwrap())));
                 }
 
                 let arg_list = list(args);

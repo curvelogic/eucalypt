@@ -74,7 +74,7 @@ pub struct Executor<'a> {
     err: Option<Box<dyn Write + 'a>>,
 }
 
-impl<'a> From<SourceLoader> for Executor<'a> {
+impl From<SourceLoader> for Executor<'_> {
     fn from(loader: SourceLoader) -> Self {
         let (files, source_map, evaluand) = loader.complete();
         Self::new(files, source_map, evaluand)

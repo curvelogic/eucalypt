@@ -41,7 +41,7 @@ pub struct ScopedPtr<'guard, T: Sized> {
     value: &'guard T,
 }
 
-impl<'guard, T: Sized> MutatorScope for ScopedPtr<'guard, T> {}
+impl<T: Sized> MutatorScope for ScopedPtr<'_, T> {}
 
 impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     pub fn new(_guard: &'guard dyn MutatorScope, value: &'guard T) -> ScopedPtr<'guard, T> {
@@ -57,7 +57,7 @@ impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     }
 }
 
-impl<'guard, T: Sized> Deref for ScopedPtr<'guard, T> {
+impl<T: Sized> Deref for ScopedPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {

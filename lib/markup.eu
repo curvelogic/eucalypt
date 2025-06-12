@@ -1,0 +1,41 @@
+"Facilities for working with hiccup style markup representations that
+encode XML, HTML etc."
+
+# Normalise
+
+` "When authored in eucalypt, a shorthand can be used to
+encode ids and classes in the tag name component. In this case the
+tag name must be either a string or a single-quoted symbol because
+of the `.` and `#` characters
+
+_classes_ can be embedded using `.`, e.g. `[:'a.big.red' ...]`
+An _id_ can be embedded using `#`, e.g. `[:'a#foo' ...]`
+
+Both syntaxes can be mixed.
+"
+deconstruct_head(text): {
+  parts: str.of(text) str.split-on("\b") remove(= "")
+  tag: parts head sym
+  qualifier(l): (head(l) = "#") then({id: l second}, {class: l second})
+  qualifiers: parts tail partition(2) map(qualifier) foldl(merge, {})
+}.[tag, qualifiers]
+
+` { target: :test-deconstruct-head }
+test: {
+  α: deconstruct_head("a#foo") = [:a, {id: "foo"}]
+  β: deconstruct_head("a.red.big") = [:a, {class: "red big"}]
+  γ: deconstruct_head("a.red#foo.big") = [:a, {id: "foo", class: "red big"}]
+
+  RESULT: (α ∧ β ∧ γ) then(:PASS, :FAIL)
+}
+
+# Accessors
+
+` "tag(element) - returns the tag"
+tag = head
+
+` "attrs(element) - return the attribute block for the tag"
+attrs = second
+
+` "content(element)" - return a list
+content = _ tail tail

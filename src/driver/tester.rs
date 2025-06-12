@@ -164,7 +164,7 @@ pub struct TestResult<'t> {
     pub statistics: Statistics,
 }
 
-impl<'t> fmt::Display for TestResult<'t> {
+impl fmt::Display for TestResult<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Target: {}", self.target.name())?;
         writeln!(f, "Format: {}", self.format)?;
@@ -219,10 +219,10 @@ impl InProcessTester {
     /// The evidence does not as yet constitute a pass or a fail as
     /// assertions might have been specified which validate the
     /// outputs recorded in evidence.yaml - e.g. the stderr or stdout.
-    fn create_evidence_yaml<'t>(
+    fn create_evidence_yaml(
         &self,
         plan: &TestPlan,
-        results: Vec<TestResult<'t>>,
+        results: Vec<TestResult<'_>>,
     ) -> Result<(), EucalyptError> {
         let mut inputs = vec![];
         let mut evidence_script = Vec::new();

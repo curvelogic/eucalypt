@@ -15,7 +15,7 @@ impl Timings {
     }
 
     pub fn merge(&mut self, other: Timings) {
-        self.timings.extend(other.timings.into_iter());
+        self.timings.extend(other.timings);
     }
 }
 

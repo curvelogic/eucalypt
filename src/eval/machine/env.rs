@@ -133,7 +133,7 @@ impl Closing<RefPtr<HeapSyn>> {
 
 pub struct ScopeAndClosure<'guard>(pub &'guard dyn MutatorScope, pub &'guard SynClosure);
 
-impl<'guard> fmt::Display for ScopeAndClosure<'guard> {
+impl fmt::Display for ScopeAndClosure<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let code = ScopedPtr::from_non_null(self.0, self.1.code());
         let env = ScopedPtr::from_non_null(self.0, self.1.env());
@@ -148,7 +148,7 @@ impl<'guard> fmt::Display for ScopeAndClosure<'guard> {
     }
 }
 
-impl<'guard> fmt::Display for ScopedPtr<'guard, SynClosure> {
+impl fmt::Display for ScopedPtr<'_, SynClosure> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         ScopeAndClosure(self, self).fmt(f)
     }
@@ -283,7 +283,7 @@ where
     }
 }
 
-impl<'guard, C> fmt::Display for ScopedPtr<'guard, EnvironmentFrame<C>>
+impl<C> fmt::Display for ScopedPtr<'_, EnvironmentFrame<C>>
 where
     C: Clone,
 {
@@ -306,14 +306,14 @@ where
     }
 }
 
-impl<'guard, C> fmt::Debug for ScopedPtr<'guard, EnvironmentFrame<C>>
+impl<C> fmt::Debug for ScopedPtr<'_, EnvironmentFrame<C>>
 where
     C: Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.bindings.len();
 
-        match (*self).next {
+        match self.next {
             None => {
                 write!(f, "[{:p} × {}]→•", self.as_ptr(), len)
             }
@@ -329,10 +329,10 @@ where
 pub type SynClosure = Closing<RefPtr<HeapSyn>>;
 
 impl GcScannable for SynClosure {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
-        marker: &'b mut crate::eval::memory::collect::CollectorHeapView<'a>,
+        marker: &mut crate::eval::memory::collect::CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
 
@@ -355,10 +355,10 @@ pub type EnvFrame = EnvironmentFrame<SynClosure>;
 impl StgObject for EnvFrame {}
 
 impl GcScannable for EnvFrame {
-    fn scan<'a, 'b>(
+    fn scan<'a>(
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
-        marker: &'b mut crate::eval::memory::collect::CollectorHeapView<'a>,
+        marker: &mut crate::eval::memory::collect::CollectorHeapView<'a>,
     ) -> Vec<ScanPtr<'a>> {
         let mut grey = vec![];
 

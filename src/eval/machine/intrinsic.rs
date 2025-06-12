@@ -74,10 +74,10 @@ pub trait StgIntrinsic: Sync {
     /// already evaluated (by the corresponding global wrapper) but must
     /// take care of updating the machine's closure and stack as
     /// appropriate to constitute a return.
-    fn execute<'guard>(
+    fn execute(
         &self,
         _machine: &mut dyn IntrinsicMachine,
-        _heap: MutatorHeapView<'guard>,
+        _heap: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {

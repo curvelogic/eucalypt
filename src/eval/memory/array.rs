@@ -25,10 +25,7 @@ pub struct RawArray<T: Sized> {
 
 impl<T: Sized> Clone for RawArray<T> {
     fn clone(&self) -> Self {
-        RawArray {
-            capacity: self.capacity,
-            ptr: self.ptr,
-        }
+        *self
     }
 }
 
@@ -116,7 +113,7 @@ impl<T: Sized> RawArray<T> {
             Ok(None)
         } else {
             let capacity_bytes = capacity
-                .checked_mul(size_of::<T>() as usize)
+                .checked_mul(size_of::<T>())
                 .ok_or(ExecutionError::AllocationError)?;
             Ok(RefPtr::new(
                 mem.alloc_bytes(capacity_bytes)?.as_ptr() as *mut T
@@ -208,7 +205,7 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
-    pub fn pop_n<'guard, G, V, F>(&mut self, _scope: &'guard G, _n: usize, _consumer: F) -> V
+    pub fn pop_n<G, V, F>(&mut self, _scope: &G, _n: usize, _consumer: F) -> V
     where
         F: Fn(&[T]) -> V,
         G: MutatorScope,

@@ -82,7 +82,7 @@ pub trait EnvBuilder {
     ) -> Result<Array<SynClosure>, ExecutionError>;
 }
 
-impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
+impl EnvBuilder for MutatorHeapView<'_> {
     /// Allocate an env frame for a set of bindings coming from an
     /// argument list
     fn from_saturation(
