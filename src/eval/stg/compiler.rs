@@ -760,7 +760,6 @@ impl ProtoSyntax for ProtoInline {
     ///
     /// We need an optimisation pass to eliminate needless lets as
     /// they're only refs to elsewhere
-
     fn take_syntax(
         &mut self,
         _compiler: &Compiler,
