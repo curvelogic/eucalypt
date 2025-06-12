@@ -275,3 +275,8 @@ pub fn test_gc_001() {
 pub fn test_gc_002() {
     run_test(&opts("gc/gc_002_stress_allocation.eu"));
 }
+
+#[test]
+pub fn test_gc_003() {
+    run_test(&opts("gc/gc_003_memory_pressure.eu"));
+}
