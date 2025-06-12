@@ -1,0 +1,50 @@
+---
+title: gc_003_memory_pressure
+filename: /Users/greg/dev/curvelogic/eucalypt/harness/test/gc/gc_003_memory_pressure.eu
+tests:
+  test-memory-pressure-yaml:
+    exit: 0
+    stdout:
+      - "---"
+      - "small-count: true"
+      - "medium-count: true"
+      - "large-count: true"
+      - "small-first-id: true"
+      - "small-last-id: true"
+      - "medium-first-id: true"
+      - "large-first-id: true"
+      - "small-buffer-size: true"
+      - "medium-buffer-size: true"
+      - "large-buffer-size: true"
+      - "small-size-class: true"
+      - "medium-size-class: true"
+      - "large-size-class: true"
+      - "total-pressure-objects: true"
+    stderr: []
+    result:
+      small-count: true
+      medium-count: true
+      large-count: true
+      small-first-id: true
+      small-last-id: true
+      medium-first-id: true
+      large-first-id: true
+      small-buffer-size: true
+      medium-buffer-size: true
+      large-buffer-size: true
+      small-size-class: true
+      medium-size-class: true
+      large-size-class: true
+      total-pressure-objects: true
+    expectations:
+      - name: verify-memory-pressure
+        function-key: verify-memory-pressure
+    stats:
+      ticks: 6896
+      allocs: 906
+      max-stack: 37
+    validation:
+      - name: verify-memory-pressure
+        function-key: verify-memory-pressure
+        result: PASS
+overall: PASS

@@ -187,10 +187,10 @@ impl StgIntrinsic for Mod {
         "MOD"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -200,12 +200,12 @@ impl StgIntrinsic for Mod {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let product = l
                 .checked_rem(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let product = l
                 .checked_rem(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l % r) {

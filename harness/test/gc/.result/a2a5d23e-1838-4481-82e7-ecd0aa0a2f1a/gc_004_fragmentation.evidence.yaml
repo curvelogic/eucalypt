@@ -1,0 +1,45 @@
+---
+title: gc_004_fragmentation
+filename: /Users/greg/dev/curvelogic/eucalypt/harness/test/gc/gc_004_fragmentation.eu
+tests:
+  test-fragmentation-yaml:
+    exit: 0
+    stdout:
+      - "---"
+      - "total-objects: true"
+      - "small-frag-count: true"
+      - "medium-frag-count: true"
+      - "large-frag-count: true"
+      - "small-frag-first-id: true"
+      - "medium-frag-first-id: true"
+      - "large-frag-first-id: true"
+      - "small-frag-buffer-size: true"
+      - "medium-frag-buffer-size: true"
+      - "large-frag-buffer-size: true"
+      - "small-frag-type: true"
+      - "medium-frag-type: true"
+      - "large-frag-type: true"
+      - "pattern-integrity: true"
+    stderr: []
+    result:
+      total-objects: true
+      small-frag-count: true
+      medium-frag-count: true
+      large-frag-count: true
+      small-frag-first-id: true
+      medium-frag-first-id: true
+      large-frag-first-id: true
+      small-frag-buffer-size: true
+      medium-frag-buffer-size: true
+      large-frag-buffer-size: true
+      small-frag-type: true
+      medium-frag-type: true
+      large-frag-type: true
+      pattern-integrity: true
+    expectations:
+      - name: verify-fragmentation
+        function-key: verify-fragmentation
+    stats:
+      ticks: 7054
+      allocs: 926
+      max-stack: 31
