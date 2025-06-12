@@ -280,3 +280,8 @@ pub fn test_gc_002() {
 pub fn test_gc_003() {
     run_test(&opts("gc/gc_003_memory_pressure.eu"));
 }
+
+#[test]
+pub fn test_gc_004() {
+    run_test(&opts("gc/gc_004_fragmentation.eu"));
+}
