@@ -60,8 +60,8 @@ impl Block {
     }
 
     /// Fill areas that are meant to be dead with 0xff to aid debugging
-    #[cfg(debug_assertions)]
     pub fn fill(&self, offset_bytes: usize, size_bytes: usize) {
+        #[cfg(debug_assertions)]
         unsafe {
             let start = self.ptr.as_ptr().add(offset_bytes);
             let mem = std::slice::from_raw_parts_mut(start, size_bytes);

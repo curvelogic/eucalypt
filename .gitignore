@@ -4,3 +4,8 @@
 /harness/test/.result/
 /src/syntax/grammar.rs
 /src/syntax/string_pattern.rs
+
+# Temporary files
+.DS_Store
+.cache/
+test.eu
