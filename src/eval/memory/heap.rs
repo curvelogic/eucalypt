@@ -9,7 +9,7 @@ use std::{ptr::write, slice::from_raw_parts_mut};
 use super::bump::BLOCK_SIZE_BYTES;
 use super::{
     alloc::{Allocator, MutatorScope},
-    bump::{self, AllocError, BumpBlock},
+    bump::{self, BumpBlock},
     header::AllocHeader,
     lob::LargeObjectBlock,
 };
@@ -179,6 +179,44 @@ impl HeapState {
     }
 }
 
+/// Heap-level errors for memory allocation and management
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum HeapError {
+    /// Out of memory - no more blocks can be allocated
+    OutOfMemory,
+    /// Emergency collection failed to free sufficient memory
+    EmergencyCollectionFailed,
+    /// Invalid allocation size requested
+    InvalidAllocationSize,
+    /// Heap fragmentation prevents allocation despite available memory
+    FragmentationError,
+    /// Block allocation failure from underlying allocator
+    BlockAllocationFailed,
+}
+
+impl std::fmt::Display for HeapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HeapError::OutOfMemory => write!(f, "out of memory"),
+            HeapError::EmergencyCollectionFailed => write!(f, "emergency collection failed to free sufficient memory"),
+            HeapError::InvalidAllocationSize => write!(f, "invalid allocation size"),
+            HeapError::FragmentationError => write!(f, "heap fragmentation prevents allocation"),
+            HeapError::BlockAllocationFailed => write!(f, "block allocation failed"),
+        }
+    }
+}
+
+impl std::error::Error for HeapError {}
+
+impl From<super::bump::AllocError> for HeapError {
+    fn from(e: super::bump::AllocError) -> Self {
+        match e {
+            super::bump::AllocError::OOM => HeapError::OutOfMemory,
+            super::bump::AllocError::BadRequest => HeapError::InvalidAllocationSize,
+        }
+    }
+}
+
 /// A heap (with interior mutability)
 pub struct Heap {
     state: UnsafeCell<HeapState>,
@@ -216,15 +254,36 @@ mod oom_tests {
         let result = heap.find_space(64);
         assert!(result.is_ok(), "Small allocation should succeed");
         
-        // Test very large allocation (should return error, not panic)
-        let result = heap.find_space(usize::MAX);
-        // This might succeed or fail depending on system memory, but it should not panic
+        // Test allocation that should exceed block size limits
+        let result = heap.find_space(BLOCK_SIZE_BYTES * 2); // Larger than single block
+        // This should either succeed or return HeapError, not panic
         match result {
             Ok(_) => println!("Large allocation succeeded (system has lots of memory)"),
+            Err(HeapError::OutOfMemory) => println!("Large allocation failed gracefully with OutOfMemory"),
             Err(e) => println!("Large allocation failed gracefully: {:?}", e),
         }
         
-        println!("✅ find_space returns Results instead of panicking");
+        println!("✅ find_space returns HeapError Results instead of panicking");
+    }
+
+    #[test]
+    fn test_heap_error_conversions() {
+        // Test HeapError conversions
+        use super::bump::AllocError;
+        
+        // Test bump error conversion
+        let heap_err: HeapError = AllocError::OOM.into();
+        assert_eq!(heap_err, HeapError::OutOfMemory);
+        
+        let heap_err: HeapError = AllocError::BadRequest.into();
+        assert_eq!(heap_err, HeapError::InvalidAllocationSize);
+        
+        // Test ExecutionError conversion
+        use crate::eval::error::ExecutionError;
+        let exec_err: ExecutionError = HeapError::OutOfMemory.into();
+        matches!(exec_err, ExecutionError::AllocationError);
+        
+        println!("✅ HeapError conversions working correctly");
     }
 }
 
@@ -276,7 +335,7 @@ impl Heap {
 
 impl Allocator for Heap {
     /// Allocate an object into the backing bump blocks
-    fn alloc<T>(&self, object: T) -> Result<NonNull<T>, super::bump::AllocError>
+    fn alloc<T>(&self, object: T) -> Result<NonNull<T>, HeapError>
     where
         T: super::alloc::StgObject,
     {
@@ -297,9 +356,9 @@ impl Allocator for Heap {
     }
 
     /// Allocate a region of bytes (for array / vector implementations)
-    fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, super::bump::AllocError> {
+    fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, HeapError> {
         if size_bytes > u32::MAX as usize {
-            return Err(AllocError::BadRequest);
+            return Err(HeapError::InvalidAllocationSize);
         }
 
         let header_size = size_of::<AllocHeader>();
@@ -336,12 +395,12 @@ impl Allocator for Heap {
 
 impl Heap {
     /// Allocate space, with emergency collection on failure
-    fn find_space(&self, size_bytes: usize) -> Result<*const u8, super::bump::AllocError> {
+    fn find_space(&self, size_bytes: usize) -> Result<*const u8, HeapError> {
         self.find_space_impl(size_bytes)
     }
 
     /// Internal implementation of space finding
-    fn find_space_impl(&self, size_bytes: usize) -> Result<*const u8, super::bump::AllocError> {
+    fn find_space_impl(&self, size_bytes: usize) -> Result<*const u8, HeapError> {
         let heap_state = unsafe { &mut *self.state.get() };
         let head = heap_state.head();
 
@@ -354,11 +413,11 @@ impl Heap {
                 .overflow()
                 .bump(size_bytes)
                 .or_else(|| heap_state.replace_overflow().bump(size_bytes))
-                .ok_or(super::bump::AllocError::OOM)?,
+                .ok_or(HeapError::OutOfMemory)?,
             _ => head
                 .bump(size_bytes)
                 .or_else(|| heap_state.replace_head().bump(size_bytes))
-                .ok_or(super::bump::AllocError::OOM)?,
+                .ok_or(HeapError::OutOfMemory)?,
         };
 
         Ok(space)
