@@ -15,10 +15,12 @@ Eucalypt is a Rust-based tool and language for generating, templating, rendering
 - `cargo install --path .` - Install local `eu` binary
 
 ### Testing
-- `cargo test` - Run all tests including the comprehensive harness test suite
+- `RUST_TEST_THREADS=1 cargo test` - Run all tests (recommended due to global GC mark state)
 - `cargo test test_harness_001` - Run a specific harness test (e.g., test 001)
 - `cargo test --test harness_test` - Run only the harness tests
 - `cargo bench` - Run benchmarks (located in `benches/`)
+
+**Important**: Use `RUST_TEST_THREADS=1` for reliable test execution due to global mark state in the garbage collector that can cause race conditions in concurrent test execution.
 
 ### Build System
 - The project uses LALRPOP for parser generation (configured in `build.rs`)
@@ -109,7 +111,7 @@ The project includes a sophisticated garbage collector:
 **ALWAYS run these commands before committing to avoid CI failures:**
 1. `cargo fmt` - Fix formatting issues
 2. `cargo clippy --lib -- -D warnings` - Fix all lint warnings
-3. `cargo test --lib` - Verify tests pass (when appropriate)
+3. `RUST_TEST_THREADS=1 cargo test --lib` - Verify tests pass (when appropriate)
 4. `git commit` and `git push`
 
 ### Security and Dependencies

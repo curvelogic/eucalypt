@@ -299,7 +299,7 @@ pub mod tests {
         assert_eq!(mark_state(), false);
     }
 
-    #[test] 
+    #[test]
     pub fn test_simple_collection_with_isolation() {
         use crate::eval::memory::mark::{mark_state, flip_mark_state};
         
