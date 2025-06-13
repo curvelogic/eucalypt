@@ -329,7 +329,7 @@ Based on analysis of the original Immix paper (Blackburn & McKinley, 2008) and c
 - Block evacuation
 - Fragmentation-based collection decisions
 - Moving/copying collection phases
-- Lazy sweeping optimization
+- Lazy sweeping optimisation
 
 ### Performance Implications
 

@@ -117,6 +117,9 @@ impl From<super::memory::heap::HeapError> for ExecutionError {
             super::memory::heap::HeapError::BlockAllocationFailed => {
                 ExecutionError::AllocationError
             }
+            super::memory::heap::HeapError::EmergencyCollectionInsufficient => {
+                ExecutionError::AllocationError
+            }
         }
     }
 }

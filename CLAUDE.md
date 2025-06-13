@@ -103,6 +103,11 @@ The project includes a sophisticated garbage collector:
 - Maintain strict code quality standards throughout the codebase
 - When asked to fix clippy issues, fix ALL of them systematically, not selectively
 
+## Language and Style
+
+- **Use UK English spelling**: optimisation (not optimization), utilisation (not utilization), colour (not color), etc.
+- **Comments and documentation**: Follow UK English conventions throughout
+
 ## Development Workflow
 
 ### Pre-Commit Checklist

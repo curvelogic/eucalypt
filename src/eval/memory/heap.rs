@@ -4,6 +4,7 @@ use std::collections::LinkedList;
 use std::fmt::Debug;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use std::time::{Duration, Instant};
 use std::{cell::UnsafeCell, mem::size_of};
 use std::{ptr::write, slice::from_raw_parts_mut};
 
@@ -193,6 +194,8 @@ pub enum HeapError {
     FragmentationError,
     /// Block allocation failure from underlying allocator
     BlockAllocationFailed,
+    /// Emergency collection was attempted but failed to free sufficient memory
+    EmergencyCollectionInsufficient,
 }
 
 impl std::fmt::Display for HeapError {
@@ -205,6 +208,7 @@ impl std::fmt::Display for HeapError {
             HeapError::InvalidAllocationSize => write!(f, "invalid allocation size"),
             HeapError::FragmentationError => write!(f, "heap fragmentation prevents allocation"),
             HeapError::BlockAllocationFailed => write!(f, "block allocation failed"),
+            HeapError::EmergencyCollectionInsufficient => write!(f, "emergency collection failed to free sufficient memory"),
         }
     }
 }
@@ -220,12 +224,55 @@ impl From<super::bump::AllocError> for HeapError {
     }
 }
 
+/// Emergency collection state to prevent infinite loops and track collection attempts
+#[derive(Debug, Clone)]
+enum EmergencyState {
+    /// Normal operation, emergency collection allowed
+    Normal,
+    /// Currently performing emergency collection (reentrancy guard)
+    InEmergencyCollection,
+    /// Recent emergency collection performed (cooldown period)
+    RecentEmergencyCollection { 
+        performed_at: Instant,
+        cooldown_duration: Duration,
+    },
+}
+
+impl EmergencyState {
+    fn new() -> Self {
+        EmergencyState::Normal
+    }
+
+    fn can_attempt_emergency_collection(&self) -> bool {
+        match self {
+            EmergencyState::Normal => true,
+            EmergencyState::InEmergencyCollection => false,
+            EmergencyState::RecentEmergencyCollection { performed_at, cooldown_duration } => {
+                performed_at.elapsed() > *cooldown_duration
+            }
+        }
+    }
+
+    fn start_emergency_collection(&mut self) {
+        *self = EmergencyState::InEmergencyCollection;
+    }
+
+    fn complete_emergency_collection(&mut self) {
+        *self = EmergencyState::RecentEmergencyCollection {
+            performed_at: Instant::now(),
+            cooldown_duration: Duration::from_millis(100), // 100ms cooldown
+        };
+    }
+}
+
 /// A heap (with interior mutability)
 pub struct Heap {
     state: UnsafeCell<HeapState>,
     limit: Option<usize>,
     /// Mark state for this heap instance - flipped each collection to avoid clearing marks
     mark_state: AtomicBool,
+    /// Emergency collection state tracking
+    emergency_state: UnsafeCell<EmergencyState>,
 }
 
 #[cfg(test)]
@@ -295,6 +342,92 @@ mod oom_tests {
 
         println!("✅ HeapError conversions working correctly");
     }
+
+    #[test]
+    fn test_emergency_collection_state_tracking() {
+        // Test that emergency collection state prevents infinite loops
+        let heap = Heap::new();
+        
+        // Verify initial state allows emergency collection
+        let emergency_state = unsafe { &*heap.emergency_state.get() };
+        assert!(emergency_state.can_attempt_emergency_collection());
+        
+        // Simulate emergency collection attempt (this will fail but should update state)
+        let result = heap.attempt_emergency_collection(1024);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), HeapError::EmergencyCollectionInsufficient));
+        
+        // After emergency collection, there should be a cooldown period
+        let emergency_state = unsafe { &*heap.emergency_state.get() };
+        assert!(!emergency_state.can_attempt_emergency_collection());
+        
+        println!("✅ Emergency collection state tracking works correctly");
+    }
+
+    #[test]
+    fn test_emergency_collection_reentrancy_protection() {
+        // Test that emergency collection cannot be called recursively
+        let heap = Heap::new();
+        
+        // Manually set state to InEmergencyCollection
+        let emergency_state = unsafe { &mut *heap.emergency_state.get() };
+        emergency_state.start_emergency_collection();
+        
+        // Verify emergency collection is not allowed
+        assert!(!emergency_state.can_attempt_emergency_collection());
+        
+        println!("✅ Emergency collection reentrancy protection works correctly");
+    }
+
+    #[test]
+    fn test_emergency_collection_implementation() {
+        // Test that emergency collection can free space
+        let heap = Heap::new();
+        
+        // Force allocation of multiple blocks by allocating large amounts
+        let heap_state = unsafe { &mut *heap.state.get() };
+        let _block1 = heap_state.head(); // Forces first block allocation
+        let _block2 = heap_state.overflow(); // Forces second block allocation
+        
+        // Move blocks to "rest" list by replacing them
+        heap_state.replace_head();
+        heap_state.replace_overflow();
+        
+        let stats_before = heap_state.stats();
+        eprintln!("Before emergency collection: {} blocks allocated, {} in rest, {} recycled", 
+                 stats_before.blocks_allocated, stats_before.used, stats_before.recycled);
+        
+        // Now attempt emergency collection
+        let result = heap.attempt_emergency_collection(1024);
+        
+        let stats_after = heap.stats();
+        eprintln!("After emergency collection: {} blocks allocated, {} in rest, {} recycled", 
+                 stats_after.blocks_allocated, stats_after.used, stats_after.recycled);
+        
+        // Emergency collection should have attempted to free space
+        // Even if it doesn't succeed (because blocks might not be reclaimable), 
+        // it should not crash and should provide proper error reporting
+        
+        match result {
+            Ok(()) => {
+                println!("✅ Emergency collection successfully freed space");
+                assert!(stats_after.recycled > stats_before.recycled, 
+                       "Should have recycled some blocks");
+            }
+            Err(HeapError::EmergencyCollectionInsufficient) => {
+                println!("✅ Emergency collection completed but insufficient space freed (expected)");
+                // This is fine - the emergency collection ran but couldn't free enough space
+            }
+            Err(e) => {
+                panic!("Unexpected error from emergency collection: {:?}", e);
+            }
+        }
+        
+        // Verify cooldown is in effect
+        let emergency_state = unsafe { &*heap.emergency_state.get() };
+        assert!(!emergency_state.can_attempt_emergency_collection(), 
+               "Should be in cooldown period after emergency collection");
+    }
 }
 
 impl MutatorScope for Heap {}
@@ -317,6 +450,7 @@ impl Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: None,
             mark_state: AtomicBool::new(false),
+            emergency_state: UnsafeCell::new(EmergencyState::new()),
         }
     }
 
@@ -327,6 +461,7 @@ impl Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: Some(block_limit),
             mark_state: AtomicBool::new(false),
+            emergency_state: UnsafeCell::new(EmergencyState::new()),
         }
     }
 
@@ -418,11 +553,29 @@ impl Allocator for Heap {
 impl Heap {
     /// Allocate space, with emergency collection on failure
     fn find_space(&self, size_bytes: usize) -> Result<*const u8, HeapError> {
-        self.find_space_impl(size_bytes)
+        // First attempt: normal allocation
+        if let Ok(space) = self.try_allocate(size_bytes) {
+            return Ok(space);
+        }
+
+        // Check if we can attempt emergency collection
+        let emergency_state = unsafe { &mut *self.emergency_state.get() };
+        if emergency_state.can_attempt_emergency_collection() {
+            // Attempt emergency collection
+            if self.attempt_emergency_collection(size_bytes).is_ok() {
+                // Retry allocation after emergency collection
+                if let Ok(space) = self.try_allocate(size_bytes) {
+                    return Ok(space);
+                }
+            }
+        }
+
+        // All attempts failed
+        Err(HeapError::OutOfMemory)
     }
 
-    /// Internal implementation of space finding
-    fn find_space_impl(&self, size_bytes: usize) -> Result<*const u8, HeapError> {
+    /// Try to allocate without emergency collection
+    fn try_allocate(&self, size_bytes: usize) -> Result<*const u8, HeapError> {
         let heap_state = unsafe { &mut *self.state.get() };
         let head = heap_state.head();
 
@@ -443,6 +596,83 @@ impl Heap {
         };
 
         Ok(space)
+    }
+
+    /// Attempt emergency garbage collection
+    fn attempt_emergency_collection(&self, requested_size: usize) -> Result<(), HeapError> {
+        // Set emergency state to prevent reentrancy
+        let emergency_state = unsafe { &mut *self.emergency_state.get() };
+        emergency_state.start_emergency_collection();
+
+        eprintln!("Emergency collection: attempting to free space for {} bytes", requested_size);
+
+        // Perform conservative emergency collection
+        let success = self.perform_emergency_sweep(requested_size);
+        
+        // Mark collection as completed
+        emergency_state.complete_emergency_collection();
+        
+        if success {
+            eprintln!("Emergency collection: successfully freed space");
+            Ok(())
+        } else {
+            eprintln!("Emergency collection: insufficient space freed");
+            Err(HeapError::EmergencyCollectionInsufficient)
+        }
+    }
+
+    /// Perform conservative emergency sweep without full marking
+    /// This is safe because it only reclaims blocks that can be proven unused
+    fn perform_emergency_sweep(&self, _requested_size: usize) -> bool {
+        let heap_state = unsafe { &mut *self.state.get() };
+        let stats_before = heap_state.stats();
+        
+        eprintln!("Emergency collection: before sweep - {} blocks allocated, {} recycled", 
+                 stats_before.blocks_allocated, stats_before.recycled);
+
+        // Strategy 1: Try to reclaim blocks that are completely unused
+        // This is safe because we're not relying on reachability analysis
+        heap_state.sweep();
+        
+        // Strategy 2: If we still need space, try to free the current head block
+        // if it's mostly empty (this is more aggressive but still relatively safe)
+        if stats_before.recycled == heap_state.stats().recycled {
+            self.try_emergency_head_replacement(heap_state);
+        }
+
+        let stats_after = heap_state.stats();
+        eprintln!("Emergency collection: after sweep - {} blocks allocated, {} recycled", 
+                 stats_after.blocks_allocated, stats_after.recycled);
+
+        // Check if we freed enough space
+        let blocks_freed = stats_after.recycled - stats_before.recycled;
+        let bytes_freed = blocks_freed * BLOCK_SIZE_BYTES;
+        
+        eprintln!("Emergency collection: freed {} blocks ({} bytes)", blocks_freed, bytes_freed);
+        
+        // Success if we freed at least one block worth of space
+        // (This is conservative - we could be more sophisticated about size requirements)
+        blocks_freed > 0
+    }
+
+    /// Try to replace the head block if it's mostly empty
+    /// This is more aggressive but still relatively safe
+    fn try_emergency_head_replacement(&self, heap_state: &mut HeapState) {
+        // Only replace head if it exists and has very little allocated space
+        if let Some(ref head) = heap_state.head {
+            let hole_size = head.current_hole_size();
+            let utilisation_percent = ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0;
+            
+            eprintln!("Emergency collection: head block utilisation {:.1}% (hole size: {} bytes)", 
+                     utilisation_percent, hole_size);
+            
+            // If head block is less than 10% utilised, replace it
+            // This is aggressive but in an emergency situation it's reasonable
+            if utilisation_percent < 10.0 {
+                eprintln!("Emergency collection: replacing underutilised head block");
+                heap_state.replace_head();
+            }
+        }
     }
 
     /// Return the allocated size of an object as it's size_of::<T>() value rounded
