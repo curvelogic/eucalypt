@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use std::{cell::UnsafeCell, mem::size_of};
 use std::{ptr::write, slice::from_raw_parts_mut};
 
-use super::bump::BLOCK_SIZE_BYTES;
+use super::bump::{BLOCK_SIZE_BYTES, MAX_ALLOC_SIZE};
 use super::{
     alloc::{Allocator, MutatorScope},
     bump::{self, BumpBlock},
@@ -181,34 +181,176 @@ impl HeapState {
     }
 }
 
-/// Heap-level errors for memory allocation and management
-#[derive(Debug, PartialEq, Eq, Clone)]
+/// Detailed heap context for error diagnostics
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeapContext {
+    /// Total blocks allocated
+    pub blocks_allocated: usize,
+    /// Blocks in use (not reclaimed)
+    pub blocks_used: usize,
+    /// Blocks recycled and available for reuse
+    pub blocks_recycled: usize,
+    /// Large object blocks allocated
+    pub lobs_allocated: usize,
+    /// Requested allocation size that failed
+    pub requested_size: usize,
+    /// Size class of the failed allocation
+    pub size_class: SizeClass,
+    /// Current head block utilisation percentage (if exists)
+    pub head_utilisation_percent: Option<f64>,
+    /// Current overflow block utilisation percentage (if exists)
+    pub overflow_utilisation_percent: Option<f64>,
+    /// Emergency collection attempts made
+    pub emergency_collections_attempted: bool,
+    /// Heap limit (if configured)
+    pub heap_limit: Option<usize>,
+}
+
+impl HeapContext {
+    /// Calculate memory utilisation percentage
+    pub fn memory_utilisation_percent(&self) -> f64 {
+        if self.blocks_allocated == 0 {
+            0.0
+        } else {
+            (self.blocks_used as f64 / self.blocks_allocated as f64) * 100.0
+        }
+    }
+
+    /// Calculate fragmentation indicator (lower recycled ratio = more fragmented)
+    pub fn fragmentation_indicator(&self) -> f64 {
+        if self.blocks_allocated == 0 {
+            0.0
+        } else {
+            (self.blocks_recycled as f64 / self.blocks_allocated as f64) * 100.0
+        }
+    }
+
+    /// Total heap size in bytes
+    pub fn total_heap_bytes(&self) -> usize {
+        self.blocks_allocated * BLOCK_SIZE_BYTES
+    }
+
+    /// Used heap size in bytes
+    pub fn used_heap_bytes(&self) -> usize {
+        self.blocks_used * BLOCK_SIZE_BYTES
+    }
+}
+
+/// Heap-level errors for memory allocation and management with detailed context
+#[derive(Debug, Clone)]
 pub enum HeapError {
     /// Out of memory - no more blocks can be allocated
-    OutOfMemory,
+    OutOfMemory { context: HeapContext },
     /// Emergency collection failed to free sufficient memory
-    EmergencyCollectionFailed,
+    EmergencyCollectionFailed { context: HeapContext },
     /// Invalid allocation size requested
-    InvalidAllocationSize,
+    InvalidAllocationSize { 
+        requested_size: usize,
+        max_size: usize,
+    },
     /// Heap fragmentation prevents allocation despite available memory
-    FragmentationError,
+    FragmentationError { context: HeapContext },
     /// Block allocation failure from underlying allocator
-    BlockAllocationFailed,
+    BlockAllocationFailed { context: HeapContext },
     /// Emergency collection was attempted but failed to free sufficient memory
-    EmergencyCollectionInsufficient,
+    EmergencyCollectionInsufficient { context: HeapContext },
 }
 
 impl std::fmt::Display for HeapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HeapError::OutOfMemory => write!(f, "out of memory"),
-            HeapError::EmergencyCollectionFailed => {
-                write!(f, "emergency collection failed to free sufficient memory")
+            HeapError::OutOfMemory { context } => {
+                write!(
+                    f,
+                    "out of memory: failed to allocate {} bytes ({:?}) | heap: {:.1}% used ({}/{} blocks), {:.1}% fragmented, {} LOBs{}{}",
+                    context.requested_size,
+                    context.size_class,
+                    context.memory_utilisation_percent(),
+                    context.blocks_used,
+                    context.blocks_allocated,
+                    context.fragmentation_indicator(),
+                    context.lobs_allocated,
+                    if let Some(limit) = context.heap_limit {
+                        format!(" | limit: {} blocks", limit)
+                    } else {
+                        " | no limit".to_string()
+                    },
+                    if context.emergency_collections_attempted {
+                        " | emergency collection attempted"
+                    } else {
+                        ""
+                    }
+                )
             }
-            HeapError::InvalidAllocationSize => write!(f, "invalid allocation size"),
-            HeapError::FragmentationError => write!(f, "heap fragmentation prevents allocation"),
-            HeapError::BlockAllocationFailed => write!(f, "block allocation failed"),
-            HeapError::EmergencyCollectionInsufficient => write!(f, "emergency collection failed to free sufficient memory"),
+            HeapError::EmergencyCollectionFailed { context } => {
+                write!(
+                    f,
+                    "emergency collection failed: could not free sufficient memory for {} bytes ({:?}) | heap: {:.1}% used ({}/{} blocks), {:.1}% fragmented{}",
+                    context.requested_size,
+                    context.size_class,
+                    context.memory_utilisation_percent(),
+                    context.blocks_used,
+                    context.blocks_allocated,
+                    context.fragmentation_indicator(),
+                    if let Some(head_util) = context.head_utilisation_percent {
+                        format!(" | head: {:.1}% utilised", head_util)
+                    } else {
+                        "".to_string()
+                    }
+                )
+            }
+            HeapError::InvalidAllocationSize { requested_size, max_size } => {
+                write!(
+                    f,
+                    "invalid allocation size: requested {} bytes exceeds maximum {} bytes",
+                    requested_size,
+                    max_size
+                )
+            }
+            HeapError::FragmentationError { context } => {
+                write!(
+                    f,
+                    "heap fragmentation prevents allocation: {} bytes ({:?}) cannot fit | heap: {:.1}% used, {:.1}% fragmented ({} recycled/{} total blocks){}",
+                    context.requested_size,
+                    context.size_class,
+                    context.memory_utilisation_percent(),
+                    context.fragmentation_indicator(),
+                    context.blocks_recycled,
+                    context.blocks_allocated,
+                    if let Some(head_util) = context.head_utilisation_percent {
+                        format!(" | head: {:.1}% utilised", head_util)
+                    } else {
+                        "".to_string()
+                    }
+                )
+            }
+            HeapError::BlockAllocationFailed { context } => {
+                write!(
+                    f,
+                    "block allocation failed: underlying allocator error | heap: {:.1}% used ({}/{} blocks), {} LOBs | attempting {} bytes ({:?})",
+                    context.memory_utilisation_percent(),
+                    context.blocks_used,
+                    context.blocks_allocated,
+                    context.lobs_allocated,
+                    context.requested_size,
+                    context.size_class
+                )
+            }
+            HeapError::EmergencyCollectionInsufficient { context } => {
+                write!(
+                    f,
+                    "emergency collection insufficient: freed space but not enough for {} bytes ({:?}) | heap: {:.1}% used, {:.1}% fragmented{}",
+                    context.requested_size,
+                    context.size_class,
+                    context.memory_utilisation_percent(),
+                    context.fragmentation_indicator(),
+                    if let Some(head_util) = context.head_utilisation_percent {
+                        format!(" | head: {:.1}% utilised", head_util)
+                    } else {
+                        "".to_string()
+                    }
+                )
+            }
         }
     }
 }
@@ -218,8 +360,24 @@ impl std::error::Error for HeapError {}
 impl From<super::bump::AllocError> for HeapError {
     fn from(e: super::bump::AllocError) -> Self {
         match e {
-            super::bump::AllocError::OOM => HeapError::OutOfMemory,
-            super::bump::AllocError::BadRequest => HeapError::InvalidAllocationSize,
+            super::bump::AllocError::OOM => HeapError::OutOfMemory { 
+                context: HeapContext {
+                    blocks_allocated: 0,
+                    blocks_used: 0,
+                    blocks_recycled: 0,
+                    lobs_allocated: 0,
+                    requested_size: 0,
+                    size_class: SizeClass::Small,
+                    head_utilisation_percent: None,
+                    overflow_utilisation_percent: None,
+                    emergency_collections_attempted: false,
+                    heap_limit: None,
+                }
+            },
+            super::bump::AllocError::BadRequest => HeapError::InvalidAllocationSize { 
+                requested_size: 0,
+                max_size: MAX_ALLOC_SIZE,
+            },
         }
     }
 }
@@ -283,7 +441,7 @@ mod oom_tests {
     #[test]
     fn test_allocation_returns_results() {
         // This test verifies that allocation methods return Results instead of panicking
-        let mut heap = Heap::new();
+        let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
 
         // Test that string allocation returns a Result
@@ -314,7 +472,7 @@ mod oom_tests {
                                                             // This should either succeed or return HeapError, not panic
         match result {
             Ok(_) => println!("Large allocation succeeded (system has lots of memory)"),
-            Err(HeapError::OutOfMemory) => {
+            Err(HeapError::OutOfMemory { .. }) => {
                 println!("Large allocation failed gracefully with OutOfMemory")
             }
             Err(e) => println!("Large allocation failed gracefully: {:?}", e),
@@ -330,15 +488,17 @@ mod oom_tests {
 
         // Test bump error conversion
         let heap_err: HeapError = AllocError::OOM.into();
-        assert_eq!(heap_err, HeapError::OutOfMemory);
+        assert!(matches!(heap_err, HeapError::OutOfMemory { .. }));
 
         let heap_err: HeapError = AllocError::BadRequest.into();
-        assert_eq!(heap_err, HeapError::InvalidAllocationSize);
+        assert!(matches!(heap_err, HeapError::InvalidAllocationSize { .. }));
 
-        // Test ExecutionError conversion
+        // Test ExecutionError conversion - create a proper HeapError with context
         use crate::eval::error::ExecutionError;
-        let exec_err: ExecutionError = HeapError::OutOfMemory.into();
-        matches!(exec_err, ExecutionError::AllocationError);
+        let heap = Heap::new();
+        let heap_err = heap.out_of_memory_error(1024, false);
+        let exec_err: ExecutionError = heap_err.into();
+        assert!(matches!(exec_err, ExecutionError::AllocationError));
 
         println!("✅ HeapError conversions working correctly");
     }
@@ -355,7 +515,7 @@ mod oom_tests {
         // Simulate emergency collection attempt (this will fail but should update state)
         let result = heap.attempt_emergency_collection(1024);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), HeapError::EmergencyCollectionInsufficient));
+        assert!(matches!(result.unwrap_err(), HeapError::EmergencyCollectionInsufficient { .. }));
         
         // After emergency collection, there should be a cooldown period
         let emergency_state = unsafe { &*heap.emergency_state.get() };
@@ -414,7 +574,7 @@ mod oom_tests {
                 assert!(stats_after.recycled > stats_before.recycled, 
                        "Should have recycled some blocks");
             }
-            Err(HeapError::EmergencyCollectionInsufficient) => {
+            Err(HeapError::EmergencyCollectionInsufficient { .. }) => {
                 println!("✅ Emergency collection completed but insufficient space freed (expected)");
                 // This is fine - the emergency collection ran but couldn't free enough space
             }
@@ -427,6 +587,47 @@ mod oom_tests {
         let emergency_state = unsafe { &*heap.emergency_state.get() };
         assert!(!emergency_state.can_attempt_emergency_collection(), 
                "Should be in cooldown period after emergency collection");
+    }
+
+    #[test]
+    fn test_enhanced_error_diagnostics() {
+        // Test that enhanced error messages include detailed heap context
+        let heap = Heap::new();
+        
+        // Create a heap context error (64 bytes = Small, 1024 bytes = Medium)
+        let error = heap.out_of_memory_error(64, false);
+        let error_message = format!("{}", error);
+        
+        // Print the actual error message to see its format
+        println!("Enhanced error message: {}", error_message);
+        
+        // Verify the error message includes detailed diagnostic information
+        assert!(error_message.contains("64 bytes"));
+        assert!(error_message.contains("Small"));  // Size class
+        assert!(error_message.contains("% used"));
+        assert!(error_message.contains("% fragmented"));
+        assert!(error_message.contains("no limit"));
+        
+        // Test InvalidAllocationSize error
+        let invalid_error = HeapError::InvalidAllocationSize {
+            requested_size: u32::MAX as usize + 1,
+            max_size: u32::MAX as usize,
+        };
+        let invalid_message = format!("{}", invalid_error);
+        assert!(invalid_message.contains("exceeds maximum"));
+        assert!(invalid_message.contains(&format!("{}", u32::MAX as usize)));
+        
+        println!("Invalid allocation error: {}", invalid_message);
+        
+        // Test emergency collection insufficient error with context
+        let emergency_error = heap.emergency_collection_insufficient_error(2048);
+        let emergency_message = format!("{}", emergency_error);
+        assert!(emergency_message.contains("2048 bytes"));
+        assert!(emergency_message.contains("emergency collection insufficient"));
+        
+        println!("Emergency collection error: {}", emergency_message);
+        
+        println!("✅ Enhanced error diagnostics provide detailed context");
     }
 }
 
@@ -515,7 +716,10 @@ impl Allocator for Heap {
     /// Allocate a region of bytes (for array / vector implementations)
     fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, HeapError> {
         if size_bytes > u32::MAX as usize {
-            return Err(HeapError::InvalidAllocationSize);
+            return Err(HeapError::InvalidAllocationSize {
+                requested_size: size_bytes,
+                max_size: u32::MAX as usize,
+            });
         }
 
         let header_size = size_of::<AllocHeader>();
@@ -571,7 +775,7 @@ impl Heap {
         }
 
         // All attempts failed
-        Err(HeapError::OutOfMemory)
+        Err(self.out_of_memory_error(size_bytes, emergency_state.can_attempt_emergency_collection()))
     }
 
     /// Try to allocate without emergency collection
@@ -588,11 +792,11 @@ impl Heap {
                 .overflow()
                 .bump(size_bytes)
                 .or_else(|| heap_state.replace_overflow().bump(size_bytes))
-                .ok_or(HeapError::OutOfMemory)?,
+                .ok_or_else(|| self.out_of_memory_error(size_bytes, false))?,
             _ => head
                 .bump(size_bytes)
                 .or_else(|| heap_state.replace_head().bump(size_bytes))
-                .ok_or(HeapError::OutOfMemory)?,
+                .ok_or_else(|| self.out_of_memory_error(size_bytes, false))?,
         };
 
         Ok(space)
@@ -617,7 +821,7 @@ impl Heap {
             Ok(())
         } else {
             eprintln!("Emergency collection: insufficient space freed");
-            Err(HeapError::EmergencyCollectionInsufficient)
+            Err(self.emergency_collection_insufficient_error(requested_size))
         }
     }
 
@@ -685,6 +889,61 @@ impl Heap {
     pub fn alloc_size_of(object_size: usize) -> usize {
         let align = size_of::<usize>(); // * 2;
         (object_size + (align - 1)) & !(align - 1)
+    }
+
+    // Error context creation methods
+
+    /// Create heap context for error reporting
+    fn create_heap_context(&self, requested_size: usize, emergency_attempted: bool) -> HeapContext {
+        let stats = self.stats();
+        let heap_state = unsafe { &*self.state.get() };
+        let size_class = SizeClass::for_size(requested_size);
+
+        // Calculate head block utilisation if it exists
+        let head_utilisation_percent = heap_state.head.as_ref().map(|head| {
+            let hole_size = head.current_hole_size();
+            ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0
+        });
+
+        // Calculate overflow block utilisation if it exists
+        let overflow_utilisation_percent = heap_state.overflow.as_ref().map(|overflow| {
+            let hole_size = overflow.current_hole_size();
+            ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0
+        });
+
+        HeapContext {
+            blocks_allocated: stats.blocks_allocated,
+            blocks_used: stats.used,
+            blocks_recycled: stats.recycled,
+            lobs_allocated: stats.lobs_allocated,
+            requested_size,
+            size_class,
+            head_utilisation_percent,
+            overflow_utilisation_percent,
+            emergency_collections_attempted: emergency_attempted,
+            heap_limit: self.limit,
+        }
+    }
+
+    /// Create contextual OutOfMemory error
+    fn out_of_memory_error(&self, requested_size: usize, emergency_attempted: bool) -> HeapError {
+        HeapError::OutOfMemory {
+            context: self.create_heap_context(requested_size, emergency_attempted),
+        }
+    }
+
+    /// Create contextual EmergencyCollectionInsufficient error
+    fn emergency_collection_insufficient_error(&self, requested_size: usize) -> HeapError {
+        HeapError::EmergencyCollectionInsufficient {
+            context: self.create_heap_context(requested_size, true),
+        }
+    }
+
+    /// Create contextual FragmentationError
+    fn fragmentation_error(&self, requested_size: usize) -> HeapError {
+        HeapError::FragmentationError {
+            context: self.create_heap_context(requested_size, false),
+        }
     }
 
     // GC functions
