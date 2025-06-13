@@ -244,7 +244,7 @@ pub enum HeapError {
     /// Emergency collection failed to free sufficient memory
     EmergencyCollectionFailed { context: HeapContext },
     /// Invalid allocation size requested
-    InvalidAllocationSize { 
+    InvalidAllocationSize {
         requested_size: usize,
         max_size: usize,
     },
@@ -299,12 +299,14 @@ impl std::fmt::Display for HeapError {
                     }
                 )
             }
-            HeapError::InvalidAllocationSize { requested_size, max_size } => {
+            HeapError::InvalidAllocationSize {
+                requested_size,
+                max_size,
+            } => {
                 write!(
                     f,
                     "invalid allocation size: requested {} bytes exceeds maximum {} bytes",
-                    requested_size,
-                    max_size
+                    requested_size, max_size
                 )
             }
             HeapError::FragmentationError { context } => {
@@ -360,7 +362,7 @@ impl std::error::Error for HeapError {}
 impl From<super::bump::AllocError> for HeapError {
     fn from(e: super::bump::AllocError) -> Self {
         match e {
-            super::bump::AllocError::OOM => HeapError::OutOfMemory { 
+            super::bump::AllocError::OOM => HeapError::OutOfMemory {
                 context: HeapContext {
                     blocks_allocated: 0,
                     blocks_used: 0,
@@ -372,9 +374,9 @@ impl From<super::bump::AllocError> for HeapError {
                     overflow_utilisation_percent: None,
                     emergency_collections_attempted: false,
                     heap_limit: None,
-                }
+                },
             },
-            super::bump::AllocError::BadRequest => HeapError::InvalidAllocationSize { 
+            super::bump::AllocError::BadRequest => HeapError::InvalidAllocationSize {
                 requested_size: 0,
                 max_size: MAX_ALLOC_SIZE,
             },
@@ -390,7 +392,7 @@ enum EmergencyState {
     /// Currently performing emergency collection (reentrancy guard)
     InEmergencyCollection,
     /// Recent emergency collection performed (cooldown period)
-    RecentEmergencyCollection { 
+    RecentEmergencyCollection {
         performed_at: Instant,
         cooldown_duration: Duration,
     },
@@ -405,9 +407,10 @@ impl EmergencyState {
         match self {
             EmergencyState::Normal => true,
             EmergencyState::InEmergencyCollection => false,
-            EmergencyState::RecentEmergencyCollection { performed_at, cooldown_duration } => {
-                performed_at.elapsed() > *cooldown_duration
-            }
+            EmergencyState::RecentEmergencyCollection {
+                performed_at,
+                cooldown_duration,
+            } => performed_at.elapsed() > *cooldown_duration,
         }
     }
 
@@ -507,20 +510,23 @@ mod oom_tests {
     fn test_emergency_collection_state_tracking() {
         // Test that emergency collection state prevents infinite loops
         let heap = Heap::new();
-        
+
         // Verify initial state allows emergency collection
         let emergency_state = unsafe { &*heap.emergency_state.get() };
         assert!(emergency_state.can_attempt_emergency_collection());
-        
+
         // Simulate emergency collection attempt (this will fail but should update state)
         let result = heap.attempt_emergency_collection(1024);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), HeapError::EmergencyCollectionInsufficient { .. }));
-        
+        assert!(matches!(
+            result.unwrap_err(),
+            HeapError::EmergencyCollectionInsufficient { .. }
+        ));
+
         // After emergency collection, there should be a cooldown period
         let emergency_state = unsafe { &*heap.emergency_state.get() };
         assert!(!emergency_state.can_attempt_emergency_collection());
-        
+
         println!("✅ Emergency collection state tracking works correctly");
     }
 
@@ -528,14 +534,14 @@ mod oom_tests {
     fn test_emergency_collection_reentrancy_protection() {
         // Test that emergency collection cannot be called recursively
         let heap = Heap::new();
-        
+
         // Manually set state to InEmergencyCollection
         let emergency_state = unsafe { &mut *heap.emergency_state.get() };
         emergency_state.start_emergency_collection();
-        
+
         // Verify emergency collection is not allowed
         assert!(!emergency_state.can_attempt_emergency_collection());
-        
+
         println!("✅ Emergency collection reentrancy protection works correctly");
     }
 
@@ -543,71 +549,81 @@ mod oom_tests {
     fn test_emergency_collection_implementation() {
         // Test that emergency collection can free space
         let heap = Heap::new();
-        
+
         // Force allocation of multiple blocks by allocating large amounts
         let heap_state = unsafe { &mut *heap.state.get() };
         let _block1 = heap_state.head(); // Forces first block allocation
         let _block2 = heap_state.overflow(); // Forces second block allocation
-        
+
         // Move blocks to "rest" list by replacing them
         heap_state.replace_head();
         heap_state.replace_overflow();
-        
+
         let stats_before = heap_state.stats();
-        eprintln!("Before emergency collection: {} blocks allocated, {} in rest, {} recycled", 
-                 stats_before.blocks_allocated, stats_before.used, stats_before.recycled);
-        
+        eprintln!(
+            "Before emergency collection: {} blocks allocated, {} in rest, {} recycled",
+            stats_before.blocks_allocated, stats_before.used, stats_before.recycled
+        );
+
         // Now attempt emergency collection
         let result = heap.attempt_emergency_collection(1024);
-        
+
         let stats_after = heap.stats();
-        eprintln!("After emergency collection: {} blocks allocated, {} in rest, {} recycled", 
-                 stats_after.blocks_allocated, stats_after.used, stats_after.recycled);
-        
+        eprintln!(
+            "After emergency collection: {} blocks allocated, {} in rest, {} recycled",
+            stats_after.blocks_allocated, stats_after.used, stats_after.recycled
+        );
+
         // Emergency collection should have attempted to free space
-        // Even if it doesn't succeed (because blocks might not be reclaimable), 
+        // Even if it doesn't succeed (because blocks might not be reclaimable),
         // it should not crash and should provide proper error reporting
-        
+
         match result {
             Ok(()) => {
                 println!("✅ Emergency collection successfully freed space");
-                assert!(stats_after.recycled > stats_before.recycled, 
-                       "Should have recycled some blocks");
+                assert!(
+                    stats_after.recycled > stats_before.recycled,
+                    "Should have recycled some blocks"
+                );
             }
             Err(HeapError::EmergencyCollectionInsufficient { .. }) => {
-                println!("✅ Emergency collection completed but insufficient space freed (expected)");
+                println!(
+                    "✅ Emergency collection completed but insufficient space freed (expected)"
+                );
                 // This is fine - the emergency collection ran but couldn't free enough space
             }
             Err(e) => {
                 panic!("Unexpected error from emergency collection: {:?}", e);
             }
         }
-        
+
         // Verify cooldown is in effect
         let emergency_state = unsafe { &*heap.emergency_state.get() };
-        assert!(!emergency_state.can_attempt_emergency_collection(), 
-               "Should be in cooldown period after emergency collection");
+        assert!(
+            !emergency_state.can_attempt_emergency_collection(),
+            "Should be in cooldown period after emergency collection"
+        );
     }
 
     #[test]
     fn test_enhanced_error_diagnostics() {
         // Test that enhanced error messages include detailed heap context
         let heap = Heap::new();
-        
+
         // Create a heap context error (64 bytes = Small, 1024 bytes = Medium)
         let error = heap.out_of_memory_error(64, false);
         let error_message = format!("{}", error);
-        
+
         // Print the actual error message to see its format
         println!("Enhanced error message: {}", error_message);
-        
+
         // Verify the error message includes detailed diagnostic information
         assert!(error_message.contains("64 bytes"));
-        assert!(error_message.contains("Small"));  // Size class
+        assert!(error_message.contains("Small")); // Size class
         assert!(error_message.contains("% used"));
         assert!(error_message.contains("% fragmented"));
         assert!(error_message.contains("no limit"));
-        
+
         // Test InvalidAllocationSize error
         let invalid_error = HeapError::InvalidAllocationSize {
             requested_size: u32::MAX as usize + 1,
@@ -616,99 +632,109 @@ mod oom_tests {
         let invalid_message = format!("{}", invalid_error);
         assert!(invalid_message.contains("exceeds maximum"));
         assert!(invalid_message.contains(&format!("{}", u32::MAX as usize)));
-        
+
         println!("Invalid allocation error: {}", invalid_message);
-        
+
         // Test emergency collection insufficient error with context
         let emergency_error = heap.emergency_collection_insufficient_error(2048);
         let emergency_message = format!("{}", emergency_error);
         assert!(emergency_message.contains("2048 bytes"));
         assert!(emergency_message.contains("emergency collection insufficient"));
-        
+
         println!("Emergency collection error: {}", emergency_message);
-        
+
         println!("✅ Enhanced error diagnostics provide detailed context");
     }
 
     #[test]
     fn demonstrate_enhanced_diagnostics() {
         println!("\n=== Enhanced Error Diagnostics Demonstration ===");
-        
+
         use crate::eval::memory::syntax::Ref;
-        
+
         // Scenario 1: Fresh heap - clean state
         println!("\n🔍 Scenario 1: Fresh Heap Out-of-Memory");
         let heap = Heap::new();
         let fresh_error = heap.out_of_memory_error(1024, false);
         println!("   {}", fresh_error);
-        
+
         // Scenario 2: Heap with limit - realistic constraint
         println!("\n🔍 Scenario 2: Limited Heap with Allocated Objects");
         let limited_heap = Heap::with_limit(1); // 1 MiB limit = 32 blocks
-        
+
         // Allocate several objects to create fragmentation
         for i in 0..10 {
             let _ = limited_heap.alloc(Ref::num(i));
         }
         let _ = limited_heap.alloc_bytes(1024); // Medium allocation
-        
+
         let limited_error = limited_heap.out_of_memory_error(512, false);
         println!("   {}", limited_error);
-        
+
         // Scenario 3: Emergency collection attempted
         println!("\n🔍 Scenario 3: Emergency Collection Scenario");
         let emergency_error = limited_heap.emergency_collection_insufficient_error(2048);
         println!("   {}", emergency_error);
-        
+
         // Scenario 4: Invalid allocation sizes
         println!("\n🔍 Scenario 4: Invalid Allocation Sizes");
-        
+
         let invalid_too_large = HeapError::InvalidAllocationSize {
             requested_size: u32::MAX as usize + 1,
             max_size: u32::MAX as usize,
         };
         println!("   Large: {}", invalid_too_large);
-        
+
         let invalid_zero = HeapError::InvalidAllocationSize {
             requested_size: 0,
             max_size: MAX_ALLOC_SIZE,
         };
         println!("   Zero:  {}", invalid_zero);
-        
+
         // Scenario 5: Fragmentation scenarios
         println!("\n🔍 Scenario 5: Fragmentation Analysis");
-        
+
         // Simulate a fragmented heap
         let frag_heap = Heap::new();
         for _ in 0..5 {
             let _ = frag_heap.alloc(Ref::num(42));
         }
-        
+
         let frag_error = frag_heap.fragmentation_error(8192);
         println!("   {}", frag_error);
-        
+
         // Scenario 6: Size class examples
         println!("\n🔍 Scenario 6: Different Size Classes");
-        
-        let small_error = heap.out_of_memory_error(64, false);  // Small (< 128 bytes)
+
+        let small_error = heap.out_of_memory_error(64, false); // Small (< 128 bytes)
         println!("   Small:  {}", small_error);
-        
+
         let medium_error = heap.out_of_memory_error(1024, true); // Medium (128B - 32KB)
         println!("   Medium: {}", medium_error);
-        
+
         let large_error = heap.out_of_memory_error(40960, true); // Large (> 32KB)
         println!("   Large:  {}", large_error);
-        
+
         // Show actual heap stats for context
         println!("\n📊 Heap Statistics:");
         let stats = limited_heap.stats();
-        println!("   - Total blocks: {} ({} KB)", stats.blocks_allocated, stats.blocks_allocated * 32);
-        println!("   - Used blocks:  {} ({:.1}%)", stats.used, 
-                (stats.used as f64 / stats.blocks_allocated as f64) * 100.0);
-        println!("   - Recycled:     {} ({:.1}%)", stats.recycled,
-                (stats.recycled as f64 / stats.blocks_allocated as f64) * 100.0);
+        println!(
+            "   - Total blocks: {} ({} KB)",
+            stats.blocks_allocated,
+            stats.blocks_allocated * 32
+        );
+        println!(
+            "   - Used blocks:  {} ({:.1}%)",
+            stats.used,
+            (stats.used as f64 / stats.blocks_allocated as f64) * 100.0
+        );
+        println!(
+            "   - Recycled:     {} ({:.1}%)",
+            stats.recycled,
+            (stats.recycled as f64 / stats.blocks_allocated as f64) * 100.0
+        );
         println!("   - Large objects: {}", stats.lobs_allocated);
-        
+
         println!("\n=== End Demonstration ===\n");
     }
 }
@@ -857,7 +883,10 @@ impl Heap {
         }
 
         // All attempts failed
-        Err(self.out_of_memory_error(size_bytes, emergency_state.can_attempt_emergency_collection()))
+        Err(self.out_of_memory_error(
+            size_bytes,
+            emergency_state.can_attempt_emergency_collection(),
+        ))
     }
 
     /// Try to allocate without emergency collection
@@ -890,14 +919,17 @@ impl Heap {
         let emergency_state = unsafe { &mut *self.emergency_state.get() };
         emergency_state.start_emergency_collection();
 
-        eprintln!("Emergency collection: attempting to free space for {} bytes", requested_size);
+        eprintln!(
+            "Emergency collection: attempting to free space for {} bytes",
+            requested_size
+        );
 
         // Perform conservative emergency collection
         let success = self.perform_emergency_sweep(requested_size);
-        
+
         // Mark collection as completed
         emergency_state.complete_emergency_collection();
-        
+
         if success {
             eprintln!("Emergency collection: successfully freed space");
             Ok(())
@@ -912,14 +944,16 @@ impl Heap {
     fn perform_emergency_sweep(&self, _requested_size: usize) -> bool {
         let heap_state = unsafe { &mut *self.state.get() };
         let stats_before = heap_state.stats();
-        
-        eprintln!("Emergency collection: before sweep - {} blocks allocated, {} recycled", 
-                 stats_before.blocks_allocated, stats_before.recycled);
+
+        eprintln!(
+            "Emergency collection: before sweep - {} blocks allocated, {} recycled",
+            stats_before.blocks_allocated, stats_before.recycled
+        );
 
         // Strategy 1: Try to reclaim blocks that are completely unused
         // This is safe because we're not relying on reachability analysis
         heap_state.sweep();
-        
+
         // Strategy 2: If we still need space, try to free the current head block
         // if it's mostly empty (this is more aggressive but still relatively safe)
         if stats_before.recycled == heap_state.stats().recycled {
@@ -927,15 +961,20 @@ impl Heap {
         }
 
         let stats_after = heap_state.stats();
-        eprintln!("Emergency collection: after sweep - {} blocks allocated, {} recycled", 
-                 stats_after.blocks_allocated, stats_after.recycled);
+        eprintln!(
+            "Emergency collection: after sweep - {} blocks allocated, {} recycled",
+            stats_after.blocks_allocated, stats_after.recycled
+        );
 
         // Check if we freed enough space
         let blocks_freed = stats_after.recycled - stats_before.recycled;
         let bytes_freed = blocks_freed * BLOCK_SIZE_BYTES;
-        
-        eprintln!("Emergency collection: freed {} blocks ({} bytes)", blocks_freed, bytes_freed);
-        
+
+        eprintln!(
+            "Emergency collection: freed {} blocks ({} bytes)",
+            blocks_freed, bytes_freed
+        );
+
         // Success if we freed at least one block worth of space
         // (This is conservative - we could be more sophisticated about size requirements)
         blocks_freed > 0
@@ -947,11 +986,14 @@ impl Heap {
         // Only replace head if it exists and has very little allocated space
         if let Some(ref head) = heap_state.head {
             let hole_size = head.current_hole_size();
-            let utilisation_percent = ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0;
-            
-            eprintln!("Emergency collection: head block utilisation {:.1}% (hole size: {} bytes)", 
-                     utilisation_percent, hole_size);
-            
+            let utilisation_percent =
+                ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0;
+
+            eprintln!(
+                "Emergency collection: head block utilisation {:.1}% (hole size: {} bytes)",
+                utilisation_percent, hole_size
+            );
+
             // If head block is less than 10% utilised, replace it
             // This is aggressive but in an emergency situation it's reasonable
             if utilisation_percent < 10.0 {
@@ -1022,6 +1064,7 @@ impl Heap {
     }
 
     /// Create contextual FragmentationError
+    #[cfg(test)]
     fn fragmentation_error(&self, requested_size: usize) -> HeapError {
         HeapError::FragmentationError {
             context: self.create_heap_context(requested_size, false),
