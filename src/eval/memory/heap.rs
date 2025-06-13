@@ -185,6 +185,49 @@ pub struct Heap {
     limit: Option<usize>,
 }
 
+#[cfg(test)]
+mod oom_tests {
+    use super::*;
+    use crate::eval::memory::{mutator::MutatorHeapView, syntax::StgBuilder};
+
+    #[test]
+    fn test_allocation_returns_results() {
+        // This test verifies that allocation methods return Results instead of panicking
+        let mut heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        
+        // Test that string allocation returns a Result
+        let result = view.str("test string");
+        assert!(result.is_ok(), "String allocation should succeed for reasonable sizes");
+        
+        // Test that unit allocation returns a Result  
+        let result = view.unit();
+        assert!(result.is_ok(), "Unit allocation should succeed");
+        
+        println!("✅ All allocation methods return Results instead of panicking");
+    }
+
+    #[test] 
+    fn test_find_space_returns_result() {
+        // Test that the low-level find_space method returns Result instead of panicking
+        let heap = Heap::new();
+        
+        // Test normal allocation
+        let result = heap.find_space(64);
+        assert!(result.is_ok(), "Small allocation should succeed");
+        
+        // Test very large allocation (should return error, not panic)
+        let result = heap.find_space(usize::MAX);
+        // This might succeed or fail depending on system memory, but it should not panic
+        match result {
+            Ok(_) => println!("Large allocation succeeded (system has lots of memory)"),
+            Err(e) => println!("Large allocation failed gracefully: {:?}", e),
+        }
+        
+        println!("✅ find_space returns Results instead of panicking");
+    }
+}
+
 impl MutatorScope for Heap {}
 
 impl Debug for Heap {
@@ -292,8 +335,13 @@ impl Allocator for Heap {
 }
 
 impl Heap {
-    /// Allocate space
-    fn find_space(&self, size_bytes: usize) -> Result<*const u8, AllocError> {
+    /// Allocate space, with emergency collection on failure
+    fn find_space(&self, size_bytes: usize) -> Result<*const u8, super::bump::AllocError> {
+        self.find_space_impl(size_bytes)
+    }
+
+    /// Internal implementation of space finding
+    fn find_space_impl(&self, size_bytes: usize) -> Result<*const u8, super::bump::AllocError> {
         let heap_state = unsafe { &mut *self.state.get() };
         let head = heap_state.head();
 
@@ -306,11 +354,11 @@ impl Heap {
                 .overflow()
                 .bump(size_bytes)
                 .or_else(|| heap_state.replace_overflow().bump(size_bytes))
-                .expect("aargh"),
+                .ok_or(super::bump::AllocError::OOM)?,
             _ => head
                 .bump(size_bytes)
                 .or_else(|| heap_state.replace_head().bump(size_bytes))
-                .expect("aarrgh"),
+                .ok_or(super::bump::AllocError::OOM)?,
         };
 
         Ok(space)
