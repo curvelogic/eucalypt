@@ -15,7 +15,8 @@
       "Bash(./target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..10000]\")",
       "Bash(/Users/greg/dev/curvelogic/eucalypt/target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..100]\")",
       "Bash(./target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..100]\")",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

@@ -4,8 +4,8 @@
 
 use crate::eval::error::ExecutionError;
 
-use super::bump::AllocError;
 use super::header::AllocHeader;
+use super::heap::HeapError;
 use std::ops::Deref;
 use std::ptr::NonNull;
 
@@ -19,12 +19,12 @@ impl<T> StgObject for NonNull<T> {}
 /// is forwarded to mutators and collectors by ScopedPtr.
 pub trait Allocator {
     /// Allocate a T
-    fn alloc<T>(&self, object: T) -> Result<NonNull<T>, AllocError>
+    fn alloc<T>(&self, object: T) -> Result<NonNull<T>, HeapError>
     where
         T: StgObject;
 
     /// Allocate a region of bytes
-    fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, AllocError>;
+    fn alloc_bytes(&self, size_bytes: usize) -> Result<NonNull<u8>, HeapError>;
 
     /// Get header from object
     fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader>;
