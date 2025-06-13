@@ -198,7 +198,9 @@ impl std::fmt::Display for HeapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HeapError::OutOfMemory => write!(f, "out of memory"),
-            HeapError::EmergencyCollectionFailed => write!(f, "emergency collection failed to free sufficient memory"),
+            HeapError::EmergencyCollectionFailed => {
+                write!(f, "emergency collection failed to free sufficient memory")
+            }
             HeapError::InvalidAllocationSize => write!(f, "invalid allocation size"),
             HeapError::FragmentationError => write!(f, "heap fragmentation prevents allocation"),
             HeapError::BlockAllocationFailed => write!(f, "block allocation failed"),
@@ -233,36 +235,41 @@ mod oom_tests {
         // This test verifies that allocation methods return Results instead of panicking
         let mut heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
-        
+
         // Test that string allocation returns a Result
         let result = view.str("test string");
-        assert!(result.is_ok(), "String allocation should succeed for reasonable sizes");
-        
-        // Test that unit allocation returns a Result  
+        assert!(
+            result.is_ok(),
+            "String allocation should succeed for reasonable sizes"
+        );
+
+        // Test that unit allocation returns a Result
         let result = view.unit();
         assert!(result.is_ok(), "Unit allocation should succeed");
-        
+
         println!("✅ All allocation methods return Results instead of panicking");
     }
 
-    #[test] 
+    #[test]
     fn test_find_space_returns_result() {
         // Test that the low-level find_space method returns Result instead of panicking
         let heap = Heap::new();
-        
+
         // Test normal allocation
         let result = heap.find_space(64);
         assert!(result.is_ok(), "Small allocation should succeed");
-        
+
         // Test allocation that should exceed block size limits
         let result = heap.find_space(BLOCK_SIZE_BYTES * 2); // Larger than single block
-        // This should either succeed or return HeapError, not panic
+                                                            // This should either succeed or return HeapError, not panic
         match result {
             Ok(_) => println!("Large allocation succeeded (system has lots of memory)"),
-            Err(HeapError::OutOfMemory) => println!("Large allocation failed gracefully with OutOfMemory"),
+            Err(HeapError::OutOfMemory) => {
+                println!("Large allocation failed gracefully with OutOfMemory")
+            }
             Err(e) => println!("Large allocation failed gracefully: {:?}", e),
         }
-        
+
         println!("✅ find_space returns HeapError Results instead of panicking");
     }
 
@@ -270,19 +277,19 @@ mod oom_tests {
     fn test_heap_error_conversions() {
         // Test HeapError conversions
         use super::bump::AllocError;
-        
+
         // Test bump error conversion
         let heap_err: HeapError = AllocError::OOM.into();
         assert_eq!(heap_err, HeapError::OutOfMemory);
-        
+
         let heap_err: HeapError = AllocError::BadRequest.into();
         assert_eq!(heap_err, HeapError::InvalidAllocationSize);
-        
+
         // Test ExecutionError conversion
         use crate::eval::error::ExecutionError;
         let exec_err: ExecutionError = HeapError::OutOfMemory.into();
         matches!(exec_err, ExecutionError::AllocationError);
-        
+
         println!("✅ HeapError conversions working correctly");
     }
 }

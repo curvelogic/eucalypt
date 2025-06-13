@@ -4,8 +4,8 @@
 
 use crate::eval::error::ExecutionError;
 
-use super::heap::HeapError;
 use super::header::AllocHeader;
+use super::heap::HeapError;
 use std::ops::Deref;
 use std::ptr::NonNull;
 

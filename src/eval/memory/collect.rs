@@ -176,13 +176,13 @@ pub mod tests {
 
     #[test]
     pub fn test_simple_collection() {
-        use crate::eval::memory::mark::{mark_state, flip_mark_state};
-        
+        use crate::eval::memory::mark::{flip_mark_state, mark_state};
+
         // Ensure clean mark state at test start
         if mark_state() != false {
             flip_mark_state();
         }
-        
+
         let mut heap = Heap::new();
         let mut clock = Clock::default();
 
@@ -262,10 +262,10 @@ pub mod tests {
         eprintln!("Final stats: {:?}", &stats_c);
 
         // Original test logic: removing let_ptr root should cause more blocks to be recycled
-        assert!(stats_a.recycled < stats_b.recycled, 
-               "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})", 
+        assert!(stats_a.recycled < stats_b.recycled,
+               "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})",
                stats_a.recycled, stats_b.recycled);
-               
+
         // Clean up mark state for other tests
         if mark_state() != false {
             flip_mark_state();
@@ -274,40 +274,40 @@ pub mod tests {
 
     #[test]
     pub fn test_mark_state_isolation() {
-        use crate::eval::memory::mark::{mark_state, flip_mark_state};
-        
+        use crate::eval::memory::mark::{flip_mark_state, mark_state};
+
         // Test should be isolated from other tests' mark state
         let initial_mark_state = mark_state();
-        
+
         // Perform collection which flips mark state
         let mut heap = Heap::new();
         let mut clock = Clock::default();
         clock.switch(ThreadOccupation::Mutator);
-        
+
         let empty_roots: Vec<NonNull<crate::eval::memory::syntax::HeapSyn>> = vec![];
         collect(&empty_roots, &mut heap, &mut clock, true);
-        
+
         // Mark state should have flipped
         assert_ne!(mark_state(), initial_mark_state);
-        
+
         // Reset mark state to ensure test isolation
         if mark_state() != false {
             flip_mark_state();
         }
-        
+
         // Verify we're back to initial state
         assert_eq!(mark_state(), false);
     }
 
     #[test]
     pub fn test_simple_collection_with_isolation() {
-        use crate::eval::memory::mark::{mark_state, flip_mark_state};
-        
+        use crate::eval::memory::mark::{flip_mark_state, mark_state};
+
         // Ensure clean mark state at test start
         if mark_state() != false {
             flip_mark_state();
         }
-        
+
         let mut heap = Heap::new();
         let mut clock = Clock::default();
 
@@ -382,11 +382,11 @@ pub mod tests {
         let stats_c = heap.stats();
         eprintln!("Final stats: {:?}", &stats_c);
 
-        // Original test logic: removing let_ptr root should cause more blocks to be recycled  
-        assert!(stats_a.recycled < stats_b.recycled, 
-               "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})", 
+        // Original test logic: removing let_ptr root should cause more blocks to be recycled
+        assert!(stats_a.recycled < stats_b.recycled,
+               "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})",
                stats_a.recycled, stats_b.recycled);
-               
+
         // Clean up mark state for other tests
         if mark_state() != false {
             flip_mark_state();
