@@ -83,7 +83,7 @@ pub struct Context<'a> {
     next: Option<&'a Context<'a>>,
 }
 
-impl<'a> Context<'a> {
+impl Context<'_> {
     /// The core expression representing an underlying scope, if not synthetic
     pub fn scope(&self) -> Option<&RcExpr> {
         self.scope.as_ref()
@@ -760,7 +760,6 @@ impl ProtoSyntax for ProtoInline {
     ///
     /// We need an optimisation pass to eliminate needless lets as
     /// they're only refs to elsewhere
-
     fn take_syntax(
         &mut self,
         _compiler: &Compiler,

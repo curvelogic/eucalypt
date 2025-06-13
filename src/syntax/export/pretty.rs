@@ -66,7 +66,7 @@ impl ToSourceDoc for Name {
 fn is_normal(n: &str) -> bool {
     let mut i = n.chars();
 
-    i.next().map_or(false, lexer::is_normal_start) && i.all(lexer::is_normal_continuation)
+    i.next().is_some_and(lexer::is_normal_start) && i.all(lexer::is_normal_continuation)
 }
 
 /// Represent a name in contexts which must be normal (non-operator).

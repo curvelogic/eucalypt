@@ -80,7 +80,7 @@ impl<'smap> Desugarer<'smap> {
             self.file.pop();
             Ok(unit)
         } else {
-            Err(CoreError::NoParsedAstFor(input.clone()))
+            Err(CoreError::NoParsedAstFor(Box::new(input.clone())))
         }
     }
 
@@ -97,7 +97,7 @@ impl<'smap> Desugarer<'smap> {
             self.file.pop();
             Ok(expr)
         } else {
-            Err(CoreError::NoParsedAstFor(import.clone()))
+            Err(CoreError::NoParsedAstFor(Box::new(import.clone())))
         }
     }
 

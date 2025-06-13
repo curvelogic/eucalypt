@@ -30,7 +30,7 @@ fn dispatch(
     items: &[Expression],
 ) -> Result<RcExpr, CoreError> {
     let head = items
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("empty embedding list".to_string(), smid))?;
     if let Expression::Lit(Literal::Sym(_, tag)) = head {
         match tag.as_str() {
@@ -72,7 +72,7 @@ fn dispatch(
 /// [:c-var "x"]
 fn c_var(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let name = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing variable name".to_string(), smid))?;
     if let Expression::Lit(Literal::Str(_, n)) = name {
         let fv = desugarer
@@ -91,7 +91,7 @@ fn c_var(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<R
 /// [:c-let {x: binding ...} body]
 fn c_let(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let bindings = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing bindings".to_string(), smid))?;
     let body = args
         .get(1)
@@ -129,7 +129,7 @@ fn c_let(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<R
 /// [:c-bif "EQ"]
 fn c_bif(_desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let name = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing intrinsic name".to_string(), smid))?;
     if let Expression::Lit(Literal::Sym(_, n)) = name {
         Ok(core::bif(smid, n))
@@ -144,7 +144,7 @@ fn c_bif(_desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<
 /// [:c-lit x]
 fn c_lit(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let lit = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing literal value".to_string(), smid))?;
     if let Expression::Lit(literal) = lit {
         Ok(desugar_literal(desugarer, literal))
@@ -159,7 +159,7 @@ fn c_lookup(
     smid: Smid,
     args: &[Expression],
 ) -> Result<RcExpr, CoreError> {
-    let expr = args.get(0).ok_or_else(|| {
+    let expr = args.first().ok_or_else(|| {
         CoreError::InvalidEmbedding("missing target expression".to_string(), smid)
     })?;
     let obj = core_from_embedding(desugarer, expr)?;
@@ -189,7 +189,7 @@ fn c_name(
     args: &[Expression],
 ) -> Result<RcExpr, CoreError> {
     let name = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing name".to_string(), smid))?;
     if let Expression::Lit(Literal::Str(_, n)) = name {
         Ok(core::name(smid, n))
@@ -233,7 +233,7 @@ fn c_block(
     args: &[Expression],
 ) -> Result<RcExpr, CoreError> {
     let arg = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing block content".to_string(), smid))?;
 
     if let Expression::Block(block) = arg {
@@ -259,7 +259,7 @@ fn c_block(
 fn c_meta(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let expr = core_from_embedding(
         desugarer,
-        args.get(0).ok_or_else(|| {
+        args.first().ok_or_else(|| {
             CoreError::InvalidEmbedding("missing metadata target".to_string(), smid)
         })?,
     )?;
@@ -284,7 +284,7 @@ fn c_args(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<
 /// [:c-lam ["x" "y"] ...x...]
 fn c_lam(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let bound_vars = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing bindings".to_string(), smid))?;
     let mut var_names = vec![];
     if let Expression::List(span, vars) = bound_vars {
@@ -320,7 +320,7 @@ fn c_lam(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<R
 fn c_app(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let f = core_from_embedding(
         desugarer,
-        args.get(0)
+        args.first()
             .ok_or_else(|| CoreError::InvalidEmbedding("missing function".to_string(), smid))?,
     )?;
     let params = args
@@ -353,7 +353,7 @@ fn c_soup(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<
 /// [:c-op :unary-prefix 88]
 fn c_op(desugarer: &mut Desugarer, smid: Smid, args: &[Expression]) -> Result<RcExpr, CoreError> {
     let fixity_arg = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing fixity".to_string(), smid))?;
     let precedence_arg = args
         .get(1)
@@ -405,7 +405,7 @@ fn e_unresolved(
     args: &[Expression],
 ) -> Result<RcExpr, CoreError> {
     let name = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing variable name".to_string(), smid))?;
     if let Expression::Lit(Literal::Str(_, n)) = name {
         Ok(RcExpr::from(Expr::ErrUnresolved(smid, n.clone())))
@@ -424,7 +424,7 @@ fn e_redeclaration(
     args: &[Expression],
 ) -> Result<RcExpr, CoreError> {
     let name = args
-        .get(0)
+        .first()
         .ok_or_else(|| CoreError::InvalidEmbedding("missing variable name".to_string(), smid))?;
     if let Expression::Lit(Literal::Str(_, n)) = name {
         Ok(RcExpr::from(Expr::ErrRedeclaration(smid, n.clone())))

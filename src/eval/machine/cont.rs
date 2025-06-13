@@ -6,12 +6,13 @@ use crate::eval::{
     memory::{
         alloc::StgObject,
         array::Array,
+        collect::{CollectorHeapView, GcScannable, ScanPtr},
         syntax::{HeapSyn, RefPtr},
     },
     stg::tags::Tag,
 };
 
-use super::env::{Closure, EnvFrame};
+use super::env::{EnvFrame, SynClosure};
 
 /// Continuations used on the stack to record how to handle returns
 ///
@@ -43,7 +44,7 @@ pub enum Continuation {
         index: usize,
     },
     /// Once callable is evaluated, apply to args
-    ApplyTo { args: Array<Closure> },
+    ApplyTo { args: Array<SynClosure> },
     /// Catch metadata and pass it (with body) to handler
     DeMeta {
         /// handler receives metdata and body as bound args
@@ -90,5 +91,73 @@ impl fmt::Display for Continuation {
                 write!(f, "ƒ(`,•)")
             }
         }
+    }
+}
+
+impl GcScannable for Continuation {
+    fn scan<'a>(
+        &'a self,
+        scope: &'a dyn crate::eval::memory::collect::CollectorScope,
+        marker: &mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+        match self {
+            Continuation::Branch {
+                branches,
+                fallback,
+                environment,
+            } => {
+                if marker.mark_array(branches) {
+                    for (_tag, branch) in branches.iter() {
+                        marker.mark(*branch);
+                        grey.push(ScanPtr::from_non_null(scope, *branch));
+                    }
+                }
+
+                if let Some(fb) = fallback {
+                    if marker.mark(*fb) {
+                        grey.push(ScanPtr::from_non_null(scope, *fb));
+                    }
+                }
+
+                if marker.mark(*environment) {
+                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                }
+            }
+            Continuation::Update {
+                environment,
+                index: _,
+            } => {
+                if marker.mark(*environment) {
+                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                }
+            }
+            Continuation::ApplyTo { args } => {
+                if marker.mark_array(args) {
+                    for arg in args.iter() {
+                        grey.push(ScanPtr::new(scope, arg));
+                    }
+                }
+            }
+            Continuation::DeMeta {
+                handler,
+                or_else,
+                environment,
+            } => {
+                if marker.mark(*handler) {
+                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                }
+
+                if marker.mark(*or_else) {
+                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                }
+
+                if marker.mark(*environment) {
+                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                }
+            }
+        }
+
+        grey
     }
 }

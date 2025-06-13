@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::common::sourcemap::Smid;
 
 use self::{
-    env::{Closure, EnvFrame},
+    env::{EnvFrame, SynClosure},
     env_builder::EnvBuilder,
     vm::Machine,
 };
@@ -34,9 +34,9 @@ pub struct Initialiser<'a> {
     runtime: &'a dyn Runtime,
 }
 
-impl<'a> Mutator for Initialiser<'a> {
+impl Mutator for Initialiser<'_> {
     type Input = ();
-    type Output = (RefPtr<EnvFrame>, RefPtr<EnvFrame>, Closure);
+    type Output = (RefPtr<EnvFrame>, RefPtr<EnvFrame>, SynClosure);
 
     fn run(
         &self,
@@ -54,7 +54,7 @@ impl<'a> Mutator for Initialiser<'a> {
             Smid::default(),
         );
 
-        let closure = Closure::new(load(view, self.syntax.clone()).unwrap(), root_env);
+        let closure = SynClosure::new(load(view, self.syntax.clone()).unwrap(), root_env);
         Ok((root_env, globals, closure))
     }
 }
@@ -69,7 +69,12 @@ pub fn standard_machine<'a>(
     emitter: Box<dyn Emitter + 'a>,
     runtime: &'a dyn Runtime,
 ) -> Result<Machine<'a>, ExecutionError> {
-    let mut machine = Machine::new(emitter, settings.trace_steps);
+    let mut machine = Machine::new(
+        emitter,
+        settings.trace_steps,
+        settings.heap_limit_mib,
+        settings.heap_dump_at_gc,
+    );
     let (root_env, globals, closure) = { machine.mutate(Initialiser { syntax, runtime }, ())? };
 
     machine.initialise(root_env, globals, closure, runtime.intrinsics())?;

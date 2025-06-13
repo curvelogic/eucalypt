@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    env::{Closure, EnvFrame},
+    env::{EnvFrame, SynClosure},
     vm::HeapNavigator,
 };
 
@@ -31,7 +31,7 @@ pub trait IntrinsicMachine {
     fn rcache(&mut self) -> &mut LruCache<String, Regex>;
 
     /// Update closure after completion
-    fn set_closure(&mut self, closure: Closure) -> Result<(), ExecutionError>;
+    fn set_closure(&mut self, closure: SynClosure) -> Result<(), ExecutionError>;
 
     /// Get a navigator for resolving references
     fn nav<'guard>(&'guard self, view: MutatorHeapView<'guard>) -> HeapNavigator<'guard>;
@@ -74,10 +74,10 @@ pub trait StgIntrinsic: Sync {
     /// already evaluated (by the corresponding global wrapper) but must
     /// take care of updating the machine's closure and stack as
     /// appropriate to constitute a return.
-    fn execute<'guard>(
+    fn execute(
         &self,
         _machine: &mut dyn IntrinsicMachine,
-        _heap: MutatorHeapView<'guard>,
+        _heap: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {

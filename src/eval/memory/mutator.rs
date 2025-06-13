@@ -284,7 +284,7 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
     }
 }
 
-impl<'guard> MutatorScope for MutatorHeapView<'guard> {}
+impl MutatorScope for MutatorHeapView<'_> {}
 
 /// Implement mutator to get access to the heap as a mutator
 pub trait Mutator: Sized {

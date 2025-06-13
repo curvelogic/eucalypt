@@ -9,7 +9,7 @@ jobs:
   update-latest-tag:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: update branch latest
@@ -21,24 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [update-latest-tag]
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: build and install temporary eu
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path .
+        run: cargo install --path .
       - name: generate homebrew formula
         run: |
           eu -t formula-sh > generate.sh
           chmod +x generate.sh
           ./generate.sh > eucalypt.rb
       - name: upload formula
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
           name: eucalypt.rb
           path: eucalypt.rb

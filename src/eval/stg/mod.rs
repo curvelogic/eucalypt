@@ -48,6 +48,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(arith::Lt));
     rt.add(Box::new(arith::Gte));
     rt.add(Box::new(arith::Lte));
+    rt.add(Box::new(arith::Floor));
+    rt.add(Box::new(arith::Ceil));
     rt.add(Box::new(eq::Eq));
     rt.add(Box::new(boolean::True));
     rt.add(Box::new(boolean::False));
@@ -126,20 +128,15 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
 }
 
 /// What type of render-wrapping to apply to the compiled code
-#[derive(StructOpt, Copy, Debug, Clone, PartialEq, Eq)]
+#[derive(StructOpt, Copy, Debug, Clone, PartialEq, Eq, Default)]
 pub enum RenderType {
     /// No rendering - calculate only
     Headless,
     /// Render a fragment (suitable for -e flag)
     RenderFragment,
     /// Render an entire document (source must be a block)
+    #[default]
     RenderDoc,
-}
-
-impl Default for RenderType {
-    fn default() -> Self {
-        RenderType::RenderDoc
-    }
 }
 
 impl FromStr for RenderType {
@@ -186,6 +183,12 @@ pub struct StgSettings {
     /// Suppress optimiser
     #[structopt(long = "stg-suppress-optimiser")]
     pub suppress_optimiser: bool,
+    /// Limit managed heap to SIZE MiB
+    #[structopt(long)]
+    pub heap_limit_mib: Option<usize>,
+    /// Dump heap to stderr at GC time for debugging
+    #[structopt(long)]
+    pub heap_dump_at_gc: bool,
 }
 
 /// Compile core syntax to STG ready for execution

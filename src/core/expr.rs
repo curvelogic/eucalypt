@@ -51,6 +51,7 @@ pub enum Primitive {
 impl_bound_term_ignore!(Primitive);
 
 /// Fixity of operator
+#[allow(non_local_definitions)]
 #[derive(Debug, Clone, BoundTerm, Copy, PartialEq, Eq)]
 pub enum Fixity {
     UnaryPrefix,
@@ -319,6 +320,7 @@ pub type LetScope<T> = Scope<Rec<Vec<(Binder<String>, Embed<T>)>>, T>;
 pub type LamScope<T> = Scope<Vec<Binder<String>>, T>;
 
 /// The main core expression type
+#[allow(non_local_definitions)]
 #[derive(Debug, Clone, BoundTerm, PartialEq, Eq)]
 pub enum Expr<T>
 where
@@ -496,6 +498,7 @@ where
 }
 
 /// The main form in which core expressions are passed around
+#[allow(non_local_definitions)]
 #[derive(Debug, Clone, BoundTerm, PartialEq)]
 pub struct RcExpr {
     pub inner: Rc<CoreExpr>,
@@ -859,6 +862,7 @@ impl RcExpr {
 ///     }
 /// }
 /// ```
+#[allow(non_local_definitions)]
 #[derive(Debug, Clone, BoundTerm)]
 pub struct RcFatExpr<T>
 where

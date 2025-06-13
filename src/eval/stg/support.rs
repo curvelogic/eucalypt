@@ -8,16 +8,16 @@ use serde_json::Number;
 
 use crate::eval::{
     error::ExecutionError,
-    machine::{env::Closure, env_builder::EnvBuilder, intrinsic::*},
+    machine::{env::SynClosure, env_builder::EnvBuilder, intrinsic::*},
     memory::{alloc::ScopedAllocator, array::Array, mutator::MutatorHeapView, syntax::StgBuilder},
     stg::tags::DataConstructor,
 };
 use crate::{common::sourcemap::Smid, eval::memory::syntax::*};
 
 /// Helper for intrinsics to access a numeric arg
-pub fn num_arg<'guard>(
+pub fn num_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<Number, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -30,9 +30,9 @@ pub fn num_arg<'guard>(
 
 /// Helper for intrinsics to access a str arg
 /// TODO: use &str
-pub fn str_arg<'guard>(
+pub fn str_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<String, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -45,9 +45,9 @@ pub fn str_arg<'guard>(
 
 /// Helper for intrinsics to access a sym arg
 /// TODO: use &str
-pub fn sym_arg<'guard>(
+pub fn sym_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<String, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -59,9 +59,9 @@ pub fn sym_arg<'guard>(
 }
 
 /// Helper for intrinsics to access a zoned date time arg
-pub fn zdt_arg<'guard>(
+pub fn zdt_arg(
     machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
+    view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<DateTime<FixedOffset>, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
@@ -73,12 +73,12 @@ pub fn zdt_arg<'guard>(
 }
 
 pub struct DataIterator<'scope> {
-    closure: Closure,
+    closure: SynClosure,
     view: MutatorHeapView<'scope>,
 }
 
-impl<'scope> Iterator for DataIterator<'scope> {
-    type Item = Closure;
+impl Iterator for DataIterator<'_> {
+    type Item = SynClosure;
 
     fn next(&mut self) -> Option<Self::Item> {
         let code = self.view.scoped(self.closure.code());
@@ -124,11 +124,11 @@ pub fn data_list_arg<'scope>(
 /// An iterator for tracing through the list of string values as
 /// established by SeqStrList
 pub struct StrListIterator<'scope> {
-    closure: Closure,
+    closure: SynClosure,
     view: MutatorHeapView<'scope>,
 }
 
-impl<'scope> Iterator for StrListIterator<'scope> {
+impl Iterator for StrListIterator<'_> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -179,7 +179,7 @@ pub fn machine_return_unit(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(Closure::new(view.unit()?.as_ptr(), machine.root_env()))
+    machine.set_closure(SynClosure::new(view.unit()?.as_ptr(), machine.root_env()))
 }
 
 /// Return number from intrinsic
@@ -188,7 +188,7 @@ pub fn machine_return_num(
     view: MutatorHeapView,
     n: Number,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(Closure::new(
+    machine.set_closure(SynClosure::new(
         view.alloc(HeapSyn::Atom {
             evaluand: Ref::V(Native::Num(n)),
         })?
@@ -203,7 +203,7 @@ pub fn machine_return_str(
     view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(Closure::new(
+    machine.set_closure(SynClosure::new(
         view.alloc(HeapSyn::Atom {
             evaluand: view.str_ref(s)?,
         })?
@@ -218,7 +218,7 @@ pub fn machine_return_sym(
     view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(Closure::new(
+    machine.set_closure(SynClosure::new(
         view.alloc(HeapSyn::Atom {
             evaluand: view.sym_ref(s)?,
         })?
@@ -233,7 +233,7 @@ pub fn machine_return_zdt(
     view: MutatorHeapView,
     zdt: DateTime<FixedOffset>,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(Closure::new(
+    machine.set_closure(SynClosure::new(
         view.alloc(HeapSyn::Atom {
             evaluand: Ref::V(Native::Zdt(zdt)),
         })?
@@ -248,7 +248,7 @@ pub fn machine_return_bool(
     view: MutatorHeapView,
     b: bool,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(Closure::new(
+    machine.set_closure(SynClosure::new(
         if b {
             view.t()?.as_ptr()
         } else {
@@ -289,14 +289,14 @@ pub fn machine_return_str_list(
             view.atom(Ref::L(list_index))?,
         )?
         .as_ptr();
-    machine.set_closure(Closure::new(syn, machine.root_env()))
+    machine.set_closure(SynClosure::new(syn, machine.root_env()))
 }
 
 /// Return a list of closures from intrinsic
 pub fn machine_return_closure_list(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    list: Vec<Closure>,
+    list: Vec<SynClosure>,
 ) -> Result<(), ExecutionError> {
     // env of items
     let item_frame = view.from_closures(
@@ -322,14 +322,14 @@ pub fn machine_return_closure_list(
     let syn = view
         .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
         .as_ptr();
-    machine.set_closure(Closure::new(syn, item_frame))
+    machine.set_closure(SynClosure::new(syn, item_frame))
 }
 
 /// Return a list of closures from intrinsic
 pub fn machine_return_block_pair_closure_list(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
-    block: IndexMap<String, Closure>,
+    block: IndexMap<String, SynClosure>,
 ) -> Result<(), ExecutionError> {
     // env of values
     let values: Vec<_> = block.values().cloned().collect();
@@ -344,7 +344,7 @@ pub fn machine_return_block_pair_closure_list(
     // env of pairs
     let mut pairs = vec![];
     for (i, k) in block.keys().enumerate() {
-        pairs.push(Closure::new(
+        pairs.push(SynClosure::new(
             view.data(
                 DataConstructor::BlockPair.tag(),
                 Array::from_slice(&view, &[view.sym_ref(k)?, Ref::L(i)]),
@@ -375,7 +375,7 @@ pub fn machine_return_block_pair_closure_list(
     let syn = view
         .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
         .as_ptr();
-    machine.set_closure(Closure::new(syn, pair_frame))
+    machine.set_closure(SynClosure::new(syn, pair_frame))
 }
 
 pub mod call {

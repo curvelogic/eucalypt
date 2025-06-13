@@ -5,6 +5,8 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::ptr::NonNull;
 
+use super::bump::BLOCK_SIZE_BYTES;
+
 /// A block of memory allocated by the OS / upstream allocator
 #[derive(Debug, PartialEq, Eq)]
 pub struct Block {
@@ -21,6 +23,7 @@ pub enum BlockError {
 }
 
 impl Block {
+    /// Defer to global allocatore to create new block of given size
     pub fn new(size: usize) -> Result<Self, BlockError> {
         if !size.is_power_of_two() {
             Err(BlockError::BadSize)
@@ -46,13 +49,39 @@ impl Block {
             if ptr.is_null() {
                 Err(BlockError::OOM)
             } else {
+                if cfg!(debug_assertions) {
+                    // fill memory with 0xff to aid debugging
+                    let mem = std::slice::from_raw_parts_mut(ptr, size);
+                    mem.fill(0xff);
+                }
                 Ok(NonNull::new_unchecked(ptr))
             }
         }
     }
 
+    /// Fill areas that are meant to be dead with 0xff to aid debugging
+    #[cfg(debug_assertions)]
+    pub fn fill(&self, offset_bytes: usize, size_bytes: usize) {
+        unsafe {
+            let start = self.ptr.as_ptr().add(offset_bytes);
+            let mem = std::slice::from_raw_parts_mut(start, size_bytes);
+            mem.fill(0xff);
+        }
+    }
+
     fn dealloc_block(ptr: NonNull<u8>, size: usize) {
         unsafe { dealloc(ptr.as_ptr(), Layout::from_size_align_unchecked(size, size)) }
+    }
+
+    pub fn byte_offset_of<T>(&self, ptr: NonNull<T>) -> Option<usize> {
+        // TODO: efficiency
+        if ptr.cast() > self.ptr {
+            let offset = (ptr.as_ptr() as usize).abs_diff(self.ptr.as_ptr() as usize);
+            if offset < BLOCK_SIZE_BYTES {
+                return Some(offset);
+            }
+        }
+        None
     }
 }
 

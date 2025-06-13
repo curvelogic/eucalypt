@@ -7,20 +7,21 @@ use crate::{
         memory::{
             alloc::ScopedAllocator,
             array::Array,
+            infotable::InfoTable,
             mutator::MutatorHeapView,
             syntax::{HeapSyn, LambdaForm, Ref, RefPtr, StgBuilder},
         },
     },
 };
 
-use super::env::{Closure, EnvFrame};
+use super::env::{EnvFrame, SynClosure};
 
 /// For building environments in the heap
 #[allow(clippy::wrong_self_convention)]
 pub trait EnvBuilder {
     fn from_saturation(
         &self,
-        args: Array<Closure>,
+        args: Array<SynClosure>,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame>;
@@ -30,12 +31,12 @@ pub trait EnvBuilder {
 
     fn from_closure(
         &self,
-        closure: Closure,
+        closure: SynClosure,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame>;
 
-    fn from_closures<I: Iterator<Item = Closure>>(
+    fn from_closures<I: Iterator<Item = SynClosure>>(
         &self,
         closures: I,
         len: usize,
@@ -60,29 +61,33 @@ pub trait EnvBuilder {
     ) -> RefPtr<EnvFrame>;
 
     /// Create a saturated version of a closure ready for entry
-    fn saturate(&self, closure: &Closure, args: &[Closure]) -> Result<Closure, ExecutionError>;
+    fn saturate(
+        &self,
+        closure: &SynClosure,
+        args: &[SynClosure],
+    ) -> Result<SynClosure, ExecutionError>;
 
     /// Create a new closure with extra partial arguments
     fn partially_apply(
         &self,
-        closure: &Closure,
-        args: &[Closure],
-    ) -> Result<Closure, ExecutionError>;
+        closure: &SynClosure,
+        args: &[SynClosure],
+    ) -> Result<SynClosure, ExecutionError>;
 
     /// Create array of atom closures from refs
     fn create_arg_array(
         &self,
         args: &[Ref],
         environment: RefPtr<EnvFrame>,
-    ) -> Result<Array<Closure>, ExecutionError>;
+    ) -> Result<Array<SynClosure>, ExecutionError>;
 }
 
-impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
+impl EnvBuilder for MutatorHeapView<'_> {
     /// Allocate an env frame for a set of bindings coming from an
     /// argument list
     fn from_saturation(
         &self,
-        args: Array<Closure>,
+        args: Array<SynClosure>,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame> {
@@ -102,7 +107,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         for r in args {
             array.push(
                 self,
-                Closure::new(
+                SynClosure::new(
                     self.alloc(HeapSyn::Atom {
                         evaluand: r.clone(),
                     })
@@ -120,7 +125,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
     /// especially fallback clauses in case / demeta)
     fn from_closure(
         &self,
-        closure: Closure,
+        closure: SynClosure,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame> {
@@ -131,7 +136,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
     }
 
     /// From closures
-    fn from_closures<I: Iterator<Item = Closure>>(
+    fn from_closures<I: Iterator<Item = SynClosure>>(
         &self,
         closures: I,
         len: usize,
@@ -153,7 +158,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         next: RefPtr<EnvFrame>,
         annotation: Smid,
     ) -> RefPtr<EnvFrame> {
-        let closures = bindings.iter().map(|lf| Closure::close(lf, next));
+        let closures = bindings.iter().map(|lf| SynClosure::close(lf, next));
         self.from_closures(closures, bindings.len(), next, annotation)
     }
 
@@ -166,7 +171,10 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
     ) -> RefPtr<EnvFrame> {
         let mut array = Array::with_capacity(self, bindings.len());
         for _ in 0..bindings.len() {
-            array.push(self, Closure::new(RefPtr::dangling(), RefPtr::dangling()));
+            array.push(
+                self,
+                SynClosure::new(RefPtr::dangling(), RefPtr::dangling()),
+            );
         }
 
         let frame = self
@@ -175,16 +183,20 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
             .as_ptr();
 
         for (i, pc) in bindings.iter().enumerate() {
-            array.set(i, Closure::close(pc, frame))
+            array.set(i, SynClosure::close(pc, frame))
         }
 
         frame
     }
 
     /// Create a new saturated closure ready for call
-    fn saturate(&self, closure: &Closure, args: &[Closure]) -> Result<Closure, ExecutionError> {
-        let arg_array: Array<Closure> = Array::from_slice(self, args);
-        Ok(Closure::new_annotated(
+    fn saturate(
+        &self,
+        closure: &SynClosure,
+        args: &[SynClosure],
+    ) -> Result<SynClosure, ExecutionError> {
+        let arg_array: Array<SynClosure> = Array::from_slice(self, args);
+        Ok(SynClosure::new_annotated(
             closure.code(),
             self.from_saturation(arg_array, closure.env(), closure.annotation()),
             closure.annotation(),
@@ -195,9 +207,9 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
     /// an env frame
     fn partially_apply(
         &self,
-        closure: &Closure,
-        args: &[Closure],
-    ) -> Result<Closure, ExecutionError> {
+        closure: &SynClosure,
+        args: &[SynClosure],
+    ) -> Result<SynClosure, ExecutionError> {
         let arity = closure.arity() - (args.len() as u8);
         let env = self.from_closures(
             std::iter::once(closure.clone()).chain(args.iter().cloned()),
@@ -206,7 +218,7 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
             closure.annotation(),
         );
         let syn = pap_syn(*self, args.len(), arity.into())?;
-        Ok(Closure::new_annotated_lambda(
+        Ok(SynClosure::new_annotated_lambda(
             syn,
             arity,
             env,
@@ -219,12 +231,12 @@ impl<'scope> EnvBuilder for MutatorHeapView<'scope> {
         &self,
         args: &[Ref],
         environment: RefPtr<EnvFrame>,
-    ) -> Result<Array<Closure>, ExecutionError> {
+    ) -> Result<Array<SynClosure>, ExecutionError> {
         let mut array = Array::with_capacity(self, args.len());
         for syn in args.iter() {
             array.push(
                 self,
-                Closure::new(self.atom(syn.clone())?.as_ptr(), environment),
+                SynClosure::new(self.atom(syn.clone())?.as_ptr(), environment),
             );
         }
 

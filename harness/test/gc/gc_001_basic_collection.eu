@@ -1,0 +1,48 @@
+#!/usr/bin/env eu
+# Basic GC collection test - Simple allocation -> collection cycle
+
+{
+  title: "GC 001 - Basic Collection Test"
+  test-formats: [:yaml, :json]
+}
+
+# Create a function that allocates several objects
+allocate-objects(n): if(n <= 0, [], 
+  cons({ id: n, data: repeat(n) take(100) }, allocate-objects(n - 1))
+)
+
+# Allocate enough objects to trigger collection
+# Each object contains ~100 elements, so 50 objects should create pressure
+objects: allocate-objects(50)
+
+# Force some additional allocation to ensure GC runs
+more-objects: allocate-objects(25)
+
+# Verify we can still access the data (objects weren't corrupted)
+first-object: objects head
+last-object: objects last
+
+# Test that objects contain expected data
+first-id: first-object.id
+last-id: last-object.id
+
+# Verify data integrity after potential collection
+` { target: :test-basic-collection
+    doc: "Basic allocation and collection cycle works correctly"
+    verify: [:verify-allocation-integrity] }
+test-basic-collection: {
+  first-id-correct: first-id //= 50
+  last-id-correct: last-id //= 1
+  objects-count: objects count //= 50
+  more-objects-count: more-objects count //= 25
+  # Verify some data integrity
+  first-data-size: first-object.data count //= 100
+  last-data-size: last-object.data count //= 100
+}
+
+# Verification function that checks all conditions are true
+verify-allocation-integrity(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)

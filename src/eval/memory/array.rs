@@ -9,7 +9,10 @@ use std::{cmp::min, mem::size_of, slice::from_raw_parts};
 
 use crate::eval::error::ExecutionError;
 
-use super::{alloc::ScopedAllocator, syntax::RefPtr};
+use super::{
+    alloc::{MutatorScope, ScopedAllocator},
+    syntax::RefPtr,
+};
 
 /// Simple growable backing array
 ///
@@ -22,10 +25,7 @@ pub struct RawArray<T: Sized> {
 
 impl<T: Sized> Clone for RawArray<T> {
     fn clone(&self) -> Self {
-        RawArray {
-            capacity: self.capacity,
-            ptr: self.ptr,
-        }
+        *self
     }
 }
 
@@ -113,7 +113,7 @@ impl<T: Sized> RawArray<T> {
             Ok(None)
         } else {
             let capacity_bytes = capacity
-                .checked_mul(size_of::<T>() as usize)
+                .checked_mul(size_of::<T>())
                 .ok_or(ExecutionError::AllocationError)?;
             Ok(RefPtr::new(
                 mem.alloc_bytes(capacity_bytes)?.as_ptr() as *mut T
@@ -192,6 +192,7 @@ impl<T: Sized + Clone> Array<T> {
         self.write(self.length - 1, item);
     }
 
+    // TODO: needs guard
     /// Remove and return the final item (if any)
     pub fn pop(&mut self) -> Option<T> {
         if self.length > 0 {
@@ -202,6 +203,14 @@ impl<T: Sized + Clone> Array<T> {
         } else {
             None
         }
+    }
+
+    pub fn pop_n<G, V, F>(&mut self, _scope: &G, _n: usize, _consumer: F) -> V
+    where
+        F: Fn(&[T]) -> V,
+        G: MutatorScope,
+    {
+        todo!();
     }
 
     /// Return the final item
@@ -222,11 +231,13 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     /// Set item at index
     pub fn set(&mut self, index: usize, item: T) {
         self.write(index, item);
     }
 
+    // TODO: needs guard
     /// As immutable slice
     pub fn as_slice(&self) -> &[T] {
         if let Some(ptr) = self.data.as_ptr() {
@@ -236,8 +247,11 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     /// Read only iterator
     pub fn iter(&self) -> std::slice::Iter<T> {
+        debug_assert_ne!(self.length, usize::MAX);
+        debug_assert!(self.length < u32::MAX as usize);
         self.as_slice().iter()
     }
 
@@ -263,6 +277,7 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     fn write(&mut self, index: usize, item: T) -> &T {
         unsafe {
             let dest = self.get_offset(index).expect("write: bounds error");
@@ -271,11 +286,18 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
+    // TODO: needs guard
     fn read(&self, index: usize) -> T {
         unsafe {
             let dest = self.get_offset(index).expect("bounds error");
             std::ptr::read(dest)
         }
+    }
+
+    // Return pointer to allocated data for navigating to header (and
+    // marking during GC)
+    pub fn allocated_data(&self) -> Option<RefPtr<u8>> {
+        self.data.ptr.map(|p| p.cast())
     }
 }
 

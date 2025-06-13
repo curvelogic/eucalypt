@@ -20,7 +20,7 @@ pub fn read_edn<'smap>(
     file_id: usize,
     text: &'smap str,
 ) -> Result<RcExpr, SourceError> {
-    let edn = parse_str(text).map_err(|e| SourceError::InvalidEdn(e, file_id))?;
+    let edn = parse_str(text).map_err(|e| SourceError::InvalidEdn(Box::new(e), file_id))?;
     value_to_core(&edn, file_id)
 }
 
@@ -85,7 +85,7 @@ fn value_to_core(edn: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
                 },
             )
             .collect::<Result<Vec<(String, RcExpr)>, SourceError>>()
-            .map(|entries| acore::block(entries.into_iter())),
+            .map(acore::block),
         Value::Set(xs) => xs
             .iter()
             .map(|v| value_to_core(v, file_id))

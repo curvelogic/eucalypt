@@ -149,16 +149,16 @@ impl StgIntrinsic for Unimplemented {
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
-        dsl::value(call::bif::panic(dsl::str(&format!(
+        dsl::value(call::bif::panic(dsl::str(format!(
             "unimplemented intrinsic wrapper {}",
             self.name()
         ))))
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         _machine: &mut dyn IntrinsicMachine,
-        _view: MutatorHeapView<'guard>,
+        _view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         _args: &[Ref],
     ) -> Result<(), ExecutionError> {

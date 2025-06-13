@@ -14,15 +14,10 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check
+        run: cargo check
 
   test:
     name: Test Suite
@@ -31,54 +26,41 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v1
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
-          path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-            ${{ runner.os }}-cargo
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+            ${{ runner.os }}-cargo-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test
 
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
+          components: clippy
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
 
   benchmark:
     needs: [check, test, fmt, clippy]
@@ -87,31 +69,29 @@ jobs:
     # if: ${{ false }}
     continue-on-error: true
     steps:
-      - uses: actions/cache@v1
+      - uses: actions/cache@v4
         with:
-          path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-            ${{ runner.os }}-cargo
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions/checkout@v2
+            ${{ runner.os }}-cargo-
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
       - run: |
            cargo bench --bench alloc -- --save-baseline base
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           clean: false
           ref: ${{ github.event.pull_request.head.sha }}
       - run: |
            cargo bench --bench alloc -- --baseline base
       - name: Save HTML report
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-report
           path: |
@@ -123,30 +103,23 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/cache@v1
+      - uses: actions/cache@v4
         with:
-          path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-            ${{ runner.os }}-cargo
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: git-changelog
+            ${{ runner.os }}-cargo-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install git-changelog
+        run: cargo install git-changelog
       - name: build and install temporary eu
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path .
+        run: cargo install --path .
       - name: prepare build files for new version
         run: |
           export OSTYPE=$(uname)
@@ -156,14 +129,10 @@ jobs:
           mv -f build-meta.yaml.new build-meta.yaml
 
           echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all --release
+      - name: Run release tests
+        run: cargo test --release
+      - name: Build release
+        run: cargo build --all --release
       - run: |
           strip target/release/eu
           mv target/release/eu target/release/eu_amd64
@@ -178,12 +147,12 @@ jobs:
         run: |
           echo "$(git-changelog latest...)" > CHANGELOG.md
       - name: Upload changelog
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
           name: CHANGELOG.md
           path: CHANGELOG.md
       - name: Upload binary
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
           name: eu_amd64
           path: target/release/eu_amd64
@@ -195,24 +164,19 @@ jobs:
     runs-on: macos-latest
     if: github.ref == 'refs/heads/master'
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v1
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
-          path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-            ${{ runner.os }}-cargo
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+            ${{ runner.os }}-cargo-
+      - uses: dtolnay/rust-toolchain@stable
       - name: Build and install temporary eu
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path .
+        run: cargo install --path .
       - name: Prepare build files for new version
         run: |
           export OSTYPE=$(uname)
@@ -222,14 +186,10 @@ jobs:
           mv -f build-meta.yaml.new build-meta.yaml
 
           echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all --release
+      - name: Run release tests
+        run: cargo test --release
+      - name: Build release
+        run: cargo build --all --release
       - run: |
           strip target/release/eu
           mv target/release/eu target/release/eu_darwin
@@ -238,7 +198,7 @@ jobs:
           target/release/eu_darwin -v
           target/release/eu_darwin harness/test -T
       - name: Upload binary
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
           name: eu_darwin
           path: target/release/eu_darwin
@@ -251,15 +211,15 @@ jobs:
       - release-candidate-macos
     steps:
 
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: eu_darwin
 
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: eu_amd64
 
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: CHANGELOG.md
 

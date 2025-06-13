@@ -8,7 +8,7 @@ use crate::{
         machine::intrinsic::{
             CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
         },
-        memory::{mutator::MutatorHeapView, syntax::Ref},
+        memory::{infotable::InfoTable, mutator::MutatorHeapView, syntax::Ref},
         stg::{runtime::NativeVariant, support::call},
     },
 };
@@ -293,10 +293,10 @@ impl StgIntrinsic for Saturated {
         "SATURATED"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {

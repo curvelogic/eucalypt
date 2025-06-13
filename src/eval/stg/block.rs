@@ -10,7 +10,7 @@ use crate::{
         emit::Emitter,
         error::ExecutionError,
         machine::{
-            env::Closure,
+            env::SynClosure,
             env_builder::EnvBuilder,
             intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic},
         },
@@ -561,8 +561,8 @@ pub struct Merge;
 /// and v. The same function can deconstruct either.
 fn deconstruct(
     view: MutatorHeapView,
-    pair_closure: &Closure,
-) -> Result<(String, Closure), ExecutionError> {
+    pair_closure: &SynClosure,
+) -> Result<(String, SynClosure), ExecutionError> {
     use crate::eval::memory::syntax;
 
     let code = view.scoped(pair_closure.code());
@@ -652,17 +652,17 @@ impl StgIntrinsic for Merge {
         )
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let l = data_list_arg(machine, view, args[0].clone())?;
         let r = data_list_arg(machine, view, args[1].clone())?;
 
-        let mut merge: IndexMap<String, Closure> = IndexMap::new();
+        let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
         for item in l {
             let (k, kv) = deconstruct(view, &item)?;
@@ -751,10 +751,10 @@ impl StgIntrinsic for MergeWith {
         )
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
@@ -762,7 +762,7 @@ impl StgIntrinsic for MergeWith {
         let r = data_list_arg(machine, view, args[1].clone())?;
         let f = args[2].clone();
 
-        let mut merge: IndexMap<String, Closure> = IndexMap::new();
+        let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
         for item in l {
             let (key, value) = deconstruct(view, &item)?;
@@ -773,7 +773,7 @@ impl StgIntrinsic for MergeWith {
             let (key, nv) = deconstruct(view, &item)?;
             if let Some(ov) = merge.get_mut(&key) {
                 let args = [ov.clone(), nv];
-                let mut combined = Closure::new(
+                let mut combined = SynClosure::new(
                     view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
                         .as_ptr(),
                     view.from_closures(args.iter().cloned(), 2, machine.env(view), Smid::default()),
@@ -801,7 +801,7 @@ impl StgIntrinsic for DeepMerge {
         "DEEPMERGE"
     }
 
-    ///
+    /// Deep merge operation
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 

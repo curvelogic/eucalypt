@@ -265,3 +265,53 @@ pub fn test_harness_053() {
 pub fn test_harness_054() {
     run_test(&opts("054_qsort.eu"));
 }
+
+#[test]
+pub fn test_gc_001() {
+    run_test(&opts("gc/gc_001_basic_collection.eu"));
+}
+
+#[test]
+pub fn test_gc_002() {
+    run_test(&opts("gc/gc_002_stress_allocation.eu"));
+}
+
+#[test]
+pub fn test_gc_003() {
+    run_test(&opts("gc/gc_003_memory_pressure.eu"));
+}
+
+#[test]
+pub fn test_gc_004() {
+    run_test(&opts("gc/gc_004_fragmentation.eu"));
+}
+
+#[test]
+pub fn test_gc_005() {
+    run_test(&opts("gc/gc_005_collection_cycles.eu"));
+}
+
+#[test]
+pub fn test_gc_006() {
+    run_test(&opts("gc/gc_006_object_lifecycle.eu"));
+}
+
+#[test]
+pub fn test_gc_007() {
+    run_test(&opts("gc/gc_007_concurrent_allocation.eu"));
+}
+
+#[test]
+pub fn test_gc_008() {
+    run_test(&opts("gc/gc_008_edge_cases.eu"));
+}
+
+#[test]
+pub fn test_gc_009() {
+    run_test(&opts("gc/gc_009_performance_regression.eu"));
+}
+
+#[test]
+pub fn test_gc_010() {
+    run_test(&opts("gc/gc_010_comprehensive_stress.eu"));
+}

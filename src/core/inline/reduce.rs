@@ -24,8 +24,8 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 
             let inlines: Vec<_> = open_binders
                 .iter()
+                .filter(|&(_, Embed(v))| inlinable(v))
                 .cloned()
-                .filter(|(_, Embed(v))| inlinable(v))
                 .map(|(Binder(k), Embed(v))| (k, v))
                 .collect();
 

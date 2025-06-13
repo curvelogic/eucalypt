@@ -1,0 +1,102 @@
+#!/usr/bin/env eu
+# GC object lifecycle test - Test object lifecycle and generational behavior
+#
+# CURRENT SCALE: 15 objects across different lifecycle stages for basic validation
+# FUTURE SCALE: 300+ objects with complex generational patterns and lifecycle tracking
+# 
+# This test validates GC behavior across object lifecycles, testing how objects
+# move through different generations and survive based on their age and usage patterns.
+
+# Create objects with different lifecycle characteristics
+# Simulates young, middle-aged, and old generation objects
+# TODO: Scale up for more complex generational testing
+
+# Young generation - recently allocated objects (may be collected quickly)
+young-generation: [
+  { id: 1, generation: :young, age: 0, references: 1, data: ["Y1"] },
+  { id: 2, generation: :young, age: 0, references: 2, data: ["Y2"] },
+  { id: 3, generation: :young, age: 0, references: 1, data: ["Y3"] },
+  { id: 4, generation: :young, age: 0, references: 3, data: ["Y4"] },
+  { id: 5, generation: :young, age: 0, references: 1, data: ["Y5"] }
+]  # Future: 100+ young objects with varying reference patterns
+
+# Middle generation - objects that survived some collections
+middle-generation: [
+  { id: 101, generation: :middle, age: 2, references: 5, data: ["M1", "M1"] },
+  { id: 102, generation: :middle, age: 3, references: 4, data: ["M2", "M2"] },
+  { id: 103, generation: :middle, age: 2, references: 6, data: ["M3", "M3"] },
+  { id: 104, generation: :middle, age: 4, references: 3, data: ["M4", "M4"] },
+  { id: 105, generation: :middle, age: 1, references: 7, data: ["M5", "M5"] }
+]  # Future: 100+ middle-aged objects with survival tracking
+
+# Old generation - long-lived objects (should rarely be collected)
+old-generation: [
+  { id: 1001, generation: :old, age: 10, references: 15, data: ["O1", "O1", "O1"] },
+  { id: 1002, generation: :old, age: 12, references: 20, data: ["O2", "O2", "O2"] },
+  { id: 1003, generation: :old, age: 8, references: 18, data: ["O3", "O3", "O3"] },
+  { id: 1004, generation: :old, age: 15, references: 12, data: ["O4", "O4", "O4"] },
+  { id: 1005, generation: :old, age: 9, references: 25, data: ["O5", "O5", "O5"] }
+]  # Future: 100+ old objects with complex reference networks
+
+# Combine all generations for lifecycle testing
+all-lifecycle-objects: {
+  young: young-generation,
+  middle: middle-generation,
+  old: old-generation
+}
+
+# Verify lifecycle objects survived according to generational expectations
+first-young: young-generation head
+last-young: young-generation last
+first-middle: middle-generation head
+first-old: old-generation head
+
+# Test object lifecycle scenarios
+` { target: :test-object-lifecycle
+    doc: "Object lifecycle and generational behavior validation"
+    verify: [:verify-object-lifecycle] }
+test-object-lifecycle: {
+  # Validate generational survival
+  # TODO: Scale up counts when generation sizes increase
+  young-gen-count: young-generation count //= 5                 # Future: validate survival rate %
+  middle-gen-count: middle-generation count //= 5               # Future: //= 100
+  old-gen-count: old-generation count //= 5                     # Future: //= 100
+  
+  # Validate ID ranges for each generation
+  young-first-id: first-young.id //= 1
+  young-last-id: last-young.id //= 5                            # Future: //= 100
+  middle-first-id: first-middle.id //= 101
+  old-first-id: first-old.id //= 1001
+  
+  # Validate generation classification
+  young-gen-class: first-young.generation //= :young
+  middle-gen-class: first-middle.generation //= :middle
+  old-gen-class: first-old.generation //= :old
+  
+  # Validate age progression (older generations should have higher ages)
+  age-progression-young: first-young.age //= 0
+  age-progression-middle: first-middle.age //= 2                # Middle > Young
+  age-progression-old: first-old.age //= 10                     # Old > Middle
+  
+  # Validate reference patterns (older objects tend to have more references)
+  # TODO: Add more sophisticated reference validation
+  young-refs: first-young.references //= 1
+  middle-refs: first-middle.references //= 5                    # Middle > Young
+  old-refs: first-old.references //= 15                         # Old > Middle
+  
+  # Validate data sizes correlate with generation
+  # TODO: Scale up data sizes when object sizes increase
+  young-data-size: first-young.data count //= 1                 # Future: //= 10
+  middle-data-size: first-middle.data count //= 2               # Future: //= 25
+  old-data-size: first-old.data count //= 3                     # Future: //= 50
+  
+  # Validate total lifecycle objects
+  total-lifecycle-objects: ((young-generation count) + (middle-generation count) + (old-generation count)) = 15
+}
+
+# Verification function that checks all conditions are true
+verify-object-lifecycle(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)

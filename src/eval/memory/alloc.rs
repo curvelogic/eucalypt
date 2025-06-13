@@ -5,6 +5,7 @@
 use crate::eval::error::ExecutionError;
 
 use super::bump::AllocError;
+use super::header::AllocHeader;
 use std::ops::Deref;
 use std::ptr::NonNull;
 
@@ -12,9 +13,10 @@ pub trait StgObject {}
 
 impl<T> StgObject for NonNull<T> {}
 
-pub struct AllocHeader {}
-
-/// Allocator for STG
+/// Fundamental allocation trait
+///
+/// Heap implementations provide this and then controlled access to it
+/// is forwarded to mutators and collectors by ScopedPtr.
 pub trait Allocator {
     /// Allocate a T
     fn alloc<T>(&self, object: T) -> Result<NonNull<T>, AllocError>
@@ -39,7 +41,7 @@ pub struct ScopedPtr<'guard, T: Sized> {
     value: &'guard T,
 }
 
-impl<'guard, T: Sized> MutatorScope for ScopedPtr<'guard, T> {}
+impl<T: Sized> MutatorScope for ScopedPtr<'_, T> {}
 
 impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     pub fn new(_guard: &'guard dyn MutatorScope, value: &'guard T) -> ScopedPtr<'guard, T> {
@@ -55,7 +57,7 @@ impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     }
 }
 
-impl<'guard, T: Sized> Deref for ScopedPtr<'guard, T> {
+impl<T: Sized> Deref for ScopedPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {

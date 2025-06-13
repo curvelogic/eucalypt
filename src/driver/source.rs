@@ -123,7 +123,8 @@ impl SourceLoader {
             &mut self.files,
             &mut self.source_map,
             file_id,
-        )?;
+        )
+        .map_err(|e| EucalyptError::Source(Box::new(e)))?;
         self.imports.add_leaf(input.clone())?;
         self.cores.insert(input.clone(), core);
         Ok(file_id)

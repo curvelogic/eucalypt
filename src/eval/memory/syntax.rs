@@ -2,12 +2,14 @@
 //! eucalypt-allocated memory
 
 use crate::common::sourcemap::Smid;
+
 use crate::eval::{error::ExecutionError, stg::tags::Tag};
 use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
 use std::{fmt, ptr::NonNull, rc::Rc};
 
-use super::infotable::InfoTable;
+use super::collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr};
+use super::infotable::InfoTagged;
 use super::string::HeapString;
 use super::{
     alloc::{ScopedPtr, StgObject},
@@ -148,10 +150,10 @@ impl Ref {
 }
 
 /// Add arity, update flag etc. to HeapSyn to make LambdaForm
-pub type LambdaForm = InfoTable<RefPtr<HeapSyn>>;
+pub type LambdaForm = InfoTagged<RefPtr<HeapSyn>>;
 
 /// Compiled STG syntax
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum HeapSyn {
     /// A single thing - either a reference into env or a native
     Atom { evaluand: Ref },
@@ -195,16 +197,11 @@ pub enum HeapSyn {
         or_else: RefPtr<HeapSyn>,
     },
     /// Blackhole - invalid / uninitialised code
+    #[default]
     BlackHole,
 }
 
 impl StgObject for HeapSyn {}
-
-impl Default for HeapSyn {
-    fn default() -> Self {
-        HeapSyn::BlackHole
-    }
-}
 
 impl HeapSyn {
     /// Used to determine when to create thunks and when not
@@ -220,6 +217,111 @@ impl HeapSyn {
     }
 }
 
+impl GcScannable for LambdaForm {
+    fn scan<'a>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let body = self.body();
+        if marker.mark(body) {
+            vec![ScanPtr::from_non_null(scope, body)]
+        } else {
+            vec![]
+        }
+    }
+}
+
+impl GcScannable for HeapSyn {
+    fn scan<'a>(
+        &'a self,
+        scope: &'a dyn CollectorScope,
+        marker: &mut CollectorHeapView<'a>,
+    ) -> Vec<ScanPtr<'a>> {
+        let mut grey = vec![];
+
+        match self {
+            HeapSyn::Atom { evaluand: _ } => {}
+            HeapSyn::Case {
+                scrutinee,
+                branches,
+                fallback,
+            } => {
+                if marker.mark(*scrutinee) {
+                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                }
+                if marker.mark_array(branches) {
+                    for (_, b) in branches.iter() {
+                        if marker.mark(*b) {
+                            grey.push(ScanPtr::from_non_null(scope, *b));
+                        }
+                    }
+                }
+                if let Some(f) = fallback {
+                    if marker.mark(*f) {
+                        grey.push(ScanPtr::from_non_null(scope, *f));
+                    }
+                }
+            }
+            HeapSyn::Cons { tag: _, args } => {
+                marker.mark_array(args);
+            }
+            HeapSyn::App { callable: _, args } => {
+                marker.mark_array(args);
+            }
+            HeapSyn::Bif { intrinsic: _, args } => {
+                marker.mark_array(args);
+            }
+            HeapSyn::Let { bindings, body } => {
+                if marker.mark_array(bindings) {
+                    for bindings in bindings.iter() {
+                        grey.push(ScanPtr::new(scope, bindings));
+                    }
+                }
+
+                if marker.mark(*body) {
+                    grey.push(ScanPtr::from_non_null(scope, *body));
+                }
+            }
+            HeapSyn::LetRec { bindings, body } => {
+                if marker.mark_array(bindings) {
+                    for bindings in bindings.iter() {
+                        grey.push(ScanPtr::new(scope, bindings));
+                    }
+                }
+
+                if marker.mark(*body) {
+                    grey.push(ScanPtr::from_non_null(scope, *body));
+                }
+            }
+            HeapSyn::Ann { smid: _, body } => {
+                if marker.mark(*body) {
+                    grey.push(ScanPtr::from_non_null(scope, *body));
+                }
+            }
+            HeapSyn::Meta { meta: _, body: _ } => {}
+            HeapSyn::DeMeta {
+                scrutinee,
+                handler,
+                or_else,
+            } => {
+                if marker.mark(*scrutinee) {
+                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                }
+                if marker.mark(*handler) {
+                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                }
+                if marker.mark(*or_else) {
+                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                }
+            }
+            HeapSyn::BlackHole => {}
+        }
+
+        grey
+    }
+}
+
 /// Support for representing in-heap code as STG language syntax for
 /// debugging / display
 pub mod repr {
@@ -231,6 +333,7 @@ pub mod repr {
             self,
             alloc::{MutatorScope, ScopedPtr},
             array::Array,
+            infotable::InfoTable,
         },
         stg::{self, syntax::StgSyn},
     };
@@ -307,7 +410,7 @@ pub mod repr {
 }
 
 /// Convert in-heap HeapSyn back to StgSyn for debugging
-impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
+impl Repr for ScopedPtr<'_, HeapSyn> {
     fn repr(&self) -> Rc<crate::eval::stg::syntax::StgSyn> {
         use crate::eval::stg::syntax::StgSyn;
 
@@ -368,7 +471,7 @@ impl<'guard> Repr for ScopedPtr<'guard, HeapSyn> {
     }
 }
 
-impl<'guard> fmt::Display for ScopedPtr<'guard, HeapSyn> {
+impl fmt::Display for ScopedPtr<'_, HeapSyn> {
     /// Defer to STG syntax implementation
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.repr().fmt(f)

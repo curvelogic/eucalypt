@@ -4,23 +4,18 @@ use crate::{
     eval::stg::RenderType,
     syntax::input::{Input, Locator},
 };
-use atty::Stream;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::str::FromStr;
 use structopt::StructOpt;
 
 use super::project;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum CommandLineMode {
+    #[default]
     Ergonomic,
     Batch,
-}
-
-impl Default for CommandLineMode {
-    fn default() -> Self {
-        CommandLineMode::Ergonomic
-    }
 }
 
 impl CommandLineMode {
@@ -516,7 +511,7 @@ impl EucalyptOptions {
         self.lib_path.insert(0, std::env::current_dir()?);
 
         // For pipes, default json stdin
-        if self.explicit_inputs.is_empty() && !atty::is(Stream::Stdin) {
+        if self.explicit_inputs.is_empty() && !std::io::stdin().is_terminal() {
             self.prepend_input(Input::from_str("-").unwrap());
         }
 

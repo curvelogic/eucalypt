@@ -31,7 +31,9 @@ pub fn run(opt: &EucalyptOptions, loader: SourceLoader) -> Result<Statistics, Eu
     let format = determine_format(opt, &loader);
     let mut stats = Statistics::default();
     let mut executor = Executor::from(loader);
-    executor.execute(opt, &mut stats, format)?;
+    executor
+        .execute(opt, &mut stats, format)
+        .map_err(|e| EucalyptError::Execution(Box::new(e)))?;
     Ok(stats)
 }
 
@@ -74,7 +76,7 @@ pub struct Executor<'a> {
     err: Option<Box<dyn Write + 'a>>,
 }
 
-impl<'a> From<SourceLoader> for Executor<'a> {
+impl From<SourceLoader> for Executor<'_> {
     fn from(loader: SourceLoader) -> Self {
         let (files, source_map, evaluand) = loader.complete();
         Self::new(files, source_map, evaluand)
@@ -158,12 +160,25 @@ impl<'a> Executor<'a> {
                     let t = Instant::now();
                     let ret = machine.run(None);
                     stats.timings_mut().record("stg-execute", t.elapsed());
+
+                    // copy finer grained GC timings
+                    for (k, v) in machine.clock().report() {
+                        stats.timings_mut().record(k, v);
+                    }
+
+                    // copy machine stats
+
                     stats.set_ticks(machine.metrics().ticks());
                     stats.set_allocs(machine.metrics().allocs());
                     stats.set_max_stack(machine.metrics().max_stack());
+
+                    // copy heap stats
+
                     let heap_stats = machine.heap_stats();
                     stats.set_blocks_allocated(heap_stats.blocks_allocated);
                     stats.set_lobs_allocated(heap_stats.lobs_allocated);
+                    stats.set_blocks_used(heap_stats.used);
+                    stats.set_blocks_recycled(heap_stats.recycled);
                     ret
                 };
 

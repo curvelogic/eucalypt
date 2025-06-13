@@ -273,7 +273,7 @@ fn desugar_name(name: &Name, desugarer: &mut Desugarer) -> RcExpr {
             }
         }
         Name::Normal(s, n) => {
-            if n.starts_with("__") && n.chars().nth(2).map_or(false, |c| c.is_uppercase()) {
+            if n.starts_with("__") && n.chars().nth(2).is_some_and(|c| c.is_uppercase()) {
                 RcExpr::from(Expr::Intrinsic(desugarer.new_smid(*s), n[2..].to_string()))
             } else if BLOCK_ANAPHORA.is_anaphor(n) {
                 let smid = desugarer.new_smid(*s);

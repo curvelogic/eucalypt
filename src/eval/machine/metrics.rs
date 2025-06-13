@@ -1,6 +1,56 @@
 //! Machine metrics
 
 use std::cmp::max;
+use std::collections::BTreeMap;
+use std::time;
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum ThreadOccupation {
+    Initialisation,
+    Mutator,
+    CollectorMark,
+    CollectorSweep,
+}
+
+#[derive(Default)]
+pub struct Clock {
+    durations: BTreeMap<ThreadOccupation, time::Duration>,
+    current: Option<(ThreadOccupation, time::Instant)>,
+}
+
+impl Clock {
+    pub fn report(&self) -> Vec<(String, time::Duration)> {
+        let mut total = time::Duration::default();
+        let mut report = vec![];
+        for (k, v) in &self.durations {
+            total += *v;
+            report.push((format!("VM-{:?}", k), *v));
+        }
+
+        report.push(("VM-Total".to_string(), total));
+        report
+    }
+
+    pub fn switch(&mut self, occupation: ThreadOccupation) {
+        self.commit();
+        self.current = Some((occupation, time::Instant::now()))
+    }
+
+    pub fn stop(&mut self) {
+        self.commit();
+        self.current = None
+    }
+
+    fn commit(&mut self) {
+        if let Some((task, since)) = &self.current {
+            let duration = since.elapsed();
+            self.durations
+                .entry(*task)
+                .and_modify(|v| *v += duration)
+                .or_insert(duration);
+        }
+    }
+}
 
 /// Record some metrics as we execute code
 #[derive(Default)]

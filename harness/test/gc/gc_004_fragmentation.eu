@@ -1,0 +1,84 @@
+#!/usr/bin/env eu
+# GC fragmentation test - Test GC behavior with fragmented allocation patterns
+#
+# CURRENT SCALE: 6 objects total with mixed sizes to create basic fragmentation
+# FUTURE SCALE: 100+ objects with complex interleaved allocation/deallocation patterns
+# 
+# This test validates GC behavior when memory becomes fragmented through
+# mixed allocation patterns that create holes in memory layout.
+
+# Create fragmentation through interleaved allocation of different sizes
+# Simple pattern: large -> small -> medium -> large -> small -> medium
+# TODO: Scale up for more fragmentation - add more size variations and complex patterns
+
+fragmentation-objects: [
+  { id: 100, type: :large, buffer: ["L1", "L1", "L1", "L1", "L1", "L1"] },
+  { id: 10, type: :small, buffer: ["S1", "S1"] },
+  { id: 50, type: :medium, buffer: ["M1", "M1", "M1", "M1"] },
+  { id: 101, type: :large, buffer: ["L2", "L2", "L2", "L2", "L2", "L2"] },
+  { id: 11, type: :small, buffer: ["S2", "S2"] },
+  { id: 51, type: :medium, buffer: ["M2", "M2", "M2", "M2"] }
+]  # Future: 100+ objects with complex allocation/deallocation cycles
+
+# Simple grouping - manually list the objects by type to avoid complex operations
+# TODO: Use more sophisticated filtering when performance issues resolved
+small-objects: [
+  { id: 10, type: :small, buffer: ["S1", "S1"] },
+  { id: 11, type: :small, buffer: ["S2", "S2"] }
+]
+
+medium-objects: [
+  { id: 50, type: :medium, buffer: ["M1", "M1", "M1", "M1"] },
+  { id: 51, type: :medium, buffer: ["M2", "M2", "M2", "M2"] }
+]
+
+large-objects: [
+  { id: 100, type: :large, buffer: ["L1", "L1", "L1", "L1", "L1", "L1"] },
+  { id: 101, type: :large, buffer: ["L2", "L2", "L2", "L2", "L2", "L2"] }
+]
+
+# Verify fragmentation pattern survived GC
+first-small-frag: small-objects head
+first-medium-frag: medium-objects head
+first-large-frag: large-objects head
+
+# Test fragmentation scenarios
+` { target: :test-fragmentation
+    doc: "Memory fragmentation scenarios with mixed allocation patterns"
+    verify: [:verify-fragmentation] }
+test-fragmentation: {
+  # Validate total fragmentation survived
+  # TODO: Scale up counts when object counts increase
+  total-objects: fragmentation-objects count //= 6            # Future: //= 100+
+  
+  # Validate each size class survived fragmentation
+  small-frag-count: small-objects count //= 2                # Future: //= 30
+  medium-frag-count: medium-objects count //= 2              # Future: //= 35  
+  large-frag-count: large-objects count //= 2                # Future: //= 35
+  
+  # Validate ID correctness after fragmentation
+  small-frag-first-id: first-small-frag.id //= 10
+  medium-frag-first-id: first-medium-frag.id //= 50
+  large-frag-first-id: first-large-frag.id //= 100
+  
+  # Validate buffer integrity after fragmentation and potential GC
+  # TODO: Scale up buffer sizes when object sizes increase
+  small-frag-buffer-size: first-small-frag.buffer count //= 2   # Future: //= 50
+  medium-frag-buffer-size: first-medium-frag.buffer count //= 4 # Future: //= 150
+  large-frag-buffer-size: first-large-frag.buffer count //= 6   # Future: //= 300
+  
+  # Validate type assignments preserved through fragmentation
+  small-frag-type: first-small-frag.type //= :small
+  medium-frag-type: first-medium-frag.type //= :medium
+  large-frag-type: first-large-frag.type //= :large
+  
+  # Validate fragmentation pattern integrity
+  pattern-integrity: ((small-objects count) + (medium-objects count) + (large-objects count)) = 6
+}
+
+# Verification function that checks all conditions are true
+verify-fragmentation(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)

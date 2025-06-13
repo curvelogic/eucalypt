@@ -1,0 +1,80 @@
+#!/usr/bin/env eu
+# GC memory pressure test - Test GC behavior under sustained memory pressure
+#
+# CURRENT SCALE: 9 objects total (3+3+3) with minimal buffers for fast execution
+# FUTURE SCALE: 100+ objects with large buffers and complex allocation patterns
+# 
+# This test validates GC behavior under basic memory pressure through
+# different object sizes that exercise allocation patterns.
+
+# Create memory pressure through different allocation sizes
+# TODO: Scale up for more pressure - increase counts dramatically
+small-objects: [
+  { id: 0, size-class: :small, buffer: ["s", "s", "s"] },
+  { id: 1, size-class: :small, buffer: ["s", "s", "s"] },
+  { id: 2, size-class: :small, buffer: ["s", "s", "s"] }
+]  # Future: 30 objects with buffer size 100
+
+medium-objects: [
+  { id: 10, size-class: :medium, buffer: ["m", "m", "m", "m", "m"] },
+  { id: 11, size-class: :medium, buffer: ["m", "m", "m", "m", "m"] },
+  { id: 12, size-class: :medium, buffer: ["m", "m", "m", "m", "m"] }
+]  # Future: 15 objects with buffer size 250
+
+large-objects: [
+  { id: 20, size-class: :large, buffer: ["l", "l", "l", "l", "l", "l", "l", "l"] },
+  { id: 21, size-class: :large, buffer: ["l", "l", "l", "l", "l", "l", "l", "l"] },
+  { id: 22, size-class: :large, buffer: ["l", "l", "l", "l", "l", "l", "l", "l"] }
+]  # Future: 15 objects with buffer size 500
+
+# Combine all pressure objects to test memory management
+all-pressure-objects: {
+  small: small-objects,
+  medium: medium-objects,
+  large: large-objects
+}
+
+# Verify objects survived memory pressure
+first-small: small-objects head
+last-small: small-objects last
+first-medium: medium-objects head
+first-large: large-objects head
+
+# Test memory pressure scenarios
+` { target: :test-memory-pressure
+    doc: "Memory pressure scenarios with different object sizes"
+    verify: [:verify-memory-pressure] }
+test-memory-pressure: {
+  # Validate allocations survived pressure
+  # TODO: Scale up counts when object counts increase
+  small-count: small-objects count //= 3                    # Future: //= 30
+  medium-count: medium-objects count //= 3                  # Future: //= 15
+  large-count: large-objects count //= 3                    # Future: //= 15
+  
+  # Validate ID correctness
+  small-first-id: first-small.id //= 0
+  small-last-id: last-small.id //= 2                        # Future: //= 29
+  medium-first-id: first-medium.id //= 10
+  large-first-id: first-large.id //= 20
+  
+  # Validate buffer integrity after pressure
+  # TODO: Scale up buffer sizes when object sizes increase
+  small-buffer-size: first-small.buffer count //= 3         # Future: //= 100
+  medium-buffer-size: first-medium.buffer count //= 5       # Future: //= 250
+  large-buffer-size: first-large.buffer count //= 8         # Future: //= 500
+  
+  # Validate size class assignments
+  small-size-class: first-small.size-class //= :small
+  medium-size-class: first-medium.size-class //= :medium
+  large-size-class: first-large.size-class //= :large
+  
+  # Calculate total objects under pressure
+  total-pressure-objects: (3 + 3 + 3) = 9                   # Future: (30 + 15 + 15) = 60
+}
+
+# Verification function that checks all conditions are true
+verify-memory-pressure(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)

@@ -29,7 +29,7 @@ pub enum Token<'text> {
     Symbol(&'text str),
 }
 
-impl<'text> Token<'text> {
+impl Token<'_> {
     /// return true if this is a character which when preceding a '('
     /// indicates a paren expression rather than an apply tuple
     pub fn new_context(&self) -> bool {

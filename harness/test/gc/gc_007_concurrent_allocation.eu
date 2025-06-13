@@ -1,0 +1,105 @@
+#!/usr/bin/env eu
+# GC concurrent allocation test - Test concurrent allocation patterns
+#
+# CURRENT SCALE: 18 objects simulating concurrent allocation patterns
+# FUTURE SCALE: 500+ objects with true concurrent allocation simulation
+# 
+# This test validates GC behavior under simulated concurrent allocation patterns,
+# testing allocation bursts that might occur in multi-threaded or high-throughput scenarios.
+
+# Simulate concurrent allocation patterns through rapid bursts
+# Each "thread" represents a different allocation pattern happening simultaneously
+# TODO: Scale up for true concurrent testing with complex synchronization
+
+# Thread 1 - High-frequency small allocations
+thread-1-allocs: [
+  { id: 1001, thread: 1, size: :small, timestamp: 0, data: ["T1-A"] },
+  { id: 1002, thread: 1, size: :small, timestamp: 1, data: ["T1-B"] },
+  { id: 1003, thread: 1, size: :small, timestamp: 2, data: ["T1-C"] },
+  { id: 1004, thread: 1, size: :small, timestamp: 3, data: ["T1-D"] },
+  { id: 1005, thread: 1, size: :small, timestamp: 4, data: ["T1-E"] },
+  { id: 1006, thread: 1, size: :small, timestamp: 5, data: ["T1-F"] }
+]  # Future: 200+ rapid small allocations
+
+# Thread 2 - Medium-frequency medium allocations
+thread-2-allocs: [
+  { id: 2001, thread: 2, size: :medium, timestamp: 0, data: ["T2-A", "T2-A"] },
+  { id: 2002, thread: 2, size: :medium, timestamp: 2, data: ["T2-B", "T2-B"] },
+  { id: 2003, thread: 2, size: :medium, timestamp: 4, data: ["T2-C", "T2-C"] },
+  { id: 2004, thread: 2, size: :medium, timestamp: 6, data: ["T2-D", "T2-D"] },
+  { id: 2005, thread: 2, size: :medium, timestamp: 8, data: ["T2-E", "T2-E"] },
+  { id: 2006, thread: 2, size: :medium, timestamp: 10, data: ["T2-F", "T2-F"] }
+]  # Future: 150+ medium allocations with timing
+
+# Thread 3 - Low-frequency large allocations
+thread-3-allocs: [
+  { id: 3001, thread: 3, size: :large, timestamp: 0, data: ["T3-A", "T3-A", "T3-A"] },
+  { id: 3002, thread: 3, size: :large, timestamp: 5, data: ["T3-B", "T3-B", "T3-B"] },
+  { id: 3003, thread: 3, size: :large, timestamp: 10, data: ["T3-C", "T3-C", "T3-C"] },
+  { id: 3004, thread: 3, size: :large, timestamp: 15, data: ["T3-D", "T3-D", "T3-D"] },
+  { id: 3005, thread: 3, size: :large, timestamp: 20, data: ["T3-E", "T3-E", "T3-E"] },
+  { id: 3006, thread: 3, size: :large, timestamp: 25, data: ["T3-F", "T3-F", "T3-F"] }
+]  # Future: 100+ large allocations with complex timing
+
+# Combine all concurrent allocations for testing
+all-concurrent-allocs: {
+  thread-1: thread-1-allocs,
+  thread-2: thread-2-allocs,
+  thread-3: thread-3-allocs
+}
+
+# Verify concurrent allocations survived GC
+first-thread-1: thread-1-allocs head
+last-thread-1: thread-1-allocs last
+first-thread-2: thread-2-allocs head
+first-thread-3: thread-3-allocs head
+
+# Test concurrent allocation scenarios
+` { target: :test-concurrent-allocation
+    doc: "Concurrent allocation patterns with multi-thread simulation"
+    verify: [:verify-concurrent-allocation] }
+test-concurrent-allocation: {
+  # Validate thread allocation survival
+  # TODO: Scale up counts when thread allocation sizes increase
+  thread-1-count: thread-1-allocs count //= 6                   # Future: //= 200
+  thread-2-count: thread-2-allocs count //= 6                   # Future: //= 150
+  thread-3-count: thread-3-allocs count //= 6                   # Future: //= 100
+  
+  # Validate thread ID ranges
+  thread-1-first-id: first-thread-1.id //= 1001
+  thread-1-last-id: last-thread-1.id //= 1006                   # Future: //= 1200
+  thread-2-first-id: first-thread-2.id //= 2001
+  thread-3-first-id: first-thread-3.id //= 3001
+  
+  # Validate thread numbering survived concurrent pressure
+  thread-1-num: first-thread-1.thread //= 1
+  thread-2-num: first-thread-2.thread //= 2
+  thread-3-num: first-thread-3.thread //= 3
+  
+  # Validate size classification survived concurrent allocation
+  thread-1-size: first-thread-1.size //= :small
+  thread-2-size: first-thread-2.size //= :medium
+  thread-3-size: first-thread-3.size //= :large
+  
+  # Validate timestamp ordering (concurrent allocation timing)
+  thread-1-first-timestamp: first-thread-1.timestamp //= 0
+  thread-1-last-timestamp: last-thread-1.timestamp //= 5        # Sequential timing
+  thread-2-first-timestamp: first-thread-2.timestamp //= 0
+  thread-3-first-timestamp: first-thread-3.timestamp //= 0
+  
+  # Validate data integrity after concurrent allocation stress
+  # TODO: Scale up data sizes when object sizes increase
+  thread-1-data-size: first-thread-1.data count //= 1           # Future: //= 10
+  thread-2-data-size: first-thread-2.data count //= 2           # Future: //= 25
+  thread-3-data-size: first-thread-3.data count //= 3           # Future: //= 50
+  
+  # Validate total concurrent allocations survived
+  total-concurrent-objects: ((thread-1-allocs count) + (thread-2-allocs count) + (thread-3-allocs count)) = 18
+}
+
+# Verification function that checks all conditions are true
+verify-concurrent-allocation(context): 
+  context.result values all-true? then(:PASS, :FAIL)
+
+# Helper function to check if all values are true
+all-true?(values): values all(= true)

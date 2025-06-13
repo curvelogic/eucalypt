@@ -15,7 +15,7 @@ impl Timings {
     }
 
     pub fn merge(&mut self, other: Timings) {
-        self.timings.extend(other.timings.into_iter());
+        self.timings.extend(other.timings);
     }
 }
 
@@ -45,6 +45,10 @@ pub struct Statistics {
     blocks_allocated: usize,
     /// Large object blocks allocated
     lobs_allocated: usize,
+    /// Used and not recycled memory blocks
+    blocks_used: usize,
+    /// Recycled memory blocks
+    blocks_recycled: usize,
 }
 
 impl Statistics {
@@ -92,6 +96,22 @@ impl Statistics {
         self.lobs_allocated = count
     }
 
+    pub fn blocks_used(&self) -> usize {
+        self.blocks_used
+    }
+
+    pub fn set_blocks_used(&mut self, count: usize) {
+        self.blocks_used = count
+    }
+
+    pub fn blocks_recycled(&self) -> usize {
+        self.blocks_recycled
+    }
+
+    pub fn set_blocks_recycled(&mut self, count: usize) {
+        self.blocks_recycled = count
+    }
+
     pub fn merge(&mut self, other: Statistics) {
         self.machine_ticks += other.machine_ticks;
         self.machine_allocs += other.machine_allocs;
@@ -99,6 +119,8 @@ impl Statistics {
         self.timings.merge(other.timings);
         self.blocks_allocated = max(self.blocks_allocated, other.blocks_allocated);
         self.lobs_allocated = max(self.lobs_allocated, other.lobs_allocated);
+        self.blocks_used = max(self.blocks_used, other.blocks_used);
+        self.blocks_recycled = max(self.blocks_recycled, other.blocks_recycled);
     }
 }
 
@@ -110,6 +132,8 @@ impl Display for Statistics {
         writeln!(f, "Machine Max Stack      : {:10}", self.machine_max_stack)?;
         writeln!(f, "Heap Blocks Allocated  : {:10}", self.blocks_allocated)?;
         writeln!(f, "Heap LOBs Allocated    : {:10}", self.lobs_allocated)?;
+        writeln!(f, "Heap Blocks Used       : {:10}", self.blocks_used)?;
+        writeln!(f, "Heap Blocks Recycled   : {:10}", self.blocks_recycled)?;
         writeln!(f)?;
         writeln!(f, "{}", self.timings)
     }

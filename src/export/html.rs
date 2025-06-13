@@ -56,7 +56,7 @@ impl<'a> HtmlMarkupSerialiser<'a> {
     }
 }
 
-impl<'a> MarkupSerialiser for HtmlMarkupSerialiser<'a> {
+impl MarkupSerialiser for HtmlMarkupSerialiser<'_> {
     /// Serialise the markup Element as HTML
     fn serialise(&mut self, root: Element) -> Result<(), RenderError> {
         let mut serializer = HtmlSerializer::new(

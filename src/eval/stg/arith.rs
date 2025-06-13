@@ -5,7 +5,7 @@ use serde_json::Number;
 use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
-    machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
+    machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{mutator::MutatorHeapView, syntax::Ref},
 };
 
@@ -19,10 +19,10 @@ impl StgIntrinsic for Add {
         "ADD"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -32,12 +32,12 @@ impl StgIntrinsic for Add {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let total = l
                 .checked_add(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let total = l
                 .checked_add(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l + r) {
@@ -61,10 +61,10 @@ impl StgIntrinsic for Sub {
         "SUB"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -74,12 +74,12 @@ impl StgIntrinsic for Sub {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let result = l
                 .checked_sub(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l
                 .checked_sub(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l - r) {
@@ -103,10 +103,10 @@ impl StgIntrinsic for Mul {
         "MUL"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -116,12 +116,12 @@ impl StgIntrinsic for Mul {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let product = l
                 .checked_mul(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let product = l
                 .checked_mul(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l * r) {
@@ -145,10 +145,10 @@ impl StgIntrinsic for Div {
         "DIV"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -158,12 +158,12 @@ impl StgIntrinsic for Div {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let result = l
                 .checked_div(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l
                 .checked_div(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l / r) {
@@ -187,10 +187,10 @@ impl StgIntrinsic for Mod {
         "MOD"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -200,12 +200,12 @@ impl StgIntrinsic for Mod {
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let product = l
                 .checked_rem(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let product = l
                 .checked_rem(r)
-                .map_or(Err(ExecutionError::NumericRangeError(x, y)), Ok)?;
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l % r) {
@@ -229,10 +229,10 @@ impl StgIntrinsic for Gt {
         "GT"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -261,10 +261,10 @@ impl StgIntrinsic for Gte {
         "GTE"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -293,10 +293,10 @@ impl StgIntrinsic for Lt {
         "LT"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -325,10 +325,10 @@ impl StgIntrinsic for Lte {
         "LTE"
     }
 
-    fn execute<'guard>(
+    fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'guard>,
+        view: MutatorHeapView<'_>,
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
@@ -348,6 +348,72 @@ impl StgIntrinsic for Lte {
 }
 
 impl CallGlobal2 for Lte {}
+
+/// CEIL(x)
+pub struct Ceil;
+
+impl StgIntrinsic for Ceil {
+    fn name(&self) -> &str {
+        "CEILING"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), crate::eval::error::ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+
+        if x.is_i64() || x.is_u64() {
+            machine_return_num(machine, view, x)
+        } else if let Some(val) = x.as_f64() {
+            if let Some(ret) = Number::from_f64(val.ceil()) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, Number::from(0)))
+            }
+        } else {
+            unreachable!();
+        }
+    }
+}
+
+impl CallGlobal1 for Ceil {}
+
+/// FLOOR(x)
+pub struct Floor;
+
+impl StgIntrinsic for Floor {
+    fn name(&self) -> &str {
+        "FLOOR"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), crate::eval::error::ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+
+        if x.is_i64() || x.is_u64() {
+            machine_return_num(machine, view, x)
+        } else if let Some(val) = x.as_f64() {
+            if let Some(ret) = Number::from_f64(val.floor()) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, Number::from(0)))
+            }
+        } else {
+            unreachable!();
+        }
+    }
+}
+
+impl CallGlobal1 for Floor {}
 
 #[cfg(test)]
 pub mod tests {

@@ -267,7 +267,7 @@ pub fn byte_index(m: Marker) -> ByteIndex {
     ByteIndex(m.index() as u32)
 }
 
-impl<'smap> MarkedEventReceiver for Receiver<'smap> {
+impl MarkedEventReceiver for Receiver<'_> {
     fn on_event(&mut self, event: Event, marker: Marker) {
         match event {
             Event::Nothing => {}
