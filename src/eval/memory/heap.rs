@@ -629,6 +629,88 @@ mod oom_tests {
         
         println!("✅ Enhanced error diagnostics provide detailed context");
     }
+
+    #[test]
+    fn demonstrate_enhanced_diagnostics() {
+        println!("\n=== Enhanced Error Diagnostics Demonstration ===");
+        
+        use crate::eval::memory::syntax::Ref;
+        
+        // Scenario 1: Fresh heap - clean state
+        println!("\n🔍 Scenario 1: Fresh Heap Out-of-Memory");
+        let heap = Heap::new();
+        let fresh_error = heap.out_of_memory_error(1024, false);
+        println!("   {}", fresh_error);
+        
+        // Scenario 2: Heap with limit - realistic constraint
+        println!("\n🔍 Scenario 2: Limited Heap with Allocated Objects");
+        let limited_heap = Heap::with_limit(1); // 1 MiB limit = 32 blocks
+        
+        // Allocate several objects to create fragmentation
+        for i in 0..10 {
+            let _ = limited_heap.alloc(Ref::num(i));
+        }
+        let _ = limited_heap.alloc_bytes(1024); // Medium allocation
+        
+        let limited_error = limited_heap.out_of_memory_error(512, false);
+        println!("   {}", limited_error);
+        
+        // Scenario 3: Emergency collection attempted
+        println!("\n🔍 Scenario 3: Emergency Collection Scenario");
+        let emergency_error = limited_heap.emergency_collection_insufficient_error(2048);
+        println!("   {}", emergency_error);
+        
+        // Scenario 4: Invalid allocation sizes
+        println!("\n🔍 Scenario 4: Invalid Allocation Sizes");
+        
+        let invalid_too_large = HeapError::InvalidAllocationSize {
+            requested_size: u32::MAX as usize + 1,
+            max_size: u32::MAX as usize,
+        };
+        println!("   Large: {}", invalid_too_large);
+        
+        let invalid_zero = HeapError::InvalidAllocationSize {
+            requested_size: 0,
+            max_size: MAX_ALLOC_SIZE,
+        };
+        println!("   Zero:  {}", invalid_zero);
+        
+        // Scenario 5: Fragmentation scenarios
+        println!("\n🔍 Scenario 5: Fragmentation Analysis");
+        
+        // Simulate a fragmented heap
+        let frag_heap = Heap::new();
+        for _ in 0..5 {
+            let _ = frag_heap.alloc(Ref::num(42));
+        }
+        
+        let frag_error = frag_heap.fragmentation_error(8192);
+        println!("   {}", frag_error);
+        
+        // Scenario 6: Size class examples
+        println!("\n🔍 Scenario 6: Different Size Classes");
+        
+        let small_error = heap.out_of_memory_error(64, false);  // Small (< 128 bytes)
+        println!("   Small:  {}", small_error);
+        
+        let medium_error = heap.out_of_memory_error(1024, true); // Medium (128B - 32KB)
+        println!("   Medium: {}", medium_error);
+        
+        let large_error = heap.out_of_memory_error(40960, true); // Large (> 32KB)
+        println!("   Large:  {}", large_error);
+        
+        // Show actual heap stats for context
+        println!("\n📊 Heap Statistics:");
+        let stats = limited_heap.stats();
+        println!("   - Total blocks: {} ({} KB)", stats.blocks_allocated, stats.blocks_allocated * 32);
+        println!("   - Used blocks:  {} ({:.1}%)", stats.used, 
+                (stats.used as f64 / stats.blocks_allocated as f64) * 100.0);
+        println!("   - Recycled:     {} ({:.1}%)", stats.recycled,
+                (stats.recycled as f64 / stats.blocks_allocated as f64) * 100.0);
+        println!("   - Large objects: {}", stats.lobs_allocated);
+        
+        println!("\n=== End Demonstration ===\n");
+    }
 }
 
 impl MutatorScope for Heap {}
