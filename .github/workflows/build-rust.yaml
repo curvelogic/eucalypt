@@ -65,10 +65,12 @@ jobs:
   benchmark:
     needs: [check, test, fmt, clippy]
     runs-on: macos-latest
-    # if: ${{ github.event_name == 'pull_request' }}
-    # if: ${{ false }}
+    if: ${{ github.event_name == 'pull_request' }}
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
       - uses: actions/cache@v4
         with:
           path: |
@@ -79,9 +81,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
       - run: |
            cargo bench --bench alloc -- --save-baseline base
       - uses: actions/checkout@v4

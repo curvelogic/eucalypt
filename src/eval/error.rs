@@ -106,15 +106,20 @@ impl From<bump::AllocError> for ExecutionError {
 impl From<super::memory::heap::HeapError> for ExecutionError {
     fn from(e: super::memory::heap::HeapError) -> Self {
         match e {
-            super::memory::heap::HeapError::OutOfMemory => ExecutionError::AllocationError,
-            super::memory::heap::HeapError::EmergencyCollectionFailed => {
+            super::memory::heap::HeapError::OutOfMemory { .. } => ExecutionError::AllocationError,
+            super::memory::heap::HeapError::EmergencyCollectionFailed { .. } => {
                 ExecutionError::AllocationError
             }
-            super::memory::heap::HeapError::InvalidAllocationSize => {
+            super::memory::heap::HeapError::InvalidAllocationSize { .. } => {
                 ExecutionError::AllocationError
             }
-            super::memory::heap::HeapError::FragmentationError => ExecutionError::AllocationError,
-            super::memory::heap::HeapError::BlockAllocationFailed => {
+            super::memory::heap::HeapError::FragmentationError { .. } => {
+                ExecutionError::AllocationError
+            }
+            super::memory::heap::HeapError::BlockAllocationFailed { .. } => {
+                ExecutionError::AllocationError
+            }
+            super::memory::heap::HeapError::EmergencyCollectionInsufficient { .. } => {
                 ExecutionError::AllocationError
             }
         }

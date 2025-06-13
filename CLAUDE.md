@@ -103,6 +103,11 @@ The project includes a sophisticated garbage collector:
 - Maintain strict code quality standards throughout the codebase
 - When asked to fix clippy issues, fix ALL of them systematically, not selectively
 
+## Language and Style
+
+- **Use UK English spelling**: optimisation (not optimization), utilisation (not utilization), colour (not color), etc.
+- **Comments and documentation**: Follow UK English conventions throughout
+
 ## Development Workflow
 
 ### Pre-Commit Checklist
@@ -110,13 +115,17 @@ The project includes a sophisticated garbage collector:
 1. `cargo fmt` - Fix formatting issues
 2. `cargo clippy --lib -- -D warnings` - Fix all lint warnings
 3. `cargo test --lib` - Verify tests pass (when appropriate)
-4. `git commit` and `git push`
+4. **Check and fix dependabot security alerts** - Address vulnerabilities immediately
+5. `git commit` and `git push`
 
 ### Security and Dependencies
-- Monitor dependabot alerts and fix security vulnerabilities promptly
+- **MANDATORY: Fix dependabot security alerts immediately** - treat them like clippy warnings
+- **NEVER ignore security vulnerabilities** - address them with the same urgency as build failures
+- Monitor GitHub security alerts and resolve them as part of standard development workflow
 - Use `cargo update` to update dependencies within semver constraints
 - Replace deprecated dependencies with modern alternatives (e.g., `atty` → `std::io::IsTerminal`)
 - Fix deprecation warnings to maintain compatibility with newer dependency versions
+- **Security alerts should block PRs** - just like clippy and rustfmt failures
 
 ## Project Management
 
