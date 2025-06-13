@@ -3,6 +3,7 @@
 use std::collections::LinkedList;
 use std::fmt::Debug;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use std::{cell::UnsafeCell, mem::size_of};
 use std::{ptr::write, slice::from_raw_parts_mut};
 
@@ -223,6 +224,8 @@ impl From<super::bump::AllocError> for HeapError {
 pub struct Heap {
     state: UnsafeCell<HeapState>,
     limit: Option<usize>,
+    /// Mark state for this heap instance - flipped each collection to avoid clearing marks
+    mark_state: AtomicBool,
 }
 
 #[cfg(test)]
@@ -313,6 +316,7 @@ impl Heap {
         Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: None,
+            mark_state: AtomicBool::new(false),
         }
     }
 
@@ -322,11 +326,22 @@ impl Heap {
         Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: Some(block_limit),
+            mark_state: AtomicBool::new(false),
         }
     }
 
     pub fn stats(&self) -> HeapStats {
         unsafe { (*self.state.get()).stats() }
+    }
+
+    /// Get the current mark state for this heap
+    pub fn mark_state(&self) -> bool {
+        self.mark_state.load(SeqCst)
+    }
+
+    /// Flip the mark state for this heap (called after each collection)
+    pub fn flip_mark_state(&self) {
+        self.mark_state.fetch_xor(true, SeqCst);
     }
 
     pub fn policy_requires_collection(&self) -> bool {
@@ -352,7 +367,7 @@ impl Allocator for Heap {
 
         let space = self.find_space(alloc_size)?;
 
-        let header = AllocHeader::default();
+        let header = AllocHeader::new_with_mark_state(0, self.mark_state());
 
         unsafe {
             write(space as *mut AllocHeader, header);
@@ -373,7 +388,7 @@ impl Allocator for Heap {
 
         let space = self.find_space(alloc_size)?;
 
-        let header = AllocHeader::new(alloc_size as u32);
+        let header = AllocHeader::new_with_mark_state(alloc_size as u32, self.mark_state());
 
         unsafe {
             write(space as *mut AllocHeader, header);
@@ -461,15 +476,17 @@ impl Heap {
     pub fn is_marked<T>(&self, ptr: NonNull<T>) -> bool {
         let header: NonNull<AllocHeader> = self.get_header(ptr);
         debug_assert!(header.as_ptr() as usize > 0);
-        unsafe { (*header.as_ptr()).is_marked() }
+        let current_mark_state = self.mark_state();
+        unsafe { (*header.as_ptr()).is_marked_with_state(current_mark_state) }
     }
 
     /// Mark an object as live
     pub fn mark_object<T>(&self, ptr: NonNull<T>) {
         debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
         let header: NonNull<AllocHeader> = self.get_header(ptr);
+        let current_mark_state = self.mark_state();
         unsafe {
-            (*header.as_ptr()).mark();
+            (*header.as_ptr()).mark_with_state(current_mark_state);
         }
     }
 
@@ -477,7 +494,8 @@ impl Heap {
     pub fn unmark_object<T>(&self, ptr: NonNull<T>) {
         debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
         let header = self.get_header(ptr);
-        unsafe { (*header.as_ptr()).unmark() }
+        let current_mark_state = self.mark_state();
+        unsafe { (*header.as_ptr()).unmark_with_state(current_mark_state) }
     }
 
     /// Mark lines for and object (array) that uses untyped backing

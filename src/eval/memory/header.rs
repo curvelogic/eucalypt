@@ -38,6 +38,26 @@ impl HeaderBits {
         self.0.get(MARK_BIT) == mark_state()
     }
 
+    // New methods that take mark state as parameter
+    fn mark_with_state(&mut self, mark_state: bool) {
+        self.0.set(MARK_BIT, mark_state);
+    }
+
+    fn unmark_with_state(&mut self, mark_state: bool) {
+        self.0.set(MARK_BIT, !mark_state);
+    }
+
+    fn is_marked_with_state(&self, mark_state: bool) -> bool {
+        self.0.get(MARK_BIT) == mark_state
+    }
+
+    // Create unmarked header bits for given mark state
+    fn new_unmarked(mark_state: bool) -> HeaderBits {
+        let mut m = HeaderBits(Bitmap::default());
+        m.unmark_with_state(mark_state);
+        m
+    }
+
     fn set_forwarded(&mut self) {
         self.0.set(FORWARDED_BIT, true);
     }
@@ -77,6 +97,14 @@ impl AllocHeader {
         }
     }
 
+    pub fn new_with_mark_state(byte_length: u32, mark_state: bool) -> Self {
+        AllocHeader {
+            bits: HeaderBits::new_unmarked(mark_state),
+            alloc_length: byte_length,
+            forwarded_to: None,
+        }
+    }
+
     pub fn mark(&mut self) {
         self.bits.mark()
     }
@@ -87,6 +115,19 @@ impl AllocHeader {
 
     pub fn is_marked(&self) -> bool {
         self.bits.is_marked()
+    }
+
+    // New methods that take mark state as parameter
+    pub fn mark_with_state(&mut self, mark_state: bool) {
+        self.bits.mark_with_state(mark_state)
+    }
+
+    pub fn unmark_with_state(&mut self, mark_state: bool) {
+        self.bits.unmark_with_state(mark_state)
+    }
+
+    pub fn is_marked_with_state(&self, mark_state: bool) -> bool {
+        self.bits.is_marked_with_state(mark_state)
     }
 
     pub fn set_length(&mut self, len: u32) {
