@@ -16,6 +16,16 @@ use super::{
     lob::LargeObjectBlock,
 };
 
+/// Type of garbage collection performed
+#[derive(Debug, Clone, Copy)]
+enum CollectionType {
+    /// Full mark and sweep collection
+    #[allow(dead_code)] // Not yet implemented but planned for future use
+    Full,
+    /// Partial sweep-only collection (e.g., emergency collection)
+    Partial,
+}
+
 #[derive(Debug)]
 pub struct HeapStats {
     /// Number of standard blocks allocated
@@ -26,6 +36,210 @@ pub struct HeapStats {
     pub used: usize,
     /// Number of blocks used and recycled
     pub recycled: usize,
+}
+
+/// Comprehensive GC performance metrics and telemetry
+#[derive(Debug, Clone)]
+pub struct GCMetrics {
+    /// Collection timing metrics
+    pub collection_stats: CollectionStats,
+    /// Memory allocation tracking
+    pub allocation_stats: AllocationStats,
+    /// Block utilisation and fragmentation metrics
+    pub utilisation_stats: UtilisationStats,
+    /// Emergency collection metrics
+    pub emergency_stats: EmergencyCollectionStats,
+    /// Performance counters since heap creation
+    pub performance_counters: PerformanceCounters,
+}
+
+/// Collection timing and frequency metrics
+#[derive(Debug, Clone)]
+pub struct CollectionStats {
+    /// Total number of collections performed
+    pub total_collections: u64,
+    /// Number of full collections (mark and sweep)
+    pub full_collections: u64,
+    /// Number of partial collections (sweep only)
+    pub partial_collections: u64,
+    /// Total time spent in garbage collection
+    pub total_gc_time: Duration,
+    /// Average collection time
+    pub average_collection_time: Duration,
+    /// Last collection time
+    pub last_collection_time: Option<Duration>,
+    /// Time since last collection
+    pub time_since_last_collection: Option<Duration>,
+    /// Last collection timestamp
+    pub last_collection_at: Option<Instant>,
+}
+
+/// Memory allocation rate and pattern tracking
+#[derive(Debug, Clone)]
+pub struct AllocationStats {
+    /// Total bytes allocated since heap creation
+    pub total_bytes_allocated: u64,
+    /// Total objects allocated
+    pub total_objects_allocated: u64,
+    /// Allocation rate (bytes per second)
+    pub allocation_rate_bps: f64,
+    /// Allocation rate (objects per second)
+    pub allocation_rate_ops: f64,
+    /// Size class distribution
+    pub size_class_distribution: SizeClassStats,
+    /// Peak allocation rate observed
+    pub peak_allocation_rate_bps: f64,
+    /// Current allocation burst size
+    pub current_burst_bytes: u64,
+}
+
+/// Distribution of allocations by size class
+#[derive(Debug, Clone, Default)]
+pub struct SizeClassStats {
+    /// Small object allocations (count, total bytes)
+    pub small: (u64, u64),
+    /// Medium object allocations (count, total bytes)
+    pub medium: (u64, u64),
+    /// Large object allocations (count, total bytes)
+    pub large: (u64, u64),
+}
+
+/// Block utilisation and fragmentation analysis
+#[derive(Debug, Clone)]
+pub struct UtilisationStats {
+    /// Current heap utilisation percentage
+    pub heap_utilisation_percent: f64,
+    /// Current fragmentation level (0.0 = no fragmentation, 1.0 = fully fragmented)
+    pub fragmentation_ratio: f64,
+    /// Average block utilisation percentage
+    pub average_block_utilisation: f64,
+    /// Wasted space due to fragmentation (bytes)
+    pub fragmentation_waste_bytes: u64,
+    /// Head block utilisation history (last 10 measurements)
+    pub head_utilisation_history: Vec<f64>,
+    /// Block recycling efficiency (recycled / total allocated)
+    pub recycling_efficiency: f64,
+}
+
+/// Emergency collection performance metrics
+#[derive(Debug, Clone)]
+pub struct EmergencyCollectionStats {
+    /// Total emergency collections attempted
+    pub total_attempts: u64,
+    /// Successful emergency collections
+    pub successful_collections: u64,
+    /// Failed emergency collections
+    pub failed_collections: u64,
+    /// Total time spent in emergency collections
+    pub total_emergency_time: Duration,
+    /// Average emergency collection time
+    pub average_emergency_time: Duration,
+    /// Success rate (successful / total attempts)
+    pub success_rate: f64,
+    /// Average bytes freed per successful emergency collection
+    pub average_bytes_freed: u64,
+}
+
+/// High-level performance counters and health indicators
+#[derive(Debug, Clone)]
+pub struct PerformanceCounters {
+    /// Heap creation timestamp
+    pub heap_created_at: Instant,
+    /// Total heap lifetime
+    pub heap_lifetime: Duration,
+    /// Allocation efficiency (useful allocations / total allocations)
+    pub allocation_efficiency: f64,
+    /// Memory pressure indicator (0.0 = low, 1.0 = high)
+    pub memory_pressure: f64,
+    /// GC overhead percentage (gc_time / total_time)
+    pub gc_overhead_percent: f64,
+    /// Current allocation trend (positive = increasing, negative = decreasing)
+    pub allocation_trend: f64,
+    /// System health score (0.0 = poor, 1.0 = excellent)
+    pub health_score: f64,
+}
+
+impl Default for GCMetrics {
+    fn default() -> Self {
+        let now = Instant::now();
+        GCMetrics {
+            collection_stats: CollectionStats::default(),
+            allocation_stats: AllocationStats::default(),
+            utilisation_stats: UtilisationStats::default(),
+            emergency_stats: EmergencyCollectionStats::default(),
+            performance_counters: PerformanceCounters::new(now),
+        }
+    }
+}
+
+impl Default for CollectionStats {
+    fn default() -> Self {
+        CollectionStats {
+            total_collections: 0,
+            full_collections: 0,
+            partial_collections: 0,
+            total_gc_time: Duration::ZERO,
+            average_collection_time: Duration::ZERO,
+            last_collection_time: None,
+            time_since_last_collection: None,
+            last_collection_at: None,
+        }
+    }
+}
+
+impl Default for AllocationStats {
+    fn default() -> Self {
+        AllocationStats {
+            total_bytes_allocated: 0,
+            total_objects_allocated: 0,
+            allocation_rate_bps: 0.0,
+            allocation_rate_ops: 0.0,
+            size_class_distribution: SizeClassStats::default(),
+            peak_allocation_rate_bps: 0.0,
+            current_burst_bytes: 0,
+        }
+    }
+}
+
+impl Default for UtilisationStats {
+    fn default() -> Self {
+        UtilisationStats {
+            heap_utilisation_percent: 0.0,
+            fragmentation_ratio: 0.0,
+            average_block_utilisation: 0.0,
+            fragmentation_waste_bytes: 0,
+            head_utilisation_history: Vec::new(),
+            recycling_efficiency: 0.0,
+        }
+    }
+}
+
+impl Default for EmergencyCollectionStats {
+    fn default() -> Self {
+        EmergencyCollectionStats {
+            total_attempts: 0,
+            successful_collections: 0,
+            failed_collections: 0,
+            total_emergency_time: Duration::ZERO,
+            average_emergency_time: Duration::ZERO,
+            success_rate: 0.0,
+            average_bytes_freed: 0,
+        }
+    }
+}
+
+impl PerformanceCounters {
+    fn new(created_at: Instant) -> Self {
+        PerformanceCounters {
+            heap_created_at: created_at,
+            heap_lifetime: Duration::ZERO,
+            allocation_efficiency: 1.0,
+            memory_pressure: 0.0,
+            gc_overhead_percent: 0.0,
+            allocation_trend: 0.0,
+            health_score: 1.0,
+        }
+    }
 }
 
 /// Object size class.
@@ -434,6 +648,8 @@ pub struct Heap {
     mark_state: AtomicBool,
     /// Emergency collection state tracking
     emergency_state: UnsafeCell<EmergencyState>,
+    /// GC performance metrics and telemetry
+    gc_metrics: UnsafeCell<GCMetrics>,
 }
 
 #[cfg(test)]
@@ -543,6 +759,142 @@ mod oom_tests {
         assert!(!emergency_state.can_attempt_emergency_collection());
 
         println!("✅ Emergency collection reentrancy protection works correctly");
+    }
+
+    #[test]
+    fn test_gc_performance_metrics() {
+        // Test that GC performance metrics are properly tracked
+        let heap = Heap::new();
+
+        // Initial metrics should be zeroed
+        let initial_metrics = heap.gc_metrics();
+        assert_eq!(initial_metrics.allocation_stats.total_objects_allocated, 0);
+        assert_eq!(initial_metrics.allocation_stats.total_bytes_allocated, 0);
+        assert_eq!(initial_metrics.collection_stats.total_collections, 0);
+        assert_eq!(initial_metrics.emergency_stats.total_attempts, 0);
+
+        println!("✅ Initial GC metrics are properly initialized");
+
+        // Perform some allocations and check metrics
+        use crate::eval::memory::syntax::Ref;
+
+        let _obj1 = heap.alloc(Ref::num(1)).unwrap();
+        let _obj2 = heap.alloc(Ref::num(2)).unwrap();
+        let _obj3 = heap.alloc(Ref::num(3)).unwrap();
+
+        let post_alloc_metrics = heap.gc_metrics();
+        assert_eq!(
+            post_alloc_metrics.allocation_stats.total_objects_allocated,
+            3
+        );
+        assert!(post_alloc_metrics.allocation_stats.total_bytes_allocated > 0);
+        assert!(post_alloc_metrics.allocation_stats.allocation_rate_bps > 0.0);
+        assert!(post_alloc_metrics.allocation_stats.allocation_rate_ops > 0.0);
+
+        // Check size class distribution
+        assert_eq!(
+            post_alloc_metrics
+                .allocation_stats
+                .size_class_distribution
+                .small
+                .0,
+            3
+        ); // 3 small objects
+        assert!(
+            post_alloc_metrics
+                .allocation_stats
+                .size_class_distribution
+                .small
+                .1
+                > 0
+        ); // Some bytes allocated
+
+        println!("✅ Allocation metrics are properly tracked");
+
+        // Allocate some bytes to test different size classes
+        let _bytes = heap.alloc_bytes(1024).unwrap(); // Should be medium size
+
+        let post_bytes_metrics = heap.gc_metrics();
+        assert_eq!(
+            post_bytes_metrics.allocation_stats.total_objects_allocated,
+            4
+        );
+        assert_eq!(
+            post_bytes_metrics
+                .allocation_stats
+                .size_class_distribution
+                .medium
+                .0,
+            1
+        ); // 1 medium object
+
+        println!("✅ Size class distribution tracking works correctly");
+
+        // Test utilisation metrics
+        assert!(
+            post_bytes_metrics
+                .utilisation_stats
+                .heap_utilisation_percent
+                >= 0.0
+        );
+        assert!(post_bytes_metrics.utilisation_stats.fragmentation_ratio >= 0.0);
+        assert!(post_bytes_metrics.utilisation_stats.fragmentation_ratio <= 1.0);
+
+        println!("✅ Utilisation metrics are calculated correctly");
+
+        // Test performance health indicators
+        assert!(post_bytes_metrics.performance_counters.health_score >= 0.0);
+        assert!(post_bytes_metrics.performance_counters.health_score <= 1.0);
+        assert!(
+            post_bytes_metrics
+                .performance_counters
+                .allocation_efficiency
+                >= 0.0
+        );
+        assert!(
+            post_bytes_metrics
+                .performance_counters
+                .allocation_efficiency
+                <= 1.0
+        );
+
+        println!("✅ Performance health indicators are calculated correctly");
+
+        // Test emergency collection metrics by triggering one
+        let result = heap.attempt_emergency_collection(1024);
+
+        let post_emergency_metrics = heap.gc_metrics();
+        assert_eq!(post_emergency_metrics.emergency_stats.total_attempts, 1);
+        assert!(
+            post_emergency_metrics.emergency_stats.total_emergency_time > std::time::Duration::ZERO
+        );
+
+        match result {
+            Ok(()) => {
+                assert_eq!(
+                    post_emergency_metrics
+                        .emergency_stats
+                        .successful_collections,
+                    1
+                );
+                assert_eq!(post_emergency_metrics.emergency_stats.failed_collections, 0);
+                assert!(post_emergency_metrics.emergency_stats.success_rate > 0.0);
+                println!("✅ Emergency collection succeeded and metrics recorded");
+            }
+            Err(_) => {
+                assert_eq!(
+                    post_emergency_metrics
+                        .emergency_stats
+                        .successful_collections,
+                    0
+                );
+                assert_eq!(post_emergency_metrics.emergency_stats.failed_collections, 1);
+                assert_eq!(post_emergency_metrics.emergency_stats.success_rate, 0.0);
+                println!("✅ Emergency collection failed and metrics recorded");
+            }
+        }
+
+        println!("✅ GC performance metrics system is working correctly");
     }
 
     #[test]
@@ -760,6 +1112,7 @@ impl Heap {
             limit: None,
             mark_state: AtomicBool::new(false),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
+            gc_metrics: UnsafeCell::new(GCMetrics::default()),
         }
     }
 
@@ -771,6 +1124,7 @@ impl Heap {
             limit: Some(block_limit),
             mark_state: AtomicBool::new(false),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
+            gc_metrics: UnsafeCell::new(GCMetrics::default()),
         }
     }
 
@@ -797,6 +1151,271 @@ impl Heap {
             false
         }
     }
+
+    /// Get a snapshot of current GC performance metrics (calculates derived metrics on-demand)
+    pub fn gc_metrics(&self) -> GCMetrics {
+        let mut metrics = unsafe { (*self.gc_metrics.get()).clone() };
+        
+        // Calculate derived metrics on-demand to avoid hot path overhead
+        let now = Instant::now();
+        metrics.performance_counters.heap_lifetime = now.duration_since(metrics.performance_counters.heap_created_at);
+        
+        // Calculate allocation rates
+        let heap_lifetime_seconds = metrics.performance_counters.heap_lifetime.as_secs_f64();
+        if heap_lifetime_seconds > 0.0 {
+            metrics.allocation_stats.allocation_rate_bps = 
+                metrics.allocation_stats.total_bytes_allocated as f64 / heap_lifetime_seconds;
+            metrics.allocation_stats.allocation_rate_ops = 
+                metrics.allocation_stats.total_objects_allocated as f64 / heap_lifetime_seconds;
+        }
+        
+        // Update utilisation and performance metrics
+        self.calculate_utilisation_metrics(&mut metrics);
+        self.calculate_performance_health(&mut metrics);
+        
+        metrics
+    }
+
+    /// Ultra-fast allocation counter update (absolute minimal overhead for hot path)
+    fn update_allocation_counters_fast(&self, size_bytes: usize, size_class: SizeClass) {
+        // Skip metrics entirely in release builds for maximum performance
+        #[cfg(debug_assertions)]
+        {
+            let metrics = unsafe { &mut *self.gc_metrics.get() };
+
+            // Only update the most essential counters in debug mode
+            metrics.allocation_stats.total_bytes_allocated += size_bytes as u64;
+            metrics.allocation_stats.total_objects_allocated += 1;
+
+            // Update size class distribution for testing
+            match size_class {
+                SizeClass::Small => {
+                    metrics.allocation_stats.size_class_distribution.small.0 += 1;
+                    metrics.allocation_stats.size_class_distribution.small.1 += size_bytes as u64;
+                }
+                SizeClass::Medium => {
+                    metrics.allocation_stats.size_class_distribution.medium.0 += 1;
+                    metrics.allocation_stats.size_class_distribution.medium.1 += size_bytes as u64;
+                }
+                SizeClass::Large => {
+                    metrics.allocation_stats.size_class_distribution.large.0 += 1;
+                    metrics.allocation_stats.size_class_distribution.large.1 += size_bytes as u64;
+                }
+            }
+        }
+        
+        // In release builds, do nothing to maximize performance
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = (size_bytes, size_class); // Suppress unused warnings
+        }
+    }
+
+    /// Update collection metrics when a garbage collection occurs (debug-only for performance)
+    fn update_collection_metrics(
+        &self,
+        collection_time: Duration,
+        collection_type: CollectionType,
+    ) {
+        // Only update metrics in debug builds
+        #[cfg(debug_assertions)]
+        {
+            let metrics = unsafe { &mut *self.gc_metrics.get() };
+            let now = Instant::now();
+
+            // Update collection counters
+            metrics.collection_stats.total_collections += 1;
+            match collection_type {
+                CollectionType::Full => metrics.collection_stats.full_collections += 1,
+                CollectionType::Partial => metrics.collection_stats.partial_collections += 1,
+            }
+
+            // Update timing metrics
+            metrics.collection_stats.total_gc_time += collection_time;
+            metrics.collection_stats.last_collection_time = Some(collection_time);
+            metrics.collection_stats.last_collection_at = Some(now);
+
+            // Update average collection time
+            if metrics.collection_stats.total_collections > 0 {
+                metrics.collection_stats.average_collection_time =
+                    metrics.collection_stats.total_gc_time
+                        / metrics.collection_stats.total_collections as u32;
+            }
+
+            // Update time since last collection for next measurement
+            metrics.collection_stats.time_since_last_collection = None; // Reset, will be calculated on next access
+
+            // Update GC overhead percentage
+            let total_time = now.duration_since(metrics.performance_counters.heap_created_at);
+            if total_time.as_secs_f64() > 0.0 {
+                metrics.performance_counters.gc_overhead_percent =
+                    (metrics.collection_stats.total_gc_time.as_secs_f64() / total_time.as_secs_f64())
+                        * 100.0;
+            }
+
+            // Reset allocation burst after collection
+            metrics.allocation_stats.current_burst_bytes = 0;
+        }
+        
+        // In release builds, do nothing
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = (collection_time, collection_type); // Suppress unused warnings
+        }
+    }
+
+    /// Update emergency collection metrics (debug-only for performance)
+    fn update_emergency_collection_metrics(
+        &self,
+        emergency_time: Duration,
+        success: bool,
+        bytes_freed: u64,
+    ) {
+        // Only update metrics in debug builds
+        #[cfg(debug_assertions)]
+        {
+            let metrics = unsafe { &mut *self.gc_metrics.get() };
+
+            // Update emergency collection counters
+            metrics.emergency_stats.total_attempts += 1;
+            if success {
+                metrics.emergency_stats.successful_collections += 1;
+            } else {
+                metrics.emergency_stats.failed_collections += 1;
+            }
+
+            // Update timing metrics
+            metrics.emergency_stats.total_emergency_time += emergency_time;
+            if metrics.emergency_stats.total_attempts > 0 {
+                metrics.emergency_stats.average_emergency_time =
+                    metrics.emergency_stats.total_emergency_time
+                        / metrics.emergency_stats.total_attempts as u32;
+            }
+
+            // Update success rate
+            metrics.emergency_stats.success_rate = metrics.emergency_stats.successful_collections
+                as f64
+                / metrics.emergency_stats.total_attempts as f64;
+
+            // Update average bytes freed (only for successful collections)
+            if success {
+                let total_bytes_freed = (metrics.emergency_stats.average_bytes_freed
+                    * (metrics.emergency_stats.successful_collections - 1))
+                    + bytes_freed;
+                metrics.emergency_stats.average_bytes_freed =
+                    total_bytes_freed / metrics.emergency_stats.successful_collections;
+            }
+        }
+        
+        // In release builds, do nothing
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = (emergency_time, success, bytes_freed); // Suppress unused warnings
+        }
+    }
+
+    /// Calculate utilisation and fragmentation metrics on-demand
+    fn calculate_utilisation_metrics(&self, metrics: &mut GCMetrics) {
+        let stats = self.stats();
+        let heap_state = unsafe { &*self.state.get() };
+
+        // Calculate current heap utilisation
+        if stats.blocks_allocated > 0 {
+            metrics.utilisation_stats.heap_utilisation_percent =
+                (stats.used as f64 / stats.blocks_allocated as f64) * 100.0;
+
+            // Calculate recycling efficiency
+            metrics.utilisation_stats.recycling_efficiency =
+                (stats.recycled as f64 / stats.blocks_allocated as f64) * 100.0;
+
+            // Fragmentation ratio (1 - recycling efficiency normalized)
+            metrics.utilisation_stats.fragmentation_ratio =
+                1.0 - (metrics.utilisation_stats.recycling_efficiency / 100.0);
+        }
+
+        // Calculate head block utilisation if it exists
+        if let Some(ref head) = heap_state.head {
+            let hole_size = head.current_hole_size();
+            let head_utilisation =
+                ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0;
+
+            // Add to utilisation history (keep last 10 measurements)
+            metrics
+                .utilisation_stats
+                .head_utilisation_history
+                .push(head_utilisation);
+            if metrics.utilisation_stats.head_utilisation_history.len() > 10 {
+                metrics.utilisation_stats.head_utilisation_history.remove(0);
+            }
+
+            // Update average block utilisation
+            let avg_utilisation: f64 = metrics
+                .utilisation_stats
+                .head_utilisation_history
+                .iter()
+                .sum::<f64>()
+                / metrics.utilisation_stats.head_utilisation_history.len() as f64;
+            metrics.utilisation_stats.average_block_utilisation = avg_utilisation;
+        }
+
+        // Calculate fragmentation waste in bytes
+        let total_heap_bytes = stats.blocks_allocated * BLOCK_SIZE_BYTES;
+        let used_heap_bytes = stats.used * BLOCK_SIZE_BYTES;
+        let recyclable_bytes = stats.recycled * BLOCK_SIZE_BYTES;
+        metrics.utilisation_stats.fragmentation_waste_bytes =
+            (total_heap_bytes - used_heap_bytes - recyclable_bytes) as u64;
+    }
+
+    /// Calculate performance health indicators on-demand  
+    fn calculate_performance_health(&self, metrics: &mut GCMetrics) {
+
+        // Calculate memory pressure based on allocation rate and collection frequency
+        let allocation_pressure = if metrics.allocation_stats.peak_allocation_rate_bps > 0.0 {
+            (metrics.allocation_stats.allocation_rate_bps
+                / metrics.allocation_stats.peak_allocation_rate_bps)
+                .min(1.0)
+        } else {
+            0.0
+        };
+
+        let gc_pressure = if metrics.performance_counters.gc_overhead_percent > 50.0 {
+            1.0
+        } else {
+            metrics.performance_counters.gc_overhead_percent / 50.0
+        };
+
+        metrics.performance_counters.memory_pressure = (allocation_pressure + gc_pressure) / 2.0;
+
+        // Calculate allocation efficiency (successful allocations vs total attempts)
+        // For now, assume all counted allocations were successful
+        metrics.performance_counters.allocation_efficiency = 1.0;
+
+        // Calculate allocation trend (simple: increasing if current rate > average rate)
+        let lifetime_seconds = metrics.performance_counters.heap_lifetime.as_secs_f64();
+        if lifetime_seconds > 1.0 {
+            let average_rate =
+                metrics.allocation_stats.total_bytes_allocated as f64 / lifetime_seconds;
+            // Use recent burst as current rate proxy
+            let recent_rate = if metrics.allocation_stats.current_burst_bytes > 0 {
+                metrics.allocation_stats.current_burst_bytes as f64
+            } else {
+                average_rate
+            };
+
+            metrics.performance_counters.allocation_trend =
+                (recent_rate - average_rate) / average_rate.max(1.0);
+        }
+
+        // Calculate overall health score (0.0 = poor, 1.0 = excellent)
+        let pressure_score = 1.0 - metrics.performance_counters.memory_pressure;
+        let efficiency_score = metrics.performance_counters.allocation_efficiency;
+        let gc_overhead_score =
+            1.0 - (metrics.performance_counters.gc_overhead_percent / 100.0).min(1.0);
+        let fragmentation_score = 1.0 - metrics.utilisation_stats.fragmentation_ratio;
+
+        metrics.performance_counters.health_score =
+            (pressure_score + efficiency_score + gc_overhead_score + fragmentation_score) / 4.0;
+    }
 }
 
 impl Allocator for Heap {
@@ -808,10 +1427,14 @@ impl Allocator for Heap {
         let header_size = size_of::<AllocHeader>();
         let object_size = size_of::<T>();
         let alloc_size = Self::alloc_size_of(header_size + object_size);
+        let size_class = SizeClass::for_size(alloc_size);
 
         let space = self.find_space(alloc_size)?;
 
         let header = AllocHeader::new_with_mark_state(0, self.mark_state());
+
+        // Update allocation metrics (lightweight - just counters)
+        self.update_allocation_counters_fast(alloc_size, size_class);
 
         unsafe {
             write(space as *mut AllocHeader, header);
@@ -832,10 +1455,14 @@ impl Allocator for Heap {
 
         let header_size = size_of::<AllocHeader>();
         let alloc_size = Self::alloc_size_of(header_size + size_bytes);
+        let size_class = SizeClass::for_size(alloc_size);
 
         let space = self.find_space(alloc_size)?;
 
         let header = AllocHeader::new_with_mark_state(alloc_size as u32, self.mark_state());
+
+        // Update allocation metrics (lightweight - just counters)
+        self.update_allocation_counters_fast(alloc_size, size_class);
 
         unsafe {
             write(space as *mut AllocHeader, header);
@@ -915,6 +1542,8 @@ impl Heap {
 
     /// Attempt emergency garbage collection
     fn attempt_emergency_collection(&self, requested_size: usize) -> Result<(), HeapError> {
+        let start_time = Instant::now();
+
         // Set emergency state to prevent reentrancy
         let emergency_state = unsafe { &mut *self.emergency_state.get() };
         emergency_state.start_emergency_collection();
@@ -924,11 +1553,20 @@ impl Heap {
             requested_size
         );
 
+        let stats_before = self.stats();
+
         // Perform conservative emergency collection
         let success = self.perform_emergency_sweep(requested_size);
 
         // Mark collection as completed
         emergency_state.complete_emergency_collection();
+
+        let emergency_time = start_time.elapsed();
+        let stats_after = self.stats();
+        let bytes_freed = (stats_after.recycled - stats_before.recycled) * BLOCK_SIZE_BYTES;
+
+        // Update emergency collection metrics
+        self.update_emergency_collection_metrics(emergency_time, success, bytes_freed as u64);
 
         if success {
             eprintln!("Emergency collection: successfully freed space");
@@ -1165,7 +1803,12 @@ impl Heap {
     }
 
     pub fn sweep(&mut self) {
-        self.state.get_mut().sweep()
+        let start_time = Instant::now();
+        self.state.get_mut().sweep();
+        let sweep_time = start_time.elapsed();
+
+        // Record collection metrics for sweep operation (collection is less frequent)
+        self.update_collection_metrics(sweep_time, CollectionType::Partial);
     }
 }
 
