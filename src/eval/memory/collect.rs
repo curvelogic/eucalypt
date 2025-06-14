@@ -8,7 +8,7 @@ use std::{collections::VecDeque, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{array::Array, heap::{Heap, CollectionStrategy}};
+use super::{array::Array, heap::{Heap, CollectionStrategy}, alloc::Allocator};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
