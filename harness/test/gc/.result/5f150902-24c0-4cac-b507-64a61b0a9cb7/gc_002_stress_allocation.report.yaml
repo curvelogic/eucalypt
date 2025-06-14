@@ -1,0 +1,44 @@
+---
+title: gc_002_stress_allocation
+filename: /Users/greg/dev/curvelogic/eucalypt/harness/test/gc/gc_002_stress_allocation.eu
+tests:
+  test-stress-allocation-yaml:
+    exit: 0
+    stdout:
+      - "---"
+      - "rapid-count-correct: true"
+      - "rapid-first-id-correct: true"
+      - "rapid-last-id-correct: true"
+      - "progressive-count-correct: true"
+      - "progressive-first-id-correct: true"
+      - "progressive-last-id-correct: true"
+      - "mixed-count-correct: true"
+      - "temp-count-correct: true"
+      - "first-small-size: true"
+      - "first-medium-size: true"
+      - "first-large-size: true"
+    stderr: []
+    result:
+      rapid-count-correct: true
+      rapid-first-id-correct: true
+      rapid-last-id-correct: true
+      progressive-count-correct: true
+      progressive-first-id-correct: true
+      progressive-last-id-correct: true
+      mixed-count-correct: true
+      temp-count-correct: true
+      first-small-size: true
+      first-medium-size: true
+      first-large-size: true
+    expectations:
+      - name: verify-stress-allocation
+        function-key: verify-stress-allocation
+    stats:
+      ticks: 61154
+      allocs: 11908
+      max-stack: 147
+    validation:
+      - name: verify-stress-allocation
+        function-key: verify-stress-allocation
+        result: PASS
+overall: PASS

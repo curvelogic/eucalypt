@@ -17,6 +17,7 @@ use crate::{
 use super::env::{EnvFrame, SynClosure};
 
 /// For building environments in the heap
+/// All operations now return Result to handle allocation failures gracefully.
 #[allow(clippy::wrong_self_convention)]
 pub trait EnvBuilder {
     fn from_saturation(
@@ -24,17 +25,21 @@ pub trait EnvBuilder {
         args: Array<SynClosure>,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame>;
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
 
-    fn from_args(&self, args: &[Ref], next: RefPtr<EnvFrame>, annotation: Smid)
-        -> RefPtr<EnvFrame>;
+    fn from_args(
+        &self,
+        args: &[Ref],
+        next: RefPtr<EnvFrame>,
+        annotation: Smid,
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
 
     fn from_closure(
         &self,
         closure: SynClosure,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame>;
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
 
     fn from_closures<I: Iterator<Item = SynClosure>>(
         &self,
@@ -42,7 +47,7 @@ pub trait EnvBuilder {
         len: usize,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame>;
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
 
     /// "Allocate" let bindings in a new env
     fn from_let(
@@ -50,7 +55,7 @@ pub trait EnvBuilder {
         bindings: &[LambdaForm],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame>;
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
 
     /// "Allocate" let bindings in a new env
     fn from_letrec(
@@ -58,7 +63,7 @@ pub trait EnvBuilder {
         bindings: &[LambdaForm],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame>;
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError>;
 
     /// Create a saturated version of a closure ready for entry
     fn saturate(
@@ -90,10 +95,10 @@ impl EnvBuilder for MutatorHeapView<'_> {
         args: Array<SynClosure>,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame> {
-        self.alloc(EnvFrame::new(args, annotation, Some(next)))
-            .expect("failed to allocate env frame from saturation")
-            .as_ptr()
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
+        Ok(self
+            .alloc(EnvFrame::new(args, annotation, Some(next)))?
+            .as_ptr())
     }
 
     /// From data constructor or lambda args
@@ -102,20 +107,15 @@ impl EnvBuilder for MutatorHeapView<'_> {
         args: &[Ref],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame> {
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         let mut array = Array::with_capacity(self, args.len());
         for r in args {
-            array.push(
-                self,
-                SynClosure::new(
-                    self.alloc(HeapSyn::Atom {
-                        evaluand: r.clone(),
-                    })
-                    .expect("allocation failure")
-                    .as_ptr(),
-                    next,
-                ),
-            )
+            let atom_ptr = self
+                .alloc(HeapSyn::Atom {
+                    evaluand: r.clone(),
+                })?
+                .as_ptr();
+            array.push(self, SynClosure::new(atom_ptr, next))
         }
 
         self.from_saturation(array, next, annotation)
@@ -128,7 +128,7 @@ impl EnvBuilder for MutatorHeapView<'_> {
         closure: SynClosure,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame> {
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         let mut array = Array::with_capacity(self, 1);
         array.push(self, closure);
 
@@ -142,7 +142,7 @@ impl EnvBuilder for MutatorHeapView<'_> {
         len: usize,
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame> {
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         let mut array = Array::with_capacity(self, len);
         for c in closures {
             array.push(self, c)
@@ -157,7 +157,7 @@ impl EnvBuilder for MutatorHeapView<'_> {
         bindings: &[LambdaForm],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame> {
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         let closures = bindings.iter().map(|lf| SynClosure::close(lf, next));
         self.from_closures(closures, bindings.len(), next, annotation)
     }
@@ -168,7 +168,7 @@ impl EnvBuilder for MutatorHeapView<'_> {
         bindings: &[LambdaForm],
         next: RefPtr<EnvFrame>,
         annotation: Smid,
-    ) -> RefPtr<EnvFrame> {
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         let mut array = Array::with_capacity(self, bindings.len());
         for _ in 0..bindings.len() {
             array.push(
@@ -178,15 +178,14 @@ impl EnvBuilder for MutatorHeapView<'_> {
         }
 
         let frame = self
-            .alloc(EnvFrame::new(array.clone(), annotation, Some(next)))
-            .expect("allocation failure")
+            .alloc(EnvFrame::new(array.clone(), annotation, Some(next)))?
             .as_ptr();
 
         for (i, pc) in bindings.iter().enumerate() {
             array.set(i, SynClosure::close(pc, frame))
         }
 
-        frame
+        Ok(frame)
     }
 
     /// Create a new saturated closure ready for call
@@ -198,7 +197,7 @@ impl EnvBuilder for MutatorHeapView<'_> {
         let arg_array: Array<SynClosure> = Array::from_slice(self, args);
         Ok(SynClosure::new_annotated(
             closure.code(),
-            self.from_saturation(arg_array, closure.env(), closure.annotation()),
+            self.from_saturation(arg_array, closure.env(), closure.annotation())?,
             closure.annotation(),
         ))
     }
@@ -221,7 +220,7 @@ impl EnvBuilder for MutatorHeapView<'_> {
         Ok(SynClosure::new_annotated_lambda(
             syn,
             arity,
-            env,
+            env?,
             closure.annotation(),
         ))
     }

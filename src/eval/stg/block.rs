@@ -776,7 +776,12 @@ impl StgIntrinsic for MergeWith {
                 let mut combined = SynClosure::new(
                     view.app(f.bump(2), Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]))?
                         .as_ptr(),
-                    view.from_closures(args.iter().cloned(), 2, machine.env(view), Smid::default()),
+                    view.from_closures(
+                        args.iter().cloned(),
+                        2,
+                        machine.env(view),
+                        Smid::default(),
+                    )?,
                 );
                 swap(ov, &mut combined);
             } else {

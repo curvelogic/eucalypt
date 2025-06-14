@@ -52,7 +52,7 @@ fn fake_env_stack(
 
     for _ in 0..height {
         let bindings = fake_bindings(view, width);
-        base = view.from_letrec(&bindings, base, Smid::default());
+        base = view.from_letrec(&bindings, base, Smid::default()).unwrap();
     }
 
     base
@@ -64,7 +64,7 @@ fn alloc_let(
     empty: RefPtr<EnvFrame>,
     bindings: &[LambdaForm],
 ) -> RefPtr<EnvFrame> {
-    view.from_let(bindings, empty, Smid::default())
+    view.from_let(bindings, empty, Smid::default()).unwrap()
 }
 
 /// Allocate a letrec of identify function bindings
@@ -73,7 +73,7 @@ fn alloc_letrec(
     empty: RefPtr<EnvFrame>,
     bindings: &[LambdaForm],
 ) -> RefPtr<EnvFrame> {
-    view.from_letrec(bindings, empty, Smid::default())
+    view.from_letrec(bindings, empty, Smid::default()).unwrap()
 }
 
 /// Access deep closure

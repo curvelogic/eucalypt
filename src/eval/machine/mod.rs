@@ -55,7 +55,7 @@ impl Mutator for Initialiser<'_> {
         );
 
         let closure = SynClosure::new(load(view, self.syntax.clone()).unwrap(), root_env);
-        Ok((root_env, globals, closure))
+        Ok((root_env, globals?, closure))
     }
 }
 
