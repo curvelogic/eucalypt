@@ -332,6 +332,7 @@ pub mod tests {
     use crate::{
         common::sourcemap::Smid,
         eval::memory::{
+            alloc::Allocator,
             mutator::MutatorHeapView,
             syntax::{HeapSyn, LambdaForm, Ref, StgBuilder},
         },
