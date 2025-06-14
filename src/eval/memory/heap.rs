@@ -1318,7 +1318,7 @@ impl Heap {
     /// This is the core operation for Immix object evacuation
     pub fn evacuate_object<T>(&self, source: NonNull<T>) -> Result<NonNull<T>, HeapError> {
         let source_header = self.get_header(source);
-        
+
         // Check if object is already evacuated
         unsafe {
             if (*source_header.as_ptr()).is_forwarded() {
@@ -1336,31 +1336,35 @@ impl Heap {
 
         // Allocate new space for the evacuated object
         let new_location = self.find_evacuation_space(total_size)?;
-        
+
         // Copy header and object data
         unsafe {
             // Copy the header
             let source_header_ptr = source_header.as_ptr();
             let new_header_ptr = new_location as *mut AllocHeader;
             std::ptr::copy_nonoverlapping(source_header_ptr, new_header_ptr, 1);
-            
+
             // Copy the object data
             let source_data_ptr = source.as_ptr();
             let new_data_ptr = (new_location as usize + header_size) as *mut T;
             std::ptr::copy_nonoverlapping(source_data_ptr, new_data_ptr, 1);
-            
+
             // Set forwarding pointer in source header
             let new_object_ptr = NonNull::new_unchecked(new_data_ptr);
             (*source_header_ptr).set_forwarded(NonNull::new_unchecked(new_data_ptr as *mut ()));
-            
+
             Ok(new_object_ptr)
         }
     }
 
     /// Copy a byte array object with explicit size
-    pub fn evacuate_bytes(&self, source: NonNull<u8>, byte_count: usize) -> Result<NonNull<u8>, HeapError> {
+    pub fn evacuate_bytes(
+        &self,
+        source: NonNull<u8>,
+        byte_count: usize,
+    ) -> Result<NonNull<u8>, HeapError> {
         let source_header = self.get_header(source);
-        
+
         // Check if object is already evacuated
         unsafe {
             if (*source_header.as_ptr()).is_forwarded() {
@@ -1376,23 +1380,23 @@ impl Heap {
 
         // Allocate new space
         let new_location = self.find_evacuation_space(total_size)?;
-        
+
         // Copy header and byte data
         unsafe {
             // Copy the header
             let source_header_ptr = source_header.as_ptr();
             let new_header_ptr = new_location as *mut AllocHeader;
             std::ptr::copy_nonoverlapping(source_header_ptr, new_header_ptr, 1);
-            
+
             // Copy the byte data
             let source_data_ptr = source.as_ptr();
             let new_data_ptr = (new_location as usize + header_size) as *mut u8;
             std::ptr::copy_nonoverlapping(source_data_ptr, new_data_ptr, byte_count);
-            
+
             // Set forwarding pointer in source header
             let new_object_ptr = NonNull::new_unchecked(new_data_ptr);
             (*source_header_ptr).set_forwarded(NonNull::new_unchecked(new_data_ptr as *mut ()));
-            
+
             Ok(new_object_ptr)
         }
     }
@@ -1497,14 +1501,20 @@ impl Heap {
         match block_index {
             0 => {
                 if let Some(ref head) = heap_state.head {
-                    matches!(head.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented)
+                    matches!(
+                        head.analyze_density(),
+                        BlockDensity::Sparse | BlockDensity::Fragmented
+                    )
                 } else {
                     false
                 }
             }
             1 => {
                 if let Some(ref overflow) = heap_state.overflow {
-                    matches!(overflow.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented)
+                    matches!(
+                        overflow.analyze_density(),
+                        BlockDensity::Sparse | BlockDensity::Fragmented
+                    )
                 } else {
                     false
                 }
@@ -1512,7 +1522,10 @@ impl Heap {
             rest_index if rest_index >= 2 => {
                 let rest_idx = rest_index - 2;
                 if let Some(block) = heap_state.rest.iter().nth(rest_idx) {
-                    matches!(block.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented)
+                    matches!(
+                        block.analyze_density(),
+                        BlockDensity::Sparse | BlockDensity::Fragmented
+                    )
                 } else {
                     false
                 }
@@ -1523,7 +1536,11 @@ impl Heap {
 
     /// Check if an object should be evacuated based on collection strategy
     /// Now uses proper block detection with index-based selection for SelectiveEvacuation
-    pub fn should_evacuate_object<T>(&self, ptr: NonNull<T>, strategy: &CollectionStrategy) -> bool {
+    pub fn should_evacuate_object<T>(
+        &self,
+        ptr: NonNull<T>,
+        strategy: &CollectionStrategy,
+    ) -> bool {
         match strategy {
             CollectionStrategy::MarkInPlace => false, // No evacuation
             CollectionStrategy::SelectiveEvacuation(block_indices) => {
@@ -1552,21 +1569,30 @@ impl Heap {
         // Check head block
         if let Some(ref head) = heap_state.head {
             if head.contains_address(ptr_addr) {
-                return matches!(head.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented);
+                return matches!(
+                    head.analyze_density(),
+                    BlockDensity::Sparse | BlockDensity::Fragmented
+                );
             }
         }
 
         // Check overflow block
         if let Some(ref overflow) = heap_state.overflow {
             if overflow.contains_address(ptr_addr) {
-                return matches!(overflow.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented);
+                return matches!(
+                    overflow.analyze_density(),
+                    BlockDensity::Sparse | BlockDensity::Fragmented
+                );
             }
         }
 
         // Check rest blocks
         for block in heap_state.rest.iter() {
             if block.contains_address(ptr_addr) {
-                return matches!(block.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented);
+                return matches!(
+                    block.analyze_density(),
+                    BlockDensity::Sparse | BlockDensity::Fragmented
+                );
             }
         }
 
@@ -2648,21 +2674,21 @@ pub mod tests {
     #[test]
     pub fn test_evacuation_basic_object() {
         let heap = Heap::new();
-        
+
         // Allocate a simple object
         let original_ptr = heap.alloc(Ref::num(42)).unwrap();
         let original_value = unsafe { original_ptr.as_ref().clone() };
-        
+
         // Evacuate the object
         let evacuated_ptr = heap.evacuate_object(original_ptr).unwrap();
-        
+
         // Verify the evacuated object has the same value
         let evacuated_value = unsafe { evacuated_ptr.as_ref().clone() };
         assert_eq!(original_value, evacuated_value);
-        
+
         // Verify the original object is marked as forwarded
         assert!(heap.is_evacuated(original_ptr));
-        
+
         // Verify following the forwarding pointer returns the evacuated location
         let followed_ptr = heap.follow_forwarding_pointer(original_ptr);
         assert_eq!(followed_ptr, evacuated_ptr);
@@ -2671,20 +2697,20 @@ pub mod tests {
     #[test]
     pub fn test_evacuation_byte_array() {
         let heap = Heap::new();
-        
+
         // Just test the basic functionality without unsafe memory operations
         let byte_count = 8; // Keep it simple
-        
+
         // Allocate byte array - this creates a properly aligned allocation
         let original_ptr = heap.alloc_bytes(byte_count).unwrap();
-        
+
         // Test evacuation - the evacuate_bytes method should handle copying correctly
         let evacuation_result = heap.evacuate_bytes(original_ptr, byte_count);
-        
+
         // Just verify that evacuation succeeds and the object is marked as evacuated
         assert!(evacuation_result.is_ok());
         let evacuated_ptr = evacuation_result.unwrap();
-        
+
         // Verify basic properties
         assert_ne!(original_ptr, evacuated_ptr); // Different locations
         assert!(heap.is_evacuated(original_ptr)); // Original is marked as evacuated
@@ -2695,15 +2721,15 @@ pub mod tests {
     #[test]
     pub fn test_evacuation_already_evacuated() {
         let heap = Heap::new();
-        
+
         // Allocate and evacuate an object
         let original_ptr = heap.alloc(Ref::num(42)).unwrap();
         let first_evacuation = heap.evacuate_object(original_ptr).unwrap();
-        
+
         // Try to evacuate again - should return the same location
         let second_evacuation = heap.evacuate_object(original_ptr).unwrap();
         assert_eq!(first_evacuation, second_evacuation);
-        
+
         // Verify the object is still marked as evacuated
         assert!(heap.is_evacuated(original_ptr));
     }
@@ -2711,12 +2737,12 @@ pub mod tests {
     #[test]
     pub fn test_evacuation_object_size_calculation() {
         let heap = Heap::new();
-        
+
         // Test typed object size
         let ref_ptr = heap.alloc(Ref::num(42)).unwrap();
         let ref_size = heap.get_object_total_size(ref_ptr);
         assert!(ref_size >= size_of::<AllocHeader>() + size_of::<Ref>());
-        
+
         // Test byte array size
         let data = b"Test data";
         let bytes_ptr = heap.alloc_bytes(data.len()).unwrap();
@@ -2727,14 +2753,14 @@ pub mod tests {
     #[test]
     pub fn test_follow_forwarding_pointer_not_evacuated() {
         let heap = Heap::new();
-        
+
         // Allocate an object but don't evacuate it
         let ptr = heap.alloc(Ref::num(42)).unwrap();
-        
+
         // Following the forwarding pointer should return the same pointer
         let followed_ptr = heap.follow_forwarding_pointer(ptr);
         assert_eq!(ptr, followed_ptr);
-        
+
         // Object should not be marked as evacuated
         assert!(!heap.is_evacuated(ptr));
     }

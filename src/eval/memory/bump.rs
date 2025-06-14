@@ -389,7 +389,7 @@ impl BumpBlock {
         let block_end = block_start + BLOCK_SIZE_BYTES;
         addr >= block_start && addr < block_end
     }
-    
+
     /// Get the base address of this block for arithmetic operations
     /// Enables Immix-style address calculations within block boundaries
     pub fn base_address(&self) -> usize {
