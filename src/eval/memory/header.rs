@@ -151,6 +151,10 @@ impl AllocHeader {
     pub fn is_forwarded(&self) -> bool {
         self.bits.is_forwarded()
     }
+
+    pub fn forwarded_to(&self) -> Option<NonNull<()>> {
+        self.forwarded_to
+    }
 }
 
 #[cfg(test)]
