@@ -8,7 +8,7 @@ use std::{collections::VecDeque, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{array::Array, heap::{Heap, CollectionStrategy}, alloc::Allocator};
+use super::{array::Array, heap::{Heap, CollectionStrategy}};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
@@ -369,7 +369,7 @@ pub mod tests {
     pub fn test_per_heap_mark_state_isolation() {
         // Test that each heap has its own independent mark state
         let mut heap1 = Heap::new();
-        let mut heap2 = Heap::new();
+        let heap2 = Heap::new();
         let mut clock = Clock::default();
         clock.switch(ThreadOccupation::Mutator);
 
@@ -703,14 +703,14 @@ pub mod tests {
             assert!(is_fragmented == true || is_fragmented == false, "Should return valid boolean");
             
             // Should be able to determine evacuation based on strategy
-            let should_evacuate_selective = heap.should_evacuate_object(
+            let _should_evacuate_selective = heap.should_evacuate_object(
                 obj_ptr, 
                 &CollectionStrategy::SelectiveEvacuation(vec![block_idx])
             );
             // If we specifically target this block, and it's detected, evacuation should be considered
             // (may still be false if block is not fragmented, but method should work)
             
-            let should_evacuate_defrag = heap.should_evacuate_object(
+            let _should_evacuate_defrag = heap.should_evacuate_object(
                 obj_ptr, 
                 &CollectionStrategy::DefragmentationSweep
             );
