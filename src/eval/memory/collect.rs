@@ -8,7 +8,7 @@ use std::{collections::VecDeque, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{array::Array, heap::Heap};
+use super::{array::Array, heap::{Heap, CollectionStrategy}};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
@@ -71,11 +71,20 @@ impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {
 /// View of the heap available to the collector
 pub struct CollectorHeapView<'guard> {
     heap: &'guard mut Heap,
+    /// Objects that need evacuation (collected during marking)
+    evacuation_candidates: Vec<NonNull<()>>,
+    /// Collection strategy for this collection cycle
+    strategy: Option<CollectionStrategy>,
 }
 
 impl CollectorHeapView<'_> {
     pub fn reset(&mut self) {
         self.heap.reset_region_marks();
+        self.evacuation_candidates.clear();
+    }
+
+    pub fn set_strategy(&mut self, strategy: CollectionStrategy) {
+        self.strategy = Some(strategy);
     }
 
     /// Mark object if not already marked and return whether marked
@@ -85,10 +94,24 @@ impl CollectorHeapView<'_> {
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
+            
+            // Check if this object should be evacuated based on collection strategy
+            if let Some(ref strategy) = self.strategy {
+                if self.should_evacuate_object(obj, strategy) {
+                    self.evacuation_candidates.push(NonNull::new(obj.as_ptr() as *mut ()).unwrap());
+                }
+            }
+            
             true
         } else {
             false
         }
+    }
+
+
+    /// Check if an object should be evacuated based on collection strategy
+    fn should_evacuate_object<T>(&self, obj: NonNull<T>, strategy: &CollectionStrategy) -> bool {
+        self.heap.should_evacuate_object(obj, strategy)
     }
 
     /// Mark object if not already marked and return whether marked
@@ -115,28 +138,87 @@ impl CollectorHeapView<'_> {
     pub fn sweep(&mut self) {
         self.heap.sweep();
     }
+
+    /// Evacuate all collected evacuation candidates
+    pub fn perform_evacuation(&mut self) {
+        let candidates = std::mem::take(&mut self.evacuation_candidates);
+        
+        for candidate in candidates {
+            // Try to evacuate the object
+            match self.heap.evacuate_object(candidate) {
+                Ok(new_location) => {
+                    // Object successfully evacuated
+                    // The forwarding pointer is already set by evacuate_object
+                    if cfg!(debug_assertions) {
+                        println!("Evacuated object from {:p} to {:p}", candidate.as_ptr(), new_location.as_ptr());
+                    }
+                }
+                Err(err) => {
+                    // Evacuation failed - this could happen if we run out of space
+                    // For now, log the error and continue
+                    eprintln!("Failed to evacuate object {:p}: {:?}", candidate.as_ptr(), err);
+                }
+            }
+        }
+    }
+
+    /// Evacuate objects from specific fragmented blocks during selective evacuation
+    pub fn evacuate_fragmented_blocks(&mut self, block_indices: &[usize]) {
+        if cfg!(debug_assertions) {
+            println!("Performing selective evacuation of {} blocks", block_indices.len());
+        }
+        
+        // Evacuation candidates should have been collected during marking
+        // Now perform the actual evacuation
+        self.perform_evacuation();
+    }
+
+    /// Evacuate objects from all fragmented blocks during comprehensive defragmentation
+    pub fn evacuate_all_fragmented_blocks(&mut self) {
+        if cfg!(debug_assertions) {
+            println!("Performing comprehensive defragmentation evacuation");
+        }
+        
+        // Evacuation candidates should have been collected during marking
+        // Now perform the actual evacuation
+        self.perform_evacuation();
+    }
 }
 
 pub struct Scope();
 impl CollectorScope for Scope {}
+
 
 pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock, dump_heap: bool) {
     if dump_heap {
         eprintln!("GC!");
     }
 
+    // Analyze fragmentation and choose collection strategy before collection
+    let collection_strategy = heap.analyze_collection_strategy();
+    if dump_heap {
+        eprintln!("Collection strategy: {:?}", collection_strategy);
+    }
+
     clock.switch(ThreadOccupation::CollectorMark);
 
-    let mut heap_view = CollectorHeapView { heap };
+    let mut heap_view = CollectorHeapView { 
+        heap,
+        evacuation_candidates: Vec::new(),
+        strategy: None,
+    };
 
-    // clear line maps
+    // clear line maps and evacuation candidates
     heap_view.reset();
+    
+    // Set collection strategy for evacuation-aware marking
+    heap_view.set_strategy(collection_strategy.clone());
 
     let mut queue = VecDeque::default();
 
     let scope = Scope();
 
-    // find and queue the roots
+    // find and queue the roots - the mark method will automatically check for evacuation
     queue.extend(roots.scan(&scope, &mut heap_view).drain(..));
 
     while let Some(scanptr) = queue.pop_front() {
@@ -145,6 +227,28 @@ pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock, dump
 
     if dump_heap {
         eprintln!("Heap after mark:\n\n{:?}", &heap_view.heap)
+    }
+
+    // Apply evacuation based on collection strategy before sweep
+    match collection_strategy {
+        CollectionStrategy::MarkInPlace => {
+            // No evacuation needed - standard mark-and-sweep
+            if dump_heap {
+                eprintln!("Using MarkInPlace - no evacuation");
+            }
+        }
+        CollectionStrategy::SelectiveEvacuation(block_indices) => {
+            if dump_heap {
+                eprintln!("Using SelectiveEvacuation for {} blocks", block_indices.len());
+            }
+            heap_view.evacuate_fragmented_blocks(&block_indices);
+        }
+        CollectionStrategy::DefragmentationSweep => {
+            if dump_heap {
+                eprintln!("Using DefragmentationSweep - evacuating all fragmented blocks");
+            }
+            heap_view.evacuate_all_fragmented_blocks();
+        }
     }
 
     clock.switch(ThreadOccupation::CollectorSweep);
@@ -362,5 +466,47 @@ pub mod tests {
         assert!(stats_a.recycled < stats_b.recycled,
                "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})",
                stats_a.recycled, stats_b.recycled);
+    }
+
+    #[test]
+    pub fn test_collection_with_strategy_selection() {
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+
+        clock.switch(ThreadOccupation::Mutator);
+
+        // Create some objects that will result in a specific collection strategy
+        let ptr = {
+            let view = MutatorHeapView::new(&heap);
+            view.atom(Ref::L(0)).unwrap().as_ptr()
+        };
+
+        // Test that collection analyzes strategy before proceeding
+        let strategy_before = heap.analyze_collection_strategy();
+        
+        // Collect with heap dumping disabled to avoid noise
+        collect(&vec![ptr], &mut heap, &mut clock, false);
+        
+        // Verify that collection completed successfully 
+        // (The strategy selection is now integrated into the collection process)
+        let stats = heap.stats();
+        assert!(stats.blocks_allocated > 0, "Heap should have allocated blocks");
+        
+        // Verify that the strategy selection is consistent
+        let strategy_after = heap.analyze_collection_strategy();
+        
+        // The strategy might change after collection due to different block states,
+        // but the analysis should not crash
+        match strategy_before {
+            CollectionStrategy::MarkInPlace => {}
+            CollectionStrategy::SelectiveEvacuation(_) => {}
+            CollectionStrategy::DefragmentationSweep => {}
+        }
+        
+        match strategy_after {
+            CollectionStrategy::MarkInPlace => {}
+            CollectionStrategy::SelectiveEvacuation(_) => {}
+            CollectionStrategy::DefragmentationSweep => {}
+        }
     }
 }

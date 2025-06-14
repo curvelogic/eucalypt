@@ -17,7 +17,9 @@
       "Bash(./target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..100]\")",
       "Bash(find:*)",
       "Bash(rm:*)",
-      "Bash(~/.claude/showme src/eval/memory/heap.rs)"
+      "Bash(~/.claude/showme src/eval/memory/heap.rs)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)"
     ],
     "deny": []
   }
