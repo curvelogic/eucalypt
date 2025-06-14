@@ -381,6 +381,20 @@ impl BumpBlock {
             BlockDensity::Empty => 0.0,      // No evacuation needed (already reclaimable)
         }
     }
+
+    /// Check if an address falls within this block's memory range
+    /// Used for Immix-style pointer-to-block mapping using arithmetic
+    pub fn contains_address(&self, addr: usize) -> bool {
+        let block_start = self.block.as_ptr() as usize;
+        let block_end = block_start + BLOCK_SIZE_BYTES;
+        addr >= block_start && addr < block_end
+    }
+    
+    /// Get the base address of this block for arithmetic operations
+    /// Enables Immix-style address calculations within block boundaries
+    pub fn base_address(&self) -> usize {
+        self.block.as_ptr() as usize
+    }
 }
 
 #[cfg(test)]

@@ -1460,61 +1460,116 @@ impl Heap {
         })
     }
 
+    /// Find which block contains a given pointer using Immix-style arithmetic detection
+    /// Returns block index for use with collection strategies
+    pub fn find_block_containing<T>(&self, ptr: NonNull<T>) -> Option<usize> {
+        let heap_state = unsafe { &*self.state.get() };
+        let ptr_addr = ptr.as_ptr() as usize;
+
+        // Check head block (index 0)
+        if let Some(ref head) = heap_state.head {
+            if head.contains_address(ptr_addr) {
+                return Some(0);
+            }
+        }
+
+        // Check overflow block (index 1)
+        if let Some(ref overflow) = heap_state.overflow {
+            if overflow.contains_address(ptr_addr) {
+                return Some(1);
+            }
+        }
+
+        // Check rest blocks (index 2+)
+        for (i, block) in heap_state.rest.iter().enumerate() {
+            if block.contains_address(ptr_addr) {
+                return Some(2 + i);
+            }
+        }
+
+        None
+    }
+
+    /// Check if a block at given index is fragmented
+    pub fn is_block_fragmented(&self, block_index: usize) -> bool {
+        let heap_state = unsafe { &*self.state.get() };
+
+        match block_index {
+            0 => {
+                if let Some(ref head) = heap_state.head {
+                    matches!(head.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented)
+                } else {
+                    false
+                }
+            }
+            1 => {
+                if let Some(ref overflow) = heap_state.overflow {
+                    matches!(overflow.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented)
+                } else {
+                    false
+                }
+            }
+            rest_index if rest_index >= 2 => {
+                let rest_idx = rest_index - 2;
+                if let Some(block) = heap_state.rest.iter().nth(rest_idx) {
+                    matches!(block.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// Check if an object should be evacuated based on collection strategy
-    /// This is a simplified approach that doesn't require block indexing
+    /// Now uses proper block detection with index-based selection for SelectiveEvacuation
     pub fn should_evacuate_object<T>(&self, ptr: NonNull<T>, strategy: &CollectionStrategy) -> bool {
         match strategy {
             CollectionStrategy::MarkInPlace => false, // No evacuation
-            CollectionStrategy::SelectiveEvacuation(_block_indices) => {
-                // For now, check if the object is in a fragmented block
-                // A more precise implementation would map block indices to actual blocks
-                self.is_object_in_fragmented_block(ptr)
+            CollectionStrategy::SelectiveEvacuation(block_indices) => {
+                // Check if object is in one of the blocks marked for selective evacuation
+                if let Some(block_index) = self.find_block_containing(ptr) {
+                    block_indices.contains(&block_index)
+                } else {
+                    false
+                }
             }
             CollectionStrategy::DefragmentationSweep => {
-                // Check if object is in a fragmented block
+                // Check if object is in any fragmented block
                 self.is_object_in_fragmented_block(ptr)
             }
         }
     }
 
-    /// Check if an object is in a fragmented block (simplified implementation)
+    /// Check if an object is in a fragmented block using proper Immix-style block detection
     fn is_object_in_fragmented_block<T>(&self, ptr: NonNull<T>) -> bool {
         let heap_state = unsafe { &*self.state.get() };
         let ptr_addr = ptr.as_ptr() as usize;
 
-        // This is a simplified implementation that checks all blocks
-        // A more efficient implementation would maintain a mapping from addresses to blocks
+        // Use arithmetic-based block detection following Immix principles
+        // Check each block using the new contains_address method
 
         // Check head block
         if let Some(ref head) = heap_state.head {
-            if self.ptr_in_block_range(ptr_addr, head) {
+            if head.contains_address(ptr_addr) {
                 return matches!(head.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented);
             }
         }
 
         // Check overflow block
         if let Some(ref overflow) = heap_state.overflow {
-            if self.ptr_in_block_range(ptr_addr, overflow) {
+            if overflow.contains_address(ptr_addr) {
                 return matches!(overflow.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented);
             }
         }
 
         // Check rest blocks
         for block in heap_state.rest.iter() {
-            if self.ptr_in_block_range(ptr_addr, block) {
+            if block.contains_address(ptr_addr) {
                 return matches!(block.analyze_density(), BlockDensity::Sparse | BlockDensity::Fragmented);
             }
         }
 
-        false
-    }
-
-    /// Check if a pointer address is within a block's range
-    /// Simplified implementation for testing evacuation framework
-    fn ptr_in_block_range(&self, _ptr_addr: usize, _block: &BumpBlock) -> bool {
-        // For now, return false to test the evacuation framework without precise block detection
-        // This means evacuation will rarely be triggered, but the infrastructure will work
-        // A proper implementation would need public methods in BumpBlock to get memory ranges
         false
     }
 
