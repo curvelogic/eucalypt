@@ -8,7 +8,7 @@ use std::{collections::VecDeque, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
-use super::{array::Array, heap::{Heap, CollectionStrategy}};
+use super::{array::Array, heap::{Heap, CollectionStrategy}, alloc::Allocator};
 
 pub struct ScanPtr<'scope> {
     value: &'scope dyn GcScannable,
@@ -507,6 +507,167 @@ pub mod tests {
             CollectionStrategy::MarkInPlace => {}
             CollectionStrategy::SelectiveEvacuation(_) => {}
             CollectionStrategy::DefragmentationSweep => {}
+        }
+    }
+
+    #[test]
+    pub fn test_evacuation_during_collection() {
+        let mut heap = Heap::new();
+        let mut _clock = Clock::default();
+
+        // Create some objects directly on heap
+        let objects = vec![
+            heap.alloc(Ref::num(1)).unwrap(),
+            heap.alloc(Ref::num(2)).unwrap(),
+            heap.alloc(Ref::num(3)).unwrap(),
+            heap.alloc(Ref::lref(42)).unwrap(),
+        ];
+
+        // Test collection with different strategies
+        let strategies = [
+            CollectionStrategy::MarkInPlace,
+            CollectionStrategy::SelectiveEvacuation(vec![0, 1]),
+            CollectionStrategy::DefragmentationSweep,
+        ];
+
+        for strategy in strategies.iter() {
+            // Create a modified heap view that will collect evacuation candidates
+            let mut heap_view = CollectorHeapView { 
+                heap: &mut heap,
+                evacuation_candidates: Vec::new(),
+                strategy: Some(strategy.clone()),
+            };
+
+            heap_view.reset();
+
+            // Mark all objects manually to test evacuation detection
+            for obj_ptr in &objects {
+                heap_view.mark(*obj_ptr);
+            }
+
+            // Check if evacuation candidates were collected based on strategy
+            match strategy {
+                CollectionStrategy::MarkInPlace => {
+                    assert!(heap_view.evacuation_candidates.is_empty(), 
+                           "MarkInPlace should not collect evacuation candidates");
+                }
+                CollectionStrategy::SelectiveEvacuation(_) | 
+                CollectionStrategy::DefragmentationSweep => {
+                    // With our current simplified block detection (returns false),
+                    // no candidates should be collected. This validates the logic.
+                    // When block detection is improved, this will collect candidates.
+                    assert!(heap_view.evacuation_candidates.is_empty(), 
+                           "Current simplified implementation should not find objects in fragmented blocks");
+                }
+            }
+
+            // Test that evacuation methods can be called without errors
+            match strategy {
+                CollectionStrategy::SelectiveEvacuation(block_indices) => {
+                    heap_view.evacuate_fragmented_blocks(block_indices);
+                }
+                CollectionStrategy::DefragmentationSweep => {
+                    heap_view.evacuate_all_fragmented_blocks();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    pub fn test_collection_strategy_analysis() {
+        let heap = Heap::new();
+
+        // Test that strategy analysis works consistently
+        let strategy1 = heap.analyze_collection_strategy();
+        let strategy2 = heap.analyze_collection_strategy();
+        
+        // Strategy should be deterministic for the same heap state
+        match (&strategy1, &strategy2) {
+            (CollectionStrategy::MarkInPlace, CollectionStrategy::MarkInPlace) => {}
+            (CollectionStrategy::SelectiveEvacuation(blocks1), CollectionStrategy::SelectiveEvacuation(blocks2)) => {
+                assert_eq!(blocks1, blocks2, "SelectiveEvacuation should return same blocks");
+            }
+            (CollectionStrategy::DefragmentationSweep, CollectionStrategy::DefragmentationSweep) => {}
+            _ => {
+                // Strategies should match
+                assert_eq!(
+                    std::mem::discriminant(&strategy1), 
+                    std::mem::discriminant(&strategy2),
+                    "Strategy analysis should be deterministic"
+                );
+            }
+        }
+
+        // For a new heap with no objects, we should get MarkInPlace strategy
+        assert_eq!(strategy1, CollectionStrategy::MarkInPlace, "New heap should use MarkInPlace strategy");
+    }
+
+    #[test]
+    pub fn test_evacuation_infrastructure_end_to_end() {
+        let heap = Heap::new();
+
+        // Create objects directly on heap
+        let objects = vec![
+            heap.alloc(Ref::num(100)).unwrap(),
+            heap.alloc(Ref::num(200)).unwrap(),
+            heap.alloc(Ref::lref(123)).unwrap(),
+        ];
+
+        // Test the evacuation infrastructure directly
+        for &original_ptr in &objects {
+            // Test object evacuation
+            let evacuation_result = heap.evacuate_object(original_ptr);
+            assert!(evacuation_result.is_ok(), "Object evacuation should succeed");
+            
+            let evacuated_ptr = evacuation_result.unwrap();
+            
+            // Verify evacuation properties
+            assert_ne!(original_ptr, evacuated_ptr, "Evacuated object should be at different location");
+            assert!(heap.is_evacuated(original_ptr), "Original object should be marked as evacuated");
+            
+            let followed_ptr = heap.follow_forwarding_pointer(original_ptr);
+            assert_eq!(followed_ptr, evacuated_ptr, "Forwarding pointer should point to evacuated location");
+            
+            // Verify the evacuated object has same value
+            let original_value = unsafe { original_ptr.as_ref().clone() };
+            let evacuated_value = unsafe { evacuated_ptr.as_ref().clone() };
+            assert_eq!(original_value, evacuated_value, "Evacuated object should have same value");
+        }
+    }
+
+    #[test] 
+    pub fn test_collection_with_forced_evacuation_simulation() {
+        let mut heap = Heap::new();
+
+        // Create an object directly on heap
+        let ptr = heap.alloc(Ref::num(42)).unwrap();
+
+        // Manually test evacuation during collection flow
+        {
+            let mut heap_view = CollectorHeapView { 
+                heap: &mut heap,
+                evacuation_candidates: Vec::new(),
+                strategy: Some(CollectionStrategy::DefragmentationSweep),
+            };
+
+            heap_view.reset();
+
+            // Manually add evacuation candidate to simulate finding fragmented objects
+            let candidate_ptr = NonNull::new(ptr.as_ptr() as *mut ()).unwrap();
+            heap_view.evacuation_candidates.push(candidate_ptr);
+
+            // Test that evacuation is performed
+            let candidates_before = heap_view.evacuation_candidates.len();
+            assert_eq!(candidates_before, 1, "Should have one evacuation candidate");
+
+            heap_view.perform_evacuation();
+
+            let candidates_after = heap_view.evacuation_candidates.len();
+            assert_eq!(candidates_after, 0, "Evacuation candidates should be consumed");
+
+            // The object should now be evacuated
+            assert!(heap.is_evacuated(ptr), "Object should be evacuated after perform_evacuation");
         }
     }
 }
