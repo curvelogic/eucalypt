@@ -22,6 +22,19 @@ impl From<BlockError> for AllocError {
     }
 }
 
+/// Block density classification for fragmentation analysis
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockDensity {
+    /// Empty block with no live objects (0% utilisation)
+    Empty,
+    /// Sparsely populated block (1-25% utilisation) - high evacuation priority
+    Sparse,
+    /// Moderately fragmented block (25-75% utilisation) - medium evacuation priority  
+    Fragmented,
+    /// Densely packed block (75%+ utilisation) - low evacuation priority
+    Dense,
+}
+
 /// 32K Block
 pub const BLOCK_SIZE_BITS: usize = 15;
 /// 32K Block
@@ -342,6 +355,32 @@ impl BumpBlock {
     pub fn stats(&self) -> (usize, usize, usize) {
         self.line_map.stats()
     }
+
+    /// Analyze block density for fragmentation detection
+    pub fn analyze_density(&self) -> BlockDensity {
+        let (_holes, _free, marked) = self.line_map.stats();
+        let total_lines = LINE_COUNT;
+        let utilisation = marked as f64 / total_lines as f64;
+
+        match utilisation {
+            x if x == 0.0 => BlockDensity::Empty,
+            x if x <= 0.25 => BlockDensity::Sparse,
+            x if x <= 0.75 => BlockDensity::Fragmented,
+            _ => BlockDensity::Dense,
+        }
+    }
+
+    /// Calculate fragmentation score for evacuation prioritisation
+    /// Returns a score from 0.0 to 1.0, where higher scores indicate higher evacuation priority
+    pub fn fragmentation_score(&self) -> f64 {
+        let density = self.analyze_density();
+        match density {
+            BlockDensity::Sparse => 1.0,        // Highest evacuation priority
+            BlockDensity::Fragmented => 0.5,    // Medium evacuation priority
+            BlockDensity::Dense => 0.0,         // Low evacuation priority (keep as-is)
+            BlockDensity::Empty => 0.0,         // No evacuation needed (already reclaimable)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -472,5 +511,138 @@ pub mod tests {
             assert_eq!(lo, 23680);
             assert_eq!(hi, 24064);
         }
+    }
+
+    #[test]
+    pub fn test_block_density_empty() {
+        // Test completely empty block
+        let block = BumpBlock::new();
+        assert_eq!(block.analyze_density(), BlockDensity::Empty);
+        assert_eq!(block.fragmentation_score(), 0.0);
+
+        let (_holes, free, marked) = block.stats();
+        assert_eq!(marked, 0);
+        assert_eq!(free, LINE_COUNT);
+    }
+
+    #[test]
+    pub fn test_block_density_sparse() {
+        // Test sparse block (1-25% utilisation)
+        let mut block = BumpBlock::new();
+        
+        // Mark ~10% of lines (25 out of 256 lines)
+        for i in 0..25 {
+            block.line_map.mark(i * 10); // Spread marks throughout block
+        }
+
+        assert_eq!(block.analyze_density(), BlockDensity::Sparse);
+        assert_eq!(block.fragmentation_score(), 1.0); // Highest evacuation priority
+
+        let (_holes, _free, marked) = block.stats();
+        assert_eq!(marked, 25);
+        assert!(marked as f64 / LINE_COUNT as f64 <= 0.25);
+    }
+
+    #[test]
+    pub fn test_block_density_fragmented() {
+        // Test fragmented block (25-75% utilisation)
+        let mut block = BumpBlock::new();
+        
+        // Mark ~50% of lines (128 out of 256 lines)
+        for i in 0..128 {
+            block.line_map.mark(i * 2); // Every other line
+        }
+
+        assert_eq!(block.analyze_density(), BlockDensity::Fragmented);
+        assert_eq!(block.fragmentation_score(), 0.5); // Medium evacuation priority
+
+        let (_holes, _free, marked) = block.stats();
+        assert_eq!(marked, 128);
+        let utilisation = marked as f64 / LINE_COUNT as f64;
+        assert!(utilisation > 0.25 && utilisation <= 0.75);
+    }
+
+    #[test]
+    pub fn test_block_density_dense() {
+        // Test dense block (75%+ utilisation)
+        let mut block = BumpBlock::new();
+        
+        // Mark ~90% of lines (230 out of 256 lines)
+        for i in 0..230 {
+            block.line_map.mark(i);
+        }
+
+        assert_eq!(block.analyze_density(), BlockDensity::Dense);
+        assert_eq!(block.fragmentation_score(), 0.0); // Low evacuation priority
+
+        let (_holes, _free, marked) = block.stats();
+        assert_eq!(marked, 230);
+        assert!(marked as f64 / LINE_COUNT as f64 > 0.75);
+    }
+
+    #[test]
+    pub fn test_block_density_boundary_cases() {
+        // Test exact boundary cases
+        let mut block = BumpBlock::new();
+
+        // Test exactly 25% utilisation (should be Sparse)
+        let sparse_lines = (LINE_COUNT as f64 * 0.25) as usize;
+        for i in 0..sparse_lines {
+            block.line_map.mark(i);
+        }
+        assert_eq!(block.analyze_density(), BlockDensity::Sparse);
+
+        // Clear and test exactly 75% utilisation (should be Fragmented)
+        block.line_map = LineMap::default();
+        let fragmented_lines = (LINE_COUNT as f64 * 0.75) as usize;
+        for i in 0..fragmented_lines {
+            block.line_map.mark(i);
+        }
+        assert_eq!(block.analyze_density(), BlockDensity::Fragmented);
+
+        // Clear and test just over 75% utilisation (should be Dense)
+        block.line_map = LineMap::default();
+        let dense_lines = (LINE_COUNT as f64 * 0.76) as usize;
+        for i in 0..dense_lines {
+            block.line_map.mark(i);
+        }
+        assert_eq!(block.analyze_density(), BlockDensity::Dense);
+    }
+
+    #[test]
+    pub fn test_fragmentation_score_ordering() {
+        // Test that fragmentation scores are properly ordered for evacuation priority
+        let mut blocks = Vec::new();
+
+        // Create blocks with different densities
+        for &(lines_to_mark, expected_density) in &[
+            (0, BlockDensity::Empty),
+            (64, BlockDensity::Sparse),      // 25% utilisation
+            (128, BlockDensity::Fragmented), // 50% utilisation  
+            (200, BlockDensity::Dense),      // ~78% utilisation
+        ] {
+            let mut block = BumpBlock::new();
+            for i in 0..lines_to_mark {
+                block.line_map.mark(i);
+            }
+            assert_eq!(block.analyze_density(), expected_density);
+            blocks.push(block);
+        }
+
+        // Verify evacuation priority ordering (higher score = higher priority)
+        let empty_score = blocks[0].fragmentation_score();
+        let sparse_score = blocks[1].fragmentation_score();
+        let fragmented_score = blocks[2].fragmentation_score();
+        let dense_score = blocks[3].fragmentation_score();
+
+        assert_eq!(empty_score, 0.0);
+        assert_eq!(sparse_score, 1.0);
+        assert_eq!(fragmented_score, 0.5);
+        assert_eq!(dense_score, 0.0);
+
+        // Sparse blocks should have highest priority
+        assert!(sparse_score > fragmented_score);
+        assert!(fragmented_score > dense_score);
+        assert!(sparse_score > dense_score);
     }
 }
