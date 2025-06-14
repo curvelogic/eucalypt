@@ -304,7 +304,7 @@ pub fn machine_return_closure_list(
         list.len(),
         machine.env(view),
         Smid::default(),
-    );
+    )?;
     let len = list.len();
 
     // env of links [lnull, l0, l1 ..] [i0 i1 i2]
@@ -338,7 +338,7 @@ pub fn machine_return_block_pair_closure_list(
         values.len(),
         machine.env(view),
         Smid::default(),
-    );
+    )?;
     let len = block.len();
 
     // env of pairs
@@ -358,7 +358,7 @@ pub fn machine_return_block_pair_closure_list(
         pairs.len(),
         value_frame,
         Smid::default(),
-    );
+    )?;
 
     // env of links [lnull, l0, l1 ..] [p0 p1 p2...] [v0 v1 ..]
     let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];

@@ -1,0 +1,55 @@
+---
+title: GC 001 - Basic Collection Test
+filename: /Users/greg/dev/curvelogic/eucalypt/harness/test/gc/gc_001_basic_collection.eu
+tests:
+  test-basic-collection-yaml:
+    exit: 0
+    stdout:
+      - "---"
+      - "first-id-correct: true"
+      - "last-id-correct: true"
+      - "objects-count: true"
+      - "more-objects-count: true"
+      - "first-data-size: true"
+      - "last-data-size: true"
+    stderr: []
+    result:
+      first-id-correct: true
+      last-id-correct: true
+      objects-count: true
+      more-objects-count: true
+      first-data-size: true
+      last-data-size: true
+    expectations:
+      - name: verify-allocation-integrity
+        function-key: verify-allocation-integrity
+    stats:
+      ticks: 53275
+      allocs: 7895
+      max-stack: 313
+  test-basic-collection-json:
+    exit: 0
+    stdout:
+      - "{"
+      - "  \"first-data-size\": true,"
+      - "  \"first-id-correct\": true,"
+      - "  \"last-data-size\": true,"
+      - "  \"last-id-correct\": true,"
+      - "  \"more-objects-count\": true,"
+      - "  \"objects-count\": true"
+      - "}"
+    stderr: []
+    result:
+      first-data-size: true
+      first-id-correct: true
+      last-data-size: true
+      last-id-correct: true
+      more-objects-count: true
+      objects-count: true
+    expectations:
+      - name: verify-allocation-integrity
+        function-key: verify-allocation-integrity
+    stats:
+      ticks: 53275
+      allocs: 7895
+      max-stack: 313
