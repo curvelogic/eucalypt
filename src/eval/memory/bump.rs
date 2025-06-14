@@ -363,7 +363,7 @@ impl BumpBlock {
         let utilisation = marked as f64 / total_lines as f64;
 
         match utilisation {
-            x if x == 0.0 => BlockDensity::Empty,
+            0.0 => BlockDensity::Empty,
             x if x <= 0.25 => BlockDensity::Sparse,
             x if x <= 0.75 => BlockDensity::Fragmented,
             _ => BlockDensity::Dense,
@@ -375,10 +375,10 @@ impl BumpBlock {
     pub fn fragmentation_score(&self) -> f64 {
         let density = self.analyze_density();
         match density {
-            BlockDensity::Sparse => 1.0,        // Highest evacuation priority
-            BlockDensity::Fragmented => 0.5,    // Medium evacuation priority
-            BlockDensity::Dense => 0.0,         // Low evacuation priority (keep as-is)
-            BlockDensity::Empty => 0.0,         // No evacuation needed (already reclaimable)
+            BlockDensity::Sparse => 1.0,     // Highest evacuation priority
+            BlockDensity::Fragmented => 0.5, // Medium evacuation priority
+            BlockDensity::Dense => 0.0,      // Low evacuation priority (keep as-is)
+            BlockDensity::Empty => 0.0,      // No evacuation needed (already reclaimable)
         }
     }
 }
@@ -529,7 +529,7 @@ pub mod tests {
     pub fn test_block_density_sparse() {
         // Test sparse block (1-25% utilisation)
         let mut block = BumpBlock::new();
-        
+
         // Mark ~10% of lines (25 out of 256 lines)
         for i in 0..25 {
             block.line_map.mark(i * 10); // Spread marks throughout block
@@ -547,7 +547,7 @@ pub mod tests {
     pub fn test_block_density_fragmented() {
         // Test fragmented block (25-75% utilisation)
         let mut block = BumpBlock::new();
-        
+
         // Mark ~50% of lines (128 out of 256 lines)
         for i in 0..128 {
             block.line_map.mark(i * 2); // Every other line
@@ -566,7 +566,7 @@ pub mod tests {
     pub fn test_block_density_dense() {
         // Test dense block (75%+ utilisation)
         let mut block = BumpBlock::new();
-        
+
         // Mark ~90% of lines (230 out of 256 lines)
         for i in 0..230 {
             block.line_map.mark(i);
@@ -618,7 +618,7 @@ pub mod tests {
         for &(lines_to_mark, expected_density) in &[
             (0, BlockDensity::Empty),
             (64, BlockDensity::Sparse),      // 25% utilisation
-            (128, BlockDensity::Fragmented), // 50% utilisation  
+            (128, BlockDensity::Fragmented), // 50% utilisation
             (200, BlockDensity::Dense),      // ~78% utilisation
         ] {
             let mut block = BumpBlock::new();
