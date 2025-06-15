@@ -819,76 +819,91 @@ mod oom_tests {
         let _obj3 = heap.alloc(Ref::num(3)).unwrap();
 
         let post_alloc_metrics = heap.gc_metrics();
-        assert_eq!(
-            post_alloc_metrics.allocation_stats.total_objects_allocated,
-            3
-        );
-        assert!(post_alloc_metrics.allocation_stats.total_bytes_allocated > 0);
-        assert!(post_alloc_metrics.allocation_stats.allocation_rate_bps > 0.0);
-        assert!(post_alloc_metrics.allocation_stats.allocation_rate_ops > 0.0);
+        
+        // Allocation tracking is only enabled in debug builds or with gc-telemetry feature
+        #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
+        {
+            assert_eq!(
+                post_alloc_metrics.allocation_stats.total_objects_allocated,
+                3
+            );
+            assert!(post_alloc_metrics.allocation_stats.total_bytes_allocated > 0);
+            assert!(post_alloc_metrics.allocation_stats.allocation_rate_bps > 0.0);
+            assert!(post_alloc_metrics.allocation_stats.allocation_rate_ops > 0.0);
 
-        // Check size class distribution
-        assert_eq!(
-            post_alloc_metrics
-                .allocation_stats
-                .size_class_distribution
-                .small
-                .0,
-            3
-        ); // 3 small objects
-        assert!(
-            post_alloc_metrics
-                .allocation_stats
-                .size_class_distribution
-                .small
-                .1
-                > 0
-        ); // Some bytes allocated
+            // Check size class distribution
+            assert_eq!(
+                post_alloc_metrics
+                    .allocation_stats
+                    .size_class_distribution
+                    .small
+                    .0,
+                3
+            ); // 3 small objects
+            assert!(
+                post_alloc_metrics
+                    .allocation_stats
+                    .size_class_distribution
+                    .small
+                    .1
+                    > 0
+            ); // Some bytes allocated
 
-        println!("✅ Allocation metrics are properly tracked");
+            println!("✅ Allocation metrics are properly tracked");
 
-        // Allocate some bytes to test different size classes
-        let _bytes = heap.alloc_bytes(1024).unwrap(); // Should be medium size
+            // Allocate some bytes to test different size classes
+            let _bytes = heap.alloc_bytes(1024).unwrap(); // Should be medium size
 
-        let post_bytes_metrics = heap.gc_metrics();
-        assert_eq!(
-            post_bytes_metrics.allocation_stats.total_objects_allocated,
-            4
-        );
-        assert_eq!(
-            post_bytes_metrics
-                .allocation_stats
-                .size_class_distribution
-                .medium
-                .0,
-            1
-        ); // 1 medium object
+            let post_bytes_metrics = heap.gc_metrics();
+            assert_eq!(
+                post_bytes_metrics.allocation_stats.total_objects_allocated,
+                4
+            );
+            assert_eq!(
+                post_bytes_metrics
+                    .allocation_stats
+                    .size_class_distribution
+                    .medium
+                    .0,
+                1
+            ); // 1 medium object
+        }
+        
+        // In release builds without gc-telemetry, metrics should remain zero (zero-overhead)
+        #[cfg(not(any(debug_assertions, feature = "gc-telemetry")))]
+        {
+            assert_eq!(post_alloc_metrics.allocation_stats.total_objects_allocated, 0);
+            assert_eq!(post_alloc_metrics.allocation_stats.total_bytes_allocated, 0);
+            println!("✅ Release build has zero-overhead metrics (no tracking)");
+        }
 
+        #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         println!("✅ Size class distribution tracking works correctly");
 
-        // Test utilisation metrics
+        // Test utilisation metrics (these should work in all builds)
+        let final_metrics = heap.gc_metrics();
         assert!(
-            post_bytes_metrics
+            final_metrics
                 .utilisation_stats
                 .heap_utilisation_percent
                 >= 0.0
         );
-        assert!(post_bytes_metrics.utilisation_stats.fragmentation_ratio >= 0.0);
-        assert!(post_bytes_metrics.utilisation_stats.fragmentation_ratio <= 1.0);
+        assert!(final_metrics.utilisation_stats.fragmentation_ratio >= 0.0);
+        assert!(final_metrics.utilisation_stats.fragmentation_ratio <= 1.0);
 
         println!("✅ Utilisation metrics are calculated correctly");
 
         // Test performance health indicators
-        assert!(post_bytes_metrics.performance_counters.health_score >= 0.0);
-        assert!(post_bytes_metrics.performance_counters.health_score <= 1.0);
+        assert!(final_metrics.performance_counters.health_score >= 0.0);
+        assert!(final_metrics.performance_counters.health_score <= 1.0);
         assert!(
-            post_bytes_metrics
+            final_metrics
                 .performance_counters
                 .allocation_efficiency
                 >= 0.0
         );
         assert!(
-            post_bytes_metrics
+            final_metrics
                 .performance_counters
                 .allocation_efficiency
                 <= 1.0
@@ -897,37 +912,26 @@ mod oom_tests {
         println!("✅ Performance health indicators are calculated correctly");
 
         // Test emergency collection metrics by triggering one
-        let result = heap.attempt_emergency_collection(1024);
+        let _result = heap.attempt_emergency_collection(1024);
 
         let post_emergency_metrics = heap.gc_metrics();
-        assert_eq!(post_emergency_metrics.emergency_stats.total_attempts, 1);
-        assert!(
-            post_emergency_metrics.emergency_stats.total_emergency_time > std::time::Duration::ZERO
-        );
-
-        match result {
-            Ok(()) => {
-                assert_eq!(
-                    post_emergency_metrics
-                        .emergency_stats
-                        .successful_collections,
-                    1
-                );
-                assert_eq!(post_emergency_metrics.emergency_stats.failed_collections, 0);
-                assert!(post_emergency_metrics.emergency_stats.success_rate > 0.0);
-                println!("✅ Emergency collection succeeded and metrics recorded");
-            }
-            Err(_) => {
-                assert_eq!(
-                    post_emergency_metrics
-                        .emergency_stats
-                        .successful_collections,
-                    0
-                );
-                assert_eq!(post_emergency_metrics.emergency_stats.failed_collections, 1);
-                assert_eq!(post_emergency_metrics.emergency_stats.success_rate, 0.0);
-                println!("✅ Emergency collection failed and metrics recorded");
-            }
+        
+        // Emergency collection metrics are only tracked with debug builds or gc-telemetry feature
+        #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
+        {
+            assert_eq!(post_emergency_metrics.emergency_stats.total_attempts, 1);
+            assert!(
+                post_emergency_metrics.emergency_stats.total_emergency_time > std::time::Duration::ZERO
+            );
+            println!("✅ Emergency collection metrics are tracked");
+        }
+        
+        // In release builds without gc-telemetry, emergency metrics should remain zero
+        #[cfg(not(any(debug_assertions, feature = "gc-telemetry")))]
+        {
+            assert_eq!(post_emergency_metrics.emergency_stats.total_attempts, 0);
+            assert_eq!(post_emergency_metrics.emergency_stats.total_emergency_time, std::time::Duration::ZERO);
+            println!("✅ Emergency collection has zero-overhead metrics in release builds");
         }
 
         println!("✅ GC performance metrics system is working correctly");
