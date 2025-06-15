@@ -1155,24 +1155,25 @@ impl Heap {
     /// Get a snapshot of current GC performance metrics (calculates derived metrics on-demand)
     pub fn gc_metrics(&self) -> GCMetrics {
         let mut metrics = unsafe { (*self.gc_metrics.get()).clone() };
-        
+
         // Calculate derived metrics on-demand to avoid hot path overhead
         let now = Instant::now();
-        metrics.performance_counters.heap_lifetime = now.duration_since(metrics.performance_counters.heap_created_at);
-        
+        metrics.performance_counters.heap_lifetime =
+            now.duration_since(metrics.performance_counters.heap_created_at);
+
         // Calculate allocation rates
         let heap_lifetime_seconds = metrics.performance_counters.heap_lifetime.as_secs_f64();
         if heap_lifetime_seconds > 0.0 {
-            metrics.allocation_stats.allocation_rate_bps = 
+            metrics.allocation_stats.allocation_rate_bps =
                 metrics.allocation_stats.total_bytes_allocated as f64 / heap_lifetime_seconds;
-            metrics.allocation_stats.allocation_rate_ops = 
+            metrics.allocation_stats.allocation_rate_ops =
                 metrics.allocation_stats.total_objects_allocated as f64 / heap_lifetime_seconds;
         }
-        
+
         // Update utilisation and performance metrics
         self.calculate_utilisation_metrics(&mut metrics);
         self.calculate_performance_health(&mut metrics);
-        
+
         metrics
     }
 
@@ -1243,14 +1244,15 @@ impl Heap {
             let total_time = now.duration_since(metrics.performance_counters.heap_created_at);
             if total_time.as_secs_f64() > 0.0 {
                 metrics.performance_counters.gc_overhead_percent =
-                    (metrics.collection_stats.total_gc_time.as_secs_f64() / total_time.as_secs_f64())
+                    (metrics.collection_stats.total_gc_time.as_secs_f64()
+                        / total_time.as_secs_f64())
                         * 100.0;
             }
 
             // Reset allocation burst after collection
             metrics.allocation_stats.current_burst_bytes = 0;
         }
-        
+
         // In release builds, do nothing
         #[cfg(not(debug_assertions))]
         {
@@ -1300,7 +1302,7 @@ impl Heap {
                     total_bytes_freed / metrics.emergency_stats.successful_collections;
             }
         }
-        
+
         // In release builds, do nothing
         #[cfg(not(debug_assertions))]
         {
@@ -1362,7 +1364,6 @@ impl Heap {
 
     /// Calculate performance health indicators on-demand  
     fn calculate_performance_health(&self, metrics: &mut GCMetrics) {
-
         // Calculate memory pressure based on allocation rate and collection frequency
         let allocation_pressure = if metrics.allocation_stats.peak_allocation_rate_bps > 0.0 {
             (metrics.allocation_stats.allocation_rate_bps
