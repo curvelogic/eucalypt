@@ -4,6 +4,12 @@ version = "0.2.0"
 authors = ["gmorpheme <github@gmorpheme.net>"]
 edition = "2021"
 
+[features]
+default = []
+# Enable comprehensive GC metrics collection in release builds
+# WARNING: May impact performance - only enable for monitoring/debugging
+gc-telemetry = []
+
 [build-dependencies]
 lalrpop = { version = "0.19.8", features = ["lexer"] }
 

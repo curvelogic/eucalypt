@@ -62,7 +62,6 @@ pub struct FragmentationAnalysis {
     /// Average fragmentation score across all blocks
     pub average_fragmentation_score: f64,
 }
-
 #[derive(Debug)]
 pub struct HeapStats {
     /// Number of standard blocks allocated
@@ -1314,7 +1313,6 @@ impl Heap {
 
         analysis
     }
-
     /// Get a snapshot of current GC performance metrics (calculates derived metrics on-demand)
     pub fn gc_metrics(&self) -> GCMetrics {
         let mut metrics = unsafe { (*self.gc_metrics.get()).clone() };
@@ -1342,25 +1340,29 @@ impl Heap {
 
     /// Ultra-fast allocation counter update (minimal overhead for hot path)
     fn update_allocation_counters_fast(&self, size_bytes: usize, size_class: SizeClass) {
-        let metrics = unsafe { &mut *self.gc_metrics.get() };
+        // Only update counters in debug builds or with gc-telemetry feature
+        #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
+        {
+            let metrics = unsafe { &mut *self.gc_metrics.get() };
 
-        // Always update basic counters (minimal performance impact)
-        metrics.allocation_stats.total_bytes_allocated += size_bytes as u64;
-        metrics.allocation_stats.total_objects_allocated += 1;
+            // Update basic counters
+            metrics.allocation_stats.total_bytes_allocated += size_bytes as u64;
+            metrics.allocation_stats.total_objects_allocated += 1;
 
-        // Update size class distribution - always enabled for basic functionality
-        match size_class {
-            SizeClass::Small => {
-                metrics.allocation_stats.size_class_distribution.small.0 += 1;
-                metrics.allocation_stats.size_class_distribution.small.1 += size_bytes as u64;
-            }
-            SizeClass::Medium => {
-                metrics.allocation_stats.size_class_distribution.medium.0 += 1;
-                metrics.allocation_stats.size_class_distribution.medium.1 += size_bytes as u64;
-            }
-            SizeClass::Large => {
-                metrics.allocation_stats.size_class_distribution.large.0 += 1;
-                metrics.allocation_stats.size_class_distribution.large.1 += size_bytes as u64;
+            // Update size class distribution
+            match size_class {
+                SizeClass::Small => {
+                    metrics.allocation_stats.size_class_distribution.small.0 += 1;
+                    metrics.allocation_stats.size_class_distribution.small.1 += size_bytes as u64;
+                }
+                SizeClass::Medium => {
+                    metrics.allocation_stats.size_class_distribution.medium.0 += 1;
+                    metrics.allocation_stats.size_class_distribution.medium.1 += size_bytes as u64;
+                }
+                SizeClass::Large => {
+                    metrics.allocation_stats.size_class_distribution.large.0 += 1;
+                    metrics.allocation_stats.size_class_distribution.large.1 += size_bytes as u64;
+                }
             }
         }
     }
@@ -1419,43 +1421,47 @@ impl Heap {
         }
     }
 
-    /// Update emergency collection metrics (basic counters always enabled)
+    /// Update emergency collection metrics (feature-gated for performance)
     fn update_emergency_collection_metrics(
         &self,
         emergency_time: Duration,
         success: bool,
         bytes_freed: u64,
     ) {
-        let metrics = unsafe { &mut *self.gc_metrics.get() };
+        // Only update metrics in debug builds or with gc-telemetry feature
+        #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
+        {
+            let metrics = unsafe { &mut *self.gc_metrics.get() };
 
-        // Always update basic emergency collection counters
-        metrics.emergency_stats.total_attempts += 1;
-        if success {
-            metrics.emergency_stats.successful_collections += 1;
-        } else {
-            metrics.emergency_stats.failed_collections += 1;
-        }
+            // Update emergency collection counters
+            metrics.emergency_stats.total_attempts += 1;
+            if success {
+                metrics.emergency_stats.successful_collections += 1;
+            } else {
+                metrics.emergency_stats.failed_collections += 1;
+            }
 
-        // Always update timing metrics for emergency collections (important for diagnostics)
-        metrics.emergency_stats.total_emergency_time += emergency_time;
-        if metrics.emergency_stats.total_attempts > 0 {
-            metrics.emergency_stats.average_emergency_time =
-                metrics.emergency_stats.total_emergency_time
-                    / metrics.emergency_stats.total_attempts as u32;
-        }
+            // Update timing metrics
+            metrics.emergency_stats.total_emergency_time += emergency_time;
+            if metrics.emergency_stats.total_attempts > 0 {
+                metrics.emergency_stats.average_emergency_time =
+                    metrics.emergency_stats.total_emergency_time
+                        / metrics.emergency_stats.total_attempts as u32;
+            }
 
-        // Update success rate
-        metrics.emergency_stats.success_rate = metrics.emergency_stats.successful_collections
-            as f64
-            / metrics.emergency_stats.total_attempts as f64;
+            // Update success rate
+            metrics.emergency_stats.success_rate = metrics.emergency_stats.successful_collections
+                as f64
+                / metrics.emergency_stats.total_attempts as f64;
 
-        // Update average bytes freed (only for successful collections)
-        if success {
-            let total_bytes_freed = (metrics.emergency_stats.average_bytes_freed
-                * (metrics.emergency_stats.successful_collections - 1))
-                + bytes_freed;
-            metrics.emergency_stats.average_bytes_freed =
-                total_bytes_freed / metrics.emergency_stats.successful_collections;
+            // Update average bytes freed (only for successful collections)
+            if success {
+                let total_bytes_freed = (metrics.emergency_stats.average_bytes_freed
+                    * (metrics.emergency_stats.successful_collections - 1))
+                    + bytes_freed;
+                metrics.emergency_stats.average_bytes_freed =
+                    total_bytes_freed / metrics.emergency_stats.successful_collections;
+            }
         }
     }
 
