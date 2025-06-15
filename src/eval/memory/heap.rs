@@ -1176,18 +1176,18 @@ impl Heap {
         metrics
     }
 
-    /// Ultra-fast allocation counter update (absolute minimal overhead for hot path)
+    /// Ultra-fast allocation counter update (minimal overhead for hot path)
     fn update_allocation_counters_fast(&self, size_bytes: usize, size_class: SizeClass) {
-        // Skip metrics entirely in release builds for maximum performance
-        #[cfg(debug_assertions)]
+        // Only update counters in debug builds or with gc-telemetry feature
+        #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {
             let metrics = unsafe { &mut *self.gc_metrics.get() };
 
-            // Only update the most essential counters in debug mode
+            // Update basic counters
             metrics.allocation_stats.total_bytes_allocated += size_bytes as u64;
             metrics.allocation_stats.total_objects_allocated += 1;
 
-            // Update size class distribution for testing
+            // Update size class distribution
             match size_class {
                 SizeClass::Small => {
                     metrics.allocation_stats.size_class_distribution.small.0 += 1;
@@ -1202,12 +1202,6 @@ impl Heap {
                     metrics.allocation_stats.size_class_distribution.large.1 += size_bytes as u64;
                 }
             }
-        }
-        
-        // In release builds, do nothing to maximize performance
-        #[cfg(not(debug_assertions))]
-        {
-            let _ = (size_bytes, size_class); // Suppress unused warnings
         }
     }
 
