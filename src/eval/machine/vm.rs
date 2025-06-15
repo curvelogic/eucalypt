@@ -247,12 +247,13 @@ impl MachineState {
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
-                let new_env = view.from_let(bindings.as_slice(), environment, self.annotation);
+                let new_env = view.from_let(bindings.as_slice(), environment, self.annotation)?;
                 self.closure = SynClosure::new(body, new_env);
             }
             HeapSyn::LetRec { bindings, body } => {
                 metrics.alloc(bindings.len());
-                let new_env = view.from_letrec(bindings.as_slice(), environment, self.annotation);
+                let new_env =
+                    view.from_letrec(bindings.as_slice(), environment, self.annotation)?;
                 self.closure = SynClosure::new(body, new_env);
             }
             HeapSyn::Ann { smid, body } => {
@@ -320,7 +321,7 @@ impl MachineState {
                             2,
                             environment,
                             self.annotation,
-                        ),
+                        )?,
                     );
                 }
                 Continuation::Update { environment, index } => {
@@ -362,7 +363,7 @@ impl MachineState {
                                 &[Ref::vref(value.clone())],
                                 environment,
                                 self.annotation,
-                            ),
+                            )?,
                         );
                     } else {
                         return Err(ExecutionError::NoBranchForNative);
@@ -382,7 +383,7 @@ impl MachineState {
                     // demeta or_else can accept natives
                     self.closure = SynClosure::new(
                         or_else,
-                        view.from_args(&[Ref::vref(value.clone())], environment, self.annotation),
+                        view.from_args(&[Ref::vref(value.clone())], environment, self.annotation)?,
                     );
                 }
             }
@@ -426,12 +427,12 @@ impl MachineState {
                                 len,
                                 environment,
                                 self.annotation,
-                            ),
+                            )?,
                         );
                     } else if let Some(body) = fallback {
                         self.closure = SynClosure::new(
                             body,
-                            view.from_closure(self.closure.clone(), environment, self.annotation),
+                            view.from_closure(self.closure.clone(), environment, self.annotation)?,
                         );
                     } else {
                         return Err(ExecutionError::NoBranchForDataTag(tag));
@@ -467,7 +468,7 @@ impl MachineState {
                 } => {
                     self.closure = SynClosure::new(
                         or_else,
-                        view.from_closure(self.closure.clone(), environment, self.annotation),
+                        view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
             }
@@ -531,7 +532,7 @@ impl MachineState {
                     if let Some(body) = fallback {
                         self.closure = SynClosure::new(
                             body,
-                            view.from_closure(self.closure.clone(), environment, self.annotation),
+                            view.from_closure(self.closure.clone(), environment, self.annotation)?,
                         );
                     } else {
                         return Err(ExecutionError::CannotReturnFunToCase);
@@ -547,7 +548,7 @@ impl MachineState {
                 } => {
                     self.closure = SynClosure::new(
                         or_else,
-                        view.from_closure(self.closure.clone(), environment, self.annotation),
+                        view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
             }

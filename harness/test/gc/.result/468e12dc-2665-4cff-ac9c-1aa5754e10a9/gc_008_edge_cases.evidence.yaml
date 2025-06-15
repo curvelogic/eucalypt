@@ -1,0 +1,59 @@
+---
+title: gc_008_edge_cases
+filename: /Users/greg/dev/curvelogic/eucalypt/harness/test/gc/gc_008_edge_cases.eu
+tests:
+  test-edge-cases-yaml:
+    exit: 0
+    stdout:
+      - "---"
+      - "empty-cases-count: true"
+      - "nested-cases-count: true"
+      - "size-cases-count: true"
+      - "boundary-cases-count: true"
+      - "empty-first-id: true"
+      - "nested-first-id: true"
+      - "size-first-id: true"
+      - "boundary-first-id: true"
+      - "empty-type: true"
+      - "nested-type: true"
+      - "size-type: true"
+      - "boundary-type: true"
+      - "empty-data-length: true"
+      - "minimal-data-length: true"
+      - "null-data-check: true"
+      - "shallow-nesting: true"
+      - "tiny-size: true"
+      - "odd-size: true"
+      - "zero-boundary: true"
+      - "negative-boundary: true"
+      - "total-edge-objects: true"
+    stderr: []
+    result:
+      empty-cases-count: true
+      nested-cases-count: true
+      size-cases-count: true
+      boundary-cases-count: true
+      empty-first-id: true
+      nested-first-id: true
+      size-first-id: true
+      boundary-first-id: true
+      empty-type: true
+      nested-type: true
+      size-type: true
+      boundary-type: true
+      empty-data-length: true
+      minimal-data-length: true
+      null-data-check: true
+      shallow-nesting: true
+      tiny-size: true
+      odd-size: true
+      zero-boundary: true
+      negative-boundary: true
+      total-edge-objects: true
+    expectations:
+      - name: verify-edge-cases
+        function-key: verify-edge-cases
+    stats:
+      ticks: 9935
+      allocs: 1244
+      max-stack: 28

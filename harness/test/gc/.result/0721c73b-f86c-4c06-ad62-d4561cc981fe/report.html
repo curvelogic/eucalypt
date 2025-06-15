@@ -1,0 +1,125 @@
+<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></meta><title>Eucalypt Test Report</title><style type="text/css">
+          body {
+              font: 14px Helvetica Neue;
+              text-rendering: optimizelegibility;
+          }
+
+          .body {
+              width: 960px;
+              margin: auto;
+          }
+
+          .sidenav {
+            height: 100%;
+            width: 250px;
+            position: fixed;
+            z-index: 1;
+            top: 0;
+            left: 0;
+            overflow-x: hidden;
+            padding-top: 60px;
+          }
+
+          a:link {
+              color: #1F78B4;
+              text-decoration: none;
+          }
+
+          h1 {
+              font-size: 36px;
+              font-weight: 300;
+          }
+
+          h2 {
+              font-size: 24px;
+              font-weight: 300;
+          }
+
+          h3 {
+              font-size: 18px;
+              font-weight: 300;
+          }
+
+          table {
+              border-collapse: collapse;
+          }
+
+          table,
+          th,
+          td {
+              border: 1px solid #888;
+              padding: 2px;
+          }
+
+         .pill {
+           align-items: center;
+           font-family: Arial, Verdana, sans-serif;
+           font-weight: bold;
+           font-size: 11px;
+           display: inline-block;
+           height: 100%;
+           white-space: nowrap;
+           width: auto;
+
+           position: relative;
+           border-radius: 100px;
+           line-height: 1;
+           padding: 5px 12px 5px 12px;
+           text-overflow: ellipsis;
+           color: #595959;
+           word-break: break-word;
+
+          }
+
+          .PASS {
+            background: #b4eda0;
+          }
+
+          .FAIL {
+            background: #ffd5d1;
+          }
+
+          section.stdout {
+            border-left: 3px solid rgb(31, 120, 180);
+            padding-left: 8px;
+          }
+
+          section.stderr {
+            border-left: 3px solid rgb(227, 26, 28);
+            padding-left: 8px;
+          }
+
+          section.assertions {
+            border-left: 3px solid gray;
+            padding-left: 8px;
+          }
+
+          section.stats {
+            border-left: 3px solid rgb(224,202,60);
+            padding-left: 8px;
+          }
+
+
+  </style></head><body><div class="body"><nav class="sidenav"><table><tr><td class="PASS"><a href="#gc_005_collection_cycles">gc_005_collection_cycles</a></td></tr></table></nav><main><section id="gc_005_collection_cycles" class="subject"><h1>gc_005_collection_cycles</h1><section class="test"><h2>test-collection-cycles-yaml</h2><section class="stdout"><h4>stdout</h4><pre><code>---
+wave-1-survivors-count: true
+wave-2-survivors-count: true
+wave-3-transient-count: true
+wave-4-pressure-count: true
+wave-1-first-id: true
+wave-1-last-id: true
+wave-2-first-id: true
+wave-3-first-id: true
+wave-4-first-id: true
+wave-1-wave-num: true
+wave-2-wave-num: true
+wave-3-wave-num: true
+wave-4-wave-num: true
+wave-1-data-size: true
+wave-2-data-size: true
+wave-3-data-size: true
+wave-4-data-size: true
+wave-1-type: true
+wave-2-type: true
+wave-3-type: true
+wave-4-type: true
+total-surviving-objects: true</code></pre></section><section class="stderr"><h4>stderr</h4><pre><code></code></pre></section><section class="assertions"><h4>assertions</h4><ul></ul><li><span class="validation">verify-collection-cycles</span><span>: </span><span class="pill PASS">PASS</span></li></section><section class="stats"><h4>stats</h4><table><tr><th>ticks</th><td>10869</td></tr><tr><th>allocs</th><td>1338</td></tr><tr><th>max-stack</th><td>25</td></tr></table></section></section></section></main></div></body></html>
