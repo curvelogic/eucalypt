@@ -819,7 +819,7 @@ mod oom_tests {
         let _obj3 = heap.alloc(Ref::num(3)).unwrap();
 
         let post_alloc_metrics = heap.gc_metrics();
-        
+
         // Allocation tracking is only enabled in debug builds or with gc-telemetry feature
         #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {
@@ -868,11 +868,14 @@ mod oom_tests {
                 1
             ); // 1 medium object
         }
-        
+
         // In release builds without gc-telemetry, metrics should remain zero (zero-overhead)
         #[cfg(not(any(debug_assertions, feature = "gc-telemetry")))]
         {
-            assert_eq!(post_alloc_metrics.allocation_stats.total_objects_allocated, 0);
+            assert_eq!(
+                post_alloc_metrics.allocation_stats.total_objects_allocated,
+                0
+            );
             assert_eq!(post_alloc_metrics.allocation_stats.total_bytes_allocated, 0);
             println!("✅ Release build has zero-overhead metrics (no tracking)");
         }
@@ -882,12 +885,7 @@ mod oom_tests {
 
         // Test utilisation metrics (these should work in all builds)
         let final_metrics = heap.gc_metrics();
-        assert!(
-            final_metrics
-                .utilisation_stats
-                .heap_utilisation_percent
-                >= 0.0
-        );
+        assert!(final_metrics.utilisation_stats.heap_utilisation_percent >= 0.0);
         assert!(final_metrics.utilisation_stats.fragmentation_ratio >= 0.0);
         assert!(final_metrics.utilisation_stats.fragmentation_ratio <= 1.0);
 
@@ -896,18 +894,8 @@ mod oom_tests {
         // Test performance health indicators
         assert!(final_metrics.performance_counters.health_score >= 0.0);
         assert!(final_metrics.performance_counters.health_score <= 1.0);
-        assert!(
-            final_metrics
-                .performance_counters
-                .allocation_efficiency
-                >= 0.0
-        );
-        assert!(
-            final_metrics
-                .performance_counters
-                .allocation_efficiency
-                <= 1.0
-        );
+        assert!(final_metrics.performance_counters.allocation_efficiency >= 0.0);
+        assert!(final_metrics.performance_counters.allocation_efficiency <= 1.0);
 
         println!("✅ Performance health indicators are calculated correctly");
 
@@ -915,22 +903,26 @@ mod oom_tests {
         let _result = heap.attempt_emergency_collection(1024);
 
         let post_emergency_metrics = heap.gc_metrics();
-        
+
         // Emergency collection metrics are only tracked with debug builds or gc-telemetry feature
         #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {
             assert_eq!(post_emergency_metrics.emergency_stats.total_attempts, 1);
             assert!(
-                post_emergency_metrics.emergency_stats.total_emergency_time > std::time::Duration::ZERO
+                post_emergency_metrics.emergency_stats.total_emergency_time
+                    > std::time::Duration::ZERO
             );
             println!("✅ Emergency collection metrics are tracked");
         }
-        
+
         // In release builds without gc-telemetry, emergency metrics should remain zero
         #[cfg(not(any(debug_assertions, feature = "gc-telemetry")))]
         {
             assert_eq!(post_emergency_metrics.emergency_stats.total_attempts, 0);
-            assert_eq!(post_emergency_metrics.emergency_stats.total_emergency_time, std::time::Duration::ZERO);
+            assert_eq!(
+                post_emergency_metrics.emergency_stats.total_emergency_time,
+                std::time::Duration::ZERO
+            );
             println!("✅ Emergency collection has zero-overhead metrics in release builds");
         }
 
