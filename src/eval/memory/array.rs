@@ -243,27 +243,25 @@ impl<T: Sized + Clone> Array<T> {
     }
 
     /// Set item at index without bounds checking
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// Caller must ensure index < self.length to avoid undefined behavior.
     /// This method is intended for performance-critical paths where bounds
     /// are guaranteed by construction (e.g., pre-allocated arrays).
     pub(crate) unsafe fn set_unchecked(&mut self, index: usize, item: T) {
-        debug_assert!(index < self.length, "Array bounds violation: index {} >= length {}", index, self.length);
+        debug_assert!(
+            index < self.length,
+            "Array bounds violation: index {} >= length {}",
+            index,
+            self.length
+        );
         self.write(index, item);
     }
 
     /// As immutable slice
     pub fn as_slice(&self) -> &[T] {
         if let Some(ptr) = self.data.as_ptr() {
-            if self.length > self.data.capacity() {
-                panic!(
-                    "Array length ({}) exceeds capacity ({})",
-                    self.length,
-                    self.data.capacity()
-                );
-            }
             unsafe { from_raw_parts(ptr, self.length) }
         } else {
             &[]
