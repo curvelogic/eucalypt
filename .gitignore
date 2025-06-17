@@ -2,6 +2,7 @@
 **/*.rs.bk
 /.idea
 /harness/test/.result/
+/harness/test/**/.result/
 /src/syntax/grammar.rs
 /src/syntax/string_pattern.rs
 
