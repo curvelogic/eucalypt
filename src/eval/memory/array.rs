@@ -192,7 +192,6 @@ impl<T: Sized + Clone> Array<T> {
         self.write(self.length - 1, item);
     }
 
-    // TODO: needs guard
     /// Remove and return the final item (if any)
     pub fn pop(&mut self) -> Option<T> {
         if self.length > 0 {
@@ -231,13 +230,35 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
-    // TODO: needs guard
     /// Set item at index
-    pub fn set(&mut self, index: usize, item: T) {
+    pub fn set(&mut self, index: usize, item: T) -> Result<(), ExecutionError> {
+        if index >= self.length {
+            return Err(ExecutionError::ArrayBoundsError {
+                index,
+                length: self.length,
+            });
+        }
+        self.write(index, item);
+        Ok(())
+    }
+
+    /// Set item at index without bounds checking
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure index < self.length to avoid undefined behavior.
+    /// This method is intended for performance-critical paths where bounds
+    /// are guaranteed by construction (e.g., pre-allocated arrays).
+    pub(crate) unsafe fn set_unchecked(&mut self, index: usize, item: T) {
+        debug_assert!(
+            index < self.length,
+            "Array bounds violation: index {} >= length {}",
+            index,
+            self.length
+        );
         self.write(index, item);
     }
 
-    // TODO: needs guard
     /// As immutable slice
     pub fn as_slice(&self) -> &[T] {
         if let Some(ptr) = self.data.as_ptr() {
@@ -247,7 +268,6 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
-    // TODO: needs guard
     /// Read only iterator
     pub fn iter(&self) -> std::slice::Iter<T> {
         debug_assert_ne!(self.length, usize::MAX);
@@ -277,7 +297,6 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
-    // TODO: needs guard
     fn write(&mut self, index: usize, item: T) -> &T {
         unsafe {
             let dest = self.get_offset(index).expect("write: bounds error");
@@ -286,7 +305,6 @@ impl<T: Sized + Clone> Array<T> {
         }
     }
 
-    // TODO: needs guard
     fn read(&self, index: usize) -> T {
         unsafe {
             let dest = self.get_offset(index).expect("bounds error");
@@ -322,5 +340,107 @@ pub mod tests {
             arr.pop();
         }
         assert_eq!(arr.top(), Some(63));
+    }
+
+    #[test]
+    pub fn test_array_bounds_checking() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let mut arr = Array::default();
+
+        // Push some items
+        for i in 0..5 {
+            arr.push(&view, i);
+        }
+        assert_eq!(arr.len(), 5);
+
+        // Test valid set operations
+        assert!(arr.set(0, 100).is_ok());
+        assert!(arr.set(4, 400).is_ok());
+        assert_eq!(arr.get(0), Some(100));
+        assert_eq!(arr.get(4), Some(400));
+
+        // Test bounds checking for set
+        assert!(matches!(
+            arr.set(5, 500).unwrap_err(),
+            ExecutionError::ArrayBoundsError {
+                index: 5,
+                length: 5
+            }
+        ));
+        assert!(matches!(
+            arr.set(100, 1000).unwrap_err(),
+            ExecutionError::ArrayBoundsError {
+                index: 100,
+                length: 5
+            }
+        ));
+
+        // Test valid get operations
+        assert_eq!(arr.get(0), Some(100));
+        assert_eq!(arr.get(4), Some(400));
+        assert_eq!(arr.get(5), None);
+        assert_eq!(arr.get(100), None);
+
+        // Test pop boundary
+        assert_eq!(arr.len(), 5);
+        assert!(arr.pop().is_some());
+        assert_eq!(arr.len(), 4);
+
+        // Pop all remaining items
+        while !arr.is_empty() {
+            arr.pop();
+        }
+        assert_eq!(arr.len(), 0);
+        assert_eq!(arr.pop(), None);
+    }
+
+    #[test]
+    pub fn test_array_slice_safety() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let mut arr = Array::default();
+
+        // Empty array should return empty slice
+        let slice = arr.as_slice();
+        assert_eq!(slice.len(), 0);
+
+        // Add items and check slice
+        for i in 0..10 {
+            arr.push(&view, i);
+        }
+        let slice = arr.as_slice();
+        assert_eq!(slice.len(), 10);
+        assert_eq!(slice[0], 0);
+        assert_eq!(slice[9], 9);
+
+        // Iterator should work correctly
+        let collected: Vec<_> = arr.iter().cloned().collect();
+        assert_eq!(collected, (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    pub fn test_unchecked_set_performance_path() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let mut arr = Array::with_capacity(&view, 5);
+
+        // Pre-populate array to establish length
+        for i in 0..5 {
+            arr.push(&view, i * 10);
+        }
+        assert_eq!(arr.len(), 5);
+
+        // Use unchecked set for performance-critical controlled updates
+        unsafe {
+            arr.set_unchecked(0, 999);
+            arr.set_unchecked(4, 888);
+        }
+
+        // Verify updates worked
+        assert_eq!(arr.get(0), Some(999));
+        assert_eq!(arr.get(4), Some(888));
+        assert_eq!(arr.get(1), Some(10)); // Unchanged
+        assert_eq!(arr.get(3), Some(30)); // Unchanged
     }
 }
