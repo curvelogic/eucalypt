@@ -387,6 +387,73 @@ impl HeapState {
         self.head.as_mut().unwrap()
     }
 
+    /// Find and return the best recycled block for a given allocation size
+    /// Uses intelligent targeting to minimize fragmentation and improve locality
+    pub fn replace_head_targeted(&mut self, allocation_size: usize) -> &mut BumpBlock {
+        let replacement = if self.recycled.is_empty() {
+            // No recycled blocks available, create new one
+            BumpBlock::default()
+        } else if allocation_size == 0 {
+            // For zero-size allocations, just take the first available block
+            self.recycled.pop_front().unwrap()
+        } else {
+            // Find the best block for this allocation size
+            self.find_best_recycled_block(allocation_size)
+                .unwrap_or_default()
+        };
+
+        self.head.replace(replacement).and_then(|old| {
+            self.rest.push_back(old);
+            None as Option<BumpBlock>
+        });
+        self.head.as_mut().unwrap()
+    }
+
+    /// Find the best recycled block for the given allocation size
+    /// Removes and returns the block from the recycled list
+    fn find_best_recycled_block(&mut self, allocation_size: usize) -> Option<BumpBlock> {
+        if self.recycled.is_empty() {
+            return None;
+        }
+
+        let mut best_index: Option<usize> = None;
+        let mut best_score = 0.0;
+
+        // Evaluate all recycled blocks and find the best fit
+        for (index, block) in self.recycled.iter().enumerate() {
+            let score = block.allocation_suitability_score(allocation_size);
+            if score > best_score {
+                best_score = score;
+                best_index = Some(index);
+            }
+        }
+
+        // Remove and return the best block if one was found with a good score
+        if let Some(index) = best_index {
+            if best_score > 0.0 {
+                // Remove the block at the found index
+                let mut remaining = LinkedList::new();
+                let mut target_block: Option<BumpBlock> = None;
+                let mut current_index = 0;
+
+                while let Some(block) = self.recycled.pop_front() {
+                    if current_index == index {
+                        target_block = Some(block);
+                    } else {
+                        remaining.push_back(block);
+                    }
+                    current_index += 1;
+                }
+
+                self.recycled = remaining;
+                return target_block;
+            }
+        }
+
+        // No suitable block found, take the first available
+        self.recycled.pop_front()
+    }
+
     pub fn replace_overflow(&mut self) -> &mut BumpBlock {
         self.overflow.replace(BumpBlock::new()).and_then(|old| {
             self.rest.push_back(old);
@@ -1679,7 +1746,11 @@ impl Heap {
                 .ok_or_else(|| self.out_of_memory_error(size_bytes, false))?,
             _ => head
                 .bump(size_bytes)
-                .or_else(|| heap_state.replace_head().bump(size_bytes))
+                .or_else(|| {
+                    heap_state
+                        .replace_head_targeted(size_bytes)
+                        .bump(size_bytes)
+                })
                 .ok_or_else(|| self.out_of_memory_error(size_bytes, false))?,
         };
 
@@ -2450,5 +2521,83 @@ pub mod tests {
             "AllocHeader not aligned to 16-byte boundary: 0x{:x}",
             header_addr
         );
+    }
+
+    #[test]
+    fn test_targeted_block_replacement() {
+        let heap = Heap::new();
+        let _view = MutatorHeapView::new(&heap);
+
+        // Create several recycled blocks with different characteristics
+        let mut blocks = Vec::new();
+        for _ in 0..3 {
+            let mut block = BumpBlock::new();
+            // Simulate some allocations and markings to create holes
+            for i in 0..50 {
+                block.mark_line_for_test(i);
+            }
+            // Leave different sized holes in each block
+            blocks.push(block);
+        }
+
+        let state = unsafe { &mut *heap.state.get() };
+
+        // Add blocks to recycled list
+        for block in blocks {
+            state.recycled.push_back(block);
+        }
+
+        let recycled_count_before = state.recycled.len();
+
+        // Test targeted replacement
+        let _best_block = state.replace_head_targeted(1024);
+
+        // Should have consumed one recycled block
+        assert_eq!(state.recycled.len(), recycled_count_before - 1);
+    }
+
+    #[test]
+    fn test_find_best_recycled_block() {
+        use crate::eval::memory::bump::LINE_COUNT;
+
+        let heap = Heap::new();
+        let state = unsafe { &mut *heap.state.get() };
+
+        // Create blocks with different hole sizes
+        let mut small_hole_block = BumpBlock::new();
+        let mut large_hole_block = BumpBlock::new();
+
+        // Small hole block: mark most lines, leave small hole
+        for i in 10..LINE_COUNT {
+            small_hole_block.mark_line_for_test(i);
+        }
+
+        // Large hole block: mark fewer lines, leave large hole
+        for i in 100..LINE_COUNT {
+            large_hole_block.mark_line_for_test(i);
+        }
+
+        state.recycled.push_back(small_hole_block);
+        state.recycled.push_back(large_hole_block);
+
+        // Request large allocation - should prefer large hole block
+        let selected = state.find_best_recycled_block(5000);
+        assert!(selected.is_some());
+
+        // Should have removed one block (the better one) from recycled list
+        assert_eq!(state.recycled.len(), 1);
+    }
+
+    #[test]
+    fn test_block_targeting_empty_recycled_list() {
+        let heap = Heap::new();
+        let state = unsafe { &mut *heap.state.get() };
+
+        // Empty recycled list
+        assert!(state.recycled.is_empty());
+
+        // Should create new block when no recycled blocks available
+        let _block = state.replace_head_targeted(1024);
+        assert!(state.head.is_some());
     }
 }
