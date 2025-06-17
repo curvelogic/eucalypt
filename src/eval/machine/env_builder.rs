@@ -182,7 +182,10 @@ impl EnvBuilder for MutatorHeapView<'_> {
             .as_ptr();
 
         for (i, pc) in bindings.iter().enumerate() {
-            array.set(i, SynClosure::close(pc, frame))?;
+            // SAFETY: We pre-allocated array with bindings.len() capacity and i < bindings.len()
+            unsafe {
+                array.set_unchecked(i, SynClosure::close(pc, frame));
+            }
         }
 
         Ok(frame)

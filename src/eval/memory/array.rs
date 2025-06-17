@@ -242,6 +242,18 @@ impl<T: Sized + Clone> Array<T> {
         Ok(())
     }
 
+    /// Set item at index without bounds checking
+    /// 
+    /// # Safety
+    /// 
+    /// Caller must ensure index < self.length to avoid undefined behavior.
+    /// This method is intended for performance-critical paths where bounds
+    /// are guaranteed by construction (e.g., pre-allocated arrays).
+    pub(crate) unsafe fn set_unchecked(&mut self, index: usize, item: T) {
+        debug_assert!(index < self.length, "Array bounds violation: index {} >= length {}", index, self.length);
+        self.write(index, item);
+    }
+
     /// As immutable slice
     pub fn as_slice(&self) -> &[T] {
         if let Some(ptr) = self.data.as_ptr() {
@@ -407,5 +419,30 @@ pub mod tests {
         // Iterator should work correctly
         let collected: Vec<_> = arr.iter().cloned().collect();
         assert_eq!(collected, (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    pub fn test_unchecked_set_performance_path() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let mut arr = Array::with_capacity(&view, 5);
+
+        // Pre-populate array to establish length
+        for i in 0..5 {
+            arr.push(&view, i * 10);
+        }
+        assert_eq!(arr.len(), 5);
+
+        // Use unchecked set for performance-critical controlled updates
+        unsafe {
+            arr.set_unchecked(0, 999);
+            arr.set_unchecked(4, 888);
+        }
+
+        // Verify updates worked
+        assert_eq!(arr.get(0), Some(999));
+        assert_eq!(arr.get(4), Some(888));
+        assert_eq!(arr.get(1), Some(10)); // Unchanged
+        assert_eq!(arr.get(3), Some(30)); // Unchanged
     }
 }
