@@ -2095,16 +2095,25 @@ pub mod tests {
         match strategy {
             CollectionStrategy::SelectiveEvacuation(blocks) => {
                 assert!(!blocks.is_empty(), "Should identify blocks for evacuation");
-                assert!(analysis.fragmentation_ratio >= 0.15, "Should have moderate fragmentation for SelectiveEvacuation");
+                assert!(
+                    analysis.fragmentation_ratio >= 0.15,
+                    "Should have moderate fragmentation for SelectiveEvacuation"
+                );
             }
             CollectionStrategy::MarkInPlace => {
                 // If fragmentation is very low, MarkInPlace is acceptable
-                assert!(analysis.fragmentation_ratio < 0.15, "MarkInPlace should only be used for low fragmentation");
+                assert!(
+                    analysis.fragmentation_ratio < 0.15,
+                    "MarkInPlace should only be used for low fragmentation"
+                );
             }
             CollectionStrategy::DefragmentationSweep => {
                 // DefragmentationSweep is acceptable for high fragmentation (30%+)
                 // With double-word alignment, fragmentation can be higher than expected
-                assert!(analysis.fragmentation_ratio >= 0.30, "DefragmentationSweep should be used for high fragmentation");
+                assert!(
+                    analysis.fragmentation_ratio >= 0.30,
+                    "DefragmentationSweep should be used for high fragmentation"
+                );
             }
         }
     }
