@@ -95,6 +95,8 @@ pub enum ExecutionError {
     ExpectedLabel,
     #[error("expected closure on stack")]
     ExpectedClosure,
+    #[error("array bounds error: index {index} out of bounds for array of length {length}")]
+    ArrayBoundsError { index: usize, length: usize },
 }
 
 impl From<bump::AllocError> for ExecutionError {

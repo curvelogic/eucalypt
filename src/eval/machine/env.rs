@@ -251,7 +251,7 @@ where
         closure: C,
     ) -> Result<(), ExecutionError> {
         if let Some((mut arr, i)) = self.cell(guard, idx) {
-            arr.set(i, closure);
+            arr.set(i, closure)?;
             Ok(())
         } else {
             Err(ExecutionError::BadEnvironmentIndex(idx))
