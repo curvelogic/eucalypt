@@ -314,6 +314,8 @@ pub struct HeapState {
     rest: LinkedList<BumpBlock>,
     /// Large object blocks - each contains single object
     lobs: Vec<LargeObjectBlock>,
+    /// Recycled large object blocks available for reuse
+    recycled_lobs: Vec<LargeObjectBlock>,
 }
 
 impl Default for HeapState {
@@ -356,6 +358,7 @@ impl HeapState {
             recycled: LinkedList::default(),
             rest: LinkedList::default(),
             lobs: vec![],
+            recycled_lobs: vec![],
         }
     }
 
@@ -463,10 +466,53 @@ impl HeapState {
     }
 
     /// Create and return a new large object block able to store data
-    /// of the specified size
+    /// of the specified size. Tries to reuse recycled blocks first.
     pub fn lob(&mut self, size: usize) -> &mut LargeObjectBlock {
-        self.lobs.push(LargeObjectBlock::new(size));
+        // First, try to find a recycled block that can fit this allocation
+        if let Some(recycled_block) = self.find_suitable_recycled_lob(size) {
+            self.lobs.push(recycled_block);
+        } else {
+            // No suitable recycled block, create a new one
+            self.lobs.push(LargeObjectBlock::new(size));
+        }
         self.lobs.last_mut().unwrap()
+    }
+
+    /// Find and remove a suitable recycled large object block for the given size
+    /// Returns the block if found, or None if no suitable block exists
+    fn find_suitable_recycled_lob(&mut self, required_size: usize) -> Option<LargeObjectBlock> {
+        // Find the best fit among recycled blocks
+        let mut best_index: Option<usize> = None;
+        let mut best_waste: f64 = f64::MAX;
+
+        for (index, lob) in self.recycled_lobs.iter().enumerate() {
+            if lob.can_fit(required_size) {
+                let waste = lob.waste_percentage(required_size);
+                if waste < best_waste {
+                    best_waste = waste;
+                    best_index = Some(index);
+                }
+            }
+        }
+
+        // Remove and return the best block if found
+        if let Some(index) = best_index {
+            Some(self.recycled_lobs.remove(index))
+        } else {
+            None
+        }
+    }
+
+    /// Recycle a large object block for future reuse
+    /// This would typically be called during garbage collection when a large object is freed
+    pub fn recycle_lob(&mut self, lob: LargeObjectBlock) {
+        // For now, we'll add a simple limit to prevent unbounded growth
+        const MAX_RECYCLED_LOBS: usize = 16;
+        
+        if self.recycled_lobs.len() < MAX_RECYCLED_LOBS {
+            self.recycled_lobs.push(lob);
+        }
+        // If we're at the limit, just drop the block (let it be deallocated)
     }
 
     /// Look for reclaimable blocks and move to recycled list
@@ -2599,5 +2645,74 @@ pub mod tests {
         // Should create new block when no recycled blocks available
         let _block = state.replace_head_targeted(1024);
         assert!(state.head.is_some());
+    }
+
+    #[test]
+    fn test_large_object_recycling() {
+        let heap = Heap::new();
+        let state = unsafe { &mut *heap.state.get() };
+        
+        // Initially no LOBs
+        assert_eq!(state.lobs.len(), 0);
+        assert_eq!(state.recycled_lobs.len(), 0);
+        
+        // Allocate a large object
+        let _lob1 = state.lob(100 * 1024);
+        assert_eq!(state.lobs.len(), 1);
+        
+        // Simulate recycling (normally done during GC)
+        let recycled_lob = state.lobs.pop().unwrap();
+        state.recycle_lob(recycled_lob);
+        assert_eq!(state.recycled_lobs.len(), 1);
+        
+        // Allocate another large object of similar size - should reuse recycled block
+        let _lob2 = state.lob(90 * 1024);
+        assert_eq!(state.lobs.len(), 1);
+        assert_eq!(state.recycled_lobs.len(), 0); // Should have consumed recycled block
+    }
+
+    #[test]
+    fn test_large_object_best_fit_recycling() {
+        let heap = Heap::new();
+        let state = unsafe { &mut *heap.state.get() };
+        
+        // Create and recycle blocks of different sizes
+        let small_lob = LargeObjectBlock::new(50 * 1024);   // ~64KB allocation
+        let medium_lob = LargeObjectBlock::new(100 * 1024); // ~112KB allocation  
+        let large_lob = LargeObjectBlock::new(200 * 1024);  // ~256KB allocation
+        
+        state.recycle_lob(large_lob);
+        state.recycle_lob(small_lob);
+        state.recycle_lob(medium_lob);
+        assert_eq!(state.recycled_lobs.len(), 3);
+        
+        // Request 90KB - should get the medium block (best fit)
+        let _allocated = state.lob(90 * 1024);
+        assert_eq!(state.recycled_lobs.len(), 2); // Medium block should be consumed
+        
+        // Verify the remaining blocks are small and large
+        let remaining_sizes: Vec<_> = state.recycled_lobs.iter()
+            .map(|lob| lob.allocated_size())
+            .collect();
+        
+        // Should have kept the small and large blocks
+        assert!(remaining_sizes.len() == 2);
+        assert!(remaining_sizes.contains(&(64 * 1024))); // Small block
+        assert!(remaining_sizes.contains(&(256 * 1024))); // Large block
+    }
+
+    #[test]
+    fn test_large_object_recycling_limit() {
+        let heap = Heap::new();
+        let state = unsafe { &mut *heap.state.get() };
+        
+        // Try to recycle more than the limit (16)
+        for _ in 0..20 {
+            let lob = LargeObjectBlock::new(50 * 1024);
+            state.recycle_lob(lob);
+        }
+        
+        // Should be capped at the limit
+        assert_eq!(state.recycled_lobs.len(), 16);
     }
 }
