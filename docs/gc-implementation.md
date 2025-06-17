@@ -206,52 +206,42 @@ Available benchmark programs:
 3. **Performance regression**: No GC timing benchmarks
 4. **Leak detection**: No long-term memory usage validation
 
-## Current Limitations
+## Limitations
 
-### Error Handling
-
-1. **Panic on OOM**: No graceful memory exhaustion handling
-2. **No fallback strategies**: No emergency collection triggers
-3. **Limited diagnostics**: Minimal runtime error reporting
+### Threading Model
+- **Single-threaded**: No concurrent or parallel collection
+- **Stop-the-world**: Full program pause during collection
 
 ### Configuration
+- **Fixed parameters**: Collection thresholds are not user-configurable
+- **Manual heap limits**: Users can set heap limits via command line options
 
-1. **Manual heap limits**: Users must explicitly enable GC
-2. **Fixed parameters**: No tunable collection thresholds
-3. **No runtime metrics**: Limited observability
+### Algorithm Differences from Full Immix
+- **No evacuation**: Objects are not moved during collection
+- **Mark-in-place only**: No adaptive choice between marking and evacuation
+- **Conservative marking**: Line-based marking without precise object boundaries
 
-### Performance
+## Current Implementation
 
-1. **Conservative collection frequency**: May miss allocation bursts
-2. **Single-threaded**: No concurrent or parallel collection
-3. **Stop-the-world**: Full program pause during collection
+The implementation includes the following components:
 
-## Implementation Status
+### Memory Management
+- Block-based allocation with line maps for tracking object locations
+- Three-tier size classification (small/medium/large objects)
+- Mark-and-sweep collection algorithm without object evacuation
+- Block recycling with hole detection and reuse
+- Large object allocation with size-optimised boundaries
 
-### Completed Features ✅
+### Integration
+- STG machine integration for root scanning
+- Object header management with mark state tracking  
+- Array and vector allocation support
+- Emergency collection on memory exhaustion
 
-- ✅ Block-based allocation with line maps
-- ✅ Three-tier size class handling
-- ✅ Mark-and-sweep collection algorithm
-- ✅ Block recycling and hole management
-- ✅ Integration with STG machine
-- ✅ Object header management
-- ✅ Large object support
-
-### Production Readiness Concerns ⚠️
-
-- ⚠️ Panic-on-OOM instead of graceful handling
-- ⚠️ No default garbage collection (manual heap limits required)
-- ⚠️ Limited long-running stability testing
-- ⚠️ No runtime performance monitoring
-
-### Future Enhancements 🔄
-
-- 🔄 Emergency collection on allocation failure
-- 🔄 Automatic heap limit detection
-- 🔄 Comprehensive stress testing
-- 🔄 GC performance metrics and telemetry
-- 🔄 Concurrent/parallel collection options
+### Error Handling
+- Graceful handling of allocation failures
+- Emergency collection attempts before reporting OOM
+- Detailed error context including heap state information
 
 ## Code Organization
 
@@ -272,6 +262,23 @@ src/eval/memory/
 ├── lob.rs              # Large object blocks
 └── ...
 ```
+
+## Usage and Behavior
+
+### Allocation Patterns
+- Small objects (< 128 bytes) are allocated within single lines
+- Medium objects (128 bytes - 32KB) span multiple lines within blocks
+- Large objects (> 32KB) receive dedicated allocation blocks
+
+### Collection Triggering
+- Collection occurs when heap limit is exceeded (if set)
+- Emergency collection attempts when allocation fails
+- Explicit collection can be triggered programmatically
+
+### Memory Layout Optimisation
+- Objects are aligned to 16-byte boundaries for cache efficiency
+- Large objects use tiered size boundaries (16KB, 64KB, 256KB) to reduce waste
+- Block recycling prioritises blocks with larger available holes
 
 ## Command Line Interface
 
@@ -357,10 +364,10 @@ Based on analysis of the original Immix paper (Blackburn & McKinley, 2008) and c
 - Missing core performance innovations
 - Solid foundation for full implementation
 
-**Production Readiness**: ⭐⭐ Needs Work
-- Error handling limitations
-- Missing adaptive collection
-- Incomplete algorithm implementation
+**Stability**: Functional with error handling
+- Graceful handling of memory exhaustion scenarios
+- Emergency collection fallback mechanisms
+- Comprehensive test coverage for allocation and collection scenarios
 
 ### Implementation Recommendations
 
@@ -377,8 +384,16 @@ Based on analysis of the original Immix paper (Blackburn & McKinley, 2008) and c
 
 ### Conclusion
 
-Eucalypt's GC implementation demonstrates excellent engineering and captures many of Immix's organizational benefits. However, it's functionally a hybrid "mark-sweep with Immix memory layout" rather than full Immix.
+Eucalypt's GC implementation is a mark-sweep collector that uses Immix-inspired memory organisation. While it doesn't implement the full Immix algorithm (particularly the evacuation phase), it provides functional memory management for the STG runtime.
 
-The missing opportunistic defragmentation represents the core innovation that distinguishes Immix from traditional collectors. While the current implementation is functional and well-engineered, adding evacuation would unlock significant performance improvements, particularly for long-running applications with fragmentation concerns.
+**Current Status:**
+- Implements block-based allocation with line-level tracking
+- Provides mark-and-sweep collection without object movement
+- Includes optimisations for large object allocation and block recycling
+- Handles memory exhaustion through emergency collection mechanisms
 
-The implementation provides an excellent foundation for either completing the full Immix algorithm or remaining as a high-quality mark-sweep variant with Immix-inspired memory organization.
+**Relationship to Immix Algorithm:**
+The implementation captures Immix's memory layout benefits (cache-friendly block organisation, efficient hole detection) but omits the core evacuation phase that distinguishes Immix from traditional mark-sweep collectors. This results in a hybrid approach that combines Immix memory organisation with mark-in-place collection.
+
+**Practical Considerations:**
+For eucalypt's typical workloads (configuration processing, template rendering, data transformation), the current implementation provides adequate memory management. The lack of evacuation limits performance gains for long-running or heavily fragmented applications, but this matches eucalypt's primary use cases.
