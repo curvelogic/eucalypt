@@ -421,13 +421,19 @@ pub mod tests {
     pub fn test_tz_parse() {
         assert_eq!(
             offset_from_tz_str("-02:00").unwrap(),
-            FixedOffset::east(2 * 60 * 60)
+            FixedOffset::east_opt(2 * 60 * 60).unwrap()
         );
         assert_eq!(
             offset_from_tz_str("+02:00").unwrap(),
-            FixedOffset::west(2 * 60 * 60)
+            FixedOffset::west_opt(2 * 60 * 60).unwrap()
         );
-        assert_eq!(offset_from_tz_str("UTC").unwrap(), FixedOffset::east(0));
-        assert_eq!(offset_from_tz_str("Z").unwrap(), FixedOffset::east(0));
+        assert_eq!(
+            offset_from_tz_str("UTC").unwrap(),
+            FixedOffset::east_opt(0).unwrap()
+        );
+        assert_eq!(
+            offset_from_tz_str("Z").unwrap(),
+            FixedOffset::east_opt(0).unwrap()
+        );
     }
 }

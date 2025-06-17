@@ -264,7 +264,7 @@ pub mod tests {
     pub fn test_per_heap_mark_state_isolation() {
         // Test that each heap has its own independent mark state
         let mut heap1 = Heap::new();
-        let mut heap2 = Heap::new();
+        let heap2 = Heap::new();
         let mut clock = Clock::default();
         clock.switch(ThreadOccupation::Mutator);
 
