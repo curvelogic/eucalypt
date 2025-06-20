@@ -304,8 +304,58 @@ impl Validatable for Element {
             Element::List(xs) => xs.validate(errors),
             Element::ParenExpr(pe) => pe.validate(errors),
             Element::Name(n) => n.validate(errors),
+            Element::StringPattern(s) => s.validate(errors),
             Element::ApplyTuple(t) => t.validate(errors),
         }
+    }
+}
+
+// String pattern validation implementations
+impl Validatable for StringPattern {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for StringLiteralContent {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for StringInterpolation {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for StringInterpolationTarget {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for StringFormatSpec {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for StringConversionSpec {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for StringEscapedOpen {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for StringEscapedClose {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
     }
 }
 

@@ -707,6 +707,124 @@ impl ApplyTuple {
     }
 }
 
+//
+// String Pattern AST nodes
+//
+
+ast_node!(StringPattern, STRING_PATTERN);
+ast_node!(StringLiteralContent, STRING_LITERAL_CONTENT);
+ast_node!(StringInterpolation, STRING_INTERPOLATION);
+ast_node!(StringInterpolationTarget, STRING_INTERPOLATION_TARGET);
+ast_node!(StringFormatSpec, STRING_FORMAT_SPEC);
+ast_node!(StringConversionSpec, STRING_CONVERSION_SPEC);
+ast_node!(StringDottedReference, STRING_DOTTED_REFERENCE);
+ast_node!(StringEscapedOpen, STRING_ESCAPED_OPEN);
+ast_node!(StringEscapedClose, STRING_ESCAPED_CLOSE);
+
+impl StringPattern {
+    pub fn chunks(&self) -> AstChildren<StringChunk> {
+        support::children::<StringChunk>(self.syntax())
+    }
+}
+
+impl StringLiteralContent {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringInterpolation {
+    pub fn target(&self) -> Option<StringInterpolationTarget> {
+        support::child::<StringInterpolationTarget>(self.syntax())
+    }
+    
+    pub fn format_spec(&self) -> Option<StringFormatSpec> {
+        support::child::<StringFormatSpec>(self.syntax())
+    }
+    
+    pub fn conversion_spec(&self) -> Option<StringConversionSpec> {
+        support::child::<StringConversionSpec>(self.syntax())
+    }
+}
+
+impl StringInterpolationTarget {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringFormatSpec {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringConversionSpec {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringEscapedOpen {
+    pub fn value(&self) -> &str {
+        "{"
+    }
+}
+
+impl StringEscapedClose {
+    pub fn value(&self) -> &str {
+        "}"
+    }
+}
+
+// String chunk enum for pattern contents
+pub enum StringChunk {
+    LiteralContent(StringLiteralContent),
+    Interpolation(StringInterpolation),
+    EscapedOpen(StringEscapedOpen),
+    EscapedClose(StringEscapedClose),
+}
+
+impl AstNode for StringChunk {
+    type Language = EucalyptLanguage;
+
+    fn can_cast(kind: SyntaxKind) -> bool {
+        matches!(kind, 
+            SyntaxKind::STRING_LITERAL_CONTENT |
+            SyntaxKind::STRING_INTERPOLATION |
+            SyntaxKind::STRING_ESCAPED_OPEN |
+            SyntaxKind::STRING_ESCAPED_CLOSE
+        )
+    }
+
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        match node.kind() {
+            SyntaxKind::STRING_LITERAL_CONTENT => {
+                StringLiteralContent::cast(node).map(StringChunk::LiteralContent)
+            }
+            SyntaxKind::STRING_INTERPOLATION => {
+                StringInterpolation::cast(node).map(StringChunk::Interpolation)
+            }
+            SyntaxKind::STRING_ESCAPED_OPEN => {
+                StringEscapedOpen::cast(node).map(StringChunk::EscapedOpen)
+            }
+            SyntaxKind::STRING_ESCAPED_CLOSE => {
+                StringEscapedClose::cast(node).map(StringChunk::EscapedClose)
+            }
+            _ => None,
+        }
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        match self {
+            StringChunk::LiteralContent(n) => n.syntax(),
+            StringChunk::Interpolation(n) => n.syntax(),
+            StringChunk::EscapedOpen(n) => n.syntax(),
+            StringChunk::EscapedClose(n) => n.syntax(),
+        }
+    }
+}
+
 /// One of the items concatenated in an operator soup expression
 pub enum Element {
     Lit(Literal),
@@ -714,7 +832,7 @@ pub enum Element {
     List(List),
     ParenExpr(ParenExpr),
     Name(Name),
-    //StringPattern(StringPattern),
+    StringPattern(StringPattern),
     ApplyTuple(ApplyTuple),
 }
 
@@ -732,6 +850,7 @@ impl AstNode for Element {
                 | SyntaxKind::LIST
                 | SyntaxKind::PAREN_EXPR
                 | SyntaxKind::NAME
+                | SyntaxKind::STRING_PATTERN
                 | SyntaxKind::ARG_TUPLE
         )
     }
@@ -747,6 +866,7 @@ impl AstNode for Element {
             SyntaxKind::PAREN_EXPR => ParenExpr::cast(node).map(Element::ParenExpr),
             SyntaxKind::ARG_TUPLE => ApplyTuple::cast(node).map(Element::ApplyTuple),
             SyntaxKind::NAME => Name::cast(node).map(Element::Name),
+            SyntaxKind::STRING_PATTERN => StringPattern::cast(node).map(Element::StringPattern),
             _ => None,
         }
     }
@@ -758,6 +878,7 @@ impl AstNode for Element {
             Element::List(l) => l.syntax(),
             Element::ParenExpr(e) => e.syntax(),
             Element::Name(n) => n.syntax(),
+            Element::StringPattern(s) => s.syntax(),
             Element::ApplyTuple(t) => t.syntax(),
         }
     }

@@ -59,6 +59,26 @@ pub enum SyntaxKind {
     /// Arguments to direct appliation e.g. (x, y) in f(x, y)
     ARG_TUPLE,
 
+    // String pattern syntax kinds
+    /// String pattern containing interpolation e.g. "Hello {name}!"
+    STRING_PATTERN,
+    /// Literal content within string pattern
+    STRING_LITERAL_CONTENT,
+    /// Interpolation within string pattern e.g. {name}
+    STRING_INTERPOLATION,
+    /// Interpolation target (identifier or anaphor)
+    STRING_INTERPOLATION_TARGET,
+    /// Format specifier in interpolation e.g. :%03d
+    STRING_FORMAT_SPEC,
+    /// Conversion specifier in interpolation
+    STRING_CONVERSION_SPEC,
+    /// Dotted reference in interpolation e.g. x.y.z
+    STRING_DOTTED_REFERENCE,
+    /// Escaped open brace {{
+    STRING_ESCAPED_OPEN,
+    /// Escaped close brace }}
+    STRING_ESCAPED_CLOSE,
+
     /// Extraneous tokens tagging along for the ride
     ERROR_STOWAWAYS,
     /// Characters (brackets and quotes) reserved for future use

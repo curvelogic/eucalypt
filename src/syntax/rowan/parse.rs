@@ -144,12 +144,19 @@ impl<'text> Parser<'text> {
 
     /// Try to parse literal, pushing token back into tokens on failure
     fn try_parse_literal(&mut self) -> bool {
-        if let Some((k, _)) = self.next() {
+        if let Some((k, text)) = self.next() {
             if k.is_literal_terminal() {
-                self.sink().start_node(LITERAL);
-                self.sink().token(k);
-                self.sink().finish_node();
-                true
+                if k == STRING && (text.contains('{') || text.contains('}')) {
+                    // This is a string pattern, parse it specially
+                    self.parse_string_pattern(text);
+                    true
+                } else {
+                    // Regular literal
+                    self.sink().start_node(LITERAL);
+                    self.sink().token(k);
+                    self.sink().finish_node();
+                    true
+                }
             } else {
                 self.push_back();
                 false
@@ -438,6 +445,16 @@ impl<'text> Parser<'text> {
                 break;
             }
         }
+    }
+
+    /// Parse a string pattern with interpolation
+    fn parse_string_pattern(&mut self, text: &str) {
+        // For now, consume the original STRING token but mark it as a STRING_PATTERN
+        // In a proper implementation, we would parse the internal structure
+        // but for the initial implementation, let's just treat it as a special literal
+        self.sink().start_node(STRING_PATTERN);
+        self.sink().token(STRING);
+        self.sink().finish_node();
     }
 }
 
@@ -1753,6 +1770,75 @@ UNIT@0..105
                 parse.syntax_node()
             );
             assert!(parse.ok().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_string_patterns() {
+        // Simple string pattern with interpolation
+        let text = r#""Hello {name}!""#;
+        let parse = parse_expr(text);
+        println!("String pattern parse tree:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok());
+        
+        // String pattern with format specifier
+        let text = r#""Value: {num:%03d}""#;
+        let parse = parse_expr(text);
+        println!("String pattern with format spec:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok());
+        
+        // String pattern with escaped braces
+        let text = r#""Escaped {{braces}} here""#;
+        let parse = parse_expr(text);
+        println!("String pattern with escaped braces:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok());
+        
+        // Test examples from actual harness files
+        
+        // From 024_interpolation.eu - basic variable interpolation
+        let text = r#"test: "{x}+{y}={z}""#;
+        let parse = parse_unit(text);
+        println!("Harness example - basic interpolation:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok(), "Failed to parse basic interpolation from harness");
+        
+        // From 024_interpolation.eu - dotted reference with format
+        let text = r#"test: "{data.foo.bar:%06d}""#;
+        let parse = parse_unit(text);
+        println!("Harness example - dotted reference with format:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok(), "Failed to parse dotted reference with format from harness");
+        
+        // From 041_numeric_formats.eu - complex format
+        let text = r#"test: "{a:%04d}-{b:%04f}""#;
+        let parse = parse_unit(text);
+        println!("Harness example - complex format:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok(), "Failed to parse complex format from harness");
+        
+        // From 041_numeric_formats.eu - anaphora with format
+        let text = r#"test: "{:%03d}{:%05x}""#;
+        let parse = parse_unit(text);
+        println!("Harness example - anaphora with format:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok(), "Failed to parse anaphora with format from harness");
+    }
+
+    #[test]
+    fn test_specific_string_pattern_files() {
+        // Test specific files known to contain string patterns
+        let test_files = [
+            "harness/test/024_interpolation.eu",
+            "harness/test/041_numeric_formats.eu"
+        ];
+        
+        for file_path in &test_files {
+            println!("Testing string pattern file: {}", file_path);
+            let content = std::fs::read_to_string(file_path).unwrap();
+            let parse = parse_unit(&content);
+            
+            if !parse.errors().is_empty() {
+                println!("Errors in {}: {:?}", file_path, parse.errors());
+            }
+            
+            assert!(parse.errors().is_empty(), "{} should parse without errors", file_path);
+            assert!(parse.ok().is_ok(), "{} should parse successfully", file_path);
         }
     }
 

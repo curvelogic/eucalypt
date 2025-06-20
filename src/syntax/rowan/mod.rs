@@ -6,6 +6,7 @@ pub mod kind;
 pub mod lex;
 pub mod make;
 pub mod parse;
+pub mod string_lex;
 pub mod validate;
 
 pub use error::ParseError;
