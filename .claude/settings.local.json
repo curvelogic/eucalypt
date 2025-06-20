@@ -19,7 +19,8 @@
       "Bash(rm:*)",
       "Bash(~/.claude/showme src/eval/memory/heap.rs)",
       "Bash(./bench.sh run:*)",
-      "Bash(./bench.sh:*)"
+      "Bash(./bench.sh:*)",
+      "Bash(timeout 300 cargo bench criterion_benchmark)"
     ],
     "deny": []
   }

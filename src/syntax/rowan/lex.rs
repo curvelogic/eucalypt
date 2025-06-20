@@ -45,85 +45,94 @@ pub fn is_normal_continuation(c: char) -> bool {
 
 /// is c a character which can start an operator identifier?
 fn is_oper_start(c: char) -> bool {
-    match c {
-        '.' => true,
-        '!' => true,
-        '@' => true,
-        '£' => true,
-        '%' => true,
-        '^' => true,
-        '&' => true,
-        '*' => true,
-        '|' => true,
-        '>' => true,
-        '<' => true,
-        '/' => true,
-        '+' => true,
-        '=' => true,
-        '-' => true,
-        '~' => true,
-        ';' => true,
-        '"' => false,
-        '\'' => false,
-        _ => match GeneralCategory::of(c) {
+    // Fast path for ASCII characters (most common case)
+    if c.is_ascii() {
+        match c {
+            '.' | '!' | '@' | '£' | '%' | '^' | '&' | '*' | '|' 
+            | '>' | '<' | '/' | '+' | '=' | '-' | '~' | ';' => true,
+            '"' | '\'' => false,
+            // Fast rejection for common ASCII non-operators
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | ' ' | '\t' | '\n' | '\r'
+            | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' => false,
+            // For other ASCII punctuation, check Unicode categories
+            _ => {
+                let cat = GeneralCategory::of(c);
+                !matches!(cat, 
+                    GeneralCategory::OpenPunctuation | 
+                    GeneralCategory::ClosePunctuation |
+                    GeneralCategory::InitialPunctuation |
+                    GeneralCategory::FinalPunctuation
+                ) && (cat.is_symbol() || cat.is_punctuation())
+            }
+        }
+    } else {
+        // Slow path for non-ASCII (Unicode) characters
+        match GeneralCategory::of(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
             GeneralCategory::InitialPunctuation => false,
             GeneralCategory::FinalPunctuation => false,
-            cat => (cat.is_symbol() || cat.is_punctuation()),
-        },
+            cat => cat.is_symbol() || cat.is_punctuation(),
+        }
     }
 }
 
 /// is c a character which can continue an operator identifier?
 fn is_oper_continuation(c: char) -> bool {
-    match c {
-        '.' => true,
-        '!' => true,
-        '@' => true,
-        '£' => true,
-        '$' => true,
-        '%' => true,
-        '^' => true,
-        '&' => true,
-        '*' => true,
-        '|' => true,
-        '>' => true,
-        '<' => true,
-        '/' => true,
-        '?' => true,
-        '+' => true,
-        '=' => true,
-        '-' => true,
-        '~' => true,
-        ';' => true,
-        '"' => false,
-        '\'' => false,
-        ',' => false,
-        ':' => false,
-        '_' => false,
-        _ => match GeneralCategory::of(c) {
+    // Fast path for ASCII characters (most common case)
+    if c.is_ascii() {
+        match c {
+            '.' | '!' | '@' | '£' | '$' | '%' | '^' | '&' | '*' | '|' 
+            | '>' | '<' | '/' | '?' | '+' | '=' | '-' | '~' | ';' => true,
+            '"' | '\'' | ',' | ':' | '_' => false,
+            // Fast rejection for common ASCII non-operators
+            'a'..='z' | 'A'..='Z' | '0'..='9' | ' ' | '\t' | '\n' | '\r'
+            | '(' | ')' | '[' | ']' | '{' | '}' => false,
+            // For other ASCII punctuation, check Unicode categories
+            _ => {
+                let cat = GeneralCategory::of(c);
+                !matches!(cat, 
+                    GeneralCategory::OpenPunctuation | 
+                    GeneralCategory::ClosePunctuation |
+                    GeneralCategory::InitialPunctuation |
+                    GeneralCategory::FinalPunctuation
+                ) && (cat.is_symbol() || cat.is_punctuation())
+            }
+        }
+    } else {
+        // Slow path for non-ASCII (Unicode) characters
+        match GeneralCategory::of(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
             GeneralCategory::InitialPunctuation => false,
             GeneralCategory::FinalPunctuation => false,
-            cat => (cat.is_symbol() || cat.is_punctuation()),
-        },
+            cat => cat.is_symbol() || cat.is_punctuation(),
+        }
     }
 }
 
 fn is_reserved_open(c: char) -> bool {
-    matches!(
-        GeneralCategory::of(c),
-        GeneralCategory::OpenPunctuation | GeneralCategory::InitialPunctuation
-    )
+    // Fast path for ASCII - no ASCII characters are InitialPunctuation
+    if c.is_ascii() {
+        matches!(c, '(' | '[' | '{')
+    } else {
+        matches!(
+            GeneralCategory::of(c),
+            GeneralCategory::OpenPunctuation | GeneralCategory::InitialPunctuation
+        )
+    }
 }
 
 fn is_reserved_close(c: char) -> bool {
-    matches!(
-        GeneralCategory::of(c),
-        GeneralCategory::ClosePunctuation | GeneralCategory::FinalPunctuation
-    )
+    // Fast path for ASCII - no ASCII characters are FinalPunctuation  
+    if c.is_ascii() {
+        matches!(c, ')' | ']' | '}')
+    } else {
+        matches!(
+            GeneralCategory::of(c),
+            GeneralCategory::ClosePunctuation | GeneralCategory::FinalPunctuation
+        )
+    }
 }
 
 pub const ONE_BYTE: ByteOffset = ByteOffset(1);

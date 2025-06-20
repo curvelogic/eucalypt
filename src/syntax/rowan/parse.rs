@@ -778,6 +778,7 @@ mod tests {
     use std::path::Path;
 
     use crate::syntax::rowan::{parse_expr, parse_unit};
+    use rowan::ast::AstNode;
 
     fn verify_expr(text: &str, parse_repr: &str) {
         let parse = parse_expr(text);
@@ -1840,6 +1841,103 @@ UNIT@0..105
             assert!(parse.errors().is_empty(), "{} should parse without errors", file_path);
             assert!(parse.ok().is_ok(), "{} should parse successfully", file_path);
         }
+    }
+
+    #[test]
+    fn test_block_anaphora() {
+        // Test basic block anaphora patterns
+        
+        // Unnumbered anaphora
+        let text = r#"test: { x: • y: • }"#;
+        let parse = parse_unit(text);
+        println!("Block anaphora - unnumbered:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok(), "Failed to parse unnumbered block anaphora");
+        
+        // Numbered anaphora
+        let text = r#"test: { third: •2 second: •1 first: •0 }"#;
+        let parse = parse_unit(text);
+        println!("Block anaphora - numbered:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok(), "Failed to parse numbered block anaphora");
+        
+        // Anaphora in lambda context
+        let text = r#"test: {it: •}"#;
+        let parse = parse_unit(text);
+        println!("Block anaphora - lambda:\n{:#?}", parse.syntax_node());
+        assert!(parse.ok().is_ok(), "Failed to parse block anaphora in lambda");
+        
+        // Test the actual harness file
+        let content = std::fs::read_to_string("harness/test/031_block_anaphora.eu").unwrap();
+        let parse = parse_unit(&content);
+        
+        if !parse.errors().is_empty() {
+            println!("Errors in block anaphora harness: {:?}", parse.errors());
+        }
+        
+        assert!(parse.errors().is_empty(), "031_block_anaphora.eu should parse without errors");
+        assert!(parse.ok().is_ok(), "031_block_anaphora.eu should parse successfully");
+    }
+
+    #[test]
+    fn test_rowan_integration() {
+        // Comprehensive integration test for Rowan parser functionality
+        // Tests string patterns, block anaphora, and complex structures together
+        
+        let complex_code = r#"
+        // Test file demonstrating key Rowan parser features
+        "Integration test metadata"
+        
+        string-patterns: {
+            basic: "Hello {name}!"
+            formatted: "Value: {num:%03d}"
+            escaped: "Literal {{braces}} preserved"
+            complex: "{a:%04d}-{b:%04f}"
+            anaphora: "{:%03d}{:%05x}"
+        }
+        
+        block-anaphora: {
+            unnumbered: { x: • y: • }
+            numbered: { third: •2 second: •1 first: •0 }
+            lambda: [1, 2, 3] map({it: •})
+        }
+        
+        complex-structure: {
+            nested: {
+                deep: {
+                    values: [:a, :b, :c]
+                    pattern: "Items: {values}"
+                    func: { result: • * •1 }
+                }
+            }
+        }
+        
+        RESULT: :INTEGRATION_SUCCESS
+        "#;
+        
+        println!("Testing comprehensive Rowan integration...");
+        let parse = parse_unit(complex_code);
+        
+        if !parse.errors().is_empty() {
+            println!("Integration test errors: {:?}", parse.errors());
+            for error in parse.errors() {
+                println!("  - {:?}", error);
+            }
+        }
+        
+        // Verify parsing succeeds
+        assert!(parse.errors().is_empty(), "Integration test should parse without errors");
+        
+        // Get the tree before consuming parse with ok()
+        let tree = parse.tree();
+        let syntax = tree.syntax();
+        
+        // Verify the tree structure is reasonable
+        
+        // Should have declarations
+        assert!(syntax.to_string().contains("string-patterns"), "Should contain string-patterns declaration");
+        assert!(syntax.to_string().contains("block-anaphora"), "Should contain block-anaphora declaration");
+        assert!(syntax.to_string().contains("complex-structure"), "Should contain complex-structure declaration");
+        
+        println!("✓ Rowan parser integration test passed!");
     }
 
     #[test]
