@@ -200,18 +200,14 @@ impl Embed for RcExpr {
 pub mod tests {
     use super::*;
     use crate::syntax::export::pretty;
-    use crate::syntax::lexer::Lexer;
-    use crate::syntax::parser::grammar;
+    use crate::syntax::parser;
     use codespan_reporting::files::SimpleFiles;
     use moniker::FreeVar;
 
     pub fn parse_expression(txt: &'static str) -> Expression {
         let mut files = SimpleFiles::<String, String>::new();
         let file_id = files.add("test".to_string(), txt.to_string());
-        let lexer = Lexer::from_file_id(&files, file_id);
-        grammar::ExpressionParser::new()
-            .parse(lexer.file_id(), lexer)
-            .unwrap()
+        parser::parse_expression(&files, file_id).unwrap()
     }
 
     #[test]

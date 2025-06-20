@@ -448,7 +448,7 @@ impl<'text> Parser<'text> {
     }
 
     /// Parse a string pattern with interpolation
-    fn parse_string_pattern(&mut self, text: &str) {
+    fn parse_string_pattern(&mut self, _text: &str) {
         // For now, consume the original STRING token but mark it as a STRING_PATTERN
         // In a proper implementation, we would parse the internal structure
         // but for the initial implementation, let's just treat it as a special literal
@@ -756,7 +756,7 @@ impl BlockEventSink {
                 ParseEvent::StartNode(ARG_TUPLE) => {
                     depth -= 1;
                 }
-                ParseEvent::StartNode(t) => {
+                ParseEvent::StartNode(_t) => {
                     // invalid - refuse split
                     return vec![];
                 }

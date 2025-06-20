@@ -376,7 +376,7 @@ where
     }
 }
 
-/// The type returned by the lexer iterator as required by lalrpop
+/// The type returned by the lexer iterator
 pub type Spanned<Tok, Loc, Error> = Result<(Loc, Tok, Loc), Error>;
 
 impl<'text, N, T, C> Iterator for Lexer<'text, N, T, C>

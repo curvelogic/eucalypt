@@ -24,7 +24,7 @@ block: {
 fn old_parser(text: &str) -> Result<Block, ParserError> {
     let mut files = SimpleFiles::new();
     let id = files.add("test".to_string(), text.to_string());
-    eucalypt::syntax::parser::parse_unit(&files, id)
+    eucalypt::syntax::compat::parse_unit_compat(&files, id)
 }
 
 fn new_lossless_parser(text: &str) -> Parse<Unit> {

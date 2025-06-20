@@ -174,16 +174,19 @@ fn scrape_metadata(metadata: &Expression) -> Result<Vec<Input>, ImportError> {
 pub mod test {
     use super::*;
     use crate::syntax::input::Locator;
-    use crate::syntax::parser::tests::ParseTester;
+    use crate::syntax::parser;
+    use codespan_reporting::files::SimpleFiles;
 
     fn parse_expr(text: &'static str) -> Expression {
-        let mut parser = ParseTester::new();
-        parser.parse_expr(text)
+        let mut files = SimpleFiles::new();
+        let file_id = files.add("test".to_string(), text.to_string());
+        parser::parse_expression(&files, file_id).unwrap()
     }
 
     pub fn parse_unit(text: &'static str) -> Expression {
-        let mut parser = ParseTester::new();
-        Expression::Block(Box::new(parser.parse_unit(text)))
+        let mut files = SimpleFiles::new();
+        let file_id = files.add("test".to_string(), text.to_string());
+        Expression::Block(Box::new(parser::parse_unit(&files, file_id).unwrap()))
     }
 
     #[test]

@@ -1,8 +1,6 @@
 #![allow(non_local_definitions)]
 extern crate regex;
 extern crate serde_json;
-#[macro_use]
-extern crate lalrpop_util;
 extern crate codespan;
 extern crate codespan_reporting;
 extern crate indexmap;
