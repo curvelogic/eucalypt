@@ -1,5 +1,4 @@
 pub mod ast;
-pub mod compat;
 pub mod error;
 pub mod export;
 pub mod import;

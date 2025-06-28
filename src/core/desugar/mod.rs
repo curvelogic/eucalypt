@@ -14,6 +14,7 @@ pub mod desugarable;
 pub mod desugarer;
 pub mod disembed;
 pub mod literal;
+pub mod rowan_ast;
 
 pub use desugarable::Content;
 pub use desugarer::Desugarer;

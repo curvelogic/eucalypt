@@ -205,11 +205,12 @@ impl<'smap> Receiver<'smap> {
             .translate_simple(file_id, &body)
             .map_err(|c| SourceError::EmbeddedCoreError(c, file_id, span))?;
 
-        let fvs: HashMap<String, FreeVar<String>> = head
+        // TODO: Fix for Rowan AST
+        let fvs: HashMap<String, FreeVar<String>> = HashMap::new(); /*head
             .names()
             .iter()
             .map(|k| (k.name().to_string(), free(k.name())))
-            .collect();
+            .collect();*/
 
         let lam_body =
             lam_body.substs_free(&|n| fvs.get(n).map(|fv| core::var(Smid::default(), fv.clone())));

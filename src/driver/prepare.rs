@@ -4,9 +4,9 @@ use crate::core::target::Target;
 use crate::driver::error::EucalyptError;
 use crate::driver::options::EucalyptOptions;
 use crate::driver::source::SourceLoader;
-use crate::syntax::ast::Expression;
+use crate::driver::source::ParsedAst;
 use crate::syntax::export::embed::Embed;
-use crate::syntax::export::pretty;
+use crate::syntax::export::pretty::express;
 use crate::{common::prettify::prettify, core::export};
 use std::time::Instant;
 
@@ -192,13 +192,23 @@ pub fn prepare(
 }
 
 /// Dump AST expression using whatever format specified by options
-fn dump_ast(ast: &Expression, opt: &EucalyptOptions) {
+fn dump_ast(ast: &ParsedAst, opt: &EucalyptOptions) {
     if opt.quote_embed() {
-        println!("{}\n\n", pretty::express_unit(&ast.embed()));
+        match ast {
+            ParsedAst::Unit(unit) => {
+                let embedded = unit.embed();
+                println!("{}\n", express(&embedded));
+            }
+            ParsedAst::Soup(soup) => {
+                let embedded = soup.embed();
+                println!("{}\n", express(&embedded));
+            }
+        }
     } else if opt.quote_debug() {
         println!("{:#?}", ast);
     } else {
-        println!("{}\n\n", pretty::express_unit(ast));
+        // TODO: implement pretty printing for Rowan AST
+        println!("TODO: implement pretty printing for Rowan AST\n");
     }
 }
 

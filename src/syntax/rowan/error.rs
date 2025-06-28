@@ -54,4 +54,7 @@ pub enum ParseError {
     EmptyExpression {
         range: TextRange,
     },
+    UnclosedStringInterpolation {
+        range: TextRange,
+    },
 }

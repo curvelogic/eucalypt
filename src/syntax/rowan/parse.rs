@@ -449,11 +449,10 @@ impl<'text> Parser<'text> {
 
     /// Parse a string pattern with interpolation
     fn parse_string_pattern(&mut self, _text: &str) {
-        // For now, consume the original STRING token but mark it as a STRING_PATTERN
-        // In a proper implementation, we would parse the internal structure
-        // but for the initial implementation, let's just treat it as a special literal
+        // For now, just wrap the STRING token in a STRING_PATTERN node
+        // The detailed parsing will be handled in the AST layer
         self.sink().start_node(STRING_PATTERN);
-        self.sink().token(STRING);
+        self.sink().token(STRING); // Original string token
         self.sink().finish_node();
     }
 }
@@ -558,8 +557,7 @@ impl EventSink for BlockEventSink {
                     self.buffer.push(ParseEvent::Token(kind));
                 }
                 COLON => {
-                    let mut head_nodes = self.split_off_head();
-
+                    // First, handle any buffer contents that might be metadata
                     if !self.buffer.is_empty() {
                         match self.declaration {
                             Some(ref mut d) => {
@@ -579,6 +577,9 @@ impl EventSink for BlockEventSink {
                             }
                         }
                     }
+                    
+                    // Now split off the head from whatever is left in the buffer
+                    let mut head_nodes = self.split_off_head();
 
                     match self.declaration {
                         Some(ref mut d) => {
@@ -683,47 +684,56 @@ impl BlockEventSink {
     /// Pending declaration is complete, copy it to the underlying builder
     fn commit_declaration(&mut self) {
         if let Some(ref mut decl) = self.declaration {
-            self.committed.push(ParseEvent::StartNode(DECLARATION));
-            if let Some(m) = &mut decl.meta {
-                self.committed.push(ParseEvent::StartNode(DECL_META));
+            // Don't commit a declaration that only has metadata - it should become block metadata instead
+            if decl.head.is_empty() && decl.colon.is_empty() && decl.body.is_empty() {
+                if let Some(m) = &mut decl.meta {
+                    // This is just metadata without a declaration - treat as block metadata
+                    swap(&mut self.block_meta, m);
+                    self.commit_meta();
+                }
+            } else {
+                self.committed.push(ParseEvent::StartNode(DECLARATION));
+                if let Some(m) = &mut decl.meta {
+                    self.committed.push(ParseEvent::StartNode(DECL_META));
+                    self.committed.push(ParseEvent::StartNode(SOUP));
+                    self.committed.append(m);
+                    self.committed.push(ParseEvent::Finish);
+                    self.committed.push(ParseEvent::Finish);
+                }
+
+                self.committed.push(ParseEvent::StartNode(DECL_HEAD));
+                self.committed.append(&mut decl.head);
+                self.committed.push(ParseEvent::Finish);
+
+                self.committed.append(&mut decl.colon);
+
+                self.committed.push(ParseEvent::StartNode(DECL_BODY));
                 self.committed.push(ParseEvent::StartNode(SOUP));
-                self.committed.append(m);
-                self.committed.push(ParseEvent::Finish);
-                self.committed.push(ParseEvent::Finish);
-            }
 
-            self.committed.push(ParseEvent::StartNode(DECL_HEAD));
-            self.committed.append(&mut decl.head);
-            self.committed.push(ParseEvent::Finish);
-
-            self.committed.append(&mut decl.colon);
-
-            self.committed.push(ParseEvent::StartNode(DECL_BODY));
-            self.committed.push(ParseEvent::StartNode(SOUP));
-
-            // split trailing comma & trivia off the body
-            let mut idx = decl.body.len();
-            for e in decl.body.iter().rev() {
-                match e {
-                    ParseEvent::Token(COMMA)
-                    | ParseEvent::Token(WHITESPACE)
-                    | ParseEvent::Token(COMMENT) => {
-                        idx -= 1;
-                    }
-                    _ => {
-                        break;
+                // split trailing comma & trivia off the body
+                let mut idx = decl.body.len();
+                for e in decl.body.iter().rev() {
+                    match e {
+                        ParseEvent::Token(COMMA)
+                        | ParseEvent::Token(WHITESPACE)
+                        | ParseEvent::Token(COMMENT) => {
+                            idx -= 1;
+                        }
+                        _ => {
+                            break;
+                        }
                     }
                 }
-            }
-            let trailer = decl.body.split_off(idx);
+                let trailer = decl.body.split_off(idx);
 
-            self.committed.append(&mut decl.body);
-            self.committed.push(ParseEvent::Finish);
-            self.committed.push(ParseEvent::Finish);
-            self.committed.push(ParseEvent::Finish);
+                self.committed.append(&mut decl.body);
+                self.committed.push(ParseEvent::Finish);
+                self.committed.push(ParseEvent::Finish);
+                self.committed.push(ParseEvent::Finish);
 
-            for e in trailer {
-                self.committed.push(e);
+                for e in trailer {
+                    self.committed.push(e);
+                }
             }
         }
         self.declaration = None;
@@ -1542,6 +1552,7 @@ SOUP@0..20
 "#,
         );
     }
+
 
     #[test]
     pub fn test_several_decls() {

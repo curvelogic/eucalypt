@@ -295,7 +295,7 @@ fn desugar_name(name: &Name, desugarer: &mut Desugarer) -> RcExpr {
 }
 
 #[derive(Eq, PartialEq)]
-enum PendingLookup {
+pub enum PendingLookup {
     None,
     Static,
     Dynamic,

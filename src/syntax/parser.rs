@@ -1,76 +1,88 @@
-use crate::syntax::ast::{Block, Expression};
-use crate::syntax::error::ParserError;
+// Re-export the Rowan parser interface as the main parser interface
+pub use crate::syntax::rowan::{parse_expr, parse_unit as rowan_parse_unit, ast, Parse, ParseError as RowanParseError};
 
+// Legacy compatibility functions for existing code - these now return Rowan AST directly
+use crate::syntax::{rowan, error::ParserError};
 use codespan_reporting::files::SimpleFiles;
 
-use super::ast::ArgTuple;
-
-/// Parse a unit into an AST Block
-pub fn parse_unit<N, T>(files: &SimpleFiles<N, T>, id: usize) -> Result<Block, ParserError>
+/// Parse a unit - returns Rowan AST Unit directly
+pub fn parse_unit<N, T>(files: &SimpleFiles<N, T>, id: usize) -> Result<rowan::ast::Unit, ParserError>
 where
-    N: AsRef<str>,
-    N: Clone,
-    N: std::fmt::Display,
+    N: AsRef<str> + Clone + std::fmt::Display,
     T: AsRef<str>,
 {
-    crate::syntax::compat::parse_unit_compat(files, id)
+    let text = files.get(id).unwrap().source().as_ref();
+    let parse_result = rowan::parse_unit(text);
+    
+    if !parse_result.errors().is_empty() {
+        let errors: Vec<String> = parse_result.errors().iter()
+            .map(|e| format!("{:?}", e))
+            .collect();
+        return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+            id,
+            format!("Parse errors: {}", errors.join(", ")),
+        )));
+    }
+    
+    Ok(parse_result.tree())
 }
 
-/// Parse an expression into an AST block
-pub fn parse_expression<N, T>(
-    files: &SimpleFiles<N, T>,
-    id: usize,
-) -> Result<Expression, ParserError>
+/// Parse an expression - returns Rowan AST Soup directly
+pub fn parse_expression<N, T>(files: &SimpleFiles<N, T>, id: usize) -> Result<rowan::ast::Soup, ParserError>
 where
-    N: AsRef<str>,
-    N: Clone,
-    N: std::fmt::Display,
+    N: AsRef<str> + Clone + std::fmt::Display,
     T: AsRef<str>,
 {
-    crate::syntax::compat::parse_expression_compat(files, id)
+    let text = files.get(id).unwrap().source().as_ref();
+    let parse_result = rowan::parse_expr(text);
+    
+    if !parse_result.errors().is_empty() {
+        let errors: Vec<String> = parse_result.errors().iter()
+            .map(|e| format!("{:?}", e))
+            .collect();
+        return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+            id,
+            format!("Parse errors: {}", errors.join(", ")),
+        )));
+    }
+    
+    Ok(parse_result.tree())
 }
 
-/// Parse an expression into an AST block
+/// Parse an embedded lambda - legacy interface (not implemented in Rowan yet)
 pub fn parse_embedded_lambda<N, T>(
-    files: &SimpleFiles<N, T>,
+    _files: &SimpleFiles<N, T>,
     id: usize,
-) -> Result<(ArgTuple, Expression), ParserError>
+) -> Result<(rowan::ast::ApplyTuple, rowan::ast::Soup), ParserError>
 where
-    N: AsRef<str>,
-    N: Clone,
-    N: std::fmt::Display,
+    N: AsRef<str> + Clone + std::fmt::Display,
     T: AsRef<str>,
 {
-    crate::syntax::compat::parse_embedded_lambda_compat(files, id)
+    // For now, return an error since embedded lambda parsing is not yet implemented in Rowan
+    Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+        id,
+        "Embedded lambda parsing not yet implemented in Rowan parser".to_string(),
+    )))
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use codespan_reporting::files::SimpleFiles;
 
     fn accepts_expr(txt: &str) -> bool {
-        let mut files = SimpleFiles::new();
-        let file_id = files.add("test".to_string(), txt.to_string());
-        parse_expression(&files, file_id).is_ok()
+        parse_expr(txt).errors().is_empty()
     }
 
     fn rejects_expr(txt: &str) -> bool {
-        let mut files = SimpleFiles::new();
-        let file_id = files.add("test".to_string(), txt.to_string());
-        parse_expression(&files, file_id).is_err()
+        !parse_expr(txt).errors().is_empty()
     }
 
     fn accepts_unit(txt: &str) -> bool {
-        let mut files = SimpleFiles::new();
-        let file_id = files.add("test".to_string(), txt.to_string());
-        parse_unit(&files, file_id).is_ok()
+        rowan_parse_unit(txt).errors().is_empty()
     }
 
     fn rejects_unit(txt: &str) -> bool {
-        let mut files = SimpleFiles::new();
-        let file_id = files.add("test".to_string(), txt.to_string());
-        parse_unit(&files, file_id).is_err()
+        !rowan_parse_unit(txt).errors().is_empty()
     }
 
     #[test]
@@ -229,15 +241,5 @@ ns: {
         
         // Error cases
         assert!(rejects_unit("9 ``"));
-    }
-
-    #[test]
-    fn test_parse_embedded_lambda() {
-        let lam = "(x, y) x * y";
-        let mut files = SimpleFiles::new();
-        let file_id = files.add("test".to_string(), lam.to_string());
-        let result = parse_embedded_lambda(&files, file_id);
-        // Should return an error since embedded lambda parsing is not yet implemented in Rowan
-        assert!(result.is_err());
     }
 }

@@ -375,7 +375,9 @@ where
         };
 
         if let Some((tok, _)) = ret {
-            self.last_token = Some(tok);
+            if !tok.is_trivial() {
+                self.last_token = Some(tok);
+            }
         };
 
         ret
