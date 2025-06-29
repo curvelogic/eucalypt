@@ -126,3 +126,17 @@ The project includes a sophisticated garbage collector:
 - Replace deprecated dependencies with modern alternatives (e.g., `atty` → `std::io::IsTerminal`)
 - Fix deprecation warnings to maintain compatibility with newer dependency versions
 - **Security alerts should block PRs** - just like clippy and rustfmt failures
+
+## Development Standards (Based on Common Mistakes)
+
+### Technical Analysis Standards  
+- **Read relevant documentation FIRST** - always check `docs/` directory before making assumptions about language syntax or behaviour
+- **Understand root causes, not just symptoms** - investigate HOW things work, not just WHETHER they work
+- **Respect architectural boundaries** - only modify components within the defined scope (e.g., don't modify STG compiler when implementing Rowan parser)
+- **Track your own changes** - don't assume existing working code is broken without verifying what you changed
+
+### Communication and Progress Standards
+- **Be precise about what "working" means** - distinguish between "not crashing" and "producing correct results"
+- **Avoid flip-flopping** - gather solid evidence before changing diagnosis or approach
+- **Don't repeat failed investigations** - if an approach isn't yielding insights, step back and try a different angle
+- **Follow the scope of assigned tasks** - complete what's asked without expanding scope unnecessarily
