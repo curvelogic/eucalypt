@@ -297,7 +297,7 @@ impl ContainsName for SingleQuoteIdentifier {
     fn name_range(&self) -> Option<TextRange> {
         let text = self.text();
         let lquote = text.find('\'');
-        let rquote = text.find('\'');
+        let rquote = text.rfind('\'');
         match (lquote, rquote) {
             (Some(0), Some(n)) if n == text.len() - 1 => {
                 Some(TextRange::new(1.into(), TextSize::try_from(n).unwrap()))

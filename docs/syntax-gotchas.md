@@ -64,6 +64,51 @@ map({ result: _ + 1, doubled: _ * 2 })
 
 **Reference**: See `docs/anaphora-and-lambdas.md` for detailed explanation of anaphora usage.
 
+## Single Quote Identifiers
+
+### Single Quotes Are Not String Delimiters
+
+**Problem**: Single quotes (`'`) in Eucalypt are used to create identifiers, not strings.
+
+**Gotcha**: Coming from languages where single quotes delimit strings, developers might expect `'text'` to be a string literal.
+
+**Key Rules**:
+- Single quotes create **normal identifiers** that can contain any characters
+- The identifier name is the content *between* the quotes (quotes are stripped)
+- This is the only use of single quotes in Eucalypt
+- String literals use double quotes (`"`) only
+
+**Examples**:
+```eu
+# Single quotes create identifiers (variable names):
+'my-file.txt': "content"     # Creates identifier: my-file.txt
+home: {
+  '.bashrc': false           # Creates identifier: .bashrc  
+  '.emacs.d': false          # Creates identifier: .emacs.d
+  'notes.txt': true          # Creates identifier: notes.txt
+}
+
+# Access using lookup:
+z: home.'notes.txt'          # Looks up identifier: notes.txt
+
+# NOT string literals:
+'hello' = 'hello'            # Compares two variable references (not strings)
+"hello" = "hello"            # Compares two string literals (correct)
+```
+
+**Common Mistake**: Using single quotes for strings in test data or evidence files:
+```eu
+# Incorrect (this references a variable):
+stdout: 'default-yaml-stdout-text'
+
+# Correct (this would be a string, if that's what you wanted):  
+stdout: "default-yaml-stdout-text"
+```
+
+**Implementation Note**: In the Rowan parser, single-quoted identifiers are lexed as `SINGLE_QUOTE_IDENTIFIER` tokens and the content between quotes is extracted by the `ContainsName::name_range()` method.
+
+**Reference**: See `docs/operators-and-identifiers.md` for complete identifier syntax rules.
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

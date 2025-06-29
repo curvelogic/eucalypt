@@ -362,13 +362,6 @@ fn extract_rowan_declaration_components(
     }
 }
 
-/// Convert Rowan identifier to string
-fn rowan_identifier_to_string(id: &rowan_ast::Identifier) -> String {
-    match id {
-        rowan_ast::Identifier::OperatorIdentifier(op) => op.text().to_string(),
-        rowan_ast::Identifier::NormalIdentifier(normal) => normal.text().to_string(),
-    }
-}
 
 /// Translate special operator names (".") to operators but all other
 /// names to Expr::Name for further analysis
@@ -383,7 +376,9 @@ fn desugar_rowan_name(span: Span, id: &rowan_ast::Identifier, desugarer: &mut De
             }
         }
         rowan_ast::Identifier::NormalIdentifier(normal) => {
-            let name = normal.text();
+            // Use the parent Identifier's name() method to properly extract name content (strips quotes)
+            let full_id = rowan_ast::Identifier::NormalIdentifier(normal.clone());
+            let name = full_id.name().unwrap_or("");
             if name.starts_with("__") && name.chars().nth(2).is_some_and(|c| c.is_uppercase()) {
                 Ok(RcExpr::from(Expr::Intrinsic(desugarer.new_smid(span), name[2..].to_string())))
             } else if BLOCK_ANAPHORA.is_anaphor(name) {
