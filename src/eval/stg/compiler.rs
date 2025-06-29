@@ -670,7 +670,13 @@ pub fn extract_bound_var<'a>(
 ) -> Result<&'a BoundVar<String>, CompileError> {
     match var {
         Var::Bound(bound_var) => Ok(bound_var),
-        Var::Free(_) => Err(CompileError::FreeVar(*smid)),
+        Var::Free(free_var) => {
+            eprintln!("DEBUG MASTER: Unresolved FreeVar: {:?} with smid: {:?}", free_var, smid);
+            if let Some(ref name) = free_var.pretty_name {
+                eprintln!("DEBUG MASTER: Variable name: {}", name);
+            }
+            Err(CompileError::FreeVar(*smid))
+        }
     }
 }
 

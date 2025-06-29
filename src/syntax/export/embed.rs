@@ -330,7 +330,7 @@ impl Embed for rowan::Declaration {
         // A more sophisticated implementation would classify the declaration kind
         let meta = embed_rowan_decl_meta(self.meta());
         
-        let head = if let Some(head) = self.head() {
+        let head = if let Some(_head) = self.head() {
             // We'd need to analyze the head to determine the declaration type
             // For now, just embed as generic head
             list(vec![lit(sym("a-decl-head")), lit(str("generic"))])

@@ -200,11 +200,9 @@ impl Embed for RcExpr {
 pub mod tests {
     use super::*;
     use crate::syntax::export::pretty;
-    use crate::syntax::parser;
-    use codespan_reporting::files::SimpleFiles;
     use moniker::FreeVar;
 
-    pub fn parse_expression(txt: &'static str) -> Expression {
+    pub fn parse_expression(_txt: &'static str) -> Expression {
         // TODO: Fix for Rowan AST - for now return a placeholder
         Expression::Lit(crate::syntax::ast::Literal::Str(codespan::Span::default(), "placeholder".to_string()))
     }

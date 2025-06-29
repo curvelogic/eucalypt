@@ -195,7 +195,7 @@ impl<'smap> Receiver<'smap> {
     pub fn parse_eu_fn(&mut self, text: String) -> Result<RcExpr, SourceError> {
         let span = Span::new(ByteIndex(0), ByteIndex(0) + ByteOffset::from_str_len(&text));
         let file_id = self.files.add(format!("yaml:[{}]", text), text);
-        let (head, body) = parser::parse_embedded_lambda(self.files, file_id)
+        let (_head, body) = parser::parse_embedded_lambda(self.files, file_id)
             .map_err(|p| SourceError::EmbeddedParserError(p, file_id, span))?;
 
         let content = HashMap::new();

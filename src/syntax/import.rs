@@ -208,7 +208,7 @@ fn read_rowan_ast_imports(ast: &ParsedAst, imports: &mut Vec<Input>) -> Result<(
             }
             
             // Check each declaration for imports
-            for (i, decl) in unit.declarations().enumerate() {
+            for (_i, decl) in unit.declarations().enumerate() {
                 
                 // Check declaration metadata
                 if let Some(meta) = decl.meta() {
@@ -238,7 +238,7 @@ fn read_rowan_soup_imports(soup: &crate::syntax::rowan::ast::Soup, imports: &mut
     use crate::syntax::rowan::ast::{Element, HasSoup, AstToken};
     
     
-    for (i, element) in soup.elements().enumerate() {
+    for (_i, element) in soup.elements().enumerate() {
         
         match element {
             Element::Block(block) => {
@@ -353,10 +353,7 @@ fn scrape_rowan_imports(soup: &crate::syntax::rowan::ast::Soup, imports: &mut Ve
 pub mod test {
     use super::*;
     use crate::syntax::input::Locator;
-    use crate::syntax::parser;
     use crate::syntax::rowan::ast::{Unit, Soup, Element, HasSoup, AstToken};
-    use crate::syntax::ast::*;
-    use codespan_reporting::files::SimpleFiles;
 
     /// Convert Rowan Soup to legacy Expression for testing
     fn rowan_soup_to_legacy_expression(soup: &Soup) -> Expression {

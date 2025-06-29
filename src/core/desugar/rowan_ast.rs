@@ -13,7 +13,7 @@ use crate::core::metadata::{
     ReadMetadata,
 };
 use crate::{
-    common::sourcemap::HasSmid,
+    common::sourcemap::{HasSmid, Smid},
     core::{
         anaphora::{BLOCK_ANAPHORA, EXPR_ANAPHORA},
         error::CoreError,
@@ -597,14 +597,43 @@ fn desugar_rowan_soup(
     }
 }
 
+/// Extract just the declaration name without desugaring body
+fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, CoreError> {
+    if let Some(head) = decl.head() {
+        let kind = head.classify_declaration();
+        match kind {
+            rowan_ast::DeclarationKind::Property(prop) => Ok(prop.text().to_string()),
+            rowan_ast::DeclarationKind::Function(func, _) => Ok(func.text().to_string()),
+            rowan_ast::DeclarationKind::Prefix(_, op, _) => Ok(op.text().to_string()),
+            rowan_ast::DeclarationKind::Postfix(_, _, op) => Ok(op.text().to_string()),
+            rowan_ast::DeclarationKind::Binary(_, _, op, _) => Ok(op.text().to_string()),
+            rowan_ast::DeclarationKind::Nullary(_, op) => Ok(op.text().to_string()),
+            rowan_ast::DeclarationKind::MalformedHead(_) => {
+                Err(CoreError::InvalidEmbedding(
+                    "malformed declaration head".to_string(),
+                    Smid::default()
+                ))
+            }
+        }
+    } else {
+        Err(CoreError::InvalidEmbedding(
+            "missing declaration head".to_string(),
+            Smid::default()
+        ))
+    }
+}
+
 /// Convert Rowan declaration to binding for let expression
 fn rowan_declaration_to_binding(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
 ) -> Result<(Binder<String>, Embed<RcExpr>), CoreError> {
     
+    // Extract declaration name first and push to stack before body desugaring
+    let name = extract_declaration_name(decl)?;
+    desugarer.push(&name);
+    
     let components = extract_rowan_declaration_components(decl, desugarer)?;
-    desugarer.push(&components.name);
     
     // Process metadata for desugar-phase information
     let (core_meta, metadata) = match components.metadata {
@@ -806,8 +835,9 @@ impl Desugarable for rowan_ast::Block {
         
         // Create body - check for parse-embed override
         let body = if let Some(embed_key) = block_meta.parse_embed {
-            match desugarer.env().get(&embed_key) {
-                Some(fv) => acore::var(fv.clone()),
+            let fv_opt = desugarer.env().get(&embed_key).cloned();
+            match fv_opt {
+                Some(fv) => core::var(desugarer.new_smid(span), fv),
                 None => {
                     let meta_smid = metadata.as_ref().map(|m| m.smid()).unwrap_or_default();
                     RcExpr::from(Expr::ErrUnresolved(meta_smid, embed_key))
@@ -920,8 +950,9 @@ impl Desugarable for rowan_ast::Unit {
         
         // Create body - check for parse-embed override
         let body = if let Some(embed_key) = unit_meta.parse_embed {
-            match desugarer.env().get(&embed_key) {
-                Some(fv) => acore::var(fv.clone()),
+            let fv_opt = desugarer.env().get(&embed_key).cloned();
+            match fv_opt {
+                Some(fv) => core::var(desugarer.new_smid(span), fv),
                 None => {
                     let meta_smid = metadata.as_ref().map(|m| m.smid()).unwrap_or_default();
                     RcExpr::from(Expr::ErrUnresolved(meta_smid, embed_key))

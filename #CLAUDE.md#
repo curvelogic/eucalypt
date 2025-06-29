@@ -127,16 +127,17 @@ The project includes a sophisticated garbage collector:
 - Fix deprecation warnings to maintain compatibility with newer dependency versions
 - **Security alerts should block PRs** - just like clippy and rustfmt failures
 
-## Development Standards (Based on Common Mistakes)
+## Project Management
 
-### Technical Analysis Standards  
-- **Read relevant documentation FIRST** - always check `docs/` directory before making assumptions about language syntax or behaviour
-- **Understand root causes, not just symptoms** - investigate HOW things work, not just WHETHER they work
-- **Respect architectural boundaries** - only modify components within the defined scope (e.g., don't modify STG compiler when implementing Rowan parser)
-- **Track your own changes** - don't assume existing working code is broken without verifying what you changed
+### GitHub Project
+- **Eucalypt Backlog**: Private GitHub project containing development plans, roadmap, and work items
+- Access via: `gh project list --owner curvelogic` (shows project ID: `PVT_kwDOAG6azc4AAShI`)
+- **Privacy Note**: The repository is public but the project is private - do not reference specific project items in public commits
 
-### Communication and Progress Standards
-- **Be precise about what "working" means** - distinguish between "not crashing" and "producing correct results"
-- **Avoid flip-flopping** - gather solid evidence before changing diagnosis or approach
-- **Don't repeat failed investigations** - if an approach isn't  yielding insights, step back and ask to try a different angle
-- **Follow the scope of assigned tasks** - complete what's asked without expanding scope unnecessarily
+### GC Implementation
+- See `docs/gc-implementation.md` for comprehensive garbage collector documentation
+- **Phase 1 COMPLETE**: Comprehensive GC test suite with 10 test scenarios covering all major functionality
+- **GC Tests Location**: `harness/test/gc/gc_001_*.eu` through `gc_010_*.eu`
+- **Test Integration**: Added to `tests/harness_test.rs` with functions `test_gc_001()` through `test_gc_010()`
+- **Current Status**: Feature-complete implementation, all tests passing, ready for production hardening
+- **Next Phase**: Error handling, long-running stability, performance monitoring
