@@ -215,8 +215,15 @@ impl Embed for rowan::List {
 
 impl Embed for rowan::ApplyTuple {
     fn embed(&self) -> Expression {
-        let items: Vec<_> = self.items().map(|item| item.embed()).collect();
-        let mut result = vec![lit(sym("a-apply-tuple"))];
+        let items: Vec<_> = self.items().map(|soup| {
+            // If the soup has a single element, unwrap it like LALRPOP does
+            if let Some(elem) = soup.singleton() {
+                elem.embed()
+            } else {
+                soup.embed()
+            }
+        }).collect();
+        let mut result = vec![lit(sym("a-applytuple"))];
         result.extend(items);
         list(result)
     }

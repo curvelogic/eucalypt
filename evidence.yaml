@@ -1,0 +1,26 @@
+title: 001_ski
+filename: harness/test/001_ski.eu
+tests:
+  default-yaml:
+    exit: 0
+    stdout: |
+      ---
+      box:
+        value: 5
+      box2:
+        value: 5
+      RESULT: PASS
+    stderr: ""
+    result:
+      box:
+        value: 5
+      box2:
+        value: 5
+      RESULT: PASS
+    expectations:
+      - name: default
+        function-key: default-expectation
+    stats:
+      ticks: 100
+      allocs: 50
+      max-stack: 10
