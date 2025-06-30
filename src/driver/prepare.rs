@@ -207,8 +207,16 @@ fn dump_ast(ast: &ParsedAst, opt: &EucalyptOptions) {
     } else if opt.quote_debug() {
         println!("{:#?}", ast);
     } else {
-        // TODO: implement pretty printing for Rowan AST
-        println!("TODO: implement pretty printing for Rowan AST\n");
+        match ast {
+            ParsedAst::Unit(unit) => {
+                let embedded = unit.embed();
+                println!("{}\n", express(&embedded));
+            }
+            ParsedAst::Soup(soup) => {
+                let embedded = soup.embed();
+                println!("{}\n", express(&embedded));
+            }
+        }
     }
 }
 
