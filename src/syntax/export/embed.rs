@@ -42,7 +42,7 @@ impl Embed for Expression {
             Expression::List(_, xs) => list_elements("a-list", xs),
             Expression::OpSoup(_, xs) => list_elements("a-soup", xs),
             Expression::Name(n) => list(vec![lit(sym("a-name")), n.embed()]),
-            Expression::StringPattern(_, _) => unimplemented!(),
+            Expression::StringPattern(_, chunks) => list_elements("a-string-pattern", chunks),
             Expression::ApplyTuple(_, xs) => list([&[lit(sym("a-applytuple"))], &xs[..]].concat()),
         }
     }
@@ -109,6 +109,54 @@ impl Embed for Block {
         elements.extend(self.declarations.iter().map(|x| x.embed()));
         elements.push(embed_meta(&self.metadata));
         list(elements)
+    }
+}
+
+impl Embed for InterpolationTarget {
+    fn embed(&self) -> Expression {
+        match self {
+            InterpolationTarget::StringAnaphor(_, index) => {
+                if let Some(idx) = index {
+                    list(vec![lit(sym("a-str-anaphor")), lit(num(*idx))])
+                } else {
+                    list(vec![lit(sym("a-str-anaphor")), lit(sym("a-no-index"))])
+                }
+            }
+            InterpolationTarget::Reference(_, names) => {
+                list_elements("a-str-reference", names)
+            }
+        }
+    }
+}
+
+impl Embed for InterpolationRequest {
+    fn embed(&self) -> Expression {
+        let target = self.target.embed();
+        let format = if let Some(fmt) = &self.format {
+            lit(str(fmt))
+        } else {
+            lit(sym("a-no-format"))
+        };
+        let conversion = if let Some(conv) = &self.conversion {
+            lit(str(conv))
+        } else {
+            lit(sym("a-no-conversion"))
+        };
+        
+        list(vec![lit(sym("a-str-interp")), target, format, conversion])
+    }
+}
+
+impl Embed for StringChunk {
+    fn embed(&self) -> Expression {
+        match self {
+            StringChunk::LiteralContent(_, text) => {
+                list(vec![lit(sym("a-str-literal")), lit(str(text))])
+            }
+            StringChunk::Interpolation(_, request) => {
+                request.embed()
+            }
+        }
     }
 }
 

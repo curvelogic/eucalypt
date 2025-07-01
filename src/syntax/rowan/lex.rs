@@ -1,6 +1,6 @@
 //! Lexer for Eucalypt
 use codespan::{ByteIndex, ByteOffset, Span};
-use std::{iter::Peekable, str::Chars};
+use std::{collections::VecDeque, iter::Peekable, str::Chars};
 
 use unic_ucd_category::GeneralCategory;
 
@@ -19,6 +19,8 @@ where
     last_token: Option<SyntaxKind>,
     /// track whether we've seen whitespace since last non-whitespace token
     whitespace_since_last_token: bool,
+    /// buffer for string pattern tokens
+    token_buffer: VecDeque<(SyntaxKind, Span)>,
 }
 
 /// is c a character which can start a normal identifier?
@@ -147,6 +149,7 @@ impl<'text> Lexer<Chars<'text>> {
             chars: text.chars().peekable(),
             last_token: None,
             whitespace_since_last_token: false,
+            token_buffer: VecDeque::new(),
         }
     }
 }
@@ -210,14 +213,52 @@ where
         (OPERATOR_IDENTIFIER, Span::new(i, e))
     }
 
-    /// consume a string literal
+    /// consume a string literal or string pattern
     fn dquote(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
-        match self.consume_delimited(|c| c != '"') {
-            Ok(end) => {
-                self.bump();
-                (STRING, Span::new(i, end + ONE_BYTE))
+        // Collect the string content to check for interpolation
+        let mut content = String::new();
+        
+        // Consume characters until closing quote or EOF
+        loop {
+            match self.peek() {
+                Some(&'"') => {
+                    self.bump(); // consume closing quote
+                    break;
+                }
+                Some(&c) => {
+                    content.push(c);
+                    self.bump();
+                }
+                None => {
+                    // Unterminated string
+                    return (STRING, Span::new(i, self.location));
+                }
             }
-            Err(end) => (STRING, Span::new(i, end)),
+        }
+        
+        let full_span = Span::new(i, self.location);
+        
+        // Check if this string contains interpolation (simple check for braces)
+        if content.contains('{') || content.contains('}') {
+            // Use StringPatternLexer to tokenize the content and buffer detailed tokens
+            use super::string_lex::StringPatternLexer;
+            let string_lexer = StringPatternLexer::new(&content, ByteOffset(i.to_usize() as i64 + 1));
+            
+            // Buffer the opening quote
+            self.token_buffer.push_back((STRING_PATTERN_START, Span::new(i, i + ByteOffset(1))));
+            
+            // Buffer all the detailed tokens from the string content
+            for (token_kind, span, _text) in string_lexer {
+                self.token_buffer.push_back((token_kind, span));
+            }
+            
+            // Buffer the closing quote
+            self.token_buffer.push_back((STRING_PATTERN_END, Span::new(self.location - ByteOffset(1), self.location)));
+            
+            // Return the first buffered token (opening quote)
+            self.token_buffer.pop_front().unwrap()
+        } else {
+            (STRING, full_span)
         }
     }
 
@@ -351,6 +392,16 @@ where
     type Item = (SyntaxKind, Span);
 
     fn next(&mut self) -> Option<Self::Item> {
+        // First check if we have buffered tokens
+        if let Some(token) = self.token_buffer.pop_front() {
+            // Update tracking for non-trivial tokens
+            if !token.0.is_trivial() {
+                self.last_token = Some(token.0);
+                self.whitespace_since_last_token = false;
+            }
+            return Some(token);
+        }
+        
         let ret = match self.bump() {
             Some((i, '{')) => Some((OPEN_BRACE, Span::new(i, i + ONE_BYTE))),
             Some((i, '}')) => Some((CLOSE_BRACE, Span::new(i, i + ONE_BYTE))),

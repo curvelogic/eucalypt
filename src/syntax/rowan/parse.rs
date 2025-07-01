@@ -144,11 +144,11 @@ impl<'text> Parser<'text> {
 
     /// Try to parse literal, pushing token back into tokens on failure
     fn try_parse_literal(&mut self) -> bool {
-        if let Some((k, text)) = self.next() {
-            if k.is_literal_terminal() {
-                if k == STRING && (text.contains('{') || text.contains('}')) {
+        if let Some((k, _text)) = self.next() {
+            if k.is_literal_terminal() || k == STRING_PATTERN_START {
+                if k == STRING_PATTERN_START {
                     // This is a string pattern, parse it specially
-                    self.parse_string_pattern(text);
+                    self.parse_string_pattern();
                     true
                 } else {
                     // Regular literal
@@ -448,13 +448,103 @@ impl<'text> Parser<'text> {
     }
 
     /// Parse a string pattern with interpolation
-    fn parse_string_pattern(&mut self, _text: &str) {
-        // For now, consume the original STRING token but mark it as a STRING_PATTERN
-        // In a proper implementation, we would parse the internal structure
-        // but for the initial implementation, let's just treat it as a special literal
+    fn parse_string_pattern(&mut self) {
         self.sink().start_node(STRING_PATTERN);
-        self.sink().token(STRING);
-        self.sink().finish_node();
+        self.sink().token(STRING_PATTERN_START); // consume opening quote
+        
+        // Process tokens until we reach STRING_PATTERN_END
+        while let Some((kind, _text)) = self.peek() {
+            match kind {
+                STRING_PATTERN_END => {
+                    self.sink().token(STRING_PATTERN_END);
+                    self.next(); // consume closing quote
+                    break;
+                }
+                STRING_LITERAL_CONTENT => {
+                    self.sink().start_node(STRING_LITERAL_CONTENT);
+                    self.sink().token(STRING_LITERAL_CONTENT);
+                    self.next();
+                    self.sink().finish_node();
+                }
+                STRING_ESCAPED_OPEN => {
+                    self.sink().start_node(STRING_ESCAPED_OPEN);
+                    self.sink().token(STRING_ESCAPED_OPEN);
+                    self.next();
+                    self.sink().finish_node();
+                }
+                STRING_ESCAPED_CLOSE => {
+                    self.sink().start_node(STRING_ESCAPED_CLOSE);
+                    self.sink().token(STRING_ESCAPED_CLOSE);
+                    self.next();
+                    self.sink().finish_node();
+                }
+                OPEN_BRACE => {
+                    // Start of interpolation
+                    self.sink().start_node(STRING_INTERPOLATION);
+                    self.sink().token(OPEN_BRACE);
+                    self.next(); // consume {
+                    
+                    // Parse interpolation content
+                    self.parse_string_interpolation_content();
+                    
+                    // Consume closing brace
+                    if let Some((CLOSE_BRACE, _)) = self.peek() {
+                        self.sink().token(CLOSE_BRACE);
+                        self.next();
+                    }
+                    
+                    self.sink().finish_node(); // end STRING_INTERPOLATION
+                }
+                _ => {
+                    // Unexpected token - consume and continue
+                    self.next();
+                }
+            }
+        }
+        
+        self.sink().finish_node(); // end STRING_PATTERN
+    }
+    
+    /// Parse the content inside an interpolation {...}
+    fn parse_string_interpolation_content(&mut self) {
+        // Parse interpolation target
+        if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
+            self.sink().start_node(STRING_INTERPOLATION_TARGET);
+            self.sink().token(STRING_INTERPOLATION_TARGET);
+            self.next();
+            self.sink().finish_node();
+        }
+        
+        // Handle dotted references (target.field.subfield)
+        while let Some((OPERATOR_IDENTIFIER, text)) = self.peek() {
+            if text == "." {
+                self.sink().token(OPERATOR_IDENTIFIER); // consume the dot
+                self.next();
+                
+                // Parse the next target
+                if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
+                    self.sink().start_node(STRING_INTERPOLATION_TARGET);
+                    self.sink().token(STRING_INTERPOLATION_TARGET);
+                    self.next();
+                    self.sink().finish_node();
+                }
+            } else {
+                break;
+            }
+        }
+        
+        // Check for format spec (colon followed by format)
+        if let Some((COLON, _)) = self.peek() {
+            self.sink().token(COLON);
+            self.next(); // consume :
+            
+            if let Some((STRING_FORMAT_SPEC, _)) = self.peek() {
+                self.sink().start_node(STRING_FORMAT_SPEC);
+                self.sink().token(STRING_FORMAT_SPEC);
+                self.next();
+                self.sink().finish_node();
+            }
+        }
     }
 }
 

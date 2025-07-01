@@ -62,6 +62,10 @@ pub enum SyntaxKind {
     // String pattern syntax kinds
     /// String pattern containing interpolation e.g. "Hello {name}!"
     STRING_PATTERN,
+    /// Opening quote of string pattern
+    STRING_PATTERN_START,
+    /// Closing quote of string pattern
+    STRING_PATTERN_END,
     /// Literal content within string pattern
     STRING_LITERAL_CONTENT,
     /// Interpolation within string pattern e.g. {name}
