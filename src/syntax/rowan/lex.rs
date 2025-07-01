@@ -17,6 +17,8 @@ where
     location: ByteIndex,
     /// keep last token for disambiguating OpenParen and OpenParenApply
     last_token: Option<SyntaxKind>,
+    /// track whether we've seen whitespace since last non-whitespace token
+    whitespace_since_last_token: bool,
 }
 
 /// is c a character which can start a normal identifier?
@@ -144,6 +146,7 @@ impl<'text> Lexer<Chars<'text>> {
             location: ByteIndex(0),
             chars: text.chars().peekable(),
             last_token: None,
+            whitespace_since_last_token: false,
         }
     }
 }
@@ -287,7 +290,14 @@ where
                 (OPEN_PAREN, Span::new(i, i + paren_offset))
             }
             None => (OPEN_PAREN, Span::new(i, i + paren_offset)),
-            _ => (OPEN_PAREN_APPLY, Span::new(i, i + paren_offset)),
+            _ => {
+                // If there was whitespace since the last token, it's not an applytuple
+                if self.whitespace_since_last_token {
+                    (OPEN_PAREN, Span::new(i, i + paren_offset))
+                } else {
+                    (OPEN_PAREN_APPLY, Span::new(i, i + paren_offset))
+                }
+            }
         }
     }
 
@@ -375,8 +385,11 @@ where
         };
 
         if let Some((tok, _)) = ret {
-            if !tok.is_trivial() {
+            if tok == WHITESPACE {
+                self.whitespace_since_last_token = true;
+            } else if !tok.is_trivial() {
                 self.last_token = Some(tok);
+                self.whitespace_since_last_token = false;
             }
         };
 

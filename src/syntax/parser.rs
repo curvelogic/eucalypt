@@ -242,4 +242,35 @@ ns: {
         // Error cases
         assert!(rejects_unit("9 ``"));
     }
+
+    #[test]
+    fn test_whitespace_separated_parentheses() {
+        // Test distinguishing between applytuple and paren-expr based on whitespace
+        
+        // This should be an applytuple (no whitespace)
+        let result = parse_expr("f(g)");
+        assert!(result.errors().is_empty());
+        let ast_str = format!("{:#?}", result.syntax_node());
+        assert!(ast_str.contains("ARG_TUPLE"), "f(g) should parse as applytuple (ARG_TUPLE)");
+        assert!(ast_str.contains("OPEN_PAREN_APPLY"), "f(g) should use OPEN_PAREN_APPLY");
+        
+        // This should be catenation with paren-expr (whitespace)
+        let result = parse_expr("f (g)");
+        assert!(result.errors().is_empty());
+        let ast_str = format!("{:#?}", result.syntax_node());
+        assert!(ast_str.contains("PAREN_EXPR"), "f (g) should parse with paren-expr, not applytuple");
+        assert!(!ast_str.contains("ARG_TUPLE"), "f (g) should not contain applytuple");
+        assert!(ast_str.contains("OPEN_PAREN"), "f (g) should use OPEN_PAREN (not OPEN_PAREN_APPLY)");
+        assert!(!ast_str.contains("OPEN_PAREN_APPLY"), "f (g) should not use OPEN_PAREN_APPLY");
+        
+        // Test the matches? case specifically
+        let result = parse_expr("match(s, re) (not ∘ nil?)");
+        assert!(result.errors().is_empty());
+        let ast_str = format!("{:#?}", result.syntax_node());
+        assert!(ast_str.contains("PAREN_EXPR"), "match(s, re) (not ∘ nil?) should have paren-expr");
+        assert!(ast_str.contains("ARG_TUPLE"), "match(s, re) (not ∘ nil?) should have applytuple for match");
+        // Should have both types of parens
+        assert!(ast_str.contains("OPEN_PAREN_APPLY"), "match(s, re) should use OPEN_PAREN_APPLY");
+        assert!(ast_str.contains("OPEN_PAREN"), "second part should use OPEN_PAREN");
+    }
 }
