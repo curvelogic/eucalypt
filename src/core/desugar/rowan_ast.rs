@@ -521,7 +521,15 @@ fn desugar_rowan_soup(
                     // simple static lookup
                     soup.pop();
                     if let Some(dlet) = soup.pop() {
-                        soup.push(dlet.rebody(core::var(*s, desugarer.var(n))));
+                        let rebodied = dlet.rebody(core::var(*s, desugarer.var(n)));
+                        // Convert to OtherLet to prevent subsequent static lookups
+                        let fixed_rebodied = match &*rebodied.inner {
+                            Expr::Let(smid, scope, LetType::DefaultBlockLet) => {
+                                RcExpr::from(Expr::Let(*smid, scope.clone(), LetType::OtherLet))
+                            }
+                            _ => rebodied
+                        };
+                        soup.push(fixed_rebodied);
                     } else {
                         panic!("Expected default let");
                     }
@@ -558,7 +566,15 @@ fn desugar_rowan_soup(
                 } else if lookup == PendingLookup::Static {
                     soup.pop();
                     if let Some(dlet) = soup.pop() {
-                        soup.push(dlet.rebody(expr.clone()));
+                        let rebodied = dlet.rebody(expr.clone());
+                        // Convert to OtherLet to prevent subsequent static lookups
+                        let fixed_rebodied = match &*rebodied.inner {
+                            Expr::Let(smid, scope, LetType::DefaultBlockLet) => {
+                                RcExpr::from(Expr::Let(*smid, scope.clone(), LetType::OtherLet))
+                            }
+                            _ => rebodied
+                        };
+                        soup.push(fixed_rebodied);
                     } else {
                         panic!("Expected default let");
                     }

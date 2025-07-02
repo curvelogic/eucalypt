@@ -1,6 +1,7 @@
 //! Rowan based parsing of eucalypt syntax
 
 pub mod ast;
+pub mod dotted_lookup_tests;
 pub mod error;
 pub mod kind;
 pub mod lex;
