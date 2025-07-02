@@ -851,6 +851,10 @@ impl StringInterpolation {
         support::child::<StringInterpolationTarget>(self.syntax())
     }
     
+    pub fn soup(&self) -> Option<Soup> {
+        support::child::<Soup>(self.syntax())
+    }
+    
     pub fn format_spec(&self) -> Option<StringFormatSpec> {
         support::child::<StringFormatSpec>(self.syntax())
     }

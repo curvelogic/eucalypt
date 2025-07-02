@@ -22,6 +22,7 @@ use crate::{
     },
     syntax::rowan::{
         ast::{self as rowan_ast, Element, HasSoup, AstToken},
+        kind::SyntaxKind,
     },
 };
 use rowan::{ast::AstNode, TextRange};
@@ -421,8 +422,41 @@ fn desugar_rowan_string_pattern(
             rowan_ast::StringChunk::Interpolation(interp) => {
                 let chunk_span = text_range_to_span(interp.syntax().text_range());
                 
-                // Extract target
-                let target = if let Some(target_token) = interp.target() {
+                // Extract target - check for soup first (dotted lookups), then fallback to simple target
+                let target = if let Some(soup) = interp.soup() {
+                    // We have a soup (dotted lookup like data.foo.bar)
+                    // Convert the soup elements to a list of Names for the Reference variant
+                    let elements: Vec<_> = soup.elements().collect();
+                    let mut names = Vec::new();
+                    
+                    for element in elements {
+                        if let rowan_ast::Element::Name(name) = element {
+                            // Only process STRING_INTERPOLATION_TARGET tokens, skip dot operators
+                            // The dots will be handled automatically by InterpolationTarget::Reference desugaring
+                            if let Some(token) = name.syntax().first_token() {
+                                let token_text = token.text();
+                                match token.kind() {
+                                    SyntaxKind::STRING_INTERPOLATION_TARGET => {
+                                        names.push(crate::syntax::ast::normal(token_text));
+                                    }
+                                    SyntaxKind::OPERATOR_IDENTIFIER => {
+                                        // Skip dot operators - they will be added by the Reference desugaring
+                                    }
+                                    _ => {
+                                        // Skip unknown tokens
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if names.is_empty() {
+                        // Fallback to anonymous if no names found
+                        InterpolationTarget::StringAnaphor(chunk_span, None)
+                    } else {
+                        InterpolationTarget::Reference(chunk_span, names)
+                    }
+                } else if let Some(target_token) = interp.target() {
                     if let Some(target_text) = target_token.value() {
                         if target_text.is_empty() {
                             // Empty {} means anonymous positional parameter

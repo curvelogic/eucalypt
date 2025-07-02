@@ -507,29 +507,55 @@ impl<'text> Parser<'text> {
     
     /// Parse the content inside an interpolation {...}
     fn parse_string_interpolation_content(&mut self) {
-        // Parse interpolation target
-        if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
-            self.sink().start_node(STRING_INTERPOLATION_TARGET);
-            self.sink().token(STRING_INTERPOLATION_TARGET);
-            self.next();
-            self.sink().finish_node();
-        }
+        // Check if we have dotted references by looking ahead
+        let has_dots = self.tokens.iter().skip(self.next_token)
+            .take_while(|(kind, _)| *kind != CLOSE_BRACE && *kind != COLON)
+            .any(|(kind, _)| *kind == OPERATOR_IDENTIFIER);
         
-        // Handle dotted references (target.field.subfield)
-        while let Some((OPERATOR_IDENTIFIER, text)) = self.peek() {
-            if text == "." {
-                self.sink().token(OPERATOR_IDENTIFIER); // consume the dot
+        if has_dots {
+            // Create a soup to hold the interpolation expression
+            self.sink().start_node(SOUP);
+            
+            // Parse the first target (must exist)
+            if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
+                self.sink().start_node(NAME);
+                self.sink().token(STRING_INTERPOLATION_TARGET);
                 self.next();
-                
-                // Parse the next target
-                if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
-                    self.sink().start_node(STRING_INTERPOLATION_TARGET);
-                    self.sink().token(STRING_INTERPOLATION_TARGET);
+                self.sink().finish_node(); // end NAME
+            }
+            
+            // Parse alternating dots and targets
+            while let Some((OPERATOR_IDENTIFIER, text)) = self.peek() {
+                if text == "." {
+                    // Parse the dot
+                    self.sink().start_node(NAME);
+                    self.sink().token(OPERATOR_IDENTIFIER);
                     self.next();
-                    self.sink().finish_node();
+                    self.sink().finish_node(); // end NAME
+                    
+                    // Parse the following target
+                    if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
+                        self.sink().start_node(NAME);
+                        self.sink().token(STRING_INTERPOLATION_TARGET);
+                        self.next();
+                        self.sink().finish_node(); // end NAME
+                    } else {
+                        // Malformed - dot without following target
+                        break;
+                    }
+                } else {
+                    break;
                 }
-            } else {
-                break;
+            }
+            
+            self.sink().finish_node(); // end SOUP
+        } else {
+            // Simple case - just one target
+            if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
+                self.sink().start_node(STRING_INTERPOLATION_TARGET);
+                self.sink().token(STRING_INTERPOLATION_TARGET);
+                self.next();
+                self.sink().finish_node();
             }
         }
         

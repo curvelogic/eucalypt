@@ -148,6 +148,13 @@ mod tests {
     }
 
     #[test]
+    fn test_string_interpolation_complex() {
+        // Test complex multi-level dotted lookup in string interpolation
+        let result = eval_expr(r#"{data: {foo: {bar: 99}}}."{data.foo.bar}""#).unwrap();
+        assert_eq!(result, "99");
+    }
+
+    #[test]
     fn test_dotted_lookup_in_string_interpolation() {
         let result = eval_expr(r#"{data: {foo: {bar: 99}}}."{data.foo.bar}""#).unwrap();
         assert_eq!(result, "99");
@@ -336,5 +343,51 @@ mod tests {
         println!("\n--- After cooking ---");
         println!("{}", quote_embed_core_unit(&cooked.expr));
         println!("=== End Core Expression ===\n");
+    }
+
+    #[test] 
+    fn test_interpolation_expression_capabilities() {
+        println!("\n=== Testing String Interpolation Expression Support ===");
+
+        // Test simple variable - should work
+        println!("\n--- Simple variable ---");
+        let result = eval_expr(r#"{x: 42}."{x}""#);
+        println!("Result: {:?}", result.is_ok());
+        assert!(result.is_ok());
+
+        // Test dotted lookup - should work  
+        println!("\n--- Dotted lookup ---");
+        let result = eval_expr(r#"{data: {foo: 99}}."{data.foo}""#);
+        println!("Result: {:?}", result.is_ok());
+        assert!(result.is_ok());
+
+        // Test numeric positional (should fail - no such context)
+        println!("\n--- Numeric positional ---");
+        let result = eval_expr(r#"test."{0}""#);
+        println!("Result: {:?}", result.is_ok());
+        // This should fail because 'test' is undefined
+
+        // Test what lexer produces for complex expressions
+        use crate::syntax::rowan::string_lex::StringPatternLexer;
+        
+        println!("\n--- What gets lexed for '{{a + b}}' ---");
+        let lexer = StringPatternLexer::new("{a + b}", codespan::ByteOffset(0));
+        let tokens: Vec<_> = lexer.collect();
+        println!("Tokens: {:?}", tokens);
+
+        println!("\n--- What gets lexed for '{{a.b.c}}' ---");
+        let lexer = StringPatternLexer::new("{a.b.c}", codespan::ByteOffset(0));
+        let tokens: Vec<_> = lexer.collect();
+        println!("Tokens: {:?}", tokens);
+
+        println!("\n--- What gets lexed for '{{func()}}' ---");
+        let lexer = StringPatternLexer::new("{func()}", codespan::ByteOffset(0));
+        let tokens: Vec<_> = lexer.collect();
+        println!("Tokens: {:?}", tokens);
+
+        println!("\n--- What gets lexed for '{{0}}' ---");
+        let lexer = StringPatternLexer::new("{0}", codespan::ByteOffset(0));
+        let tokens: Vec<_> = lexer.collect();
+        println!("Tokens: {:?}", tokens);
     }
 }
