@@ -10,15 +10,15 @@ mod tests {
     use crate::syntax::input::{Input, Locator};
 
     fn eval_expr(expr: &str) -> Result<String, Box<dyn std::error::Error>> {
-        let input = Input::from(Locator::Literal(expr.to_string()));
+        let input = Input::from(Locator::Cli(expr.to_string()));
         let opts = EucalyptOptions::default()
             .with_explicit_inputs(vec![input.clone()])
             .with_export_type("text".to_string())
-            .without_prelude()
             .build();
         
         let mut loader = SourceLoader::new(vec![]);
         let mut timings = Timings::default();
+        println!("About to prepare with expression: {}", expr);
         prepare::prepare(&opts, &mut loader, &mut timings)?;
         
         let mut outbuf = Vec::new();
@@ -104,8 +104,18 @@ mod tests {
 
     #[test]
     fn test_two_level_dotted_lookup() {
-        let result = eval_expr("{data: {foo: 99}}.data.foo").unwrap();
-        assert_eq!(result, "99");
+        println!("Starting test_two_level_dotted_lookup");
+        let result = eval_expr("{data: {foo: 99}}.data.foo");
+        match result {
+            Ok(output) => {
+                println!("Got output: '{}'", output);
+                assert_eq!(output, "99");
+            }
+            Err(e) => {
+                println!("Test failed with error: {}", e);
+                panic!("Test failed: {}", e);
+            }
+        }
     }
 
     #[test]
@@ -174,8 +184,24 @@ mod tests {
 
     #[test]
     fn test_static_lookup_syntax() {
+        use crate::driver::source::SourceLoader;
+        use crate::syntax::input::{Input, Locator};
+        use crate::core::export::embed::quote_embed_core_unit;
+        
         // The static lookup syntax {block}.(expr) should work
         let expr = r#"{a: 1, b: 2}.(a + b)"#;
+        println!("\n=== Debug generalized lookup: {} ===", expr);
+        
+        // First check what core expression we get
+        let mut loader = SourceLoader::default();
+        let loc = Locator::Cli(expr.to_string());
+        let input_obj = Input::from(loc);
+        loader.load(&input_obj).unwrap();
+        let unit = loader.translate(&input_obj).unwrap();
+        
+        println!("After desugaring:");
+        println!("{}", quote_embed_core_unit(&unit.expr));
+        
         let result = eval_expr(expr).unwrap();
         assert_eq!(result, "3");
     }
@@ -186,5 +212,129 @@ mod tests {
         let expr = r#"{data: {a: 1, b: 2}}.data.(a + b)"#;
         let result = eval_expr(expr).unwrap();
         assert_eq!(result, "3");
+    }
+
+    #[test]
+    fn debug_simple_lookup_failure() {
+        use crate::driver::source::SourceLoader;
+        use crate::syntax::input::{Input, Locator};
+        use crate::core::export::embed::quote_embed_core_unit;
+        
+        let input = "{foo: 99}.foo";
+        println!("\n=== Debug Simple Lookup: {} ===", input);
+        
+        let mut loader = SourceLoader::default();
+        let loc = Locator::Cli(input.to_string());
+        let input_obj = Input::from(loc);
+        loader.load(&input_obj).unwrap();
+        
+        // Check the AST structure
+        if let Some(ast) = loader.ast(input_obj.locator()) {
+            println!("\n--- AST Structure ---");
+            println!("{:#?}", ast);
+        }
+        
+        let unit = loader.translate(&input_obj).unwrap();
+        
+        println!("\n--- After desugaring ---");
+        println!("{}", quote_embed_core_unit(&unit.expr));
+        
+        // Run through the pipeline
+        loader.merge_units(&[input_obj]).unwrap();
+        loader.cook().unwrap();
+        println!("\n--- After cooking ---");
+        println!("{}", quote_embed_core_unit(&loader.core().expr));
+        
+        // Try to run inline
+        match loader.inline() {
+            Ok(_) => println!("\n--- After inline: OK ---"),
+            Err(e) => println!("\n--- After inline: ERROR: {} ---", e),
+        }
+        
+        // Try to run eliminate  
+        match loader.eliminate() {
+            Ok(_) => println!("\n--- After eliminate: OK ---"),
+            Err(e) => println!("\n--- After eliminate: ERROR: {} ---", e),
+        }
+        
+        // Check the final core
+        println!("\n--- Final core ---");
+        println!("{}", quote_embed_core_unit(&loader.core().expr));
+    }
+
+    #[test]
+    fn debug_rowan_stg_generation() {
+        use crate::driver::source::SourceLoader;
+        use crate::syntax::input::{Input, Locator};
+        use crate::eval::stg::{compiler::Compiler, RenderType};
+        
+        let input = "{data: {foo: 99}}.data.foo";
+        println!("\n=== STG Generation for: {} ===", input);
+        
+        let mut loader = SourceLoader::default();
+        let loc = Locator::Cli(input.to_string());
+        let input_obj = Input::from(loc);
+        loader.load(&input_obj).unwrap();
+        loader.translate(&input_obj).unwrap();
+        loader.merge_units(&[input_obj]).unwrap();
+        loader.cook().unwrap();
+        
+        // Try each pipeline step
+        println!("\n--- After inline ---");
+        match loader.inline() {
+            Ok(_) => println!("OK"),
+            Err(e) => println!("ERROR: {}", e),
+        }
+        
+        println!("\n--- After eliminate ---");
+        match loader.eliminate() {
+            Ok(_) => {
+                println!("OK");
+                
+                // Now try to compile to STG
+                let core_expr = loader.core().expr.clone();
+                let compiler = Compiler::new(false, RenderType::Headless, false, false, false, vec![]);
+                
+                println!("\n--- STG Compilation ---");
+                match compiler.compile(core_expr) {
+                    Ok(stg) => {
+                        println!("STG generated successfully!");
+                        println!("{:#?}", stg);
+                    }
+                    Err(e) => {
+                        println!("STG compilation failed: {}", e);
+                    }
+                }
+            }
+            Err(e) => println!("ERROR: {}", e),
+        }
+    }
+
+    #[test]
+    fn debug_rowan_core_expression() {
+        use crate::core::export::embed::quote_embed_core_unit;
+        use crate::driver::source::SourceLoader;
+        use crate::syntax::input::{Input, Locator};
+        
+        let input = "{data: {foo: 99}}.data.foo";
+        println!("\n=== ROWAN Core Expression for: {} ===", input);
+        
+        let mut loader = SourceLoader::default();
+        let loc = Locator::Cli(input.to_string());
+        let input_obj = Input::from(loc);
+        loader.load(&input_obj).unwrap();
+        let unit = loader.translate(&input_obj).unwrap();
+        
+        println!("\n--- After desugaring ---");
+        println!("{}", quote_embed_core_unit(&unit.expr));
+        
+        // Also run cooking to see what happens
+        loader.merge_units(&[input_obj]).unwrap();
+        loader.cook().unwrap();
+        let cooked = loader.core();
+        
+        println!("\n--- After cooking ---");
+        println!("{}", quote_embed_core_unit(&cooked.expr));
+        println!("=== End Core Expression ===\n");
     }
 }
