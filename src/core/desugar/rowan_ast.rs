@@ -22,7 +22,6 @@ use crate::{
     },
     syntax::rowan::{
         ast::{self as rowan_ast, Element, HasSoup, AstToken},
-        kind::SyntaxKind::STRING,
     },
 };
 use rowan::{ast::AstNode, TextRange};
@@ -406,89 +405,75 @@ fn desugar_rowan_string_pattern(
     pattern: &rowan_ast::StringPattern,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
-    use crate::syntax::string_lexer::{StringLexer, Token};
     use crate::syntax::ast::{InterpolationTarget, InterpolationRequest, StringChunk};
-    use codespan::ByteOffset;
     
-    // Get the string token (which contains the quotes)
-    if let Some(string_token) = pattern.syntax().children_with_tokens()
-        .filter_map(|child| child.into_token())
-        .find(|token| token.kind() == STRING) {
-        
-        let text = string_token.text();
-        
-        // Strip quotes and parse the content
-        if let Some(content) = text.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-            let mut lexer = StringLexer::new(content, ByteOffset(0));
-            let mut chunks = Vec::new();
-            
-            while let Some(token_result) = lexer.next() {
-                match token_result {
-                    Ok((start, token, end)) => {
-                        match token {
-                            Token::Literal(literal_text) => {
-                                chunks.push(StringChunk::LiteralContent(
-                                    codespan::Span::new(start, end),
-                                    literal_text.to_string()
-                                ));
-                            }
-                            Token::InterpolationContent(name) => {
-                                // Simple variable reference
-                                let target = InterpolationTarget::Reference(
-                                    codespan::Span::new(start, end),
-                                    vec![crate::syntax::ast::normal(name)]
-                                );
-                                let request = InterpolationRequest::new(
-                                    codespan::Span::new(start, end),
-                                    target,
-                                    None,
-                                    None
-                                );
-                                chunks.push(StringChunk::Interpolation(
-                                    codespan::Span::new(start, end),
-                                    request
-                                ));
-                            }
-                            Token::Number(num_str) => {
-                                // Anaphor with explicit number
-                                if let Ok(num) = num_str.parse::<i32>() {
-                                    let target = InterpolationTarget::StringAnaphor(
-                                        codespan::Span::new(start, end),
-                                        Some(num)
-                                    );
-                                    let request = InterpolationRequest::new(
-                                        codespan::Span::new(start, end),
-                                        target,
-                                        None,
-                                        None
-                                    );
-                                    chunks.push(StringChunk::Interpolation(
-                                        codespan::Span::new(start, end),
-                                        request
-                                    ));
-                                }
-                            }
-                            _ => {
-                                // Skip other tokens for now
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        // Skip lexer errors for now
-                    }
+    // Convert Rowan AST chunks to legacy AST chunks for reuse of existing logic
+    let mut legacy_chunks = Vec::new();
+    
+    for chunk in pattern.chunks() {
+        match chunk {
+            rowan_ast::StringChunk::LiteralContent(content) => {
+                if let Some(text) = content.value() {
+                    let chunk_span = text_range_to_span(content.syntax().text_range());
+                    legacy_chunks.push(StringChunk::LiteralContent(chunk_span, text));
                 }
             }
-            
-            // Use the existing string pattern desugaring from ast.rs
-            crate::core::desugar::ast::desugar_string_pattern(span, &chunks, desugarer)
-        } else {
-            // Malformed string - treat as regular string
-            Ok(core::str(desugarer.new_smid(span), text))
+            rowan_ast::StringChunk::Interpolation(interp) => {
+                let chunk_span = text_range_to_span(interp.syntax().text_range());
+                
+                // Extract target
+                let target = if let Some(target_token) = interp.target() {
+                    if let Some(target_text) = target_token.value() {
+                        if target_text.is_empty() {
+                            // Empty {} means anonymous positional parameter
+                            InterpolationTarget::StringAnaphor(chunk_span, None)
+                        } else if let Ok(num) = target_text.parse::<i32>() {
+                            // Numeric index like {0}, {1}, {2}
+                            InterpolationTarget::StringAnaphor(chunk_span, Some(num))
+                        } else {
+                            // Variable reference like {name}
+                            InterpolationTarget::Reference(
+                                chunk_span,
+                                vec![crate::syntax::ast::normal(&target_text)]
+                            )
+                        }
+                    } else {
+                        // No value means anonymous positional parameter
+                        InterpolationTarget::StringAnaphor(chunk_span, None)
+                    }
+                } else {
+                    // No target means anonymous positional parameter
+                    InterpolationTarget::StringAnaphor(chunk_span, None)
+                };
+                
+                // Extract format spec
+                let format = interp.format_spec()
+                    .and_then(|spec| spec.value())
+                    .filter(|s| !s.is_empty());
+                
+                // Extract conversion spec  
+                let conversion = interp.conversion_spec()
+                    .and_then(|spec| spec.value())
+                    .filter(|s| !s.is_empty());
+                
+                let request = InterpolationRequest::new(chunk_span, target, format, conversion);
+                legacy_chunks.push(StringChunk::Interpolation(chunk_span, request));
+            }
+            rowan_ast::StringChunk::EscapedOpen(_) => {
+                // Escaped {{ becomes literal {
+                let chunk_span = text_range_to_span(chunk.syntax().text_range());
+                legacy_chunks.push(StringChunk::LiteralContent(chunk_span, "{".to_string()));
+            }
+            rowan_ast::StringChunk::EscapedClose(_) => {
+                // Escaped }} becomes literal }
+                let chunk_span = text_range_to_span(chunk.syntax().text_range());
+                legacy_chunks.push(StringChunk::LiteralContent(chunk_span, "}".to_string()));
+            }
         }
-    } else {
-        // No string token found - return empty string
-        Ok(core::str(desugarer.new_smid(span), ""))
     }
+    
+    // Use the existing string pattern desugaring from ast.rs
+    crate::core::desugar::ast::desugar_string_pattern(span, &legacy_chunks, desugarer)
 }
 
 /// Soup desugaring

@@ -93,7 +93,7 @@ use SyntaxKind::*;
 
 impl SyntaxKind {
     pub fn is_callable_terminal(&self) -> bool {
-        *self == CLOSE_PAREN || *self == CLOSE_BRACE || *self == UNQUOTED_IDENTIFIER
+        *self == CLOSE_PAREN || *self == CLOSE_BRACE || *self == UNQUOTED_IDENTIFIER || *self == STRING_PATTERN_END
     }
 
     pub fn is_literal_terminal(&self) -> bool {
