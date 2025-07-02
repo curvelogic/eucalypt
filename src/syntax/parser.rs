@@ -49,20 +49,106 @@ where
     Ok(parse_result.tree())
 }
 
-/// Parse an embedded lambda - legacy interface (not implemented in Rowan yet)
+/// Parse an embedded lambda - parses syntax like "(x, y) x * y" into parameter tuple and body
 pub fn parse_embedded_lambda<N, T>(
-    _files: &SimpleFiles<N, T>,
+    files: &SimpleFiles<N, T>,
     id: usize,
 ) -> Result<(rowan::ast::ApplyTuple, rowan::ast::Soup), ParserError>
 where
     N: AsRef<str> + Clone + std::fmt::Display,
     T: AsRef<str>,
 {
-    // For now, return an error since embedded lambda parsing is not yet implemented in Rowan
-    Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
-        id,
-        "Embedded lambda parsing not yet implemented in Rowan parser".to_string(),
-    )))
+    let text = files.get(id).unwrap().source().as_ref();
+    
+    // Find the closing parenthesis of the parameter tuple
+    // The format is "(x, y) body_expression"
+    let mut paren_depth = 0;
+    let mut closing_paren_pos = None;
+    
+    for (i, ch) in text.char_indices() {
+        match ch {
+            '(' => paren_depth += 1,
+            ')' => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    closing_paren_pos = Some(i + 1); // Position after the closing paren
+                    break;
+                }
+            },
+            _ => {}
+        }
+    }
+    
+    let (_param_text, body_text) = if let Some(pos) = closing_paren_pos {
+        let param_text = &text[..pos - 1]; // Everything up to but not including the closing paren
+        let body_text = if pos < text.len() {
+            text[pos..].trim()
+        } else {
+            return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+                id,
+                "Lambda body is missing".to_string(),
+            )));
+        };
+        (param_text, body_text)
+    } else {
+        return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+            id,
+            "Could not find closing parenthesis for lambda parameters".to_string(),
+        )));
+    };
+    
+    if body_text.is_empty() {
+        return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+            id,
+            "Lambda body is empty".to_string(),
+        )));
+    }
+    
+    // Parse the parameter tuple by wrapping it in "f" to make it look like function application
+    let param_function_text = format!("f{}", text[..closing_paren_pos.unwrap()].trim());
+    let param_parse_result = rowan::parse_expr(&param_function_text);
+    
+    if !param_parse_result.errors().is_empty() {
+        return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+            id,
+            "Failed to parse lambda parameters".to_string(),
+        )));
+    }
+    
+    let param_soup = param_parse_result.tree();
+    let param_elements: Vec<_> = param_soup.elements().collect();
+    
+    // Should have exactly two elements: function name and ApplyTuple  
+    if param_elements.len() != 2 {
+        return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+            id,
+            format!("Invalid parameter parsing result - got {} elements", param_elements.len()),
+        )));
+    }
+    
+    // Extract the ApplyTuple (second element)
+    let apply_tuple = match &param_elements[1] {
+        rowan::ast::Element::ApplyTuple(tuple) => tuple.clone(),
+        _ => {
+            return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+                id,
+                "Lambda must start with parameter tuple like (x, y)".to_string(),
+            )));
+        }
+    };
+    
+    // Parse the body as a separate expression
+    let body_parse_result = rowan::parse_expr(body_text);
+    if !body_parse_result.errors().is_empty() {
+        return Err(ParserError::Syntax(crate::syntax::error::SyntaxError::InvalidInputFormat(
+            id,
+            "Failed to parse lambda body".to_string(),
+        )));
+    }
+    
+    let body_soup = body_parse_result.tree();
+    
+    Ok((apply_tuple, body_soup))
 }
 
 #[cfg(test)]
