@@ -1,6 +1,6 @@
 //! Pretty printing ASTs in Eucalypt syntax (i.e. writing Eucalypt)
 use crate::syntax::ast::*;
-use crate::syntax::lexer;
+use crate::syntax::rowan::lex as lexer;
 use pretty::RcDoc;
 
 /// Express AST as eucalypt, pretty printing to string.

@@ -3,7 +3,7 @@ use crate::common::sourcemap::{HasSmid, Smid};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 use crate::core::transform::succ;
-use crate::syntax::lexer;
+use crate::syntax::rowan::lex as lexer;
 use moniker::*;
 
 /// Transform an expression into a dynamic generalised lookup

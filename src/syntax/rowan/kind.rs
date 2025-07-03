@@ -1,6 +1,5 @@
 //! Syntax kinds for Rowan-based parser implementation
 
-use crate::syntax::lexer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(non_camel_case_types)]
@@ -116,30 +115,6 @@ impl SyntaxKind {
     }
 }
 
-impl<'a> From<lexer::Token<'a>> for SyntaxKind {
-    fn from(t: lexer::Token<'a>) -> Self {
-        match t {
-            lexer::Token::OpenBrace => OPEN_BRACE,
-            lexer::Token::CloseBrace => CLOSE_BRACE,
-            lexer::Token::Backtick => BACKTICK,
-            lexer::Token::Colon => COLON,
-            lexer::Token::OpenSquare => OPEN_SQUARE,
-            lexer::Token::CloseSquare => CLOSE_SQUARE,
-            lexer::Token::Comma => COMMA,
-            lexer::Token::Whitespace(_) => WHITESPACE,
-            lexer::Token::Comment(_) => COMMENT,
-            lexer::Token::OpenParen => OPEN_PAREN,
-            lexer::Token::OpenParenApply => OPEN_PAREN_APPLY,
-            lexer::Token::CloseParen => CLOSE_PAREN,
-            lexer::Token::NormalIdentifier(_) => UNQUOTED_IDENTIFIER,
-            lexer::Token::OperatorIdentifier(_) => OPERATOR_IDENTIFIER,
-            lexer::Token::SingleQuoteIdentifier(_) => SINGLE_QUOTE_IDENTIFIER,
-            lexer::Token::Number(_) => NUMBER,
-            lexer::Token::String(_) => STRING,
-            lexer::Token::Symbol(_) => SYMBOL,
-        }
-    }
-}
 
 impl From<SyntaxKind> for rowan::SyntaxKind {
     fn from(kind: SyntaxKind) -> Self {
