@@ -202,9 +202,17 @@ pub mod tests {
     use crate::syntax::export::pretty;
     use moniker::FreeVar;
 
-    pub fn parse_expression(_txt: &'static str) -> Expression {
-        // TODO: Fix for Rowan AST - for now return a placeholder
-        Expression::Lit(crate::syntax::ast::Literal::Str(codespan::Span::default(), "placeholder".to_string()))
+    pub fn parse_expression(txt: &'static str) -> Expression {
+        // Parse the embedding expression using the Rowan parser
+        use crate::syntax::rowan::parse_expr;
+        use crate::core::desugar::rowan_ast::rowan_soup_to_legacy;
+        
+        let parse_result = parse_expr(txt);
+        let soup = parse_result.tree();
+        match rowan_soup_to_legacy(&soup) {
+            Ok(expr) => expr,
+            Err(_) => Expression::Lit(crate::syntax::ast::Literal::Str(codespan::Span::default(), "parse_error".to_string()))
+        }
     }
 
     #[test]

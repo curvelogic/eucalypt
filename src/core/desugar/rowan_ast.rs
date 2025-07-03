@@ -73,6 +73,150 @@ fn rowan_literal_to_legacy(lit: &rowan_ast::Literal) -> Result<crate::syntax::as
     }
 }
 
+/// Convert Rowan AST Element to legacy Expression for core embedding
+fn rowan_element_to_legacy(element: &Element) -> Result<crate::syntax::ast::Expression, CoreError> {
+    match element {
+        Element::Lit(lit) => {
+            let legacy_lit = rowan_literal_to_legacy(lit)?;
+            Ok(crate::syntax::ast::Expression::Lit(legacy_lit))
+        }
+        Element::List(list) => {
+            let span = text_range_to_span(list.syntax().text_range());
+            let mut items = Vec::new();
+            
+            for soup in list.items() {
+                let legacy_expr = rowan_soup_to_legacy(&soup)?;
+                items.push(legacy_expr);
+            }
+            
+            Ok(crate::syntax::ast::Expression::List(span, items))
+        }
+        Element::Block(block) => {
+            let span = text_range_to_span(block.syntax().text_range());
+            let mut declarations = Vec::new();
+            
+            for decl in block.declarations() {
+                let name_span = text_range_to_span(decl.syntax().text_range());
+                let name = if let Some(head) = decl.head() {
+                    let kind = head.classify_declaration();
+                    match kind {
+                        rowan_ast::DeclarationKind::Property(prop) => {
+                            crate::syntax::ast::Name::Normal(name_span, prop.text().to_string())
+                        }
+                        _ => {
+                            return Err(CoreError::InvalidEmbedding(
+                                "complex declaration not supported in core embedding".to_string(),
+                                crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                            ));
+                        }
+                    }
+                } else {
+                    return Err(CoreError::InvalidEmbedding(
+                        "malformed declaration in core embedding".to_string(),
+                        crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                    ));
+                };
+                
+                let definition = if let Some(body) = decl.body() {
+                    if let Some(body_soup) = body.soup() {
+                        rowan_soup_to_legacy(&body_soup)?
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "empty declaration body in core embedding".to_string(),
+                            crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                        ));
+                    }
+                } else {
+                    return Err(CoreError::InvalidEmbedding(
+                        "missing declaration body in core embedding".to_string(),
+                        crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                    ));
+                };
+                
+                let decl_head = crate::syntax::ast::DeclarationHead::PropertyPattern(name);
+                declarations.push(crate::syntax::ast::Declaration::new(decl_head, None, definition));
+            }
+            
+            Ok(crate::syntax::ast::Expression::Block(Box::new(
+                crate::syntax::ast::Block { span, metadata: None, declarations }
+            )))
+        }
+        Element::Name(name) => {
+            let span = text_range_to_span(name.syntax().text_range());
+            if let Some(ident) = name.identifier() {
+                match ident {
+                    rowan_ast::Identifier::NormalIdentifier(normal) => {
+                        Ok(crate::syntax::ast::Expression::Name(
+                            crate::syntax::ast::Name::Normal(span, normal.text().to_string())
+                        ))
+                    }
+                    rowan_ast::Identifier::OperatorIdentifier(op) => {
+                        Ok(crate::syntax::ast::Expression::Name(
+                            crate::syntax::ast::Name::Operator(span, op.text().to_string())
+                        ))
+                    }
+                }
+            } else {
+                Err(CoreError::InvalidEmbedding(
+                    "malformed name in core embedding".to_string(),
+                    crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                ))
+            }
+        }
+        Element::ParenExpr(paren) => {
+            // For parenthesized expressions, just convert the inner soup
+            if let Some(soup) = paren.soup() {
+                rowan_soup_to_legacy(&soup)
+            } else {
+                let span = text_range_to_span(paren.syntax().text_range());
+                Err(CoreError::InvalidEmbedding(
+                    "empty parenthesized expression in core embedding".to_string(),
+                    crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                ))
+            }
+        }
+        Element::StringPattern(string_pattern) => {
+            let span = text_range_to_span(string_pattern.syntax().text_range());
+            Err(CoreError::InvalidEmbedding(
+                "string patterns not supported in core embedding".to_string(),
+                crate::common::sourcemap::Smid::from(span.start().0 as u32)
+            ))
+        }
+        Element::ApplyTuple(apply_tuple) => {
+            let span = text_range_to_span(apply_tuple.syntax().text_range());
+            let mut items = Vec::new();
+            
+            for soup in apply_tuple.items() {
+                let legacy_expr = rowan_soup_to_legacy(&soup)?;
+                items.push(legacy_expr);
+            }
+            
+            Ok(crate::syntax::ast::Expression::ApplyTuple(span, items))
+        }
+    }
+}
+
+/// Convert Rowan AST Soup to legacy Expression for core embedding
+pub fn rowan_soup_to_legacy(soup: &rowan_ast::Soup) -> Result<crate::syntax::ast::Expression, CoreError> {
+    let elements: Vec<_> = soup.elements().collect();
+    
+    if elements.len() == 1 {
+        // Single element soup - convert the element directly
+        rowan_element_to_legacy(&elements[0])
+    } else {
+        // Multi-element soup - create an OpSoup expression
+        let span = text_range_to_span(soup.syntax().text_range());
+        let mut legacy_elements = Vec::new();
+        
+        for element in elements {
+            let legacy_expr = rowan_element_to_legacy(&element)?;
+            legacy_elements.push(legacy_expr);
+        }
+        
+        Ok(crate::syntax::ast::Expression::OpSoup(span, legacy_elements))
+    }
+}
+
 /// Literals desugar into core Primitives
 impl Desugarable for rowan_ast::Literal {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
@@ -330,7 +474,7 @@ fn extract_rowan_declaration_components(
                     body,
                     arg_vars,
                     is_operator: true,
-                    fixity: Some(crate::core::expr::Fixity::InfixLeft),
+                    fixity: None,
                 })
             }
             rowan_ast::DeclarationKind::Nullary(_, op) => {
@@ -344,7 +488,7 @@ fn extract_rowan_declaration_components(
                     body,
                     arg_vars,
                     is_operator: true,
-                    fixity: Some(crate::core::expr::Fixity::InfixLeft),
+                    fixity: None,
                 })
             }
             rowan_ast::DeclarationKind::MalformedHead(_) => {
@@ -674,7 +818,7 @@ fn rowan_declaration_to_binding(
     let (core_meta, metadata) = match components.metadata {
         Some(m) => {
             let mut core_meta = normalise_metadata(&m);
-            let metadata = core_meta.read_metadata().unwrap_or_default();
+            let metadata: DesugarPhaseDeclarationMetadata = core_meta.read_metadata().unwrap_or_default();
             (Some(core_meta), metadata)
         }
         None => {
@@ -730,11 +874,25 @@ fn rowan_declaration_to_binding(
     // Desugar the body expression
     let mut expr = if let Some(embedding) = &metadata.embedding {
         if embedding == "core" {
-            // Convert Rowan body to legacy Expression for core embedding
-            let legacy_body = crate::syntax::ast::Expression::Lit(
-                crate::syntax::ast::Literal::Str(components.span, "core-embedded".to_string())
-            );
-            core_from_embedding(desugarer, &legacy_body)?
+            // For core embedding, we need to access the raw Rowan body before desugaring
+            // and convert it to legacy Expression format
+            let raw_body = if let Some(body) = decl.body() {
+                if let Some(body_soup) = body.soup() {
+                    rowan_soup_to_legacy(&body_soup)?
+                } else {
+                    return Err(CoreError::InvalidEmbedding(
+                        "empty declaration body in core embedding".to_string(),
+                        desugarer.new_smid(components.span)
+                    ));
+                }
+            } else {
+                return Err(CoreError::InvalidEmbedding(
+                    "missing declaration body in core embedding".to_string(),
+                    desugarer.new_smid(components.span)
+                ));
+            };
+            
+            core_from_embedding(desugarer, &raw_body)?
         } else {
             return Err(CoreError::UnknownEmbedding(embedding.clone()));
         }
