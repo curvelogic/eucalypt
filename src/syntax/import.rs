@@ -371,14 +371,72 @@ pub mod test {
                 Element::List(list) => {
                     return rowan_list_to_legacy_expression(list);
                 }
+                Element::Name(name) => {
+                    if let Some(ident) = name.identifier() {
+                        match ident {
+                            crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
+                                return Expression::Name(crate::syntax::ast::Name::Normal(
+                                    codespan::Span::default(), 
+                                    normal.text().to_string()
+                                ));
+                            }
+                            crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
+                                return Expression::Name(crate::syntax::ast::Name::Operator(
+                                    codespan::Span::default(), 
+                                    op.text().to_string()
+                                ));
+                            }
+                        }
+                    }
+                }
                 _ => {
                     // Handle other element types as needed
                 }
             }
         }
         
-        // Otherwise return a simple placeholder
-        Expression::Lit(Literal::Str(codespan::Span::default(), "soup".to_string()))
+        // Multiple elements - create an OpSoup
+        let mut soup_elements = Vec::new();
+        for element in elements {
+            match element {
+                Element::Block(block) => {
+                    soup_elements.push(rowan_block_to_legacy_expression(&block));
+                }
+                Element::Lit(literal) => {
+                    soup_elements.push(rowan_literal_to_legacy_expression(&literal));
+                }
+                Element::List(list) => {
+                    soup_elements.push(rowan_list_to_legacy_expression(&list));
+                }
+                Element::Name(name) => {
+                    if let Some(ident) = name.identifier() {
+                        match ident {
+                            crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
+                                soup_elements.push(Expression::Name(crate::syntax::ast::Name::Normal(
+                                    codespan::Span::default(), 
+                                    normal.text().to_string()
+                                )));
+                            }
+                            crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
+                                soup_elements.push(Expression::Name(crate::syntax::ast::Name::Operator(
+                                    codespan::Span::default(), 
+                                    op.text().to_string()
+                                )));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // Skip other element types for now
+                }
+            }
+        }
+        
+        if soup_elements.is_empty() {
+            Expression::Lit(Literal::Str(codespan::Span::default(), "empty_soup".to_string()))
+        } else {
+            Expression::OpSoup(codespan::Span::default(), soup_elements)
+        }
     }
     
     /// Convert Rowan Literal to legacy Expression for testing  
@@ -425,6 +483,11 @@ pub mod test {
         let mut declarations = Vec::new();
         
         for decl in unit.declarations() {
+            // Check for declaration metadata
+            let decl_metadata = decl.meta()
+                .and_then(|m| m.soup())
+                .map(|soup| rowan_soup_to_legacy_expression(&soup));
+            
             if let Some(head) = decl.head() {
                 let kind = head.classify_declaration();
                 match kind {
@@ -435,7 +498,7 @@ pub mod test {
                                 let body_expr = rowan_soup_to_legacy_expression(&body_soup);
                                 declarations.push(Declaration::PropertyDeclaration(
                                     codespan::Span::default(),
-                                    None, // metadata
+                                    decl_metadata, // Include declaration metadata
                                     normal(&name),
                                     body_expr,
                                 ));
@@ -464,6 +527,11 @@ pub mod test {
         let mut declarations = Vec::new();
         
         for decl in block.declarations() {
+            // Check for declaration metadata
+            let decl_metadata = decl.meta()
+                .and_then(|m| m.soup())
+                .map(|soup| rowan_soup_to_legacy_expression(&soup));
+            
             if let Some(head) = decl.head() {
                 let kind = head.classify_declaration();
                 match kind {
@@ -474,7 +542,7 @@ pub mod test {
                                 let body_expr = rowan_soup_to_legacy_expression(&body_soup);
                                 declarations.push(Declaration::PropertyDeclaration(
                                     codespan::Span::default(),
-                                    None, // metadata
+                                    decl_metadata, // Include declaration metadata
                                     normal(&name),
                                     body_expr,
                                 ));
