@@ -154,7 +154,7 @@ impl<'smap> Desugarer<'smap> {
 
     /// Add a pending string anaphor
     pub fn add_pending_string_anaphor(&mut self, anaphor: Anaphor<Smid, i32>) -> FreeVar<String> {
-        let var = free(&format!("{}", anaphor));
+        let var = free(&format!("{anaphor}"));
         self.pending_string_anaphora.insert(anaphor, var.clone());
         var
     }

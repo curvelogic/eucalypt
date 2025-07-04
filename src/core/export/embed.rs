@@ -71,11 +71,11 @@ impl Embed for CoreExpr {
             }
             Expr::BlockAnaphor(_, anaphor) => {
                 elements.push(lit(sym("c-bk-ana")));
-                elements.push(lit(str(format!("{}", anaphor))));
+                elements.push(lit(str(format!("{anaphor}"))));
             }
             Expr::ExprAnaphor(_, anaphor) => {
                 elements.push(lit(sym("c-ex-ana")));
-                elements.push(lit(str(format!("{}", anaphor))));
+                elements.push(lit(str(format!("{anaphor}"))));
             }
             Expr::List(_, items) => {
                 elements.push(lit(sym("c-list")));
