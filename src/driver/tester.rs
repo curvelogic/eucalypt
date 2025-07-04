@@ -47,7 +47,7 @@ pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, Eu
             path.to_string_lossy().to_string(),
         ))
     } else {
-        Err(EucalyptError::FileCouldNotBeRead(format!("{}", input)))
+        Err(EucalyptError::FileCouldNotBeRead(format!("{input}")))
     }
 }
 
@@ -95,7 +95,7 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
         tester.run(test, &execution_opts)?;
         tester.validate(test)?;
         let summary = tester.summary(test)?.to_string();
-        print!("{}", summary);
+        print!("{summary}");
 
         if !summary.starts_with("PASS") {
             exit = 1;
@@ -172,7 +172,7 @@ impl fmt::Display for TestResult<'_> {
             f,
             "Exit: {}",
             match self.exit_code {
-                Some(n) => format!("{}", n),
+                Some(n) => format!("{n}"),
                 None => "incomplete".to_string(),
             }
         )?;
@@ -266,7 +266,7 @@ impl InProcessTester {
                 .target
                 .validations()
                 .iter()
-                .map(|v| format!("{{ name: \"{}\" function-key: \"{}\" }}", v, v))
+                .map(|v| format!("{{ name: \"{v}\" function-key: \"{v}\" }}"))
                 .collect();
 
             if expectations.is_empty() {
@@ -305,7 +305,7 @@ impl InProcessTester {
                 inputs.push(output);
             }
 
-            writeln!(&mut evidence_script, "{}", test_template)?;
+            writeln!(&mut evidence_script, "{test_template}")?;
         }
         writeln!(&mut evidence_script, "}}\n")?;
 

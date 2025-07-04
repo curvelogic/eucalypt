@@ -158,10 +158,7 @@ impl<'smap> Receiver<'smap> {
                 t => Ok(core::meta(
                     smid,
                     core::str(smid, text),
-                    acore::block(iter::once((
-                        "tag".to_string(),
-                        acore::str(format!("!{}", t)),
-                    ))),
+                    acore::block(iter::once(("tag".to_string(), acore::str(format!("!{t}"))))),
                 )),
             },
         }
@@ -180,7 +177,7 @@ impl<'smap> Receiver<'smap> {
     /// Parse eucalypt expression embedded in YAML source
     pub fn parse_eu(&mut self, text: String) -> Result<RcExpr, SourceError> {
         let span = Span::new(ByteIndex(0), ByteIndex(0) + ByteOffset::from_str_len(&text));
-        let file_id = self.files.add(format!("yaml:[{}]", text), text);
+        let file_id = self.files.add(format!("yaml:[{text}]"), text);
         let ast = parser::parse_expression(self.files, file_id)
             .map_err(|p| SourceError::EmbeddedParserError(p, file_id, span))?;
 
@@ -194,7 +191,7 @@ impl<'smap> Receiver<'smap> {
     /// Parse eucalypt expression embedded in YAML source
     pub fn parse_eu_fn(&mut self, text: String) -> Result<RcExpr, SourceError> {
         let span = Span::new(ByteIndex(0), ByteIndex(0) + ByteOffset::from_str_len(&text));
-        let file_id = self.files.add(format!("yaml:[{}]", text), text);
+        let file_id = self.files.add(format!("yaml:[{text}]"), text);
         let (head, body) = parser::parse_embedded_lambda(self.files, file_id)
             .map_err(|p| SourceError::EmbeddedParserError(p, file_id, span))?;
 
@@ -205,11 +202,21 @@ impl<'smap> Receiver<'smap> {
             .translate_simple(file_id, &body)
             .map_err(|c| SourceError::EmbeddedCoreError(c, file_id, span))?;
 
-        let fvs: HashMap<String, FreeVar<String>> = head
-            .names()
-            .iter()
-            .map(|k| (k.name().to_string(), free(k.name())))
-            .collect();
+        // Extract parameter names from the Rowan ApplyTuple
+        let mut fvs: HashMap<String, FreeVar<String>> = HashMap::new();
+        for item in head.items() {
+            // Each item in the ApplyTuple should be a single identifier
+            let elements: Vec<_> = item.elements().collect();
+            if elements.len() == 1 {
+                if let crate::syntax::rowan::ast::Element::Name(name) = &elements[0] {
+                    if let Some(identifier) = name.identifier() {
+                        if let Some(param_name) = identifier.name() {
+                            fvs.insert(param_name.to_string(), free(param_name));
+                        }
+                    }
+                }
+            }
+        }
 
         let lam_body =
             lam_body.substs_free(&|n| fvs.get(n).map(|fv| core::var(Smid::default(), fv.clone())));

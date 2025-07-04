@@ -1,7 +1,6 @@
 use crate::syntax::span::HasSpan;
 use codespan::{ByteIndex, Span};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use lalrpop_util::ParseError;
 use std::io;
 use thiserror::Error;
 
@@ -35,31 +34,7 @@ pub enum SyntaxError {
     InvalidStringPattern(usize, Span),
 }
 
-impl SyntaxError {
-    /// Convert a LALRPOP error from string pattern parsing into a
-    /// syntax error that can pass through the AST parser.
-    pub fn from_string_pattern_error<T>(
-        file_id: usize,
-        err: ParseError<ByteIndex, T, SyntaxError>,
-    ) -> Self {
-        match err {
-            ParseError::User {
-                error: syntax_error,
-            } => syntax_error,
-            ParseError::ExtraToken { token: (s, _t, e) } => {
-                SyntaxError::ExtraToken(file_id, Span::new(s, e))
-            }
-            ParseError::UnrecognizedToken {
-                token: (s, _t, e),
-                expected,
-            } => SyntaxError::UnrecognisedToken(file_id, Span::new(s, e), expected.to_vec()),
-            ParseError::UnrecognizedEOF { location: l, .. } => {
-                SyntaxError::UnexpectedEndOfInput(file_id, Span::new(l, l))
-            }
-            ParseError::InvalidToken { .. } => unreachable!(),
-        }
-    }
-}
+impl SyntaxError {}
 
 impl HasSpan for SyntaxError {
     fn span(&self) -> Span {
@@ -104,7 +79,7 @@ impl SyntaxError {
 
     pub fn to_diagnostic(&self) -> Diagnostic<usize> {
         Diagnostic::error()
-            .with_message(format!("{}", self))
+            .with_message(format!("{self}"))
             .with_labels(vec![Label::primary(self.file_id(), self.span())])
     }
 }
@@ -119,41 +94,12 @@ pub enum ParserError {
     Syntax(SyntaxError),
 }
 
-/// Freely convert to ParserError
-impl ParserError {
-    pub fn from_lalrpop<T>(
-        file_id: usize,
-        err: ParseError<ByteIndex, T, SyntaxError>,
-    ) -> ParserError {
-        match err {
-            ParseError::User {
-                error: syntax_error,
-            } => ParserError::Syntax(syntax_error),
-            ParseError::ExtraToken { token: (s, _t, e) } => {
-                ParserError::Syntax(SyntaxError::ExtraToken(file_id, Span::new(s, e)))
-            }
-            ParseError::UnrecognizedToken {
-                token: (s, _t, e),
-                expected,
-            } => ParserError::Syntax(SyntaxError::UnrecognisedToken(
-                file_id,
-                Span::new(s, e),
-                expected.to_vec(),
-            )),
-            ParseError::UnrecognizedEOF { location: l, .. } => {
-                ParserError::Syntax(SyntaxError::UnexpectedEndOfInput(file_id, Span::new(l, l)))
-            }
-            ParseError::InvalidToken { .. } => unreachable!(),
-        }
-    }
-}
-
 impl ParserError {
     /// Convert to a diagnostic
     pub fn to_diagnostic(&self) -> Diagnostic<usize> {
         match self {
             ParserError::Syntax(e) => e.to_diagnostic(),
-            ParserError::Io(e) => Diagnostic::error().with_message(format!("IO Error: {}", e)),
+            ParserError::Io(e) => Diagnostic::error().with_message(format!("IO Error: {e}")),
         }
     }
 }

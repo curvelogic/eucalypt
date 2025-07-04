@@ -28,10 +28,10 @@ impl Emitter for TextEmitter<'_> {
 fn as_text(prim: &Primitive) -> String {
     match prim {
         Primitive::Null => "".to_string(),
-        Primitive::Bool(b) => format!("{}", b),
+        Primitive::Bool(b) => format!("{b}"),
         Primitive::Sym(s) => s.to_string(),
         Primitive::Str(s) => s.to_string(),
-        Primitive::Num(n) => format!("{}", n),
-        Primitive::ZonedDateTime(dt) => format!("{}", dt),
+        Primitive::Num(n) => format!("{n}"),
+        Primitive::ZonedDateTime(dt) => format!("{dt}"),
     }
 }

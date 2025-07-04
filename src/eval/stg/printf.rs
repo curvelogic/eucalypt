@@ -284,9 +284,9 @@ fn write_str(
 ) -> Result<(), PrintfError> {
     let precision = precision.unwrap_or(string.len());
     if flags.contains(Flags::LEFT_ALIGN) {
-        write!(w, "{:1$.prec$}", string, width, prec = precision).map_err(PrintfError::FmtError)
+        write!(w, "{string:width$.precision$}").map_err(PrintfError::FmtError)
     } else {
-        write!(w, "{:>1$.prec$}", string, width, prec = precision).map_err(PrintfError::FmtError)
+        write!(w, "{string:>width$.precision$}").map_err(PrintfError::FmtError)
     }
 }
 
@@ -426,7 +426,7 @@ pub fn fmt(
                 printf_spec.specifier,
                 num,
             )?,
-            Native::Zdt(dt) => write!(&mut output, "{}", dt).map_err(PrintfError::FmtError)?,
+            Native::Zdt(dt) => write!(&mut output, "{dt}").map_err(PrintfError::FmtError)?,
         }
         Ok(output)
     } else {

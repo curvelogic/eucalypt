@@ -79,7 +79,7 @@ impl Cooker {
         let var = self
             .pending_expr_anaphora
             .entry(*anaphor)
-            .or_insert_with(|| free(&format!("_e{}", anaphor)));
+            .or_insert_with(|| free(&format!("_e{anaphor}")));
         core::var(s, var.clone())
     }
 
@@ -88,7 +88,7 @@ impl Cooker {
         let var = self
             .pending_block_anaphora
             .entry(*anaphor)
-            .or_insert_with(|| free(&format!("_b{}", anaphor)));
+            .or_insert_with(|| free(&format!("_b{anaphor}")));
         core::var(s, var.clone())
     }
 

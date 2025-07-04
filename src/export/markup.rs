@@ -169,7 +169,7 @@ where
                 if let Some(top) = self.stack.pop() {
                     let attrs = match top {
                         Expectation::EvenAttrAccumulation(attrs) => attrs,
-                        e => panic!("unexpected block end event in state {:?}", e),
+                        e => panic!("unexpected block end event in state {e:?}"),
                     };
 
                     if let Some(mut top) = self.stack.pop() {
@@ -233,8 +233,8 @@ fn as_text(prim: &Primitive) -> String {
         }
         Primitive::Sym(s) => s.clone(),
         Primitive::Str(s) => s.clone(),
-        Primitive::Num(n) => format!("{}", n),
-        Primitive::ZonedDateTime(dt) => format!("{}", dt),
+        Primitive::Num(n) => format!("{n}"),
+        Primitive::ZonedDateTime(dt) => format!("{dt}"),
     }
 }
 

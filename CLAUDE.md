@@ -112,11 +112,20 @@ The project includes a sophisticated garbage collector:
 
 ### Pre-Commit Checklist
 **ALWAYS run these commands before committing to avoid CI failures:**
-1. `cargo fmt` - Fix formatting issues
-2. `cargo clippy --lib -- -D warnings` - Fix all lint warnings
-3. `cargo test --lib` - Verify tests pass (when appropriate)
-4. **Check and fix dependabot security alerts** - Address vulnerabilities immediately
-5. `git commit` and `git push`
+1. `rustup update stable` - Ensure latest stable Rust to match CI (run weekly)
+2. `cargo fmt --all` - Fix formatting issues for all targets
+3. `cargo clippy --all-targets -- -D warnings` - Fix ALL lint warnings (matches CI exactly)
+4. `cargo test --lib` - Verify tests pass (when appropriate)  
+5. **Check and fix dependabot security alerts** - Address vulnerabilities immediately
+6. `git commit` and `git push`
+
+**CRITICAL Rust Version Matching**: 
+- CI uses `dtolnay/rust-toolchain@stable` (latest stable Rust)
+- Local development MUST use the same Rust version as CI to avoid clippy discrepancies
+- Different Rust versions have different clippy rules - this causes the "local passes, CI fails" cycle
+- Run `rustup update stable` regularly to stay current with CI
+
+**CRITICAL Clippy Targeting**: Use `--all-targets` for clippy to match CI behaviour exactly. Local `--lib` checks miss test and bench targets that CI validates.
 
 ### Security and Dependencies
 - **MANDATORY: Fix dependabot security alerts immediately** - treat them like clippy warnings
@@ -127,17 +136,16 @@ The project includes a sophisticated garbage collector:
 - Fix deprecation warnings to maintain compatibility with newer dependency versions
 - **Security alerts should block PRs** - just like clippy and rustfmt failures
 
-## Project Management
+## Development Standards (Based on Common Mistakes)
 
-### GitHub Project
-- **Eucalypt Backlog**: Private GitHub project containing development plans, roadmap, and work items
-- Access via: `gh project list --owner curvelogic` (shows project ID: `PVT_kwDOAG6azc4AAShI`)
-- **Privacy Note**: The repository is public but the project is private - do not reference specific project items in public commits
+### Technical Analysis Standards  
+- **Read relevant documentation FIRST** - always check `docs/` directory before making assumptions about language syntax or behaviour
+- **Understand root causes, not just symptoms** - investigate HOW things work, not just WHETHER they work
+- **Respect architectural boundaries** - only modify components within the defined scope (e.g., don't modify STG compiler when implementing Rowan parser)
+- **Track your own changes** - don't assume existing working code is broken without verifying what you changed
 
-### GC Implementation
-- See `docs/gc-implementation.md` for comprehensive garbage collector documentation
-- **Phase 1 COMPLETE**: Comprehensive GC test suite with 10 test scenarios covering all major functionality
-- **GC Tests Location**: `harness/test/gc/gc_001_*.eu` through `gc_010_*.eu`
-- **Test Integration**: Added to `tests/harness_test.rs` with functions `test_gc_001()` through `test_gc_010()`
-- **Current Status**: Feature-complete implementation, all tests passing, ready for production hardening
-- **Next Phase**: Error handling, long-running stability, performance monitoring
+### Communication and Progress Standards
+- **Be precise about what "working" means** - distinguish between "not crashing" and "producing correct results"
+- **Avoid flip-flopping** - gather solid evidence before changing diagnosis or approach
+- **Don't repeat failed investigations** - if an approach isn't  yielding insights, step back and ask to try a different angle
+- **Follow the scope of assigned tasks** - complete what's asked without expanding scope unnecessarily

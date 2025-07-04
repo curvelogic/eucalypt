@@ -79,10 +79,10 @@ impl fmt::Display for Continuation {
                     tags.push("…".to_string());
                 }
                 let desc = &tags.join(",");
-                write!(f, "⑂<{}>", desc)
+                write!(f, "⑂<{desc}>")
             }
             Continuation::Update { index, .. } => {
-                write!(f, "☇[ρ,{}]", index)
+                write!(f, "☇[ρ,{index}]")
             }
             Continuation::ApplyTo { args } => {
                 write!(f, "•(×{})", args.len())

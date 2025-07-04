@@ -69,7 +69,7 @@ impl Emitter for TomlEmitter<'_> {
     fn emit(&mut self, event: Event) {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(self.out, "{}", result).unwrap();
+            writeln!(self.out, "{result}").unwrap();
         }
     }
 }

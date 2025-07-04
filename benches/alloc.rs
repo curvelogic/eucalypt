@@ -112,7 +112,7 @@ fn create_partially_apply_and_saturate_lambda(view: MutatorHeapView, empty: RefP
     view.saturate(&lambda, second_arg.as_slice()).unwrap();
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
+pub fn criterion_benchmark(c: &mut Criterion) {
     let heap = Heap::new();
     let view = MutatorHeapView::new(&heap);
     let empty = view.alloc(EnvFrame::default()).unwrap().as_ptr();

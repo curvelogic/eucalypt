@@ -125,8 +125,8 @@ impl StgIntrinsic for Str {
         let text = match nat {
             Native::Sym(s) => (*view.scoped(s)).as_str().to_string(),
             Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
-            Native::Num(n) => format!("{}", n),
-            Native::Zdt(d) => format!("{}", d),
+            Native::Num(n) => format!("{n}"),
+            Native::Zdt(d) => format!("{d}"),
         };
         machine_return_str(machine, view, text)
     }

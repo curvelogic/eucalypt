@@ -71,11 +71,11 @@ impl Embed for CoreExpr {
             }
             Expr::BlockAnaphor(_, anaphor) => {
                 elements.push(lit(sym("c-bk-ana")));
-                elements.push(lit(str(format!("{}", anaphor))));
+                elements.push(lit(str(format!("{anaphor}"))));
             }
             Expr::ExprAnaphor(_, anaphor) => {
                 elements.push(lit(sym("c-ex-ana")));
-                elements.push(lit(str(format!("{}", anaphor))));
+                elements.push(lit(str(format!("{anaphor}"))));
             }
             Expr::List(_, items) => {
                 elements.push(lit(sym("c-list")));
@@ -200,18 +200,22 @@ impl Embed for RcExpr {
 pub mod tests {
     use super::*;
     use crate::syntax::export::pretty;
-    use crate::syntax::lexer::Lexer;
-    use crate::syntax::parser::grammar;
-    use codespan_reporting::files::SimpleFiles;
     use moniker::FreeVar;
 
     pub fn parse_expression(txt: &'static str) -> Expression {
-        let mut files = SimpleFiles::<String, String>::new();
-        let file_id = files.add("test".to_string(), txt.to_string());
-        let lexer = Lexer::from_file_id(&files, file_id);
-        grammar::ExpressionParser::new()
-            .parse(lexer.file_id(), lexer)
-            .unwrap()
+        // Parse the embedding expression using the Rowan parser
+        use crate::core::desugar::rowan_ast::rowan_soup_to_legacy;
+        use crate::syntax::rowan::parse_expr;
+
+        let parse_result = parse_expr(txt);
+        let soup = parse_result.tree();
+        match rowan_soup_to_legacy(&soup) {
+            Ok(expr) => expr,
+            Err(_) => Expression::Lit(crate::syntax::ast::Literal::Str(
+                codespan::Span::default(),
+                "parse_error".to_string(),
+            )),
+        }
     }
 
     #[test]

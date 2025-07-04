@@ -82,7 +82,7 @@ impl ToPretty for StandardRuntime {
             let name = intrinsics::intrinsic(i).name();
 
             allocator
-                .text(format!("(⊗{}) ", i))
+                .text(format!("(⊗{i}) "))
                 .append(name)
                 .append(":")
                 .append(allocator.space())

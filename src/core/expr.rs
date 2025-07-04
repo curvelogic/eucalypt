@@ -293,10 +293,10 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Anaphor::ExplicitAnonymous(smid) => write!(f, "_a{}", smid),
-            Anaphor::ExplicitNumbered(n) => write!(f, "_n{}", n),
-            Anaphor::Implicit(smid, ImplicitAnaphorSide::Left) => write!(f, "_il{}", smid),
-            Anaphor::Implicit(smid, ImplicitAnaphorSide::Right) => write!(f, "_ir{}", smid),
+            Anaphor::ExplicitAnonymous(smid) => write!(f, "_a{smid}"),
+            Anaphor::ExplicitNumbered(n) => write!(f, "_n{n}"),
+            Anaphor::Implicit(smid, ImplicitAnaphorSide::Left) => write!(f, "_il{smid}"),
+            Anaphor::Implicit(smid, ImplicitAnaphorSide::Right) => write!(f, "_ir{smid}"),
         }
     }
 }
@@ -320,57 +320,82 @@ pub type LetScope<T> = Scope<Rec<Vec<(Binder<String>, Embed<T>)>>, T>;
 pub type LamScope<T> = Scope<Vec<Binder<String>>, T>;
 
 /// The main core expression type
+///
+/// Each variant can be embedded using the core embedding syntax:
+///
+/// - `Var`: `[:c-var "name"]` - Variable reference
+/// - `Let`: `[:c-let {bindings} body]` - Let binding  
+/// - `Intrinsic`: `[:c-bif :NAME]` - Built-in function
+/// - `Literal`: `[:c-lit value]` - Primitive value
+/// - `Lookup`: `[:c-lookup obj "key" fallback]` - Object property lookup
+/// - `Name`: `[:c-name "identifier"]` - Unresolved name
+/// - `BlockAnaphor`: `[:c-bk-ana ...]` - Block anaphora (•, •0, •1, etc.)
+/// - `ExprAnaphor`: `[:c-ex-ana ...]` - Expression anaphora  
+/// - `List`: `[:c-list item1 item2 ...]` - List construction
+/// - `Block`: `[:c-block {key: val, ...}]` - Block/object construction
+/// - `Meta`: `[:c-meta expr metadata]` - Metadata attachment
+/// - `ArgTuple`: `[:c-args arg1 arg2 ...]` - Function arguments
+/// - `Lam`: `[:c-lam ["param1" "param2"] body]` - Lambda function
+/// - `App`: `[:c-app func [arg1 arg2]]` - Function application
+/// - `Soup`: `[:c-soup item1 item2 ...]` - Operator soup (unresolved precedence)
+/// - `Operator`: `[:c-op :fixity precedence expr]` - Operator with fixity info
+/// - `ErrUnresolved`: `[:e-unresolved "name"]` - Unresolved variable error
+/// - `ErrRedeclaration`: `[:e-redeclaration "name"]` - Redeclared variable error
+/// - `ErrEliminated`: `[:e-eliminated]` - Eliminated code marker
+/// - `ErrPseudoDot`: `[:e-pseudodot]` - Pseudo dot operator error
+/// - `ErrPseudoCall`: `[:e-pseudocall]` - Pseudo call operator error  
+/// - `ErrPseudoCat`: `[:e-pseudocat]` - Pseudo concatenation error
 #[allow(non_local_definitions)]
 #[derive(Debug, Clone, BoundTerm, PartialEq, Eq)]
 pub enum Expr<T>
 where
     T: BoundTerm<String>,
 {
-    /// Variable (free or bound)
+    /// Variable (free or bound) - Embedding: `[:c-var "name"]`
     Var(Smid, Var<String>),
-    /// Recursive let
+    /// Recursive let - Embedding: `[:c-let {bindings} body]`
     Let(Smid, LetScope<T>, LetType),
-    /// Reference to built-in
+    /// Reference to built-in - Embedding: `[:c-bif :NAME]`
     Intrinsic(Smid, String),
-    /// Primitive core value
+    /// Primitive core value - Embedding: `[:c-lit value]`
     Literal(Smid, Primitive),
-    /// Lookup (with optional fallback)
+    /// Lookup (with optional fallback) - Embedding: `[:c-lookup obj "key" fallback]`
     Lookup(Smid, T, String, Option<T>),
-    /// Name (to become symbol for lookup or variable for evaluation)
+    /// Name (to become symbol for lookup or variable for evaluation) - Embedding: `[:c-name "identifier"]`
     Name(Smid, String),
-    /// Block anaphor (implicit block parameter)
+    /// Block anaphor (implicit block parameter) - Embedding: `[:c-bk-ana ...]`
     BlockAnaphor(Smid, Anaphor<Smid, i32>),
-    /// Expression anaphor (implicit expression parameter)
+    /// Expression anaphor (implicit expression parameter) - Embedding: `[:c-ex-ana ...]`
     ExprAnaphor(Smid, Anaphor<Smid, i32>),
-    /// Literal list expression
+    /// Literal list expression - Embedding: `[:c-list item1 item2 ...]`
     List(Smid, Vec<T>),
     /// Block (in contrast to the haskell implementation we're storing
-    /// an ordered record right here)
+    /// an ordered record right here) - Embedding: `[:c-block {key: val, ...}]`
     Block(Smid, BlockMap<T>),
-    /// Metadata annotation (span, expr, meta)
+    /// Metadata annotation (span, expr, meta) - Embedding: `[:c-meta expr metadata]`
     Meta(Smid, T, T),
-    /// Tuple of arguments to apply
+    /// Tuple of arguments to apply - Embedding: `[:c-args arg1 arg2 ...]`
     ArgTuple(Smid, Vec<T>),
-    /// A multi-argument lambda
+    /// A multi-argument lambda - Embedding: `[:c-lam ["param1" "param2"] body]`
     Lam(Smid, bool, LamScope<T>),
-    /// Application of lambda or builtin (or block)
+    /// Application of lambda or builtin (or block) - Embedding: `[:c-app func [arg1 arg2]]`
     App(Smid, T, Vec<T>),
-    /// Operator soup awaiting precedence / fixity processing
+    /// Operator soup awaiting precedence / fixity processing - Embedding: `[:c-soup item1 item2 ...]`
     Soup(Smid, Vec<T>),
     /// Operator precedence / fixity metadata (may surround definition
-    /// or call)
+    /// or call) - Embedding: `[:c-op :fixity precedence expr]`
     Operator(Smid, Fixity, Precedence, T),
-    /// Marker for unresolved variable
+    /// Marker for unresolved variable - Embedding: `[:e-unresolved "name"]`
     ErrUnresolved(Smid, String),
-    /// Marker for redeclaration
+    /// Marker for redeclaration - Embedding: `[:e-redeclaration "name"]`
     ErrRedeclaration(Smid, String),
-    /// Eliminated
+    /// Eliminated - Embedding: `[:e-eliminated]`
     ErrEliminated,
-    /// Marks pseudo dot operator eliminated before compile
+    /// Marks pseudo dot operator eliminated before compile - Embedding: `[:e-pseudodot]`
     ErrPseudoDot,
-    /// Marks pseudo call operator eliminated before compile
+    /// Marks pseudo call operator eliminated before compile - Embedding: `[:e-pseudocall]`
     ErrPseudoCall,
-    /// Marks pseudo cat operator eliminated before compile
+    /// Marks pseudo cat operator eliminated before compile - Embedding: `[:e-pseudocat]`
     ErrPseudoCat,
 }
 

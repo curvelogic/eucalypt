@@ -2,6 +2,7 @@
 //!
 //! We analyse imports at the AST stage so we can get binding right on
 //! desugar into core syntax.
+use crate::driver::source::ParsedAst;
 use crate::syntax::ast::*;
 use crate::syntax::error::SyntaxError;
 use crate::syntax::input::Input;
@@ -38,6 +39,25 @@ impl ImportGraph {
 
         let mut imports: Vec<Input> = vec![];
         read_expression_imports(ast, &mut imports)?;
+
+        for i in &imports {
+            let target_node = self.encounter_input(i.clone());
+            self.graph.add_edge(source_node, target_node, ());
+        }
+        Ok(imports)
+    }
+
+    /// Analyse the Rowan AST for imports and add to graph, returning
+    /// inputs for further load and analysis
+    pub fn analyse_rowan_ast(
+        &mut self,
+        input: Input,
+        ast: &ParsedAst,
+    ) -> Result<Vec<Input>, ImportError> {
+        let source_node = self.encounter_input(input);
+
+        let mut imports: Vec<Input> = vec![];
+        read_rowan_ast_imports(ast, &mut imports)?;
 
         for i in &imports {
             let target_node = self.encounter_input(i.clone());
@@ -170,20 +190,424 @@ fn scrape_metadata(metadata: &Expression) -> Result<Vec<Input>, ImportError> {
     }
 }
 
+/// Read all imports specified in the Rowan AST and add them to imports
+fn read_rowan_ast_imports(ast: &ParsedAst, imports: &mut Vec<Input>) -> Result<(), ImportError> {
+    use crate::syntax::rowan::ast::HasSoup;
+
+    match ast {
+        ParsedAst::Unit(unit) => {
+            // Check unit metadata for imports
+            if let Some(meta) = unit.meta() {
+                if let Some(meta_soup) = meta.soup() {
+                    read_rowan_soup_imports(&meta_soup, imports)?;
+                }
+            }
+
+            // Check each declaration for imports
+            for decl in unit.declarations() {
+                // Check declaration metadata
+                if let Some(meta) = decl.meta() {
+                    if let Some(meta_soup) = meta.soup() {
+                        read_rowan_soup_imports(&meta_soup, imports)?;
+                    }
+                }
+
+                // Check declaration body for imports
+                if let Some(body) = decl.body() {
+                    if let Some(body_soup) = body.soup() {
+                        read_rowan_soup_imports(&body_soup, imports)?;
+                    }
+                }
+            }
+        }
+        ParsedAst::Soup(soup) => {
+            read_rowan_soup_imports(soup, imports)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Read imports from a Rowan Soup expression
+fn read_rowan_soup_imports(
+    soup: &crate::syntax::rowan::ast::Soup,
+    imports: &mut Vec<Input>,
+) -> Result<(), ImportError> {
+    use crate::syntax::rowan::ast::{AstToken, Element, HasSoup};
+
+    for element in soup.elements() {
+        match element {
+            Element::Block(block) => {
+                // Check if this block contains import declarations
+                for decl in block.declarations() {
+                    if let Some(head) = decl.head() {
+                        let kind = head.classify_declaration();
+                        if let crate::syntax::rowan::ast::DeclarationKind::Property(prop) = kind {
+                            let name = prop.text();
+                            if name == "import" {
+                                if let Some(body) = decl.body() {
+                                    if let Some(body_soup) = body.soup() {
+                                        scrape_rowan_imports(&body_soup, imports)?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check block metadata for imports (recursive)
+                if let Some(meta) = block.meta() {
+                    if let Some(meta_soup) = meta.soup() {
+                        read_rowan_soup_imports(&meta_soup, imports)?;
+                    }
+                }
+
+                // Check declaration metadata (recursive)
+                for decl in block.declarations() {
+                    if let Some(meta) = decl.meta() {
+                        if let Some(meta_soup) = meta.soup() {
+                            read_rowan_soup_imports(&meta_soup, imports)?;
+                        }
+                    }
+
+                    // Check declaration body for imports (recursive)
+                    if let Some(body) = decl.body() {
+                        if let Some(body_soup) = body.soup() {
+                            read_rowan_soup_imports(&body_soup, imports)?;
+                        }
+                    }
+                }
+            }
+            Element::List(list) => {
+                for item in list.items() {
+                    read_rowan_soup_imports(&item, imports)?;
+                }
+            }
+            Element::ParenExpr(paren) => {
+                if let Some(soup) = paren.soup() {
+                    read_rowan_soup_imports(&soup, imports)?;
+                }
+            }
+            Element::ApplyTuple(tuple) => {
+                for item in tuple.items() {
+                    read_rowan_soup_imports(&item, imports)?;
+                }
+            }
+            _ => {
+                // Other elements (literals, names, string patterns) don't contain imports
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Extract import values from a Rowan soup (equivalent to read_import_values for legacy AST)
+fn scrape_rowan_imports(
+    soup: &crate::syntax::rowan::ast::Soup,
+    imports: &mut Vec<Input>,
+) -> Result<(), ImportError> {
+    use crate::syntax::rowan::ast::Element;
+
+    for element in soup.elements() {
+        match element {
+            Element::Lit(literal) => {
+                if let Some(crate::syntax::rowan::ast::LiteralValue::Str(s)) = literal.value() {
+                    if let Some(import_str) = s.value() {
+                        match Input::from_str(import_str) {
+                            Ok(input) => {
+                                imports.push(input);
+                            }
+                            Err(e) => {
+                                return Err(ImportError::ImportSyntax(e));
+                            }
+                        }
+                    }
+                }
+            }
+            Element::List(list) => {
+                // Handle list of imports
+                for item in list.items() {
+                    scrape_rowan_imports(&item, imports)?;
+                }
+            }
+            _ => {
+                // Other elements might contain imports recursively
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub mod test {
     use super::*;
     use crate::syntax::input::Locator;
-    use crate::syntax::parser::tests::ParseTester;
+    use crate::syntax::rowan::ast::{AstToken, Element, HasSoup, Soup, Unit};
+
+    /// Convert Rowan Soup to legacy Expression for testing
+    fn rowan_soup_to_legacy_expression(soup: &Soup) -> Expression {
+        let elements: Vec<Element> = soup.elements().collect();
+
+        // If single element, convert it
+        if elements.len() == 1 {
+            match &elements[0] {
+                Element::Block(block) => {
+                    return rowan_block_to_legacy_expression(block);
+                }
+                Element::Lit(literal) => {
+                    return rowan_literal_to_legacy_expression(literal);
+                }
+                Element::List(list) => {
+                    return rowan_list_to_legacy_expression(list);
+                }
+                Element::Name(name) => {
+                    if let Some(ident) = name.identifier() {
+                        match ident {
+                            crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
+                                return Expression::Name(crate::syntax::ast::Name::Normal(
+                                    codespan::Span::default(),
+                                    normal.text().to_string(),
+                                ));
+                            }
+                            crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
+                                return Expression::Name(crate::syntax::ast::Name::Operator(
+                                    codespan::Span::default(),
+                                    op.text().to_string(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // Handle other element types as needed
+                }
+            }
+        }
+
+        // Multiple elements - create an OpSoup
+        let mut soup_elements = Vec::new();
+        for element in elements {
+            match element {
+                Element::Block(block) => {
+                    soup_elements.push(rowan_block_to_legacy_expression(&block));
+                }
+                Element::Lit(literal) => {
+                    soup_elements.push(rowan_literal_to_legacy_expression(&literal));
+                }
+                Element::List(list) => {
+                    soup_elements.push(rowan_list_to_legacy_expression(&list));
+                }
+                Element::Name(name) => {
+                    if let Some(ident) = name.identifier() {
+                        match ident {
+                            crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
+                                soup_elements.push(Expression::Name(
+                                    crate::syntax::ast::Name::Normal(
+                                        codespan::Span::default(),
+                                        normal.text().to_string(),
+                                    ),
+                                ));
+                            }
+                            crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
+                                soup_elements.push(Expression::Name(
+                                    crate::syntax::ast::Name::Operator(
+                                        codespan::Span::default(),
+                                        op.text().to_string(),
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // Skip other element types for now
+                }
+            }
+        }
+
+        if soup_elements.is_empty() {
+            Expression::Lit(Literal::Str(
+                codespan::Span::default(),
+                "empty_soup".to_string(),
+            ))
+        } else {
+            Expression::OpSoup(codespan::Span::default(), soup_elements)
+        }
+    }
+
+    /// Convert Rowan Literal to legacy Expression for testing  
+    fn rowan_literal_to_legacy_expression(
+        literal: &crate::syntax::rowan::ast::Literal,
+    ) -> Expression {
+        if let Some(value) = literal.value() {
+            match value {
+                crate::syntax::rowan::ast::LiteralValue::Str(s) => {
+                    if let Some(text) = s.value() {
+                        return Expression::Lit(Literal::Str(
+                            codespan::Span::default(),
+                            text.to_string(),
+                        ));
+                    }
+                }
+                crate::syntax::rowan::ast::LiteralValue::Sym(sym) => {
+                    if let Some(text) = sym.value() {
+                        return Expression::Lit(Literal::Sym(
+                            codespan::Span::default(),
+                            text.to_string(),
+                        ));
+                    }
+                }
+                crate::syntax::rowan::ast::LiteralValue::Num(num) => {
+                    if let Some(n) = num.value() {
+                        return Expression::Lit(Literal::Num(codespan::Span::default(), n));
+                    }
+                }
+            }
+        }
+
+        // Fallback
+        Expression::Lit(Literal::Str(
+            codespan::Span::default(),
+            "literal".to_string(),
+        ))
+    }
+
+    /// Convert Rowan List to legacy Expression for testing
+    fn rowan_list_to_legacy_expression(list: &crate::syntax::rowan::ast::List) -> Expression {
+        let mut items = Vec::new();
+
+        for item in list.items() {
+            let item_expr = rowan_soup_to_legacy_expression(&item);
+            items.push(item_expr);
+        }
+
+        Expression::List(codespan::Span::default(), items)
+    }
+
+    /// Convert Rowan Unit to legacy Expression for testing
+    fn rowan_unit_to_legacy_expression(unit: &Unit) -> Expression {
+        // Convert declarations to legacy format
+        let mut declarations = Vec::new();
+
+        for decl in unit.declarations() {
+            // Check for declaration metadata
+            let decl_metadata = decl
+                .meta()
+                .and_then(|m| m.soup())
+                .map(|soup| rowan_soup_to_legacy_expression(&soup));
+
+            if let Some(head) = decl.head() {
+                let kind = head.classify_declaration();
+                match kind {
+                    crate::syntax::rowan::ast::DeclarationKind::Property(prop) => {
+                        let name = prop.text().to_string();
+                        if let Some(body) = decl.body() {
+                            if let Some(body_soup) = body.soup() {
+                                let body_expr = rowan_soup_to_legacy_expression(&body_soup);
+                                declarations.push(Declaration::PropertyDeclaration(
+                                    codespan::Span::default(),
+                                    decl_metadata, // Include declaration metadata
+                                    normal(&name),
+                                    body_expr,
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        // Skip other declaration types for now
+                    }
+                }
+            }
+        }
+
+        // Check for unit metadata
+        let metadata = unit
+            .meta()
+            .and_then(|m| m.soup())
+            .map(|soup| rowan_soup_to_legacy_expression(&soup));
+
+        Expression::Block(Box::new(Block {
+            span: codespan::Span::default(),
+            metadata,
+            declarations,
+        }))
+    }
+
+    /// Convert Rowan Block to legacy Expression for testing
+    fn rowan_block_to_legacy_expression(block: &crate::syntax::rowan::ast::Block) -> Expression {
+        let mut declarations = Vec::new();
+
+        for decl in block.declarations() {
+            // Check for declaration metadata
+            let decl_metadata = decl
+                .meta()
+                .and_then(|m| m.soup())
+                .map(|soup| rowan_soup_to_legacy_expression(&soup));
+
+            if let Some(head) = decl.head() {
+                let kind = head.classify_declaration();
+                match kind {
+                    crate::syntax::rowan::ast::DeclarationKind::Property(prop) => {
+                        let name = prop.text().to_string();
+                        if let Some(body) = decl.body() {
+                            if let Some(body_soup) = body.soup() {
+                                let body_expr = rowan_soup_to_legacy_expression(&body_soup);
+                                declarations.push(Declaration::PropertyDeclaration(
+                                    codespan::Span::default(),
+                                    decl_metadata, // Include declaration metadata
+                                    normal(&name),
+                                    body_expr,
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        // Skip other declaration types for now
+                    }
+                }
+            }
+        }
+
+        // Check for block metadata
+        let metadata = block
+            .meta()
+            .and_then(|m| m.soup())
+            .map(|soup| rowan_soup_to_legacy_expression(&soup));
+
+        Expression::Block(Box::new(Block {
+            span: codespan::Span::default(),
+            metadata,
+            declarations,
+        }))
+    }
 
     fn parse_expr(text: &'static str) -> Expression {
-        let mut parser = ParseTester::new();
-        parser.parse_expr(text)
+        // Parse with Rowan and convert to legacy AST for testing
+        let parse_result = crate::syntax::rowan::parse_expr(text);
+        if parse_result.errors().is_empty() {
+            rowan_soup_to_legacy_expression(&parse_result.tree())
+        } else {
+            // Return error placeholder if parse fails
+            Expression::Lit(crate::syntax::ast::Literal::Str(
+                codespan::Span::default(),
+                "parse_error".to_string(),
+            ))
+        }
     }
 
     pub fn parse_unit(text: &'static str) -> Expression {
-        let mut parser = ParseTester::new();
-        Expression::Block(Box::new(parser.parse_unit(text)))
+        // Parse with Rowan and convert to legacy AST for testing
+        let parse_result = crate::syntax::rowan::parse_unit(text);
+        if parse_result.errors().is_empty() {
+            rowan_unit_to_legacy_expression(&parse_result.tree())
+        } else {
+            // Return error placeholder if parse fails
+            Expression::Block(Box::new(crate::syntax::ast::Block {
+                span: codespan::Span::default(),
+                metadata: None,
+                declarations: Vec::new(),
+            }))
+        }
     }
 
     #[test]

@@ -84,7 +84,7 @@ impl SourceError {
             SourceError::EmbeddedCoreError(e, _, _) => e.to_diagnostic(source_map),
             SourceError::EmbeddedParserError(e, _, _) => e.to_diagnostic(),
             _ => Diagnostic::error()
-                .with_message(format!("{}", self))
+                .with_message(format!("{self}"))
                 .with_labels(vec![Label::primary(self.file_id(), self.span())]),
         }
     }

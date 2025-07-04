@@ -327,23 +327,23 @@ impl Default for HeapState {
 impl std::fmt::Debug for HeapState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for block in &self.rest {
-            writeln!(f, "(XX) {:?}", block)?;
+            writeln!(f, "(XX) {block:?}")?;
         }
 
         for block in &self.recycled {
-            writeln!(f, "(Cy) {:?}", block)?;
+            writeln!(f, "(Cy) {block:?}")?;
         }
 
         if let Some(head) = &self.head {
-            writeln!(f, "(Hd) {:?}", head)?;
+            writeln!(f, "(Hd) {head:?}")?;
         }
 
         if let Some(of) = &self.overflow {
-            writeln!(f, "(Ov) Overflow:\n\n{:?}", of)?;
+            writeln!(f, "(Ov) Overflow:\n\n{of:?}")?;
         }
 
         for lob in &self.lobs {
-            writeln!(f, "{:?}", lob)?;
+            writeln!(f, "{lob:?}")?;
         }
 
         writeln!(f, "\n")
@@ -634,7 +634,7 @@ impl std::fmt::Display for HeapError {
                     context.fragmentation_indicator(),
                     context.lobs_allocated,
                     if let Some(limit) = context.heap_limit {
-                        format!(" | limit: {} blocks", limit)
+                        format!(" | limit: {limit} blocks")
                     } else {
                         " | no limit".to_string()
                     },
@@ -656,7 +656,7 @@ impl std::fmt::Display for HeapError {
                     context.blocks_allocated,
                     context.fragmentation_indicator(),
                     if let Some(head_util) = context.head_utilisation_percent {
-                        format!(" | head: {:.1}% utilised", head_util)
+                        format!(" | head: {head_util:.1}% utilised")
                     } else {
                         "".to_string()
                     }
@@ -668,8 +668,7 @@ impl std::fmt::Display for HeapError {
             } => {
                 write!(
                     f,
-                    "invalid allocation size: requested {} bytes exceeds maximum {} bytes",
-                    requested_size, max_size
+                    "invalid allocation size: requested {requested_size} bytes exceeds maximum {max_size} bytes"
                 )
             }
             HeapError::FragmentationError { context } => {
@@ -683,7 +682,7 @@ impl std::fmt::Display for HeapError {
                     context.blocks_recycled,
                     context.blocks_allocated,
                     if let Some(head_util) = context.head_utilisation_percent {
-                        format!(" | head: {:.1}% utilised", head_util)
+                        format!(" | head: {head_util:.1}% utilised")
                     } else {
                         "".to_string()
                     }
@@ -710,7 +709,7 @@ impl std::fmt::Display for HeapError {
                     context.memory_utilisation_percent(),
                     context.fragmentation_indicator(),
                     if let Some(head_util) = context.head_utilisation_percent {
-                        format!(" | head: {:.1}% utilised", head_util)
+                        format!(" | head: {head_util:.1}% utilised")
                     } else {
                         "".to_string()
                     }
@@ -843,7 +842,7 @@ mod oom_tests {
             Err(HeapError::OutOfMemory { .. }) => {
                 println!("Large allocation failed gracefully with OutOfMemory")
             }
-            Err(e) => println!("Large allocation failed gracefully: {:?}", e),
+            Err(e) => println!("Large allocation failed gracefully: {e:?}"),
         }
 
         println!("✅ find_space returns HeapError Results instead of panicking");
@@ -1091,7 +1090,7 @@ mod oom_tests {
             }
             Err(e) => {
                 // Log unexpected errors but don't panic - this is production hardening
-                eprintln!("⚠️ Unexpected error from emergency collection: {:?}", e);
+                eprintln!("⚠️ Unexpected error from emergency collection: {e:?}");
                 // Emergency collection can fail for various reasons (e.g., no GC limit set)
                 // This should not cause a panic in production
             }
@@ -1112,10 +1111,10 @@ mod oom_tests {
 
         // Create a heap context error (64 bytes = Small, 1024 bytes = Medium)
         let error = heap.out_of_memory_error(64, false);
-        let error_message = format!("{}", error);
+        let error_message = format!("{error}");
 
         // Print the actual error message to see its format
-        println!("Enhanced error message: {}", error_message);
+        println!("Enhanced error message: {error_message}");
 
         // Verify the error message includes detailed diagnostic information
         assert!(error_message.contains("64 bytes"));
@@ -1129,19 +1128,19 @@ mod oom_tests {
             requested_size: u32::MAX as usize + 1,
             max_size: u32::MAX as usize,
         };
-        let invalid_message = format!("{}", invalid_error);
+        let invalid_message = format!("{invalid_error}");
         assert!(invalid_message.contains("exceeds maximum"));
         assert!(invalid_message.contains(&format!("{}", u32::MAX as usize)));
 
-        println!("Invalid allocation error: {}", invalid_message);
+        println!("Invalid allocation error: {invalid_message}");
 
         // Test emergency collection insufficient error with context
         let emergency_error = heap.emergency_collection_insufficient_error(2048);
-        let emergency_message = format!("{}", emergency_error);
+        let emergency_message = format!("{emergency_error}");
         assert!(emergency_message.contains("2048 bytes"));
         assert!(emergency_message.contains("emergency collection insufficient"));
 
-        println!("Emergency collection error: {}", emergency_message);
+        println!("Emergency collection error: {emergency_message}");
 
         println!("✅ Enhanced error diagnostics provide detailed context");
     }
@@ -1156,7 +1155,7 @@ mod oom_tests {
         println!("\n🔍 Scenario 1: Fresh Heap Out-of-Memory");
         let heap = Heap::new();
         let fresh_error = heap.out_of_memory_error(1024, false);
-        println!("   {}", fresh_error);
+        println!("   {fresh_error}");
 
         // Scenario 2: Heap with limit - realistic constraint
         println!("\n🔍 Scenario 2: Limited Heap with Allocated Objects");
@@ -1169,12 +1168,12 @@ mod oom_tests {
         let _ = limited_heap.alloc_bytes(1024); // Medium allocation
 
         let limited_error = limited_heap.out_of_memory_error(512, false);
-        println!("   {}", limited_error);
+        println!("   {limited_error}");
 
         // Scenario 3: Emergency collection attempted
         println!("\n🔍 Scenario 3: Emergency Collection Scenario");
         let emergency_error = limited_heap.emergency_collection_insufficient_error(2048);
-        println!("   {}", emergency_error);
+        println!("   {emergency_error}");
 
         // Scenario 4: Invalid allocation sizes
         println!("\n🔍 Scenario 4: Invalid Allocation Sizes");
@@ -1183,13 +1182,13 @@ mod oom_tests {
             requested_size: u32::MAX as usize + 1,
             max_size: u32::MAX as usize,
         };
-        println!("   Large: {}", invalid_too_large);
+        println!("   Large: {invalid_too_large}");
 
         let invalid_zero = HeapError::InvalidAllocationSize {
             requested_size: 0,
             max_size: MAX_ALLOC_SIZE,
         };
-        println!("   Zero:  {}", invalid_zero);
+        println!("   Zero:  {invalid_zero}");
 
         // Scenario 5: Fragmentation scenarios
         println!("\n🔍 Scenario 5: Fragmentation Analysis");
@@ -1201,19 +1200,19 @@ mod oom_tests {
         }
 
         let frag_error = frag_heap.fragmentation_error(8192);
-        println!("   {}", frag_error);
+        println!("   {frag_error}");
 
         // Scenario 6: Size class examples
         println!("\n🔍 Scenario 6: Different Size Classes");
 
         let small_error = heap.out_of_memory_error(64, false); // Small (< 128 bytes)
-        println!("   Small:  {}", small_error);
+        println!("   Small:  {small_error}");
 
         let medium_error = heap.out_of_memory_error(1024, true); // Medium (128B - 32KB)
-        println!("   Medium: {}", medium_error);
+        println!("   Medium: {medium_error}");
 
         let large_error = heap.out_of_memory_error(40960, true); // Large (> 32KB)
-        println!("   Large:  {}", large_error);
+        println!("   Large:  {large_error}");
 
         // Show actual heap stats for context
         println!("\n📊 Heap Statistics:");
@@ -1266,7 +1265,7 @@ impl Heap {
 
     pub fn with_limit(limit_mib: usize) -> Self {
         let block_limit = (limit_mib * 1_048_576) / BLOCK_SIZE_BYTES;
-        println!("block limit {:?}", block_limit);
+        println!("block limit {block_limit:?}");
         Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: Some(block_limit),
@@ -1811,10 +1810,7 @@ impl Heap {
         let emergency_state = unsafe { &mut *self.emergency_state.get() };
         emergency_state.start_emergency_collection();
 
-        eprintln!(
-            "Emergency collection: attempting to free space for {} bytes",
-            requested_size
-        );
+        eprintln!("Emergency collection: attempting to free space for {requested_size} bytes");
 
         let stats_before = self.stats();
 
@@ -1871,10 +1867,7 @@ impl Heap {
         let blocks_freed = stats_after.recycled - stats_before.recycled;
         let bytes_freed = blocks_freed * BLOCK_SIZE_BYTES;
 
-        eprintln!(
-            "Emergency collection: freed {} blocks ({} bytes)",
-            blocks_freed, bytes_freed
-        );
+        eprintln!("Emergency collection: freed {blocks_freed} blocks ({bytes_freed} bytes)");
 
         // Success if we freed at least one block worth of space
         // (This is conservative - we could be more sophisticated about size requirements)
@@ -1891,8 +1884,7 @@ impl Heap {
                 ((BLOCK_SIZE_BYTES - hole_size) as f64 / BLOCK_SIZE_BYTES as f64) * 100.0;
 
             eprintln!(
-                "Emergency collection: head block utilisation {:.1}% (hole size: {} bytes)",
-                utilisation_percent, hole_size
+                "Emergency collection: head block utilisation {utilisation_percent:.1}% (hole size: {hole_size} bytes)"
             );
 
             // If head block is less than 10% utilised, replace it
@@ -2466,7 +2458,7 @@ pub mod tests {
                 // High fragmentation might still trigger selective evacuation depending on thresholds
                 assert!(analysis.fragmentation_ratio > 0.0, "SelectiveEvacuation should have some fragmentation");
             }
-            _ => panic!("Expected DefragmentationSweep or SelectiveEvacuation for heavily fragmented heap, got {:?}", strategy),
+            _ => panic!("Expected DefragmentationSweep or SelectiveEvacuation for heavily fragmented heap, got {strategy:?}"),
         }
     }
 
@@ -2535,9 +2527,7 @@ pub mod tests {
             assert_eq!(
                 addr & 15,
                 0,
-                "Allocation of size {} not aligned to 16-byte boundary: 0x{:x}",
-                size,
-                addr
+                "Allocation of size {size} not aligned to 16-byte boundary: 0x{addr:x}"
             );
         }
     }
@@ -2564,8 +2554,7 @@ pub mod tests {
         assert_eq!(
             header_addr & 15,
             0,
-            "AllocHeader not aligned to 16-byte boundary: 0x{:x}",
-            header_addr
+            "AllocHeader not aligned to 16-byte boundary: 0x{header_addr:x}"
         );
     }
 

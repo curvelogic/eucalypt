@@ -184,7 +184,7 @@ impl Debug for LineMap {
         for dword in dwords {
             let lo = (dword as u64).reverse_bits();
             let hi = ((dword >> 64) as u64).reverse_bits();
-            writeln!(f, "{:#018x} {:#018x}", lo, hi)?;
+            writeln!(f, "{lo:#018x} {hi:#018x}")?;
         }
         Ok(())
     }
@@ -262,9 +262,9 @@ impl Debug for BumpBlock {
         let (q1, q2) = above.split_at(length / 4);
         let (q3, q4) = below.split_at(halfway.0);
 
-        writeln!(f, "  {}   {}", q1, q2)?;
+        writeln!(f, "  {q1}   {q2}")?;
         write!(f, "{:?}", self.line_map)?;
-        writeln!(f, "  {}   {}", q3, q4)
+        writeln!(f, "  {q3}   {q4}")
     }
 }
 

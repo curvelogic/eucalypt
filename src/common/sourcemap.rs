@@ -41,7 +41,7 @@ impl From<Smid> for u32 {
 impl Display for Smid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self.0 {
-            Some(n) => write!(f, "[{}]", n),
+            Some(n) => write!(f, "[{n}]"),
             None => write!(f, "[?]"),
         }
     }
@@ -62,7 +62,7 @@ impl Smid {
 
     pub fn sym_name(&self) -> String {
         match self.0 {
-            Some(n) => format!("__{}", n),
+            Some(n) => format!("__{n}"),
             None => "__<nosmid>".to_string(),
         }
     }
@@ -188,7 +188,7 @@ impl SourceMap {
     where
         E: HasSmid + Display,
     {
-        let diag = Diagnostic::error().with_message(format!("{}", error));
+        let diag = Diagnostic::error().with_message(format!("{error}"));
 
         if let Some(&SourceInfo {
             file: Some(file),
@@ -218,7 +218,7 @@ impl SourceMap {
                                         .and_then(|span| file.source().get(Range::from(span)))
                                 })
                         })
-                        .map(|text| format!("- {}", text))
+                        .map(|text| format!("- {text}"))
                 } else {
                     None
                 }

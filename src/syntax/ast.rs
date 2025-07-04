@@ -11,13 +11,18 @@ use serde_json::Number;
 use std::collections::VecDeque;
 
 /// A literal value
+///
+/// AST embedding syntax:
+/// - `Sym`: `[:a-sym "name"]` - Symbol literal (e.g. `:foo`)
+/// - `Str`: `[:a-str "text"]` - String literal (e.g. `"hello"`)
+/// - `Num`: `[:a-num value]` - Number literal (e.g. `42`, `3.14`)
 #[derive(PartialEq, Debug, Clone, Eq)]
 pub enum Literal {
-    /// e.g. :foo
+    /// e.g. :foo - Embedding: `[:a-sym "foo"]`
     Sym(Span, String),
-    /// e.g. "foo"
+    /// e.g. "foo" - Embedding: `[:a-str "foo"]`
     Str(Span, String),
-    /// e.g. -1234.64364e99
+    /// e.g. -1234.64364e99 - Embedding: `[:a-num -1234.64364e99]`
     Num(Span, Number),
 }
 
@@ -72,11 +77,15 @@ where
 }
 
 /// A name (normal or operator)
+///
+/// AST embedding syntax:
+/// - `Normal`: `[:a-norm "name"]` - Normal identifier (e.g. `x`, `'quoted'`)
+/// - `Operator`: `[:a-oper "operator"]` - Operator identifier (e.g. `+`, `&&`)
 #[derive(Clone, PartialEq, Debug, Eq)]
 pub enum Name {
-    /// normal (non-operator) name
+    /// normal (non-operator) name - Embedding: `[:a-norm "name"]`
     Normal(Span, String),
-    /// operator name
+    /// operator name - Embedding: `[:a-oper "operator"]`
     Operator(Span, String),
 }
 
@@ -119,21 +128,30 @@ pub fn operator(id: &str) -> Name {
 }
 
 /// Types of expression
+///
+/// AST embedding syntax:
+/// - `Lit`: `[:a-lit literal]` - Literal value
+/// - `Block`: `[:a-block declarations... metadata]` - Block expression  
+/// - `List`: `[:a-list item1 item2 ...]` - List literal
+/// - `OpSoup`: `[:a-soup item1 item2 ...]` - Operator soup (unresolved precedence)
+/// - `Name`: `[:a-name name]` - Identifier reference
+/// - `StringPattern`: (not implemented) - String with interpolation
+/// - `ApplyTuple`: `[:a-applytuple arg1 arg2 ...]` - Function arguments
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expression {
-    /// e.g. 123, "blah", :symbol
+    /// e.g. 123, "blah", :symbol - Embedding: `[:a-lit literal]`
     Lit(Literal),
-    /// e.g. { x: y }
+    /// e.g. { x: y } - Embedding: `[:a-block declarations... metadata]`
     Block(Box<Block>),
-    /// e.g. [x, y, z]
+    /// e.g. [x, y, z] - Embedding: `[:a-list item1 item2 ...]`
     List(Span, Vec<Expression>),
-    /// possibly parenthesised operator soup e.g. (x &&& y!)
+    /// possibly parenthesised operator soup e.g. (x &&& y!) - Embedding: `[:a-soup item1 item2 ...]`
     OpSoup(Span, Vec<Expression>),
-    /// e.g. x, $$
+    /// e.g. x, $$ - Embedding: `[:a-name name]`
     Name(Name),
-    /// e.g. "{1} {2}!"
+    /// e.g. "{1} {2}!" - Embedding: (not implemented)
     StringPattern(Span, Vec<StringChunk>),
-    /// e.g. ...(1, :foo, :bar)
+    /// e.g. ...(1, :foo, :bar) - Embedding: `[:a-applytuple arg1 arg2 ...]`
     ApplyTuple(Span, Vec<Expression>),
 }
 

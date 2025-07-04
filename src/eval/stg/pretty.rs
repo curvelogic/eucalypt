@@ -14,7 +14,7 @@ impl ToPretty for LambdaForm {
     {
         match self {
             LambdaForm::Lambda { bound, body, .. } => allocator
-                .text(format!("λ{{{}}}", bound))
+                .text(format!("λ{{{bound}}}"))
                 .append(body.pretty(allocator).parens()),
             LambdaForm::Thunk { body } => {
                 allocator.text("Th").append(body.pretty(allocator).parens())
@@ -32,7 +32,7 @@ impl ToPretty for StgSyn {
         A: Clone,
     {
         match self {
-            StgSyn::Atom { evaluand } => allocator.text(format!("{}", evaluand)),
+            StgSyn::Atom { evaluand } => allocator.text(format!("{evaluand}")),
             StgSyn::Case {
                 scrutinee,
                 branches,
@@ -44,11 +44,7 @@ impl ToPretty for StgSyn {
                     .append(allocator.line());
                 let mut branch_docs: Vec<_> = branches
                     .iter()
-                    .map(|(t, c)| {
-                        allocator
-                            .text(format!("{}: ", t))
-                            .append(c.pretty(allocator))
-                    })
+                    .map(|(t, c)| allocator.text(format!("{t}: ")).append(c.pretty(allocator)))
                     .collect();
                 if let Some(fb) = fallback {
                     branch_docs.push(allocator.text("…: ").append(fb.pretty(allocator)));
@@ -58,24 +54,24 @@ impl ToPretty for StgSyn {
                 scrutinee_doc.append(branch_doc).hang(2)
             }
             StgSyn::Cons { tag, args } => {
-                let args_docs = args.iter().map(|r| allocator.text(format!("{}", r)));
-                allocator.text(format!("DATA[{}]", tag)).append(
+                let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
+                allocator.text(format!("DATA[{tag}]")).append(
                     allocator
                         .intersperse(args_docs, allocator.text(" "))
                         .parens(),
                 )
             }
             StgSyn::App { callable, args } => {
-                let args_docs = args.iter().map(|r| allocator.text(format!("{}", r)));
-                allocator.text(format!("{}", callable)).append(
+                let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
+                allocator.text(format!("{callable}")).append(
                     allocator
                         .intersperse(args_docs, allocator.text(" "))
                         .parens(),
                 )
             }
             StgSyn::Bif { intrinsic, args } => {
-                let args_docs = args.iter().map(|r| allocator.text(format!("{}", r)));
-                allocator.text(format!("BIF[{}]", intrinsic)).append(
+                let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
+                allocator.text(format!("BIF[{intrinsic}]")).append(
                     allocator
                         .intersperse(args_docs, allocator.text(" "))
                         .parens(),
@@ -113,12 +109,12 @@ impl ToPretty for StgSyn {
                     .hang(2)
             }
             StgSyn::Ann { smid, body } => allocator
-                .text(format!("♩{}:", smid))
+                .text(format!("♩{smid}:"))
                 .append(body.pretty(allocator)),
             StgSyn::Meta { meta, body } => allocator
                 .text("`")
-                .append(allocator.text(format!("{}", meta)))
-                .append(allocator.text(format!("{}", body))),
+                .append(allocator.text(format!("{meta}")))
+                .append(allocator.text(format!("{body}"))),
             StgSyn::DeMeta {
                 scrutinee,
                 handler,

@@ -19,7 +19,14 @@
       "Bash(rm:*)",
       "Bash(~/.claude/showme src/eval/memory/heap.rs)",
       "Bash(./bench.sh run:*)",
-      "Bash(./bench.sh:*)"
+      "Bash(./bench.sh:*)",
+      "Bash(timeout 300 cargo bench criterion_benchmark)",
+      "Bash(git commit:*)",
+      "Bash(./target/debug/eu:*)",
+      "Bash(EU_EXPERIMENTAL_PARSER=false cargo test test_harness_001 2 >& 1)",
+      "Bash(./test_simple_parse:*)",
+      "Bash(rustc:*)",
+      "Bash(./test_identifier_parse)"
     ],
     "deny": []
   }

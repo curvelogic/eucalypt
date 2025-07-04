@@ -1,5 +1,6 @@
 use crate::common::sourcemap::*;
 use crate::core::cook;
+use crate::core::desugar::desugarable::Desugarable;
 use crate::core::desugar::{Content, Desugarer};
 use crate::core::error::CoreError;
 use crate::core::expr::RcExpr;
@@ -12,7 +13,26 @@ use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
 use crate::driver::resources::Resources;
 use crate::import::read_to_core;
-use crate::syntax::ast::*;
+use crate::syntax::rowan::ast::{Soup, Unit};
+
+/// Enum to hold either a Unit (for files) or Soup (for CLI expressions)
+#[derive(Debug)]
+pub enum ParsedAst {
+    Unit(Unit),
+    Soup(Soup),
+}
+
+impl Desugarable for ParsedAst {
+    fn desugar(
+        &self,
+        desugarer: &mut crate::core::desugar::desugarer::Desugarer,
+    ) -> Result<crate::core::expr::RcExpr, crate::core::error::CoreError> {
+        match self {
+            ParsedAst::Unit(unit) => unit.desugar(desugarer),
+            ParsedAst::Soup(soup) => soup.desugar(desugarer),
+        }
+    }
+}
 use crate::syntax::import::ImportGraph;
 use crate::syntax::input::Input;
 use crate::syntax::input::Locator;
@@ -40,13 +60,13 @@ pub struct SourceLoader {
     /// Access to source file text
     files: SimpleFiles<String, String>,
     /// Parsed ASTs  pending core translation
-    asts: HashMap<usize, Expression>,
+    asts: HashMap<usize, ParsedAst>,
     /// Parsed core exprs pending core translation (YAML, JSON etc.)
     cores: HashMap<Input, RcExpr>,
     /// Import analysis
     imports: ImportGraph,
     /// Core Units pending merge
-    units: HashMap<Input, TranslationUnit>,
+    translation_units: HashMap<Input, TranslationUnit>,
     /// Units once merged
     core: TranslationUnit,
     /// SourceMap for references to source locations across all files
@@ -64,7 +84,7 @@ impl Default for SourceLoader {
             asts: HashMap::new(),
             cores: HashMap::new(),
             imports: ImportGraph::default(),
-            units: HashMap::new(),
+            translation_units: HashMap::new(),
             core: TranslationUnit::default(),
             source_map: SourceMap::new(),
             lib_path: Vec::new(),
@@ -82,7 +102,7 @@ impl SourceLoader {
             asts: HashMap::new(),
             cores: HashMap::new(),
             imports: ImportGraph::default(),
-            units: HashMap::new(),
+            translation_units: HashMap::new(),
             core: TranslationUnit::default(),
             source_map: SourceMap::new(),
             lib_path,
@@ -90,7 +110,7 @@ impl SourceLoader {
     }
 
     /// Return refs to all parsed ASTs by locator,
-    pub fn asts(&self) -> Vec<(&Locator, &Expression)> {
+    pub fn asts(&self) -> Vec<(&Locator, &ParsedAst)> {
         self.locators
             .iter()
             .filter_map(|(k, v)| self.asts.get(v).map(|value| (k, value)))
@@ -98,7 +118,7 @@ impl SourceLoader {
     }
 
     /// Retrieve the parsed AST for the specified locator
-    pub fn ast(&self, locator: &Locator) -> Option<&Expression> {
+    pub fn ast(&self, locator: &Locator) -> Option<&ParsedAst> {
         self.locators.get(locator).and_then(|id| self.asts.get(id))
     }
 
@@ -135,12 +155,14 @@ impl SourceLoader {
     fn load_tree(&mut self, input: &Input) -> Result<usize, EucalyptError> {
         let locator = input.locator();
         let file_id = self.load_eucalypt(locator)?;
+
+        // Implement import analysis for Rowan AST
         let ast = self.asts.get(&file_id).unwrap();
-        let inputs = self.imports.analyse_ast(input.clone(), ast)?;
+        let inputs = self.imports.analyse_rowan_ast(input.clone(), ast)?;
         self.imports.check_for_cycles()?;
 
-        for input in inputs {
-            self.load(&input)?;
+        for import_input in inputs {
+            self.load(&import_input)?;
         }
         Ok(file_id)
     }
@@ -159,9 +181,11 @@ impl SourceLoader {
         }
 
         let ast = if matches!(locator, Locator::Cli(_)) {
-            parser::parse_expression(&self.files, id)?
+            let soup = parser::parse_expression(&self.files, id)?;
+            ParsedAst::Soup(soup)
         } else {
-            Expression::Block(Box::new(parser::parse_unit(&self.files, id)?))
+            let unit = parser::parse_unit(&self.files, id)?;
+            ParsedAst::Unit(unit)
         };
         self.asts.insert(id, ast);
         Ok(id)
@@ -212,8 +236,8 @@ impl SourceLoader {
     /// into a core expression.
     pub fn translate(&mut self, input: &Input) -> Result<&TranslationUnit, EucalyptError> {
         // If we already have a translation, we're done.
-        if self.units.contains_key(input) {
-            return Ok(self.units.get(input).unwrap());
+        if self.translation_units.contains_key(input) {
+            return Ok(self.translation_units.get(input).unwrap());
         }
 
         // Retrieve the ASTs and Core exprs contributing to the unit
@@ -235,8 +259,8 @@ impl SourceLoader {
         // Desugar all the content starting from the input specified
         let mut desugarer = Desugarer::new(&desugarables, &mut self.source_map);
         let unit = desugarer.translate_unit(input)?;
-        self.units.insert(input.clone(), unit);
-        Ok(&self.units[input])
+        self.translation_units.insert(input.clone(), unit);
+        Ok(&self.translation_units[input])
     }
 
     /// Set the body of the core expression to the specified target
@@ -274,14 +298,14 @@ impl SourceLoader {
 
     /// The core syntax translation units currently in play
     pub fn units(&self) -> Vec<&TranslationUnit> {
-        self.units.values().collect()
+        self.translation_units.values().collect()
     }
 
     /// Merge all units into a single core expression
     pub fn merge_units(&mut self, inputs: &[Input]) -> Result<(), EucalyptError> {
         let units = inputs
             .iter()
-            .map(|i| self.units.get(i).expect("merging unknown unit"));
+            .map(|i| self.translation_units.get(i).expect("merging unknown unit"));
         self.core = TranslationUnit::merge(units.cloned())?;
         Ok(())
     }
@@ -297,13 +321,13 @@ impl SourceLoader {
     ) -> Result<(), EucalyptError> {
         let prologue_units = prologue_inputs
             .iter()
-            .map(|i| self.units.get(i).expect("merging unknown unit"));
+            .map(|i| self.translation_units.get(i).expect("merging unknown unit"));
         let explicit_units = explicit_inputs
             .iter()
-            .map(|i| self.units.get(i).expect("merging unknown unit"));
+            .map(|i| self.translation_units.get(i).expect("merging unknown unit"));
         let epilogue_units = epilogue_inputs
             .iter()
-            .map(|i| self.units.get(i).expect("merging unknown unit"));
+            .map(|i| self.translation_units.get(i).expect("merging unknown unit"));
 
         let mut collection_unit = if name_inputs {
             let names: Vec<String> = explicit_inputs

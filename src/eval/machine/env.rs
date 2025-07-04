@@ -139,11 +139,11 @@ impl fmt::Display for ScopeAndClosure<'_> {
         let env = ScopedPtr::from_non_null(self.0, self.1.env());
 
         if self.1.update() {
-            write!(f, "Th({}|{})", code, env)
+            write!(f, "Th({code}|{env})")
         } else if self.1.arity() > 0 {
             write!(f, "λ{{{}}}({}|⒳→{})", self.1.arity(), code, env)
         } else {
-            write!(f, "({}|{})", code, env)
+            write!(f, "({code}|{env})")
         }
     }
 }
@@ -293,14 +293,14 @@ where
         match self.next {
             None => {
                 if len > 0 {
-                    write!(f, "[×{}]→•", len)
+                    write!(f, "[×{len}]→•")
                 } else {
                     write!(f, "•")
                 }
             }
             Some(env) => {
                 let env = ScopedPtr::from_non_null(self, env);
-                write!(f, "[×{}]→{}", len, env)
+                write!(f, "[×{len}]→{env}")
             }
         }
     }

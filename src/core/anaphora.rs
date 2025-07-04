@@ -55,7 +55,7 @@ pub fn to_binding_pattern(
         Ok(v.into_iter()
             .enumerate()
             .map(|(i, x)| {
-                x.or_else(|| Some(FreeVar::fresh_named(format!("_d{}", i))))
+                x.or_else(|| Some(FreeVar::fresh_named(format!("_d{i}"))))
                     .unwrap()
             })
             .collect())

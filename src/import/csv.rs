@@ -17,13 +17,13 @@ pub fn read_csv<'src>(
 
     let headers = rdr
         .headers()
-        .map_err(|e| SourceError::InvalidSource(format!("{}", e), file_id))?
+        .map_err(|e| SourceError::InvalidSource(format!("{e}"), file_id))?
         .clone();
 
     let rows = rdr
         .records()
         .map(|r| match r {
-            Err(e) => Err(SourceError::InvalidSource(format!("{}", e), file_id)),
+            Err(e) => Err(SourceError::InvalidSource(format!("{e}"), file_id)),
             Ok(rec) => Ok(convert_string_record(&headers, rec)),
         })
         .collect::<Result<Vec<RcExpr>, SourceError>>()?;

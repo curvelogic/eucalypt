@@ -29,7 +29,7 @@ pub fn main() {
         match tester::test(&opt) {
             Ok(exit) => process::exit(exit),
             Err(e) => {
-                eprintln!("{}", e);
+                eprintln!("{e}");
                 process::exit(2)
             }
         }
@@ -73,7 +73,7 @@ pub fn exit(opts: &EucalyptOptions, code: i32, stats: &Statistics) {
         eprintln!("STATISTICS");
         eprintln!("~~~~~~~~~~");
         eprintln!();
-        eprintln!("{}", stats);
+        eprintln!("{stats}");
     }
     process::exit(code)
 }
