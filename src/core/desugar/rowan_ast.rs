@@ -426,7 +426,9 @@ fn extract_rowan_declaration_components(
                     .filter_map(|soup| {
                         // Each argument should be a single name
                         if let Some(rowan_ast::Element::Name(name)) = soup.singleton() {
-                            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
+                                name.identifier()
+                            {
                                 Some(normal.text().to_string())
                             } else {
                                 None
