@@ -991,13 +991,13 @@ mod tests {
     fn verify_expr(text: &str, parse_repr: &str) {
         let parse = parse_expr(text);
         println!("checking: {text}");
-        assert_eq!(format!("\n{}", parse.syntax_node()), parse_repr);
+        assert_eq!(format!("\n{:#?}", parse.syntax_node()), parse_repr);
         assert!(parse.ok().is_ok());
     }
 
     fn verify_unit(text: &str, parse_repr: &str) {
         let parse = parse_unit(text);
-        assert_eq!(format!("\n{}", parse.syntax_node()), parse_repr);
+        assert_eq!(format!("\n{:#?}", parse.syntax_node()), parse_repr);
         assert!(parse.ok().is_ok());
     }
 
