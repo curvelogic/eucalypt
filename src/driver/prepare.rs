@@ -237,7 +237,7 @@ fn format_target_table<'a>(targets: impl Iterator<Item = &'a Target>) -> Vec<Str
     let mut pairs: Vec<(String, String)> = vec![];
     let mut len = 0;
     for t in targets {
-        let prefix = format!(" - {}", t);
+        let prefix = format!(" - {t}");
         len = len.max(prefix.len());
         pairs.push((prefix, t.doc().clone()));
     }

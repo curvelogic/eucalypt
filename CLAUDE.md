@@ -112,11 +112,13 @@ The project includes a sophisticated garbage collector:
 
 ### Pre-Commit Checklist
 **ALWAYS run these commands before committing to avoid CI failures:**
-1. `cargo fmt` - Fix formatting issues
-2. `cargo clippy --lib -- -D warnings` - Fix all lint warnings
-3. `cargo test --lib` - Verify tests pass (when appropriate)
+1. `cargo fmt --all` - Fix formatting issues for all targets
+2. `cargo clippy --all-targets -- -D warnings` - Fix ALL lint warnings (matches CI exactly)
+3. `cargo test --lib` - Verify tests pass (when appropriate)  
 4. **Check and fix dependabot security alerts** - Address vulnerabilities immediately
 5. `git commit` and `git push`
+
+**CRITICAL**: Use `--all-targets` for clippy to match CI behaviour exactly. Local `--lib` checks miss test and bench targets that CI validates.
 
 ### Security and Dependencies
 - **MANDATORY: Fix dependabot security alerts immediately** - treat them like clippy warnings

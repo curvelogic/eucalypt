@@ -1112,7 +1112,7 @@ mod oom_tests {
 
         // Create a heap context error (64 bytes = Small, 1024 bytes = Medium)
         let error = heap.out_of_memory_error(64, false);
-        let error_message = format!("{}", error);
+        let error_message = format!("{error}");
 
         // Print the actual error message to see its format
         println!("Enhanced error message: {}", error_message);
@@ -1129,7 +1129,7 @@ mod oom_tests {
             requested_size: u32::MAX as usize + 1,
             max_size: u32::MAX as usize,
         };
-        let invalid_message = format!("{}", invalid_error);
+        let invalid_message = format!("{invalid_error}");
         assert!(invalid_message.contains("exceeds maximum"));
         assert!(invalid_message.contains(&format!("{}", u32::MAX as usize)));
 
@@ -1137,7 +1137,7 @@ mod oom_tests {
 
         // Test emergency collection insufficient error with context
         let emergency_error = heap.emergency_collection_insufficient_error(2048);
-        let emergency_message = format!("{}", emergency_error);
+        let emergency_message = format!("{emergency_error}");
         assert!(emergency_message.contains("2048 bytes"));
         assert!(emergency_message.contains("emergency collection insufficient"));
 

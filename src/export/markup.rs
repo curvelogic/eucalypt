@@ -233,8 +233,8 @@ fn as_text(prim: &Primitive) -> String {
         }
         Primitive::Sym(s) => s.clone(),
         Primitive::Str(s) => s.clone(),
-        Primitive::Num(n) => format!("{}", n),
-        Primitive::ZonedDateTime(dt) => format!("{}", dt),
+        Primitive::Num(n) => format!("{n}"),
+        Primitive::ZonedDateTime(dt) => format!("{dt}"),
     }
 }
 

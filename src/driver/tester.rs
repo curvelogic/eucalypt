@@ -47,7 +47,7 @@ pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, Eu
             path.to_string_lossy().to_string(),
         ))
     } else {
-        Err(EucalyptError::FileCouldNotBeRead(format!("{}", input)))
+        Err(EucalyptError::FileCouldNotBeRead(format!("{input}")))
     }
 }
 
@@ -172,7 +172,7 @@ impl fmt::Display for TestResult<'_> {
             f,
             "Exit: {}",
             match self.exit_code {
-                Some(n) => format!("{}", n),
+                Some(n) => format!("{n}"),
                 None => "incomplete".to_string(),
             }
         )?;

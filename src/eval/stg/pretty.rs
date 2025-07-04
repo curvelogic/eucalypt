@@ -32,7 +32,7 @@ impl ToPretty for StgSyn {
         A: Clone,
     {
         match self {
-            StgSyn::Atom { evaluand } => allocator.text(format!("{}", evaluand)),
+            StgSyn::Atom { evaluand } => allocator.text(format!("{evaluand}")),
             StgSyn::Case {
                 scrutinee,
                 branches,
@@ -58,7 +58,7 @@ impl ToPretty for StgSyn {
                 scrutinee_doc.append(branch_doc).hang(2)
             }
             StgSyn::Cons { tag, args } => {
-                let args_docs = args.iter().map(|r| allocator.text(format!("{}", r)));
+                let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
                 allocator.text(format!("DATA[{}]", tag)).append(
                     allocator
                         .intersperse(args_docs, allocator.text(" "))
@@ -66,15 +66,15 @@ impl ToPretty for StgSyn {
                 )
             }
             StgSyn::App { callable, args } => {
-                let args_docs = args.iter().map(|r| allocator.text(format!("{}", r)));
-                allocator.text(format!("{}", callable)).append(
+                let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
+                allocator.text(format!("{callable}")).append(
                     allocator
                         .intersperse(args_docs, allocator.text(" "))
                         .parens(),
                 )
             }
             StgSyn::Bif { intrinsic, args } => {
-                let args_docs = args.iter().map(|r| allocator.text(format!("{}", r)));
+                let args_docs = args.iter().map(|r| allocator.text(format!("{r}")));
                 allocator.text(format!("BIF[{}]", intrinsic)).append(
                     allocator
                         .intersperse(args_docs, allocator.text(" "))
@@ -117,8 +117,8 @@ impl ToPretty for StgSyn {
                 .append(body.pretty(allocator)),
             StgSyn::Meta { meta, body } => allocator
                 .text("`")
-                .append(allocator.text(format!("{}", meta)))
-                .append(allocator.text(format!("{}", body))),
+                .append(allocator.text(format!("{meta}")))
+                .append(allocator.text(format!("{body}"))),
             StgSyn::DeMeta {
                 scrutinee,
                 handler,

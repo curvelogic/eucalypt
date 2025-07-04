@@ -158,10 +158,7 @@ impl<'smap> Receiver<'smap> {
                 t => Ok(core::meta(
                     smid,
                     core::str(smid, text),
-                    acore::block(iter::once((
-                        "tag".to_string(),
-                        acore::str(format!("!{}", t)),
-                    ))),
+                    acore::block(iter::once(("tag".to_string(), acore::str(format!("!{t}"))))),
                 )),
             },
         }

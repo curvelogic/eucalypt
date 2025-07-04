@@ -51,7 +51,7 @@ impl ToPretty for Primitive {
                 .append(allocator.text(s)) //TODO: escape quotes
                 .append(allocator.text("\"")),
             Primitive::Sym(s) => allocator.text(":").append(allocator.text(s)),
-            Primitive::Num(n) => allocator.text(format!("{}", n)),
+            Primitive::Num(n) => allocator.text(format!("{n}")),
             Primitive::Bool(b) => allocator.text(if *b { "true" } else { "false" }),
             Primitive::Null => allocator.text("null"),
         }
@@ -151,8 +151,8 @@ impl ToPretty for RcExpr {
                     )
                     .append(allocator.text("]"))
             }
-            Expr::BlockAnaphor(_, anaphor) => allocator.text(format!("•{}", anaphor)),
-            Expr::ExprAnaphor(_, anaphor) => allocator.text(format!("{}", anaphor)),
+            Expr::BlockAnaphor(_, anaphor) => allocator.text(format!("•{anaphor}")),
+            Expr::ExprAnaphor(_, anaphor) => allocator.text(format!("{anaphor}")),
             Expr::Meta(_, e, m) => {
                 let meta_doc = allocator
                     .text("`")

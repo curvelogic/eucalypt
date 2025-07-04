@@ -37,7 +37,7 @@ fn default_diagnostic<E>(e: &E) -> Diagnostic<usize>
 where
     E: Display,
 {
-    Diagnostic::error().with_message(format!("{}", e))
+    Diagnostic::error().with_message(format!("{e}"))
 }
 
 impl EucalyptError {

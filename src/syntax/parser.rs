@@ -373,7 +373,7 @@ ns: {
         // This should be an applytuple (no whitespace)
         let result = parse_expr("f(g)");
         assert!(result.errors().is_empty());
-        let ast_str = format!("{:#?}", result.syntax_node());
+        let ast_str = format!("{}", result.syntax_node());
         assert!(
             ast_str.contains("ARG_TUPLE"),
             "f(g) should parse as applytuple (ARG_TUPLE)"
@@ -386,7 +386,7 @@ ns: {
         // This should be catenation with paren-expr (whitespace)
         let result = parse_expr("f (g)");
         assert!(result.errors().is_empty());
-        let ast_str = format!("{:#?}", result.syntax_node());
+        let ast_str = format!("{}", result.syntax_node());
         assert!(
             ast_str.contains("PAREN_EXPR"),
             "f (g) should parse with paren-expr, not applytuple"
@@ -407,7 +407,7 @@ ns: {
         // Test the matches? case specifically
         let result = parse_expr("match(s, re) (not ∘ nil?)");
         assert!(result.errors().is_empty());
-        let ast_str = format!("{:#?}", result.syntax_node());
+        let ast_str = format!("{}", result.syntax_node());
         assert!(
             ast_str.contains("PAREN_EXPR"),
             "match(s, re) (not ∘ nil?) should have paren-expr"

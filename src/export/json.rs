@@ -20,7 +20,7 @@ impl FromPrimitive for serde_json::Value {
             Primitive::Sym(s) => serde_json::Value::String(s.clone()),
             Primitive::Str(s) => serde_json::Value::String(s.clone()),
             Primitive::Num(n) => serde_json::Value::Number(n.clone()),
-            Primitive::ZonedDateTime(dt) => serde_json::Value::String(format!("{}", dt)),
+            Primitive::ZonedDateTime(dt) => serde_json::Value::String(format!("{dt}")),
         }
     }
 }

@@ -79,7 +79,7 @@ impl SyntaxError {
 
     pub fn to_diagnostic(&self) -> Diagnostic<usize> {
         Diagnostic::error()
-            .with_message(format!("{}", self))
+            .with_message(format!("{self}"))
             .with_labels(vec![Label::primary(self.file_id(), self.span())])
     }
 }
@@ -99,7 +99,7 @@ impl ParserError {
     pub fn to_diagnostic(&self) -> Diagnostic<usize> {
         match self {
             ParserError::Syntax(e) => e.to_diagnostic(),
-            ParserError::Io(e) => Diagnostic::error().with_message(format!("IO Error: {}", e)),
+            ParserError::Io(e) => Diagnostic::error().with_message(format!("IO Error: {e}")),
         }
     }
 }

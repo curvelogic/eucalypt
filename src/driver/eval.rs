@@ -201,12 +201,12 @@ impl<'a> Executor<'a> {
 
                 if let Some(trace) = e.env_trace() {
                     let env_trace = self.source_map.format_trace(&trace, &self.files);
-                    notes.push(format!("environment trace:\n{}", env_trace));
+                    notes.push(format!("environment trace:\n{env_trace}"));
                 }
 
                 if let Some(trace) = e.stack_trace() {
                     let stack_trace = self.source_map.format_trace(&trace, &self.files);
-                    notes.push(format!("stack trace:\n{}", stack_trace));
+                    notes.push(format!("stack trace:\n{stack_trace}"));
                 }
 
                 diagnostic = diagnostic.with_notes(notes);

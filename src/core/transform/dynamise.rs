@@ -25,7 +25,7 @@ impl Dynamiser {
     fn new(smid: Smid) -> Self {
         Dynamiser {
             depth: ScopeOffset(0),
-            param: free(format!("__g{}", smid).as_ref()),
+            param: free(format!("__g{smid}").as_ref()),
             wrap_lambda: false,
         }
     }

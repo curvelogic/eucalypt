@@ -843,7 +843,7 @@ pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
     use dsl::*;
 
     let_(
-        vec![value(box_str(format!("Key not found: {}", key)))],
+        vec![value(box_str(format!("Key not found: {key}")))],
         Panic.global(lref(0)),
     )
 }

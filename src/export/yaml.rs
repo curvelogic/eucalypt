@@ -49,7 +49,7 @@ impl FromPrimitive for yaml_rust::Yaml {
             }
             // TODO: tags...
             Primitive::ZonedDateTime(dt) => {
-                yaml_rust::Yaml::String(metadata.into(), format!("{}", dt))
+                yaml_rust::Yaml::String(metadata.into(), format!("{dt}"))
             }
         }
     }

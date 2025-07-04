@@ -40,13 +40,13 @@ impl ToSourceDoc for Literal {
         match self {
             Literal::Sym(_, s) => {
                 if is_normal(s) {
-                    RcDoc::text(format!(":{}", s))
+                    RcDoc::text(format!(":{s}"))
                 } else {
                     RcDoc::text(format!(":'{}'", s))
                 }
             }
             Literal::Str(_, s) => RcDoc::text(format!("\"{}\"", escape_string_literal(s))),
-            Literal::Num(_, n) => RcDoc::text(format!("{}", n)),
+            Literal::Num(_, n) => RcDoc::text(format!("{n}")),
         }
     }
 }
