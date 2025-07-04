@@ -87,14 +87,18 @@ mod tests {
 
         // Second element should be a name with dot operator
         if let crate::syntax::rowan::ast::Element::Name(name) = &elements[1] {
-            if let Some(crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op)) = name.identifier() {
+            if let Some(crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op)) =
+                name.identifier()
+            {
                 assert_eq!(op.text(), ".");
             }
         }
 
         // Third element should be a name "foo"
         if let crate::syntax::rowan::ast::Element::Name(name) = &elements[2] {
-            if let Some(crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+            if let Some(crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal)) =
+                name.identifier()
+            {
                 let full_id =
                     crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal.clone());
                 assert_eq!(full_id.name().unwrap_or(""), "foo");

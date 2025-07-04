@@ -2215,7 +2215,10 @@ UNIT@0..105
 
     #[test]
     pub fn parse_harness_eucalypt_files() {
-        for entry in std::fs::read_dir(Path::new("harness/test")).unwrap().flatten() {
+        for entry in std::fs::read_dir(Path::new("harness/test"))
+            .unwrap()
+            .flatten()
+        {
             let path = entry.path();
             if path.is_file() && path.ends_with(".eu") {
                 println!("parsing {}", path.display());
