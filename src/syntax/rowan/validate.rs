@@ -539,13 +539,11 @@ mod tests {
 
     #[test]
     pub fn check_harness_eucalypt_files() {
-        for p in std::fs::read_dir(Path::new("harness/test")).unwrap() {
-            if let Ok(entry) = p {
-                let path = entry.path();
-                if path.is_file() && path.extension().unwrap_or_default() == "eu" {
-                    println!("checking {}", path.display());
-                    check_eucalypt_file(&path);
-                }
+        for entry in std::fs::read_dir(Path::new("harness/test")).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().unwrap_or_default() == "eu" {
+                println!("checking {}", path.display());
+                check_eucalypt_file(&path);
             }
         }
     }

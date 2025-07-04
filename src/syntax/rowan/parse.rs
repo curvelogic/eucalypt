@@ -2215,13 +2215,11 @@ UNIT@0..105
 
     #[test]
     pub fn parse_harness_eucalypt_files() {
-        for p in std::fs::read_dir(Path::new("harness/test")).unwrap() {
-            if let Ok(entry) = p {
-                let path = entry.path();
-                if path.is_file() && path.ends_with(".eu") {
-                    println!("parsing {}", path.display());
-                    parse_eucalypt_file(&path);
-                }
+        for entry in std::fs::read_dir(Path::new("harness/test")).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_file() && path.ends_with(".eu") {
+                println!("parsing {}", path.display());
+                parse_eucalypt_file(&path);
             }
         }
     }
