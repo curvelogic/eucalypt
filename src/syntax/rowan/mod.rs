@@ -191,31 +191,35 @@ mod tests {
     #[test]
     pub fn test_string_patterns() {
         use super::ast::{Element, StringChunk};
-        
+
         // Test simple string pattern with interpolation
         let result = parse_expr(r#""hello {name} world""#);
         println!("Parse tree: {:#?}", result.syntax_node());
         assert!(result.errors().is_empty(), "Parse should succeed");
-        
+
         let soup = result.tree();
         let elements: Vec<_> = soup.elements().collect();
         assert_eq!(elements.len(), 1, "Should have one element");
-        
+
         if let Element::StringPattern(pattern) = &elements[0] {
             println!("Found StringPattern, checking chunks...");
             let chunks: Vec<_> = pattern.chunks().collect();
             println!("Found {} chunks", chunks.len());
-            
+
             // Now we should have proper chunks!
-            assert_eq!(chunks.len(), 3, "Should have 3 chunks: literal, interpolation, literal");
-            
+            assert_eq!(
+                chunks.len(),
+                3,
+                "Should have 3 chunks: literal, interpolation, literal"
+            );
+
             // Check first chunk is literal content
             if let StringChunk::LiteralContent(lit) = &chunks[0] {
                 assert_eq!(lit.value().as_deref(), Some("hello "));
             } else {
                 panic!("First chunk should be literal content");
             }
-            
+
             // Check second chunk is interpolation
             if let StringChunk::Interpolation(interp) = &chunks[1] {
                 let target = interp.target().expect("Should have interpolation target");
@@ -224,7 +228,7 @@ mod tests {
             } else {
                 panic!("Second chunk should be interpolation");
             }
-            
+
             // Check third chunk is literal content
             if let StringChunk::LiteralContent(lit) = &chunks[2] {
                 assert_eq!(lit.value().as_deref(), Some(" world"));
@@ -239,22 +243,26 @@ mod tests {
     #[test]
     pub fn test_string_pattern_with_format() {
         use super::ast::{Element, StringChunk};
-        
+
         let result = parse_expr(r#""{value:%03d}""#);
         assert!(result.errors().is_empty(), "Parse should succeed");
-        
+
         let soup = result.tree();
         let elements: Vec<_> = soup.elements().collect();
         assert_eq!(elements.len(), 1, "Should have one element");
-        
+
         if let Element::StringPattern(pattern) = &elements[0] {
             let chunks: Vec<_> = pattern.chunks().collect();
-            assert_eq!(chunks.len(), 1, "Should have 1 chunk: interpolation with format");
-            
+            assert_eq!(
+                chunks.len(),
+                1,
+                "Should have 1 chunk: interpolation with format"
+            );
+
             if let StringChunk::Interpolation(interp) = &chunks[0] {
                 let target = interp.target().expect("Should have interpolation target");
                 assert_eq!(target.value().as_deref(), Some("value"));
-                
+
                 let format = interp.format_spec().expect("Should have format spec");
                 assert_eq!(format.value().as_deref(), Some("%03d"));
             } else {
@@ -268,19 +276,19 @@ mod tests {
     #[test]
     pub fn test_string_pattern_with_escaped_braces() {
         use super::ast::{Element, StringChunk};
-        
+
         let result = parse_expr(r#""hello {{world}} test""#);
         assert!(result.errors().is_empty(), "Parse should succeed");
-        
+
         let soup = result.tree();
         let elements: Vec<_> = soup.elements().collect();
         assert_eq!(elements.len(), 1, "Should have one element");
-        
+
         if let Element::StringPattern(pattern) = &elements[0] {
             let chunks: Vec<_> = pattern.chunks().collect();
             // Should have 5 chunks: "hello ", {{, "world", }}, " test"
             assert_eq!(chunks.len(), 5, "Should have 5 chunks");
-            
+
             // Check chunk types
             assert!(matches!(chunks[0], StringChunk::LiteralContent(_)));
             assert!(matches!(chunks[1], StringChunk::EscapedOpen(_)));

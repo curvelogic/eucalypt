@@ -122,9 +122,7 @@ impl Embed for InterpolationTarget {
                     list(vec![lit(sym("a-str-anaphor")), lit(sym("a-no-index"))])
                 }
             }
-            InterpolationTarget::Reference(_, names) => {
-                list_elements("a-str-reference", names)
-            }
+            InterpolationTarget::Reference(_, names) => list_elements("a-str-reference", names),
         }
     }
 }
@@ -142,7 +140,7 @@ impl Embed for InterpolationRequest {
         } else {
             lit(sym("a-no-conversion"))
         };
-        
+
         list(vec![lit(sym("a-str-interp")), target, format, conversion])
     }
 }
@@ -153,9 +151,7 @@ impl Embed for StringChunk {
             StringChunk::LiteralContent(_, text) => {
                 list(vec![lit(sym("a-str-literal")), lit(str(text))])
             }
-            StringChunk::Interpolation(_, request) => {
-                request.embed()
-            }
+            StringChunk::Interpolation(_, request) => request.embed(),
         }
     }
 }
@@ -247,7 +243,10 @@ impl Embed for rowan::ParenExpr {
         if let Some(soup) = self.soup() {
             list(vec![lit(sym("a-paren-expr")), soup.embed()])
         } else {
-            list(vec![lit(sym("a-paren-expr")), list(vec![lit(sym("a-soup"))])])
+            list(vec![
+                lit(sym("a-paren-expr")),
+                list(vec![lit(sym("a-soup"))]),
+            ])
         }
     }
 }
@@ -263,14 +262,17 @@ impl Embed for rowan::List {
 
 impl Embed for rowan::ApplyTuple {
     fn embed(&self) -> Expression {
-        let items: Vec<_> = self.items().map(|soup| {
-            // If the soup has a single element, unwrap it like LALRPOP does
-            if let Some(elem) = soup.singleton() {
-                elem.embed()
-            } else {
-                soup.embed()
-            }
-        }).collect();
+        let items: Vec<_> = self
+            .items()
+            .map(|soup| {
+                // If the soup has a single element, unwrap it like LALRPOP does
+                if let Some(elem) = soup.singleton() {
+                    elem.embed()
+                } else {
+                    soup.embed()
+                }
+            })
+            .collect();
         let mut result = vec![lit(sym("a-applytuple"))];
         result.extend(items);
         list(result)
@@ -297,7 +299,7 @@ impl Embed for rowan::StringChunk {
                 } else {
                     lit(str(""))
                 };
-                
+
                 let format = if let Some(format) = interp.format_spec() {
                     if let Some(text) = format.value() {
                         lit(str(&text))
@@ -307,7 +309,7 @@ impl Embed for rowan::StringChunk {
                 } else {
                     lit(sym("a-no-format"))
                 };
-                
+
                 let conversion = if let Some(conversion) = interp.conversion_spec() {
                     if let Some(text) = conversion.value() {
                         lit(str(&text))
@@ -317,15 +319,11 @@ impl Embed for rowan::StringChunk {
                 } else {
                     lit(sym("a-no-conversion"))
                 };
-                
+
                 list(vec![lit(sym("a-str-interp")), target, format, conversion])
             }
-            rowan::StringChunk::EscapedOpen(_) => {
-                list(vec![lit(sym("a-str-esc-open"))])
-            }
-            rowan::StringChunk::EscapedClose(_) => {
-                list(vec![lit(sym("a-str-esc-close"))])
-            }
+            rowan::StringChunk::EscapedOpen(_) => list(vec![lit(sym("a-str-esc-open"))]),
+            rowan::StringChunk::EscapedClose(_) => list(vec![lit(sym("a-str-esc-close"))]),
         }
     }
 }
@@ -338,7 +336,6 @@ impl Embed for rowan::StringPattern {
         list(result)
     }
 }
-
 
 impl Embed for rowan::Element {
     fn embed(&self) -> Expression {
@@ -384,7 +381,7 @@ impl Embed for rowan::Declaration {
         // For now, we embed the declaration structure generically
         // A more sophisticated implementation would classify the declaration kind
         let meta = embed_rowan_decl_meta(self.meta());
-        
+
         let head = if let Some(_head) = self.head() {
             // We'd need to analyze the head to determine the declaration type
             // For now, just embed as generic head
@@ -392,7 +389,7 @@ impl Embed for rowan::Declaration {
         } else {
             list(vec![lit(sym("a-decl-head")), lit(str("missing"))])
         };
-        
+
         let body = if let Some(body) = self.body() {
             if let Some(soup) = body.soup() {
                 soup.embed()
@@ -402,28 +399,23 @@ impl Embed for rowan::Declaration {
         } else {
             list(vec![lit(sym("a-soup"))])
         };
-        
-        list(vec![
-            lit(sym("a-declaration")),
-            head,
-            body,
-            meta,
-        ])
+
+        list(vec![lit(sym("a-declaration")), head, body, meta])
     }
 }
 
 impl Embed for rowan::Block {
     fn embed(&self) -> Expression {
         let mut elements = vec![lit(sym("a-block"))];
-        
+
         // Add all declarations
         for decl in self.declarations() {
             elements.push(decl.embed());
         }
-        
+
         // Add metadata
         elements.push(embed_rowan_meta(self.meta()));
-        
+
         list(elements)
     }
 }
@@ -431,15 +423,15 @@ impl Embed for rowan::Block {
 impl Embed for rowan::Unit {
     fn embed(&self) -> Expression {
         let mut elements = vec![lit(sym("a-unit"))];
-        
+
         // Add all declarations
         for decl in self.declarations() {
             elements.push(decl.embed());
         }
-        
+
         // Add metadata
         elements.push(embed_rowan_meta(self.meta()));
-        
+
         list(elements)
     }
 }

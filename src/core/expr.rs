@@ -320,9 +320,9 @@ pub type LetScope<T> = Scope<Rec<Vec<(Binder<String>, Embed<T>)>>, T>;
 pub type LamScope<T> = Scope<Vec<Binder<String>>, T>;
 
 /// The main core expression type
-/// 
+///
 /// Each variant can be embedded using the core embedding syntax:
-/// 
+///
 /// - `Var`: `[:c-var "name"]` - Variable reference
 /// - `Let`: `[:c-let {bindings} body]` - Let binding  
 /// - `Intrinsic`: `[:c-bif :NAME]` - Built-in function

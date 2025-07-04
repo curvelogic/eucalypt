@@ -4,7 +4,7 @@ use crate::syntax::rowan::kind::SyntaxKind::{self, *};
 use codespan::{ByteIndex, ByteOffset, Span};
 use std::{iter::Peekable, str::Chars};
 
-/// String pattern lexer for parsing string interpolation 
+/// String pattern lexer for parsing string interpolation
 /// This lexer preserves all source information for lossless parsing
 pub struct StringPatternLexer<'text> {
     /// Input text (without outer quotes)
@@ -103,7 +103,11 @@ impl<'text> StringPatternLexer<'text> {
     fn interpolation_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
         let end = self.consume(|c| !c.is_whitespace() && c != '}' && c != ':' && c != '.');
         let content = self.slice(start, end);
-        (STRING_INTERPOLATION_TARGET, self.make_span(start, end), content)
+        (
+            STRING_INTERPOLATION_TARGET,
+            self.make_span(start, end),
+            content,
+        )
     }
 
     /// Parse format specifier content after :
@@ -169,9 +173,11 @@ impl<'text> Iterator for StringPatternLexer<'text> {
                 self.in_format_spec = true;
                 Some((COLON, self.make_span(start, self.position), ":"))
             }
-            '.' if self.in_interpolation => {
-                Some((OPERATOR_IDENTIFIER, self.make_span(start, self.position), "."))
-            }
+            '.' if self.in_interpolation => Some((
+                OPERATOR_IDENTIFIER,
+                self.make_span(start, self.position),
+                ".",
+            )),
             _ if self.in_interpolation => {
                 if self.in_format_spec {
                     Some(self.format_content(start))

@@ -1,6 +1,5 @@
 //! Syntax kinds for Rowan-based parser implementation
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(non_camel_case_types)]
 #[repr(u16)]
@@ -92,7 +91,10 @@ use SyntaxKind::*;
 
 impl SyntaxKind {
     pub fn is_callable_terminal(&self) -> bool {
-        *self == CLOSE_PAREN || *self == CLOSE_BRACE || *self == UNQUOTED_IDENTIFIER || *self == STRING_PATTERN_END
+        *self == CLOSE_PAREN
+            || *self == CLOSE_BRACE
+            || *self == UNQUOTED_IDENTIFIER
+            || *self == STRING_PATTERN_END
     }
 
     pub fn is_literal_terminal(&self) -> bool {
@@ -114,7 +116,6 @@ impl SyntaxKind {
         unsafe { std::mem::transmute::<u16, SyntaxKind>(raw.0) }
     }
 }
-
 
 impl From<SyntaxKind> for rowan::SyntaxKind {
     fn from(kind: SyntaxKind) -> Self {

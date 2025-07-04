@@ -451,7 +451,7 @@ impl<'text> Parser<'text> {
     fn parse_string_pattern(&mut self) {
         self.sink().start_node(STRING_PATTERN);
         self.sink().token(STRING_PATTERN_START); // consume opening quote
-        
+
         // Process tokens until we reach STRING_PATTERN_END
         while let Some((kind, _text)) = self.peek() {
             match kind {
@@ -483,16 +483,16 @@ impl<'text> Parser<'text> {
                     self.sink().start_node(STRING_INTERPOLATION);
                     self.sink().token(OPEN_BRACE);
                     self.next(); // consume {
-                    
+
                     // Parse interpolation content
                     self.parse_string_interpolation_content();
-                    
+
                     // Consume closing brace
                     if let Some((CLOSE_BRACE, _)) = self.peek() {
                         self.sink().token(CLOSE_BRACE);
                         self.next();
                     }
-                    
+
                     self.sink().finish_node(); // end STRING_INTERPOLATION
                 }
                 _ => {
@@ -501,21 +501,24 @@ impl<'text> Parser<'text> {
                 }
             }
         }
-        
+
         self.sink().finish_node(); // end STRING_PATTERN
     }
-    
+
     /// Parse the content inside an interpolation {...}
     fn parse_string_interpolation_content(&mut self) {
         // Check if we have dotted references by looking ahead
-        let has_dots = self.tokens.iter().skip(self.next_token)
+        let has_dots = self
+            .tokens
+            .iter()
+            .skip(self.next_token)
             .take_while(|(kind, _)| *kind != CLOSE_BRACE && *kind != COLON)
             .any(|(kind, _)| *kind == OPERATOR_IDENTIFIER);
-        
+
         if has_dots {
             // Create a soup to hold the interpolation expression
             self.sink().start_node(SOUP);
-            
+
             // Parse the first target (must exist)
             if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
                 self.sink().start_node(NAME);
@@ -523,7 +526,7 @@ impl<'text> Parser<'text> {
                 self.next();
                 self.sink().finish_node(); // end NAME
             }
-            
+
             // Parse alternating dots and targets
             while let Some((OPERATOR_IDENTIFIER, text)) = self.peek() {
                 if text == "." {
@@ -532,7 +535,7 @@ impl<'text> Parser<'text> {
                     self.sink().token(OPERATOR_IDENTIFIER);
                     self.next();
                     self.sink().finish_node(); // end NAME
-                    
+
                     // Parse the following target
                     if let Some((STRING_INTERPOLATION_TARGET, _)) = self.peek() {
                         self.sink().start_node(NAME);
@@ -547,7 +550,7 @@ impl<'text> Parser<'text> {
                     break;
                 }
             }
-            
+
             self.sink().finish_node(); // end SOUP
         } else {
             // Simple case - just one target
@@ -558,12 +561,12 @@ impl<'text> Parser<'text> {
                 self.sink().finish_node();
             }
         }
-        
+
         // Check for format spec (colon followed by format)
         if let Some((COLON, _)) = self.peek() {
             self.sink().token(COLON);
             self.next(); // consume :
-            
+
             if let Some((STRING_FORMAT_SPEC, _)) = self.peek() {
                 self.sink().start_node(STRING_FORMAT_SPEC);
                 self.sink().token(STRING_FORMAT_SPEC);
@@ -595,7 +598,7 @@ impl EventSink for SimpleEventSink {
     }
 
     fn accept(&mut self, events: Vec<ParseEvent>) {
-        self.0.extend(events.into_iter());
+        self.0.extend(events);
     }
 
     fn token(&mut self, kind: SyntaxKind) {
@@ -646,7 +649,7 @@ impl EventSink for BlockEventSink {
     }
 
     fn accept(&mut self, events: Vec<ParseEvent>) {
-        self.buffer.extend(events.into_iter());
+        self.buffer.extend(events);
     }
 
     fn token(&mut self, kind: SyntaxKind) {
@@ -681,7 +684,7 @@ impl EventSink for BlockEventSink {
                             Some(ref mut d) => {
                                 // if meta is set and empty it is
                                 // expecting metadata
-                                if d.meta.as_ref().map_or(false, |m| m.is_empty()) {
+                                if d.meta.as_ref().is_some_and(|m| m.is_empty()) {
                                     swap(d.meta.as_mut().unwrap(), &mut self.buffer);
                                 } else {
                                     // expecting body of last block
@@ -701,7 +704,9 @@ impl EventSink for BlockEventSink {
                     if head_nodes.is_empty() {
                         if let Some(ref mut d) = self.declaration {
                             if let Some(ref mut meta) = d.meta {
-                                if let Some(extracted_head) = Self::extract_last_expression_from_metadata(meta) {
+                                if let Some(extracted_head) =
+                                    Self::extract_last_expression_from_metadata(meta)
+                                {
                                     head_nodes = extracted_head;
                                 }
                             }
@@ -902,7 +907,9 @@ impl BlockEventSink {
     /// Extract the last complete expression from metadata events to use as declaration head.
     /// This handles cases like: ` { complex: metadata } (head): body
     /// where (head) should be the declaration head, not part of metadata.
-    fn extract_last_expression_from_metadata(meta: &mut Vec<ParseEvent>) -> Option<Vec<ParseEvent>> {
+    fn extract_last_expression_from_metadata(
+        meta: &mut Vec<ParseEvent>,
+    ) -> Option<Vec<ParseEvent>> {
         if meta.is_empty() {
             return None;
         }
@@ -921,7 +928,9 @@ impl BlockEventSink {
                 ParseEvent::StartNode(_) if depth > 1 => {
                     depth -= 1;
                 }
-                ParseEvent::StartNode(PAREN_EXPR) | ParseEvent::StartNode(NAME) | ParseEvent::StartNode(ARG_TUPLE) => {
+                ParseEvent::StartNode(PAREN_EXPR)
+                | ParseEvent::StartNode(NAME)
+                | ParseEvent::StartNode(ARG_TUPLE) => {
                     found_expression = true;
                     if depth == 0 {
                         break;
@@ -956,14 +965,14 @@ impl BlockEventSink {
         if found_expression && idx < meta.len() {
             // Split off the expression from the metadata
             let mut extracted = meta.split_off(idx);
-            
+
             // Convert ARG_TUPLE to PAREN_EXPR for operator declarations
             // ARG_TUPLE is used in parameter context, but for declaration heads
             // we need PAREN_EXPR to match the validation logic
             if let Some(ParseEvent::StartNode(ARG_TUPLE)) = extracted.first() {
                 extracted[0] = ParseEvent::StartNode(PAREN_EXPR);
             }
-            
+
             Some(extracted)
         } else {
             None
@@ -1980,44 +1989,74 @@ UNIT@0..105
         let parse = parse_expr(text);
         println!("String pattern parse tree:\n{:#?}", parse.syntax_node());
         assert!(parse.ok().is_ok());
-        
+
         // String pattern with format specifier
         let text = r#""Value: {num:%03d}""#;
         let parse = parse_expr(text);
-        println!("String pattern with format spec:\n{:#?}", parse.syntax_node());
+        println!(
+            "String pattern with format spec:\n{:#?}",
+            parse.syntax_node()
+        );
         assert!(parse.ok().is_ok());
-        
+
         // String pattern with escaped braces
         let text = r#""Escaped {{braces}} here""#;
         let parse = parse_expr(text);
-        println!("String pattern with escaped braces:\n{:#?}", parse.syntax_node());
+        println!(
+            "String pattern with escaped braces:\n{:#?}",
+            parse.syntax_node()
+        );
         assert!(parse.ok().is_ok());
-        
+
         // Test examples from actual harness files
-        
+
         // From 024_interpolation.eu - basic variable interpolation
         let text = r#"test: "{x}+{y}={z}""#;
         let parse = parse_unit(text);
-        println!("Harness example - basic interpolation:\n{:#?}", parse.syntax_node());
-        assert!(parse.ok().is_ok(), "Failed to parse basic interpolation from harness");
-        
+        println!(
+            "Harness example - basic interpolation:\n{:#?}",
+            parse.syntax_node()
+        );
+        assert!(
+            parse.ok().is_ok(),
+            "Failed to parse basic interpolation from harness"
+        );
+
         // From 024_interpolation.eu - dotted reference with format
         let text = r#"test: "{data.foo.bar:%06d}""#;
         let parse = parse_unit(text);
-        println!("Harness example - dotted reference with format:\n{:#?}", parse.syntax_node());
-        assert!(parse.ok().is_ok(), "Failed to parse dotted reference with format from harness");
-        
+        println!(
+            "Harness example - dotted reference with format:\n{:#?}",
+            parse.syntax_node()
+        );
+        assert!(
+            parse.ok().is_ok(),
+            "Failed to parse dotted reference with format from harness"
+        );
+
         // From 041_numeric_formats.eu - complex format
         let text = r#"test: "{a:%04d}-{b:%04f}""#;
         let parse = parse_unit(text);
-        println!("Harness example - complex format:\n{:#?}", parse.syntax_node());
-        assert!(parse.ok().is_ok(), "Failed to parse complex format from harness");
-        
+        println!(
+            "Harness example - complex format:\n{:#?}",
+            parse.syntax_node()
+        );
+        assert!(
+            parse.ok().is_ok(),
+            "Failed to parse complex format from harness"
+        );
+
         // From 041_numeric_formats.eu - anaphora with format
         let text = r#"test: "{:%03d}{:%05x}""#;
         let parse = parse_unit(text);
-        println!("Harness example - anaphora with format:\n{:#?}", parse.syntax_node());
-        assert!(parse.ok().is_ok(), "Failed to parse anaphora with format from harness");
+        println!(
+            "Harness example - anaphora with format:\n{:#?}",
+            parse.syntax_node()
+        );
+        assert!(
+            parse.ok().is_ok(),
+            "Failed to parse anaphora with format from harness"
+        );
     }
 
     #[test]
@@ -2025,62 +2064,85 @@ UNIT@0..105
         // Test specific files known to contain string patterns
         let test_files = [
             "harness/test/024_interpolation.eu",
-            "harness/test/041_numeric_formats.eu"
+            "harness/test/041_numeric_formats.eu",
         ];
-        
+
         for file_path in &test_files {
             println!("Testing string pattern file: {}", file_path);
             let content = std::fs::read_to_string(file_path).unwrap();
             let parse = parse_unit(&content);
-            
+
             if !parse.errors().is_empty() {
                 println!("Errors in {}: {:?}", file_path, parse.errors());
             }
-            
-            assert!(parse.errors().is_empty(), "{} should parse without errors", file_path);
-            assert!(parse.ok().is_ok(), "{} should parse successfully", file_path);
+
+            assert!(
+                parse.errors().is_empty(),
+                "{} should parse without errors",
+                file_path
+            );
+            assert!(
+                parse.ok().is_ok(),
+                "{} should parse successfully",
+                file_path
+            );
         }
     }
 
     #[test]
     fn test_block_anaphora() {
         // Test basic block anaphora patterns
-        
+
         // Unnumbered anaphora
         let text = r#"test: { x: • y: • }"#;
         let parse = parse_unit(text);
         println!("Block anaphora - unnumbered:\n{:#?}", parse.syntax_node());
-        assert!(parse.ok().is_ok(), "Failed to parse unnumbered block anaphora");
-        
+        assert!(
+            parse.ok().is_ok(),
+            "Failed to parse unnumbered block anaphora"
+        );
+
         // Numbered anaphora
         let text = r#"test: { third: •2 second: •1 first: •0 }"#;
         let parse = parse_unit(text);
         println!("Block anaphora - numbered:\n{:#?}", parse.syntax_node());
-        assert!(parse.ok().is_ok(), "Failed to parse numbered block anaphora");
-        
+        assert!(
+            parse.ok().is_ok(),
+            "Failed to parse numbered block anaphora"
+        );
+
         // Anaphora in lambda context
         let text = r#"test: {it: •}"#;
         let parse = parse_unit(text);
         println!("Block anaphora - lambda:\n{:#?}", parse.syntax_node());
-        assert!(parse.ok().is_ok(), "Failed to parse block anaphora in lambda");
-        
+        assert!(
+            parse.ok().is_ok(),
+            "Failed to parse block anaphora in lambda"
+        );
+
         // Test the actual harness file
         let content = std::fs::read_to_string("harness/test/031_block_anaphora.eu").unwrap();
         let parse = parse_unit(&content);
-        
+
         if !parse.errors().is_empty() {
             println!("Errors in block anaphora harness: {:?}", parse.errors());
         }
-        
-        assert!(parse.errors().is_empty(), "031_block_anaphora.eu should parse without errors");
-        assert!(parse.ok().is_ok(), "031_block_anaphora.eu should parse successfully");
+
+        assert!(
+            parse.errors().is_empty(),
+            "031_block_anaphora.eu should parse without errors"
+        );
+        assert!(
+            parse.ok().is_ok(),
+            "031_block_anaphora.eu should parse successfully"
+        );
     }
 
     #[test]
     fn test_rowan_integration() {
         // Comprehensive integration test for Rowan parser functionality
         // Tests string patterns, block anaphora, and complex structures together
-        
+
         let complex_code = r#"
         // Test file demonstrating key Rowan parser features
         "Integration test metadata"
@@ -2111,31 +2173,43 @@ UNIT@0..105
         
         RESULT: :INTEGRATION_SUCCESS
         "#;
-        
+
         println!("Testing comprehensive Rowan integration...");
         let parse = parse_unit(complex_code);
-        
+
         if !parse.errors().is_empty() {
             println!("Integration test errors: {:?}", parse.errors());
             for error in parse.errors() {
                 println!("  - {:?}", error);
             }
         }
-        
+
         // Verify parsing succeeds
-        assert!(parse.errors().is_empty(), "Integration test should parse without errors");
-        
+        assert!(
+            parse.errors().is_empty(),
+            "Integration test should parse without errors"
+        );
+
         // Get the tree before consuming parse with ok()
         let tree = parse.tree();
         let syntax = tree.syntax();
-        
+
         // Verify the tree structure is reasonable
-        
+
         // Should have declarations
-        assert!(syntax.to_string().contains("string-patterns"), "Should contain string-patterns declaration");
-        assert!(syntax.to_string().contains("block-anaphora"), "Should contain block-anaphora declaration");
-        assert!(syntax.to_string().contains("complex-structure"), "Should contain complex-structure declaration");
-        
+        assert!(
+            syntax.to_string().contains("string-patterns"),
+            "Should contain string-patterns declaration"
+        );
+        assert!(
+            syntax.to_string().contains("block-anaphora"),
+            "Should contain block-anaphora declaration"
+        );
+        assert!(
+            syntax.to_string().contains("complex-structure"),
+            "Should contain complex-structure declaration"
+        );
+
         println!("✓ Rowan parser integration test passed!");
     }
 

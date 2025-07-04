@@ -4,13 +4,12 @@
 //! instead of direct pattern matching on data structures.
 
 use super::{
-    desugarable::Desugarable, desugarer::Desugarer,
-    literal::desugar_literal, disembed::core_from_embedding,
+    desugarable::Desugarable, desugarer::Desugarer, disembed::core_from_embedding,
+    literal::desugar_literal,
 };
 use crate::core::metadata::{
-    normalise_metadata, strip_desugar_phase_metadata,
-    DesugarPhaseBlockMetadata, DesugarPhaseDeclarationMetadata,
-    ReadMetadata,
+    normalise_metadata, strip_desugar_phase_metadata, DesugarPhaseBlockMetadata,
+    DesugarPhaseDeclarationMetadata, ReadMetadata,
 };
 use crate::{
     common::sourcemap::{HasSmid, Smid},
@@ -21,13 +20,13 @@ use crate::{
         transform::dynamise,
     },
     syntax::rowan::{
-        ast::{self as rowan_ast, Element, HasSoup, AstToken},
+        ast::{self as rowan_ast, AstToken, Element, HasSoup},
         kind::SyntaxKind,
     },
 };
-use rowan::{ast::AstNode, TextRange};
 use codespan::{ByteIndex, Span};
-use moniker::{Binder, Embed, Scope, Rec};
+use moniker::{Binder, Embed, Rec, Scope};
+use rowan::{ast::AstNode, TextRange};
 
 /// Convert a TextRange to a Span
 fn text_range_to_span(range: TextRange) -> Span {
@@ -37,39 +36,49 @@ fn text_range_to_span(range: TextRange) -> Span {
 }
 
 /// Convert Rowan literal value to legacy AST literal for reuse
-fn rowan_literal_to_legacy(lit: &rowan_ast::Literal) -> Result<crate::syntax::ast::Literal, CoreError> {
+fn rowan_literal_to_legacy(
+    lit: &rowan_ast::Literal,
+) -> Result<crate::syntax::ast::Literal, CoreError> {
     let span = text_range_to_span(lit.syntax().text_range());
-    
+
     if let Some(value) = lit.value() {
         match value {
             rowan_ast::LiteralValue::Sym(sym) => {
                 if let Some(s) = sym.value() {
                     Ok(crate::syntax::ast::Literal::Sym(span, s.to_string()))
                 } else {
-                    Err(CoreError::InvalidEmbedding("invalid symbol literal".to_string(), 
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32)))
+                    Err(CoreError::InvalidEmbedding(
+                        "invalid symbol literal".to_string(),
+                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
+                    ))
                 }
             }
             rowan_ast::LiteralValue::Str(s) => {
                 if let Some(text) = s.value() {
                     Ok(crate::syntax::ast::Literal::Str(span, text.to_string()))
                 } else {
-                    Err(CoreError::InvalidEmbedding("invalid string literal".to_string(), 
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32)))
+                    Err(CoreError::InvalidEmbedding(
+                        "invalid string literal".to_string(),
+                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
+                    ))
                 }
             }
             rowan_ast::LiteralValue::Num(n) => {
                 if let Some(num) = n.value() {
                     Ok(crate::syntax::ast::Literal::Num(span, num))
                 } else {
-                    Err(CoreError::InvalidEmbedding("invalid number literal".to_string(), 
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32)))
+                    Err(CoreError::InvalidEmbedding(
+                        "invalid number literal".to_string(),
+                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
+                    ))
                 }
             }
         }
     } else {
-        Err(CoreError::InvalidEmbedding("malformed literal".to_string(), 
-            crate::common::sourcemap::Smid::from(span.start().0 as u32)))
+        Err(CoreError::InvalidEmbedding(
+            "malformed literal".to_string(),
+            crate::common::sourcemap::Smid::from(span.start().0 as u32),
+        ))
     }
 }
 
@@ -83,18 +92,18 @@ fn rowan_element_to_legacy(element: &Element) -> Result<crate::syntax::ast::Expr
         Element::List(list) => {
             let span = text_range_to_span(list.syntax().text_range());
             let mut items = Vec::new();
-            
+
             for soup in list.items() {
                 let legacy_expr = rowan_soup_to_legacy(&soup)?;
                 items.push(legacy_expr);
             }
-            
+
             Ok(crate::syntax::ast::Expression::List(span, items))
         }
         Element::Block(block) => {
             let span = text_range_to_span(block.syntax().text_range());
             let mut declarations = Vec::new();
-            
+
             for decl in block.declarations() {
                 let name_span = text_range_to_span(decl.syntax().text_range());
                 let name = if let Some(head) = decl.head() {
@@ -106,39 +115,45 @@ fn rowan_element_to_legacy(element: &Element) -> Result<crate::syntax::ast::Expr
                         _ => {
                             return Err(CoreError::InvalidEmbedding(
                                 "complex declaration not supported in core embedding".to_string(),
-                                crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                                crate::common::sourcemap::Smid::from(span.start().0 as u32),
                             ));
                         }
                     }
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "malformed declaration in core embedding".to_string(),
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
                     ));
                 };
-                
+
                 let definition = if let Some(body) = decl.body() {
                     if let Some(body_soup) = body.soup() {
                         rowan_soup_to_legacy(&body_soup)?
                     } else {
                         return Err(CoreError::InvalidEmbedding(
                             "empty declaration body in core embedding".to_string(),
-                            crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                            crate::common::sourcemap::Smid::from(span.start().0 as u32),
                         ));
                     }
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "missing declaration body in core embedding".to_string(),
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
                     ));
                 };
-                
+
                 let decl_head = crate::syntax::ast::DeclarationHead::PropertyPattern(name);
-                declarations.push(crate::syntax::ast::Declaration::new(decl_head, None, definition));
+                declarations.push(crate::syntax::ast::Declaration::new(
+                    decl_head, None, definition,
+                ));
             }
-            
+
             Ok(crate::syntax::ast::Expression::Block(Box::new(
-                crate::syntax::ast::Block { span, metadata: None, declarations }
+                crate::syntax::ast::Block {
+                    span,
+                    metadata: None,
+                    declarations,
+                },
             )))
         }
         Element::Name(name) => {
@@ -147,19 +162,19 @@ fn rowan_element_to_legacy(element: &Element) -> Result<crate::syntax::ast::Expr
                 match ident {
                     rowan_ast::Identifier::NormalIdentifier(normal) => {
                         Ok(crate::syntax::ast::Expression::Name(
-                            crate::syntax::ast::Name::Normal(span, normal.text().to_string())
+                            crate::syntax::ast::Name::Normal(span, normal.text().to_string()),
                         ))
                     }
                     rowan_ast::Identifier::OperatorIdentifier(op) => {
                         Ok(crate::syntax::ast::Expression::Name(
-                            crate::syntax::ast::Name::Operator(span, op.text().to_string())
+                            crate::syntax::ast::Name::Operator(span, op.text().to_string()),
                         ))
                     }
                 }
             } else {
                 Err(CoreError::InvalidEmbedding(
                     "malformed name in core embedding".to_string(),
-                    crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                    crate::common::sourcemap::Smid::from(span.start().0 as u32),
                 ))
             }
         }
@@ -171,7 +186,7 @@ fn rowan_element_to_legacy(element: &Element) -> Result<crate::syntax::ast::Expr
                 let span = text_range_to_span(paren.syntax().text_range());
                 Err(CoreError::InvalidEmbedding(
                     "empty parenthesized expression in core embedding".to_string(),
-                    crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                    crate::common::sourcemap::Smid::from(span.start().0 as u32),
                 ))
             }
         }
@@ -179,27 +194,29 @@ fn rowan_element_to_legacy(element: &Element) -> Result<crate::syntax::ast::Expr
             let span = text_range_to_span(string_pattern.syntax().text_range());
             Err(CoreError::InvalidEmbedding(
                 "string patterns not supported in core embedding".to_string(),
-                crate::common::sourcemap::Smid::from(span.start().0 as u32)
+                crate::common::sourcemap::Smid::from(span.start().0 as u32),
             ))
         }
         Element::ApplyTuple(apply_tuple) => {
             let span = text_range_to_span(apply_tuple.syntax().text_range());
             let mut items = Vec::new();
-            
+
             for soup in apply_tuple.items() {
                 let legacy_expr = rowan_soup_to_legacy(&soup)?;
                 items.push(legacy_expr);
             }
-            
+
             Ok(crate::syntax::ast::Expression::ApplyTuple(span, items))
         }
     }
 }
 
 /// Convert Rowan AST Soup to legacy Expression for core embedding
-pub fn rowan_soup_to_legacy(soup: &rowan_ast::Soup) -> Result<crate::syntax::ast::Expression, CoreError> {
+pub fn rowan_soup_to_legacy(
+    soup: &rowan_ast::Soup,
+) -> Result<crate::syntax::ast::Expression, CoreError> {
     let elements: Vec<_> = soup.elements().collect();
-    
+
     if elements.len() == 1 {
         // Single element soup - convert the element directly
         rowan_element_to_legacy(&elements[0])
@@ -207,13 +224,16 @@ pub fn rowan_soup_to_legacy(soup: &rowan_ast::Soup) -> Result<crate::syntax::ast
         // Multi-element soup - create an OpSoup expression
         let span = text_range_to_span(soup.syntax().text_range());
         let mut legacy_elements = Vec::new();
-        
+
         for element in elements {
             let legacy_expr = rowan_element_to_legacy(&element)?;
             legacy_elements.push(legacy_expr);
         }
-        
-        Ok(crate::syntax::ast::Expression::OpSoup(span, legacy_elements))
+
+        Ok(crate::syntax::ast::Expression::OpSoup(
+            span,
+            legacy_elements,
+        ))
     }
 }
 
@@ -234,7 +254,8 @@ impl Desugarable for Element {
             Element::Block(block) => block.desugar(desugarer),
             Element::List(list) => {
                 let span = text_range_to_span(list.syntax().text_range());
-                let items: Result<Vec<RcExpr>, CoreError> = list.items()
+                let items: Result<Vec<RcExpr>, CoreError> = list
+                    .items()
                     .map(|soup| {
                         // Each item is a Soup, get its singleton element if it exists
                         let expr = if let Some(elem) = soup.singleton() {
@@ -247,11 +268,8 @@ impl Desugarable for Element {
                         Ok(desugarer.varify(expr))
                     })
                     .collect();
-                
-                Ok(RcExpr::from(Expr::List(
-                    desugarer.new_smid(span),
-                    items?
-                )))
+
+                Ok(RcExpr::from(Expr::List(desugarer.new_smid(span), items?)))
             }
             Element::ParenExpr(paren) => {
                 // ParenExpr contains a soup
@@ -259,7 +277,10 @@ impl Desugarable for Element {
                     soup.desugar(desugarer)
                 } else {
                     let span = text_range_to_span(paren.syntax().text_range());
-                    Err(CoreError::InvalidEmbedding("empty parentheses".to_string(), desugarer.new_smid(span)))
+                    Err(CoreError::InvalidEmbedding(
+                        "empty parentheses".to_string(),
+                        desugarer.new_smid(span),
+                    ))
                 }
             }
             Element::Name(name) => {
@@ -267,7 +288,10 @@ impl Desugarable for Element {
                 if let Some(id) = name.identifier() {
                     desugar_rowan_name(span, &id, desugarer)
                 } else {
-                    Err(CoreError::InvalidEmbedding("invalid name".to_string(), desugarer.new_smid(span)))
+                    Err(CoreError::InvalidEmbedding(
+                        "invalid name".to_string(),
+                        desugarer.new_smid(span),
+                    ))
                 }
             }
             Element::StringPattern(pattern) => {
@@ -276,7 +300,8 @@ impl Desugarable for Element {
             }
             Element::ApplyTuple(tuple) => {
                 let span = text_range_to_span(tuple.syntax().text_range());
-                let args: Result<Vec<RcExpr>, CoreError> = tuple.items()
+                let args: Result<Vec<RcExpr>, CoreError> = tuple
+                    .items()
                     .map(|soup| {
                         let expr = if let Some(elem) = soup.singleton() {
                             elem.desugar(desugarer)?
@@ -287,10 +312,10 @@ impl Desugarable for Element {
                         Ok(desugarer.varify(expr))
                     })
                     .collect();
-                
+
                 Ok(RcExpr::from(Expr::ArgTuple(
                     desugarer.new_smid(span),
-                    args?
+                    args?,
                 )))
             }
         }
@@ -327,7 +352,7 @@ fn desugar_declaration_body(
     } else {
         Vec::new()
     };
-    
+
     // Desugar body
     let mut body = if let Some(body) = decl.body() {
         if let Some(body_soup) = body.soup() {
@@ -335,34 +360,34 @@ fn desugar_declaration_body(
         } else {
             return Err(CoreError::InvalidEmbedding(
                 "empty declaration body".to_string(),
-                desugarer.new_smid(span)
+                desugarer.new_smid(span),
             ));
         }
     } else {
         return Err(CoreError::InvalidEmbedding(
             "missing declaration body".to_string(),
-            desugarer.new_smid(span)
+            desugarer.new_smid(span),
         ));
     };
-    
+
     // Apply varify to convert Name expressions to Var expressions
     body = desugarer.varify(body);
-    
+
     // Pop args from environment if any
     if !args.is_empty() {
         desugarer.env_mut().pop();
     }
-    
+
     Ok((body, arg_vars))
 }
 
 /// Extract declaration components from a Rowan Declaration
 fn extract_rowan_declaration_components(
-    decl: &rowan_ast::Declaration, 
-    desugarer: &mut Desugarer
+    decl: &rowan_ast::Declaration,
+    desugarer: &mut Desugarer,
 ) -> Result<RowanDeclarationComponents, CoreError> {
     let span = text_range_to_span(decl.syntax().text_range());
-    
+
     // Extract metadata first
     let metadata = if let Some(meta) = decl.meta() {
         if let Some(meta_soup) = meta.soup() {
@@ -373,16 +398,16 @@ fn extract_rowan_declaration_components(
     } else {
         None
     };
-    
+
     // Extract head information (name, args, operator status) BEFORE body
     // so we can push args to environment for body desugaring
     if let Some(head) = decl.head() {
         let kind = head.classify_declaration();
-        
+
         match kind {
             rowan_ast::DeclarationKind::Property(prop) => {
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &[], span)?;
-                
+
                 Ok(RowanDeclarationComponents {
                     span,
                     metadata,
@@ -396,20 +421,13 @@ fn extract_rowan_declaration_components(
             }
             rowan_ast::DeclarationKind::Function(func, args_tuple) => {
                 // Extract argument names from the apply tuple
-                let arg_names: Vec<String> = args_tuple.items()
+                let arg_names: Vec<String> = args_tuple
+                    .items()
                     .filter_map(|soup| {
                         // Each argument should be a single name
-                        if let Some(elem) = soup.singleton() {
-                            if let rowan_ast::Element::Name(name) = elem {
-                                if let Some(id) = name.identifier() {
-                                    if let rowan_ast::Identifier::NormalIdentifier(normal) = id {
-                                        Some(normal.text().to_string())
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
+                        if let Some(rowan_ast::Element::Name(name)) = soup.singleton() {
+                            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                                Some(normal.text().to_string())
                             } else {
                                 None
                             }
@@ -418,9 +436,9 @@ fn extract_rowan_declaration_components(
                         }
                     })
                     .collect();
-                
+
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &arg_names, span)?;
-                
+
                 Ok(RowanDeclarationComponents {
                     span,
                     metadata,
@@ -435,7 +453,7 @@ fn extract_rowan_declaration_components(
             rowan_ast::DeclarationKind::Prefix(_, op, arg) => {
                 let args = vec![arg.text().to_string()];
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
-                
+
                 Ok(RowanDeclarationComponents {
                     span,
                     metadata,
@@ -450,7 +468,7 @@ fn extract_rowan_declaration_components(
             rowan_ast::DeclarationKind::Postfix(_, arg, op) => {
                 let args = vec![arg.text().to_string()];
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
-                
+
                 Ok(RowanDeclarationComponents {
                     span,
                     metadata,
@@ -465,7 +483,7 @@ fn extract_rowan_declaration_components(
             rowan_ast::DeclarationKind::Binary(_, left, op, right) => {
                 let args = vec![left.text().to_string(), right.text().to_string()];
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
-                
+
                 Ok(RowanDeclarationComponents {
                     span,
                     metadata,
@@ -479,7 +497,7 @@ fn extract_rowan_declaration_components(
             }
             rowan_ast::DeclarationKind::Nullary(_, op) => {
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &[], span)?;
-                
+
                 Ok(RowanDeclarationComponents {
                     span,
                     metadata,
@@ -491,32 +509,36 @@ fn extract_rowan_declaration_components(
                     fixity: None,
                 })
             }
-            rowan_ast::DeclarationKind::MalformedHead(_) => {
-                Err(CoreError::InvalidEmbedding(
-                    "malformed declaration head".to_string(),
-                    desugarer.new_smid(span)
-                ))
-            }
+            rowan_ast::DeclarationKind::MalformedHead(_) => Err(CoreError::InvalidEmbedding(
+                "malformed declaration head".to_string(),
+                desugarer.new_smid(span),
+            )),
         }
     } else {
         Err(CoreError::InvalidEmbedding(
             "missing declaration head".to_string(),
-            desugarer.new_smid(span)
+            desugarer.new_smid(span),
         ))
     }
 }
 
-
 /// Translate special operator names (".") to operators but all other
 /// names to Expr::Name for further analysis
-fn desugar_rowan_name(span: Span, id: &rowan_ast::Identifier, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
+fn desugar_rowan_name(
+    span: Span,
+    id: &rowan_ast::Identifier,
+    desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
     match id {
         rowan_ast::Identifier::OperatorIdentifier(op) => {
             let name = op.text();
             if name == "." {
                 Ok(RcExpr::from(ops::dot()))
             } else {
-                Ok(RcExpr::from(Expr::Name(desugarer.new_smid(span), name.to_string())))
+                Ok(RcExpr::from(Expr::Name(
+                    desugarer.new_smid(span),
+                    name.to_string(),
+                )))
             }
         }
         rowan_ast::Identifier::NormalIdentifier(normal) => {
@@ -524,7 +546,10 @@ fn desugar_rowan_name(span: Span, id: &rowan_ast::Identifier, desugarer: &mut De
             let full_id = rowan_ast::Identifier::NormalIdentifier(normal.clone());
             let name = full_id.name().unwrap_or("");
             if name.starts_with("__") && name.chars().nth(2).is_some_and(|c| c.is_uppercase()) {
-                Ok(RcExpr::from(Expr::Intrinsic(desugarer.new_smid(span), name[2..].to_string())))
+                Ok(RcExpr::from(Expr::Intrinsic(
+                    desugarer.new_smid(span),
+                    name[2..].to_string(),
+                )))
             } else if BLOCK_ANAPHORA.is_anaphor(name) {
                 let smid = desugarer.new_smid(span);
                 Ok(RcExpr::from(Expr::BlockAnaphor(
@@ -538,7 +563,10 @@ fn desugar_rowan_name(span: Span, id: &rowan_ast::Identifier, desugarer: &mut De
                     EXPR_ANAPHORA.to_explicit_anaphor(smid, name),
                 )))
             } else {
-                Ok(RcExpr::from(Expr::Name(desugarer.new_smid(span), name.to_string())))
+                Ok(RcExpr::from(Expr::Name(
+                    desugarer.new_smid(span),
+                    name.to_string(),
+                )))
             }
         }
     }
@@ -550,11 +578,11 @@ fn desugar_rowan_string_pattern(
     pattern: &rowan_ast::StringPattern,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
-    use crate::syntax::ast::{InterpolationTarget, InterpolationRequest, StringChunk};
-    
+    use crate::syntax::ast::{InterpolationRequest, InterpolationTarget, StringChunk};
+
     // Convert Rowan AST chunks to legacy AST chunks for reuse of existing logic
     let mut legacy_chunks = Vec::new();
-    
+
     for chunk in pattern.chunks() {
         match chunk {
             rowan_ast::StringChunk::LiteralContent(content) => {
@@ -565,14 +593,14 @@ fn desugar_rowan_string_pattern(
             }
             rowan_ast::StringChunk::Interpolation(interp) => {
                 let chunk_span = text_range_to_span(interp.syntax().text_range());
-                
+
                 // Extract target - check for soup first (dotted lookups), then fallback to simple target
                 let target = if let Some(soup) = interp.soup() {
                     // We have a soup (dotted lookup like data.foo.bar)
                     // Convert the soup elements to a list of Names for the Reference variant
                     let elements: Vec<_> = soup.elements().collect();
                     let mut names = Vec::new();
-                    
+
                     for element in elements {
                         if let rowan_ast::Element::Name(name) = element {
                             // Only process STRING_INTERPOLATION_TARGET tokens, skip dot operators
@@ -593,7 +621,7 @@ fn desugar_rowan_string_pattern(
                             }
                         }
                     }
-                    
+
                     if names.is_empty() {
                         // Fallback to anonymous if no names found
                         InterpolationTarget::StringAnaphor(chunk_span, None)
@@ -612,7 +640,7 @@ fn desugar_rowan_string_pattern(
                             // Variable reference like {name}
                             InterpolationTarget::Reference(
                                 chunk_span,
-                                vec![crate::syntax::ast::normal(&target_text)]
+                                vec![crate::syntax::ast::normal(&target_text)],
                             )
                         }
                     } else {
@@ -623,17 +651,19 @@ fn desugar_rowan_string_pattern(
                     // No target means anonymous positional parameter
                     InterpolationTarget::StringAnaphor(chunk_span, None)
                 };
-                
+
                 // Extract format spec
-                let format = interp.format_spec()
+                let format = interp
+                    .format_spec()
                     .and_then(|spec| spec.value())
                     .filter(|s| !s.is_empty());
-                
-                // Extract conversion spec  
-                let conversion = interp.conversion_spec()
+
+                // Extract conversion spec
+                let conversion = interp
+                    .conversion_spec()
                     .and_then(|spec| spec.value())
                     .filter(|s| !s.is_empty());
-                
+
                 let request = InterpolationRequest::new(chunk_span, target, format, conversion);
                 legacy_chunks.push(StringChunk::Interpolation(chunk_span, request));
             }
@@ -649,7 +679,7 @@ fn desugar_rowan_string_pattern(
             }
         }
     }
-    
+
     // Use the existing string pattern desugaring from ast.rs
     crate::core::desugar::ast::desugar_string_pattern(span, &legacy_chunks, desugarer)
 }
@@ -659,7 +689,7 @@ impl Desugarable for rowan_ast::Soup {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
         let span = text_range_to_span(self.syntax().text_range());
         let elements: Vec<Element> = self.elements().collect();
-        
+
         // If there's only one element, desugar it and apply variable resolution
         if elements.len() == 1 {
             let expr = elements[0].desugar(desugarer)?;
@@ -679,7 +709,7 @@ fn desugar_rowan_soup(
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
     use crate::core::desugar::ast::PendingLookup;
-    
+
     let mut soup: Vec<RcExpr> = Vec::with_capacity(elements.len() * 2);
     let mut lookup = PendingLookup::None;
 
@@ -705,7 +735,7 @@ fn desugar_rowan_soup(
                             Expr::Let(smid, scope, LetType::DefaultBlockLet) => {
                                 RcExpr::from(Expr::Let(*smid, scope.clone(), LetType::OtherLet))
                             }
-                            _ => rebodied
+                            _ => rebodied,
                         };
                         soup.push(fixed_rebodied);
                     } else {
@@ -750,7 +780,7 @@ fn desugar_rowan_soup(
                             Expr::Let(smid, scope, LetType::DefaultBlockLet) => {
                                 RcExpr::from(Expr::Let(*smid, scope.clone(), LetType::OtherLet))
                             }
-                            _ => rebodied
+                            _ => rebodied,
                         };
                         soup.push(fixed_rebodied);
                     } else {
@@ -787,17 +817,15 @@ fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, Cor
             rowan_ast::DeclarationKind::Postfix(_, _, op) => Ok(op.text().to_string()),
             rowan_ast::DeclarationKind::Binary(_, _, op, _) => Ok(op.text().to_string()),
             rowan_ast::DeclarationKind::Nullary(_, op) => Ok(op.text().to_string()),
-            rowan_ast::DeclarationKind::MalformedHead(_) => {
-                Err(CoreError::InvalidEmbedding(
-                    "malformed declaration head".to_string(),
-                    Smid::default()
-                ))
-            }
+            rowan_ast::DeclarationKind::MalformedHead(_) => Err(CoreError::InvalidEmbedding(
+                "malformed declaration head".to_string(),
+                Smid::default(),
+            )),
         }
     } else {
         Err(CoreError::InvalidEmbedding(
             "missing declaration head".to_string(),
-            Smid::default()
+            Smid::default(),
         ))
     }
 }
@@ -807,18 +835,18 @@ fn rowan_declaration_to_binding(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
 ) -> Result<(Binder<String>, Embed<RcExpr>), CoreError> {
-    
     // Extract declaration name first and push to stack before body desugaring
     let name = extract_declaration_name(decl)?;
     desugarer.push(&name);
-    
+
     let components = extract_rowan_declaration_components(decl, desugarer)?;
-    
+
     // Process metadata for desugar-phase information
     let (core_meta, metadata) = match components.metadata {
         Some(m) => {
             let mut core_meta = normalise_metadata(&m);
-            let metadata: DesugarPhaseDeclarationMetadata = core_meta.read_metadata().unwrap_or_default();
+            let metadata: DesugarPhaseDeclarationMetadata =
+                core_meta.read_metadata().unwrap_or_default();
             (Some(core_meta), metadata)
         }
         None => {
@@ -826,14 +854,21 @@ fn rowan_declaration_to_binding(
             (None, metadata)
         }
     };
-    
+
     // Handle documentation if in base file
     if let Some(doc) = &metadata.doc {
         if desugarer.in_base_file() {
             // Convert to legacy DeclarationComponents for documentation
             let name_ref = crate::syntax::ast::normal(&components.name);
-            let body_expr = crate::syntax::ast::Expression::Lit(crate::syntax::ast::Literal::Str(components.span, "placeholder".to_string()));
-            let args_refs: Vec<_> = components.args.iter().map(|a| crate::syntax::ast::normal(a)).collect();
+            let body_expr = crate::syntax::ast::Expression::Lit(crate::syntax::ast::Literal::Str(
+                components.span,
+                "placeholder".to_string(),
+            ));
+            let args_refs: Vec<_> = components
+                .args
+                .iter()
+                .map(|a| crate::syntax::ast::normal(a))
+                .collect();
             let legacy_components = crate::syntax::ast::DeclarationComponents {
                 span: components.span,
                 metadata: None, // Already processed
@@ -844,7 +879,7 @@ fn rowan_declaration_to_binding(
             desugarer.record_doc(doc.to_string(), &legacy_components);
         }
     }
-    
+
     // Handle target metadata
     if let Some(target) = &metadata.target {
         desugarer.record_target(
@@ -854,7 +889,7 @@ fn rowan_declaration_to_binding(
             metadata.validations.unwrap_or_default(),
         );
     }
-    
+
     // Handle imports
     let mut imports = Vec::new();
     if let Some(inputs) = metadata.imports {
@@ -867,10 +902,10 @@ fn rowan_declaration_to_binding(
             );
         }
     }
-    
+
     // Note: argument names were already resolved during body desugaring
     // We need to get the original FreeVars that were used, not create new ones
-    
+
     // Desugar the body expression
     let mut expr = if let Some(embedding) = &metadata.embedding {
         if embedding == "core" {
@@ -882,16 +917,16 @@ fn rowan_declaration_to_binding(
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "empty declaration body in core embedding".to_string(),
-                        desugarer.new_smid(components.span)
+                        desugarer.new_smid(components.span),
                     ));
                 }
             } else {
                 return Err(CoreError::InvalidEmbedding(
                     "missing declaration body in core embedding".to_string(),
-                    desugarer.new_smid(components.span)
+                    desugarer.new_smid(components.span),
                 ));
             };
-            
+
             core_from_embedding(desugarer, &raw_body)?
         } else {
             return Err(CoreError::UnknownEmbedding(embedding.clone()));
@@ -900,7 +935,7 @@ fn rowan_declaration_to_binding(
         // Body is already desugared and variable resolution was done during soup processing
         components.body
     };
-    
+
     // Wrap in lambda if there are arguments
     if !components.args.is_empty() {
         expr = core::lam(
@@ -909,19 +944,20 @@ fn rowan_declaration_to_binding(
             expr.clone(),
         );
     }
-    
+
     // Wrap in operator if this is an operator declaration
     if components.is_operator {
         expr = RcExpr::from(Expr::Operator(
             desugarer.new_smid(components.span),
-            components.fixity
+            components
+                .fixity
                 .or(metadata.fixity)
                 .unwrap_or(Fixity::InfixLeft),
             metadata.precedence.unwrap_or(50),
             expr.clone(),
         ));
     }
-    
+
     // Attach metadata if present
     if let Some(m) = core_meta {
         let stripped_meta = strip_desugar_phase_metadata(&m);
@@ -933,19 +969,19 @@ fn rowan_declaration_to_binding(
             ));
         }
     }
-    
+
     // Get the declared variable from environment
     let declared_var = desugarer
         .env()
         .get(&components.name)
         .expect("declaration var should have been prepared in block")
         .clone();
-    
+
     // Embed in imports if required
     expr = imports.iter().rfold(expr, |acc, import| import.rebody(acc));
-    
+
     let ret = (Binder(declared_var), Embed(expr));
-    
+
     // Note: Don't pop the environment here - it's shared across all declarations
     // The caller (Unit or Block) will pop it after processing all declarations
     desugarer.pop();
@@ -955,9 +991,8 @@ fn rowan_declaration_to_binding(
 /// Block desugaring - proper implementation following legacy architecture
 impl Desugarable for rowan_ast::Block {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
-        
         let span = text_range_to_span(self.syntax().text_range());
-        
+
         // Transform metadata for attachment later
         let mut metadata = if let Some(meta) = self.meta() {
             if let Some(meta_soup) = meta.soup() {
@@ -968,13 +1003,13 @@ impl Desugarable for rowan_ast::Block {
         } else {
             None
         };
-        
+
         // Extract block metadata for desugar-phase processing
         let block_meta: DesugarPhaseBlockMetadata = match metadata {
             Some(ref mut concrete_meta) => concrete_meta.read_metadata().unwrap_or_default(),
             None => DesugarPhaseBlockMetadata::default(),
         };
-        
+
         // Handle imports
         let mut imports = Vec::new();
         if let Some(inputs) = block_meta.imports {
@@ -987,18 +1022,25 @@ impl Desugarable for rowan_ast::Block {
                 );
             }
         }
-        
+
         // Collect declaration names for environment
-        let keys: Vec<_> = self.declarations()
+        let keys: Vec<_> = self
+            .declarations()
             .filter_map(|decl| {
                 if let Some(head) = decl.head() {
                     let kind = head.classify_declaration();
                     match kind {
                         rowan_ast::DeclarationKind::Property(prop) => Some(prop.text().to_string()),
-                        rowan_ast::DeclarationKind::Function(func, _) => Some(func.text().to_string()),
+                        rowan_ast::DeclarationKind::Function(func, _) => {
+                            Some(func.text().to_string())
+                        }
                         rowan_ast::DeclarationKind::Prefix(_, op, _) => Some(op.text().to_string()),
-                        rowan_ast::DeclarationKind::Postfix(_, _, op) => Some(op.text().to_string()),
-                        rowan_ast::DeclarationKind::Binary(_, _, op, _) => Some(op.text().to_string()),
+                        rowan_ast::DeclarationKind::Postfix(_, _, op) => {
+                            Some(op.text().to_string())
+                        }
+                        rowan_ast::DeclarationKind::Binary(_, _, op, _) => {
+                            Some(op.text().to_string())
+                        }
                         rowan_ast::DeclarationKind::Nullary(_, op) => Some(op.text().to_string()),
                         rowan_ast::DeclarationKind::MalformedHead(_) => None,
                     }
@@ -1007,14 +1049,15 @@ impl Desugarable for rowan_ast::Block {
                 }
             })
             .collect();
-        
+
         desugarer.env_mut().push_keys(keys);
-        
+
         // Convert declarations to bindings
-        let bindings = self.declarations()
+        let bindings = self
+            .declarations()
             .map(|decl| rowan_declaration_to_binding(&decl, desugarer))
             .collect::<Result<Vec<_>, CoreError>>()?;
-        
+
         // Create block body mapping names to variables
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
@@ -1025,7 +1068,7 @@ impl Desugarable for rowan_ast::Block {
                 )
             })
             .collect();
-        
+
         // Create body - check for parse-embed override
         let body = if let Some(embed_key) = block_meta.parse_embed {
             let fv_opt = desugarer.env().get(&embed_key).cloned();
@@ -1039,29 +1082,25 @@ impl Desugarable for rowan_ast::Block {
         } else {
             RcExpr::from(Expr::Block(desugarer.new_smid(span), body_elements))
         };
-        
+
         // Create let expression with bindings
         let mut expr = RcExpr::from(Expr::Let(
             desugarer.new_smid(span),
             Scope::new(Rec::new(bindings), body),
             LetType::DefaultBlockLet,
         ));
-        
+
         // Attach metadata if present
         if let Some(m) = metadata {
             let stripped_meta = strip_desugar_phase_metadata(&m);
             if !matches!(&*stripped_meta.inner, Expr::ErrEliminated) {
-                expr = RcExpr::from(Expr::Meta(
-                    desugarer.new_smid(span),
-                    expr,
-                    stripped_meta,
-                ));
+                expr = RcExpr::from(Expr::Meta(desugarer.new_smid(span), expr, stripped_meta));
             }
         }
-        
+
         // Embed in imports if required
         expr = imports.iter().rfold(expr, |acc, import| import.rebody(acc));
-        
+
         desugarer.env_mut().pop();
         Ok(expr)
     }
@@ -1070,9 +1109,8 @@ impl Desugarable for rowan_ast::Block {
 /// Unit desugaring - proper implementation following legacy architecture
 impl Desugarable for rowan_ast::Unit {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
-        
         let span = text_range_to_span(self.syntax().text_range());
-        
+
         // Transform metadata for attachment later
         let mut metadata = if let Some(meta) = self.meta() {
             if let Some(meta_soup) = meta.soup() {
@@ -1083,13 +1121,13 @@ impl Desugarable for rowan_ast::Unit {
         } else {
             None
         };
-        
+
         // Extract unit metadata for desugar-phase processing
         let unit_meta: DesugarPhaseBlockMetadata = match metadata {
             Some(ref mut concrete_meta) => concrete_meta.read_metadata().unwrap_or_default(),
             None => DesugarPhaseBlockMetadata::default(),
         };
-        
+
         // Handle imports
         let mut imports = Vec::new();
         if let Some(inputs) = unit_meta.imports {
@@ -1102,18 +1140,25 @@ impl Desugarable for rowan_ast::Unit {
                 );
             }
         }
-        
+
         // Collect declaration names for environment
-        let keys: Vec<_> = self.declarations()
+        let keys: Vec<_> = self
+            .declarations()
             .filter_map(|decl| {
                 if let Some(head) = decl.head() {
                     let kind = head.classify_declaration();
                     match kind {
                         rowan_ast::DeclarationKind::Property(prop) => Some(prop.text().to_string()),
-                        rowan_ast::DeclarationKind::Function(func, _) => Some(func.text().to_string()),
+                        rowan_ast::DeclarationKind::Function(func, _) => {
+                            Some(func.text().to_string())
+                        }
                         rowan_ast::DeclarationKind::Prefix(_, op, _) => Some(op.text().to_string()),
-                        rowan_ast::DeclarationKind::Postfix(_, _, op) => Some(op.text().to_string()),
-                        rowan_ast::DeclarationKind::Binary(_, _, op, _) => Some(op.text().to_string()),
+                        rowan_ast::DeclarationKind::Postfix(_, _, op) => {
+                            Some(op.text().to_string())
+                        }
+                        rowan_ast::DeclarationKind::Binary(_, _, op, _) => {
+                            Some(op.text().to_string())
+                        }
                         rowan_ast::DeclarationKind::Nullary(_, op) => Some(op.text().to_string()),
                         rowan_ast::DeclarationKind::MalformedHead(_) => None,
                     }
@@ -1122,14 +1167,15 @@ impl Desugarable for rowan_ast::Unit {
                 }
             })
             .collect();
-        
+
         desugarer.env_mut().push_keys(keys);
-        
+
         // Convert declarations to bindings
-        let bindings = self.declarations()
+        let bindings = self
+            .declarations()
             .map(|decl| rowan_declaration_to_binding(&decl, desugarer))
             .collect::<Result<Vec<_>, CoreError>>()?;
-        
+
         // Create unit body mapping names to variables
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
@@ -1140,7 +1186,7 @@ impl Desugarable for rowan_ast::Unit {
                 )
             })
             .collect();
-        
+
         // Create body - check for parse-embed override
         let body = if let Some(embed_key) = unit_meta.parse_embed {
             let fv_opt = desugarer.env().get(&embed_key).cloned();
@@ -1154,29 +1200,25 @@ impl Desugarable for rowan_ast::Unit {
         } else {
             RcExpr::from(Expr::Block(desugarer.new_smid(span), body_elements))
         };
-        
+
         // Create let expression with bindings
         let mut expr = RcExpr::from(Expr::Let(
             desugarer.new_smid(span),
             Scope::new(Rec::new(bindings), body),
             LetType::DefaultBlockLet,
         ));
-        
+
         // Attach metadata if present
         if let Some(m) = metadata {
             let stripped_meta = strip_desugar_phase_metadata(&m);
             if !matches!(&*stripped_meta.inner, Expr::ErrEliminated) {
-                expr = RcExpr::from(Expr::Meta(
-                    desugarer.new_smid(span),
-                    expr,
-                    stripped_meta,
-                ));
+                expr = RcExpr::from(Expr::Meta(desugarer.new_smid(span), expr, stripped_meta));
             }
         }
-        
+
         // Embed in imports if required
         expr = imports.iter().rfold(expr, |acc, import| import.rebody(acc));
-        
+
         desugarer.env_mut().pop();
         Ok(expr)
     }

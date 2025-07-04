@@ -186,10 +186,10 @@ impl Num {
 }
 
 // Literal value types
-// 
+//
 // AST embedding syntax:
 // - `Sym`: `[:a-sym "name"]` - Symbol literal (e.g. `:foo`)
-// - `Str`: `[:a-str "text"]` - String literal (e.g. `"hello"`) 
+// - `Str`: `[:a-str "text"]` - String literal (e.g. `"hello"`)
 // - `Num`: `[:a-num value]` - Number literal (e.g. `42`, `3.14`)
 pub enum LiteralValue {
     /// A symbol e.g. :foo - Embedding: `[:a-sym "foo"]`
@@ -256,7 +256,7 @@ impl LiteralValue {
 }
 
 // A literal value node
-// 
+//
 // AST embedding syntax:
 // - `[:a-literal value]` - Contains a literal value (symbol, string, or number)
 ast_node!(Literal, LITERAL);
@@ -359,7 +359,7 @@ impl ContainsName for NormalIdentifier {
 }
 
 // An identifier token
-// 
+//
 // AST embedding syntax:
 // - `NormalIdentifier`: `[:a-norm "name"]` - Normal identifier (e.g. `x`, `'quoted'`)
 // - `OperatorIdentifier`: `[:a-oper "operator"]` - Operator identifier (e.g. `+`, `&&`)
@@ -416,7 +416,7 @@ impl Identifier {
 }
 
 // A name (identifier) node
-// 
+//
 // AST embedding syntax:
 // - `[:a-name identifier]` - Contains an identifier (normal or operator)
 ast_node!(Name, NAME);
@@ -438,7 +438,7 @@ pub trait HasSoup: AstNode<Language = EucalyptLanguage> {
 }
 
 // A soup expression (sequence of elements for operator resolution)
-// 
+//
 // AST embedding syntax:
 // - `[:a-soup elements...]` - Operator soup containing elements to be resolved
 ast_node!(Soup, SOUP);
@@ -463,7 +463,7 @@ impl Soup {
 }
 
 // A parenthesised expression
-// 
+//
 // AST embedding syntax:
 // - `[:a-paren-expr soup]` - Expression enclosed in parentheses
 ast_node!(ParenExpr, PAREN_EXPR);
@@ -481,7 +481,7 @@ impl ParenExpr {
 impl HasSoup for ParenExpr {}
 
 // Metadata for a block expression
-// 
+//
 // AST embedding syntax:
 // - `[:a-block-meta soup]` - Metadata expression for a block
 ast_node!(BlockMetadata, BLOCK_META);
@@ -489,7 +489,7 @@ ast_node!(BlockMetadata, BLOCK_META);
 impl HasSoup for BlockMetadata {}
 
 // Metadata for a declaration
-// 
+//
 // AST embedding syntax:
 // - `[:a-decl-meta soup]` - Metadata expression for a declaration
 ast_node!(DeclarationMetadata, DECL_META);
@@ -497,7 +497,7 @@ ast_node!(DeclarationMetadata, DECL_META);
 impl HasSoup for DeclarationMetadata {}
 
 // The kind of declaration signalled by the format of the declaration head
-// 
+//
 // AST embedding syntax:
 // - `Property`: `[:a-decl-prop name]` - Property declaration (e.g. `x: ...`)
 // - `Function`: `[:a-decl-func name args]` - Function declaration (e.g. `f(x, y): ...`)
@@ -529,7 +529,7 @@ pub enum DeclarationKind {
 }
 
 // The head of a declaration (name and parameters)
-// 
+//
 // AST embedding syntax:
 // - `[:a-decl-head elements...]` - Declaration head containing name and parameter patterns
 ast_node!(DeclarationHead, DECL_HEAD);
@@ -687,7 +687,7 @@ impl DeclarationHead {
 }
 
 // The body of a declaration (expression after colon)
-// 
+//
 // AST embedding syntax:
 // - `[:a-decl-body soup]` - Declaration body containing the defining expression
 ast_node!(DeclarationBody, DECL_BODY);
@@ -695,7 +695,7 @@ ast_node!(DeclarationBody, DECL_BODY);
 impl HasSoup for DeclarationBody {}
 
 // A declaration in a block
-// 
+//
 // AST embedding syntax:
 // - `[:a-declaration head colon body metadata]` - Complete declaration with head, body and optional metadata
 ast_node!(Declaration, DECLARATION);
@@ -719,7 +719,7 @@ impl Declaration {
 }
 
 // A block expression with declarations
-// 
+//
 // AST embedding syntax:
 // - `[:a-block declarations... metadata]` - Block containing declarations and optional metadata
 ast_node!(Block, BLOCK);
@@ -743,7 +743,7 @@ impl Block {
 }
 
 // A list literal expression
-// 
+//
 // AST embedding syntax:
 // - `[:a-list items...]` - List containing comma-separated items
 ast_node!(List, LIST);
@@ -755,7 +755,7 @@ impl List {
 }
 
 // Function application arguments tuple
-// 
+//
 // AST embedding syntax:
 // - `[:a-apply-tuple args...]` - Function application arguments in parentheses
 ast_node!(ApplyTuple, ARG_TUPLE);
@@ -779,55 +779,55 @@ impl ApplyTuple {
 //
 
 // A string pattern with interpolation
-// 
+//
 // AST embedding syntax:
 // - `[:a-string-pattern chunks...]` - String with interpolation and literal chunks
 ast_node!(StringPattern, STRING_PATTERN);
 
 // Literal text content in a string pattern
-// 
+//
 // AST embedding syntax:
 // - `[:a-str-literal "text"]` - Plain text content within string
 ast_node!(StringLiteralContent, STRING_LITERAL_CONTENT);
 
-// Variable interpolation in a string pattern  
-// 
+// Variable interpolation in a string pattern
+//
 // AST embedding syntax:
 // - `[:a-str-interp target format conversion]` - Variable interpolation with optional formatting
 ast_node!(StringInterpolation, STRING_INTERPOLATION);
 
 // Target of string interpolation (variable reference)
-// 
+//
 // AST embedding syntax:
 // - `[:a-str-target "name"]` - Variable name to interpolate
 ast_node!(StringInterpolationTarget, STRING_INTERPOLATION_TARGET);
 
 // Format specification for string interpolation
-// 
+//
 // AST embedding syntax:
 // - `[:a-str-format "spec"]` - Format specification (e.g. ":.2f")
 ast_node!(StringFormatSpec, STRING_FORMAT_SPEC);
 
 // Conversion specification for string interpolation
-// 
+//
 // AST embedding syntax:
 // - `[:a-str-conversion "spec"]` - Conversion specification (e.g. "!r", "!s")
 ast_node!(StringConversionSpec, STRING_CONVERSION_SPEC);
 
 // Dotted reference in string interpolation
-// 
+//
 // AST embedding syntax:
 // - `[:a-str-dotted "path"]` - Dotted path reference (e.g. "obj.field.subfield")
 ast_node!(StringDottedReference, STRING_DOTTED_REFERENCE);
 
 // Escaped opening brace in string pattern
-// 
+//
 // AST embedding syntax:
 // - `[:a-str-esc-open]` - Escaped `{{` becomes literal `{`
 ast_node!(StringEscapedOpen, STRING_ESCAPED_OPEN);
 
 // Escaped closing brace in string pattern
-// 
+//
 // AST embedding syntax:
 // - `[:a-str-esc-close]` - Escaped `}}` becomes literal `}`
 ast_node!(StringEscapedClose, STRING_ESCAPED_CLOSE);
@@ -850,15 +850,15 @@ impl StringInterpolation {
     pub fn target(&self) -> Option<StringInterpolationTarget> {
         support::child::<StringInterpolationTarget>(self.syntax())
     }
-    
+
     pub fn soup(&self) -> Option<Soup> {
         support::child::<Soup>(self.syntax())
     }
-    
+
     pub fn format_spec(&self) -> Option<StringFormatSpec> {
         support::child::<StringFormatSpec>(self.syntax())
     }
-    
+
     pub fn conversion_spec(&self) -> Option<StringConversionSpec> {
         support::child::<StringConversionSpec>(self.syntax())
     }
@@ -895,7 +895,7 @@ impl StringEscapedClose {
 }
 
 // String chunk enum for pattern contents
-// 
+//
 // AST embedding syntax:
 // - `LiteralContent`: `[:a-str-literal "text"]` - Plain text content
 // - `Interpolation`: `[:a-str-interp target format conversion]` - Variable interpolation
@@ -916,11 +916,12 @@ impl AstNode for StringChunk {
     type Language = EucalyptLanguage;
 
     fn can_cast(kind: SyntaxKind) -> bool {
-        matches!(kind, 
-            SyntaxKind::STRING_LITERAL_CONTENT |
-            SyntaxKind::STRING_INTERPOLATION |
-            SyntaxKind::STRING_ESCAPED_OPEN |
-            SyntaxKind::STRING_ESCAPED_CLOSE
+        matches!(
+            kind,
+            SyntaxKind::STRING_LITERAL_CONTENT
+                | SyntaxKind::STRING_INTERPOLATION
+                | SyntaxKind::STRING_ESCAPED_OPEN
+                | SyntaxKind::STRING_ESCAPED_CLOSE
         )
     }
 
@@ -953,7 +954,7 @@ impl AstNode for StringChunk {
 }
 
 // One of the items concatenated in an operator soup expression
-// 
+//
 // AST embedding syntax:
 // - `Lit`: `[:a-lit literal]` - Literal value (number, string, symbol)
 // - `Block`: `[:a-block declarations... metadata]` - Block expression with declarations
@@ -1060,7 +1061,7 @@ impl Element {
 //
 
 // A top-level unit (complete program or module)
-// 
+//
 // AST embedding syntax:
 // - `[:a-unit declarations... metadata]` - Top-level unit containing declarations
 ast_node!(Unit, UNIT);

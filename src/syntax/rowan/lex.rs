@@ -52,20 +52,35 @@ fn is_oper_start(c: char) -> bool {
     // Fast path for ASCII characters (most common case)
     if c.is_ascii() {
         match c {
-            '.' | '!' | '@' | '£' | '%' | '^' | '&' | '*' | '|' 
-            | '>' | '<' | '/' | '+' | '=' | '-' | '~' | ';' => true,
+            '.' | '!' | '@' | '£' | '%' | '^' | '&' | '*' | '|' | '>' | '<' | '/' | '+' | '='
+            | '-' | '~' | ';' => true,
             '"' | '\'' => false,
             // Fast rejection for common ASCII non-operators
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | ' ' | '\t' | '\n' | '\r'
-            | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' => false,
+            'a'..='z'
+            | 'A'..='Z'
+            | '0'..='9'
+            | '_'
+            | ' '
+            | '\t'
+            | '\n'
+            | '\r'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | ','
+            | ':' => false,
             // For other ASCII punctuation, check Unicode categories
             _ => {
                 let cat = GeneralCategory::of(c);
-                !matches!(cat, 
-                    GeneralCategory::OpenPunctuation | 
-                    GeneralCategory::ClosePunctuation |
-                    GeneralCategory::InitialPunctuation |
-                    GeneralCategory::FinalPunctuation
+                !matches!(
+                    cat,
+                    GeneralCategory::OpenPunctuation
+                        | GeneralCategory::ClosePunctuation
+                        | GeneralCategory::InitialPunctuation
+                        | GeneralCategory::FinalPunctuation
                 ) && (cat.is_symbol() || cat.is_punctuation())
             }
         }
@@ -86,20 +101,32 @@ fn is_oper_continuation(c: char) -> bool {
     // Fast path for ASCII characters (most common case)
     if c.is_ascii() {
         match c {
-            '.' | '!' | '@' | '£' | '$' | '%' | '^' | '&' | '*' | '|' 
-            | '>' | '<' | '/' | '?' | '+' | '=' | '-' | '~' | ';' => true,
+            '.' | '!' | '@' | '£' | '$' | '%' | '^' | '&' | '*' | '|' | '>' | '<' | '/' | '?'
+            | '+' | '=' | '-' | '~' | ';' => true,
             '"' | '\'' | ',' | ':' | '_' => false,
             // Fast rejection for common ASCII non-operators
-            'a'..='z' | 'A'..='Z' | '0'..='9' | ' ' | '\t' | '\n' | '\r'
-            | '(' | ')' | '[' | ']' | '{' | '}' => false,
+            'a'..='z'
+            | 'A'..='Z'
+            | '0'..='9'
+            | ' '
+            | '\t'
+            | '\n'
+            | '\r'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}' => false,
             // For other ASCII punctuation, check Unicode categories
             _ => {
                 let cat = GeneralCategory::of(c);
-                !matches!(cat, 
-                    GeneralCategory::OpenPunctuation | 
-                    GeneralCategory::ClosePunctuation |
-                    GeneralCategory::InitialPunctuation |
-                    GeneralCategory::FinalPunctuation
+                !matches!(
+                    cat,
+                    GeneralCategory::OpenPunctuation
+                        | GeneralCategory::ClosePunctuation
+                        | GeneralCategory::InitialPunctuation
+                        | GeneralCategory::FinalPunctuation
                 ) && (cat.is_symbol() || cat.is_punctuation())
             }
         }
@@ -128,7 +155,7 @@ fn is_reserved_open(c: char) -> bool {
 }
 
 fn is_reserved_close(c: char) -> bool {
-    // Fast path for ASCII - no ASCII characters are FinalPunctuation  
+    // Fast path for ASCII - no ASCII characters are FinalPunctuation
     if c.is_ascii() {
         matches!(c, ')' | ']' | '}')
     } else {
@@ -192,7 +219,7 @@ where
 
     /// consume a normal identifer
     fn normal(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
-        let e = self.consume(&is_normal_continuation);
+        let e = self.consume(is_normal_continuation);
         (UNQUOTED_IDENTIFIER, Span::new(i, e))
     }
 
@@ -209,7 +236,7 @@ where
 
     /// consume an operator identifer
     fn oper(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
-        let e = self.consume(&is_oper_continuation);
+        let e = self.consume(is_oper_continuation);
         (OPERATOR_IDENTIFIER, Span::new(i, e))
     }
 
@@ -217,7 +244,7 @@ where
     fn dquote(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
         // Collect the string content to check for interpolation
         let mut content = String::new();
-        
+
         // Consume characters until closing quote or EOF
         loop {
             match self.peek() {
@@ -235,26 +262,31 @@ where
                 }
             }
         }
-        
+
         let full_span = Span::new(i, self.location);
-        
+
         // Check if this string contains interpolation (simple check for braces)
         if content.contains('{') || content.contains('}') {
             // Use StringPatternLexer to tokenize the content and buffer detailed tokens
             use super::string_lex::StringPatternLexer;
-            let string_lexer = StringPatternLexer::new(&content, ByteOffset(i.to_usize() as i64 + 1));
-            
+            let string_lexer =
+                StringPatternLexer::new(&content, ByteOffset(i.to_usize() as i64 + 1));
+
             // Buffer the opening quote
-            self.token_buffer.push_back((STRING_PATTERN_START, Span::new(i, i + ByteOffset(1))));
-            
+            self.token_buffer
+                .push_back((STRING_PATTERN_START, Span::new(i, i + ByteOffset(1))));
+
             // Buffer all the detailed tokens from the string content
             for (token_kind, span, _text) in string_lexer {
                 self.token_buffer.push_back((token_kind, span));
             }
-            
+
             // Buffer the closing quote
-            self.token_buffer.push_back((STRING_PATTERN_END, Span::new(self.location - ByteOffset(1), self.location)));
-            
+            self.token_buffer.push_back((
+                STRING_PATTERN_END,
+                Span::new(self.location - ByteOffset(1), self.location),
+            ));
+
             // Return the first buffered token (opening quote)
             self.token_buffer.pop_front().unwrap()
         } else {
@@ -275,7 +307,7 @@ where
         // symbol literal
         if is_normal_start(c) {
             if let Some((_, _)) = self.bump() {
-                let e = self.consume(&is_normal_continuation);
+                let e = self.consume(is_normal_continuation);
                 return (SYMBOL, Span::new(i, e));
             } else {
                 panic!("peek and next disagree");
@@ -304,7 +336,7 @@ where
 
     /// '-' can introduce a signed literal or be an operator start
     fn minus(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
-        if self.lookahead(|c| c.is_digit(10)) {
+        if self.lookahead(|c| c.is_ascii_digit()) {
             self.number(i)
         } else {
             self.oper(i)
@@ -313,10 +345,10 @@ where
 
     /// read int or float (currently no hex or sci notation)
     fn number(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
-        let e = self.consume(|c| c.is_digit(10));
+        let e = self.consume(|c| c.is_ascii_digit());
         if self.lookahead(|c| c == '.') {
             self.bump();
-            let e = self.consume(|c| c.is_digit(10));
+            let e = self.consume(|c| c.is_ascii_digit());
             (NUMBER, Span::new(i, e))
         } else {
             (NUMBER, Span::new(i, e))
@@ -401,7 +433,7 @@ where
             }
             return Some(token);
         }
-        
+
         let ret = match self.bump() {
             Some((i, '{')) => Some((OPEN_BRACE, Span::new(i, i + ONE_BYTE))),
             Some((i, '}')) => Some((CLOSE_BRACE, Span::new(i, i + ONE_BYTE))),
@@ -416,7 +448,7 @@ where
             Some((i, '\'')) => Some(self.squote(i)),
             Some((i, '"')) => Some(self.dquote(i)),
             Some((i, '-')) => Some(self.minus(i)),
-            Some((i, c)) if c.is_digit(10) => Some(self.number(i)),
+            Some((i, c)) if c.is_ascii_digit() => Some(self.number(i)),
             Some((i, c)) if is_normal_start(c) => Some(self.normal(i)),
             Some((i, c)) if is_oper_start(c) => Some(self.oper(i)),
             Some((i, c)) if c.is_whitespace() => Some(self.whitespace(i)),

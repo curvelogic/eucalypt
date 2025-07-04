@@ -204,14 +204,17 @@ pub mod tests {
 
     pub fn parse_expression(txt: &'static str) -> Expression {
         // Parse the embedding expression using the Rowan parser
-        use crate::syntax::rowan::parse_expr;
         use crate::core::desugar::rowan_ast::rowan_soup_to_legacy;
-        
+        use crate::syntax::rowan::parse_expr;
+
         let parse_result = parse_expr(txt);
         let soup = parse_result.tree();
         match rowan_soup_to_legacy(&soup) {
             Ok(expr) => expr,
-            Err(_) => Expression::Lit(crate::syntax::ast::Literal::Str(codespan::Span::default(), "parse_error".to_string()))
+            Err(_) => Expression::Lit(crate::syntax::ast::Literal::Str(
+                codespan::Span::default(),
+                "parse_error".to_string(),
+            )),
         }
     }
 

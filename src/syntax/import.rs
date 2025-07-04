@@ -2,10 +2,10 @@
 //!
 //! We analyse imports at the AST stage so we can get binding right on
 //! desugar into core syntax.
+use crate::driver::source::ParsedAst;
 use crate::syntax::ast::*;
 use crate::syntax::error::SyntaxError;
 use crate::syntax::input::Input;
-use crate::driver::source::ParsedAst;
 use petgraph::algo;
 use petgraph::graph::Graph;
 use petgraph::graph::NodeIndex;
@@ -193,30 +193,25 @@ fn scrape_metadata(metadata: &Expression) -> Result<Vec<Input>, ImportError> {
 /// Read all imports specified in the Rowan AST and add them to imports
 fn read_rowan_ast_imports(ast: &ParsedAst, imports: &mut Vec<Input>) -> Result<(), ImportError> {
     use crate::syntax::rowan::ast::HasSoup;
-    
-    
+
     match ast {
         ParsedAst::Unit(unit) => {
-            
             // Check unit metadata for imports
             if let Some(meta) = unit.meta() {
                 if let Some(meta_soup) = meta.soup() {
                     read_rowan_soup_imports(&meta_soup, imports)?;
-                } else {
                 }
-            } else {
             }
-            
+
             // Check each declaration for imports
-            for (_i, decl) in unit.declarations().enumerate() {
-                
+            for decl in unit.declarations() {
                 // Check declaration metadata
                 if let Some(meta) = decl.meta() {
                     if let Some(meta_soup) = meta.soup() {
                         read_rowan_soup_imports(&meta_soup, imports)?;
                     }
                 }
-                
+
                 // Check declaration body for imports
                 if let Some(body) = decl.body() {
                     if let Some(body_soup) = body.soup() {
@@ -229,47 +224,44 @@ fn read_rowan_ast_imports(ast: &ParsedAst, imports: &mut Vec<Input>) -> Result<(
             read_rowan_soup_imports(soup, imports)?;
         }
     }
-    
+
     Ok(())
 }
 
 /// Read imports from a Rowan Soup expression
-fn read_rowan_soup_imports(soup: &crate::syntax::rowan::ast::Soup, imports: &mut Vec<Input>) -> Result<(), ImportError> {
-    use crate::syntax::rowan::ast::{Element, HasSoup, AstToken};
-    
-    
-    for (_i, element) in soup.elements().enumerate() {
-        
+fn read_rowan_soup_imports(
+    soup: &crate::syntax::rowan::ast::Soup,
+    imports: &mut Vec<Input>,
+) -> Result<(), ImportError> {
+    use crate::syntax::rowan::ast::{AstToken, Element, HasSoup};
+
+    for element in soup.elements() {
         match element {
             Element::Block(block) => {
-                
                 // Check if this block contains import declarations
                 for decl in block.declarations() {
                     if let Some(head) = decl.head() {
                         let kind = head.classify_declaration();
-                        match kind {
-                            crate::syntax::rowan::ast::DeclarationKind::Property(prop) => {
-                                let name = prop.text();
-                                if name == "import" {
-                                    if let Some(body) = decl.body() {
-                                        if let Some(body_soup) = body.soup() {
-                                            scrape_rowan_imports(&body_soup, imports)?;
-                                        }
+                        if let crate::syntax::rowan::ast::DeclarationKind::Property(prop) = kind {
+                            let name = prop.text();
+                            if name == "import" {
+                                if let Some(body) = decl.body() {
+                                    if let Some(body_soup) = body.soup() {
+                                        scrape_rowan_imports(&body_soup, imports)?;
                                     }
                                 }
                             }
-                            _ => {}
                         }
                     }
                 }
-                
+
                 // Check block metadata for imports (recursive)
                 if let Some(meta) = block.meta() {
                     if let Some(meta_soup) = meta.soup() {
                         read_rowan_soup_imports(&meta_soup, imports)?;
                     }
                 }
-                
+
                 // Check declaration metadata (recursive)
                 for decl in block.declarations() {
                     if let Some(meta) = decl.meta() {
@@ -277,7 +269,7 @@ fn read_rowan_soup_imports(soup: &crate::syntax::rowan::ast::Soup, imports: &mut
                             read_rowan_soup_imports(&meta_soup, imports)?;
                         }
                     }
-                    
+
                     // Check declaration body for imports (recursive)
                     if let Some(body) = decl.body() {
                         if let Some(body_soup) = body.soup() {
@@ -310,28 +302,25 @@ fn read_rowan_soup_imports(soup: &crate::syntax::rowan::ast::Soup, imports: &mut
 }
 
 /// Extract import values from a Rowan soup (equivalent to read_import_values for legacy AST)
-fn scrape_rowan_imports(soup: &crate::syntax::rowan::ast::Soup, imports: &mut Vec<Input>) -> Result<(), ImportError> {
+fn scrape_rowan_imports(
+    soup: &crate::syntax::rowan::ast::Soup,
+    imports: &mut Vec<Input>,
+) -> Result<(), ImportError> {
     use crate::syntax::rowan::ast::Element;
-    
-    
+
     for element in soup.elements() {
         match element {
             Element::Lit(literal) => {
-                if let Some(value) = literal.value() {
-                    match value {
-                        crate::syntax::rowan::ast::LiteralValue::Str(s) => {
-                            if let Some(import_str) = s.value() {
-                                match Input::from_str(&import_str) {
-                                    Ok(input) => {
-                                        imports.push(input);
-                                    }
-                                    Err(e) => {
-                                        return Err(ImportError::ImportSyntax(e));
-                                    }
-                                }
+                if let Some(crate::syntax::rowan::ast::LiteralValue::Str(s)) = literal.value() {
+                    if let Some(import_str) = s.value() {
+                        match Input::from_str(import_str) {
+                            Ok(input) => {
+                                imports.push(input);
+                            }
+                            Err(e) => {
+                                return Err(ImportError::ImportSyntax(e));
                             }
                         }
-                        _ => {}
                     }
                 }
             }
@@ -353,12 +342,12 @@ fn scrape_rowan_imports(soup: &crate::syntax::rowan::ast::Soup, imports: &mut Ve
 pub mod test {
     use super::*;
     use crate::syntax::input::Locator;
-    use crate::syntax::rowan::ast::{Unit, Soup, Element, HasSoup, AstToken};
+    use crate::syntax::rowan::ast::{AstToken, Element, HasSoup, Soup, Unit};
 
     /// Convert Rowan Soup to legacy Expression for testing
     fn rowan_soup_to_legacy_expression(soup: &Soup) -> Expression {
         let elements: Vec<Element> = soup.elements().collect();
-        
+
         // If single element, convert it
         if elements.len() == 1 {
             match &elements[0] {
@@ -376,14 +365,14 @@ pub mod test {
                         match ident {
                             crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
                                 return Expression::Name(crate::syntax::ast::Name::Normal(
-                                    codespan::Span::default(), 
-                                    normal.text().to_string()
+                                    codespan::Span::default(),
+                                    normal.text().to_string(),
                                 ));
                             }
                             crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
                                 return Expression::Name(crate::syntax::ast::Name::Operator(
-                                    codespan::Span::default(), 
-                                    op.text().to_string()
+                                    codespan::Span::default(),
+                                    op.text().to_string(),
                                 ));
                             }
                         }
@@ -394,7 +383,7 @@ pub mod test {
                 }
             }
         }
-        
+
         // Multiple elements - create an OpSoup
         let mut soup_elements = Vec::new();
         for element in elements {
@@ -412,16 +401,20 @@ pub mod test {
                     if let Some(ident) = name.identifier() {
                         match ident {
                             crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
-                                soup_elements.push(Expression::Name(crate::syntax::ast::Name::Normal(
-                                    codespan::Span::default(), 
-                                    normal.text().to_string()
-                                )));
+                                soup_elements.push(Expression::Name(
+                                    crate::syntax::ast::Name::Normal(
+                                        codespan::Span::default(),
+                                        normal.text().to_string(),
+                                    ),
+                                ));
                             }
                             crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
-                                soup_elements.push(Expression::Name(crate::syntax::ast::Name::Operator(
-                                    codespan::Span::default(), 
-                                    op.text().to_string()
-                                )));
+                                soup_elements.push(Expression::Name(
+                                    crate::syntax::ast::Name::Operator(
+                                        codespan::Span::default(),
+                                        op.text().to_string(),
+                                    ),
+                                ));
                             }
                         }
                     }
@@ -431,26 +424,37 @@ pub mod test {
                 }
             }
         }
-        
+
         if soup_elements.is_empty() {
-            Expression::Lit(Literal::Str(codespan::Span::default(), "empty_soup".to_string()))
+            Expression::Lit(Literal::Str(
+                codespan::Span::default(),
+                "empty_soup".to_string(),
+            ))
         } else {
             Expression::OpSoup(codespan::Span::default(), soup_elements)
         }
     }
-    
+
     /// Convert Rowan Literal to legacy Expression for testing  
-    fn rowan_literal_to_legacy_expression(literal: &crate::syntax::rowan::ast::Literal) -> Expression {
+    fn rowan_literal_to_legacy_expression(
+        literal: &crate::syntax::rowan::ast::Literal,
+    ) -> Expression {
         if let Some(value) = literal.value() {
             match value {
                 crate::syntax::rowan::ast::LiteralValue::Str(s) => {
                     if let Some(text) = s.value() {
-                        return Expression::Lit(Literal::Str(codespan::Span::default(), text.to_string()));
+                        return Expression::Lit(Literal::Str(
+                            codespan::Span::default(),
+                            text.to_string(),
+                        ));
                     }
                 }
                 crate::syntax::rowan::ast::LiteralValue::Sym(sym) => {
                     if let Some(text) = sym.value() {
-                        return Expression::Lit(Literal::Sym(codespan::Span::default(), text.to_string()));
+                        return Expression::Lit(Literal::Sym(
+                            codespan::Span::default(),
+                            text.to_string(),
+                        ));
                     }
                 }
                 crate::syntax::rowan::ast::LiteralValue::Num(num) => {
@@ -460,34 +464,38 @@ pub mod test {
                 }
             }
         }
-        
+
         // Fallback
-        Expression::Lit(Literal::Str(codespan::Span::default(), "literal".to_string()))
+        Expression::Lit(Literal::Str(
+            codespan::Span::default(),
+            "literal".to_string(),
+        ))
     }
-    
+
     /// Convert Rowan List to legacy Expression for testing
     fn rowan_list_to_legacy_expression(list: &crate::syntax::rowan::ast::List) -> Expression {
         let mut items = Vec::new();
-        
+
         for item in list.items() {
             let item_expr = rowan_soup_to_legacy_expression(&item);
             items.push(item_expr);
         }
-        
+
         Expression::List(codespan::Span::default(), items)
     }
-    
+
     /// Convert Rowan Unit to legacy Expression for testing
     fn rowan_unit_to_legacy_expression(unit: &Unit) -> Expression {
         // Convert declarations to legacy format
         let mut declarations = Vec::new();
-        
+
         for decl in unit.declarations() {
             // Check for declaration metadata
-            let decl_metadata = decl.meta()
+            let decl_metadata = decl
+                .meta()
                 .and_then(|m| m.soup())
                 .map(|soup| rowan_soup_to_legacy_expression(&soup));
-            
+
             if let Some(head) = decl.head() {
                 let kind = head.classify_declaration();
                 match kind {
@@ -511,27 +519,31 @@ pub mod test {
                 }
             }
         }
-        
+
         // Check for unit metadata
-        let metadata = unit.meta().and_then(|m| m.soup()).map(|soup| rowan_soup_to_legacy_expression(&soup));
-        
+        let metadata = unit
+            .meta()
+            .and_then(|m| m.soup())
+            .map(|soup| rowan_soup_to_legacy_expression(&soup));
+
         Expression::Block(Box::new(Block {
             span: codespan::Span::default(),
             metadata,
             declarations,
         }))
     }
-    
+
     /// Convert Rowan Block to legacy Expression for testing
     fn rowan_block_to_legacy_expression(block: &crate::syntax::rowan::ast::Block) -> Expression {
         let mut declarations = Vec::new();
-        
+
         for decl in block.declarations() {
             // Check for declaration metadata
-            let decl_metadata = decl.meta()
+            let decl_metadata = decl
+                .meta()
                 .and_then(|m| m.soup())
                 .map(|soup| rowan_soup_to_legacy_expression(&soup));
-            
+
             if let Some(head) = decl.head() {
                 let kind = head.classify_declaration();
                 match kind {
@@ -555,10 +567,13 @@ pub mod test {
                 }
             }
         }
-        
-        // Check for block metadata  
-        let metadata = block.meta().and_then(|m| m.soup()).map(|soup| rowan_soup_to_legacy_expression(&soup));
-        
+
+        // Check for block metadata
+        let metadata = block
+            .meta()
+            .and_then(|m| m.soup())
+            .map(|soup| rowan_soup_to_legacy_expression(&soup));
+
         Expression::Block(Box::new(Block {
             span: codespan::Span::default(),
             metadata,
@@ -573,12 +588,15 @@ pub mod test {
             rowan_soup_to_legacy_expression(&parse_result.tree())
         } else {
             // Return error placeholder if parse fails
-            Expression::Lit(crate::syntax::ast::Literal::Str(codespan::Span::default(), "parse_error".to_string()))
+            Expression::Lit(crate::syntax::ast::Literal::Str(
+                codespan::Span::default(),
+                "parse_error".to_string(),
+            ))
         }
     }
 
     pub fn parse_unit(text: &'static str) -> Expression {
-        // Parse with Rowan and convert to legacy AST for testing  
+        // Parse with Rowan and convert to legacy AST for testing
         let parse_result = crate::syntax::rowan::parse_unit(text);
         if parse_result.errors().is_empty() {
             rowan_unit_to_legacy_expression(&parse_result.tree())

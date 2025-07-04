@@ -94,7 +94,6 @@ pub enum ParserError {
     Syntax(SyntaxError),
 }
 
-
 impl ParserError {
     /// Convert to a diagnostic
     pub fn to_diagnostic(&self) -> Diagnostic<usize> {

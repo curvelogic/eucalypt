@@ -1,12 +1,12 @@
 #![allow(non_local_definitions)]
-extern crate regex;
-extern crate serde_json;
 extern crate codespan;
 extern crate codespan_reporting;
 extern crate indexmap;
 extern crate itertools;
 extern crate moniker;
 extern crate pretty;
+extern crate regex;
+extern crate serde_json;
 extern crate structopt;
 extern crate thiserror;
 extern crate unic_ucd_category;

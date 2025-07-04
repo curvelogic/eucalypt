@@ -11,7 +11,7 @@ use serde_json::Number;
 use std::collections::VecDeque;
 
 /// A literal value
-/// 
+///
 /// AST embedding syntax:
 /// - `Sym`: `[:a-sym "name"]` - Symbol literal (e.g. `:foo`)
 /// - `Str`: `[:a-str "text"]` - String literal (e.g. `"hello"`)
@@ -77,7 +77,7 @@ where
 }
 
 /// A name (normal or operator)
-/// 
+///
 /// AST embedding syntax:
 /// - `Normal`: `[:a-norm "name"]` - Normal identifier (e.g. `x`, `'quoted'`)
 /// - `Operator`: `[:a-oper "operator"]` - Operator identifier (e.g. `+`, `&&`)
@@ -128,7 +128,7 @@ pub fn operator(id: &str) -> Name {
 }
 
 /// Types of expression
-/// 
+///
 /// AST embedding syntax:
 /// - `Lit`: `[:a-lit literal]` - Literal value
 /// - `Block`: `[:a-block declarations... metadata]` - Block expression  

@@ -1,3 +1,0 @@
-evidence: { x: "boo" }
-
-main: evidence set-value(:x, :y)

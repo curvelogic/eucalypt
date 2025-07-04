@@ -1,5 +1,6 @@
 use crate::common::sourcemap::*;
 use crate::core::cook;
+use crate::core::desugar::desugarable::Desugarable;
 use crate::core::desugar::{Content, Desugarer};
 use crate::core::error::CoreError;
 use crate::core::expr::RcExpr;
@@ -12,8 +13,7 @@ use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
 use crate::driver::resources::Resources;
 use crate::import::read_to_core;
-use crate::syntax::rowan::ast::{Unit, Soup};
-use crate::core::desugar::desugarable::Desugarable;
+use crate::syntax::rowan::ast::{Soup, Unit};
 
 /// Enum to hold either a Unit (for files) or Soup (for CLI expressions)
 #[derive(Debug)]
@@ -23,7 +23,10 @@ pub enum ParsedAst {
 }
 
 impl Desugarable for ParsedAst {
-    fn desugar(&self, desugarer: &mut crate::core::desugar::desugarer::Desugarer) -> Result<crate::core::expr::RcExpr, crate::core::error::CoreError> {
+    fn desugar(
+        &self,
+        desugarer: &mut crate::core::desugar::desugarer::Desugarer,
+    ) -> Result<crate::core::expr::RcExpr, crate::core::error::CoreError> {
         match self {
             ParsedAst::Unit(unit) => unit.desugar(desugarer),
             ParsedAst::Soup(soup) => soup.desugar(desugarer),
@@ -152,7 +155,7 @@ impl SourceLoader {
     fn load_tree(&mut self, input: &Input) -> Result<usize, EucalyptError> {
         let locator = input.locator();
         let file_id = self.load_eucalypt(locator)?;
-        
+
         // Implement import analysis for Rowan AST
         let ast = self.asts.get(&file_id).unwrap();
         let inputs = self.imports.analyse_rowan_ast(input.clone(), ast)?;
@@ -240,7 +243,6 @@ impl SourceLoader {
         // Retrieve the ASTs and Core exprs contributing to the unit
         let inputs = self.imports.unit_inputs(input)?;
         let mut desugarables: HashMap<Input, Content> = HashMap::new();
-        
 
         for input in inputs {
             if let Some(file_id) = self.locators.get(input.locator()) {
@@ -250,9 +252,7 @@ impl SourceLoader {
 
                 if let Some(core) = self.cores.get(input) {
                     desugarables.insert(input.clone(), Content::new(*file_id, core));
-                } else {
                 }
-            } else {
             }
         }
 

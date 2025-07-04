@@ -1,12 +1,7 @@
 //! Simple parse benchmarks
 
-use codespan_reporting::files::SimpleFiles;
 use criterion::{criterion_group, criterion_main, Criterion};
-use eucalypt::syntax::{
-    ast::Block,
-    error::ParserError,
-    rowan::{ast::Unit, validate, Parse},
-};
+use eucalypt::syntax::rowan::{ast::Unit, Parse};
 
 const UNIT: &str = r#"
 "some documentation metadata"
@@ -21,19 +16,12 @@ block: {
 { :meta :data :only :block }
 "#;
 
-fn old_parser(text: &str) -> Result<Block, ParserError> {
-    let mut files = SimpleFiles::new();
-    let id = files.add("test".to_string(), text.to_string());
-    eucalypt::syntax::compat::parse_unit_compat(&files, id)
-}
-
-fn new_lossless_parser(text: &str) -> Parse<Unit> {
+fn rowan_parser(text: &str) -> Parse<Unit> {
     eucalypt::syntax::rowan::parse_unit(text)
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("new parser", |b| b.iter(|| new_lossless_parser(UNIT)));
-    c.bench_function("old parser", |b| b.iter(|| old_parser(UNIT)));
+    c.bench_function("rowan parser", |b| b.iter(|| rowan_parser(UNIT)));
 }
 
 criterion_group!(benches, criterion_benchmark);
