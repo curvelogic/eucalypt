@@ -93,7 +93,7 @@ impl Emitter for YamlEmitter<'_> {
             yaml_rust::YamlEmitter::new(&mut output)
                 .dump(result)
                 .unwrap();
-            writeln!(self.out, "{}", output).unwrap();
+            writeln!(self.out, "{output}").unwrap();
         }
     }
 }

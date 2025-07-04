@@ -42,7 +42,7 @@ impl ToSourceDoc for Literal {
                 if is_normal(s) {
                     RcDoc::text(format!(":{s}"))
                 } else {
-                    RcDoc::text(format!(":'{}'", s))
+                    RcDoc::text(format!(":'{s}'"))
                 }
             }
             Literal::Str(_, s) => RcDoc::text(format!("\"{}\"", escape_string_literal(s))),

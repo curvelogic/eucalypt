@@ -30,7 +30,7 @@ impl fmt::Display for IntrinsicType {
             IntrinsicType::Number => write!(f, "Num"),
             IntrinsicType::ZonedDateTime => write!(f, "Zdt"),
             IntrinsicType::List(t) => write!(f, "[{}]", *t),
-            IntrinsicType::Function(i, o) => write!(f, "{} -> {}", i, o),
+            IntrinsicType::Function(i, o) => write!(f, "{i} -> {o}"),
             IntrinsicType::Record(hm) => {
                 write!(f, "{{")?;
                 let mut it = hm.iter();

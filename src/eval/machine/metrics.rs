@@ -24,7 +24,7 @@ impl Clock {
         let mut report = vec![];
         for (k, v) in &self.durations {
             total += *v;
-            report.push((format!("VM-{:?}", k), *v));
+            report.push((format!("VM-{k:?}"), *v));
         }
 
         report.push(("VM-Total".to_string(), total));

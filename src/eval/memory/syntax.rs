@@ -47,16 +47,16 @@ impl fmt::Display for Native {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Native::Sym(s) => {
-                write!(f, ":<{:p}>", s)
+                write!(f, ":<{s:p}>")
             }
             Native::Str(s) => {
-                write!(f, "\"<{:p}>\"", s)
+                write!(f, "\"<{s:p}>\"")
             }
             Native::Num(n) => {
-                write!(f, "{}", n)
+                write!(f, "{n}")
             }
             Native::Zdt(t) => {
-                write!(f, "☽{}", t)
+                write!(f, "☽{t}")
             }
         }
     }
@@ -110,13 +110,13 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Reference::L(i) => {
-                write!(f, "✳{}", i)
+                write!(f, "✳{i}")
             }
             Reference::G(i) => {
-                write!(f, "⊗{}", i)
+                write!(f, "⊗{i}")
             }
             Reference::V(n) => {
-                write!(f, "!{}", n)
+                write!(f, "!{n}")
             }
         }
     }

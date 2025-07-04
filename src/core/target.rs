@@ -29,7 +29,7 @@ pub struct Target {
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let format_str = match &self.format {
-            Some(fstr) => format!("(as: {}) ", fstr),
+            Some(fstr) => format!("(as: {fstr}) "),
             None => "".to_string(),
         };
 

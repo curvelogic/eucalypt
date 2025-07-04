@@ -990,7 +990,7 @@ mod tests {
 
     fn verify_expr(text: &str, parse_repr: &str) {
         let parse = parse_expr(text);
-        println!("checking: {}", text);
+        println!("checking: {text}");
         assert_eq!(format!("\n{}", parse.syntax_node()), parse_repr);
         assert!(parse.ok().is_ok());
     }
@@ -2068,7 +2068,7 @@ UNIT@0..105
         ];
 
         for file_path in &test_files {
-            println!("Testing string pattern file: {}", file_path);
+            println!("Testing string pattern file: {file_path}");
             let content = std::fs::read_to_string(file_path).unwrap();
             let parse = parse_unit(&content);
 
@@ -2078,14 +2078,9 @@ UNIT@0..105
 
             assert!(
                 parse.errors().is_empty(),
-                "{} should parse without errors",
-                file_path
+                "{file_path} should parse without errors"
             );
-            assert!(
-                parse.ok().is_ok(),
-                "{} should parse successfully",
-                file_path
-            );
+            assert!(parse.ok().is_ok(), "{file_path} should parse successfully");
         }
     }
 
@@ -2180,7 +2175,7 @@ UNIT@0..105
         if !parse.errors().is_empty() {
             println!("Integration test errors: {:?}", parse.errors());
             for error in parse.errors() {
-                println!("  - {:?}", error);
+                println!("  - {error:?}");
             }
         }
 

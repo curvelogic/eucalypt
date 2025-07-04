@@ -41,7 +41,7 @@ pub fn prepare(
     // If we're dumping parses, dump every file read during the load
     if opt.parse_only() {
         for (loc, ast) in loader.asts() {
-            println!("--- {} ---\n", loc);
+            println!("--- {loc} ---\n");
             dump_ast(ast, opt);
         }
         return Ok(Command::Exit);
@@ -94,12 +94,12 @@ pub fn prepare(
     if opt.list_targets() {
         println!("Available targets\n");
         for t in format_target_table(loader.core().targets.iter()) {
-            println!("{}", t);
+            println!("{t}");
         }
 
         println!("\nFrom inputs\n");
         for i in &inputs {
-            println!("  - {}", i);
+            println!("  - {i}");
         }
         return Ok(Command::Exit);
     }
@@ -205,7 +205,7 @@ fn dump_ast(ast: &ParsedAst, opt: &EucalyptOptions) {
             }
         }
     } else if opt.quote_debug() {
-        println!("{:#?}", ast);
+        println!("{ast:#?}");
     } else {
         match ast {
             ParsedAst::Unit(unit) => {
@@ -225,7 +225,7 @@ fn dump_core(expr: RcExpr, opt: &EucalyptOptions) {
     if opt.quote_embed() {
         println!("{}\n\n", export::quote_embed_core_unit(&expr));
     } else if opt.quote_debug() {
-        println!("{:#?}", expr);
+        println!("{expr:#?}");
     } else {
         // direct expression
         print!("{}", prettify(&expr));
@@ -245,7 +245,7 @@ fn format_target_table<'a>(targets: impl Iterator<Item = &'a Target>) -> Vec<Str
     let doc_column = len + 2;
     let mut lines: Vec<String> = pairs
         .into_iter()
-        .map(|(pre, doc)| format!("{:width$}{}", pre, doc, width = doc_column))
+        .map(|(pre, doc)| format!("{pre:doc_column$}{doc}"))
         .collect();
     lines.sort();
     lines

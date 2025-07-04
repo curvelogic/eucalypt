@@ -177,7 +177,7 @@ impl<'smap> Receiver<'smap> {
     /// Parse eucalypt expression embedded in YAML source
     pub fn parse_eu(&mut self, text: String) -> Result<RcExpr, SourceError> {
         let span = Span::new(ByteIndex(0), ByteIndex(0) + ByteOffset::from_str_len(&text));
-        let file_id = self.files.add(format!("yaml:[{}]", text), text);
+        let file_id = self.files.add(format!("yaml:[{text}]"), text);
         let ast = parser::parse_expression(self.files, file_id)
             .map_err(|p| SourceError::EmbeddedParserError(p, file_id, span))?;
 
@@ -191,7 +191,7 @@ impl<'smap> Receiver<'smap> {
     /// Parse eucalypt expression embedded in YAML source
     pub fn parse_eu_fn(&mut self, text: String) -> Result<RcExpr, SourceError> {
         let span = Span::new(ByteIndex(0), ByteIndex(0) + ByteOffset::from_str_len(&text));
-        let file_id = self.files.add(format!("yaml:[{}]", text), text);
+        let file_id = self.files.add(format!("yaml:[{text}]"), text);
         let (head, body) = parser::parse_embedded_lambda(self.files, file_id)
             .map_err(|p| SourceError::EmbeddedParserError(p, file_id, span))?;
 

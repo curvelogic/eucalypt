@@ -18,7 +18,7 @@ mod tests {
 
         let mut loader = SourceLoader::new(vec![]);
         let mut timings = Timings::default();
-        println!("About to prepare with expression: {}", expr);
+        println!("About to prepare with expression: {expr}");
         prepare::prepare(&opts, &mut loader, &mut timings)?;
 
         let mut outbuf = Vec::new();
@@ -35,7 +35,7 @@ mod tests {
 
         let stderr_output = std::str::from_utf8(&errbuf)?;
         if !stderr_output.is_empty() {
-            eprintln!("STDERR: {}", stderr_output);
+            eprintln!("STDERR: {stderr_output}");
         }
         Ok(std::str::from_utf8(&outbuf)?.trim().to_string())
     }
@@ -51,11 +51,11 @@ mod tests {
         let result = eval_expr("{foo: 99}.foo");
         match result {
             Ok(output) => {
-                eprintln!("Got output: '{}'", output);
+                eprintln!("Got output: '{output}'");
                 assert_eq!(output, "99");
             }
             Err(e) => {
-                panic!("Test failed with error: {}", e);
+                panic!("Test failed with error: {e}");
             }
         }
     }
@@ -112,12 +112,12 @@ mod tests {
         let result = eval_expr("{data: {foo: 99}}.data.foo");
         match result {
             Ok(output) => {
-                println!("Got output: '{}'", output);
+                println!("Got output: '{output}'");
                 assert_eq!(output, "99");
             }
             Err(e) => {
-                println!("Test failed with error: {}", e);
-                panic!("Test failed: {}", e);
+                println!("Test failed with error: {e}");
+                panic!("Test failed: {e}");
             }
         }
     }
@@ -204,7 +204,7 @@ mod tests {
 
         // The static lookup syntax {block}.(expr) should work
         let expr = r#"{a: 1, b: 2}.(a + b)"#;
-        println!("\n=== Debug generalized lookup: {} ===", expr);
+        println!("\n=== Debug generalized lookup: {expr} ===");
 
         // First check what core expression we get
         let mut loader = SourceLoader::default();
@@ -235,7 +235,7 @@ mod tests {
         use crate::syntax::input::{Input, Locator};
 
         let input = "{foo: 99}.foo";
-        println!("\n=== Debug Simple Lookup: {} ===", input);
+        println!("\n=== Debug Simple Lookup: {input} ===");
 
         let mut loader = SourceLoader::default();
         let loc = Locator::Cli(input.to_string());
@@ -245,7 +245,7 @@ mod tests {
         // Check the AST structure
         if let Some(ast) = loader.ast(input_obj.locator()) {
             println!("\n--- AST Structure ---");
-            println!("{:#?}", ast);
+            println!("{ast:#?}");
         }
 
         let unit = loader.translate(&input_obj).unwrap();
@@ -262,13 +262,13 @@ mod tests {
         // Try to run inline
         match loader.inline() {
             Ok(_) => println!("\n--- After inline: OK ---"),
-            Err(e) => println!("\n--- After inline: ERROR: {} ---", e),
+            Err(e) => println!("\n--- After inline: ERROR: {e} ---"),
         }
 
         // Try to run eliminate
         match loader.eliminate() {
             Ok(_) => println!("\n--- After eliminate: OK ---"),
-            Err(e) => println!("\n--- After eliminate: ERROR: {} ---", e),
+            Err(e) => println!("\n--- After eliminate: ERROR: {e} ---"),
         }
 
         // Check the final core
@@ -283,7 +283,7 @@ mod tests {
         use crate::syntax::input::{Input, Locator};
 
         let input = "{data: {foo: 99}}.data.foo";
-        println!("\n=== STG Generation for: {} ===", input);
+        println!("\n=== STG Generation for: {input} ===");
 
         let mut loader = SourceLoader::default();
         let loc = Locator::Cli(input.to_string());
@@ -297,7 +297,7 @@ mod tests {
         println!("\n--- After inline ---");
         match loader.inline() {
             Ok(_) => println!("OK"),
-            Err(e) => println!("ERROR: {}", e),
+            Err(e) => println!("ERROR: {e}"),
         }
 
         println!("\n--- After eliminate ---");
@@ -314,14 +314,14 @@ mod tests {
                 match compiler.compile(core_expr) {
                     Ok(stg) => {
                         println!("STG generated successfully!");
-                        println!("{:#?}", stg);
+                        println!("{stg:#?}");
                     }
                     Err(e) => {
-                        println!("STG compilation failed: {}", e);
+                        println!("STG compilation failed: {e}");
                     }
                 }
             }
-            Err(e) => println!("ERROR: {}", e),
+            Err(e) => println!("ERROR: {e}"),
         }
     }
 
@@ -332,7 +332,7 @@ mod tests {
         use crate::syntax::input::{Input, Locator};
 
         let input = "{data: {foo: 99}}.data.foo";
-        println!("\n=== ROWAN Core Expression for: {} ===", input);
+        println!("\n=== ROWAN Core Expression for: {input} ===");
 
         let mut loader = SourceLoader::default();
         let loc = Locator::Cli(input.to_string());
@@ -381,21 +381,21 @@ mod tests {
         println!("\n--- What gets lexed for '{{a + b}}' ---");
         let lexer = StringPatternLexer::new("{a + b}", codespan::ByteOffset(0));
         let tokens: Vec<_> = lexer.collect();
-        println!("Tokens: {:?}", tokens);
+        println!("Tokens: {tokens:?}");
 
         println!("\n--- What gets lexed for '{{a.b.c}}' ---");
         let lexer = StringPatternLexer::new("{a.b.c}", codespan::ByteOffset(0));
         let tokens: Vec<_> = lexer.collect();
-        println!("Tokens: {:?}", tokens);
+        println!("Tokens: {tokens:?}");
 
         println!("\n--- What gets lexed for '{{func()}}' ---");
         let lexer = StringPatternLexer::new("{func()}", codespan::ByteOffset(0));
         let tokens: Vec<_> = lexer.collect();
-        println!("Tokens: {:?}", tokens);
+        println!("Tokens: {tokens:?}");
 
         println!("\n--- What gets lexed for '{{0}}' ---");
         let lexer = StringPatternLexer::new("{0}", codespan::ByteOffset(0));
         let tokens: Vec<_> = lexer.collect();
-        println!("Tokens: {:?}", tokens);
+        println!("Tokens: {tokens:?}");
     }
 }

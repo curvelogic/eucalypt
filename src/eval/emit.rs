@@ -117,7 +117,7 @@ pub struct DebugEmitter();
 
 impl Emitter for DebugEmitter {
     fn emit(&mut self, event: Event) {
-        println!("{:?}", event)
+        println!("{event:?}")
     }
 }
 

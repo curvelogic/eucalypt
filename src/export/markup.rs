@@ -169,7 +169,7 @@ where
                 if let Some(top) = self.stack.pop() {
                     let attrs = match top {
                         Expectation::EvenAttrAccumulation(attrs) => attrs,
-                        e => panic!("unexpected block end event in state {:?}", e),
+                        e => panic!("unexpected block end event in state {e:?}"),
                     };
 
                     if let Some(mut top) = self.stack.pop() {

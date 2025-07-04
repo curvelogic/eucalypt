@@ -197,10 +197,10 @@ impl EucalyptOptions {
 
         // targets
         if let Some(t) = &self.target {
-            explanation.push_str(&format!("Target: {}\n\n", t));
+            explanation.push_str(&format!("Target: {t}\n\n"));
         }
         if let Some(e) = &self.evaluate {
-            explanation.push_str(&format!("Evaluand: {}\n\n", e));
+            explanation.push_str(&format!("Evaluand: {e}\n\n"));
         }
 
         // output
@@ -213,24 +213,24 @@ impl EucalyptOptions {
             .export_type
             .clone()
             .unwrap_or_else(|| "yaml".to_string());
-        explanation.push_str(&format!("Render output: {} to {}\n\n", f, o));
+        explanation.push_str(&format!("Render output: {f} to {o}\n\n"));
 
         // inputs
         explanation.push_str("Inputs:\n");
         for i in &self.prologue_inputs {
-            explanation.push_str(&format!(" • {}\n", i));
+            explanation.push_str(&format!(" • {i}\n"));
         }
         if let Some(name) = self.collection() {
-            explanation.push_str(&format!(" • {}=\n", name));
+            explanation.push_str(&format!(" • {name}=\n"));
         }
         for i in &self.explicit_inputs {
             if self.collection().is_some() {
                 explanation.push_str("  ");
             }
-            explanation.push_str(&format!(" • {}\n", i));
+            explanation.push_str(&format!(" • {i}\n"));
         }
         for i in &self.epilogue_inputs {
-            explanation.push_str(&format!(" • {}\n", i));
+            explanation.push_str(&format!(" • {i}\n"));
         }
         explanation.push('\n');
 

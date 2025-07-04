@@ -293,10 +293,10 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Anaphor::ExplicitAnonymous(smid) => write!(f, "_a{}", smid),
-            Anaphor::ExplicitNumbered(n) => write!(f, "_n{}", n),
-            Anaphor::Implicit(smid, ImplicitAnaphorSide::Left) => write!(f, "_il{}", smid),
-            Anaphor::Implicit(smid, ImplicitAnaphorSide::Right) => write!(f, "_ir{}", smid),
+            Anaphor::ExplicitAnonymous(smid) => write!(f, "_a{smid}"),
+            Anaphor::ExplicitNumbered(n) => write!(f, "_n{n}"),
+            Anaphor::Implicit(smid, ImplicitAnaphorSide::Left) => write!(f, "_il{smid}"),
+            Anaphor::Implicit(smid, ImplicitAnaphorSide::Right) => write!(f, "_ir{smid}"),
         }
     }
 }

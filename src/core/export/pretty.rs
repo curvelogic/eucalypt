@@ -227,10 +227,10 @@ impl ToPretty for RcExpr {
                     .append(allocator.text(")"))
             }
             Expr::Operator(_, f, p, e) => allocator
-                .text(format!("^{}({})^", f, p))
+                .text(format!("^{f}({p})^"))
                 .append(e.pretty(allocator)),
-            Expr::ErrUnresolved(_, name) => allocator.text(format!("⚠unresolved:{}⚠", name)),
-            Expr::ErrRedeclaration(_, name) => allocator.text(format!("⚠redecl:{}⚠", name)),
+            Expr::ErrUnresolved(_, name) => allocator.text(format!("⚠unresolved:{name}⚠")),
+            Expr::ErrRedeclaration(_, name) => allocator.text(format!("⚠redecl:{name}⚠")),
             Expr::ErrEliminated => allocator.text("⃝"),
             Expr::ErrPseudoDot => allocator.text("."),
             Expr::ErrPseudoCat => allocator.text("__CAT"),

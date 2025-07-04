@@ -23,16 +23,16 @@ impl fmt::Display for Native {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Native::Sym(s) => {
-                write!(f, ":{}", s)
+                write!(f, ":{s}")
             }
             Native::Str(s) => {
-                write!(f, "\"{}\"", s)
+                write!(f, "\"{s}\"")
             }
             Native::Num(n) => {
-                write!(f, "{}", n)
+                write!(f, "{n}")
             }
             Native::Zdt(t) => {
-                write!(f, "☽{}", t)
+                write!(f, "☽{t}")
             }
         }
     }
@@ -65,13 +65,13 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Reference::L(i) => {
-                write!(f, "✳{}", i)
+                write!(f, "✳{i}")
             }
             Reference::G(i) => {
-                write!(f, "⊗{}", i)
+                write!(f, "⊗{i}")
             }
             Reference::V(n) => {
-                write!(f, "!{}", n)
+                write!(f, "!{n}")
             }
         }
     }
@@ -150,7 +150,7 @@ impl fmt::Display for StgSyn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StgSyn::Atom { evaluand } => {
-                write!(f, "{}", evaluand)
+                write!(f, "{evaluand}")
             }
             StgSyn::Case {
                 scrutinee,
@@ -162,7 +162,7 @@ impl fmt::Display for StgSyn {
                     tags.push("…".to_string());
                 }
                 let desc = &tags.join(",");
-                write!(f, "CASE({}⑂<{}>)", scrutinee, desc)
+                write!(f, "CASE({scrutinee}⑂<{desc}>)")
             }
             StgSyn::Cons { tag, args } => {
                 write!(f, "DATA[{}](×{})", tag, args.len())
@@ -180,10 +180,10 @@ impl fmt::Display for StgSyn {
                 write!(f, "LETREC[×{}]({})", bindings.len(), body)
             }
             StgSyn::Ann { smid, body } => {
-                write!(f, "♪{}:{}", smid, body)
+                write!(f, "♪{smid}:{body}")
             }
             StgSyn::Meta { meta, body } => {
-                write!(f, "`{}{}", meta, body)
+                write!(f, "`{meta}{body}")
             }
             StgSyn::DeMeta { .. } => {
                 write!(f, "ƒ(`,•)")

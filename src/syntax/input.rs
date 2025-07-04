@@ -67,13 +67,13 @@ impl From<&Path> for Locator {
 impl Display for Locator {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         match self {
-            Locator::Url(url) => write!(f, "{}", url),
+            Locator::Url(url) => write!(f, "{url}"),
             Locator::Fs(path) => write!(f, "{}", path.to_str().expect("Bad File")),
-            Locator::Resource(s) => write!(f, "[{}]", s),
-            Locator::Pseudo(s) => write!(f, "«{}»", s),
+            Locator::Resource(s) => write!(f, "[{s}]"),
+            Locator::Pseudo(s) => write!(f, "«{s}»"),
             Locator::StdIn => write!(f, "-"),
-            Locator::Cli(text) => write!(f, "'{}'", text),
-            Locator::Literal(text) => write!(f, "'''{}'''", text),
+            Locator::Cli(text) => write!(f, "'{text}'"),
+            Locator::Literal(text) => write!(f, "'''{text}'''"),
         }
     }
 }
@@ -84,7 +84,7 @@ impl Into<OsString> for Locator {
     fn into(self) -> OsString {
         match self {
             Locator::Fs(path) => path.into(),
-            Locator::Cli(text) => format!("cli:'{}'", text).into(),
+            Locator::Cli(text) => format!("cli:'{text}'").into(),
             _ => todo!(),
         }
     }

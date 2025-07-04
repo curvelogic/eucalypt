@@ -112,13 +112,20 @@ The project includes a sophisticated garbage collector:
 
 ### Pre-Commit Checklist
 **ALWAYS run these commands before committing to avoid CI failures:**
-1. `cargo fmt --all` - Fix formatting issues for all targets
-2. `cargo clippy --all-targets -- -D warnings` - Fix ALL lint warnings (matches CI exactly)
-3. `cargo test --lib` - Verify tests pass (when appropriate)  
-4. **Check and fix dependabot security alerts** - Address vulnerabilities immediately
-5. `git commit` and `git push`
+1. `rustup update stable` - Ensure latest stable Rust to match CI (run weekly)
+2. `cargo fmt --all` - Fix formatting issues for all targets
+3. `cargo clippy --all-targets -- -D warnings` - Fix ALL lint warnings (matches CI exactly)
+4. `cargo test --lib` - Verify tests pass (when appropriate)  
+5. **Check and fix dependabot security alerts** - Address vulnerabilities immediately
+6. `git commit` and `git push`
 
-**CRITICAL**: Use `--all-targets` for clippy to match CI behaviour exactly. Local `--lib` checks miss test and bench targets that CI validates.
+**CRITICAL Rust Version Matching**: 
+- CI uses `dtolnay/rust-toolchain@stable` (latest stable Rust)
+- Local development MUST use the same Rust version as CI to avoid clippy discrepancies
+- Different Rust versions have different clippy rules - this causes the "local passes, CI fails" cycle
+- Run `rustup update stable` regularly to stay current with CI
+
+**CRITICAL Clippy Targeting**: Use `--all-targets` for clippy to match CI behaviour exactly. Local `--lib` checks miss test and bench targets that CI validates.
 
 ### Security and Dependencies
 - **MANDATORY: Fix dependabot security alerts immediately** - treat them like clippy warnings
