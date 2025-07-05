@@ -8,7 +8,7 @@ use crate::{
     core::{
         doc::DeclarationDocumentation, error::CoreError, expr::*, target::*, unit::TranslationUnit,
     },
-    syntax::{ast::*, input::*},
+    syntax::input::*,
 };
 use codespan::Span;
 use moniker::FreeVar;
@@ -211,15 +211,9 @@ impl<'smap> Desugarer<'smap> {
         self.targets.insert(tgt);
     }
 
-    /// Record doc strings
-    pub fn record_doc(&mut self, doc: String, decl: &DeclarationComponents) {
-        let path = self.stack.iter().map(String::clone).collect();
-
-        self.docs.push(DeclarationDocumentation {
-            name: decl.name.name().to_string(),
-            args: decl.args.iter().map(|a| a.name().to_string()).collect(),
-            path,
-            doc,
-        });
+    /// Record doc strings (temporarily disabled during legacy AST elimination)
+    /// TODO: Implement native Rowan documentation support
+    pub fn record_doc(&mut self, _doc: String, _name: &str, _args: Vec<String>) {
+        // Documentation recording disabled during legacy AST elimination
     }
 }

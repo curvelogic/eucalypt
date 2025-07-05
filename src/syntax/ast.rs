@@ -1,1015 +1,1068 @@
-//! The concrete AST targeted by initial parse.
+//! AST types and parsing functionality
 //!
-//! Parsing of the block DSL proceeds in two phases: parsing into
-//! `Protoblock` and then `Block` so as not to require too much
-//! cleverness from the underlying parser (LALRPOP).
-use crate::syntax::error::SyntaxError;
-use crate::syntax::span::HasSpan;
-use codespan::Span;
-use itertools::Itertools;
+//! This module provides the complete AST interface for Eucalypt syntax,
+//! combining type definitions with parsing functionality.
+
+use std::marker::PhantomData;
+
+use crate::syntax::{
+    kind::{EucalyptLanguage, SyntaxKind, SyntaxNode, SyntaxNodeChildren, SyntaxToken},
+    error::ParseError,
+};
+
+use rowan::{ast::AstNode, TextRange, TextSize};
 use serde_json::Number;
-use std::collections::VecDeque;
 
-/// A literal value
-///
-/// AST embedding syntax:
-/// - `Sym`: `[:a-sym "name"]` - Symbol literal (e.g. `:foo`)
-/// - `Str`: `[:a-str "text"]` - String literal (e.g. `"hello"`)
-/// - `Num`: `[:a-num value]` - Number literal (e.g. `42`, `3.14`)
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub enum Literal {
-    /// e.g. :foo - Embedding: `[:a-sym "foo"]`
-    Sym(Span, String),
-    /// e.g. "foo" - Embedding: `[:a-str "foo"]`
-    Str(Span, String),
-    /// e.g. -1234.64364e99 - Embedding: `[:a-num -1234.64364e99]`
-    Num(Span, Number),
+// Basic interface of a syntax token (as per Rowan's own AstNode)
+pub trait AstToken {
+    fn can_cast(token: SyntaxKind) -> bool
+    where
+        Self: Sized;
+
+    fn cast(syntax: SyntaxToken) -> Option<Self>
+    where
+        Self: Sized;
+
+    fn syntax(&self) -> &SyntaxToken;
+
+    fn text(&self) -> &str {
+        self.syntax().text()
+    }
 }
 
-impl HasSpan for Literal {
-    fn span(&self) -> Span {
-        match self {
-            Literal::Sym(s, _) | Literal::Str(s, _) | Literal::Num(s, _) => *s,
+// An iterator over `SyntaxNode` children of a particular AST type.
+#[derive(Debug, Clone)]
+pub struct AstChildren<N> {
+    inner: SyntaxNodeChildren,
+    ph: PhantomData<N>,
+}
+
+impl<N> AstChildren<N> {
+    fn new(parent: &SyntaxNode) -> Self {
+        AstChildren {
+            inner: parent.children(),
+            ph: PhantomData,
         }
     }
 }
 
-/// Construct a symbol literal at a source location
-pub fn sym_at(span: Span, name: &str) -> Literal {
-    Literal::Sym(span, name.to_string())
+impl<N: AstNode<Language = EucalyptLanguage>> Iterator for AstChildren<N> {
+    type Item = N;
+    fn next(&mut self) -> Option<N> {
+        self.inner.find_map(N::cast)
+    }
 }
 
-/// Construct a symbol literal
-pub fn sym(name: &str) -> Literal {
-    sym_at(Span::default(), name)
-}
+// Shortcut implementation of AstNode members for an AST struct
+// corresponding directly to a syntax kind
+macro_rules! ast_node {
+    ($ast:ident, $kind:ident) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[repr(transparent)]
+        pub struct $ast(SyntaxNode);
+        impl AstNode for $ast {
+            type Language = EucalyptLanguage;
 
-/// Construct a string literal at a source location
-pub fn str_at<T>(span: Span, text: T) -> Literal
-where
-    T: AsRef<str>,
-{
-    Literal::Str(span, text.as_ref().to_string())
-}
+            fn can_cast(kind: SyntaxKind) -> bool
+            where
+                Self: Sized,
+            {
+                kind == SyntaxKind::$kind
+            }
 
-/// Construct a string literal
-pub fn str<T>(text: T) -> Literal
-where
-    T: AsRef<str>,
-{
-    str_at(Span::default(), text)
-}
+            fn cast(node: SyntaxNode) -> Option<Self>
+            where
+                Self: Sized,
+            {
+                if node.kind() == SyntaxKind::$kind {
+                    Some(Self(node))
+                } else {
+                    None
+                }
+            }
 
-/// Construct a number literal at a source location
-pub fn num_at<N>(span: Span, n: N) -> Literal
-where
-    N: Into<Number>,
-{
-    Literal::Num(span, n.into())
-}
-
-/// Construct a number literal
-pub fn num<N>(n: N) -> Literal
-where
-    N: Into<Number>,
-{
-    num_at(Span::default(), n)
-}
-
-/// A name (normal or operator)
-///
-/// AST embedding syntax:
-/// - `Normal`: `[:a-norm "name"]` - Normal identifier (e.g. `x`, `'quoted'`)
-/// - `Operator`: `[:a-oper "operator"]` - Operator identifier (e.g. `+`, `&&`)
-#[derive(Clone, PartialEq, Debug, Eq)]
-pub enum Name {
-    /// normal (non-operator) name - Embedding: `[:a-norm "name"]`
-    Normal(Span, String),
-    /// operator name - Embedding: `[:a-oper "operator"]`
-    Operator(Span, String),
-}
-
-impl HasSpan for Name {
-    fn span(&self) -> Span {
-        match self {
-            Name::Normal(s, _) | Name::Operator(s, _) => *s,
+            fn syntax(&self) -> &SyntaxNode {
+                &self.0
+            }
         }
-    }
+    };
 }
 
-impl Name {
-    /// Convert the name to a string
-    pub fn name(&self) -> &str {
-        match self {
-            Name::Normal(_, n) => n,
-            Name::Operator(_, n) => n,
+// Shortcut implementation of AstToken members for an AST struct
+// corresponding directly to a syntax kind
+macro_rules! ast_token {
+    ($ast:ident, $kind:ident) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[repr(transparent)]
+        pub struct $ast(SyntaxToken);
+        impl AstToken for $ast {
+            fn can_cast(kind: SyntaxKind) -> bool
+            where
+                Self: Sized,
+            {
+                kind == SyntaxKind::$kind
+            }
+
+            fn cast(node: SyntaxToken) -> Option<Self>
+            where
+                Self: Sized,
+            {
+                if node.kind() == SyntaxKind::$kind {
+                    Some(Self(node))
+                } else {
+                    None
+                }
+            }
+
+            fn syntax(&self) -> &SyntaxToken {
+                &self.0
+            }
         }
+    };
+}
+
+// Helpers for AST method implementation
+mod support {
+    use crate::syntax::kind::{EucalyptLanguage, SyntaxKind};
+
+    use super::{AstChildren, AstNode, AstToken, SyntaxNode, SyntaxToken};
+
+    pub(super) fn child<N: AstNode<Language = EucalyptLanguage>>(parent: &SyntaxNode) -> Option<N> {
+        parent.children().find_map(N::cast)
+    }
+
+    pub(super) fn children<N: AstNode>(parent: &SyntaxNode) -> AstChildren<N> {
+        AstChildren::new(parent)
+    }
+
+    pub(super) fn syntax_token(parent: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
+        parent
+            .children_with_tokens()
+            .filter_map(|it| it.into_token())
+            .find(|t| t.kind() == kind)
+    }
+
+    pub(super) fn token<T>(parent: &SyntaxNode) -> Option<T>
+    where
+        T: AstToken,
+    {
+        parent
+            .children_with_tokens()
+            .filter_map(|it| it.into_token())
+            .find_map(T::cast)
     }
 }
 
-/// Create a normal name
-pub fn normal_at(span: Span, id: &str) -> Name {
-    Name::Normal(span, id.into())
-}
+//
+// Literal tokens and nodes
+//
 
-/// Create a normal name
-pub fn normal(id: &str) -> Name {
-    normal_at(Span::default(), id)
-}
+ast_token!(Sym, SYMBOL);
 
-/// Create a operator name
-pub fn operator_at(span: Span, id: &str) -> Name {
-    Name::Operator(span, id.into())
-}
-
-/// Create a operator name
-pub fn operator(id: &str) -> Name {
-    operator_at(Span::default(), id)
-}
-
-/// Types of expression
-///
-/// AST embedding syntax:
-/// - `Lit`: `[:a-lit literal]` - Literal value
-/// - `Block`: `[:a-block declarations... metadata]` - Block expression  
-/// - `List`: `[:a-list item1 item2 ...]` - List literal
-/// - `OpSoup`: `[:a-soup item1 item2 ...]` - Operator soup (unresolved precedence)
-/// - `Name`: `[:a-name name]` - Identifier reference
-/// - `StringPattern`: (not implemented) - String with interpolation
-/// - `ApplyTuple`: `[:a-applytuple arg1 arg2 ...]` - Function arguments
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Expression {
-    /// e.g. 123, "blah", :symbol - Embedding: `[:a-lit literal]`
-    Lit(Literal),
-    /// e.g. { x: y } - Embedding: `[:a-block declarations... metadata]`
-    Block(Box<Block>),
-    /// e.g. [x, y, z] - Embedding: `[:a-list item1 item2 ...]`
-    List(Span, Vec<Expression>),
-    /// possibly parenthesised operator soup e.g. (x &&& y!) - Embedding: `[:a-soup item1 item2 ...]`
-    OpSoup(Span, Vec<Expression>),
-    /// e.g. x, $$ - Embedding: `[:a-name name]`
-    Name(Name),
-    /// e.g. "{1} {2}!" - Embedding: (not implemented)
-    StringPattern(Span, Vec<StringChunk>),
-    /// e.g. ...(1, :foo, :bar) - Embedding: `[:a-applytuple arg1 arg2 ...]`
-    ApplyTuple(Span, Vec<Expression>),
-}
-
-impl HasSpan for Expression {
-    fn span(&self) -> Span {
-        match self {
-            Expression::Lit(lit) => lit.span(),
-            Expression::Block(b) => b.span(),
-            Expression::List(s, _) => *s,
-            Expression::OpSoup(s, _) => *s,
-            Expression::Name(n) => n.span(),
-            Expression::StringPattern(s, _) => *s,
-            Expression::ApplyTuple(s, _) => *s,
-        }
+impl Sym {
+    pub fn value(&self) -> Option<&str> {
+        self.text().strip_prefix(':').and_then(|s| {
+            if s.starts_with('\'') {
+                s.strip_prefix('\'').and_then(|s| s.strip_suffix('\''))
+            } else {
+                Some(s)
+            }
+        })
     }
 }
 
-/// Create a literal expression
-pub fn lit(l: Literal) -> Expression {
-    Expression::Lit(l)
-}
-
-/// Create a name expression
-pub fn name(n: Name) -> Expression {
-    Expression::Name(n)
-}
-
-/// Create operator soup for plural expressions, pass-through otherwise
-pub fn maybe_soup_at(span: Span, mut exps: Vec<Expression>) -> Expression {
-    if exps.len() == 1 {
-        exps.pop().unwrap()
-    } else {
-        Expression::OpSoup(span, exps)
+ast_token!(Str, STRING);
+impl Str {
+    pub fn value(&self) -> Option<&str> {
+        self.text()
+            .strip_prefix('\"')
+            .and_then(|s| s.strip_suffix('\"'))
     }
 }
 
-/// Create operator soup expression
-pub fn soup_at(span: Span, exps: Vec<Expression>) -> Expression {
-    Expression::OpSoup(span, exps)
-}
+ast_token!(Num, NUMBER);
 
-/// Create operator soup expression
-pub fn soup(exps: Vec<Expression>) -> Expression {
-    soup_at(Span::default(), exps)
-}
-
-/// Create a list expression
-pub fn list_at(span: Span, exps: Vec<Expression>) -> Expression {
-    Expression::List(span, exps)
-}
-
-/// Create a list expression
-pub fn list(exps: Vec<Expression>) -> Expression {
-    list_at(Span::default(), exps)
-}
-
-/// Create an application tuple expression
-pub fn tuple_at(span: Span, exps: Vec<Expression>) -> Expression {
-    Expression::ApplyTuple(span, exps)
-}
-
-/// Create an application tuple expression
-pub fn tuple(exps: Vec<Expression>) -> Expression {
-    tuple_at(Span::default(), exps)
-}
-
-impl Expression {
-    /// Convert an expression into just a name if possible
-    pub fn as_name(&self) -> Option<Name> {
-        match self {
-            Expression::Name(n) => Some(n.clone()),
-            _ => None,
-        }
+impl Num {
+    pub fn value(&self) -> Option<Number> {
+        self.text().parse().ok()
     }
 }
 
-/// Prior to parsing into declarations a block is a sequence of proto
-/// block elements. The LALRPOP parser generates this and it is
-/// structured into a full block by
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub enum ProtoblockElement {
-    /// A backtick to preface metadata expressions
-    DeclarationBacktick(Span),
-    /// A colon to separate a name / pattern from declaration content
-    DeclarationColon(Span),
-    /// An (optional colon) terminating a declaration
-    DeclarationComma(Span),
-    /// A (delimited, single) expression element - several of these
-    /// may form a soup expression later
-    ExpressionElement(Expression),
+// Literal value types
+pub enum LiteralValue {
+    /// A symbol e.g. :foo
+    Sym(Sym),
+    /// A string e.g. "foo"
+    Str(Str),
+    /// A number e.g. 99
+    Num(Num),
 }
 
-pub fn elt(expr: Expression) -> ProtoblockElement {
-    ProtoblockElement::from_expression(expr)
-}
-
-impl ProtoblockElement {
-    pub fn from_expression(expr: Expression) -> Self {
-        ProtoblockElement::ExpressionElement(expr)
-    }
-
-    /// Extract expression from the protoblock element if possible
-    pub fn into_expression(self) -> Option<Expression> {
-        match self {
-            ProtoblockElement::ExpressionElement(expr) => Some(expr),
+impl AstToken for LiteralValue {
+    fn cast(token: SyntaxToken) -> Option<Self> {
+        match token.kind() {
+            SyntaxKind::NUMBER => Num::cast(token).map(LiteralValue::Num),
+            SyntaxKind::STRING => Str::cast(token).map(LiteralValue::Str),
+            SyntaxKind::SYMBOL => Sym::cast(token).map(LiteralValue::Sym),
             _ => None,
         }
     }
 
-    pub fn is_backtick(&self) -> bool {
-        matches!(self, ProtoblockElement::DeclarationBacktick(_))
+    fn can_cast(kind: SyntaxKind) -> bool
+    where
+        Self: Sized,
+    {
+        matches!(
+            kind,
+            SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::SYMBOL
+        )
     }
 
-    pub fn is_colon(&self) -> bool {
-        matches!(self, ProtoblockElement::DeclarationColon(_))
-    }
-
-    pub fn is_comma(&self) -> bool {
-        matches!(self, ProtoblockElement::DeclarationComma(_))
-    }
-}
-
-impl HasSpan for ProtoblockElement {
-    fn span(&self) -> Span {
+    fn syntax(&self) -> &SyntaxToken {
         match self {
-            ProtoblockElement::DeclarationBacktick(s)
-            | ProtoblockElement::DeclarationColon(s)
-            | ProtoblockElement::DeclarationComma(s) => *s,
-            ProtoblockElement::ExpressionElement(expr) => expr.span(),
+            LiteralValue::Num(n) => n.syntax(),
+            LiteralValue::Str(s) => s.syntax(),
+            LiteralValue::Sym(s) => s.syntax(),
         }
     }
 }
 
-/// A `Protoblock_` is a sequence of protoblock elements
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Protoblock(Span, Vec<ProtoblockElement>);
-
-impl Protoblock {
-    /// Construct Protoblock from elements
-    pub fn new(span: Span, elements: Vec<ProtoblockElement>) -> Self {
-        Protoblock(span, elements)
-    }
-}
-
-impl HasSpan for Protoblock {
-    fn span(&self) -> Span {
-        match self {
-            Protoblock(s, _) => *s,
+impl LiteralValue {
+    pub fn symbol_name(&self) -> Option<&str> {
+        if let LiteralValue::Sym(s) = self {
+            s.value()
+        } else {
+            None
         }
     }
-}
 
-/// A declaration argument tuple is a tuple of names (for now)
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub struct ArgTuple(Span, Vec<Name>);
-
-impl ArgTuple {
-    /// Construct ArgTuple from elements
-    pub fn new(span: Span, args: Vec<Name>) -> Self {
-        ArgTuple(span, args)
+    pub fn string_value(&self) -> Option<&str> {
+        if let LiteralValue::Str(s) = self {
+            s.value()
+        } else {
+            None
+        }
     }
 
-    /// Construct from and ApplyTuple expression
-    pub fn from_apply_tuple(expr: Expression) -> Option<Self> {
-        if let Expression::ApplyTuple(span, args) = expr {
-            Some(ArgTuple(
-                span,
-                args.into_iter().flat_map(|e| e.as_name()).collect(),
-            ))
+    pub fn number_value(&self) -> Option<Number> {
+        if let LiteralValue::Num(n) = self {
+            n.value()
         } else {
             None
         }
     }
 }
 
-impl ArgTuple {
-    pub fn names(&self) -> &Vec<Name> {
-        &self.1
+// A literal value node
+ast_node!(Literal, LITERAL);
+
+impl Literal {
+    pub fn value(&self) -> Option<LiteralValue> {
+        support::token::<LiteralValue>(&self.0)
     }
 }
 
-impl HasSpan for ArgTuple {
-    fn span(&self) -> Span {
-        match self {
-            ArgTuple(s, _) => *s,
-        }
+//
+// Identifier tokens and nodes
+//
+
+pub trait ContainsName {
+    fn name_range(&self) -> Option<TextRange>;
+}
+
+ast_token!(UnquotedIdentifier, UNQUOTED_IDENTIFIER);
+
+impl ContainsName for UnquotedIdentifier {
+    fn name_range(&self) -> Option<TextRange> {
+        Some(TextRange::up_to(TextSize::of(self.text())))
     }
 }
 
-#[allow(clippy::from_over_into)]
-impl Into<Vec<Name>> for ArgTuple {
-    fn into(self) -> Vec<Name> {
-        self.1
+ast_token!(OperatorIdentifier, OPERATOR_IDENTIFIER);
+
+impl ContainsName for OperatorIdentifier {
+    fn name_range(&self) -> Option<TextRange> {
+        Some(TextRange::up_to(TextSize::of(self.text())))
     }
 }
 
-pub fn args_at(span: Span, names: Vec<Name>) -> ArgTuple {
-    ArgTuple(span, names)
-}
+ast_token!(SingleQuoteIdentifier, SINGLE_QUOTE_IDENTIFIER);
 
-pub fn args(names: Vec<Name>) -> ArgTuple {
-    ArgTuple(Span::default(), names)
-}
-
-/// Types of declaration head pattern
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub enum DeclarationHead {
-    /// e.g. `k: ...`
-    PropertyPattern(Name),
-    /// e.g. f(x, y, z): ...
-    FunctionPattern(Span, Name, ArgTuple),
-    /// e.g. (x &&& y): ...
-    InfixOperatorPattern(Span, Name, Name, Name),
-    /// e.g. (!x): ...
-    PrefixOperatorPattern(Span, Name, Name),
-    /// e.g. (x!): ...
-    PostfixOperatorPattern(Span, Name, Name),
-}
-
-impl HasSpan for DeclarationHead {
-    fn span(&self) -> Span {
-        match self {
-            DeclarationHead::PropertyPattern(n) => n.span(),
-            DeclarationHead::FunctionPattern(s, _, _)
-            | DeclarationHead::InfixOperatorPattern(s, _, _, _)
-            | DeclarationHead::PrefixOperatorPattern(s, _, _)
-            | DeclarationHead::PostfixOperatorPattern(s, _, _) => *s,
-        }
-    }
-}
-
-/// Takes elements from the back of a vector of expressions to form a
-/// declaration head.
-pub fn take_declaration_head(
-    file_id: usize,
-    exprs: &mut Vec<ProtoblockElement>,
-) -> Result<DeclarationHead, SyntaxError> {
-    use self::DeclarationHead::*;
-    use self::Expression::*;
-    use self::Name::*;
-    use self::ProtoblockElement::*;
-
-    if let Some(ExpressionElement(expr)) = exprs.pop() {
-        match expr {
-            // property patterns are normal names: `x: y`
-            Name(n @ Normal(_, _)) => Ok(PropertyPattern(n)),
-            // operator patterns are parenthesised op soup
-            OpSoup(s, xs) => match xs.as_slice() {
-                [Name(l @ Normal(_, _)), Name(op @ Operator(_, _)), Name(r @ Normal(_, _))] => {
-                    Ok(InfixOperatorPattern(s, l.clone(), op.clone(), r.clone()))
-                }
-                [Name(x @ Normal(_, _)), Name(op @ Operator(_, _))] => {
-                    Ok(PostfixOperatorPattern(s, x.clone(), op.clone()))
-                }
-                [Name(op @ Operator(_, _)), Name(x @ Normal(_, _))] => {
-                    Ok(PrefixOperatorPattern(s, op.clone(), x.clone()))
-                }
-                _ => Err(SyntaxError::InvalidDeclarationHead(file_id, s)),
-            },
-            // apply tuple requires us to take the preceding function
-            // name too
-            ApplyTuple(s, args) => {
-                if let Some(ExpressionElement(Name(f @ Normal(_, _)))) = exprs.pop() {
-                    let len = args.len();
-                    let params: Vec<_> = args.into_iter().flat_map(|e| e.as_name()).collect();
-                    if params.len() == len {
-                        Ok(FunctionPattern(f.span().merge(s), f, ArgTuple(s, params)))
-                    } else {
-                        Err(SyntaxError::InvalidDeclarationHead(file_id, s))
-                    }
-                } else {
-                    Err(SyntaxError::InvalidDeclarationHead(file_id, s))
-                }
+impl ContainsName for SingleQuoteIdentifier {
+    fn name_range(&self) -> Option<TextRange> {
+        let text = self.text();
+        let lquote = text.find('\'');
+        let rquote = text.rfind('\'');
+        match (lquote, rquote) {
+            (Some(0), Some(n)) if n == text.len() - 1 => {
+                Some(TextRange::new(1.into(), TextSize::try_from(n).unwrap()))
             }
-            e => Err(SyntaxError::InvalidDeclarationHead(file_id, e.span())),
-        }
-    } else {
-        Err(SyntaxError::MissingDeclarationHead(file_id, exprs.span()))
-    }
-}
-
-/// Convert a vector of protoblock elements into an expression
-pub fn elements_to_expression(
-    file_id: usize,
-    elements: &mut Vec<ProtoblockElement>,
-) -> Result<Expression, SyntaxError> {
-    let span = elements.span();
-    let size = elements.len();
-
-    let mut exprs: Vec<_> = elements
-        .drain(..)
-        .flat_map(ProtoblockElement::into_expression)
-        .collect();
-
-    if exprs.len() != size {
-        Err(SyntaxError::InvalidExpression(file_id, span))
-    } else if exprs.len() > 1 {
-        Ok(Expression::OpSoup(exprs.span(), exprs))
-    } else if exprs.len() == 1 {
-        Ok(exprs.pop().unwrap())
-    } else {
-        Err(SyntaxError::EmptyExpression(file_id, span))
-    }
-}
-
-/// Take metadata expression from the back of a vector of expressions
-/// if available.
-pub fn take_metadata_expression(
-    file_id: usize,
-    elements: &mut Vec<ProtoblockElement>,
-) -> Result<Option<Expression>, SyntaxError> {
-    if let Some(backtick) = elements.iter().position(ProtoblockElement::is_backtick) {
-        let mut meta = elements.split_off(backtick + 1);
-        chomp_backtick(elements);
-        elements_to_expression(file_id, &mut meta).map(Option::Some)
-    } else {
-        Ok(None)
-    }
-}
-
-/// Chomp any trailing comma from a vec of protoblock elements
-pub fn chomp_comma(elements: &mut Vec<ProtoblockElement>) {
-    if elements.last().filter(|e| e.is_comma()).is_some() {
-        elements.pop();
-    }
-}
-
-/// Chomp any trailing colon from a vec of protoblock elements
-pub fn chomp_colon(elements: &mut Vec<ProtoblockElement>) {
-    if elements.last().filter(|e| e.is_colon()).is_some() {
-        elements.pop();
-    }
-}
-
-/// Chomp any trailing backtick from a vec of protoblock elements
-pub fn chomp_backtick(elements: &mut Vec<ProtoblockElement>) {
-    if elements.last().filter(|e| e.is_backtick()).is_some() {
-        elements.pop();
-    }
-}
-
-/// Types of declaration
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub enum Declaration {
-    /// e.g. k: expr
-    PropertyDeclaration(Span, Option<Expression>, Name, Expression),
-    /// e.g. f(x, y, z): expr
-    FunctionDeclaration(Span, Option<Expression>, Name, ArgTuple, Expression),
-    /// e.g. (x &&& y): expr
-    InfixOperatorDeclaration(Span, Option<Expression>, Name, Name, Name, Expression),
-    /// e.g. (!x): expr
-    PrefixOperatorDeclaration(Span, Option<Expression>, Name, Name, Expression),
-    /// e.g. (x!): expr
-    PostfixOperatorDeclaration(Span, Option<Expression>, Name, Name, Expression),
-}
-
-impl HasSpan for Declaration {
-    fn span(&self) -> Span {
-        use self::Declaration::*;
-        match self {
-            PropertyDeclaration(s, _, _, _) => *s,
-            FunctionDeclaration(s, _, _, _, _) => *s,
-            InfixOperatorDeclaration(s, _, _, _, _, _) => *s,
-            PrefixOperatorDeclaration(s, _, _, _, _) => *s,
-            PostfixOperatorDeclaration(s, _, _, _, _) => *s,
+            _ => None,
         }
     }
 }
 
-impl Declaration {
-    /// Get the name declared by the declaration
-    pub fn name(&self) -> &Name {
-        use self::Declaration::*;
-        match self {
-            PropertyDeclaration(_, _, n, _) => n,
-            FunctionDeclaration(_, _, f, _, _) => f,
-            InfixOperatorDeclaration(_, _, _, op, _, _) => op,
-            PrefixOperatorDeclaration(_, _, op, _, _) => op,
-            PostfixOperatorDeclaration(_, _, _, op, _) => op,
-        }
-    }
+#[derive(Debug, Clone)]
+pub enum NormalIdentifier {
+    /// e.g. foo
+    UnquotedIdentifier(UnquotedIdentifier),
+    /// e.g. 'foo'
+    SingleQuoteIdentifier(SingleQuoteIdentifier),
+}
 
-    /// Get any declaration metadata
-    pub fn metadata(&self) -> &Option<Expression> {
-        use self::Declaration::*;
-        match self {
-            PropertyDeclaration(_, m, _, _)
-            | FunctionDeclaration(_, m, _, _, _)
-            | InfixOperatorDeclaration(_, m, _, _, _, _)
-            | PrefixOperatorDeclaration(_, m, _, _, _)
-            | PostfixOperatorDeclaration(_, m, _, _, _) => m,
-        }
-    }
-
-    /// Get the defining expression
-    pub fn definition(&self) -> &Expression {
-        use self::Declaration::*;
-        match self {
-            PropertyDeclaration(_, _, _, x)
-            | FunctionDeclaration(_, _, _, _, x)
-            | InfixOperatorDeclaration(_, _, _, _, _, x)
-            | PrefixOperatorDeclaration(_, _, _, _, x)
-            | PostfixOperatorDeclaration(_, _, _, _, x) => x,
-        }
-    }
-
-    /// True if and only if this declares an operator
-    pub fn is_operator(&self) -> bool {
-        use self::Declaration::*;
+impl AstToken for NormalIdentifier {
+    fn can_cast(kind: SyntaxKind) -> bool
+    where
+        Self: Sized,
+    {
         matches!(
-            self,
-            InfixOperatorDeclaration(_, _, _, _, _, _)
-                | PrefixOperatorDeclaration(_, _, _, _, _)
-                | PostfixOperatorDeclaration(_, _, _, _, _)
+            kind,
+            SyntaxKind::UNQUOTED_IDENTIFIER | SyntaxKind::SINGLE_QUOTE_IDENTIFIER
         )
     }
-}
 
-/// Declarations can be analysed into a common decomposition of their components
-pub struct DeclarationComponents<'decl> {
-    pub span: Span,
-    pub metadata: Option<&'decl Expression>,
-    pub name: &'decl Name,
-    pub args: Vec<&'decl Name>,
-    pub body: &'decl Expression,
-}
+    fn cast(token: SyntaxToken) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match token.kind() {
+            SyntaxKind::UNQUOTED_IDENTIFIER => {
+                UnquotedIdentifier::cast(token).map(Self::UnquotedIdentifier)
+            }
+            SyntaxKind::SINGLE_QUOTE_IDENTIFIER => {
+                SingleQuoteIdentifier::cast(token).map(Self::SingleQuoteIdentifier)
+            }
+            _ => None,
+        }
+    }
 
-impl<'decl> DeclarationComponents<'decl> {
-    pub fn new(
-        span: Span,
-        metadata: Option<&'decl Expression>,
-        name: &'decl Name,
-        args: Vec<&'decl Name>,
-        body: &'decl Expression,
-    ) -> Self {
-        DeclarationComponents {
-            span,
-            metadata,
-            name,
-            args,
-            body,
+    fn syntax(&self) -> &SyntaxToken {
+        match self {
+            NormalIdentifier::UnquotedIdentifier(n) => n.syntax(),
+            NormalIdentifier::SingleQuoteIdentifier(n) => n.syntax(),
         }
     }
 }
 
-impl<'decl> From<&'decl Declaration> for DeclarationComponents<'decl> {
-    fn from(decl: &'decl Declaration) -> Self {
-        use self::Declaration::*;
-        match decl {
-            PropertyDeclaration(s, meta, name, expr) => {
-                DeclarationComponents::new(*s, meta.as_ref(), name, vec![], expr)
-            }
-            FunctionDeclaration(s, meta, f, xs, body) => {
-                DeclarationComponents::new(*s, meta.as_ref(), f, xs.names().iter().collect(), body)
-            }
-            InfixOperatorDeclaration(s, meta, l, op, r, body) => {
-                DeclarationComponents::new(*s, meta.as_ref(), op, vec![l, r], body)
-            }
-            PrefixOperatorDeclaration(s, meta, op, r, body) => {
-                DeclarationComponents::new(*s, meta.as_ref(), op, vec![r], body)
-            }
-            PostfixOperatorDeclaration(s, meta, l, op, body) => {
-                DeclarationComponents::new(*s, meta.as_ref(), op, vec![l], body)
-            }
+impl ContainsName for NormalIdentifier {
+    fn name_range(&self) -> Option<TextRange> {
+        match self {
+            NormalIdentifier::UnquotedIdentifier(t) => t.name_range(),
+            NormalIdentifier::SingleQuoteIdentifier(t) => t.name_range(),
         }
     }
 }
 
-/// Construct a property declaration at a specified source location
-pub fn prop_at(span: Span, meta: Option<Expression>, name: Name, body: Expression) -> Declaration {
-    Declaration::PropertyDeclaration(span, meta, name, body)
+// An identifier token
+pub enum Identifier {
+    /// A normal identifier e.g. foo
+    NormalIdentifier(NormalIdentifier),
+    /// An operator identifier e.g. ++
+    OperatorIdentifier(OperatorIdentifier),
 }
 
-/// Construct a property declaration at a specified source location
-pub fn prop(meta: Option<Expression>, name: Name, body: Expression) -> Declaration {
-    Declaration::PropertyDeclaration(Span::default(), meta, name, body)
-}
+impl AstToken for Identifier {
+    fn can_cast(kind: SyntaxKind) -> bool
+    where
+        Self: Sized,
+    {
+        NormalIdentifier::can_cast(kind) || OperatorIdentifier::can_cast(kind)
+    }
 
-/// Construct a property declaration at a specified source location
-pub fn fn_at(
-    span: Span,
-    meta: Option<Expression>,
-    name: Name,
-    args: ArgTuple,
-    body: Expression,
-) -> Declaration {
-    Declaration::FunctionDeclaration(span, meta, name, args, body)
-}
+    fn cast(syntax: SyntaxToken) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        if NormalIdentifier::can_cast(syntax.kind()) {
+            NormalIdentifier::cast(syntax).map(Self::NormalIdentifier)
+        } else {
+            OperatorIdentifier::cast(syntax).map(Self::OperatorIdentifier)
+        }
+    }
 
-/// Construct a function declaration at an unspecified location
-pub fn fn_(meta: Option<Expression>, name: Name, args: ArgTuple, body: Expression) -> Declaration {
-    Declaration::FunctionDeclaration(Span::default(), meta, name, args, body)
-}
-
-/// Construct an infix operator declaration at a specified source location
-pub fn infix_at(
-    span: Span,
-    meta: Option<Expression>,
-    l: Name,
-    op: Name,
-    r: Name,
-    body: Expression,
-) -> Declaration {
-    Declaration::InfixOperatorDeclaration(span, meta, l, op, r, body)
-}
-
-/// Construct an prefix operator declaration at a specified source location
-pub fn prefix_at(
-    span: Span,
-    meta: Option<Expression>,
-    op: Name,
-    r: Name,
-    body: Expression,
-) -> Declaration {
-    Declaration::PrefixOperatorDeclaration(span, meta, op, r, body)
-}
-
-/// Construct an postfix operator declaration at a specified source location
-pub fn postfix_at(
-    span: Span,
-    meta: Option<Expression>,
-    op: Name,
-    r: Name,
-    body: Expression,
-) -> Declaration {
-    Declaration::PostfixOperatorDeclaration(span, meta, op, r, body)
-}
-
-impl Declaration {
-    /// Construct a new declaration
-    pub fn new(head: DeclarationHead, meta: Option<Expression>, expr: Expression) -> Declaration {
-        use self::Declaration::*;
-        use self::DeclarationHead::*;
-        match head {
-            PropertyPattern(n) => PropertyDeclaration(n.span().merge(expr.span()), meta, n, expr),
-            FunctionPattern(s, f, xs) => {
-                FunctionDeclaration(s.merge(expr.span()), meta, f, xs, expr)
-            }
-            InfixOperatorPattern(s, l, op, r) => {
-                InfixOperatorDeclaration(s.merge(expr.span()), meta, l, op, r, expr)
-            }
-            PrefixOperatorPattern(s, op, x) => {
-                PrefixOperatorDeclaration(s.merge(expr.span()), meta, op, x, expr)
-            }
-            PostfixOperatorPattern(s, x, op) => {
-                PostfixOperatorDeclaration(s.merge(expr.span()), meta, x, op, expr)
-            }
+    fn syntax(&self) -> &SyntaxToken {
+        match self {
+            Identifier::NormalIdentifier(n) => n.syntax(),
+            Identifier::OperatorIdentifier(n) => n.syntax(),
         }
     }
 }
 
-/// A block is a sequence of declarations with optional block metadata
-/// expression
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub struct Block {
-    pub span: Span,
-    pub metadata: Option<Expression>,
-    pub declarations: Vec<Declaration>,
-}
+impl Identifier {
+    pub fn name(&self) -> Option<&str> {
+        let range = match self {
+            Identifier::NormalIdentifier(n) => n.name_range(),
+            Identifier::OperatorIdentifier(n) => n.name_range(),
+        };
+        range.map(|range| &self.syntax().text()[range])
+    }
 
-impl HasSpan for Block {
-    fn span(&self) -> Span {
-        self.span
+    pub fn as_normal(&self) -> Option<NormalIdentifier> {
+        if let Identifier::NormalIdentifier(n) = self {
+            Some(n.clone())
+        } else {
+            None
+        }
     }
 }
 
-impl Block {
-    /// Construct from a vector of protoblock elements
-    pub fn from_protoblock_elements(
-        file_id: usize,
-        span: Span,
-        mut elements: Vec<ProtoblockElement>,
-    ) -> Result<Self, SyntaxError> {
-        // split on colons
-        let colon_indices: Vec<usize> = elements
-            .iter()
-            .positions(ProtoblockElement::is_colon)
-            .rev()
+// A name (identifier) node
+ast_node!(Name, NAME);
+
+impl Name {
+    pub fn identifier(&self) -> Option<Identifier> {
+        support::token::<Identifier>(&self.0)
+    }
+}
+
+//
+// Expression elements
+//
+
+pub trait HasSoup: AstNode<Language = EucalyptLanguage> {
+    fn soup(&self) -> Option<Soup> {
+        support::child::<Soup>(self.syntax())
+    }
+}
+
+// A soup expression (sequence of elements for operator resolution)
+ast_node!(Soup, SOUP);
+
+impl Soup {
+    pub fn elements(&self) -> AstChildren<Element> {
+        support::children::<Element>(self.syntax())
+    }
+
+    /// return the one and only element if it exists
+    pub fn singleton(&self) -> Option<Element> {
+        let mut elements = self.elements();
+        let existing = elements.next();
+        let unique = elements.next().is_none();
+
+        if unique {
+            existing
+        } else {
+            None
+        }
+    }
+}
+
+// A parenthesised expression
+ast_node!(ParenExpr, PAREN_EXPR);
+
+impl ParenExpr {
+    pub fn open_paren(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::OPEN_PAREN)
+    }
+
+    pub fn close_paren(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::CLOSE_PAREN)
+    }
+}
+
+impl HasSoup for ParenExpr {}
+
+// Metadata for a block expression
+ast_node!(BlockMetadata, BLOCK_META);
+
+impl HasSoup for BlockMetadata {}
+
+// Metadata for a declaration
+ast_node!(DeclarationMetadata, DECL_META);
+
+impl HasSoup for DeclarationMetadata {}
+
+// The kind of declaration signalled by the format of the declaration head
+pub enum DeclarationKind {
+    /// Property declaration (e.g. x: ...)
+    Property(NormalIdentifier),
+    /// Function declaration (e.g. f(x, y, z): ...)
+    Function(NormalIdentifier, ApplyTuple),
+    /// Nullary operator (e.g (∅): ...)
+    Nullary(ParenExpr, OperatorIdentifier),
+    /// Prefix operator (e.g. (!x): ...)
+    Prefix(ParenExpr, OperatorIdentifier, NormalIdentifier),
+    /// Postfix operator (e.g. (x^^): ...)
+    Postfix(ParenExpr, NormalIdentifier, OperatorIdentifier),
+    /// Binary operator (e.g. (x + y): ...)
+    Binary(
+        ParenExpr,
+        NormalIdentifier,
+        OperatorIdentifier,
+        NormalIdentifier,
+    ),
+    /// Invalid declaration head
+    MalformedHead(Vec<ParseError>),
+}
+
+// The head of a declaration (name and parameters)
+ast_node!(DeclarationHead, DECL_HEAD);
+
+// Classify a paren expression into a DeclarationKind
+fn classify_operator(pe: ParenExpr) -> DeclarationKind {
+    let elements: Vec<_> = pe
+        .soup()
+        .map(|s| s.elements().collect())
+        .unwrap_or_default();
+    match elements.len() {
+        0 => DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+            range: pe.syntax().text_range(),
+        }]),
+        1 => {
+            // nullary
+            if let Some(op) = elements[0].as_operator_identifier() {
+                DeclarationKind::Nullary(pe, op)
+            } else {
+                DeclarationKind::MalformedHead(vec![ParseError::InvalidOperatorName {
+                    head_range: pe.syntax().text_range(),
+                    range: elements[0].syntax().text_range(),
+                }])
+            }
+        }
+        2 => {
+            // unary
+            if let Some(prefix_op) = elements[0].as_operator_identifier() {
+                if let Some(operand) = elements[1].as_normal_identifier() {
+                    DeclarationKind::Prefix(pe, prefix_op, operand)
+                } else {
+                    DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
+                        head_range: pe.syntax().text_range(),
+                        range: elements[1].syntax().text_range(),
+                    }])
+                }
+            } else if let Some(operand) = elements[0].as_normal_identifier() {
+                if let Some(postfix_op) = elements[1].as_operator_identifier() {
+                    DeclarationKind::Postfix(pe, operand, postfix_op)
+                } else {
+                    DeclarationKind::MalformedHead(vec![ParseError::InvalidOperatorName {
+                        head_range: pe.syntax().text_range(),
+                        range: elements[1].syntax().text_range(),
+                    }])
+                }
+            } else {
+                DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+                    range: pe.syntax().text_range(),
+                }])
+            }
+        }
+        3 => {
+            // binary
+            if let Some(x) = elements[0].as_normal_identifier() {
+                if let Some(op) = elements[1].as_operator_identifier() {
+                    if let Some(y) = elements[2].as_normal_identifier() {
+                        DeclarationKind::Binary(pe, x, op, y)
+                    } else {
+                        DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
+                            head_range: pe.syntax().text_range(),
+                            range: elements[2].syntax().text_range(),
+                        }])
+                    }
+                } else {
+                    DeclarationKind::MalformedHead(vec![ParseError::InvalidOperatorName {
+                        head_range: pe.syntax().text_range(),
+                        range: elements[1].syntax().text_range(),
+                    }])
+                }
+            } else {
+                DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
+                    head_range: pe.syntax().text_range(),
+                    range: elements[0].syntax().text_range(),
+                }])
+            }
+        }
+        _ => DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+            range: pe.syntax().text_range(),
+        }]),
+    }
+}
+
+impl DeclarationHead {
+    /// Classify a DeclarationHead into a DeclarationKind
+    pub fn classify_declaration(&self) -> DeclarationKind {
+        let items: Vec<_> = self
+            .syntax()
+            .children()
+            .filter(|e| e.kind() != SyntaxKind::COMMENT && e.kind() != SyntaxKind::WHITESPACE)
             .collect();
 
-        // break into chunks around the colons
-        let mut chunks: VecDeque<Vec<ProtoblockElement>> =
-            VecDeque::with_capacity(elements.len() / 3);
-        for index in colon_indices {
-            chunks.push_back(elements.split_off(index + 1));
-            chomp_colon(&mut elements);
-        }
-        if !elements.is_empty() {
-            chunks.push_back(elements);
-        }
+        let malformed = || {
+            DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+                range: self.syntax().text_range(),
+            }])
+        };
 
-        // process into declarations
-        let mut decls: Vec<Declaration> = Vec::with_capacity(chunks.len());
-
-        if let Some(mut last_chunk) = chunks.pop_front() {
-            chomp_comma(&mut last_chunk);
-            let mut remainder = last_chunk;
-
-            while let Some(mut chunk) = chunks.pop_front() {
-                let head = take_declaration_head(file_id, &mut chunk)?;
-                let meta = take_metadata_expression(file_id, &mut chunk)?;
-                let expr = elements_to_expression(file_id, &mut remainder)?;
-                decls.push(Declaration::new(head, meta, expr));
-
-                chomp_comma(&mut chunk);
-                remainder = chunk;
+        match items.len() {
+            // single item must be property or operator
+            1 => {
+                if let Some(n) = Name::cast(items[0].clone()) {
+                    let prop = n.identifier().and_then(|id| id.as_normal());
+                    if let Some(prop) = prop {
+                        DeclarationKind::Property(prop)
+                    } else {
+                        DeclarationKind::MalformedHead(vec![ParseError::InvalidPropertyName {
+                            head_range: self.syntax().text_range(),
+                            range: n.syntax().text_range(),
+                        }])
+                    }
+                } else if let Some(pe) = ParenExpr::cast(items[0].clone()) {
+                    classify_operator(pe)
+                } else {
+                    malformed()
+                }
             }
+            // two items must be function head: f(x, y, z)
+            2 => {
+                // must be function
+                let f = Name::cast(items[0].clone())
+                    .and_then(|n| n.identifier())
+                    .and_then(|id| id.as_normal());
+                let args = ApplyTuple::cast(items[1].clone());
 
-            decls.reverse();
-
-            let block_meta = if !remainder.is_empty() {
-                Some(elements_to_expression(file_id, &mut remainder)?)
-            } else {
-                None
-            };
-
-            Ok(Block {
-                span,
-                metadata: block_meta,
-                declarations: decls,
-            })
-        } else {
-            Ok(Block {
-                span,
-                metadata: None,
-                declarations: vec![],
-            })
+                if let Some(f) = f {
+                    if let Some(args) = args {
+                        let mut errors = vec![];
+                        for arg in args.items() {
+                            if arg
+                                .singleton()
+                                .and_then(|e| e.as_normal_identifier())
+                                .is_none()
+                            {
+                                errors.push(ParseError::InvalidFormalParameter {
+                                    head_range: self.syntax().text_range(),
+                                    range: arg.syntax().text_range(),
+                                })
+                            }
+                        }
+                        if !errors.is_empty() {
+                            DeclarationKind::MalformedHead(errors)
+                        } else {
+                            DeclarationKind::Function(f, args)
+                        }
+                    } else {
+                        malformed()
+                    }
+                } else {
+                    malformed()
+                }
+            }
+            _ => malformed(),
         }
     }
 }
 
-/// Construct a block at the specified source location
-pub fn block_at(span: Span, meta: Option<Expression>, decls: Vec<Declaration>) -> Block {
-    Block {
-        span,
-        metadata: meta,
-        declarations: decls,
+// The body of a declaration (expression after colon)
+ast_node!(DeclarationBody, DECL_BODY);
+
+impl HasSoup for DeclarationBody {}
+
+// A declaration in a block
+ast_node!(Declaration, DECLARATION);
+
+impl Declaration {
+    pub fn meta(&self) -> Option<DeclarationMetadata> {
+        support::child::<DeclarationMetadata>(&self.0)
+    }
+
+    pub fn head(&self) -> Option<DeclarationHead> {
+        support::child::<DeclarationHead>(&self.0)
+    }
+
+    pub fn colon(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::COLON)
+    }
+
+    pub fn body(&self) -> Option<DeclarationBody> {
+        support::child::<DeclarationBody>(&self.0)
     }
 }
 
-/// Construct a block
-pub fn block(meta: Option<Expression>, decls: Vec<Declaration>) -> Block {
-    Block {
-        span: Span::default(),
-        metadata: meta,
-        declarations: decls,
+// A block expression with declarations
+ast_node!(Block, BLOCK);
+
+impl Block {
+    pub fn meta(&self) -> Option<BlockMetadata> {
+        support::child::<BlockMetadata>(&self.0)
+    }
+
+    pub fn declarations(&self) -> AstChildren<Declaration> {
+        support::children::<Declaration>(&self.0)
+    }
+
+    pub fn open_brace(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::OPEN_BRACE)
+    }
+
+    pub fn close_brace(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::CLOSE_BRACE)
     }
 }
 
-/// A chunk of a string pattern, either literal or interpolation
-#[derive(PartialEq, Debug, Clone, Eq)]
+// A list literal expression
+ast_node!(List, LIST);
+
+impl List {
+    pub fn items(&self) -> AstChildren<Soup> {
+        support::children::<Soup>(&self.0)
+    }
+}
+
+// Function application arguments tuple
+ast_node!(ApplyTuple, ARG_TUPLE);
+
+impl ApplyTuple {
+    pub fn items(&self) -> AstChildren<Soup> {
+        support::children::<Soup>(&self.0)
+    }
+
+    pub fn open_paren(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::OPEN_PAREN_APPLY)
+    }
+
+    pub fn close_paren(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::CLOSE_PAREN)
+    }
+}
+
+//
+// String Pattern AST nodes
+//
+
+// A string pattern with interpolation
+ast_node!(StringPattern, STRING_PATTERN);
+
+// Literal text content in a string pattern
+ast_node!(StringLiteralContent, STRING_LITERAL_CONTENT);
+
+// Variable interpolation in a string pattern
+ast_node!(StringInterpolation, STRING_INTERPOLATION);
+
+// Target of string interpolation (variable reference)
+ast_node!(StringInterpolationTarget, STRING_INTERPOLATION_TARGET);
+
+// Format specification for string interpolation
+ast_node!(StringFormatSpec, STRING_FORMAT_SPEC);
+
+// Conversion specification for string interpolation
+ast_node!(StringConversionSpec, STRING_CONVERSION_SPEC);
+
+// Dotted reference in string interpolation
+ast_node!(StringDottedReference, STRING_DOTTED_REFERENCE);
+
+// Escaped opening brace in string pattern
+ast_node!(StringEscapedOpen, STRING_ESCAPED_OPEN);
+
+// Escaped closing brace in string pattern
+ast_node!(StringEscapedClose, STRING_ESCAPED_CLOSE);
+
+impl StringPattern {
+    pub fn chunks(&self) -> AstChildren<StringChunk> {
+        support::children::<StringChunk>(self.syntax())
+    }
+}
+
+impl StringLiteralContent {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringInterpolation {
+    pub fn target(&self) -> Option<StringInterpolationTarget> {
+        support::child::<StringInterpolationTarget>(self.syntax())
+    }
+
+    pub fn soup(&self) -> Option<Soup> {
+        support::child::<Soup>(self.syntax())
+    }
+
+    pub fn format_spec(&self) -> Option<StringFormatSpec> {
+        support::child::<StringFormatSpec>(self.syntax())
+    }
+
+    pub fn conversion_spec(&self) -> Option<StringConversionSpec> {
+        support::child::<StringConversionSpec>(self.syntax())
+    }
+}
+
+impl StringInterpolationTarget {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringFormatSpec {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringConversionSpec {
+    pub fn value(&self) -> Option<String> {
+        self.syntax().first_token().map(|t| t.text().to_string())
+    }
+}
+
+impl StringEscapedOpen {
+    pub fn value(&self) -> &str {
+        "{"
+    }
+}
+
+impl StringEscapedClose {
+    pub fn value(&self) -> &str {
+        "}"
+    }
+}
+
+// String chunk enum for pattern contents
 pub enum StringChunk {
-    /// Literal content
-    LiteralContent(Span, String),
-    /// An interpolation reference "{x}", "{}", "{1}"
-    Interpolation(Span, InterpolationRequest),
+    /// Plain text content
+    LiteralContent(StringLiteralContent),
+    /// Variable interpolation
+    Interpolation(StringInterpolation),
+    /// Escaped opening brace
+    EscapedOpen(StringEscapedOpen),
+    /// Escaped closing brace
+    EscapedClose(StringEscapedClose),
 }
 
-impl StringChunk {
-    pub fn is_literal(&self) -> bool {
-        matches!(*self, StringChunk::LiteralContent(_, _))
+impl AstNode for StringChunk {
+    type Language = EucalyptLanguage;
+
+    fn can_cast(kind: SyntaxKind) -> bool {
+        matches!(
+            kind,
+            SyntaxKind::STRING_LITERAL_CONTENT
+                | SyntaxKind::STRING_INTERPOLATION
+                | SyntaxKind::STRING_ESCAPED_OPEN
+                | SyntaxKind::STRING_ESCAPED_CLOSE
+        )
     }
 
-    pub fn literal_content(&self) -> &str {
-        if let StringChunk::LiteralContent(_, c) = self {
-            c
-        } else {
-            panic!("taking literal content of interpolation")
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        match node.kind() {
+            SyntaxKind::STRING_LITERAL_CONTENT => {
+                StringLiteralContent::cast(node).map(StringChunk::LiteralContent)
+            }
+            SyntaxKind::STRING_INTERPOLATION => {
+                StringInterpolation::cast(node).map(StringChunk::Interpolation)
+            }
+            SyntaxKind::STRING_ESCAPED_OPEN => {
+                StringEscapedOpen::cast(node).map(StringChunk::EscapedOpen)
+            }
+            SyntaxKind::STRING_ESCAPED_CLOSE => {
+                StringEscapedClose::cast(node).map(StringChunk::EscapedClose)
+            }
+            _ => None,
         }
     }
-}
 
-impl HasSpan for StringChunk {
-    fn span(&self) -> Span {
+    fn syntax(&self) -> &SyntaxNode {
         match self {
-            StringChunk::LiteralContent(s, _) => *s,
-            StringChunk::Interpolation(s, _) => *s,
+            StringChunk::LiteralContent(n) => n.syntax(),
+            StringChunk::Interpolation(n) => n.syntax(),
+            StringChunk::EscapedOpen(n) => n.syntax(),
+            StringChunk::EscapedClose(n) => n.syntax(),
         }
     }
 }
 
-/// A request for interpolation
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub struct InterpolationRequest {
-    /// Span of source code
-    pub span: Span,
-    /// The interpolation target (name in scope or anaphor)
-    pub target: InterpolationTarget,
-    /// Optional format / parse specification
-    pub format: Option<String>,
-    /// Optional conversion function
-    pub conversion: Option<String>,
+// One of the items concatenated in an operator soup expression
+pub enum Element {
+    /// Literal value
+    Lit(Literal),
+    /// Block expression
+    Block(Block),
+    /// List literal
+    List(List),
+    /// Parenthesised expression
+    ParenExpr(ParenExpr),
+    /// Identifier reference
+    Name(Name),
+    /// String with interpolation
+    StringPattern(StringPattern),
+    /// Function arguments
+    ApplyTuple(ApplyTuple),
 }
 
-impl InterpolationRequest {
-    pub fn new(
-        span: Span,
-        target: InterpolationTarget,
-        format: Option<String>,
-        conversion: Option<String>,
-    ) -> Self {
-        InterpolationRequest {
-            span,
-            target,
-            format,
-            conversion,
+impl AstNode for Element {
+    type Language = EucalyptLanguage;
+
+    fn can_cast(kind: SyntaxKind) -> bool
+    where
+        Self: Sized,
+    {
+        matches!(
+            kind,
+            SyntaxKind::LITERAL
+                | SyntaxKind::BLOCK
+                | SyntaxKind::LIST
+                | SyntaxKind::PAREN_EXPR
+                | SyntaxKind::NAME
+                | SyntaxKind::STRING_PATTERN
+                | SyntaxKind::ARG_TUPLE
+        )
+    }
+
+    fn cast(node: SyntaxNode) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match node.kind() {
+            SyntaxKind::LITERAL => Literal::cast(node).map(Element::Lit),
+            SyntaxKind::LIST => List::cast(node).map(Element::List),
+            SyntaxKind::BLOCK => Block::cast(node).map(Element::Block),
+            SyntaxKind::PAREN_EXPR => ParenExpr::cast(node).map(Element::ParenExpr),
+            SyntaxKind::ARG_TUPLE => ApplyTuple::cast(node).map(Element::ApplyTuple),
+            SyntaxKind::NAME => Name::cast(node).map(Element::Name),
+            SyntaxKind::STRING_PATTERN => StringPattern::cast(node).map(Element::StringPattern),
+            _ => None,
+        }
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        match self {
+            Element::Lit(l) => l.syntax(),
+            Element::Block(b) => b.syntax(),
+            Element::List(l) => l.syntax(),
+            Element::ParenExpr(e) => e.syntax(),
+            Element::Name(n) => n.syntax(),
+            Element::StringPattern(s) => s.syntax(),
+            Element::ApplyTuple(t) => t.syntax(),
         }
     }
 }
 
-/// Create an interpolation string chunk
-pub fn interpolation_at<S, T>(
-    span: Span,
-    target: InterpolationTarget,
-    format: Option<S>,
-    conversion: Option<T>,
-) -> StringChunk
-where
-    S: AsRef<str>,
-    T: AsRef<str>,
-{
-    StringChunk::Interpolation(
-        span,
-        InterpolationRequest {
-            span,
-            target,
-            format: format.map(|s| s.as_ref().to_string()),
-            conversion: conversion.map(|s| s.as_ref().to_string()),
-        },
-    )
+impl Element {
+    /// Cast to normal identifier if possible
+    ///
+    /// Useful in checking formal parameters of function or operator declaration
+    pub fn as_normal_identifier(&self) -> Option<NormalIdentifier> {
+        match self {
+            Element::Name(n) => n.identifier().and_then(|id| match id {
+                Identifier::NormalIdentifier(id) => Some(id),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
+
+    /// Cast to operator identifier if possible
+    ///
+    /// Useful in checking formal parameters of operator declaration
+    pub fn as_operator_identifier(&self) -> Option<OperatorIdentifier> {
+        match self {
+            Element::Name(n) => n.identifier().and_then(|id| match id {
+                Identifier::OperatorIdentifier(id) => Some(id),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
 }
 
-pub fn interpolation<S, T>(
-    target: InterpolationTarget,
-    format: Option<S>,
-    conversion: Option<T>,
-) -> StringChunk
-where
-    S: AsRef<str>,
-    T: AsRef<str>,
-{
-    interpolation_at(Span::default(), target, format, conversion)
+//
+// Unit
+//
+
+// A top-level unit (complete program or module)
+ast_node!(Unit, UNIT);
+
+impl Unit {
+    pub fn meta(&self) -> Option<BlockMetadata> {
+        support::child::<BlockMetadata>(&self.0)
+    }
+
+    pub fn declarations(&self) -> AstChildren<Declaration> {
+        support::children::<Declaration>(&self.0)
+    }
 }
 
-pub fn simple_interpolation_at(span: Span, target: InterpolationTarget) -> StringChunk {
-    StringChunk::Interpolation(
-        span,
-        InterpolationRequest {
-            span,
-            target,
-            format: None,
-            conversion: None,
-        },
-    )
-}
+// Parse struct and parsing functions are in parse.rs module
 
-pub fn simple_interpolation(target: InterpolationTarget) -> StringChunk {
-    simple_interpolation_at(Span::default(), target)
-}
-
-/// Construct a literal string chunk at a source location
-pub fn lit_content_at<T>(span: Span, text: T) -> StringChunk
-where
-    T: AsRef<str>,
-{
-    StringChunk::LiteralContent(span, text.as_ref().to_string())
-}
-
-/// Construct a literal string chunk at a source location
-pub fn lit_content<T>(text: T) -> StringChunk
-where
-    T: AsRef<str>,
-{
-    lit_content_at(Span::default(), text)
-}
-
-/// An interpolation target
-#[derive(PartialEq, Debug, Clone, Eq)]
-pub enum InterpolationTarget {
-    /// An anaphor (turning the string pattern into a lambda)
-    StringAnaphor(Span, Option<i32>),
-    /// Reference to a dotted name to be bound / looked up in scope
-    Reference(Span, Vec<Name>),
-}
-
-pub fn str_anaphor_at(span: Span, index: Option<i32>) -> InterpolationTarget {
-    InterpolationTarget::StringAnaphor(span, index)
-}
-
-pub fn str_anaphor(index: Option<i32>) -> InterpolationTarget {
-    str_anaphor_at(Span::default(), index)
-}
-
-/// Create a string pattern from span and chunks
-pub fn pattern_at(span: Span, chunks: Vec<StringChunk>) -> Expression {
-    Expression::StringPattern(span, chunks)
-}
-
-/// Create a string pattern from span and chunks
-pub fn pattern(chunks: Vec<StringChunk>) -> Expression {
-    pattern_at(Span::default(), chunks)
-}
+// Supporting modules are now siblings in syntax/
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use codespan_reporting::files::SimpleFiles;
+    use crate::syntax::parse::parse_expr;
 
     #[test]
-    pub fn test_literals() {
-        assert_eq!(sym("x"), sym("x"));
-        assert_eq!(num(3i32), num(3u64));
+    pub fn test_expressions() {
+        assert!(parse_expr("x f g h").ok().is_ok());
+        assert!(parse_expr(" x f g h ").ok().is_ok());
+        assert!(parse_expr("#\n x #\n f #\n g #\n h ").ok().is_ok());
+        assert!(parse_expr("[:x,]").ok().is_ok());
+        assert!(parse_expr("[:x, ]").ok().is_ok());
+
+        assert!(parse_expr("").ok().is_err());
+        assert!(parse_expr(" ").ok().is_err());
+        assert!(parse_expr("`").ok().is_err());
     }
 
     #[test]
-    pub fn test_eq() {
-        assert!(sym("foo") != str("foo"));
-        assert!(sym("foo") == sym("foo"));
-    }
-
-    pub fn fake_file_id() -> usize {
-        SimpleFiles::new().add("", "")
-    }
-
-    #[test]
-    pub fn test_take_declaration_head() {
-        let mut prop_head = vec![elt(name(normal("x")))];
-        assert_eq!(
-            take_declaration_head(fake_file_id(), &mut prop_head),
-            Ok(DeclarationHead::PropertyPattern(normal("x")))
+    pub fn test_blocks() {
+        assert!(parse_expr("{}").ok().is_ok());
+        assert!(parse_expr("{ x: 3 f }").ok().is_ok());
+        assert!(parse_expr("{ x: 3 f y(x): x * 3}").ok().is_ok());
+        assert!(parse_expr("{ \"meta\" x: 3 f g h (x && y): x * 3}")
+            .ok()
+            .is_ok());
+        assert!(parse_expr("{ x: 3, y: 4 f, }").ok().is_ok());
+        assert!(parse_expr("{ (! x): 3 + x (y %): y}").ok().is_ok());
+        assert!(parse_expr("{ x }").ok().is_ok());
+        assert!(parse_expr("{ (    ב    ∗  Ъ  )}").ok().is_ok());
+        assert!(parse_expr("{ m n o p q r x: y z: f g h i}").ok().is_ok());
+        assert!(parse_expr("{ ` m3 z: 877 f}").ok().is_ok());
+        assert!(parse_expr("{ MMMM ` m x: y `m3 z: 877 f}").ok().is_ok());
+        assert!(
+            parse_expr("{ M M M M M ` m m m m m (x £ y): y1 y2 y3 y4 y5 }")
+                .ok()
+                .is_ok()
         );
-        assert!(prop_head.is_empty());
+        assert!(parse_expr("{ α: [:x] = [:x, ] }").ok().is_ok());
+        assert!(parse_expr("{ α: [:x, :y, :z] = [:x, :y, :z, ] }")
+            .ok()
+            .is_ok());
 
-        let mut fn_head = vec![
-            elt(name(normal("f"))),
-            elt(tuple(vec![name(normal("x")), name(normal("y"))])),
-        ];
-        assert_eq!(
-            take_declaration_head(fake_file_id(), &mut fn_head),
-            Ok(DeclarationHead::FunctionPattern(
-                Span::default(),
-                normal("f"),
-                ArgTuple(Span::default(), vec![normal("x"), normal("y")])
-            ))
-        );
-        assert!(fn_head.is_empty());
-    }
+        // various error cases
+        assert!(parse_expr("{ x: }").ok().is_err());
+        assert!(parse_expr("{ x: 3, 3 }").ok().is_err());
+        assert!(parse_expr("{ x: 3: 3 }").ok().is_err());
+        assert!(parse_expr("{ x: 3").ok().is_err());
+        assert!(parse_expr("x: 3}").ok().is_err());
+        assert!(parse_expr("{ x: a b c, d e f, y: 3}").ok().is_err());
+        assert!(parse_expr("{ (x & &): 3}").ok().is_err());
+        assert!(parse_expr("{ (x & y && z): 3}").ok().is_err());
+        assert!(parse_expr("{ (x & y z): 3}").ok().is_err());
+        assert!(parse_expr("{ ((x) & (y).ok().is_err()): 3}").ok().is_err());
+        assert!(parse_expr("{ x: 3 ` }").ok().is_err());
+        assert!(parse_expr("{ x: ` 4 }").ok().is_err());
+        assert!(parse_expr("{ ` ` x: 4 }").ok().is_err());
 
-    #[test]
-    pub fn test_take_metadata_expression() {
-        let mut remainder = vec![
-            ProtoblockElement::DeclarationBacktick(Span::default()),
-            elt(name(normal("m"))),
-        ];
-        assert_eq!(
-            take_metadata_expression(fake_file_id(), &mut remainder),
-            Ok(Some(name(normal("m"))))
+        // nested blocks
+        assert!(parse_expr("{ x: { y: value } }").ok().is_ok());
+        assert!(parse_expr("{ { m: v} x: { y: value } }").ok().is_ok());
+        assert!(parse_expr("{ ` { m: v } x: { y: value } }").ok().is_ok());
+        assert!(parse_expr("{ { m: v } ` { m: v } x: { y: value } }")
+            .ok()
+            .is_ok());
+        assert!(
+            parse_expr("{ { m: v } ` { ` :m m: v } x: { ` \"m\" y: value } }")
+                .ok()
+                .is_ok()
         );
-        assert!(remainder.is_empty());
+        assert!(
+            parse_expr("{ { m: v } ` { ` :m m: v } x: { ` \"m\" y: value } }")
+                .ok()
+                .is_ok()
+        );
+        assert!(parse_expr("{ x: { y: { z: { f(x): x }} } }").ok().is_ok());
+        assert!(parse_expr("{ { k: v } : v  } }").ok().is_err());
+
+        // comments
+        assert!(parse_expr("{f( #\n x): x}").ok().is_ok());
+        assert!(parse_expr("{f(x #\n): x}").ok().is_ok());
+        assert!(parse_expr("{f(x): x #\n}").ok().is_ok());
+        assert!(parse_expr("{ #\n f( #\n x #\n )#\n   : x}").ok().is_ok());
     }
 }

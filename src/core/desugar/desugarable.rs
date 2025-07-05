@@ -32,3 +32,10 @@ impl<'a> Content<'a> {
         self.1
     }
 }
+
+/// Core expressions implement Desugarable as a no-op since they're already desugared
+impl Desugarable for RcExpr {
+    fn desugar(&self, _desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
+        Ok(self.clone())
+    }
+}
