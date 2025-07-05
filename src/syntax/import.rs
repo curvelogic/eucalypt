@@ -3,7 +3,6 @@
 //! We analyse imports at the AST stage so we can get binding right on
 //! desugar into core syntax.
 use crate::driver::source::ParsedAst;
-use crate::syntax::ast::*;
 use crate::syntax::error::SyntaxError;
 use crate::syntax::input::Input;
 use petgraph::algo;
@@ -28,25 +27,6 @@ impl Default for ImportGraph {
 }
 
 impl ImportGraph {
-    /// Analyse the AST for imports and add to graph, returning
-    /// inputs for further load and analysis
-    pub fn analyse_ast(
-        &mut self,
-        input: Input,
-        ast: &Expression,
-    ) -> Result<Vec<Input>, ImportError> {
-        let source_node = self.encounter_input(input);
-
-        let mut imports: Vec<Input> = vec![];
-        read_expression_imports(ast, &mut imports)?;
-
-        for i in &imports {
-            let target_node = self.encounter_input(i.clone());
-            self.graph.add_edge(source_node, target_node, ());
-        }
-        Ok(imports)
-    }
-
     /// Analyse the Rowan AST for imports and add to graph, returning
     /// inputs for further load and analysis
     pub fn analyse_rowan_ast(
@@ -118,8 +98,6 @@ impl ImportGraph {
 /// An error in reading, loading or analysing the import graph.
 #[derive(PartialEq, Debug, Clone, Error, Eq)]
 pub enum ImportError {
-    #[error("non-string import value")]
-    BadImportValue(Expression),
     #[error("bad import syntax")]
     ImportSyntax(#[from] SyntaxError),
     #[error("load failure in test")]
@@ -128,66 +106,6 @@ pub enum ImportError {
     Cycle(Box<Input>),
     #[error("unknown input {0}")]
     UnknownInput(Box<Input>),
-}
-
-/// Read all imports specified in the expression and add them to imports
-fn read_expression_imports(ast: &Expression, imports: &mut Vec<Input>) -> Result<(), ImportError> {
-    match ast {
-        Expression::Block(block) => {
-            if let Some(ref meta) = block.metadata {
-                for input in scrape_metadata(meta)? {
-                    imports.push(input);
-                }
-            }
-            for decl in &block.declarations {
-                if let Some(ref meta) = decl.metadata() {
-                    for input in scrape_metadata(meta)? {
-                        imports.push(input);
-                    }
-                }
-                read_expression_imports(decl.definition(), imports)?;
-            }
-        }
-        Expression::List(_, xs) | Expression::OpSoup(_, xs) | Expression::ApplyTuple(_, xs) => {
-            for x in xs {
-                read_expression_imports(x, imports)?;
-            }
-        }
-        _ => (),
-    }
-    Ok(())
-}
-
-/// Read import of list of imports from string or list of strings
-fn read_import_values(import: &Expression) -> Result<Vec<Input>, ImportError> {
-    match import {
-        Expression::Lit(Literal::Str(_, input_str)) => Ok(vec![Input::from_str(input_str)?]),
-        Expression::List(_, strs) => {
-            let mut imports = Vec::new();
-            for str in strs {
-                imports.extend(read_import_values(str)?);
-            }
-            Ok(imports)
-        }
-        e => Err(ImportError::BadImportValue(e.clone())),
-    }
-}
-
-/// If the metadata is a block, read an import key as an Input.
-fn scrape_metadata(metadata: &Expression) -> Result<Vec<Input>, ImportError> {
-    if let Expression::Block(block) = metadata {
-        if let Some(decl) = block
-            .declarations
-            .iter()
-            .find(|d| d.name().name() == "import")
-        {
-            read_import_values(decl.definition())
-        } else {
-            Ok(vec![])
-        }
-    } else {
-        Ok(vec![])
-    }
 }
 
 /// Read all imports specified in the Rowan AST and add them to imports
@@ -301,7 +219,7 @@ fn read_rowan_soup_imports(
     Ok(())
 }
 
-/// Extract import values from a Rowan soup (equivalent to read_import_values for legacy AST)
+/// Extract import values from a Rowan soup
 fn scrape_rowan_imports(
     soup: &crate::syntax::rowan::ast::Soup,
     imports: &mut Vec<Input>,
@@ -342,324 +260,26 @@ fn scrape_rowan_imports(
 pub mod test {
     use super::*;
     use crate::syntax::input::Locator;
-    use crate::syntax::rowan::ast::{AstToken, Element, HasSoup, Soup, Unit};
-
-    /// Convert Rowan Soup to legacy Expression for testing
-    fn rowan_soup_to_legacy_expression(soup: &Soup) -> Expression {
-        let elements: Vec<Element> = soup.elements().collect();
-
-        // If single element, convert it
-        if elements.len() == 1 {
-            match &elements[0] {
-                Element::Block(block) => {
-                    return rowan_block_to_legacy_expression(block);
-                }
-                Element::Lit(literal) => {
-                    return rowan_literal_to_legacy_expression(literal);
-                }
-                Element::List(list) => {
-                    return rowan_list_to_legacy_expression(list);
-                }
-                Element::Name(name) => {
-                    if let Some(ident) = name.identifier() {
-                        match ident {
-                            crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
-                                return Expression::Name(crate::syntax::ast::Name::Normal(
-                                    codespan::Span::default(),
-                                    normal.text().to_string(),
-                                ));
-                            }
-                            crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
-                                return Expression::Name(crate::syntax::ast::Name::Operator(
-                                    codespan::Span::default(),
-                                    op.text().to_string(),
-                                ));
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    // Handle other element types as needed
-                }
-            }
-        }
-
-        // Multiple elements - create an OpSoup
-        let mut soup_elements = Vec::new();
-        for element in elements {
-            match element {
-                Element::Block(block) => {
-                    soup_elements.push(rowan_block_to_legacy_expression(&block));
-                }
-                Element::Lit(literal) => {
-                    soup_elements.push(rowan_literal_to_legacy_expression(&literal));
-                }
-                Element::List(list) => {
-                    soup_elements.push(rowan_list_to_legacy_expression(&list));
-                }
-                Element::Name(name) => {
-                    if let Some(ident) = name.identifier() {
-                        match ident {
-                            crate::syntax::rowan::ast::Identifier::NormalIdentifier(normal) => {
-                                soup_elements.push(Expression::Name(
-                                    crate::syntax::ast::Name::Normal(
-                                        codespan::Span::default(),
-                                        normal.text().to_string(),
-                                    ),
-                                ));
-                            }
-                            crate::syntax::rowan::ast::Identifier::OperatorIdentifier(op) => {
-                                soup_elements.push(Expression::Name(
-                                    crate::syntax::ast::Name::Operator(
-                                        codespan::Span::default(),
-                                        op.text().to_string(),
-                                    ),
-                                ));
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    // Skip other element types for now
-                }
-            }
-        }
-
-        if soup_elements.is_empty() {
-            Expression::Lit(Literal::Str(
-                codespan::Span::default(),
-                "empty_soup".to_string(),
-            ))
-        } else {
-            Expression::OpSoup(codespan::Span::default(), soup_elements)
-        }
-    }
-
-    /// Convert Rowan Literal to legacy Expression for testing  
-    fn rowan_literal_to_legacy_expression(
-        literal: &crate::syntax::rowan::ast::Literal,
-    ) -> Expression {
-        if let Some(value) = literal.value() {
-            match value {
-                crate::syntax::rowan::ast::LiteralValue::Str(s) => {
-                    if let Some(text) = s.value() {
-                        return Expression::Lit(Literal::Str(
-                            codespan::Span::default(),
-                            text.to_string(),
-                        ));
-                    }
-                }
-                crate::syntax::rowan::ast::LiteralValue::Sym(sym) => {
-                    if let Some(text) = sym.value() {
-                        return Expression::Lit(Literal::Sym(
-                            codespan::Span::default(),
-                            text.to_string(),
-                        ));
-                    }
-                }
-                crate::syntax::rowan::ast::LiteralValue::Num(num) => {
-                    if let Some(n) = num.value() {
-                        return Expression::Lit(Literal::Num(codespan::Span::default(), n));
-                    }
-                }
-            }
-        }
-
-        // Fallback
-        Expression::Lit(Literal::Str(
-            codespan::Span::default(),
-            "literal".to_string(),
-        ))
-    }
-
-    /// Convert Rowan List to legacy Expression for testing
-    fn rowan_list_to_legacy_expression(list: &crate::syntax::rowan::ast::List) -> Expression {
-        let mut items = Vec::new();
-
-        for item in list.items() {
-            let item_expr = rowan_soup_to_legacy_expression(&item);
-            items.push(item_expr);
-        }
-
-        Expression::List(codespan::Span::default(), items)
-    }
-
-    /// Convert Rowan Unit to legacy Expression for testing
-    fn rowan_unit_to_legacy_expression(unit: &Unit) -> Expression {
-        // Convert declarations to legacy format
-        let mut declarations = Vec::new();
-
-        for decl in unit.declarations() {
-            // Check for declaration metadata
-            let decl_metadata = decl
-                .meta()
-                .and_then(|m| m.soup())
-                .map(|soup| rowan_soup_to_legacy_expression(&soup));
-
-            if let Some(head) = decl.head() {
-                let kind = head.classify_declaration();
-                match kind {
-                    crate::syntax::rowan::ast::DeclarationKind::Property(prop) => {
-                        let name = prop.text().to_string();
-                        if let Some(body) = decl.body() {
-                            if let Some(body_soup) = body.soup() {
-                                let body_expr = rowan_soup_to_legacy_expression(&body_soup);
-                                declarations.push(Declaration::PropertyDeclaration(
-                                    codespan::Span::default(),
-                                    decl_metadata, // Include declaration metadata
-                                    normal(&name),
-                                    body_expr,
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
-                        // Skip other declaration types for now
-                    }
-                }
-            }
-        }
-
-        // Check for unit metadata
-        let metadata = unit
-            .meta()
-            .and_then(|m| m.soup())
-            .map(|soup| rowan_soup_to_legacy_expression(&soup));
-
-        Expression::Block(Box::new(Block {
-            span: codespan::Span::default(),
-            metadata,
-            declarations,
-        }))
-    }
-
-    /// Convert Rowan Block to legacy Expression for testing
-    fn rowan_block_to_legacy_expression(block: &crate::syntax::rowan::ast::Block) -> Expression {
-        let mut declarations = Vec::new();
-
-        for decl in block.declarations() {
-            // Check for declaration metadata
-            let decl_metadata = decl
-                .meta()
-                .and_then(|m| m.soup())
-                .map(|soup| rowan_soup_to_legacy_expression(&soup));
-
-            if let Some(head) = decl.head() {
-                let kind = head.classify_declaration();
-                match kind {
-                    crate::syntax::rowan::ast::DeclarationKind::Property(prop) => {
-                        let name = prop.text().to_string();
-                        if let Some(body) = decl.body() {
-                            if let Some(body_soup) = body.soup() {
-                                let body_expr = rowan_soup_to_legacy_expression(&body_soup);
-                                declarations.push(Declaration::PropertyDeclaration(
-                                    codespan::Span::default(),
-                                    decl_metadata, // Include declaration metadata
-                                    normal(&name),
-                                    body_expr,
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
-                        // Skip other declaration types for now
-                    }
-                }
-            }
-        }
-
-        // Check for block metadata
-        let metadata = block
-            .meta()
-            .and_then(|m| m.soup())
-            .map(|soup| rowan_soup_to_legacy_expression(&soup));
-
-        Expression::Block(Box::new(Block {
-            span: codespan::Span::default(),
-            metadata,
-            declarations,
-        }))
-    }
-
-    fn parse_expr(text: &'static str) -> Expression {
-        // Parse with Rowan and convert to legacy AST for testing
-        let parse_result = crate::syntax::rowan::parse_expr(text);
-        if parse_result.errors().is_empty() {
-            rowan_soup_to_legacy_expression(&parse_result.tree())
-        } else {
-            // Return error placeholder if parse fails
-            Expression::Lit(crate::syntax::ast::Literal::Str(
-                codespan::Span::default(),
-                "parse_error".to_string(),
-            ))
-        }
-    }
-
-    pub fn parse_unit(text: &'static str) -> Expression {
-        // Parse with Rowan and convert to legacy AST for testing
-        let parse_result = crate::syntax::rowan::parse_unit(text);
-        if parse_result.errors().is_empty() {
-            rowan_unit_to_legacy_expression(&parse_result.tree())
-        } else {
-            // Return error placeholder if parse fails
-            Expression::Block(Box::new(crate::syntax::ast::Block {
-                span: codespan::Span::default(),
-                metadata: None,
-                declarations: Vec::new(),
-            }))
-        }
-    }
 
     #[test]
-    pub fn test_scrape_metadata() {
-        let expr = parse_expr("{ import: \"blah.eu\" }");
-        let meta = scrape_metadata(&expr);
-        assert_eq!(meta, Ok(vec![Input::from_str("blah.eu").unwrap()]));
-    }
-
-    #[test]
-    pub fn test_scrape_metadata_list() {
-        let expr = parse_expr("{ import: [\"blah.eu\", \"blurgh.eu\"] }");
-        let meta = scrape_metadata(&expr);
-        assert_eq!(
-            meta,
-            Ok(vec![
-                Input::from_str("blah.eu").unwrap(),
-                Input::from_str("blurgh.eu").unwrap()
-            ])
-        );
-    }
-
-    #[test]
-    pub fn test_graph_imports() {
+    pub fn test_import_graph_basic() {
         let mut g = ImportGraph::default();
-        let inputs = g
-            .analyse_ast(
-                Input::from_str("[resource:a]").unwrap(),
-                &parse_unit(" { import: \"[resource:b]\"} ` { import: \"[resource:c]\" } foo: bar"),
-            )
-            .unwrap();
 
-        assert_eq!(
-            inputs,
-            vec![
-                Input::from(Locator::Resource("b".to_string())),
-                Input::from(Locator::Resource("c".to_string()))
-            ]
-        );
-        assert_eq!(g.graph().node_count(), 3);
+        // Test adding a leaf (data file)
+        let input = Input::from(Locator::Resource("test.yaml".to_string()));
+        g.add_leaf(input.clone()).unwrap();
 
-        let inputs = g
-            .analyse_ast(
-                Input::from_str("[resource:b]").unwrap(),
-                &parse_unit(" ` { import: \"[resource:d]\" } x: y"),
-            )
-            .unwrap();
+        assert_eq!(g.graph().node_count(), 1);
 
-        assert_eq!(
-            inputs,
-            vec![Input::from(Locator::Resource("d".to_string()))]
-        );
-        assert_eq!(g.graph().node_count(), 4);
+        // Test that the input is found
+        assert!(g.find_index(&input).is_some());
+    }
+
+    #[test]
+    pub fn test_cycle_detection() {
+        let g = ImportGraph::default();
+
+        // Empty graph should have no cycles
+        assert!(g.check_for_cycles().is_ok());
     }
 }

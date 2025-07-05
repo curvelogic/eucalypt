@@ -240,7 +240,19 @@ impl SourceLoader {
             return Ok(self.translation_units.get(input).unwrap());
         }
 
-        // Retrieve the ASTs and Core exprs contributing to the unit
+        // Check if this is a core input (already desugared)
+        if let Some(core_expr) = self.cores.get(input) {
+            // Create a translation unit directly from the core expression
+            let unit = TranslationUnit {
+                expr: core_expr.clone(),
+                targets: std::collections::HashSet::new(),
+                docs: Vec::new(),
+            };
+            self.translation_units.insert(input.clone(), unit);
+            return Ok(&self.translation_units[input]);
+        }
+
+        // Retrieve the ASTs contributing to the unit
         let inputs = self.imports.unit_inputs(input)?;
         let mut desugarables: HashMap<Input, Content> = HashMap::new();
 
@@ -248,10 +260,9 @@ impl SourceLoader {
             if let Some(file_id) = self.locators.get(input.locator()) {
                 if let Some(ast) = self.asts.get(file_id) {
                     desugarables.insert(input.clone(), Content::new(*file_id, ast));
-                }
-
-                if let Some(core) = self.cores.get(input) {
-                    desugarables.insert(input.clone(), Content::new(*file_id, core));
+                } else if let Some(core_expr) = self.cores.get(input) {
+                    // Include core expressions (from non-eucalypt file formats) in desugarables
+                    desugarables.insert(input.clone(), Content::new(*file_id, core_expr));
                 }
             }
         }

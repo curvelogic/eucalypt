@@ -9,12 +9,20 @@
 //! syntax. Desugaring leaves it unchanged but can splice it in at
 //! import points.
 
-pub mod ast;
 pub mod desugarable;
 pub mod desugarer;
 pub mod disembed;
 pub mod literal;
 pub mod rowan_ast;
+pub mod rowan_disembed;
+
+#[cfg(test)]
+#[path = "rowan_integration_test.rs"]
+mod rowan_integration_test;
+
+#[cfg(test)]
+#[path = "rowan_comprehensive_test.rs"]
+mod rowan_comprehensive_test;
 
 pub use desugarable::Content;
 pub use desugarer::Desugarer;
