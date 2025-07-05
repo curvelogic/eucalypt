@@ -65,10 +65,7 @@ mod tests {
         let mut loader = SourceLoader::new(vec![]);
 
         let result = loader.load(&input);
-        assert!(
-            result.is_ok(),
-            "Should load complex embeddings: {result:?}"
-        );
+        assert!(result.is_ok(), "Should load complex embeddings: {result:?}");
 
         let result = loader.translate(&input);
         assert!(result.is_ok(), "Should translate complex embeddings");
@@ -94,10 +91,7 @@ mod tests {
         let mut loader = SourceLoader::new(vec![]);
 
         let result = loader.load(&input);
-        assert!(
-            result.is_ok(),
-            "Should load nested embeddings: {result:?}"
-        );
+        assert!(result.is_ok(), "Should load nested embeddings: {result:?}");
 
         let result = loader.translate(&input);
         assert!(result.is_ok(), "Should translate nested embeddings");

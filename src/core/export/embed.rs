@@ -29,7 +29,6 @@ CORE: {}
     }
 }
 
-
 /// Helper function to create a soup with a tagged name (e.g., c-var, c-name)
 fn embed_tagged_name(tag: &str, name: &str) -> Option<rowan_ast::Soup> {
     use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode};
