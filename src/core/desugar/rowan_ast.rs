@@ -4,8 +4,7 @@
 //! instead of direct pattern matching on data structures.
 
 use super::{
-    desugarable::Desugarable, desugarer::Desugarer, disembed::core_from_embedding,
-    literal::desugar_literal,
+    desugarable::Desugarable, desugarer::Desugarer, rowan_disembed::core_from_rowan_embedding,
 };
 use crate::core::metadata::{
     normalise_metadata, strip_desugar_phase_metadata, DesugarPhaseBlockMetadata,
@@ -17,12 +16,10 @@ use crate::{
         anaphora::{BLOCK_ANAPHORA, EXPR_ANAPHORA},
         error::CoreError,
         expr::*,
+        rt,
         transform::dynamise,
     },
-    syntax::rowan::{
-        ast::{self as rowan_ast, AstToken, Element, HasSoup},
-        kind::SyntaxKind,
-    },
+    syntax::rowan::ast::{self as rowan_ast, AstToken, Element, HasSoup},
 };
 use codespan::{ByteIndex, Span};
 use moniker::{Binder, Embed, Rec, Scope};
@@ -35,214 +32,54 @@ fn text_range_to_span(range: TextRange) -> Span {
     Span::new(start, end)
 }
 
-/// Convert Rowan literal value to legacy AST literal for reuse
-fn rowan_literal_to_legacy(
-    lit: &rowan_ast::Literal,
-) -> Result<crate::syntax::ast::Literal, CoreError> {
-    let span = text_range_to_span(lit.syntax().text_range());
-
-    if let Some(value) = lit.value() {
-        match value {
-            rowan_ast::LiteralValue::Sym(sym) => {
-                if let Some(s) = sym.value() {
-                    Ok(crate::syntax::ast::Literal::Sym(span, s.to_string()))
-                } else {
-                    Err(CoreError::InvalidEmbedding(
-                        "invalid symbol literal".to_string(),
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                    ))
-                }
-            }
-            rowan_ast::LiteralValue::Str(s) => {
-                if let Some(text) = s.value() {
-                    Ok(crate::syntax::ast::Literal::Str(span, text.to_string()))
-                } else {
-                    Err(CoreError::InvalidEmbedding(
-                        "invalid string literal".to_string(),
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                    ))
-                }
-            }
-            rowan_ast::LiteralValue::Num(n) => {
-                if let Some(num) = n.value() {
-                    Ok(crate::syntax::ast::Literal::Num(span, num))
-                } else {
-                    Err(CoreError::InvalidEmbedding(
-                        "invalid number literal".to_string(),
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                    ))
-                }
-            }
-        }
-    } else {
-        Err(CoreError::InvalidEmbedding(
-            "malformed literal".to_string(),
-            crate::common::sourcemap::Smid::from(span.start().0 as u32),
-        ))
-    }
-}
-
-/// Convert Rowan AST Element to legacy Expression for core embedding
-fn rowan_element_to_legacy(element: &Element) -> Result<crate::syntax::ast::Expression, CoreError> {
-    match element {
-        Element::Lit(lit) => {
-            let legacy_lit = rowan_literal_to_legacy(lit)?;
-            Ok(crate::syntax::ast::Expression::Lit(legacy_lit))
-        }
-        Element::List(list) => {
-            let span = text_range_to_span(list.syntax().text_range());
-            let mut items = Vec::new();
-
-            for soup in list.items() {
-                let legacy_expr = rowan_soup_to_legacy(&soup)?;
-                items.push(legacy_expr);
-            }
-
-            Ok(crate::syntax::ast::Expression::List(span, items))
-        }
-        Element::Block(block) => {
-            let span = text_range_to_span(block.syntax().text_range());
-            let mut declarations = Vec::new();
-
-            for decl in block.declarations() {
-                let name_span = text_range_to_span(decl.syntax().text_range());
-                let name = if let Some(head) = decl.head() {
-                    let kind = head.classify_declaration();
-                    match kind {
-                        rowan_ast::DeclarationKind::Property(prop) => {
-                            crate::syntax::ast::Name::Normal(name_span, prop.text().to_string())
-                        }
-                        _ => {
-                            return Err(CoreError::InvalidEmbedding(
-                                "complex declaration not supported in core embedding".to_string(),
-                                crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                            ));
-                        }
-                    }
-                } else {
-                    return Err(CoreError::InvalidEmbedding(
-                        "malformed declaration in core embedding".to_string(),
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                    ));
-                };
-
-                let definition = if let Some(body) = decl.body() {
-                    if let Some(body_soup) = body.soup() {
-                        rowan_soup_to_legacy(&body_soup)?
-                    } else {
-                        return Err(CoreError::InvalidEmbedding(
-                            "empty declaration body in core embedding".to_string(),
-                            crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                        ));
-                    }
-                } else {
-                    return Err(CoreError::InvalidEmbedding(
-                        "missing declaration body in core embedding".to_string(),
-                        crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                    ));
-                };
-
-                let decl_head = crate::syntax::ast::DeclarationHead::PropertyPattern(name);
-                declarations.push(crate::syntax::ast::Declaration::new(
-                    decl_head, None, definition,
-                ));
-            }
-
-            Ok(crate::syntax::ast::Expression::Block(Box::new(
-                crate::syntax::ast::Block {
-                    span,
-                    metadata: None,
-                    declarations,
-                },
-            )))
-        }
-        Element::Name(name) => {
-            let span = text_range_to_span(name.syntax().text_range());
-            if let Some(ident) = name.identifier() {
-                match ident {
-                    rowan_ast::Identifier::NormalIdentifier(normal) => {
-                        Ok(crate::syntax::ast::Expression::Name(
-                            crate::syntax::ast::Name::Normal(span, normal.text().to_string()),
-                        ))
-                    }
-                    rowan_ast::Identifier::OperatorIdentifier(op) => {
-                        Ok(crate::syntax::ast::Expression::Name(
-                            crate::syntax::ast::Name::Operator(span, op.text().to_string()),
-                        ))
-                    }
-                }
-            } else {
-                Err(CoreError::InvalidEmbedding(
-                    "malformed name in core embedding".to_string(),
-                    crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                ))
-            }
-        }
-        Element::ParenExpr(paren) => {
-            // For parenthesized expressions, just convert the inner soup
-            if let Some(soup) = paren.soup() {
-                rowan_soup_to_legacy(&soup)
-            } else {
-                let span = text_range_to_span(paren.syntax().text_range());
-                Err(CoreError::InvalidEmbedding(
-                    "empty parenthesized expression in core embedding".to_string(),
-                    crate::common::sourcemap::Smid::from(span.start().0 as u32),
-                ))
-            }
-        }
-        Element::StringPattern(string_pattern) => {
-            let span = text_range_to_span(string_pattern.syntax().text_range());
-            Err(CoreError::InvalidEmbedding(
-                "string patterns not supported in core embedding".to_string(),
-                crate::common::sourcemap::Smid::from(span.start().0 as u32),
-            ))
-        }
-        Element::ApplyTuple(apply_tuple) => {
-            let span = text_range_to_span(apply_tuple.syntax().text_range());
-            let mut items = Vec::new();
-
-            for soup in apply_tuple.items() {
-                let legacy_expr = rowan_soup_to_legacy(&soup)?;
-                items.push(legacy_expr);
-            }
-
-            Ok(crate::syntax::ast::Expression::ApplyTuple(span, items))
-        }
-    }
-}
-
-/// Convert Rowan AST Soup to legacy Expression for core embedding
-pub fn rowan_soup_to_legacy(
-    soup: &rowan_ast::Soup,
-) -> Result<crate::syntax::ast::Expression, CoreError> {
-    let elements: Vec<_> = soup.elements().collect();
-
-    if elements.len() == 1 {
-        // Single element soup - convert the element directly
-        rowan_element_to_legacy(&elements[0])
-    } else {
-        // Multi-element soup - create an OpSoup expression
-        let span = text_range_to_span(soup.syntax().text_range());
-        let mut legacy_elements = Vec::new();
-
-        for element in elements {
-            let legacy_expr = rowan_element_to_legacy(&element)?;
-            legacy_elements.push(legacy_expr);
-        }
-
-        Ok(crate::syntax::ast::Expression::OpSoup(
-            span,
-            legacy_elements,
-        ))
-    }
-}
-
 /// Literals desugar into core Primitives
 impl Desugarable for rowan_ast::Literal {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
-        // Convert to legacy literal and reuse existing desugar_literal function
-        let legacy_lit = rowan_literal_to_legacy(self)?;
-        Ok(desugar_literal(desugarer, &legacy_lit))
+        let span = text_range_to_span(self.syntax().text_range());
+
+        if let Some(value) = self.value() {
+            let primitive = match value {
+                rowan_ast::LiteralValue::Sym(sym) => {
+                    if let Some(s) = sym.value() {
+                        Primitive::Sym(s.to_string())
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid symbol literal".to_string(),
+                            desugarer.new_smid(span),
+                        ));
+                    }
+                }
+                rowan_ast::LiteralValue::Str(s) => {
+                    if let Some(text) = s.value() {
+                        Primitive::Str(text.to_string())
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid string literal".to_string(),
+                            desugarer.new_smid(span),
+                        ));
+                    }
+                }
+                rowan_ast::LiteralValue::Num(n) => {
+                    if let Some(num) = n.value() {
+                        Primitive::Num(num)
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid number literal".to_string(),
+                            desugarer.new_smid(span),
+                        ));
+                    }
+                }
+            };
+            Ok(RcExpr::from(Expr::Literal(
+                desugarer.new_smid(span),
+                primitive,
+            )))
+        } else {
+            Err(CoreError::InvalidEmbedding(
+                "malformed literal".to_string(),
+                desugarer.new_smid(span),
+            ))
+        }
     }
 }
 
@@ -574,116 +411,176 @@ fn desugar_rowan_name(
     }
 }
 
-/// Desugar string pattern
+/// Desugar string pattern directly from Rowan AST
 fn desugar_rowan_string_pattern(
     span: Span,
     pattern: &rowan_ast::StringPattern,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
-    use crate::syntax::ast::{InterpolationRequest, InterpolationTarget, StringChunk};
-
-    // Convert Rowan AST chunks to legacy AST chunks for reuse of existing logic
-    let mut legacy_chunks = Vec::new();
+    // Desugar chunks directly without converting to legacy AST
+    let mut translated_chunks = Vec::new();
 
     for chunk in pattern.chunks() {
-        match chunk {
+        let chunk_expr = match chunk {
             rowan_ast::StringChunk::LiteralContent(content) => {
                 if let Some(text) = content.value() {
                     let chunk_span = text_range_to_span(content.syntax().text_range());
-                    legacy_chunks.push(StringChunk::LiteralContent(chunk_span, text));
+                    RcExpr::from(Expr::Literal(
+                        desugarer.new_smid(chunk_span),
+                        Primitive::Str(text.to_string()),
+                    ))
+                } else {
+                    RcExpr::from(Expr::Literal(
+                        desugarer.new_smid(span),
+                        Primitive::Str("".to_string()),
+                    ))
                 }
             }
             rowan_ast::StringChunk::Interpolation(interp) => {
                 let chunk_span = text_range_to_span(interp.syntax().text_range());
 
-                // Extract target - check for soup first (dotted lookups), then fallback to simple target
-                let target = if let Some(soup) = interp.soup() {
-                    // We have a soup (dotted lookup like data.foo.bar)
-                    // Convert the soup elements to a list of Names for the Reference variant
+                // Extract target expression using the exact same approach as legacy AST
+                let mut target_expr = if let Some(soup) = interp.soup() {
+                    // Extract names from the soup (equivalent to Vec<Name> in legacy AST)
                     let elements: Vec<_> = soup.elements().collect();
-                    let mut names = Vec::new();
-
-                    for element in elements {
-                        if let rowan_ast::Element::Name(name) = element {
-                            // Only process STRING_INTERPOLATION_TARGET tokens, skip dot operators
-                            // The dots will be handled automatically by InterpolationTarget::Reference desugaring
-                            if let Some(token) = name.syntax().first_token() {
-                                let token_text = token.text();
-                                match token.kind() {
-                                    SyntaxKind::STRING_INTERPOLATION_TARGET => {
-                                        names.push(crate::syntax::ast::normal(token_text));
-                                    }
-                                    SyntaxKind::OPERATOR_IDENTIFIER => {
-                                        // Skip dot operators - they will be added by the Reference desugaring
-                                    }
-                                    _ => {
-                                        // Skip unknown tokens
-                                    }
+                    let names: Vec<_> = elements
+                        .iter()
+                        .filter_map(|elem| match elem {
+                            rowan_ast::Element::Name(name) => {
+                                // Exclude dots - they're parsed as names but aren't actual identifiers
+                                if name.syntax().text() == "." {
+                                    None
+                                } else {
+                                    Some(name)
                                 }
                             }
-                        }
-                    }
+                            _ => None,
+                        })
+                        .collect();
 
-                    if names.is_empty() {
-                        // Fallback to anonymous if no names found
-                        InterpolationTarget::StringAnaphor(chunk_span, None)
+                    // Apply the exact legacy algorithm for InterpolationTarget::Reference
+                    let smid = desugarer.new_smid(chunk_span);
+                    if names.len() == 1 {
+                        // Single name case: just desugar the name and varify it
+                        let name = &names[0];
+                        let name_text = name.syntax().text().to_string();
+                        let name_expr = core::name(smid, name_text);
+                        desugarer.varify(name_expr)
                     } else {
-                        InterpolationTarget::Reference(chunk_span, names)
+                        // Multiple names case: build [name, dot, name, dot, name] soup
+                        let mut v = Vec::new();
+                        let mut items: Vec<_> = names.to_vec();
+
+                        // Process from end to beginning, just like legacy AST
+                        while items.len() > 1 {
+                            let name = items.pop().unwrap();
+                            let name_text = name.syntax().text().to_string();
+                            v.push(core::name(smid, name_text));
+                            v.push(acore::dot());
+                        }
+
+                        // Add the final name (the first one in the original order)
+                        if let Some(final_name) = items.pop() {
+                            let final_name_text = final_name.syntax().text().to_string();
+                            let name_expr = core::name(smid, final_name_text);
+                            v.push(desugarer.varify(name_expr));
+                        }
+
+                        // Reverse the entire vector, just like legacy AST
+                        v.reverse();
+                        core::soup(smid, v)
                     }
                 } else if let Some(target_token) = interp.target() {
                     if let Some(target_text) = target_token.value() {
                         if target_text.is_empty() {
                             // Empty {} means anonymous positional parameter
-                            InterpolationTarget::StringAnaphor(chunk_span, None)
+                            let smid = desugarer.new_smid(chunk_span);
+                            let fv = desugarer
+                                .add_pending_string_anaphor(Anaphor::ExplicitAnonymous(smid));
+                            core::var(smid, fv)
                         } else if let Ok(num) = target_text.parse::<i32>() {
                             // Numeric index like {0}, {1}, {2}
-                            InterpolationTarget::StringAnaphor(chunk_span, Some(num))
+                            let smid = desugarer.new_smid(chunk_span);
+                            let fv = desugarer
+                                .add_pending_string_anaphor(Anaphor::ExplicitNumbered(num));
+                            core::var(smid, fv)
                         } else {
                             // Variable reference like {name}
-                            InterpolationTarget::Reference(
-                                chunk_span,
-                                vec![crate::syntax::ast::normal(&target_text)],
-                            )
+                            core::var(desugarer.new_smid(chunk_span), desugarer.var(&target_text))
                         }
                     } else {
                         // No value means anonymous positional parameter
-                        InterpolationTarget::StringAnaphor(chunk_span, None)
+                        let smid = desugarer.new_smid(chunk_span);
+                        let fv =
+                            desugarer.add_pending_string_anaphor(Anaphor::ExplicitAnonymous(smid));
+                        core::var(smid, fv)
                     }
                 } else {
                     // No target means anonymous positional parameter
-                    InterpolationTarget::StringAnaphor(chunk_span, None)
+                    let smid = desugarer.new_smid(chunk_span);
+                    let fv = desugarer.add_pending_string_anaphor(Anaphor::ExplicitAnonymous(smid));
+                    core::var(smid, fv)
                 };
 
-                // Extract format spec
-                let format = interp
-                    .format_spec()
-                    .and_then(|spec| spec.value())
-                    .filter(|s| !s.is_empty());
+                // Apply format spec if present
+                if let Some(format_spec) = interp.format_spec() {
+                    if let Some(format) = format_spec.value() {
+                        if !format.is_empty() {
+                            if format.as_bytes()[0] as char == '%' {
+                                target_expr =
+                                    acore::app(rt::fmt(), vec![target_expr, acore::str(format)]);
+                            } else {
+                                let smid = desugarer.new_smid(chunk_span);
+                                target_expr = acore::app(
+                                    core::var(smid, desugarer.var(&format)),
+                                    vec![target_expr],
+                                );
+                            }
+                        }
+                    }
+                }
 
-                // Extract conversion spec
-                let conversion = interp
-                    .conversion_spec()
-                    .and_then(|spec| spec.value())
-                    .filter(|s| !s.is_empty());
-
-                let request = InterpolationRequest::new(chunk_span, target, format, conversion);
-                legacy_chunks.push(StringChunk::Interpolation(chunk_span, request));
+                // Apply default string conversion for interpolated expressions
+                acore::app(rt::str(), vec![target_expr])
             }
             rowan_ast::StringChunk::EscapedOpen(_) => {
                 // Escaped {{ becomes literal {
                 let chunk_span = text_range_to_span(chunk.syntax().text_range());
-                legacy_chunks.push(StringChunk::LiteralContent(chunk_span, "{".to_string()));
+                RcExpr::from(Expr::Literal(
+                    desugarer.new_smid(chunk_span),
+                    Primitive::Str("{".to_string()),
+                ))
             }
             rowan_ast::StringChunk::EscapedClose(_) => {
                 // Escaped }} becomes literal }
                 let chunk_span = text_range_to_span(chunk.syntax().text_range());
-                legacy_chunks.push(StringChunk::LiteralContent(chunk_span, "}".to_string()));
+                RcExpr::from(Expr::Literal(
+                    desugarer.new_smid(chunk_span),
+                    Primitive::Str("}".to_string()),
+                ))
             }
-        }
+        };
+        translated_chunks.push(chunk_expr);
     }
 
-    // Use the existing string pattern desugaring from ast.rs
-    crate::core::desugar::ast::desugar_string_pattern(span, &legacy_chunks, desugarer)
+    // Create the final string expression using JOIN intrinsic
+    let smid = desugarer.new_smid(span);
+    let mut expr = core::app(
+        smid,
+        rt::join(),
+        vec![core::list(smid, translated_chunks), acore::str("")],
+    );
+
+    // If there are any anaphora wrap into a lambda
+    if desugarer.has_pending_string_anaphora() {
+        use crate::core::anaphora;
+        use crate::core::transform::succ;
+        let binders = anaphora::to_binding_pattern(desugarer.pending_string_anaphora())?;
+        desugarer.clear_pending_string_anaphora();
+        expr = core::lam(expr.smid(), binders, succ::succ(&expr)?);
+    }
+
+    Ok(expr)
 }
 
 /// Soup desugaring
@@ -710,7 +607,13 @@ fn desugar_rowan_soup(
     elements: Vec<Element>,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
-    use crate::core::desugar::ast::PendingLookup;
+    // Define PendingLookup enum locally since we removed the legacy AST module
+    #[derive(Debug, Clone, PartialEq)]
+    enum PendingLookup {
+        None,
+        Static,
+        Dynamic,
+    }
 
     let mut soup: Vec<RcExpr> = Vec::with_capacity(elements.len() * 2);
     let mut lookup = PendingLookup::None;
@@ -858,27 +761,10 @@ fn rowan_declaration_to_binding(
     };
 
     // Handle documentation if in base file
-    if let Some(doc) = &metadata.doc {
+    if let Some(_doc) = &metadata.doc {
         if desugarer.in_base_file() {
-            // Convert to legacy DeclarationComponents for documentation
-            let name_ref = crate::syntax::ast::normal(&components.name);
-            let body_expr = crate::syntax::ast::Expression::Lit(crate::syntax::ast::Literal::Str(
-                components.span,
-                "placeholder".to_string(),
-            ));
-            let args_refs: Vec<_> = components
-                .args
-                .iter()
-                .map(|a| crate::syntax::ast::normal(a))
-                .collect();
-            let legacy_components = crate::syntax::ast::DeclarationComponents {
-                span: components.span,
-                metadata: None, // Already processed
-                name: &name_ref,
-                args: args_refs.iter().collect(),
-                body: &body_expr,
-            };
-            desugarer.record_doc(doc.to_string(), &legacy_components);
+            // Documentation processing disabled for now during legacy AST elimination
+            // TODO: Implement native Rowan documentation support that doesn't depend on legacy AST
         }
     }
 
@@ -911,11 +797,10 @@ fn rowan_declaration_to_binding(
     // Desugar the body expression
     let mut expr = if let Some(embedding) = &metadata.embedding {
         if embedding == "core" {
-            // For core embedding, we need to access the raw Rowan body before desugaring
-            // and convert it to legacy Expression format
+            // For core embedding, we use the raw Rowan body before desugaring
             let raw_body = if let Some(body) = decl.body() {
                 if let Some(body_soup) = body.soup() {
-                    rowan_soup_to_legacy(&body_soup)?
+                    body_soup
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "empty declaration body in core embedding".to_string(),
@@ -929,7 +814,7 @@ fn rowan_declaration_to_binding(
                 ));
             };
 
-            core_from_embedding(desugarer, &raw_body)?
+            core_from_rowan_embedding(desugarer, &raw_body)?
         } else {
             return Err(CoreError::UnknownEmbedding(embedding.clone()));
         }
