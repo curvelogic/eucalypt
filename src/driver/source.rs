@@ -248,7 +248,7 @@ impl SourceLoader {
             } else {
                 core_expr.clone()
             };
-            
+
             // Create a translation unit directly from the core expression
             let unit = TranslationUnit {
                 expr,
