@@ -242,9 +242,16 @@ impl SourceLoader {
 
         // Check if this is a core input (already desugared)
         if let Some(core_expr) = self.cores.get(input) {
+            // Apply name if specified (same as desugarer does)
+            let expr = if let Some(name) = input.name() {
+                core_expr.apply_name(Smid::default(), name)
+            } else {
+                core_expr.clone()
+            };
+            
             // Create a translation unit directly from the core expression
             let unit = TranslationUnit {
-                expr: core_expr.clone(),
+                expr,
                 targets: std::collections::HashSet::new(),
                 docs: Vec::new(),
             };
