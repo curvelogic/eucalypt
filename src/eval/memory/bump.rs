@@ -341,11 +341,24 @@ impl BumpBlock {
     /// If ptr is within the block, mark lines contain the region
     /// starting at ptr and extending for bytes.
     pub fn mark_region(&mut self, ptr: NonNull<u8>, bytes: usize) {
-        // n.b. div_ceil is in nightly
-        let lines = bytes / LINE_SIZE_BYTES + 1;
         if let Some(offset) = self.block.byte_offset_of(ptr) {
+            // Validate that the region fits within this block
+            debug_assert!(
+                offset + bytes <= BLOCK_SIZE_BYTES,
+                "mark_region: object at offset {offset} with size {bytes} bytes extends beyond block boundary (block size: {BLOCK_SIZE_BYTES} bytes)"
+            );
+
+            // n.b. div_ceil is in nightly
+            let lines = bytes / LINE_SIZE_BYTES + 1;
             let first_line = offset / LINE_SIZE_BYTES;
-            for line in first_line..(first_line + lines) {
+            let last_line = first_line + lines;
+
+            debug_assert!(
+                last_line <= LINE_COUNT,
+                "mark_region: calculated line range {first_line}..{last_line} exceeds LINE_COUNT {LINE_COUNT} (offset: {offset}, bytes: {bytes})"
+            );
+
+            for line in first_line..last_line {
                 self.line_map.mark(line);
             }
         }

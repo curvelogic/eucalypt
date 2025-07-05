@@ -1717,7 +1717,7 @@ impl Allocator for Heap {
 
         let space = self.find_space(alloc_size)?;
 
-        let header = AllocHeader::new_with_mark_state(alloc_size as u32, self.mark_state());
+        let header = AllocHeader::new_with_mark_state(size_bytes as u32, self.mark_state());
 
         // Update allocation metrics (lightweight - just counters)
         self.update_allocation_counters_fast(alloc_size, size_class);
@@ -2528,6 +2528,38 @@ pub mod tests {
                 addr & 15,
                 0,
                 "Allocation of size {size} not aligned to 16-byte boundary: 0x{addr:x}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_alloc_bytes_header_size_correctness() {
+        let heap = Heap::new();
+
+        // Test that alloc_bytes stores the actual requested size in the header,
+        // not the padded allocation size. This prevents GC marking beyond block boundaries.
+        let test_sizes = [100, 500, 1000, 2000];
+
+        for requested_size in test_sizes {
+            let ptr = heap.alloc_bytes(requested_size).unwrap();
+            let header = unsafe { heap.get_header(ptr).as_ref() };
+
+            // The header should store the exact requested size, not the padded alloc_size
+            assert_eq!(
+                header.length() as usize,
+                requested_size,
+                "Header length mismatch: expected {}, got {} for requested size {}",
+                requested_size,
+                header.length(),
+                requested_size
+            );
+
+            // Verify the padded size would be larger (confirming our fix matters)
+            let header_size = std::mem::size_of::<crate::eval::memory::header::AllocHeader>();
+            let padded_size = Heap::alloc_size_of(header_size + requested_size);
+            assert!(
+                padded_size > requested_size,
+                "Padded size {padded_size} should be larger than requested size {requested_size}"
             );
         }
     }
