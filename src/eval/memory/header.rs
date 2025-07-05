@@ -82,7 +82,8 @@ impl HeaderBits {
 pub struct AllocHeader {
     /// Header bits for object state
     bits: HeaderBits,
-    /// Count of allocated bytes (for untyped allocations)
+    /// Count of actual object bytes (excluding header and alignment padding)
+    /// This is the size that should be marked during GC, NOT the total allocation size
     alloc_length: u32,
     /// Forwarding pointer for when object is moved
     forwarded_to: Option<NonNull<()>>,
