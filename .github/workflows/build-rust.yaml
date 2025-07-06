@@ -82,8 +82,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install git-changelog
-        run: cargo install git-changelog
       - name: build and install temporary eu
         run: cargo install --path .
       - name: prepare build files for new version
@@ -109,9 +107,44 @@ jobs:
       - name: Ensure we have the latest tag
         run: |
           git fetch origin latest:latest
-      - name: Generate changelog
+      - name: Generate release notes with Claude API
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          echo "$(git-changelog latest...)" > CHANGELOG.md
+          # Collect git data for analysis
+          echo "Collecting commit data between latest tag and HEAD..."
+          git log latest..HEAD --pretty=format:"%H|%an|%ad|%s|%b" --date=short > commits.txt
+          git log latest..HEAD --name-only --pretty=format:"COMMIT:%H" > changed_files.txt
+          
+          # Create input for Claude API
+          echo "=== COMMIT DATA ===" > release_input.txt
+          cat commits.txt >> release_input.txt
+          echo "" >> release_input.txt
+          echo "=== CHANGED FILES ===" >> release_input.txt
+          cat changed_files.txt >> release_input.txt
+          
+          # Read the prompt template
+          PROMPT_CONTENT=$(cat .github/release-notes-prompt.md)
+          INPUT_CONTENT=$(cat release_input.txt)
+          
+          # Generate release notes with Anthropic API
+          curl -X POST https://api.anthropic.com/v1/messages \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "{
+              \"model\": \"claude-3-5-sonnet-20241022\",
+              \"max_tokens\": 4000,
+              \"messages\": [{
+                \"role\": \"user\",
+                \"content\": \"$PROMPT_CONTENT\n\n$INPUT_CONTENT\"
+              }]
+            }" | jq -r '.content[0].text' > CHANGELOG.md || {
+            echo "Claude API failed, falling back to basic git log"
+            echo "# Release Notes" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            git log latest..HEAD --pretty=format:"- %s" >> CHANGELOG.md
+          }
       - name: Upload changelog
         uses: actions/upload-artifact@v4
         with:
