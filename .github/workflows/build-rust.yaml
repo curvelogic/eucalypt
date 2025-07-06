@@ -128,23 +128,51 @@ jobs:
           INPUT_CONTENT=$(cat release_input.txt)
           
           # Generate release notes with Anthropic API
-          curl -X POST https://api.anthropic.com/v1/messages \
+          echo "🔍 Creating API payload..."
+          
+          # Create JSON payload with proper escaping
+          jq -n \
+            --arg prompt "$(cat .github/release-notes-prompt.md)" \
+            --arg input "$(cat release_input.txt)" \
+            '{
+              "model": "claude-3-5-sonnet-20241022",
+              "max_tokens": 4000,
+              "messages": [{
+                "role": "user", 
+                "content": ($prompt + "\n\n" + $input)
+              }]
+            }' > api_payload.json
+          
+          echo "📏 Payload size: $(wc -c < api_payload.json) bytes"
+          
+          # Make API call with debugging
+          echo "🚀 Calling Claude API..."
+          curl -s -X POST https://api.anthropic.com/v1/messages \
             -H "Content-Type: application/json" \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
-            -d "{
-              \"model\": \"claude-3-5-sonnet-20241022\",
-              \"max_tokens\": 4000,
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": \"$PROMPT_CONTENT\n\n$INPUT_CONTENT\"
-              }]
-            }" | jq -r '.content[0].text' > CHANGELOG.md || {
-            echo "Claude API failed, falling back to basic git log"
+            -d @api_payload.json \
+            -w "HTTP Status: %{http_code}\n" \
+            -o api_response.json
+          
+          echo "📥 API Response:"
+          cat api_response.json
+          echo ""
+          
+          # Check if response contains expected content
+          if jq -e '.content[0].text' api_response.json > /dev/null 2>&1; then
+            echo "✅ Successfully extracting release notes from API response"
+            jq -r '.content[0].text' api_response.json > CHANGELOG.md
+          else
+            echo "❌ API response missing expected '.content[0].text' structure"
+            echo "🔄 Falling back to basic git log"
             echo "# Release Notes" > CHANGELOG.md
             echo "" >> CHANGELOG.md
             git log latest..HEAD --pretty=format:"- %s" >> CHANGELOG.md
-          }
+          fi
+          
+          echo "📝 Generated CHANGELOG.md:"
+          cat CHANGELOG.md
       - name: Upload changelog
         uses: actions/upload-artifact@v4
         with:
