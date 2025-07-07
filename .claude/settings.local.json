@@ -26,7 +26,8 @@
       "Bash(EU_EXPERIMENTAL_PARSER=false cargo test test_harness_001 2 >& 1)",
       "Bash(./test_simple_parse:*)",
       "Bash(rustc:*)",
-      "Bash(./test_identifier_parse)"
+      "Bash(./test_identifier_parse)",
+      "Bash(git pull:*)"
     ],
     "deny": []
   }

@@ -13,6 +13,30 @@ eu --version # shows the current eu version
 eu --help # lists command line options
 ```
 
+## Command Structure
+
+The `eu` command uses a subcommand structure for clarity and extensibility:
+
+```sh
+eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
+```
+
+### Subcommands
+
+- `run` (default) - Evaluate eucalypt code
+- `test` - Run tests  
+- `dump` - Dump intermediate representations
+- `version` - Show version information
+- `explain` - Explain what would be executed
+- `list-targets` - List targets defined in the source
+
+When no subcommand is specified, `run` is used by default, so these are equivalent:
+
+```sh
+eu file.eu
+eu run file.eu
+```
+
 ## Inputs
 
 ### Files / *stdin*
@@ -197,7 +221,7 @@ Occasionally it is useful to aggregate data from an arbitrary number
 of sources files, typically specified by shell wildcards. To refer to
 this data we need to introduce a name for the collection of data.
 
-This is what the command line switch `--collect-as` / `-C` is for.
+This is what the command line switch `--collect-as` / `-c` is for.
 
 ```sh
 eu --collect-as inputs *.eu
@@ -215,7 +239,7 @@ inputs:
 It is common to use `-e` to select an item to render:
 
 ```sh
-eu -C *.eu -e 'inputs head'
+eu -c inputs *.eu -e 'inputs head'
 ```
 
 ...renders:
@@ -272,11 +296,11 @@ There are various ways to override this. First, `:target` metadata can
 be specified in the final input to identify different parts for
 potential export.
 
-To list the **targets** found in the specified inputs, use the `-t`
-flag.
+To list the **targets** found in the specified inputs, use the 
+`list-targets` subcommand.
 
 ```sh
-eu -l
+eu list-targets file.eu
 ```
 
 ...and a particular target can be selected for render using `-t`.
@@ -327,4 +351,25 @@ would like to provide an alternative.
 ## Debugging
 
 `eu` has a variety of command line switches for dumping out internal
-representations or tracing execution. `eu --help` lists them all.
+representations or tracing execution. The `dump` subcommand provides
+access to intermediate representations:
+
+```sh
+eu dump ast file.eu          # Parse and dump syntax tree
+eu dump desugared file.eu    # Dump core expression
+eu dump stg file.eu          # Dump compiled STG syntax
+eu list-targets file.eu      # List available targets
+```
+
+Use `eu --help` and `eu <subcommand> --help` for complete option lists.
+
+## Backward Compatibility
+
+All existing command patterns continue to work unchanged:
+
+```sh
+eu file.eu                   # Still works (uses run subcommand)
+eu -e "expression"           # Still works (uses run subcommand)  
+eu -j file.eu                # Still works (JSON output)
+eu -S -Q file.eu             # Still works (statistics, no prelude)
+```

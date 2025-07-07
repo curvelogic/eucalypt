@@ -7,7 +7,6 @@ extern crate moniker;
 extern crate pretty;
 extern crate regex;
 extern crate serde_json;
-extern crate structopt;
 extern crate thiserror;
 extern crate unic_ucd_category;
 extern crate url;

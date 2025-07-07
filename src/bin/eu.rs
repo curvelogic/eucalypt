@@ -1,5 +1,4 @@
 extern crate eucalypt;
-extern crate structopt;
 
 use std::process;
 
@@ -8,7 +7,6 @@ use eucalypt::driver::prepare::{self, Command};
 use eucalypt::driver::source::SourceLoader;
 use eucalypt::driver::tester;
 use eucalypt::driver::{eval, statistics::Statistics};
-use structopt::StructOpt;
 
 pub fn main() {
     let mut opt = EucalyptOptions::from_args();
