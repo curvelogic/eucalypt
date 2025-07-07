@@ -27,7 +27,6 @@ pub mod time;
 pub mod wrap;
 
 use std::{fmt, rc::Rc, str::FromStr};
-use structopt::StructOpt;
 
 use crate::{common::sourcemap::SourceMap, core::expr::RcExpr};
 
@@ -128,7 +127,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
 }
 
 /// What type of render-wrapping to apply to the compiled code
-#[derive(StructOpt, Copy, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Copy, Debug, Clone, PartialEq, Eq, Default)]
 pub enum RenderType {
     /// No rendering - calculate only
     Headless,
@@ -163,31 +162,23 @@ impl fmt::Display for RenderType {
 }
 
 /// Settings to control compilation and execution of STG code
-#[derive(StructOpt, Debug, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct StgSettings {
     /// Generate annotations for stack traces in compiled output
-    #[structopt(long = "stg-stack-trace")]
     pub generate_annotations: bool,
     /// Trace steps during execution
-    #[structopt(long = "stg-trace-steps")]
     pub trace_steps: bool,
     /// Whether to generate a top-level render / render-doc call
-    #[structopt(long = "stg-render-type", default_value)]
     pub render_type: RenderType,
     /// Suppress thunks and updates (i.e call-by-name)
-    #[structopt(long = "stg-suppress-updates")]
     pub suppress_updates: bool,
     /// Suppress inlining of intrinsic wrappers
-    #[structopt(long = "stg-suppress-inlining")]
     pub suppress_inlining: bool,
     /// Suppress optimiser
-    #[structopt(long = "stg-suppress-optimiser")]
     pub suppress_optimiser: bool,
     /// Limit managed heap to SIZE MiB
-    #[structopt(long)]
     pub heap_limit_mib: Option<usize>,
     /// Dump heap to stderr at GC time for debugging
-    #[structopt(long)]
     pub heap_dump_at_gc: bool,
 }
 
