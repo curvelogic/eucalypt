@@ -2,6 +2,7 @@ extern crate eucalypt;
 
 use std::process;
 
+use eucalypt::driver::format;
 use eucalypt::driver::options::EucalyptOptions;
 use eucalypt::driver::prepare::{self, Command};
 use eucalypt::driver::source::SourceLoader;
@@ -25,6 +26,17 @@ pub fn main() {
     // the tester
     if opt.test() {
         match tester::test(&opt) {
+            Ok(exit) => process::exit(exit),
+            Err(e) => {
+                eprintln!("{e}");
+                process::exit(2)
+            }
+        }
+    }
+
+    // Format mode handles its own input loading
+    if opt.format() {
+        match format::format(&opt) {
             Ok(exit) => process::exit(exit),
             Err(e) => {
                 eprintln!("{e}");

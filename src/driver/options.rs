@@ -67,6 +67,8 @@ pub enum Commands {
     Explain(ExplainArgs),
     /// List targets defined in the source
     ListTargets(ListTargetsArgs),
+    /// Format eucalypt source files
+    Fmt(FmtArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -194,6 +196,33 @@ pub struct ListTargetsArgs {
     pub files: Vec<String>,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct FmtArgs {
+    /// Files to format
+    #[arg(value_name = "FILES")]
+    pub files: Vec<String>,
+
+    /// Line width for formatting (default: 80)
+    #[arg(short = 'w', long = "width", default_value = "80")]
+    pub width: usize,
+
+    /// Modify files in place
+    #[arg(long = "write")]
+    pub write: bool,
+
+    /// Check if files are formatted (exit 1 if not)
+    #[arg(long = "check")]
+    pub check: bool,
+
+    /// Full reformatting mode (instead of conservative)
+    #[arg(long = "reformat")]
+    pub reformat: bool,
+
+    /// Indent size in spaces (default: 2)
+    #[arg(long = "indent", default_value = "2")]
+    pub indent: usize,
+}
+
 /// Combined options structure that maintains compatibility
 #[derive(Debug, Clone, Default)]
 pub struct EucalyptOptions {
@@ -229,6 +258,14 @@ pub struct EucalyptOptions {
     pub dump_stg: bool,
     pub dump_runtime: bool,
 
+    // Format command options
+    pub format: bool,
+    pub format_width: usize,
+    pub format_write: bool,
+    pub format_check: bool,
+    pub format_reformat: bool,
+    pub format_indent: usize,
+
     // STG settings (flattened)
     pub stg_settings: StgSettings,
 
@@ -248,6 +285,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             Some(Commands::Dump(args)) => &args.files,
             Some(Commands::Explain(args)) => &args.files,
             Some(Commands::ListTargets(args)) => &args.files,
+            Some(Commands::Fmt(args)) => &args.files,
             None => &cli.files,
             _ => &Vec::new(),
         };
@@ -391,6 +429,20 @@ impl From<EucalyptCli> for EucalyptOptions {
             ),
         };
 
+        // Extract format options
+        let (format, format_width, format_write, format_check, format_reformat, format_indent) =
+            match &cli.command {
+                Some(Commands::Fmt(args)) => (
+                    true,
+                    args.width,
+                    args.write,
+                    args.check,
+                    args.reformat,
+                    args.indent,
+                ),
+                _ => (false, 80, false, false, false, 2),
+            };
+
         EucalyptOptions {
             mode: if cmd_batch.unwrap_or(cli.batch) {
                 CommandLineMode::Batch
@@ -422,6 +474,12 @@ impl From<EucalyptCli> for EucalyptOptions {
             dump_pruned,
             dump_stg,
             dump_runtime,
+            format,
+            format_width,
+            format_write,
+            format_check,
+            format_reformat,
+            format_indent,
             stg_settings: StgSettings::default(),
             explicit_inputs,
             prologue_inputs: Vec::new(),
@@ -448,6 +506,7 @@ impl EucalyptCli {
             "version",
             "explain",
             "list-targets",
+            "fmt",
             "help",
         ];
         if SUBCOMMANDS.contains(&args[1].as_str())
@@ -520,6 +579,30 @@ impl EucalyptOptions {
         self.dump_runtime
     }
 
+    pub fn format(&self) -> bool {
+        self.format
+    }
+
+    pub fn format_width(&self) -> usize {
+        self.format_width
+    }
+
+    pub fn format_write(&self) -> bool {
+        self.format_write
+    }
+
+    pub fn format_check(&self) -> bool {
+        self.format_check
+    }
+
+    pub fn format_reformat(&self) -> bool {
+        self.format_reformat
+    }
+
+    pub fn format_indent(&self) -> usize {
+        self.format_indent
+    }
+
     pub fn list_targets(&self) -> bool {
         self.list_targets
     }
@@ -543,6 +626,7 @@ impl EucalyptOptions {
             && !self.dump_pruned
             && !self.dump_stg
             && !self.dump_runtime
+            && !self.format
     }
 
     pub fn target(&self) -> Option<&str> {

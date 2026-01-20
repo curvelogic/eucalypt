@@ -1,5 +1,6 @@
 pub mod error;
 pub mod eval;
+pub mod format;
 pub mod io;
 pub mod options;
 pub mod prepare;
