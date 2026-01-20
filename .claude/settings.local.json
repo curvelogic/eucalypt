@@ -1,34 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cargo:*)",
-      "Bash(timeout 300 cargo test --lib)",
-      "Bash(git stash:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(git remote add:*)",
+      "Bash(git fetch:*)",
       "Bash(git checkout:*)",
-      "WebFetch(domain:github.com)",
-      "Bash(gh:*)",
-      "Bash(python3:*)",
-      "Bash(grep:*)",
-      "Bash(git add:*)",
-      "Bash(rg:*)",
-      "Bash(../../target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..10000]\")",
-      "Bash(./target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..10000]\")",
-      "Bash(/Users/greg/dev/curvelogic/eucalypt/target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..100]\")",
-      "Bash(./target/debug/eu --heap-limit-mib 1 --heap-dump-at-gc -e \"[0..100]\")",
-      "Bash(find:*)",
-      "Bash(rm:*)",
-      "Bash(~/.claude/showme src/eval/memory/heap.rs)",
-      "Bash(./bench.sh run:*)",
-      "Bash(./bench.sh:*)",
-      "Bash(timeout 300 cargo bench criterion_benchmark)",
-      "Bash(git commit:*)",
-      "Bash(./target/debug/eu:*)",
-      "Bash(EU_EXPERIMENTAL_PARSER=false cargo test test_harness_001 2 >& 1)",
-      "Bash(./test_simple_parse:*)",
-      "Bash(rustc:*)",
-      "Bash(./test_identifier_parse)",
-      "Bash(git pull:*)"
-    ],
-    "deny": []
+      "Bash(git push:*)",
+      "Bash(gh repo edit:*)",
+      "Bash(git branch:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh api:*)",
+      "Bash(while read branch)",
+      "Bash(do echo \"Pushing $branch...\" git push origin \"upstream/$branch:refs/heads/$branch\" done)",
+      "Bash(bd prime:*)",
+      "Bash(bd --help:*)",
+      "Bash(bd help:*)",
+      "Bash(bd:*)"
+    ]
   }
 }
