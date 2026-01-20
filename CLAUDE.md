@@ -1,3 +1,7 @@
+# Beads / Project Management
+
+See AGENTS.md for using `bd` for project management.
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
