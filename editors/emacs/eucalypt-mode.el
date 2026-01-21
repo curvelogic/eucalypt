@@ -1,8 +1,6 @@
-;;; eucalypt-mode.el --- Major mode for Eucalypt code
-
-;; -*- lexical-binding: t; -*-
+;;; eucalypt-mode.el --- Major mode for Eucalypt code  -*- lexical-binding: t; -*-
 ;;
-;; Copyright © 2019 Greg Hawkins
+;; Copyright © 2019, 2026 Greg Hawkins
 
 (defgroup eucalypt nil
   "Major mode for editing Eucalypt native syntax files."
@@ -32,73 +30,122 @@
 
 (defvar eucalypt-mode-syntax-table
   (let ((table (make-syntax-table)))
+    ;; Operator characters (symbol constituent)
     (modify-syntax-entry ?=  "_" table)
-    (modify-syntax-entry ?∧  "_" table)
-    (modify-syntax-entry ?∨  "_" table)
-    (modify-syntax-entry ?∘  "_" table)
+    (modify-syntax-entry ?<  "_" table)
+    (modify-syntax-entry ?>  "_" table)
+    (modify-syntax-entry ?+  "_" table)
+    (modify-syntax-entry ?*  "_" table)
+    (modify-syntax-entry ?/  "_" table)
+    (modify-syntax-entry ?%  "_" table)
+    (modify-syntax-entry ?&  "_" table)
+    (modify-syntax-entry ?|  "_" table)
+    (modify-syntax-entry ?@  "_" table)
+    ;; Unicode operators
+    (modify-syntax-entry ?∧  "_" table)  ; logical and
+    (modify-syntax-entry ?∨  "_" table)  ; logical or
+    (modify-syntax-entry ?∘  "_" table)  ; composition
+    (modify-syntax-entry ?¬  "_" table)  ; negation
+    (modify-syntax-entry ?∸  "_" table)  ; unary minus
+    (modify-syntax-entry ?€  "_" table)  ; custom operator
+    (modify-syntax-entry ?¡  "_" table)  ; custom operator
+    (modify-syntax-entry ?⨈  "_" table)  ; custom operator
+    (modify-syntax-entry ?⊙  "_" table)  ; custom operator
+    (modify-syntax-entry ?£  "_" table)  ; custom operator
+    ;; Punctuation
     (modify-syntax-entry ?`  "." table)
     (modify-syntax-entry ?:  "." table)
     (modify-syntax-entry ?,  "." table)
-    (modify-syntax-entry ?_  "w" table)
-    (modify-syntax-entry ?•  "w" table)
-    (modify-syntax-entry ?-  "w" table)
-    (modify-syntax-entry ?!  "w" table)
-    (modify-syntax-entry ??  "w" table)
     (modify-syntax-entry ?.  "." table)
+    ;; Word constituents (for identifiers)
+    (modify-syntax-entry ?_  "w" table)
+    (modify-syntax-entry ?•  "w" table)  ; block anaphor
+    (modify-syntax-entry ?-  "w" table)  ; kebab-case identifiers
+    (modify-syntax-entry ?!  "w" table)  ; identifier suffix
+    (modify-syntax-entry ??  "w" table)  ; predicate suffix
+    ;; Strings
     (modify-syntax-entry ?\' "\"" table)
+    ;; Comments
     (modify-syntax-entry ?\# "<" table)
     (modify-syntax-entry ?\n ">" table)
     (modify-syntax-entry ?\r ">" table)
     table)
   "Syntax table to use in eucalypt mode buffers.")
 
-;; generate with:
-;; eu prelude=resource:prelude -x text -e 'prelude keys map(str.of) filter(str.matches?("[\w-?]+")) map("{ch.dq}{}{ch.dq}")'
-(defvar eucalypt--prelude-names (regexp-opt '("eu" "io" "panic"
-  "assert" "null" "true" "false" "cat" "if" "then" "when" "cons"
-  "head" "nil?" "head-or" "tail" "tail-or" "nil" "first" "second"
-  "second-or" "sym" "merge" "deep-merge" "elements" "block" "has"
-  "lookup" "lookup-in" "lookup-or" "lookup-or-in" "lookup-alts" "not"
-  "and" "or" "-" "inc" "dec" "negate" "zero?" "pos?" "neg?" "num"
-  "floor" "ceiling" "max" "max-of" "min" "min-of" "ch" "str"
+;; Prelude names for syntax highlighting
+;; Generate with: eu prelude=resource:prelude -x text -e 'prelude keys map(str.of) filter(str.matches?("[\w-?]+")) map("{ch.dq}{}{ch.dq}")'
+(defvar eucalypt--prelude-names (regexp-opt '(
+  ;; Core and metadata
+  "eu" "io" "panic" "assert" "null" "true" "false" "if" "then" "when"
+  ;; List basics
+  "cons" "head" "nil?" "head-or" "tail" "tail-or" "nil" "first" "second" "second-or"
+  ;; Blocks and merge
+  "sym" "merge" "deep-merge" "elements" "block" "has"
+  "lookup" "lookup-in" "lookup-or" "lookup-or-in" "lookup-alts" "lookup-across" "lookup-path"
+  ;; Boolean
+  "not" "and" "or"
+  ;; Arithmetic
+  "inc" "dec" "negate" "zero?" "pos?" "neg?" "num" "floor" "ceiling"
+  "max" "max-of" "min" "min-of"
+  ;; Text
+  "ch" "str"
+  ;; Combinators
   "identity" "const" "->" "compose" "apply" "flip" "complement"
-  "curry" "uncurry" "cond" "juxt" "with-meta" "meta" "assertions"
-  "//=?" "//!?" "take" "drop" "take-while" "take-until" "drop-while"
-  "drop-until" "nth" "repeat" "foldl" "foldr" "scanl" "scanr"
-  "iterate" "ints-from" "range" "count" "last" "cycle" "map" "map2"
-  "zip-with" "zip" "filter" "remove" "append" "prepend" "concat"
-  "mapcat" "zip-apply" "reverse" "all-true?" "all" "any-true?" "any"
-  "window" "partition" "over-sliding-pairs" "differences" "merge-all"
-  "key" "value" "keys" "values" "bimap" "map-first" "map-second"
-  "map-kv" "map-as-block" "pair" "zip-kv" "with-keys" "map-values"
-  "map-keys" "filter-items" "by-key" "by-key-name" "by-key-match"
-  "by-value" "match-filter-values" "filter-values" "_block"
+  "curry" "uncurry" "cond" "juxt" "fnil"
+  ;; Metadata
+  "with-meta" "meta" "merge-meta" "assertions"
+  ;; List operations
+  "take" "drop" "split-at" "take-while" "take-until" "drop-while" "drop-until"
+  "split-after" "split-when" "nth" "repeat"
+  "foldl" "foldr" "scanl" "scanr" "iterate" "ints-from" "range" "count" "last" "cycle"
+  "map" "map2" "zip-with" "zip" "filter" "remove" "append" "prepend" "concat"
+  "mapcat" "zip-apply" "reverse"
+  "all-true?" "all" "any-true?" "any"
+  "window" "partition" "over-sliding-pairs" "differences"
+  "discriminate" "group-by" "qsort"
+  ;; Block operations
+  "merge-all" "key" "value" "keys" "values"
+  "bimap" "map-first" "map-second" "map-kv" "map-as-block"
+  "pair" "zip-kv" "with-keys" "map-values" "map-keys"
+  "filter-items" "by-key" "by-key-name" "by-key-match" "by-value"
+  "match-filter-values" "filter-values" "_block"
   "alter-value" "update-value" "alter" "update" "update-value-or"
-  "set-value" "tongue" "merge-at" "cal" "iosm") 'symbols))
+  "set-value" "tongue" "merge-at"
+  ;; Namespaces
+  "cal" "iosm") 'symbols))
+
+;; Common metadata keys used in block metadata
+(defvar eucalypt--metadata-keys (regexp-opt '(
+  "doc" "export" "associates" "precedence" "tag" "note" "assert") 'symbols))
 
 (defvar eucalypt-font-lock-keywords
-  `(;; declaration metadata lead-in
+  `(;; declaration metadata lead-in (backtick)
     ("`" . font-lock-preprocessor-face)
-    ;; binary op declaration
+    ;; metadata block keys (doc, export, associates, precedence, etc.)
+    (,(concat "\\<" eucalypt--metadata-keys "\\>") . font-lock-builtin-face)
+    ;; binary op declaration: (x OP y):
     ("([[:space:]]*\\sw+[[:space:]]*\\(\\s_+\\)[[:space:]]*\\sw+[[:space:]]*)[[:space:]]*:[[:space:]]" 1 font-lock-function-name-face)
-    ;; unary prefix op declaration
+    ;; unary prefix op declaration: (OP x):
     ("([[:space:]]*\\(\\s_+\\)[[:space:]]*\\sw+[[:space:]]*)[[:space:]]*:[[:space:]]" 1 font-lock-function-name-face)
-    ;; unary postfix op declaration
+    ;; zero-arity postfix op declaration: (x OP):
     ("([[:space:]]*\\sw+[[:space:]]*\\(\\s_+\\)[[:space:]]*)[[:space:]]*:[[:space:]]" 1 font-lock-function-name-face)
-    ;; function declaration
+    ;; function declaration: fn(args):
     ("\\(\\sw+\\)[[:space:]]*(.+)[[:space:]]*:[[:space:]]" 1 font-lock-function-name-face)
-    ;; property declaration
+    ;; property declaration: name:
     ("\\(\\sw+\\)[[:space:]]*:[[:space:]]" 1 font-lock-variable-name-face)
-    ;; operators
+    ;; operators (including zero-arity like //! and //!!)
     ("\\s_+" . font-lock-keyword-face)
-    ;; intrinsics
+    ;; intrinsics (__NAME)
     ("__\\sw+" . font-lock-builtin-face)
-    ;; symbols
-    (":\\sw+" . font-lock-constant-face)
-    ;; expression anaphora
+    ;; quoted intrinsics ('__NAME.METHOD')
+    ("'__[^']+'" . font-lock-builtin-face)
+    ;; symbols (:name)
+    (":\\sw[\\sw-]*" . font-lock-constant-face)
+    ;; expression anaphora (_0, _1, etc.)
     ("\\_<_[[:digit:]]*\\_>" . font-lock-type-face)
-    ;; block anaphora
+    ;; block anaphora (•0, •1, etc.)
     ("\\_<•[[:digit:]]*\\_>" . font-lock-type-face)
+    ;; prelude function names
     (,eucalypt--prelude-names 1 font-lock-keyword-face))
   "Keywords patterns to highlight in Eucalypt mode")
 
