@@ -18,5 +18,14 @@ benchmark_results/
 
 # Gas Town (added by gt)
 .claude/
-.beads/
 .logs/
+
+# Beads runtime state (not tracked in git)
+# issues.jsonl and metadata files ARE tracked - see .beads/.gitignore for internal patterns
+.beads/redirect
+.beads/mq/
+.beads/last-touched
+.beads/daemon-*.log.gz
+.beads/.sync.lock
+.beads/sync_base.jsonl
+.beads-wisp/
