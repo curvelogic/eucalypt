@@ -715,7 +715,7 @@ impl<'a> Machine<'a> {
         &mut self,
     ) -> (
         &mut MachineState,
-        MutatorHeapView,
+        MutatorHeapView<'_>,
         &mut dyn Emitter,
         &mut Metrics,
         &MachineSettings,
@@ -732,7 +732,7 @@ impl<'a> Machine<'a> {
     }
 
     /// Get a navigator for resolving references
-    fn nav(&self) -> HeapNavigator {
+    fn nav(&self) -> HeapNavigator<'_> {
         self.state.nav(MutatorHeapView::new(&self.heap))
     }
 

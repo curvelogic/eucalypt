@@ -144,19 +144,19 @@ impl<T: BoundTerm<String> + Clone> BlockMap<T> {
         self.0.get_mut(key)
     }
 
-    pub fn keys(&self) -> indexmap::map::Keys<String, T> {
+    pub fn keys(&self) -> indexmap::map::Keys<'_, String, T> {
         self.0.keys()
     }
 
-    pub fn values(&self) -> indexmap::map::Values<String, T> {
+    pub fn values(&self) -> indexmap::map::Values<'_, String, T> {
         self.0.values()
     }
 
-    pub fn values_mut(&mut self) -> indexmap::map::ValuesMut<String, T> {
+    pub fn values_mut(&mut self) -> indexmap::map::ValuesMut<'_, String, T> {
         self.0.values_mut()
     }
 
-    pub fn iter(&self) -> indexmap::map::Iter<String, T> {
+    pub fn iter(&self) -> indexmap::map::Iter<'_, String, T> {
         self.0.iter()
     }
 

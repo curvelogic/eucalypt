@@ -269,7 +269,7 @@ impl<T: Sized + Clone> Array<T> {
     }
 
     /// Read only iterator
-    pub fn iter(&self) -> std::slice::Iter<T> {
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
         debug_assert_ne!(self.length, usize::MAX);
         debug_assert!(self.length < u32::MAX as usize);
         self.as_slice().iter()

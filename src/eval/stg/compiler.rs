@@ -101,7 +101,7 @@ impl Context<'_> {
     }
 
     /// Next or error
-    pub fn next(&self) -> Result<&Context, CompileError> {
+    pub fn next(&self) -> Result<&Context<'_>, CompileError> {
         match self.next {
             Some(frame) => Ok(frame),
             None => Err(CompileError::BoundVarOverflowsContext),
