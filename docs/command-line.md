@@ -24,11 +24,12 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 ### Subcommands
 
 - `run` (default) - Evaluate eucalypt code
-- `test` - Run tests  
+- `test` - Run tests
 - `dump` - Dump intermediate representations
 - `version` - Show version information
 - `explain` - Explain what would be executed
 - `list-targets` - List targets defined in the source
+- `fmt` - Format eucalypt source files
 
 When no subcommand is specified, `run` is used by default, so these are equivalent:
 
@@ -362,6 +363,32 @@ eu list-targets file.eu      # List available targets
 ```
 
 Use `eu --help` and `eu <subcommand> --help` for complete option lists.
+
+## Formatting Source Files
+
+The `fmt` subcommand formats eucalypt source files for consistent style:
+
+```sh
+eu fmt file.eu              # Print formatted output to stdout
+eu fmt --write file.eu      # Format in place
+eu fmt --check file.eu      # Check formatting (exit 1 if not formatted)
+eu fmt *.eu --write         # Format multiple files in place
+```
+
+### Options
+
+- `-w, --width <WIDTH>` - Line width for formatting (default: 80)
+- `--write` - Modify files in place
+- `--check` - Check if files are formatted (exit 1 if not)
+- `--reformat` - Full reformatting mode (instead of conservative)
+- `--indent <INDENT>` - Indent size in spaces (default: 2)
+
+The formatter has two modes:
+
+- **Conservative mode** (default) - Preserves original formatting choices
+  where possible, only reformatting where necessary
+- **Reformat mode** (`--reformat`) - Full reformatting that applies
+  consistent style throughout
 
 ## Backward Compatibility
 

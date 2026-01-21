@@ -24,7 +24,7 @@ It has the following features:
   - an ergonomic command line interface and access to environment
 	variables
   - metadata annotations and numerous extension points
-  - a *prelude* of built in functions, acting like a standard library
+  - a [*prelude*](prelude.md) of built in functions, acting like a standard library
 
 It can currently read YAML, JSON, TOML, XML, CSV and plain text and
 eucalypt's own ("eu") syntax and it can export YAML, JSON, TOML or

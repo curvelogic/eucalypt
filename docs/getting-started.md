@@ -12,10 +12,8 @@ If you use homebrew, you can install using
 brew install curvelogic/homebrew-tap/eucalypt
 ```
 
-Otherwise binaries for macOS x86_64 are available on the [releases
+Otherwise binaries for macOS are available on the [releases
 page](https://github.com/curvelogic/eucalypt/releases).
-
-No binaries are available for Apple Silicon yet.
 
 ## On Linux
 
@@ -47,7 +45,7 @@ eu --version
 
 ```shell
 $ eu --version
-eu - Eucalypt (Rust Impl: v0.2.0.0)
+eu 0.2.0
 ```
 
 ...and...
@@ -59,40 +57,31 @@ eu --help
 ...shows command line help:
 
 ```text
-reu 0.2.0
-Option to select the command actually run
+A functional language for structured data
 
-USAGE:
-	eu [FLAGS] [OPTIONS] [--] [inputs]...
+Usage: eu [OPTIONS] [FILES]... [COMMAND]
 
-FLAGS:
-	-d, --debug             Turn on debug features
-		--dump-cooked       Dump core expression once operator soup has been analysed for precedence
-		--dump-desugared    Dump core expression as initially translated from syntax tree
-		--dump-inlined      Dump core expression once inliner pass has run
-		--dump-pruned       Dump core expression once dead ocde has been eliminated
-		--dump-runtime      Dump code for runtime globals
-		--dump-stg          Dump compiled STG syntax
-	-n, --explain           Explain command (do not run)
-	-h, --help              Prints help information
-	-j                      Shortcut for `-x json``
-	-l, --list-targets      List targets defined in the source
-	-B, --batch             Batch mode (no .eucalypt.d)
-	-Q, --no-prelude        Don't load the standard prelude
-	-p, --parse             Parse only
-		--quote-debug       When outputing AST or Core expressions, quote as debug print of structure
-		--quote-embed       When outputing AST or Core expressions, quote-embed as eucalypt
-	-S, --statistics        Print metrics to stderr before exiting
-	-T, --test              Run file as test
-	-v, --version           Explain command (do not run)
+Commands:
+  run           Evaluate eucalypt code (default)
+  test          Run tests
+  dump          Dump intermediate representations
+  version       Show version information
+  explain       Explain what would be executed
+  list-targets  List targets defined in the source
+  fmt           Format eucalypt source files
+  help          Print this message or the help of the given subcommand(s)
 
-OPTIONS:
-	-e, --evaluate <evaluate>          Expression to evaluate
-	-x, --export-type <export-type>    Format to export output in (e.g. yaml, json, toml, text)
-	-L, --lib-path <lib-path>...       Add directory to lib path
-	-o <output>                        Output file to export to
-	-t, --target <target>              Target to run (identified by target metadata in eucalypt source)
+Arguments:
+  [FILES]...  Files to process (used when no subcommand specified)
 
-ARGS:
-	<inputs>...    Source code / data inputs (in order)
+Options:
+  -L, --lib-path <LIB_PATH>  Add directory to lib path
+  -Q, --no-prelude           Don't load the standard prelude
+  -B, --batch                Batch mode (no .eucalypt.d)
+  -d, --debug                Turn on debug features
+  -S, --statistics           Print metrics to stderr before exiting
+  -h, --help                 Print help
+  -V, --version              Print version
 ```
+
+Use `eu <command> --help` for detailed help on each subcommand.
