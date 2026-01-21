@@ -1,0 +1,105 @@
+================================================================================
+Simple property declaration
+================================================================================
+
+x: 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number)))))
+
+================================================================================
+Function declaration
+================================================================================
+
+f(x): x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Binary operator declaration
+================================================================================
+
+(l + r): __ADD(l, r)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (application
+        (name
+          (identifier))
+        (argument_list
+          (soup
+            (name
+              (identifier)))
+          (soup
+            (name
+              (identifier))))))))
+
+================================================================================
+Multiple declarations
+================================================================================
+
+x: 1
+y: 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number)))))
+
+================================================================================
+Declaration with metadata
+================================================================================
+
+` "A description"
+f(x): x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (metadata
+      (string
+        (string_content)))
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
