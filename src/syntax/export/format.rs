@@ -34,7 +34,7 @@ impl FormatterConfig {
     pub fn new(line_width: usize, indent_size: usize, reformat: bool) -> Self {
         Self {
             line_width,
-            indent_size,
+            indent_size: indent_size.max(1),
             reformat,
         }
     }
@@ -51,22 +51,23 @@ impl Formatter {
     }
 
     /// Format a Unit (top-level file)
-    pub fn format_unit(&self, unit: &rowan_ast::Unit) -> String {
+    pub fn format_unit(&self, unit: &rowan_ast::Unit) -> Result<String, String> {
         let doc = self.format_unit_doc(unit);
         self.render_doc(doc)
     }
 
     /// Format a Soup (expression)
-    pub fn format_soup(&self, soup: &rowan_ast::Soup) -> String {
+    pub fn format_soup(&self, soup: &rowan_ast::Soup) -> Result<String, String> {
         let doc = self.format_soup_doc(soup);
         self.render_doc(doc)
     }
 
     /// Render a document to string
-    fn render_doc(&self, doc: RcDoc<'static, ()>) -> String {
+    fn render_doc(&self, doc: RcDoc<'static, ()>) -> Result<String, String> {
         let mut w = Vec::new();
-        doc.render(self.config.line_width, &mut w).unwrap();
-        String::from_utf8(w).unwrap()
+        doc.render(self.config.line_width, &mut w)
+            .map_err(|e| format!("Render error: {e}"))?;
+        String::from_utf8(w).map_err(|e| format!("UTF-8 error: {e}"))
     }
 
     /// Format a Unit to a Doc
@@ -235,7 +236,7 @@ impl Formatter {
 
         // Check if block can be single line (short enough, no nested blocks)
         let single_line_len = self.estimate_block_single_line_len(block);
-        let can_single_line = single_line_len <= self.config.line_width - 10
+        let can_single_line = single_line_len <= self.config.line_width.saturating_sub(10)
             && decls.len() <= 3
             && !self.has_nested_block(block);
 
@@ -300,7 +301,7 @@ impl Formatter {
             .map(|s| usize::from(s.syntax().text().len()) + 2)
             .sum();
 
-        if single_line_len <= self.config.line_width - 10 {
+        if single_line_len <= self.config.line_width.saturating_sub(10) {
             // Single line: [a, b, c]
             let docs: Vec<_> = items.iter().map(|s| self.reformat_soup(s)).collect();
             RcDoc::text("[")
@@ -508,7 +509,7 @@ pub fn format_source(source: &str, config: &FormatterConfig) -> Result<String, S
 
     let unit = parsed.tree();
     let formatter = Formatter::new(config.clone());
-    Ok(formatter.format_unit(&unit))
+    formatter.format_unit(&unit)
 }
 
 /// Check if a source file needs formatting

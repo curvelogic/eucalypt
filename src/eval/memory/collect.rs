@@ -45,11 +45,14 @@ pub trait CollectorScope {}
 
 /// A heap object that scanned for references to other heap objects
 pub trait GcScannable {
+    /// Scan this object for references to other heap objects.
+    /// Pushes newly discovered grey objects to the provided buffer.
     fn scan<'a>(
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>>;
+        out: &mut Vec<ScanPtr<'a>>,
+    );
 }
 
 impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {
@@ -57,14 +60,13 @@ impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         for p in self {
             if marker.mark(*p) {
-                grey.push(ScanPtr::from_non_null(scope, *p))
+                out.push(ScanPtr::from_non_null(scope, *p))
             }
         }
-        grey
     }
 }
 
@@ -133,14 +135,17 @@ pub fn collect(roots: &dyn GcScannable, heap: &mut Heap, clock: &mut Clock, dump
     heap_view.reset();
 
     let mut queue = VecDeque::default();
+    let mut scan_buffer = Vec::new();
 
     let scope = Scope();
 
     // find and queue the roots
-    queue.extend(roots.scan(&scope, &mut heap_view).drain(..));
+    roots.scan(&scope, &mut heap_view, &mut scan_buffer);
+    queue.extend(scan_buffer.drain(..));
 
     while let Some(scanptr) = queue.pop_front() {
-        queue.extend(scanptr.get().scan(&scope, &mut heap_view).drain(..));
+        scanptr.get().scan(&scope, &mut heap_view, &mut scan_buffer);
+        queue.extend(scan_buffer.drain(..));
     }
 
     if dump_heap {

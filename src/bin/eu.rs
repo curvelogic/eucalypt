@@ -10,11 +10,7 @@ use eucalypt::driver::tester;
 use eucalypt::driver::{eval, statistics::Statistics};
 
 pub fn main() {
-    let mut opt = EucalyptOptions::from_args();
-
-    if opt.process_defaults().is_err() {
-        process::exit(1);
-    }
+    let opt = EucalyptOptions::from_args();
 
     // For a dry run, just explain the options
     if opt.explain() {

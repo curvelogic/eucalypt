@@ -222,12 +222,11 @@ impl GcScannable for LambdaForm {
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         let body = self.body();
         if marker.mark(body) {
-            vec![ScanPtr::from_non_null(scope, body)]
-        } else {
-            vec![]
+            out.push(ScanPtr::from_non_null(scope, body));
         }
     }
 }
@@ -237,9 +236,8 @@ impl GcScannable for HeapSyn {
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         match self {
             HeapSyn::Atom { evaluand: _ } => {}
             HeapSyn::Case {
@@ -248,18 +246,18 @@ impl GcScannable for HeapSyn {
                 fallback,
             } => {
                 if marker.mark(*scrutinee) {
-                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                    out.push(ScanPtr::from_non_null(scope, *scrutinee));
                 }
                 if marker.mark_array(branches) {
                     for (_, b) in branches.iter() {
                         if marker.mark(*b) {
-                            grey.push(ScanPtr::from_non_null(scope, *b));
+                            out.push(ScanPtr::from_non_null(scope, *b));
                         }
                     }
                 }
                 if let Some(f) = fallback {
                     if marker.mark(*f) {
-                        grey.push(ScanPtr::from_non_null(scope, *f));
+                        out.push(ScanPtr::from_non_null(scope, *f));
                     }
                 }
             }
@@ -275,28 +273,28 @@ impl GcScannable for HeapSyn {
             HeapSyn::Let { bindings, body } => {
                 if marker.mark_array(bindings) {
                     for bindings in bindings.iter() {
-                        grey.push(ScanPtr::new(scope, bindings));
+                        out.push(ScanPtr::new(scope, bindings));
                     }
                 }
 
                 if marker.mark(*body) {
-                    grey.push(ScanPtr::from_non_null(scope, *body));
+                    out.push(ScanPtr::from_non_null(scope, *body));
                 }
             }
             HeapSyn::LetRec { bindings, body } => {
                 if marker.mark_array(bindings) {
                     for bindings in bindings.iter() {
-                        grey.push(ScanPtr::new(scope, bindings));
+                        out.push(ScanPtr::new(scope, bindings));
                     }
                 }
 
                 if marker.mark(*body) {
-                    grey.push(ScanPtr::from_non_null(scope, *body));
+                    out.push(ScanPtr::from_non_null(scope, *body));
                 }
             }
             HeapSyn::Ann { smid: _, body } => {
                 if marker.mark(*body) {
-                    grey.push(ScanPtr::from_non_null(scope, *body));
+                    out.push(ScanPtr::from_non_null(scope, *body));
                 }
             }
             HeapSyn::Meta { meta: _, body: _ } => {}
@@ -306,19 +304,17 @@ impl GcScannable for HeapSyn {
                 or_else,
             } => {
                 if marker.mark(*scrutinee) {
-                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                    out.push(ScanPtr::from_non_null(scope, *scrutinee));
                 }
                 if marker.mark(*handler) {
-                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                    out.push(ScanPtr::from_non_null(scope, *handler));
                 }
                 if marker.mark(*or_else) {
-                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                    out.push(ScanPtr::from_non_null(scope, *or_else));
                 }
             }
             HeapSyn::BlackHole => {}
         }
-
-        grey
     }
 }
 

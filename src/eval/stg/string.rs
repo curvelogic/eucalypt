@@ -1,7 +1,5 @@
 //! String and regex intrinsics
 
-use std::iter;
-
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -47,14 +45,15 @@ fn cached_regex<T: AsRef<str>>(
     text: T,
 ) -> Result<&Regex, ExecutionError> {
     let rcache = machine.rcache();
-    let key = text.as_ref().to_string();
+    let text_ref = text.as_ref();
 
-    if !rcache.contains(&key) {
-        let re = Regex::new(text.as_ref()).map_err(|_| ExecutionError::BadRegex(key.clone()))?;
-        rcache.put(key.clone(), re);
+    if !rcache.contains(text_ref) {
+        let re =
+            Regex::new(text_ref).map_err(|_| ExecutionError::BadRegex(text_ref.to_string()))?;
+        rcache.put(text_ref.to_string(), re);
     }
 
-    Ok(rcache.get(&key).unwrap())
+    Ok(rcache.get(text_ref).unwrap())
 }
 
 /// SYM(str) to convert strings to symbols
@@ -429,7 +428,7 @@ impl StgIntrinsic for Letters {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let string = str_arg(machine, view, &args[0])?;
-        let letters: Vec<String> = string.chars().map(|c| iter::once(c).collect()).collect();
+        let letters: Vec<String> = string.chars().map(|c| c.to_string()).collect();
         machine_return_str_list(machine, view, letters)
     }
 }

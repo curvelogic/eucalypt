@@ -619,22 +619,19 @@ impl GcScannable for MachineState {
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         if marker.mark(self.globals) {
-            grey.push(ScanPtr::from_non_null(scope, self.globals));
+            out.push(ScanPtr::from_non_null(scope, self.globals));
         }
 
-        grey.push(ScanPtr::new(scope, &self.closure));
+        out.push(ScanPtr::new(scope, &self.closure));
 
         for cont in &self.stack {
             if marker.mark(*cont) {
-                grey.push(ScanPtr::from_non_null(scope, *cont));
+                out.push(ScanPtr::from_non_null(scope, *cont));
             }
         }
-
-        grey
     }
 }
 

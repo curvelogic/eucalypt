@@ -286,8 +286,8 @@ impl From<EucalyptCli> for EucalyptOptions {
             Some(Commands::Explain(args)) => &args.files,
             Some(Commands::ListTargets(args)) => &args.files,
             Some(Commands::Fmt(args)) => &args.files,
+            Some(Commands::Version) => &cli.files,
             None => &cli.files,
-            _ => &Vec::new(),
         };
 
         for file in files {

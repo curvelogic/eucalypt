@@ -333,20 +333,17 @@ impl GcScannable for SynClosure {
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
         marker: &mut crate::eval::memory::collect::CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         let code = self.code();
         if marker.mark(code) {
-            grey.push(ScanPtr::from_non_null(scope, code));
+            out.push(ScanPtr::from_non_null(scope, code));
         }
 
         let env = self.env();
         if marker.mark(env) {
-            grey.push(ScanPtr::from_non_null(scope, env));
+            out.push(ScanPtr::from_non_null(scope, env));
         }
-
-        grey
     }
 }
 
@@ -359,23 +356,20 @@ impl GcScannable for EnvFrame {
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
         marker: &mut crate::eval::memory::collect::CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         let bindings = &self.bindings;
 
         if marker.mark_array(bindings) {
             for binding in bindings.iter() {
-                grey.push(ScanPtr::new(scope, binding));
+                out.push(ScanPtr::new(scope, binding));
             }
         }
 
         if let Some(next) = self.next {
             if marker.mark(next) {
-                grey.push(ScanPtr::from_non_null(scope, next));
+                out.push(ScanPtr::from_non_null(scope, next));
             }
         }
-
-        grey
     }
 }

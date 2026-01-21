@@ -99,8 +99,8 @@ impl GcScannable for Continuation {
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         match self {
             Continuation::Branch {
                 branches,
@@ -110,18 +110,18 @@ impl GcScannable for Continuation {
                 if marker.mark_array(branches) {
                     for (_tag, branch) in branches.iter() {
                         marker.mark(*branch);
-                        grey.push(ScanPtr::from_non_null(scope, *branch));
+                        out.push(ScanPtr::from_non_null(scope, *branch));
                     }
                 }
 
                 if let Some(fb) = fallback {
                     if marker.mark(*fb) {
-                        grey.push(ScanPtr::from_non_null(scope, *fb));
+                        out.push(ScanPtr::from_non_null(scope, *fb));
                     }
                 }
 
                 if marker.mark(*environment) {
-                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                    out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
             Continuation::Update {
@@ -129,13 +129,13 @@ impl GcScannable for Continuation {
                 index: _,
             } => {
                 if marker.mark(*environment) {
-                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                    out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
             Continuation::ApplyTo { args } => {
                 if marker.mark_array(args) {
                     for arg in args.iter() {
-                        grey.push(ScanPtr::new(scope, arg));
+                        out.push(ScanPtr::new(scope, arg));
                     }
                 }
             }
@@ -145,19 +145,17 @@ impl GcScannable for Continuation {
                 environment,
             } => {
                 if marker.mark(*handler) {
-                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                    out.push(ScanPtr::from_non_null(scope, *handler));
                 }
 
                 if marker.mark(*or_else) {
-                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                    out.push(ScanPtr::from_non_null(scope, *or_else));
                 }
 
                 if marker.mark(*environment) {
-                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                    out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
         }
-
-        grey
     }
 }

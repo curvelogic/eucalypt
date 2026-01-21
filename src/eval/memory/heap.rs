@@ -1,6 +1,6 @@
 //! The STG heap implementation
 
-use std::collections::LinkedList;
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
@@ -309,9 +309,9 @@ pub struct HeapState {
     /// For allocating medium objects
     overflow: Option<BumpBlock>,
     /// Recycled - part used but reclaimed
-    recycled: LinkedList<BumpBlock>,
+    recycled: VecDeque<BumpBlock>,
     /// Part used - not yet reclaimed
-    rest: LinkedList<BumpBlock>,
+    rest: VecDeque<BumpBlock>,
     /// Large object blocks - each contains single object
     lobs: Vec<LargeObjectBlock>,
     /// Recycled large object blocks available for reuse
@@ -355,8 +355,8 @@ impl HeapState {
         HeapState {
             head: None,
             overflow: None,
-            recycled: LinkedList::default(),
-            rest: LinkedList::default(),
+            recycled: VecDeque::new(),
+            rest: VecDeque::new(),
             lobs: vec![],
             recycled_lobs: vec![],
         }
@@ -434,22 +434,8 @@ impl HeapState {
         // Remove and return the best block if one was found with a good score
         if let Some(index) = best_index {
             if best_score > 0.0 {
-                // Remove the block at the found index
-                let mut remaining = LinkedList::new();
-                let mut target_block: Option<BumpBlock> = None;
-                let mut current_index = 0;
-
-                while let Some(block) = self.recycled.pop_front() {
-                    if current_index == index {
-                        target_block = Some(block);
-                    } else {
-                        remaining.push_back(block);
-                    }
-                    current_index += 1;
-                }
-
-                self.recycled = remaining;
-                return target_block;
+                // VecDeque::remove is O(min(i, n-i)) - much better than LinkedList reconstruction
+                return self.recycled.remove(index);
             }
         }
 
@@ -517,7 +503,7 @@ impl HeapState {
 
     /// Look for reclaimable blocks and move to recycled list
     pub fn sweep(&mut self) {
-        let mut unusable: LinkedList<BumpBlock> = LinkedList::default();
+        let mut unusable: VecDeque<BumpBlock> = VecDeque::new();
 
         while let Some(mut block) = self.rest.pop_front() {
             if block.recycle() {
