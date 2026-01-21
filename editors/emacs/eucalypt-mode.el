@@ -139,8 +139,8 @@
     ("__\\sw+" . font-lock-builtin-face)
     ;; quoted intrinsics ('__NAME.METHOD')
     ("'__[^']+'" . font-lock-builtin-face)
-    ;; symbols (:name)
-    (":\\sw[\\sw-]*" . font-lock-constant-face)
+    ;; symbols (:name) - hyphen is already a word constituent
+    (":\\sw+" . font-lock-constant-face)
     ;; expression anaphora (_0, _1, etc.)
     ("\\_<_[[:digit:]]*\\_>" . font-lock-type-face)
     ;; block anaphora (•0, •1, etc.)

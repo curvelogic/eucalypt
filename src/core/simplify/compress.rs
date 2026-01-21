@@ -44,21 +44,23 @@ impl ScopeCompressor {
             Expr::Let(s, scope, t) => {
                 self.enter(permutation_from_let_scope(scope));
 
-                let new_bindings: Vec<_> = scope
+                let new_bindings: Result<Vec<_>, CoreError> = scope
                     .unsafe_pattern
                     .unsafe_pattern
                     .iter()
-                    .filter_map(|&(ref n, Embed(ref value))| {
-                        if matches!(*value.inner, Expr::ErrEliminated) {
-                            None
-                        } else {
-                            match self.compress(value) {
-                                Ok(val) => Some((n.clone(), Embed(val))),
-                                Err(_) => None, //TODO: propagate
-                            }
-                        }
+                    .filter(|&(_, Embed(ref value))| !matches!(*value.inner, Expr::ErrEliminated))
+                    .map(|&(ref n, Embed(ref value))| {
+                        self.compress(value).map(|val| (n.clone(), Embed(val)))
                     })
                     .collect();
+
+                let new_bindings = match new_bindings {
+                    Ok(b) => b,
+                    Err(e) => {
+                        self.exit();
+                        return Err(e);
+                    }
+                };
 
                 let new_body = self.compress(&scope.unsafe_body)?;
 

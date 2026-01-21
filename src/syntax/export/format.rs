@@ -53,7 +53,12 @@ impl Formatter {
     /// Format a Unit (top-level file)
     pub fn format_unit(&self, unit: &rowan_ast::Unit) -> Result<String, String> {
         let doc = self.format_unit_doc(unit);
-        self.render_doc(doc)
+        let mut result = self.render_doc(doc)?;
+        // Ensure trailing newline
+        if !result.is_empty() && !result.ends_with('\n') {
+            result.push('\n');
+        }
+        Ok(result)
     }
 
     /// Format a Soup (expression)
@@ -92,21 +97,102 @@ impl Formatter {
     // Full Reformatting Mode
     // ========================================================================
 
+    /// Extract leading comments (including shebang) from a syntax node
+    fn extract_leading_comments(&self, node: &SyntaxNode) -> Vec<String> {
+        let mut comments = Vec::new();
+        for child in node.children_with_tokens() {
+            match child {
+                rowan::NodeOrToken::Token(t) => {
+                    if t.kind() == SyntaxKind::COMMENT {
+                        comments.push(t.text().to_string());
+                    } else if t.kind() != SyntaxKind::WHITESPACE {
+                        // Stop at first non-trivia token
+                        break;
+                    }
+                }
+                rowan::NodeOrToken::Node(_) => {
+                    // Stop at first node (declarations, metadata, etc.)
+                    break;
+                }
+            }
+        }
+        comments
+    }
+
+    /// Extract comments that precede a declaration
+    fn extract_declaration_leading_comments(
+        &self,
+        decl: &rowan_ast::Declaration,
+    ) -> Vec<String> {
+        let mut found_comments = Vec::new();
+        // Look at the previous siblings to find comments
+        let mut prev = decl.syntax().prev_sibling_or_token();
+
+        while let Some(sibling) = prev {
+            match &sibling {
+                rowan::NodeOrToken::Token(t) => {
+                    if t.kind() == SyntaxKind::COMMENT {
+                        found_comments.push(t.text().to_string());
+                    } else if t.kind() == SyntaxKind::WHITESPACE {
+                        // Check if whitespace contains blank line (resets comment association)
+                        if t.text().chars().filter(|&c| c == '\n').count() > 1 {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                rowan::NodeOrToken::Node(_) => break,
+            }
+            prev = sibling.prev_sibling_or_token();
+        }
+
+        // Reverse since we collected in reverse order
+        found_comments.reverse();
+        found_comments
+    }
+
     fn reformat_unit(&self, unit: &rowan_ast::Unit) -> RcDoc<'static, ()> {
-        let mut docs = Vec::new();
+        let mut result = RcDoc::nil();
+
+        // Preserve leading comments (including shebang) as a single header block
+        let leading_comments = self.extract_leading_comments(unit.syntax());
+        if !leading_comments.is_empty() {
+            for comment in &leading_comments {
+                result = result.append(RcDoc::text(comment.clone())).append(RcDoc::hardline());
+            }
+            // Add blank line after leading comments section
+            result = result.append(RcDoc::hardline());
+        }
 
         // Handle metadata if present
         if let Some(meta) = unit.meta() {
-            docs.push(self.reformat_block_metadata(&meta));
+            result = result.append(self.reformat_block_metadata(&meta));
+            result = result.append(RcDoc::hardline()).append(RcDoc::hardline());
         }
 
-        // Format each declaration
-        for decl in unit.declarations() {
-            docs.push(self.reformat_declaration(&decl));
+        // Format each declaration with its leading comments
+        let declarations: Vec<_> = unit.declarations().collect();
+        for (i, decl) in declarations.iter().enumerate() {
+            if i > 0 {
+                // Blank line between declarations
+                result = result.append(RcDoc::hardline());
+
+                // Extract and add comments that precede this declaration (not the first one,
+                // as those are already handled by extract_leading_comments)
+                let decl_comments = self.extract_declaration_leading_comments(decl);
+                for comment in &decl_comments {
+                    result = result.append(RcDoc::text(comment.clone())).append(RcDoc::hardline());
+                }
+            }
+
+            result = result.append(self.reformat_declaration(decl));
+            if i < declarations.len() - 1 {
+                result = result.append(RcDoc::hardline());
+            }
         }
 
-        // Join declarations with blank lines
-        RcDoc::intersperse(docs, RcDoc::hardline().append(RcDoc::hardline()))
+        result
     }
 
     fn reformat_declaration(&self, decl: &rowan_ast::Declaration) -> RcDoc<'static, ()> {
@@ -262,9 +348,9 @@ impl Formatter {
 
             let inner = RcDoc::intersperse(inner_docs, RcDoc::hardline());
 
+            // Nest includes the leading hardline so first line gets indented too
             RcDoc::text("{")
-                .append(RcDoc::hardline())
-                .append(inner.nest(indent as isize))
+                .append(RcDoc::hardline().append(inner).nest(indent as isize))
                 .append(RcDoc::hardline())
                 .append(RcDoc::text("}"))
         }
@@ -381,59 +467,87 @@ impl Formatter {
     /// Fix whitespace violations in a syntax node
     fn fix_whitespace_violations(&self, node: &SyntaxNode) -> RcDoc<'static, ()> {
         let mut result = String::new();
-        self.process_node_conservative(node, &mut result);
+        let mut line_col: usize = 0;
+        self.process_node_conservative(node, &mut result, &mut line_col);
         RcDoc::text(result)
     }
 
-    fn process_node_conservative(&self, node: &SyntaxNode, result: &mut String) {
+    fn process_node_conservative(
+        &self,
+        node: &SyntaxNode,
+        result: &mut String,
+        line_col: &mut usize,
+    ) {
         for child in node.children_with_tokens() {
             match child {
                 rowan::NodeOrToken::Node(n) => {
-                    self.process_node_conservative(&n, result);
+                    self.process_node_conservative(&n, result, line_col);
                 }
                 rowan::NodeOrToken::Token(t) => {
-                    self.process_token_conservative(&t, result);
+                    self.process_token_conservative(&t, result, line_col);
                 }
             }
         }
     }
 
-    fn process_token_conservative(&self, token: &SyntaxToken, result: &mut String) {
+    fn process_token_conservative(
+        &self,
+        token: &SyntaxToken,
+        result: &mut String,
+        line_col: &mut usize,
+    ) {
         let text = token.text();
         let kind = token.kind();
 
         match kind {
             SyntaxKind::WHITESPACE => {
                 // Convert tabs to spaces and normalize excessive whitespace
-                let normalized = self.normalize_whitespace(text);
+                let normalized = self.normalize_whitespace(text, *line_col);
+                // Update line_col based on normalized output
+                for c in normalized.chars() {
+                    if c == '\n' {
+                        *line_col = 0;
+                    } else {
+                        *line_col += 1;
+                    }
+                }
                 result.push_str(&normalized);
             }
             SyntaxKind::COLON => {
                 // Colon should have no space before, one space after
                 // (The space after is handled by following whitespace)
                 result.push_str(text);
+                *line_col += text.len();
             }
             SyntaxKind::COMMA => {
                 // Comma should have no space before, one space after
                 result.push_str(text);
+                *line_col += text.len();
             }
             _ => {
+                // Update line_col tracking
+                for c in text.chars() {
+                    if c == '\n' {
+                        *line_col = 0;
+                    } else {
+                        *line_col += 1;
+                    }
+                }
                 result.push_str(text);
             }
         }
     }
 
-    /// Normalize whitespace: convert tabs to spaces, normalize runs
-    fn normalize_whitespace(&self, ws: &str) -> String {
+    /// Normalize whitespace: convert tabs to spaces while preserving alignment
+    /// line_col is the column position at the start of this whitespace token
+    fn normalize_whitespace(&self, ws: &str, line_col: usize) -> String {
         let mut result = String::new();
-        let mut col = 0;
-        let mut has_newline = false;
+        let mut col = line_col;
 
         for c in ws.chars() {
             match c {
                 '\n' => {
                     result.push('\n');
-                    has_newline = true;
                     col = 0;
                 }
                 '\t' => {
@@ -458,14 +572,8 @@ impl Formatter {
             }
         }
 
-        // Don't collapse all whitespace to single space on newlines
-        if !has_newline && !result.contains('\n') {
-            // For inline whitespace, normalize excessive spaces (5+) to single
-            let space_count = result.chars().filter(|c| *c == ' ').count();
-            if space_count >= 5 {
-                result = " ".to_string();
-            }
-        }
+        // In conservative mode, we preserve whitespace structure to maintain alignment.
+        // Only tabs are converted to spaces, keeping the overall spacing intent.
 
         result
     }
@@ -527,19 +635,34 @@ mod tests {
         let config = FormatterConfig::default();
         let formatter = Formatter::new(config);
 
-        let result = formatter.normalize_whitespace("\t");
+        // Tab at column 0 -> 2 spaces (indent_size=2)
+        let result = formatter.normalize_whitespace("\t", 0);
         assert_eq!(result, "  ");
 
-        let result = formatter.normalize_whitespace(" \t");
+        // Space then tab at column 0: space puts us at col 1, tab aligns to col 2
+        let result = formatter.normalize_whitespace(" \t", 0);
+        assert_eq!(result, "  ");
+
+        // Tab at column 1 -> 1 space to reach next tab stop (col 2)
+        let result = formatter.normalize_whitespace("\t", 1);
+        assert_eq!(result, " ");
+
+        // Tab at column 2 (already at tab stop) -> 2 spaces to reach col 4
+        let result = formatter.normalize_whitespace("\t", 2);
         assert_eq!(result, "  ");
     }
 
     #[test]
-    fn test_normalize_whitespace_excessive() {
+    fn test_normalize_whitespace_preserves_spaces() {
         let config = FormatterConfig::default();
         let formatter = Formatter::new(config);
 
-        let result = formatter.normalize_whitespace("     ");
-        assert_eq!(result, " ");
+        // Conservative mode preserves spaces to maintain alignment
+        let result = formatter.normalize_whitespace("     ", 0);
+        assert_eq!(result, "     ");
+
+        // Mixed tabs and spaces: tab expanded, spaces preserved
+        let result = formatter.normalize_whitespace("\t    ", 0);
+        assert_eq!(result, "      "); // 2 (from tab) + 4 spaces = 6 spaces
     }
 }
