@@ -13,3 +13,5 @@ test.eu
 
 # Benchmark results
 benchmark_results/
+
+.runtime/
