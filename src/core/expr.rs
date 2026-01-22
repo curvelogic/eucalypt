@@ -54,6 +54,7 @@ impl_bound_term_ignore!(Primitive);
 #[allow(non_local_definitions)]
 #[derive(Debug, Clone, BoundTerm, Copy, PartialEq, Eq)]
 pub enum Fixity {
+    Nullary,
     UnaryPrefix,
     UnaryPostfix,
     InfixLeft,
@@ -63,6 +64,7 @@ pub enum Fixity {
 impl Fixity {
     pub fn arity(&self) -> u8 {
         match self {
+            Fixity::Nullary => 0,
             Fixity::UnaryPrefix | Fixity::UnaryPostfix => 1,
             Fixity::InfixLeft | Fixity::InfixRight => 2,
         }
@@ -72,6 +74,7 @@ impl Fixity {
 impl Display for Fixity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Fixity::Nullary => write!(f, "nullary"),
             Fixity::UnaryPrefix => write!(f, "prefix"),
             Fixity::UnaryPostfix => write!(f, "postfix"),
             Fixity::InfixLeft => write!(f, "infixl"),
@@ -1218,6 +1221,11 @@ pub mod core {
         RcExpr::from(Expr::Operator(smid, Fixity::UnaryPostfix, prec, def))
     }
 
+    /// Create a nullary operator
+    pub fn nullary(smid: Smid, prec: Precedence, def: RcExpr) -> RcExpr {
+        RcExpr::from(Expr::Operator(smid, Fixity::Nullary, prec, def))
+    }
+
     /// Create an section anaphor on the left of an operator
     pub fn section_anaphor_left(smid: Smid) -> RcExpr {
         RcExpr::from(Expr::ExprAnaphor(
@@ -1395,6 +1403,11 @@ pub mod acore {
     /// Create a postfix operator
     pub fn postfix(prec: Precedence, def: RcExpr) -> RcExpr {
         core::postfix(Smid::default(), prec, def)
+    }
+
+    /// Create a nullary operator
+    pub fn nullary(prec: Precedence, def: RcExpr) -> RcExpr {
+        core::nullary(Smid::default(), prec, def)
     }
 
     /// Target path to a lookup expression

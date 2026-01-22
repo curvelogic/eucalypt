@@ -159,8 +159,12 @@ static bool at_declaration_start(TSLexer *lexer) {
         if (lexer->lookahead == ')') {
             lexer->advance(lexer, true);
             skip_whitespace(lexer);
-            // An operator declaration has both identifier and operator
-            if (has_identifier && has_operator && lexer->lookahead == ':') {
+            // An operator declaration has an operator (and optionally identifiers for non-nullary)
+            // Nullary: (∅): - operator only
+            // Prefix: (!x): - operator and identifier
+            // Postfix: (x!): - identifier and operator
+            // Binary: (x + y): - identifiers and operator
+            if (has_operator && lexer->lookahead == ':') {
                 return true;
             }
         }

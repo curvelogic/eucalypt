@@ -345,7 +345,7 @@ fn extract_rowan_declaration_components(
                     body,
                     arg_vars,
                     is_operator: true,
-                    fixity: None,
+                    fixity: Some(crate::core::expr::Fixity::Nullary),
                 })
             }
             rowan_ast::DeclarationKind::MalformedHead(_) => Err(CoreError::InvalidEmbedding(

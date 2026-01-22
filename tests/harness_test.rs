@@ -267,6 +267,11 @@ pub fn test_harness_054() {
 }
 
 #[test]
+pub fn test_harness_059() {
+    run_test(&opts("059_nullary_operators.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
