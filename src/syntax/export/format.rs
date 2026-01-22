@@ -242,10 +242,36 @@ impl Formatter {
                 let args_doc = self.reformat_apply_tuple(&args);
                 name_doc.append(args_doc)
             }
-            rowan_ast::DeclarationKind::Nullary(paren, _) => self.reformat_paren_expr(&paren),
-            rowan_ast::DeclarationKind::Prefix(paren, _, _) => self.reformat_paren_expr(&paren),
-            rowan_ast::DeclarationKind::Postfix(paren, _, _) => self.reformat_paren_expr(&paren),
-            rowan_ast::DeclarationKind::Binary(paren, _, _, _) => self.reformat_paren_expr(&paren),
+            rowan_ast::DeclarationKind::Nullary(_, op) => {
+                // Format: (op)
+                RcDoc::text("(")
+                    .append(RcDoc::text(op.syntax().text().to_string()))
+                    .append(RcDoc::text(")"))
+            }
+            rowan_ast::DeclarationKind::Prefix(_, op, operand) => {
+                // Format: (op operand) - no space between operator and operand
+                RcDoc::text("(")
+                    .append(RcDoc::text(op.syntax().text().to_string()))
+                    .append(RcDoc::text(operand.syntax().text().to_string()))
+                    .append(RcDoc::text(")"))
+            }
+            rowan_ast::DeclarationKind::Postfix(_, operand, op) => {
+                // Format: (operand op) - no space between operand and operator
+                RcDoc::text("(")
+                    .append(RcDoc::text(operand.syntax().text().to_string()))
+                    .append(RcDoc::text(op.syntax().text().to_string()))
+                    .append(RcDoc::text(")"))
+            }
+            rowan_ast::DeclarationKind::Binary(_, x, op, y) => {
+                // Format: (x op y) - spaces around operator
+                RcDoc::text("(")
+                    .append(RcDoc::text(x.syntax().text().to_string()))
+                    .append(RcDoc::space())
+                    .append(RcDoc::text(op.syntax().text().to_string()))
+                    .append(RcDoc::space())
+                    .append(RcDoc::text(y.syntax().text().to_string()))
+                    .append(RcDoc::text(")"))
+            }
             rowan_ast::DeclarationKind::MalformedHead(_) => {
                 // Preserve original for malformed heads
                 RcDoc::text(head.syntax().text().to_string())
@@ -268,21 +294,29 @@ impl Formatter {
                 let is_apply_tuple = matches!(elem, rowan_ast::Element::ApplyTuple(_));
 
                 // Check if this is a dot-connected expression (lookup)
-                // In eucalypt, dots are likely represented as operator identifiers
-                let is_dot_op = match elem {
-                    rowan_ast::Element::Name(n) => n.syntax().text() == ".",
-                    _ => false,
-                };
+                let is_dot_op = elem.as_operator_identifier().is_some_and(|op| op.syntax().text() == ".");
 
-                let prev_was_dot = match &elements[i - 1] {
-                    rowan_ast::Element::Name(n) => n.syntax().text() == ".",
-                    _ => false,
-                };
+                let prev_was_dot = elements[i - 1]
+                    .as_operator_identifier()
+                    .is_some_and(|op| op.syntax().text() == ".");
+
+                // Check for unary operators - no space after prefix ops, no space before postfix ops
+                let prev_is_prefix_op = self.is_prefix_operator(&elements, i - 1);
+
+                let is_postfix_op = self.is_postfix_operator(&elements, i);
 
                 // Add space unless:
                 // - This is an ApplyTuple (function call, no space before)
                 // - This or previous element is a dot operator
-                if !is_apply_tuple && !is_dot_op && !prev_was_dot {
+                // - Previous element is a prefix operator (tight binding)
+                // - This element is a postfix operator (tight binding)
+                let need_space = !is_apply_tuple
+                    && !is_dot_op
+                    && !prev_was_dot
+                    && !prev_is_prefix_op
+                    && !is_postfix_op;
+
+                if need_space {
                     docs.push(RcDoc::space());
                 }
             }
@@ -291,6 +325,36 @@ impl Formatter {
         }
 
         RcDoc::concat(docs)
+    }
+
+    /// Check if an element at a given position is likely a prefix operator
+    fn is_prefix_operator(&self, elements: &[rowan_ast::Element], idx: usize) -> bool {
+        // Must be an operator
+        if elements[idx].as_operator_identifier().is_none() {
+            return false;
+        }
+        // Prefix operator is either at position 0, or follows another operator
+        if idx == 0 {
+            return true;
+        }
+        // If the previous element is also an operator, this could be a prefix op
+        // (e.g., in "x + -y", the "-" after "+" is a prefix operator)
+        elements[idx - 1].as_operator_identifier().is_some()
+    }
+
+    /// Check if an element at a given position is likely a postfix operator
+    fn is_postfix_operator(&self, elements: &[rowan_ast::Element], idx: usize) -> bool {
+        // Must be an operator
+        if elements[idx].as_operator_identifier().is_none() {
+            return false;
+        }
+        // Postfix operator is at the end, or followed by another operator
+        if idx == elements.len() - 1 {
+            return true;
+        }
+        // If the next element is also an operator, this could be a postfix op
+        // (e.g., in "x! + y", the "!" before "+" is a postfix operator)
+        elements[idx + 1].as_operator_identifier().is_some()
     }
 
     fn reformat_element(&self, elem: &rowan_ast::Element) -> RcDoc<'static, ()> {
@@ -545,6 +609,9 @@ impl Formatter {
         let mut result = String::new();
         let mut col = line_col;
 
+        // Standard tab width for alignment preservation
+        const TAB_WIDTH: usize = 8;
+
         for c in ws.chars() {
             match c {
                 '\n' => {
@@ -552,12 +619,14 @@ impl Formatter {
                     col = 0;
                 }
                 '\t' => {
-                    // Convert tab to spaces (align to indent_size boundaries)
-                    let spaces = self.config.indent_size - (col % self.config.indent_size);
+                    // Convert tab to spaces (align to standard 8-character tab stops)
+                    // This preserves the alignment intent of the original author
+                    let next_tab_stop = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                    let spaces = next_tab_stop - col;
                     for _ in 0..spaces {
                         result.push(' ');
                     }
-                    col += spaces;
+                    col = next_tab_stop;
                 }
                 ' ' => {
                     result.push(' ');
@@ -636,21 +705,25 @@ mod tests {
         let config = FormatterConfig::default();
         let formatter = Formatter::new(config);
 
-        // Tab at column 0 -> 2 spaces (indent_size=2)
+        // Tab at column 0 -> 8 spaces (standard tab width)
         let result = formatter.normalize_whitespace("\t", 0);
-        assert_eq!(result, "  ");
+        assert_eq!(result, "        ");
 
-        // Space then tab at column 0: space puts us at col 1, tab aligns to col 2
+        // Space then tab at column 0: space puts us at col 1, tab aligns to col 8
         let result = formatter.normalize_whitespace(" \t", 0);
-        assert_eq!(result, "  ");
+        assert_eq!(result, "        "); // 1 space + 7 more = 8 total
 
-        // Tab at column 1 -> 1 space to reach next tab stop (col 2)
+        // Tab at column 1 -> 7 spaces to reach next tab stop (col 8)
         let result = formatter.normalize_whitespace("\t", 1);
-        assert_eq!(result, " ");
+        assert_eq!(result, "       ");
 
-        // Tab at column 2 (already at tab stop) -> 2 spaces to reach col 4
-        let result = formatter.normalize_whitespace("\t", 2);
-        assert_eq!(result, "  ");
+        // Tab at column 8 (already at tab stop) -> 8 spaces to reach col 16
+        let result = formatter.normalize_whitespace("\t", 8);
+        assert_eq!(result, "        ");
+
+        // Tab at column 3 -> 5 spaces to reach next tab stop (col 8)
+        let result = formatter.normalize_whitespace("\t", 3);
+        assert_eq!(result, "     ");
     }
 
     #[test]
@@ -662,8 +735,8 @@ mod tests {
         let result = formatter.normalize_whitespace("     ", 0);
         assert_eq!(result, "     ");
 
-        // Mixed tabs and spaces: tab expanded, spaces preserved
+        // Mixed tabs and spaces: tab expanded (to 8), then spaces preserved
         let result = formatter.normalize_whitespace("\t    ", 0);
-        assert_eq!(result, "      "); // 2 (from tab) + 4 spaces = 6 spaces
+        assert_eq!(result, "            "); // 8 (from tab) + 4 spaces = 12 spaces
     }
 }
