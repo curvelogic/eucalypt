@@ -120,10 +120,7 @@ impl Formatter {
     }
 
     /// Extract comments that precede a declaration
-    fn extract_declaration_leading_comments(
-        &self,
-        decl: &rowan_ast::Declaration,
-    ) -> Vec<String> {
+    fn extract_declaration_leading_comments(&self, decl: &rowan_ast::Declaration) -> Vec<String> {
         let mut found_comments = Vec::new();
         // Look at the previous siblings to find comments
         let mut prev = decl.syntax().prev_sibling_or_token();
@@ -159,7 +156,9 @@ impl Formatter {
         let leading_comments = self.extract_leading_comments(unit.syntax());
         if !leading_comments.is_empty() {
             for comment in &leading_comments {
-                result = result.append(RcDoc::text(comment.clone())).append(RcDoc::hardline());
+                result = result
+                    .append(RcDoc::text(comment.clone()))
+                    .append(RcDoc::hardline());
             }
             // Add blank line after leading comments section
             result = result.append(RcDoc::hardline());
@@ -182,7 +181,9 @@ impl Formatter {
                 // as those are already handled by extract_leading_comments)
                 let decl_comments = self.extract_declaration_leading_comments(decl);
                 for comment in &decl_comments {
-                    result = result.append(RcDoc::text(comment.clone())).append(RcDoc::hardline());
+                    result = result
+                        .append(RcDoc::text(comment.clone()))
+                        .append(RcDoc::hardline());
                 }
             }
 

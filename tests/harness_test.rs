@@ -267,6 +267,11 @@ pub fn test_harness_054() {
 }
 
 #[test]
+pub fn test_harness_055() {
+    run_test(&opts("055_jsonl_import.eu"));
+}
+
+#[test]
 pub fn test_harness_059() {
     run_test(&opts("059_nullary_operators.eu"));
 }

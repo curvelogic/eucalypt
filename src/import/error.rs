@@ -18,6 +18,8 @@ use thiserror::Error;
 pub enum SourceError {
     #[error("invalid yaml or json syntax {0}")]
     InvalidYaml(String, usize, Span),
+    #[error("invalid jsonl: {0}")]
+    InvalidJsonl(String, usize, Span),
     #[error("invalid xml syntax {0}")]
     InvalidXml(String, usize, Span),
     #[error("invalid toml syntax {0}")]
@@ -46,6 +48,7 @@ impl HasSpan for SourceError {
     fn span(&self) -> Span {
         match *self {
             SourceError::InvalidYaml(_, _, s) => s,
+            SourceError::InvalidJsonl(_, _, s) => s,
             SourceError::InvalidXml(_, _, s) => s,
             SourceError::InvalidToml(_, _) => Span::default(),
             SourceError::CharSetError(_, _) => Span::default(),
@@ -65,6 +68,7 @@ impl SourceError {
     pub fn file_id(&self) -> usize {
         match *self {
             SourceError::InvalidYaml(_, f, _) => f,
+            SourceError::InvalidJsonl(_, f, _) => f,
             SourceError::InvalidXml(_, f, _) => f,
             SourceError::InvalidToml(_, f) => f,
             SourceError::CharSetError(_, f) => f,

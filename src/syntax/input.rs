@@ -106,6 +106,7 @@ impl Locator {
     fn ext_to_format(ext: &str) -> Option<String> {
         match ext {
             "json" => Some(String::from("json")),
+            "jsonl" => Some(String::from("jsonl")),
             "txt" => Some(String::from("text")),
             "toml" => Some(String::from("toml")),
             "edn" => Some(String::from("edn")),
@@ -241,6 +242,10 @@ pub mod tests {
         assert_eq!(
             Locator::from("data.json").infer_format(),
             Some(String::from("json"))
+        );
+        assert_eq!(
+            Locator::from("data.jsonl").infer_format(),
+            Some(String::from("jsonl"))
         );
         assert_eq!(
             Locator::from("data.toml").infer_format(),

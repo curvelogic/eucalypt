@@ -1,0 +1,7 @@
+{ import: "records=aux/aux_import.jsonl" }
+
+count-ok: records count //= 3
+names-ok: records map(_.name) //= ["Alice", "Bob", "Charlie"]
+ages-ok: records map(_.age) //= [30, 25, 35]
+
+RESULT: [count-ok, names-ok, ages-ok] all-true? then(:PASS, :FAIL)
