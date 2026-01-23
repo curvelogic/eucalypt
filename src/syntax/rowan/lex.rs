@@ -674,7 +674,7 @@ d: {
             "(∅):",
             vec![
                 (OPEN_PAREN, Span::new(0, 1)),
-                (OPERATOR_IDENTIFIER, Span::new(1, 4)),  // ∅ is 3 bytes in UTF-8
+                (OPERATOR_IDENTIFIER, Span::new(1, 4)), // ∅ is 3 bytes in UTF-8
                 (CLOSE_PAREN, Span::new(4, 5)),
                 (COLON, Span::new(5, 6)),
             ],

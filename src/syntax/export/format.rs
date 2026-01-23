@@ -294,7 +294,9 @@ impl Formatter {
                 let is_apply_tuple = matches!(elem, rowan_ast::Element::ApplyTuple(_));
 
                 // Check if this is a dot-connected expression (lookup)
-                let is_dot_op = elem.as_operator_identifier().is_some_and(|op| op.syntax().text() == ".");
+                let is_dot_op = elem
+                    .as_operator_identifier()
+                    .is_some_and(|op| op.syntax().text() == ".");
 
                 let prev_was_dot = elements[i - 1]
                     .as_operator_identifier()
