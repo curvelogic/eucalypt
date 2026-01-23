@@ -52,6 +52,7 @@ in the prelude).
 |----------|-------------|
 | `cons(h, t)` | Prepend item `h` to list `t` |
 | `head(xs)` | First item of list (error if empty) |
+| `↑xs` | Tight-binding prefix form of `head` (prec 95) |
 | `head-or(d, xs)` | First item or default `d` if empty |
 | `tail(xs)` | List without first item (error if empty) |
 | `tail-or(d, xs)` | List without first item or `d` if empty |
