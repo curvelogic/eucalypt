@@ -34,6 +34,14 @@ tests: {
     pass: [t1, t2, t3] all-true?
   }
 
+  up-arrow-operator: {
+    t1: ↑[1, 2, 3] = 1
+    t2: ↑[{x: 42}].x = 42
+    t3: ↑ ↑[[1, 2], [3, 4]] = 1
+
+    pass: [t1, t2, t3] all-true?
+  }
+
   block-basics: {
     t1: merge({ a: 1 }, { b: 2 }) elements second head __EQ(sym("b"))
     t2: merge({}, { x: 3 }) has(:x)
