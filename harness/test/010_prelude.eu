@@ -7,7 +7,7 @@ tests: {
     eu-version: [eu.build.version, eu.build.commit, eu.build.url] str.join-on(" ")
 
     pass: [ prelude str.matches?("\d+\.\d+\.\d+(\.\d+)?")
-	  , eu-version str.matches?(".* .* .*") ] all-true?
+          , eu-version str.matches?(".* .* .*") ] all-true?
   }
 
   environment: {
@@ -15,7 +15,7 @@ tests: {
     launch-time: io.epoch-time
 
     pass: [ pwd str.matches?(".*/.*")
-	  , launch-time str.of str.matches?("\d+") ] all-true?
+          , launch-time str.of str.matches?("\d+") ] all-true?
   }
 
   basics: {
@@ -148,27 +148,27 @@ tests: {
     t21: repeat(:x) take(2) //= [:x, :x]
 
     pass: [ t1
-	  , t2
-	  , t3
-	  , t4
-	  , t5
-	  , t6
-	  , t7
-	  , t8
-	  , t9
-	  , t10
-	  , t11
-	  , t12
-	  , t13
-	  , t14
-	  , t15
-	  , t16
-	  , t17
-	  , t18
-	  , t19
-	  , t20
-	  , t21
-	  ] all-true?
+          , t2
+          , t3
+          , t4
+          , t5
+          , t6
+          , t7
+          , t8
+          , t9
+          , t10
+          , t11
+          , t12
+          , t13
+          , t14
+          , t15
+          , t16
+          , t17
+          , t18
+          , t19
+          , t20
+          , t21
+          ] all-true?
   }
 
   block-lib: {

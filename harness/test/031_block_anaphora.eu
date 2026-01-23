@@ -32,5 +32,5 @@ with-expr-anaphora: {
 # }
 
 RESULT: [unnumbered, numbered, lambdas, with-expr-anaphora]
-	  all(all-true? ∘ values)
-	  then(:PASS, :FAIL)
+          all(all-true? ∘ values)
+          then(:PASS, :FAIL)

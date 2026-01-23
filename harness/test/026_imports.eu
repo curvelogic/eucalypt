@@ -15,8 +15,8 @@ deep: {
   nest: {
     down: {
       here: {
-	` { import: ["aux/aux_import_a.eu"] }
-	imp: { footoo: foo }
+        ` { import: ["aux/aux_import_a.eu"] }
+        imp: { footoo: foo }
       }
     }
   }
