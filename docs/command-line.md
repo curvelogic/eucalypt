@@ -71,12 +71,13 @@ at present, are:
 
  - yaml
  - json
+ - jsonl (JSON Lines)
  - toml
  - csv
  - text
 
-Of these the first three (yaml, json, toml) return blocks and the last
-two return lists. Inputs that return lists frequently to be named (see
+Of these yaml, json and toml return blocks; jsonl, csv and text return
+lists. Inputs that return lists frequently need to be named (see
 below) to allow them to be used.
 
 Usually the format is inferred from file extension but it can be

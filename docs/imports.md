@@ -77,7 +77,7 @@ x: cfg.x
 ```
 
 In cases, where the import format delivers a list rather than a block
-("text", "csv", ...) a name is mandatory:
+("text", "csv", "jsonl", ...) a name is mandatory:
 
 ```eu
 { import: "txns=transactions.csv" }
