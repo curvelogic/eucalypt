@@ -803,7 +803,8 @@ impl<'a> Machine<'a> {
                 }
             }
 
-            if self.metrics.ticks() % gc_check_freq == 0 && self.heap().policy_requires_collection()
+            if self.metrics.ticks().is_multiple_of(gc_check_freq)
+                && self.heap().policy_requires_collection()
             {
                 collect::collect(
                     &self.state,

@@ -104,8 +104,7 @@ impl LineMap {
                 }
             } else {
                 // Hit a marked line - check if we have a sufficient hole
-                if count > 1 && upper.is_some() {
-                    let hole_upper = upper.unwrap();
+                if let Some(hole_upper) = upper.filter(|_| count > 1) {
                     let hole_lower = lower;
 
                     // Apply conservative marking: exclude one line from upper end only
@@ -132,8 +131,7 @@ impl LineMap {
         }
 
         // Check for hole at the beginning of the block
-        if count > 1 && upper.is_some() {
-            let hole_upper = upper.unwrap();
+        if let Some(hole_upper) = upper.filter(|_| count > 1) {
             let hole_lower = lower;
 
             // Apply conservative marking: exclude one line from upper end only

@@ -64,6 +64,10 @@ cons: __CONS
 ` "`head(xs)` - return the head item of list `xs`, panic if empty."
 head: __HEAD
 
+` { doc: "`↑xs` - return first element of list `xs`. Tight-binding prefix operator."
+    precedence: 95 }
+(↑ xs): xs head
+
 ` "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
 nil?: = []
 
