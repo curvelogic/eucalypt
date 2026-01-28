@@ -30,5 +30,5 @@ benchmark_results/
 .beads/sync_base.jsonl
 .beads-wisp/
 
-# Gas Town (added by gt)
-.beads/
+# Local settings
+*.local.json
