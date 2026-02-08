@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Prelude Reference - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Prelude Reference";
+        var mkdocs_page_input_path = "prelude.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Prelude Reference</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#metadata-and-io">Metadata and IO</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#eu-namespace">eu namespace</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#io-namespace">io namespace</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#essentials">Essentials</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#constants">Constants</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#control-flow">Control Flow</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#error-handling">Error Handling</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#lists">Lists</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#basic-operations">Basic Operations</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#list-construction">List Construction</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#transformations">Transformations</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#combining-lists">Combining Lists</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#splitting-lists">Splitting Lists</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#folds-and-scans">Folds and Scans</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#predicates">Predicates</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#sorting">Sorting</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#other">Other</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#blocks">Blocks</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#construction">Construction</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#access">Access</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#merging">Merging</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#transformation">Transformation</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#item-predicates">Item Predicates</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#mutation">Mutation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#booleans">Booleans</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#functions">Functions</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#operators">Operators</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#equality-and-comparison">Equality and Comparison</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#arithmetic">Arithmetic</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#operators_1">Operators</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#functions_1">Functions</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#predicates_1">Predicates</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#strings">Strings</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#character-constants">Character Constants</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#function-combinators">Function Combinators</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#pairs">Pairs</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#metadata">Metadata</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#assertions">Assertions</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#calendar-time">Calendar / Time</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Prelude Reference</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/prelude.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="prelude-reference">Prelude Reference</h1>
+<p>The eucalypt <strong>prelude</strong> is a standard library of functions, operators,
+and constants that is automatically loaded before your code runs.</p>
+<p>You can suppress the prelude with <code>-Q</code> if needed, though this leaves
+a very bare environment (even <code>true</code>, <code>false</code>, and <code>if</code> are defined
+in the prelude).</p>
+<h2 id="metadata-and-io">Metadata and IO</h2>
+<h3 id="eu-namespace"><code>eu</code> namespace</h3>
+<ul>
+<li><code>eu.prelude.version</code> - Version of the standard prelude</li>
+<li><code>eu.build</code> - Build metadata for the eucalypt executable</li>
+</ul>
+<h3 id="io-namespace"><code>io</code> namespace</h3>
+<ul>
+<li><code>io.env</code> - Block of environment variables at launch time</li>
+<li><code>io.epoch-time</code> - Unix timestamp at launch time</li>
+<li><code>io.args</code> - List of command-line arguments passed after <code>--</code> separator</li>
+</ul>
+<h2 id="essentials">Essentials</h2>
+<h3 id="constants">Constants</h3>
+<ul>
+<li><code>null</code> - Null value (exports as <code>null</code> in JSON, <code>~</code> in YAML)</li>
+<li><code>true</code> - Boolean true</li>
+<li><code>false</code> - Boolean false</li>
+<li><code>nil</code> - Empty list <code>[]</code></li>
+</ul>
+<h3 id="control-flow">Control Flow</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>if(c, t, f)</code></td>
+<td>If <code>c</code> is true return <code>t</code>, else <code>f</code></td>
+</tr>
+<tr>
+<td><code>then(t, f, c)</code></td>
+<td>Pipeline-friendly if: <code>x? then(t, f)</code></td>
+</tr>
+<tr>
+<td><code>when(p?, f, x)</code></td>
+<td>When <code>x</code> satisfies <code>p?</code>, apply <code>f</code>, else pass through</td>
+</tr>
+<tr>
+<td><code>cond(l, d)</code></td>
+<td>Select first true condition from list of <code>[condition, value]</code> pairs, else default <code>d</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="error-handling">Error Handling</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>panic(s)</code></td>
+<td>Raise runtime error with message <code>s</code></td>
+</tr>
+<tr>
+<td><code>assert(c, s, v)</code></td>
+<td>If <code>c</code> is true return <code>v</code>, else error with message <code>s</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="lists">Lists</h2>
+<h3 id="basic-operations">Basic Operations</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cons(h, t)</code></td>
+<td>Prepend item <code>h</code> to list <code>t</code></td>
+</tr>
+<tr>
+<td><code>head(xs)</code></td>
+<td>First item of list (error if empty)</td>
+</tr>
+<tr>
+<td><code>↑xs</code></td>
+<td>Tight-binding prefix form of <code>head</code> (prec 95)</td>
+</tr>
+<tr>
+<td><code>head-or(d, xs)</code></td>
+<td>First item or default <code>d</code> if empty</td>
+</tr>
+<tr>
+<td><code>tail(xs)</code></td>
+<td>List without first item (error if empty)</td>
+</tr>
+<tr>
+<td><code>tail-or(d, xs)</code></td>
+<td>List without first item or <code>d</code> if empty</td>
+</tr>
+<tr>
+<td><code>first(xs)</code></td>
+<td>Alias for <code>head</code></td>
+</tr>
+<tr>
+<td><code>second(xs)</code></td>
+<td>Second item of list</td>
+</tr>
+<tr>
+<td><code>second-or(d, xs)</code></td>
+<td>Second item or default <code>d</code></td>
+</tr>
+<tr>
+<td><code>last(l)</code></td>
+<td>Last element of list</td>
+</tr>
+<tr>
+<td><code>nil?(xs)</code></td>
+<td>True if list is empty</td>
+</tr>
+<tr>
+<td><code>nth(n, l)</code></td>
+<td>Return <code>n</code>th item (0-indexed)</td>
+</tr>
+<tr>
+<td><code>l !! n</code></td>
+<td>Operator form of <code>nth</code></td>
+</tr>
+<tr>
+<td><code>count(l)</code></td>
+<td>Number of items in list</td>
+</tr>
+</tbody>
+</table>
+<h3 id="list-construction">List Construction</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>repeat(i)</code></td>
+<td>Infinite list of item <code>i</code></td>
+</tr>
+<tr>
+<td><code>ints-from(n)</code></td>
+<td>Infinite list of integers from <code>n</code> upwards</td>
+</tr>
+<tr>
+<td><code>range(b, e)</code></td>
+<td>List of integers from <code>b</code> to <code>e</code> (exclusive)</td>
+</tr>
+<tr>
+<td><code>cycle(l)</code></td>
+<td>Infinite list cycling elements of <code>l</code></td>
+</tr>
+<tr>
+<td><code>iterate(f, i)</code></td>
+<td>List of <code>i</code>, <code>f(i)</code>, <code>f(f(i))</code>, ...</td>
+</tr>
+</tbody>
+</table>
+<h3 id="transformations">Transformations</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>map(f, l)</code></td>
+<td>Apply <code>f</code> to each element</td>
+</tr>
+<tr>
+<td><code>f &lt;$&gt; l</code></td>
+<td>Operator form of <code>map</code></td>
+</tr>
+<tr>
+<td><code>map2(f, l1, l2)</code></td>
+<td>Map <code>f</code> over two lists in parallel</td>
+</tr>
+<tr>
+<td><code>filter(p?, l)</code></td>
+<td>Keep elements satisfying predicate <code>p?</code></td>
+</tr>
+<tr>
+<td><code>remove(p?, l)</code></td>
+<td>Remove elements satisfying predicate <code>p?</code></td>
+</tr>
+<tr>
+<td><code>reverse(l)</code></td>
+<td>Reverse list</td>
+</tr>
+<tr>
+<td><code>take(n, l)</code></td>
+<td>First <code>n</code> elements</td>
+</tr>
+<tr>
+<td><code>drop(n, l)</code></td>
+<td>List after dropping <code>n</code> elements</td>
+</tr>
+<tr>
+<td><code>take-while(p?, l)</code></td>
+<td>Initial elements while <code>p?</code> is true</td>
+</tr>
+<tr>
+<td><code>take-until(p?, l)</code></td>
+<td>Initial elements while <code>p?</code> is false</td>
+</tr>
+<tr>
+<td><code>drop-while(p?, l)</code></td>
+<td>Skip elements while <code>p?</code> is true</td>
+</tr>
+<tr>
+<td><code>drop-until(p?, l)</code></td>
+<td>Skip elements while <code>p?</code> is false</td>
+</tr>
+</tbody>
+</table>
+<h3 id="combining-lists">Combining Lists</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>append(l1, l2)</code></td>
+<td>Concatenate two lists</td>
+</tr>
+<tr>
+<td><code>l1 ++ l2</code></td>
+<td>Operator form of <code>append</code></td>
+</tr>
+<tr>
+<td><code>prepend(l1, l2)</code></td>
+<td>Concatenate with <code>l1</code> after <code>l2</code></td>
+</tr>
+<tr>
+<td><code>concat(ls)</code></td>
+<td>Concatenate list of lists</td>
+</tr>
+<tr>
+<td><code>mapcat(f, l)</code></td>
+<td>Map then concatenate results</td>
+</tr>
+<tr>
+<td><code>zip(l1, l2)</code></td>
+<td>List of pairs from two lists</td>
+</tr>
+<tr>
+<td><code>zip-with(f, l1, l2)</code></td>
+<td>Apply <code>f</code> to parallel elements</td>
+</tr>
+<tr>
+<td><code>zip-apply(fs, vs)</code></td>
+<td>Apply functions to corresponding values</td>
+</tr>
+</tbody>
+</table>
+<h3 id="splitting-lists">Splitting Lists</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>split-at(n, l)</code></td>
+<td>Split at index <code>n</code>, return pair</td>
+</tr>
+<tr>
+<td><code>split-after(p?, l)</code></td>
+<td>Split where <code>p?</code> becomes false</td>
+</tr>
+<tr>
+<td><code>split-when(p?, l)</code></td>
+<td>Split where <code>p?</code> becomes true</td>
+</tr>
+<tr>
+<td><code>window(n, step, l)</code></td>
+<td>Sliding windows of size <code>n</code> with offset <code>step</code></td>
+</tr>
+<tr>
+<td><code>partition(n, l)</code></td>
+<td>Non-overlapping segments of size <code>n</code></td>
+</tr>
+<tr>
+<td><code>discriminate(pred, xs)</code></td>
+<td>Split into [matches, non-matches]</td>
+</tr>
+</tbody>
+</table>
+<h3 id="folds-and-scans">Folds and Scans</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>foldl(op, i, l)</code></td>
+<td>Left fold with initial value <code>i</code></td>
+</tr>
+<tr>
+<td><code>foldr(op, i, l)</code></td>
+<td>Right fold with final value <code>i</code></td>
+</tr>
+<tr>
+<td><code>scanl(op, i, l)</code></td>
+<td>Left scan (intermediate fold values)</td>
+</tr>
+<tr>
+<td><code>scanr(op, i, l)</code></td>
+<td>Right scan</td>
+</tr>
+</tbody>
+</table>
+<h3 id="predicates">Predicates</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>all(p?, l)</code></td>
+<td>True if all elements satisfy <code>p?</code></td>
+</tr>
+<tr>
+<td><code>all-true?(l)</code></td>
+<td>True if all elements are true</td>
+</tr>
+<tr>
+<td><code>any(p?, l)</code></td>
+<td>True if any element satisfies <code>p?</code></td>
+</tr>
+<tr>
+<td><code>any-true?(l)</code></td>
+<td>True if any element is true</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sorting">Sorting</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qsort(lt, xs)</code></td>
+<td>Sort using less-than function <code>lt</code></td>
+</tr>
+<tr>
+<td><code>group-by(k, xs)</code></td>
+<td>Group by key function, returns block</td>
+</tr>
+</tbody>
+</table>
+<h3 id="other">Other</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>over-sliding-pairs(f, l)</code></td>
+<td>Apply binary <code>f</code> to overlapping pairs</td>
+</tr>
+<tr>
+<td><code>differences(l)</code></td>
+<td>Differences between adjacent numbers</td>
+</tr>
+</tbody>
+</table>
+<h2 id="blocks">Blocks</h2>
+<h3 id="construction">Construction</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>block(kvs)</code></td>
+<td>Construct block from list of <code>[key, value]</code> pairs</td>
+</tr>
+<tr>
+<td><code>pair(k, v)</code></td>
+<td>Create a <code>[key, value]</code> pair</td>
+</tr>
+<tr>
+<td><code>sym(s)</code></td>
+<td>Create symbol from string <code>s</code></td>
+</tr>
+<tr>
+<td><code>tongue(ks, v)</code></td>
+<td>Create nested block from key path to value</td>
+</tr>
+<tr>
+<td><code>zip-kv(ks, vs)</code></td>
+<td>Create block by zipping keys and values</td>
+</tr>
+<tr>
+<td><code>with-keys(ks)</code></td>
+<td>Alias for <code>zip-kv</code></td>
+</tr>
+<tr>
+<td><code>map-as-block(f, syms)</code></td>
+<td>Map symbols and create block</td>
+</tr>
+</tbody>
+</table>
+<h3 id="access">Access</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lookup(s, b)</code></td>
+<td>Look up symbol <code>s</code> in block (error if missing)</td>
+</tr>
+<tr>
+<td><code>lookup-in(b, s)</code></td>
+<td>Same as <code>lookup</code> with swapped args</td>
+</tr>
+<tr>
+<td><code>lookup-or(s, d, b)</code></td>
+<td>Look up with default <code>d</code> if missing</td>
+</tr>
+<tr>
+<td><code>lookup-or-in(b, s, d)</code></td>
+<td>Same with swapped args</td>
+</tr>
+<tr>
+<td><code>lookup-alts(syms, d, b)</code></td>
+<td>Try symbols in order until found</td>
+</tr>
+<tr>
+<td><code>lookup-across(s, d, bs)</code></td>
+<td>Look up in sequence of blocks</td>
+</tr>
+<tr>
+<td><code>lookup-path(ks, b)</code></td>
+<td>Look up nested key path</td>
+</tr>
+<tr>
+<td><code>has(s, b)</code></td>
+<td>True if block has key <code>s</code></td>
+</tr>
+<tr>
+<td><code>elements(b)</code></td>
+<td>List of <code>[key, value]</code> pairs</td>
+</tr>
+<tr>
+<td><code>keys(b)</code></td>
+<td>List of keys</td>
+</tr>
+<tr>
+<td><code>values(b)</code></td>
+<td>List of values</td>
+</tr>
+<tr>
+<td><code>key(pr)</code></td>
+<td>Key from a pair</td>
+</tr>
+<tr>
+<td><code>value(pr)</code></td>
+<td>Value from a pair</td>
+</tr>
+</tbody>
+</table>
+<h3 id="merging">Merging</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>merge(b1, b2)</code></td>
+<td>Shallow merge <code>b2</code> onto <code>b1</code></td>
+</tr>
+<tr>
+<td><code>deep-merge(b1, b2)</code></td>
+<td>Deep merge (nested blocks)</td>
+</tr>
+<tr>
+<td><code>l &lt;&lt; r</code></td>
+<td>Operator for deep merge</td>
+</tr>
+<tr>
+<td><code>merge-all(bs)</code></td>
+<td>Merge list of blocks</td>
+</tr>
+<tr>
+<td><code>merge-at(ks, v, b)</code></td>
+<td>Merge <code>v</code> at key path <code>ks</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="transformation">Transformation</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>map-values(f, b)</code></td>
+<td>Apply <code>f</code> to each value</td>
+</tr>
+<tr>
+<td><code>map-keys(f, b)</code></td>
+<td>Apply <code>f</code> to each key</td>
+</tr>
+<tr>
+<td><code>map-kv(f, b)</code></td>
+<td>Apply <code>f(k, v)</code> to each pair, return list</td>
+</tr>
+<tr>
+<td><code>filter-items(f, b)</code></td>
+<td>Filter items by predicate on pairs</td>
+</tr>
+<tr>
+<td><code>filter-values(p?, b)</code></td>
+<td>Values matching predicate</td>
+</tr>
+<tr>
+<td><code>match-filter-values(re, b)</code></td>
+<td>Values with keys matching regex</td>
+</tr>
+</tbody>
+</table>
+<h3 id="item-predicates">Item Predicates</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>by-key(p?)</code></td>
+<td>Predicate on key</td>
+</tr>
+<tr>
+<td><code>by-key-name(p?)</code></td>
+<td>Predicate on key as string</td>
+</tr>
+<tr>
+<td><code>by-key-match(re)</code></td>
+<td>Predicate matching key against regex</td>
+</tr>
+<tr>
+<td><code>by-value(p?)</code></td>
+<td>Predicate on value</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mutation">Mutation</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alter-value(k, v, b)</code></td>
+<td>Set <code>b.k</code> to <code>v</code></td>
+</tr>
+<tr>
+<td><code>update-value(k, f, b)</code></td>
+<td>Apply <code>f</code> to <code>b.k</code></td>
+</tr>
+<tr>
+<td><code>alter(ks, v, b)</code></td>
+<td>Set value at nested key path</td>
+</tr>
+<tr>
+<td><code>update(ks, f, b)</code></td>
+<td>Apply <code>f</code> at nested key path</td>
+</tr>
+<tr>
+<td><code>update-value-or(k, f, d, b)</code></td>
+<td>Update or add with default</td>
+</tr>
+<tr>
+<td><code>set-value(k, v, b)</code></td>
+<td>Set value, adding if absent</td>
+</tr>
+</tbody>
+</table>
+<h2 id="booleans">Booleans</h2>
+<h3 id="functions">Functions</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not(b)</code></td>
+<td>Toggle boolean</td>
+</tr>
+<tr>
+<td><code>and(l, r)</code></td>
+<td>Logical and</td>
+</tr>
+<tr>
+<td><code>or(l, r)</code></td>
+<td>Logical or</td>
+</tr>
+</tbody>
+</table>
+<h3 id="operators">Operators</h3>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>!x</code> or <code>¬x</code></td>
+<td>Not (prefix)</td>
+</tr>
+<tr>
+<td><code>l &amp;&amp; r</code> or <code>l ∧ r</code></td>
+<td>And</td>
+</tr>
+<tr>
+<td><code>l \|\| r</code> or <code>l ∨ r</code></td>
+<td>Or</td>
+</tr>
+</tbody>
+</table>
+<h2 id="equality-and-comparison">Equality and Comparison</h2>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>l = r</code></td>
+<td>Equality</td>
+</tr>
+<tr>
+<td><code>l != r</code></td>
+<td>Inequality</td>
+</tr>
+<tr>
+<td><code>l &lt; r</code></td>
+<td>Less than</td>
+</tr>
+<tr>
+<td><code>l &gt; r</code></td>
+<td>Greater than</td>
+</tr>
+<tr>
+<td><code>l &lt;= r</code></td>
+<td>Less than or equal</td>
+</tr>
+<tr>
+<td><code>l &gt;= r</code></td>
+<td>Greater than or equal</td>
+</tr>
+</tbody>
+</table>
+<h2 id="arithmetic">Arithmetic</h2>
+<h3 id="operators_1">Operators</h3>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>l + r</code></td>
+<td>Addition</td>
+</tr>
+<tr>
+<td><code>l - r</code></td>
+<td>Subtraction</td>
+</tr>
+<tr>
+<td><code>l * r</code></td>
+<td>Multiplication</td>
+</tr>
+<tr>
+<td><code>l / r</code></td>
+<td>Division</td>
+</tr>
+<tr>
+<td><code>l % r</code></td>
+<td>Modulus</td>
+</tr>
+<tr>
+<td><code>∸ n</code></td>
+<td>Unary minus (negate)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="functions_1">Functions</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>inc(x)</code></td>
+<td>Increment by 1</td>
+</tr>
+<tr>
+<td><code>dec(x)</code></td>
+<td>Decrement by 1</td>
+</tr>
+<tr>
+<td><code>negate(n)</code></td>
+<td>Negate number</td>
+</tr>
+<tr>
+<td><code>num(s)</code></td>
+<td>Parse number from string</td>
+</tr>
+<tr>
+<td><code>floor(n)</code></td>
+<td>Round down to integer</td>
+</tr>
+<tr>
+<td><code>ceiling(n)</code></td>
+<td>Round up to integer</td>
+</tr>
+<tr>
+<td><code>max(l, r)</code></td>
+<td>Maximum of two numbers</td>
+</tr>
+<tr>
+<td><code>min(l, r)</code></td>
+<td>Minimum of two numbers</td>
+</tr>
+<tr>
+<td><code>max-of(l)</code></td>
+<td>Maximum in list</td>
+</tr>
+<tr>
+<td><code>min-of(l)</code></td>
+<td>Minimum in list</td>
+</tr>
+</tbody>
+</table>
+<h3 id="predicates_1">Predicates</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>zero?(n)</code></td>
+<td>True if <code>n</code> is 0</td>
+</tr>
+<tr>
+<td><code>pos?(n)</code></td>
+<td>True if <code>n</code> is positive</td>
+</tr>
+<tr>
+<td><code>neg?(n)</code></td>
+<td>True if <code>n</code> is negative</td>
+</tr>
+</tbody>
+</table>
+<h2 id="strings">Strings</h2>
+<p>The <code>str</code> namespace contains string functions:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>str.of(e)</code></td>
+<td>Convert to string</td>
+</tr>
+<tr>
+<td><code>str.split(s, re)</code></td>
+<td>Split string on regex</td>
+</tr>
+<tr>
+<td><code>str.split-on(re, s)</code></td>
+<td>Split (pipeline-friendly)</td>
+</tr>
+<tr>
+<td><code>str.join(l, s)</code></td>
+<td>Join list with separator</td>
+</tr>
+<tr>
+<td><code>str.join-on(s, l)</code></td>
+<td>Join (pipeline-friendly)</td>
+</tr>
+<tr>
+<td><code>str.match(s, re)</code></td>
+<td>Match regex, return captures</td>
+</tr>
+<tr>
+<td><code>str.match-with(re, s)</code></td>
+<td>Match (pipeline-friendly)</td>
+</tr>
+<tr>
+<td><code>str.matches(s, re)</code></td>
+<td>All matches of regex</td>
+</tr>
+<tr>
+<td><code>str.matches-of(re, s)</code></td>
+<td>All matches (pipeline-friendly)</td>
+</tr>
+<tr>
+<td><code>str.matches?(re, s)</code></td>
+<td>True if regex matches full string</td>
+</tr>
+<tr>
+<td><code>str.extract(re, s)</code></td>
+<td>Extract single capture</td>
+</tr>
+<tr>
+<td><code>str.extract-or(re, d, s)</code></td>
+<td>Extract with default</td>
+</tr>
+<tr>
+<td><code>str.suffix(b, a)</code></td>
+<td>Suffix <code>b</code> onto <code>a</code></td>
+</tr>
+<tr>
+<td><code>str.prefix(b, a)</code></td>
+<td>Prefix <code>b</code> onto <code>a</code></td>
+</tr>
+<tr>
+<td><code>str.letters(s)</code></td>
+<td>List of characters</td>
+</tr>
+<tr>
+<td><code>str.len(s)</code></td>
+<td>String length</td>
+</tr>
+<tr>
+<td><code>str.fmt(x, spec)</code></td>
+<td>Printf-style formatting</td>
+</tr>
+<tr>
+<td><code>str.to-upper(s)</code></td>
+<td>Convert to upper case</td>
+</tr>
+<tr>
+<td><code>str.to-lower(s)</code></td>
+<td>Convert to lower case</td>
+</tr>
+</tbody>
+</table>
+<h3 id="character-constants">Character Constants</h3>
+<p>The <code>ch</code> namespace provides special characters:</p>
+<ul>
+<li><code>ch.n</code> - Newline</li>
+<li><code>ch.t</code> - Tab</li>
+<li><code>ch.dq</code> - Double quote</li>
+</ul>
+<h2 id="function-combinators">Function Combinators</h2>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>identity(v)</code></td>
+<td>Return <code>v</code> unchanged</td>
+</tr>
+<tr>
+<td><code>const(k)</code></td>
+<td>Function that always returns <code>k</code></td>
+</tr>
+<tr>
+<td><code>-&gt; k</code></td>
+<td>Operator form of <code>const</code></td>
+</tr>
+<tr>
+<td><code>compose(f, g, x)</code></td>
+<td>Apply <code>f</code> to <code>g(x)</code></td>
+</tr>
+<tr>
+<td><code>f ∘ g</code></td>
+<td>Composition: <code>g</code> then <code>f</code></td>
+</tr>
+<tr>
+<td><code>f ; g</code></td>
+<td>Composition: <code>f</code> then <code>g</code></td>
+</tr>
+<tr>
+<td><code>l @ r</code></td>
+<td>Application: <code>l(r)</code></td>
+</tr>
+<tr>
+<td><code>apply(f, xs)</code></td>
+<td>Apply <code>f</code> to args in list</td>
+</tr>
+<tr>
+<td><code>flip(f)</code></td>
+<td>Swap argument order</td>
+</tr>
+<tr>
+<td><code>complement(p?)</code></td>
+<td>Invert predicate</td>
+</tr>
+<tr>
+<td><code>curry(f)</code></td>
+<td>Convert <code>f([x,y])</code> to <code>f(x,y)</code></td>
+</tr>
+<tr>
+<td><code>uncurry(f)</code></td>
+<td>Convert <code>f(x,y)</code> to <code>f([x,y])</code></td>
+</tr>
+<tr>
+<td><code>juxt(f, g, x)</code></td>
+<td>Return <code>[f(x), g(x)]</code></td>
+</tr>
+<tr>
+<td><code>fnil(f, v, x)</code></td>
+<td>Replace null with <code>v</code> before applying <code>f</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="pairs">Pairs</h2>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pair(k, v)</code></td>
+<td>Create pair <code>[k, v]</code></td>
+</tr>
+<tr>
+<td><code>bimap(f, g, pr)</code></td>
+<td>Apply <code>f</code> to first, <code>g</code> to second</td>
+</tr>
+<tr>
+<td><code>map-first(f, prs)</code></td>
+<td>Apply <code>f</code> to first elements</td>
+</tr>
+<tr>
+<td><code>map-second(f, prs)</code></td>
+<td>Apply <code>f</code> to second elements</td>
+</tr>
+</tbody>
+</table>
+<h2 id="metadata">Metadata</h2>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>with-meta(m, e)</code></td>
+<td>Add metadata block <code>m</code> to expression <code>e</code></td>
+</tr>
+<tr>
+<td><code>e // m</code></td>
+<td>Operator form of <code>with-meta</code></td>
+</tr>
+<tr>
+<td><code>meta(e)</code></td>
+<td>Retrieve metadata from expression</td>
+</tr>
+<tr>
+<td><code>merge-meta(m, e)</code></td>
+<td>Merge into existing metadata</td>
+</tr>
+<tr>
+<td><code>e //&lt;&lt; m</code></td>
+<td>Operator form of <code>merge-meta</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="assertions">Assertions</h3>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>e //= v</code></td>
+<td>Check if <code>e</code> equals <code>v</code>, return boolean</td>
+</tr>
+<tr>
+<td><code>e //=&gt; v</code></td>
+<td>Assert <code>e</code> equals <code>v</code>, return <code>e</code> or panic</td>
+</tr>
+<tr>
+<td><code>e //=? f</code></td>
+<td>Assert <code>e</code> satisfies predicate <code>f</code></td>
+</tr>
+<tr>
+<td><code>e //!? f</code></td>
+<td>Assert <code>e</code> does not satisfy <code>f</code></td>
+</tr>
+<tr>
+<td><code>e //!</code></td>
+<td>Assert <code>e</code> is true</td>
+</tr>
+<tr>
+<td><code>e //!!</code></td>
+<td>Assert <code>e</code> is false</td>
+</tr>
+</tbody>
+</table>
+<h2 id="calendar-time">Calendar / Time</h2>
+<p>The <code>cal</code> namespace provides date/time functions:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cal.now</code></td>
+<td>Current time as fields block</td>
+</tr>
+<tr>
+<td><code>cal.epoch</code></td>
+<td>Unix epoch as fields block</td>
+</tr>
+<tr>
+<td><code>cal.zdt(y,m,d,H,M,S,Z)</code></td>
+<td>Create zoned datetime</td>
+</tr>
+<tr>
+<td><code>cal.datetime(b)</code></td>
+<td>Create from block with defaults</td>
+</tr>
+<tr>
+<td><code>cal.parse(s)</code></td>
+<td>Parse ISO8601 string</td>
+</tr>
+<tr>
+<td><code>cal.format(t)</code></td>
+<td>Format as ISO8601</td>
+</tr>
+<tr>
+<td><code>cal.fields(t)</code></td>
+<td>Decompose to <code>{y,m,d,H,M,S,Z}</code> block</td>
+</tr>
+</tbody>
+</table>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../yaml-embedding/" class="btn btn-neutral float-left" title="YAML Embedding"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../tester/" class="btn btn-neutral float-right" title="Testing">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../yaml-embedding/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../tester/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

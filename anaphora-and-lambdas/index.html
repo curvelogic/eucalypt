@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Anaphora and Lambdas - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Anaphora and Lambdas";
+        var mkdocs_page_input_path = "anaphora-and-lambdas.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Anaphora and Lambdas</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#named-functions">Named functions</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#expression-anaphora">Expression Anaphora</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#sections">Sections</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#block-anaphora">Block Anaphora</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#pseudo-lambdas">Pseudo-lambdas</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#string-anaphora">String Anaphora</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#summary">Summary</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Anaphora and Lambdas</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/anaphora-and-lambdas.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="anaphora-and-lambdas">Anaphora and Lambdas</h1>
+<p>Eucalypt doesn't have a lambda syntax in itself and prefers to
+encourage other approaches in most cases where you would use a lambda.</p>
+<ul>
+<li>named functions</li>
+<li>function values from composites, combinators, partials</li>
+<li>anaphoric expressions, blocks or strings</li>
+</ul>
+<p>However, through the combination of two Eucalypt features, namely
+<em>block anaphora</em> and <em>generalised lookup</em>, you can express arbitrary
+lambdas as we'll see below.</p>
+<p>The various alternatives are considered one by one.</p>
+<h2 id="named-functions">Named functions</h2>
+<p>Very likely, the clearest way to square a list of numbers is to map an
+explicitly named <code>square</code> function across it.</p>
+<pre><code class="language-eu">square(x): x * x
+squares: [1, 2, 3] map(square) //=&gt; [1, 4, 9]
+</code></pre>
+<p>The drawbacks of this are:
+- polluting a namespace with a name that is need only once
+- arguably, a slightly tedious verbosity</p>
+<p>The first can be dealt with as follows:</p>
+<pre><code class="language-eu">squares: { square(x): x * x }.([1, 2, 3] map(square)) //=&gt; [1, 4, 9]
+</code></pre>
+<p>This exploits a feature called <em>generalised lookup</em>.</p>
+<p>Why "generalised lookup"? In the simple case below, the dot signifies
+the "lookup" of key <code>a</code> in the block preceding the dot:</p>
+<pre><code class="language-eu">x: { a: 3 b: 4 }.a //=&gt; 3
+</code></pre>
+<p>We can generalise this by allowing arbitrary expressions in place of
+the <code>a</code> by evaluating the expression after the dot in the context of
+the namespace introduced by the block to the left.</p>
+<pre><code class="language-eu">x: { a: 3 b: 4 }.(a + b) //=&gt; 7
+</code></pre>
+<p>It works for any expression after the dot:</p>
+<pre><code class="language-eu">x: { a: 3 b: 4 }.[a, b] //=&gt; [3, 4]
+y: { a: 3 b: 4 }.{ c: a + b } //=&gt; { c: 7 }
+z: { a: 3 b: 4 }.&quot;{a} and {b}&quot; //=&gt; &quot;3 and 4&quot;
+</code></pre>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This is very effective for short and simple expressions but
+quickly gets very complicated and hard to understand if you use it
+too much. Nested or iterated generalised lookups are usually a bad idea.</p>
+</div>
+<p>In the <code>squares</code> example above, generalised lookup is used to restrict
+the scope in which <code>square</code> is visible right down to the only
+expression which needs it.</p>
+<p>However in the case of a simple expression like the squaring example,
+a neater approach is to use <em>expression anaphora</em>.</p>
+<h2 id="expression-anaphora">Expression Anaphora</h2>
+<p>Any expression can become a function by referring to implicit
+parameters known as expression anaphora.</p>
+<p>These parameters are called <code>_0</code>, <code>_1</code> <code>_2</code>, and so on. There is also
+an unnumbered anaphorus, <code>_</code>, which we'll come back to.</p>
+<p>Just referring to these parameters is enough to turn an expression
+into a lambda.</p>
+<p>So an expression that refers <code>_0</code> and <code>_1</code> actually defines a function
+accepting two parameters:</p>
+<pre><code class="language-eu">xs: zip-with(f, [1, 2, 3], [1, 2, 3]) //=&gt; [3, 6, 9]
+
+# or more succinctly
+xs: zip-with(_0 + 2 * _1, [1, 2, 3], [1, 2, 3]) //=&gt; [3, 6, 9]
+</code></pre>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Again, anaphora intended for use in simple cases where they are
+readable and readily understood. The scope of the implicit parameters
+is not easy to work out in complicated contexts. (It does not
+extend past catenation or commas in lists or function application
+tuples.) Anaphoric expressions are not, and not intended to be, a fully general lambda
+syntax. Unlike explicit lambda constructions, you cannot nest anaphoric expressions.</p>
+</div>
+<pre><code class="language-eu">squares: [1, 2, 3] map(_0 * _0) //=&gt; [1, 4, 9]
+</code></pre>
+<p>In cases where the position of the anaphora in the expression matches
+the parameter positions in the function call, you can omit the
+numbers. So, for instance, <code>_0 + _1</code> can simply be written <code>_ + _</code>,
+and <code>_0 * _1 + x * _2</code> can be written <code>_ * _ + x * _</code>.</p>
+<p>Each <code>_</code> represents a <em>different</em> implicit parameter, which is why we
+had to write <code>_0 * _0</code> in our squares example - it was important that
+the same parameter was reference twice.</p>
+<p>Sometime you need explicit parentheses to clarify the scope of
+expression anaphora:</p>
+<pre><code class="language-eu">block: { a: 1 b: 2 }
+
+x: block (_.a) //=&gt; 1
+y: block lookup(:a) //=&gt; 1
+#
+# BUT NOT: block _.a
+#
+
+</code></pre>
+<h2 id="sections">Sections</h2>
+<p>Even more conciseness is on offer in some cases where the anaphora can
+be entirely omitted. Eucalypt will automatically insert anaphora
+when it detects <em>gaps</em> in an expression based on its knowledge of an
+operator's type.</p>
+<p>So it will automatically read <code>(1 +)</code> as <code>(1 + _)</code>, for example,
+defining a function of one parameter. Or <code>(*)</code> as <code>(_ * _)</code>, defining
+a function of two parameters. The parentheses may not even be
+necessary to delimit the expression:</p>
+<pre><code class="language-eu">x: foldl(+, 0, [1, 2, 3]) = 6
+</code></pre>
+<p>Again, use of sections is recommended only for short expressions or
+where the intention is obvious. This level of tersity can lead to
+baffling code if abused.</p>
+<h2 id="block-anaphora">Block Anaphora</h2>
+<p>Expression anaphora are scoped by an expression which is roughly
+defined as something within parentheses or something which can be the
+right hand side of a declaration.</p>
+<p>Sometimes however you would like to define a block-valued function.
+Imagine you wanted a two-parameter function which placed the
+parameters in a block with keys <code>x</code> and <code>y</code>:</p>
+<pre><code class="language-eu">f(x, y): {x: x y: y }
+</code></pre>
+<p>An attempt to define this using expression anaphora would fail. This
+defines a block with two identity functions:</p>
+<pre><code class="language-eu">f: {x: _ y: _ }
+</code></pre>
+<p>Instead, you can use <em>block anaphora</em> which are scoped by the block
+that contains them.</p>
+<p>The block anaphora are named <code>•0</code>, <code>•1</code>, <code>•2</code> with a special
+unnumbered anaphor <code>•</code>, playing the same role as <code>_</code> does for
+expression anaphora.</p>
+<p><code>•</code> is the BULLET character (usually Option-8 on a Mac but you may
+find other convenient ways to type it). The slightly awkward character
+is chosen firstly because it looks like a hole and therefore makes
+sense as a placeholder, and secondly to discourage overuse of the
+feature...</p>
+<p>The following defines the function we want</p>
+<pre><code class="language-eu">f: { x: • y: • }
+</code></pre>
+<p>...and can, of course, be used</p>
+<pre><code class="language-eu">x: [[1, 2], [3, 4], [5, 6]] map({ x: • y: • } uncurry)
+</code></pre>
+<h2 id="pseudo-lambdas">Pseudo-lambdas</h2>
+<p>Astute observers may realise that by combining generalised lookup and
+block anaphora you end up with something that's not a million miles
+away from a lambda syntax:</p>
+<pre><code class="language-eu">f: { x: • y: • }.(x + y)
+</code></pre>
+<p>Indeed this does allow declaration of anonymous functions with named
+parameters and can occasionally be useful but it still falls short of
+a fully general lambda construction because it cannot (at least for
+now) be nested.</p>
+<h2 id="string-anaphora">String Anaphora</h2>
+<p>Analogously, Eucalypt's string interpolation syntax allows the use of
+anaphora <code>{0}</code>, <code>{1}</code>, <code>{2}</code> and the unnumbered <code>{}</code> to define
+functions which return strings.</p>
+<pre><code class="language-eu">x: [1, 2, 3] map(&quot;#{}&quot;) //=&gt; [&quot;#1&quot;, &quot;#2&quot;, &quot;#3&quot;]
+</code></pre>
+<h2 id="summary">Summary</h2>
+<p>There are lots of ways to define functions but the clearest is just
+defining them with names using function declarations and for anything
+even slightly complicated this should be the default. The only things
+you should be tempted to define on the spot are things that are simple
+enough that the various species of anaphora can handle them neatly.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../operators-and-identifiers/" class="btn btn-neutral float-left" title="Operators and Identifiers"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../command-line/" class="btn btn-neutral float-right" title="Command Line">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../operators-and-identifiers/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../command-line/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Syntax Gotchas - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Syntax Gotchas";
+        var mkdocs_page_input_path = "syntax-gotchas.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Syntax Gotchas</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#operator-precedence-issues">Operator Precedence Issues</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#field-access-vs-catenation">Field Access vs Catenation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#anaphora-and-function-syntax">Anaphora and Function Syntax</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#lambda-syntax-does-not-exist">Lambda Syntax Does Not Exist</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#single-quote-identifiers">Single Quote Identifiers</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#single-quotes-are-not-string-delimiters">Single Quotes Are Not String Delimiters</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#future-improvements">Future Improvements</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#contributing">Contributing</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Syntax Gotchas</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/syntax-gotchas.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="syntax-gotchas">Syntax Gotchas</h1>
+<p>This document records unintuitive consequences of Eucalypt's syntax design decisions that can lead to subtle bugs or confusion. These are documented here until such time as we can implement a linter or improve error messages to catch them more clearly.</p>
+<h2 id="operator-precedence-issues">Operator Precedence Issues</h2>
+<h3 id="field-access-vs-catenation">Field Access vs Catenation</h3>
+<p><strong>Problem</strong>: The lookup operator (<code>.</code>) has higher precedence (90) than catenation (precedence 20), which can lead to unexpected parsing.</p>
+<p><strong>Gotcha</strong>: Writing <code>objects head.id</code> is parsed as <code>objects (head.id)</code> rather than <code>(objects head).id</code>.</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-eu"># This doesn't work as expected:
+objects: range(0, 5) map({ id: _ })
+result: objects head.id  # Parsed as: objects (head.id)
+
+# Correct syntax requires parentheses:
+result: (objects head).id  # Explicitly groups the field access
+</code></pre>
+<p><strong>Error Message</strong>: When this occurs, you may see confusing errors like:
+- <code>cannot return function into case table without default</code>
+- <code>bad index 18446744073709551615 into environment</code> (under memory pressure)</p>
+<p><strong>Solution</strong>: Always use parentheses to group the expression you want to access fields from:
+- Use <code>(expression).field</code> instead of <code>expression target.field</code>
+- Be explicit about precedence when combining catenation with field access</p>
+<p><strong>Reference</strong>: Operator precedences are defined in <code>src/core/metadata.rs:165-186</code>:
+- <code>lookup</code> (<code>.</code>): precedence 90
+- <code>cat</code> (catenation): precedence 20</p>
+<h2 id="anaphora-and-function-syntax">Anaphora and Function Syntax</h2>
+<h3 id="lambda-syntax-does-not-exist">Lambda Syntax Does Not Exist</h3>
+<p><strong>Problem</strong>: Eucalypt does not have lambda expressions like other functional languages.</p>
+<p><strong>Gotcha</strong>: Attempting to write lambda-style syntax will cause syntax errors.</p>
+<p><strong>Invalid Examples</strong>:</p>
+<pre><code class="language-eu"># These syntaxes DO NOT exist in Eucalypt:
+map(\x -&gt; x + 1)     # Invalid
+map(|x| x + 1)       # Invalid  
+map(fn(x) =&gt; x + 1)  # Invalid
+map(λx.x + 1)        # Invalid
+</code></pre>
+<p><strong>Correct Approach</strong>: Use anaphora (<code>_</code>, <code>_0</code>, <code>_1</code>, etc.) or define named functions:</p>
+<pre><code class="language-eu"># Using anaphora:
+map(_ + 1)
+
+# Using named function:
+add-one(x): x + 1
+map(add-one)
+
+# Using block with anaphora for complex expressions:
+map({ result: _ + 1, doubled: _ * 2 })
+</code></pre>
+<p><strong>Reference</strong>: See <code>docs/anaphora-and-lambdas.md</code> for detailed explanation of anaphora usage.</p>
+<h2 id="single-quote-identifiers">Single Quote Identifiers</h2>
+<h3 id="single-quotes-are-not-string-delimiters">Single Quotes Are Not String Delimiters</h3>
+<p><strong>Problem</strong>: Single quotes (<code>'</code>) in Eucalypt are used to create identifiers, not strings.</p>
+<p><strong>Gotcha</strong>: Coming from languages where single quotes delimit strings, developers might expect <code>'text'</code> to be a string literal.</p>
+<p><strong>Key Rules</strong>:
+- Single quotes create <strong>normal identifiers</strong> that can contain any characters
+- The identifier name is the content <em>between</em> the quotes (quotes are stripped)
+- This is the only use of single quotes in Eucalypt
+- String literals use double quotes (<code>"</code>) only</p>
+<p><strong>Examples</strong>:</p>
+<pre><code class="language-eu"># Single quotes create identifiers (variable names):
+'my-file.txt': &quot;content&quot;     # Creates identifier: my-file.txt
+home: {
+  '.bashrc': false           # Creates identifier: .bashrc  
+  '.emacs.d': false          # Creates identifier: .emacs.d
+  'notes.txt': true          # Creates identifier: notes.txt
+}
+
+# Access using lookup:
+z: home.'notes.txt'          # Looks up identifier: notes.txt
+
+# NOT string literals:
+'hello' = 'hello'            # Compares two variable references (not strings)
+&quot;hello&quot; = &quot;hello&quot;            # Compares two string literals (correct)
+</code></pre>
+<p><strong>Common Mistake</strong>: Using single quotes for strings in test data or evidence files:</p>
+<pre><code class="language-eu"># Incorrect (this references a variable):
+stdout: 'default-yaml-stdout-text'
+
+# Correct (this would be a string, if that's what you wanted):  
+stdout: &quot;default-yaml-stdout-text&quot;
+</code></pre>
+<p><strong>Implementation Note</strong>: In the Rowan parser, single-quoted identifiers are lexed as <code>SINGLE_QUOTE_IDENTIFIER</code> tokens and the content between quotes is extracted by the <code>ContainsName::name_range()</code> method.</p>
+<p><strong>Reference</strong>: See <code>docs/operators-and-identifiers.md</code> for complete identifier syntax rules.</p>
+<h2 id="future-improvements">Future Improvements</h2>
+<p>These gotchas highlight areas where the language could benefit from:</p>
+<ol>
+<li><strong>Better Error Messages</strong>: More specific error messages when precedence issues occur</li>
+<li><strong>Linting Rules</strong>: Static analysis to catch common precedence mistakes  </li>
+<li><strong>IDE Support</strong>: Syntax highlighting and warnings for ambiguous expressions</li>
+<li><strong>Documentation</strong>: Better examples showing correct precedence usage</li>
+</ol>
+<h2 id="contributing">Contributing</h2>
+<p>When you encounter a new syntax gotcha, please add it to this document with:
+- A clear description of the problem
+- Example of incorrect usage
+- Example of correct usage<br />
+- The error message(s) that result
+- Reference to relevant code or documentation</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../syntax/" class="btn btn-neutral float-left" title="Syntax"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../operators-and-identifiers/" class="btn btn-neutral float-right" title="Operators and Identifiers">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../syntax/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../operators-and-identifiers/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

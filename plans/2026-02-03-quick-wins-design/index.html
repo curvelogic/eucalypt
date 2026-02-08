@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Quick Wins Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Quick Wins Design";
+        var mkdocs_page_input_path = "plans/2026-02-03-quick-wins-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Quick Wins Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-03-quick-wins-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="quick-wins-design">Quick Wins Design</h1>
+<p>Date: 2026-02-03</p>
+<h2 id="overview">Overview</h2>
+<p>Five small, well-defined features that follow established patterns in
+the codebase. Each is independent and can be implemented in any order.</p>
+<ol>
+<li><strong>Catch <code>{name: name}</code> recursion</strong> (eu-dlr) — static + runtime cycle detection</li>
+<li><strong>min/max for ZDTs</strong> (eu-u1m) — polymorphic comparison operators</li>
+<li><strong>Version assertions</strong> (eu-nbc) — <code>eu.requires("&gt;=0.2.0")</code></li>
+<li><strong>Base64 encoding</strong> (eu-dyx) — encode/decode intrinsics</li>
+<li><strong>Hash built-ins</strong> (eu-dd5) — SHA-256 intrinsic</li>
+</ol>
+<hr />
+<h2 id="1-catch-name-name-recursion-eu-dlr">1. Catch <code>{name: name}</code> Recursion (eu-dlr)</h2>
+<h3 id="problem">Problem</h3>
+<p>The pattern <code>{name: name}</code> is a common mistake for developers coming
+from other languages. Eucalypt currently enters an infinite loop
+instead of providing a helpful error message. The thunk enters itself,
+pushes an Update continuation, and re-enters endlessly.</p>
+<h3 id="approach-two-layers-of-protection">Approach: Two layers of protection</h3>
+<h4 id="layer-1-static-check-in-cook-phase">Layer 1: Static check in cook phase</h4>
+<p>After soup processing / varification, walk each <code>Let</code> binding's body.
+If the body is a bare <code>Var::Free(fv)</code> where <code>fv.pretty_name</code> matches
+the binding's own name (and there is no intervening scope that shadows
+it), emit a compile error: "binding 'name' refers to itself".</p>
+<p>Also detect simple mutual cycles like <code>{a: b, b: a}</code> within the same
+let block by building a reference graph among the block's bindings and
+checking for cycles.</p>
+<p><strong>Location</strong>: New function in <code>src/core/cook/mod.rs</code> or a small new
+module <code>src/core/verify/self_ref.rs</code>. Runs after varification, before
+inline/simplify.</p>
+<p><strong>Performance</strong>: Gate with before/after timing using the existing
+<code>Timings</code> infrastructure. The cook phase already has a timing entry.
+If the check is measurable, scope it to only check
+<code>LetType::DefaultBlockLet</code> bindings (blocks, where the mistake
+actually occurs) rather than all let expressions.</p>
+<h4 id="layer-2-runtime-blackhole">Layer 2: Runtime BlackHole</h4>
+<p>When entering a thunk (the code path in <code>vm.rs</code> that pushes
+<code>Continuation::Update</code>), overwrite the binding in the environment
+with a BlackHole sentinel before evaluation. If evaluation re-enters
+the same binding, it hits the BlackHole and raises
+<code>ExecutionError::BlackHole</code>. When the Update continuation fires
+successfully, the BlackHole is replaced with the computed value
+(which Update already does).</p>
+<p>The <code>ExecutionError::BlackHole</code> variant already exists but is
+currently unused. This catches any cycle that the static check
+misses (indirect cycles through multiple levels of indirection).</p>
+<p><strong>Important</strong>: This does not affect benign recursion. Functions are
+compiled as lambda forms (already in WHNF), not thunks. They never
+get an Update continuation, so the BlackHole overwrite never happens.</p>
+<h3 id="files-changed">Files changed</h3>
+<ul>
+<li><code>src/core/cook/mod.rs</code> or <code>src/core/verify/self_ref.rs</code> — static
+  cycle detection</li>
+<li><code>src/eval/machine/vm.rs</code> — BlackHole overwrite at thunk entry</li>
+<li><code>src/eval/memory/syntax.rs</code> — BlackHole sentinel value</li>
+<li><code>src/eval/machine/error.rs</code> — improve BlackHole error message with
+  binding context</li>
+</ul>
+<h3 id="testing">Testing</h3>
+<ul>
+<li>New harness error test for <code>{name: name}</code> — compile error, not hang</li>
+<li>New harness error test for <code>{a: b, b: a}</code> — compile error</li>
+<li>New harness error test for indirect runtime cycle — BlackHole error</li>
+<li>Existing recursive programs (fibonacci etc.) continue to work</li>
+<li>Before/after timing of cook phase to verify no performance
+  regression</li>
+</ul>
+<hr />
+<h2 id="2-minmax-for-zdts-eu-u1m">2. min/max for ZDTs (eu-u1m)</h2>
+<h3 id="problem_1">Problem</h3>
+<p>The prelude <code>min</code> and <code>max</code> functions use <code>&lt;</code> and <code>&gt;</code> operators, which
+only work on numbers. ZDT values (<code>DateTime&lt;FixedOffset&gt;</code>) implement
+<code>PartialOrd</code> and <code>Ord</code> via chrono but the comparison intrinsics do not
+handle them.</p>
+<h3 id="approach-make-comparison-operators-polymorphic">Approach: Make comparison operators polymorphic</h3>
+<p>Extend <code>Lt</code>, <code>Gt</code>, <code>Lte</code>, <code>Gte</code> in <code>arith.rs</code> to handle <code>Native::Zdt</code>
+and <code>Native::Str</code>/<code>Native::Sym</code> values, following the same pattern as
+<code>EQ</code> in <code>eq.rs</code> which already handles multiple types polymorphically:</p>
+<pre><code class="language-rust">fn execute(&amp;self, ..., args: &amp;[Ref]) -&gt; Result&lt;(), ExecutionError&gt; {
+    let x = machine.nav(view).resolve_native(&amp;args[0])?;
+    let y = machine.nav(view).resolve_native(&amp;args[1])?;
+    match (x, y) {
+        (Native::Num(nx), Native::Num(ny)) =&gt; {
+            // existing numeric comparison
+        }
+        (Native::Zdt(dx), Native::Zdt(dy)) =&gt; {
+            machine_return_bool(machine, view, dx &lt; dy)
+        }
+        (Native::Str(sx), Native::Str(sy)) =&gt; {
+            machine_return_bool(machine, view, sx &lt; sy)
+        }
+        (Native::Sym(sx), Native::Sym(sy)) =&gt; {
+            // compare by resolved string, not by SymbolId
+            machine_return_bool(machine, view, pool.resolve(sx) &lt; pool.resolve(sy))
+        }
+        _ =&gt; Err(ExecutionError::TypeMismatch(...))
+    }
+}
+</code></pre>
+<p>This means <code>min</code>, <code>max</code>, and <code>sort-by(key, lt)</code> in the prelude
+automatically work for ZDTs and strings with no prelude changes.</p>
+<p><strong>Note</strong>: Symbol comparison uses the resolved string (lexicographic),
+not the interned ID (which reflects insertion order). This ensures
+<code>sort-keys</code> produces alphabetical output regardless of interning order.</p>
+<h3 id="files-changed_1">Files changed</h3>
+<ul>
+<li><code>src/eval/stg/arith.rs</code> — extend <code>Lt</code>, <code>Gt</code>, <code>Lte</code>, <code>Gte</code> to
+  handle <code>Native::Zdt</code>, <code>Native::Str</code>, and <code>Native::Sym</code></li>
+</ul>
+<h3 id="testing_1">Testing</h3>
+<ul>
+<li>New harness test: ZDT comparison operators return correct booleans</li>
+<li>New harness test: string comparison operators return correct booleans</li>
+<li>New harness test: symbol comparison with lexicographic ordering</li>
+<li>New harness test: <code>min</code> / <code>max</code> with ZDT values</li>
+<li>New harness test: <code>min</code> / <code>max</code> with string values</li>
+<li>Existing numeric comparison tests unchanged</li>
+</ul>
+<hr />
+<h2 id="3-version-assertions-eu-nbc">3. Version Assertions (eu-nbc)</h2>
+<h3 id="problem_2">Problem</h3>
+<p>Scripts should be able to declare which eucalypt version they require,
+with fail-fast behaviour if requirements are not met.</p>
+<h3 id="approach-requires-intrinsic-with-semver-crate">Approach: <code>REQUIRES</code> intrinsic with semver crate</h3>
+<p>Add <code>semver</code> to <code>Cargo.toml</code> dependencies. New intrinsic <code>REQUIRES</code>
+that:</p>
+<ol>
+<li>Takes one string argument (version constraint, e.g. <code>"&gt;=0.2.0"</code>)</li>
+<li>Parses the constraint with <code>semver::VersionReq::parse()</code></li>
+<li>Parses the current eucalypt version with <code>semver::Version::parse()</code>
+   (stripping the <code>.dev</code> suffix from e.g. <code>0.2.0.dev</code> → <code>0.2.0</code>)</li>
+<li>If the constraint matches, returns unit (no-op)</li>
+<li>If it does not match, returns an error: "eucalypt version 0.2.0
+   does not satisfy requirement &gt;=0.3.0"</li>
+<li>If either string fails to parse, returns a clear parse error</li>
+</ol>
+<h3 id="files-changed_2">Files changed</h3>
+<ul>
+<li><code>Cargo.toml</code> — add <code>semver</code> dependency</li>
+<li><code>src/eval/stg/version.rs</code> (new) — <code>Requires</code> intrinsic
+  implementation</li>
+<li><code>src/eval/stg/mod.rs</code> — register module and intrinsic</li>
+<li><code>src/eval/intrinsics.rs</code> — catalogue entry</li>
+<li><code>lib/prelude.eu</code> — expose as <code>eu.requires: __REQUIRES</code></li>
+</ul>
+<h3 id="usage">Usage</h3>
+<pre><code class="language-eu">eu.requires(&quot;&gt;=0.2.0&quot;)
+result: do-stuff
+</code></pre>
+<h3 id="testing_2">Testing</h3>
+<ul>
+<li>Harness test: <code>eu.requires("&gt;=0.0.1")</code> — passes</li>
+<li>Harness error test: <code>eu.requires("&gt;=99.0.0")</code> — fails with clear
+  message</li>
+<li>Harness test: <code>eu.requires("^0.2")</code> — verify caret ranges work</li>
+</ul>
+<hr />
+<h2 id="4-base64-encoding-functions-eu-dyx">4. Base64 Encoding Functions (eu-dyx)</h2>
+<h3 id="problem_3">Problem</h3>
+<p>No built-in base64 encode/decode capability.</p>
+<h3 id="approach-two-new-intrinsics-using-base64-crate">Approach: Two new intrinsics using base64 crate</h3>
+<p>Add <code>base64</code> crate to <code>Cargo.toml</code>. Two intrinsics:</p>
+<ul>
+<li><code>BASE64_ENCODE</code> — takes a string, returns its base64 encoding
+  (standard alphabet, with padding)</li>
+<li><code>BASE64_DECODE</code> — takes a base64 string, returns the decoded
+  string. Errors if the input is not valid base64 or the decoded
+  bytes are not valid UTF-8.</li>
+</ul>
+<p>Both follow the existing string intrinsic pattern: <code>str_arg()</code> to
+extract the argument, <code>machine_return_str()</code> to return the result.</p>
+<h3 id="files-changed_3">Files changed</h3>
+<ul>
+<li><code>Cargo.toml</code> — add <code>base64</code> dependency</li>
+<li><code>src/eval/stg/encoding.rs</code> (new) — <code>Base64Encode</code> and
+  <code>Base64Decode</code> intrinsic implementations</li>
+<li><code>src/eval/stg/mod.rs</code> — register module and intrinsics</li>
+<li><code>src/eval/intrinsics.rs</code> — two catalogue entries</li>
+<li><code>lib/prelude.eu</code> — expose as <code>str.base64-encode: __BASE64_ENCODE</code>
+  and <code>str.base64-decode: __BASE64_DECODE</code></li>
+</ul>
+<h3 id="usage_1">Usage</h3>
+<pre><code class="language-eu">str.base64-encode(&quot;hello world&quot;)       # =&gt; &quot;aGVsbG8gd29ybGQ=&quot;
+str.base64-decode(&quot;aGVsbG8gd29ybGQ=&quot;)  # =&gt; &quot;hello world&quot;
+</code></pre>
+<h3 id="testing_3">Testing</h3>
+<ul>
+<li>Harness test: encode then decode roundtrip</li>
+<li>Harness test: known test vectors</li>
+<li>Harness error test: invalid base64 input to decode</li>
+</ul>
+<hr />
+<h2 id="5-hash-built-ins-eu-dd5">5. Hash Built-ins (eu-dd5)</h2>
+<h3 id="problem_4">Problem</h3>
+<p>No built-in cryptographic hash capability.</p>
+<h3 id="approach-sha-256-intrinsic-using-sha2-crate">Approach: SHA-256 intrinsic using sha2 crate</h3>
+<p>Add <code>sha2</code> crate to <code>Cargo.toml</code>. One intrinsic:</p>
+<ul>
+<li><code>SHA256</code> — takes a string, returns its SHA-256 hash as a lowercase
+  hex string</li>
+</ul>
+<p>Implemented in the same <code>encoding.rs</code> module as base64 (both are
+encoding/hashing operations). If other hash algorithms are needed
+later, they follow the same pattern in the same module.</p>
+<h3 id="files-changed_4">Files changed</h3>
+<ul>
+<li><code>Cargo.toml</code> — add <code>sha2</code> dependency</li>
+<li><code>src/eval/stg/encoding.rs</code> — add <code>Sha256Hash</code> intrinsic</li>
+<li><code>src/eval/stg/mod.rs</code> — register intrinsic</li>
+<li><code>src/eval/intrinsics.rs</code> — catalogue entry</li>
+<li><code>lib/prelude.eu</code> — expose as <code>str.sha256: __SHA256</code></li>
+</ul>
+<h3 id="usage_2">Usage</h3>
+<pre><code class="language-eu">str.sha256(&quot;hello world&quot;)
+# =&gt; &quot;b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9&quot;
+</code></pre>
+<h3 id="testing_4">Testing</h3>
+<ul>
+<li>Harness test: known SHA-256 test vector for "hello world"</li>
+<li>Harness test: empty string hash (known value)</li>
+<li>Harness test: verify output is lowercase hex, 64 characters</li>
+</ul>
+<hr />
+<h2 id="beads">Beads</h2>
+<p>Existing beads to update with design references:</p>
+<ul>
+<li><strong>eu-dlr</strong> — Catch <code>{name: name}</code> recursion (section 1)</li>
+<li><strong>eu-u1m</strong> — min/max for ZDTs (section 2)</li>
+<li><strong>eu-nbc</strong> — Version assertions (section 3)</li>
+<li><strong>eu-dyx</strong> — Base64 encoding functions (section 4)</li>
+<li><strong>eu-dd5</strong> — Hash built-ins (section 5)</li>
+</ul>
+<p>All five are independent and can be implemented in any order.</p>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

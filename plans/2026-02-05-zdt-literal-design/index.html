@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>ZDT Literal — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "ZDT Literal \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-05-zdt-literal-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">ZDT Literal — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-05-zdt-literal-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="zdt-literal-design">ZDT Literal — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>Creating ZDT (zoned datetime) values requires verbose function calls:</p>
+<pre><code class="language-eu">meeting: cal.parse(&quot;2023-01-15T10:30:00Z&quot;)
+birthday: cal.parse(&quot;1990-06-15&quot;)
+</code></pre>
+<p>Users want cleaner syntax for datetime literals.</p>
+<h2 id="solution">Solution</h2>
+<p>A prefixed string literal <code>t"..."</code> for ZDT values, consistent with existing
+<code>c"..."</code> (c-strings) and <code>r"..."</code> (raw strings).</p>
+<pre><code class="language-eu">meeting: t&quot;2023-01-15T10:30:00Z&quot;
+birthday: t&quot;1990-06-15&quot;
+deadline: t&quot;2023-12-31T23:59:59+05:00&quot;
+</code></pre>
+<h2 id="supported-formats">Supported Formats</h2>
+<p>Matching YAML timestamp flexibility for familiarity:</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Example</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ISO8601 with Z</td>
+<td><code>t"2023-01-15T10:30:00Z"</code></td>
+<td>2023-01-15T10:30:00Z</td>
+</tr>
+<tr>
+<td>ISO8601 with offset</td>
+<td><code>t"2023-01-15T10:30:00+05:00"</code></td>
+<td>2023-01-15T10:30:00+05:00</td>
+</tr>
+<tr>
+<td>ISO8601 no timezone</td>
+<td><code>t"2023-01-15T10:30:00"</code></td>
+<td>2023-01-15T10:30:00Z (UTC)</td>
+</tr>
+<tr>
+<td>Space separator</td>
+<td><code>t"2023-01-15 10:30:00"</code></td>
+<td>2023-01-15T10:30:00Z (UTC)</td>
+</tr>
+<tr>
+<td>Fractional seconds</td>
+<td><code>t"2023-01-15T10:30:00.123Z"</code></td>
+<td>2023-01-15T10:30:00.123Z</td>
+</tr>
+<tr>
+<td>Date only</td>
+<td><code>t"2023-01-15"</code></td>
+<td>2023-01-15T00:00:00Z (midnight UTC)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="defaults">Defaults</h2>
+<ul>
+<li><strong>Missing timezone</strong> → UTC</li>
+<li><strong>Date only</strong> → midnight (00:00:00) UTC</li>
+</ul>
+<p>These match the existing YAML timestamp import behaviour.</p>
+<h2 id="compile-time-validation">Compile-Time Validation</h2>
+<p>Invalid dates are rejected at parse time:</p>
+<pre><code class="language-eu">bad1: t&quot;2023-02-30&quot;        # error: February has 28/29 days
+bad2: t&quot;2023-13-01&quot;        # error: month must be 1-12
+bad3: t&quot;2023-01-32&quot;        # error: day out of range
+bad4: t&quot;2023-01-15T25:00&quot;  # error: hour must be 0-23
+bad5: t&quot;not-a-date&quot;        # error: invalid timestamp format
+
+leap: t&quot;2024-02-29&quot;        # OK - 2024 is a leap year
+</code></pre>
+<p>Error messages include source location and specific reason:</p>
+<pre><code>error: invalid ZDT literal
+  --&gt; file.eu:3:10
+   |
+ 3 | deadline: t&quot;2023-02-30&quot;
+   |           ^^^^^^^^^^^^^ February 2023 has only 28 days
+</code></pre>
+<h2 id="implementation">Implementation</h2>
+<h3 id="lexer-srcsyntaxrowanlexrs">Lexer (<code>src/syntax/rowan/lex.rs</code>)</h3>
+<p>Add <code>T_STRING</code> token type alongside existing <code>C_STRING</code> and <code>R_STRING</code>. When
+the lexer sees <code>t"</code>, it:</p>
+<ol>
+<li>Extracts the string content</li>
+<li>Validates it as a timestamp using chrono</li>
+<li>Emits <code>T_STRING</code> token (or error if invalid)</li>
+</ol>
+<p>No interpolation support needed — just <code>T_STRING</code>, not <code>T_STRING_PATTERN</code>.</p>
+<h3 id="syntax-kinds-srcsyntaxrowankindrs">Syntax kinds (<code>src/syntax/rowan/kind.rs</code>)</h3>
+<pre><code class="language-rust">T_STRING,  // t&quot;2023-01-15T10:30:00Z&quot;
+</code></pre>
+<h3 id="ast-and-code-generation">AST and code generation</h3>
+<p>A <code>t"..."</code> literal desugars to a <code>ZDT</code> native value during compilation — the
+same internal representation used by <code>cal.parse(...)</code> and YAML timestamp
+imports. The chrono <code>DateTime&lt;FixedOffset&gt;</code> is computed at compile time and
+embedded directly. No runtime parsing occurs.</p>
+<h2 id="testing">Testing</h2>
+<h3 id="harness-tests">Harness tests</h3>
+<ul>
+<li>Valid formats: All supported YAML-style formats</li>
+<li>Timezone defaulting: Literals without timezone produce UTC</li>
+<li>Date-only: Produces midnight UTC</li>
+<li>Leap years: <code>t"2024-02-29"</code> valid, <code>t"2023-02-29"</code> invalid</li>
+<li>Edge cases: Month boundaries, year boundaries, maximum values</li>
+<li>Equivalence: <code>t"2023-01-15T10:30:00Z"</code> equals <code>cal.parse("2023-01-15T10:30:00Z")</code></li>
+<li>Timezone comparison: <code>t"2023-01-15T10:00:00Z"</code> equals <code>t"2023-01-15T10:00:00+00:00"</code>
+  (chrono compares absolute instants)</li>
+<li>Cross-timezone ordering: <code>t"2023-01-15T08:00:00Z"</code> &lt; <code>t"2023-01-15T12:00:00+02:00"</code>
+  (08:00 UTC is before 10:00 UTC)</li>
+</ul>
+<h3 id="error-tests">Error tests</h3>
+<p>Using <code>.expect</code> sidecar mechanism:</p>
+<ul>
+<li>Invalid day: <code>t"2023-02-30"</code></li>
+<li>Invalid month: <code>t"2023-13-01"</code></li>
+<li>Invalid hour: <code>t"2023-01-15T25:00:00Z"</code></li>
+<li>Malformed: <code>t"not-a-date"</code></li>
+<li>Empty: <code>t""</code></li>
+</ul>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>Interpolation in ZDT literals (not needed)</li>
+<li>Duration literals (separate future feature)</li>
+<li>Period literals (separate future feature)</li>
+<li>Time-only literals (separate future feature)</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

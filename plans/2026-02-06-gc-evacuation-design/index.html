@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>GC Evacuation Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "GC Evacuation Design";
+        var mkdocs_page_input_path = "plans/2026-02-06-gc-evacuation-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">GC Evacuation Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-06-gc-evacuation-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="gc-evacuation-design">GC Evacuation Design</h1>
+<p>Date: 2026-02-06</p>
+<h2 id="1-overview-and-goals">1. Overview and Goals</h2>
+<p>Implement opportunistic evacuation for the Immix garbage collector --
+Phase 3 of the GC Immix completion plan. During collection, instead of
+always marking objects in place, the collector can move objects out of
+fragmented blocks into fresh blocks, compacting the heap.</p>
+<p>This is the core Immix innovation: selective object movement during the
+mark phase to reduce fragmentation and improve allocation throughput.</p>
+<h3 id="success-criteria">Success Criteria</h3>
+<ul>
+<li>Objects in fragmented blocks are evacuated to fresh blocks during
+  collection</li>
+<li>All existing tests pass throughout (<code>cargo test</code>)</li>
+<li><code>008_fragmentation.eu</code> stress test shows improved <code>blocks_recycled</code>
+  and reduced <code>blocks_used</code></li>
+<li>Non-fragmented workloads show no regression (evacuation not triggered)</li>
+<li>Mark phase overhead from forwarding checks is minimal (&lt;5%)</li>
+<li>All new unsafe code has safety documentation</li>
+</ul>
+<hr />
+<h2 id="2-current-state">2. Current State</h2>
+<p>The codebase already has significant scaffolding for evacuation:</p>
+<ul>
+<li>
+<p><strong><code>AllocHeader</code></strong> (<code>src/eval/memory/header.rs</code>): Has <code>forwarded_to:
+  Option&lt;NonNull&lt;()&gt;&gt;</code>, <code>is_forwarded()</code>, <code>set_forwarded()</code>, and
+  <code>clear_forwarded()</code> methods -- all present but unused.</p>
+</li>
+<li>
+<p><strong><code>CollectionStrategy</code></strong> (<code>src/eval/memory/heap.rs</code>): Enum with
+  <code>MarkInPlace</code>, <code>SelectiveEvacuation(Vec&lt;usize&gt;)</code>, and
+  <code>DefragmentationSweep</code> variants -- defined but unused.</p>
+</li>
+<li>
+<p><strong><code>FragmentationAnalysis</code></strong> (<code>src/eval/memory/heap.rs</code>): Struct with
+  block density categorisation and <code>analyze_fragmentation()</code> method --
+  implemented but never drives decisions.</p>
+</li>
+<li>
+<p><strong><code>GcScannable</code> trait</strong> (<code>src/eval/memory/collect.rs</code>): Has <code>scan()</code>
+  method that pushes discovered grey pointers but does not support
+  reference rewriting. Needs a companion <code>scan_and_update()</code> method.</p>
+</li>
+<li>
+<p><strong><code>collect()</code> function</strong> (<code>src/eval/memory/collect.rs</code>): Takes
+  <code>roots: &amp;dyn GcScannable</code> (immutable borrow). Needs mutable roots
+  for reference updating.</p>
+</li>
+<li>
+<p><strong><code>Native::Str</code> and <code>Native::Set</code></strong>: Contain <code>RefPtr&lt;HeapString&gt;</code> and
+  <code>RefPtr&lt;HeapSet&gt;</code> heap pointers that are not traced during GC scan.
+  These must be traced for evacuation to correctly update all references.</p>
+</li>
+</ul>
+<h3 id="gcscannable-implementations">GcScannable Implementations</h3>
+<p>The following types implement <code>GcScannable</code> and will each need a
+<code>scan_and_update()</code> method:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>File</th>
+<th>Heap Pointers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LambdaForm</code></td>
+<td><code>src/eval/memory/syntax.rs</code></td>
+<td><code>body: NonNull&lt;HeapSyn&gt;</code></td>
+</tr>
+<tr>
+<td><code>HeapSyn</code></td>
+<td><code>src/eval/memory/syntax.rs</code></td>
+<td>Various <code>NonNull&lt;HeapSyn&gt;</code>, arrays</td>
+</tr>
+<tr>
+<td><code>SynClosure</code></td>
+<td><code>src/eval/machine/env.rs</code></td>
+<td><code>code: RefPtr&lt;HeapSyn&gt;</code>, <code>env: RefPtr&lt;EnvFrame&gt;</code></td>
+</tr>
+<tr>
+<td><code>EnvFrame</code></td>
+<td><code>src/eval/machine/env.rs</code></td>
+<td><code>bindings: Array&lt;SynClosure&gt;</code>, <code>next: Option&lt;NonNull&lt;EnvFrame&gt;&gt;</code></td>
+</tr>
+<tr>
+<td><code>Continuation</code></td>
+<td><code>src/eval/machine/cont.rs</code></td>
+<td>Branch tables, environments, fallbacks</td>
+</tr>
+<tr>
+<td><code>MachineState</code></td>
+<td><code>src/eval/machine/vm.rs</code></td>
+<td><code>globals</code>, <code>closure</code>, <code>stack</code> (roots)</td>
+</tr>
+<tr>
+<td><code>Vec&lt;NonNull&lt;T&gt;&gt;</code></td>
+<td><code>src/eval/memory/collect.rs</code></td>
+<td>Generic pointer vector</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-sub-bead-1-trace-nativestr-and-nativeset-heap-pointers">3. Sub-bead 1: Trace Native::Str and Native::Set Heap Pointers</h2>
+<h3 id="problem">Problem</h3>
+<p><code>Native::Str(RefPtr&lt;HeapString&gt;)</code> and <code>Native::Set(RefPtr&lt;HeapSet&gt;)</code>
+contain heap pointers but these are not traced during GC scanning. The
+<code>HeapSyn::Atom { evaluand }</code> and <code>HeapSyn::Cons { args }</code> paths mark
+only the <code>Ref</code> array, not the <code>Native</code> variants within <code>Ref::V(...)</code>.</p>
+<p>For mark-in-place collection this is not a correctness bug (the objects
+are still reachable via other paths, and line marking keeps them alive).
+But for evacuation, every pointer that could reference a moved object
+must be discoverable so it can be updated.</p>
+<h3 id="changes">Changes</h3>
+<p><strong>File: <code>src/eval/memory/syntax.rs</code></strong></p>
+<p>In the <code>GcScannable</code> impl for <code>HeapSyn</code>, when scanning <code>Ref</code> arrays
+(in <code>Cons</code>, <code>App</code>, <code>Bif</code> arms and anywhere <code>Ref::V(Native::Str(ptr))</code>
+or <code>Ref::V(Native::Set(ptr))</code> can appear), add marking calls:</p>
+<pre><code class="language-rust">// When iterating Ref values in arrays:
+match ref_val {
+    Ref::V(Native::Str(ptr)) =&gt; { marker.mark(*ptr); }
+    Ref::V(Native::Set(ptr)) =&gt; { marker.mark(*ptr); }
+    _ =&gt; {}
+}
+</code></pre>
+<p>This does not change the scan output (strings and sets are leaf objects
+with no further heap references), but it ensures their line marks are
+set and, crucially, that evacuation can discover and update these
+pointers.</p>
+<h3 id="validation">Validation</h3>
+<ul>
+<li>All existing tests pass</li>
+<li>Add a unit test that allocates a <code>HeapString</code>, creates a <code>Native::Str</code>
+  referencing it, collects, and verifies the string's line is marked</li>
+</ul>
+<hr />
+<h2 id="4-sub-bead-2-change-collect-to-take-mutable-roots">4. Sub-bead 2: Change collect() to Take Mutable Roots</h2>
+<h3 id="problem_1">Problem</h3>
+<p>The current <code>collect()</code> signature is:</p>
+<pre><code class="language-rust">pub fn collect(roots: &amp;dyn GcScannable, heap: &amp;mut Heap, clock: &amp;mut Clock, dump_heap: bool)
+</code></pre>
+<p>The <code>roots</code> parameter is an immutable borrow. For evacuation, the
+collector must be able to update root pointers when a root's referent is
+evacuated. This requires mutable access to the roots.</p>
+<h3 id="changes_1">Changes</h3>
+<p><strong>File: <code>src/eval/memory/collect.rs</code></strong></p>
+<p>Change the signature to:</p>
+<pre><code class="language-rust">pub fn collect(roots: &amp;mut dyn GcScannableMut, heap: &amp;mut Heap, clock: &amp;mut Clock, dump_heap: bool)
+</code></pre>
+<p>Where <code>GcScannableMut</code> extends <code>GcScannable</code> with mutable scanning.
+Alternatively, change <code>GcScannable::scan()</code> to take <code>&amp;mut self</code>:</p>
+<pre><code class="language-rust">pub trait GcScannable {
+    fn scan&lt;'a&gt;(
+        &amp;'a mut self,
+        scope: &amp;'a dyn CollectorScope,
+        marker: &amp;mut CollectorHeapView&lt;'a&gt;,
+        out: &amp;mut Vec&lt;ScanPtr&lt;'a&gt;&gt;,
+    );
+}
+</code></pre>
+<p>The simpler approach: just change the <code>roots</code> parameter to <code>&amp;mut dyn
+GcScannable</code> and update the trait to take <code>&amp;mut self</code>. All current
+implementations already have mutable access available at the call site
+(the <code>MachineState</code> is owned by <code>Machine</code>).</p>
+<p><strong>File: <code>src/eval/machine/vm.rs</code></strong></p>
+<p>Update the <code>collect()</code> call in <code>Machine::step()</code> or wherever GC is
+triggered to pass <code>&amp;mut self.state</code> instead of <code>&amp;self.state</code>.</p>
+<h3 id="validation_1">Validation</h3>
+<ul>
+<li>All existing tests pass</li>
+<li>The change is purely mechanical -- no behaviour change for
+  mark-in-place collection</li>
+</ul>
+<hr />
+<h2 id="5-sub-bead-3-evacuation-target-block-management">5. Sub-bead 3: Evacuation Target Block Management</h2>
+<h3 id="problem_2">Problem</h3>
+<p>When evacuating, the collector needs fresh blocks to copy live objects
+into. These "evacuation target blocks" must be managed separately from
+normal allocation blocks to avoid interference with the mutator's bump
+pointer.</p>
+<h3 id="changes_2">Changes</h3>
+<p><strong>File: <code>src/eval/memory/heap.rs</code></strong></p>
+<p>Add evacuation target management to <code>HeapState</code>:</p>
+<pre><code class="language-rust">/// Block currently being used as evacuation target during collection
+evacuation_target: Option&lt;BumpBlock&gt;,
+/// Blocks filled during evacuation (become part of rest after collection)
+filled_evacuation_blocks: Vec&lt;BumpBlock&gt;,
+</code></pre>
+<p>Add methods to <code>Heap</code>:</p>
+<ul>
+<li>
+<p><code>acquire_evacuation_target() -&gt; Option&lt;&amp;mut BumpBlock&gt;</code>: Get or
+  allocate an evacuation target block. Returns <code>None</code> if the heap limit
+  would be exceeded (fall back to mark-in-place for remaining objects).</p>
+</li>
+<li>
+<p><code>bump_allocate_in_target(size: usize) -&gt; Option&lt;NonNull&lt;u8&gt;&gt;</code>: Bump
+  allocate into the evacuation target. If the current target is full,
+  move it to <code>filled_evacuation_blocks</code> and acquire a new one.</p>
+</li>
+<li>
+<p><code>finalise_evacuation()</code>: After collection, move all evacuation blocks
+  (target + filled) into <code>rest</code>. These blocks are freshly allocated and
+  fully live -- no need to sweep them.</p>
+</li>
+</ul>
+<p><strong>File: <code>src/eval/memory/collect.rs</code></strong></p>
+<p>Add to <code>CollectorHeapView</code>:</p>
+<ul>
+<li><code>evacuate_alloc(size: usize) -&gt; Option&lt;NonNull&lt;u8&gt;&gt;</code>: Delegate to
+  <code>heap.bump_allocate_in_target(size)</code>.</li>
+</ul>
+<h3 id="validation_2">Validation</h3>
+<ul>
+<li>Unit test: acquire target, allocate into it, finalise, verify blocks
+  appear in rest</li>
+<li>Verify heap limit is respected (no unbounded allocation during
+  evacuation)</li>
+</ul>
+<hr />
+<h2 id="6-sub-bead-4-object-evacuation-memcpy-forwarding">6. Sub-bead 4: Object Evacuation (memcpy + Forwarding)</h2>
+<h3 id="problem_3">Problem</h3>
+<p>The core evacuation operation: copy an object from a fragmented block to
+an evacuation target block, set the forwarding pointer in the old
+location, and mark the new copy.</p>
+<h3 id="changes_3">Changes</h3>
+<p><strong>File: <code>src/eval/memory/collect.rs</code></strong></p>
+<p>Add <code>evacuate()</code> method to <code>CollectorHeapView</code>:</p>
+<pre><code class="language-rust">/// Evacuate an object from a candidate block to the evacuation target.
+///
+/// # Safety
+///
+/// - `obj` must point to a valid, live heap object with an AllocHeader
+///   prefix
+/// - The object must be in a candidate (fragmented) block
+/// - The object must not already be forwarded
+/// - The evacuation target must have sufficient space
+///
+/// Returns the new location of the object, or None if evacuation
+/// failed (e.g. target block full and no replacement available).
+pub fn evacuate&lt;T&gt;(&amp;mut self, obj: NonNull&lt;T&gt;) -&gt; Option&lt;NonNull&lt;T&gt;&gt; {
+    let header = self.heap.get_header_mut(obj);
+    let size = header.length() as usize + size_of::&lt;AllocHeader&gt;();
+
+    // Allocate space in evacuation target
+    let new_raw = self.heap.bump_allocate_in_target(size)?;
+
+    // Copy object (header + payload) to new location
+    // SAFETY: Both source and destination are valid, non-overlapping,
+    // properly aligned heap memory. Size is the full allocation
+    // including header.
+    unsafe {
+        let src = (obj.as_ptr() as *const u8)
+            .sub(size_of::&lt;AllocHeader&gt;());
+        std::ptr::copy_nonoverlapping(src, new_raw.as_ptr(), size);
+    }
+
+    // Compute new object pointer (after header)
+    let new_obj = unsafe {
+        NonNull::new_unchecked(
+            new_raw.as_ptr().add(size_of::&lt;AllocHeader&gt;()) as *mut T
+        )
+    };
+
+    // Set forwarding pointer in old header
+    header.set_forwarded(new_obj.cast());
+
+    // Mark the new copy
+    self.heap.mark_object(new_obj);
+    self.heap.mark_line(new_obj);
+
+    Some(new_obj)
+}
+</code></pre>
+<p><strong>File: <code>src/eval/memory/heap.rs</code></strong></p>
+<p>Add <code>get_header_mut()</code> method to <code>Heap</code>:</p>
+<pre><code class="language-rust">/// Get mutable access to an object's AllocHeader.
+///
+/// # Safety
+///
+/// The pointer must be to a valid heap object allocated with an
+/// AllocHeader prefix.
+pub fn get_header_mut&lt;T&gt;(&amp;mut self, obj: NonNull&lt;T&gt;) -&gt; &amp;mut AllocHeader {
+    unsafe {
+        let header_ptr = (obj.as_ptr() as *mut AllocHeader).sub(1);
+        &amp;mut *header_ptr
+    }
+}
+</code></pre>
+<p>Add <code>is_in_candidate_block()</code> method to check whether an object resides
+in a block marked for evacuation.</p>
+<h3 id="validation_3">Validation</h3>
+<ul>
+<li>Unit test: allocate object, evacuate it, verify forwarding pointer set
+  and new copy is accessible</li>
+<li>Verify old object's header shows <code>is_forwarded() == true</code></li>
+<li>Verify new object has correct data (byte-for-byte comparison)</li>
+</ul>
+<hr />
+<h2 id="7-sub-bead-5-implement-scan_and_update-for-all-gcscannable-types">7. Sub-bead 5: Implement scan_and_update for All GcScannable Types</h2>
+<h3 id="problem_4">Problem</h3>
+<p>During an evacuating collection, after objects are copied and forwarding
+pointers set, all live objects must have their internal pointers updated
+to reflect the new locations. The existing <code>scan()</code> method only reads
+pointers -- it cannot rewrite them.</p>
+<h3 id="design">Design</h3>
+<p>Add a <code>scan_and_update()</code> method to <code>GcScannable</code>:</p>
+<pre><code class="language-rust">pub trait GcScannable {
+    fn scan&lt;'a&gt;(
+        &amp;'a self,
+        scope: &amp;'a dyn CollectorScope,
+        marker: &amp;mut CollectorHeapView&lt;'a&gt;,
+        out: &amp;mut Vec&lt;ScanPtr&lt;'a&gt;&gt;,
+    );
+
+    /// Scan this object and update any forwarded pointers in place.
+    /// Called during the update phase of an evacuating collection.
+    /// Default implementation does nothing (for types with no
+    /// rewritable pointers).
+    fn scan_and_update&lt;'a&gt;(
+        &amp;'a mut self,
+        _heap: &amp;'a CollectorHeapView&lt;'a&gt;,
+    ) {}
+}
+</code></pre>
+<h3 id="changes-per-type">Changes per Type</h3>
+<p><strong><code>LambdaForm</code></strong> (<code>src/eval/memory/syntax.rs</code>):
+- Check if <code>body</code> pointer is forwarded; if so, update to new location</p>
+<p><strong><code>HeapSyn</code></strong> (<code>src/eval/memory/syntax.rs</code>):
+- For each <code>NonNull&lt;HeapSyn&gt;</code> field (in <code>Case</code>, <code>Let</code>, <code>LetRec</code>, <code>Ann</code>,
+  <code>DeMeta</code>): check forwarding, update pointer
+- For each <code>Array&lt;Ref&gt;</code> (in <code>Cons</code>, <code>App</code>, <code>Bif</code>): iterate refs, check
+  <code>Native::Str</code>/<code>Native::Set</code> pointers for forwarding, update
+- For <code>Array&lt;LambdaForm&gt;</code> (in <code>Let</code>, <code>LetRec</code>): iterate, check body
+  pointers
+- For <code>Array&lt;Option&lt;NonNull&lt;HeapSyn&gt;&gt;&gt;</code> (branch tables in <code>Case</code>):
+  iterate, check forwarding, update</p>
+<p><strong><code>SynClosure</code></strong> (<code>src/eval/machine/env.rs</code>):
+- Check <code>code</code> and <code>env</code> pointers for forwarding, update</p>
+<p><strong><code>EnvFrame</code></strong> (<code>src/eval/machine/env.rs</code>):
+- Check <code>next</code> pointer for forwarding, update
+- Iterate <code>bindings</code> array, update each closure's pointers</p>
+<p><strong><code>Continuation</code></strong> (<code>src/eval/machine/cont.rs</code>):
+- For each variant: check all <code>NonNull</code> fields for forwarding, update
+- Branch tables: iterate and update forwarded entries</p>
+<p><strong><code>MachineState</code></strong> (<code>src/eval/machine/vm.rs</code>):
+- Check <code>globals</code>, <code>closure.code</code>, <code>closure.env</code> for forwarding, update
+- Iterate <code>stack</code>, update forwarded continuation pointers</p>
+<p><strong><code>Vec&lt;NonNull&lt;T&gt;&gt;</code></strong> (<code>src/eval/memory/collect.rs</code>):
+- Iterate, check each pointer for forwarding, update in place</p>
+<h3 id="forwarding-check-helper">Forwarding Check Helper</h3>
+<p>Add to <code>CollectorHeapView</code>:</p>
+<pre><code class="language-rust">/// If the object at `ptr` has been forwarded, return the new location.
+/// Otherwise return None.
+pub fn forwarded_to&lt;T&gt;(&amp;self, ptr: NonNull&lt;T&gt;) -&gt; Option&lt;NonNull&lt;T&gt;&gt; {
+    let header = self.heap.get_header(ptr);
+    if header.is_forwarded() {
+        header.forwarded_to.map(|p| p.cast())
+    } else {
+        None
+    }
+}
+</code></pre>
+<h3 id="validation_4">Validation</h3>
+<ul>
+<li>Unit test per type: create object with pointers to evacuated objects,
+  call <code>scan_and_update()</code>, verify pointers updated</li>
+<li>Integration test: full collection cycle with evacuation, verify all
+  references resolve correctly</li>
+</ul>
+<hr />
+<h2 id="8-sub-bead-6-wire-evacuation-into-collect-cycle">8. Sub-bead 6: Wire Evacuation into collect() Cycle</h2>
+<h3 id="problem_5">Problem</h3>
+<p>Integrate the evacuation components into the main <code>collect()</code> function.</p>
+<h3 id="design_1">Design</h3>
+<p>The evacuating collection cycle proceeds as:</p>
+<ol>
+<li>
+<p><strong>Analyse fragmentation</strong>: Call <code>analyze_fragmentation()</code> on the heap
+   to identify candidate blocks (occupancy below threshold, e.g. &lt;50%
+   of lines marked in previous cycle)</p>
+</li>
+<li>
+<p><strong>Decide strategy</strong>: If candidate blocks exist and evacuation target
+   space is available, run an evacuating cycle. Otherwise, fall back to
+   mark-in-place.</p>
+</li>
+<li>
+<p><strong>Mark phase (with evacuation)</strong>: During the normal mark-and-trace
+   loop, when scanning reaches an object in a candidate block:</p>
+</li>
+<li>Instead of marking in place, call <code>evacuate()</code> to copy to target</li>
+<li>Set forwarding pointer in old location</li>
+<li>
+<p>Push the new copy onto the scan queue (to trace its children)</p>
+</li>
+<li>
+<p><strong>Update phase</strong>: After marking completes, traverse all live objects
+   and roots calling <code>scan_and_update()</code> to rewrite any pointers to
+   forwarded objects.</p>
+</li>
+<li>
+<p><strong>Finalise</strong>: Call <code>finalise_evacuation()</code> to integrate target blocks
+   into the heap. Candidate blocks are now fully dead (all live objects
+   moved out) and can be returned to the free list without sweeping.</p>
+</li>
+</ol>
+<h3 id="changes_4">Changes</h3>
+<p><strong>File: <code>src/eval/memory/collect.rs</code></strong></p>
+<pre><code class="language-rust">pub fn collect(
+    roots: &amp;mut dyn GcScannable,
+    heap: &amp;mut Heap,
+    clock: &amp;mut Clock,
+    dump_heap: bool,
+) {
+    clock.switch(ThreadOccupation::CollectorMark);
+
+    // Decide strategy
+    let strategy = heap.choose_collection_strategy();
+
+    let mut heap_view = CollectorHeapView { heap };
+    heap_view.reset();
+
+    let mut queue = VecDeque::default();
+    let mut scan_buffer = Vec::new();
+    let scope = Scope();
+
+    // Mark roots
+    roots.scan(&amp;scope, &amp;mut heap_view, &amp;mut scan_buffer);
+    queue.extend(scan_buffer.drain(..));
+
+    // Trace
+    while let Some(scanptr) = queue.pop_front() {
+        // If evacuating and object is in candidate block,
+        // evacuate instead of scanning in place
+        if strategy.is_evacuating() {
+            if let Some(new_ptr) = maybe_evacuate(&amp;mut heap_view, &amp;scanptr) {
+                // Push new location for scanning
+                queue.push_back(new_ptr);
+                continue;
+            }
+        }
+        scanptr.get().scan(&amp;scope, &amp;mut heap_view, &amp;mut scan_buffer);
+        queue.extend(scan_buffer.drain(..));
+    }
+
+    // Update phase (only if evacuation occurred)
+    if strategy.is_evacuating() {
+        // Update root pointers
+        roots.scan_and_update(&amp;heap_view);
+        // Update all live objects (traverse marked objects)
+        heap_view.update_all_forwarded_refs();
+    }
+
+    clock.switch(ThreadOccupation::CollectorSweep);
+    heap_view.defer_sweep();
+
+    // Finalise evacuation blocks
+    if strategy.is_evacuating() {
+        heap.finalise_evacuation();
+    }
+
+    heap.record_collection();
+    heap.flip_mark_state();
+}
+</code></pre>
+<p><strong>File: <code>src/eval/memory/heap.rs</code></strong></p>
+<p>Add <code>choose_collection_strategy() -&gt; CollectionStrategy</code>:</p>
+<pre><code class="language-rust">pub fn choose_collection_strategy(&amp;self) -&gt; CollectionStrategy {
+    let analysis = self.analyze_fragmentation();
+
+    // Only evacuate if fragmentation is significant
+    if analysis.fragmentation_ratio &lt; 0.2 {
+        return CollectionStrategy::MarkInPlace;
+    }
+
+    // Need at least one free block for evacuation target
+    if !self.can_acquire_evacuation_target() {
+        return CollectionStrategy::MarkInPlace;
+    }
+
+    // Collect indices of candidate blocks (sparse + fragmented)
+    let candidates = self.candidate_block_indices(&amp;analysis);
+    if candidates.is_empty() {
+        CollectionStrategy::MarkInPlace
+    } else {
+        CollectionStrategy::SelectiveEvacuation(candidates)
+    }
+}
+</code></pre>
+<h3 id="interaction-with-lazy-sweeping">Interaction with Lazy Sweeping</h3>
+<p>Evacuated candidate blocks become fully dead after evacuation (all live
+objects moved out). They bypass the lazy sweep queue and go directly to
+the free list. Non-candidate blocks follow the normal lazy sweep path.</p>
+<h3 id="validation_5">Validation</h3>
+<ul>
+<li>All existing tests pass</li>
+<li><code>008_fragmentation.eu</code> shows measurably better <code>blocks_recycled</code></li>
+<li>Non-fragmented benchmarks show no regression (strategy remains
+  <code>MarkInPlace</code>)</li>
+<li>Benchmark comparison confirms mark phase is only slightly slower
+  (forwarding check overhead)</li>
+</ul>
+<hr />
+<h2 id="9-sub-bead-7-evacuation-testing-and-validation">9. Sub-bead 7: Evacuation Testing and Validation</h2>
+<h3 id="test-plan">Test Plan</h3>
+<p><strong>Unit Tests</strong> (<code>src/eval/memory/collect.rs::tests</code>):</p>
+<ol>
+<li>
+<p><strong><code>test_evacuate_single_object</code></strong>: Allocate one object in a block,
+   mark block as candidate, collect with evacuation, verify object
+   accessible at new location via forwarding pointer.</p>
+</li>
+<li>
+<p><strong><code>test_evacuate_with_internal_refs</code></strong>: Allocate a Let expression
+   whose body points to another HeapSyn. Evacuate the body. Verify the
+   Let's body pointer is updated to the new location.</p>
+</li>
+<li>
+<p><strong><code>test_evacuate_preserves_data</code></strong>: Evacuate various object types
+   (LambdaForm, HeapSyn variants, Continuation). Verify data integrity
+   by comparing field values before and after evacuation.</p>
+</li>
+<li>
+<p><strong><code>test_no_evacuation_when_not_fragmented</code></strong>: Create a non-fragmented
+   heap, run collection, verify <code>CollectionStrategy::MarkInPlace</code> is
+   chosen and no forwarding pointers are set.</p>
+</li>
+<li>
+<p><strong><code>test_evacuation_target_exhaustion</code></strong>: Fill the heap near its
+   limit, trigger evacuating collection, verify graceful fallback to
+   mark-in-place when no evacuation target can be acquired.</p>
+</li>
+<li>
+<p><strong><code>test_native_str_pointer_updated</code></strong>: Allocate a <code>HeapString</code>,
+   reference it via <code>Native::Str</code>, evacuate the string, verify the
+   <code>Native::Str</code> pointer is updated.</p>
+</li>
+<li>
+<p><strong><code>test_native_set_pointer_updated</code></strong>: Same as above for
+   <code>Native::Set</code> / <code>HeapSet</code>.</p>
+</li>
+</ol>
+<p><strong>Stress Tests</strong> (<code>harness/test/bench/</code>):</p>
+<ul>
+<li>Run <code>008_fragmentation.eu</code> with <code>--statistics-file</code> before and after</li>
+<li>Compare <code>blocks_recycled</code>, <code>blocks_used</code>, mark phase timing</li>
+<li>Run non-fragmented benchmarks to verify no regression</li>
+</ul>
+<p><strong>Integration</strong>:</p>
+<ul>
+<li>Full <code>cargo test</code> suite passes</li>
+<li><code>./scripts/gc-bench.sh compare</code> shows improvement in fragmentation
+  metrics without regression elsewhere</li>
+</ul>
+<hr />
+<h2 id="10-sub-bead-8-safety-documentation-for-evacuation-unsafe-code">10. Sub-bead 8: Safety Documentation for Evacuation Unsafe Code</h2>
+<h3 id="scope">Scope</h3>
+<p>All <code>unsafe</code> blocks introduced by evacuation must have safety comments
+documenting:</p>
+<ol>
+<li><strong>What invariant the unsafe code relies on</strong></li>
+<li><strong>Why the invariant holds at this call site</strong></li>
+<li><strong>What could go wrong if the invariant is violated</strong></li>
+</ol>
+<h3 id="locations-requiring-documentation">Locations Requiring Documentation</h3>
+<ul>
+<li><code>evacuate()</code> in <code>CollectorHeapView</code>: <code>ptr::copy_nonoverlapping</code>,
+  pointer arithmetic, <code>NonNull::new_unchecked</code></li>
+<li><code>get_header_mut()</code> in <code>Heap</code>: raw pointer dereference</li>
+<li><code>bump_allocate_in_target()</code>: raw pointer arithmetic for bump
+  allocation</li>
+<li><code>scan_and_update()</code> implementations: mutable pointer rewriting in
+  each <code>GcScannable</code> type</li>
+<li><code>forwarded_to()</code>: reading header through raw pointer</li>
+</ul>
+<h3 id="documentation-standard">Documentation Standard</h3>
+<p>Each unsafe block should follow the existing project pattern (visible
+in <code>ScanPtr::from_non_null</code> and the heap safety model comment at the
+top of <code>heap.rs</code>):</p>
+<pre><code class="language-rust">// SAFETY: &lt;what invariant holds&gt;
+// - &lt;first reason it holds&gt;
+// - &lt;second reason it holds&gt;
+// - &lt;what the caller guarantees&gt;
+unsafe {
+    // ...
+}
+</code></pre>
+<h3 id="existing-unsafe-to-audit">Existing Unsafe to Audit</h3>
+<p>Review and update safety comments for existing forwarding-related code
+in <code>header.rs</code> that is currently unused but will become live:</p>
+<ul>
+<li><code>AllocHeader::set_forwarded()</code></li>
+<li><code>AllocHeader::clear_forwarded()</code></li>
+<li><code>AllocHeader::is_forwarded()</code></li>
+</ul>
+<p>Also address <strong>eu-w68</strong> (Memory management unsafe code lacks safety
+documentation) by auditing all existing unsafe blocks in
+<code>src/eval/memory/</code> and adding missing safety comments.</p>
+<hr />
+<h2 id="appendix-a-dependency-graph">Appendix A: Dependency Graph</h2>
+<pre><code>Sub-bead 1: Trace Native::Str/Set pointers
+Sub-bead 2: Mutable roots
+Sub-bead 3: Evacuation target blocks
+Sub-bead 4: Object evacuation (memcpy + forwarding)  ← depends on 3
+Sub-bead 5: scan_and_update for all types             ← depends on 1, 2, 4
+Sub-bead 6: Wire into collect() cycle                 ← depends on 2, 3, 4, 5
+Sub-bead 7: Testing and validation                    ← depends on 6
+Sub-bead 8: Safety documentation                      ← depends on 4, 5, 6
+</code></pre>
+<p>Sub-beads 1, 2, and 3 can proceed in parallel. Sub-bead 4 requires 3.
+Sub-bead 5 requires 1, 2, and 4. Sub-bead 6 brings everything together.
+Sub-beads 7 and 8 follow.</p>
+<h2 id="appendix-b-files-modified">Appendix B: Files Modified</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/eval/memory/collect.rs</code></td>
+<td><code>GcScannable</code> trait extension, <code>collect()</code> signature, <code>CollectorHeapView</code> methods</td>
+</tr>
+<tr>
+<td><code>src/eval/memory/header.rs</code></td>
+<td>No structural changes (existing forwarding API used)</td>
+</tr>
+<tr>
+<td><code>src/eval/memory/heap.rs</code></td>
+<td>Evacuation target management, strategy selection, <code>get_header_mut()</code></td>
+</tr>
+<tr>
+<td><code>src/eval/memory/syntax.rs</code></td>
+<td><code>Native::Str</code>/<code>Set</code> tracing, <code>scan_and_update()</code> for <code>LambdaForm</code>, <code>HeapSyn</code></td>
+</tr>
+<tr>
+<td><code>src/eval/machine/env.rs</code></td>
+<td><code>scan_and_update()</code> for <code>SynClosure</code>, <code>EnvFrame</code></td>
+</tr>
+<tr>
+<td><code>src/eval/machine/cont.rs</code></td>
+<td><code>scan_and_update()</code> for <code>Continuation</code></td>
+</tr>
+<tr>
+<td><code>src/eval/machine/vm.rs</code></td>
+<td><code>scan_and_update()</code> for <code>MachineState</code>, mutable root passing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="appendix-c-risk-assessment">Appendix C: Risk Assessment</h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Severity</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Missed pointer update (use-after-move)</td>
+<td>Critical</td>
+<td>Comprehensive <code>scan_and_update()</code> coverage + stress tests</td>
+</tr>
+<tr>
+<td><code>Native::Str</code>/<code>Set</code> pointers not updated</td>
+<td>High</td>
+<td>Sub-bead 1 ensures these are traced; sub-bead 5 ensures they are updated</td>
+</tr>
+<tr>
+<td>Evacuation target exhaustion</td>
+<td>Medium</td>
+<td>Graceful fallback to mark-in-place</td>
+</tr>
+<tr>
+<td>Mark phase overhead from forwarding checks</td>
+<td>Low</td>
+<td>Check is a single bit test; benchmark validates</td>
+</tr>
+<tr>
+<td>Interaction with lazy sweep</td>
+<td>Medium</td>
+<td>Evacuated blocks bypass sweep queue; tested explicitly</td>
+</tr>
+<tr>
+<td>Mutable root borrow conflicts</td>
+<td>Low</td>
+<td>Stop-the-world GC ensures exclusive access</td>
+</tr>
+</tbody>
+</table>
+<h2 id="appendix-d-related-beads">Appendix D: Related Beads</h2>
+<ul>
+<li><strong>eu-2ij</strong> -- GC: Implement lazy sweeping optimisation (Phase 2, prerequisite, completed)</li>
+<li><strong>eu-5si</strong> -- GC: Implement full reference updating system (Phase 3, this work)</li>
+<li><strong>eu-w68</strong> -- Memory management unsafe code lacks safety documentation (addressed by sub-bead 8)</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

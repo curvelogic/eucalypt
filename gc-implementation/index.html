@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>GC Implementation - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "GC Implementation";
+        var mkdocs_page_input_path = "gc-implementation.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">GC Implementation</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#architecture">Architecture</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#memory-layout">Memory Layout</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#size-classes">Size Classes</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#object-headers">Object Headers</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#allocation-strategy">Allocation Strategy</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#bump-allocation">Bump Allocation</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#block-management">Block Management</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#allocation-paths">Allocation Paths</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#collection-algorithm">Collection Algorithm</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#mark-phase">Mark Phase</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#sweep-phase">Sweep Phase</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#mark-state-management">Mark State Management</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#collection-triggering">Collection Triggering</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#policy-based-collection">Policy-Based Collection</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#no-emergency-collection">No Emergency Collection</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#collection-frequency">Collection Frequency</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#memory-management-integration">Memory Management Integration</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#stg-machine-integration">STG Machine Integration</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#object-tracing">Object Tracing</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#performance-characteristics">Performance Characteristics</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#allocation-performance">Allocation Performance</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#collection-performance">Collection Performance</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#memory-utilization">Memory Utilization</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#testing-and-validation">Testing and Validation</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#unit-tests">Unit Tests</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#benchmark-tests">Benchmark Tests</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#missing-test-coverage">Missing Test Coverage</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#limitations">Limitations</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#threading-model">Threading Model</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#configuration">Configuration</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#algorithm-differences-from-full-immix">Algorithm Differences from Full Immix</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#current-implementation">Current Implementation</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#memory-management">Memory Management</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#integration">Integration</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#error-handling">Error Handling</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#code-organization">Code Organization</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#usage-and-behavior">Usage and Behavior</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#allocation-patterns">Allocation Patterns</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#collection-triggering_1">Collection Triggering</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#memory-layout-optimisation">Memory Layout Optimisation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#command-line-interface">Command Line Interface</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#analysis-against-immix-standards">Analysis Against Immix Standards</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#research-summary">Research Summary</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#specification-compliance">Specification Compliance</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#1-missing-opportunistic-defragmentation-critical">1. Missing Opportunistic Defragmentation (Critical)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#2-eager-vs-lazy-sweeping-performance-impact">2. Eager vs Lazy Sweeping (Performance Impact)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#3-conservative-marking-interpretation-semantic-difference">3. Conservative Marking Interpretation (Semantic Difference)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#4-fragmentation-detection-missing-core-feature">4. Fragmentation Detection (Missing Core Feature)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#algorithm-classification">Algorithm Classification</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#performance-implications">Performance Implications</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#technical-quality-assessment">Technical Quality Assessment</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#implementation-recommendations">Implementation Recommendations</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#immediate-improvements-current-algorithm">Immediate Improvements (Current Algorithm)</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#full-immix-implementation-major-enhancement">Full Immix Implementation (Major Enhancement)</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#conclusion">Conclusion</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Implementation</li>
+      <li class="breadcrumb-item active">GC Implementation</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/gc-implementation.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="garbage-collection-implementation">Garbage Collection Implementation</h1>
+<p>This document describes the current state of Eucalypt's Immix-style garbage collector implementation.</p>
+<h2 id="overview">Overview</h2>
+<p>Eucalypt uses a generational, mark-and-sweep garbage collector based on the Immix algorithm. The implementation provides automatic memory management for the STG (Spineless Tagless G-machine) runtime with support for multiple object size classes and block recycling.</p>
+<h2 id="architecture">Architecture</h2>
+<h3 id="memory-layout">Memory Layout</h3>
+<p>The GC uses a block-based allocation strategy with the following hierarchy:</p>
+<ul>
+<li><strong>Blocks</strong>: 32KB (2^15 bytes) memory regions</li>
+<li><strong>Lines</strong>: 128-byte (2^7 bytes) allocation units within blocks  </li>
+<li><strong>Objects</strong>: Variable-sized objects with 16-byte headers</li>
+</ul>
+<pre><code>Block (32KB)
+├── Line 0 (128B) ┐
+├── Line 1 (128B) │ 256 lines per block
+├── ...           │
+└── Line 255      ┘
+</code></pre>
+<h3 id="size-classes">Size Classes</h3>
+<p>Objects are categorized into three size classes:</p>
+<ol>
+<li><strong>Small</strong> (&lt; 128 bytes): Fit within a single line</li>
+<li><strong>Medium</strong> (128B - 32KB): Span multiple lines within a block</li>
+<li><strong>Large</strong> (&gt; 32KB): Allocated in dedicated Large Object Blocks (LOBs)</li>
+</ol>
+<p><em>Implementation</em>: <code>src/eval/memory/heap.rs:29-51</code></p>
+<h3 id="object-headers">Object Headers</h3>
+<p>Every allocated object has a 16-byte header containing:</p>
+<ul>
+<li><strong>Mark bits</strong> (2 bits): Current mark state and forwarding flag</li>
+<li><strong>Size field</strong> (32 bits): For untyped byte allocations</li>
+<li><strong>Forwarding pointer</strong> (64 bits): For potential moving collection</li>
+</ul>
+<p><em>Implementation</em>: <code>src/eval/memory/header.rs:61-69</code></p>
+<h2 id="allocation-strategy">Allocation Strategy</h2>
+<h3 id="bump-allocation">Bump Allocation</h3>
+<p>Each block uses downward bump allocation with:
+- <strong>Cursor</strong>: Current allocation position
+- <strong>Lower limit</strong>: Boundary of current usable region
+- <strong>Line map</strong>: Bitmap tracking which lines contain live objects</p>
+<p><em>Implementation</em>: <code>src/eval/memory/bump.rs:181-191</code></p>
+<h3 id="block-management">Block Management</h3>
+<p>The heap maintains several block categories:</p>
+<ul>
+<li><strong>Head block</strong>: Active small object allocation</li>
+<li><strong>Overflow block</strong>: Active medium object allocation  </li>
+<li><strong>Rest blocks</strong>: Previously used, pending collection</li>
+<li><strong>Recycled blocks</strong>: Reclaimed with usable holes</li>
+<li><strong>LOBs</strong>: Large object storage</li>
+</ul>
+<p><em>Implementation</em>: <code>src/eval/memory/heap.rs:54-65</code></p>
+<h3 id="allocation-paths">Allocation Paths</h3>
+<p><strong>All allocations</strong> flow through the GC system via:</p>
+<ol>
+<li><code>Heap::alloc&lt;T&gt;()</code> - Typed objects (<code>src/eval/memory/heap.rs:240</code>)</li>
+<li><code>Heap::alloc_bytes()</code> - Arrays/vectors (<code>src/eval/memory/heap.rs:261</code>)</li>
+</ol>
+<p>Both paths:
+- Calculate total size (header + object)
+- Find appropriate space based on size class
+- Write header and object data
+- Return typed pointer</p>
+<h2 id="collection-algorithm">Collection Algorithm</h2>
+<h3 id="mark-phase">Mark Phase</h3>
+<p>Uses tricolor marking with breadth-first traversal:</p>
+<ol>
+<li><strong>Reset</strong> all line maps in blocks</li>
+<li><strong>Root scanning</strong> from machine state (stack, globals, locals)</li>
+<li><strong>Transitive closure</strong> following object references</li>
+<li><strong>Line marking</strong> for objects and backing storage</li>
+</ol>
+<p><em>Implementation</em>: <code>src/eval/memory/collect.rs:123-144</code></p>
+<h3 id="sweep-phase">Sweep Phase</h3>
+<p>Conservative Immix sweep with hole identification:</p>
+<ol>
+<li><strong>Scan line maps</strong> in each block</li>
+<li><strong>Identify holes</strong> requiring 2+ consecutive free lines</li>
+<li><strong>Apply conservative marking</strong> (exclude boundary lines)</li>
+<li><strong>Move recyclable blocks</strong> to recycled list</li>
+</ol>
+<p><em>Implementation</em>: <code>src/eval/memory/bump.rs:295-306</code></p>
+<h3 id="mark-state-management">Mark State Management</h3>
+<p>Uses global mark bit flipping to avoid clearing marks:
+- <strong>MARK_STATE</strong>: Global atomic boolean indicating current "marked" value
+- <strong>flip_mark_state()</strong>: Called after each collection
+- <strong>Header marking</strong>: Compares object mark bit with current MARK_STATE</p>
+<p><em>Implementation</em>: <code>src/eval/memory/mark.rs</code></p>
+<h2 id="collection-triggering">Collection Triggering</h2>
+<h3 id="policy-based-collection">Policy-Based Collection</h3>
+<p>Collection occurs only when:
+1. User sets <code>--heap-limit-mib</code> command line option
+2. Allocated blocks ≥ limit AND recycled blocks &lt; 25% of total
+3. Check performed every 500 execution steps</p>
+<p><em>Implementation</em>: <code>src/eval/machine/vm.rs:810-818</code></p>
+<h3 id="no-emergency-collection">No Emergency Collection</h3>
+<p><strong>Critical limitation</strong>: Allocation failures cause panics rather than triggering emergency collection:</p>
+<pre><code class="language-rust">.expect(&quot;aargh&quot;)  // heap.rs:313,317
+</code></pre>
+<h3 id="collection-frequency">Collection Frequency</h3>
+<ul>
+<li><strong>Check interval</strong>: Every 500 VM execution steps</li>
+<li><strong>Default behavior</strong>: No automatic collection (no heap limit set)</li>
+<li><strong>Final collection</strong>: Always performed at program termination</li>
+</ul>
+<h2 id="memory-management-integration">Memory Management Integration</h2>
+<h3 id="stg-machine-integration">STG Machine Integration</h3>
+<p>The GC integrates with the STG machine through:</p>
+<ul>
+<li><strong>Root scanning</strong>: Machine state implements <code>GcScannable</code></li>
+<li><strong>Allocation scoping</strong>: <code>MutatorHeapView</code> provides safe allocation</li>
+<li><strong>Collection timing</strong>: Integrated with VM execution loop</li>
+</ul>
+<h3 id="object-tracing">Object Tracing</h3>
+<p>Objects implement <code>GcScannable</code> trait:
+- <strong>scan()</strong> method returns referenced objects
+- <strong>Collector scope</strong> ensures lifetime safety
+- <strong>Polymorphic scanning</strong> handles different object types</p>
+<p><em>Implementation</em>: <code>src/eval/memory/collect.rs:47-53</code></p>
+<h2 id="performance-characteristics">Performance Characteristics</h2>
+<h3 id="allocation-performance">Allocation Performance</h3>
+<ul>
+<li><strong>Bump allocation</strong>: O(1) for small/medium objects</li>
+<li><strong>Block recycling</strong>: Efficient hole-finding algorithm</li>
+<li><strong>Size-based routing</strong>: Optimal strategy per size class</li>
+</ul>
+<h3 id="collection-performance">Collection Performance</h3>
+<ul>
+<li><strong>Mark phase</strong>: Proportional to live object count</li>
+<li><strong>Sweep phase</strong>: Proportional to total block count</li>
+<li><strong>Pause times</strong>: Single-threaded stop-the-world collection</li>
+</ul>
+<h3 id="memory-utilization">Memory Utilization</h3>
+<ul>
+<li><strong>Conservative marking</strong>: May retain some garbage near live objects</li>
+<li><strong>Block recycling</strong>: Reduces allocation overhead</li>
+<li><strong>Fragmentation</strong>: Managed through hole coalescing</li>
+</ul>
+<h2 id="testing-and-validation">Testing and Validation</h2>
+<h3 id="unit-tests">Unit Tests</h3>
+<p>Current test coverage includes:</p>
+<ul>
+<li><strong>Basic allocation</strong>: Simple object allocation and retrieval</li>
+<li><strong>Multi-block allocation</strong>: Stress testing block management</li>
+<li><strong>Collection cycles</strong>: Mark-sweep correctness validation</li>
+<li><strong>Large objects</strong>: LOB allocation and collection</li>
+</ul>
+<p><em>Implementation</em>: <code>src/eval/memory/collect.rs:164-259</code></p>
+<h3 id="benchmark-tests">Benchmark Tests</h3>
+<p>Available benchmark programs:</p>
+<ul>
+<li><code>004_generations.eu</code>: Multi-generational allocation patterns</li>
+<li>Other benchmarks in <code>harness/test/bench/</code></li>
+</ul>
+<h3 id="missing-test-coverage">Missing Test Coverage</h3>
+<p><strong>Critical gaps identified</strong>:</p>
+<ol>
+<li><strong>Long-running tests</strong>: No sustained allocation testing</li>
+<li><strong>Emergency scenarios</strong>: No OOM recovery testing  </li>
+<li><strong>Performance regression</strong>: No GC timing benchmarks</li>
+<li><strong>Leak detection</strong>: No long-term memory usage validation</li>
+</ol>
+<h2 id="limitations">Limitations</h2>
+<h3 id="threading-model">Threading Model</h3>
+<ul>
+<li><strong>Single-threaded</strong>: No concurrent or parallel collection</li>
+<li><strong>Stop-the-world</strong>: Full program pause during collection</li>
+</ul>
+<h3 id="configuration">Configuration</h3>
+<ul>
+<li><strong>Fixed parameters</strong>: Collection thresholds are not user-configurable</li>
+<li><strong>Manual heap limits</strong>: Users can set heap limits via command line options</li>
+</ul>
+<h3 id="algorithm-differences-from-full-immix">Algorithm Differences from Full Immix</h3>
+<ul>
+<li><strong>No evacuation</strong>: Objects are not moved during collection</li>
+<li><strong>Mark-in-place only</strong>: No adaptive choice between marking and evacuation</li>
+<li><strong>Conservative marking</strong>: Line-based marking without precise object boundaries</li>
+</ul>
+<h2 id="current-implementation">Current Implementation</h2>
+<p>The implementation includes the following components:</p>
+<h3 id="memory-management">Memory Management</h3>
+<ul>
+<li>Block-based allocation with line maps for tracking object locations</li>
+<li>Three-tier size classification (small/medium/large objects)</li>
+<li>Mark-and-sweep collection algorithm without object evacuation</li>
+<li>Block recycling with hole detection and reuse</li>
+<li>Large object allocation with size-optimised boundaries</li>
+</ul>
+<h3 id="integration">Integration</h3>
+<ul>
+<li>STG machine integration for root scanning</li>
+<li>Object header management with mark state tracking  </li>
+<li>Array and vector allocation support</li>
+<li>Emergency collection on memory exhaustion</li>
+</ul>
+<h3 id="error-handling">Error Handling</h3>
+<ul>
+<li>Graceful handling of allocation failures</li>
+<li>Emergency collection attempts before reporting OOM</li>
+<li>Detailed error context including heap state information</li>
+</ul>
+<h2 id="code-organization">Code Organization</h2>
+<p>The GC implementation spans several modules:</p>
+<pre><code>src/eval/memory/
+├── mod.rs              # Module declarations
+├── heap.rs             # Main heap and allocation logic
+├── collect.rs          # Mark-and-sweep collector
+├── bump.rs             # Block allocation and line maps
+├── header.rs           # Object header management
+├── mark.rs             # Mark state management
+├── mutator.rs          # Mutator heap access
+├── alloc.rs            # Allocation traits
+├── array.rs            # Array/vector support
+├── block.rs            # Low-level block management
+├── lob.rs              # Large object blocks
+└── ...
+</code></pre>
+<h2 id="usage-and-behavior">Usage and Behavior</h2>
+<h3 id="allocation-patterns">Allocation Patterns</h3>
+<ul>
+<li>Small objects (&lt; 128 bytes) are allocated within single lines</li>
+<li>Medium objects (128 bytes - 32KB) span multiple lines within blocks</li>
+<li>Large objects (&gt; 32KB) receive dedicated allocation blocks</li>
+</ul>
+<h3 id="collection-triggering_1">Collection Triggering</h3>
+<ul>
+<li>Collection occurs when heap limit is exceeded (if set)</li>
+<li>Emergency collection attempts when allocation fails</li>
+<li>Explicit collection can be triggered programmatically</li>
+</ul>
+<h3 id="memory-layout-optimisation">Memory Layout Optimisation</h3>
+<ul>
+<li>Objects are aligned to 16-byte boundaries for cache efficiency</li>
+<li>Large objects use tiered size boundaries (16KB, 64KB, 256KB) to reduce waste</li>
+<li>Block recycling prioritises blocks with larger available holes</li>
+</ul>
+<h2 id="command-line-interface">Command Line Interface</h2>
+<p>GC-related options:</p>
+<ul>
+<li><code>--heap-limit-mib &lt;SIZE&gt;</code>: Set heap limit in MiB (enables automatic GC)</li>
+<li><code>--heap-dump-at-gc</code>: Dump heap state during collection (debugging)</li>
+<li><code>-S, --statistics</code>: Print execution metrics including GC stats</li>
+</ul>
+<h2 id="analysis-against-immix-standards">Analysis Against Immix Standards</h2>
+<h3 id="research-summary">Research Summary</h3>
+<p>Based on analysis of the original Immix paper (Blackburn &amp; McKinley, 2008) and comparison with open-source implementations, several important disparities have been identified in Eucalypt's implementation.</p>
+<h3 id="specification-compliance">Specification Compliance</h3>
+<p><strong>✅ Correct Implementations:</strong>
+- <strong>Block size</strong>: 32KB (matches original paper specification)
+- <strong>Line size</strong>: 128 bytes (consistent across all Immix implementations)
+- <strong>Conservative line marking</strong>: Properly requires 2+ consecutive free lines for holes
+- <strong>Downward bump allocation</strong>: Correct allocation direction within blocks
+- <strong>Line map organization</strong>: Proper bitmap implementation for line marking
+- <strong>Memory layout</strong>: Correct block/line hierarchy</p>
+<p><strong>⚠️ Significant Disparities:</strong></p>
+<h4 id="1-missing-opportunistic-defragmentation-critical">1. <strong>Missing Opportunistic Defragmentation</strong> (Critical)</h4>
+<ul>
+<li><strong>Standard Immix</strong>: Core innovation is opportunistic evacuation of fragmented blocks</li>
+<li><strong>Eucalypt</strong>: No evacuation or moving collection implemented</li>
+<li><strong>Impact</strong>: Loses primary performance advantage of Immix over mark-sweep</li>
+<li><strong>Evidence</strong>: Headers have forwarding fields but they're never used</li>
+</ul>
+<h4 id="2-eager-vs-lazy-sweeping-performance-impact">2. <strong>Eager vs Lazy Sweeping</strong> (Performance Impact)</h4>
+<ul>
+<li><strong>Standard Immix</strong>: Lazy sweeping - blocks swept just before allocation</li>
+<li><strong>Eucalypt</strong>: Eager sweeping - all blocks swept immediately after marking</li>
+<li><strong>Impact</strong>: Higher collection pause times, less responsive allocation</li>
+</ul>
+<h4 id="3-conservative-marking-interpretation-semantic-difference">3. <strong>Conservative Marking Interpretation</strong> (Semantic Difference)</h4>
+<ul>
+<li><strong>Standard Immix</strong>: Conservative refers to stack/root scanning without precise type info</li>
+<li><strong>Eucalypt</strong>: Conservative refers to line boundary exclusion during hole detection</li>
+<li><strong>Impact</strong>: Different meaning of "conservative" - both valid but semantically different</li>
+</ul>
+<h4 id="4-fragmentation-detection-missing-core-feature">4. <strong>Fragmentation Detection</strong> (Missing Core Feature)</h4>
+<ul>
+<li><strong>Standard Immix</strong>: Decides whether to evacuate based on fragmentation analysis</li>
+<li><strong>Eucalypt</strong>: No fragmentation detection or evacuation decisions</li>
+<li><strong>Impact</strong>: Cannot adapt collection strategy to heap state</li>
+</ul>
+<h3 id="algorithm-classification">Algorithm Classification</h3>
+<p><strong>Current Status</strong>: Eucalypt implements a "Mark-Sweep with Line Maps" collector rather than true Immix.</p>
+<p><strong>Missing Core Immix Features:</strong>
+- Opportunistic defragmentation
+- Block evacuation
+- Fragmentation-based collection decisions
+- Moving/copying collection phases
+- Lazy sweeping optimisation</p>
+<h3 id="performance-implications">Performance Implications</h3>
+<p><strong>Retained Benefits:</strong>
+- Efficient allocation through bump allocation
+- Good cache locality from line-based organization
+- Effective hole identification and reuse</p>
+<p><strong>Lost Benefits:</strong>
+- Defragmentation to combat fragmentation
+- Adaptive collection based on heap state
+- Lower pause times from lazy sweeping
+- Space efficiency improvements from compaction</p>
+<h3 id="technical-quality-assessment">Technical Quality Assessment</h3>
+<p><strong>Code Quality</strong>: ⭐⭐⭐⭐⭐ Excellent
+- Clean, well-structured implementation
+- Proper safety invariants
+- Good abstraction boundaries
+- Comprehensive unit tests</p>
+<p><strong>Algorithm Completeness</strong>: ⭐⭐⭐ Partial<br />
+- Implements ~60% of full Immix algorithm
+- Missing core performance innovations
+- Solid foundation for full implementation</p>
+<p><strong>Stability</strong>: Functional with error handling
+- Graceful handling of memory exhaustion scenarios
+- Emergency collection fallback mechanisms
+- Comprehensive test coverage for allocation and collection scenarios</p>
+<h3 id="implementation-recommendations">Implementation Recommendations</h3>
+<h4 id="immediate-improvements-current-algorithm">Immediate Improvements (Current Algorithm)</h4>
+<ol>
+<li><strong>Lazy sweeping</strong>: Sweep blocks just before allocation</li>
+<li><strong>Better collection policy</strong>: More sophisticated triggering</li>
+<li><strong>Error handling</strong>: Graceful OOM recovery</li>
+</ol>
+<h4 id="full-immix-implementation-major-enhancement">Full Immix Implementation (Major Enhancement)</h4>
+<ol>
+<li><strong>Fragmentation detection</strong>: Track fragmented vs dense blocks</li>
+<li><strong>Evacuation phase</strong>: Implement object moving during collection</li>
+<li><strong>Adaptive collection</strong>: Choose mark-in-place vs evacuation per cycle</li>
+<li><strong>Conservative root scanning</strong>: Stack scanning without precise types</li>
+</ol>
+<h3 id="conclusion">Conclusion</h3>
+<p>Eucalypt's GC implementation is a mark-sweep collector that uses Immix-inspired memory organisation. While it doesn't implement the full Immix algorithm (particularly the evacuation phase), it provides functional memory management for the STG runtime.</p>
+<p><strong>Current Status:</strong>
+- Implements block-based allocation with line-level tracking
+- Provides mark-and-sweep collection without object movement
+- Includes optimisations for large object allocation and block recycling
+- Handles memory exhaustion through emergency collection mechanisms</p>
+<p><strong>Relationship to Immix Algorithm:</strong>
+The implementation captures Immix's memory layout benefits (cache-friendly block organisation, efficient hole detection) but omits the core evacuation phase that distinguishes Immix from traditional mark-sweep collectors. This results in a hybrid approach that combines Immix memory organisation with mark-in-place collection.</p>
+<p><strong>Practical Considerations:</strong>
+For eucalypt's typical workloads (configuration processing, template rendering, data transformation), the current implementation provides adequate memory management. The lack of evacuation limits performance gains for long-running or heavily fragmented applications, but this matches eucalypt's primary use cases.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../architecture/" class="btn btn-neutral float-left" title="Architecture"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../gc-benchmarking/" class="btn btn-neutral float-right" title="GC Benchmarking">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../architecture/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../gc-benchmarking/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

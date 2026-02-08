@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Symbol Interning — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Symbol Interning \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-05-symbol-interning-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Symbol Interning — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-05-symbol-interning-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="symbol-interning-design">Symbol Interning — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>Symbols are stored as individual heap strings. The same symbol appearing N
+times results in N separate heap allocations. Comparison requires full
+string comparison.</p>
+<h2 id="solution">Solution</h2>
+<p>Symbol interning — a per-machine pool where each unique symbol string is
+stored once, referenced by a compact <code>SymbolId(u32)</code>.</p>
+<h2 id="key-properties">Key Properties</h2>
+<ul>
+<li><strong>Per-machine pool</strong> — owned by VM, clear lifetime, no thread safety</li>
+<li><strong>Interning at heap load</strong> — loader interns instead of allocating</li>
+<li><strong><code>Native::Sym(SymbolId)</code></strong> — symbols are just IDs, strings live in pool</li>
+<li><strong>Fast comparison</strong> — <code>id1 == id2</code> instead of string comparison</li>
+<li><strong>Pool structure</strong> — <code>HashMap&lt;String, SymbolId&gt;</code> + <code>Vec&lt;String&gt;</code></li>
+</ul>
+<h2 id="benefits">Benefits</h2>
+<ul>
+<li>Memory: each unique symbol stored once</li>
+<li>Speed: integer comparison vs string comparison</li>
+<li>Enables: block indexing (eu-brj) with <code>HashMap&lt;SymbolId, usize&gt;</code></li>
+</ul>
+<h2 id="data-structures">Data Structures</h2>
+<p><strong>SymbolId</strong> — newtype wrapper for type safety:</p>
+<pre><code class="language-rust">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SymbolId(u32);
+</code></pre>
+<p><strong>SymbolPool</strong> — owned by the machine:</p>
+<pre><code class="language-rust">pub struct SymbolPool {
+    /// String → ID lookup for interning
+    to_id: HashMap&lt;String, SymbolId&gt;,
+    /// ID → String lookup for resolving
+    to_str: Vec&lt;String&gt;,
+}
+
+impl SymbolPool {
+    pub fn intern(&amp;mut self, s: &amp;str) -&gt; SymbolId {
+        if let Some(&amp;id) = self.to_id.get(s) {
+            return id;
+        }
+        let id = SymbolId(self.to_str.len() as u32);
+        self.to_str.push(s.to_string());
+        self.to_id.insert(s.to_string(), id);
+        id
+    }
+
+    pub fn resolve(&amp;self, id: SymbolId) -&gt; &amp;str {
+        &amp;self.to_str[id.0 as usize]
+    }
+}
+</code></pre>
+<p><strong>Native::Sym change</strong>:</p>
+<pre><code class="language-rust">// Before
+Native::Sym(RefPtr&lt;HeapString&gt;)
+
+// After
+Native::Sym(SymbolId)
+</code></pre>
+<h2 id="integration-points">Integration Points</h2>
+<h3 id="loader-srcevalmemoryloaderrs">Loader (<code>src/eval/memory/loader.rs</code>)</h3>
+<p>Currently allocates HeapString for each symbol. Change to intern:</p>
+<pre><code class="language-rust">// Before
+stg::syntax::Native::Sym(s) =&gt; {
+    let ptr = self.alloc(HeapString::from_str(mem, s.as_str()))?;
+    memory::syntax::Ref::V(memory::syntax::Native::Sym(ptr))
+}
+
+// After
+stg::syntax::Native::Sym(s) =&gt; {
+    let id = symbol_pool.intern(s.as_str());
+    memory::syntax::Ref::V(memory::syntax::Native::Sym(id))
+}
+</code></pre>
+<h3 id="equality-srcevalstgeqrs">Equality (<code>src/eval/stg/eq.rs</code>)</h3>
+<p>Currently compares strings. Change to integer comparison:</p>
+<pre><code class="language-rust">// Before
+(Native::Sym(sx), Native::Sym(sy)) =&gt; str_eq(view, sx, sy)
+
+// After
+(Native::Sym(id_x), Native::Sym(id_y)) =&gt; id_x == id_y
+</code></pre>
+<h3 id="display-and-errors">Display and errors</h3>
+<p>Anywhere that needs the symbol string calls <code>pool.resolve(id)</code>. This
+includes error messages, rendering, and debugging output.</p>
+<h3 id="block-key-matching">Block key matching</h3>
+<p><code>MatchesKey</code> in block.rs compares SymbolIds directly instead of string
+comparison.</p>
+<h2 id="machine-ownership">Machine Ownership</h2>
+<p>The <code>SymbolPool</code> is owned by the machine/evaluator:</p>
+<pre><code class="language-rust">pub struct Machine {
+    // ... existing fields
+    symbol_pool: SymbolPool,
+}
+</code></pre>
+<p>Pool access via <code>IntrinsicMachine</code> trait — add <code>symbol_pool(&amp;self) -&gt;
+&amp;SymbolPool</code> and <code>symbol_pool_mut(&amp;mut self) -&gt; &amp;mut SymbolPool</code>
+methods. Intrinsics already receive the machine reference, so no
+signature changes needed. Intrinsics that don't use symbols are
+unaffected.</p>
+<h2 id="testing">Testing</h2>
+<p><strong>Correctness</strong>: Existing harness tests pass unchanged.</p>
+<p><strong>Interning</strong>: Same symbol interned twice returns same ID.</p>
+<p><strong>Resolve round-trip</strong>: <code>pool.resolve(pool.intern("foo")) == "foo"</code>.</p>
+<p><strong>Comparison</strong>: Two symbols with same string have equal IDs.</p>
+<p><strong>Memory</strong>: Verify single allocation per unique symbol.</p>
+<h2 id="benchmarking">Benchmarking</h2>
+<ul>
+<li>Memory usage before/after on symbol-heavy programs</li>
+<li>Symbol comparison performance</li>
+<li>Block lookup performance (benefits from fast key comparison)</li>
+</ul>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>Thread-safe pool (single-threaded execution)</li>
+<li>Garbage collection of unused symbols (pool lives with machine)</li>
+<li>Interning at parse time (would require larger changes)</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

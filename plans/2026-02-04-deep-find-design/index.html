@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Deep Find — Data Querying for Eucalypt - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Deep Find \u2014 Data Querying for Eucalypt";
+        var mkdocs_page_input_path = "plans/2026-02-04-deep-find-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Deep Find — Data Querying for Eucalypt</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-04-deep-find-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="deep-find-data-querying-for-eucalypt">Deep Find — Data Querying for Eucalypt</h1>
+<h2 id="problem">Problem</h2>
+<p>Navigating deeply nested data in eucalypt requires spelling out full
+paths. When exploring unfamiliar JSON/YAML or extracting values from
+complex structures, this is tedious and brittle:</p>
+<pre><code>data.response.body.items.0.pricing.price
+</code></pre>
+<h2 id="design-decisions">Design Decisions</h2>
+<h3 id="no-root-reference">No root reference</h3>
+<p>We deliberately do not provide a way to reference the entire top-level
+namespace (the feature proposed in eu-lt0). Users must use named
+imports, e.g. <code>data=response.json</code>, keeping the reachability scope
+bounded. This preserves the compiler's ability to perform dead code
+elimination — a root reference would hold everything live and defeat
+DCE entirely.</p>
+<p>Since eucalypt intentionally blurs the line between data and code
+(blocks can contain lambdas, YAML files can contain executable
+eucalypt), any reference to the root is effectively a reference to all
+code. Named imports are sufficient and DCE-safe.</p>
+<h3 id="library-functions-not-syntax">Library functions, not syntax</h3>
+<p>Deep find is implemented as prelude library functions, not new syntax.
+This avoids grammar changes, is consistent with eucalypt's existing
+style, and can be extended incrementally. Note that <code>//</code> syntax would
+conflict with existing metadata/assertion functionality.</p>
+<h3 id="prelude-first-intrinsics-if-needed">Prelude first, intrinsics if needed</h3>
+<p>Initial implementation is pure eucalypt using existing block
+intrinsics (<code>elements</code>, <code>keys</code>, recursive walk). Rust intrinsics are a
+future optimisation only if profiling shows performance problems on
+realistic data sizes.</p>
+<h2 id="phase-1-core-functions">Phase 1 — Core Functions</h2>
+<p>Three prelude functions for searching block structures by key name at
+any depth:</p>
+<ul>
+<li><strong><code>deep-find(key)</code></strong> — returns a list of all values matching the
+  key, depth-first document order</li>
+<li><strong><code>deep-find-first(key, default)</code></strong> — returns the first match, or
+  the default if none found (follows the <code>lookup-or</code> pattern)</li>
+<li><strong><code>deep-find-paths(key)</code></strong> — returns a list of paths to matching
+  keys</li>
+</ul>
+<p>All operate on a named import or any block value.</p>
+<pre><code class="language-bash">eu data=response.json -e &quot;data deep-find(\&quot;price\&quot;)&quot;
+# [10, 20, 30]
+
+eu data=response.json -e &quot;data deep-find-first(\&quot;email\&quot;, \&quot;unknown\&quot;)&quot;
+# &quot;alice@example.com&quot;
+</code></pre>
+<h3 id="traversal">Traversal</h3>
+<p>Depth-first, document order — matches appear in the order their keys
+would be encountered reading the source top to bottom.</p>
+<h2 id="phase-2-query-string-dsl">Phase 2 — Query String DSL</h2>
+<p>A <code>deep-query</code> function that accepts a simple path expression as a
+string, parsed at runtime:</p>
+<pre><code>data deep-query(&quot;items.*.price&quot;)
+</code></pre>
+<h3 id="query-language-minimal">Query language (minimal)</h3>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>foo</code></td>
+<td>Match key <code>foo</code> at any depth (same as <code>deep-find</code>)</td>
+</tr>
+<tr>
+<td><code>foo.bar</code></td>
+<td>Match <code>bar</code> directly inside <code>foo</code>, at any depth</td>
+</tr>
+<tr>
+<td><code>foo.*.bar</code></td>
+<td>Match <code>bar</code> inside any direct child of <code>foo</code></td>
+</tr>
+<tr>
+<td><code>foo.**.bar</code></td>
+<td>Match <code>bar</code> at any depth inside <code>foo</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>*</code> matches a single level. <code>**</code> matches zero or more levels. Bare
+<code>foo</code> is sugar for <code>**.foo</code>.</p>
+<h3 id="variants">Variants</h3>
+<ul>
+<li><strong><code>deep-query(pattern)</code></strong> — list of values</li>
+<li><strong><code>deep-query-first(pattern, default)</code></strong> — first match or default</li>
+<li><strong><code>deep-query-paths(pattern)</code></strong> — list of paths</li>
+</ul>
+<h3 id="implementation">Implementation</h3>
+<p>Phase 2 is a pure eucalypt implementation that parses the pattern
+string into segments, then uses the phase 1 primitives as building
+blocks for the recursive walk. Pattern parsing happens on each call —
+no caching. A Rust intrinsic (phase 3) could follow if profiling shows
+the string parsing overhead matters in hot loops.</p>
+<h2 id="phase-3-rust-intrinsics-if-needed">Phase 3 — Rust Intrinsics (if needed)</h2>
+<p>Only pursued if profiling shows performance problems. Would replace
+the prelude implementations with equivalent Rust intrinsics registered
+via the standard intrinsic catalogue.</p>
+<h2 id="interaction-with-dead-code-elimination">Interaction with Dead Code Elimination</h2>
+<p>These functions do not worsen DCE because they operate on named
+imports or explicit block values — the compiler already considers
+everything reachable from that binding as live.</p>
+<p>eu-8d8 (dead code elimination inside blocks) remains an independent
+compiler concern. The deep-find functions are consumers of block data,
+not a factor in what the compiler can prune.</p>
+<h2 id="testing">Testing</h2>
+<ul>
+<li>Harness tests with nested JSON/YAML fixtures</li>
+<li>Edge cases: empty blocks, lists within blocks, no matches, duplicate
+  keys at different depths</li>
+<li>Performance: test against a moderately large JSON document (~1MB) to
+  establish baseline</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

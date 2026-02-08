@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Architecture - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Architecture";
+        var mkdocs_page_input_path = "architecture.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Architecture</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#system-architecture">System Architecture</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#high-level-pipeline">High-Level Pipeline</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#module-structure">Module Structure</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#parsing-pipeline">Parsing Pipeline</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#lexer">Lexer</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#parser">Parser</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#ast">AST</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#core-expression-representation">Core Expression Representation</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#expression-type">Expression Type</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#transformation-pipeline">Transformation Pipeline</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#desugaring">Desugaring</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#cooking">Cooking</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#simplification-and-inlining">Simplification and Inlining</a>
+    </li>
+    <li class="toctree-l4"><a class="reference internal" href="#verification">Verification</a>
+    </li>
+        </ul>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#stg-compilation-and-evaluation-model">STG Compilation and Evaluation Model</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#stg-syntax">STG Syntax</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#stg-compiler">STG Compiler</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#virtual-machine">Virtual Machine</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#continuations">Continuations</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#lazy-evaluation">Lazy Evaluation</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#memory-management-and-garbage-collection">Memory Management and Garbage Collection</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#memory-layout">Memory Layout</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#object-headers">Object Headers</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#garbage-collection">Garbage Collection</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-prelude-and-standard-library">The Prelude and Standard Library</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#intrinsic-functions">Intrinsic Functions</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#prelude">Prelude</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#driver-and-cli-architecture">Driver and CLI Architecture</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#entry-point">Entry Point</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#modes-of-operation">Modes of Operation</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#output-formats">Output Formats</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#input-handling">Input Handling</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#key-design-decisions-and-trade-offs">Key Design Decisions and Trade-offs</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#why-stg">Why STG?</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#why-rowan-for-parsing">Why Rowan for Parsing?</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#core-as-intermediate-language">Core as Intermediate Language</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#block-duality">Block Duality</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#immix-inspired-gc">Immix-Inspired GC</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#embedded-prelude">Embedded Prelude</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#performance-characteristics">Performance Characteristics</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#compilation">Compilation</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#execution">Execution</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#memory">Memory</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#code-organisation-summary">Code Organisation Summary</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#further-reading">Further Reading</a>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Implementation</li>
+      <li class="breadcrumb-item active">Architecture</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/architecture.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="eucalypt-architecture">Eucalypt Architecture</h1>
+<p>This document provides a comprehensive overview of Eucalypt's design and implementation architecture.</p>
+<h2 id="overview">Overview</h2>
+<p>Eucalypt is a functional programming language and tool for generating, templating, rendering, and processing structured data formats like YAML, JSON, and TOML. Written in Rust (~44,000 lines), it features a classic multi-phase compiler design with an STG (Spineless Tagless G-machine) runtime for lazy evaluation.</p>
+<h2 id="system-architecture">System Architecture</h2>
+<h3 id="high-level-pipeline">High-Level Pipeline</h3>
+<pre><code>Source Code (*.eu files)
+        │
+        ▼
+┌───────────────────────┐
+│    Parsing Phase      │  src/syntax/
+│  Lexer → Parser → AST │
+└───────────────────────┘
+        │
+        ▼
+┌───────────────────────┐
+│     Core Phase        │  src/core/
+│  Desugar → Cook →     │
+│  Transform → Verify   │
+└───────────────────────┘
+        │
+        ▼
+┌───────────────────────┐
+│   Evaluation Phase    │  src/eval/
+│  STG Compile → VM →   │
+│  Memory Management    │
+└───────────────────────┘
+        │
+        ▼
+┌───────────────────────┐
+│    Export Phase       │  src/export/
+│  JSON/YAML/TOML/etc   │
+└───────────────────────┘
+</code></pre>
+<h3 id="module-structure">Module Structure</h3>
+<pre><code>eucalypt/
+├── src/
+│   ├── bin/eu.rs           # CLI entry point
+│   ├── lib.rs              # Library root
+│   ├── common/             # Shared utilities
+│   ├── syntax/             # Parsing and AST
+│   │   └── rowan/          # Rowan-based incremental parser
+│   ├── core/               # Core expression representation
+│   │   ├── desugar/        # AST to core transformation
+│   │   ├── cook/           # Operator fixity resolution
+│   │   ├── transform/      # Expression transformations
+│   │   ├── simplify/       # Optimisation passes
+│   │   ├── inline/         # Inlining passes
+│   │   ├── verify/         # Validation
+│   │   └── analyse/        # Program analysis
+│   ├── eval/               # Evaluation engine
+│   │   ├── stg/            # STG syntax and compiler
+│   │   ├── machine/        # Virtual machine
+│   │   └── memory/         # Heap and garbage collection
+│   ├── driver/             # CLI orchestration
+│   ├── export/             # Output format generation
+│   └── import/             # Input format parsing
+├── lib/                    # Standard library (eucalypt source)
+│   ├── prelude.eu          # Core prelude
+│   ├── test.eu             # Test framework
+│   └── markup.eu           # Markup utilities
+└── docs/                   # Documentation
+</code></pre>
+<h2 id="parsing-pipeline">Parsing Pipeline</h2>
+<p>The parsing pipeline transforms source text into a structured AST using Rowan, an incremental parsing library that preserves full source fidelity including whitespace and comments.</p>
+<h3 id="lexer">Lexer</h3>
+<p><em>Implementation</em>: <code>src/syntax/rowan/lex.rs</code>, <code>src/syntax/rowan/string_lex.rs</code></p>
+<p>The lexer (<code>Lexer&lt;C&gt;</code>) tokenises source text into a stream of <code>SyntaxKind</code> tokens:</p>
+<pre><code class="language-rust">pub struct Lexer&lt;C: Iterator&lt;Item = char&gt;&gt; {
+    chars: Peekable&lt;C&gt;,           // Character stream with lookahead
+    location: ByteIndex,           // Source position tracking
+    last_token: Option&lt;SyntaxKind&gt;, // Context for disambiguation
+    whitespace_since_last_token: bool,
+    token_buffer: VecDeque&lt;(SyntaxKind, Span)&gt;,
+}
+</code></pre>
+<p><strong>Key features:</strong>
+- Unicode-aware identifier and operator recognition
+- Context-sensitive tokenisation (distinguishes <code>OPEN_PAREN</code> from <code>OPEN_PAREN_APPLY</code>)
+- String pattern lexing with interpolation support (<code>"Hello {name}"</code>)
+- Preserves trivia (whitespace, comments) for full-fidelity AST</p>
+<p><strong>Token categories:</strong>
+- Delimiters: <code>{ } ( ) [ ] : , \``
+- Identifiers:</code>foo<code>,</code>'quoted name'<code>,</code>+<code>,</code>&amp;&amp;<code>- Literals: Numbers, strings, symbols (</code>:keyword<code>)
+- Annotations: Whitespace, comments (</code>#`)</p>
+<h3 id="parser">Parser</h3>
+<p><em>Implementation</em>: <code>src/syntax/rowan/parse.rs</code></p>
+<p>The parser uses an event-driven recursive descent approach:</p>
+<pre><code class="language-rust">pub struct Parser&lt;'text&gt; {
+    tokens: Vec&lt;(SyntaxKind, &amp;'text str)&gt;,
+    next_token: usize,
+    sink_stack: Vec&lt;Box&lt;dyn EventSink&gt;&gt;,
+    errors: Vec&lt;ParseError&gt;,
+}
+</code></pre>
+<p><strong>Parse events:</strong></p>
+<pre><code class="language-rust">enum ParseEvent {
+    StartNode(SyntaxKind),  // Begin syntax node
+    Finish,                  // Complete node
+    Token(SyntaxKind),      // Include token
+}
+</code></pre>
+<p><strong>Key parsing methods:</strong>
+- <code>parse_unit()</code> - Top-level file (no braces required)
+- <code>parse_expression()</code> / <code>parse_soup()</code> - Expression sequences
+- <code>parse_block_expression()</code> - <code>{ ... }</code> blocks with declarations
+- <code>parse_string_pattern()</code> - Interpolated strings</p>
+<p>The parser maintains error recovery for LSP support, collecting errors while continuing to parse.</p>
+<h3 id="ast">AST</h3>
+<p><em>Implementation</em>: <code>src/syntax/rowan/ast.rs</code></p>
+<p>The AST uses a two-layer design:
+1. <strong>SyntaxNode</strong> (Rowan) - Rich, source-preserving tree
+2. <strong>AST Nodes</strong> - Typed wrappers via macros</p>
+<pre><code class="language-rust">macro_rules! ast_node {
+    ($ast:ident, $kind:ident) =&gt; {
+        pub struct $ast(SyntaxNode);
+        impl AstNode for $ast { ... }
+    }
+}
+</code></pre>
+<p><strong>Key AST types:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Unit</code></td>
+<td>Top-level file structure</td>
+</tr>
+<tr>
+<td><code>Block</code></td>
+<td>Enclosed <code>{ ... }</code> block</td>
+</tr>
+<tr>
+<td><code>Declaration</code></td>
+<td>Property/function declaration</td>
+</tr>
+<tr>
+<td><code>DeclHead</code></td>
+<td>Declaration name (before <code>:</code>)</td>
+</tr>
+<tr>
+<td><code>DeclBody</code></td>
+<td>Declaration value (after <code>:</code>)</td>
+</tr>
+<tr>
+<td><code>Soup</code></td>
+<td>Unordered expression sequence</td>
+</tr>
+<tr>
+<td><code>List</code></td>
+<td>List expression <code>[a, b, c]</code></td>
+</tr>
+<tr>
+<td><code>Name</code></td>
+<td>Identifier reference</td>
+</tr>
+<tr>
+<td><code>Literal</code></td>
+<td>Literal value</td>
+</tr>
+<tr>
+<td><code>StringPattern</code></td>
+<td>Interpolated string</td>
+</tr>
+</tbody>
+</table>
+<h2 id="core-expression-representation">Core Expression Representation</h2>
+<p>The core representation is an intermediate language that facilitates powerful transformations while maintaining source information for error reporting.</p>
+<h3 id="expression-type">Expression Type</h3>
+<p><em>Implementation</em>: <code>src/core/expr.rs</code></p>
+<p>The <code>Expr&lt;T&gt;</code> enum (where <code>T: BoundTerm&lt;String&gt;</code>) represents all expression forms:</p>
+<pre><code class="language-rust">pub enum Expr&lt;T&gt; {
+    // Variables
+    Var(Smid, Var&lt;String&gt;),           // Free or bound variable
+
+    // Primitives
+    Literal(Smid, Primitive),          // Number, string, symbol, bool, null
+
+    // Binding forms
+    Let(Smid, LetScope&lt;T&gt;, LetType),   // Recursive let binding
+    Lam(Smid, bool, LamScope&lt;T&gt;),      // Lambda abstraction
+
+    // Application
+    App(Smid, T, Vec&lt;T&gt;),              // Function application
+
+    // Data structures
+    List(Smid, Vec&lt;T&gt;),                // List literal
+    Block(Smid, BlockMap&lt;T&gt;),          // Object/record literal
+
+    // Operators (pre-cooking)
+    Operator(Smid, Fixity, Precedence, T),
+    Soup(Smid, Vec&lt;T&gt;),                // Unresolved operator soup
+
+    // Anaphora (implicit parameters)
+    BlockAnaphor(Smid, ...),
+    ExprAnaphor(Smid, ...),
+
+    // Access
+    Lookup(Smid, T, String, Option&lt;T&gt;), // Property access
+
+    // Metadata
+    Meta(Smid, T, T),                   // Expression with metadata
+
+    // Intrinsics
+    Intrinsic(Smid, String),           // Built-in function reference
+
+    // Error nodes
+    ErrUnresolved, ErrRedeclaration, ...
+}
+</code></pre>
+<p><strong>Primitive types:</strong></p>
+<pre><code class="language-rust">pub enum Primitive {
+    Str(String),
+    Sym(String),
+    Num(Number),
+    Bool(bool),
+    Null,
+}
+</code></pre>
+<p><strong>Standard wrapper</strong>: <code>RcExpr</code> provides reference-counted immutable expressions with substitution and transformation methods.</p>
+<h3 id="transformation-pipeline">Transformation Pipeline</h3>
+<p>The core pipeline transforms expressions through several phases:</p>
+<pre><code>AST → Desugar → Cook → Simplify → Inline → Verify → STG
+</code></pre>
+<h4 id="desugaring">Desugaring</h4>
+<p><em>Implementation</em>: <code>src/core/desugar/</code></p>
+<p>Transforms parsed AST into core expressions:
+- Converts block declarations into recursive let bindings
+- Extracts targets and documentation metadata
+- Handles imports and cross-file references
+- Processes both native AST and embedded data (JSON/YAML)</p>
+<h4 id="cooking">Cooking</h4>
+<p><em>Implementation</em>: <code>src/core/cook/</code></p>
+<p>Resolves operator precedence and anaphora:
+1. <strong>Fixity distribution</strong> - Propagate operator precedence info
+2. <strong>Anaphor filling</strong> - Infer missing implicit parameters (<code>(+ 10)</code> → <code>(_ + 10)</code>)
+3. <strong>Shunting yard</strong> - Apply precedence climbing to linearise operator soup
+4. <strong>Anaphor processing</strong> - Wrap lambda abstractions around anaphoric expressions</p>
+<p>Example transformation:</p>
+<pre><code>(+ 10)        →  (λ _ . (_ + 10))
+a + b * c     →  (+ a (* b c))      // with standard precedence
+</code></pre>
+<h4 id="simplification-and-inlining">Simplification and Inlining</h4>
+<p><em>Implementation</em>: <code>src/core/simplify/</code>, <code>src/core/inline/</code></p>
+<ul>
+<li><strong>Compression</strong> - Remove eliminated bindings</li>
+<li><strong>Pruning</strong> - Dead code elimination</li>
+<li><strong>Inlining</strong> - Inline marked expressions</li>
+</ul>
+<h4 id="verification">Verification</h4>
+<p><em>Implementation</em>: <code>src/core/verify/</code></p>
+<p>Validates transformed expressions before STG compilation:
+- Binding verification
+- Content validation</p>
+<h2 id="stg-compilation-and-evaluation-model">STG Compilation and Evaluation Model</h2>
+<p>Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.</p>
+<h3 id="stg-syntax">STG Syntax</h3>
+<p><em>Implementation</em>: <code>src/eval/stg/syntax.rs</code></p>
+<p>The STG syntax represents executable code:</p>
+<pre><code class="language-rust">pub enum StgSyn {
+    Atom { evaluand: Ref },              // Value or reference
+    Case { scrutinee, branches, fallback }, // Pattern matching (evaluation point)
+    Cons { tag: Tag, args: Vec&lt;Ref&gt; },   // Data constructor
+    App { callable: Ref, args: Vec&lt;Ref&gt; }, // Function application
+    Bif { intrinsic: u8, args: Vec&lt;Ref&gt; }, // Built-in intrinsic
+    Let { bindings: Vec&lt;LambdaForm&gt;, body }, // Non-recursive let
+    LetRec { bindings: Vec&lt;LambdaForm&gt;, body }, // Recursive let
+    Ann { smid: Smid, body },            // Source annotation
+    Meta { meta: Ref, body: Ref },       // Metadata wrapper
+    DeMeta { scrutinee, handler, or_else }, // Metadata destructure
+    BlackHole,                            // Uninitialized marker
+}
+</code></pre>
+<p><strong>Reference types:</strong></p>
+<pre><code class="language-rust">pub enum Reference&lt;T&gt; {
+    L(usize),  // Local environment index
+    G(usize),  // Global environment index
+    V(T),      // Direct value (Native)
+}
+</code></pre>
+<p><strong>Lambda forms</strong> control laziness:
+- <code>Lambda</code> - Function with explicit arity
+- <code>Thunk</code> - Lazy expression (evaluated and updated in-place)
+- <code>Value</code> - Already in WHNF (no update needed)</p>
+<h3 id="stg-compiler">STG Compiler</h3>
+<p><em>Implementation</em>: <code>src/eval/stg/compiler.rs</code></p>
+<p>The compiler transforms core expressions to STG syntax:</p>
+<pre><code class="language-rust">impl Compiler {
+    fn compile_body(&amp;mut self, expr: &amp;RcExpr) -&gt; ProtoSyntax;
+    fn compile_binding(&amp;mut self, expr: &amp;RcExpr) -&gt; ProtoBinding;
+    fn compile_lambda(&amp;mut self, expr: &amp;RcExpr) -&gt; ProtoSyntax;
+    fn compile_application(&amp;mut self, f: &amp;RcExpr, args: &amp;[RcExpr]) -&gt; ProtoSyntax;
+}
+</code></pre>
+<p><strong>Key decisions:</strong>
+- <strong>Thunk creation</strong>: Expressions not in WHNF and used more than once become thunks
+- <strong>WHNF detection</strong>: Constructors, native values, and metadata wrappers are WHNF
+- <strong>Deferred compilation</strong>: <code>ProtoSyntax</code> allows deferring binding construction until environment size is known</p>
+<h3 id="virtual-machine">Virtual Machine</h3>
+<p><em>Implementation</em>: <code>src/eval/machine/vm.rs</code></p>
+<p>The STG machine is a state machine executing closures:</p>
+<pre><code class="language-rust">pub struct MachineState {
+    root_env: SynEnvPtr,           // Empty root environment
+    closure: SynClosure,           // Current (code, environment) pair
+    globals: SynEnvPtr,            // Global bindings
+    stack: Vec&lt;Continuation&gt;,      // Continuation stack
+    terminated: bool,
+    annotation: Smid,              // Current source location
+}
+</code></pre>
+<p><strong>Execution loop:</strong></p>
+<pre><code class="language-rust">fn run(&amp;mut self) {
+    while !self.terminated {
+        if self.gc_check_needed() {
+            self.collect_garbage();
+        }
+        self.step();
+    }
+}
+</code></pre>
+<p><strong>Instruction dispatch</strong> (<code>handle_instruction</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Code Form</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Atom</code></td>
+<td>Resolve reference; push Update continuation if thunk</td>
+</tr>
+<tr>
+<td><code>Case</code></td>
+<td>Push Branch continuation, evaluate scrutinee</td>
+</tr>
+<tr>
+<td><code>Cons</code></td>
+<td>Return data constructor</td>
+</tr>
+<tr>
+<td><code>App</code></td>
+<td>Push ApplyTo continuation, evaluate callable</td>
+</tr>
+<tr>
+<td><code>Bif</code></td>
+<td>Execute intrinsic directly</td>
+</tr>
+<tr>
+<td><code>Let</code></td>
+<td>Allocate environment frame, continue in body</td>
+</tr>
+<tr>
+<td><code>LetRec</code></td>
+<td>Allocate frame with backfilled recursive references</td>
+</tr>
+</tbody>
+</table>
+<h3 id="continuations">Continuations</h3>
+<p><em>Implementation</em>: <code>src/eval/machine/cont.rs</code></p>
+<p>Four continuation types manage control flow:</p>
+<ol>
+<li><strong>Branch</strong> - Pattern matching branches for CASE</li>
+<li><strong>Update</strong> - Deferred thunk update (memoisation)</li>
+<li><strong>ApplyTo</strong> - Pending arguments for function application</li>
+<li><strong>DeMeta</strong> - Metadata destructuring handler</li>
+</ol>
+<h3 id="lazy-evaluation">Lazy Evaluation</h3>
+<p>Laziness is achieved through thunks and updates:</p>
+<ol>
+<li><strong>Thunk creation</strong> (compile time): Non-WHNF expressions become <code>LambdaForm::Thunk</code></li>
+<li><strong>Thunk evaluation</strong> (runtime): When a thunk is entered, push Update continuation</li>
+<li><strong>Memoisation</strong>: After evaluation, update the environment slot with the result</li>
+</ol>
+<pre><code class="language-rust">// When entering a local reference
+if closure.update() {
+    stack.push(Continuation::Update { environment, index });
+}
+
+// After evaluation completes
+Continuation::Update { environment, index } =&gt; {
+    self.update(environment, index);  // Replace thunk with result
+}
+</code></pre>
+<h2 id="memory-management-and-garbage-collection">Memory Management and Garbage Collection</h2>
+<p>Eucalypt uses an Immix-inspired memory layout with mark-and-sweep collection.</p>
+<h3 id="memory-layout">Memory Layout</h3>
+<p><em>Implementation</em>: <code>src/eval/memory/heap.rs</code>, <code>src/eval/memory/bump.rs</code></p>
+<pre><code>Block (32KB)
+├── Line 0 (128B) ┐
+├── Line 1 (128B) │ 256 lines per block
+├── ...           │
+└── Line 255      ┘
+</code></pre>
+<p><strong>Size classes:</strong>
+- <strong>Small</strong> (&lt; 128 bytes) - Single line
+- <strong>Medium</strong> (128B - 32KB) - Multiple lines within block
+- <strong>Large</strong> (&gt; 32KB) - Dedicated Large Object Block</p>
+<p><strong>Heap state:</strong></p>
+<pre><code class="language-rust">pub struct HeapState {
+    head: Option&lt;BumpBlock&gt;,           // Active small allocation
+    overflow: Option&lt;BumpBlock&gt;,       // Active medium allocation
+    recycled: VecDeque&lt;BumpBlock&gt;,     // Blocks with reusable holes
+    rest: VecDeque&lt;BumpBlock&gt;,         // Used blocks pending collection
+    lobs: Vec&lt;LargeObjectBlock&gt;,       // Large objects
+}
+</code></pre>
+<h3 id="object-headers">Object Headers</h3>
+<p><em>Implementation</em>: <code>src/eval/memory/header.rs</code></p>
+<p>Every object has a 16-byte header:</p>
+<pre><code class="language-rust">pub struct AllocHeader {
+    bits: HeaderBits,                  // Mark bit + forwarded flag
+    alloc_length: u32,                 // Object size
+    forwarded_to: Option&lt;NonNull&lt;()&gt;&gt;, // For potential evacuation
+}
+</code></pre>
+<h3 id="garbage-collection">Garbage Collection</h3>
+<p><em>Implementation</em>: <code>src/eval/memory/collect.rs</code></p>
+<p><strong>Mark phase:</strong>
+1. Reset line maps across all blocks
+2. Breadth-first root scanning from machine state
+3. Transitive closure following object references
+4. Mark lines containing live objects</p>
+<p><strong>Sweep phase:</strong>
+1. Scan line maps in each block
+2. Identify holes (2+ consecutive free lines)
+3. Move recyclable blocks to recycled list</p>
+<p><strong>Collection triggering:</strong>
+- When <code>--heap-limit-mib</code> is set and limit exceeded
+- Check performed every 500 VM execution steps
+- Emergency collection on allocation failure</p>
+<p>See <code>gc-implementation.md</code> for detailed analysis.</p>
+<h2 id="the-prelude-and-standard-library">The Prelude and Standard Library</h2>
+<h3 id="intrinsic-functions">Intrinsic Functions</h3>
+<p><em>Implementation</em>: <code>src/eval/intrinsics.rs</code>, <code>src/eval/stg/</code></p>
+<p>Built-in functions are implemented in Rust and indexed by position:</p>
+<p><strong>Categories:</strong>
+- <strong>Control flow</strong>: <code>__IF</code>, <code>__PANIC</code>, <code>__TRUE</code>, <code>__FALSE</code>, <code>__NULL</code>
+- <strong>Lists</strong>: <code>__CONS</code>, <code>__HEAD</code>, <code>__TAIL</code>, <code>__NIL</code>, <code>__REVERSE</code>
+- <strong>Blocks</strong>: <code>__MERGE</code>, <code>__DEEPMERGE</code>, <code>__ELEMENTS</code>, <code>__BLOCK</code>, <code>__LOOKUP</code>
+- <strong>Arithmetic</strong>: <code>__ADD</code>, <code>__SUB</code>, <code>__MUL</code>, <code>__DIV</code>, <code>__MOD</code>, comparisons
+- <strong>Strings</strong>: <code>__STR</code>, <code>__SPLIT</code>, <code>__JOIN</code>, <code>__MATCH</code>, <code>__FMT</code>
+- <strong>Metadata</strong>: <code>__META</code>, <code>__WITHMETA</code>
+- <strong>Time</strong>: <code>__ZDT</code>, <code>__ZDT.PARSE</code>, <code>__ZDT.FORMAT</code>
+- <strong>I/O</strong>: <code>__io.ENV</code>, <code>__io.EPOCHTIME</code>
+- <strong>Emission</strong>: <code>__RENDER</code>, <code>__EMIT*</code> family</p>
+<p>Each intrinsic implements the <code>StgIntrinsic</code> trait with direct access to machine state.</p>
+<h3 id="prelude">Prelude</h3>
+<p><em>Implementation</em>: <code>lib/prelude.eu</code></p>
+<p>The prelude (~29KB) is written entirely in eucalypt, wrapping intrinsics with ergonomic functions:</p>
+<p><strong>List functions:</strong>
+- <code>take</code>, <code>drop</code>, <code>nth</code> (<code>!!</code>), <code>fold</code>/<code>foldr</code>, <code>map</code>, <code>filter</code>
+- <code>append</code> (<code>++</code>), <code>concat</code>, <code>reverse</code>, <code>zip</code>, <code>group-by</code>, <code>qsort</code></p>
+<p><strong>Block functions:</strong>
+- <code>merge-all</code>, <code>keys</code>, <code>values</code>, <code>map-kv</code>, <code>map-keys</code>, <code>map-values</code>
+- <code>lookup-path</code>, <code>alter-value</code>, <code>update-value</code></p>
+<p><strong>Combinators:</strong>
+- <code>identity</code>, <code>const</code>, <code>compose</code> (<code>∘</code>, <code>;</code>), <code>flip</code>, <code>curry</code>, <code>uncurry</code></p>
+<p><strong>String functions:</strong>
+- <code>str.split</code>, <code>str.join</code>, <code>str.match</code>, <code>str.fmt</code>, <code>str.letters</code></p>
+<p><strong>Loading:</strong>
+- Prelude is embedded in the binary at compile time
+- Loaded by default unless <code>--no-prelude</code> / <code>-Q</code> flag is used</p>
+<h2 id="driver-and-cli-architecture">Driver and CLI Architecture</h2>
+<h3 id="entry-point">Entry Point</h3>
+<p><em>Implementation</em>: <code>src/bin/eu.rs</code>, <code>src/driver/options.rs</code></p>
+<p>The CLI uses <code>clap v4</code> with derive macros:</p>
+<pre><code class="language-rust">#[derive(Parser)]
+struct EucalyptCli {
+    #[command(subcommand)]
+    command: Option&lt;Commands&gt;,
+    files: Vec&lt;String&gt;,
+    // Global options...
+}
+
+enum Commands {
+    Run(RunArgs),
+    Test(TestArgs),
+    Dump(DumpArgs),
+    Fmt(FmtArgs),
+    Explain(ExplainArgs),
+    ListTargets(ListTargetsArgs),
+    Version,
+}
+</code></pre>
+<h3 id="modes-of-operation">Modes of Operation</h3>
+<p><strong>Run (default):</strong></p>
+<pre><code class="language-bash">eu file.eu                    # Implicit run
+eu -e &quot;expression&quot; file.eu    # With evaluand
+eu -x json file.eu            # JSON output
+eu -t target file.eu          # Select target
+</code></pre>
+<p><strong>Test:</strong></p>
+<pre><code class="language-bash">eu test tests/              # Run all tests in directory
+eu test -t specific file.eu  # Run specific test target
+</code></pre>
+<p><strong>Format:</strong></p>
+<pre><code class="language-bash">eu fmt file.eu              # Print formatted to stdout
+eu fmt --write file.eu      # Modify in place
+eu fmt --check file.eu      # Check formatting (exit 1 if needs format)
+</code></pre>
+<p><strong>Dump:</strong></p>
+<pre><code class="language-bash">eu dump ast file.eu          # Dump AST
+eu dump desugared file.eu    # Dump after desugaring
+eu dump stg file.eu          # Dump STG syntax
+eu dump runtime              # Dump intrinsic definitions
+</code></pre>
+<h3 id="output-formats">Output Formats</h3>
+<p><em>Implementation</em>: <code>src/export/</code></p>
+<p>Emitters for each format implement the <code>Emitter</code> trait:
+- <strong>YAML</strong> (<code>yaml.rs</code>) - Uses <code>yaml_rust</code>, supports tags from metadata
+- <strong>JSON</strong> (<code>json.rs</code>) - Uses <code>serde_json</code>
+- <strong>TOML</strong> (<code>toml.rs</code>) - Structured output
+- <strong>Text</strong> (<code>text.rs</code>) - Plain text
+- <strong>EDN</strong> (<code>edn.rs</code>) - Clojure-like format
+- <strong>HTML</strong> (<code>html.rs</code>) - Markup with serialisation</p>
+<h3 id="input-handling">Input Handling</h3>
+<p>Inputs are merged in order:
+1. <strong>Prologue</strong>: Prelude, config files, build metadata, IO block
+2. <strong>Explicit</strong>: Files and options (<code>-c</code>/<code>--collect-as</code>)
+3. <strong>Epilogue</strong>: CLI evaluand (<code>-e</code>)</p>
+<p>Names from earlier inputs are available to later inputs.</p>
+<h2 id="key-design-decisions-and-trade-offs">Key Design Decisions and Trade-offs</h2>
+<h3 id="why-stg">Why STG?</h3>
+<p>The STG machine provides a well-defined reference point for lazy functional language implementation:
+- Clear semantics for lazy evaluation with memoisation
+- Established compilation strategies
+- Potential for future optimisations</p>
+<p><em>Trade-off</em>: More complex than direct interpretation but provides a solid foundation.</p>
+<h3 id="why-rowan-for-parsing">Why Rowan for Parsing?</h3>
+<p>Rowan provides:
+- Incremental parsing for IDE support
+- Full source fidelity (preserves whitespace and comments)
+- Error recovery for partial parsing</p>
+<p><em>Trade-off</em>: More complex API than traditional parser generators.</p>
+<h3 id="core-as-intermediate-language">Core as Intermediate Language</h3>
+<p>The core representation enables powerful transformations:
+- User-definable operator precedence resolved by syntax transformation
+- Block semantics (binding vs structuring) separated cleanly
+- Source information preserved through <code>Smid</code> for error reporting</p>
+<p><em>Trade-off</em>: Additional compilation phase, but enables experimentation.</p>
+<h3 id="block-duality">Block Duality</h3>
+<p>Eucalypt blocks serve two roles:
+1. <strong>Name binding</strong> - Like <code>let</code> expressions
+2. <strong>Data structuring</strong> - Like objects/records</p>
+<p>The core phase separates these into distinct <code>Let</code> and <code>Block</code> expressions.</p>
+<p><em>Trade-off</em>: Elegant surface syntax at cost of semantic complexity.</p>
+<h3 id="immix-inspired-gc">Immix-Inspired GC</h3>
+<p>The memory layout provides:
+- Efficient bump allocation
+- Cache-friendly organisation
+- Effective hole reuse</p>
+<p><em>Current limitation</em>: No evacuation/compaction (mark-sweep only).</p>
+<p>See <code>gc-implementation.md</code> for detailed analysis.</p>
+<h3 id="embedded-prelude">Embedded Prelude</h3>
+<p>The prelude is:
+- Written in eucalypt itself
+- Compiled into the binary
+- Loaded unless explicitly disabled</p>
+<p><em>Benefit</em>: Dogfooding, consistent semantics
+<em>Trade-off</em>: Slower startup if prelude is large</p>
+<h2 id="performance-characteristics">Performance Characteristics</h2>
+<h3 id="compilation">Compilation</h3>
+<ul>
+<li>Parsing: O(n) with incremental support</li>
+<li>Desugaring: O(n) pass over AST</li>
+<li>Cooking: O(n log n) for operator precedence resolution</li>
+<li>STG compilation: O(n) with binding analysis</li>
+</ul>
+<h3 id="execution">Execution</h3>
+<ul>
+<li>Bump allocation: O(1) for most objects</li>
+<li>Thunk updates: O(1) memoisation</li>
+<li>GC: O(live objects) for marking, O(total blocks) for sweeping</li>
+</ul>
+<h3 id="memory">Memory</h3>
+<ul>
+<li>16-byte header overhead per object</li>
+<li>Block-level allocation granularity</li>
+<li>Large objects get dedicated blocks</li>
+</ul>
+<h2 id="code-organisation-summary">Code Organisation Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Directory</th>
+<th>Purpose</th>
+<th>Key Files</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/syntax/rowan/</code></td>
+<td>Incremental parsing</td>
+<td><code>lex.rs</code>, <code>parse.rs</code>, <code>ast.rs</code></td>
+</tr>
+<tr>
+<td><code>src/core/</code></td>
+<td>Expression representation</td>
+<td><code>expr.rs</code></td>
+</tr>
+<tr>
+<td><code>src/core/desugar/</code></td>
+<td>AST to core</td>
+<td><code>desugarer.rs</code></td>
+</tr>
+<tr>
+<td><code>src/core/cook/</code></td>
+<td>Operator resolution</td>
+<td><code>shunt.rs</code>, <code>fixity.rs</code></td>
+</tr>
+<tr>
+<td><code>src/eval/stg/</code></td>
+<td>STG syntax and compiler</td>
+<td><code>syntax.rs</code>, <code>compiler.rs</code></td>
+</tr>
+<tr>
+<td><code>src/eval/machine/</code></td>
+<td>Virtual machine</td>
+<td><code>vm.rs</code>, <code>cont.rs</code>, <code>env.rs</code></td>
+</tr>
+<tr>
+<td><code>src/eval/memory/</code></td>
+<td>Heap and GC</td>
+<td><code>heap.rs</code>, <code>collect.rs</code></td>
+</tr>
+<tr>
+<td><code>src/driver/</code></td>
+<td>CLI orchestration</td>
+<td><code>options.rs</code>, <code>eval.rs</code></td>
+</tr>
+<tr>
+<td><code>src/export/</code></td>
+<td>Output formats</td>
+<td><code>yaml.rs</code>, <code>json.rs</code></td>
+</tr>
+<tr>
+<td><code>lib/</code></td>
+<td>Standard library</td>
+<td><code>prelude.eu</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="further-reading">Further Reading</h2>
+<ul>
+<li><code>implementation.md</code> - Brief implementation overview</li>
+<li><code>gc-implementation.md</code> - Detailed GC documentation</li>
+<li><code>command-line.md</code> - CLI usage guide</li>
+<li><code>syntax.md</code> - Language syntax reference</li>
+<li><code>operators-and-identifiers.md</code> - Operator definitions</li>
+<li><code>anaphora-and-lambdas.md</code> - Implicit parameter handling</li>
+</ul>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../implementation/" class="btn btn-neutral float-left" title="Overview"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../gc-implementation/" class="btn btn-neutral float-right" title="GC Implementation">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../implementation/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../gc-implementation/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

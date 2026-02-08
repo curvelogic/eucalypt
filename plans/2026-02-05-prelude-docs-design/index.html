@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Prelude Docs Generator — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Prelude Docs Generator \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-05-prelude-docs-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Prelude Docs Generator — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-05-prelude-docs-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="prelude-docs-generator-design">Prelude Docs Generator — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>The prelude has ~176 documented items but no way to render them as
+user-facing documentation. Users can't easily discover available functions.</p>
+<h2 id="solution">Solution</h2>
+<p>A general-purpose documentation generator written in eucalypt that extracts
+metadata from any eucalypt code and renders it as Markdown.</p>
+<h2 id="key-properties">Key Properties</h2>
+<ul>
+<li><strong>Eucalypt program</strong> — "eat your own dog food", demonstrates capabilities</li>
+<li><strong>General-purpose</strong> — works on any eucalypt code, not just prelude</li>
+<li><strong>Markdown output</strong> — viewable anywhere, convertible to HTML later</li>
+<li><strong>Single file</strong> — one markdown file with sections for namespaces</li>
+<li><strong>Structured metadata</strong> — recognizes <code>doc:</code>, <code>export:</code>, <code>example:</code>, <code>see-also:</code></li>
+<li><strong>Omit undocumented</strong> — only documented items appear in output</li>
+</ul>
+<h2 id="usage">Usage</h2>
+<pre><code class="language-bash"># Document the prelude
+eu lib/doc-gen.eu target=lib/prelude.eu -f text &gt; prelude-reference.md
+
+# Document a user library
+eu lib/doc-gen.eu target=my-library.eu -f text &gt; my-library-docs.md
+</code></pre>
+<h2 id="metadata-format">Metadata Format</h2>
+<p><strong>Recognized metadata keys</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Purpose</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>doc:</code></td>
+<td>Description</td>
+<td><code>` { doc: "Map function over list" }</code></td>
+</tr>
+<tr>
+<td><code>export: :suppress</code></td>
+<td>Hide from docs</td>
+<td><code>` { export: :suppress }</code></td>
+</tr>
+<tr>
+<td><code>example:</code></td>
+<td>Usage example</td>
+<td><code>` { example: "[1,2,3] map(_ * 2)" }</code></td>
+</tr>
+<tr>
+<td><code>see-also:</code></td>
+<td>Related functions</td>
+<td><code>` { see-also: [:filter, :fold] }</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Shorthand</strong>: <code>` "description"</code> is equivalent to <code>` { doc: "description" }</code></p>
+<p><strong>Nested blocks</strong>: Blocks within blocks become sections. <code>cal.parse</code> appears
+under a "cal" heading.</p>
+<h2 id="output-format">Output Format</h2>
+<pre><code class="language-markdown"># Library Reference
+
+## cal
+
+Calendar functions
+
+### cal.parse
+
+Parse ISO8601 date string
+
+**Example:**
+```eu
+cal.parse(&quot;2024-01-15&quot;)
+</code></pre>
+<p><strong>See also:</strong> <a href="#calformat">cal.format</a></p>
+<hr />
+<h2 id="str">str</h2>
+<p>String functions</p>
+<h3 id="strupper">str.upper</h3>
+<p>...</p>
+<pre><code>
+**Rendering rules**:
+
+- Top-level documented items get H2 headings
+- Nested items (e.g., `cal.parse`) get H3 under their parent's H2
+- Doc string becomes description paragraph
+- `example:` renders as fenced code block
+- `see-also:` renders as links (anchor format)
+- Items sorted alphabetically within sections
+
+## Implementation
+
+**Location**: `lib/doc-gen.eu`
+
+**Core functions**:
+
+```eu
+` { doc: &quot;Generate markdown documentation for a block&quot; }
+generate-docs(target): ...
+
+` { doc: &quot;Extract documented items from a block&quot; }
+extract-docs(b): b elements filter(has-doc?) map(extract-item)
+
+` { doc: &quot;Check if item has documentation (not suppressed)&quot; }
+has-doc?(kv): kv second meta has(:doc) and(not(is-suppressed?(kv)))
+
+` { doc: &quot;Check if item is suppressed&quot; }
+is-suppressed?(kv): kv second meta lookup-or(:export, :public) eq(:suppress)
+
+` { doc: &quot;Render item as markdown&quot; }
+render-item(name, m): ...
+</code></pre>
+<p><strong>Intrinsics used</strong>:</p>
+<ul>
+<li><code>meta(x)</code> — get metadata block for value</li>
+<li><code>elements(b)</code> — get key-value pairs from block</li>
+<li><code>lookup-or</code> — safe metadata access</li>
+</ul>
+<p><strong>Dependencies</strong>: Only prelude functions — no new intrinsics needed.</p>
+<h2 id="testing">Testing</h2>
+<ul>
+<li>Harness test with fixture file containing various metadata patterns</li>
+<li>Verify output contains expected sections and formatting</li>
+<li>Test nested blocks render correctly</li>
+<li>Test suppressed items are omitted</li>
+</ul>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>Multiple output files (future enhancement)</li>
+<li>HTML generation (use mdbook or similar)</li>
+<li>Automatic signature extraction (would need type inference)</li>
+<li>Interactive examples (would need eval capability)</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

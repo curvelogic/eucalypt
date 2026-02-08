@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Sorting Lists — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Sorting Lists \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-05-sorting-lists-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Sorting Lists — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-05-sorting-lists-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="sorting-lists-design">Sorting Lists — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>The prelude has <code>qsort(lt, xs)</code> for sorting with a custom comparator, but no
+convenience functions for common sorting tasks. Users must write:</p>
+<pre><code class="language-eu">[3, 1, 2] qsort(lt)
+[&quot;c&quot;, &quot;a&quot;] qsort(str.lt)
+people qsort(λ(a, b): a.age lt(b.age))
+</code></pre>
+<h2 id="solution">Solution</h2>
+<p>Type-specific sort functions and sort-by conveniences, all built on <code>qsort</code>.</p>
+<h2 id="core-sort-functions">Core Sort Functions</h2>
+<p>Type-specific sorting using existing comparison infrastructure:</p>
+<pre><code class="language-eu">sort-nums(xs): xs qsort(lt)
+sort-strs(xs): xs qsort(str.lt)
+sort-zdts(xs): xs qsort(lt)      # requires polymorphic lt from eu-u1m
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-eu">[3, 1, 2] sort-nums              # [1, 2, 3]
+[&quot;c&quot;, &quot;a&quot;, &quot;b&quot;] sort-strs        # [&quot;a&quot;, &quot;b&quot;, &quot;c&quot;]
+[t&quot;2024-01-01&quot;, t&quot;2023-06-15&quot;] sort-zdts  # [t&quot;2023-06-15&quot;, t&quot;2024-01-01&quot;]
+</code></pre>
+<p><strong>Descending order</strong> via composition with existing <code>reverse</code>:</p>
+<pre><code class="language-eu">[3, 1, 2] sort-nums reverse      # [3, 2, 1]
+</code></pre>
+<h2 id="sort-by-functions">Sort-By Functions</h2>
+<p>Generic sort-by with key extractor and comparator:</p>
+<pre><code class="language-eu">sort-by(key-fn, cmp, xs): xs qsort(λ(a, b): key-fn(a) cmp(key-fn(b)))
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-eu">people: [{name: &quot;Bob&quot;, age: 30}, {name: &quot;Alice&quot;, age: 25}]
+
+people sort-by(_.age, lt)        # sorted by age ascending
+people sort-by(_.name, str.lt)   # sorted by name ascending
+</code></pre>
+<p><strong>Convenience wrappers:</strong></p>
+<pre><code class="language-eu">sort-by-num(key-fn, xs): xs sort-by(key-fn, lt)
+sort-by-str(key-fn, xs): xs sort-by(key-fn, str.lt)
+sort-by-zdt(key-fn, xs): xs sort-by(key-fn, lt)
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-eu">people sort-by-num(_.age)        # sorted by age
+people sort-by-str(_.name)       # sorted by name
+events sort-by-zdt(_.date)       # sorted by date
+</code></pre>
+<h2 id="implementation">Implementation</h2>
+<p>All functions are pure prelude — no new intrinsics needed.</p>
+<pre><code class="language-eu">` &quot;`sort-nums(xs)` - sort list of numbers ascending&quot;
+sort-nums(xs): xs qsort(lt)
+
+` &quot;`sort-strs(xs)` - sort list of strings/symbols ascending&quot;
+sort-strs(xs): xs qsort(str.lt)
+
+` &quot;`sort-zdts(xs)` - sort list of ZDTs ascending&quot;
+sort-zdts(xs): xs qsort(lt)
+
+` &quot;`sort-by(key-fn, cmp, xs)` - sort list by key using comparator&quot;
+sort-by(key-fn, cmp, xs): xs qsort(λ(a, b): key-fn(a) cmp(key-fn(b)))
+
+` &quot;`sort-by-num(key-fn, xs)` - sort list by numeric key&quot;
+sort-by-num(key-fn, xs): xs sort-by(key-fn, lt)
+
+` &quot;`sort-by-str(key-fn, xs)` - sort list by string key&quot;
+sort-by-str(key-fn, xs): xs sort-by(key-fn, str.lt)
+
+` &quot;`sort-by-zdt(key-fn, xs)` - sort list by ZDT key&quot;
+sort-by-zdt(key-fn, xs): xs sort-by(key-fn, lt)
+</code></pre>
+<h2 id="dependencies">Dependencies</h2>
+<ul>
+<li><code>str.lt</code> from eu-da3 (string comparison intrinsics)</li>
+<li>Polymorphic <code>lt</code> for ZDTs from eu-u1m</li>
+</ul>
+<h2 id="testing">Testing</h2>
+<p><strong>Sort functions:</strong></p>
+<ul>
+<li><code>sort-nums</code>: empty, single, sorted, reverse, duplicates, negatives, floats</li>
+<li><code>sort-strs</code>: empty, single, case sensitivity, unicode, symbols</li>
+<li><code>sort-zdts</code>: different dates, same date different times, timezones</li>
+</ul>
+<p><strong>Sort-by functions:</strong></p>
+<ul>
+<li><code>sort-by-num</code>: blocks sorted by numeric field</li>
+<li><code>sort-by-str</code>: blocks sorted by string field</li>
+<li><code>sort-by-zdt</code>: blocks sorted by date field</li>
+<li>Nested keys: <code>sort-by-num(_.stats.score, items)</code></li>
+</ul>
+<p><strong>Edge cases:</strong></p>
+<ul>
+<li>Empty lists return empty</li>
+<li>Single element unchanged</li>
+<li>Equal elements (note: order not guaranteed — qsort is not stable)</li>
+</ul>
+<p><strong>Descending:</strong></p>
+<ul>
+<li><code>sort-nums reverse</code> produces descending</li>
+<li><code>sort-by-num(key) reverse</code> works</li>
+</ul>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>Stable sort guarantees (the prelude <code>qsort</code> is a classic quicksort
+  partition which is <strong>not</strong> stable — equal elements may be reordered)</li>
+<li>Custom comparator builders (users have <code>qsort</code> for that)</li>
+<li>In-place sorting (eucalypt is functional)</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Error Message Tests — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Error Message Tests \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-04-error-message-tests-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Error Message Tests — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-04-error-message-tests-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="error-message-tests-design">Error Message Tests — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>The 24 error test files in <code>harness/test/errors/</code> have no validation.
+They trigger errors but nothing checks that the right error was
+produced. Error messages can silently regress.</p>
+<h2 id="solution">Solution</h2>
+<p>Sidecar <code>.expect</code> files alongside each error test, containing expected
+exit code and/or stderr regex. The existing tester infrastructure
+already captures exit code and stderr in evidence — this extends
+validation to check them.</p>
+<h2 id="sidecar-format">Sidecar Format</h2>
+<p>For <code>006_div_by_zero.eu</code>, create <code>006_div_by_zero.eu.expect</code>:</p>
+<pre><code class="language-yaml">exit: 1
+stderr: &quot;division by zero&quot;
+</code></pre>
+<ul>
+<li><strong><code>exit</code></strong> — integer, exact equality check against process exit code</li>
+<li><strong><code>stderr</code></strong> — regex pattern, matched against the full stderr output</li>
+<li>Both fields optional; if present, both must pass</li>
+<li>If no sidecar exists, the test is treated as unvalidated (warning/skip)</li>
+</ul>
+<p>This approach uses sidecar files for all error tests rather than
+in-file metadata. This is necessary because some error tests
+deliberately have broken syntax or malformed metadata — the parsing
+failure is the thing being tested, so we cannot rely on reading
+metadata from the file itself.</p>
+<h2 id="integration-with-existing-tester">Integration with Existing Tester</h2>
+<p>The tester pipeline is currently: load plan → run → generate evidence
+→ validate → summarise. Error tests slot in with minimal changes.</p>
+<h3 id="test-plan-analysis-testplanrs">Test plan analysis (<code>testplan.rs</code>)</h3>
+<p>When analysing a file from <code>errors/</code>, check for a <code>.expect</code> sidecar.
+If found, mark the test plan as an error test with the parsed
+expectations.</p>
+<h3 id="execution-testerrs">Execution (<code>tester.rs</code>)</h3>
+<p>Run the file exactly as now. The evidence already captures <code>exit</code>,
+<code>stdout</code>, and <code>stderr</code>. No changes needed here.</p>
+<h3 id="validation-libtesteu-or-rust-side">Validation (<code>lib/test.eu</code> or Rust-side)</h3>
+<p>For error tests, skip the normal <code>RESULT</code>-based validation. Instead:</p>
+<ul>
+<li>If <code>exit</code> specified: check <code>evidence.exit == expected</code></li>
+<li>If <code>stderr</code> specified: regex match against joined stderr lines</li>
+<li>Pass only if all specified checks pass</li>
+</ul>
+<h3 id="harness-runner-harness_testrs">Harness runner (<code>harness_test.rs</code>)</h3>
+<p>Error tests get generated test functions just like normal tests, so
+they appear in <code>cargo test</code> output individually.</p>
+<h3 id="missing-sidecars">Missing sidecars</h3>
+<p>Error test files without a <code>.expect</code> sidecar are treated as
+unvalidated — the test runs but is marked as a warning/skip rather
+than a pass or fail. This allows incremental migration of the existing
+24 error tests.</p>
+<h2 id="implementation-plan">Implementation Plan</h2>
+<h3 id="phase-1-sidecar-parsing-and-validation-logic">Phase 1: Sidecar parsing and validation logic</h3>
+<p>Extend <code>testplan.rs</code> to detect <code>.expect</code> files. Add error test
+validation path in the tester that checks exit code equality and
+stderr regex matching.</p>
+<h3 id="phase-2-harness-integration">Phase 2: Harness integration</h3>
+<p>Generate <code>cargo test</code> functions for error tests in <code>harness_test.rs</code>,
+so error tests appear alongside normal harness tests.</p>
+<h3 id="phase-3-write-expect-sidecars-for-existing-error-tests">Phase 3: Write <code>.expect</code> sidecars for existing error tests</h3>
+<p>Migrate the ~20 active error tests (excluding <code>x</code>-prefixed disabled
+ones). Start with a few known-good smoke tests to validate the
+infrastructure:</p>
+<ul>
+<li>One parse error (e.g. <code>014_unterm_strlit.eu</code>)</li>
+<li>One runtime error (e.g. <code>006_div_by_zero.eu</code>)</li>
+<li>One assertion failure (e.g. <code>010_assert.eu</code>)</li>
+</ul>
+<p>Then migrate the remainder.</p>
+<h2 id="interaction-with-benchmarks-eu-01v">Interaction with Benchmarks (eu-01v)</h2>
+<p>Error tests and benchmark targets are orthogonal. <code>.expect</code> sidecars
+apply only to files in <code>errors/</code>. <code>bench-</code> prefix targets apply only
+to non-error test files. If both features are present on the same file,
+<code>.expect</code> validation takes precedence (error tests exit early, making
+benchmark stats meaningless).</p>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>No changes to success test infrastructure</li>
+<li>No changes to the evidence format (it already captures everything
+  needed)</li>
+<li>No HTML report changes (error tests show pass/fail like normal
+  tests)</li>
+<li>No new metadata keys in <code>.eu</code> files</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

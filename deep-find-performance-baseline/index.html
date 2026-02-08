@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Deep Find/Query Performance Baseline - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Deep Find/Query Performance Baseline";
+        var mkdocs_page_input_path = "deep-find-performance-baseline.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Deep Find/Query Performance Baseline</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/deep-find-performance-baseline.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="deep-findquery-performance-baseline">Deep Find/Query Performance Baseline</h1>
+<p><strong>Date</strong>: 2026-02-06
+<strong>Bead</strong>: eu-d43z
+<strong>Platform</strong>: macOS Darwin 24.6.0, release build</p>
+<h2 id="summary">Summary</h2>
+<p>The prelude-only implementation of deep-find and deep-query is
+<strong>usable for small-to-moderate data sizes</strong> (up to ~100 top-level
+blocks) with acceptable latency. For large data (1000+ top-level
+blocks), VM execution time becomes significant, dominated by GC
+pressure from intermediate allocations.</p>
+<p><strong>Recommendation</strong>: Rust intrinsics are NOT urgently needed. The
+current prelude implementation is sufficient for typical eucalypt use
+cases. If profiling of real workloads shows deep-find/query as a
+bottleneck, Rust intrinsics can be pursued as an optimisation.</p>
+<h2 id="methodology">Methodology</h2>
+<p>Two JSON fixtures were generated:</p>
+<ul>
+<li><strong>List fixture</strong>: 2000 records in a JSON array (~1.15 MB). Tests
+  <code>deep-find</code> which traverses lists.</li>
+<li><strong>Flat fixture</strong>: 2500 service blocks as top-level keys (~0.95 MB).
+  Tests both <code>deep-find</code> and <code>deep-query</code> on pure block structures.</li>
+</ul>
+<p>All measurements use <code>eu -S</code> (statistics flag) on a release build.</p>
+<h2 id="results">Results</h2>
+<h3 id="compile-pipeline-overhead">Compile pipeline overhead</h3>
+<p>The compile pipeline (parse, translate, cook, eliminate, etc.) is
+constant regardless of the query operation. For ~1MB fixtures:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parse</td>
+<td>~120ms</td>
+</tr>
+<tr>
+<td>Cook</td>
+<td>~190ms</td>
+</tr>
+<tr>
+<td>Eliminate</td>
+<td>~110ms</td>
+</tr>
+<tr>
+<td>STG compile</td>
+<td>~90ms</td>
+</tr>
+<tr>
+<td><strong>Total pipeline</strong></td>
+<td><strong>~500-700ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>This dominates wall-clock time for small queries on large data.</p>
+<h3 id="vm-execution-time">VM execution time</h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Data</th>
+<th>VM Time</th>
+<th>Ticks</th>
+<th>Allocs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simple lookup (<code>data.total</code>)</td>
+<td>1.15MB list</td>
+<td>1ms</td>
+<td>215</td>
+<td>25</td>
+</tr>
+<tr>
+<td><code>deep-find-first("host", ...)</code></td>
+<td>1.15MB list</td>
+<td>240ms</td>
+<td>8K</td>
+<td>5K</td>
+</tr>
+<tr>
+<td><code>deep-find-first("host", ...)</code></td>
+<td>0.95MB flat</td>
+<td>2.0s</td>
+<td>19M</td>
+<td>53K</td>
+</tr>
+<tr>
+<td><code>deep-query-first("host", ...)</code></td>
+<td>0.95MB flat</td>
+<td>1.3s</td>
+<td>19M</td>
+<td>53K</td>
+</tr>
+<tr>
+<td><code>deep-query-first("config.host", ...)</code></td>
+<td>0.95MB flat</td>
+<td>91.5s</td>
+<td>393M</td>
+<td>3.9M</td>
+</tr>
+<tr>
+<td><code>deep-query-first("config.host", ...)</code></td>
+<td>18KB (100 blocks)</td>
+<td>4ms</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>deep-query-first("config.host", ...)</code></td>
+<td>9KB (50 blocks)</td>
+<td>3ms</td>
+<td>-</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<h3 id="inline-benchmark-20-services">Inline benchmark (20 services)</h3>
+<p>The <code>bench/010_deep_find_perf.eu</code> harness test exercises deep-find,
+deep-query with bare keys, dotted paths, and wildcards on 20 inline
+service blocks:</p>
+<ul>
+<li><strong>Ticks</strong>: 102,550</li>
+<li><strong>Allocs</strong>: 12,738</li>
+<li><strong>Max stack</strong>: 83</li>
+</ul>
+<h3 id="scaling-characteristics">Scaling characteristics</h3>
+<ul>
+<li><code>deep-find</code> scales roughly linearly with total block count</li>
+<li><code>deep-query</code> with <code>**</code> expands to all descendants before matching —
+  this is O(n * d) where n is block count and d is average depth</li>
+<li>The <code>descendants</code> expansion creates many intermediate list
+  allocations, triggering GC pressure</li>
+<li>GC mark time dominates for large data sets (232ms of 240ms for
+  deep-find-first on list fixture)</li>
+</ul>
+<h2 id="key-findings">Key findings</h2>
+<ol>
+<li>
+<p><strong>GC dominates</strong>: For deep-find on large data, GC mark time is</p>
+<blockquote>
+<p>95% of VM time. The actual mutator work is minimal.</p>
+</blockquote>
+</li>
+<li>
+<p><strong>Descendants expansion is expensive</strong>: The <code>deep-query</code> <code>**</code>
+   handler builds a complete list of all descendant blocks before
+   matching the next segment. For 2500 services with 3-4 nesting
+   levels, this creates ~15,000 intermediate block references.</p>
+</li>
+<li>
+<p><strong>Practical size limit</strong>: ~100 top-level blocks for complex
+   patterns (<code>config.host</code>), ~500 for simple patterns (<code>host</code>).
+   Beyond this, consider using targeted lookups instead.</p>
+</li>
+<li>
+<p><strong>List traversal gap</strong>: <code>deep-query</code> does not traverse JSON arrays
+   (lists). Only <code>deep-find</code> correctly recurses into lists. This is a
+   known design gap — <code>deep-query</code>'s <code>descendants</code> function only
+   expands block children.</p>
+</li>
+</ol>
+<h2 id="recommendations">Recommendations</h2>
+<h3 id="no-immediate-action-needed">No immediate action needed</h3>
+<p>The prelude implementation is sufficient for eucalypt's typical use
+case: processing configuration files and moderate-sized API responses.
+These are rarely &gt;100KB.</p>
+<h3 id="if-optimisation-is-pursued-phase-3">If optimisation is pursued (Phase 3)</h3>
+<ol>
+<li>
+<p><strong>Rust intrinsic for deep-find</strong>: Would eliminate GC pressure by
+   collecting results in Rust Vec before returning to the VM.</p>
+</li>
+<li>
+<p><strong>Lazy descendants in deep-query</strong>: Rather than expanding all
+   descendants eagerly, use a lazy recursive traversal that can
+   short-circuit on first match.</p>
+</li>
+<li>
+<p><strong>Fix list traversal in deep-query</strong>: The <code>descendants</code> function
+   should recurse into lists, matching <code>deep-find</code>'s behaviour.</p>
+</li>
+</ol>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

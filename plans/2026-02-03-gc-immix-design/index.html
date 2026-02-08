@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>GC Immix Completion Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "GC Immix Completion Design";
+        var mkdocs_page_input_path = "plans/2026-02-03-gc-immix-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">GC Immix Completion Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-03-gc-immix-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="gc-immix-completion-design">GC Immix Completion Design</h1>
+<p>Date: 2026-02-03</p>
+<h2 id="overview-and-goals">Overview and Goals</h2>
+<p>Complete the Immix garbage collector implementation with reliable validation
+at every step. Three phases of work, strictly ordered:</p>
+<ol>
+<li><strong>Benchmarking infrastructure</strong> -- Statistics enhancements,
+   <code>--statistics-file</code>, Criterion GC benchmarks, end-to-end bench script,
+   agent workflow documentation</li>
+<li><strong>Lazy sweeping</strong> -- Defer sweep work to allocation time, reducing
+   stop-the-world pause duration</li>
+<li><strong>Opportunistic evacuation</strong> -- Object moving/compaction for fragmented
+   blocks, completing the Immix algorithm</li>
+</ol>
+<p>Each phase produces measurable before/after evidence using the infrastructure
+from phase 1. No phase begins until the previous one is validated.</p>
+<h3 id="success-criteria">Success criteria</h3>
+<ul>
+<li>An AI agent can follow the documented workflow to make a GC change and
+  produce reliable before/after comparison</li>
+<li>Lazy sweep measurably reduces total GC pause time in the bench suite</li>
+<li>Evacuation measurably reduces fragmentation in the stress programs</li>
+<li>No correctness regressions (all existing tests pass throughout)</li>
+</ul>
+<hr />
+<h2 id="phase-1-statistics-and-benchmarking-infrastructure">Phase 1: Statistics and Benchmarking Infrastructure</h2>
+<h3 id="1a-statistics-struct-enhancements">1a: Statistics struct enhancements</h3>
+<p><strong>File</strong>: <code>src/driver/statistics.rs</code></p>
+<p>Add the following fields to <code>Statistics</code>:</p>
+<ul>
+<li><code>collections_count: u64</code> -- how many GC cycles ran</li>
+<li><code>peak_heap_blocks: usize</code> -- high-water mark of allocated blocks</li>
+<li><code>total_mark_time: Duration</code> -- aggregate mark phase time</li>
+<li><code>total_sweep_time: Duration</code> -- aggregate sweep phase time</li>
+</ul>
+<p>These get populated from the existing <code>Clock</code> (which already tracks
+<code>CollectorMark</code> and <code>CollectorSweep</code> durations) and from a new counter in
+<code>collect()</code>. The collection count needs threading through -- most likely a
+counter on <code>Heap</code> that <code>collect()</code> increments, then read out at the end
+alongside <code>HeapStats</code>.</p>
+<p>Also fix the duplicate <code>Machine Max Stack</code> line in the <code>Display</code> impl.</p>
+<h3 id="1b-statistics-file-path-cli-flag">1b: <code>--statistics-file &lt;path&gt;</code> CLI flag</h3>
+<p><strong>Files</strong>: <code>src/driver/options.rs</code>, <code>src/driver/eval.rs</code></p>
+<p>New option in <code>RunArgs</code> / <code>EucalyptOptions</code>. When set, writes a JSON file at
+program exit containing all <code>Statistics</code> fields plus the timing breakdown.</p>
+<p>Structure:</p>
+<pre><code class="language-json">{
+  &quot;machine_ticks&quot;: 42,
+  &quot;machine_allocs&quot;: 5,
+  &quot;machine_max_stack&quot;: 2,
+  &quot;collections_count&quot;: 1,
+  &quot;blocks_allocated&quot;: 5,
+  &quot;peak_heap_blocks&quot;: 5,
+  &quot;blocks_used&quot;: 2,
+  &quot;blocks_recycled&quot;: 1,
+  &quot;timings&quot;: {
+    &quot;parse&quot;: 0.021459,
+    &quot;stg-execute&quot;: 0.000831,
+    &quot;VM-CollectorMark&quot;: 0.000213,
+    &quot;VM-CollectorSweep&quot;: 0.000002,
+    &quot;VM-Total&quot;: 0.000831
+  }
+}
+</code></pre>
+<p>Uses <code>serde_json</code> (already a dependency) for serialisation. The existing <code>-S</code>
+text output remains unchanged.</p>
+<h3 id="1c-gc-stress-programs">1c: GC stress programs</h3>
+<p>Three new <code>.eu</code> files in <code>harness/test/bench/</code>:</p>
+<ul>
+<li>
+<p><strong><code>006_short_lived.eu</code></strong> -- Repeatedly builds and discards large lists
+  using <code>foldl</code> over <code>repeat(...) take(N)</code> with suppressed intermediate
+  results. Forces frequent collection of short-lived objects.</p>
+</li>
+<li>
+<p><strong><code>007_long_lived_graph.eu</code></strong> -- Builds a large persistent block
+  structure, then allocates throwaway lists around it. Tests mark phase
+  performance with a large live set.</p>
+</li>
+<li>
+<p><strong><code>008_fragmentation.eu</code></strong> -- Interleaves retained and discarded
+  allocations to create holes in blocks. This is the scenario where
+  evacuation should show improvement -- before evacuation it fragments,
+  after evacuation it compacts.</p>
+</li>
+</ul>
+<p>These use existing eucalypt language features only (lists, blocks, folds,
+<code>suppress</code> metadata). Each should run in under a second but allocate enough
+to trigger multiple collections with a reasonable <code>--heap-limit-mib</code> (e.g.
+2-4 MiB).</p>
+<h3 id="1d-criterion-gc-benchmarks">1d: Criterion GC benchmarks</h3>
+<p><strong>File</strong>: <code>benches/gc.rs</code> (new)</p>
+<p>Benchmarks isolating GC operations, following the existing pattern in
+<code>benches/alloc.rs</code>:</p>
+<ul>
+<li>
+<p><strong><code>alloc_then_collect</code></strong> -- Allocate N objects, trigger collection,
+  measure mark + sweep separately via <code>Clock</code></p>
+</li>
+<li>
+<p><strong><code>collect_with_survivors</code></strong> -- Allocate N objects, keep M% alive as
+  roots, collect. Vary M to measure mark phase scaling with live set size.</p>
+</li>
+<li>
+<p><strong><code>alloc_into_recycled</code></strong> -- After collection leaves holes, measure
+  allocation throughput into recycled blocks vs fresh blocks.</p>
+</li>
+</ul>
+<p>Around 200-300 lines total. Each benchmark constructs a <code>Heap</code>, gets a
+<code>MutatorHeapView</code>, and operates directly on the GC internals.</p>
+<h3 id="1e-bench-script">1e: Bench script</h3>
+<p><strong>File</strong>: <code>scripts/gc-bench.sh</code></p>
+<p>Two modes:</p>
+<pre><code>./scripts/gc-bench.sh baseline    # Run suite, save to gc-bench-baseline.json
+./scripts/gc-bench.sh compare     # Run suite, compare against baseline
+</code></pre>
+<p>The script:</p>
+<ol>
+<li>Builds release (<code>cargo build --release</code>)</li>
+<li>Runs each bench program 5 times with <code>--statistics-file</code> and
+   <code>--heap-limit-mib 4</code></li>
+<li>Takes the median of each timing metric</li>
+<li>In <code>baseline</code> mode: writes medians to <code>gc-bench-baseline.json</code></li>
+<li>In <code>compare</code> mode: runs again, computes percentage change per metric,
+   flags regressions beyond a threshold (&gt;5% slower)</li>
+</ol>
+<p>Bench programs included:</p>
+<ul>
+<li><code>harness/test/bench/001_naive_fib.eu</code></li>
+<li><code>harness/test/bench/002_thunk_updates.eu</code></li>
+<li><code>harness/test/bench/003_smarter_fib.eu</code></li>
+<li><code>harness/test/bench/004_generations.eu</code></li>
+<li><code>harness/test/bench/005_drop_cons.eu</code></li>
+<li><code>harness/test/bench/006_short_lived.eu</code> (new)</li>
+<li><code>harness/test/bench/007_long_lived_graph.eu</code> (new)</li>
+<li><code>harness/test/bench/008_fragmentation.eu</code> (new)</li>
+</ul>
+<p>Example output:</p>
+<pre><code>004_generations:  VM-CollectorMark   0.0034s -&gt; 0.0031s  (-8.8%)  OK
+004_generations:  VM-CollectorSweep  0.0012s -&gt; 0.0003s  (-75.0%) OK
+006_short_lived:  VM-Total           0.0089s -&gt; 0.0091s  (+2.2%)  OK
+008_fragmentation: blocks_recycled   12      -&gt; 18        (+50.0%) OK
+</code></pre>
+<h3 id="1f-agent-workflow-documentation">1f: Agent workflow documentation</h3>
+<p><strong>File</strong>: <code>docs/gc-benchmarking.md</code></p>
+<p>Step-by-step procedure for any GC modification:</p>
+<ol>
+<li>Ensure clean working tree</li>
+<li>Run <code>./scripts/gc-bench.sh baseline</code></li>
+<li>Make the GC change</li>
+<li>Run <code>cargo test</code> (correctness gate)</li>
+<li>Run <code>./scripts/gc-bench.sh compare</code></li>
+<li>Review output -- no metric should regress beyond threshold</li>
+<li>If investigating: run <code>cargo bench -- gc</code> for Criterion detail</li>
+<li>Include summary of benchmark results in commit message</li>
+</ol>
+<hr />
+<h2 id="phase-2-lazy-sweeping">Phase 2: Lazy Sweeping</h2>
+<h3 id="2a-what-changes">2a: What changes</h3>
+<p>Currently in <code>collect()</code> (<code>src/eval/memory/collect.rs:160-163</code>), the sweep
+phase runs eagerly -- all blocks are scanned for holes and moved to the
+recycled list immediately after marking. The full sweep cost is paid during
+the stop-the-world pause.</p>
+<p>With lazy sweeping, the collector only marks. Sweeping happens incrementally
+at allocation time -- when the allocator needs a new block, it sweeps the
+next unswept block to find holes, then either uses it (if recyclable) or
+moves it to <code>rest</code> (if fully occupied).</p>
+<h3 id="2b-heap-state-changes">2b: Heap state changes</h3>
+<p><strong>File</strong>: <code>src/eval/memory/heap.rs</code></p>
+<p>The block categories change from:</p>
+<pre><code>head, overflow, rest, recycled, lobs, recycled_lobs
+</code></pre>
+<p>to:</p>
+<pre><code>head, overflow, unswept, rest, recycled, lobs, recycled_lobs
+</code></pre>
+<p>After collection, blocks that were in <code>rest</code> move to <code>unswept</code> instead of
+being eagerly swept. The existing <code>rest</code> list retains its meaning (blocks
+that have been swept but are not recyclable, i.e. fully occupied).</p>
+<h3 id="2c-collection-changes">2c: Collection changes</h3>
+<p><strong>File</strong>: <code>src/eval/memory/collect.rs</code></p>
+<ul>
+<li>Remove the sweep call from <code>collect()</code></li>
+<li>After marking, move all non-head/overflow blocks to <code>unswept</code></li>
+<li>The <code>Clock</code> still records <code>CollectorSweep</code> but the duration during
+  collection drops to near zero (just the list move)</li>
+</ul>
+<h3 id="2d-allocation-changes">2d: Allocation changes</h3>
+<p><strong>File</strong>: <code>src/eval/memory/heap.rs</code> (allocation paths)</p>
+<p>When the allocator needs a new block (head block exhausted, no recycled
+blocks available):</p>
+<ol>
+<li>Pop a block from <code>unswept</code></li>
+<li>Sweep it (scan line map, identify holes)</li>
+<li>If it has usable holes: use it as the new head/recycled block</li>
+<li>If it is fully live: move to <code>rest</code>, try next unswept block</li>
+<li>If <code>unswept</code> is empty: allocate a fresh block from the OS</li>
+</ol>
+<p>The actual per-block sweep logic (<code>recycle()</code> in <code>bump.rs</code>) is unchanged --
+just called lazily instead of eagerly.</p>
+<h3 id="2e-sweep-timing">2e: Sweep timing</h3>
+<p>Track total sweep time for benchmarking by switching the <code>Clock</code> to
+<code>CollectorSweep</code> around each individual block sweep at allocation time.
+The aggregate still appears in statistics output.</p>
+<h3 id="2f-what-doesnt-change">2f: What doesn't change</h3>
+<ul>
+<li>Mark phase -- identical</li>
+<li>Object headers -- unchanged</li>
+<li><code>GcScannable</code> trait -- unchanged</li>
+<li>Line map format -- unchanged</li>
+<li>Per-block sweep logic (<code>recycle()</code> in <code>bump.rs</code>) -- unchanged</li>
+<li>Emergency collection -- still triggers a full mark; unswept blocks get
+  lazily swept on demand</li>
+</ul>
+<h3 id="2g-risk-and-validation">2g: Risk and validation</h3>
+<p><strong>Risks:</strong></p>
+<ul>
+<li>Allocation latency becomes less predictable (some allocations trigger a
+  sweep). This is the standard Immix trade-off -- shorter GC pauses at the
+  cost of occasional slower allocations.</li>
+<li>Must ensure <code>unswept</code> blocks are not accidentally used as fresh blocks
+  before sweeping.</li>
+</ul>
+<p><strong>Validation:</strong></p>
+<ol>
+<li>All existing tests pass (<code>cargo test</code>)</li>
+<li>Benchmark comparison shows reduced <code>VM-CollectorSweep</code> time during
+   collection pause</li>
+<li><code>VM-Total</code> should remain similar or improve (sweep work is the same
+   total, just distributed)</li>
+<li>The stress programs (<code>006_short_lived</code> and <code>004_generations</code>) should show
+   lower peak pause times</li>
+</ol>
+<hr />
+<h2 id="phase-3-opportunistic-evacuation">Phase 3: Opportunistic Evacuation</h2>
+<h3 id="3a-what-this-adds">3a: What this adds</h3>
+<p>The core Immix innovation: during collection, instead of always marking
+objects in place, the collector can move objects out of fragmented blocks
+into fresh blocks, compacting the heap. This is opportunistic -- it only
+evacuates blocks where fragmentation is bad enough to justify the copy cost.</p>
+<h3 id="3b-deciding-when-to-evacuate">3b: Deciding when to evacuate</h3>
+<p>Before each collection, the collector analyses heap fragmentation using the
+existing <code>FragmentationAnalysis</code> struct (already in <code>heap.rs</code> but currently
+unused):</p>
+<ul>
+<li><strong>Candidate blocks</strong>: Blocks where occupancy is below a threshold (e.g.
+  &lt;50% of lines marked). These are fragmented enough that evacuating their
+  live objects to a fresh block saves space.</li>
+<li><strong>Available space</strong>: Need at least one fresh block to evacuate into. If
+  the heap is completely full, fall back to mark-in-place.</li>
+<li><strong>Decision</strong>: If there are candidate blocks and space to evacuate, mark
+  that collection cycle as an "evacuating" cycle. Otherwise, mark-in-place
+  as today.</li>
+</ul>
+<p>Uses fragmentation data from the previous collection's line maps -- we know
+which blocks had poor occupancy last time.</p>
+<h3 id="3c-evacuation-during-marking">3c: Evacuation during marking</h3>
+<p>During an evacuating collection, the mark phase changes behaviour for
+objects in candidate blocks:</p>
+<ol>
+<li>When scanning reaches an object in a candidate block, instead of marking
+   it in place:</li>
+<li>Copy the object to the evacuation target block (bump-allocate into it)</li>
+<li>Set the forwarding pointer in the old object's header (the field
+     already exists in <code>AllocHeader</code> but is currently unused)</li>
+<li>Mark the new copy</li>
+<li>When scanning reaches an object that has already been forwarded:</li>
+<li>Follow the forwarding pointer to the new location</li>
+<li>Use the new location for any references being updated</li>
+</ol>
+<h3 id="3d-reference-updating">3d: Reference updating</h3>
+<p>As the mark phase traces references, if a reference points to a forwarded
+object, update the reference in place to the new location. This means the
+scan must be able to write to the referring object, not just read it.</p>
+<p>The <code>GcScannable</code> trait needs extending. Currently <code>scan()</code> pushes
+discovered pointers but does not support rewriting them. Add an
+<code>update_refs()</code> method (or modify <code>scan()</code> to support reference rewriting)
+that follows the same traversal but updates forwarded pointers.</p>
+<p>The <code>CollectorHeapView</code> already has mutable access to the heap, so the
+mutation is possible within the existing safety model.</p>
+<p>This approach (update during scan) follows the Immix paper and avoids an
+extra full-heap traversal pass.</p>
+<h3 id="3e-what-changes">3e: What changes</h3>
+<ul>
+<li>
+<p><strong><code>AllocHeader</code></strong> (<code>src/eval/memory/header.rs</code>) -- the <code>forwarded_to</code>
+  field gets used. Add <code>is_forwarded()</code> / <code>set_forwarded()</code> methods.</p>
+</li>
+<li>
+<p><strong><code>CollectorHeapView</code></strong> (<code>src/eval/memory/collect.rs</code>) -- add
+  <code>evacuate()</code> method that copies an object and sets forwarding pointer.</p>
+</li>
+<li>
+<p><strong><code>GcScannable</code></strong> (<code>src/eval/memory/collect.rs</code>) -- extend with
+  <code>scan_and_update()</code> or modify <code>scan()</code> to support reference rewriting.
+  Needs careful design to maintain the lifetime safety model.</p>
+</li>
+<li>
+<p><strong><code>collect()</code></strong> (<code>src/eval/memory/collect.rs</code>) -- takes a strategy enum
+  indicating mark-in-place vs evacuating. Evacuation cycles use the
+  modified scan path.</p>
+</li>
+<li>
+<p><strong><code>Heap</code></strong> (<code>src/eval/memory/heap.rs</code>) -- add evacuation target block
+  management. Track which blocks are candidates.</p>
+</li>
+<li>
+<p><strong>Lazy sweep interaction</strong> -- evacuated candidate blocks become fully dead
+  after evacuation (all live objects moved out), so they can be returned to
+  the free list without sweeping.</p>
+</li>
+</ul>
+<h3 id="3f-what-doesnt-change">3f: What doesn't change</h3>
+<ul>
+<li>Allocation paths (bump allocation unchanged)</li>
+<li>Non-evacuating collections (mark-in-place path identical to phase 2)</li>
+<li>Object layout and size classes</li>
+<li>Large objects (LOBs are never evacuated -- too expensive to copy)</li>
+</ul>
+<h3 id="3g-risk-and-validation">3g: Risk and validation</h3>
+<p><strong>Risks:</strong></p>
+<ul>
+<li>Reference updating is the most complex part. A missed pointer update is a
+  use-after-move bug -- hard to debug, potentially silent corruption.</li>
+<li>The <code>GcScannable</code> trait change touches every heap object type. Needs
+  careful review.</li>
+<li>Forwarding pointer chasing adds overhead to the mark phase even when it
+  does not find forwarded objects.</li>
+</ul>
+<p><strong>Validation:</strong></p>
+<ol>
+<li>All existing tests pass (<code>cargo test</code>)</li>
+<li>New unit tests specifically for evacuation: create fragmented heap,
+   evacuate, verify objects accessible at new locations</li>
+<li><code>008_fragmentation.eu</code> stress test should show improved <code>blocks_recycled</code>
+   and reduced <code>blocks_used</code> after evacuation</li>
+<li>Non-fragmented workloads should show no regression (evacuation not
+   triggered)</li>
+<li>Benchmark comparison confirms mark phase is only slightly slower
+   (forwarding check overhead) and fragmentation recovery is measurably
+   better</li>
+</ol>
+<hr />
+<h2 id="beads">Beads</h2>
+<p>Existing beads to close on completion:</p>
+<ul>
+<li><strong>eu-2ij</strong> -- GC: Implement lazy sweeping optimisation (phase 2)</li>
+<li><strong>eu-5si</strong> -- GC: Implement full reference updating system (phase 3)</li>
+<li><strong>eu-w68</strong> -- Memory management unsafe code lacks safety documentation
+  (address as part of phase 3, which adds new unsafe code for evacuation)</li>
+</ul>
+<p>New beads to create for phase 1 (benchmarking infrastructure) as no
+existing bead covers this work.</p>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

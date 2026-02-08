@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Philosophy - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Philosophy";
+        var mkdocs_page_input_path = "philosophy-lang.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Philosophy</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#accept-crypticality-for-minimal-intrusion">Accept crypticality for minimal intrusion</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#cohabitation-of-code-and-data">Cohabitation of code and data</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#simplicity">Simplicity</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#footnotes">Footnotes</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Philosophy</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/philosophy-lang.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="eucalypt-the-language">eucalypt (the language)</h1>
+<p><strong>eucalypt</strong>, the language, is unorthodox in many respects - probably
+more than you might realise on first acquaintance.</p>
+<p>People tend to have deep-seated and inflexible opinions about
+programming languages and language design and will quite possibly find
+something in here that they have a kneejerk reaction against.</p>
+<p>However, the design is not unprincipled and, while it is experimental
+in some respects, I believe it's internally consistent. Several
+aspects of the design and the aesthetic are driven by the primary use
+case, templating and generating YAML. Maybe by exploring some of the
+inspiration and philosophy behind the language itself, I can pre-empt
+some of the knee jerks.</p>
+<h2 id="accept-crypticality-for-minimal-intrusion">Accept crypticality for minimal intrusion</h2>
+<p><strong>eucalypt</strong> is first and foremost a <em>tool</em>, rather than a language. It is
+intended to replace generation and transformation processes on
+semi-structured data formats. Many or most uses of <strong>eucalypt</strong> the
+language should just be simple one-liner tags in YAML files, or maybe
+eucalypt files that are predominantly data rather than manipulation.</p>
+<p>The <strong>eucalypt</strong> language is the depth behind these one-liners that
+allows <strong>eucalypt</strong> to accommodate increasingly ambitious use cases
+without breaking the paradigm and reaching for a general purpose
+imperative scripting language or the lowest common denominator or
+text-based templating languages.</p>
+<p>The pre-eminence of one-liners and small annotations and "logic
+mark-up", means that <strong>eucalypt</strong> often favours concise and cryptic over
+wordy and transparent. This is a controversial approach.</p>
+<ul>
+<li>
+<p><strong>eucalypt</strong> logic should "get out of the way" of the data. Templating
+  is attractive precisely because the generating source looks very
+  like the result. Template tags are often short (with "cryptic"
+  delimiters - <code>{{}}</code>, <code>&lt;%= %&gt;</code>, <code>[| ]</code>...) because these are "marking
+  up" the data which is the main event. At the same time, the tags are
+  often "noisy" or visually disruptive to ensure they cannot be
+  ignored. <strong>eucalypt</strong> via operator and bracket definitions, picks and
+  chooseS from a similar palette of expressive effects to try and be a
+  sympathetic cohabitee with its accompanying data.</p>
+</li>
+<li>
+<p>There are many cases where it makes sense to resist offering an
+  incomplete understanding in favour of demanding full understanding.
+  For example, it is spurious to say that <code>bind(x, f)</code> gives more
+  understanding of what is going on than <code>x &gt;&gt;= f</code> - unless you
+  understand the monad abstraction and the role of bind in it, you
+  gain nothing useful from the ideas that the word <code>bind</code> connotes
+  when you are trying to understand program text.</p>
+</li>
+<li>
+<p><strong>eucalypt</strong> just plain ignores the notion that program text should
+  be readable <em>as English text</em>. This (well motivated) idea has made a
+  resurgence in recent years through the back door of internal DSLs
+  and "fluent" Java interfaces. There is much merit in languages
+  supple enough to allow the APIs to approach the natural means of
+  expression of the problem domain. However, problem domains
+  frequently have their own technical jargon and notation which suit
+  their purpose better than natural language so it cuts both ways.
+  Program text should be approachable by its target audience but that
+  does not mean it should make no demands of its target audience.</p>
+</li>
+</ul>
+<p>These stances lead directly to several slightly esoteric aspects of
+<strong>eucalypt</strong> that may be obnoxious to some:</p>
+<ul>
+<li>
+<p><strong>eucalypt</strong> tends to be operator-heavy. Operators are concise (if
+  cryptic) and the full range of unicode is available to call upon.
+  Using operators keeps custom logic visually out of the way of the
+  data whilst also signposting it to attract closer attention.</p>
+</li>
+<li>
+<p><strong>eucalypt</strong> lets you define your own operators and specify their
+  precedence and associativity (which are applied at a relatively late
+  stage in the evaluation pipeline - <em>operator soup</em> persists through
+  the initial parse). There are no ternary operators.</p>
+</li>
+<li>
+<p>For absolute minimal intrusion, merely the act of placing elements
+  next to each other ("catenation"), <code>x f</code>, is meaningful in
+  <strong>eucalypt</strong>. By default this is pipeline-order function
+  application, but blocks can be applied as functions to make common
+  transformations, like block merge, very succinct.</p>
+</li>
+<li>
+<p>For even more power, <strong>eucalypt</strong> might soon let you alter the
+  meaning of concatenation via overloaded <em>idiot brackets</em> <sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup>. (<code>«x y»: ...</code>). This is inspired by the <em>idiom brackets</em> that can be used
+  to express applicative styles in functional programming <sup id="fnref:2"><a class="footnote-ref" href="#fn:2">2</a></sup>. These
+  may also provide an acceptable proxy for ternary and other operators
+  too.</p>
+</li>
+<li>
+<p>An equivalent generalisation of <strong>eucalypt</strong> block syntax to provide
+  a capability similar to Haskell's <code>do</code> notation could conceivably
+  follow.</p>
+</li>
+</ul>
+<h2 id="cohabitation-of-code-and-data">Cohabitation of code and data</h2>
+<p>Just like templates, <strong>eucalypt</strong> source (or <strong>eucalypt</strong>-tagged YAML)
+should be almost entirely data.</p>
+<p>The idea behind <strong>eucalypt</strong> is to adopt the basic maps-and-arrays
+organisation philosophy of these data formats but make the data
+<em>active</em> - allowing lambdas to live in and amongst it and operate on
+it and allowing the data to express dispositions towards its
+environment by addition of metadata that controls import, export, and
+execution preferences.</p>
+<p><strong>eucalypt</strong> therefore collapses the separation of code and data to some
+degree. You can run <code>eu</code> against a mixture of YAML, JSON and eucalypt
+files and all the data and logic appears there together in the same
+namespace hierarchy. The namespace hierarchy just <em>is</em> the data.</p>
+<p>However, code and data aren't unified in the sense of Lisp for
+instance. <strong>eucalypt</strong> is not homoiconic. The relationship is more like
+cohabitation; code lives in amongst the data it operates on but is
+stripped out before export.</p>
+<p>Nevertheless <strong>eucalypt</strong> is heavily inspired by Lisp and aims for a
+similar fluidity through:</p>
+<ul>
+<li>lazy evaluation (going some way towards matching uses of Lisp macros
+  which control evaluation order - in eucalypt, <code>if</code> is just a
+  function)</li>
+<li>economical syntax to facilitate (future) manipulation of code as
+  data</li>
+</ul>
+<h2 id="simplicity">Simplicity</h2>
+<ul>
+<li>
+<p><strong>eucalypt</strong> values simplicity in the sense of fewer moving parts (and
+  therefore, hopefully, fewer things to go wrong). It values ease of
+  use in the sense of offering a rich and powerful toolkit. You may
+  not think it achieves either.</p>
+</li>
+<li>
+<p><strong>eucalypt</strong> values familiarity mostly in the "shallower" parts of
+  the language where it only requires a couple of mental leaps for the
+  average programmer in these areas - the (ab)use of catenation being
+  the key one.</p>
+</li>
+<li>
+<p>However, <strong>eucalypt</strong> isn't ashamed of its dusty corners. Dusty
+  corners are areas where novices and experts alike can get trapped
+  and lose time but they're also rich seams for experimentation,
+  innovation and discovery. If you have to venture too far off-piste
+  to find what you need, we'll find a way to bring it onto the nursery
+  slopes but we won't close off the mountain.</p>
+</li>
+</ul>
+<hr />
+<h4 id="footnotes">Footnotes</h4>
+<div class="footnote">
+<hr />
+<ol>
+<li id="fn:1">
+<p>Inspired by <em>idiom brackets</em>. If I didn't call them that,
+someone else would.&#160;<a class="footnote-backref" href="#fnref:1" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+<li id="fn:2">
+<p>Applicative Programming with Effects, Conor McBride and Ross
+Paterson. (2008)
+http://www.staff.city.ac.uk/~ross/papers/Applicative.html&#160;<a class="footnote-backref" href="#fnref:2" title="Jump back to footnote 2 in the text">&#8617;</a></p>
+</li>
+</ol>
+</div>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../gc-benchmarking/" class="btn btn-neutral float-left" title="GC Benchmarking"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../gc-benchmarking/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

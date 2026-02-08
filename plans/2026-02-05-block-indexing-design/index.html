@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Block Indexing — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Block Indexing \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-05-block-indexing-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Block Indexing — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-05-block-indexing-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="block-indexing-design">Block Indexing — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>Block lookup is O(n) — LOOKUPOR walks a cons-list comparing keys on each
+access. For medium/large blocks with repeated lookups, this is slow.</p>
+<h2 id="solution">Solution</h2>
+<p>Lazy indexing — blocks build a hash index on first lookup if they exceed a
+size threshold. Index is stored in the heap alongside the block.</p>
+<h2 id="key-properties">Key Properties</h2>
+<ul>
+<li><strong>Transparent to users</strong> — no API changes</li>
+<li><strong>Construction unchanged</strong> — blocks still built as lists</li>
+<li><strong>Small blocks</strong> (&lt; threshold) use linear search — fast enough</li>
+<li><strong>Large blocks</strong> build index on first lookup — O(1) thereafter</li>
+<li><strong>Purely functional</strong> — new blocks from merge start without index</li>
+<li><strong>Depends on eu-4af</strong> (symbol interning) for efficient <code>HashMap&lt;SymbolId, usize&gt;</code></li>
+</ul>
+<h2 id="heap-representation">Heap Representation</h2>
+<p><strong>Current Block structure</strong>:</p>
+<pre><code>Block(list)  — single field pointing to cons-list of key-value pairs
+</code></pre>
+<p><strong>New Block structure</strong>:</p>
+<pre><code>Block(list, index)  — two fields:
+  - list: cons-list of key-value pairs (unchanged)
+  - index: null OR pointer to NativeIndex
+</code></pre>
+<p><strong>NativeIndex</strong>: A new Native variant holding <code>HashMap&lt;SymbolId, usize&gt;</code>:
+- Key: interned symbol ID
+- Value: position in the list (0-indexed)</p>
+<p><strong>Threshold</strong>: 16 keys. Blocks with fewer than 16 elements use linear
+search; 16+ elements trigger index building on first lookup.</p>
+<h2 id="index-building">Index Building</h2>
+<p>On first LOOKUPOR call, if block has 16+ elements and no index:</p>
+<ol>
+<li>Walk the list once, recording (symbol_id → position) mappings</li>
+<li>Allocate NativeIndex on heap</li>
+<li>Store reference in block's index field</li>
+<li>Use index for this and subsequent lookups</li>
+</ol>
+<h2 id="lookupor-implementation">LOOKUPOR Implementation</h2>
+<p><strong>Current flow</strong> (in <code>src/eval/stg/block.rs</code>):
+1. Unbox the key symbol
+2. Walk list with <code>MatchesKey</code> on each element
+3. Return value when found, or default if exhausted</p>
+<p><strong>New flow</strong>:
+1. Check if block has index
+2. If indexed: hash lookup → position → fetch value at position
+3. If not indexed:
+   - If size &lt; threshold: linear search (as now)
+   - If size &gt;= threshold: build index, store in block, then hash lookup</p>
+<p><strong>Position-based access</strong>: The index maps symbol → position. Initial
+implementation walks list to position. Array-based optimisation can follow
+if profiling shows benefit.</p>
+<p><strong>LOOKUP</strong>: Delegates to LOOKUPOR with a panic default, so gets indexing
+for free.</p>
+<h2 id="dependencies">Dependencies</h2>
+<ul>
+<li><strong>eu-4af (symbol interning)</strong> — required for <code>HashMap&lt;SymbolId, usize&gt;</code>.
+  Without interning, we'd hash strings which is slower.</li>
+</ul>
+<h2 id="testing">Testing</h2>
+<p><strong>Correctness</strong>: Existing harness tests should pass unchanged — behaviour
+is identical, only performance differs.</p>
+<p><strong>Threshold boundary</strong>: Test blocks with 15, 16, 17 keys.</p>
+<p><strong>Repeated lookups</strong>: Verify second lookup is faster (index built).</p>
+<p><strong>Miss behaviour</strong>: Lookup of non-existent key returns default.</p>
+<p><strong>After merge</strong>: Merged block lookups work (new block, no index).</p>
+<h2 id="benchmarking">Benchmarking</h2>
+<ul>
+<li>Lookup time for blocks of various sizes (10, 50, 100, 500 keys)</li>
+<li>Single lookup vs repeated lookups on same block</li>
+<li>Before/after comparison for representative workloads</li>
+</ul>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>Array-based positional access (future optimisation)</li>
+<li>Index for blocks below threshold</li>
+<li>Explicit IOSM API (prelude already has <code>iosm</code> namespace for explicit use)</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

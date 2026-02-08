@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Lazy Streams and Random Number Facilities - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Lazy Streams and Random Number Facilities";
+        var mkdocs_page_input_path = "plans/2026-02-01-lazy-streams-and-random-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Lazy Streams and Random Number Facilities</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-01-lazy-streams-and-random-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="lazy-streams-and-random-number-facilities">Lazy Streams and Random Number Facilities</h1>
+<p>Design for lazy streaming infrastructure and random number generation in eucalypt.</p>
+<h2 id="overview">Overview</h2>
+<p>Eucalypt is purely functional, so exposing randomness as a function breaks referential transparency. Instead, we model randomness as an <strong>infinite lazy list</strong> of floats — a value, not an effect. Functions that need randomness consume from the stream and return the unconsumed remainder.</p>
+<p>This design uses <strong>two separate architectures</strong> for the two features:</p>
+<ol>
+<li><strong>Random numbers</strong>: Pure functional — two arithmetic BIFs + prelude recursive lazy list. No mutable state, no runtime changes. Leverages existing thunk memoisation.</li>
+<li><strong>Streaming file imports</strong>: Native::Stream with <code>Rc&lt;RefCell&lt;Box&lt;dyn StreamProducer&gt;&gt;&gt;</code> — mutable state needed for IO-backed producers. Follows existing <code>Native::Index(Rc&lt;BlockIndex&gt;)</code> pattern for off-heap Rc types.</li>
+</ol>
+<h2 id="part-1-random-numbers">Part 1: Random Numbers</h2>
+<h3 id="api">API</h3>
+<h4 id="prelude">Prelude</h4>
+<pre><code>io.random                      # Infinite stream, seeded from system entropy (or --seed)
+
+random-stream(seed)            # Explicit seeding for reproducibility
+
+random-int(n, stream)          -&gt; {value: 0..n-1, rest: stream}
+random-choice(list, stream)    -&gt; {value: element, rest: stream}
+shuffle(list, stream)          -&gt; {value: shuffled-list, rest: stream}
+sample(n, list, stream)        -&gt; {value: n-elements, rest: stream}
+</code></pre>
+<h4 id="cli">CLI</h4>
+<pre><code>eu --seed 12345 myfile.eu      # Reproducible io.random
+</code></pre>
+<h3 id="architecture">Architecture</h3>
+<h4 id="pure-functional-prng">Pure Functional PRNG</h4>
+<p>Random numbers use <strong>no mutable state</strong>. The PRNG state is a plain integer, threaded through the prelude as a value:</p>
+<pre><code>random-stream(seed): cons(__PRNG_FLOAT(seed), random-stream(__PRNG_NEXT(seed)))
+</code></pre>
+<p>This produces an infinite lazy list because:
+1. <code>cons(head, tail)</code> creates a list cell where <code>tail</code> is a thunk
+2. The recursive <code>random-stream(__PRNG_NEXT(seed))</code> is not evaluated until <code>tail</code> is forced
+3. STG thunk memoisation ensures each position is computed at most once
+4. No special runtime support needed — standard lazy evaluation handles everything</p>
+<h4 id="intrinsics-bifs">Intrinsics (BIFs)</h4>
+<p>Only two new built-in functions, both pure arithmetic:</p>
+<table>
+<thead>
+<tr>
+<th>Intrinsic</th>
+<th>Args</th>
+<th>Returns</th>
+<th>Algorithm</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>__PRNG_NEXT</code></td>
+<td>seed (int)</td>
+<td>Next seed state (int)</td>
+<td>SplitMix64 state transition</td>
+</tr>
+<tr>
+<td><code>__PRNG_FLOAT</code></td>
+<td>seed (int)</td>
+<td>Float in [0,1)</td>
+<td>SplitMix64 output → double</td>
+</tr>
+</tbody>
+</table>
+<p><strong>SplitMix64</strong> was chosen because:
+- Single u64 state (fits in eucalypt's existing integer representation)
+- Simple arithmetic (no arrays, no SIMD)
+- Good statistical quality for non-cryptographic use
+- Widely used as a seed generator (used by Java's SplittableRandom)</p>
+<h4 id="-seed-cli-flag">--seed CLI Flag</h4>
+<ul>
+<li>Add <code>--seed &lt;integer&gt;</code> to <code>src/driver/options.rs</code> (clap argument)</li>
+<li>Wire into <code>create_io_pseudoblock()</code> in <code>src/driver/io.rs</code> as <code>__io.RANDOM_SEED</code></li>
+<li>If <code>--seed</code> not provided, generate from <code>std::time::SystemTime::now()</code> epoch nanos</li>
+<li>The seed is a regular integer value, available at runtime as <code>io.RANDOM_SEED</code></li>
+</ul>
+<h4 id="prelude-functions">Prelude Functions</h4>
+<pre><code class="language-eucalypt">` &quot;Infinite lazy stream of random floats in [0,1), seeded by the given integer.&quot;
+random-stream(seed): cons(__PRNG_FLOAT(seed), random-stream(__PRNG_NEXT(seed)))
+
+` &quot;Infinite lazy stream of random floats, seeded from system entropy or --seed flag.&quot;
+io.random: random-stream(io.RANDOM_SEED)
+
+` &quot;Generate a random integer in [0, n) from the stream. Returns {value, rest}.&quot;
+random-int(n, stream): {
+  value: floor(stream head * n)
+  rest: stream tail
+}
+
+` &quot;Choose a random element from a list. Returns {value, rest}.&quot;
+random-choice(list, stream): {
+  r: random-int(list length, stream)
+  value: list nth(r.value)
+  rest: r.rest
+}
+
+` &quot;Shuffle a list using Fisher-Yates. Returns {value, rest}.&quot;
+shuffle(list, stream): __shuffle-impl(list, list length, stream)
+
+` &quot;Sample n elements from a list without replacement. Returns {value, rest}.&quot;
+sample(n, list, stream): {
+  shuffled: shuffle(list, stream)
+  value: shuffled.value take(n)
+  rest: shuffled.rest
+}
+</code></pre>
+<p>The <code>__shuffle-impl</code> helper implements Fisher-Yates iteratively, consuming one random value per swap.</p>
+<h3 id="files-changed">Files Changed</h3>
+<p><strong>Modified:</strong>
+- <code>src/eval/machine/intrinsic.rs</code> — Register <code>__PRNG_NEXT</code>, <code>__PRNG_FLOAT</code>
+- <code>src/eval/intrinsics.rs</code> — BIF implementations (SplitMix64 arithmetic)
+- <code>src/driver/options.rs</code> — <code>--seed</code> CLI arg
+- <code>src/driver/io.rs</code> — <code>__io.RANDOM_SEED</code> in pseudo-block
+- <code>lib/prelude.eu</code> — random-stream, io.random, random-int, random-choice, shuffle, sample
+- <code>harness/test/077_random.eu</code> (or next available number) — harness tests</p>
+<h3 id="dependency-order">Dependency Order</h3>
+<ol>
+<li><code>eu-cxom</code>: PRNG BIFs (<code>__PRNG_NEXT</code>, <code>__PRNG_FLOAT</code>)</li>
+<li><code>eu-mbps</code>: CLI <code>--seed</code> flag + <code>__io.RANDOM_SEED</code> (parallel with step 1)</li>
+<li><code>eu-qghh</code>: Prelude functions + <code>io.random</code> (depends on steps 1 + 2)</li>
+<li><code>eu-64eq</code>: Harness tests (depends on step 3)</li>
+</ol>
+<hr />
+<h2 id="part-2-streaming-file-imports">Part 2: Streaming File Imports</h2>
+<h3 id="api_1">API</h3>
+<pre><code>eu jsonl-stream@large.jsonl    # Lazy line-by-line JSON processing
+eu csv-stream@data.csv         # Lazy row-by-row CSV processing
+eu text-stream@log.txt         # Lazy line-by-line text processing
+eu text-stream@-               # Lazy streaming from stdin
+</code></pre>
+<h3 id="architecture_1">Architecture</h3>
+<h4 id="why-mutable-state-is-needed">Why Mutable State is Needed</h4>
+<p>Unlike random numbers, file streaming requires genuine mutable IO state:
+- A <code>BufReader</code> cursor advances as lines are read
+- A CSV parser maintains internal state between rows
+- Stdin is inherently sequential</p>
+<p>This cannot be modelled purely functionally like PRNG, so we use a different approach.</p>
+<h4 id="streamproducer-trait">StreamProducer Trait</h4>
+<p>Core abstraction in <code>src/eval/stg/stream.rs</code>:</p>
+<pre><code class="language-rust">/// A producer that yields values lazily from an IO source
+trait StreamProducer: Send + Sync {
+    /// Produce next value, or None if exhausted
+    fn next(&amp;mut self) -&gt; Option&lt;RcExpr&gt;;
+}
+</code></pre>
+<p>No <code>fork()</code> method — streams are inherently single-consumer (you can't rewind a file cursor or stdin). If forking is needed later, it can be added.</p>
+<h4 id="nativestream-variant">Native::Stream Variant</h4>
+<p>Add to <code>src/eval/memory/syntax.rs</code>:</p>
+<pre><code class="language-rust">enum Native {
+    Sym(SymbolId),
+    Str(RefPtr&lt;HeapString&gt;),
+    Num(Number),
+    Zdt(DateTime),
+    Index(Rc&lt;BlockIndex&gt;),
+    Set(RefPtr&lt;HeapSet&gt;),
+    Stream(Rc&lt;RefCell&lt;Box&lt;dyn StreamProducer&gt;&gt;&gt;),  // NEW
+}
+</code></pre>
+<p>This follows the existing <code>Rc&lt;BlockIndex&gt;</code> pattern. The <code>Rc</code> lives off-heap, so:
+- GC evacuation (byte-level memcpy) is safe — the Rc pointer is copied, refcount is correct
+- No special GC scanning needed (no heap pointers inside)
+- <code>RefCell</code> provides interior mutability for advancing the producer</p>
+<h4 id="stream-handle-table">Stream Handle Table</h4>
+<p>Producers are stored in a handle table on the VM side:</p>
+<pre><code class="language-rust">// In the VM or machine context
+struct StreamTable {
+    handles: HashMap&lt;u32, Rc&lt;RefCell&lt;Box&lt;dyn StreamProducer&gt;&gt;&gt;&gt;,
+    next_id: u32,
+}
+</code></pre>
+<ul>
+<li>Import phase creates a producer, registers it in the table, gets a handle ID</li>
+<li>The handle ID is embedded in the initial thunk's STG code</li>
+<li><code>__STREAM_NEXT(handle)</code> intrinsic looks up the handle to advance the producer</li>
+</ul>
+<h4 id="__stream_next-intrinsic">__STREAM_NEXT Intrinsic</h4>
+<pre><code class="language-rust">// Intrinsic execution
+fn execute_stream_next(handle: u32, table: &amp;StreamTable) -&gt; StgValue {
+    let producer = table.get(handle);
+    match producer.borrow_mut().next() {
+        Some(value) =&gt; Cons(value, thunk_calling_stream_next(handle)),
+        None =&gt; Nil,
+    }
+}
+</code></pre>
+<p>The tail thunk is a standard STG thunk containing a call to <code>__STREAM_NEXT(handle)</code>. When forced, it advances the producer again. Thunk update semantics ensure each position is forced at most once, so the producer advances exactly once per list position.</p>
+<h4 id="concrete-producers">Concrete Producers</h4>
+<table>
+<thead>
+<tr>
+<th>Producer</th>
+<th>Source</th>
+<th>Yields</th>
+<th>Finite?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>JsonlProducer</code></td>
+<td><code>BufReader&lt;File&gt;</code></td>
+<td>Parsed JSON value per line</td>
+<td>Yes (EOF)</td>
+</tr>
+<tr>
+<td><code>CsvProducer</code></td>
+<td><code>csv::Reader&lt;File&gt;</code></td>
+<td>Block with column-name keys per row</td>
+<td>Yes (EOF)</td>
+</tr>
+<tr>
+<td><code>TextProducer</code></td>
+<td><code>BufReader&lt;File&gt;</code> or <code>BufReader&lt;Stdin&gt;</code></td>
+<td>String per line</td>
+<td>Yes (EOF/Ctrl-D)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="import-system-integration">Import System Integration</h4>
+<p>New format specifiers in <code>src/import/mod.rs</code>:</p>
+<pre><code>jsonl-stream  →  JsonlProducer  →  register in handle table  →  thunk(__STREAM_NEXT(handle))
+csv-stream    →  CsvProducer    →  register in handle table  →  thunk(__STREAM_NEXT(handle))
+text-stream   →  TextProducer   →  register in handle table  →  thunk(__STREAM_NEXT(handle))
+</code></pre>
+<p>Existing eager imports (<code>jsonl</code>, <code>csv</code>, <code>text</code>) remain unchanged.</p>
+<h3 id="files-changed_1">Files Changed</h3>
+<p><strong>New:</strong>
+- <code>src/eval/stg/stream.rs</code> — StreamProducer trait, concrete producers</p>
+<p><strong>Modified:</strong>
+- <code>src/eval/memory/syntax.rs</code> — <code>Native::Stream</code> variant
+- <code>src/eval/machine/intrinsic.rs</code> — Register <code>__STREAM_NEXT</code>
+- <code>src/eval/intrinsics.rs</code> — <code>__STREAM_NEXT</code> implementation
+- <code>src/eval/machine/vm.rs</code> — StreamTable in VM context
+- <code>src/import/mod.rs</code> — <code>*-stream</code> format dispatch
+- <code>src/import/jsonl.rs</code> — <code>JsonlProducer</code> (lazy variant alongside existing eager)
+- <code>src/import/csv.rs</code> — <code>CsvProducer</code>
+- <code>harness/test/078_streams.eu</code> (or next available number) — harness tests</p>
+<h3 id="dependency-order_1">Dependency Order</h3>
+<ol>
+<li><code>eu-4yb6</code>: Stream infrastructure (trait, Native::Stream, handle table)</li>
+<li><code>eu-ln9r</code>: <code>__STREAM_NEXT</code> intrinsic + thunk construction (depends on step 1)</li>
+<li><code>eu-5rsn</code>: JSONL producer + format dispatch (depends on step 2)</li>
+<li><code>eu-fh73</code>: CSV producer (parallel with step 3, depends on step 2)</li>
+<li><code>eu-g6d6</code>: Text/stdin producer (parallel with steps 3-4, depends on step 2)</li>
+<li><code>eu-0g85</code>: Harness tests (depends on steps 3-5)</li>
+</ol>
+<hr />
+<h2 id="error-handling">Error Handling</h2>
+<p><strong>Fail fast</strong> — errors terminate the stream immediately rather than returning inline error values. Consumers rarely handle inline errors properly.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Invalid seed</td>
+<td>Treat as <code>seed.abs() as u64</code> or hash to u64</td>
+</tr>
+<tr>
+<td>Malformed JSONL line</td>
+<td>Error terminates stream</td>
+</tr>
+<tr>
+<td>File deleted mid-stream</td>
+<td>Error on next <code>tail</code> force</td>
+</tr>
+<tr>
+<td>Stdin EOF</td>
+<td>Stream returns <code>Nil</code> (finite)</td>
+</tr>
+<tr>
+<td>CSV parse error</td>
+<td>Error terminates stream</td>
+</tr>
+</tbody>
+</table>
+<h2 id="testing">Testing</h2>
+<h3 id="unit-tests-rust">Unit Tests (Rust)</h3>
+<ul>
+<li>SplitMix64 yields deterministic sequence for known seed</li>
+<li><code>__PRNG_FLOAT</code> output is in [0, 1)</li>
+<li><code>JsonlProducer</code> parses lines correctly</li>
+<li><code>CsvProducer</code> yields blocks with correct keys</li>
+<li><code>TextProducer</code> yields lines as strings</li>
+<li>Stream thunk memoisation (same head on repeat access)</li>
+</ul>
+<h3 id="harness-tests-eucalypt">Harness Tests (eucalypt)</h3>
+<p><strong>Random (077_random.eu or similar):</strong>
+- <code>random-stream(42) head</code> is deterministic
+- <code>random-stream(42) head</code> is in [0,1)
+- <code>random-int(10, io.random).value</code> is in [0,9]
+- <code>shuffle([1,2,3], io.random).value length</code> is 3
+- <code>sample(2, [1,2,3,4], io.random).value length</code> is 2
+- <code>--seed 42</code> produces same results across runs
+- Different seeds produce different sequences</p>
+<p><strong>Streaming (078_streams.eu or similar):</strong>
+- <code>jsonl-stream@file</code> processes lines lazily, yields correct count
+- <code>csv-stream@file</code> yields row blocks with correct keys
+- <code>text-stream@file</code> yields correct line count
+- Streams terminate with empty list at EOF
+- Malformed JSONL line produces error</p>
+<h2 id="team-assignment">Team Assignment</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Agent</th>
+<th>Worktree</th>
+<th>Beads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Random Numbers</td>
+<td>Callum</td>
+<td>eucalypt-prelude</td>
+<td>eu-778o (epic), eu-cxom, eu-mbps, eu-qghh, eu-64eq</td>
+</tr>
+<tr>
+<td>Streaming Imports</td>
+<td>Niamh</td>
+<td>eucalypt-vm</td>
+<td>eu-n50 (epic), eu-4yb6, eu-ln9r, eu-5rsn, eu-fh73, eu-g6d6, eu-0g85</td>
+</tr>
+<tr>
+<td>Review (both)</td>
+<td>Seren</td>
+<td>eucalypt</td>
+<td>PR review gate</td>
+</tr>
+</tbody>
+</table>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

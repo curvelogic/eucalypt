@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="description" content="None" />
+      <link rel="shortcut icon" href="img/favicon.ico" />
+    <title>eucalypt</title>
+    <link rel="stylesheet" href="css/theme.css" />
+    <link rel="stylesheet" href="css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Home";
+        var mkdocs_page_input_path = "index.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="./search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Home</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#a-lightning-tour">A lightning tour</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#example-1">Example 1</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#example-2">Example 2</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#quick-tour-of-the-command-line">Quick tour of the command line</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href=".">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Home</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/index.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="eucalypt">eucalypt</h1>
+<p><strong>eucalypt</strong> is a tool, and a little language, for generating and
+transforming structured data formats like YAML, JSON and TOML.</p>
+<p>If you use text-based templating to process these formats or you pipe
+this these formats through several different tools or build steps,
+eucalypt might be able to help you generate your output more cleanly
+and with fewer cognitive somersaults.</p>
+<p><strong>eucalypt</strong> is a purely functional language that can be used quickly and
+easily from the command line.</p>
+<p>It has the following features:</p>
+<ul>
+<li>a concise native syntax that allows you to define data, functions,
+    and operators</li>
+<li>a simple embedding into YAML files to support in-place
+    manipulation of the data (a la templating)</li>
+<li>facilities for manipulating blocks (think JSON objects, YAML
+    mappings)</li>
+<li>facilities for manipulating text including string interpolation
+    and regular expressions</li>
+<li>an ergonomic command line interface and access to environment
+    variables</li>
+<li>metadata annotations and numerous extension points</li>
+<li>a <a href="prelude/"><em>prelude</em></a> of built in functions, acting like a standard library</li>
+</ul>
+<p>It can currently read YAML, JSON, JSON Lines, TOML, EDN, XML, CSV and
+plain text and eucalypt's own ("eu") syntax and it can export YAML, JSON,
+TOML, EDN or plain text.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>eucalypt is still in an early phase of development and subject to
+change.</p>
+</div>
+<h2 id="a-lightning-tour">A lightning tour</h2>
+<p>Eucalypt has a native <a href="syntax/">syntax</a> for writing blocks,
+lists and expressions. The YAML embedding consists of a few YAML tags
+used to embed eucalypt expression in YAML so a basic understanding of
+the native syntax is helpful.</p>
+<p>A few micro-examples should help give a flavour of eucalypt's
+native syntax. If you want to follow along, see <a href="getting-started/">Getting
+Started</a> for notes on installation.</p>
+<h3 id="example-1">Example 1</h3>
+<p>Here is a simple one:</p>
+<pre><code class="language-eu">target-zones: [&quot;a&quot;, &quot;b&quot;, &quot;c&quot;] map(&quot;eu-west-1{}&quot;)
+</code></pre>
+<p>You can put this in a file named <code>test.eu</code> and run it with just:</p>
+<pre><code class="language-shell">eu test.eu
+</code></pre>
+<p>This outputs the following YAML:</p>
+<pre><code class="language-yaml">target-zones:
+  - eu-west-1a
+  - eu-west-1b
+  - eu-west-1c
+</code></pre>
+<p>As an aside, although we're looking at the native eucalypt syntax
+here, this example could just as easily be embedded directly in a YAML
+file using the <code>!eu</code> tag. Pop the following in a <code>test.yaml</code> file and
+process it with: <code>eu test.yaml</code>. You'll get the same result.</p>
+<pre><code class="language-yaml">target-zones: !eu [&quot;a&quot;, &quot;b&quot;, &quot;c&quot;] map(&quot;eu-west-1{}&quot;)
+</code></pre>
+<p>First, this example illustrates how we apply transformations like
+<code>map</code> simply by concatenation. This "pipelining" or "catenation" is
+the natural way to apply transformations to values in eucalypt.</p>
+<p>In fact this is simply a function call with the arguments rearranged a
+bit. In this example, <code>map</code> is a function of two parameters. Its first
+argument is provided in parentheses and its second argument is the
+value of what came before.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Users of languages like Elixir or OCaml may recognise an implicit
+<code>|&gt;</code> operator here. Clojure users may see an invisible threading
+macro. Note that writing elements next to each other like this gives
+you the <em>reverse</em> of what you might expect in Haskell or OCaml or
+Lisp: we write <code>x f</code> <em>not</em> <code>f x</code>.</p>
+</div>
+<p>There is a lot of freedom in eucalypt to express ideas in different
+ways and develop colorful and cryptic expressions. In a larger or
+more ambitious language this could be viewed as rope to hang yourself
+with. Please be careful.</p>
+<p>The string template, <code>"eu-west-1{}"</code>, actually defines a function of
+one argument that returns a string. The key ingredients here are:</p>
+<ul>
+<li>the interpolation syntax <code>"{...}"</code> which allows values to be inserted
+into the string</li>
+<li>the (hidden) use of numeric <em>anaphora</em> in the interpolation syntax
+(<code>{0}</code>, <code>{1}</code>, <code>{2}</code>, ...) which cause the string to define a
+function, not just sequence of characters</li>
+<li>the use of the <em>unnumbered anaphor</em> (<code>{}</code>) which is numbered
+  automatically for us, so in this case, <code>{}</code> is a convenient synonym
+  for <code>{0}</code> - the first argument</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Anaphora crop up in various contexts in eucalypt and are generally
+preferable to the full generality of lambdas. If the idea is too
+complex to be expressed with anaphora, it should generally be
+explicitly named.</p>
+</div>
+<p>So:</p>
+<pre><code class="language-eu">a: 42 &quot;The answer is {0}&quot;
+</code></pre>
+<p>renders as</p>
+<pre><code class="language-yaml">a: The answer is 42
+</code></pre>
+<p>eucalypt also has <em>expression anaphora</em> and <em>block anaphora</em></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Users of Groovy or Kotlin may recognise an equivalent of the <code>it</code>
+parameter. Seasoned Lisp hackers are familiar with anaphoric macros.
+Clojure users will recognise the <code>%</code>, <code>%1</code>, <code>%2</code> forms from
+<code>#(...)</code> contexts. Unlike <code>%</code> repeated uses of unnumbered
+anaphora in eucalypt refer to different parameters. <code>"{}{}"</code> is a
+two-argument function which concatenates strings.</p>
+</div>
+<p>Back to:</p>
+<pre><code class="language-eu">target-zones: [&quot;a&quot;, &quot;b&quot;, &quot;c&quot;] map(&quot;eu-west-1{}&quot;)
+</code></pre>
+<p>The whole line is a <strong>declaration</strong>. Declarations come in several
+types - this one is a <strong>property declaration</strong>. A <strong>block</strong> is written
+as a sequence of declarations enclosed in braces. For example:</p>
+<pre><code class="language-eu">{
+  w: &quot;foo&quot; # a string
+  x: 3     # a whole number
+  y: 22.2  # a floaty number
+  z: true  # the truth
+}
+</code></pre>
+<p>(The <code>#</code> character introduces a comment which is ignored.)</p>
+<p>Unlike YAML, indentation is never significant.</p>
+<p>Unlike JSON, commas are not needed to separate declarations. Instead,
+the eucalypt parser determines the declarations mainly based on the
+location of colons. You can write:</p>
+<pre><code class="language-eu">{ x: 1 increment negate y: 2 }
+</code></pre>
+<p>...and eucalypt knows it's two declarations.</p>
+<p>If that's a bit too crazy for you, then feel free to insert the
+commas. Eucalypt will accept them. Any of these are okay:</p>
+<pre><code class="language-eu">ok1: { a: 1 b: 2 c: 3 }
+ok2: { a: 1, b: 2, c: 3 }
+ok3: { a: 1, b: 2, c: 3, }
+</code></pre>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Unlike Clojure which makes commas optional by
+treating them as whitespace, Eucalypt demands that if you are
+going to put commas in, they have to be in the right place, at the
+end of declarations. So you can use them if you believe it makes
+things clearer but you are prevented from using them in ways which
+would misguide.</p>
+</div>
+<p>Our <code>target-zones</code> property declaration is at the <strong>top level</strong> so
+need not be surrounded by braces. Nevertheless it is in a block: the
+top level block, known as a <strong>unit</strong>, that is defined by the file that
+contains it. You can imagine the braces to be there if you like.</p>
+<p>As a final point on this example, it is probably worthwhile
+documenting declarations. eucalypt offers an easy way to do that using
+<strong>declaration metadata</strong> which we squeeze in between a leading
+backtick and the declaration itself:</p>
+<pre><code class="language-eu">` &quot;AZs to deploy alien widgets in&quot;
+target-zones: [&quot;a&quot;, &quot;b&quot;, &quot;c&quot;] map(&quot;eu-west-1{}&quot;)
+</code></pre>
+<p>In fact, all sorts of things can be wedged in there, but if a string
+appears on its own, it is interpreted as documentation.</p>
+<h3 id="example-2">Example 2</h3>
+<p>Let's look at another small example:</p>
+<pre><code class="language-eu">character(name): {
+  resource-name: name
+  created: io.epoch-time
+}
+
+prentice: character(&quot;Pirate Prentice&quot;) {
+  laser-colour: &quot;red&quot;
+}
+
+slothrop: character(&quot;Tyrone Slothrop&quot;) {
+  eye-count: 7
+}
+</code></pre>
+<p>We've introduced a new type of declaration here of the form <code>f(x):</code>.
+This is a <strong>function declaration</strong>.</p>
+<p>Remember we saw a <strong>property declaration</strong> earlier. Eucalypt also has
+<strong>operator declarations</strong> but we'll ignore those for now.</p>
+<p>The function declaration declares a function called <code>character</code>, which
+accepts a single parameter (<code>name</code>) and returns a block containing two
+properties.</p>
+<p>Functions, like everything else in eucalypt, are declared in and live
+in blocks but they are left out when output is rendered, so you won't
+see them in the YAML or JSON that eucalypt produces.</p>
+<p>The braces in the definition of <code>character</code> are there to delimit the
+resulting block - <em>not</em> to define a function body. A function that
+returned a number would not need them:</p>
+<pre><code class="language-eu">inc(x): x + 1 # this defines an increment function
+</code></pre>
+<p>The next important ingredient in this example is <em>block catenation</em>.</p>
+<p>Blocks can be treated as functions of a single parameter. When they
+are applied as functions, the effect is a <em>block merge</em>.</p>
+<p>We've already seen that functions can be applied to arguments by
+concatenation.</p>
+<p>So writing one block after another produces a merged block. It
+contains the contents of the second block merged "on top" of the
+first.</p>
+<p>There is more to be said on block merge, but for now:</p>
+<p><code>{ a: 1 } { b: 2 }</code> evaluates to <code>{ a: 1 b: 2 }</code>.</p>
+<p>and</p>
+<p><code>{ a: 1 } { a: 2 }</code> evaluates to <code>{ a: 2 }</code>.</p>
+<p>In our example, the resulting YAML is just:</p>
+<pre><code class="language-yaml">prentice:
+  resource-name: Pirate Prentice
+  created: 1526991765
+  laser-colour: red
+
+slothrop:
+  resource-name: Tyrone Slothrop
+  created: 1526991765
+  eye-count: 7
+</code></pre>
+<p>As you can see, <code>io.epoch-time</code> evaluates to a unix timestamp.</p>
+<p>This metadata is generated once at launch time, <em>not</em> each time the
+expression is evaluated. eucalypt the language is a pure functional
+language, and there are no side-effects or non-deterministic functions
+(although its command line driver can perform all sorts of
+side-effects as input to the evaluation and as output from the
+evaluation and there are one or two dirty tricks in the debugging
+functions). For this reason, <code>prentice</code> and <code>slothrop</code> will have the
+same timestamps.</p>
+<p>Block merge can be a useful means of generating common content in
+objects. The common content can appear first as in this case, allowing
+it to be overridden. Or it couple be applied second allowing it to
+override the existing detail. Or a mixture of both. Many more
+sophisticated means of combining block data are available too.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This merge is similar to the effect of <em>merge keys</em> in YAML, where a
+special <code>&lt;&lt;</code> mapping key causes a similar merge to occur. Not all
+YAML processors support this and nor does eucalypt at present, but
+it probably will some day.</p>
+</div>
+<p>Be aware that eucalypt has nothing like virtual functions. The
+functions in scope when an expression is created are the ones that are
+applied. So if you redefine an <code>f</code> like this, in an overriding
+block...</p>
+<pre><code class="language-eu">{ f(x): x+1 a: f(2) } { f(x): x-2 }
+</code></pre>
+<p>...the definition of <code>a</code> will not see it.</p>
+<pre><code class="language-yaml">a: 3
+</code></pre>
+<p>So block merge is only very loosely related to object oriented
+inheritance. Also by default you only get a <em>shallow</em> merge - deep
+merges are provided in the standard prelude. It is possible that a
+deep merge will become the default for block catenation in future.</p>
+<p>Many more complicated ways of processing blocks are possible using
+functions, block anaphora and standard prelude functions.</p>
+<h2 id="quick-tour-of-the-command-line">Quick tour of the command line</h2>
+<p>On macOS you can install the <code>eu</code> command line tools using Homebrew
+with:</p>
+<pre><code class="language-shell">brew install curvelogic/homebrew-tap/eucalypt
+</code></pre>
+<p>Check the version you are running with:</p>
+<pre><code class="language-shell">eu version
+</code></pre>
+<p><code>eu</code> is intended to be easy to use for common tasks and does its best
+to allow you to say what you want succinctly. The intention is to be
+easy to use in pipelines in combination with other tools like <code>jq</code>.</p>
+<p>By default, it runs in ergonomic mode which will make a few
+assumptions in order to allow you to be a little less explicit. It
+also pulls in user-specific declarations from <code>~/.eucalypt</code>. For
+repeatable builds and scripted usage, it is better to turn ergonomic
+mode <em>off</em> using the <code>-B (--batch)</code> switch.</p>
+<p>The simplest usage is to specify a eucalypt file to evaluate and leave
+the default render format (YAML) and output (standard out) alone.</p>
+<pre><code class="language-shell">&gt; eu test.eu
+</code></pre>
+<p><code>eu</code> with no arguments will generally be taken to specify that input
+is coming from standard in. So the above is equivalent to:</p>
+<pre><code class="language-shell">&gt; cat test.eu | eu
+</code></pre>
+<p>There is an <code>-x</code> switch to control output format explicitly (setting
+"yaml", "json", "text", "csv" or "eu") but for the very common case of
+requiring JSON output there is a shortcut:</p>
+<pre><code class="language-shell">&gt; eu test.eu -j
+</code></pre>
+<p>You can, of course, redirect standard output to a file but if you
+specify the output file explicitly (with <code>-o</code>), <code>eu</code> will infer the
+output format from the extension:</p>
+<pre><code class="language-shell">&gt; eu test.eu -o output.json # equivalent to eu test.eu -j &gt; output.json
+</code></pre>
+<p>Small snippets of eucalypt can be passed in directly using the <code>-e</code>
+switch.</p>
+<pre><code class="language-shell">&gt; eu -e '{ a: 8 * 8 }'
+</code></pre>
+<p>The fact that eucalypt makes relatively infrequent use of single
+quotes makes this straightforward for most shells.</p>
+<p>By default, <code>eu</code> evaluates the entirety of the loaded source and uses
+all of it to render the result, leaving out any function values and
+other non-renderable content.</p>
+<p>It is possible to select just parts of the eucalypt for rendering:</p>
+<ol>
+<li>A declaration in the source may be identified as the <strong>main</strong>
+     target using the <code>:main</code> declaration metadata and we become the
+     part rendered by default.</li>
+<li><strong>targets</strong> may be defined and named using the <code>:target</code>
+     declaration metadata and those targets can then be specified
+     using the <code>-t</code> option to <code>eu</code></li>
+<li>The <code>-e</code> option can be used in addition to other
+     source file(s) to identify an expression to be rendered (e.g. <code>eu
+     test.eu -e x.y.z</code>)</li>
+</ol>
+<p>So <code>eu</code>'s ability to read JSON and YAML natively combined with the
+last options give a simple way to pick values out of structured data
+which can be very handy for "querying" services that return YAML or
+JSON data.</p>
+<pre><code class="language-shell">&gt; aws s3api list-buckets | eu -e 'Buckets map(lookup(:Name))'
+</code></pre>
+<p>There is much more to this story. For instance <code>eu</code> can:</p>
+<ul>
+<li>accept several inputs to make definitions in earlier inputs
+  available to subsequent inputs <code>eu test1.eu test2.eu test3.eu</code></li>
+<li>accept YAML and JSON files as pure data to be merged in: <code>eu
+  data.yaml tools.eu</code></li>
+<li>accept YAML or JSON annotated with eucalypt to execute: <code>eu
+  data.yaml</code></li>
+<li>override the default extensions: <code>eu yaml@info.txt</code></li>
+<li>automatically use <code>Eufile</code> files in the current folder hierarchy</li>
+</ul>
+<p>See <a href="command-line/">command line</a> for more complete documentation.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="getting-started/" class="btn btn-neutral float-right" title="Getting Started">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+      <span><a href="getting-started/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = ".";</script>
+    <script src="js/theme_extra.js"></script>
+    <script src="js/theme.js"></script>
+      <script src="search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
+
+<!--
+MkDocs version : 1.6.1
+Build Date UTC : 2026-02-08 11:51:01.441960+00:00
+-->

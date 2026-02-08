@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Command Line - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Command Line";
+        var mkdocs_page_input_path = "command-line.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Command Line</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#command-structure">Command Structure</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#subcommands">Subcommands</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#inputs">Inputs</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#files-stdin">Files / stdin</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#input-format">Input format</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#named-inputs">Named inputs</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#full-input-syntax">Full input syntax</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#stdin-defaulting">stdin defaulting</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#how-inputs-are-merged">How inputs are merged</a>
+        <ul>
+    <li class="toctree-l4"><a class="reference internal" href="#-collect-as-and-name-inputs">--collect-as and --name-inputs</a>
+    </li>
+        </ul>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#outputs">Outputs</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#output-format">Output format</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#output-targets">Output targets</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#evaluands">Evaluands</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#passing-arguments-to-programs">Passing Arguments to Programs</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#suppressing-prelude">Suppressing prelude</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#debugging">Debugging</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#formatting-source-files">Formatting Source Files</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#options">Options</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#backward-compatibility">Backward Compatibility</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Command Line</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/command-line.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="eu-command-line"><code>eu</code> command line</h1>
+<p>Eucalypt is available as a command line tool, <code>eu</code>, which reads inputs
+and writes outputs.</p>
+<p>Everything it does in between is purely functional and there is no
+mutable state.</p>
+<p>It is intended to be simple to use in unix pipelines.</p>
+<pre><code class="language-sh">eu --version # shows the current eu version
+eu --help # lists command line options
+</code></pre>
+<h2 id="command-structure">Command Structure</h2>
+<p>The <code>eu</code> command uses a subcommand structure for clarity and extensibility:</p>
+<pre><code class="language-sh">eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
+</code></pre>
+<h3 id="subcommands">Subcommands</h3>
+<ul>
+<li><code>run</code> (default) - Evaluate eucalypt code</li>
+<li><code>test</code> - Run tests</li>
+<li><code>dump</code> - Dump intermediate representations</li>
+<li><code>version</code> - Show version information</li>
+<li><code>explain</code> - Explain what would be executed</li>
+<li><code>list-targets</code> - List targets defined in the source</li>
+<li><code>fmt</code> - Format eucalypt source files</li>
+<li><code>lsp</code> - Start the Language Server Protocol server</li>
+</ul>
+<p>When no subcommand is specified, <code>run</code> is used by default, so these are equivalent:</p>
+<pre><code class="language-sh">eu file.eu
+eu run file.eu
+</code></pre>
+<h2 id="inputs">Inputs</h2>
+<h3 id="files-stdin">Files / <em>stdin</em></h3>
+<p><code>eu</code> can read several inputs, specified by command line arguments.</p>
+<p>Inputs specify text data from:</p>
+<ul>
+<li>files</li>
+<li>stdin</li>
+<li>internal resources (ignored for now)</li>
+<li>(in future) HTTPS URLS or Git refs</li>
+</ul>
+<p>...of which the first two are the common case. In the simplest case,
+file inputs are specified by file name, stdin is specified by <code>-</code>.</p>
+<p>So</p>
+<pre><code class="language-sh">eu a.yaml - b.eu
+</code></pre>
+<p>...will read input from <code>a.yaml</code>, stdin and <code>b.eu</code>.
+Each will be read into <strong>eucalypt</strong>'s core representation and merged
+before output is rendered.</p>
+<h3 id="input-format">Input format</h3>
+<p>Inputs must be one of the formats that <strong>eucalypt</strong> supports, which
+at present, are:</p>
+<ul>
+<li>yaml</li>
+<li>json</li>
+<li>jsonl (JSON Lines)</li>
+<li>toml</li>
+<li>edn</li>
+<li>xml</li>
+<li>csv</li>
+<li>text</li>
+</ul>
+<p>Of these yaml, json, toml, edn and xml return blocks; jsonl, csv and
+text return lists. Inputs that return lists frequently need to be named (see
+below) to allow them to be used.</p>
+<p>Usually the format is inferred from file extension but it can be
+overridden on an input by input basis using a <code>format@</code> prefix.</p>
+<p>For instance:</p>
+<pre><code class="language-sh">eu yaml@a.txt json@- yaml@b.txt
+</code></pre>
+<p>...will read YAML from <code>a.txt</code>, JSON from stdin and YAML from <code>b.txt</code>.</p>
+<h3 id="named-inputs">Named inputs</h3>
+<p>Finally inputs can be <em>named</em> using a <code>name=</code> prefix. This alters the
+way that data is merged by making the contents of an input available
+in a block or list with the specified name, instead of at the top
+level.</p>
+<p>Suppose we have two inputs:</p>
+<pre><code class="language-yaml">foo: bar
+</code></pre>
+<pre><code class="language-eu">x: 42
+</code></pre>
+<p>then</p>
+<pre><code class="language-sh">eu a.yaml b.eu
+</code></pre>
+<p>would generate:</p>
+<pre><code class="language-yaml">foo: bar
+x: 42
+</code></pre>
+<p>but</p>
+<pre><code class="language-sh">eu data=a.yaml b.eu
+</code></pre>
+<p>would generate:</p>
+<pre><code class="language-yaml">data:
+  foo: bar
+
+x: 42
+</code></pre>
+<p>This can be useful for various reasons, particularly when:</p>
+<ul>
+<li>the form of the input's content is not known in advance</li>
+<li>the input's content is a list rather than a block</li>
+</ul>
+<h3 id="full-input-syntax">Full input syntax</h3>
+<p>The full input syntax is therefore:</p>
+<pre><code>[name=][format@][URL/file]
+</code></pre>
+<p>This applies at the command line and also when specifying
+<a href="../imports/">imports</a> in <code>.eu</code> files.</p>
+<h3 id="stdin-defaulting"><em>stdin</em> defaulting</h3>
+<p>When no inputs are specified and <code>eu</code> is being used in a pipeline, it
+will accept input from <em>stdin</em> by default, making it easy to pipe JSON
+or YAML from other tools into eu.</p>
+<p>For example, this takes JSON from the <code>aws</code> CLI and formats it as YAML
+to stdout.</p>
+<pre><code class="language-sh">aws s3-api list-buckets | eu
+</code></pre>
+<h3 id="how-inputs-are-merged">How inputs are merged</h3>
+<p>When several inputs are listed, names from earlier inputs become
+available to later inputs, but the content that will be rendered is
+that of the final input.</p>
+<p>So for instance:</p>
+<p>a.eu</p>
+<pre><code class="language-eu">x: 4
+y: 8
+</code></pre>
+<p>b.eu</p>
+<pre><code class="language-eu">z: x + y
+</code></pre>
+<pre><code class="language-sh">eu a.eu b.eu
+</code></pre>
+<p>will output</p>
+<pre><code class="language-yaml">z: 12
+</code></pre>
+<p>The common use cases are:
+- a final input containing logic to inspect or process data
+  provided by previous inputs
+- a final input which uses functions defined in earlier inputs to
+  process data provided in previous inputs</p>
+<p>If you want to __render_ contents of earlier inputs, you need a named
+input to provide a name for that content which you can then use.</p>
+<p>For instance:</p>
+<pre><code class="language-sh">eu r=a.eu b.eu -e r
+</code></pre>
+<p>will render:</p>
+<pre><code class="language-yaml">x: 4
+y: 8
+</code></pre>
+<h4 id="-collect-as-and-name-inputs"><code>--collect-as</code> and <code>--name-inputs</code></h4>
+<p>Occasionally it is useful to aggregate data from an arbitrary number
+of sources files, typically specified by shell wildcards. To refer to
+this data we need to introduce a name for the collection of data.</p>
+<p>This is what the command line switch <code>--collect-as</code> / <code>-c</code> is for.</p>
+<pre><code class="language-sh">eu --collect-as inputs *.eu
+</code></pre>
+<p>...will render:</p>
+<pre><code class="language-yaml">inputs:
+  - x: 4
+    y: 8
+  - z: 12
+</code></pre>
+<p>It is common to use <code>-e</code> to select an item to render:</p>
+<pre><code class="language-sh">eu -c inputs *.eu -e 'inputs head'
+</code></pre>
+<p>...renders:</p>
+<pre><code class="language-yaml">x: 4
+y: 8
+</code></pre>
+<p>If you are likely to need to refer to inputs by name, you can add
+<code>--name-inputs</code> / <code>-N</code> to pass inputs as a block instead of a list:</p>
+<pre><code class="language-sh">eu --collect-as inputs *.eu
+</code></pre>
+<p>...renders:</p>
+<pre><code class="language-yaml">inputs:
+  a.eu:
+    x: 4
+    y: 8
+  b.eu:
+    z: 12
+</code></pre>
+<p>This makes it possible to easier to invoke specific functions from
+named inputs although you will need single-quote name syntax to use
+the generated names which contain '.'s.</p>
+<h2 id="outputs">Outputs</h2>
+<p>In the current version, <code>eu</code> can only generate one output.</p>
+<h3 id="output-format">Output format</h3>
+<p>Output is rendered as YAML by default. Other formats can be specified
+using the <code>-x</code> command line option:</p>
+<pre><code class="language-sh">eu -x json # for JSON
+eu -x text # for plain text
+</code></pre>
+<p>JSON is such a common case that there is a shortcut: <code>-j</code>.</p>
+<h3 id="output-targets">Output targets</h3>
+<p>By default, <strong>eucalypt</strong> renders all the content of the final input to
+output.</p>
+<p>There are various ways to override this. First, <code>:target</code> metadata can
+be specified in the final input to identify different parts for
+potential export.</p>
+<p>To list the <strong>targets</strong> found in the specified inputs, use the 
+<code>list-targets</code> subcommand.</p>
+<pre><code class="language-sh">eu list-targets file.eu
+</code></pre>
+<p>...and a particular target can be selected for render using <code>-t</code>.</p>
+<pre><code class="language-sh">eu -t my-target
+</code></pre>
+<p>If there is a <strong>target</strong> called "main" it will be used by default
+unless another target is specified.</p>
+<h2 id="evaluands">Evaluands</h2>
+<p>In addition to inputs, an <em>evaluand</em> can be specified at the command
+line. This is a <strong>eucalypt</strong> expression which has access to all names
+defined in the inputs and replaces the input body or targets as the
+data to export.</p>
+<p>It can be used to select content or derive values from data in the
+inputs:</p>
+<pre><code class="language-console">$ aws s3api list-buckets | eu -e 'Buckets map(lookup(:CreationDate)) head'
+2016-12-25T14:22:30.000Z
+</code></pre>
+<p>...or just to test out short expressions or command line features:</p>
+<pre><code class="language-console">$ eu -e '{a: 1 b: 2 * 2}' -j
+{&quot;a&quot;: 1, &quot;b&quot;: 4}
+</code></pre>
+<h2 id="passing-arguments-to-programs">Passing Arguments to Programs</h2>
+<p>You can pass command-line arguments to your eucalypt program using the
+<code>--</code> separator. Arguments after <code>--</code> are available via <code>io.args</code>:</p>
+<pre><code class="language-console">$ eu -e 'io.args' -- foo bar baz
+---
+- foo
+- bar
+- baz
+</code></pre>
+<p>This is useful for writing eucalypt scripts that accept parameters:</p>
+<pre><code class="language-eu"># greet.eu
+name: io.args head-or(&quot;World&quot;)
+greeting: &quot;Hello, {name}!&quot;
+</code></pre>
+<pre><code class="language-console">$ eu greet.eu -e greeting -- Alice
+---
+Hello, Alice!
+</code></pre>
+<p>Arguments are passed as strings. Use <code>num</code> to convert numeric arguments:</p>
+<pre><code class="language-eu"># sum.eu
+total: io.args map(num) foldl((+), 0)
+</code></pre>
+<pre><code class="language-console">$ eu sum.eu -e total -- 1 2 3 4 5
+---
+15
+</code></pre>
+<p>When no arguments are passed, <code>io.args</code> is an empty list:</p>
+<pre><code class="language-console">$ eu -e 'io.args nil?'
+---
+true
+</code></pre>
+<h2 id="suppressing-prelude">Suppressing prelude</h2>
+<p>A standard <em>prelude</em> containing many functions and operators is
+automatically prepended to the input list.</p>
+<p>This can be suppressed using <code>-Q</code> if it is not required or if you
+would like to provide an alternative.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Many very basic facilities - like the definition of <code>true</code> and
+<code>false</code> and <code>if</code> - are provided by the prelude so suppressing it
+leaves a very bare environment.</p>
+</div>
+<h2 id="debugging">Debugging</h2>
+<p><code>eu</code> has a variety of command line switches for dumping out internal
+representations or tracing execution. The <code>dump</code> subcommand provides
+access to intermediate representations:</p>
+<pre><code class="language-sh">eu dump ast file.eu          # Parse and dump syntax tree
+eu dump desugared file.eu    # Dump core expression
+eu dump stg file.eu          # Dump compiled STG syntax
+eu list-targets file.eu      # List available targets
+</code></pre>
+<p>Use <code>eu --help</code> and <code>eu &lt;subcommand&gt; --help</code> for complete option lists.</p>
+<h2 id="formatting-source-files">Formatting Source Files</h2>
+<p>The <code>fmt</code> subcommand formats eucalypt source files for consistent style:</p>
+<pre><code class="language-sh">eu fmt file.eu              # Print formatted output to stdout
+eu fmt --write file.eu      # Format in place
+eu fmt --check file.eu      # Check formatting (exit 1 if not formatted)
+eu fmt *.eu --write         # Format multiple files in place
+</code></pre>
+<h3 id="options">Options</h3>
+<ul>
+<li><code>-w, --width &lt;WIDTH&gt;</code> - Line width for formatting (default: 80)</li>
+<li><code>--write</code> - Modify files in place</li>
+<li><code>--check</code> - Check if files are formatted (exit 1 if not)</li>
+<li><code>--reformat</code> - Full reformatting mode (instead of conservative)</li>
+<li><code>--indent &lt;INDENT&gt;</code> - Indent size in spaces (default: 2)</li>
+</ul>
+<p>The formatter has two modes:</p>
+<ul>
+<li><strong>Conservative mode</strong> (default) - Preserves original formatting choices
+  where possible, only reformatting where necessary</li>
+<li><strong>Reformat mode</strong> (<code>--reformat</code>) - Full reformatting that applies
+  consistent style throughout</li>
+</ul>
+<h2 id="backward-compatibility">Backward Compatibility</h2>
+<p>All existing command patterns continue to work unchanged:</p>
+<pre><code class="language-sh">eu file.eu                   # Still works (uses run subcommand)
+eu -e &quot;expression&quot;           # Still works (uses run subcommand)  
+eu -j file.eu                # Still works (JSON output)
+eu -S -Q file.eu             # Still works (statistics, no prelude)
+</code></pre>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../anaphora-and-lambdas/" class="btn btn-neutral float-left" title="Anaphora and Lambdas"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../imports/" class="btn btn-neutral float-right" title="Imports">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../anaphora-and-lambdas/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../imports/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

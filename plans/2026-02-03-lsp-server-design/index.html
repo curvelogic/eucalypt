@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>LSP Server Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "LSP Server Design";
+        var mkdocs_page_input_path = "plans/2026-02-03-lsp-server-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">LSP Server Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-03-lsp-server-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="lsp-server-design">LSP Server Design</h1>
+<p>Date: 2026-02-03</p>
+<h2 id="overview">Overview</h2>
+<p>A Language Server Protocol implementation for eucalypt, bundled as the
+<code>eu lsp</code> subcommand. Communicates via stdio. Built on the <code>lsp-server</code>
+crate (same as Gleam, Nickel, rust-analyzer).</p>
+<p>Three phases, each building on the previous:</p>
+<ol>
+<li><strong>Syntax-level features</strong> — diagnostics, document symbols, folding,
+   selection ranges</li>
+<li><strong>Semantic features</strong> — go-to-definition, hover, completion, find
+   references</li>
+<li><strong>Polish</strong> — formatting, semantic tokens, rename, code actions,
+   inlay hints</li>
+</ol>
+<h3 id="foundations">Foundations</h3>
+<p>Eucalypt already has excellent LSP foundations:</p>
+<ul>
+<li><strong>Rowan-based lossless parser</strong> with error recovery — preserves all
+  source information (whitespace, comments, tokens)</li>
+<li><strong>Comprehensive AST</strong> with 30+ node types covering the entire
+  language, each with <code>TextRange</code> for source mapping</li>
+<li><strong>12+ parse error types</strong> with positional ranges — diagnostics are
+  nearly free</li>
+<li><strong>Tree-sitter grammar</strong> and <strong>Emacs major mode</strong> in <code>editors/</code> —
+  syntax highlighting already works</li>
+<li><strong>Import graph</strong> using petgraph — transitive import resolution with
+  cycle detection</li>
+<li><strong>Formatter</strong> (<code>eu fmt</code>) using Rowan — two-mode (conservative and
+  full reformat), with internal fragment formatting support</li>
+</ul>
+<h3 id="design-principles">Design Principles</h3>
+<ul>
+<li><strong>Reuse the compiler</strong> — the LSP shares the parser, import resolver,
+  and formatter with the main <code>eu</code> binary. No separate analysis engine.</li>
+<li><strong>File-declared context</strong> — the file being edited declares its own
+  LSP context via metadata. No guessing.</li>
+<li><strong>Start minimal, iterate</strong> — diagnostics first, then navigation,
+  then polish.</li>
+</ul>
+<hr />
+<h2 id="context-model">Context Model</h2>
+<p>When the LSP analyses a file, it needs to know what other files
+provide names in scope. Three sources, in order:</p>
+<h3 id="1-prelude-always-loaded">1. Prelude (always loaded)</h3>
+<p>The standard prelude (<code>lib/prelude.eu</code>) is always loaded as context.
+Its declarations (<code>map</code>, <code>filter</code>, <code>foldl</code>, <code>str.split</code>, <code>io.args</code>,
+etc.) are available for completion, hover, and go-to-definition.
+Cached once on server start — it never changes during a session.
+When the <code>eu</code> binary updates (with new prelude functions), restarting
+the language server picks up the changes automatically.</p>
+<h3 id="2-imports-followed-automatically">2. Imports (followed automatically)</h3>
+<p>Import metadata blocks are already parsed by the existing
+<code>ImportGraph</code> system:</p>
+<pre><code class="language-eu">` { import: &quot;helpers.eu&quot; }
+` { import: [&quot;utils.eu&quot;, &quot;data=config.yaml&quot;] }
+</code></pre>
+<p>The LSP follows these transitively, using the same <code>analyse_rowan_ast</code>
+and <code>Input::from_str</code> logic as the compiler. Imported files are parsed
+and their declarations added to the symbol table.</p>
+<h3 id="3-lsp-context-explicit-co-inputs">3. lsp-context (explicit co-inputs)</h3>
+<p>Files that would normally be provided as CLI co-inputs at runtime can
+be declared in the file's top-level metadata:</p>
+<pre><code class="language-eu">` { lsp-context: [&quot;base.yaml&quot;, &quot;overrides.json&quot;, &quot;helpers.eu&quot;] }
+</code></pre>
+<p>This is equivalent to the command line:</p>
+<pre><code>eu base.yaml overrides.json helpers.eu thisfile.eu
+</code></pre>
+<p>Ordering matters — earlier entries provide bindings that later ones
+can reference, following the same <code>merge_in</code> / <code>rebody</code> semantics as
+CLI co-inputs. Unnamed entries merge their top-level keys flat into
+scope. Named entries (e.g. <code>"data=data.json"</code>) wrap keys under the
+given name.</p>
+<p>The <code>lsp-context</code> value is a list of strings, each parsed with
+<code>Input::from_str()</code> — the same format as CLI arguments. Relative paths
+are resolved relative to the directory containing the <code>.eu</code> file being
+edited. For a single entry, a bare string is also accepted:</p>
+<pre><code class="language-eu">` { lsp-context: &quot;data.json&quot; }
+</code></pre>
+<p>For data files (JSON, YAML, TOML, CSV), the LSP parses them to
+extract top-level keys for completion and go-to-definition. No deep
+analysis of values.</p>
+<hr />
+<h2 id="phase-1-syntax-level-features">Phase 1: Syntax-Level Features</h2>
+<h3 id="architecture">Architecture</h3>
+<ul>
+<li><strong>Crate</strong>: <code>lsp-server</code> (synchronous, crossbeam-channel based)</li>
+<li><strong>Binary</strong>: <code>eu lsp</code> subcommand, added to the existing clap command
+  structure in <code>src/driver/options.rs</code></li>
+<li><strong>Communication</strong>: stdio (stdin/stdout for LSP messages, stderr for
+  logging)</li>
+<li><strong>Threading</strong>: Single-threaded event loop. Re-parse on each
+  <code>didChange</code> notification. For typical eucalypt files (small), full
+  re-parse is sub-millisecond with Rowan.</li>
+</ul>
+<h3 id="features">Features</h3>
+<h4 id="1a-diagnostics">1a. Diagnostics</h4>
+<p>On each <code>textDocument/didOpen</code> and <code>textDocument/didChange</code>:</p>
+<ol>
+<li>Re-parse the file with the Rowan parser</li>
+<li>Collect <code>Parse::errors()</code> — each <code>ParseError</code> has a <code>TextRange</code></li>
+<li>Convert to LSP <code>Diagnostic</code> with severity, range, and message</li>
+<li>Push via <code>textDocument/publishDiagnostics</code></li>
+</ol>
+<p>The 12+ error types in <code>src/syntax/rowan/error.rs</code> map directly to
+diagnostic messages: <code>UnexpectedToken</code>, <code>UnclosedSingleQuote</code>,
+<code>UnterminatedBlock</code>, <code>EmptyDeclarationBody</code>, etc.</p>
+<p>Also parse imported files and report their errors, so the user sees
+downstream breakage.</p>
+<h4 id="1b-document-symbols">1b. Document Symbols</h4>
+<p>Walk the Rowan <code>Unit</code> node, extract <code>Declaration</code> nodes:</p>
+<ul>
+<li>Property declarations → <code>SymbolKind::Property</code></li>
+<li>Function declarations (with parameters) → <code>SymbolKind::Function</code></li>
+<li>Operator declarations → <code>SymbolKind::Operator</code></li>
+</ul>
+<p>Return as <code>DocumentSymbol[]</code> with name, kind, range, and selection
+range. Provides the outline/breadcrumb view in both VS Code and Emacs.</p>
+<p>Nested blocks produce nested symbol hierarchies.</p>
+<h4 id="1c-folding-ranges">1c. Folding Ranges</h4>
+<p>Derive from syntax tree nodes:</p>
+<ul>
+<li><code>Block</code> (<code>{ ... }</code>) → folding range</li>
+<li><code>List</code> (<code>[ ... ]</code>) → folding range</li>
+<li>Multi-line string patterns → folding range</li>
+<li>Multi-line metadata annotations → folding range</li>
+</ul>
+<p>Only emit folding ranges for nodes spanning more than one line.</p>
+<h4 id="1d-selection-range">1d. Selection Range</h4>
+<p>Smart expand/contract selection using Rowan's parent chain. Each
+<code>SyntaxNode</code> maps to a selection range, with its parent as the next
+expansion level. This is a core Rowan strength — rust-analyzer does
+exactly this.</p>
+<p>Example expansion sequence for cursor on <code>x</code> in <code>f(x + y)</code>:
+<code>x</code> → <code>x + y</code> → <code>(x + y)</code> → <code>f(x + y)</code> → full declaration</p>
+<h3 id="phase-1-context">Phase 1 Context</h3>
+<p>Parse the open file only. Follow imports for error reporting. Load
+prelude as a resource but do not build a symbol table from it yet.
+<code>lsp-context</code> parsing is deferred to phase 2.</p>
+<h3 id="editor-deliverables-phase-1">Editor Deliverables (Phase 1)</h3>
+<h4 id="emacs">Emacs</h4>
+<p>Eglot registration for the existing <code>eucalypt-ts-mode</code>:</p>
+<pre><code class="language-elisp">(add-to-list 'eglot-server-programs
+             '(eucalypt-ts-mode &quot;eu&quot; &quot;lsp&quot;))
+</code></pre>
+<p>The tree-sitter mode already provides syntax highlighting and
+indentation. Eglot adds diagnostics (via Flymake), document symbols,
+and folding.</p>
+<h4 id="vs-code">VS Code</h4>
+<p>Minimal extension:</p>
+<ul>
+<li><code>package.json</code> declaring the <code>eucalypt</code> language, <code>.eu</code> extension,
+  and language server command (<code>eu lsp</code>)</li>
+<li>TextMate grammar (<code>syntaxes/eucalypt.tmLanguage.json</code>) derived from
+  the existing tree-sitter <code>queries/highlights.scm</code></li>
+<li>Language configuration (comment toggling with <code>#</code>, bracket pairs,
+  auto-closing, 2-space indentation)</li>
+<li>Extension entry point using <code>vscode-languageclient</code></li>
+</ul>
+<hr />
+<h2 id="phase-2-semantic-features">Phase 2: Semantic Features</h2>
+<p>Phase 2 requires building a <strong>symbol table</strong> from parsed files.</p>
+<h3 id="symbol-table-construction">Symbol Table Construction</h3>
+<p>On file open/change, after parsing:</p>
+<ol>
+<li>Parse the open file with Rowan</li>
+<li>Load the prelude (cached — it never changes)</li>
+<li>Follow <code>import</code> metadata to parse imported files (existing
+   <code>ImportGraph</code> logic)</li>
+<li>Parse <code>lsp-context</code> metadata — same <code>Input::from_str()</code> parsing,
+   treated as CLI co-inputs with <code>merge_in</code> / <code>rebody</code> semantics</li>
+<li>Walk all parsed trees to build a symbol table: name → (file, range,
+   kind, documentation, parameters)</li>
+</ol>
+<p>Declaration kinds:</p>
+<ul>
+<li><strong>Property</strong>: <code>name: expression</code></li>
+<li><strong>Function</strong>: <code>f(x, y): expression</code> — with parameter names and
+  arity</li>
+<li><strong>Operator</strong>: <code>(x + y): expression</code> — with fixity and precedence
+  from metadata</li>
+</ul>
+<p>Documentation comes from <code>` { doc: "..." }</code> metadata blocks that
+already exist in the language.</p>
+<p>For data files referenced via <code>lsp-context</code>, extract top-level keys
+for the symbol table. JSON objects produce property symbols, YAML
+mappings produce property symbols, etc.</p>
+<h3 id="features_1">Features</h3>
+<h4 id="2a-go-to-definition">2a. Go to Definition</h4>
+<p>Resolve the identifier under the cursor against the symbol table.
+Search order:</p>
+<ol>
+<li>Local scope (same block / let binding)</li>
+<li>File-level declarations</li>
+<li>Imported file declarations</li>
+<li><code>lsp-context</code> file declarations</li>
+<li>Prelude declarations</li>
+</ol>
+<p>Return the declaration's file URI and range.</p>
+<p>For dotted access like <code>data.user</code>, resolve <code>data</code> first, then look up
+<code>user</code> within its declarations.</p>
+<h4 id="2b-hover">2b. Hover</h4>
+<p>Show information about the symbol under the cursor:</p>
+<ul>
+<li>Declaration kind (property / function / operator)</li>
+<li>Parameter names for functions</li>
+<li>Documentation from <code>` { doc: "..." }</code> metadata</li>
+<li>Source file (for imported / prelude symbols)</li>
+<li>For prelude built-ins: the intrinsic name</li>
+</ul>
+<p>No type inference — purely syntactic information from declarations and
+metadata.</p>
+<h4 id="2c-completion">2c. Completion</h4>
+<p>At the cursor position, determine what is in scope and offer
+completions. Sources:</p>
+<ol>
+<li>Local declarations in the same block</li>
+<li>File-level declarations</li>
+<li>Imported symbols</li>
+<li><code>lsp-context</code> symbols</li>
+<li>Prelude symbols (highest value — <code>map</code>, <code>filter</code>, <code>foldl</code>,
+   <code>str.split</code>, <code>io.args</code>, etc.)</li>
+</ol>
+<p>Each completion item includes:</p>
+<ul>
+<li>Label (the name)</li>
+<li>Kind (property / function / operator)</li>
+<li>Detail (parameter list for functions)</li>
+<li>Documentation (from metadata)</li>
+</ul>
+<p>For dotted access (<code>str.</code>), offer completions from the <code>str</code> block's
+declarations.</p>
+<h4 id="2d-find-references">2d. Find References</h4>
+<p>Given a declaration, search all open/imported files for uses of that
+name. Walk the Rowan trees looking for <code>Name</code> nodes matching the
+declaration. Scope-aware — a local <code>x</code> in an inner block does not
+match a top-level <code>x</code>.</p>
+<hr />
+<h2 id="phase-3-formatting-semantic-tokens-and-polish">Phase 3: Formatting, Semantic Tokens, and Polish</h2>
+<h3 id="3a-formatting">3a. Formatting</h3>
+<p>Wire up the existing <code>eu fmt</code> formatter via LSP:</p>
+<ul>
+<li>
+<p><strong><code>textDocument/formatting</code></strong>: Call <code>format_source()</code> with reformat
+  mode on the full document. Return the formatted text as a single
+  <code>TextEdit</code> replacing the entire document.</p>
+</li>
+<li>
+<p><strong><code>textDocument/rangeFormatting</code></strong>: Find the smallest complete
+  syntactic unit (declaration or block) containing the selection.
+  Format that unit using the internal <code>format_soup()</code> /
+  <code>format_unit()</code> API. Return <code>TextEdit</code>s for the affected range only.</p>
+</li>
+</ul>
+<p>The formatter already works on the Rowan tree, so this is plumbing
+rather than new formatting logic. Fragment formatting may need the
+internal API to be extended slightly to accept a <code>Declaration</code> or
+<code>Element</code> node rather than only a full <code>Unit</code>.</p>
+<h3 id="3b-semantic-tokens">3b. Semantic Tokens</h3>
+<p>Augment tree-sitter / TextMate highlighting with context-aware token
+classification. Using the symbol table from phase 2:</p>
+<ul>
+<li>Prelude / built-in functions → <code>function</code> + <code>defaultLibrary</code>
+  modifier</li>
+<li>User-defined functions → <code>function</code></li>
+<li>Parameters → <code>parameter</code></li>
+<li>Top-level properties → <code>property</code></li>
+<li>Operator identifiers → <code>operator</code></li>
+<li>Symbols (<code>:foo</code>) → <code>enumMember</code> (or custom <code>symbol</code> type)</li>
+<li>Metadata annotations → <code>decorator</code></li>
+<li>String interpolation expressions → distinguished from string content</li>
+<li>Comments → <code>comment</code></li>
+</ul>
+<p>Implement <code>textDocument/semanticTokens/full</code> first. Add
+<code>textDocument/semanticTokens/range</code> later for performance with large
+files.</p>
+<h3 id="3c-rename">3c. Rename</h3>
+<p>Given the symbol table and find-references from phase 2, rename a
+symbol across the file and its imports:</p>
+<ol>
+<li>Find all references to the symbol</li>
+<li>Generate <code>TextEdit</code>s for each occurrence</li>
+<li>Return as <code>WorkspaceEdit</code></li>
+</ol>
+<p>Scope-aware — renaming a local binding does not affect same-named
+bindings in other scopes.</p>
+<h3 id="3d-code-actions">3d. Code Actions</h3>
+<p>Quick fixes for common errors:</p>
+<ul>
+<li><strong>Unresolved name matching a prelude symbol</strong>: Suggest the correct
+  qualified name (e.g. <code>split</code> → <code>str.split</code>)</li>
+<li><strong><code>{name: name}</code> self-reference</strong>: If the eu-dlr static check is
+  implemented, offer a fix suggestion</li>
+<li><strong>Missing import</strong>: If a name resolves to a file in the workspace
+  but is not imported, suggest adding an import</li>
+</ul>
+<h3 id="3e-inlay-hints">3e. Inlay Hints</h3>
+<ul>
+<li>Show operator precedence and associativity inline for operator
+  declarations</li>
+<li>Show parameter names at call sites for functions with multiple
+  arguments</li>
+<li>Potentially show inferred structure for complex soup expressions
+  (how operators bind)</li>
+</ul>
+<hr />
+<h2 id="crate-and-dependency-summary">Crate and Dependency Summary</h2>
+<p>New dependencies for the LSP:</p>
+<ul>
+<li><code>lsp-server</code> — LSP protocol handling, message dispatch</li>
+<li><code>lsp-types</code> — Rust type definitions for LSP protocol messages</li>
+<li><code>serde_json</code> — already a dependency, used for LSP message
+  serialisation</li>
+</ul>
+<p>No async runtime needed — <code>lsp-server</code> is synchronous.</p>
+<h2 id="file-structure">File Structure</h2>
+<pre><code>src/
+  bin/eu.rs                    # Add LspMode dispatch
+  driver/
+    options.rs                 # Add LspArgs / lsp subcommand
+    lsp.rs (new)               # LSP server main loop
+    lsp/
+      diagnostics.rs (new)     # Parse errors → LSP diagnostics
+      symbols.rs (new)         # Document symbols from Rowan tree
+      folding.rs (new)         # Folding ranges
+      selection.rs (new)       # Selection ranges
+      context.rs (new)         # lsp-context metadata parsing
+      symbol_table.rs (new)    # Phase 2: name resolution
+      completion.rs (new)      # Phase 2: completion provider
+      hover.rs (new)           # Phase 2: hover provider
+      navigation.rs (new)      # Phase 2: go-to-def, references
+      formatting.rs (new)      # Phase 3: formatter integration
+      semantic.rs (new)        # Phase 3: semantic tokens
+      actions.rs (new)         # Phase 3: code actions
+editors/
+  vscode/ (new)                # VS Code extension
+    package.json
+    language-configuration.json
+    syntaxes/eucalypt.tmLanguage.json
+    src/extension.ts
+  emacs/
+    eucalypt-ts-mode.el        # Existing — add eglot registration
+</code></pre>
+<hr />
+<h2 id="beads">Beads</h2>
+<p>Existing:</p>
+<ul>
+<li><strong>eu-307</strong> — LSP server. Update description with design reference.</li>
+</ul>
+<p>New beads to create per phase:</p>
+<p><strong>Phase 1:</strong>
+- LSP server scaffold (eu lsp subcommand, lsp-server integration,
+  stdio loop)
+- LSP diagnostics from Rowan parser
+- LSP document symbols
+- LSP folding and selection ranges
+- VS Code extension (TextMate grammar + language client)</p>
+<p><strong>Phase 2:</strong>
+- lsp-context metadata parsing
+- Symbol table construction (prelude + imports + lsp-context)
+- Go-to-definition
+- Hover
+- Completion
+- Find references</p>
+<p><strong>Phase 3:</strong>
+- LSP formatting integration (full document + range)
+- Semantic tokens
+- Rename
+- Code actions
+- Inlay hints</p>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

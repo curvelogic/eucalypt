@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Set Implementation — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Set Implementation \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-05-set-implementation-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Set Implementation — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-05-set-implementation-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="set-implementation-design">Set Implementation — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>Eucalypt lacks a native set data type. Users must use lists and manually
+handle deduplication and membership testing, which is inefficient and
+verbose.</p>
+<h2 id="solution">Solution</h2>
+<p>A native Set type with O(1) operations, stored as <code>HashSet&lt;Primitive&gt;</code> in
+Rust, with prelude functions for construction and set algebra.</p>
+<h2 id="key-properties">Key Properties</h2>
+<ul>
+<li><strong>Native type</strong> — new <code>Native::Set</code> variant</li>
+<li><strong>Primitive elements</strong> — numbers, strings, symbols only</li>
+<li><strong>O(1) operations</strong> — hash-based membership and mutation</li>
+<li><strong>Set algebra</strong> — union, intersection, difference</li>
+<li><strong>Serializes as array</strong> — JSON/YAML output is <code>[1, 2, 3]</code></li>
+</ul>
+<h2 id="syntax-examples">Syntax Examples</h2>
+<pre><code class="language-eu">empty: ∅                              # empty set (0-arity operator)
+nums: [1, 2, 2, 3] set.from-list      # {1, 2, 3}
+has-two: nums set.contains?(2)        # true
+
+evens: [2, 4, 6] set.from-list
+common: nums set.intersect(evens)     # {2}
+all: nums set.union(evens)            # {1, 2, 3, 4, 6}
+</code></pre>
+<h2 id="native-type">Native Type</h2>
+<p><strong>New Native variant</strong> in <code>src/eval/memory/syntax.rs</code>:</p>
+<pre><code class="language-rust">pub enum Native {
+    Sym(RefPtr&lt;HeapString&gt;),  // becomes Sym(SymbolId) after eu-4af
+    Str(RefPtr&lt;HeapString&gt;),
+    Num(Number),
+    Zdt(DateTime&lt;FixedOffset&gt;),
+    Set(RefPtr&lt;HeapSet&gt;),  // NEW
+}
+</code></pre>
+<p><strong>Ordering</strong>: eu-4af (symbol interning) lands first, so <code>Sym</code> is
+<code>Sym(SymbolId)</code> when sets are implemented.</p>
+<p><strong>HeapSet structure</strong> in <code>src/eval/memory/set.rs</code>:</p>
+<pre><code class="language-rust">pub struct HeapSet {
+    elements: HashSet&lt;Primitive&gt;,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub enum Primitive {
+    Num(OrderedNumber),  // wrapper for hashable number
+    Str(String),
+    Sym(SymbolId),       // interned symbol ID (eu-4af)
+}
+</code></pre>
+<p>Set intrinsics access the symbol pool via <code>IntrinsicMachine::symbol_pool()</code>
+for display/construction.</p>
+<p><strong>Note on numbers</strong>: Rust's <code>f64</code> isn't <code>Hash</code>. An <code>OrderedNumber</code> wrapper
+handles this by implementing Hash for the numeric representation.</p>
+<p><strong>GC integration</strong>: <code>HeapSet</code> allocated on heap. GC scans don't trace into
+set contents since primitives contain no heap references.</p>
+<h2 id="intrinsics">Intrinsics</h2>
+<p>New module <code>src/eval/stg/set.rs</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Intrinsic</th>
+<th>Args</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SET.EMPTY</code></td>
+<td>0</td>
+<td>Returns empty set</td>
+</tr>
+<tr>
+<td><code>SET.FROM_LIST</code></td>
+<td>1</td>
+<td>List → Set</td>
+</tr>
+<tr>
+<td><code>SET.TO_LIST</code></td>
+<td>1</td>
+<td>Set → List</td>
+</tr>
+<tr>
+<td><code>SET.ADD</code></td>
+<td>2</td>
+<td>Add element to set</td>
+</tr>
+<tr>
+<td><code>SET.REMOVE</code></td>
+<td>2</td>
+<td>Remove element from set</td>
+</tr>
+<tr>
+<td><code>SET.CONTAINS</code></td>
+<td>2</td>
+<td>Check membership → bool</td>
+</tr>
+<tr>
+<td><code>SET.SIZE</code></td>
+<td>1</td>
+<td>Number of elements</td>
+</tr>
+<tr>
+<td><code>SET.UNION</code></td>
+<td>2</td>
+<td>Union of two sets</td>
+</tr>
+<tr>
+<td><code>SET.INTERSECT</code></td>
+<td>2</td>
+<td>Intersection of two sets</td>
+</tr>
+<tr>
+<td><code>SET.DIFF</code></td>
+<td>2</td>
+<td>Difference (set1 - set2)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="prelude-api">Prelude API</h2>
+<pre><code class="language-eu">` { doc: &quot;Set operations&quot; }
+set: {
+  from-list: __SET.FROM_LIST
+  to-list: __SET.TO_LIST
+  add: __SET.ADD
+  remove: __SET.REMOVE
+  contains?: __SET.CONTAINS
+  size: __SET.SIZE
+  empty?: s -&gt; s size eq(0)
+  union: __SET.UNION
+  intersect: __SET.INTERSECT
+  diff: __SET.DIFF
+}
+
+` { doc: &quot;Empty set&quot; }
+∅: __SET.EMPTY
+</code></pre>
+<h2 id="rendering">Rendering</h2>
+<p>Sets render as JSON/YAML arrays, sorted for deterministic output.
+Numbers sort numerically, strings and symbols sort lexicographically.
+Numbers sort before strings, strings before symbols.</p>
+<pre><code class="language-eu">[3, 1, 2, 2] set.from-list   # renders as [1, 2, 3]
+[&quot;c&quot;, &quot;a&quot;] set.from-list     # renders as [&quot;a&quot;, &quot;c&quot;]
+</code></pre>
+<p>The renderer handles <code>Native::Set</code> by collecting elements, sorting via
+<code>Primitive::cmp()</code>, and emitting as a list.</p>
+<h2 id="testing">Testing</h2>
+<ul>
+<li><strong>Construction</strong>: <code>set.from-list</code> deduplicates, <code>∅</code> is empty</li>
+<li><strong>Membership</strong>: <code>set.contains?</code> returns true/false correctly</li>
+<li><strong>Mutation</strong>: <code>set.add</code> adds new, ignores existing; <code>set.remove</code> removes</li>
+<li><strong>Algebra</strong>: <code>union</code>, <code>intersect</code>, <code>diff</code> produce correct results</li>
+<li><strong>Round-trip</strong>: <code>set.from-list(set.to-list(s))</code> equals original</li>
+<li><strong>Rendering</strong>: Set outputs as valid JSON array</li>
+<li><strong>Edge cases</strong>: Empty sets, single element, duplicate adds</li>
+</ul>
+<h2 id="error-handling">Error Handling</h2>
+<ul>
+<li>Adding non-primitive to set → runtime error</li>
+<li>Set operations on non-sets → runtime error</li>
+</ul>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>Block/nested structure membership (complex equality)</li>
+<li>Set literal syntax <code>{1, 2, 3}</code> (future enhancement)</li>
+<li>Subset/disjoint predicates (future enhancement)</li>
+<li>Ordered sets (future enhancement)</li>
+</ul>
+<h2 id="dependencies">Dependencies</h2>
+<ul>
+<li>eu-7kc (0-arity operators) ✓ — needed for <code>∅</code></li>
+<li>eu-4af (symbol interning) — <code>Primitive::Sym</code> uses <code>SymbolId</code></li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

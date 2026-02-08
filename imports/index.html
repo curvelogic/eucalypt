@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Imports - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Imports";
+        var mkdocs_page_input_path = "imports.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Imports</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#import-scopes">Import scopes</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#import-syntax">Import syntax</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#simple-imports">Simple imports</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#git-imports">Git imports</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#yaml-import-features">YAML import features</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#anchors-and-aliases">Anchors and aliases</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#merge-keys">Merge keys</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#timestamps">Timestamps</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Imports</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/imports.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="imports">Imports</h1>
+<p>Eucalypt supports importing content from other units in a variety of
+ways.</p>
+<p>Imported names can be scoped to specific declarations, they may be
+made accessible under a specific namespace, and they may be imported
+from disk or direct from git repositories.</p>
+<h2 id="import-scopes">Import scopes</h2>
+<p>Imports are specified in declaration metadata and make the names in
+the imported unit available within the declaration that is annotated.</p>
+<pre><code class="language-eu">
+{ import: &quot;config.eu&quot; }
+data: {
+  # names from config are available here
+  x: config-value
+}
+
+</code></pre>
+<p>As described in <a href="../syntax/">syntax</a>, declaration metadata can be
+applied at a unit level simply by including a metadata block as the
+very first thing in a eucalypt file:</p>
+<pre><code class="language-eu">{ import: &quot;config.eu&quot; }
+
+# names from config are available here
+
+x: config-value
+
+</code></pre>
+<h2 id="import-syntax">Import syntax</h2>
+<p>Imports are specified using the key <code>import</code> in a declaration metadata
+block. The value may be a single import specification:</p>
+<pre><code class="language-eu">{ import: &quot;dep-a.eu&quot;}
+</code></pre>
+<p>or a list of import specifications:</p>
+<pre><code class="language-eu">{ import: [&quot;dep-a.eu&quot;, &quot;dep-b.eu&quot;]}
+</code></pre>
+<p>The import specification itself can be either a <em>simple import</em> or a
+<em>git import</em>.</p>
+<h3 id="simple-imports">Simple imports</h3>
+<p>Simple imports are specified in exactly the same way as <em>inputs</em> are
+specified at the command line (see <a href="../command-line/">command line</a>).</p>
+<p>So you can override the format of the imported file when the file
+extension is misleading:</p>
+<pre><code class="language-eu">{ import: &quot;yaml@dep.txt&quot; }
+</code></pre>
+<p>...and provide a name under which the imported names will be
+available:</p>
+<pre><code class="language-eu">{ import: &quot;cfg=config.eu&quot; }
+
+# names in config.eu are available by lookup in cfg:
+
+x: cfg.x
+</code></pre>
+<p>In cases, where the import format delivers a list rather than a block
+("text", "csv", "jsonl", ...) a name is mandatory:</p>
+<pre><code class="language-eu">{ import: &quot;txns=transactions.csv&quot; }
+</code></pre>
+<p>Simple imports support exactly the same inputs as the command line,
+with the proviso that the stdin input ("-") will not be consumable if
+it has already been specified in the command line or another unit.</p>
+<h3 id="git-imports">Git imports</h3>
+<p>Git imports allow you to import eucalypt direct from a git repository
+at a specified commit, combining the convenience of not having to
+explicitly manage a git working copy and a library path with the
+repeatability of a git SHA. A git import is specified as a block with
+the keys "git", "commit" and "import", all of which are mandatory:</p>
+<pre><code class="language-eu">{ import: { git: &quot;https://github.com/gmorpheme/eu.aws&quot;
+            commit: &quot;0140232cf882a922bdd67b520ed56f0cddbd0637&quot;
+            import: &quot;aws/cloudformation.eu&quot; } }
+</code></pre>
+<p>The <code>git</code> URL may be any format that the git command line expects.</p>
+<p><code>commit</code> is required and should be a SHA. It is intended to ensure the
+import is repeatable and cacheable.</p>
+<p><code>import</code> identifies the file within the repository to import.</p>
+<p>Just as with simple imports, several git imports may be listed:</p>
+<pre><code class="language-eu">{ import: [{ git: ... }, { git: ... }]}
+</code></pre>
+<p>...and simple imports and git imports may be freely mixed.</p>
+<h2 id="yaml-import-features">YAML import features</h2>
+<p>When importing YAML files, eucalypt supports several YAML features that
+help reduce repetition and express data more naturally.</p>
+<h3 id="anchors-and-aliases">Anchors and aliases</h3>
+<p>YAML anchors (<code>&amp;name</code>) and aliases (<code>*name</code>) allow you to define a value
+once and reference it multiple times. When eucalypt imports a YAML file
+with anchors and aliases, the aliased values are resolved to copies of
+the anchored expression.</p>
+<pre><code class="language-yaml"># config.yaml
+defaults: &amp;defaults
+  timeout: 30
+  retries: 3
+
+development:
+  &lt;&lt;: *defaults
+  debug: true
+
+production:
+  &lt;&lt;: *defaults
+  debug: false
+</code></pre>
+<p>Anchors can be applied to any YAML value: scalars, lists, or mappings.</p>
+<pre><code class="language-yaml"># Anchor on a scalar
+name: &amp;author &quot;Alice&quot;
+books:
+  - title: &quot;First Book&quot;
+    author: *author
+  - title: &quot;Second Book&quot;
+    author: *author
+
+# Anchor on a list
+colours: &amp;primary [red, green, blue]
+palette:
+  primary: *primary
+  secondary: [yellow, cyan, magenta]
+
+# Anchor on a mapping (block)
+base: &amp;base
+  x: 1
+  y: 2
+ref: *base  # ref now has { x: 1, y: 2 }
+</code></pre>
+<p>Nested anchors are supported—an anchored structure can itself contain
+anchored values:</p>
+<pre><code class="language-yaml">outer: &amp;outer
+  inner: &amp;inner 42
+ref_outer: *outer   # { inner: 42 }
+ref_inner: *inner   # 42
+</code></pre>
+<p>If you reference an undefined alias, eucalypt reports an error:</p>
+<pre><code class="language-yaml"># This will fail: *undefined is not defined
+value: *undefined
+</code></pre>
+<h3 id="merge-keys">Merge keys</h3>
+<p>The YAML merge key (<code>&lt;&lt;</code>) allows you to merge entries from one or more
+mappings into another. This is useful for creating configuration
+variations that share a common base.</p>
+<p><strong>Single merge:</strong></p>
+<pre><code class="language-yaml">base: &amp;base
+  host: localhost
+  port: 8080
+
+server:
+  &lt;&lt;: *base
+  name: main
+# server = { host: localhost, port: 8080, name: main }
+</code></pre>
+<p><strong>Multiple merge:</strong></p>
+<p>When merging multiple mappings, later ones override earlier ones:</p>
+<pre><code class="language-yaml">defaults: &amp;defaults
+  timeout: 30
+  retries: 3
+
+overrides: &amp;overrides
+  timeout: 60
+
+config:
+  &lt;&lt;: [*defaults, *overrides]
+  name: myapp
+# config = { timeout: 60, retries: 3, name: myapp }
+</code></pre>
+<p><strong>Explicit keys override merged values:</strong></p>
+<p>Keys defined explicitly in the mapping (before or after the merge)
+always take precedence over merged values:</p>
+<pre><code class="language-yaml">base: &amp;base
+  x: 1
+  y: 2
+
+derived:
+  &lt;&lt;: *base
+  y: 99
+# derived = { x: 1, y: 99 }
+</code></pre>
+<p><strong>Inline merge:</strong></p>
+<p>You can also merge an inline mapping directly:</p>
+<pre><code class="language-yaml">config:
+  &lt;&lt;: { timeout: 30, retries: 3 }
+  name: myapp
+</code></pre>
+<p>The merge key value must be a mapping (or list of mappings). Attempting
+to merge a non-mapping value (e.g., <code>&lt;&lt;: 42</code>) results in an error.</p>
+<h3 id="timestamps">Timestamps</h3>
+<p>Eucalypt automatically converts YAML timestamps to ZDT (zoned date-time)
+expressions. Plain scalar values matching timestamp patterns are parsed
+and converted; quoted strings are left as strings.</p>
+<p><strong>Supported formats:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Example</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Date only</td>
+<td><code>2023-01-15</code></td>
+<td>Midnight UTC</td>
+</tr>
+<tr>
+<td>ISO 8601 UTC</td>
+<td><code>2023-01-15T10:30:00Z</code></td>
+<td></td>
+</tr>
+<tr>
+<td>ISO 8601 offset</td>
+<td><code>2023-01-15T10:30:00+05:00</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Space separator</td>
+<td><code>2023-01-15 10:30:00</code></td>
+<td>Treated as UTC</td>
+</tr>
+<tr>
+<td>Fractional seconds</td>
+<td><code>2023-01-15T10:30:00.123456Z</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Examples:</strong></p>
+<pre><code class="language-yaml"># These are converted to ZDT expressions:
+created: 2023-01-15
+updated: 2023-01-15T10:30:00Z
+scheduled: 2023-06-01 09:00:00
+
+# This remains a string (quoted):
+date_string: &quot;2023-01-15T10:30:00Z&quot;
+</code></pre>
+<p><strong>Invalid timestamps fall back to strings:</strong></p>
+<p>If a value looks like a timestamp but has invalid date components
+(e.g., month 13 or day 45), it remains a string:</p>
+<pre><code class="language-yaml">invalid: 2023-13-45  # Remains string &quot;2023-13-45&quot;
+</code></pre>
+<p><strong>To keep timestamps as strings:</strong></p>
+<p>If you need to preserve a timestamp-like value as a string rather than
+converting it to a ZDT, quote it:</p>
+<pre><code class="language-yaml"># As ZDT:
+actual_date: 2023-01-15
+
+# As string:
+date_label: &quot;2023-01-15&quot;
+</code></pre>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../command-line/" class="btn btn-neutral float-left" title="Command Line"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../yaml-embedding/" class="btn btn-neutral float-right" title="YAML Embedding">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../command-line/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../yaml-embedding/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

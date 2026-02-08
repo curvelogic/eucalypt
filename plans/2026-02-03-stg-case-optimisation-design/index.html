@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>STG Case Optimisation Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "STG Case Optimisation Design";
+        var mkdocs_page_input_path = "plans/2026-02-03-stg-case-optimisation-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">STG Case Optimisation Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-03-stg-case-optimisation-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="stg-case-optimisation-design">STG Case Optimisation Design</h1>
+<p>Date: 2026-02-03</p>
+<h2 id="overview">Overview</h2>
+<p>Four independent optimisations to STG case expression handling, grouped
+under an STG Optimisation epic alongside the existing eu-bpe (inlining
+into STG wrappers) bead.</p>
+<p>The four case optimisations can be implemented in any order. Each is a
+self-contained change that preserves semantics and is validated by
+existing harness tests.</p>
+<h3 id="optimisations">Optimisations</h3>
+<ol>
+<li><strong>Redundant single-branch case elimination</strong> (eu-knx, compile-time)</li>
+<li><strong>Case-of-known-constructor folding</strong> (new, compile-time)</li>
+<li><strong>O(1) tag dispatch</strong> (new, runtime)</li>
+<li><strong>Skip empty env frames for 0-arity branches</strong> (new, runtime)</li>
+</ol>
+<h3 id="success-criteria">Success criteria</h3>
+<ul>
+<li>All existing harness tests pass after each change</li>
+<li>No semantic changes to program output</li>
+<li>Measurable reduction in VM ticks, allocation count, or dispatch
+  overhead for relevant workloads</li>
+</ul>
+<hr />
+<h2 id="1-redundant-single-branch-case-elimination-eu-knx">1. Redundant Single-Branch Case Elimination (eu-knx)</h2>
+<h3 id="problem">Problem</h3>
+<p>Pointless case statements are generated when pattern matching on a
+constructor with only one branch handling that same constructor:</p>
+<pre><code>Case scrutinee
+  Constructor(a, b, c) -&gt; body(a, b, c)
+</code></pre>
+<p>This should be simplified to direct field access without case analysis.</p>
+<h3 id="location">Location</h3>
+<p>New pass in <code>src/eval/stg/optimiser.rs</code>, or extension of the existing
+<code>AllocationPruner</code>.</p>
+<h3 id="transformation">Transformation</h3>
+<p>Replace the single-branch case with a <code>force</code> (evaluate scrutinee to
+WHNF) followed by direct binding of the constructor's fields into the
+body:</p>
+<pre><code>// Before:
+Case scrutinee
+  BoxedNumber(x) -&gt; body(x)
+
+// After:
+force(scrutinee, body)
+</code></pre>
+<p>The <code>force</code> construct evaluates the scrutinee to WHNF, then the body
+receives the fields as local bindings -- which is exactly what <code>force</code>
+already does (a case with empty branches and a fallback that receives
+the value).</p>
+<p>For constructors with known arity, the fields are already bound by
+position in the environment frame, so the body's local references
+remain valid.</p>
+<h3 id="when-not-to-transform">When NOT to transform</h3>
+<ul>
+<li>Multiple branches -- not a single-constructor case</li>
+<li>Fallback present alongside the branch -- suggests the scrutinee's
+  type is not statically known</li>
+<li>Zero-arity constructors like <code>BoolTrue</code> or <code>ListNil</code> -- already
+  trivial, but could still be simplified (case becomes <code>force</code> +
+  discard)</li>
+</ul>
+<h3 id="implementation">Implementation</h3>
+<p>Add a pass over <code>StgSyn</code> that pattern-matches <code>Case { branches,
+fallback }</code> where <code>branches.len() == 1</code> and <code>fallback.is_none()</code>.
+Replace with the equivalent <code>force</code> + rebinding. Run after the existing
+<code>AllocationPruner</code> in the optimisation pipeline.</p>
+<h3 id="testing">Testing</h3>
+<ul>
+<li>Unit test in <code>optimiser.rs</code>: construct a single-branch case, run the
+  pass, verify it produces <code>force</code></li>
+<li>All harness tests pass (correctness preservation)</li>
+<li>Boolean-heavy harness tests should show slight tick reduction</li>
+</ul>
+<hr />
+<h2 id="2-case-of-known-constructor-folding">2. Case-of-Known-Constructor Folding</h2>
+<h3 id="problem_1">Problem</h3>
+<p>When the scrutinee of a case expression is a literal data constructor
+application (not a variable or function call), we know at compile time
+which branch will be taken. The entire case can be replaced with the
+matching branch body.</p>
+<h3 id="location_1">Location</h3>
+<p>Same optimiser pass as the single-branch elimination, or a separate
+pass in <code>src/eval/stg/optimiser.rs</code>.</p>
+<h3 id="transformation_1">Transformation</h3>
+<pre><code>// Before:
+Case DataCon(BoolTrue)
+  BoolTrue  -&gt; expr_a
+  BoolFalse -&gt; expr_b
+
+// After:
+expr_a
+</code></pre>
+<p>For constructors with arguments:</p>
+<pre><code>// Before:
+Case DataCon(BoxedNumber, [42])
+  BoxedNumber(n) -&gt; body(n)
+
+// After:
+let n = 42 in body(n)
+</code></pre>
+<h3 id="when-this-arises">When this arises</h3>
+<ul>
+<li>Constant folding after inlining -- an inlined function returns a
+  known constructor, which is then cased on</li>
+<li>Boolean expressions with literal arguments -- <code>if true then a else b</code></li>
+<li>Generated code from the desugarer that constructs then immediately
+  destructs</li>
+</ul>
+<h3 id="when-not-to-transform_1">When NOT to transform</h3>
+<ul>
+<li>Scrutinee is a variable reference, function application, or anything
+  requiring evaluation</li>
+<li>Scrutinee is a <code>let</code> binding wrapping a constructor -- would need to
+  look through the binding (keep it simple, do not chase through lets)</li>
+</ul>
+<h3 id="implementation_1">Implementation</h3>
+<p>Pattern-match <code>Case { scrutinee, branches, fallback }</code> where
+<code>scrutinee</code> is <code>StgSyn::Cons { tag, args }</code> (or the equivalent data
+construction form). Look up <code>tag</code> in <code>branches</code>, substitute <code>args</code> as
+local bindings in the matched body. If no branch matches, use
+<code>fallback</code>. If neither matches, leave the case unchanged.</p>
+<h3 id="testing_1">Testing</h3>
+<ul>
+<li>Unit test: construct a case with a literal constructor scrutinee,
+  verify folding produces the correct branch body</li>
+<li>All harness tests pass</li>
+<li>May not fire often in current code unless combined with inlining, but
+  is a standard compiler transform worth having</li>
+</ul>
+<hr />
+<h2 id="3-o1-tag-dispatch">3. O(1) Tag Dispatch</h2>
+<h3 id="problem_2">Problem</h3>
+<p><code>match_tag()</code> in <code>src/eval/machine/cont.rs:61-68</code> does a linear scan
+through branch pairs:</p>
+<pre><code class="language-rust">pub fn match_tag(tag: Tag, branches: &amp;[(Tag, RefPtr&lt;HeapSyn&gt;)]) -&gt; Option&lt;RefPtr&lt;HeapSyn&gt;&gt; {
+    for (t, body) in branches {
+        if *t == tag {
+            return Some(*body);
+        }
+    }
+    None
+}
+</code></pre>
+<p>Tags are <code>u8</code> (0-255). With 12 defined constructors and typical
+branches of 2-3 entries, the linear scan is fast in practice. But this
+is on the hot path -- every case dispatch calls it.</p>
+<h3 id="approach">Approach</h3>
+<p><strong>Small inline array indexed by tag range.</strong> At continuation
+construction time, compute <code>min_tag</code> and <code>max_tag</code> from the branches.
+Allocate an array of size <code>max_tag - min_tag + 1</code>, populate by tag
+offset. Lookup is <code>table[tag - min_tag]</code>.</p>
+<p>For typical cases (<code>BoolTrue</code>=1/<code>BoolFalse</code>=2, or
+<code>ListNil</code>=6/<code>ListCons</code>=7), this is a 2-entry array with O(1) lookup.
+Worst case for all 12 constructors is a 12-entry array.</p>
+<h3 id="alternatives-considered">Alternatives considered</h3>
+<ul>
+<li><strong>256-entry array</strong>: O(1) but 2KB per continuation. Wasteful for
+  typical 2-3 branch cases.</li>
+<li><strong>Sorted + binary search</strong>: O(log n) but more overhead than linear
+  scan for 2-3 entries.</li>
+</ul>
+<h3 id="location_2">Location</h3>
+<p><code>src/eval/machine/cont.rs</code> and <code>src/eval/machine/vm.rs</code>.</p>
+<h3 id="implementation_2">Implementation</h3>
+<ul>
+<li>Change <code>Continuation::Branch</code> to store <code>min_tag: Tag</code>,
+  <code>branch_table: Array&lt;Option&lt;RefPtr&lt;HeapSyn&gt;&gt;&gt;</code> instead of the pairs
+  array. <code>fallback</code> stays unchanged.</li>
+<li>Construction: in <code>vm.rs</code> where <code>Continuation::Branch</code> is created
+  (line 223-237), build the indexed table from the branch pairs.</li>
+<li>Lookup: replace <code>match_tag(tag, branches)</code> with bounds check + direct
+  index: <code>if tag &gt;= min_tag &amp;&amp; (tag - min_tag) &lt; table.len() {
+  table[(tag - min_tag) as usize] } else { None }</code>.</li>
+<li>Remove <code>match_tag()</code> function.</li>
+</ul>
+<h3 id="risk">Risk</h3>
+<p>Low. The change is localised to continuation construction and dispatch.
+The only subtlety is ensuring the <code>Array</code> allocation for the table goes
+through the GC-managed heap correctly (it already does for the current
+pairs array).</p>
+<h3 id="testing_2">Testing</h3>
+<ul>
+<li>All harness tests pass (semantic equivalence)</li>
+<li>Unit test: construct branches with various tag combinations, verify
+  correct dispatch</li>
+<li>Criterion benchmarks may show slight improvement since case dispatch
+  is on the hot path</li>
+</ul>
+<hr />
+<h2 id="4-skip-empty-env-frames-for-0-arity-branches">4. Skip Empty Env Frames for 0-Arity Branches</h2>
+<h3 id="problem_3">Problem</h3>
+<p>When a case branch matches a 0-arity constructor (<code>BoolTrue</code>,
+<code>BoolFalse</code>, <code>ListNil</code>, <code>Unit</code>), the current code allocates an
+environment frame with zero bindings. There is an existing TODO at
+<code>vm.rs:426</code>: "skip empty frames".</p>
+<pre><code class="language-rust">let closures = args.iter()                    // args is empty
+    .map(|r| self.nav(view).resolve(r))
+    .collect::&lt;Result&lt;Vec&lt;SynClosure&gt;, _&gt;&gt;()?;
+let len = closures.len();                      // len is 0
+self.closure = SynClosure::new(
+    body,
+    view.from_closures(closures.into_iter(), len, environment, self.annotation)?,
+    //                 ^^^ allocates an env frame with 0 bindings
+);
+</code></pre>
+<h3 id="location_3">Location</h3>
+<p><code>src/eval/machine/vm.rs</code>, in <code>return_data()</code> (around line 418-432).</p>
+<h3 id="implementation_3">Implementation</h3>
+<p>Before calling <code>from_closures</code>, check if <code>args</code> is empty. If so, reuse
+the parent <code>environment</code> directly:</p>
+<pre><code class="language-rust">if args.is_empty() {
+    self.closure = SynClosure::new(body, environment);
+} else {
+    let closures = args.iter()
+        .map(|r| self.nav(view).resolve(r))
+        .collect::&lt;Result&lt;Vec&lt;SynClosure&gt;, _&gt;&gt;()?;
+    let len = closures.len();
+    self.closure = SynClosure::new(
+        body,
+        view.from_closures(
+            closures.into_iter(), len, environment, self.annotation
+        )?,
+    );
+}
+</code></pre>
+<h3 id="why-this-is-safe">Why this is safe</h3>
+<p>The branch body's local references (<code>L(0)</code>, <code>L(1)</code>, etc.) refer to
+bindings in the environment frame. If the constructor has 0 arity, the
+body will not reference any locally-bound constructor fields -- it can
+only reference bindings from the enclosing scope, which are already in
+<code>environment</code>. No new frame is needed.</p>
+<h3 id="impact">Impact</h3>
+<p>Boolean dispatch is extremely common in eucalypt (every <code>if</code>, <code>and</code>,
+<code>or</code>, <code>not</code> uses <code>BoolTrue</code>/<code>BoolFalse</code> branches). Each avoided frame
+saves a heap allocation. This reduces both allocation pressure and GC
+load.</p>
+<h3 id="testing_3">Testing</h3>
+<ul>
+<li>All harness tests pass</li>
+<li>Boolean-heavy programs should show reduced <code>machine_allocs</code> count in
+  <code>-S</code> output</li>
+<li>Criterion benchmarks should show reduced allocation overhead</li>
+</ul>
+<hr />
+<h2 id="existing-bead-stg-inline-into-wrappers-eu-bpe">Existing Bead: STG Inline into Wrappers (eu-bpe)</h2>
+<p>This bead is underspecified and needs investigation before it can be
+designed. It remains in the epic as-is. Investigation should identify:</p>
+<ul>
+<li>What specific wrapper functions exist in the STG implementation</li>
+<li>Which inlining opportunities would provide meaningful performance
+  gains</li>
+<li>How inlining interacts with the case optimisations above</li>
+</ul>
+<p>eu-bpe is not blocked by any of the four case optimisations and can be
+investigated independently.</p>
+<hr />
+<h2 id="beads">Beads</h2>
+<p>Existing:</p>
+<ul>
+<li><strong>eu-knx</strong> -- STG: Case optimisation (redundant single-branch
+  elimination). Update description with design from section 1.</li>
+<li><strong>eu-bpe</strong> -- STG: Inline into STG wrappers. Remains as-is pending
+  investigation.</li>
+</ul>
+<p>New beads to create:</p>
+<ul>
+<li><strong>Case-of-known-constructor folding</strong> -- compile-time, section 2</li>
+<li><strong>O(1) tag dispatch</strong> -- runtime, section 3</li>
+<li><strong>Skip empty env frames for 0-arity branches</strong> -- runtime, section 4</li>
+<li><strong>STG Optimisation epic</strong> -- parent for all five beads</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

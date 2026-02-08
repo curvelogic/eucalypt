@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Eucalypt v0.3.0 Agent Team Implementation Plan - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Eucalypt v0.3.0 Agent Team Implementation Plan";
+        var mkdocs_page_input_path = "plans/2026-02-06-agent-team-plan.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Eucalypt v0.3.0 Agent Team Implementation Plan</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-06-agent-team-plan.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="eucalypt-v030-agent-team-implementation-plan">Eucalypt v0.3.0 Agent Team Implementation Plan</h1>
+<h2 id="context">Context</h2>
+<p>Eucalypt v0.3.0 has 16 design plans covering VM improvements, prelude
+extensions, tooling enhancements, and an LSP server. All plans have been
+reviewed and cross-checked. The work is tracked in beads with dependency
+graphs. We need a team of autonomous agents to implement this in parallel,
+with a review/architect agent ensuring quality and coherence.</p>
+<h2 id="team-structure">Team Structure</h2>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Role</th>
+<th>Worktree</th>
+<th>Scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Niamh</strong></td>
+<td>VM, GC, memory, STG, DCE</td>
+<td><code>eucalypt-vm</code></td>
+<td>eu-4af, eu-brj, eu-xg2x, eu-8d8, eu-181d, eu-40jb</td>
+</tr>
+<tr>
+<td><strong>Callum</strong></td>
+<td>Prelude, intrinsics, features, ZDT literal</td>
+<td><code>eucalypt-prelude</code></td>
+<td>Quick wins, eu-da3, eu-ert, eu-kfe, eu-kd1, eu-z0l</td>
+</tr>
+<tr>
+<td><strong>Fricka</strong></td>
+<td>Tester, benchmarks, docs gen</td>
+<td><code>eucalypt-tooling</code></td>
+<td>eu-twg, eu-01v, eu-ber</td>
+</tr>
+<tr>
+<td><strong>Ravi</strong></td>
+<td>LSP server + editors</td>
+<td><code>eucalypt-lsp</code></td>
+<td>eu-307 (all phases)</td>
+</tr>
+<tr>
+<td><strong>Seren</strong></td>
+<td>Architect, PR review, docs</td>
+<td>main repo</td>
+<td>PR gate, cross-stream, docs freshness, eu-ptu</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Orchestrator</strong> (me): delegate, unblock, manage beads, handle escalations.</p>
+<h2 id="git-strategy">Git Strategy</h2>
+<h3 id="worktree-setup">Worktree Setup</h3>
+<p>Each coding agent gets its own git worktree branched from master. This
+avoids checkout conflicts and gives each agent its own <code>target/</code> directory
+for independent builds.</p>
+<pre><code class="language-bash"># Create worktree directory
+mkdir -p /Users/greg/dev/curvelogic/eucalypt-worktrees
+
+# Create one worktree per coding agent, each starting from master
+git worktree add /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-vm master
+git worktree add /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-prelude master
+git worktree add /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-tooling master
+git worktree add /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-lsp master
+</code></pre>
+<p>The reviewer works from the main repo directory.</p>
+<h3 id="branch-per-task-flow">Branch-per-Task Flow</h3>
+<p>Each bead task gets its own branch:</p>
+<pre><code>feature/eu-XXXX-short-description
+</code></pre>
+<p>Agent workflow per task:
+1. In their worktree: <code>git fetch origin &amp;&amp; git checkout -b feature/eu-XXXX-desc origin/master</code>
+2. Implement, test, commit (multiple commits fine)
+3. Push: <code>git push -u origin feature/eu-XXXX-desc</code>
+4. Create PR: <code>gh pr create --title "..." --body "..."</code>
+5. Notify reviewer via SendMessage
+6. Wait for merge (reviewer handles this)
+7. After merge: <code>git fetch origin &amp;&amp; git checkout -b feature/eu-YYYY-next origin/master</code></p>
+<h3 id="merge-sequencing">Merge Sequencing</h3>
+<ul>
+<li>Seren <strong>squash-merges</strong> each PR (one clean commit per bead task)</li>
+<li>Squash commit message format: <code>feat(eu-XXXX): Short description of change</code>
+  with a body summarising what was done and why</li>
+<li>After each merge, Seren runs full test suite on master</li>
+<li>If merge conflicts arise, Seren resolves or asks the authoring agent</li>
+<li>Agents always branch from latest <code>origin/master</code> for each new task</li>
+</ul>
+<h2 id="agent-operating-guidelines">Agent Operating Guidelines</h2>
+<h3 id="shared-rules-all-agents">Shared Rules (All Agents)</h3>
+<pre><code>WORKTREE: You work EXCLUSIVELY in your assigned worktree directory.
+All file paths and all cargo/git commands use that directory.
+
+QUALITY GATE: Before marking any task done, you MUST pass:
+  1. cargo fmt --all
+  2. cargo clippy --all-targets -- -D warnings
+  3. cargo test
+If any step fails, fix and retry (up to 5 attempts).
+After 5 failures on the same issue, escalate to reviewer.
+
+BRANCHES: One branch per bead task. Branch from latest origin/master.
+Never commit directly to master.
+
+COMMITS: Clear, descriptive messages. Include bead ID. Example:
+  &quot;feat(eu-4af): Add SymbolId and SymbolPool data structures&quot;
+
+UK ENGLISH: All comments, docs, error messages use UK English.
+
+PUBLIC-READY: All code will be merged to the public eucalypt repo after
+0.3.0. Write everything as if it's public from day one:
+  - No internal jargon, no references to private repos or tools
+  - Clean, helpful error messages that make sense to external users
+  - Comments explain &quot;why&quot;, not &quot;what&quot; — assume a competent Rust reader
+  - Doc metadata on prelude functions (` &quot;description&quot;) is user-facing
+
+CLIPPY: Fix ALL warnings. Never use #[allow()] to suppress.
+
+DECISION AUTHORITY: You CAN decide without escalating:
+  - Implementation details not covered by the spec (choose sensibly,
+    document in PR description)
+  - Internal API additions (helper functions, internal modules)
+  - Performance trade-offs within the spec's stated approach
+  - Test strategy and coverage details beyond what the spec lists
+  - Error message wording (following UK English, clear and helpful)
+  - Minor refactoring needed to land your feature cleanly
+
+ESCALATION: Send a message to Seren ONLY when:
+  - You've failed 5 fix attempts on the same issue
+  - You discover a cross-stream conflict affecting another agent
+  - You need to change a user-visible API not covered by the spec
+  - The spec is fundamentally unclear about the desired behaviour
+    (not just missing detail — missing intent)
+
+DESIGN PLANS: Read docs/plans/*.md for your assigned features BEFORE
+starting implementation. These are the source of truth.
+
+OPPORTUNISTIC P3 FIXES: When you are already modifying a file, fix
+nearby issues from these beads if the fix is trivial and local:
+  - eu-0yz: Replace unwrap() with expect(&quot;descriptive message&quot;)
+  - eu-2254: (Niamh only) Lazy iteration for stack_trace if touching vm.rs
+  - eu-mrg: Remove or resolve TODO/FIXME/HACK comments you encounter
+Do NOT go hunting for these. Only fix them if they're in your path.
+
+NO BEADS MANAGEMENT: The orchestrator manages beads. You report task
+completion via SendMessage to the orchestrator. Do not run bd commands.
+
+BEAD LIFECYCLE (orchestrator handles all of this):
+  - in_progress: when orchestrator assigns/signals an agent to start
+  - close (sub-bead): after Seren confirms squash-merge to master
+    and master CI passes
+  - close (parent epic): when all child sub-beads are closed
+  - bd sync: orchestrator runs periodically and at session end
+</code></pre>
+<h3 id="niamh-vm-specialist">Niamh (VM Specialist)</h3>
+<pre><code>WORKTREE: /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-vm
+
+TASK ORDER (strictly serial — each depends on the previous):
+1. eu-4af: Symbol interning (eu-e1p3 → eu-jo9y → eu-pq9i → eu-uaoj → eu-yvpz → eu-eysh → eu-r9bv)
+2. eu-brj: Block indexing (eu-z5br → eu-wnkl → eu-pb3e → eu-piho)
+3. eu-xg2x: STG optimisations (eu-knx, eu-otxv, eu-354y, eu-drh0 — any order within)
+4. eu-8d8: DCE inside blocks (eu-qmw3 → eu-eezd → eu-j642)
+5. eu-40jb: String intrinsics phase 1 (eu-cb9k → eu-nq77)
+6. eu-181d: GC Immix — all 3 phases, hyper-incrementally:
+   Phase 1: Benchmarking infrastructure (statistics, --statistics-file,
+            Criterion benchmarks, gc-bench.sh, workflow docs)
+   Phase 2: Lazy sweeping — implement behind conditional, validate with
+            benchmarks, then switch on in a separate small commit
+   Phase 3: Evacuation — land in stages:
+     a. Forwarding pointer support in AllocHeader (inert, tested in isolation)
+     b. Evacuation candidate selection logic (inert, unit tested)
+     c. Evacuation during marking (disabled by default, tested via unit tests)
+     d. Reference updating in GcScannable (disabled, tested per-type)
+     e. Enable opportunistic evacuation (small commit, full validation)
+   Each sub-step is a separate branch/PR, validated independently.
+   Code can land before it's active. The switch-on is always a separate,
+   small, reviewable commit.
+
+BENCHMARKING DISCIPLINE:
+- After eu-4af: benchmark symbol-heavy programs before/after
+- After eu-brj: benchmark block lookup before/after
+- After each STG optimisation: check ticks/allocs in -S output
+- Before/after every GC phase: full gc-bench.sh comparison
+- Record all results in PR descriptions
+
+SPECIAL RULES:
+- Memory code is safety-critical. Document all unsafe blocks.
+- When changing GcScannable, verify ALL implementors are updated.
+- Symbol interning changes Native::Sym everywhere — grep exhaustively.
+- After completing eu-4af, notify orchestrator so eu-kfe can start.
+- GC changes: never enable new behaviour in the same PR that adds
+  the code. Implement → validate → enable are separate PRs.
+</code></pre>
+<h3 id="callum-prelude-features">Callum (Prelude &amp; Features)</h3>
+<pre><code>WORKTREE: /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-prelude
+
+TASK ORDER:
+Phase 1 (immediate, no dependencies):
+  - eu-u1m: Polymorphic lt/gt for ZDTs + strings + symbols
+  - eu-nbc: Version assertions (eu.requires)
+  - eu-dyx: Base64 encode/decode
+  - eu-dd5: SHA-256 hash
+
+Phase 2 (after eu-u1m):
+  - eu-da3: String comparison intrinsics (str.lt etc.) + sort-keys
+  - eu-dlr: Catch {name: name} recursion (depends on eu-twg for error tests)
+
+Phase 3 (after eu-da3 + eu-u1m):
+  - eu-ert: Sorting lists (sort-nums, sort-strs, sort-by etc.)
+
+Phase 4 (after eu-4af merges to master):
+  - eu-kfe: Set implementation (Primitive::Sym uses SymbolId)
+
+Phase 5 (independent, can start any time):
+  - eu-kd1: ZDT literal syntax (eu-yfcw → eu-7y85 → eu-qarv, then tests)
+
+Phase 6 (independent, lower priority):
+  - eu-z0l: Deep find functions
+
+NAMING CONVENTION:
+- String comparison goes INSIDE str block: str.lt, str.gt, str.lte, str.gte
+- New intrinsics follow existing pattern in src/eval/stg/
+- Prelude functions have doc metadata: ` &quot;description&quot;
+
+INTRINSIC PATTERN:
+Read an existing intrinsic (e.g., src/eval/stg/string.rs) and follow
+the exact pattern: struct, name(), execute(), CallGlobal trait, register
+in src/eval/stg/mod.rs.
+
+HARNESS TESTS:
+Every new feature gets harness tests in harness/test/. Follow the
+existing numbered naming: find the highest number, increment by 1.
+</code></pre>
+<h3 id="fricka-tooling-infrastructure">Fricka (Tooling &amp; Infrastructure)</h3>
+<pre><code>WORKTREE: /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-tooling
+
+TASK ORDER:
+Phase 1 (independent, start immediately):
+  - eu-twg: Error message tests (eu-aiux → eu-icdc → eu-i1pi)
+  - eu-01v: Benchmarks in tester (eu-s5n5 → eu-asdm → eu-2c1x → eu-1yxc → eu-f2pk)
+
+Phase 2 (after prelude stabilises):
+  - eu-ber: Prelude docs generator (eu-980b → eu-j2pu → eu-9ez6)
+
+TESTER CHANGES:
+The tester code is in src/driver/tester.rs and lib/test.eu.
+Test plan analysis is in testplan.rs (or similar).
+Read the existing code thoroughly before modifying.
+
+ERROR TESTS:
+- .expect sidecars go alongside .eu files in harness/test/errors/
+- Format: YAML with exit: and stderr: fields
+- Start with 3 smoke tests, then migrate the rest
+
+BENCHMARKS:
+- bench- prefixed targets in test files
+- Report ticks, allocs, max-stack to stderr
+- Stats already captured in evidence — surface them
+</code></pre>
+<h3 id="ravi-lsp-server">Ravi (LSP Server)</h3>
+<pre><code>WORKTREE: /Users/greg/dev/curvelogic/eucalypt-worktrees/eucalypt-lsp
+
+TASK ORDER (phase 1 only for initial sprint):
+  1. eu-307.1: LSP scaffold (eu lsp subcommand, lsp-server, stdio loop)
+  2. eu-307.2: Diagnostics from Rowan parser
+  3. eu-307.3: Document symbols
+  4. eu-307.4: Folding and selection ranges
+  5. eu-307.5: VS Code extension
+
+DEPENDENCIES:
+- Add lsp-server and lsp-types to Cargo.toml
+- Wire eu lsp subcommand into src/driver/options.rs clap structure
+- New module: src/driver/lsp.rs (and src/driver/lsp/ submodules)
+
+TESTING:
+- Unit tests for each LSP feature
+- Manual testing via VS Code extension during development
+- Automated test: spawn eu lsp, send JSON-RPC messages, check responses
+
+SCOPE:
+Phase 1 only. Do NOT start phase 2 (semantic features) without
+explicit go-ahead from orchestrator.
+</code></pre>
+<h3 id="seren-reviewer-architect">Seren (Reviewer / Architect)</h3>
+<pre><code>DIRECTORY: /Users/greg/dev/curvelogic/eucalypt (main repo)
+
+ROLE: Architect, PR reviewer, documentation guardian.
+
+PR REVIEW PROCESS:
+1. When notified of a PR, fetch and check out the branch
+2. Read the diff against master
+3. Verify:
+   a. Code matches the design plan in docs/plans/
+   b. All tests pass (cargo test)
+   c. Clippy clean (cargo clippy --all-targets -- -D warnings)
+   d. Formatting clean (cargo fmt --all -- --check)
+   e. UK English in comments/docs/errors
+   f. No #[allow()] suppressions
+   g. Harness tests added for new features
+   h. No unintended changes to other features
+4. If issues found: send specific feedback to the authoring agent
+5. If clean: squash-merge to master via gh pr merge --squash
+6. After merge: verify master CI passes
+7. Notify orchestrator that eu-XXXX has merged (triggers bead close)
+
+ARCHITECTURAL OVERSIGHT:
+- Watch for cross-stream conflicts (e.g., two agents modifying intrinsics.rs)
+- Ensure symbol interning changes propagate correctly
+- Flag if an agent deviates from the design plan
+- Check that new intrinsics follow the established pattern
+
+DOCUMENTATION OVERSIGHT:
+- Flag if harness tests are missing for new features
+- Check that prelude doc metadata (` &quot;description&quot;) is present
+- Note if docs/plans/ need updating based on implementation changes
+- Track whether docs/ user-facing docs need refresh
+
+DOCS REFRESH (eu-ptu):
+- After the bulk of features have landed, assess and fix the docs build
+- Refresh user-facing documentation to reflect 0.3.0 features
+- This feeds into Phase 5 documentation replacement work
+
+DECISION AUTHORITY: You CAN decide without escalating:
+  - Architectural details not specified in the plans (choose the
+    simpler approach, document in PR review comments)
+  - Merge conflict resolution for trivial conflicts (adjacent lines,
+    import ordering in mod.rs)
+  - Requesting minor code changes from agents (naming, structure,
+    error handling)
+  - Approving reasonable implementation choices agents made beyond
+    what the spec covers
+
+ESCALATION: Escalate to orchestrator ONLY when:
+  - Semantic merge conflict between two agents' work
+  - An agent's PR fundamentally deviates from the design plan
+  - Two rounds of feedback haven't resolved an issue
+  - Cross-stream dependency needs re-ordering
+
+MERGE CONFLICT RESOLUTION:
+- Trivial conflicts (e.g., adjacent lines in mod.rs): resolve yourself
+- Semantic conflicts (overlapping features): escalate to orchestrator
+
+ESCALATION TRIAGE: When a coding agent escalates to you (not a PR):
+1. Build/clippy failure after 5 attempts:
+   - Read the agent's code and error output
+   - Suggest a concrete fix or alternative approach
+   - If you can identify the root cause, send it back with instructions
+   - If you cannot: escalate to orchestrator
+2. Unclear spec intent:
+   - Read the relevant design plan in docs/plans/
+   - If the intent is recoverable from context, make a decision and
+     document it in a message back to the agent
+   - If the spec is genuinely ambiguous about user-visible behaviour:
+     escalate to orchestrator
+3. Cross-stream conflict:
+   - Escalate to orchestrator immediately (they coordinate agents)
+4. User-visible API change not in spec:
+   - Escalate to orchestrator (they decide scope changes)
+</code></pre>
+<h3 id="orchestrator-decision-authority">Orchestrator Decision Authority</h3>
+<pre><code>The orchestrator (me) has FULL authority to make decisions without
+consulting the user, provided the decision:
+  - Has only private/internal impact (code structure, implementation
+    approach, task ordering, agent coordination)
+  - Is REVERSIBLE (can be undone in a subsequent PR or commit)
+
+This includes:
+  - Resolving spec ambiguities (choosing between reasonable interpretations)
+  - Re-ordering tasks or shifting work between agents
+  - Approving minor scope adjustments (e.g., adding a helper function
+    not in the spec, renaming an internal API)
+  - Deciding on implementation approaches when agents or Seren escalate
+  - Resolving cross-stream conflicts by choosing which agent yields
+  - Adjusting GC phase ordering if benchmarks suggest a different sequence
+  - Changing branch/merge order for dependency reasons
+
+Decisions that require user consultation (NOT reversible or public-facing):
+  - Dropping a planned feature from 0.3.0 scope
+  - Changing user-visible syntax or semantics beyond what specs define
+  - Altering the public merge-back content decisions
+  - Any change to the release process or version numbering
+</code></pre>
+<h2 id="coordination-protocol">Coordination Protocol</h2>
+<h3 id="cross-stream-dependencies">Cross-Stream Dependencies</h3>
+<table>
+<thead>
+<tr>
+<th>Dependency</th>
+<th>Producer</th>
+<th>Consumer</th>
+<th>Signal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>eu-4af (symbol interning) done</td>
+<td>Niamh</td>
+<td>Callum (for eu-kfe)</td>
+<td>orchestrator notifies Callum</td>
+</tr>
+<tr>
+<td>eu-u1m (polymorphic lt) done</td>
+<td>Callum</td>
+<td>Callum (for eu-ert)</td>
+<td>internal, same agent</td>
+</tr>
+<tr>
+<td>eu-da3 (string comparison) done</td>
+<td>Callum</td>
+<td>Callum (for eu-ert)</td>
+<td>internal, same agent</td>
+</tr>
+<tr>
+<td>eu-twg (error tests) done</td>
+<td>Fricka</td>
+<td>Callum (for eu-dlr)</td>
+<td>orchestrator notifies Callum</td>
+</tr>
+</tbody>
+</table>
+<h3 id="communication-flow">Communication Flow</h3>
+<pre><code>Niamh/Callum/Fricka/Ravi → Seren (PR ready)
+Seren → authoring agent (feedback / merge confirmation)
+any agent → orchestrator (task complete / escalation)
+orchestrator → any agent (unblock / new assignment)
+orchestrator → Seren (priority guidance)
+</code></pre>
+<p>Coding agents do NOT message each other directly. All cross-stream
+coordination goes through the orchestrator.</p>
+<h3 id="ralph-loop-iteration-pattern">Ralph-Loop Iteration Pattern</h3>
+<p>For each task, agents follow this cycle:</p>
+<pre><code>1. Read the design plan
+2. Implement
+3. cargo fmt --all
+4. cargo clippy --all-targets -- -D warnings
+5. cargo test
+6. If 3-5 fail: fix and go to 3 (up to 5 iterations)
+7. If pass: commit, push, create PR, notify Seren
+8. If 5 iterations exhausted: escalate to Seren
+</code></pre>
+<p>Seren has a similar loop for merge issues:</p>
+<pre><code>1. Review PR
+2. If issues: send specific feedback, agent fixes, re-review (up to 2 rounds)
+3. If clean: merge to master, verify CI
+4. If 2 rounds don't resolve: escalate to orchestrator
+</code></pre>
+<h2 id="launch-sequence">Launch Sequence</h2>
+<h3 id="step-0-pre-launch-fixes-orchestrator-before-spawning-agents">Step 0: Pre-launch Fixes (orchestrator, before spawning agents)</h3>
+<ul>
+<li>Fix CI clippy to use <code>--all-targets</code> in <code>.github/workflows/build-rust.yaml</code>
+  (line 63: <code>cargo clippy -- -D warnings</code> → <code>cargo clippy --all-targets -- -D warnings</code>)
+  This aligns CI with the CLAUDE.md pre-commit checklist and what agents validate locally.</li>
+<li>Commit and push this fix to master before creating worktrees.</li>
+</ul>
+<h3 id="step-1-infrastructure-setup-orchestrator">Step 1: Infrastructure Setup (orchestrator)</h3>
+<ul>
+<li>Create worktree directories</li>
+<li>Create worktrees from master (after the CI fix is on master)</li>
+<li>Create the team via TeamCreate</li>
+<li>Set up initial task list from beads</li>
+</ul>
+<h3 id="step-2-spawn-agents-orchestrator">Step 2: Spawn Agents (orchestrator)</h3>
+<ul>
+<li>Spawn all 5 agents with their briefs</li>
+<li>Each agent starts by reading their assigned design plans</li>
+<li>Coding agents begin their first tasks immediately</li>
+</ul>
+<h3 id="step-3-steady-state">Step 3: Steady State</h3>
+<ul>
+<li>Agents work autonomously, creating PRs</li>
+<li>Reviewer processes PRs as they arrive</li>
+<li>Orchestrator monitors progress, manages beads, unblocks dependencies</li>
+<li>When eu-4af merges, orchestrator signals Callum to start eu-kfe</li>
+</ul>
+<h3 id="step-4-completion">Step 4: Completion</h3>
+<ul>
+<li>All PRs merged to master</li>
+<li>Full test suite passes on master</li>
+<li>Orchestrator closes beads and syncs</li>
+<li>Orchestrator shuts down team</li>
+</ul>
+<h2 id="verification">Verification</h2>
+<p>After all work is merged:
+1. <code>cargo test</code> — full suite passes
+2. <code>cargo clippy --all-targets -- -D warnings</code> — clean
+3. <code>cargo fmt --all -- --check</code> — clean
+4. <code>cargo build --release</code> — builds successfully
+5. <code>target/release/eu harness/test -T</code> — release binary passes harness
+6. All beads for targeted features are closed
+7. <code>bd sync</code> — beads fully synced</p>
+<h2 id="context-management">Context Management</h2>
+<p>Large tasks (especially eu-181d GC Immix with ~15+ sub-steps) risk
+exhausting agent context windows. Mitigation:</p>
+<ul>
+<li><strong>One branch/PR per sub-bead</strong>: Each sub-bead is a self-contained
+  unit of work. The agent completes it, creates a PR, and moves on.</li>
+<li><strong>Re-briefing between sub-beads</strong>: When an agent finishes a sub-bead,
+  the orchestrator can send a fresh brief for the next one, including
+  any relevant context from the completed work.</li>
+<li><strong>Agent resumption</strong>: If an agent is suspended or loses context, the
+  orchestrator re-spawns it with a focused prompt referencing the
+  design plan and the current state of the branch.</li>
+<li><strong>Design plans as ground truth</strong>: The <code>docs/plans/</code> files are the
+  authoritative reference. Agents re-read them at the start of each
+  sub-bead rather than relying on accumulated context.</li>
+<li><strong>PR descriptions as memory</strong>: Each completed PR's description
+  captures what was done and why. This serves as durable context for
+  subsequent work.</li>
+</ul>
+<p>For Niamh's GC Immix work specifically: each of the 5 evacuation
+sub-steps (a-e) is a separate PR. If context runs out mid-step, the
+orchestrator re-briefs Niamh with just that sub-step's scope.</p>
+<h2 id="phase-5-public-merge-back-eu-4bkv">Phase 5: Public Merge-Back (eu-4bkv)</h2>
+<p>After all 0.3.0 work is verified on master, merge the private repo
+back to the public <code>curvelogic/eucalypt</code> repository.</p>
+<h3 id="pre-merge-content-decisions">Pre-Merge Content Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.beads/</code> directory</td>
+<td>Exclude — start fresh with GitHub issues on public repo</td>
+</tr>
+<tr>
+<td><code>openspec/</code> directory</td>
+<td>Exclude — proposals are internal planning artefacts</td>
+</tr>
+<tr>
+<td><code>.claude/</code>, <code>.gemini/</code>, <code>.opencode/</code></td>
+<td>Exclude — AI tooling config is developer-specific</td>
+</tr>
+<tr>
+<td><code>docs/plans/</code> design documents</td>
+<td><strong>Remove</strong> — replace with proper user-facing documentation</td>
+</tr>
+<tr>
+<td>Commit history</td>
+<td>Squash/rebase to clean public history (see below)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="documentation-replacement">Documentation Replacement</h3>
+<p>Before the merge, replace <code>docs/plans/</code> with public-facing documentation:</p>
+<ol>
+<li>
+<p><strong>CHANGELOG.md</strong> — Comprehensive 0.3.0 release notes covering all new
+   features, improvements, and breaking changes. Grouped by category
+   (language features, performance, tooling, prelude additions).</p>
+</li>
+<li>
+<p><strong>Updated README.md</strong> — Reflect new capabilities (LSP, ZDT literals,
+   sets, sorting, deep-find, etc.). Update installation and usage sections.</p>
+</li>
+<li>
+<p><strong>Architecture guide</strong> (<code>docs/architecture.md</code>) — High-level overview
+   of the codebase for contributors. Cover the compilation pipeline,
+   STG machine, GC, prelude, and test infrastructure.</p>
+</li>
+<li>
+<p><strong>Generated prelude reference</strong> — Output from eu-ber (Fricka's docs
+   gen work). Auto-generated from prelude doc metadata.</p>
+</li>
+<li>
+<p><strong>LSP setup guide</strong> (<code>docs/lsp.md</code>) — How to configure Emacs and
+   VS Code with the language server.</p>
+</li>
+</ol>
+<h3 id="merge-back-steps">Merge-Back Steps</h3>
+<ol>
+<li>
+<p><strong>Create clean branch</strong>: <code>git checkout -b release/0.3.0 master</code></p>
+</li>
+<li>
+<p><strong>Remove excluded content</strong>:
+   <code>rm -rf .beads/ openspec/ .claude/ .gemini/ .opencode/ docs/plans/</code></p>
+</li>
+<li>
+<p><strong>Add new documentation</strong>: CHANGELOG.md, updated README, architecture
+   guide, LSP guide (as listed above)</p>
+</li>
+<li>
+<p><strong>Verify build</strong>: <code>cargo test &amp;&amp; cargo clippy --all-targets -- -D warnings</code></p>
+</li>
+<li>
+<p><strong>Squash to single commit</strong> against <code>upstream/master</code>: one commit
+   titled "Eucalypt 0.3.0" with a comprehensive message summarising
+   all changes.</p>
+</li>
+<li>
+<p><strong>Push to public</strong>: <code>git push upstream release/0.3.0</code></p>
+</li>
+<li>
+<p><strong>Create PR</strong> on <code>curvelogic/eucalypt</code> for review</p>
+</li>
+<li>
+<p><strong>After merge</strong>: Tag as <code>v0.3.0</code>, create GitHub release</p>
+</li>
+</ol>
+<h3 id="cicd-on-public-repo">CI/CD on Public Repo</h3>
+<p>The public repo's CI/CD workflows are <strong>identical</strong> to the private repo
+(zero drift). Three workflow files:</p>
+<ul>
+<li><strong><code>build-rust.yaml</code></strong> — On every push/PR: check, test (ubuntu + macOS),
+  fmt, clippy. On master only: builds release binaries (linux amd64 +
+  macOS), generates changelog via Claude API, creates draft GitHub release.</li>
+<li><strong><code>release.yaml</code></strong> — On published release: updates <code>latest</code> branch,
+  generates homebrew formula.</li>
+<li><strong><code>docs.yaml</code></strong> — Documentation workflow.</li>
+</ul>
+<p><strong>Changes from 0.3.0 that affect CI</strong>:
+- Clippy flag change: <code>cargo clippy -- -D warnings</code> →
+  <code>cargo clippy --all-targets -- -D warnings</code> (Step 0 fix, carried in
+  the squashed commit)
+- New crate dependencies (lsp-server, lsp-types, semver, base64, sha2)
+  — these are in Cargo.toml and will be picked up automatically
+- New <code>eu lsp</code> subcommand — no CI impact
+- No other workflow changes needed</p>
+<p><strong>The CI will work on public without modification</strong> after the merge.</p>
+<h3 id="changelog-and-release-process">Changelog and Release Process</h3>
+<p>The public repo auto-generates release notes from <code>git log latest..HEAD</code>
+via the Claude API (using <code>.github/release-notes-prompt.md</code>). Since
+we're squashing to a single commit, the auto-generated changelog would
+only see that one commit.</p>
+<p><strong>Strategy</strong>: Write a <strong>comprehensive squash commit message</strong> that lists
+all major changes in a structured format. The Claude API will use this
+to generate polished release notes. The commit message should include:</p>
+<pre><code>Eucalypt 0.3.0
+
+Major release with performance improvements, new language features,
+expanded prelude, developer tooling, and LSP support.
+
+## Performance
+- Symbol interning: SymbolId(u32) replaces heap-allocated symbols
+- Block indexing: O(1) lookup for blocks with 16+ keys
+- STG case optimisations: known-constructor, tag-only, dead-alt, wrapper
+- DCE inside blocks: static-access dead code elimination
+- GC Immix completion: lazy sweeping and opportunistic evacuation
+
+## Language Features
+- ZDT literals: t&quot;2023-01-15T10:30:00Z&quot; syntax
+- Set data type: {| :a, :b, :c |} with full set operations
+- Polymorphic comparison: lt/gt work for numbers, strings, symbols, ZDTs
+
+## Prelude
+- Sorting: sort-nums, sort-strs, sort-by, sort-by-num, sort-by-str
+- String comparison: str.lt, str.gt, str.lte, str.gte, sort-keys
+- Deep find: deep-find, deep-find-first, deep-find-paths, deep-query
+- Utilities: eu.requires, str.base64-encode, str.base64-decode, str.sha256
+- Catch {name: name} self-reference cycles
+
+## Tooling
+- LSP server: eu lsp with diagnostics, document symbols, folding
+- VS Code extension with TextMate grammar
+- Error message test infrastructure (.expect sidecars)
+- Benchmark support in test harness
+- Generated prelude reference documentation
+
+## String Intrinsics
+- Streaming return for SPLIT, MATCH, MATCHES, LETTERS
+</code></pre>
+<p>After the squash commit is pushed to public master, CI will:
+1. Run check/test/fmt/clippy (should all pass)
+2. Build release binaries
+3. Generate changelog from the commit message via Claude API
+4. Create a <strong>draft</strong> GitHub release</p>
+<p>The orchestrator then:
+1. Reviews the draft release notes
+2. Edits if needed (the Claude API output is a starting point)
+3. Publishes the release
+4. <code>release.yaml</code> runs: updates <code>latest</code> branch, generates homebrew formula</p>
+<h3 id="who-does-this">Who Does This</h3>
+<p>Seren prepares the documentation (steps 1-4). The orchestrator handles
+the git operations (steps 5-8) since interactive rebase and force-push
+require human judgement.</p>
+<h3 id="timing-and-approval-gate">Timing and Approval Gate</h3>
+<p>This phase starts ONLY after:
+1. Step 4 (Completion) of the main implementation is fully verified
+2. The orchestrator presents a summary of all completed work to the user
+3. <strong>The user explicitly approves proceeding with the public merge-back</strong></p>
+<p>No agent or the orchestrator may touch the public repository (upstream)
+until the user has reviewed the final state of the private repo and
+given the go-ahead. This is a hard gate — not a formality.</p>
+<p>During 0.3.0 development (Steps 0-4), the user is not consulted unless
+they are actively watching and showing interest. The orchestrator
+operates autonomously within its decision authority.</p>
+<h2 id="risk-mitigation">Risk Mitigation</h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Merge conflicts in shared files (intrinsics.rs, mod.rs, prelude.eu)</td>
+<td>Reviewer merges sequentially; agents always branch from latest master</td>
+</tr>
+<tr>
+<td>Agent diverges from design plan</td>
+<td>Reviewer checks every PR against the plan</td>
+</tr>
+<tr>
+<td>GC/VM changes break correctness</td>
+<td>Niamh runs full test suite; benchmarks before/after</td>
+</tr>
+<tr>
+<td>Agents spin on unfixable issues</td>
+<td>5-iteration cap, then escalate</td>
+</tr>
+<tr>
+<td>Beads get out of sync</td>
+<td>Only orchestrator manages beads</td>
+</tr>
+<tr>
+<td>Context exhaustion on long tasks</td>
+<td>Each task is one branch/PR; agents can be resumed</td>
+</tr>
+<tr>
+<td>Concurrent cargo builds in worktrees</td>
+<td>Separate worktrees have separate target dirs</td>
+</tr>
+<tr>
+<td>Agent context exhaustion on large tasks</td>
+<td>One branch/PR per sub-bead; orchestrator re-briefs between sub-beads</td>
+</tr>
+<tr>
+<td>Public merge-back loses important context</td>
+<td>Design decisions captured in docs, not just plans; public-ready code from start</td>
+</tr>
+<tr>
+<td>Internal references leak to public</td>
+<td>PUBLIC-READY rule in shared guidelines; Seren checks during review</td>
+</tr>
+</tbody>
+</table>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

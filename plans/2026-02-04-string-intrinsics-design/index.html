@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>String Intrinsics Optimisation — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "String Intrinsics Optimisation \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-04-string-intrinsics-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">String Intrinsics Optimisation — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-04-string-intrinsics-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="string-intrinsics-optimisation-design">String Intrinsics Optimisation — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>String intrinsics that return lists (SPLIT, MATCH, MATCHES, LETTERS)
+materialise the entire result as a <code>Vec&lt;String&gt;</code> in Rust, then copy
+every string onto the heap. This creates N intermediate Rust <code>String</code>
+allocations that are immediately discarded after being copied to the
+heap.</p>
+<h2 id="approach-two-phases">Approach: Two Phases</h2>
+<p><strong>Phase 1 (now):</strong> Eliminate the intermediate <code>Vec&lt;String&gt;</code> by
+providing a streaming return path. Instead of collecting all results
+into a Vec then building the heap list, build the heap list directly
+from an iterator. The input string is still copied from the heap into
+Rust via <code>str_arg()</code>.</p>
+<p><strong>Phase 2 (after GC evacuation):</strong> Add a block pinning mechanism to
+the GC, then introduce <code>str_arg_ref()</code> which returns a <code>&amp;str</code>
+borrowed directly from the heap. This eliminates the input copy.
+Requires pinning because evacuation (GC phase 3) can move objects,
+and concurrent mutators could trigger GC while the intrinsic holds the
+borrow.</p>
+<h2 id="why-not-zero-copy-now">Why Not Zero-Copy Now?</h2>
+<p>During intrinsic execution, output allocations can trigger GC. With
+the planned evacuation optimisation (eu-181d phase 3), GC could move
+the input string while the intrinsic holds a <code>&amp;str</code> into it. A
+pinning mechanism is needed to prevent this, and that belongs in the
+GC epic. Future concurrency would also require pinning for the same
+reason.</p>
+<h2 id="phase-1-streaming-return">Phase 1: Streaming Return</h2>
+<h3 id="new-helper-machine_return_str_iter">New helper: <code>machine_return_str_iter()</code></h3>
+<p>Replace the current <code>machine_return_str_list(machine, view, vec)</code>
+pattern with <code>machine_return_str_iter(machine, view, iter)</code> that
+accepts an iterator and builds the heap cons list directly.</p>
+<p>The current <code>machine_return_str_list</code> builds the list in reverse from
+a Vec. The streaming version collects the iterator into a temporary
+<code>Vec&lt;Ref&gt;</code> of heap-allocated string refs (small pointers, not full
+strings), then builds the cons list in reverse as now. This eliminates
+the <code>Vec&lt;String&gt;</code> — the strings go straight from the iterator to the
+heap.</p>
+<h3 id="intrinsic-migration">Intrinsic migration</h3>
+<table>
+<thead>
+<tr>
+<th>Intrinsic</th>
+<th>Current</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SPLIT</td>
+<td><code>re.split().map(to_string).collect()</code> then <code>machine_return_str_list(vec)</code></td>
+<td><code>re.split()</code> fed to <code>machine_return_str_iter(iter)</code></td>
+</tr>
+<tr>
+<td>MATCH</td>
+<td><code>re.captures().map(to_string).collect()</code> then <code>machine_return_str_list(vec)</code></td>
+<td><code>re.captures()</code> fed to <code>machine_return_str_iter(iter)</code></td>
+</tr>
+<tr>
+<td>MATCHES</td>
+<td><code>re.find_iter().map(to_string).collect()</code> then <code>machine_return_str_list(vec)</code></td>
+<td><code>re.find_iter()</code> fed to <code>machine_return_str_iter(iter)</code></td>
+</tr>
+<tr>
+<td>LETTERS</td>
+<td><code>chars().map(to_string).collect()</code> then <code>machine_return_str_list(vec)</code></td>
+<td><code>chars()</code> fed to <code>machine_return_str_iter(iter)</code></td>
+</tr>
+</tbody>
+</table>
+<p>JOIN, UPPER, LOWER, FMT, STR produce single strings — no change
+needed.</p>
+<h2 id="phase-2-zero-copy-input-after-gc-epic">Phase 2: Zero-Copy Input (After GC Epic)</h2>
+<h3 id="block-pinning-mechanism">Block pinning mechanism</h3>
+<p>Add a pin/unpin API to <code>MutatorHeapView</code>:</p>
+<ul>
+<li><code>pin(ref)</code> returns a <code>PinGuard</code> — marks the ref's block as
+  non-evacuatable</li>
+<li>Guard unpins on drop (RAII pattern)</li>
+<li>Evacuation skips pinned blocks</li>
+</ul>
+<h3 id="new-helper-str_arg_ref">New helper: <code>str_arg_ref()</code></h3>
+<p>Returns <code>&amp;str</code> borrowed directly from the heap string, with the block
+pinned for the duration. The intrinsic flow becomes:</p>
+<pre><code>pin input block → &amp;str from heap → regex → &amp;str slices → heap allocations → drop pin
+</code></pre>
+<p>Zero intermediate Rust <code>String</code> allocations for the entire pipeline.</p>
+<p><strong>Dependency:</strong> Blocked by GC Immix phase 3 (evacuation), since
+pinning is only necessary once objects can move.</p>
+<p><strong>Decision needed</strong>: The pinning API must be designed explicitly before
+phase 2 work begins. The GC Immix design does not yet specify the
+pin/unpin API. Key questions: RAII guard lifetime, nesting semantics
+(can an intrinsic allocate while holding a pin?), interaction with
+evacuation's reference-updating scan.</p>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>JOIN optimisation (single string output, already efficient)</li>
+<li>UPPER/LOWER/FMT/STR (single string output)</li>
+<li>General heap-backed allocation for Rust structs (separate future
+  concern)</li>
+</ul>
+<h2 id="testing">Testing</h2>
+<ul>
+<li>Phase 1: Existing harness tests cover all string intrinsics. Verify
+  no regressions. Use bench targets (once eu-01v lands) to measure
+  ticks/allocs reduction.</li>
+<li>Phase 2: GC stress tests with string-heavy workloads to verify
+  pinning works under evacuation.</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../../img/favicon.ico" />
+    <title>Sorting Blocks — Design - eucalypt</title>
+    <link rel="stylesheet" href="../../css/theme.css" />
+    <link rel="stylesheet" href="../../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Sorting Blocks \u2014 Design";
+        var mkdocs_page_input_path = "plans/2026-02-04-sorting-blocks-design.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href="../.." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../../gc-benchmarking/">GC Benchmarking</a>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Sorting Blocks — Design</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/plans/2026-02-04-sorting-blocks-design.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="sorting-blocks-design">Sorting Blocks — Design</h1>
+<h2 id="problem">Problem</h2>
+<p>Users want blocks to render with keys in alphabetical order for clean,
+deterministic JSON/YAML output. Currently blocks preserve insertion
+order.</p>
+<h2 id="scope">Scope</h2>
+<p>This feature is purely about <strong>output ordering</strong> — reordering block
+pairs by key for presentation. Performance improvements (O(1) lookup
+via indexmap) are deferred to eu-brj.</p>
+<h2 id="solution">Solution</h2>
+<p>A prelude-level <code>sort-keys</code> function that reorders block pairs
+alphabetically. This requires string/symbol comparison intrinsics
+which don't currently exist.</p>
+<h2 id="string-comparison-intrinsics">String Comparison Intrinsics</h2>
+<p>New intrinsics for lexicographic string comparison:</p>
+<ul>
+<li><code>STR_LT</code> — string less-than</li>
+<li><code>STR_GT</code> — string greater-than</li>
+<li><code>STR_LTE</code> — string less-than-or-equal</li>
+<li><code>STR_GTE</code> — string greater-than-or-equal</li>
+</ul>
+<p>These accept both strings and symbols, comparing by their underlying
+text. Implemented in <code>src/eval/stg/string.rs</code> following the pattern of
+numeric comparison intrinsics.</p>
+<h2 id="prelude-functions">Prelude Functions</h2>
+<p>Exposed inside the <code>str</code> block (consistent with <code>str.split</code>,
+<code>str.upper</code>, <code>str.base64-encode</code> etc.):</p>
+<ul>
+<li><code>str.lt(a, b)</code> — true if a &lt; b lexicographically</li>
+<li><code>str.gt(a, b)</code> — true if a &gt; b lexicographically</li>
+<li><code>str.lte(a, b)</code> — true if a &lt;= b</li>
+<li><code>str.gte(a, b)</code> — true if a &gt;= b</li>
+</ul>
+<p>And the main feature:</p>
+<ul>
+<li><code>sort-keys(b)</code> — returns block with pairs reordered by key
+  alphabetically</li>
+</ul>
+<h2 id="implementation">Implementation</h2>
+<h3 id="string-comparison-intrinsics-srcevalstgstringrs">String comparison intrinsics (<code>src/eval/stg/string.rs</code>)</h3>
+<p>Follow the pattern of <code>LT</code>/<code>GT</code> in <code>arith.rs</code>. Accept two arguments,
+extract as strings or symbols, use Rust's <code>str::cmp()</code> for
+lexicographic ordering, return boolean.</p>
+<pre><code class="language-rust">// Pseudocode
+fn execute(&amp;self, ..., args: &amp;[Ref]) -&gt; Result&lt;(), ExecutionError&gt; {
+    let a = str_or_sym_arg(machine, view, &amp;args[0])?;
+    let b = str_or_sym_arg(machine, view, &amp;args[1])?;
+    let result = a.as_str() &lt; b.as_str();  // or &gt;, &lt;=, &gt;=
+    machine_return_bool(machine, view, result)
+}
+</code></pre>
+<h3 id="prelude-functions-libpreludeeu">Prelude functions (<code>lib/prelude.eu</code>)</h3>
+<p>Inside the existing <code>str</code> block in the prelude:</p>
+<pre><code class="language-eu">str: {
+  # ... existing functions ...
+  lt(a, b): a '__STR_LT(b)
+  gt(a, b): a '__STR_GT(b)
+  lte(a, b): a '__STR_LTE(b)
+  gte(a, b): a '__STR_GTE(b)
+}
+
+sort-keys(b): b elements qsort(pair-key-lt) block
+  pair-key-lt(p1, p2): first(p1) str.lt(first(p2))
+</code></pre>
+<p>Note: <code>str.lt</code> as a higher-order argument (<code>qsort(str.lt)</code>) is a static
+dot access — DCE correctly tracks it and can still eliminate unused <code>str</code>
+members.</p>
+<h2 id="testing">Testing</h2>
+<ul>
+<li>Harness tests for string comparison: empty strings, single chars,
+  unicode, mixed case</li>
+<li>Harness tests for symbol comparison: <code>:a</code> vs <code>:b</code>, <code>:foo</code> vs <code>:bar</code></li>
+<li>Harness tests for <code>sort-keys</code>: empty block, single key, multiple
+  keys, already sorted</li>
+</ul>
+<p><strong>Note</strong>: With polymorphic <code>lt</code>/<code>gt</code> (eu-u1m), <code>sort-keys</code> could also
+use <code>lt</code> directly. The <code>str.lt</code> variants remain as explicit typed
+alternatives and are used in <code>sort-keys</code> for clarity.</p>
+<h2 id="out-of-scope">Out of Scope</h2>
+<ul>
+<li>Performance improvements for block lookup (eu-brj)</li>
+<li>Custom sort order / locale-aware comparison</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "../..";</script>
+    <script src="../../js/theme_extra.js"></script>
+    <script src="../../js/theme.js"></script>
+      <script src="../../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

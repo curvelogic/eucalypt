@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>GC Benchmarking - eucalypt</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "GC Benchmarking";
+        var mkdocs_page_input_path = "gc-benchmarking.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> eucalypt
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../getting-started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax/">Syntax</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../syntax-gotchas/">Syntax Gotchas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../operators-and-identifiers/">Operators and Identifiers</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../anaphora-and-lambdas/">Anaphora and Lambdas</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../command-line/">Command Line</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../imports/">Imports</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../yaml-embedding/">YAML Embedding</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../prelude/">Prelude Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../tester/">Testing</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Implementation</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../implementation/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../gc-implementation/">GC Implementation</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">GC Benchmarking</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#tools">Tools</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#gc-benchsh-end-to-end-benchmarking">gc-bench.sh — End-to-end benchmarking</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#criterion-benchmarks">Criterion benchmarks</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#step-by-step-procedure">Step-by-step procedure</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#1-establish-baseline">1. Establish baseline</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#2-make-your-change">2. Make your change</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#3-run-tests">3. Run tests</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#4-compare-against-baseline">4. Compare against baseline</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#5-investigate-with-criterion-if-needed">5. Investigate with Criterion if needed</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#6-include-results-in-commit-message">6. Include results in commit message</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#options-reference">Options reference</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#gc-benchsh">gc-bench.sh</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#interpreting-results">Interpreting results</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#notes">Notes</a>
+    </li>
+    </ul>
+                  </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../philosophy-lang/">Philosophy</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">eucalypt</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Implementation</li>
+      <li class="breadcrumb-item active">GC Benchmarking</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/gc-benchmarking.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="gc-benchmarking-workflow">GC Benchmarking Workflow</h1>
+<p>This document describes the procedure for measuring GC performance when
+making changes to the garbage collector or memory management code.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Build the release binary (benchmarks should always run against optimised
+builds):</p>
+<pre><code class="language-bash">cargo build --release
+</code></pre>
+<h2 id="tools">Tools</h2>
+<h3 id="gc-benchsh-end-to-end-benchmarking">gc-bench.sh — End-to-end benchmarking</h3>
+<p>The <code>scripts/gc-bench.sh</code> script runs three GC stress benchmark programs
+multiple times, collects statistics via <code>--statistics-file</code>, computes
+medians, and compares against a saved baseline.</p>
+<p><strong>Benchmark programs</strong> (in <code>harness/test/bench/</code>):</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Target</th>
+<th>What it tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>007_short_lived.eu</code></td>
+<td><code>bench-short-lived</code></td>
+<td>High allocation churn — many temporary lists created and immediately discarded</td>
+</tr>
+<tr>
+<td><code>008_long_lived_graph.eu</code></td>
+<td><code>bench-long-lived-graph</code></td>
+<td>Long-lived persistent structure surviving alongside temporary garbage</td>
+</tr>
+<tr>
+<td><code>009_fragmentation.eu</code></td>
+<td><code>bench-fragmentation</code></td>
+<td>Interleaved retained/discarded allocations producing heap fragmentation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Metrics collected</strong> per benchmark:</p>
+<ul>
+<li><code>machine_ticks</code> — VM instruction count (deterministic)</li>
+<li><code>machine_allocs</code> — heap allocation count (deterministic)</li>
+<li><code>collections_count</code> — number of GC collections triggered</li>
+<li><code>total_mark_time_secs</code> — wall-clock time in mark phase</li>
+<li><code>total_sweep_time_secs</code> — wall-clock time in sweep phase</li>
+<li><code>peak_heap_blocks</code> — maximum heap blocks in use at any point</li>
+</ul>
+<h3 id="criterion-benchmarks">Criterion benchmarks</h3>
+<p><code>cargo bench</code> runs Criterion microbenchmarks defined in <code>benches/gc.rs</code>.
+These measure low-level GC operations:</p>
+<ul>
+<li><strong>Allocate then collect</strong> — allocation + full collection cycle</li>
+<li><strong>Collect with survivors</strong> — collection with varying survival rates (0% to 100%)</li>
+<li><strong>Allocate into recycled</strong> — allocation into previously-collected blocks</li>
+</ul>
+<h2 id="step-by-step-procedure">Step-by-step procedure</h2>
+<h3 id="1-establish-baseline">1. Establish baseline</h3>
+<p>Before making any GC changes, on a clean working tree:</p>
+<pre><code class="language-bash">scripts/gc-bench.sh baseline --runs 5
+</code></pre>
+<p>This saves median statistics to <code>gc-bench-baseline.json</code> (git-ignored).</p>
+<h3 id="2-make-your-change">2. Make your change</h3>
+<p>Implement the GC modification, then rebuild:</p>
+<pre><code class="language-bash">cargo build --release
+</code></pre>
+<h3 id="3-run-tests">3. Run tests</h3>
+<p>Verify correctness is not broken:</p>
+<pre><code class="language-bash">cargo test --lib
+cargo test --test harness_test
+</code></pre>
+<h3 id="4-compare-against-baseline">4. Compare against baseline</h3>
+<pre><code class="language-bash">scripts/gc-bench.sh compare --runs 5
+</code></pre>
+<p>This runs the same benchmarks and reports percentage change for each
+metric. Regressions above the threshold (default 5%) are flagged.</p>
+<p>Example output:</p>
+<pre><code>--- bench-short-lived ---
+  machine_ticks                  baseline=167037166    current=167037166    change=0.0%
+  machine_allocs                 baseline=11178642     current=11178642     change=0.0%
+  total_mark_time_secs           baseline=0.308        current=0.295       change=-4.2%
+  total_sweep_time_secs          baseline=0.073        current=0.068       change=-6.8%
+</code></pre>
+<h3 id="5-investigate-with-criterion-if-needed">5. Investigate with Criterion if needed</h3>
+<p>If gc-bench.sh shows unexpected results, use Criterion for detailed
+analysis:</p>
+<pre><code class="language-bash"># Run all GC benchmarks
+cargo bench -- gc
+
+# Run a specific benchmark group
+cargo bench -- gc_alloc_then_collect
+
+# Compare against saved Criterion baseline
+cargo bench -- gc --save-baseline before
+# ... make change, rebuild ...
+cargo bench -- gc --baseline before
+</code></pre>
+<h3 id="6-include-results-in-commit-message">6. Include results in commit message</h3>
+<p>When committing GC changes, include a summary of benchmark results in
+the commit message body. For example:</p>
+<pre><code>feat(eu-xxx): implement lazy sweeping
+
+gc-bench.sh results (5 runs, median):
+  bench-short-lived:    mark -12%, sweep -45%, ticks 0%
+  bench-long-lived:     mark -8%, sweep -38%, ticks 0%
+  bench-fragmentation:  mark -5%, sweep -42%, ticks 0%
+</code></pre>
+<h2 id="options-reference">Options reference</h2>
+<h3 id="gc-benchsh">gc-bench.sh</h3>
+<pre><code>Usage: scripts/gc-bench.sh {baseline|compare} [OPTIONS]
+
+Options:
+  --runs N         Number of runs per benchmark (default: 5)
+  --heap-limit MIB Heap limit in MiB (default: no limit)
+  --threshold PCT  Regression threshold percentage (default: 5)
+
+Environment:
+  EU_BIN           Path to eu binary (default: target/release/eu)
+</code></pre>
+<h3 id="interpreting-results">Interpreting results</h3>
+<ul>
+<li><strong>Deterministic metrics</strong> (ticks, allocs) should show 0% change unless
+  the GC change affects the allocation path or triggers collections at
+  different points.</li>
+<li><strong>Timing metrics</strong> (mark, sweep) naturally vary by a few percent
+  between runs. Use <code>--runs 5</code> or higher for reliable medians.</li>
+<li><strong>collections_count</strong> changes indicate the GC is triggering at
+  different points, which may be expected for threshold or heuristic
+  changes.</li>
+<li><strong>peak_heap_blocks</strong> changes indicate different peak memory usage.</li>
+</ul>
+<h2 id="notes">Notes</h2>
+<ul>
+<li>Always benchmark release builds — debug builds are 10-50x slower.</li>
+<li>The <code>--heap-limit-mib</code> flag forces a smaller heap, which can trigger
+  more frequent collections. However, there is a known GC assertion
+  issue under very small heap limits, so use this flag with caution.</li>
+<li>The baseline file (<code>gc-bench-baseline.json</code>) is git-ignored and
+  local to each worktree.</li>
+</ul>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../gc-implementation/" class="btn btn-neutral float-left" title="GC Implementation"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../philosophy-lang/" class="btn btn-neutral float-right" title="Philosophy">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+      <p>Copyright (C) 2018-2026 Greg Hawkins</p>
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/curvelogic/eucalypt" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../gc-implementation/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../philosophy-lang/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
