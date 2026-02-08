@@ -2,6 +2,8 @@ extern crate eucalypt;
 
 use std::process;
 
+use eucalypt::driver::format;
+use eucalypt::driver::lsp;
 use eucalypt::driver::options::EucalyptOptions;
 use eucalypt::driver::prepare::{self, Command};
 use eucalypt::driver::source::SourceLoader;
@@ -9,10 +11,17 @@ use eucalypt::driver::tester;
 use eucalypt::driver::{eval, statistics::Statistics};
 
 pub fn main() {
-    let mut opt = EucalyptOptions::from_args();
+    let opt = EucalyptOptions::from_args();
 
-    if opt.process_defaults().is_err() {
-        process::exit(1);
+    // LSP mode runs the language server and exits
+    if opt.lsp() {
+        match lsp::run() {
+            Ok(()) => process::exit(0),
+            Err(e) => {
+                eprintln!("LSP server error: {e}");
+                process::exit(2)
+            }
+        }
     }
 
     // For a dry run, just explain the options
@@ -33,8 +42,21 @@ pub fn main() {
         }
     }
 
+    // Format mode handles its own input loading
+    if opt.format() {
+        match format::format(&opt) {
+            Ok(exit) => process::exit(exit),
+            Err(e) => {
+                eprintln!("{e}");
+                process::exit(2)
+            }
+        }
+    }
+
     // Anything else is going to involve reading the inputs
-    let mut loader = SourceLoader::new(opt.lib_path().to_vec());
+    let mut loader = SourceLoader::new(opt.lib_path().to_vec())
+        .with_args(opt.args().to_vec())
+        .with_seed(opt.seed());
 
     // Load and translate to core, handling errors by printing
     // diagnostic
@@ -63,7 +85,7 @@ pub fn main() {
     exit(&opt, 0, &statistics);
 }
 
-/// Optionally dump stats to stderr then exit
+/// Optionally dump stats to stderr and/or write JSON file, then exit
 pub fn exit(opts: &EucalyptOptions, code: i32, stats: &Statistics) {
     if opts.statistics() {
         eprintln!();
@@ -73,5 +95,13 @@ pub fn exit(opts: &EucalyptOptions, code: i32, stats: &Statistics) {
         eprintln!();
         eprintln!("{stats}");
     }
+
+    if let Some(path) = opts.statistics_file() {
+        let json = serde_json::to_string_pretty(&stats.to_json()).unwrap_or_default();
+        if let Err(e) = std::fs::write(path, json) {
+            eprintln!("Failed to write statistics file {}: {e}", path.display());
+        }
+    }
+
     process::exit(code)
 }

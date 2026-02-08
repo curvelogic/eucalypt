@@ -10,29 +10,47 @@ use crate::eval::stg;
 use crate::eval::{error::ExecutionError, memory};
 
 use super::string::HeapString;
+use super::symbol::SymbolPool;
 use super::{alloc::ScopedAllocator, array::Array, syntax::RefPtr};
 
-/// Load branch table into heap
+/// An indexed branch table: `(min_tag, table)` where `table[tag - min_tag]`
+/// holds the handler for that tag, or `None` if no branch exists.
+type BranchTable = (u8, Array<Option<RefPtr<HeapSyn>>>);
+
+/// Load branch table into heap as an indexed table
 fn load_branches<'scope, T: ScopedAllocator<'scope>>(
     mem: &'scope T,
+    pool: &mut SymbolPool,
     branches: &[(u8, Rc<StgSyn>)],
-) -> Result<Array<(u8, RefPtr<HeapSyn>)>, ExecutionError> {
-    let mut array = Array::with_capacity(mem, branches.len());
-    for (tag, b) in branches {
-        let branch = load(mem, b.clone())?;
-        array.push(mem, (*tag, branch));
+) -> Result<BranchTable, ExecutionError> {
+    if branches.is_empty() {
+        return Ok((0, Array::default()));
     }
-    Ok(array)
+    let min_tag = branches.iter().map(|(t, _)| *t).min().unwrap();
+    let max_tag = branches.iter().map(|(t, _)| *t).max().unwrap();
+    let table_size = (max_tag - min_tag + 1) as usize;
+    let mut table: Array<Option<RefPtr<HeapSyn>>> = Array::with_capacity(mem, table_size);
+    for _ in 0..table_size {
+        table.push(mem, None);
+    }
+    for (tag, b) in branches {
+        let branch = load(mem, pool, b.clone())?;
+        let index = (*tag - min_tag) as usize;
+        // SAFETY: index is within [0, table_size) by construction
+        unsafe { table.set_unchecked(index, Some(branch)) };
+    }
+    Ok((min_tag, table))
 }
 
 /// Load syntax ref vector into heap
 fn load_refvec<'scope, T: ScopedAllocator<'scope>>(
     mem: &'scope T,
+    pool: &mut SymbolPool,
     refs: &[stg::syntax::Ref],
 ) -> Result<Array<memory::syntax::Ref>, ExecutionError> {
     let mut array = Array::with_capacity(mem, refs.len());
     for r in refs {
-        array.push(mem, stg_to_heap(mem, r));
+        array.push(mem, stg_to_heap(mem, pool, r));
     }
     Ok(array)
 }
@@ -40,6 +58,7 @@ fn load_refvec<'scope, T: ScopedAllocator<'scope>>(
 /// Load binding vector into heap
 pub fn load_lambdavec<'scope, T: ScopedAllocator<'scope>>(
     mem: &'scope T,
+    pool: &mut SymbolPool,
     bindings: &[stg::syntax::LambdaForm],
 ) -> Result<Array<memory::syntax::LambdaForm>, ExecutionError> {
     let mut array = Array::with_capacity(mem, bindings.len());
@@ -49,12 +68,14 @@ pub fn load_lambdavec<'scope, T: ScopedAllocator<'scope>>(
                 bound,
                 body,
                 annotation,
-            } => memory::syntax::LambdaForm::new(*bound, load(mem, body.clone())?, *annotation),
+            } => {
+                memory::syntax::LambdaForm::new(*bound, load(mem, pool, body.clone())?, *annotation)
+            }
             stg::syntax::LambdaForm::Thunk { body } => {
-                memory::syntax::LambdaForm::thunk(load(mem, body.clone())?)
+                memory::syntax::LambdaForm::thunk(load(mem, pool, body.clone())?)
             }
             stg::syntax::LambdaForm::Value { body } => {
-                memory::syntax::LambdaForm::value(load(mem, body.clone())?)
+                memory::syntax::LambdaForm::value(load(mem, pool, body.clone())?)
             }
         };
         array.push(mem, binding);
@@ -64,21 +85,19 @@ pub fn load_lambdavec<'scope, T: ScopedAllocator<'scope>>(
 
 /// Convert syntax Ref to in-heap representation
 ///
-/// These type duplicates look crazy now but the intention is to alter
-/// the in-heap representation but not the compile representation.
+/// Symbols are interned into the pool rather than heap-allocated.
+/// Strings are still heap-allocated as HeapString.
 fn stg_to_heap<'scope, T: ScopedAllocator<'scope>>(
     mem: &'scope T,
+    pool: &mut SymbolPool,
     r: &stg::syntax::Ref,
 ) -> memory::syntax::Ref {
     match r {
         stg::syntax::Ref::L(n) => memory::syntax::Ref::L(*n),
         stg::syntax::Ref::G(n) => memory::syntax::Ref::G(*n),
         stg::syntax::Ref::V(stg::syntax::Native::Sym(s)) => {
-            let ptr = mem
-                .alloc(HeapString::from_str(mem, s.as_str()))
-                .expect("alloc heap sym failure")
-                .as_ptr();
-            memory::syntax::Ref::V(memory::syntax::Native::Sym(ptr))
+            let id = pool.intern(s.as_str());
+            memory::syntax::Ref::V(memory::syntax::Native::Sym(id))
         }
         stg::syntax::Ref::V(stg::syntax::Native::Str(s)) => {
             let ptr = mem
@@ -97,63 +116,68 @@ fn stg_to_heap<'scope, T: ScopedAllocator<'scope>>(
 }
 
 /// Translate compiled syntax into in-heap representation using
-/// supplied allocator
+/// supplied allocator. Symbols are interned into the pool.
 pub fn load<'scope, T: ScopedAllocator<'scope>>(
     view: &'scope T,
+    pool: &mut SymbolPool,
     syntax: Rc<StgSyn>,
 ) -> Result<RefPtr<HeapSyn>, ExecutionError> {
     match &*syntax {
         StgSyn::Atom { evaluand } => view.alloc(HeapSyn::Atom {
-            evaluand: stg_to_heap(view, evaluand),
+            evaluand: stg_to_heap(view, pool, evaluand),
         }),
         StgSyn::Case {
             scrutinee,
             branches,
             fallback,
-        } => view.alloc(HeapSyn::Case {
-            scrutinee: load(view, scrutinee.clone())?,
-            branches: load_branches(view, branches)?,
-            fallback: match fallback {
-                Some(f) => Some(load(view, f.clone())?),
-                None => None,
-            },
-        }),
+        } => {
+            let (min_tag, branch_table) = load_branches(view, pool, branches)?;
+            view.alloc(HeapSyn::Case {
+                scrutinee: load(view, pool, scrutinee.clone())?,
+                min_tag,
+                branch_table,
+                fallback: match fallback {
+                    Some(f) => Some(load(view, pool, f.clone())?),
+                    None => None,
+                },
+            })
+        }
         StgSyn::Cons { tag, args } => view.alloc(HeapSyn::Cons {
             tag: *tag,
-            args: load_refvec(view, args)?,
+            args: load_refvec(view, pool, args)?,
         }),
         StgSyn::App { callable, args } => view.alloc(HeapSyn::App {
-            callable: stg_to_heap(view, callable),
-            args: load_refvec(view, args)?,
+            callable: stg_to_heap(view, pool, callable),
+            args: load_refvec(view, pool, args)?,
         }),
         StgSyn::Bif { intrinsic, args } => view.alloc(HeapSyn::Bif {
             intrinsic: *intrinsic,
-            args: load_refvec(view, args)?,
+            args: load_refvec(view, pool, args)?,
         }),
         StgSyn::Let { bindings, body } => view.alloc(HeapSyn::Let {
-            bindings: load_lambdavec(view, bindings.as_slice())?,
-            body: load(view, body.clone())?,
+            bindings: load_lambdavec(view, pool, bindings.as_slice())?,
+            body: load(view, pool, body.clone())?,
         }),
         StgSyn::LetRec { bindings, body } => view.alloc(HeapSyn::LetRec {
-            bindings: load_lambdavec(view, bindings.as_slice())?,
-            body: load(view, body.clone())?,
+            bindings: load_lambdavec(view, pool, bindings.as_slice())?,
+            body: load(view, pool, body.clone())?,
         }),
         StgSyn::Ann { smid, body } => view.alloc(HeapSyn::Ann {
             smid: *smid,
-            body: load(view, body.clone())?,
+            body: load(view, pool, body.clone())?,
         }),
         StgSyn::Meta { meta, body } => view.alloc(HeapSyn::Meta {
-            meta: stg_to_heap(view, meta),
-            body: stg_to_heap(view, body),
+            meta: stg_to_heap(view, pool, meta),
+            body: stg_to_heap(view, pool, body),
         }),
         StgSyn::DeMeta {
             scrutinee,
             handler,
             or_else,
         } => view.alloc(HeapSyn::DeMeta {
-            scrutinee: load(view, scrutinee.clone())?,
-            handler: load(view, handler.clone())?,
-            or_else: load(view, or_else.clone())?,
+            scrutinee: load(view, pool, scrutinee.clone())?,
+            handler: load(view, pool, handler.clone())?,
+            or_else: load(view, pool, or_else.clone())?,
         }),
         StgSyn::BlackHole => view.alloc(HeapSyn::BlackHole {}),
     }

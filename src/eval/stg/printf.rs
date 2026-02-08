@@ -12,9 +12,6 @@
 //! Only a single argument is passed and available and no dynamic
 //! arguments may be specified.
 
-// TODO: Move Native out of here - this should be testable without
-// heap representation
-
 use std::fmt::{self, Write};
 
 use bitflags::bitflags;
@@ -401,13 +398,25 @@ fn write_numeric(
 /// Format a single value according to a printf-style % spec
 pub fn fmt(
     view: MutatorHeapView<'_>,
+    pool: &crate::eval::memory::symbol::SymbolPool,
     fmt_string: &str,
     nat: &Native,
 ) -> Result<String, PrintfError> {
     let mut output = String::new();
     if let Some(printf_spec) = parse_format(fmt_string) {
         match nat {
-            Native::Sym(s) | Native::Str(s) => {
+            Native::Sym(id) => {
+                let string = pool.resolve(*id);
+
+                write_str(
+                    &mut output,
+                    printf_spec.flags,
+                    printf_spec.width,
+                    printf_spec.precision,
+                    string,
+                )?
+            }
+            Native::Str(s) => {
                 let string = (*view.scoped(*s)).as_str().to_string();
 
                 write_str(
@@ -427,6 +436,16 @@ pub fn fmt(
                 num,
             )?,
             Native::Zdt(dt) => write!(&mut output, "{dt}").map_err(PrintfError::FmtError)?,
+            Native::Index(_) => {
+                return Err(PrintfError::InvalidFormatString(
+                    "cannot format block index".to_string(),
+                ))
+            }
+            Native::Set(_) => {
+                return Err(PrintfError::InvalidFormatString(
+                    "cannot format set".to_string(),
+                ))
+            }
         }
         Ok(output)
     } else {

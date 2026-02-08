@@ -1,0 +1,46 @@
+##
+## 078: Random number generation
+##
+
+## Test PRNG intrinsics, random-stream, and prelude random functions.
+## All stream uses are inline to avoid infinite evaluation.
+
+seed: 42
+
+trues: [
+  ## PRNG_FLOAT produces a float in [0,1)
+  __PRNG_FLOAT(seed) >= 0,
+  __PRNG_FLOAT(seed) < 1,
+  ## PRNG_NEXT produces a different number
+  __PRNG_NEXT(seed) != seed,
+  ## deterministic
+  __PRNG_FLOAT(seed) = __PRNG_FLOAT(seed),
+  __PRNG_NEXT(seed) = __PRNG_NEXT(seed),
+  ## different seeds give different results
+  __PRNG_FLOAT(seed) != __PRNG_FLOAT(99),
+  ## random-stream head is in [0,1)
+  (random-stream(seed) head) >= 0,
+  (random-stream(seed) head) < 1,
+  ## stream elements differ
+  (random-stream(seed) head) != (random-stream(seed) tail head),
+  ## can take finite segment from stream
+  (random-stream(seed) take(5) count) = 5,
+  ## random-int value is in range
+  (random-int(10, random-stream(seed)).value) >= 0,
+  (random-int(10, random-stream(seed)).value) < 10,
+  ## random-choice picks from the list
+  [:a, :b, :c, :d] any(_ = random-choice([:a, :b, :c, :d], random-stream(seed)).value),
+  ## shuffle preserves count
+  (shuffle([1, 2, 3, 4, 5], random-stream(seed)).value count) = 5,
+  ## shuffle preserves elements
+  (shuffle([1, 2, 3, 4, 5], random-stream(seed)).value sort-nums) = [1, 2, 3, 4, 5],
+  ## sample returns correct count
+  (sample(3, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], random-stream(seed)).value count) = 3,
+  ## sample items are in range
+  sample(3, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], random-stream(seed)).value all(_ >= 1),
+  sample(3, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], random-stream(seed)).value all(_ <= 10)
+]
+
+pass: trues all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

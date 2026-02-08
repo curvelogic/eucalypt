@@ -54,6 +54,7 @@ impl_bound_term_ignore!(Primitive);
 #[allow(non_local_definitions)]
 #[derive(Debug, Clone, BoundTerm, Copy, PartialEq, Eq)]
 pub enum Fixity {
+    Nullary,
     UnaryPrefix,
     UnaryPostfix,
     InfixLeft,
@@ -63,6 +64,7 @@ pub enum Fixity {
 impl Fixity {
     pub fn arity(&self) -> u8 {
         match self {
+            Fixity::Nullary => 0,
             Fixity::UnaryPrefix | Fixity::UnaryPostfix => 1,
             Fixity::InfixLeft | Fixity::InfixRight => 2,
         }
@@ -72,6 +74,7 @@ impl Fixity {
 impl Display for Fixity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Fixity::Nullary => write!(f, "nullary"),
             Fixity::UnaryPrefix => write!(f, "prefix"),
             Fixity::UnaryPostfix => write!(f, "postfix"),
             Fixity::InfixLeft => write!(f, "infixl"),
@@ -144,19 +147,19 @@ impl<T: BoundTerm<String> + Clone> BlockMap<T> {
         self.0.get_mut(key)
     }
 
-    pub fn keys(&self) -> indexmap::map::Keys<String, T> {
+    pub fn keys(&self) -> indexmap::map::Keys<'_, String, T> {
         self.0.keys()
     }
 
-    pub fn values(&self) -> indexmap::map::Values<String, T> {
+    pub fn values(&self) -> indexmap::map::Values<'_, String, T> {
         self.0.values()
     }
 
-    pub fn values_mut(&mut self) -> indexmap::map::ValuesMut<String, T> {
+    pub fn values_mut(&mut self) -> indexmap::map::ValuesMut<'_, String, T> {
         self.0.values_mut()
     }
 
-    pub fn iter(&self) -> indexmap::map::Iter<String, T> {
+    pub fn iter(&self) -> indexmap::map::Iter<'_, String, T> {
         self.0.iter()
     }
 
@@ -550,6 +553,13 @@ impl Default for RcExpr {
 }
 
 impl RcExpr {
+    /// Check if two RcExpr point to the same allocation.
+    /// Used to detect when a transformation returned the same expression.
+    #[inline]
+    pub fn ptr_eq(&self, other: &RcExpr) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
+    }
+
     /// True iff the expression is a call pseudo operator
     pub fn is_pseudocall(&self) -> bool {
         self.inner.is_pseudocall()
@@ -772,20 +782,317 @@ impl RcExpr {
         })
     }
 
-    /// Substitute expression for free variables as specified by mappings
+    /// Optimized walk that only rebuilds when children actually change.
+    /// Uses pointer equality to detect unchanged subtrees, avoiding
+    /// unnecessary allocations during tree transformations.
+    ///
+    /// This is more efficient than `walk` when most subtrees remain unchanged,
+    /// as it avoids creating new Rc allocations for unchanged nodes.
+    pub fn try_walk<F: Fn(&RcExpr) -> RcExpr>(&self, f: &F) -> RcExpr {
+        match &*self.inner {
+            Expr::Lookup(s, e, n, fb) => {
+                let new_e = f(e);
+                let new_fb = fb.as_ref().map(f);
+                let e_same = new_e.ptr_eq(e);
+                let fb_same = match (&new_fb, fb) {
+                    (Some(a), Some(b)) => a.ptr_eq(b),
+                    (None, None) => true,
+                    _ => false,
+                };
+                if e_same && fb_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Lookup(*s, new_e, n.clone(), new_fb))
+                }
+            }
+            Expr::List(s, xs) => {
+                let new_xs: Vec<_> = xs.iter().map(f).collect();
+                let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::List(*s, new_xs))
+                }
+            }
+            Expr::Block(s, block_map) => {
+                let new_items: Vec<_> = block_map.iter().map(|(k, v)| (k, f(v))).collect();
+                let all_same = block_map
+                    .iter()
+                    .zip(new_items.iter())
+                    .all(|((_, v), (_, new_v))| v.ptr_eq(new_v));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Block(
+                        *s,
+                        new_items.into_iter().map(|(k, v)| (k.clone(), v)).collect(),
+                    ))
+                }
+            }
+            Expr::Meta(s, e, m) => {
+                let new_e = f(e);
+                let new_m = f(m);
+                if new_e.ptr_eq(e) && new_m.ptr_eq(m) {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Meta(*s, new_e, new_m))
+                }
+            }
+            Expr::ArgTuple(s, xs) => {
+                let new_xs: Vec<_> = xs.iter().map(f).collect();
+                let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::ArgTuple(*s, new_xs))
+                }
+            }
+            Expr::App(s, g, xs) => {
+                let new_g = f(g);
+                let new_xs: Vec<_> = xs.iter().map(f).collect();
+                let g_same = new_g.ptr_eq(g);
+                let xs_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if g_same && xs_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::App(*s, new_g, new_xs))
+                }
+            }
+            Expr::Soup(s, xs) => {
+                let new_xs: Vec<_> = xs.iter().map(f).collect();
+                let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Soup(*s, new_xs))
+                }
+            }
+            Expr::Operator(s, fx, p, e) => {
+                let new_e = f(e);
+                if new_e.ptr_eq(e) {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Operator(*s, *fx, *p, new_e))
+                }
+            }
+            Expr::Let(s, scope, t) => {
+                let new_bindings: Vec<_> = scope
+                    .unsafe_pattern
+                    .unsafe_pattern
+                    .iter()
+                    .map(|(n, Embed(value))| (n, f(value)))
+                    .collect();
+                let new_body = f(&scope.unsafe_body);
+
+                let bindings_same = scope
+                    .unsafe_pattern
+                    .unsafe_pattern
+                    .iter()
+                    .zip(new_bindings.iter())
+                    .all(|((_, Embed(v)), (_, new_v))| v.ptr_eq(new_v));
+                let body_same = scope.unsafe_body.ptr_eq(&new_body);
+
+                if bindings_same && body_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Let(
+                        *s,
+                        Scope {
+                            unsafe_pattern: Rec {
+                                unsafe_pattern: new_bindings
+                                    .into_iter()
+                                    .map(|(n, v)| (n.clone(), Embed(v)))
+                                    .collect(),
+                            },
+                            unsafe_body: new_body,
+                        },
+                        *t,
+                    ))
+                }
+            }
+            Expr::Lam(s, inl, scope) => {
+                let new_body = f(&scope.unsafe_body);
+                if scope.unsafe_body.ptr_eq(&new_body) {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Lam(
+                        *s,
+                        *inl,
+                        Scope {
+                            unsafe_pattern: scope.unsafe_pattern.clone(),
+                            unsafe_body: new_body,
+                        },
+                    ))
+                }
+            }
+            _ => self.clone(),
+        }
+    }
+
+    /// Optimized fallible walk that only rebuilds when children actually change.
+    /// Uses pointer equality to detect unchanged subtrees, avoiding
+    /// unnecessary allocations during tree transformations.
+    pub fn try_walk_safe<E, F: FnMut(&RcExpr) -> Result<RcExpr, E>>(
+        &self,
+        f: &mut F,
+    ) -> Result<RcExpr, E> {
+        Ok(match &*self.inner {
+            Expr::Lookup(s, e, n, fb) => {
+                let new_e = f(e)?;
+                let new_fb = match fb {
+                    Some(expr) => Some(f(expr)?),
+                    None => None,
+                };
+                let e_same = new_e.ptr_eq(e);
+                let fb_same = match (&new_fb, fb) {
+                    (Some(a), Some(b)) => a.ptr_eq(b),
+                    (None, None) => true,
+                    _ => false,
+                };
+                if e_same && fb_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Lookup(*s, new_e, n.clone(), new_fb))
+                }
+            }
+            Expr::List(s, xs) => {
+                let new_xs: Vec<RcExpr> = xs.iter().map(f).collect::<Result<_, E>>()?;
+                let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::List(*s, new_xs))
+                }
+            }
+            Expr::Block(s, block_map) => {
+                let new_items: Vec<_> = block_map
+                    .iter()
+                    .map(|(k, v)| f(v).map(|new_v| (k, v, new_v)))
+                    .collect::<Result<_, E>>()?;
+                let all_same = new_items.iter().all(|(_, v, new_v)| v.ptr_eq(new_v));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Block(
+                        *s,
+                        new_items
+                            .into_iter()
+                            .map(|(k, _, v)| (k.clone(), v))
+                            .collect(),
+                    ))
+                }
+            }
+            Expr::Meta(s, e, m) => {
+                let new_e = f(e)?;
+                let new_m = f(m)?;
+                if new_e.ptr_eq(e) && new_m.ptr_eq(m) {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Meta(*s, new_e, new_m))
+                }
+            }
+            Expr::ArgTuple(s, xs) => {
+                let new_xs: Vec<RcExpr> = xs.iter().map(f).collect::<Result<_, E>>()?;
+                let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::ArgTuple(*s, new_xs))
+                }
+            }
+            Expr::App(s, g, xs) => {
+                let new_g = f(g)?;
+                let new_xs: Vec<RcExpr> = xs.iter().map(f).collect::<Result<_, E>>()?;
+                let g_same = new_g.ptr_eq(g);
+                let xs_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if g_same && xs_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::App(*s, new_g, new_xs))
+                }
+            }
+            Expr::Soup(s, xs) => {
+                let new_xs: Vec<RcExpr> = xs.iter().map(f).collect::<Result<_, E>>()?;
+                let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
+                if all_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Soup(*s, new_xs))
+                }
+            }
+            Expr::Operator(s, fx, p, e) => {
+                let new_e = f(e)?;
+                if new_e.ptr_eq(e) {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Operator(*s, *fx, *p, new_e))
+                }
+            }
+            Expr::Let(s, scope, t) => {
+                let new_bindings: Vec<_> = scope
+                    .unsafe_pattern
+                    .unsafe_pattern
+                    .iter()
+                    .map(|(n, Embed(value))| f(value).map(|new_v| (n, value, new_v)))
+                    .collect::<Result<_, E>>()?;
+                let new_body = f(&scope.unsafe_body)?;
+
+                let bindings_same = new_bindings.iter().all(|(_, v, new_v)| v.ptr_eq(new_v));
+                let body_same = scope.unsafe_body.ptr_eq(&new_body);
+
+                if bindings_same && body_same {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Let(
+                        *s,
+                        Scope {
+                            unsafe_pattern: Rec {
+                                unsafe_pattern: new_bindings
+                                    .into_iter()
+                                    .map(|(n, _, v)| (n.clone(), Embed(v)))
+                                    .collect(),
+                            },
+                            unsafe_body: new_body,
+                        },
+                        *t,
+                    ))
+                }
+            }
+            Expr::Lam(s, inl, scope) => {
+                let new_body = f(&scope.unsafe_body)?;
+                if scope.unsafe_body.ptr_eq(&new_body) {
+                    self.clone()
+                } else {
+                    RcExpr::from(Expr::Lam(
+                        *s,
+                        *inl,
+                        Scope {
+                            unsafe_pattern: scope.unsafe_pattern.clone(),
+                            unsafe_body: new_body,
+                        },
+                    ))
+                }
+            }
+            _ => self.clone(),
+        })
+    }
+
+    /// Substitute expression for free variables as specified by mappings.
+    /// Uses optimized try_walk to avoid unnecessary allocations.
     pub fn substs<N: PartialEq<Var<String>>>(&self, mappings: &[(N, RcExpr)]) -> RcExpr {
         match &*self.inner {
             Expr::Var(_, v) => match mappings.iter().find(|&(n, _)| n == v) {
                 Some((_, replacement)) => replacement.clone(),
                 None => self.clone(),
             },
-            _ => self.walk(&|e: RcExpr| e.substs(mappings)),
+            _ => self.try_walk(&|e: &RcExpr| e.substs(mappings)),
         }
     }
 
     /// Substitute expressions for free variabbles based on name only
     /// (allowing free vars minted in other core translations to be
     /// bound) by binders in different core translations.
+    /// Uses optimized try_walk to avoid unnecessary allocations.
     pub fn substs_free<F: Fn(&str) -> Option<RcExpr>>(&self, substitute: &F) -> RcExpr {
         match &*self.inner {
             Expr::Var(_, Free(f)) => {
@@ -799,7 +1106,7 @@ impl RcExpr {
                     self.clone()
                 }
             }
-            _ => self.walk(&|e: RcExpr| e.substs_free(substitute)),
+            _ => self.try_walk(&|e: &RcExpr| e.substs_free(substitute)),
         }
     }
 
@@ -1218,6 +1525,11 @@ pub mod core {
         RcExpr::from(Expr::Operator(smid, Fixity::UnaryPostfix, prec, def))
     }
 
+    /// Create a nullary operator
+    pub fn nullary(smid: Smid, prec: Precedence, def: RcExpr) -> RcExpr {
+        RcExpr::from(Expr::Operator(smid, Fixity::Nullary, prec, def))
+    }
+
     /// Create an section anaphor on the left of an operator
     pub fn section_anaphor_left(smid: Smid) -> RcExpr {
         RcExpr::from(Expr::ExprAnaphor(
@@ -1395,6 +1707,11 @@ pub mod acore {
     /// Create a postfix operator
     pub fn postfix(prec: Precedence, def: RcExpr) -> RcExpr {
         core::postfix(Smid::default(), prec, def)
+    }
+
+    /// Create a nullary operator
+    pub fn nullary(prec: Precedence, def: RcExpr) -> RcExpr {
+        core::nullary(Smid::default(), prec, def)
     }
 
     /// Target path to a lookup expression

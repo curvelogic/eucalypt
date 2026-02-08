@@ -26,6 +26,11 @@ impl HeapString {
 
     pub fn as_slice(&self) -> &[u8] {
         if let Some(ptr) = self.data.as_ptr() {
+            // SAFETY: The slice construction is valid because:
+            // - `ptr` points to valid heap-allocated memory (from RawArray::with_data)
+            // - `self.length` was set from the source string length at construction
+            // - The data was copied from valid UTF-8 bytes (source.as_bytes())
+            // - HeapString owns this memory via RawArray for the slice lifetime
             unsafe { from_raw_parts(ptr, self.length) }
         } else {
             &[]

@@ -2,6 +2,7 @@ name: eucalypt build
 
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -9,21 +10,42 @@ on:
         description: 'Reason for build'
         required: false
 
+concurrency:
+  group: ${{ github.ref == 'refs/heads/master' && format('{0}-{1}', github.workflow, github.sha) || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 jobs:
-  check:
-    name: Check
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - name: Check
         run: cargo check
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run cargo audit
+        run: cargo audit
 
   test:
     name: Test Suite
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && fromJSON('["ubuntu-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -40,31 +62,9 @@ jobs:
       - name: Run tests
         run: cargo test
 
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-
 
   release-candidate-linux:
-    needs: [check, test, fmt, clippy]
+    needs: [lint, test, audit]
     name: Release Linux
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
@@ -102,8 +102,8 @@ jobs:
           mv target/release/eu target/release/eu_amd64
       - name: run final test with release binary
         run: |
-          target/release/eu_amd64 -v
-          target/release/eu_amd64 harness/test -T
+          target/release/eu_amd64 version
+          target/release/eu_amd64 test harness/test
       - name: Ensure we have the latest tag
         run: |
           git fetch origin latest:latest
@@ -115,21 +115,21 @@ jobs:
           echo "Collecting commit data between latest tag and HEAD..."
           git log latest..HEAD --pretty=format:"%H|%an|%ad|%s|%b" --date=short > commits.txt
           git log latest..HEAD --name-only --pretty=format:"COMMIT:%H" > changed_files.txt
-          
+
           # Create input for Claude API
           echo "=== COMMIT DATA ===" > release_input.txt
           cat commits.txt >> release_input.txt
           echo "" >> release_input.txt
           echo "=== CHANGED FILES ===" >> release_input.txt
           cat changed_files.txt >> release_input.txt
-          
+
           # Read the prompt template
           PROMPT_CONTENT=$(cat .github/release-notes-prompt.md)
           INPUT_CONTENT=$(cat release_input.txt)
-          
+
           # Generate release notes with Anthropic API
           echo "🔍 Creating API payload..."
-          
+
           # Create JSON payload with proper escaping
           jq -n \
             --arg prompt "$(cat .github/release-notes-prompt.md)" \
@@ -138,13 +138,13 @@ jobs:
               "model": "claude-3-5-sonnet-20241022",
               "max_tokens": 4000,
               "messages": [{
-                "role": "user", 
+                "role": "user",
                 "content": ($prompt + "\n\n" + $input)
               }]
             }' > api_payload.json
-          
+
           echo "📏 Payload size: $(wc -c < api_payload.json) bytes"
-          
+
           # Make API call with debugging
           echo "🚀 Calling Claude API..."
           curl -s -X POST https://api.anthropic.com/v1/messages \
@@ -154,11 +154,11 @@ jobs:
             -d @api_payload.json \
             -w "HTTP Status: %{http_code}\n" \
             -o api_response.json
-          
+
           echo "📥 API Response:"
           cat api_response.json
           echo ""
-          
+
           # Check if response contains expected content
           if jq -e '.content[0].text' api_response.json > /dev/null 2>&1; then
             echo "✅ Successfully extracting release notes from API response"
@@ -170,7 +170,7 @@ jobs:
             echo "" >> CHANGELOG.md
             git log latest..HEAD --pretty=format:"- %s" >> CHANGELOG.md
           fi
-          
+
           echo "📝 Generated CHANGELOG.md:"
           cat CHANGELOG.md
       - name: Upload changelog
@@ -186,7 +186,7 @@ jobs:
 
 
   release-candidate-macos:
-    needs: [check, test, fmt, clippy]
+    needs: [lint, test, audit]
     name: Release MacOS
     runs-on: macos-latest
     if: github.ref == 'refs/heads/master'
@@ -222,8 +222,8 @@ jobs:
           mv target/release/eu target/release/eu_darwin
       - name: Run final test with release binary
         run: |
-          target/release/eu_darwin -v
-          target/release/eu_darwin harness/test -T
+          target/release/eu_darwin version
+          target/release/eu_darwin test harness/test
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:

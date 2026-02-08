@@ -46,7 +46,7 @@ use std::path::PathBuf;
 use std::{collections::HashMap, path::Path};
 use std::{fs, iter};
 
-use super::io::create_io_pseudoblock;
+use super::io::{create_args_pseudoblock, create_io_pseudoblock};
 
 /// A loader for source code that stores the bytes for error reporting
 /// and manages the evolution of code through parse, translation to
@@ -73,6 +73,10 @@ pub struct SourceLoader {
     source_map: SourceMap,
     /// Paths to search for FS resources
     lib_path: Vec<PathBuf>,
+    /// Command-line arguments passed after -- separator (for __ARGS)
+    args: Vec<String>,
+    /// Seed for random number generation
+    seed: Option<i64>,
 }
 
 impl Default for SourceLoader {
@@ -88,6 +92,8 @@ impl Default for SourceLoader {
             core: TranslationUnit::default(),
             source_map: SourceMap::new(),
             lib_path: Vec::new(),
+            args: Vec::new(),
+            seed: None,
         }
     }
 }
@@ -106,7 +112,21 @@ impl SourceLoader {
             core: TranslationUnit::default(),
             source_map: SourceMap::new(),
             lib_path,
+            args: Vec::new(),
+            seed: None,
         }
+    }
+
+    /// Set the command-line arguments for the __ARGS pseudoblock
+    pub fn with_args(mut self, args: Vec<String>) -> Self {
+        self.args = args;
+        self
+    }
+
+    /// Set the random seed for the __io pseudoblock
+    pub fn with_seed(mut self, seed: Option<i64>) -> Self {
+        self.seed = seed;
+        self
     }
 
     /// Return refs to all parsed ASTs by locator,
@@ -137,6 +157,9 @@ impl SourceLoader {
 
     /// Loads from a data format that does not support imports
     fn load_simple(&mut self, input: &Input) -> Result<usize, EucalyptError> {
+        if crate::import::is_stream_format(input.format()) {
+            return self.load_stream(input);
+        }
         let file_id = self.load_source(input.locator())?;
         let core = read_to_core(
             input.format(),
@@ -150,6 +173,51 @@ impl SourceLoader {
         Ok(file_id)
     }
 
+    /// Load a streaming format — opens the file directly without
+    /// reading it into memory.
+    fn load_stream(&mut self, input: &Input) -> Result<usize, EucalyptError> {
+        let path = match input.locator() {
+            Locator::Fs(p) => self.resolve_fs_path(p)?,
+            Locator::StdIn => "-".to_string(),
+            _ => {
+                return Err(EucalyptError::FileCouldNotBeRead(format!(
+                    "streaming not supported for locator: {}",
+                    input.locator()
+                )))
+            }
+        };
+
+        // Register a placeholder in the file store so we have a file_id
+        let file_id = self
+            .files
+            .add(input.locator().to_string(), "(stream)".to_string());
+        self.locators.insert(input.locator().clone(), file_id);
+
+        let core = crate::import::create_stream_import(input.format(), &path)
+            .map_err(|e| EucalyptError::Source(Box::new(e)))?;
+        self.imports.add_leaf(input.clone())?;
+        self.cores.insert(input.clone(), core);
+        Ok(file_id)
+    }
+
+    /// Resolve a filesystem path using the lib_path search directories.
+    fn resolve_fs_path(&self, path: &Path) -> Result<String, EucalyptError> {
+        for libdir in &self.lib_path {
+            let mut filename = libdir.to_path_buf();
+            filename.push(path);
+            if filename.exists() {
+                return Ok(filename.to_string_lossy().to_string());
+            }
+        }
+        // Try as absolute/relative from working directory
+        if path.exists() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+        Err(EucalyptError::FileCouldNotBeRead(
+            path.to_string_lossy().to_string(),
+        ))
+    }
+
     /// Load and parse import-graph of eucalypt files starting with the one
     /// specified by locator
     fn load_tree(&mut self, input: &Input) -> Result<usize, EucalyptError> {
@@ -157,7 +225,7 @@ impl SourceLoader {
         let file_id = self.load_eucalypt(locator)?;
 
         // Implement import analysis for Rowan AST
-        let ast = self.asts.get(&file_id).unwrap();
+        let ast = self.asts.get(&file_id).expect("AST was just loaded");
         let inputs = self.imports.analyse_rowan_ast(input.clone(), ast)?;
         self.imports.check_for_cycles()?;
 
@@ -191,10 +259,16 @@ impl SourceLoader {
         Ok(id)
     }
 
-    /// Load __io pseudoblock as core
+    /// Load pseudoblock as core (dispatches based on pseudo name)
     fn load_core(&mut self, input: &Input) -> Result<usize, EucalyptError> {
         let file_id = self.load_source(input.locator())?;
-        let core = create_io_pseudoblock();
+
+        // Dispatch based on pseudo name
+        let core = match input.locator() {
+            Locator::Pseudo(name) if name == "args" => create_args_pseudoblock(&self.args),
+            _ => create_io_pseudoblock(self.seed),
+        };
+
         self.imports.add_leaf(input.clone())?;
         self.cores.insert(input.clone(), core);
         Ok(file_id)
@@ -237,7 +311,10 @@ impl SourceLoader {
     pub fn translate(&mut self, input: &Input) -> Result<&TranslationUnit, EucalyptError> {
         // If we already have a translation, we're done.
         if self.translation_units.contains_key(input) {
-            return Ok(self.translation_units.get(input).unwrap());
+            return Ok(self
+                .translation_units
+                .get(input)
+                .expect("translation unit existence just confirmed"));
         }
 
         // Check if this is a core input (already desugared)
@@ -302,7 +379,12 @@ impl SourceLoader {
         Ok(())
     }
 
-    /// Prune definitions of any unused bindings prior to run
+    /// Prune definitions of any unused bindings prior to run.
+    ///
+    /// The single `prune` pass handles both binding-level DCE and
+    /// block-level DCE (filtering unreferenced members from
+    /// `DefaultBlockLet` bindings that are only accessed via static
+    /// Lookup patterns).
     pub fn eliminate(&mut self) -> Result<(), EucalyptError> {
         self.core.expr = prune::prune(&self.core.expr);
         self.core.expr = compress::compress(&self.core.expr)?;
@@ -419,7 +501,8 @@ impl SourceLoader {
     pub fn diagnose_to_stderr(&self, diag: &Diagnostic<usize>) {
         let writer = StandardStream::stderr(ColorChoice::Auto);
         let config = codespan_reporting::term::Config::default();
-        emit(&mut writer.lock(), &config, &self.files, diag).unwrap();
+        emit(&mut writer.lock(), &config, &self.files, diag)
+            .expect("failed to write diagnostic to stderr");
     }
 
     pub fn diagnose_to_string(&self, diag: &Diagnostic<usize>) -> String {
@@ -427,7 +510,8 @@ impl SourceLoader {
         {
             let mut writer = NoColor::new(&mut s);
             let config = codespan_reporting::term::Config::default();
-            emit(&mut writer, &config, &self.files, diag).unwrap();
+            emit(&mut writer, &config, &self.files, diag)
+                .expect("failed to write diagnostic to buffer");
         }
         String::from_utf8_lossy(&s).into_owned()
     }
@@ -446,9 +530,11 @@ pub mod tests {
             for f in entries.flatten() {
                 let path = f.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("eu") {
-                    let name = path.file_stem().and_then(|s| s.to_str()).unwrap();
+                    let name = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .expect(".eu file should have a valid UTF-8 stem");
 
-                    // TODO: arbitrary size integers, text imports....
                     if name == "x013_arith_overflow" {
                         continue;
                     }

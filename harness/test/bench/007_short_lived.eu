@@ -1,0 +1,13 @@
+# GC stress: short-lived objects
+#
+# Creates many temporary lists that become garbage quickly.
+# Each iteration builds a temporary range, sums it, and discards it.
+# This creates high allocation churn with frequent GC.
+
+sr(n): range(1, n) foldl(+, 0)
+
+# Build and discard many temporary ranges
+churn(n, iters): repeat(n) take(iters) map(sr) foldl(+, 0)
+
+` { target: :bench-short-lived }
+bench-short-lived: churn(100, 200)

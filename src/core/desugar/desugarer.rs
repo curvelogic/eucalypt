@@ -61,9 +61,9 @@ impl<'smap> Desugarer<'smap> {
             self.file.push(source.file_id());
             let mut expr = source.content().desugar(self)?;
 
-            // if we have only a single name, varify - (a lone name
-            // will not have been contained in any context which will
-            // varify it) HACK:
+            // A lone name at the top level won't have passed through
+            // any desugaring context that varifies it, so handle it
+            // explicitly here.
             if expr.inner.is_name() {
                 expr = self.varify(expr);
             }
@@ -211,9 +211,13 @@ impl<'smap> Desugarer<'smap> {
         self.targets.insert(tgt);
     }
 
-    /// Record doc strings (temporarily disabled during legacy AST elimination)
-    /// TODO: Implement native Rowan documentation support
-    pub fn record_doc(&mut self, _doc: String, _name: &str, _args: Vec<String>) {
-        // Documentation recording disabled during legacy AST elimination
+    /// Record doc strings discovered during desugaring
+    pub fn record_doc(&mut self, doc: String, name: &str, args: Vec<String>) {
+        self.docs.push(DeclarationDocumentation {
+            name: name.to_string(),
+            args,
+            path: self.stack.iter().map(String::clone).collect(),
+            doc,
+        });
     }
 }

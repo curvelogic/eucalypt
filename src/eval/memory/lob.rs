@@ -31,6 +31,12 @@ impl LargeObjectBlock {
 
     /// Allocate a block directly from the system allocator
     fn alloc_block(size: usize) -> Result<NonNull<u8>, ()> {
+        // SAFETY: The allocation is valid because:
+        // - Layout is constructed with valid size/align via `from_size_align` check
+        // - Alignment is clamped to reasonable bounds (8..=4096)
+        // - Returned pointer is checked for null before wrapping in NonNull
+        // - Memory is exclusively owned by this LargeObjectBlock instance
+        // - Debug fill is within bounds (0..size)
         unsafe {
             // Use page alignment for better performance
             let align = std::cmp::max(size.next_power_of_two().min(4096), 8);
@@ -100,6 +106,11 @@ impl LargeObjectBlock {
 
 impl Drop for LargeObjectBlock {
     fn drop(&mut self) {
+        // SAFETY: The deallocation is valid because:
+        // - `ptr` was allocated by `alloc_block` in this same struct
+        // - `size` and alignment calculation match the original allocation
+        // - LargeObjectBlock owns this memory exclusively
+        // - This is called exactly once during drop
         unsafe {
             let align = std::cmp::max(self.size.next_power_of_two().min(4096), 8);
             let layout = Layout::from_size_align_unchecked(self.size, align);

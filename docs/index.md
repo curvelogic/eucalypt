@@ -24,11 +24,11 @@ It has the following features:
   - an ergonomic command line interface and access to environment
 	variables
   - metadata annotations and numerous extension points
-  - a *prelude* of built in functions, acting like a standard library
+  - a [*prelude*](prelude.md) of built in functions, acting like a standard library
 
-It can currently read YAML, JSON, TOML, XML, CSV and plain text and
-eucalypt's own ("eu") syntax and it can export YAML, JSON, TOML or
-plain text.
+It can currently read YAML, JSON, JSON Lines, TOML, EDN, XML, CSV and
+plain text and eucalypt's own ("eu") syntax and it can export YAML, JSON,
+TOML, EDN or plain text.
 
 !!! warning
 
@@ -346,7 +346,7 @@ brew install curvelogic/homebrew-tap/eucalypt
 Check the version you are running with:
 
 ```shell
-eu -v
+eu version
 ```
 
 `eu` is intended to be easy to use for common tasks and does its best
@@ -357,7 +357,7 @@ By default, it runs in ergonomic mode which will make a few
 assumptions in order to allow you to be a little less explicit. It
 also pulls in user-specific declarations from `~/.eucalypt`. For
 repeatable builds and scripted usage, it is better to turn ergonomic
-mode *off* using the `-B (--batch-mode)` switch.
+mode *off* using the `-B (--batch)` switch.
 
 The simplest usage is to specify a eucalypt file to evaluate and leave
 the default render format (YAML) and output (standard out) alone.

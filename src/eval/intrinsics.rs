@@ -488,6 +488,106 @@ lazy_static! {
             ty: function(vec![record(), str_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 89
+            name: "REQUIRES",
+            ty: function(vec![str_(), unit()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 90
+            name: "BASE64_ENCODE",
+            ty: function(vec![str_(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 91
+            name: "BASE64_DECODE",
+            ty: function(vec![str_(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 92
+            name: "SHA256",
+            ty: function(vec![str_(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 93
+            name: "SET.EMPTY",
+            ty: unk(),
+            strict: vec![],
+    },
+    Intrinsic { // 94
+            name: "SET.FROM_LIST",
+            ty: function(vec![list(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 95
+            name: "SET.TO_LIST",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 96
+            name: "SET.ADD",
+            ty: function(vec![unk(), any(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 97
+            name: "SET.REMOVE",
+            ty: function(vec![unk(), any(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 98
+            name: "SET.CONTAINS",
+            ty: function(vec![unk(), any(), bool_()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 99
+            name: "SET.SIZE",
+            ty: function(vec![unk(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 100
+            name: "SET.UNION",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 101
+            name: "SET.INTERSECT",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 102
+            name: "SET.DIFF",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 103
+            name: "ISBLOCK",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 104
+            name: "ISLIST",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 105
+            name: "RAWMETA",
+            ty: function(vec![any(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 106
+            name: "PRNG_NEXT",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 107
+            name: "PRNG_FLOAT",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 108
+            name: "STREAM_NEXT",
+            ty: function(vec![num(), unk()]).unwrap(),
+            strict: vec![0],
+    },
 
     ];
 }

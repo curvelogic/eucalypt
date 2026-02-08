@@ -4,8 +4,10 @@ use crate::core::expr::*;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty;
 use crate::syntax::rowan::ast as rowan_ast;
+use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode};
 use moniker;
 use rowan::ast::AstNode;
+use rowan::GreenNodeBuilder;
 
 /// Embed a representation of the core expression in an AST then
 /// render as parse-embed unit.
@@ -29,117 +31,215 @@ CORE: {}
     }
 }
 
-/// Helper function to create a soup with a tagged name (e.g., c-var, c-name)
-fn embed_tagged_name(tag: &str, name: &str) -> Option<rowan_ast::Soup> {
-    use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode};
-    use rowan::GreenNodeBuilder;
-
-    let mut builder = GreenNodeBuilder::new();
-    builder.start_node(SyntaxKind::SOUP.into());
-
-    // Create list with tag and name: [tag, name]
-    builder.start_node(SyntaxKind::LIST.into());
-    builder.token(SyntaxKind::OPEN_SQUARE.into(), "[");
-
-    // Tag element (e.g., "c-var")
-    builder.start_node(SyntaxKind::SOUP.into());
-    builder.token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), tag);
-    builder.finish_node();
-
-    builder.token(SyntaxKind::COMMA.into(), ",");
-    builder.token(SyntaxKind::WHITESPACE.into(), " ");
-
-    // Name element
-    builder.start_node(SyntaxKind::SOUP.into());
-    builder.token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), name);
-    builder.finish_node();
-
-    builder.token(SyntaxKind::CLOSE_SQUARE.into(), "]");
-    builder.finish_node();
-
-    builder.finish_node();
-    let green = builder.finish();
-    let syntax = SyntaxNode::new_root(green);
-    rowan_ast::Soup::cast(syntax)
+/// Builder for constructing tagged list embeddings like `[tag, elem1, elem2, ...]`
+struct EmbedBuilder {
+    builder: GreenNodeBuilder<'static>,
+    need_comma: bool,
 }
 
-/// Helper function to create a soup with a tagged literal (e.g., c-lit)
-fn embed_tagged_literal(tag: &str, literal: &str) -> Option<rowan_ast::Soup> {
-    use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode};
-    use rowan::GreenNodeBuilder;
+impl EmbedBuilder {
+    fn new(tag: &str) -> Self {
+        let mut builder = GreenNodeBuilder::new();
+        builder.start_node(SyntaxKind::SOUP.into());
+        builder.start_node(SyntaxKind::LIST.into());
+        builder.token(SyntaxKind::OPEN_SQUARE.into(), "[");
 
-    let mut builder = GreenNodeBuilder::new();
-    builder.start_node(SyntaxKind::SOUP.into());
+        // Tag element
+        builder.start_node(SyntaxKind::SOUP.into());
+        builder.token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), tag);
+        builder.finish_node();
 
-    // Create list with tag and literal: [tag, literal]
-    builder.start_node(SyntaxKind::LIST.into());
-    builder.token(SyntaxKind::OPEN_SQUARE.into(), "[");
+        EmbedBuilder {
+            builder,
+            need_comma: true,
+        }
+    }
 
-    // Tag element (e.g., "c-lit")
-    builder.start_node(SyntaxKind::SOUP.into());
-    builder.token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), tag);
-    builder.finish_node();
+    fn token(&mut self, text: &str) -> &mut Self {
+        if self.need_comma {
+            self.builder.token(SyntaxKind::COMMA.into(), ",");
+            self.builder.token(SyntaxKind::WHITESPACE.into(), " ");
+        }
+        self.builder.start_node(SyntaxKind::SOUP.into());
+        self.builder
+            .token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), text);
+        self.builder.finish_node();
+        self.need_comma = true;
+        self
+    }
 
-    builder.token(SyntaxKind::COMMA.into(), ",");
-    builder.token(SyntaxKind::WHITESPACE.into(), " ");
+    fn string(&mut self, s: &str) -> &mut Self {
+        self.token(&format!("\"{}\"", s.replace('"', "\\\"")))
+    }
 
-    // Literal element
-    builder.start_node(SyntaxKind::SOUP.into());
-    builder.token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), literal);
-    builder.finish_node();
+    fn symbol(&mut self, s: &str) -> &mut Self {
+        self.token(&format!(":{s}"))
+    }
 
-    builder.token(SyntaxKind::CLOSE_SQUARE.into(), "]");
-    builder.finish_node();
+    fn embed(&mut self, expr: &impl Embed) -> Option<&mut Self> {
+        let soup = expr.embed()?;
+        if self.need_comma {
+            self.builder.token(SyntaxKind::COMMA.into(), ",");
+            self.builder.token(SyntaxKind::WHITESPACE.into(), " ");
+        }
+        // Splice the embedded soup's green node directly
+        self.builder.start_node(SyntaxKind::SOUP.into());
+        // Re-emit the soup content as a single identifier token containing
+        // its pretty-printed form. This is a simplification that works
+        // because the embedding is consumed via pretty-printing.
+        let text = pretty::express(&soup);
+        self.builder
+            .token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), &text);
+        self.builder.finish_node();
+        self.need_comma = true;
+        Some(self)
+    }
 
-    builder.finish_node();
-    let green = builder.finish();
-    let syntax = SyntaxNode::new_root(green);
-    rowan_ast::Soup::cast(syntax)
+    fn finish(mut self) -> Option<rowan_ast::Soup> {
+        self.builder.token(SyntaxKind::CLOSE_SQUARE.into(), "]");
+        self.builder.finish_node(); // LIST
+        self.builder.finish_node(); // SOUP
+        let green = self.builder.finish();
+        let syntax = SyntaxNode::new_root(green);
+        rowan_ast::Soup::cast(syntax)
+    }
 }
 
 impl Embed for CoreExpr {
     fn embed(&self) -> Option<rowan_ast::Soup> {
         match self {
-            CoreExpr::Var(_, var) => {
-                // Create a soup with c-var tag for variables
-                match var {
-                    moniker::Var::Free(freevar) => {
-                        if let Some(name) = &freevar.pretty_name {
-                            embed_tagged_name("c-var", name)
-                        } else {
-                            None // Can't embed anonymous variables
-                        }
-                    }
-                    moniker::Var::Bound(_) => None, // Bound variables can't be embedded in simple form
+            CoreExpr::Var(_, var) => match var {
+                moniker::Var::Free(freevar) => freevar.pretty_name.as_ref().and_then(|name| {
+                    let mut b = EmbedBuilder::new("c-var");
+                    b.string(name);
+                    b.finish()
+                }),
+                moniker::Var::Bound(bound) => {
+                    let mut b = EmbedBuilder::new("c-var");
+                    b.token(&format!("${}.{}", bound.scope.0, bound.binder.to_usize()));
+                    b.finish()
                 }
-            }
-            CoreExpr::Literal(_, primitive) => {
-                // Create a soup with c-lit tag for literals
-                primitive.embed()
-            }
+            },
+            CoreExpr::Literal(_, primitive) => primitive.embed(),
             CoreExpr::Name(_, name) => {
-                // Create a soup with c-name tag for names
-                embed_tagged_name("c-name", name)
+                let mut b = EmbedBuilder::new("c-name");
+                b.string(name);
+                b.finish()
             }
-            _ => {
-                // For complex expressions, return None for now
-                // TODO: Implement embedding for all expression types
-                None
+            CoreExpr::Intrinsic(_, name) => {
+                let mut b = EmbedBuilder::new("c-bif");
+                b.symbol(name);
+                b.finish()
             }
+            CoreExpr::List(_, items) => {
+                let mut b = EmbedBuilder::new("c-list");
+                for item in items {
+                    b.embed(item)?;
+                }
+                b.finish()
+            }
+            CoreExpr::App(_, func, args) => {
+                let mut b = EmbedBuilder::new("c-app");
+                b.embed(func)?;
+                // Embed args as a sub-list
+                let mut args_builder = EmbedBuilder::new("c-args");
+                for arg in args {
+                    args_builder.embed(arg)?;
+                }
+                let args_soup = args_builder.finish()?;
+                b.embed(&args_soup)?;
+                b.finish()
+            }
+            CoreExpr::Soup(_, items) => {
+                let mut b = EmbedBuilder::new("c-soup");
+                for item in items {
+                    b.embed(item)?;
+                }
+                b.finish()
+            }
+            CoreExpr::ArgTuple(_, args) => {
+                let mut b = EmbedBuilder::new("c-args");
+                for arg in args {
+                    b.embed(arg)?;
+                }
+                b.finish()
+            }
+            CoreExpr::Meta(_, expr, meta) => {
+                let mut b = EmbedBuilder::new("c-meta");
+                b.embed(expr)?;
+                b.embed(meta)?;
+                b.finish()
+            }
+            CoreExpr::Lookup(_, obj, key, fallback) => {
+                let mut b = EmbedBuilder::new("c-lookup");
+                b.embed(obj)?;
+                b.string(key);
+                if let Some(fb) = fallback {
+                    b.embed(fb)?;
+                }
+                b.finish()
+            }
+            CoreExpr::Operator(_, fixity, prec, expr) => {
+                let fix_str = match fixity {
+                    Fixity::Nullary => "nullary",
+                    Fixity::UnaryPrefix => "prefix",
+                    Fixity::UnaryPostfix => "postfix",
+                    Fixity::InfixLeft => "infixl",
+                    Fixity::InfixRight => "infixr",
+                };
+                let mut b = EmbedBuilder::new("c-op");
+                b.symbol(fix_str);
+                b.token(&format!("{prec}"));
+                b.embed(expr)?;
+                b.finish()
+            }
+            CoreExpr::BlockAnaphor(_, _) => EmbedBuilder::new("c-bk-ana").finish(),
+            CoreExpr::ExprAnaphor(_, _) => EmbedBuilder::new("c-ex-ana").finish(),
+            CoreExpr::ErrUnresolved(_, name) => {
+                let mut b = EmbedBuilder::new("e-unresolved");
+                b.string(name);
+                b.finish()
+            }
+            CoreExpr::ErrRedeclaration(_, name) => {
+                let mut b = EmbedBuilder::new("e-redeclaration");
+                b.string(name);
+                b.finish()
+            }
+            CoreExpr::ErrEliminated => EmbedBuilder::new("e-eliminated").finish(),
+            CoreExpr::ErrPseudoDot => EmbedBuilder::new("e-pseudodot").finish(),
+            CoreExpr::ErrPseudoCall => EmbedBuilder::new("e-pseudocall").finish(),
+            CoreExpr::ErrPseudoCat => EmbedBuilder::new("e-pseudocat").finish(),
+            // Let and Lam require scope manipulation which is complex;
+            // return None for these uncommon embedding cases
+            CoreExpr::Let(..) | CoreExpr::Lam(..) | CoreExpr::Block(..) => None,
         }
     }
 }
 
 impl Embed for Primitive {
     fn embed(&self) -> Option<rowan_ast::Soup> {
+        let mut b = EmbedBuilder::new("c-lit");
         match self {
-            Primitive::Sym(s) => embed_tagged_literal("c-lit", &format!(":{s}")),
-            Primitive::Str(s) => {
-                embed_tagged_literal("c-lit", &format!("\"{}\"", s.replace('"', "\\\"")))
+            Primitive::Sym(s) => {
+                b.symbol(s);
             }
-            Primitive::Num(n) => embed_tagged_literal("c-lit", &format!("{n}")),
-            _ => None, // For other primitive types, return None for now
+            Primitive::Str(s) => {
+                b.string(s);
+            }
+            Primitive::Num(n) => {
+                b.token(&format!("{n}"));
+            }
+            Primitive::Bool(true) => {
+                b.token("true");
+            }
+            Primitive::Bool(false) => {
+                b.token("false");
+            }
+            Primitive::Null => {
+                b.token("null");
+            }
         }
+        b.finish()
     }
 }
 
@@ -152,6 +252,7 @@ impl Embed for RcExpr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::common::sourcemap::Smid;
     use crate::syntax::export::pretty;
 
     #[test]
@@ -162,8 +263,36 @@ pub mod tests {
 
         if let Some(soup) = embedding {
             let output = pretty::express(&soup);
-            // Just check that it doesn't crash and produces some output
             assert!(!output.is_empty(), "Should produce non-empty output");
         }
+    }
+
+    #[test]
+    pub fn test_intrinsic_embedding() {
+        let core_expr = CoreExpr::Intrinsic(Smid::default(), "ADD".to_string());
+        let embedding = core_expr.embed();
+        assert!(embedding.is_some(), "Should embed intrinsic");
+    }
+
+    #[test]
+    pub fn test_literal_bool_embedding() {
+        let core_expr = CoreExpr::Literal(Smid::default(), Primitive::Bool(true));
+        let embedding = core_expr.embed();
+        assert!(embedding.is_some(), "Should embed boolean literal");
+    }
+
+    #[test]
+    pub fn test_literal_null_embedding() {
+        let core_expr = CoreExpr::Literal(Smid::default(), Primitive::Null);
+        let embedding = core_expr.embed();
+        assert!(embedding.is_some(), "Should embed null literal");
+    }
+
+    #[test]
+    pub fn test_error_markers() {
+        assert!(CoreExpr::ErrEliminated.embed().is_some());
+        assert!(CoreExpr::ErrPseudoDot.embed().is_some());
+        assert!(CoreExpr::ErrPseudoCall.embed().is_some());
+        assert!(CoreExpr::ErrPseudoCat.embed().is_some());
     }
 }

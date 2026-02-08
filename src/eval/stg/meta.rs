@@ -43,6 +43,35 @@ impl StgIntrinsic for Meta {
 
 impl CallGlobal1 for Meta {}
 
+/// RAWMETA(obj) - return immediate metadata of object without recursing
+/// into inner layers. Unlike META which merges all nested metadata,
+/// this returns only the outermost metadata block. Useful for
+/// inspecting metadata without triggering infinite recursion when
+/// metadata values themselves carry metadata.
+pub struct RawMeta;
+
+impl StgIntrinsic for RawMeta {
+    fn name(&self) -> &str {
+        "RAWMETA"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        annotated_lambda(
+            1,
+            demeta(
+                local(0),
+                // Return just the immediate metadata without recursing
+                // [meta body] — return meta (local(0))
+                local(0),
+                KEmptyBlock.global(),
+            ),
+            annotation,
+        )
+    }
+}
+
+impl CallGlobal1 for RawMeta {}
+
 /// WITHMETA(meta, obj) - add meta to obj
 pub struct WithMeta;
 

@@ -9,7 +9,7 @@ use crate::{
 
 use super::{
     syntax::{
-        dsl::{self, data, let_, lref, value},
+        dsl::{self, data, let_, lref, no_index, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -56,7 +56,7 @@ impl StgIntrinsic for KEmptyBlock {
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         value(let_(
             vec![value(data(DataConstructor::ListNil.tag(), vec![]))],
-            data(DataConstructor::Block.tag(), vec![lref(0)]),
+            data(DataConstructor::Block.tag(), vec![lref(0), no_index()]),
         ))
     }
 }

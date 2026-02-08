@@ -24,11 +24,13 @@ eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
 ### Subcommands
 
 - `run` (default) - Evaluate eucalypt code
-- `test` - Run tests  
+- `test` - Run tests
 - `dump` - Dump intermediate representations
 - `version` - Show version information
 - `explain` - Explain what would be executed
 - `list-targets` - List targets defined in the source
+- `fmt` - Format eucalypt source files
+- `lsp` - Start the Language Server Protocol server
 
 When no subcommand is specified, `run` is used by default, so these are equivalent:
 
@@ -70,12 +72,15 @@ at present, are:
 
  - yaml
  - json
+ - jsonl (JSON Lines)
  - toml
+ - edn
+ - xml
  - csv
  - text
 
-Of these the first three (yaml, json, toml) return blocks and the last
-two return lists. Inputs that return lists frequently to be named (see
+Of these yaml, json, toml, edn and xml return blocks; jsonl, csv and
+text return lists. Inputs that return lists frequently need to be named (see
 below) to allow them to be used.
 
 Usually the format is inferred from file extension but it can be
@@ -334,6 +339,54 @@ $ eu -e '{a: 1 b: 2 * 2}' -j
 {"a": 1, "b": 4}
 ```
 
+## Passing Arguments to Programs
+
+You can pass command-line arguments to your eucalypt program using the
+`--` separator. Arguments after `--` are available via `io.args`:
+
+```console
+$ eu -e 'io.args' -- foo bar baz
+---
+- foo
+- bar
+- baz
+```
+
+This is useful for writing eucalypt scripts that accept parameters:
+
+```eu
+# greet.eu
+name: io.args head-or("World")
+greeting: "Hello, {name}!"
+```
+
+```console
+$ eu greet.eu -e greeting -- Alice
+---
+Hello, Alice!
+```
+
+Arguments are passed as strings. Use `num` to convert numeric arguments:
+
+```eu
+# sum.eu
+total: io.args map(num) foldl((+), 0)
+```
+
+```console
+$ eu sum.eu -e total -- 1 2 3 4 5
+---
+15
+```
+
+When no arguments are passed, `io.args` is an empty list:
+
+```console
+$ eu -e 'io.args nil?'
+---
+true
+```
+
 ## Suppressing prelude
 
 A standard *prelude* containing many functions and operators is
@@ -362,6 +415,32 @@ eu list-targets file.eu      # List available targets
 ```
 
 Use `eu --help` and `eu <subcommand> --help` for complete option lists.
+
+## Formatting Source Files
+
+The `fmt` subcommand formats eucalypt source files for consistent style:
+
+```sh
+eu fmt file.eu              # Print formatted output to stdout
+eu fmt --write file.eu      # Format in place
+eu fmt --check file.eu      # Check formatting (exit 1 if not formatted)
+eu fmt *.eu --write         # Format multiple files in place
+```
+
+### Options
+
+- `-w, --width <WIDTH>` - Line width for formatting (default: 80)
+- `--write` - Modify files in place
+- `--check` - Check if files are formatted (exit 1 if not)
+- `--reformat` - Full reformatting mode (instead of conservative)
+- `--indent <INDENT>` - Indent size in spaces (default: 2)
+
+The formatter has two modes:
+
+- **Conservative mode** (default) - Preserves original formatting choices
+  where possible, only reformatting where necessary
+- **Reformat mode** (`--reformat`) - Full reformatting that applies
+  consistent style throughout
 
 ## Backward Compatibility
 

@@ -20,7 +20,8 @@ use eucalypt::{
     },
 };
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 fn box_one(view: MutatorHeapView, empty: RefPtr<EnvFrame>) -> SynClosure {
     SynClosure::new(

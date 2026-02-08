@@ -1,0 +1,122 @@
+##
+## 075: Deep query — pattern-based data querying DSL
+##
+
+## Bare key (sugar for **.key)
+
+bare-key-checks: {
+  trues: [
+    (deep-query("a", {a: 1, b: {a: 2}})) = [1, 2],
+    (deep-query("z", {x: {y: {z: 42}}})) = [42],
+    (deep-query("missing", {a: 1, b: 2})) = []
+  ]
+}
+
+## Explicit **.key
+
+explicit-dstar-checks: {
+  trues: [
+    (deep-query("**.a", {a: 1, b: {a: 2}})) = [1, 2]
+  ]
+}
+
+## Dotted path (literal.literal)
+
+dotted-path-checks: {
+  trues: [
+    (deep-query("b.a", {a: 1, b: {a: 2}})) = [2],
+    (deep-query("a.b.c", {a: {b: {c: 42}}})) = [42],
+    (deep-query("a.z", {a: {b: 1}})) = []
+  ]
+}
+
+## Wildcard *
+
+wildcard-checks: {
+  trues: [
+    (deep-query("*.a", {x: {a: 1}, y: {a: 2}})) = [1, 2],
+    (deep-query("*.port", {web: {port: 80}, db: {port: 5432}, name: "app"})) = [80, 5432],
+    (deep-query("server.*.port", {server: {primary: {host: "a", port: 80}, backup: {host: "b", port: 443}}})) = [80, 443],
+    (deep-query("*", {a: 1, b: 2, c: 3})) = [1, 2, 3]
+  ]
+}
+
+## Deep query first
+
+first-checks: {
+  trues: [
+    (deep-query-first("host", "none", {server: {host: "a"}, db: {host: "b"}})) = "a",
+    (deep-query-first("missing", "default", {a: 1})) = "default",
+    (deep-query-first("b.x", "none", {a: 1, b: {x: 42}})) = 42
+  ]
+}
+
+## Deep query paths
+
+paths-checks: {
+  trues: [
+    (deep-query-paths("a", {a: 1, b: {a: 2}})) = [[:a], [:b, :a]],
+    (deep-query-paths("host", {server: {host: "a"}, db: {host: "b"}})) = [[:server, :host], [:db, :host]],
+    (deep-query-paths("b.a", {a: 1, b: {a: 2}})) = [[:b, :a]],
+    (deep-query-paths("missing", {a: 1})) = [],
+    (deep-query-paths("*.x", {a: {x: 1}, b: {x: 2}})) = [[:a, :x], [:b, :x]]
+  ]
+}
+
+## Edge cases
+
+edge-checks: {
+  trues: [
+    (deep-query("a", {})) = [],
+    (deep-query-first("a", "none", {})) = "none",
+    (deep-query-paths("a", {})) = []
+  ]
+}
+
+## Nested wildcards and ** at non-start position
+
+advanced-checks: {
+  trues: [
+    (deep-query("**.*.port", {
+      config: {
+        servers: { web: { port: 80 }, db: { port: 5432 } }
+      }
+    })) = [80, 5432],
+    (deep-query("config.**.port", {
+      config: { port: 9090, nested: { deep: { port: 3000 } } }
+    })) = [9090, 3000],
+    (deep-query("x", {a: "hello", x: 42})) = [42],
+    (deep-query("name", {
+      name: "root"
+      child: { name: "mid", child: { name: "leaf" } }
+    })) = ["root", "mid", "leaf"]
+  ]
+}
+
+## Realistic fixture
+
+fixture-checks: {
+  trues: [
+    (deep-query("*.*.port", {
+      prod: { web: { host: "a", port: 80 }, api: { host: "b", port: 8080 } }
+      dev: { web: { host: "c", port: 3000 } }
+    })) = [80, 8080, 3000],
+    (deep-query-first("email", "unknown", {
+      users: { admin: { email: "admin@x.com" }, guest: { name: "Guest" } }
+    })) = "admin@x.com"
+  ]
+}
+
+pass: [
+  bare-key-checks.trues all-true?,
+  explicit-dstar-checks.trues all-true?,
+  dotted-path-checks.trues all-true?,
+  wildcard-checks.trues all-true?,
+  first-checks.trues all-true?,
+  paths-checks.trues all-true?,
+  edge-checks.trues all-true?,
+  advanced-checks.trues all-true?,
+  fixture-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

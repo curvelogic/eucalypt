@@ -3,4 +3,5 @@ last(xs): if((xs tail) = [], xs head, xs tail last)
 ` :suppress
 inf: cons(:a, inf)
 
-x: inf take(20000) last
+` { target: :bench-drop-cons }
+bench-drop-cons: inf take(20000) last

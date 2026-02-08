@@ -1,0 +1,118 @@
+# Test YAML timestamp auto-detection and conversion
+#
+# Tests: ISO 8601 formats, date-only, space-separated, timezone offsets,
+#        fractional seconds, quoted strings remain strings
+
+#######################
+# ISO 8601 UTC
+#######################
+
+iso_utc:
+  ts: 2023-01-15T10:30:00Z
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.m = 1 ∧ fields.d = 15 ∧ fields.H = 10 ∧ fields.M = 30 ∧ fields.S = 0
+
+iso_utc_midnight:
+  ts: 2023-12-31T00:00:00Z
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.m = 12 ∧ fields.d = 31 ∧ fields.H = 0
+
+#######################
+# Date Only
+#######################
+
+date_only:
+  ts: 2023-01-15
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.m = 1 ∧ fields.d = 15
+
+date_only_end_year:
+  ts: 1999-12-31
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 1999 ∧ fields.m = 12 ∧ fields.d = 31
+
+#######################
+# Timezone Offsets
+#######################
+
+positive_offset:
+  ts: 2023-01-15T10:30:00+05:00
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.m = 1 ∧ fields.d = 15 ∧ fields.H = 10
+
+negative_offset:
+  ts: 2023-01-15T10:30:00-08:00
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.m = 1 ∧ fields.d = 15 ∧ fields.H = 10
+
+#######################
+# Space Separator
+#######################
+
+space_separator:
+  ts: 2023-01-15 10:30:00
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.m = 1 ∧ fields.d = 15 ∧ fields.H = 10
+
+#######################
+# Fractional Seconds
+#######################
+
+fractional_seconds:
+  ts: 2023-01-15T10:30:00.123456Z
+  fields: !eu ts cal.fields
+  # Note: fractional seconds become decimal in the S field
+  pass: !eu fields.y = 2023 ∧ fields.m = 1 ∧ fields.d = 15 ∧ fields.H = 10 ∧ fields.M = 30
+
+fractional_space:
+  ts: 2023-01-15 10:30:00.5
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.H = 10
+
+#######################
+# Quoted Strings Remain Strings
+#######################
+
+quoted_timestamp:
+  # Quoted values are NOT converted to timestamps
+  ts: "2023-01-15T10:30:00Z"
+  pass: !eu ts = "2023-01-15T10:30:00Z"
+
+quoted_date:
+  ts: "2023-01-15"
+  pass: !eu ts = "2023-01-15"
+
+#######################
+# Edge Cases
+#######################
+
+leap_year:
+  ts: 2024-02-29T12:00:00Z
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2024 ∧ fields.m = 2 ∧ fields.d = 29 ∧ fields.H = 12
+
+year_boundary:
+  ts: 2023-01-01T00:00:00Z
+  fields: !eu ts cal.fields
+  pass: !eu fields.y = 2023 ∧ fields.m = 1 ∧ fields.d = 1 ∧ fields.H = 0
+
+#######################
+# Result
+#######################
+
+RESULT: !eu |
+  [
+    iso_utc.pass,
+    iso_utc_midnight.pass,
+    date_only.pass,
+    date_only_end_year.pass,
+    positive_offset.pass,
+    negative_offset.pass,
+    space_separator.pass,
+    fractional_seconds.pass,
+    fractional_space.pass,
+    quoted_timestamp.pass,
+    quoted_date.pass,
+    leap_year.pass,
+    year_boundary.pass
+  ] all-true? then(:PASS, :FAIL)

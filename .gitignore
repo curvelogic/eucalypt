@@ -13,3 +13,31 @@ test.eu
 
 # Benchmark results
 benchmark_results/
+gc-bench-baseline.json
+
+.runtime/
+
+# Gas Town (added by gt)
+.claude/
+.logs/
+
+# Beads runtime state (not tracked in git)
+# issues.jsonl and metadata files ARE tracked - see .beads/.gitignore for internal patterns
+.beads/redirect
+.beads/mq/
+.beads/last-touched
+.beads/daemon-*.log.gz
+.beads/.sync.lock
+.beads/sync_base.jsonl
+.beads-wisp/
+
+# Gas Town (added by gt)
+.beads/
+
+# VS Code extension build artefacts
+editors/vscode/node_modules/
+editors/vscode/out/
+editors/vscode/*.vsix
+
+# Local settings
+*.local.json

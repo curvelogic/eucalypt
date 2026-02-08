@@ -23,6 +23,7 @@ use crate::{
             heap::{Heap, HeapStats},
             infotable::InfoTable,
             mutator::{Mutator, MutatorHeapView},
+            symbol::SymbolPool,
             syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
         },
         stg::tags::{DataConstructor, Tag},
@@ -44,7 +45,7 @@ pub struct HeapNavigator<'scope> {
     /// Global environment
     globals: ScopedPtr<'scope, EnvFrame>,
     /// Mutator view of heap
-    view: MutatorHeapView<'scope>,
+    pub(crate) view: MutatorHeapView<'scope>,
 }
 
 impl HeapNavigator<'_> {
@@ -121,6 +122,20 @@ impl HeapNavigator<'_> {
     pub fn env_trace(&self) -> Vec<Smid> {
         (*self.locals).annotation_trace(&self.view)
     }
+
+    /// Resolve a ref relative to a specific closure's environment, using
+    /// the navigator's globals for global refs. Returns None for value
+    /// refs (Ref::V) since forming a closure would require heap allocation.
+    pub fn resolve_in_closure(&self, closure: &SynClosure, r: Ref) -> Option<SynClosure> {
+        match r {
+            Ref::L(i) => {
+                let env = self.view.scoped(closure.env());
+                (*env).get(&self.view, i)
+            }
+            Ref::G(i) => (*self.globals).get(&self.view, i),
+            Ref::V(_) => None,
+        }
+    }
 }
 
 /// The state of the machine (stack / closure etc.)
@@ -139,6 +154,8 @@ pub struct MachineState {
     annotation: Smid,
     /// Cache compiled regexes
     rcache: LruCache<String, Regex>,
+    /// Interned symbol pool for fast symbol comparison
+    symbol_pool: SymbolPool,
 }
 
 impl Default for MachineState {
@@ -150,7 +167,10 @@ impl Default for MachineState {
             stack: Default::default(),
             terminated: Default::default(),
             annotation: Default::default(),
-            rcache: LruCache::new(NonZeroUsize::new(100).unwrap()),
+            rcache: LruCache::new(
+                NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
+            ),
+            symbol_pool: SymbolPool::new(),
         }
     }
 }
@@ -201,6 +221,15 @@ impl MachineState {
                         self.closure = self.nav(view).get(i)?;
                         let updateable = self.closure.update();
                         if updateable {
+                            // Overwrite the env slot with a BlackHole
+                            // closure to catch cyclic thunk re-entry.
+                            // The Update continuation will replace it
+                            // with the computed value on success.
+                            let hole = view.alloc(HeapSyn::BlackHole)?;
+                            let black_hole = SynClosure::new(hole.as_ptr(), environment);
+                            let cont_env = view.scoped(environment);
+                            cont_env.update(&view, i, black_hole)?;
+
                             self.push(
                                 view,
                                 Continuation::Update {
@@ -211,7 +240,7 @@ impl MachineState {
                         }
                     }
                     Ref::G(i) => {
-                        self.closure = self.nav(view).global(i)?; // TODO: update globals?
+                        self.closure = self.nav(view).global(i)?;
                     }
                     Ref::V(v) => {
                         self.return_native(view, &v)?;
@@ -220,13 +249,15 @@ impl MachineState {
             }
             HeapSyn::Case {
                 scrutinee,
-                branches,
+                min_tag,
+                branch_table,
                 fallback,
             } => {
                 self.push(
                     view,
                     Continuation::Branch {
-                        branches,
+                        min_tag,
+                        branch_table,
                         fallback,
                         environment,
                     },
@@ -409,26 +440,29 @@ impl MachineState {
 
             match continuation {
                 Continuation::Branch {
-                    branches,
+                    min_tag,
+                    branch_table,
                     fallback,
                     environment,
                 } => {
-                    if let Some(body) = match_tag(tag, branches.as_slice()) {
-                        let closures = args
-                            .iter()
-                            .map(|r| self.nav(view).resolve(r))
-                            .collect::<Result<Vec<SynClosure>, ExecutionError>>()?;
-                        let len = closures.len();
-                        self.closure = SynClosure::new(
-                            body,
-                            // TODO: skip empty frames
+                    if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
+                        let env = if args.is_empty() {
+                            // 0-arity constructor: reuse parent env directly
+                            environment
+                        } else {
+                            let closures = args
+                                .iter()
+                                .map(|r| self.nav(view).resolve(r))
+                                .collect::<Result<Vec<SynClosure>, ExecutionError>>()?;
+                            let len = closures.len();
                             view.from_closures(
                                 closures.into_iter(),
                                 len,
                                 environment,
                                 self.annotation,
-                            )?,
-                        );
+                            )?
+                        };
+                        self.closure = SynClosure::new(body, env);
                     } else if let Some(body) = fallback {
                         self.closure = SynClosure::new(
                             body,
@@ -442,19 +476,21 @@ impl MachineState {
                     self.update(view, environment, index)?;
                 }
                 Continuation::ApplyTo { args } => {
-                    // Block application - BLOCKs are a special case
-                    // and can be applied as functions, calling
-                    // __MERGE
-                    //
-                    // TODO: a more generic mechanism for applying
-                    // data structures
+                    // Block application: blocks can be applied as
+                    // functions, delegating to __MERGE. This is the
+                    // only data type with callable semantics — lists,
+                    // numbers, strings, etc. have no natural
+                    // application behaviour.
                     if tag == DataConstructor::Block.tag() {
                         let mut args = Array::from_slice(&view, args.as_slice());
                         args.push(&view, self.closure.clone());
                         self.push(view, Continuation::ApplyTo { args })?;
                         self.closure = SynClosure::new(
-                            view.atom(Ref::G(intrinsics::index("MERGE").unwrap()))?
-                                .as_ptr(),
+                            view.atom(Ref::G(
+                                intrinsics::index("MERGE")
+                                    .expect("MERGE intrinsic must be registered"),
+                            ))?
+                            .as_ptr(),
                             self.env(view),
                         );
                     } else {
@@ -513,22 +549,12 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    // HACK: This impossible in the standard STG
-                    // machine, but dynamic typing means we can't
-                    // avoid it at compile time. Code may case
-                    // something to determine its type and then
-                    // discover it's a fn.
-                    //
-                    // All we can do at this stage is use the default
-                    // branch with the evaluated scrutinee. The lack
-                    // of progress risks looping though and in the
-                    // general case it's not clear what the default
-                    // handler can do with something that might be a
-                    // native, an unmatched constructor or a lambda.
-                    //
-                    // Probably branch tables need complicating (they
-                    // already omit primitive handlers from the
-                    // standard STG machine.)
+                    // In a statically typed STG machine, functions
+                    // never enter case continuations. With dynamic
+                    // typing, code may case a value to inspect its
+                    // type and discover it is a lambda. When this
+                    // happens, we fall through to the default branch
+                    // with the evaluated scrutinee bound.
                     if let Some(body) = fallback {
                         self.closure = SynClosure::new(
                             body,
@@ -559,25 +585,49 @@ impl MachineState {
         Ok(())
     }
 
-    /// Trace of annotations in execution stack
-    pub fn stack_trace(&self, view: &MutatorHeapView) -> Vec<Smid> {
-        self.stack
-            .iter()
-            .rev()
-            .filter_map(|cont| {
-                let c = view.scoped(*cont);
-                match &*c {
+    /// Returns a lazy iterator over stack trace annotations.
+    ///
+    /// This avoids allocation during error handling - the caller can collect
+    /// if and when needed. The iterator handles deduplication inline without
+    /// intermediate structures.
+    pub fn stack_trace_iter<'a>(
+        &'a self,
+        view: &'a MutatorHeapView,
+    ) -> impl Iterator<Item = Smid> + 'a {
+        let mut prev = Smid::default();
+        self.stack.iter().rev().filter_map(move |cont| {
+            let c = view.scoped(*cont);
+            let smid = match &*c {
                 Continuation::Branch { environment, .. }
-                | Continuation::Update { environment, .. } // maybe not...
-                    | Continuation::DeMeta { environment, .. } => {
-			let cont_env = view.scoped(*environment);
-			Some(cont_env.annotation())},
-                _ => None,
-		}
-            })
-            .filter(|smid| *smid != Smid::default())
-            .dedup()
-            .collect()
+                | Continuation::Update { environment, .. }
+                | Continuation::DeMeta { environment, .. } => {
+                    let cont_env = view.scoped(*environment);
+                    cont_env.annotation()
+                }
+                _ => return None,
+            };
+
+            if smid != Smid::default() && smid != prev {
+                prev = smid;
+                Some(smid)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Trace of annotations in execution stack
+    ///
+    /// Collects the lazy iterator into a pre-allocated Vec to minimise
+    /// reallocation during error handling.
+    pub fn stack_trace(&self, view: &MutatorHeapView) -> Vec<Smid> {
+        // Pre-allocate with a reasonable estimate: after dedup, trace
+        // depth is typically much smaller than stack size but we cap at
+        // 64 to avoid over-allocation for deep stacks.
+        let capacity = self.stack.len().min(64);
+        let mut trace = Vec::with_capacity(capacity);
+        trace.extend(self.stack_trace_iter(view));
+        trace
     }
 }
 
@@ -611,6 +661,16 @@ impl IntrinsicMachine for MachineState {
     fn env(&self, _view: MutatorHeapView) -> RefPtr<EnvFrame> {
         self.closure.env()
     }
+
+    /// Read-only access to the symbol pool
+    fn symbol_pool(&self) -> &SymbolPool {
+        &self.symbol_pool
+    }
+
+    /// Mutable access to the symbol pool for interning new symbols
+    fn symbol_pool_mut(&mut self) -> &mut SymbolPool {
+        &mut self.symbol_pool
+    }
 }
 
 /// MachineState contains all the garbage collection roots
@@ -619,22 +679,34 @@ impl GcScannable for MachineState {
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         if marker.mark(self.globals) {
-            grey.push(ScanPtr::from_non_null(scope, self.globals));
+            out.push(ScanPtr::from_non_null(scope, self.globals));
         }
 
-        grey.push(ScanPtr::new(scope, &self.closure));
+        out.push(ScanPtr::new(scope, &self.closure));
 
         for cont in &self.stack {
             if marker.mark(*cont) {
-                grey.push(ScanPtr::from_non_null(scope, *cont));
+                out.push(ScanPtr::from_non_null(scope, *cont));
             }
         }
+    }
 
-        grey
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        if let Some(new) = heap.forwarded_to(self.root_env) {
+            self.root_env = new;
+        }
+        if let Some(new) = heap.forwarded_to(self.globals) {
+            self.globals = new;
+        }
+        self.closure.scan_and_update(heap);
+        for cont in &mut self.stack {
+            if let Some(new) = heap.forwarded_to(*cont) {
+                *cont = new;
+            }
+        }
     }
 }
 
@@ -688,6 +760,11 @@ impl<'a> Machine<'a> {
         }
     }
 
+    /// Replace the symbol pool (used during initialisation)
+    pub fn set_symbol_pool(&mut self, pool: SymbolPool) {
+        self.state.symbol_pool = pool;
+    }
+
     /// Access the heap for allocation
     pub fn heap(&self) -> &Heap {
         &self.heap
@@ -718,7 +795,7 @@ impl<'a> Machine<'a> {
         &mut self,
     ) -> (
         &mut MachineState,
-        MutatorHeapView,
+        MutatorHeapView<'_>,
         &mut dyn Emitter,
         &mut Metrics,
         &MachineSettings,
@@ -735,7 +812,7 @@ impl<'a> Machine<'a> {
     }
 
     /// Get a navigator for resolving references
-    fn nav(&self) -> HeapNavigator {
+    fn nav(&self) -> HeapNavigator<'_> {
         self.state.nav(MutatorHeapView::new(&self.heap))
     }
 
@@ -806,10 +883,11 @@ impl<'a> Machine<'a> {
                 }
             }
 
-            if self.metrics.ticks() % gc_check_freq == 0 && self.heap().policy_requires_collection()
+            if self.metrics.ticks().is_multiple_of(gc_check_freq)
+                && self.heap().policy_requires_collection()
             {
                 collect::collect(
-                    &self.state,
+                    &mut self.state,
                     &mut self.heap,
                     &mut self.clock,
                     self.settings.dump_heap,
@@ -821,7 +899,7 @@ impl<'a> Machine<'a> {
         }
 
         collect::collect(
-            &self.state,
+            &mut self.state,
             &mut self.heap,
             &mut self.clock,
             self.settings.dump_heap,
@@ -966,6 +1044,7 @@ impl<'a> Machine<'a> {
 #[cfg(test)]
 pub mod tests {
 
+    use std::cell::RefCell;
     use std::rc::Rc;
 
     use crate::eval::machine::env::{EnvFrame, SynClosure};
@@ -974,6 +1053,7 @@ pub mod tests {
     use crate::eval::memory::alloc::ScopedAllocator;
     use crate::eval::memory::loader::load;
     use crate::eval::memory::mutator::{Mutator, MutatorHeapView};
+    use crate::eval::memory::symbol::SymbolPool;
     use crate::eval::memory::syntax::{Native, RefPtr};
     use crate::eval::stg::syntax::{ex::*, StgSyn};
     use crate::eval::{emit::DebugEmitter, stg::syntax::dsl::*};
@@ -1001,6 +1081,7 @@ pub mod tests {
 
     pub struct Load {
         syntax: Rc<StgSyn>,
+        pool: RefCell<SymbolPool>,
     }
 
     impl Mutator for Load {
@@ -1012,14 +1093,26 @@ pub mod tests {
             view: &MutatorHeapView,
             input: Self::Input,
         ) -> Result<Self::Output, crate::eval::error::ExecutionError> {
-            Ok(SynClosure::new(load(view, self.syntax.clone())?, input))
+            let mut pool = self.pool.borrow_mut();
+            Ok(SynClosure::new(
+                load(view, &mut pool, self.syntax.clone())?,
+                input,
+            ))
         }
     }
 
     fn machine(syn: Rc<StgSyn>) -> Machine<'static> {
         let mut m = Machine::new(Box::new(DebugEmitter::default()), true, None, false);
         let blank = m.mutate(Init, ()).unwrap();
-        let closure = m.mutate(Load { syntax: syn }, blank).unwrap();
+        let closure = m
+            .mutate(
+                Load {
+                    syntax: syn,
+                    pool: RefCell::new(SymbolPool::new()),
+                },
+                blank,
+            )
+            .unwrap();
         m.initialise(blank, blank, closure, vec![]).unwrap();
         m
     }

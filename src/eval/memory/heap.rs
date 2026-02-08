@@ -1,6 +1,31 @@
 //! The STG heap implementation
+//!
+//! # Safety Model
+//!
+//! This module implements a garbage-collected heap using interior mutability
+//! via `UnsafeCell`. The safety of the unsafe code relies on these invariants:
+//!
+//! ## Single-Threaded Access
+//! - `Heap` is not `Sync` - it cannot be shared across threads
+//! - All heap access occurs on a single thread during mutation or collection
+//! - The mutator and collector never run concurrently (stop-the-world GC)
+//!
+//! ## Ownership Hierarchy
+//! - `Heap` exclusively owns its `HeapState`, `EmergencyState`, and `GCMetrics`
+//! - These are wrapped in `UnsafeCell` for interior mutability
+//! - No external references to these internals can outlive the heap
+//!
+//! ## Lifetime Management
+//! - `MutatorScope` and `CollectorScope` traits bound pointer lifetimes
+//! - `ScopedPtr<'guard, T>` ensures heap pointers don't outlive their scope
+//! - GC only runs between scopes, never while references are held
+//!
+//! ## Memory Layout
+//! - Objects are allocated with an `AllocHeader` prefix
+//! - Header is always at `object_ptr - size_of::<AllocHeader>()`
+//! - Allocations are properly aligned for their types
 
-use std::collections::LinkedList;
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
@@ -42,6 +67,25 @@ pub enum CollectionStrategy {
     DefragmentationSweep,
 }
 
+impl CollectionStrategy {
+    /// Whether this strategy involves object evacuation
+    pub fn is_evacuating(&self) -> bool {
+        matches!(
+            self,
+            CollectionStrategy::SelectiveEvacuation(_) | CollectionStrategy::DefragmentationSweep
+        )
+    }
+
+    /// Return the candidate block indices for evacuation (empty if mark-in-place)
+    pub fn candidates(&self) -> Vec<usize> {
+        match self {
+            CollectionStrategy::SelectiveEvacuation(blocks) => blocks.clone(),
+            CollectionStrategy::DefragmentationSweep => Vec::new(), // TODO: all blocks
+            CollectionStrategy::MarkInPlace => Vec::new(),
+        }
+    }
+}
+
 /// Detailed fragmentation analysis for heap diagnostics and strategy decisions
 #[derive(Debug, Clone, Default)]
 pub struct FragmentationAnalysis {
@@ -72,6 +116,10 @@ pub struct HeapStats {
     pub used: usize,
     /// Number of blocks used and recycled
     pub recycled: usize,
+    /// Number of GC collections performed
+    pub collections_count: u64,
+    /// High-water mark of allocated blocks
+    pub peak_heap_blocks: usize,
 }
 
 /// Comprehensive GC performance metrics and telemetry
@@ -309,13 +357,23 @@ pub struct HeapState {
     /// For allocating medium objects
     overflow: Option<BumpBlock>,
     /// Recycled - part used but reclaimed
-    recycled: LinkedList<BumpBlock>,
+    recycled: VecDeque<BumpBlock>,
     /// Part used - not yet reclaimed
-    rest: LinkedList<BumpBlock>,
+    rest: VecDeque<BumpBlock>,
+    /// Blocks awaiting lazy sweep (populated after mark phase)
+    unswept: VecDeque<BumpBlock>,
     /// Large object blocks - each contains single object
     lobs: Vec<LargeObjectBlock>,
     /// Recycled large object blocks available for reuse
     recycled_lobs: Vec<LargeObjectBlock>,
+    /// Number of GC collections performed
+    collections_count: u64,
+    /// High-water mark of allocated blocks
+    peak_heap_blocks: usize,
+    /// Block currently used as evacuation target during collection
+    evacuation_target: Option<BumpBlock>,
+    /// Blocks filled during evacuation (integrated into rest after collection)
+    filled_evacuation_blocks: Vec<BumpBlock>,
 }
 
 impl Default for HeapState {
@@ -328,6 +386,10 @@ impl std::fmt::Debug for HeapState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for block in &self.rest {
             writeln!(f, "(XX) {block:?}")?;
+        }
+
+        for block in &self.unswept {
+            writeln!(f, "(Us) {block:?}")?;
         }
 
         for block in &self.recycled {
@@ -355,10 +417,15 @@ impl HeapState {
         HeapState {
             head: None,
             overflow: None,
-            recycled: LinkedList::default(),
-            rest: LinkedList::default(),
+            recycled: VecDeque::new(),
+            rest: VecDeque::new(),
+            unswept: VecDeque::new(),
             lobs: vec![],
             recycled_lobs: vec![],
+            collections_count: 0,
+            peak_heap_blocks: 0,
+            evacuation_target: None,
+            filled_evacuation_blocks: Vec::new(),
         }
     }
 
@@ -368,7 +435,7 @@ impl HeapState {
             self.head = Some(BumpBlock::new());
         }
 
-        self.head.as_mut().unwrap()
+        self.head.as_mut().expect("head block was just initialised")
     }
 
     /// Get overflow block, creating if necessary
@@ -377,28 +444,41 @@ impl HeapState {
             self.overflow = Some(BumpBlock::new());
         }
 
-        self.overflow.as_mut().unwrap()
+        self.overflow
+            .as_mut()
+            .expect("overflow block was just initialised")
     }
 
     pub fn replace_head(&mut self) -> &mut BumpBlock {
+        // Try recycled first, then lazy sweep, then allocate new
+        if self.recycled.is_empty() {
+            self.lazy_sweep_next();
+        }
         let replacement = self.recycled.pop_front().unwrap_or_default();
 
         self.head.replace(replacement).and_then(|old| {
             self.rest.push_back(old);
             None as Option<BumpBlock>
         });
-        self.head.as_mut().unwrap()
+        self.head.as_mut().expect("head block was just replaced")
     }
 
     /// Find and return the best recycled block for a given allocation size
     /// Uses intelligent targeting to minimize fragmentation and improve locality
     pub fn replace_head_targeted(&mut self, allocation_size: usize) -> &mut BumpBlock {
+        // Try lazy sweep if no recycled blocks available
+        if self.recycled.is_empty() {
+            self.lazy_sweep_next();
+        }
+
         let replacement = if self.recycled.is_empty() {
-            // No recycled blocks available, create new one
+            // Still no recycled blocks after lazy sweep, create new one
             BumpBlock::default()
         } else if allocation_size == 0 {
             // For zero-size allocations, just take the first available block
-            self.recycled.pop_front().unwrap()
+            self.recycled
+                .pop_front()
+                .expect("recycled list is non-empty")
         } else {
             // Find the best block for this allocation size
             self.find_best_recycled_block(allocation_size)
@@ -409,7 +489,7 @@ impl HeapState {
             self.rest.push_back(old);
             None as Option<BumpBlock>
         });
-        self.head.as_mut().unwrap()
+        self.head.as_mut().expect("head block was just replaced")
     }
 
     /// Find the best recycled block for the given allocation size
@@ -434,22 +514,8 @@ impl HeapState {
         // Remove and return the best block if one was found with a good score
         if let Some(index) = best_index {
             if best_score > 0.0 {
-                // Remove the block at the found index
-                let mut remaining = LinkedList::new();
-                let mut target_block: Option<BumpBlock> = None;
-                let mut current_index = 0;
-
-                while let Some(block) = self.recycled.pop_front() {
-                    if current_index == index {
-                        target_block = Some(block);
-                    } else {
-                        remaining.push_back(block);
-                    }
-                    current_index += 1;
-                }
-
-                self.recycled = remaining;
-                return target_block;
+                // VecDeque::remove is O(min(i, n-i)) - much better than LinkedList reconstruction
+                return self.recycled.remove(index);
             }
         }
 
@@ -462,7 +528,9 @@ impl HeapState {
             self.rest.push_back(old);
             None as Option<BumpBlock>
         });
-        self.overflow.as_mut().unwrap()
+        self.overflow
+            .as_mut()
+            .expect("overflow block was just replaced")
     }
 
     /// Create and return a new large object block able to store data
@@ -475,7 +543,9 @@ impl HeapState {
             // No suitable recycled block, create a new one
             self.lobs.push(LargeObjectBlock::new(size));
         }
-        self.lobs.last_mut().unwrap()
+        self.lobs
+            .last_mut()
+            .expect("lob was just pushed to non-empty list")
     }
 
     /// Find and remove a suitable recycled large object block for the given size
@@ -515,11 +585,76 @@ impl HeapState {
         // If we're at the limit, just drop the block (let it be deallocated)
     }
 
-    /// Look for reclaimable blocks and move to recycled list
-    pub fn sweep(&mut self) {
-        let mut unusable: LinkedList<BumpBlock> = LinkedList::default();
+    /// Acquire a fresh evacuation target block for the collector.
+    ///
+    /// Returns a mutable reference to the target block, or None if no
+    /// block is available (heap limit reached or allocation failed).
+    pub fn acquire_evacuation_target(&mut self) -> Option<&mut BumpBlock> {
+        if self.evacuation_target.is_none() {
+            self.evacuation_target = Some(BumpBlock::new());
+        }
+        self.evacuation_target.as_mut()
+    }
 
+    /// Bump-allocate into the current evacuation target block.
+    ///
+    /// If the current target is full, moves it to filled_evacuation_blocks
+    /// and acquires a fresh one. Returns None if allocation is impossible
+    /// (e.g. heap limit would be exceeded).
+    pub fn bump_allocate_in_target(&mut self, size: usize) -> Option<NonNull<u8>> {
+        // Try the current target first
+        if let Some(ref mut target) = self.evacuation_target {
+            if let Some(ptr) = target.bump(size) {
+                // SAFETY: bump() returns a valid pointer into the block's
+                // owned memory, which is non-null by construction.
+                return Some(unsafe { NonNull::new_unchecked(ptr as *mut u8) });
+            }
+        }
+
+        // Current target is full — retire it and try a new one
+        if let Some(full_target) = self.evacuation_target.take() {
+            self.filled_evacuation_blocks.push(full_target);
+        }
+
+        // Acquire a new target and retry
+        self.evacuation_target = Some(BumpBlock::new());
+        let target = self.evacuation_target.as_mut()?;
+        let ptr = target.bump(size)?;
+        // SAFETY: As above — bump() returns valid, non-null block memory.
+        Some(unsafe { NonNull::new_unchecked(ptr as *mut u8) })
+    }
+
+    /// Finalise evacuation: integrate all evacuation blocks into rest.
+    ///
+    /// Evacuation target blocks are freshly allocated and fully live,
+    /// so they bypass the lazy sweep queue.
+    pub fn finalise_evacuation(&mut self) {
+        if let Some(target) = self.evacuation_target.take() {
+            self.rest.push_back(target);
+        }
+        for block in self.filled_evacuation_blocks.drain(..) {
+            self.rest.push_back(block);
+        }
+    }
+
+    /// Look for reclaimable blocks and move to recycled list (eager sweep)
+    ///
+    /// This sweeps all blocks in both `rest` and `unswept`. Used for
+    /// emergency collections and as a fallback.
+    pub fn sweep(&mut self) {
+        let mut unusable: VecDeque<BumpBlock> = VecDeque::new();
+
+        // Sweep blocks in rest
         while let Some(mut block) = self.rest.pop_front() {
+            if block.recycle() {
+                self.recycled.push_back(block);
+            } else {
+                unusable.push_back(block);
+            }
+        }
+
+        // Also sweep any deferred (unswept) blocks
+        while let Some(mut block) = self.unswept.pop_front() {
             if block.recycle() {
                 self.recycled.push_back(block);
             } else {
@@ -530,16 +665,111 @@ impl HeapState {
         self.rest.append(&mut unusable);
     }
 
+    /// Defer sweeping: move all blocks from `rest` to `unswept` for
+    /// lazy sweep at allocation time. Called after mark phase.
+    pub fn defer_sweep(&mut self) {
+        self.unswept.append(&mut self.rest);
+    }
+
+    /// Lazily sweep blocks from `unswept` until one is recycled or
+    /// all have been tried. Returns true if a block was recycled.
+    fn lazy_sweep_next(&mut self) -> bool {
+        while let Some(mut block) = self.unswept.pop_front() {
+            if block.recycle() {
+                self.recycled.push_back(block);
+                return true;
+            }
+            // Block is fully occupied — move to rest (not reclaimable)
+            self.rest.push_back(block);
+        }
+        false
+    }
+
+    /// Find the block containing `ptr` by its base address and mark
+    /// the line(s) for a small object (single line + implicit next).
+    pub fn mark_line_in_block<T>(&mut self, ptr: NonNull<T>) {
+        let base = bump::block_base_of(ptr);
+
+        if let Some(head) = &mut self.head {
+            if head.base_address() == base {
+                head.mark_line(ptr);
+                return;
+            }
+        }
+
+        for block in &mut self.rest {
+            if block.base_address() == base {
+                block.mark_line(ptr);
+                return;
+            }
+        }
+
+        for block in &mut self.unswept {
+            if block.base_address() == base {
+                block.mark_line(ptr);
+                return;
+            }
+        }
+    }
+
+    /// Find the block containing `ptr` by its base address and mark
+    /// the region spanning `bytes` lines.
+    pub fn mark_region_in_block(&mut self, ptr: NonNull<u8>, bytes: usize) {
+        let base = bump::block_base_of(ptr);
+
+        if let Some(head) = &mut self.head {
+            if head.base_address() == base {
+                head.mark_region(ptr, bytes);
+                return;
+            }
+        }
+
+        for block in &mut self.rest {
+            if block.base_address() == base {
+                block.mark_region(ptr, bytes);
+                return;
+            }
+        }
+
+        for block in &mut self.unswept {
+            if block.base_address() == base {
+                block.mark_region(ptr, bytes);
+                return;
+            }
+        }
+    }
+
     /// Statistics
     pub fn stats(&self) -> HeapStats {
         HeapStats {
             blocks_allocated: self.rest.len()
+                + self.unswept.len()
                 + self.recycled.len()
                 + self.head.iter().count()
                 + self.overflow.iter().count(),
             lobs_allocated: self.lobs.len(),
-            used: self.rest.len(),
+            used: self.rest.len() + self.unswept.len(),
             recycled: self.recycled.len(),
+            collections_count: self.collections_count,
+            peak_heap_blocks: self.peak_heap_blocks,
+        }
+    }
+
+    /// Record that a collection occurred and update peak blocks
+    pub fn record_collection(&mut self) {
+        self.collections_count += 1;
+        self.update_peak_blocks();
+    }
+
+    /// Update peak blocks tracking (called during allocation)
+    pub fn update_peak_blocks(&mut self) {
+        let current_blocks = self.rest.len()
+            + self.unswept.len()
+            + self.recycled.len()
+            + self.head.iter().count()
+            + self.overflow.iter().count();
+        if current_blocks > self.peak_heap_blocks {
+            self.peak_heap_blocks = current_blocks;
         }
     }
 }
@@ -1242,6 +1472,8 @@ impl MutatorScope for Heap {}
 
 impl Debug for Heap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // SAFETY: Single-threaded access - Debug is only called for diagnostics
+        // when no mutation is occurring. Heap owns the state exclusively.
         unsafe { (*self.state.get()).fmt(f) }
     }
 }
@@ -1276,7 +1508,14 @@ impl Heap {
     }
 
     pub fn stats(&self) -> HeapStats {
+        // SAFETY: Read-only access to heap state. Single-threaded, Heap owns state.
         unsafe { (*self.state.get()).stats() }
+    }
+
+    /// Record that a GC collection occurred, incrementing count and updating peak blocks
+    pub fn record_collection(&self) {
+        // SAFETY: Single-threaded mutation. Called from collect() which has &mut Heap.
+        unsafe { (*self.state.get()).record_collection() }
     }
 
     /// Get the current mark state for this heap
@@ -1287,6 +1526,27 @@ impl Heap {
     /// Flip the mark state for this heap (called after each collection)
     pub fn flip_mark_state(&self) {
         self.mark_state.fetch_xor(true, SeqCst);
+    }
+
+    /// Bump-allocate into the evacuation target block during collection.
+    ///
+    /// Delegates to HeapState::bump_allocate_in_target. Called by the
+    /// collector during evacuating collection.
+    pub fn bump_allocate_in_target(&self, size: usize) -> Option<NonNull<u8>> {
+        // SAFETY: Mutable access to heap state during stop-the-world
+        // collection. No concurrent mutation is possible.
+        let heap_state = unsafe { &mut *self.state.get() };
+        heap_state.bump_allocate_in_target(size)
+    }
+
+    /// Finalise evacuation: move evacuation blocks into rest.
+    ///
+    /// Called after the update phase of an evacuating collection.
+    pub fn finalise_evacuation(&self) {
+        // SAFETY: Mutable access during stop-the-world collection.
+        // No concurrent mutation is possible.
+        let heap_state = unsafe { &mut *self.state.get() };
+        heap_state.finalise_evacuation();
     }
 
     pub fn policy_requires_collection(&self) -> bool {
@@ -1301,6 +1561,8 @@ impl Heap {
 
     /// Analyze fragmentation across all blocks and determine optimal collection strategy
     pub fn analyze_collection_strategy(&self) -> CollectionStrategy {
+        // SAFETY: Read-only borrow of heap state for analysis.
+        // Single-threaded access, no mutation occurs during analysis.
         let heap_state = unsafe { &*self.state.get() };
         let mut fragmented_blocks = Vec::new();
         let mut total_blocks = 0;
@@ -1385,6 +1647,7 @@ impl Heap {
 
     /// Get detailed fragmentation analysis for diagnostics and metrics
     pub fn analyze_fragmentation(&self) -> FragmentationAnalysis {
+        // SAFETY: Read-only borrow for diagnostics. Single-threaded, no concurrent mutation.
         let heap_state = unsafe { &*self.state.get() };
         let mut analysis = FragmentationAnalysis::default();
 
@@ -1423,6 +1686,7 @@ impl Heap {
     }
     /// Get a snapshot of current GC performance metrics (calculates derived metrics on-demand)
     pub fn gc_metrics(&self) -> GCMetrics {
+        // SAFETY: Read-only clone of metrics. Single-threaded, Heap owns gc_metrics.
         let mut metrics = unsafe { (*self.gc_metrics.get()).clone() };
 
         // Calculate derived metrics on-demand to avoid hot path overhead
@@ -1451,6 +1715,9 @@ impl Heap {
         // Only update counters in debug builds or with gc-telemetry feature
         #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {
+            // SAFETY: Mutable access to metrics during allocation.
+            // Single-threaded execution - only one allocation can occur at a time.
+            // No other code accesses gc_metrics during the allocation hot path.
             let metrics = unsafe { &mut *self.gc_metrics.get() };
 
             // Update basic counters
@@ -1484,6 +1751,8 @@ impl Heap {
         // Only update metrics in debug builds
         #[cfg(debug_assertions)]
         {
+            // SAFETY: Mutable access during GC pause. Single-threaded, stop-the-world
+            // collection ensures no concurrent access to metrics.
             let metrics = unsafe { &mut *self.gc_metrics.get() };
             let now = Instant::now();
 
@@ -1539,6 +1808,8 @@ impl Heap {
         // Only update metrics in debug builds or with gc-telemetry feature
         #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {
+            // SAFETY: Mutable access during emergency collection.
+            // Single-threaded, allocation is blocked during emergency GC.
             let metrics = unsafe { &mut *self.gc_metrics.get() };
 
             // Update emergency collection counters
@@ -1576,6 +1847,8 @@ impl Heap {
     /// Calculate utilisation and fragmentation metrics on-demand
     fn calculate_utilisation_metrics(&self, metrics: &mut GCMetrics) {
         let stats = self.stats();
+        // SAFETY: Read-only borrow for metrics calculation.
+        // Single-threaded, called only during metrics snapshot.
         let heap_state = unsafe { &*self.state.get() };
 
         // Calculate current heap utilisation
@@ -1689,11 +1962,18 @@ impl Allocator for Heap {
 
         let space = self.find_space(alloc_size)?;
 
-        let header = AllocHeader::new_with_mark_state(0, self.mark_state());
+        let header = AllocHeader::new_with_mark_state(object_size as u32, self.mark_state());
 
         // Update allocation metrics (lightweight - just counters)
         self.update_allocation_counters_fast(alloc_size, size_class);
 
+        // SAFETY: Memory layout is correct because:
+        // - `space` points to freshly allocated memory from bump/LOB allocator
+        // - Layout is: [AllocHeader][T] with proper alignment
+        // - `header_size` is size_of::<AllocHeader>(), ensuring correct offset
+        // - `object_space` is correctly offset from header
+        // - The pointer is non-null (find_space returns valid memory or errors)
+        // - Memory is exclusively owned by this allocation
         unsafe {
             write(space as *mut AllocHeader, header);
             let object_space = space.add(header_size);
@@ -1722,6 +2002,13 @@ impl Allocator for Heap {
         // Update allocation metrics (lightweight - just counters)
         self.update_allocation_counters_fast(alloc_size, size_class);
 
+        // SAFETY: Memory layout and access is correct because:
+        // - `space` points to freshly allocated memory from bump/LOB allocator
+        // - Layout is: [AllocHeader][u8; size_bytes] with proper alignment
+        // - `array_space` is correctly offset by header_size
+        // - `size_bytes` was validated to fit in u32 (checked at function start)
+        // - The slice covers exactly the requested bytes
+        // - Memory is exclusively owned by this allocation
         unsafe {
             write(space as *mut AllocHeader, header);
             let array_space = space.add(header_size);
@@ -1735,6 +2022,11 @@ impl Allocator for Heap {
 
     /// Get header from object pointer
     fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader> {
+        // SAFETY: Pointer arithmetic is valid because:
+        // - All objects are allocated with an AllocHeader prefix
+        // - offset(-1) moves back exactly size_of::<AllocHeader>() bytes
+        // - The pointer came from alloc() which guarantees this layout
+        // - NonNull input guarantees non-null result
         let header_ptr =
             unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) };
         debug_assert!(header_ptr.as_ptr() as usize > 0);
@@ -1743,6 +2035,10 @@ impl Allocator for Heap {
 
     /// Get object from header pointer
     fn get_object(&self, header: NonNull<AllocHeader>) -> NonNull<()> {
+        // SAFETY: Pointer arithmetic is valid because:
+        // - Headers are always followed by their object data
+        // - offset(1) moves forward exactly size_of::<AllocHeader>() bytes
+        // - The header came from an allocation with this layout
         unsafe { NonNull::new_unchecked(header.as_ptr().offset(1)).cast::<()>() }
     }
 }
@@ -1756,6 +2052,8 @@ impl Heap {
         }
 
         // Check if we can attempt emergency collection
+        // SAFETY: Mutable access to emergency state during allocation failure.
+        // Single-threaded, no concurrent access during allocation path.
         let emergency_state = unsafe { &mut *self.emergency_state.get() };
         if emergency_state.can_attempt_emergency_collection() {
             // Attempt emergency collection
@@ -1776,6 +2074,9 @@ impl Heap {
 
     /// Try to allocate without emergency collection
     fn try_allocate(&self, size_bytes: usize) -> Result<*const u8, HeapError> {
+        // SAFETY: Mutable access to heap state for allocation.
+        // Single-threaded, only one allocation can occur at a time.
+        // The borrow does not escape this function.
         let heap_state = unsafe { &mut *self.state.get() };
         let head = heap_state.head();
 
@@ -1807,6 +2108,8 @@ impl Heap {
         let start_time = Instant::now();
 
         // Set emergency state to prevent reentrancy
+        // SAFETY: Mutable access during emergency collection.
+        // Single-threaded, reentrancy prevented by emergency_state itself.
         let emergency_state = unsafe { &mut *self.emergency_state.get() };
         emergency_state.start_emergency_collection();
 
@@ -1839,6 +2142,9 @@ impl Heap {
     /// Perform conservative emergency sweep without full marking
     /// This is safe because it only reclaims blocks that can be proven unused
     fn perform_emergency_sweep(&self, _requested_size: usize) -> bool {
+        // SAFETY: Mutable access to heap state during emergency sweep.
+        // Single-threaded, allocation is blocked during emergency collection.
+        // The emergency_state reentrancy guard prevents concurrent sweeps.
         let heap_state = unsafe { &mut *self.state.get() };
         let stats_before = heap_state.stats();
 
@@ -1920,6 +2226,8 @@ impl Heap {
     /// Create heap context for error reporting
     fn create_heap_context(&self, requested_size: usize, emergency_attempted: bool) -> HeapContext {
         let stats = self.stats();
+        // SAFETY: Read-only borrow for error context construction.
+        // Called during error handling, no concurrent mutation.
         let heap_state = unsafe { &*self.state.get() };
         let size_class = SizeClass::for_size(requested_size);
 
@@ -1975,6 +2283,8 @@ impl Heap {
 
     /// Reset all region marks ready for a fresh GC
     pub fn reset_region_marks(&self) {
+        // SAFETY: Mutable access during GC mark phase.
+        // Called during stop-the-world collection, no concurrent mutation.
         let heap_state = unsafe { &mut *self.state.get() };
 
         if let Some(head) = &mut heap_state.head {
@@ -1984,13 +2294,53 @@ impl Heap {
         for block in &mut heap_state.rest {
             block.reset_region_marks();
         }
+
+        // Also reset unswept blocks (may still contain live objects
+        // from a previous collection that haven't been lazily swept yet)
+        for block in &mut heap_state.unswept {
+            block.reset_region_marks();
+        }
     }
 
-    /// Check wither an object is marked
+    /// Get a raw mutable pointer to an object's AllocHeader.
+    ///
+    /// The caller must ensure exclusive access (e.g. during stop-the-world
+    /// collection).
+    pub fn header_ptr_mut<T>(&self, obj: NonNull<T>) -> *mut AllocHeader {
+        // SAFETY: Pointer arithmetic is valid because all objects are
+        // allocated with an AllocHeader prefix. offset(-1) moves back
+        // exactly size_of::<AllocHeader>() bytes.
+        unsafe { obj.cast::<AllocHeader>().as_ptr().offset(-1) }
+    }
+
+    /// Check whether an object resides in one of the candidate blocks
+    /// marked for evacuation.
+    pub fn is_in_candidate_block<T>(&self, ptr: NonNull<T>, candidates: &[usize]) -> bool {
+        let base = bump::block_base_of(ptr);
+        // SAFETY: Read-only access to heap state during collection.
+        let heap_state = unsafe { &*self.state.get() };
+
+        for &idx in candidates {
+            let block_base = match idx {
+                0 => heap_state.head.as_ref().map(|b| b.base_address()),
+                1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
+                n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
+            };
+            if block_base == Some(base) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check whether an object is marked
     pub fn is_marked<T>(&self, ptr: NonNull<T>) -> bool {
         let header: NonNull<AllocHeader> = self.get_header(ptr);
         debug_assert!(header.as_ptr() as usize > 0);
         let current_mark_state = self.mark_state();
+        // SAFETY: Read-only access to header's mark bit.
+        // The pointer came from heap allocation (get_header validates layout).
+        // Header is valid for the lifetime of the object.
         unsafe { (*header.as_ptr()).is_marked_with_state(current_mark_state) }
     }
 
@@ -1999,6 +2349,9 @@ impl Heap {
         debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
         let header: NonNull<AllocHeader> = self.get_header(ptr);
         let current_mark_state = self.mark_state();
+        // SAFETY: Mutable access to header's mark bit during GC.
+        // The pointer came from heap allocation (validated by debug_assert).
+        // Single-threaded GC ensures no concurrent access to this header.
         unsafe {
             (*header.as_ptr()).mark_with_state(current_mark_state);
         }
@@ -2009,51 +2362,40 @@ impl Heap {
         debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
         let header = self.get_header(ptr);
         let current_mark_state = self.mark_state();
+        // SAFETY: Mutable access to header's mark bit during GC.
+        // Same invariants as mark_object.
         unsafe { (*header.as_ptr()).unmark_with_state(current_mark_state) }
     }
 
-    /// Mark lines for and object (array) that uses untyped backing
+    /// Mark lines for an object (array) that uses untyped backing
     /// store of bytes.
     ///
-    /// We need to consult the header for size.
+    /// Looks up the block by base address for O(1) dispatch.
     pub fn mark_lines_for_bytes(&mut self, ptr: NonNull<u8>) {
+        // SAFETY: Mutable access to header during GC mark phase.
+        // The pointer came from heap allocation with a valid header prefix.
+        // Single-threaded GC, stop-the-world collection.
         let header = unsafe { self.get_header(ptr).as_mut() };
+        // SAFETY: Mutable access to heap state during GC mark phase.
         let heap_state = unsafe { &mut *self.state.get() };
 
         let bytes = header.length() as usize;
-        // TODO: fix
-        if let Some(head) = &mut heap_state.head {
-            head.mark_region(ptr, bytes);
-        }
-
-        for block in &mut heap_state.rest {
-            block.mark_region(ptr, bytes);
-        }
+        heap_state.mark_region_in_block(ptr, bytes);
     }
 
-    /// Mark the line in the appropriate block map
+    /// Mark the line in the appropriate block map.
+    ///
+    /// Looks up the block by base address for O(1) dispatch.
     pub fn mark_line<T>(&mut self, ptr: NonNull<T>) {
-        // depending on size of object + header, mark line or lines
+        // SAFETY: Mutable access to heap state during GC mark phase.
+        // Single-threaded, stop-the-world collection ensures exclusive access.
         let heap_state = unsafe { &mut *self.state.get() };
 
         let size = size_of::<T>();
-        // TODO: fix this - go directly to the right block!
         if SizeClass::for_size(size) == SizeClass::Medium {
-            if let Some(head) = &mut heap_state.head {
-                head.mark_region(ptr.cast(), size);
-            }
-
-            for block in &mut heap_state.rest {
-                block.mark_region(ptr.cast(), size);
-            }
+            heap_state.mark_region_in_block(ptr.cast(), size);
         } else {
-            if let Some(head) = &mut heap_state.head {
-                head.mark_line(ptr);
-            }
-
-            for block in &mut heap_state.rest {
-                block.mark_line(ptr);
-            }
+            heap_state.mark_line_in_block(ptr);
         }
     }
 
@@ -2071,6 +2413,41 @@ impl Heap {
 
         // Record collection metrics for sweep operation (collection is less frequent)
         self.update_collection_metrics(sweep_time, CollectionType::Partial);
+    }
+
+    /// Defer sweeping to allocation time (lazy sweep).
+    ///
+    /// Moves blocks from `rest` to `unswept` so they can be lazily
+    /// swept one at a time when the allocator needs a recycled block.
+    pub fn defer_sweep(&mut self) {
+        self.state.get_mut().defer_sweep();
+    }
+
+    /// Return the number of rest blocks (for test diagnostics)
+    #[cfg(test)]
+    pub fn rest_block_count(&self) -> usize {
+        let heap_state = unsafe { &*self.state.get() };
+        heap_state.rest.len()
+    }
+
+    /// Return the number of unswept blocks (for test diagnostics)
+    #[cfg(test)]
+    pub fn unswept_block_count(&self) -> usize {
+        let heap_state = unsafe { &*self.state.get() };
+        heap_state.unswept.len()
+    }
+
+    /// Eagerly sweep all remaining unswept blocks.
+    ///
+    /// Useful for tests and diagnostics that need deterministic recycled
+    /// counts immediately after collection.
+    #[cfg(test)]
+    pub fn flush_unswept(&self) {
+        // SAFETY: Single-threaded access during test.
+        let heap_state = unsafe { &mut *self.state.get() };
+        while !heap_state.unswept.is_empty() {
+            heap_state.lazy_sweep_next();
+        }
     }
 }
 
@@ -2118,6 +2495,7 @@ pub mod tests {
     pub fn test_large_object_block() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
+        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
 
         let ids = repeat_with(|| -> LambdaForm {
             LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
@@ -2128,8 +2506,11 @@ pub mod tests {
 
         view.let_(
             idarray,
-            view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
-                .unwrap(),
+            view.app(
+                Ref::L(0),
+                view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
+            )
+            .unwrap(),
         )
         .unwrap();
 

@@ -9,7 +9,13 @@ use serde_json::Number;
 use crate::eval::{
     error::ExecutionError,
     machine::{env::SynClosure, env_builder::EnvBuilder, intrinsic::*},
-    memory::{alloc::ScopedAllocator, array::Array, mutator::MutatorHeapView, syntax::StgBuilder},
+    memory::{
+        alloc::{ScopedAllocator, ScopedPtr},
+        array::Array,
+        mutator::MutatorHeapView,
+        set::HeapSet,
+        syntax::StgBuilder,
+    },
     stg::tags::DataConstructor,
 };
 use crate::{common::sourcemap::Smid, eval::memory::syntax::*};
@@ -29,7 +35,6 @@ pub fn num_arg(
 }
 
 /// Helper for intrinsics to access a str arg
-/// TODO: use &str
 pub fn str_arg(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -44,15 +49,14 @@ pub fn str_arg(
 }
 
 /// Helper for intrinsics to access a sym arg
-/// TODO: use &str
 pub fn sym_arg(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<String, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
-    if let Native::Sym(s) = native {
-        Ok((*view.scoped(s)).as_str().to_string())
+    if let Native::Sym(id) = native {
+        Ok(machine.symbol_pool().resolve(id).to_string())
     } else {
         Err(ExecutionError::NotEvaluatedString(Smid::default()))
     }
@@ -218,11 +222,9 @@ pub fn machine_return_sym(
     view: MutatorHeapView,
     s: String,
 ) -> Result<(), ExecutionError> {
+    let evaluand = view.sym_ref(machine.symbol_pool_mut(), s)?;
     machine.set_closure(SynClosure::new(
-        view.alloc(HeapSyn::Atom {
-            evaluand: view.sym_ref(s)?,
-        })?
-        .as_ptr(),
+        view.alloc(HeapSyn::Atom { evaluand })?.as_ptr(),
         machine.root_env(),
     ))
 }
@@ -236,6 +238,118 @@ pub fn machine_return_zdt(
     machine.set_closure(SynClosure::new(
         view.alloc(HeapSyn::Atom {
             evaluand: Ref::V(Native::Zdt(zdt)),
+        })?
+        .as_ptr(),
+        machine.root_env(),
+    ))
+}
+
+/// Resolve a native value from a Ref, looking through boxed constructors
+/// if necessary. This handles both raw `Atom(Ref::V(native))` chains and
+/// boxed values like `Cons { tag: BoxedNumber, args: [Ref::V(native)] }`.
+pub fn resolve_native_unboxing(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<Native, ExecutionError> {
+    // First try the standard resolve path
+    let nav = machine.nav(view);
+    if let Ok(native) = nav.resolve_native(arg) {
+        return Ok(native);
+    }
+
+    // If that failed, the value may be a boxed constructor — resolve
+    // the closure and check for a Cons with a box tag.
+    let closure = nav.resolve(arg)?;
+    let code = view.scoped(closure.code());
+    match &*code {
+        HeapSyn::Cons { tag, args } => {
+            let dc: Result<DataConstructor, _> = (*tag).try_into();
+            match dc {
+                Ok(DataConstructor::BoxedNumber)
+                | Ok(DataConstructor::BoxedString)
+                | Ok(DataConstructor::BoxedSymbol)
+                | Ok(DataConstructor::BoxedZdt) => {
+                    let inner_ref = args
+                        .get(0)
+                        .ok_or_else(|| ExecutionError::Panic("empty boxed value".to_string()))?;
+                    let native = closure.navigate_local_native(&view, inner_ref);
+                    Ok(native)
+                }
+                _ => Err(ExecutionError::NotValue(
+                    Smid::default(),
+                    "non-boxed constructor".to_string(),
+                )),
+            }
+        }
+        _ => Err(ExecutionError::NotValue(
+            Smid::default(),
+            "expected native value".to_string(),
+        )),
+    }
+}
+
+/// Convert a Native value to a set Primitive
+pub fn native_to_set_primitive(
+    view: MutatorHeapView,
+    native: &Native,
+) -> Result<crate::eval::memory::set::Primitive, ExecutionError> {
+    use crate::eval::memory::set::Primitive as SetPrim;
+    match native {
+        Native::Num(n) => Ok(SetPrim::from_number(n)),
+        Native::Str(s) => Ok(SetPrim::Str(view.scoped(*s).as_str().to_string())),
+        Native::Sym(id) => Ok(SetPrim::Sym(*id)),
+        _ => Err(ExecutionError::Panic(
+            "only numbers, strings, and symbols can be set elements".to_string(),
+        )),
+    }
+}
+
+/// Convert a set Primitive back to a Native value
+pub fn set_primitive_to_native(
+    _machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    prim: &crate::eval::memory::set::Primitive,
+) -> Result<Native, ExecutionError> {
+    use crate::eval::memory::set::Primitive as SetPrim;
+    match prim {
+        SetPrim::Num(n) => {
+            let num = serde_json::Number::from_f64(n.into_inner())
+                .unwrap_or_else(|| serde_json::Number::from(0));
+            Ok(Native::Num(num))
+        }
+        SetPrim::Str(s) => {
+            let ptr = view.str(s.as_str())?.as_ptr();
+            Ok(Native::Str(ptr))
+        }
+        SetPrim::Sym(id) => Ok(Native::Sym(*id)),
+    }
+}
+
+/// Helper for intrinsics to access a set arg
+pub fn set_arg<'guard>(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'guard>,
+    arg: &Ref,
+) -> Result<ScopedPtr<'guard, HeapSet>, ExecutionError> {
+    let native = machine.nav(view).resolve_native(arg)?;
+    if let Native::Set(ptr) = native {
+        Ok(view.scoped(ptr))
+    } else {
+        Err(ExecutionError::Panic("expected set argument".to_string()))
+    }
+}
+
+/// Return a set from intrinsic
+pub fn machine_return_set(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    set: HeapSet,
+) -> Result<(), ExecutionError> {
+    let ptr = view.alloc(set)?.as_ptr();
+    machine.set_closure(SynClosure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: Ref::V(Native::Set(ptr)),
         })?
         .as_ptr(),
         machine.root_env(),
@@ -256,6 +370,52 @@ pub fn machine_return_bool(
         },
         machine.root_env(),
     ))
+}
+
+/// Return a string list from an iterator, streaming strings directly
+/// to the heap without an intermediate `Vec<String>`.
+///
+/// Each string from the iterator is allocated on the heap immediately,
+/// producing a small `Ref` pointer. The cons list is then built in
+/// reverse from these refs, the same as `machine_return_str_list`.
+pub fn machine_return_str_iter(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    iter: impl Iterator<Item = String>,
+) -> Result<(), ExecutionError> {
+    // Allocate each string on the heap as it arrives from the iterator,
+    // collecting only the small Ref pointers (not full Strings).
+    let refs: Vec<Ref> = iter
+        .map(|s| view.str_ref(s))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Build the cons list in reverse from the heap refs
+    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for str_ref in refs.into_iter().rev() {
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::BoxedString.tag(),
+                Array::from_slice(&view, &[str_ref]),
+            )?
+            .as_ptr(),
+        ));
+        let len = bindings.len();
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+    let list_index = bindings.len() - 1;
+    let syn = view
+        .letrec(
+            Array::from_slice(&view, &bindings),
+            view.atom(Ref::L(list_index))?,
+        )?
+        .as_ptr();
+    machine.set_closure(SynClosure::new(syn, machine.root_env()))
 }
 
 /// Return a string list from intrinsic
@@ -347,7 +507,10 @@ pub fn machine_return_block_pair_closure_list(
         pairs.push(SynClosure::new(
             view.data(
                 DataConstructor::BlockPair.tag(),
-                Array::from_slice(&view, &[view.sym_ref(k)?, Ref::L(i)]),
+                Array::from_slice(
+                    &view,
+                    &[view.sym_ref(machine.symbol_pool_mut(), k)?, Ref::L(i)],
+                ),
             )?
             .as_ptr(),
             value_frame,

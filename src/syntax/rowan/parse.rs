@@ -145,17 +145,46 @@ impl<'text> Parser<'text> {
     /// Try to parse literal, pushing token back into tokens on failure
     fn try_parse_literal(&mut self) -> bool {
         if let Some((k, _text)) = self.next() {
-            if k.is_literal_terminal() || k == STRING_PATTERN_START {
-                if k == STRING_PATTERN_START {
-                    // This is a string pattern, parse it specially
-                    self.parse_string_pattern();
-                    true
-                } else {
-                    // Regular literal
-                    self.sink().start_node(LITERAL);
-                    self.sink().token(k);
-                    self.sink().finish_node();
-                    true
+            if k.is_literal_terminal()
+                || k == STRING_PATTERN_START
+                || k == C_STRING_PATTERN_START
+                || k == RAW_STRING_PATTERN_START
+            {
+                match k {
+                    STRING_PATTERN_START => {
+                        // This is a string pattern, parse it specially
+                        self.parse_string_pattern(
+                            STRING_PATTERN,
+                            STRING_PATTERN_START,
+                            STRING_PATTERN_END,
+                        );
+                        true
+                    }
+                    C_STRING_PATTERN_START => {
+                        // This is a c-string pattern, parse it specially
+                        self.parse_string_pattern(
+                            C_STRING_PATTERN,
+                            C_STRING_PATTERN_START,
+                            C_STRING_PATTERN_END,
+                        );
+                        true
+                    }
+                    RAW_STRING_PATTERN_START => {
+                        // This is a raw string pattern, parse it specially
+                        self.parse_string_pattern(
+                            RAW_STRING_PATTERN,
+                            RAW_STRING_PATTERN_START,
+                            RAW_STRING_PATTERN_END,
+                        );
+                        true
+                    }
+                    _ => {
+                        // Regular literal
+                        self.sink().start_node(LITERAL);
+                        self.sink().token(k);
+                        self.sink().finish_node();
+                        true
+                    }
                 }
             } else {
                 self.push_back();
@@ -448,18 +477,27 @@ impl<'text> Parser<'text> {
     }
 
     /// Parse a string pattern with interpolation
-    fn parse_string_pattern(&mut self) {
-        self.sink().start_node(STRING_PATTERN);
-        self.sink().token(STRING_PATTERN_START); // consume opening quote
+    ///
+    /// The pattern_kind, start_kind, and end_kind parameters allow this method
+    /// to work for plain strings, c-strings, and r-strings.
+    fn parse_string_pattern(
+        &mut self,
+        pattern_kind: SyntaxKind,
+        start_kind: SyntaxKind,
+        end_kind: SyntaxKind,
+    ) {
+        self.sink().start_node(pattern_kind);
+        self.sink().token(start_kind); // consume opening quote
 
-        // Process tokens until we reach STRING_PATTERN_END
+        // Process tokens until we reach the end kind
         while let Some((kind, _text)) = self.peek() {
+            if kind == end_kind {
+                self.sink().token(end_kind);
+                self.next(); // consume closing quote
+                break;
+            }
+
             match kind {
-                STRING_PATTERN_END => {
-                    self.sink().token(STRING_PATTERN_END);
-                    self.next(); // consume closing quote
-                    break;
-                }
                 STRING_LITERAL_CONTENT => {
                     self.sink().start_node(STRING_LITERAL_CONTENT);
                     self.sink().token(STRING_LITERAL_CONTENT);
@@ -502,7 +540,7 @@ impl<'text> Parser<'text> {
             }
         }
 
-        self.sink().finish_node(); // end STRING_PATTERN
+        self.sink().finish_node(); // end pattern
     }
 
     /// Parse the content inside an interpolation {...}
@@ -747,7 +785,7 @@ impl EventSink for BlockEventSink {
                             swap(&mut head, &mut self.buffer);
                             self.declaration = Some(PendingDeclaration {
                                 meta: None,
-                                head, // TODO: add errors
+                                head,
                                 colon: vec![],
                                 body: vec![],
                             });
@@ -773,8 +811,6 @@ impl EventSink for BlockEventSink {
                     self.commit_declaration();
                 }
                 None => {
-                    // TODO not if we already have declarations
-
                     swap(&mut self.block_meta, &mut self.buffer);
                     self.commit_meta();
                 }
@@ -1038,8 +1074,6 @@ SOUP@0..5
     STRING@0..5 "\"foo\""
 "#,
         );
-
-        // TODO string patterns
 
         verify_expr(
             "\"إ\"",
@@ -1371,8 +1405,6 @@ SOUP@0..6
     CLOSE_SQUARE@5..6 "]"
 "#,
         );
-
-        // TODO rejects
     }
 
     #[test]
@@ -2220,5 +2252,80 @@ UNIT@0..105
                 parse_eucalypt_file(&path);
             }
         }
+    }
+
+    #[test]
+    pub fn test_cstring_parsing() {
+        use crate::syntax::rowan::kind::SyntaxKind;
+
+        // Simple c-string should parse as a C_STRING literal
+        let text = r#"test: c"hello""#;
+        let parse = parse_unit(text);
+        println!("C-string parse tree:\n{:#?}", parse.syntax_node());
+
+        // Check that the literal token is C_STRING
+        let syntax = parse.syntax_node().to_string();
+        println!("Syntax: {}", syntax);
+
+        // The tree should contain C_STRING
+        let has_cstring = parse.syntax_node().descendants_with_tokens().any(|elem| {
+            if let rowan::NodeOrToken::Token(token) = elem {
+                token.kind() == SyntaxKind::C_STRING
+            } else {
+                false
+            }
+        });
+        assert!(has_cstring, "C-string should be parsed as C_STRING token");
+    }
+
+    #[test]
+    pub fn test_tstring_parsing() {
+        use crate::syntax::rowan::kind::SyntaxKind;
+
+        // Simple t-string should parse as a T_STRING literal
+        let text = r#"meeting: t"2023-01-15T10:30:00Z""#;
+        let parse = parse_unit(text);
+
+        // Should parse without errors
+        assert!(
+            parse.errors().is_empty(),
+            "Valid t-string should parse without errors: {:?}",
+            parse.errors()
+        );
+
+        // The tree should contain T_STRING
+        let has_tstring = parse.syntax_node().descendants_with_tokens().any(|elem| {
+            if let rowan::NodeOrToken::Token(token) = elem {
+                token.kind() == SyntaxKind::T_STRING
+            } else {
+                false
+            }
+        });
+        assert!(has_tstring, "T-string should be parsed as T_STRING token");
+    }
+
+    #[test]
+    pub fn test_tstring_invalid_produces_error() {
+        // Invalid t-string content should produce a validation error
+        let text = r#"bad: t"not-a-date""#;
+        let parse = parse_unit(text);
+
+        assert!(
+            !parse.errors().is_empty(),
+            "Invalid t-string should produce validation error"
+        );
+    }
+
+    #[test]
+    pub fn test_tstring_date_only_parsing() {
+        // Date-only t-string should parse successfully
+        let text = r#"birthday: t"1990-06-15""#;
+        let parse = parse_unit(text);
+
+        assert!(
+            parse.errors().is_empty(),
+            "Date-only t-string should parse without errors: {:?}",
+            parse.errors()
+        );
     }
 }

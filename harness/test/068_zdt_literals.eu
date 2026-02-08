@@ -1,0 +1,119 @@
+# Test t"..." ZDT literal syntax
+#
+# ZDT literals produce the same values as cal.parse() / cal.zdt()
+
+# Basic ISO 8601 with Z
+iso-utc: t"2023-01-15T10:30:00Z"
+iso-fields: iso-utc cal.fields
+
+iso-tests: {
+  y: iso-fields.y //= 2023
+  m: iso-fields.m //= 1
+  d: iso-fields.d //= 15
+  H: iso-fields.H //= 10
+  M: iso-fields.M //= 30
+  S: iso-fields.S //= 0
+}
+
+# Date only (midnight UTC)
+date-only: t"2023-01-15"
+date-fields: date-only cal.fields
+
+date-tests: {
+  y: date-fields.y //= 2023
+  m: date-fields.m //= 1
+  d: date-fields.d //= 15
+  H: date-fields.H //= 0
+  M: date-fields.M //= 0
+}
+
+# Timezone offset
+offset-zdt: t"2023-01-15T10:30:00+05:00"
+offset-fields: offset-zdt cal.fields
+
+offset-tests: {
+  y: offset-fields.y //= 2023
+  m: offset-fields.m //= 1
+  d: offset-fields.d //= 15
+  H: offset-fields.H //= 10
+}
+
+# No timezone (defaults to UTC)
+no-tz: t"2023-01-15T10:30:00"
+no-tz-fields: no-tz cal.fields
+
+no-tz-tests: {
+  y: no-tz-fields.y //= 2023
+  H: no-tz-fields.H //= 10
+}
+
+# Space separator (treated as T)
+space-sep: t"2023-06-15 14:00:00"
+space-fields: space-sep cal.fields
+
+space-tests: {
+  y: space-fields.y //= 2023
+  m: space-fields.m //= 6
+  d: space-fields.d //= 15
+  H: space-fields.H //= 14
+}
+
+# Fractional seconds
+frac: t"2023-01-15T10:30:00.123Z"
+frac-fields: frac cal.fields
+
+frac-tests: {
+  y: frac-fields.y //= 2023
+  H: frac-fields.H //= 10
+  M: frac-fields.M //= 30
+}
+
+# Leap year
+leap: t"2024-02-29"
+leap-fields: leap cal.fields
+
+leap-tests: {
+  y: leap-fields.y //= 2024
+  m: leap-fields.m //= 2
+  d: leap-fields.d //= 29
+}
+
+# Equivalence with cal.parse
+equiv-literal: t"2023-01-15T10:30:00Z"
+equiv-parsed: cal.parse("2023-01-15T10:30:00Z")
+
+equiv-tests: {
+  equal: equiv-literal = equiv-parsed //= true
+}
+
+# Cross-timezone equivalence (same absolute instant)
+utc-8am: t"2023-01-15T08:00:00Z"
+plus2-10am: t"2023-01-15T10:00:00+02:00"
+
+tz-tests: {
+  same-instant: utc-8am = plus2-10am //= true
+}
+
+# Ordering
+earlier: t"2023-01-01T00:00:00Z"
+later: t"2023-12-31T23:59:59Z"
+
+order-tests: {
+  lt: earlier < later //= true
+  gt: later > earlier //= true
+  le: earlier <= earlier //= true
+  ge: later >= later //= true
+}
+
+RESULT: {
+  iso: iso-tests values all-true?
+  date: date-tests values all-true?
+  offset: offset-tests values all-true?
+  no-tz: no-tz-tests values all-true?
+  space: space-tests values all-true?
+  frac: frac-tests values all-true?
+  leap: leap-tests values all-true?
+  equiv: equiv-tests values all-true?
+  tz: tz-tests values all-true?
+  order: order-tests values all-true?
+} values all-true? then(:PASS, :FAIL)

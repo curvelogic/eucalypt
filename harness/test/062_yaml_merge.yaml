@@ -1,0 +1,141 @@
+# Test YAML merge keys (<<)
+#
+# Tests: simple merge, override behaviour, multiple merge,
+#        inline merge, explicit keys override merged values
+
+#######################
+# Simple Merge
+#######################
+
+simple_merge:
+  base: &base
+    x: 1
+    y: 2
+  derived:
+    <<: *base
+    z: 3
+  pass: !eu derived.x = 1 ∧ derived.y = 2 ∧ derived.z = 3
+
+#######################
+# Override Behaviour
+#######################
+
+override_after:
+  # Later keys override merged values
+  base: &override_base
+    x: 1
+    y: 2
+  derived:
+    <<: *override_base
+    y: 99
+  pass: !eu derived.x = 1 ∧ derived.y = 99
+
+override_before:
+  # Explicit keys before merge also override
+  base: &before_base
+    x: 1
+  derived:
+    x: 99
+    <<: *before_base
+  pass: !eu derived.x = 99
+
+#######################
+# Multiple Merge
+#######################
+
+multiple_merge:
+  # <<: [*a, *b] - merge in order, later overrides earlier
+  a: &m_a
+    x: 1
+    only_a: "from a"
+  b: &m_b
+    x: 2
+    y: 3
+    only_b: "from b"
+  derived:
+    <<: [*m_a, *m_b]
+    z: 4
+  pass: !eu derived.x = 2 ∧ derived.y = 3 ∧ derived.z = 4 ∧ derived.only_a = "from a" ∧ derived.only_b = "from b"
+
+triple_merge:
+  first: &t_first
+    a: 1
+  second: &t_second
+    a: 2
+    b: 2
+  third: &t_third
+    a: 3
+    b: 3
+    c: 3
+  derived:
+    <<: [*t_first, *t_second, *t_third]
+  pass: !eu derived.a = 3 ∧ derived.b = 3 ∧ derived.c = 3
+
+#######################
+# Inline Merge
+#######################
+
+inline_merge:
+  derived:
+    <<: {x: 1, y: 2}
+    z: 3
+  pass: !eu derived.x = 1 ∧ derived.y = 2 ∧ derived.z = 3
+
+inline_override:
+  derived:
+    <<: {x: 1, y: 2}
+    y: 99
+  pass: !eu derived.x = 1 ∧ derived.y = 99
+
+#######################
+# Complex Scenarios
+#######################
+
+merge_nested_values:
+  # Merged values can themselves be complex
+  base: &nested_base
+    config:
+      host: localhost
+      port: 8080
+  derived:
+    <<: *nested_base
+    name: myservice
+  pass: !eu derived.config.host = "localhost" ∧ derived.config.port = 8080 ∧ derived.name = "myservice"
+
+merge_with_list_values:
+  base: &list_base
+    items: [1, 2, 3]
+  derived:
+    <<: *list_base
+    extra: 4
+  pass: !eu derived.items = [1, 2, 3] ∧ derived.extra = 4
+
+chain_merge:
+  # Merge from something that was itself merged
+  base: &chain_base
+    x: 1
+  middle: &chain_middle
+    <<: *chain_base
+    y: 2
+  final:
+    <<: *chain_middle
+    z: 3
+  pass: !eu final.x = 1 ∧ final.y = 2 ∧ final.z = 3
+
+#######################
+# Result
+#######################
+
+RESULT: !eu |
+  [
+    simple_merge.pass,
+    override_after.pass,
+    override_before.pass,
+    multiple_merge.pass,
+    triple_merge.pass,
+    inline_merge.pass,
+    inline_override.pass,
+    merge_nested_values.pass,
+    merge_with_list_values.pass,
+    chain_merge.pass
+  ] all-true? then(:PASS, :FAIL)

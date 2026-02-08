@@ -6,7 +6,10 @@
 use crate::{
     common::sourcemap::Smid,
     core::{error::CoreError, expr::*},
-    syntax::rowan::ast::{self as rowan_ast, AstToken, Element, HasSoup},
+    syntax::rowan::{
+        ast::{self as rowan_ast, AstToken, Element, HasSoup},
+        lex,
+    },
 };
 
 use rowan::{ast::AstNode, TextRange};
@@ -255,12 +258,58 @@ fn c_lit_rowan(
                         ));
                     }
                 }
+                rowan_ast::LiteralValue::CStr(s) => {
+                    if let Some(raw_text) = s.raw_value() {
+                        // Process escape sequences for c-strings
+                        use super::escape;
+                        match escape::process_escapes(raw_text) {
+                            Ok(processed) => Primitive::Str(processed),
+                            Err(e) => {
+                                return Err(CoreError::InvalidEmbedding(
+                                    format!("invalid c-string escape: {}", e),
+                                    smid,
+                                ));
+                            }
+                        }
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid c-string literal".to_string(),
+                            smid,
+                        ));
+                    }
+                }
+                rowan_ast::LiteralValue::RawStr(s) => {
+                    if let Some(text) = s.value() {
+                        Primitive::Str(text.to_string())
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid raw string literal".to_string(),
+                            smid,
+                        ));
+                    }
+                }
                 rowan_ast::LiteralValue::Sym(sym) => {
                     if let Some(text) = sym.value() {
                         Primitive::Sym(text.to_string())
                     } else {
                         return Err(CoreError::InvalidEmbedding(
                             "invalid symbol literal".to_string(),
+                            smid,
+                        ));
+                    }
+                }
+                rowan_ast::LiteralValue::TStr(s) => {
+                    // ZDT literal desugars to ZDT.PARSE(normalized_content)
+                    if let Some(content) = s.value() {
+                        let normalized = lex::normalize_zdt_for_parse(content);
+                        return Ok(core::app(
+                            smid,
+                            core::bif(smid, "ZDT.PARSE"),
+                            vec![core::str(smid, normalized)],
+                        ));
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid ZDT literal".to_string(),
                             smid,
                         ));
                     }

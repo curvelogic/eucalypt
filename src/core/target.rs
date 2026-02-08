@@ -82,6 +82,11 @@ impl Target {
         &self.validations
     }
 
+    /// Whether this is a benchmark target (name starts with `bench-`)
+    pub fn is_benchmark(&self) -> bool {
+        self.name.starts_with("bench-")
+    }
+
     /// Return a version of the target where the path is
     pub fn under(&self, root: &str) -> Self {
         let mut path = vec![root.to_string()];

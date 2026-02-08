@@ -1,0 +1,109 @@
+##
+## doc-gen.eu — Generate Markdown documentation from eucalypt metadata
+##
+## Usage:
+##   eu lib/doc-gen.eu target=lib/prelude.eu -e 'generate-docs(target)' -x text
+##
+## Loads the `target` named input, extracts doc metadata from all items,
+## and renders a Markdown reference document to stdout.
+##
+
+` { doc: "Check if an item's value has doc metadata"
+    export: :suppress }
+has-doc?(kv): kv second raw-meta has(:doc)
+
+` { doc: "Check if an item is suppressed via export: :suppress"
+    export: :suppress }
+is-suppressed?(kv): (kv second raw-meta lookup-or(:export, :public)) = :suppress
+
+` { doc: "Check if an item is documentable (has doc and not suppressed)"
+    export: :suppress }
+documentable?(kv): kv has-doc? and(not(kv is-suppressed?))
+
+` { doc: "Check if a value is a block (namespace)"
+    export: :suppress }
+is-namespace?(kv): kv second block?
+
+` { doc: "Get the doc string from an item's metadata"
+    export: :suppress }
+doc-string(kv): kv second raw-meta lookup-or(:doc, "")
+
+` { doc: "Get the example string from an item's metadata"
+    export: :suppress }
+example-string(kv): kv second raw-meta lookup-or(:example, null)
+
+` { doc: "Get see-also list from an item's metadata"
+    export: :suppress }
+see-also-list(kv): kv second raw-meta lookup-or(:see-also, null)
+
+` { doc: "Format a see-also symbol as an anchor link"
+    export: :suppress }
+see-also-link(prefix, s): {
+  name: str.of(s)
+  anchor: if(prefix = "", name, [prefix, name] str.join-on("."))
+}.("[{name}](#{anchor})")
+
+` { doc: "Compare items alphabetically by key name"
+    export: :suppress }
+item-lt(a, b): str.of(a first) < str.of(b first)
+
+` { doc: "Render a single top-level item as Markdown lines"
+    export: :suppress }
+render-item(kv): {
+  name: kv first str.of
+  doc: kv doc-string
+  example: kv example-string
+  see-also: kv see-also-list
+
+  heading: ["## {name}", ""]
+  description: [doc, ""]
+  example-section: if(example = null, [],
+    ["**Example:**", "```eu", example, "```", ""])
+  see-also-section: if(see-also = null, [],
+    [["**See also:** ", see-also map(see-also-link("")) str.join-on(", ")] str.join-on(""), ""])
+  separator: ["---", ""]
+}.(heading ++ description ++ example-section ++ see-also-section ++ separator)
+
+` { doc: "Render a child item within a namespace as Markdown lines"
+    export: :suppress }
+render-child(prefix, kv): {
+  name: kv first str.of
+  qualified: [prefix, name] str.join-on(".")
+  doc: kv doc-string
+  example: kv example-string
+  see-also: kv see-also-list
+
+  heading: ["### {qualified}", ""]
+  description: [doc, ""]
+  example-section: if(example = null, [],
+    ["**Example:**", "```eu", example, "```", ""])
+  see-also-section: if(see-also = null, [],
+    [["**See also:** ", see-also map(see-also-link(prefix)) str.join-on(", ")] str.join-on(""), ""])
+  separator: ["---", ""]
+}.(heading ++ description ++ example-section ++ see-also-section ++ separator)
+
+` { doc: "Render a namespace block as Markdown lines"
+    export: :suppress }
+render-namespace(kv): {
+  name: kv first str.of
+  block-doc: kv doc-string
+  children: kv second elements filter(documentable?) qsort(item-lt)
+
+  heading: ["## {name}", ""]
+  ns-description: if(block-doc = "", [], [block-doc, ""])
+  child-lines: children mapcat(render-child(name))
+}.(heading ++ ns-description ++ child-lines)
+
+` { doc: "Generate documentation for a block"
+    export: :suppress }
+generate-docs(src): {
+  all-items: src elements
+  documented: all-items filter(documentable?)
+  namespaces: all-items filter({kv: •}.(kv is-namespace? and(kv has-doc?))) qsort(item-lt)
+  top-level: documented filter({kv: •}.(not(kv is-namespace?))) qsort(item-lt)
+
+  title: ["# Library Reference", ""]
+  ns-sections: namespaces mapcat(render-namespace)
+  top-sections: top-level mapcat(render-item)
+}.(title ++ ns-sections ++ top-sections)
+

@@ -1,0 +1,237 @@
+================================================================================
+Simple property declaration
+================================================================================
+
+x: 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number)))))
+
+================================================================================
+Function declaration
+================================================================================
+
+f(x): x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Binary operator declaration
+================================================================================
+
+(l + r): __ADD(l, r)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (operator_declaration
+        (identifier)
+        (operator)
+        (identifier)))
+    (soup
+      (application
+        (name
+          (identifier))
+        (argument_list
+          (soup
+            (name
+              (identifier)))
+          (soup
+            (name
+              (identifier))))))))
+
+================================================================================
+Multiple declarations
+================================================================================
+
+x: 1
+y: 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number))))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number)))))
+
+================================================================================
+Declaration with metadata
+================================================================================
+
+` "A description"
+f(x): x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (metadata
+      (string
+        (string_content)))
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Plain string literal
+================================================================================
+
+msg: "hello world"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (string
+          (string_content))))))
+
+================================================================================
+C-string with escape sequences
+================================================================================
+
+msg: c"hello\nworld"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_string_content)
+          (c_escape_sequence)
+          (c_string_content))))))
+
+================================================================================
+C-string with hex escape
+================================================================================
+
+abc: c"\x41\x42\x43"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_escape_sequence)
+          (c_escape_sequence)
+          (c_escape_sequence))))))
+
+================================================================================
+C-string with unicode escape
+================================================================================
+
+emoji: c"\U0001F600"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_escape_sequence))))))
+
+================================================================================
+Raw string literal
+================================================================================
+
+path: r"C:\Users\name"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (r_string
+          (r_string_content))))))
+
+================================================================================
+String with interpolation
+================================================================================
+
+greeting: "Hello {name}!"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (string
+          (string_content)
+          (interpolation
+            (interpolation_content
+              (identifier)))
+          (string_content))))))
+
+================================================================================
+C-string with interpolation
+================================================================================
+
+greeting: c"Hello {name}!\n"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (c_string
+          (c_string_content)
+          (interpolation
+            (interpolation_content
+              (identifier)))
+          (c_string_content)
+          (c_escape_sequence))))))

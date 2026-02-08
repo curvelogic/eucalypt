@@ -1,0 +1,17 @@
+# GC stress: long-lived persistent structure with surrounding garbage
+#
+# Builds a large persistent data structure that survives throughout
+# execution while creating temporary garbage around it. Tests GC
+# marking efficiency when a significant fraction of the heap is
+# long-lived.
+
+# Build a persistent structure: a large list built by consing
+` :suppress
+persistent: range(1, 200) foldl(flip(cons), [])
+
+# Create garbage by building and discarding temporary lists.
+# The persistent structure stays live through the final expression.
+sr(n): range(1, n) foldl(+, 0)
+
+` { target: :bench-long-lived-graph }
+bench-long-lived-graph: (repeat(50) take(300) map(sr) foldl(+, 0)) + (persistent count)

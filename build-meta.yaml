@@ -1,8 +1,8 @@
 ---
-version: 0.2.0.dev
+version: 0.3.0.dev
 commit: working-copy
 url: "https://github.com/curvelogic/eucalypt/runs"
-banner: "eu - Eucalypt (Rust Impl: v0.2.0.dev)"
+banner: "eu - Eucalypt (Rust Impl: v0.3.0.dev)"
 eu-build:
   number: dev
   commit: working-copy

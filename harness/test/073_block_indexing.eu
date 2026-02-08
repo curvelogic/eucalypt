@@ -1,0 +1,119 @@
+#!/usr/bin/env eu
+
+# Block indexing threshold tests
+#
+# The LOOKUPOR BIF builds an index for blocks with >= 16 elements.
+# These tests verify correct lookup behaviour at the boundary.
+
+# Generate blocks of various sizes using list comprehension
+# and verify lookups work correctly for all sizes.
+
+# --- 15-key block (below threshold, no index built) ---
+
+below: {
+  k01: 1   k02: 2   k03: 3   k04: 4   k05: 5
+  k06: 6   k07: 7   k08: 8   k09: 9   k10: 10
+  k11: 11  k12: 12  k13: 13  k14: 14  k15: 15
+}
+
+# --- 16-key block (at threshold, index is built) ---
+
+at-threshold: {
+  k01: 1   k02: 2   k03: 3   k04: 4   k05: 5
+  k06: 6   k07: 7   k08: 8   k09: 9   k10: 10
+  k11: 11  k12: 12  k13: 13  k14: 14  k15: 15
+  k16: 16
+}
+
+# --- 17-key block (above threshold, index is built) ---
+
+above: {
+  k01: 1   k02: 2   k03: 3   k04: 4   k05: 5
+  k06: 6   k07: 7   k08: 8   k09: 9   k10: 10
+  k11: 11  k12: 12  k13: 13  k14: 14  k15: 15
+  k16: 16  k17: 17
+}
+
+# --- Lookup correctness at all boundaries ---
+
+below-checks: {
+  trues: [
+    below.k01 = 1,
+    below.k08 = 8,
+    below.k15 = 15,
+    lookup-or(:missing, :default)(below) = :default
+  ]
+}
+
+at-checks: {
+  trues: [
+    at-threshold.k01 = 1,
+    at-threshold.k08 = 8,
+    at-threshold.k16 = 16,
+    lookup-or(:missing, :default)(at-threshold) = :default
+  ]
+}
+
+above-checks: {
+  trues: [
+    above.k01 = 1,
+    above.k09 = 9,
+    above.k17 = 17,
+    lookup-or(:missing, :default)(above) = :default
+  ]
+}
+
+# --- Repeated lookups (same block accessed multiple times) ---
+# This exercises the index-already-exists path on second lookup
+
+repeated-checks: {
+  trues: [
+    at-threshold.k01 = 1,
+    at-threshold.k16 = 16,
+    at-threshold.k01 = 1,
+    at-threshold.k16 = 16
+  ]
+}
+
+# --- Merged blocks (merge creates a new block without index) ---
+
+merged: below { k16: 16 k17: 17 }
+
+merged-checks: {
+  trues: [
+    merged.k01 = 1,
+    merged.k15 = 15,
+    merged.k16 = 16,
+    merged.k17 = 17
+  ]
+}
+
+# --- Large block (well above threshold) ---
+
+large: {
+  a01: 1   a02: 2   a03: 3   a04: 4   a05: 5
+  a06: 6   a07: 7   a08: 8   a09: 9   a10: 10
+  a11: 11  a12: 12  a13: 13  a14: 14  a15: 15
+  a16: 16  a17: 17  a18: 18  a19: 19  a20: 20
+  a21: 21  a22: 22  a23: 23  a24: 24  a25: 25
+}
+
+large-checks: {
+  trues: [
+    large.a01 = 1,
+    large.a13 = 13,
+    large.a25 = 25,
+    lookup-or(:missing, :default)(large) = :default
+  ]
+}
+
+pass: [
+  below-checks.trues all-true?,
+  at-checks.trues all-true?,
+  above-checks.trues all-true?,
+  repeated-checks.trues all-true?,
+  merged-checks.trues all-true?,
+  large-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

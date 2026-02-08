@@ -13,7 +13,7 @@ lambdafied: {
 
   zones: ["a", "b", "c"] map("eu-west-2{}")
   triple: "{},{},{}"
-  reverse-triple: "{2},{ 1 },{0}"
+  reverse-triple: "{2},{1},{0}"
 
   truths: [
     zones = ["eu-west-2a", "eu-west-2b", "eu-west-2c"],

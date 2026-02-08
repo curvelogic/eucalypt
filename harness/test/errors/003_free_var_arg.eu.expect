@@ -1,0 +1,2 @@
+exit: 1
+stderr: "unresolved free variable reference"

@@ -48,7 +48,7 @@ impl ToPretty for Primitive {
         match self {
             Primitive::Str(s) => allocator
                 .text("\"")
-                .append(allocator.text(s)) //TODO: escape quotes
+                .append(allocator.text(s))
                 .append(allocator.text("\"")),
             Primitive::Sym(s) => allocator.text(":").append(allocator.text(s)),
             Primitive::Num(n) => allocator.text(format!("{n}")),

@@ -1,0 +1,16 @@
+# GC stress: fragmentation from interleaved retained/discarded allocations
+#
+# Alternates between building retained and discarded data, producing
+# a fragmented heap where live objects are interspersed with holes.
+# Even steps accumulate a number; odd steps build and discard a
+# temporary list structure.
+
+sr(n): range(1, n) foldl(+, 0)
+
+step(acc, i):
+  if(i % 2 = 0,
+    acc + sr(30),
+    acc + (repeat(10) take(30) count))
+
+` { target: :bench-fragmentation }
+bench-fragmentation: range(1, 500) foldl(step, 0)

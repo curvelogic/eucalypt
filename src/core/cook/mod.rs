@@ -63,14 +63,15 @@ impl Cooker {
         fill::fill_gaps(soup)
     }
 
-    /// Internal walk function for recursing down
+    /// Internal walk function for recursing down.
+    /// Uses optimized try_walk_safe to avoid unnecessary allocations.
     fn cook_(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         match &*expr.inner {
             Expr::Let(_, _, _) => self.cook_let(&expr),
             Expr::Soup(_, ref xs) => self.cook_soup(xs),
             Expr::BlockAnaphor(s, anaphor) => Ok(self.cook_block_anaphor(*s, anaphor)),
             Expr::ExprAnaphor(s, anaphor) => Ok(self.cook_expr_anaphor(*s, anaphor)),
-            _ => expr.walk_safe(&mut |e| self.cook_(e)),
+            _ => expr.try_walk_safe(&mut |e| self.cook_(e.clone())),
         }
     }
 
@@ -123,11 +124,12 @@ impl Cooker {
         }
     }
 
-    /// Handle block anaphora
+    /// Handle block anaphora.
+    /// Uses optimized try_walk_safe to avoid unnecessary allocations.
     fn cook_let(&mut self, expr: &RcExpr) -> Result<RcExpr, CoreError> {
         let inside_anaphoric_block = !self.pending_block_anaphora.is_empty();
 
-        let let_ = expr.walk_safe(&mut |e| self.cook_(e))?;
+        let let_ = expr.try_walk_safe(&mut |e| self.cook_(e.clone()))?;
 
         let is_anaphoric_block = !self.pending_block_anaphora.is_empty();
 

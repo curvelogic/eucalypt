@@ -1,0 +1,41 @@
+# Test c-string literals with escape sequences
+
+# Hex escapes produce expected ASCII
+test-hex: c"\x41\x42\x43" = "ABC"
+
+# Unicode escapes work
+test-unicode-4: c"\u0041" = "A"
+test-unicode-8: c"\U0001F600" = "😀"
+
+# C-strings differ from plain strings when escapes are involved
+test-differs: c"hello\nworld" != "hello\nworld"
+
+# Double-backslash in c-string produces single backslash
+test-backslash: c"a\\b" = r"a\b"
+
+# Brace escaping in c-strings
+test-braces: c"x: \{y\}" = r"x: {{y}}"
+
+# Interpolation works in c-strings
+name: "Alice"
+test-interp: c"Hello {name}!" = "Hello Alice!"
+
+# Raw strings preserve backslash literally
+test-raw: r"hello\nworld" = "hello\nworld"
+
+# Plain strings preserve backslash literally (same as raw)
+test-plain-eq-raw: "hello\nworld" = r"hello\nworld"
+
+# Raw strings support interpolation
+test-raw-interp: r"Hi {name}!" = "Hi Alice!"
+
+# Raw strings escape braces with {{ }}
+test-raw-braces: r"{{x}}" = c"\{x\}"
+
+# Plain strings escape braces with {{ }}
+test-plain-braces: "{{x}}" = c"\{x\}"
+
+# Main result - all tests must pass
+all-pass: test-hex && test-unicode-4 && test-unicode-8 && test-differs && test-backslash && test-braces && test-interp && test-raw && test-plain-eq-raw && test-raw-interp && test-raw-braces && test-plain-braces
+
+RESULT: if(all-pass, :PASS, :FAIL)

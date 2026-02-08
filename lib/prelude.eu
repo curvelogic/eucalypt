@@ -11,6 +11,9 @@ eu: {
 
   ` "Metadata about this version of the eucalypt executable"
   build: __build
+
+  ` "requires(constraint) - assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0')."
+  requires: __REQUIRES
 }
 
 ` "IO related declarations"
@@ -19,6 +22,61 @@ io: {
   env: __io.ENV
 
   epoch-time: __io.EPOCHTIME
+
+  ` "Command-line arguments passed after -- separator"
+  args: __args
+
+  ` "Seed for random number generation (from --seed or system time)"
+  RANDOM_SEED: __io.RANDOM_SEED
+
+  ` "Infinite lazy stream of random floats in [0,1), seeded from system entropy or --seed flag."
+  random: random-stream(io.RANDOM_SEED)
+}
+
+
+##
+## Random number generation
+##
+
+` "Infinite lazy stream of random floats in [0,1), seeded by the given integer."
+random-stream(seed): cons(__PRNG_FLOAT(seed), random-stream(__PRNG_NEXT(seed)))
+
+` "Generate a random integer in [0, n) from the stream. Returns block with value and rest."
+random-int(n, stream): {
+  value: floor((stream head) * n)
+  rest: stream tail
+}
+
+` "Choose a random element from a list. Returns block with value and rest."
+random-choice(list, stream): {
+  r: random-int(list count, stream)
+  value: list nth(r.value)
+  rest: r.rest
+}
+
+` "Shuffle a list using repeated selection. Returns block with value and rest."
+shuffle(list, stream): __shuffle-impl(list, list count, [], stream)
+
+__shuffle-impl(remaining, n, acc, stream):
+  if(n = 0,
+    { value: acc
+      rest: stream },
+    __shuffle-step(remaining, n, acc, stream))
+
+__shuffle-step(remaining, n, acc, stream): {
+  r: random-int(n, stream)
+  picked: remaining nth(r.value)
+  without: (remaining take(r.value)) ++ (remaining drop(r.value + 1))
+  next: __shuffle-impl(without, n - 1, cons(picked, acc), r.rest)
+  value: next.value
+  rest: next.rest
+}
+
+` "Sample n elements from a list without replacement. Returns block with value and rest."
+sample(n, list, stream): {
+  shuffled: shuffle(list, stream)
+  value: shuffled.value take(n)
+  rest: shuffled.rest
 }
 
 
@@ -64,6 +122,10 @@ cons: __CONS
 ` "`head(xs)` - return the head item of list `xs`, panic if empty."
 head: __HEAD
 
+` { doc: "`↑xs` - return first element of list `xs`. Tight-binding prefix operator."
+    precedence: 95 }
+(↑ xs): xs head
+
 ` "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
 nil?: = []
 
@@ -107,6 +169,12 @@ deep-merge: __DEEPMERGE
     precedence: :append }
 (l << r): __DEEPMERGE(l, r)
 
+` "`block?(v)` - true if and only if `v` is a block."
+block?: __ISBLOCK
+
+` "`list?(v)` - true if and only if `v` is a list."
+list?: __ISLIST
+
 ` "`elements(b)` - expose list of elements of block `b`."
 elements: __ELEMENTS
 
@@ -138,6 +206,100 @@ lookup-across(s, d, bs): {
 
 ` "`lookup-path(ks, b)` - look up value at key path `ks` in block `b`"
 lookup-path(ks, b): foldl(lookup-in, b, ks)
+
+##
+## Deep find — recursive key search
+##
+
+` "`deep-find(k, b)` - return list of all values for key `k` at any depth in block `b`, depth-first."
+deep-find(k, b): {
+  s: sym(k)
+  children(v): v elements map({el: •}.(el value)) mapcat(walk)
+  walk(v): if(v block?,
+              if(v has(s),
+                 cons(v lookup(s), children(v)),
+                 children(v)),
+              if(v list?,
+                 v mapcat(walk),
+                 []))
+}.walk(b)
+
+` "`deep-find-first(k, d, b)` - return first value for key `k` at any depth in block `b`, or default `d`."
+deep-find-first(k, d, b): b deep-find(k) head-or(d)
+
+` "`deep-find-paths(k, b)` - return list of key paths to all occurrences of key `k` at any depth in block `b`."
+deep-find-paths(k, b): {
+  s: sym(k)
+  walk-children(path, v): v keys mapcat({ck: •}.(walk(path ++ [ck], v lookup(ck))))
+  walk(path, v): if(v block?,
+                    if(v has(s),
+                       cons(path ++ [s], walk-children(path, v)),
+                       walk-children(path, v)),
+                    if(v list?,
+                       v mapcat(walk(path)),
+                       []))
+}.walk([], b)
+
+##
+## Deep query — pattern-based data querying
+##
+
+` "`deep-query(pattern, b)` - query block `b` using dot-separated pattern string. `*` matches one level, `**` matches any depth. Bare `foo` is sugar for `**.foo`."
+deep-query(pattern, b): {
+  segs: pattern str.split-on("[.]")
+  first-seg: segs head
+  norm: if(first-seg = "**", segs, cons("**", segs))
+  all-values(v): if(v block?, v elements map({el: •}.(el value)), [])
+  match-key(seg, v): if(v block?, if(v has(sym(seg)), [v lookup(sym(seg))], []), [])
+  descendants(v): if(v block?,
+                     cons(v, all-values(v) mapcat(descendants)),
+                     [])
+  step(vals, remaining):
+    if(remaining nil?,
+       vals,
+       {
+         seg: remaining head
+         rest: remaining tail
+       }.(if(seg = "**",
+             step(vals mapcat(descendants), rest),
+             if(seg = "*",
+                step(vals mapcat(all-values), rest),
+                step(vals mapcat(match-key(seg)), rest)))))
+  result: step([b], norm)
+}.result
+
+` "`deep-query-first(pattern, d, b)` - return first match for `pattern` in block `b`, or default `d`."
+deep-query-first(pattern, d, b): b deep-query(pattern) head-or(d)
+
+` "`deep-query-paths(pattern, b)` - return list of key paths matching `pattern` in block `b`."
+deep-query-paths(pattern, b): {
+  segs: pattern str.split-on("[.]")
+  first-seg: segs head
+  norm: if(first-seg = "**", segs, cons("**", segs))
+  all-keyed(v): if(v block?, v keys map({k: •}.[k, v lookup(k)]), [])
+  match-key-pair(seg, p): {path: p first, val: p second}.(
+    if(val block?, if(val has(sym(seg)), [[path ++ [sym(seg)], val lookup(sym(seg))]], []), []))
+  expand-star(p): {path: p first, val: p second}.(
+    if(val block?,
+       val keys map({k: •}.[path ++ [k], val lookup(k)]),
+       []))
+  desc-pairs(p): {path: p first, val: p second}.(
+    if(val block?,
+       cons(p, all-keyed(val) mapcat({kv: •}.(desc-pairs([path ++ [kv first], kv second])))),
+       []))
+  step(pairs, remaining):
+    if(remaining nil?,
+       pairs map(first),
+       {
+         seg: remaining head
+         rest: remaining tail
+       }.(if(seg = "**",
+             step(pairs mapcat(desc-pairs), rest),
+             if(seg = "*",
+                step(pairs mapcat(expand-star), rest),
+                step(pairs mapcat(match-key-pair(seg)), rest)))))
+  result: step([[[], b]], norm)
+}.result
 
 ##
 ## Boolean
@@ -236,25 +398,25 @@ or: __OR
     precedence: :prod }
 (l % r): __MOD(l, r)
 
-` { doc: "`l < r` - `true` if and only if number `l` is less than number `r`."
+` { doc: "`l < r` - `true` if `l` is less than `r`. Works on numbers, strings, symbols, and datetimes."
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l < r): __LT(l, r)
 
-` { doc: "`l > r` - `true` if and only if number `l` is greater than number `r`."
+` { doc: "`l > r` - `true` if `l` is greater than `r`. Works on numbers, strings, symbols, and datetimes."
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l > r): __GT(l, r)
 
-` { doc: "`l <= r` - `true` if and only if number `l` is less than or equal to number `r`."
+` { doc: "`l <= r` - `true` if `l` is less than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l <= r): __LTE(l, r)
 
-` { doc: "`l >= r` - `true` if and only if number `l` is greater than or equal to number `r`."
+` { doc: "`l >= r` - `true` if `l` is greater than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
     export: :suppress
     associates: :left
     precedence: :cmp }
@@ -379,6 +541,27 @@ str: {
 
   ` "`to-lower(s)` - convert string `s` to lower case."
   to-lower: __LOWER
+
+  ` "`lt(a, b)` - true if string `a` is lexicographically less than `b`."
+  lt(a, b): a < b
+
+  ` "`gt(a, b)` - true if string `a` is lexicographically greater than `b`."
+  gt(a, b): a > b
+
+  ` "`lte(a, b)` - true if string `a` is lexicographically less than or equal to `b`."
+  lte(a, b): a <= b
+
+  ` "`gte(a, b)` - true if string `a` is lexicographically greater than or equal to `b`."
+  gte(a, b): a >= b
+
+  ` "`base64-encode(s)` - encode string `s` as base64."
+  base64-encode: __BASE64_ENCODE
+
+  ` "`base64-decode(s)` - decode base64 string `s` back to its original string."
+  base64-decode: __BASE64_DECODE
+
+  ` "`sha256(s)` - return the SHA-256 hash of string `s` as lowercase hex."
+  sha256: __SHA256
 }
 
 ##
@@ -457,6 +640,9 @@ with-meta: __WITHMETA
 
 ` "`meta(e)` - retrieve expression metadata for e."
 meta: __META
+
+` "`raw-meta(e)` - retrieve immediate metadata of e without recursing into inner layers."
+raw-meta: __RAWMETA
 
 ` "`merge-meta(m, e)` - merge block `m` into `e`'s metadata."
 merge-meta(m, e): e // (meta(e) m)
@@ -613,6 +799,9 @@ zip-with: map2
 ` "`zip(l1, l2)` - list of pairs of elements  `l1` and `l2`, until the shorter is exhausted."
 zip: zip-with(pair)
 
+` "`cross(f, xs, ys)` - apply `f` to every combination of elements from `xs` and `ys` (cartesian product)."
+cross(f, xs, ys): xs mapcat({x: •}.(ys map(f(x))))
+
 ` "`filter(p?, l)` - return list of elements of list `l` that satisfy predicate `p?`."
 filter(p?, l): foldr({x: • xs: • }.(if(x p?, cons(x, xs), xs)), [], l)
 
@@ -689,6 +878,27 @@ qsort(lt, xs): if(xs nil?,
                     bigger: partitions second qsort(lt)
                   }.(smaller ++ [h] ++ bigger))
 
+` "`sort-nums(xs)` - sort list of numbers ascending."
+sort-nums(xs): xs qsort(<)
+
+` "`sort-strs(xs)` - sort list of strings or symbols ascending."
+sort-strs(xs): xs qsort(<)
+
+` "`sort-zdts(xs)` - sort list of zoned date-times ascending."
+sort-zdts(xs): xs qsort(<)
+
+` "`sort-by(key-fn, cmp, xs)` - sort list `xs` by key extracted with `key-fn` using comparator `cmp`."
+sort-by(key-fn, cmp, xs): xs qsort({ a: • b: • }.(cmp(key-fn(a), key-fn(b))))
+
+` "`sort-by-num(key-fn, xs)` - sort list `xs` ascending by numeric key extracted with `key-fn`."
+sort-by-num(key-fn): sort-by(key-fn, <)
+
+` "`sort-by-str(key-fn, xs)` - sort list `xs` ascending by string key extracted with `key-fn`."
+sort-by-str(key-fn): sort-by(key-fn, <)
+
+` "`sort-by-zdt(key-fn, xs)` - sort list `xs` ascending by zoned date-time key extracted with `key-fn`."
+sort-by-zdt(key-fn): sort-by(key-fn, <)
+
 #
 # Block library functions
 #
@@ -707,6 +917,10 @@ keys(b): b elements map(key)
 
 ` "`values(b)` - return values of block"
 values(b): b elements map(value)
+
+` "`sort-keys(b)` - return block `b` with keys sorted alphabetically."
+sort-keys(b): b elements qsort(pair-key-lt) block
+  pair-key-lt(p1, p2): key(p1) < key(p2)
 
 ` "`bimap(f, g, pr)` - apply f to first item of pair and g to second, return pair."
 bimap(f, g, pr): [f(first(pr)), g(second(pr))]
@@ -821,10 +1035,10 @@ cal: {
   ` "`cal.zdt(y, m, d, H, M, S, Z)` - create zoned date time from datetime components and timezone string (e.g. '+0100')"
   zdt: __ZDT
 
-  ` "`cal.time(b)` - convert block of time fields to time (with 0 / UTC defaults)"
-  datetime(b): zdt(b lookup-or(:y, 0),
-                   b lookup-or(:m, 0),
-	                 b lookup-or(:d, 0),
+  ` "`cal.datetime(b)` - convert block of time fields to zoned datetime (defaults: y=1, m=1, d=1, H=0, M=0, S=0, Z=UTC)"
+  datetime(b): zdt(b lookup-or(:y, 1),
+                   b lookup-or(:m, 1),
+	                 b lookup-or(:d, 1),
 	                 b lookup-or(:H, 0),
 	                 b lookup-or(:M, 0),
 	                 b lookup-or(:S, 0),
@@ -842,52 +1056,44 @@ cal: {
 
 
 
+##
+## Sets
+##
+
 ` { export: :suppress
-    doc: "Blocks are implemented either as association lists or as insert
-ordered maps and can be silently promoted from association list to the IOSM
-implementation. This namespace exposes some primitives for working with the 
-IOSM implementation diretly. " }
-iosm: {
+    doc: "Functions for working with sets of primitive values (numbers, strings, symbols)." }
+set: {
 
-  ` "Intrinsics for working with unwrapped insert ordered symbol maps"
-  Γ: {
-    empty: '__IOSM.EMPTY'
-    insert: '__IOSM.INSERT'
-    wrap: '__IOSM.WRAP'
-    unwrap: '__IOSM.UNWRAP'
-    list: '__IOSM.LIST'
-    insert-kv(k, v, m): insert(m, k, v)
-    insert-pair(m, kv): apply(insert(m), kv)
-    lookup: '__IOSM.LOOKUP'
-    lookup-or: '__IOSM.LOOKUPOR'
-    merge: '__IOSM.MERGE'
-    from-list: '__IOSM.FROMLIST'
-  }
+  ` "`set.from-list(xs)` - create a set from list `xs` of primitive values."
+  from-list(xs): foldl({s: • e: •}.(s add(e)), ∅, xs)
 
-  ` "`iosm.empty` - the empty IOSM (insert-ordered hash map)"
-  empty: Γ.wrap(Γ.empty)
+  ` "`set.to-list(s)` - return sorted list of elements in set `s`."
+  to-list: '__SET.TO_LIST'
 
-  ` "`iosm.insert(k, v, m)` - insert value `v` at key symbol `k` into IOSM `m`"
-  insert(k, v, m): m Γ.unwrap Γ.insert-kv(k, v) Γ.wrap
+  ` "`set.add(e, s)` - add element `e` to set `s`."
+  add: '__SET.ADD'
 
-  ` "`iosm.from-elements(xs)` - construct IOSM (insert-ordered hash map) from list `xs` of key-value pairs"
-  from-elements(xs): xs Γ.from-list Γ.wrap
+  ` "`set.remove(e, s)` - remove element `e` from set `s`."
+  remove: '__SET.REMOVE'
 
-  ` "`iosm.from(b)` - construct IOSM (insert-ordered hash map) from block"
-  from(b): b __ELEMENTS Γ.from-list Γ.wrap
+  ` "`set.contains?(e, s)` - true if set `s` contains element `e`."
+  contains?: '__SET.CONTAINS'
 
-` "`iosm.lookup(k, m)` - retrieve value from IOSM `m` at key symbol `k`, error if none"
-  lookup(k, m): m Γ.unwrap flip(Γ.lookup, k)
+  ` "`set.size(s)` - return number of elements in set `s`."
+  size: '__SET.SIZE'
 
-  ` "`iosm.lookup-or(k, v, m)` - retrieve value from IOSM `m` at key symbol `k`, default `d` if none"
-  lookup-or(k, d, m): Γ.lookup-or(m Γ.unwrap, k, d)
+  ` "`set.empty?(s)` - true if set `s` has no elements."
+  empty?(s): (s size) = 0
 
-  ` "`iosm.merge(l, r)` - shallow merge IOSM `r` into IOSM `l`"
-  merge(l, r): Γ.merge(Γ.unwrap(l), Γ.unwrap(r)) Γ.wrap
+  ` "`set.union(a, b)` - return union of sets `a` and `b`."
+  union: '__SET.UNION'
 
-  ` "`iosm.deep-merge(l, r)` - deep merge IOSM `r` into IOSM `l`"
-  deep-merge: '__IOSMBLOCK.DEEPMERGE'
+  ` "`set.intersect(a, b)` - return intersection of sets `a` and `b`."
+  intersect: '__SET.INTERSECT'
 
-  ` "`iosm.elements(m)` - return list of key value pairs from IOSM `m`"
-  elements(m): m Γ.unwrap Γ.list 
+  ` "`set.diff(a, b)` - return elements in set `a` that are not in set `b`."
+  diff: '__SET.DIFF'
 }
+
+` "`∅` - the empty set."
+(∅): '__SET.EMPTY'

@@ -5,10 +5,8 @@ use std::path::PathBuf;
 pub fn eufile() -> Option<PathBuf> {
     let mut dir = std::env::current_dir().ok();
 
-    while dir.is_some() {
-        if let Some(path) = dir
-            .as_ref()
-            .unwrap()
+    while let Some(ref mut current) = dir {
+        if let Some(path) = current
             .read_dir()
             .ok()?
             .filter_map(|r| r.ok().map(|e| e.path()))
@@ -22,10 +20,8 @@ pub fn eufile() -> Option<PathBuf> {
             return Some(path);
         }
 
-        if let Some(d) = dir.as_mut() {
-            if !d.pop() {
-                break;
-            }
+        if !current.pop() {
+            break;
         }
     }
 

@@ -1,0 +1,99 @@
+##
+## 072: Deep find — type predicates and recursive key search
+##
+
+## Type predicates
+
+type-pred-checks: {
+  trues: [
+    ({a: 1} block?) = true,
+    ([1, 2] block?) = false,
+    (42 block?) = false,
+    ("hello" block?) = false,
+    ({} block?) = true,
+    ([1, 2] list?) = true,
+    ([] list?) = true,
+    ({a: 1} list?) = false,
+    (42 list?) = false,
+    ("hello" list?) = false
+  ]
+}
+
+## deep-find
+
+deep-find-checks: {
+  trues: [
+    ({a: 1, b: 2, c: 3} deep-find("a")) = [1],
+    ({a: 1, b: {a: 2, c: 3}} deep-find("a")) = [1, 2],
+    ({a: 1, b: 2} deep-find("z")) = [],
+    ({x: {y: {z: 42}}} deep-find("z")) = [42],
+    ({} deep-find("x")) = [],
+    (deep-find("name", {name: "top", child: { name: "mid", child: { name: "deep" } }})) = ["top", "mid", "deep"],
+    (deep-find("a", {items: [{a: 10}, {a: 20}], a: 99})) = [99, 10, 20],
+    ({a: "hello", b: {a: true}} deep-find("a")) = ["hello", true],
+    ({x: {n: 3.14}, y: {n: 42}} deep-find("n")) = [3.14, 42],
+    (deep-find("x", {a: [[{x: 1}], [{x: 2}]]})) = [1, 2]
+  ]
+}
+
+## deep-find-first
+
+deep-find-first-checks: {
+  trues: [
+    ({a: 1, b: {a: 2}} deep-find-first("a", null)) = 1,
+    ({b: 1, c: 2} deep-find-first("a", "default")) = "default",
+    ({x: {y: {a: 42}}} deep-find-first("a", 0)) = 42,
+    ({b: 1} deep-find-first("a", null)) = null
+  ]
+}
+
+## deep-find-paths
+
+deep-find-paths-checks: {
+  trues: [
+    ({a: 1} deep-find-paths("a")) = [[:a]],
+    ({a: 1, b: {a: 2}} deep-find-paths("a")) = [[:a], [:b, :a]],
+    ({x: {y: {z: 1}}} deep-find-paths("z")) = [[:x, :y, :z]],
+    ({a: 1} deep-find-paths("z")) = []
+  ]
+}
+
+## Realistic fixture
+
+fixture-checks: {
+  trues: [
+    (deep-find("host", {
+      server: {
+        host: "10.0.0.1"
+        database: { host: "10.0.0.2" }
+        cache: { host: "10.0.0.5" }
+      }
+    })) = ["10.0.0.1", "10.0.0.2", "10.0.0.5"],
+    (deep-find("port", {
+      server: {
+        port: 8080
+        database: { port: 5432 }
+        cache: { port: 6379 }
+      }
+    })) = [8080, 5432, 6379],
+    (deep-find-first("host", "unknown", {
+      server: { host: "10.0.0.1", database: { host: "10.0.0.2" } }
+    })) = "10.0.0.1",
+    (deep-find-first("missing", "fallback", {
+      server: { host: "10.0.0.1", database: { host: "10.0.0.2" } }
+    })) = "fallback",
+    (deep-find-paths("host", {
+      server: { host: "a", db: { host: "b" } }
+    })) = [[:server, :host], [:server, :db, :host]]
+  ]
+}
+
+pass: [
+  type-pred-checks.trues all-true?,
+  deep-find-checks.trues all-true?,
+  deep-find-first-checks.trues all-true?,
+  deep-find-paths-checks.trues all-true?,
+  fixture-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

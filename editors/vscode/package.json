@@ -1,0 +1,62 @@
+{
+  "name": "eucalypt",
+  "displayName": "Eucalypt",
+  "description": "Language support for Eucalypt (.eu files)",
+  "version": "0.1.0",
+  "publisher": "curvelogic",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/curvelogic/eucalypt"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:eucalypt"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "eucalypt",
+        "aliases": [
+          "Eucalypt",
+          "eucalypt"
+        ],
+        "extensions": [
+          ".eu"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "eucalypt",
+        "scopeName": "source.eucalypt",
+        "path": "./syntaxes/eucalypt.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[eucalypt]": {
+        "editor.unicodeHighlight.ambiguousCharacters": false
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.1",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.0"
+  }
+}

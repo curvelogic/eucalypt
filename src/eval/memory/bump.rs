@@ -104,8 +104,7 @@ impl LineMap {
                 }
             } else {
                 // Hit a marked line - check if we have a sufficient hole
-                if count > 1 && upper.is_some() {
-                    let hole_upper = upper.unwrap();
+                if let Some(hole_upper) = upper.filter(|_| count > 1) {
                     let hole_lower = lower;
 
                     // Apply conservative marking: exclude one line from upper end only
@@ -132,8 +131,7 @@ impl LineMap {
         }
 
         // Check for hole at the beginning of the block
-        if count > 1 && upper.is_some() {
-            let hole_upper = upper.unwrap();
+        if let Some(hole_upper) = upper.filter(|_| count > 1) {
             let hole_lower = lower;
 
             // Apply conservative marking: exclude one line from upper end only
@@ -268,7 +266,20 @@ impl Debug for BumpBlock {
     }
 }
 
+/// Compute the base address of the block containing `ptr`, using the
+/// fact that blocks are aligned to `BLOCK_SIZE_BYTES`.
+#[inline]
+pub fn block_base_of<T>(ptr: NonNull<T>) -> usize {
+    ptr.as_ptr() as usize & !(BLOCK_SIZE_BYTES - 1)
+}
+
 impl BumpBlock {
+    /// Return the base address of this block's memory region
+    #[inline]
+    pub fn base_address(&self) -> usize {
+        self.block.as_ptr() as usize
+    }
+
     /// Initialise a fresh new block ready to start bumping downwards
     pub fn new() -> Self {
         BumpBlock {
@@ -300,6 +311,11 @@ impl BumpBlock {
                 }
             } else {
                 self.cursor = next;
+                // SAFETY: The pointer arithmetic is valid because:
+                // - `next` is within bounds: next >= lower >= 0 (checked above)
+                // - `next` < cursor <= BLOCK_SIZE_BYTES (by construction)
+                // - The block owns the underlying memory
+                // - Result points to unallocated space in the current hole
                 unsafe { Some(self.block.as_ptr().add(next)) }
             }
         }

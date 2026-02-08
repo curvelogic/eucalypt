@@ -1,0 +1,61 @@
+##
+## 076: Doc metadata and raw-meta intrinsic
+##
+
+## Test that doc metadata survives to runtime and that raw-meta
+## returns the immediate metadata without recursion
+
+fixture: {
+  ` "Documented function"
+  documented-fn(x): x
+
+  ` :suppress
+  suppressed: 99
+
+  plain: 42
+
+  ` "A namespace block"
+  ns: {
+    ` "Inner documented item"
+    inner(x): x
+  }
+}
+
+doc-checks: {
+  trues: [
+    ## doc metadata is visible via raw-meta
+    (fixture.documented-fn raw-meta has(:doc)) = true,
+    ## doc string can be extracted
+    (fixture.documented-fn raw-meta lookup(:doc)) = "Documented function",
+    ## plain items have no doc metadata
+    (fixture.plain raw-meta has(:doc)) = false,
+    ## export metadata is visible
+    (fixture.suppressed raw-meta lookup(:export)) = :suppress,
+    ## raw-meta returns empty block for items without metadata
+    (42 raw-meta) = {},
+    ## meta also works for doc extraction
+    (fixture.documented-fn meta has(:doc)) = true,
+    ## namespace block doc is accessible
+    (fixture.ns raw-meta lookup(:doc)) = "A namespace block",
+    ## inner namespace items have doc
+    (fixture.ns.inner raw-meta lookup(:doc)) = "Inner documented item"
+  ]
+}
+
+element-checks: {
+  trues: [
+    ## elements are non-empty
+    (fixture elements nil?) = false,
+    ## can get first element pair
+    (fixture elements head first) = :documented-fn,
+    ## can get doc from element via elements
+    (fixture elements head second raw-meta lookup(:doc)) = "Documented function"
+  ]
+}
+
+pass: [
+  doc-checks.trues all-true?,
+  element-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

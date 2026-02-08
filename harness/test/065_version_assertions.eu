@@ -1,0 +1,12 @@
+"Tests for eu.requires version assertion intrinsic."
+
+## Current version is 0.2.0 — these constraints should all pass
+## eu.requires returns unit on success, so we use seq to discard
+## the unit and return a test value.
+_ : eu.requires(">=0.1.0")
+_ : eu.requires(">=0.0.1")
+_ : eu.requires("^0.2")
+_ : eu.requires("0.2")
+_ : eu.requires(">=0.2.0, <1.0.0")
+
+RESULT: :PASS

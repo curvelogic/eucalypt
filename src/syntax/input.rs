@@ -32,8 +32,6 @@ pub enum Locator {
 }
 
 /// Any filename can be represented as a locator
-///
-/// TODO: fix panics on non UTF-8 file name
 impl From<&str> for Locator {
     fn from(s: &str) -> Locator {
         // Chomp away surrounding square brackets
@@ -68,7 +66,7 @@ impl Display for Locator {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         match self {
             Locator::Url(url) => write!(f, "{url}"),
-            Locator::Fs(path) => write!(f, "{}", path.to_str().expect("Bad File")),
+            Locator::Fs(path) => write!(f, "{}", path.to_string_lossy()),
             Locator::Resource(s) => write!(f, "[{s}]"),
             Locator::Pseudo(s) => write!(f, "«{s}»"),
             Locator::StdIn => write!(f, "-"),
@@ -106,6 +104,7 @@ impl Locator {
     fn ext_to_format(ext: &str) -> Option<String> {
         match ext {
             "json" => Some(String::from("json")),
+            "jsonl" => Some(String::from("jsonl")),
             "txt" => Some(String::from("text")),
             "toml" => Some(String::from("toml")),
             "edn" => Some(String::from("edn")),
@@ -241,6 +240,10 @@ pub mod tests {
         assert_eq!(
             Locator::from("data.json").infer_format(),
             Some(String::from("json"))
+        );
+        assert_eq!(
+            Locator::from("data.jsonl").infer_format(),
+            Some(String::from("jsonl"))
         );
         assert_eq!(
             Locator::from("data.toml").infer_format(),

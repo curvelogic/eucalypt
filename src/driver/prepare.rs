@@ -132,7 +132,7 @@ pub fn prepare(
     }
 
     // Prune unused bindings to reduce inline overhead
-    {
+    if !opt.no_dce() {
         let t = Instant::now();
 
         loader.eliminate()?;
@@ -158,7 +158,7 @@ pub fn prepare(
     }
 
     // Prune unused bindings
-    {
+    if !opt.no_dce() {
         let t = Instant::now();
 
         loader.eliminate()?;

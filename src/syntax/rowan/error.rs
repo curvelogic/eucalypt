@@ -57,4 +57,7 @@ pub enum ParseError {
     UnclosedStringInterpolation {
         range: TextRange,
     },
+    InvalidZdtLiteral {
+        range: TextRange,
+    },
 }

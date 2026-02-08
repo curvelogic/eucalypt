@@ -1,0 +1,110 @@
+# Test YAML anchors and aliases
+#
+# Tests: simple scalar anchors, sequence anchors, mapping anchors,
+#        nested anchors, multiple aliases to same anchor
+
+#######################
+# Simple Scalar Anchors
+#######################
+
+scalar_anchor:
+  original: &scalar_val 42
+  aliased: *scalar_val
+  pass: !eu original = aliased
+
+string_anchor:
+  original: &str_val "hello world"
+  aliased: *str_val
+  pass: !eu original = aliased
+
+#######################
+# Sequence Anchors
+#######################
+
+sequence_anchor:
+  original: &seq_val [1, 2, 3]
+  aliased: *seq_val
+  pass: !eu original = aliased
+
+nested_sequence:
+  original: &nested_seq
+    - a
+    - b
+    - [x, y, z]
+  aliased: *nested_seq
+  pass: !eu original = aliased
+
+#######################
+# Mapping Anchors
+#######################
+
+mapping_anchor:
+  original: &map_val
+    x: 1
+    y: 2
+  aliased: *map_val
+  pass: !eu original.x = aliased.x ∧ original.y = aliased.y
+
+nested_mapping:
+  original: &nested_map
+    outer:
+      inner: 99
+  aliased: *nested_map
+  pass: !eu original.outer.inner = aliased.outer.inner
+
+#######################
+# Nested Anchors
+#######################
+
+nested_anchors:
+  outer: &outer
+    inner: &inner 42
+  ref_outer: *outer
+  ref_inner: *inner
+  pass: !eu outer.inner = ref_inner ∧ ref_outer.inner = ref_inner
+
+deeply_nested:
+  level1: &l1
+    level2: &l2
+      level3: &l3 "deep value"
+  ref1: *l1
+  ref2: *l2
+  ref3: *l3
+  pass: !eu level1.level2.level3 = ref3 ∧ ref1.level2.level3 = ref3 ∧ ref2.level3 = ref3
+
+#######################
+# Multiple Aliases
+#######################
+
+multiple_aliases:
+  source: &multi "shared value"
+  alias1: *multi
+  alias2: *multi
+  alias3: *multi
+  pass: !eu alias1 = alias2 ∧ alias2 = alias3 ∧ alias1 = source
+
+alias_in_list:
+  name: &name "Alice"
+  people:
+    - *name
+    - "Bob"
+    - *name
+  pass: !eu (people nth(0)) = name ∧ (people nth(2)) = name ∧ (people nth(1)) = "Bob"
+
+#######################
+# Result
+#######################
+
+RESULT: !eu |
+  [
+    scalar_anchor.pass,
+    string_anchor.pass,
+    sequence_anchor.pass,
+    nested_sequence.pass,
+    mapping_anchor.pass,
+    nested_mapping.pass,
+    nested_anchors.pass,
+    deeply_nested.pass,
+    multiple_aliases.pass,
+    alias_in_list.pass
+  ] all-true? then(:PASS, :FAIL)

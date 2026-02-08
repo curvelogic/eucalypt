@@ -49,10 +49,20 @@ impl<'guard, T: Sized> ScopedPtr<'guard, T> {
     }
 
     pub fn from_non_null(guard: &'guard dyn MutatorScope, ptr: NonNull<T>) -> ScopedPtr<'guard, T> {
+        // SAFETY: The dereference is valid because:
+        // - NonNull<T> guarantees the pointer is non-null
+        // - The pointer came from heap allocation (Heap::alloc)
+        // - The guard lifetime ensures the reference doesn't outlive the heap
+        // - The heap owns the memory and won't deallocate during 'guard
         ScopedPtr::new(guard, unsafe { &*ptr.as_ptr() })
     }
 
     pub fn as_ptr(&self) -> NonNull<T> {
+        // SAFETY: The conversion is valid because:
+        // - `self.value` is a valid reference to heap-allocated memory
+        // - The pointer is non-null (references are never null)
+        // - The cast to *mut T is safe for NonNull construction
+        //   (mutability is determined by how the pointer is used, not its type)
         unsafe { NonNull::new_unchecked(self.value as *const T as *mut T) }
     }
 }

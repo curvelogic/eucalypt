@@ -68,9 +68,9 @@ impl Dynamiser {
             }
             Var::Bound(bv) => {
                 // if the binder is outside the scope of the dynamic
-                // expression then we insert a lookup
-                // TODO: ignore operators!
-                if bv.scope >= self.depth {
+                // expression then we insert a lookup (but not for
+                // operator names, which should not become lookups)
+                if bv.scope >= self.depth && bv.pretty_name.as_ref().is_some_and(|n| is_normal(n)) {
                     self.wrap_lambda = true;
                     RcExpr::from(Expr::Lookup(
                         *s,

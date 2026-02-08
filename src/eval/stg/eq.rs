@@ -87,9 +87,9 @@ fn num_eq(x: &Number, y: &Number) -> bool {
 
 /// Compare two heap strings for equality
 fn str_eq(view: MutatorHeapView, x: RefPtr<HeapString>, y: RefPtr<HeapString>) -> bool {
-    let sx = &*view.scoped(x);
-    let sy = &*view.scoped(y);
-    sx.as_str() == sy.as_str()
+    let sx = view.scoped(x);
+    let sy = view.scoped(y);
+    (*sx).as_str() == (*sy).as_str()
 }
 
 impl StgIntrinsic for Eq {
@@ -109,11 +109,24 @@ impl StgIntrinsic for Eq {
                     nullary_branch(DataConstructor::BoolTrue.tag()),
                     nullary_branch(DataConstructor::BoolFalse.tag()),
                     nullary_branch(DataConstructor::ListNil.tag()),
-                    // unary
-                    unary_branch(DataConstructor::Block.tag()),
+                    // block: compare list fields only, ignore index
+                    (
+                        DataConstructor::Block.tag(),
+                        // [x-list x-index] [x y]
+                        case(
+                            local(3),
+                            vec![(
+                                DataConstructor::Block.tag(),
+                                // [y-list y-index] [x-list x-index] [x y]
+                                Eq.global(lref(2), lref(0)),
+                            )],
+                            f(),
+                        ),
+                    ),
                     unary_branch(DataConstructor::BoxedNumber.tag()),
                     unary_branch(DataConstructor::BoxedString.tag()),
                     unary_branch(DataConstructor::BoxedSymbol.tag()),
+                    unary_branch(DataConstructor::BoxedZdt.tag()),
                     // binary
                     binary_branch(DataConstructor::ListCons.tag()),
                     // block pair can be eq to block kv_list
@@ -200,7 +213,7 @@ impl StgIntrinsic for Eq {
         let eq = match (x, y) {
             (Native::Num(ref nx), Native::Num(ref ny)) => num_eq(nx, ny),
             (Native::Str(sx), Native::Str(sy)) => str_eq(view, sx, sy),
-            (Native::Sym(sx), Native::Sym(sy)) => str_eq(view, sx, sy), // TODO: interning
+            (Native::Sym(id_x), Native::Sym(id_y)) => id_x == id_y,
             (l, r) => l == r,
         };
         machine_return_bool(machine, view, eq)

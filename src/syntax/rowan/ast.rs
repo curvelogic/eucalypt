@@ -177,6 +177,36 @@ impl Str {
     }
 }
 
+ast_token!(CStr, C_STRING);
+impl CStr {
+    /// Get the raw content between quotes (without prefix)
+    /// Escape processing happens during desugaring
+    pub fn raw_value(&self) -> Option<&str> {
+        self.text()
+            .strip_prefix("c\"")
+            .and_then(|s| s.strip_suffix('\"'))
+    }
+}
+
+ast_token!(RawStr, RAW_STRING);
+impl RawStr {
+    pub fn value(&self) -> Option<&str> {
+        self.text()
+            .strip_prefix("r\"")
+            .and_then(|s| s.strip_suffix('\"'))
+    }
+}
+
+ast_token!(TStr, T_STRING);
+impl TStr {
+    /// Get the content between quotes (without prefix)
+    pub fn value(&self) -> Option<&str> {
+        self.text()
+            .strip_prefix("t\"")
+            .and_then(|s| s.strip_suffix('\"'))
+    }
+}
+
 ast_token!(Num, NUMBER);
 
 impl Num {
@@ -190,12 +220,21 @@ impl Num {
 // AST embedding syntax:
 // - `Sym`: `[:a-sym "name"]` - Symbol literal (e.g. `:foo`)
 // - `Str`: `[:a-str "text"]` - String literal (e.g. `"hello"`)
+// - `CStr`: `[:a-cstr "text"]` - C-string literal (e.g. `c"hello\n"`)
+// - `RawStr`: `[:a-rstr "text"]` - Raw string literal (e.g. `r"hello\n"`)
+// - `TStr`: `[:a-tstr "text"]` - ZDT timestamp literal (e.g. `t"2023-01-15T10:30:00Z"`)
 // - `Num`: `[:a-num value]` - Number literal (e.g. `42`, `3.14`)
 pub enum LiteralValue {
     /// A symbol e.g. :foo - Embedding: `[:a-sym "foo"]`
     Sym(Sym),
     /// A string e.g. "foo" - Embedding: `[:a-str "foo"]`
     Str(Str),
+    /// A c-string e.g. c"foo\n" - Embedding: `[:a-cstr "foo\n"]`
+    CStr(CStr),
+    /// A raw string e.g. r"foo\n" - Embedding: `[:a-rstr "foo\n"]`
+    RawStr(RawStr),
+    /// A ZDT literal e.g. t"2023-01-15T10:30:00Z" - Embedding: `[:a-tstr "..."]`
+    TStr(TStr),
     /// A number e.g. 99 - Embedding: `[:a-num 99]`
     Num(Num),
 }
@@ -205,6 +244,9 @@ impl AstToken for LiteralValue {
         match token.kind() {
             SyntaxKind::NUMBER => Num::cast(token).map(LiteralValue::Num),
             SyntaxKind::STRING => Str::cast(token).map(LiteralValue::Str),
+            SyntaxKind::C_STRING => CStr::cast(token).map(LiteralValue::CStr),
+            SyntaxKind::RAW_STRING => RawStr::cast(token).map(LiteralValue::RawStr),
+            SyntaxKind::T_STRING => TStr::cast(token).map(LiteralValue::TStr),
             SyntaxKind::SYMBOL => Sym::cast(token).map(LiteralValue::Sym),
             _ => None,
         }
@@ -216,7 +258,12 @@ impl AstToken for LiteralValue {
     {
         matches!(
             kind,
-            SyntaxKind::NUMBER | SyntaxKind::STRING | SyntaxKind::SYMBOL
+            SyntaxKind::NUMBER
+                | SyntaxKind::STRING
+                | SyntaxKind::C_STRING
+                | SyntaxKind::RAW_STRING
+                | SyntaxKind::T_STRING
+                | SyntaxKind::SYMBOL
         )
     }
 
@@ -224,6 +271,9 @@ impl AstToken for LiteralValue {
         match self {
             LiteralValue::Num(n) => n.syntax(),
             LiteralValue::Str(s) => s.syntax(),
+            LiteralValue::CStr(s) => s.syntax(),
+            LiteralValue::RawStr(s) => s.syntax(),
+            LiteralValue::TStr(s) => s.syntax(),
             LiteralValue::Sym(s) => s.syntax(),
         }
     }
@@ -784,6 +834,18 @@ impl ApplyTuple {
 // - `[:a-string-pattern chunks...]` - String with interpolation and literal chunks
 ast_node!(StringPattern, STRING_PATTERN);
 
+// A c-string pattern with interpolation (escape-processed)
+//
+// AST embedding syntax:
+// - `[:a-cstring-pattern chunks...]` - C-string with interpolation and escape sequences
+ast_node!(CStringPattern, C_STRING_PATTERN);
+
+// A raw string pattern with interpolation (no escape processing)
+//
+// AST embedding syntax:
+// - `[:a-rstring-pattern chunks...]` - Raw string with interpolation
+ast_node!(RawStringPattern, RAW_STRING_PATTERN);
+
 // Literal text content in a string pattern
 //
 // AST embedding syntax:
@@ -834,8 +896,18 @@ ast_node!(StringEscapedClose, STRING_ESCAPED_CLOSE);
 
 impl StringPattern {
     pub fn chunks(&self) -> AstChildren<StringChunk> {
-        // For now, return empty children since we're not parsing the string content during parse phase
-        // This will be implemented properly once we fix the parser to create the proper structure
+        support::children::<StringChunk>(self.syntax())
+    }
+}
+
+impl CStringPattern {
+    pub fn chunks(&self) -> AstChildren<StringChunk> {
+        support::children::<StringChunk>(self.syntax())
+    }
+}
+
+impl RawStringPattern {
+    pub fn chunks(&self) -> AstChildren<StringChunk> {
         support::children::<StringChunk>(self.syntax())
     }
 }
@@ -962,6 +1034,8 @@ impl AstNode for StringChunk {
 // - `ParenExpr`: `[:a-paren-expr soup]` - Parenthesised expression
 // - `Name`: `[:a-name identifier]` - Identifier reference (normal or operator)
 // - `StringPattern`: `[:a-string-pattern chunks...]` - String with interpolation
+// - `CStringPattern`: `[:a-cstring-pattern chunks...]` - C-string with interpolation
+// - `RawStringPattern`: `[:a-rstring-pattern chunks...]` - Raw string with interpolation
 // - `ApplyTuple`: `[:a-apply-tuple args...]` - Function application arguments
 pub enum Element {
     /// Literal value - Embedding: `[:a-lit literal]`
@@ -976,6 +1050,10 @@ pub enum Element {
     Name(Name),
     /// String with interpolation - Embedding: `[:a-string-pattern chunks...]`
     StringPattern(StringPattern),
+    /// C-string with interpolation - Embedding: `[:a-cstring-pattern chunks...]`
+    CStringPattern(CStringPattern),
+    /// Raw string with interpolation - Embedding: `[:a-rstring-pattern chunks...]`
+    RawStringPattern(RawStringPattern),
     /// Function arguments - Embedding: `[:a-apply-tuple args...]`
     ApplyTuple(ApplyTuple),
 }
@@ -995,6 +1073,8 @@ impl AstNode for Element {
                 | SyntaxKind::PAREN_EXPR
                 | SyntaxKind::NAME
                 | SyntaxKind::STRING_PATTERN
+                | SyntaxKind::C_STRING_PATTERN
+                | SyntaxKind::RAW_STRING_PATTERN
                 | SyntaxKind::ARG_TUPLE
         )
     }
@@ -1011,6 +1091,10 @@ impl AstNode for Element {
             SyntaxKind::ARG_TUPLE => ApplyTuple::cast(node).map(Element::ApplyTuple),
             SyntaxKind::NAME => Name::cast(node).map(Element::Name),
             SyntaxKind::STRING_PATTERN => StringPattern::cast(node).map(Element::StringPattern),
+            SyntaxKind::C_STRING_PATTERN => CStringPattern::cast(node).map(Element::CStringPattern),
+            SyntaxKind::RAW_STRING_PATTERN => {
+                RawStringPattern::cast(node).map(Element::RawStringPattern)
+            }
             _ => None,
         }
     }
@@ -1023,6 +1107,8 @@ impl AstNode for Element {
             Element::ParenExpr(e) => e.syntax(),
             Element::Name(n) => n.syntax(),
             Element::StringPattern(s) => s.syntax(),
+            Element::CStringPattern(s) => s.syntax(),
+            Element::RawStringPattern(s) => s.syntax(),
             Element::ApplyTuple(t) => t.syntax(),
         }
     }

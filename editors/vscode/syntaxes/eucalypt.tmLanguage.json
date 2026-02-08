@@ -1,0 +1,131 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Eucalypt",
+  "scopeName": "source.eucalypt",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#c-string" },
+    { "include": "#raw-string" },
+    { "include": "#symbol" },
+    { "include": "#number" },
+    { "include": "#metadata" },
+    { "include": "#keyword" },
+    { "include": "#operator" },
+    { "include": "#punctuation" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.eucalypt",
+      "match": "#.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.eucalypt",
+      "begin": "(?<!c|r)\"",
+      "end": "\"",
+      "patterns": [
+        { "include": "#interpolation" },
+        { "include": "#brace-escape" }
+      ]
+    },
+    "c-string": {
+      "name": "string.quoted.double.c.eucalypt",
+      "begin": "c\"",
+      "end": "\"",
+      "patterns": [
+        { "include": "#interpolation" },
+        {
+          "name": "constant.character.escape.eucalypt",
+          "match": "\\\\[nrtv0\\\\\"afbe]|\\\\x[0-9a-fA-F]{2}|\\\\u\\{[0-9a-fA-F]+\\}"
+        }
+      ]
+    },
+    "raw-string": {
+      "name": "string.quoted.double.raw.eucalypt",
+      "begin": "r\"",
+      "end": "\"",
+      "patterns": [
+        { "include": "#interpolation" },
+        { "include": "#brace-escape" }
+      ]
+    },
+    "interpolation": {
+      "name": "meta.interpolation.eucalypt",
+      "begin": "(?<!\\{)\\{(?!\\{)",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.interpolation.begin.eucalypt" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.section.interpolation.end.eucalypt" }
+      },
+      "patterns": [
+        {
+          "name": "variable.other.interpolation.eucalypt",
+          "match": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!\\-*]*(?:\\.[\\p{L}_•$?][\\p{L}\\p{N}_$?!\\-*]*)*"
+        },
+        {
+          "name": "string.other.format-spec.eucalypt",
+          "match": ":[^}]+"
+        }
+      ]
+    },
+    "brace-escape": {
+      "name": "constant.character.escape.eucalypt",
+      "match": "\\{\\{|\\}\\}"
+    },
+    "symbol": {
+      "patterns": [
+        {
+          "name": "constant.other.symbol.eucalypt",
+          "match": ":[\\p{L}_•$?][\\p{L}\\p{N}_$?!\\-*]*"
+        },
+        {
+          "name": "constant.other.symbol.quoted.eucalypt",
+          "match": ":'[^']*'"
+        }
+      ]
+    },
+    "number": {
+      "name": "constant.numeric.eucalypt",
+      "match": "-?(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+    },
+    "metadata": {
+      "name": "keyword.other.metadata.eucalypt",
+      "match": "`"
+    },
+    "keyword": {
+      "name": "keyword.other.eucalypt",
+      "match": "\\b(?:if|then|when|cond|true|false|null|nil)\\b"
+    },
+    "operator": {
+      "name": "keyword.operator.eucalypt",
+      "match": "(?<![\\p{L}\\p{N}_])[+\\-*/<>=!&|^~%@$?]+(?![\\p{L}\\p{N}_])|\\.\\.+"
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.definition.block.begin.eucalypt", "match": "\\{" },
+        { "name": "punctuation.definition.block.end.eucalypt", "match": "\\}" },
+        { "name": "punctuation.definition.list.begin.eucalypt", "match": "\\[" },
+        { "name": "punctuation.definition.list.end.eucalypt", "match": "\\]" },
+        { "name": "punctuation.definition.paren.begin.eucalypt", "match": "\\(" },
+        { "name": "punctuation.definition.paren.end.eucalypt", "match": "\\)" },
+        { "name": "punctuation.separator.colon.eucalypt", "match": ":" },
+        { "name": "punctuation.separator.comma.eucalypt", "match": "," }
+      ]
+    },
+    "identifier": {
+      "patterns": [
+        {
+          "name": "variable.other.eucalypt",
+          "match": "[\\p{L}_•$?][\\p{L}\\p{N}_$?!\\-*]*"
+        },
+        {
+          "name": "variable.other.quoted.eucalypt",
+          "match": "'[^']*'"
+        }
+      ]
+    }
+  }
+}

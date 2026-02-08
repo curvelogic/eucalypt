@@ -1,10 +1,45 @@
 //! Lexer for Eucalypt
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use codespan::{ByteIndex, ByteOffset, Span};
 use std::{collections::VecDeque, iter::Peekable, str::Chars};
 
-use unic_ucd_category::GeneralCategory;
+use unicode_general_category::{get_general_category, GeneralCategory};
 
 use super::kind::SyntaxKind::{self, *};
+
+/// Whether a Unicode general category is a symbol category
+fn is_symbol_category(cat: GeneralCategory) -> bool {
+    matches!(
+        cat,
+        GeneralCategory::MathSymbol
+            | GeneralCategory::CurrencySymbol
+            | GeneralCategory::ModifierSymbol
+            | GeneralCategory::OtherSymbol
+    )
+}
+
+/// Whether a Unicode general category is a punctuation category
+fn is_punctuation_category(cat: GeneralCategory) -> bool {
+    matches!(
+        cat,
+        GeneralCategory::ConnectorPunctuation
+            | GeneralCategory::DashPunctuation
+            | GeneralCategory::OpenPunctuation
+            | GeneralCategory::ClosePunctuation
+            | GeneralCategory::InitialPunctuation
+            | GeneralCategory::FinalPunctuation
+            | GeneralCategory::OtherPunctuation
+    )
+}
+
+/// String prefix type for c-strings, r-strings and t-strings
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StringPrefix {
+    None,
+    CString,
+    RawString,
+    TString,
+}
 
 /// Eucalypt lexer
 pub struct Lexer<C>
@@ -21,6 +56,8 @@ where
     whitespace_since_last_token: bool,
     /// buffer for string pattern tokens
     token_buffer: VecDeque<(SyntaxKind, Span)>,
+    /// pending string prefix (c or r) to be absorbed by next string
+    pending_string_prefix: Option<(StringPrefix, ByteIndex)>,
 }
 
 /// is c a character which can start a normal identifier?
@@ -74,24 +111,24 @@ fn is_oper_start(c: char) -> bool {
             | ':' => false,
             // For other ASCII punctuation, check Unicode categories
             _ => {
-                let cat = GeneralCategory::of(c);
+                let cat = get_general_category(c);
                 !matches!(
                     cat,
                     GeneralCategory::OpenPunctuation
                         | GeneralCategory::ClosePunctuation
                         | GeneralCategory::InitialPunctuation
                         | GeneralCategory::FinalPunctuation
-                ) && (cat.is_symbol() || cat.is_punctuation())
+                ) && (is_symbol_category(cat) || is_punctuation_category(cat))
             }
         }
     } else {
         // Slow path for non-ASCII (Unicode) characters
-        match GeneralCategory::of(c) {
+        match get_general_category(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
             GeneralCategory::InitialPunctuation => false,
             GeneralCategory::FinalPunctuation => false,
-            cat => cat.is_symbol() || cat.is_punctuation(),
+            cat => is_symbol_category(cat) || is_punctuation_category(cat),
         }
     }
 }
@@ -120,24 +157,24 @@ fn is_oper_continuation(c: char) -> bool {
             | '}' => false,
             // For other ASCII punctuation, check Unicode categories
             _ => {
-                let cat = GeneralCategory::of(c);
+                let cat = get_general_category(c);
                 !matches!(
                     cat,
                     GeneralCategory::OpenPunctuation
                         | GeneralCategory::ClosePunctuation
                         | GeneralCategory::InitialPunctuation
                         | GeneralCategory::FinalPunctuation
-                ) && (cat.is_symbol() || cat.is_punctuation())
+                ) && (is_symbol_category(cat) || is_punctuation_category(cat))
             }
         }
     } else {
         // Slow path for non-ASCII (Unicode) characters
-        match GeneralCategory::of(c) {
+        match get_general_category(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
             GeneralCategory::InitialPunctuation => false,
             GeneralCategory::FinalPunctuation => false,
-            cat => cat.is_symbol() || cat.is_punctuation(),
+            cat => is_symbol_category(cat) || is_punctuation_category(cat),
         }
     }
 }
@@ -148,7 +185,7 @@ fn is_reserved_open(c: char) -> bool {
         matches!(c, '(' | '[' | '{')
     } else {
         matches!(
-            GeneralCategory::of(c),
+            get_general_category(c),
             GeneralCategory::OpenPunctuation | GeneralCategory::InitialPunctuation
         )
     }
@@ -160,7 +197,7 @@ fn is_reserved_close(c: char) -> bool {
         matches!(c, ')' | ']' | '}')
     } else {
         matches!(
-            GeneralCategory::of(c),
+            get_general_category(c),
             GeneralCategory::ClosePunctuation | GeneralCategory::FinalPunctuation
         )
     }
@@ -177,6 +214,7 @@ impl<'text> Lexer<Chars<'text>> {
             last_token: None,
             whitespace_since_last_token: false,
             token_buffer: VecDeque::new(),
+            pending_string_prefix: None,
         }
     }
 }
@@ -217,10 +255,49 @@ where
         (WHITESPACE, Span::new(i, e))
     }
 
-    /// consume a normal identifer
-    fn normal(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
+    /// consume a normal identifer, detecting c-string and r-string prefixes
+    fn normal(&mut self, i: ByteIndex, first_char: char) -> (SyntaxKind, Span) {
         let e = self.consume(is_normal_continuation);
-        (UNQUOTED_IDENTIFIER, Span::new(i, e))
+        let span = Span::new(i, e);
+
+        // Check if this is a single-char 'c' or 'r' identifier followed immediately by a quote
+        if e.to_usize() - i.to_usize() == 1 {
+            if let Some(&'"') = self.peek() {
+                match first_char {
+                    'c' => {
+                        // This is a c-string prefix - consume the quote and handle it
+                        self.bump(); // consume the opening quote
+                        return self.dquote_with_prefix(i, StringPrefix::CString);
+                    }
+                    'r' => {
+                        // This is an r-string prefix - consume the quote and handle it
+                        self.bump(); // consume the opening quote
+                        return self.dquote_with_prefix(i, StringPrefix::RawString);
+                    }
+                    't' => {
+                        // This is a t-string (ZDT literal) prefix
+                        self.bump(); // consume the opening quote
+                        return self.dquote_with_prefix(i, StringPrefix::TString);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        (UNQUOTED_IDENTIFIER, span)
+    }
+
+    /// consume a string literal or string pattern with a known prefix
+    fn dquote_with_prefix(
+        &mut self,
+        prefix_start: ByteIndex,
+        string_prefix: StringPrefix,
+    ) -> (SyntaxKind, Span) {
+        // Store the prefix so dquote can use it
+        self.pending_string_prefix = Some((string_prefix, prefix_start));
+        // The quote position is one byte after the prefix
+        let quote_pos = self.location - ByteOffset(1);
+        self.dquote(quote_pos)
     }
 
     /// consume a normal identifer
@@ -242,6 +319,13 @@ where
 
     /// consume a string literal or string pattern
     fn dquote(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
+        // Check if we have a pending string prefix (c or r)
+        let prefix = self.pending_string_prefix.take();
+        let (string_prefix, prefix_start) = match prefix {
+            Some((p, start)) => (p, start),
+            None => (StringPrefix::None, i),
+        };
+
         // Collect the string content to check for interpolation
         let mut content = String::new();
 
@@ -257,41 +341,103 @@ where
                     self.bump();
                 }
                 None => {
-                    // Unterminated string
-                    return (STRING, Span::new(i, self.location));
+                    // Unterminated string - return appropriate kind
+                    let kind = match string_prefix {
+                        StringPrefix::None => STRING,
+                        StringPrefix::CString => C_STRING,
+                        StringPrefix::RawString => RAW_STRING,
+                        StringPrefix::TString => T_STRING,
+                    };
+                    return (kind, Span::new(prefix_start, self.location));
                 }
             }
         }
 
-        let full_span = Span::new(i, self.location);
+        let full_span = Span::new(prefix_start, self.location);
 
-        // Check if this string contains interpolation (simple check for braces)
-        if content.contains('{') || content.contains('}') {
-            // Use StringPatternLexer to tokenize the content and buffer detailed tokens
-            use super::string_lex::StringPatternLexer;
-            let string_lexer =
-                StringPatternLexer::new(&content, ByteOffset(i.to_usize() as i64 + 1));
+        // T-strings are ZDT literals — no interpolation, just validate and emit
+        if string_prefix == StringPrefix::TString {
+            return (T_STRING, full_span);
+        }
 
-            // Buffer the opening quote
-            self.token_buffer
-                .push_back((STRING_PATTERN_START, Span::new(i, i + ByteOffset(1))));
+        // Determine the token kinds based on prefix
+        let (simple_kind, pattern_start_kind, pattern_end_kind) = match string_prefix {
+            StringPrefix::None => (STRING, STRING_PATTERN_START, STRING_PATTERN_END),
+            StringPrefix::CString => (C_STRING, C_STRING_PATTERN_START, C_STRING_PATTERN_END),
+            StringPrefix::RawString => {
+                (RAW_STRING, RAW_STRING_PATTERN_START, RAW_STRING_PATTERN_END)
+            }
+            StringPrefix::TString => unreachable!(),
+        };
+
+        // Check if this string contains interpolation
+        // For c-strings, \{ and \} are escape sequences, not interpolation markers
+        // For plain and raw strings, {{ and }} are escapes
+        let has_interpolation = match string_prefix {
+            StringPrefix::CString => {
+                // In c-strings, look for unescaped braces
+                self.content_has_unescaped_braces_cstring(&content)
+            }
+            StringPrefix::None | StringPrefix::RawString => {
+                // In plain/raw strings, any brace triggers pattern mode
+                content.contains('{') || content.contains('}')
+            }
+            StringPrefix::TString => unreachable!(),
+        };
+
+        if has_interpolation {
+            // Use appropriate string pattern lexer based on prefix
+            use super::string_lex::{CStringPatternLexer, StringPatternLexer};
+
+            // Buffer the opening quote/prefix
+            self.token_buffer.push_back((
+                pattern_start_kind,
+                Span::new(prefix_start, i + ByteOffset(1)),
+            ));
 
             // Buffer all the detailed tokens from the string content
-            for (token_kind, span, _text) in string_lexer {
-                self.token_buffer.push_back((token_kind, span));
+            let content_offset = ByteOffset(i.to_usize() as i64 + 1);
+            match string_prefix {
+                StringPrefix::CString => {
+                    let string_lexer = CStringPatternLexer::new(&content, content_offset);
+                    for (token_kind, span, _text) in string_lexer {
+                        self.token_buffer.push_back((token_kind, span));
+                    }
+                }
+                StringPrefix::None | StringPrefix::RawString => {
+                    let string_lexer = StringPatternLexer::new(&content, content_offset);
+                    for (token_kind, span, _text) in string_lexer {
+                        self.token_buffer.push_back((token_kind, span));
+                    }
+                }
+                StringPrefix::TString => unreachable!(),
             }
 
             // Buffer the closing quote
             self.token_buffer.push_back((
-                STRING_PATTERN_END,
+                pattern_end_kind,
                 Span::new(self.location - ByteOffset(1), self.location),
             ));
 
             // Return the first buffered token (opening quote)
             self.token_buffer.pop_front().unwrap()
         } else {
-            (STRING, full_span)
+            (simple_kind, full_span)
         }
+    }
+
+    /// Check if content has unescaped braces for c-string interpolation
+    fn content_has_unescaped_braces_cstring(&self, content: &str) -> bool {
+        let mut chars = content.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                // Skip the next character (it's escaped)
+                chars.next();
+            } else if c == '{' || c == '}' {
+                return true;
+            }
+        }
+        false
     }
 
     /// handle colon, returning either colon or symbol literal
@@ -449,7 +595,7 @@ where
             Some((i, '"')) => Some(self.dquote(i)),
             Some((i, '-')) => Some(self.minus(i)),
             Some((i, c)) if c.is_ascii_digit() => Some(self.number(i)),
-            Some((i, c)) if is_normal_start(c) => Some(self.normal(i)),
+            Some((i, c)) if is_normal_start(c) => Some(self.normal(i, c)),
             Some((i, c)) if is_oper_start(c) => Some(self.oper(i)),
             Some((i, c)) if c.is_whitespace() => Some(self.whitespace(i)),
             Some((i, c)) if is_reserved_open(c) => Some((
@@ -478,6 +624,89 @@ where
 
         ret
     }
+}
+
+/// Parse a ZDT timestamp string into a `DateTime<FixedOffset>`.
+///
+/// Supports the same formats as YAML timestamp import:
+/// - RFC3339 with Z or offset (2023-01-15T10:30:00Z, 2023-01-15T10:30:00+05:00)
+/// - ISO8601 without timezone (assumes UTC)
+/// - Space separator instead of T
+/// - Fractional seconds
+/// - Date only (midnight UTC)
+pub fn parse_zdt_literal(text: &str) -> Option<DateTime<FixedOffset>> {
+    let utc = FixedOffset::east_opt(0).unwrap();
+
+    // Try full RFC3339 (2023-01-15T10:30:00Z or 2023-01-15T10:30:00+05:00)
+    if let Ok(dt) = DateTime::parse_from_rfc3339(text) {
+        return Some(dt);
+    }
+
+    // Try RFC3339 with space separator (2023-01-15 10:30:00Z)
+    if let Ok(dt) = DateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%:z") {
+        return Some(dt);
+    }
+    if let Ok(dt) = DateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%SZ") {
+        return Some(DateTime::from_naive_utc_and_offset(dt.naive_utc(), utc));
+    }
+
+    // Try NaiveDateTime with T separator - assume UTC
+    if let Ok(ndt) = NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S") {
+        return Some(DateTime::from_naive_utc_and_offset(ndt, utc));
+    }
+
+    // Try NaiveDateTime with T separator and fractional seconds
+    if let Ok(ndt) = NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f") {
+        return Some(DateTime::from_naive_utc_and_offset(ndt, utc));
+    }
+
+    // Try NaiveDateTime with space separator - assume UTC
+    if let Ok(ndt) = NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S") {
+        return Some(DateTime::from_naive_utc_and_offset(ndt, utc));
+    }
+
+    // Try NaiveDateTime with space separator and fractional seconds
+    if let Ok(ndt) = NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.f") {
+        return Some(DateTime::from_naive_utc_and_offset(ndt, utc));
+    }
+
+    // Try date-only format (2023-01-15) - midnight UTC
+    if let Ok(nd) = NaiveDate::parse_from_str(text, "%Y-%m-%d") {
+        let ndt = nd.and_hms_opt(0, 0, 0)?;
+        return Some(DateTime::from_naive_utc_and_offset(ndt, utc));
+    }
+
+    None
+}
+
+/// Extract the content of a t-string token text (strip `t"` prefix and `"` suffix).
+pub fn tstring_content(token_text: &str) -> Option<&str> {
+    token_text
+        .strip_prefix("t\"")
+        .and_then(|s| s.strip_suffix('\"'))
+}
+
+/// Normalise a ZDT literal for ZDT.PARSE consumption.
+///
+/// Converts space-separated timestamps to T-separated, and appends Z
+/// for timestamps without timezone. Date-only values are left as-is.
+pub fn normalize_zdt_for_parse(text: &str) -> String {
+    // Replace space separator with T
+    let normalized = if text.contains(' ') && !text.contains('T') {
+        text.replacen(' ', "T", 1)
+    } else {
+        text.to_string()
+    };
+
+    // If there's a time component but no timezone, append Z for UTC
+    if let Some(t_pos) = normalized.find('T') {
+        let after_t = &normalized[t_pos..];
+        if !after_t.ends_with('Z') && !after_t.contains('+') && !after_t.contains('-') {
+            return format!("{normalized}Z");
+        }
+    }
+
+    normalized
 }
 
 #[cfg(test)]
@@ -665,5 +894,140 @@ d: {
                 (STRING, Span::new(1, 4)),
             ],
         );
+    }
+
+    #[test]
+    fn test_nullary_operator_symbols() {
+        // ∅ (U+2205 EMPTY SET) is a MathSymbol, should be recognized as operator
+        test_lex(
+            "(∅):",
+            vec![
+                (OPEN_PAREN, Span::new(0, 1)),
+                (OPERATOR_IDENTIFIER, Span::new(1, 4)), // ∅ is 3 bytes in UTF-8
+                (CLOSE_PAREN, Span::new(4, 5)),
+                (COLON, Span::new(5, 6)),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_cstring_simple() {
+        // c"hello" should be lexed as a C_STRING
+        test_lex(r#"c"hello""#, vec![(C_STRING, Span::new(0, 8))]);
+    }
+
+    #[test]
+    fn test_rstring_simple() {
+        // r"hello" should be lexed as a RAW_STRING
+        test_lex(r#"r"hello""#, vec![(RAW_STRING, Span::new(0, 8))]);
+    }
+
+    #[test]
+    fn test_cstring_with_space() {
+        // c "hello" (with space) should be identifier + string
+        test_lex(
+            r#"c "hello""#,
+            vec![
+                (UNQUOTED_IDENTIFIER, Span::new(0, 1)),
+                (WHITESPACE, Span::new(1, 2)),
+                (STRING, Span::new(2, 9)),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_tstring_simple() {
+        // t"2023-01-15T10:30:00Z" should be lexed as T_STRING
+        test_lex(
+            r#"t"2023-01-15T10:30:00Z""#,
+            vec![(T_STRING, Span::new(0, 23))],
+        );
+    }
+
+    #[test]
+    fn test_tstring_date_only() {
+        // t"2023-01-15" should be lexed as T_STRING
+        test_lex(r#"t"2023-01-15""#, vec![(T_STRING, Span::new(0, 13))]);
+    }
+
+    #[test]
+    fn test_tstring_with_offset() {
+        // t"2023-01-15T10:30:00+05:00" should be lexed as T_STRING
+        test_lex(
+            r#"t"2023-01-15T10:30:00+05:00""#,
+            vec![(T_STRING, Span::new(0, 28))],
+        );
+    }
+
+    #[test]
+    fn test_tstring_with_space() {
+        // t "2023-01-15" (with space) should be identifier + string
+        test_lex(
+            r#"t "2023-01-15""#,
+            vec![
+                (UNQUOTED_IDENTIFIER, Span::new(0, 1)),
+                (WHITESPACE, Span::new(1, 2)),
+                (STRING, Span::new(2, 14)),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_tstring_no_interpolation() {
+        // t-strings with braces should NOT trigger interpolation
+        test_lex(
+            r#"t"2023-01-15T10:30:00Z""#,
+            vec![(T_STRING, Span::new(0, 23))],
+        );
+    }
+
+    #[test]
+    fn test_tstring_in_context() {
+        // t-string used as a declaration value
+        test_lex(
+            r#"x: t"2023-01-15""#,
+            vec![
+                (UNQUOTED_IDENTIFIER, Span::new(0, 1)),
+                (COLON, Span::new(1, 2)),
+                (WHITESPACE, Span::new(2, 3)),
+                (T_STRING, Span::new(3, 16)),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_parse_zdt_valid_formats() {
+        use super::parse_zdt_literal;
+
+        // RFC3339 with Z
+        assert!(parse_zdt_literal("2023-01-15T10:30:00Z").is_some());
+        // RFC3339 with offset
+        assert!(parse_zdt_literal("2023-01-15T10:30:00+05:00").is_some());
+        // No timezone (assumes UTC)
+        assert!(parse_zdt_literal("2023-01-15T10:30:00").is_some());
+        // Space separator
+        assert!(parse_zdt_literal("2023-01-15 10:30:00").is_some());
+        // Fractional seconds
+        assert!(parse_zdt_literal("2023-01-15T10:30:00.123Z").is_some());
+        // Date only
+        assert!(parse_zdt_literal("2023-01-15").is_some());
+        // Leap year
+        assert!(parse_zdt_literal("2024-02-29").is_some());
+    }
+
+    #[test]
+    fn test_parse_zdt_invalid_formats() {
+        use super::parse_zdt_literal;
+
+        // Invalid day
+        assert!(parse_zdt_literal("2023-02-30").is_none());
+        // Invalid month
+        assert!(parse_zdt_literal("2023-13-01").is_none());
+        // Non-leap year Feb 29
+        assert!(parse_zdt_literal("2023-02-29").is_none());
+        // Malformed
+        assert!(parse_zdt_literal("not-a-date").is_none());
+        // Empty
+        assert!(parse_zdt_literal("").is_none());
     }
 }

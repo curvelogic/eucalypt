@@ -1,0 +1,76 @@
+# Deep find/query performance benchmark
+#
+# Measures deep-find and deep-query performance on inline
+# moderately-sized nested structures.
+#
+# This benchmark uses inline data to avoid import overhead
+# and focuses on the VM execution cost of recursive traversal.
+
+# --- Build a nested structure with 20 services ---
+
+services: {
+  svc_00: { name: "s00", host: "10.0.0.0", port: 8000, config: { timeout: 30, host: "int-00", priority: 0 } }
+  svc_01: { name: "s01", host: "10.0.0.1", port: 8001, config: { timeout: 31, host: "int-01", priority: 1 } }
+  svc_02: { name: "s02", host: "10.0.0.2", port: 8002, config: { timeout: 32, host: "int-02", priority: 2 } }
+  svc_03: { name: "s03", host: "10.0.0.3", port: 8003, config: { timeout: 33, host: "int-03", priority: 3 } }
+  svc_04: { name: "s04", host: "10.0.0.4", port: 8004, config: { timeout: 34, host: "int-04", priority: 0 } }
+  svc_05: { name: "s05", host: "10.0.0.5", port: 8005, config: { timeout: 35, host: "int-05", priority: 1 } }
+  svc_06: { name: "s06", host: "10.0.0.6", port: 8006, config: { timeout: 36, host: "int-06", priority: 2 } }
+  svc_07: { name: "s07", host: "10.0.0.7", port: 8007, config: { timeout: 37, host: "int-07", priority: 3 } }
+  svc_08: { name: "s08", host: "10.0.0.8", port: 8008, config: { timeout: 38, host: "int-08", priority: 0 } }
+  svc_09: { name: "s09", host: "10.0.0.9", port: 8009, config: { timeout: 39, host: "int-09", priority: 1 } }
+  svc_10: { name: "s10", host: "10.0.0.10", port: 8010, config: { timeout: 40, host: "int-10", priority: 2 } }
+  svc_11: { name: "s11", host: "10.0.0.11", port: 8011, config: { timeout: 41, host: "int-11", priority: 3 } }
+  svc_12: { name: "s12", host: "10.0.0.12", port: 8012, config: { timeout: 42, host: "int-12", priority: 0 } }
+  svc_13: { name: "s13", host: "10.0.0.13", port: 8013, config: { timeout: 43, host: "int-13", priority: 1 } }
+  svc_14: { name: "s14", host: "10.0.0.14", port: 8014, config: { timeout: 44, host: "int-14", priority: 2 } }
+  svc_15: { name: "s15", host: "10.0.0.15", port: 8015, config: { timeout: 45, host: "int-15", priority: 3 } }
+  svc_16: { name: "s16", host: "10.0.0.16", port: 8016, config: { timeout: 46, host: "int-16", priority: 0 } }
+  svc_17: { name: "s17", host: "10.0.0.17", port: 8017, config: { timeout: 47, host: "int-17", priority: 1 } }
+  svc_18: { name: "s18", host: "10.0.0.18", port: 8018, config: { timeout: 48, host: "int-18", priority: 2 } }
+  svc_19: { name: "s19", host: "10.0.0.19", port: 8019, config: { timeout: 49, host: "int-19", priority: 3 } }
+}
+
+# --- deep-find: find all hosts (should be 40: 20 direct + 20 nested) ---
+
+` :suppress
+all-hosts: deep-find("host", services)
+
+` :suppress
+host-count: all-hosts foldl(0, {n: •, _: •}.n + 1)
+
+# --- deep-query: find config.host values ---
+
+` :suppress
+config-hosts: deep-query("config.host", services)
+
+` :suppress
+config-host-count: config-hosts foldl(0, {n: •, _: •}.n + 1)
+
+# --- deep-find-first ---
+
+` :suppress
+first-host: deep-find-first("host", "none", services)
+
+# --- deep-query with wildcard ---
+
+` :suppress
+star-hosts: deep-query("*.host", services)
+
+` :suppress
+star-host-count: star-hosts foldl(0, {n: •, _: •}.n + 1)
+
+` { target: :bench-deep-find-perf }
+bench-deep-find-perf: {
+  deep-find-host-count: host-count
+  deep-query-config-host-count: config-host-count
+  deep-find-first-host: first-host
+  deep-query-star-host-count: star-host-count
+  RESULT: if(host-count = 40,
+             if(config-host-count = 20,
+                if(first-host = "10.0.0.0",
+                   if(star-host-count = 20, :PASS, :FAIL),
+                   :FAIL),
+                :FAIL),
+             :FAIL)
+}

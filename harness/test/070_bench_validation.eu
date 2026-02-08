@@ -1,0 +1,10 @@
+` { target: :bench-report-only }
+bench-report-only: {
+  x: foldl(+, 0, [1, 2, 3, 4, 5])
+  result: x
+}
+
+` { target: :bench-with-result }
+bench-with-result: {
+  RESULT: :PASS
+}

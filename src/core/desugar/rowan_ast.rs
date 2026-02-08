@@ -19,7 +19,10 @@ use crate::{
         rt,
         transform::dynamise,
     },
-    syntax::rowan::ast::{self as rowan_ast, AstToken, Element, HasSoup},
+    syntax::rowan::{
+        ast::{self as rowan_ast, AstToken, Element, HasSoup},
+        lex,
+    },
 };
 use codespan::{ByteIndex, Span};
 use moniker::{Binder, Embed, Rec, Scope};
@@ -55,6 +58,54 @@ impl Desugarable for rowan_ast::Literal {
                     } else {
                         return Err(CoreError::InvalidEmbedding(
                             "invalid string literal".to_string(),
+                            desugarer.new_smid(span),
+                        ));
+                    }
+                }
+                rowan_ast::LiteralValue::CStr(s) => {
+                    if let Some(raw_text) = s.raw_value() {
+                        // Process escape sequences for c-strings
+                        use super::escape;
+                        match escape::process_escapes(raw_text) {
+                            Ok(processed) => Primitive::Str(processed),
+                            Err(e) => {
+                                return Err(CoreError::InvalidEmbedding(
+                                    format!("invalid c-string escape: {}", e),
+                                    desugarer.new_smid(span),
+                                ));
+                            }
+                        }
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid c-string literal".to_string(),
+                            desugarer.new_smid(span),
+                        ));
+                    }
+                }
+                rowan_ast::LiteralValue::RawStr(s) => {
+                    // Raw strings are literal - no escape processing
+                    if let Some(text) = s.value() {
+                        Primitive::Str(text.to_string())
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid raw string literal".to_string(),
+                            desugarer.new_smid(span),
+                        ));
+                    }
+                }
+                rowan_ast::LiteralValue::TStr(s) => {
+                    // ZDT literal desugars to ZDT.PARSE(normalized_content)
+                    if let Some(content) = s.value() {
+                        let smid = desugarer.new_smid(span);
+                        let normalized = lex::normalize_zdt_for_parse(content);
+                        return Ok(core::app(
+                            smid,
+                            core::bif(smid, "ZDT.PARSE"),
+                            vec![core::str(smid, normalized)],
+                        ));
+                    } else {
+                        return Err(CoreError::InvalidEmbedding(
+                            "invalid ZDT literal".to_string(),
                             desugarer.new_smid(span),
                         ));
                     }
@@ -133,7 +184,30 @@ impl Desugarable for Element {
             }
             Element::StringPattern(pattern) => {
                 let span = text_range_to_span(pattern.syntax().text_range());
-                desugar_rowan_string_pattern(span, pattern, desugarer)
+                desugar_rowan_string_pattern(
+                    span,
+                    pattern.chunks(),
+                    StringPatternMode::Plain,
+                    desugarer,
+                )
+            }
+            Element::CStringPattern(pattern) => {
+                let span = text_range_to_span(pattern.syntax().text_range());
+                desugar_rowan_string_pattern(
+                    span,
+                    pattern.chunks(),
+                    StringPatternMode::CString,
+                    desugarer,
+                )
+            }
+            Element::RawStringPattern(pattern) => {
+                let span = text_range_to_span(pattern.syntax().text_range());
+                desugar_rowan_string_pattern(
+                    span,
+                    pattern.chunks(),
+                    StringPatternMode::Raw,
+                    desugarer,
+                )
             }
             Element::ApplyTuple(tuple) => {
                 let span = text_range_to_span(tuple.syntax().text_range());
@@ -345,7 +419,7 @@ fn extract_rowan_declaration_components(
                     body,
                     arg_vars,
                     is_operator: true,
-                    fixity: None,
+                    fixity: Some(crate::core::expr::Fixity::Nullary),
                 })
             }
             rowan_ast::DeclarationKind::MalformedHead(_) => Err(CoreError::InvalidEmbedding(
@@ -411,23 +485,50 @@ fn desugar_rowan_name(
     }
 }
 
+/// Mode for string pattern processing
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StringPatternMode {
+    /// Plain string - no backslash escape processing
+    Plain,
+    /// C-string - process backslash escape sequences
+    CString,
+    /// Raw string - no backslash escape processing (same as plain)
+    Raw,
+}
+
 /// Desugar string pattern directly from Rowan AST
 fn desugar_rowan_string_pattern(
     span: Span,
-    pattern: &rowan_ast::StringPattern,
+    chunks: rowan_ast::AstChildren<rowan_ast::StringChunk>,
+    mode: StringPatternMode,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
     // Desugar chunks directly without converting to legacy AST
     let mut translated_chunks = Vec::new();
 
-    for chunk in pattern.chunks() {
+    for chunk in chunks {
         let chunk_expr = match chunk {
             rowan_ast::StringChunk::LiteralContent(content) => {
                 if let Some(text) = content.value() {
                     let chunk_span = text_range_to_span(content.syntax().text_range());
+                    // Process escapes for c-strings
+                    let processed_text = if mode == StringPatternMode::CString {
+                        use super::escape;
+                        match escape::process_escapes(&text) {
+                            Ok(processed) => processed,
+                            Err(e) => {
+                                return Err(CoreError::InvalidEmbedding(
+                                    format!("invalid c-string escape: {}", e),
+                                    desugarer.new_smid(chunk_span),
+                                ));
+                            }
+                        }
+                    } else {
+                        text.to_string()
+                    };
                     RcExpr::from(Expr::Literal(
                         desugarer.new_smid(chunk_span),
-                        Primitive::Str(text.to_string()),
+                        Primitive::Str(processed_text),
                     ))
                 } else {
                     RcExpr::from(Expr::Literal(
@@ -761,10 +862,9 @@ fn rowan_declaration_to_binding(
     };
 
     // Handle documentation if in base file
-    if let Some(_doc) = &metadata.doc {
+    if let Some(doc) = &metadata.doc {
         if desugarer.in_base_file() {
-            // Documentation processing disabled for now during legacy AST elimination
-            // TODO: Implement native Rowan documentation support that doesn't depend on legacy AST
+            desugarer.record_doc(doc.clone(), &components.name, components.args.clone());
         }
     }
 
