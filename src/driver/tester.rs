@@ -1,5 +1,6 @@
 //! Running test scripts
-use crate::core::{analyse::testplan::TestPlan, target::Target};
+use crate::core::analyse::testplan::{ErrorExpectation, TestPlan};
+use crate::core::target::Target;
 use crate::driver::error::EucalyptError;
 use crate::driver::eval;
 use crate::driver::options::EucalyptOptions;
@@ -31,6 +32,36 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
     run_plans(opt, plans.as_slice())
 }
 
+/// Entry point for error tests — creates a plan from the `.expect`
+/// sidecar (if present) and runs through the standard pipeline.
+///
+/// Error tests bypass the normal metadata analysis since the test
+/// file itself may have deliberate parse errors. If no `.expect`
+/// sidecar exists, the test is treated as unvalidated and passes
+/// without running.
+pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
+    let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
+    let input = opt.explicit_inputs().last().unwrap_or(&cwd);
+    let path = resolve_input(opt, input)?;
+    let run_id = Uuid::new_v4().hyphenated().to_string();
+
+    let expectation = match ErrorExpectation::load(&path) {
+        Ok(Some(exp)) => exp,
+        Ok(None) => {
+            // No sidecar — unvalidated error test, skip gracefully
+            return Ok(0);
+        }
+        Err(e) => {
+            return Err(EucalyptError::FileCouldNotBeRead(format!(
+                "failed to load .expect sidecar: {e}"
+            )));
+        }
+    };
+
+    let plan = TestPlan::for_error_test(&run_id, &path, expectation);
+    run_plans(opt, &[plan])
+}
+
 /// Resolve the one and only input to determine if we are running a
 /// single test or a suite.
 pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, EucalyptError> {
@@ -60,7 +91,12 @@ fn load_plan(
     let mut timings = Timings::default();
 
     let mut analysis_lib_path = opt.lib_path().to_vec();
-    analysis_lib_path.push(filename.parent().unwrap().to_path_buf());
+    analysis_lib_path.push(
+        filename
+            .parent()
+            .expect("test file should have a parent directory")
+            .to_path_buf(),
+    );
 
     let mut loader = SourceLoader::new(analysis_lib_path);
 
@@ -198,9 +234,17 @@ pub trait Tester {
 
 pub struct InProcessTester {}
 
-/// TODO: eu escaping
+/// Quote a string for embedding in eu source code.
+///
+/// Escapes double quotes and curly braces (which would otherwise
+/// trigger string interpolation).
 fn quote<T: AsRef<str>>(text: T) -> String {
-    format!("\"{}\"", text.as_ref().replace('\"', "\\\""))
+    let escaped = text
+        .as_ref()
+        .replace('{', "{{")
+        .replace('}', "}}")
+        .replace('\"', "\\\"");
+    format!("\"{escaped}\"")
 }
 
 /// Convert stats to a core expression for output
@@ -270,9 +314,24 @@ impl InProcessTester {
                 .collect();
 
             if expectations.is_empty() {
-                expectations
-                    .push("{ name: \"default\" function-key: \"default-expectation\"}".to_string());
+                if result.target.is_benchmark() {
+                    // Bench targets without explicit validations are
+                    // report-only: use an expectation that always passes
+                    // so they don't affect the overall pass/fail summary.
+                    expectations
+                        .push("{ name: \"bench\" function-key: \"bench-expectation\"}".to_string());
+                } else {
+                    expectations.push(
+                        "{ name: \"default\" function-key: \"default-expectation\"}".to_string(),
+                    );
+                }
             }
+
+            let benchmark_field = if result.target.is_benchmark() {
+                "\n    benchmark: true"
+            } else {
+                ""
+            };
 
             let test_template = format!(
                 r#"
@@ -282,15 +341,18 @@ impl InProcessTester {
     stderr: '{}'
     result: {}
     expectations: [{}]
-    stats: {}
+    stats: {}{benchmark_field}
   }}"#,
                 &target_name,
                 &format,
                 result.exit_code.unwrap_or(1),
-                stdout.name().as_ref().unwrap(),
-                stderr.name().as_ref().unwrap(),
+                stdout.name().as_ref().expect("stdout temp file has a name"),
+                stderr.name().as_ref().expect("stderr temp file has a name"),
                 if result.exit_code.is_some() {
-                    format!("'{}'", output.name().as_ref().unwrap())
+                    format!(
+                        "'{}'",
+                        output.name().as_ref().expect("output temp file has a name")
+                    )
                 } else {
                     "{ RESULT: :FAIL }".to_string()
                 },
@@ -309,7 +371,9 @@ impl InProcessTester {
         }
         writeln!(&mut evidence_script, "}}\n")?;
 
-        let evidence_script_text = std::str::from_utf8(&evidence_script).unwrap().to_string();
+        let evidence_script_text = std::str::from_utf8(&evidence_script)
+            .expect("evidence script should be valid UTF-8")
+            .to_string();
         let evidence_input = Input::new(Locator::Literal(evidence_script_text), None, "eu");
         inputs.push(evidence_input);
 
@@ -323,6 +387,115 @@ impl InProcessTester {
         eval::run(&evidence_opts, loader)?;
 
         Ok(())
+    }
+}
+
+impl InProcessTester {
+    /// Validate an error test by checking exit code and stderr against
+    /// the `.expect` sidecar expectations.
+    ///
+    /// Reads the evidence.yaml to extract actual exit code and stderr,
+    /// then writes a result YAML with overall PASS/FAIL.
+    fn validate_error_test(&self, plan: &TestPlan) -> Result<(), EucalyptError> {
+        let expectation = plan
+            .error_expectation()
+            .expect("validate_error_test called on non-error test");
+
+        // Read the evidence YAML to get actual exit code and stderr
+        let evidence_text = fs::read_to_string(plan.evidence_file_name())?;
+        let (actual_exit, actual_stderr) = Self::extract_error_evidence(&evidence_text);
+
+        let (overall, reason) = match expectation.validate(actual_exit, &actual_stderr) {
+            Ok(()) => ("PASS".to_string(), String::new()),
+            Err(reason) => ("FAIL".to_string(), reason),
+        };
+
+        // Write a result YAML compatible with the summary reader and
+        // report generator. The report generator (lib/test.eu) expects
+        // each test entry to have stdout, stderr, validation, and stats
+        // keys.
+        let escaped_reason = reason.replace('"', "\\\"").replace('\n', "\\n");
+        let escaped_stderr = actual_stderr.replace('"', "\\\"").replace('\n', "\\n");
+        let result_yaml = format!(
+            r#"overall: {overall}
+title: {title}
+tests:
+  error-test:
+    exit: {actual_exit}
+    stdout: []
+    stderr:
+      - "{escaped_stderr}"
+    stats:
+      ticks: 0
+      allocs: 0
+      max-stack: 0
+    validation:
+      - name: error-expectation
+        result: {overall}
+        reason: "{escaped_reason}"
+"#,
+            title = plan.title(),
+        );
+        fs::write(plan.result_file_name(), result_yaml)?;
+
+        Ok(())
+    }
+
+    /// Print benchmark stats to stderr for a benchmark target.
+    fn report_bench_stats(target_name: &str, format: &str, stats: &Statistics) {
+        eprintln!("\nBENCH {target_name} ({format})");
+        eprintln!("  ticks:     {:>10}", stats.ticks());
+        eprintln!("  allocs:    {:>10}", stats.allocs());
+        eprintln!("  max-stack: {:>10}", stats.max_stack());
+    }
+
+    /// Extract exit code and stderr from evidence YAML text.
+    ///
+    /// The evidence format has a `tests` block with entries like:
+    /// ```yaml
+    /// tests:
+    ///   default-yaml:
+    ///     exit: 1
+    ///     stderr: ...
+    /// ```
+    /// We extract the first test entry's exit and stderr values.
+    fn extract_error_evidence(evidence_text: &str) -> (i32, String) {
+        let mut exit_code = 1i32;
+        let mut stderr_lines = Vec::new();
+        let mut in_stderr = false;
+
+        for line in evidence_text.lines() {
+            let trimmed = line.trim();
+
+            // Look for "exit: N" lines
+            if let Some(val) = trimmed.strip_prefix("exit:") {
+                if let Ok(code) = val.trim().parse::<i32>() {
+                    exit_code = code;
+                }
+            }
+
+            // stderr in evidence.yaml is stored as a list of strings
+            if trimmed == "stderr:" {
+                in_stderr = true;
+                continue;
+            }
+
+            if in_stderr {
+                if let Some(item) = trimmed.strip_prefix("- ") {
+                    // Strip surrounding quotes
+                    let item = item
+                        .strip_prefix('"')
+                        .and_then(|v| v.strip_suffix('"'))
+                        .or_else(|| item.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+                        .unwrap_or(item);
+                    stderr_lines.push(item.to_string());
+                } else if !trimmed.starts_with('-') {
+                    in_stderr = false;
+                }
+            }
+        }
+
+        (exit_code, stderr_lines.join("\n"))
     }
 }
 
@@ -342,7 +515,25 @@ impl Tester for InProcessTester {
                 let mut loader = SourceLoader::new(test_opts.lib_path().to_vec());
                 let mut statistics = Statistics::default();
 
-                prepare::prepare(&test_opts, &mut loader, statistics.timings_mut())?;
+                // For error tests, catch preparation failures gracefully
+                // since the error itself is what we're testing
+                let prep_result =
+                    prepare::prepare(&test_opts, &mut loader, statistics.timings_mut());
+
+                if let Err(e) = prep_result {
+                    if plan.is_error_test() {
+                        results.push(TestResult {
+                            target: t,
+                            format: f.to_string(),
+                            exit_code: Some(1),
+                            stdout: String::new(),
+                            stderr: format!("{e}"),
+                            statistics,
+                        });
+                        continue;
+                    }
+                    return Err(e);
+                }
 
                 let mut outbuf = Vec::new();
                 let mut errbuf = Vec::new();
@@ -355,14 +546,24 @@ impl Tester for InProcessTester {
                     executor.execute(&test_opts, &mut statistics, f.clone())
                 };
 
-                results.push(TestResult {
+                let result = TestResult {
                     target: t,
                     format: f.to_string(),
                     exit_code: exit_code.unwrap_or(None),
-                    stdout: std::str::from_utf8(outbuf.as_slice()).unwrap().to_string(),
-                    stderr: std::str::from_utf8(errbuf.as_slice()).unwrap().to_string(),
+                    stdout: std::str::from_utf8(outbuf.as_slice())
+                        .expect("stdout should be valid UTF-8")
+                        .to_string(),
+                    stderr: std::str::from_utf8(errbuf.as_slice())
+                        .expect("stderr should be valid UTF-8")
+                        .to_string(),
                     statistics,
-                });
+                };
+
+                if t.is_benchmark() {
+                    Self::report_bench_stats(t.name(), f, &result.statistics);
+                }
+
+                results.push(result);
             }
         }
 
@@ -372,9 +573,17 @@ impl Tester for InProcessTester {
     /// Validates the evidence.yaml which was written during the run stage
     /// and writes the results file.
     fn validate(&self, plan: &TestPlan) -> Result<(), EucalyptError> {
+        if plan.is_error_test() {
+            return self.validate_error_test(plan);
+        }
+
         // Adding test subject back in, we may need to set the lib
         // path for imports again
-        let lib_path = vec![plan.file().parent().unwrap().to_path_buf()];
+        let lib_path = vec![plan
+            .file()
+            .parent()
+            .expect("test plan file should have a parent directory")
+            .to_path_buf()];
 
         let validate_opts = EucalyptOptions::default()
             .with_explicit_inputs(vec![
@@ -383,8 +592,10 @@ impl Tester for InProcessTester {
                     Some("evidence".to_string()),
                     "yaml",
                 ),
-                // add the test subject again for availability of validations
-                // TODO: parse / compile failures...
+                // Re-import test subject so validation expressions
+                // can reference it. Error tests are handled separately
+                // (validate_error_test) so parse/compile failures here
+                // propagate as test failures, which is correct.
                 Input::from(Locator::Fs(plan.file().to_path_buf())).with_name("subject"),
                 Input::from(Locator::Resource("test".to_string())),
             ])
@@ -426,7 +637,9 @@ impl Tester for InProcessTester {
                 .execute(&check_opts, &mut stats, "text".to_string())
                 .map_err(|e| EucalyptError::Execution(Box::new(e)))?;
         }
-        let output = std::str::from_utf8(outbuf.as_slice()).unwrap().to_string();
+        let output = std::str::from_utf8(outbuf.as_slice())
+            .expect("validation output should be valid UTF-8")
+            .to_string();
         Ok(output)
     }
 
@@ -434,7 +647,10 @@ impl Tester for InProcessTester {
     ///
     /// Return path to generated report
     fn report(&self, plans: &[TestPlan]) -> Result<PathBuf, EucalyptError> {
-        let test_dir = plans.first().unwrap().result_directory();
+        let test_dir = plans
+            .first()
+            .expect("report requires at least one test plan")
+            .result_directory();
 
         // first combine all the result.yamls into one
         let inputs: Vec<Input> = plans

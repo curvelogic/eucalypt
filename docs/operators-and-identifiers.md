@@ -85,6 +85,30 @@ x: { name: name } //=> infinite recursion
 Accessing shadowed values is not yet easily possible unless you can
 refer to an enclosing block and use a lookup.
 
+## Prefix operators
+
+Some operators are defined as prefix (unary) operators rather than
+infix (binary) operators. These bind tightly to the expression that
+follows.
+
+For example, the `↑` operator is a tight-binding prefix form of `head`:
+
+```eu
+xs: [1, 2, 3]
+first: ↑xs  //=> 1
+```
+
+Because it binds tightly (precedence 95), it works naturally in
+pipelines without parentheses:
+
+```eu
+xs: [[1, 2], [3, 4]]
+result: xs map(↑)  # map head over list of lists
+```
+
+Other prefix operators include `!` and `¬` for boolean negation, and
+`∸` for numeric negation.
+
 ## Operator identifiers
 
 Operator identifiers are more limited than normal identifiers.

@@ -8,7 +8,6 @@ extern crate pretty;
 extern crate regex;
 extern crate serde_json;
 extern crate thiserror;
-extern crate unic_ucd_category;
 extern crate url;
 #[macro_use]
 extern crate lazy_static;

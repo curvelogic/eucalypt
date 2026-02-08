@@ -44,6 +44,11 @@ impl Block {
     }
 
     fn alloc_block(size: usize) -> Result<NonNull<u8>, BlockError> {
+        // SAFETY: The layout is valid because:
+        // - `size` is a power of two (checked by caller in `Block::new`)
+        // - Alignment equals size, which is valid for power-of-two sizes
+        // - The returned pointer is checked for null before use
+        // - Memory is owned exclusively by this Block instance
         unsafe {
             let ptr = alloc(Layout::from_size_align_unchecked(size, size));
             if ptr.is_null() {
@@ -62,6 +67,11 @@ impl Block {
     /// Fill areas that are meant to be dead with 0xff to aid debugging
     pub fn fill(&self, offset_bytes: usize, size_bytes: usize) {
         #[cfg(debug_assertions)]
+        // SAFETY: This is only called from bump allocation with valid offsets:
+        // - `offset_bytes` is within the block (cursor position from bump())
+        // - `offset_bytes + size_bytes` <= block size (hole boundaries from find_hole)
+        // - The Block owns this memory exclusively
+        // - Only called in debug builds for memory debugging
         unsafe {
             let start = self.ptr.as_ptr().add(offset_bytes);
             let mem = std::slice::from_raw_parts_mut(start, size_bytes);
@@ -70,11 +80,15 @@ impl Block {
     }
 
     fn dealloc_block(ptr: NonNull<u8>, size: usize) {
+        // SAFETY: The deallocation is valid because:
+        // - `ptr` was allocated by `alloc_block` with the same layout
+        // - `size` matches the original allocation size (stored in Block)
+        // - Layout uses size==alignment, matching the allocation
+        // - Block owns this memory exclusively and is being dropped
         unsafe { dealloc(ptr.as_ptr(), Layout::from_size_align_unchecked(size, size)) }
     }
 
     pub fn byte_offset_of<T>(&self, ptr: NonNull<T>) -> Option<usize> {
-        // TODO: efficiency
         if ptr.cast() > self.ptr {
             let offset = (ptr.as_ptr() as usize).abs_diff(self.ptr.as_ptr() as usize);
             if offset < BLOCK_SIZE_BYTES {

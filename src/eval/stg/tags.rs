@@ -47,7 +47,7 @@ impl DataConstructor {
             DataConstructor::BoxedString => 1,
             DataConstructor::ListNil => 0,
             DataConstructor::ListCons => 2,
-            DataConstructor::Block => 1,
+            DataConstructor::Block => 2,
             DataConstructor::BlockPair => 2,
             DataConstructor::BlockKvList => 2,
             DataConstructor::BoxedZdt => 1,

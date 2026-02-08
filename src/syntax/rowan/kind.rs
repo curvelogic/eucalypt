@@ -81,6 +81,29 @@ pub enum SyntaxKind {
     /// Escaped close brace }}
     STRING_ESCAPED_CLOSE,
 
+    // C-string pattern syntax kinds (escape-processed strings)
+    /// C-string pattern containing interpolation e.g. c"Hello {name}!\n"
+    C_STRING_PATTERN,
+    /// Opening quote of c-string pattern
+    C_STRING_PATTERN_START,
+    /// Closing quote of c-string pattern
+    C_STRING_PATTERN_END,
+    /// C-string literal (no interpolation) e.g. c"hello\nworld"
+    C_STRING,
+
+    // Raw string pattern syntax kinds (explicit raw, same as plain)
+    /// Raw string pattern containing interpolation e.g. r"Hello {name}!"
+    RAW_STRING_PATTERN,
+    /// Opening quote of raw string pattern
+    RAW_STRING_PATTERN_START,
+    /// Closing quote of raw string pattern
+    RAW_STRING_PATTERN_END,
+    /// Raw string literal (no interpolation) e.g. r"hello\nworld"
+    RAW_STRING,
+
+    /// ZDT (timestamp) string literal e.g. t"2023-01-15T10:30:00Z"
+    T_STRING,
+
     /// Extraneous tokens tagging along for the ride
     ERROR_STOWAWAYS,
     /// Characters (brackets and quotes) reserved for future use
@@ -95,10 +118,17 @@ impl SyntaxKind {
             || *self == CLOSE_BRACE
             || *self == UNQUOTED_IDENTIFIER
             || *self == STRING_PATTERN_END
+            || *self == C_STRING_PATTERN_END
+            || *self == RAW_STRING_PATTERN_END
     }
 
     pub fn is_literal_terminal(&self) -> bool {
-        *self == NUMBER || *self == STRING || *self == SYMBOL
+        *self == NUMBER
+            || *self == STRING
+            || *self == SYMBOL
+            || *self == C_STRING
+            || *self == RAW_STRING
+            || *self == T_STRING
     }
 
     pub fn is_name_terminal(&self) -> bool {

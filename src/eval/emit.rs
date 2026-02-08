@@ -43,7 +43,7 @@ pub enum Event {
     OutputBlockStart(RenderMetadata),
     /// Output a block end
     OutputBlockEnd,
-    /// Reserved: TODO: YAML aliases...
+    /// Reserved for future YAML alias support
     OutputAlias,
 }
 

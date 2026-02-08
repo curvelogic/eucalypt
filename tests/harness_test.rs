@@ -14,10 +14,28 @@ pub fn opts(filename: &str) -> EucalyptOptions {
         .build()
 }
 
+/// Common options for error tests
+pub fn error_opts(filename: &str) -> EucalyptOptions {
+    let lib_path = vec![PathBuf::from("harness/test/errors")];
+    let path = format!("harness/test/errors/{filename}");
+
+    EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
+        .with_lib_path(lib_path)
+        .build()
+}
+
 /// Parse and desugar the test files and analyse for expectations,
 /// then run and assert success.
 fn run_test(opt: &EucalyptOptions) {
     let exit_code = tester::test(opt).unwrap();
+    assert_eq!(exit_code, 0);
+}
+
+/// Run an error test — validates against `.expect` sidecar if present,
+/// otherwise passes as unvalidated.
+fn run_error_test(opt: &EucalyptOptions) {
+    let exit_code = tester::error_test(opt).unwrap();
     assert_eq!(exit_code, 0);
 }
 
@@ -267,6 +285,116 @@ pub fn test_harness_054() {
 }
 
 #[test]
+pub fn test_harness_055() {
+    run_test(&opts("055_jsonl_import.eu"));
+}
+
+#[test]
+pub fn test_harness_059() {
+    run_test(&opts("059_nullary_operators.eu"));
+}
+
+#[test]
+pub fn test_harness_060() {
+    run_test(&opts("060_cstring.eu"));
+}
+
+#[test]
+pub fn test_harness_061() {
+    run_test(&opts("061_yaml_anchors.yaml"));
+}
+
+#[test]
+pub fn test_harness_062() {
+    run_test(&opts("062_yaml_merge.yaml"));
+}
+
+#[test]
+pub fn test_harness_063() {
+    run_test(&opts("063_yaml_timestamps.yaml"));
+}
+
+#[test]
+pub fn test_harness_064() {
+    run_test(&opts("064_polymorphic_cmp.eu"));
+}
+
+#[test]
+pub fn test_harness_065() {
+    run_test(&opts("065_version_assertions.eu"));
+}
+
+#[test]
+pub fn test_harness_066() {
+    run_test(&opts("066_base64.eu"));
+}
+
+#[test]
+pub fn test_harness_067() {
+    run_test(&opts("067_sha256.eu"));
+}
+
+#[test]
+pub fn test_harness_068() {
+    run_test(&opts("068_zdt_literals.eu"));
+}
+
+#[test]
+pub fn test_harness_069() {
+    run_test(&opts("069_sort_keys.eu"));
+}
+
+#[test]
+pub fn test_harness_070() {
+    run_test(&opts("070_bench_validation.eu"));
+}
+
+#[test]
+pub fn test_harness_071() {
+    run_test(&opts("071_sorting_lists.eu"));
+}
+
+#[test]
+pub fn test_harness_072() {
+    run_test(&opts("072_deep_find.eu"));
+}
+
+#[test]
+pub fn test_harness_073() {
+    run_test(&opts("073_block_indexing.eu"));
+}
+
+#[test]
+pub fn test_harness_074() {
+    run_test(&opts("074_sets.eu"));
+}
+
+#[test]
+pub fn test_harness_075() {
+    run_test(&opts("075_deep_query.eu"));
+}
+
+#[test]
+pub fn test_harness_076() {
+    run_test(&opts("076_doc_gen.eu"));
+}
+
+#[test]
+pub fn test_harness_077() {
+    run_test(&opts("077_block_dce.eu"));
+}
+
+#[test]
+pub fn test_harness_078() {
+    run_test(&opts("078_random.eu"));
+}
+
+#[test]
+pub fn test_harness_079() {
+    run_test(&opts("079_streams.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -314,4 +442,131 @@ pub fn test_gc_009() {
 #[test]
 pub fn test_gc_010() {
     run_test(&opts("gc/gc_010_comprehensive_stress.eu"));
+}
+
+// Error tests — validate against `.expect` sidecars when present
+
+#[test]
+pub fn test_error_001() {
+    run_error_test(&error_opts("001_dot_in_metadata_key.eu"));
+}
+
+#[test]
+pub fn test_error_002() {
+    run_error_test(&error_opts("002_lists.eu"));
+}
+
+#[test]
+pub fn test_error_003() {
+    run_error_test(&error_opts("003_free_var_arg.eu"));
+}
+
+#[test]
+pub fn test_error_004() {
+    run_error_test(&error_opts("004_circular.eu"));
+}
+
+#[test]
+pub fn test_error_005() {
+    run_error_test(&error_opts("005_free_var.eu"));
+}
+
+#[test]
+pub fn test_error_006() {
+    run_error_test(&error_opts("006_div_by_zero.eu"));
+}
+
+#[test]
+pub fn test_error_008() {
+    run_error_test(&error_opts("008_op_spacing.eu"));
+}
+
+#[test]
+pub fn test_error_009() {
+    run_error_test(&error_opts("009_panic.eu"));
+}
+
+#[test]
+pub fn test_error_010() {
+    run_error_test(&error_opts("010_assert.eu"));
+}
+
+#[test]
+pub fn test_error_011() {
+    run_error_test(&error_opts("011_assert_pred.eu"));
+}
+
+#[test]
+pub fn test_error_012() {
+    run_error_test(&error_opts("012_bad_value.eu"));
+}
+
+#[test]
+pub fn test_error_013() {
+    run_error_test(&error_opts("013_bad_nested_value.eu"));
+}
+
+#[test]
+pub fn test_error_014() {
+    run_error_test(&error_opts("014_unterm_strlit.eu"));
+}
+
+#[test]
+pub fn test_error_015() {
+    run_error_test(&error_opts("015_missing_argtuple_close.eu"));
+}
+
+#[test]
+pub fn test_error_016() {
+    run_error_test(&error_opts("016_empty_brackets.eu"));
+}
+
+#[test]
+pub fn test_error_017() {
+    run_error_test(&error_opts("017_too_many_args.eu"));
+}
+
+#[test]
+pub fn test_error_019() {
+    run_error_test(&error_opts("019_no_such_key.eu"));
+}
+
+#[test]
+pub fn test_error_020() {
+    run_error_test(&error_opts("020_no_such_key_fn.eu"));
+}
+
+#[test]
+pub fn test_error_021() {
+    run_error_test(&error_opts("021_bad_num_parse.eu"));
+}
+
+#[test]
+pub fn test_error_023() {
+    run_error_test(&error_opts("023_arg_types.eu"));
+}
+
+#[test]
+pub fn test_error_024() {
+    run_error_test(&error_opts("024_invalid_zdt_literal.eu"));
+}
+
+#[test]
+pub fn test_error_025() {
+    run_error_test(&error_opts("025_malformed_zdt_literal.eu"));
+}
+
+#[test]
+pub fn test_error_026() {
+    run_error_test(&error_opts("026_empty_zdt_literal.eu"));
+}
+
+#[test]
+pub fn test_error_027() {
+    run_error_test(&error_opts("027_self_ref.eu"));
+}
+
+#[test]
+pub fn test_error_028() {
+    run_error_test(&error_opts("028_mutual_cycle.eu"));
 }

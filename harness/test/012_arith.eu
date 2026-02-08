@@ -118,7 +118,7 @@ mixed-arithmetic: {
   }
 
   pass: ((trues values) ++ (trues2 values) all-true?) ∧
-	((falses values) ++ (falses2 values) map(not) all-true?)
+        ((falses values) ++ (falses2 values) map(not) all-true?)
 }
 
 RESULT: if(integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass, :PASS, :FAIL)

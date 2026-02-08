@@ -5,6 +5,7 @@ use crate::core::expr::*;
 use crate::core::metadata::{ReadMetadata, TestHeaderMetadata};
 use crate::core::target::Target;
 use crate::core::unit::TranslationUnit;
+use regex::Regex;
 use std::path::{Path, PathBuf};
 
 /// A key under which we will find a single-argument validation
@@ -29,6 +30,114 @@ impl TestExpectation {
     }
 }
 
+/// Expected exit code and/or stderr pattern from an `.expect` sidecar
+///
+/// Sidecar files sit alongside error test `.eu` files and specify
+/// what constitutes a correct error: the exit code and/or a regex
+/// pattern that must match somewhere in stderr output.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ErrorExpectation {
+    /// Expected exit code (exact equality)
+    exit: Option<i32>,
+    /// Regex pattern to match against stderr
+    stderr_pattern: Option<String>,
+}
+
+impl ErrorExpectation {
+    /// Expected exit code
+    pub fn exit(&self) -> Option<i32> {
+        self.exit
+    }
+
+    /// Stderr regex pattern
+    pub fn stderr_pattern(&self) -> Option<&str> {
+        self.stderr_pattern.as_deref()
+    }
+
+    /// Validate actual exit code and stderr against expectations.
+    /// Returns `Ok(())` on success, or `Err(reason)` on failure.
+    pub fn validate(&self, actual_exit: i32, actual_stderr: &str) -> Result<(), String> {
+        if let Some(expected_exit) = self.exit {
+            if actual_exit != expected_exit {
+                return Err(format!(
+                    "exit code mismatch: expected {expected_exit}, got {actual_exit}"
+                ));
+            }
+        }
+        if let Some(ref pattern) = self.stderr_pattern {
+            let re = Regex::new(pattern)
+                .map_err(|e| format!("invalid stderr regex pattern '{pattern}': {e}"))?;
+            if !re.is_match(actual_stderr) {
+                return Err(format!(
+                    "stderr did not match pattern '{pattern}'\nactual stderr:\n{actual_stderr}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse an `.expect` sidecar file from its contents.
+    ///
+    /// The format is simple key-value YAML:
+    /// ```yaml
+    /// exit: 1
+    /// stderr: "pattern"
+    /// ```
+    pub fn parse(content: &str) -> Result<Self, String> {
+        let mut exit = None;
+        let mut stderr_pattern = None;
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some(value) = line.strip_prefix("exit:") {
+                let value = value.trim();
+                exit = Some(
+                    value
+                        .parse::<i32>()
+                        .map_err(|e| format!("invalid exit code '{value}': {e}"))?,
+                );
+            } else if let Some(value) = line.strip_prefix("stderr:") {
+                let value = value.trim();
+                // Strip surrounding quotes if present
+                let value = value
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .unwrap_or(value);
+                stderr_pattern = Some(value.to_string());
+            }
+        }
+
+        if exit.is_none() && stderr_pattern.is_none() {
+            return Err("sidecar must specify at least one of 'exit' or 'stderr'".to_string());
+        }
+
+        Ok(ErrorExpectation {
+            exit,
+            stderr_pattern,
+        })
+    }
+
+    /// Try to load an `.expect` sidecar for the given test file path.
+    /// Returns `None` if no sidecar exists.
+    pub fn load(test_file: &Path) -> Result<Option<Self>, String> {
+        let mut sidecar_path = test_file.to_path_buf().into_os_string();
+        sidecar_path.push(".expect");
+        let sidecar_path = PathBuf::from(sidecar_path);
+
+        if !sidecar_path.exists() {
+            return Ok(None);
+        }
+
+        let content = std::fs::read_to_string(&sidecar_path)
+            .map_err(|e| format!("failed to read sidecar '{}': {e}", sidecar_path.display()))?;
+
+        Self::parse(&content).map(Some)
+    }
+}
+
 /// Plan for the tests to run against an eu file
 ///
 /// A test plan consists of combinations of targets and formats to run
@@ -43,6 +152,8 @@ pub struct TestPlan {
     title: String,
     /// Test targets to run (and their validations) and formats for each
     targets: Vec<(Target, Vec<String>)>,
+    /// Error test expectations from `.expect` sidecar (if any)
+    error_expectation: Option<ErrorExpectation>,
 }
 
 impl TestPlan {
@@ -59,6 +170,21 @@ impl TestPlan {
     /// Test targets to run
     pub fn targets(&self) -> &Vec<(Target, Vec<String>)> {
         &self.targets
+    }
+
+    /// Error test expectations from `.expect` sidecar
+    pub fn error_expectation(&self) -> Option<&ErrorExpectation> {
+        self.error_expectation.as_ref()
+    }
+
+    /// Whether this is an error test with sidecar expectations
+    pub fn is_error_test(&self) -> bool {
+        self.error_expectation.is_some()
+    }
+
+    /// Whether this plan contains any benchmark targets
+    pub fn has_benchmarks(&self) -> bool {
+        self.targets.iter().any(|(t, _)| t.is_benchmark())
     }
 
     pub fn test_directory(&self) -> &Path {
@@ -109,10 +235,14 @@ impl TestPlan {
             formats.push("yaml".to_string());
         }
 
-        // run all targets begining with test
+        // run all targets beginning with test- or bench-, plus main and validated targets
         let mut targets: Vec<(Target, Vec<String>)> = vec![];
         for t in &unit.targets {
-            if t.name().starts_with("test") || t.name() == "main" || !t.validations().is_empty() {
+            if t.name().starts_with("test")
+                || t.is_benchmark()
+                || t.name() == "main"
+                || !t.validations().is_empty()
+            {
                 if let Some(f) = t.format() {
                     targets.push((t.clone(), vec![f.to_string()]))
                 } else {
@@ -139,7 +269,43 @@ impl TestPlan {
                 })
                 .unwrap_or_else(|| "untitled".to_string()),
             targets,
+            error_expectation: None,
         })
+    }
+
+    /// Create a test plan for an error test file.
+    ///
+    /// Error tests use a single default target and validate against an
+    /// `.expect` sidecar rather than in-file RESULT assertions.
+    pub fn for_error_test(run_id: &str, filename: &Path, expectation: ErrorExpectation) -> Self {
+        let title = filename
+            .file_stem()
+            .map(|os| os.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_string());
+
+        TestPlan {
+            run_id: run_id.to_string(),
+            file: filename.to_path_buf(),
+            title,
+            targets: vec![(Target::default(), vec!["yaml".to_string()])],
+            error_expectation: Some(expectation),
+        }
+    }
+
+    /// Create a test plan for an unvalidated error test (no sidecar).
+    pub fn for_unvalidated_error_test(run_id: &str, filename: &Path) -> Self {
+        let title = filename
+            .file_stem()
+            .map(|os| os.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "untitled".to_string());
+
+        TestPlan {
+            run_id: run_id.to_string(),
+            file: filename.to_path_buf(),
+            title,
+            targets: vec![(Target::default(), vec!["yaml".to_string()])],
+            error_expectation: None,
+        }
     }
 }
 
@@ -151,6 +317,140 @@ pub mod tests {
     use crate::syntax::input::*;
     use std::collections::HashSet;
     use std::iter::FromIterator;
+
+    #[test]
+    fn test_parse_expect_sidecar_both_fields() {
+        let content = "exit: 1\nstderr: \"division by zero\"\n";
+        let exp = ErrorExpectation::parse(content).expect("should parse");
+        assert_eq!(exp.exit(), Some(1));
+        assert_eq!(exp.stderr_pattern(), Some("division by zero"));
+    }
+
+    #[test]
+    fn test_parse_expect_sidecar_exit_only() {
+        let content = "exit: 2\n";
+        let exp = ErrorExpectation::parse(content).expect("should parse");
+        assert_eq!(exp.exit(), Some(2));
+        assert_eq!(exp.stderr_pattern(), None);
+    }
+
+    #[test]
+    fn test_parse_expect_sidecar_stderr_only() {
+        let content = "stderr: \"unterminated string\"\n";
+        let exp = ErrorExpectation::parse(content).expect("should parse");
+        assert_eq!(exp.exit(), None);
+        assert_eq!(exp.stderr_pattern(), Some("unterminated string"));
+    }
+
+    #[test]
+    fn test_parse_expect_sidecar_unquoted_stderr() {
+        let content = "stderr: unterminated string\n";
+        let exp = ErrorExpectation::parse(content).expect("should parse");
+        assert_eq!(exp.stderr_pattern(), Some("unterminated string"));
+    }
+
+    #[test]
+    fn test_parse_expect_sidecar_empty_fails() {
+        let content = "# just a comment\n";
+        assert!(ErrorExpectation::parse(content).is_err());
+    }
+
+    #[test]
+    fn test_parse_expect_sidecar_with_comments() {
+        let content =
+            "# Check for division error\nexit: 1\n# stderr pattern\nstderr: \"division\"\n";
+        let exp = ErrorExpectation::parse(content).expect("should parse");
+        assert_eq!(exp.exit(), Some(1));
+        assert_eq!(exp.stderr_pattern(), Some("division"));
+    }
+
+    #[test]
+    fn test_validate_pass() {
+        let exp = ErrorExpectation {
+            exit: Some(1),
+            stderr_pattern: Some("division by zero".to_string()),
+        };
+        assert!(exp.validate(1, "error: division by zero at line 5").is_ok());
+    }
+
+    #[test]
+    fn test_validate_exit_mismatch() {
+        let exp = ErrorExpectation {
+            exit: Some(1),
+            stderr_pattern: None,
+        };
+        let result = exp.validate(0, "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exit code mismatch"));
+    }
+
+    #[test]
+    fn test_validate_stderr_mismatch() {
+        let exp = ErrorExpectation {
+            exit: None,
+            stderr_pattern: Some("expected pattern".to_string()),
+        };
+        let result = exp.validate(1, "something else entirely");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("stderr did not match"));
+    }
+
+    #[test]
+    fn test_validate_regex_pattern() {
+        let exp = ErrorExpectation {
+            exit: None,
+            stderr_pattern: Some(r"line \d+".to_string()),
+        };
+        assert!(exp.validate(1, "error at line 42").is_ok());
+        assert!(exp.validate(1, "error at line XY").is_err());
+    }
+
+    #[test]
+    pub fn test_bench_targets_included() {
+        let plan = source_to_test_plan(
+            "
+` { target: :bench-sort }
+sort-benchmark: {
+  data: [3, 1, 2]
+  result: data
+}
+
+` { target: :test-basic }
+basic: { RESULT: :PASS }
+",
+        );
+        let names: Vec<_> = plan
+            .targets()
+            .iter()
+            .map(|(t, _)| t.name().clone())
+            .collect();
+        assert!(names.contains(&"bench-sort".to_string()));
+        assert!(names.contains(&"test-basic".to_string()));
+        assert!(plan.has_benchmarks());
+    }
+
+    #[test]
+    pub fn test_bench_target_is_benchmark() {
+        let plan = source_to_test_plan(
+            "
+` { target: :bench-fib }
+fib: 42
+",
+        );
+        let bench_targets: Vec<_> = plan
+            .targets()
+            .iter()
+            .filter(|(t, _)| t.is_benchmark())
+            .collect();
+        assert_eq!(bench_targets.len(), 1);
+        assert_eq!(bench_targets[0].0.name(), "bench-fib");
+    }
+
+    #[test]
+    pub fn test_no_bench_targets() {
+        let plan = source_to_test_plan("RESULT: :PASS");
+        assert!(!plan.has_benchmarks());
+    }
 
     pub fn source_to_test_plan(text: &str) -> TestPlan {
         let sample_input = Input::from(Locator::Literal(text.to_string()));

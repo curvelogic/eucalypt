@@ -31,8 +31,11 @@ use super::env::{EnvFrame, SynClosure};
 pub enum Continuation {
     /// Expect a data constructor and match to a branch (or native to fallback)
     Branch {
-        /// Branches for data constructor destructuring
-        branches: Array<(Tag, RefPtr<HeapSyn>)>,
+        /// Lowest tag in the branch table
+        min_tag: Tag,
+        /// Indexed branch table: entry at `[tag - min_tag]` holds the
+        /// handler for that tag, or `None` if no branch exists
+        branch_table: Array<Option<RefPtr<HeapSyn>>>,
         /// Fallback for unmatched data or native
         fallback: Option<RefPtr<HeapSyn>>,
         /// Environment of case statement
@@ -58,13 +61,17 @@ pub enum Continuation {
 
 impl StgObject for Continuation {}
 
-pub fn match_tag(tag: Tag, branches: &[(Tag, RefPtr<HeapSyn>)]) -> Option<RefPtr<HeapSyn>> {
-    for (t, body) in branches {
-        if *t == tag {
-            return Some(*body);
-        }
+/// O(1) tag dispatch: look up the branch for `tag` by direct indexing
+pub fn match_tag(
+    tag: Tag,
+    min_tag: Tag,
+    branch_table: &[Option<RefPtr<HeapSyn>>],
+) -> Option<RefPtr<HeapSyn>> {
+    if tag < min_tag {
+        return None;
     }
-    None
+    let index = (tag - min_tag) as usize;
+    branch_table.get(index).copied().flatten()
 }
 
 impl fmt::Display for Continuation {
@@ -72,9 +79,16 @@ impl fmt::Display for Continuation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Continuation::Branch {
-                branches, fallback, ..
+                min_tag,
+                branch_table,
+                fallback,
+                ..
             } => {
-                let mut tags: Vec<String> = branches.iter().map(|b| format!("{}", b.0)).collect();
+                let mut tags: Vec<String> = branch_table
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, entry)| entry.map(|_| format!("{}", *min_tag + i as u8)))
+                    .collect();
                 if fallback.is_some() {
                     tags.push("…".to_string());
                 }
@@ -99,29 +113,31 @@ impl GcScannable for Continuation {
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         match self {
             Continuation::Branch {
-                branches,
+                branch_table,
                 fallback,
                 environment,
+                ..
             } => {
-                if marker.mark_array(branches) {
-                    for (_tag, branch) in branches.iter() {
-                        marker.mark(*branch);
-                        grey.push(ScanPtr::from_non_null(scope, *branch));
+                if marker.mark_array(branch_table) {
+                    for branch in branch_table.iter().flatten() {
+                        if marker.mark(*branch) {
+                            out.push(ScanPtr::from_non_null(scope, *branch));
+                        }
                     }
                 }
 
                 if let Some(fb) = fallback {
                     if marker.mark(*fb) {
-                        grey.push(ScanPtr::from_non_null(scope, *fb));
+                        out.push(ScanPtr::from_non_null(scope, *fb));
                     }
                 }
 
                 if marker.mark(*environment) {
-                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                    out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
             Continuation::Update {
@@ -129,13 +145,13 @@ impl GcScannable for Continuation {
                 index: _,
             } => {
                 if marker.mark(*environment) {
-                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                    out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
             Continuation::ApplyTo { args } => {
                 if marker.mark_array(args) {
                     for arg in args.iter() {
-                        grey.push(ScanPtr::new(scope, arg));
+                        out.push(ScanPtr::new(scope, arg));
                     }
                 }
             }
@@ -145,19 +161,67 @@ impl GcScannable for Continuation {
                 environment,
             } => {
                 if marker.mark(*handler) {
-                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                    out.push(ScanPtr::from_non_null(scope, *handler));
                 }
 
                 if marker.mark(*or_else) {
-                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                    out.push(ScanPtr::from_non_null(scope, *or_else));
                 }
 
                 if marker.mark(*environment) {
-                    grey.push(ScanPtr::from_non_null(scope, *environment));
+                    out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
         }
+    }
 
-        grey
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        match self {
+            Continuation::Branch {
+                branch_table,
+                fallback,
+                environment,
+                ..
+            } => {
+                for ptr in branch_table.iter_mut().flatten() {
+                    if let Some(new) = heap.forwarded_to(*ptr) {
+                        *ptr = new;
+                    }
+                }
+                if let Some(ref mut fb) = fallback {
+                    if let Some(new) = heap.forwarded_to(*fb) {
+                        *fb = new;
+                    }
+                }
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+            }
+            Continuation::Update { environment, .. } => {
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+            }
+            Continuation::ApplyTo { args } => {
+                for closure in args.iter_mut() {
+                    closure.scan_and_update(heap);
+                }
+            }
+            Continuation::DeMeta {
+                handler,
+                or_else,
+                environment,
+            } => {
+                if let Some(new) = heap.forwarded_to(*handler) {
+                    *handler = new;
+                }
+                if let Some(new) = heap.forwarded_to(*or_else) {
+                    *or_else = new;
+                }
+                if let Some(new) = heap.forwarded_to(*environment) {
+                    *environment = new;
+                }
+            }
+        }
     }
 }

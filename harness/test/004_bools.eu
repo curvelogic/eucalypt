@@ -1,12 +1,12 @@
 #!/usr/bin/env eu
 
 # alias the ugly builtins
-t:	 __TRUE
-f:	 __FALSE
-or:	 __OR
-and:	 __AND
-eq:	 __EQ
-not:	 __NOT
+t:       __TRUE
+f:       __FALSE
+or:      __OR
+and:     __AND
+eq:      __EQ
+not:     __NOT
 if:      __IF
 
 trues: {

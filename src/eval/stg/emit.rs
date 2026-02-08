@@ -1,15 +1,58 @@
 //! Intrinsics for emitting data format events and debug / error
 //! tracing
 
-use crate::eval::{
-    emit::{Emitter, RenderMetadata},
-    error::ExecutionError,
-    machine::intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
-    memory::{self, mutator::MutatorHeapView, syntax::Ref},
-    primitive::Primitive,
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::{Emitter, RenderMetadata},
+        error::ExecutionError,
+        machine::intrinsic::{
+            CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
+        },
+        memory::{
+            self,
+            mutator::MutatorHeapView,
+            set::{HeapSet, Primitive as SetPrimitive},
+            syntax::{Ref, RefPtr},
+        },
+        primitive::Primitive,
+    },
 };
 
 use super::support::machine_return_unit;
+
+/// Convert a set primitive to a rendering primitive
+fn set_primitive_to_render_primitive(
+    prim: &SetPrimitive,
+    machine: &dyn IntrinsicMachine,
+) -> Primitive {
+    match prim {
+        SetPrimitive::Num(n) => {
+            let num = serde_json::Number::from_f64(n.into_inner())
+                .unwrap_or_else(|| serde_json::Number::from(0));
+            Primitive::Num(num)
+        }
+        SetPrimitive::Str(s) => Primitive::Str(s.clone()),
+        SetPrimitive::Sym(id) => Primitive::Sym(machine.symbol_pool().resolve(*id).to_string()),
+    }
+}
+
+/// Emit a set as a sorted sequence of scalars
+fn emit_set(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    emitter: &mut dyn Emitter,
+    set_ref: RefPtr<HeapSet>,
+    metadata: &RenderMetadata,
+) {
+    let set: crate::eval::memory::alloc::ScopedPtr<'_, HeapSet> = view.scoped(set_ref);
+    emitter.sequence_start(metadata);
+    for elem in set.sorted_elements() {
+        let prim = set_primitive_to_render_primitive(elem, machine);
+        emitter.scalar(&RenderMetadata::empty(), &prim);
+    }
+    emitter.sequence_end();
+}
 
 /// Interpret arg as tag if it exists otherwise None
 fn tag_from_arg(
@@ -19,9 +62,10 @@ fn tag_from_arg(
 ) -> Option<String> {
     let tag_nat = machine.nav(view).resolve_native(arg).ok();
     match tag_nat {
-        Some(memory::syntax::Native::Sym(s)) | Some(memory::syntax::Native::Str(s)) => {
-            Some(view.scoped(s).as_str().to_string())
+        Some(memory::syntax::Native::Sym(id)) => {
+            Some(machine.symbol_pool().resolve(id).to_string())
         }
+        Some(memory::syntax::Native::Str(s)) => Some(view.scoped(s).as_str().to_string()),
         _ => None,
     }
 }
@@ -116,13 +160,27 @@ impl StgIntrinsic for EmitNative {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let native = machine.nav(view).resolve_native(&args[0])?;
-        let primitive = match native {
-            memory::syntax::Native::Sym(s) => Primitive::Sym(view.scoped(s).as_str().to_string()),
-            memory::syntax::Native::Str(s) => Primitive::Str(view.scoped(s).as_str().to_string()),
-            memory::syntax::Native::Num(n) => Primitive::Num(n),
-            memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
-        };
-        emitter.scalar(&RenderMetadata::empty(), &primitive);
+        match native {
+            memory::syntax::Native::Set(ptr) => {
+                emit_set(machine, view, emitter, ptr, &RenderMetadata::empty());
+            }
+            _ => {
+                let primitive = match native {
+                    memory::syntax::Native::Sym(id) => {
+                        Primitive::Sym(machine.symbol_pool().resolve(id).to_string())
+                    }
+                    memory::syntax::Native::Str(s) => {
+                        Primitive::Str(view.scoped(s).as_str().to_string())
+                    }
+                    memory::syntax::Native::Num(n) => Primitive::Num(n),
+                    memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
+                    memory::syntax::Native::Index(_) | memory::syntax::Native::Set(_) => {
+                        return Err(ExecutionError::NotScalar(Smid::default()))
+                    }
+                };
+                emitter.scalar(&RenderMetadata::empty(), &primitive);
+            }
+        }
         machine_return_unit(machine, view)
     }
 }
@@ -148,13 +206,27 @@ impl StgIntrinsic for EmitTagNative {
     ) -> Result<(), ExecutionError> {
         let tag = tag_from_arg(&args[0], machine, view);
         let native = machine.nav(view).resolve_native(&args[1])?;
-        let primitive = match native {
-            memory::syntax::Native::Sym(s) => Primitive::Sym(view.scoped(s).as_str().to_string()),
-            memory::syntax::Native::Str(s) => Primitive::Str(view.scoped(s).as_str().to_string()),
-            memory::syntax::Native::Num(n) => Primitive::Num(n),
-            memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
-        };
-        emitter.scalar(&RenderMetadata::new(tag), &primitive);
+        match native {
+            memory::syntax::Native::Set(ptr) => {
+                emit_set(machine, view, emitter, ptr, &RenderMetadata::new(tag));
+            }
+            _ => {
+                let primitive = match native {
+                    memory::syntax::Native::Sym(id) => {
+                        Primitive::Sym(machine.symbol_pool().resolve(id).to_string())
+                    }
+                    memory::syntax::Native::Str(s) => {
+                        Primitive::Str(view.scoped(s).as_str().to_string())
+                    }
+                    memory::syntax::Native::Num(n) => Primitive::Num(n),
+                    memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
+                    memory::syntax::Native::Index(_) | memory::syntax::Native::Set(_) => {
+                        return Err(ExecutionError::NotScalar(Smid::default()))
+                    }
+                };
+                emitter.scalar(&RenderMetadata::new(tag), &primitive);
+            }
+        }
         machine_return_unit(machine, view)
     }
 }

@@ -1,0 +1,15 @@
+{ import: ["jl=jsonl-stream@aux/aux_import.jsonl",
+           "csv=csv-stream@aux/aux_import.csv",
+           "txt=text-stream@aux/aux_import.txt"] }
+
+jsonl-count: jl count //= 3
+jsonl-names: jl map(_.name) //= ["Alice", "Bob", "Charlie"]
+jsonl-ages: jl map(_.age) //= [30, 25, 35]
+
+csv-count: csv count //= 5
+csv-a-first: (csv head).a //= "1"
+
+txt-count: txt count //= 3
+txt-first: txt head //= "line 1, some text"
+
+RESULT: [jsonl-count, jsonl-names, jsonl-ages, csv-count, csv-a-first, txt-count, txt-first] all-true? then(:PASS, :FAIL)

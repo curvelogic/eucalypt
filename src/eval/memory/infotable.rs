@@ -113,6 +113,11 @@ where
     pub fn body(&self) -> L {
         self.body
     }
+
+    /// Replace the body (used during evacuation reference updating)
+    pub fn set_body(&mut self, body: L) {
+        self.body = body;
+    }
 }
 
 #[cfg(test)]

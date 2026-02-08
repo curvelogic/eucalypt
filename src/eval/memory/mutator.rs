@@ -70,6 +70,29 @@ impl<'guard> ScopedAllocator<'guard> for MutatorHeapView<'guard> {
     }
 }
 
+/// Build an indexed branch table from tagged branch pairs
+fn build_branch_table<'guard>(
+    mem: &'guard impl ScopedAllocator<'guard>,
+    branches: &[(Tag, ScopedPtr<'guard, HeapSyn>)],
+) -> (Tag, Array<Option<RefPtr<HeapSyn>>>) {
+    if branches.is_empty() {
+        return (0, Array::default());
+    }
+    let min_tag = branches.iter().map(|(t, _)| *t).min().unwrap();
+    let max_tag = branches.iter().map(|(t, _)| *t).max().unwrap();
+    let table_size = (max_tag - min_tag + 1) as usize;
+    let mut table = Array::with_capacity(mem, table_size);
+    for _ in 0..table_size {
+        table.push(mem, None);
+    }
+    for (t, p) in branches {
+        let index = (*t - min_tag) as usize;
+        // SAFETY: index is within [0, table_size) by construction
+        unsafe { table.set_unchecked(index, Some(p.as_ptr())) };
+    }
+    (min_tag, table)
+}
+
 /// Provide convencience methods for allocating heap syntax
 impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
     /// Allocate a reference as an atom
@@ -107,15 +130,13 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
         self.alloc(HeapSyn::Cons { tag, args })
     }
 
-    fn sym<T: AsRef<str>>(
+    fn sym_ref<T: AsRef<str>>(
         &'guard self,
+        pool: &mut memory::symbol::SymbolPool,
         s: T,
-    ) -> Result<ScopedPtr<'guard, memory::string::HeapString>, ExecutionError> {
-        self.alloc(HeapString::from_str(self, s.as_ref()))
-    }
-
-    fn sym_ref<T: AsRef<str>>(&'guard self, s: T) -> Result<Ref, ExecutionError> {
-        Ok(Ref::V(Native::Sym(self.sym(s)?.as_ptr())))
+    ) -> Result<Ref, ExecutionError> {
+        let id = pool.intern(s.as_ref());
+        Ok(Ref::V(Native::Sym(id)))
     }
 
     fn str<T: AsRef<str>>(
@@ -166,18 +187,20 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
     /// Block pair
     fn pair<T: AsRef<str>>(
         &'guard self,
+        pool: &mut memory::symbol::SymbolPool,
         k: T,
         v: Ref,
     ) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
         self.data(
             DataConstructor::BlockPair.tag(),
-            self.array(&[self.sym_ref(k.as_ref())?, v]),
+            self.array(&[self.sym_ref(pool, k.as_ref())?, v]),
         )
     }
 
-    /// Block wrapper
+    /// Block wrapper (list + no-index sentinel)
     fn block(&'guard self, inner: Ref) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
-        self.data(DataConstructor::Block.tag(), self.singleton(inner))
+        let no_index = Ref::V(Native::Num(serde_json::Number::from(0)));
+        self.data(DataConstructor::Block.tag(), self.array(&[inner, no_index]))
     }
 
     /// Simple let
@@ -211,13 +234,11 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
         branches: &[(Tag, ScopedPtr<'guard, HeapSyn>)],
         fallback: ScopedPtr<'guard, HeapSyn>,
     ) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
-        let mut array = Array::with_capacity(self, branches.len());
-        for (t, p) in branches {
-            array.push(self, (*t, p.as_ptr()));
-        }
+        let (min_tag, branch_table) = build_branch_table(self, branches);
         self.alloc(HeapSyn::Case {
             scrutinee: scrutinee.as_ptr(),
-            branches: array,
+            min_tag,
+            branch_table,
             fallback: Some(fallback.as_ptr()),
         })
     }
@@ -228,13 +249,11 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
         scrutinee: ScopedPtr<'guard, HeapSyn>,
         branches: &[(Tag, ScopedPtr<'guard, HeapSyn>)],
     ) -> Result<ScopedPtr<'guard, HeapSyn>, ExecutionError> {
-        let mut array = Array::with_capacity(self, branches.len());
-        for (t, p) in branches {
-            array.push(self, (*t, p.as_ptr()));
-        }
+        let (min_tag, branch_table) = build_branch_table(self, branches);
         self.alloc(HeapSyn::Case {
             scrutinee: scrutinee.as_ptr(),
-            branches: array,
+            min_tag,
+            branch_table,
             fallback: None,
         })
     }

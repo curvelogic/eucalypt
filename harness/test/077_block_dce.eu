@@ -1,0 +1,98 @@
+##
+## 077: Block-level dead code elimination
+##
+## Tests that DCE correctly eliminates unreferenced block members
+## when access is purely static, and preserves all members when
+## access is dynamic or the block escapes.
+##
+
+## Static access - DCE can safely eliminate unused members
+
+static-basic: {
+  ns: { used: 42, unused: 99 }
+  result: ns.used
+  RESULT: 42
+}
+
+static-multiple: {
+  ns: { a: 1, b: 2, c: 3 }
+  result: ns.a + ns.c
+  RESULT: 4
+}
+
+static-nested-lookup: {
+  outer: { inner: { x: 10, y: 20 } }
+  result: outer.inner.x
+  RESULT: 10
+}
+
+## Dynamic access - must preserve all members
+
+dynamic-lookup: {
+  ns: { a: 1, b: 2 }
+  key: :a
+  result: ns lookup(key)
+  RESULT: 1
+}
+
+dynamic-lookup-or: {
+  ns: { a: 1, b: 2 }
+  result: lookup-or(:b, 0)(ns)
+  RESULT: 2
+}
+
+## Block escape - must preserve all members
+
+escape-elements: {
+  ns: { x: 1, y: 2 }
+  result: ns elements count
+  RESULT: 2
+}
+
+escape-as-value: {
+  ns: { a: 1, b: 2 }
+  wrapper: { inner: ns }
+  result: wrapper.inner.b
+  RESULT: 2
+}
+
+escape-to-function: {
+  ns: { x: 10, y: 20, z: 30 }
+  result: ns elements map(value) foldl(+, 0)
+  RESULT: 60
+}
+
+## Mixed access - static and dynamic on same block
+
+mixed-access: {
+  ns: { a: 1, b: 2, c: 3 }
+  static-val: ns.a
+  key: :b
+  dynamic-val: ns lookup(key)
+  result: static-val + dynamic-val
+  RESULT: 3
+}
+
+## Multiple blocks - DCE independent per block
+
+multi-block: {
+  ns1: { used: 10, dead: 99 }
+  ns2: { alive: 20, also-dead: 88 }
+  result: ns1.used + ns2.alive
+  RESULT: 30
+}
+
+pass: [
+  static-basic.result = static-basic.RESULT,
+  static-multiple.result = static-multiple.RESULT,
+  static-nested-lookup.result = static-nested-lookup.RESULT,
+  dynamic-lookup.result = dynamic-lookup.RESULT,
+  dynamic-lookup-or.result = dynamic-lookup-or.RESULT,
+  escape-elements.result = escape-elements.RESULT,
+  escape-as-value.result = escape-as-value.RESULT,
+  escape-to-function.result = escape-to-function.RESULT,
+  mixed-access.result = mixed-access.RESULT,
+  multi-block.result = multi-block.RESULT
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

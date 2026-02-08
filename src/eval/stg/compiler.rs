@@ -101,7 +101,7 @@ impl Context<'_> {
     }
 
     /// Next or error
-    pub fn next(&self) -> Result<&Context, CompileError> {
+    pub fn next(&self) -> Result<&Context<'_>, CompileError> {
         match self.next {
             Some(frame) => Ok(frame),
             None => Err(CompileError::BoundVarOverflowsContext),
@@ -327,14 +327,18 @@ impl<'a> LetBinder<'a> {
         let body_context = Context {
             scope: self.scope,
             var_refs: self.var_refs,
-            size: self.size.unwrap(),
+            size: self
+                .size
+                .expect("LetBinder must be frozen before realisation"),
             next: self.context,
         };
 
         let binding_context = if recursive_let {
             &body_context
         } else {
-            self.context.as_ref().unwrap()
+            self.context
+                .as_ref()
+                .expect("non-recursive let must have enclosing context")
         };
 
         let bindings: Vec<LambdaForm> = self
@@ -343,7 +347,10 @@ impl<'a> LetBinder<'a> {
             .map(|mut b| b.take_lambda_form(compiler, binding_context))
             .collect::<Result<Vec<LambdaForm>, CompileError>>()?;
 
-        let mut proto_body = self.body.take().unwrap();
+        let mut proto_body = self
+            .body
+            .take()
+            .expect("LetBinder must have body before realisation");
         let body = proto_body.take_syntax(compiler, &body_context)?;
 
         if bindings.is_empty() {
@@ -518,7 +525,10 @@ impl ProtoSyntax for Holder {
         _compiler: &Compiler,
         _context: &Context,
     ) -> Result<Rc<StgSyn>, CompileError> {
-        Ok(self.syntax.take().unwrap())
+        Ok(self
+            .syntax
+            .take()
+            .expect("Holder syntax must not be taken twice"))
     }
 }
 
@@ -950,9 +960,10 @@ impl<'rt> Compiler<'rt> {
 
         let obj = self.compile_binding(binder, obj.clone(), obj.smid(), false)?;
         let dft = match dft {
-            // Tolerate free vars in lookup default for dynamic gen
-            // lookup
-            // HACK: get this right in desugar phase instead
+            // Dynamic generalised lookups (from dynamise) may have
+            // fallback defaults referencing outer-scope variables
+            // that are free at compile time. If the lookup succeeds
+            // the default is unused; if it fails we panic anyway.
             Some(expr) => match self.compile_binding(binder, expr.clone(), annotation, false) {
                 Ok(expr) => Ok(expr),
                 Err(CompileError::FreeVar(_)) => binder.add(panic_key_not_found(key)),
@@ -1039,7 +1050,7 @@ impl<'rt> Compiler<'rt> {
     ) -> Result<Holder, CompileError> {
         binder.ensure_recursive();
 
-        let mut index = KEmptyList.gref(); // binder.add(dsl::nil())?; // TODO: to CAF
+        let mut index = KEmptyList.gref();
         for (k, v) in block_map.iter().rev() {
             let v_index = self.compile_binding(binder, v.clone(), smid, false)?;
             let kv_index = binder.add(dsl::pair(k, v_index))?;

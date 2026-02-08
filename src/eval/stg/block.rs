@@ -9,15 +9,17 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
+        intrinsics,
         machine::{
             env::SynClosure,
             env_builder::EnvBuilder,
             intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic},
+            vm::HeapNavigator,
         },
         memory::{
             array::Array,
             mutator::MutatorHeapView,
-            syntax::{Ref, StgBuilder},
+            syntax::{HeapSyn, Native, Ref, StgBuilder},
         },
     },
 };
@@ -27,7 +29,8 @@ use super::{
     panic::Panic,
     runtime::NativeVariant,
     support::{
-        call, data_list_arg, machine_return_block_pair_closure_list, machine_return_closure_list,
+        call, data_list_arg, machine_return_block_pair_closure_list, machine_return_bool,
+        machine_return_closure_list,
     },
     syntax::{
         dsl::{self},
@@ -81,7 +84,7 @@ impl StgIntrinsic for Block {
                     kv_items,
                     value(app(lref(0), vec![lref(2), lref(0)])),
                 ],
-                data(DataConstructor::Block.tag(), vec![lref(1)]),
+                data(DataConstructor::Block.tag(), vec![lref(1), no_index()]),
             ),
             annotation,
         )
@@ -220,8 +223,8 @@ impl StgIntrinsic for Elements {
                 case(
                     local(1),
                     vec![(
-                        DataConstructor::Block.tag(), // [list]  [map_list] [block]
-                        app(lref(1), vec![lref(0), lref(1)]),
+                        DataConstructor::Block.tag(), // [list index]  [map_list] [block]
+                        app(lref(2), vec![lref(0), lref(2)]),
                     )],
                     call::bif::panic(str("elements called on non-block")),
                 ),
@@ -442,10 +445,16 @@ impl StgIntrinsic for BlockPair {
 
 impl CallGlobal1 for BlockPair {}
 
+/// Threshold for building a block index. Blocks with at least this
+/// many elements will have an index built on first lookup.
+const BLOCK_INDEX_THRESHOLD: usize = 16;
+
 /// LOOKUPOR(key, default, obj) is lookup with default
 ///
-/// NB. The compiler creates calls to LOOKUPOR with and unboxed
-/// symbol. Is this right? No.
+/// Uses a hybrid approach: first attempts an O(1) index lookup via
+/// a BIF, then falls back to a linear STG find loop if no index is
+/// available. Lazy indexing builds the index on first lookup for
+/// blocks with >= BLOCK_INDEX_THRESHOLD elements.
 pub struct LookupOr(pub NativeVariant);
 
 impl StgIntrinsic for LookupOr {
@@ -458,6 +467,11 @@ impl StgIntrinsic for LookupOr {
 
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
+
+        let bif_index: u8 = intrinsics::index(self.name())
+            .expect("LOOKUPOR must be registered")
+            .try_into()
+            .unwrap();
 
         let find = lambda(
             4, // [list k d find]
@@ -496,18 +510,62 @@ impl StgIntrinsic for LookupOr {
                 local(2),
                 vec![(
                     DataConstructor::Block.tag(),
-                    // [blocklist] [k d block]
+                    // [blocklist blockindex] [k d block]
                     letrec_(
-                        vec![find], // [find] [blocklist] [k d block]
+                        vec![find], // [find] [blocklist blockindex] [k d block]
                         match self.0 {
                             NativeVariant::Unboxed => {
-                                app(lref(0), vec![lref(1), lref(2), lref(3), lref(0)])
+                                // Try index lookup via BIF first
+                                // env: [find] [blocklist blockindex] [k d block]
+                                // BIF args: sym=L(3)=k, blocklist=L(1), blockindex=L(2), block=L(5)
+                                case(
+                                    app_bif(bif_index, vec![lref(3), lref(1), lref(2), lref(5)]),
+                                    vec![
+                                        (
+                                            DataConstructor::ListCons.tag(),
+                                            // [value _] [find] [blocklist blockindex] [k d block]
+                                            local(0),
+                                        ),
+                                        (
+                                            DataConstructor::ListNil.tag(),
+                                            // [] [find] [blocklist blockindex] [k d block]
+                                            app(lref(0), vec![lref(1), lref(3), lref(4), lref(0)]),
+                                        ),
+                                    ],
+                                    // fallback (native return — shouldn't happen)
+                                    // [native] [find] [blocklist blockindex] [k d block]
+                                    app(lref(1), vec![lref(2), lref(4), lref(5), lref(1)]),
+                                )
                             }
                             NativeVariant::Boxed => {
                                 unbox_sym(
-                                    local(2),
-                                    // [sym] [find] [blocklist] [k d block]
-                                    app(lref(1), vec![lref(2), lref(0), lref(4), lref(1)]),
+                                    local(3),
+                                    // [sym] [find] [blocklist blockindex] [k d block]
+                                    // BIF args: sym=L(0), blocklist=L(2), blockindex=L(3), block=L(6)
+                                    case(
+                                        app_bif(
+                                            bif_index,
+                                            vec![lref(0), lref(2), lref(3), lref(6)],
+                                        ),
+                                        vec![
+                                            (
+                                                DataConstructor::ListCons.tag(),
+                                                // [value _] [sym] [find] [blocklist blockindex] [k d block]
+                                                local(0),
+                                            ),
+                                            (
+                                                DataConstructor::ListNil.tag(),
+                                                // [] [sym] [find] [blocklist blockindex] [k d block]
+                                                app(
+                                                    lref(1),
+                                                    vec![lref(2), lref(0), lref(5), lref(1)],
+                                                ),
+                                            ),
+                                        ],
+                                        // fallback (native return — shouldn't happen)
+                                        // [native] [sym] [find] [blocklist blockindex] [k d block]
+                                        app(lref(2), vec![lref(3), lref(1), lref(6), lref(2)]),
+                                    ),
                                 )
                             }
                         },
@@ -516,6 +574,252 @@ impl StgIntrinsic for LookupOr {
             ),
             annotation,
         )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // args: [sym_key, blocklist, blockindex, block]
+        // Check for an existing index — use ok() for sym key since it
+        // may be an unforced thunk (BIF can't force thunks)
+        if let Ok(Native::Index(ref map)) = machine.nav(view).resolve_native(&args[2]) {
+            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
+                if let Some(&position) = map.get(&sym_id) {
+                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
+                        let value_env =
+                            view.from_closure(value, machine.root_env(), Smid::default())?;
+                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
+                        let cons = view.data(
+                            DataConstructor::ListCons.tag(),
+                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
+                        )?;
+                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
+                    }
+                }
+            }
+            // Index exists but key not found or not resolved — return ListNil
+            let nil = view.nil()?;
+            return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
+        }
+
+        // No index — check if we should build one
+        let count = count_list(machine, view, &args[1]);
+
+        if count >= BLOCK_INDEX_THRESHOLD {
+            // Build index
+            let map = build_index(machine, view, &args[1]);
+
+            // Try lookup — but the key may be an unforced thunk, so
+            // use ok() rather than ? to gracefully fall back to find loop
+            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
+                if let Some(&position) = map.get(&sym_id) {
+                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
+                        // Store the index in the block for future lookups
+                        store_index_in_block(view, machine, &args[3], map);
+
+                        let value_env =
+                            view.from_closure(value, machine.root_env(), Smid::default())?;
+                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
+                        let cons = view.data(
+                            DataConstructor::ListCons.tag(),
+                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
+                        )?;
+                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
+                    }
+                }
+                // Key not found — store index for future lookups
+                store_index_in_block(view, machine, &args[3], map);
+            }
+            // Key wasn't a native sym (unforced thunk) — delegate to find loop
+        }
+
+        // No index available or below threshold — return ListNil to signal "use find loop"
+        let nil = view.nil()?;
+        machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()))
+    }
+}
+
+/// An iterator over a cons-list that resolves all ref types (L, V, G).
+///
+/// Unlike DataIterator, this handles lists whose cons cells may
+/// contain non-local refs (e.g. global refs to K[] / KEmptyList).
+/// Uses the HeapNavigator for global resolution, avoiding heap
+/// allocation.
+struct BlockListIterator<'a, 'scope> {
+    closure: SynClosure,
+    nav: &'a HeapNavigator<'scope>,
+    done: bool,
+}
+
+impl Iterator for BlockListIterator<'_, '_> {
+    type Item = SynClosure;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use std::convert::TryInto;
+
+        if self.done {
+            return None;
+        }
+
+        let code = self.nav.view.scoped(self.closure.code());
+        match &*code {
+            HeapSyn::Cons { tag, args } => match (*tag).try_into() {
+                Ok(DataConstructor::ListCons) => {
+                    let h = args.get(0)?;
+                    let t = args.get(1)?;
+
+                    let head = self.nav.resolve_in_closure(&self.closure, h)?;
+
+                    match self.nav.resolve_in_closure(&self.closure, t) {
+                        Some(tail) => self.closure = tail,
+                        None => self.done = true,
+                    }
+
+                    Some(head)
+                }
+                Ok(DataConstructor::ListNil) => None,
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// Walk a cons-list to the given position and extract the value from the pair.
+fn walk_list_to_position(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    blocklist_ref: &Ref,
+    position: usize,
+) -> Option<SynClosure> {
+    let nav = machine.nav(view);
+    let closure = nav.resolve(blocklist_ref).ok()?;
+    let pair = (BlockListIterator {
+        closure,
+        nav: &nav,
+        done: false,
+    })
+    .nth(position)?;
+    extract_value_from_pair(machine, view, &pair)
+}
+
+/// Extract the value from a block pair closure.
+///
+/// Only handles BlockPair form (which is what the index maps).
+fn extract_value_from_pair(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    pair: &SynClosure,
+) -> Option<SynClosure> {
+    use crate::eval::memory::syntax::HeapSyn;
+
+    let code = view.scoped(pair.code());
+    match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
+            let v = args.get(1)?;
+            machine.nav(view).resolve_in_closure(pair, v)
+        }
+        _ => None,
+    }
+}
+
+/// Count elements in a cons-list
+fn count_list(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    blocklist_ref: &Ref,
+) -> usize {
+    let nav = machine.nav(view);
+    match nav.resolve(blocklist_ref) {
+        Ok(closure) => (BlockListIterator {
+            closure,
+            nav: &nav,
+            done: false,
+        })
+        .count(),
+        Err(_) => 0,
+    }
+}
+
+/// Build a block index (HashMap<SymbolId, usize>) from a cons-list of pairs
+fn build_index(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    blocklist_ref: &Ref,
+) -> std::collections::HashMap<crate::eval::memory::symbol::SymbolId, usize> {
+    let mut map = std::collections::HashMap::new();
+
+    let nav = machine.nav(view);
+    let closure = match nav.resolve(blocklist_ref) {
+        Ok(c) => c,
+        Err(_) => return map,
+    };
+
+    let iter = BlockListIterator {
+        closure,
+        nav: &nav,
+        done: false,
+    };
+
+    for (position, pair) in iter.enumerate() {
+        if let Some(sym_id) = pair_key_symbol_id(view, &pair) {
+            map.insert(sym_id, position);
+        }
+    }
+    map
+}
+
+/// Extract the symbol ID from a block pair's key
+fn pair_key_symbol_id(
+    view: MutatorHeapView<'_>,
+    pair: &SynClosure,
+) -> Option<crate::eval::memory::symbol::SymbolId> {
+    use crate::eval::memory::syntax::HeapSyn;
+
+    let code = view.scoped(pair.code());
+    match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
+            let k = args.get(0)?;
+            let native = pair.navigate_local_native(&view, k);
+            if let Native::Sym(id) = native {
+                Some(id)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Store a freshly-built index back into the block's data structure.
+///
+/// Resolves the block ref to its Cons node and mutates args[1] from
+/// Num(0) to Index(map). Safe because the block has already been
+/// forced (we're inside its case branch) and the mutation only
+/// replaces a sentinel value with an equivalent-shaped Ref::V.
+fn store_index_in_block(
+    view: MutatorHeapView<'_>,
+    machine: &dyn IntrinsicMachine,
+    block_ref: &Ref,
+    map: std::collections::HashMap<crate::eval::memory::symbol::SymbolId, usize>,
+) {
+    if let Ok(closure) = machine.nav(view).resolve(block_ref) {
+        let code_ptr = closure.code();
+        // SAFETY: The block has been forced (we destructured it in a case
+        // branch), so code_ptr points to a valid HeapSyn::Cons. We mutate
+        // only args[1] which is the index slot — replacing the Num(0)
+        // sentinel with an Index value. No other code reads this slot
+        // concurrently during BIF execution.
+        let heap_syn = unsafe { &mut *code_ptr.as_ptr() };
+        if let HeapSyn::Cons { tag, ref mut args } = heap_syn {
+            if *tag == DataConstructor::Block.tag() {
+                let _ = args.set(1, Ref::V(Native::Index(std::rc::Rc::new(map))));
+            }
+        }
     }
 }
 
@@ -561,6 +865,7 @@ pub struct Merge;
 /// and v. The same function can deconstruct either.
 fn deconstruct(
     view: MutatorHeapView,
+    pool: &crate::eval::memory::symbol::SymbolPool,
     pair_closure: &SynClosure,
 ) -> Result<(String, SynClosure), ExecutionError> {
     use crate::eval::memory::syntax;
@@ -571,8 +876,9 @@ fn deconstruct(
             let k = args.get(0).unwrap();
             let kv = args.get(1).unwrap();
 
-            let sym = if let syntax::Native::Sym(s) = pair_closure.navigate_local_native(&view, k) {
-                view.scoped(s).as_str().to_string()
+            let sym = if let syntax::Native::Sym(id) = pair_closure.navigate_local_native(&view, k)
+            {
+                pool.resolve(id).to_string()
             } else {
                 panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
             };
@@ -623,23 +929,26 @@ impl StgIntrinsic for Merge {
             switch(
                 local(0),
                 vec![(
-                    DataConstructor::Block.tag(), // [lcons] [l r]
+                    DataConstructor::Block.tag(), // [lcons lindex] [l r]
                     switch(
-                        local(2),
+                        local(3),
                         vec![(
-                            DataConstructor::Block.tag(), // [rcons] [lcons] [l r]
+                            DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l r]
                             let_(
                                 vec![pack_items],
-                                // [pack] [rcons] [lcons]
+                                // [pack] [rcons rindex] [lcons lindex]
                                 force(
-                                    app(lref(0), vec![lref(2), lref(0)]),
-                                    // [p-l] [pack] [rcons] [lcons]
+                                    app(lref(0), vec![lref(3), lref(0)]),
+                                    // [p-l] [pack] [rcons rindex] [lcons lindex]
                                     force(
                                         app(lref(1), vec![lref(2), lref(1)]),
-                                        // [p-r] [p-l] [pack] [rcons] [lcons]
+                                        // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex]
                                         force(
                                             call::bif::merge(lref(1), lref(0)),
-                                            data(DataConstructor::Block.tag(), vec![lref(0)]),
+                                            data(
+                                                DataConstructor::Block.tag(),
+                                                vec![lref(0), no_index()],
+                                            ),
                                         ),
                                     ),
                                 ),
@@ -665,12 +974,12 @@ impl StgIntrinsic for Merge {
         let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
         for item in l {
-            let (k, kv) = deconstruct(view, &item)?;
+            let (k, kv) = deconstruct(view, machine.symbol_pool(), &item)?;
             merge.insert(k, kv);
         }
 
         for item in r {
-            let (k, kv) = deconstruct(view, &item)?;
+            let (k, kv) = deconstruct(view, machine.symbol_pool(), &item)?;
             merge.insert(k, kv);
         }
 
@@ -722,23 +1031,26 @@ impl StgIntrinsic for MergeWith {
             switch(
                 local(0),
                 vec![(
-                    DataConstructor::Block.tag(), // [lcons] [l r f]
+                    DataConstructor::Block.tag(), // [lcons lindex] [l r f]
                     switch(
-                        local(2),
+                        local(3),
                         vec![(
-                            DataConstructor::Block.tag(), // [rcons] [lcons] [l r f]
+                            DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l r f]
                             let_(
                                 vec![pair_items],
-                                // [pack] [rcons] [lcons] [l r f]
+                                // [pack] [rcons rindex] [lcons lindex] [l r f]
                                 force(
-                                    app(lref(0), vec![lref(2), lref(0)]),
-                                    // [p-l] [pack] [rcons] [lcons] [l r f]
+                                    app(lref(0), vec![lref(3), lref(0)]),
+                                    // [p-l] [pack] [rcons rindex] [lcons lindex] [l r f]
                                     force(
                                         app(lref(1), vec![lref(2), lref(1)]),
-                                        // [p-r] [p-l] [pack] [rcons] [lcons] [l r f]
+                                        // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex] [l r f]
                                         force(
-                                            call::bif::merge_with(lref(1), lref(0), lref(7)),
-                                            data(DataConstructor::Block.tag(), vec![lref(0)]),
+                                            call::bif::merge_with(lref(1), lref(0), lref(9)),
+                                            data(
+                                                DataConstructor::Block.tag(),
+                                                vec![lref(0), no_index()],
+                                            ),
                                         ),
                                     ),
                                 ),
@@ -765,12 +1077,12 @@ impl StgIntrinsic for MergeWith {
         let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
         for item in l {
-            let (key, value) = deconstruct(view, &item)?;
+            let (key, value) = deconstruct(view, machine.symbol_pool(), &item)?;
             merge.insert(key, value);
         }
 
         for item in r {
-            let (key, nv) = deconstruct(view, &item)?;
+            let (key, nv) = deconstruct(view, machine.symbol_pool(), &item)?;
             if let Some(ov) = merge.get_mut(&key) {
                 let args = [ov.clone(), nv];
                 let mut combined = SynClosure::new(
@@ -797,8 +1109,10 @@ impl CallGlobal3 for MergeWith {}
 
 /// DEEPMERGE(l, r, fn)
 ///
-/// Merge two blocks, recursing into any subblocks, if either l or r
-/// are not blocks then return r. (TODO: Really?)
+/// Merge two blocks, recursing into any subblocks. If either `l` or
+/// `r` is not a block, return `r` — the right-hand side takes
+/// precedence at every level, consistent with the `<<` operator
+/// semantics ("`r` over `l`").
 pub struct DeepMerge;
 
 impl StgIntrinsic for DeepMerge {
@@ -816,15 +1130,15 @@ impl StgIntrinsic for DeepMerge {
                 local(0),
                 vec![(
                     DataConstructor::Block.tag(),
-                    // [lcons] [l r]
+                    // [lcons lindex] [l r]
                     case(
-                        local(2),
+                        local(3),
                         vec![(
                             DataConstructor::Block.tag(),
-                            // [rcons] [lcons] [l r]
-                            MergeWith.global(lref(2), lref(3), gref(self.index())),
+                            // [rcons rindex] [lcons lindex] [l r]
+                            MergeWith.global(lref(4), lref(5), gref(self.index())),
                         )],
-                        // [r] [lcons] [l r]
+                        // [r] [lcons lindex] [l r]
                         local(0),
                     ),
                 )],
@@ -837,6 +1151,36 @@ impl StgIntrinsic for DeepMerge {
 }
 
 impl CallGlobal3 for DeepMerge {}
+
+/// ISBLOCK(value)
+///
+/// Return true if the value is a block, false otherwise
+pub struct IsBlock;
+
+impl StgIntrinsic for IsBlock {
+    fn name(&self) -> &str {
+        "ISBLOCK"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let is_block = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::Block.tag()
+        );
+        machine_return_bool(machine, view, is_block)
+    }
+}
+
+impl CallGlobal1 for IsBlock {}
 
 /// Compile a panic for a missing key
 pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
@@ -866,6 +1210,7 @@ pub mod tests {
             Box::new(LookupOr(NativeVariant::Unboxed)),
             Box::new(Panic),
             Box::new(Eq),
+            Box::new(KEmptyList),
         ])
     }
 
@@ -934,6 +1279,214 @@ pub mod tests {
         assert_eq!(m.bool_return(), Some(true));
     }
 
+    /// Helper to build a block with `n` keys (k0..kN) and string values (v0..vN).
+    /// Returns (letrec_bindings, block_ref_index) — the block is at lref(block_ref_index).
+    fn build_n_key_block(n: usize) -> (Vec<LambdaForm>, usize) {
+        let mut bindings: Vec<LambdaForm> = Vec::new();
+
+        // For each key, create: value, pair, kv
+        // Then chain into a cons-list and wrap in Block
+        let mut kv_indices = Vec::new();
+        for i in 0..n {
+            let val_idx = bindings.len();
+            bindings.push(value(box_str(format!("v{i}"))));
+            bindings.push(value(data(
+                DataConstructor::BlockPair.tag(),
+                vec![sym(format!("k{i}")), lref(val_idx)],
+            )));
+            let kv_idx = bindings.len();
+            bindings.push(value(Kv.global(lref(val_idx + 1))));
+            kv_indices.push(kv_idx);
+        }
+
+        // Build cons list from back to front
+        let mut list_idx = {
+            // Start with nil (KEmptyList global ref)
+            let nil_idx = bindings.len();
+            bindings.push(value(data(
+                DataConstructor::ListCons.tag(),
+                vec![lref(kv_indices[n - 1]), KEmptyList.gref()],
+            )));
+            nil_idx
+        };
+
+        for i in (0..n - 1).rev() {
+            let new_idx = bindings.len();
+            bindings.push(value(data(
+                DataConstructor::ListCons.tag(),
+                vec![lref(kv_indices[i]), lref(list_idx)],
+            )));
+            list_idx = new_idx;
+        }
+
+        // Wrap in Block
+        let block_idx = bindings.len();
+        bindings.push(value(data(
+            DataConstructor::Block.tag(),
+            vec![lref(list_idx), no_index()],
+        )));
+
+        (bindings, block_idx)
+    }
+
+    #[test]
+    pub fn test_block_lookup_below_threshold() {
+        // 15 keys — below BLOCK_INDEX_THRESHOLD (16)
+        let (mut bindings, block_idx) = build_n_key_block(15);
+
+        // Lookup k0 (first key)
+        let key_idx = bindings.len();
+        bindings.push(value(box_sym("k0")));
+        let default_idx = bindings.len();
+        bindings.push(value(box_str("fail")));
+        let lookup_idx = bindings.len();
+        bindings.push(value(LookupOr(NativeVariant::Boxed).global(
+            lref(key_idx),
+            lref(default_idx),
+            lref(block_idx),
+        )));
+
+        let syntax = letrec_(
+            bindings,
+            case(
+                local(lookup_idx),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(5000)).unwrap();
+        assert_eq!(m.string_return(), Some("v0".to_string()));
+    }
+
+    #[test]
+    pub fn test_block_lookup_at_threshold() {
+        // 16 keys — at BLOCK_INDEX_THRESHOLD, index should be built
+        let (mut bindings, block_idx) = build_n_key_block(16);
+
+        // Lookup k15 (last key)
+        let key_idx = bindings.len();
+        bindings.push(value(box_sym("k15")));
+        let default_idx = bindings.len();
+        bindings.push(value(box_str("fail")));
+        let lookup_idx = bindings.len();
+        bindings.push(value(LookupOr(NativeVariant::Boxed).global(
+            lref(key_idx),
+            lref(default_idx),
+            lref(block_idx),
+        )));
+
+        let syntax = letrec_(
+            bindings,
+            case(
+                local(lookup_idx),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(5000)).unwrap();
+        assert_eq!(m.string_return(), Some("v15".to_string()));
+    }
+
+    #[test]
+    pub fn test_block_lookup_above_threshold() {
+        // 17 keys — above BLOCK_INDEX_THRESHOLD
+        let (mut bindings, block_idx) = build_n_key_block(17);
+
+        // Lookup k8 (middle key)
+        let key_idx = bindings.len();
+        bindings.push(value(box_sym("k8")));
+        let default_idx = bindings.len();
+        bindings.push(value(box_str("fail")));
+        let lookup_idx = bindings.len();
+        bindings.push(value(LookupOr(NativeVariant::Boxed).global(
+            lref(key_idx),
+            lref(default_idx),
+            lref(block_idx),
+        )));
+
+        let syntax = letrec_(
+            bindings,
+            case(
+                local(lookup_idx),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(5000)).unwrap();
+        assert_eq!(m.string_return(), Some("v8".to_string()));
+    }
+
+    #[test]
+    pub fn test_block_lookup_missing_key_below_threshold() {
+        // 15 keys — missing key should return default
+        let (mut bindings, block_idx) = build_n_key_block(15);
+
+        let key_idx = bindings.len();
+        bindings.push(value(box_sym("missing")));
+        let default_idx = bindings.len();
+        bindings.push(value(box_str("default-value")));
+        let lookup_idx = bindings.len();
+        bindings.push(value(LookupOr(NativeVariant::Boxed).global(
+            lref(key_idx),
+            lref(default_idx),
+            lref(block_idx),
+        )));
+
+        let syntax = letrec_(
+            bindings,
+            case(
+                local(lookup_idx),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(5000)).unwrap();
+        assert_eq!(m.string_return(), Some("default-value".to_string()));
+    }
+
+    #[test]
+    pub fn test_block_lookup_missing_key_above_threshold() {
+        // 17 keys — missing key should return default (exercises index path)
+        let (mut bindings, block_idx) = build_n_key_block(17);
+
+        let key_idx = bindings.len();
+        bindings.push(value(box_sym("missing")));
+        let default_idx = bindings.len();
+        bindings.push(value(box_str("default-value")));
+        let lookup_idx = bindings.len();
+        bindings.push(value(LookupOr(NativeVariant::Boxed).global(
+            lref(key_idx),
+            lref(default_idx),
+            lref(block_idx),
+        )));
+
+        let syntax = letrec_(
+            bindings,
+            case(
+                local(lookup_idx),
+                vec![(DataConstructor::BoxedString.tag(), local(0))],
+                unit(),
+            ),
+        );
+
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(5000)).unwrap();
+        assert_eq!(m.string_return(), Some("default-value".to_string()));
+    }
+
     #[test]
     pub fn test_simple_block_lookup() {
         let syntax = letrec_(
@@ -958,7 +1511,10 @@ pub mod tests {
                     DataConstructor::ListCons.tag(),
                     vec![lref(2), lref(6)],
                 )),
-                value(data(DataConstructor::Block.tag(), vec![lref(7)])),
+                value(data(
+                    DataConstructor::Block.tag(),
+                    vec![lref(7), no_index()],
+                )),
                 value(box_sym("k1")),
                 value(box_str("fail")),
                 value(LookupOr(NativeVariant::Boxed).global(lref(9), lref(10), lref(8))),

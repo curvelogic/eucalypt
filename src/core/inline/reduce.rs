@@ -53,7 +53,8 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                 )))
             }
         }
-        _ => expr.walk_safe(&mut |e| distribute(&e)),
+        // Use optimized try_walk_safe to avoid unnecessary allocations
+        _ => expr.try_walk_safe(&mut |e| distribute(e)),
     }
 }
 
@@ -74,7 +75,8 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                     if binders.len() != xs.len() {
                         // cannot inline partial application or extra
                         // args for now
-                        expr.walk_safe(&mut |e| beta_reduce(&e))
+                        // Use optimized try_walk_safe
+                        expr.try_walk_safe(&mut |e| beta_reduce(e))
                     } else {
                         let args = xs
                             .iter()
@@ -86,10 +88,12 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                         Ok(body.substs(&mappings))
                     }
                 }
-                _ => expr.walk_safe(&mut |e| beta_reduce(&e)),
+                // Use optimized try_walk_safe
+                _ => expr.try_walk_safe(&mut |e| beta_reduce(e)),
             }
         }
-        _ => expr.walk_safe(&mut |e| beta_reduce(&e)),
+        // Use optimized try_walk_safe
+        _ => expr.try_walk_safe(&mut |e| beta_reduce(e)),
     }
 }
 

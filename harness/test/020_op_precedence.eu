@@ -66,14 +66,14 @@ checks: {
 
 
   trues: [
-	  _a,
-	  _b,
-	  _c,
-	  _d,
-	  _e,
-	  rarr_act = rarr_exp,
-	  larr_act = larr_exp
-	  ]
+          _a,
+          _b,
+          _c,
+          _d,
+          _e,
+          rarr_act = rarr_exp,
+          larr_act = larr_exp
+          ]
 
   pass: trues all-true?
 }

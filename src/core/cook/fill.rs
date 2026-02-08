@@ -52,6 +52,7 @@ fn bind_sides(expr: Option<&RcExpr>) -> (BindSide, BindSide) {
     use BindSide::*;
     if let Some(expr) = expr {
         match &*expr.inner {
+            Expr::Operator(_, Fixity::Nullary, _, _) => (ValueLike, ValueLike),
             Expr::Operator(_, Fixity::UnaryPrefix, _, _) => (ValueLike, OpLike),
             Expr::Operator(_, Fixity::UnaryPostfix, _, _) => (OpLike, ValueLike),
             Expr::Operator(_, _, _, _) => (OpLike, OpLike),

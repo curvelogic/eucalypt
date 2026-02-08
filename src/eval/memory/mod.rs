@@ -11,5 +11,7 @@ pub mod loader;
 pub mod lob;
 pub mod mark;
 pub mod mutator;
+pub mod set;
 pub mod string;
+pub mod symbol;
 pub mod syntax;

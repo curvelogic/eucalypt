@@ -85,7 +85,7 @@ pub enum ExecutionError {
     Panic(String),
     #[error("machine did not terminate after {0} steps")]
     DidntTerminate(usize),
-    #[error("entered a black hole")]
+    #[error("infinite loop detected: binding refers to itself")]
     BlackHole,
     #[error(transparent)]
     Compile(#[from] CompileError),
@@ -154,18 +154,18 @@ impl ExecutionError {
     }
 
     /// Access environment trace if present
-    pub fn env_trace(&self) -> Option<Vec<Smid>> {
+    pub fn env_trace(&self) -> Option<&[Smid]> {
         if let ExecutionError::Traced(_, trace, _) = self {
-            Some(trace.clone())
+            Some(trace)
         } else {
             None
         }
     }
 
     /// Access stack trace if present
-    pub fn stack_trace(&self) -> Option<Vec<Smid>> {
+    pub fn stack_trace(&self) -> Option<&[Smid]> {
         if let ExecutionError::Traced(_, _, trace) = self {
-            Some(trace.clone())
+            Some(trace)
         } else {
             None
         }

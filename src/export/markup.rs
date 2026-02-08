@@ -44,8 +44,6 @@ impl Element {
 }
 
 /// An item in the model, either an element or text content
-///
-/// TODO: processing instructions etc.?
 #[derive(PartialEq, Eq, Debug)]
 pub enum Item {
     Element(Element),
@@ -185,7 +183,9 @@ where
             Event::OutputStreamStart => {}
             Event::OutputStreamEnd => {
                 if let Some(root) = self.result.take() {
-                    self.markup_serialiser.serialise(root).unwrap();
+                    self.markup_serialiser
+                        .serialise(root)
+                        .expect("failed to serialise markup");
                 }
             }
             _ => {}

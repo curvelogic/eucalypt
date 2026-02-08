@@ -1,7 +1,5 @@
 //! String and regex intrinsics
 
-use std::iter;
-
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -22,8 +20,8 @@ use super::{
     force::SeqStrList,
     printf::{self, PrintfError},
     support::{
-        machine_return_num, machine_return_str, machine_return_str_list, machine_return_sym,
-        str_arg, str_list_arg,
+        machine_return_num, machine_return_str, machine_return_str_iter, machine_return_str_list,
+        machine_return_sym, str_arg, str_list_arg,
     },
     syntax::{
         dsl::{
@@ -47,14 +45,15 @@ fn cached_regex<T: AsRef<str>>(
     text: T,
 ) -> Result<&Regex, ExecutionError> {
     let rcache = machine.rcache();
-    let key = text.as_ref().to_string();
+    let text_ref = text.as_ref();
 
-    if !rcache.contains(&key) {
-        let re = Regex::new(text.as_ref()).map_err(|_| ExecutionError::BadRegex(key.clone()))?;
-        rcache.put(key.clone(), re);
+    if !rcache.contains(text_ref) {
+        let re =
+            Regex::new(text_ref).map_err(|_| ExecutionError::BadRegex(text_ref.to_string()))?;
+        rcache.put(text_ref.to_string(), re);
     }
 
-    Ok(rcache.get(&key).unwrap())
+    Ok(rcache.get(text_ref).unwrap())
 }
 
 /// SYM(str) to convert strings to symbols
@@ -123,10 +122,12 @@ impl StgIntrinsic for Str {
     ) -> Result<(), ExecutionError> {
         let nat = machine.nav(view).resolve_native(&args[0])?;
         let text = match nat {
-            Native::Sym(s) => (*view.scoped(s)).as_str().to_string(),
+            Native::Sym(id) => machine.symbol_pool().resolve(id).to_string(),
             Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
             Native::Num(n) => format!("{n}"),
             Native::Zdt(d) => format!("{d}"),
+            Native::Index(idx) => format!("<index:{}>", idx.len()),
+            Native::Set(_) => "<set>".to_string(),
         };
         machine_return_str(machine, view, text)
     }
@@ -196,18 +197,18 @@ impl StgIntrinsic for Match {
         let string = str_arg(machine, view, &args[0])?;
         let regex = str_arg(machine, view, &args[1])?;
         let re = cached_regex(machine, regex)?;
-        let v: Vec<_> = if let Some(captures) = re.captures(&string) {
+        let v: Vec<String> = if let Some(captures) = re.captures(&string) {
             captures
                 .iter()
                 .map(|m| match m {
                     Some(mch) => mch.as_str().to_string(),
-                    None => "".to_string(),
+                    None => String::new(),
                 })
                 .collect()
         } else {
             vec![]
         };
-        machine_return_str_list(machine, view, v)
+        machine_return_str_iter(machine, view, v.into_iter())
     }
 }
 
@@ -232,11 +233,11 @@ impl StgIntrinsic for Matches {
         let regex = str_arg(machine, view, &args[1])?;
         let re = cached_regex(machine, regex)?;
 
-        let matches = re
+        let v: Vec<String> = re
             .find_iter(&string)
             .map(|m| m.as_str().to_string())
             .collect();
-        machine_return_str_list(machine, view, matches)
+        machine_return_str_iter(machine, view, v.into_iter())
     }
 }
 
@@ -270,8 +271,8 @@ impl StgIntrinsic for Split {
             machine_return_str_list(machine, view, vec![string])
         } else {
             let re = cached_regex(machine, regex)?;
-            let split = re.split(&string).map(|it| it.to_string()).collect();
-            machine_return_str_list(machine, view, split)
+            let v: Vec<String> = re.split(&string).map(|it| it.to_string()).collect();
+            machine_return_str_iter(machine, view, v.into_iter())
         }
     }
 }
@@ -402,7 +403,7 @@ impl StgIntrinsic for Fmt {
         let nat = machine.nav(view).resolve_native(&args[0])?;
         let fmt_string = str_arg(machine, view, &args[1])?;
 
-        match printf::fmt(view, &fmt_string, &nat) {
+        match printf::fmt(view, machine.symbol_pool(), &fmt_string, &nat) {
             Ok(text) => machine_return_str(machine, view, text),
             Err(PrintfError::InvalidFormatString(s)) => Err(ExecutionError::BadFormatString(s)),
             Err(PrintfError::FmtError(_)) => Err(ExecutionError::FormatFailure),
@@ -429,8 +430,8 @@ impl StgIntrinsic for Letters {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let string = str_arg(machine, view, &args[0])?;
-        let letters: Vec<String> = string.chars().map(|c| iter::once(c).collect()).collect();
-        machine_return_str_list(machine, view, letters)
+        let iter = string.chars().map(|c| c.to_string());
+        machine_return_str_iter(machine, view, iter)
     }
 }
 

@@ -45,6 +45,10 @@ pub struct EucalyptCli {
     #[arg(short = 'S', long = "statistics")]
     pub statistics: bool,
 
+    /// Write statistics as JSON to a file
+    #[arg(long = "statistics-file")]
+    pub statistics_file: Option<PathBuf>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 
@@ -67,6 +71,10 @@ pub enum Commands {
     Explain(ExplainArgs),
     /// List targets defined in the source
     ListTargets(ListTargetsArgs),
+    /// Format eucalypt source files
+    Fmt(FmtArgs),
+    /// Start the Language Server Protocol server
+    Lsp,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -119,9 +127,29 @@ pub struct RunArgs {
     #[arg(short = 'S', long = "statistics")]
     pub statistics: bool,
 
+    /// Write statistics as JSON to a file
+    #[arg(long = "statistics-file")]
+    pub statistics_file: Option<PathBuf>,
+
+    /// Disable dead code elimination (for debugging)
+    #[arg(long = "no-dce")]
+    pub no_dce: bool,
+
+    /// Seed for random number generation (for reproducible results)
+    #[arg(long = "seed")]
+    pub seed: Option<i64>,
+
+    /// Limit managed heap to SIZE MiB
+    #[arg(long = "heap-limit-mib")]
+    pub heap_limit_mib: Option<usize>,
+
     /// Files to process
     #[arg(value_name = "FILES")]
     pub files: Vec<String>,
+
+    /// Arguments to pass to the eucalypt program (after --)
+    #[arg(last = true, value_name = "ARGS")]
+    pub args: Vec<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -194,6 +222,33 @@ pub struct ListTargetsArgs {
     pub files: Vec<String>,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct FmtArgs {
+    /// Files to format
+    #[arg(value_name = "FILES")]
+    pub files: Vec<String>,
+
+    /// Line width for formatting (default: 80)
+    #[arg(short = 'w', long = "width", default_value = "80")]
+    pub width: usize,
+
+    /// Modify files in place
+    #[arg(long = "write")]
+    pub write: bool,
+
+    /// Check if files are formatted (exit 1 if not)
+    #[arg(long = "check")]
+    pub check: bool,
+
+    /// Full reformatting mode (instead of conservative)
+    #[arg(long = "reformat")]
+    pub reformat: bool,
+
+    /// Indent size in spaces (default: 2)
+    #[arg(long = "indent", default_value = "2")]
+    pub indent: usize,
+}
+
 /// Combined options structure that maintains compatibility
 #[derive(Debug, Clone, Default)]
 pub struct EucalyptOptions {
@@ -203,6 +258,7 @@ pub struct EucalyptOptions {
     pub no_prelude: bool,
     pub debug: bool,
     pub statistics: bool,
+    pub statistics_file: Option<PathBuf>,
 
     // Command-specific options (flattened from subcommands)
     pub target: Option<String>,
@@ -229,6 +285,20 @@ pub struct EucalyptOptions {
     pub dump_stg: bool,
     pub dump_runtime: bool,
 
+    // LSP mode
+    pub lsp: bool,
+
+    // Format command options
+    pub format: bool,
+    pub format_width: usize,
+    pub format_write: bool,
+    pub format_check: bool,
+    pub format_reformat: bool,
+    pub format_indent: usize,
+
+    // Optimisation flags
+    pub no_dce: bool,
+
     // STG settings (flattened)
     pub stg_settings: StgSettings,
 
@@ -236,6 +306,12 @@ pub struct EucalyptOptions {
     pub explicit_inputs: Vec<Input>,
     pub prologue_inputs: Vec<Input>,
     pub epilogue_inputs: Vec<Input>,
+
+    // Command-line arguments passed after -- separator
+    pub args: Vec<String>,
+
+    // Seed for random number generation
+    pub seed: Option<i64>,
 }
 
 impl From<EucalyptCli> for EucalyptOptions {
@@ -248,8 +324,9 @@ impl From<EucalyptCli> for EucalyptOptions {
             Some(Commands::Dump(args)) => &args.files,
             Some(Commands::Explain(args)) => &args.files,
             Some(Commands::ListTargets(args)) => &args.files,
+            Some(Commands::Fmt(args)) => &args.files,
+            Some(Commands::Version) | Some(Commands::Lsp) => &cli.files,
             None => &cli.files,
-            _ => &Vec::new(),
         };
 
         for file in files {
@@ -275,6 +352,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             cmd_batch,
             cmd_debug,
             cmd_statistics,
+            cmd_statistics_file,
         ) = match &cli.command {
             Some(Commands::Run(args)) => (
                 args.target.clone(),
@@ -292,6 +370,7 @@ impl From<EucalyptCli> for EucalyptOptions {
                 Some(args.batch),
                 Some(args.debug),
                 Some(args.statistics),
+                args.statistics_file.clone(),
             ),
             Some(Commands::Test(args)) => (
                 args.target.clone(),
@@ -304,6 +383,7 @@ impl From<EucalyptCli> for EucalyptOptions {
                 false,
                 false,
                 args.open_browser,
+                None,
                 None,
                 None,
                 None,
@@ -326,14 +406,15 @@ impl From<EucalyptCli> for EucalyptOptions {
                 None,
                 None,
                 None,
+                None,
             ),
             Some(Commands::ListTargets(_)) => (
                 None, None, None, None, false, None, false, false, false, false, None, None, None,
-                None, None,
+                None, None, None,
             ),
             _ => (
                 None, None, None, None, false, None, false, false, false, false, None, None, None,
-                None, None,
+                None, None, None,
             ),
         };
 
@@ -391,6 +472,46 @@ impl From<EucalyptCli> for EucalyptOptions {
             ),
         };
 
+        // Extract format options
+        let (format, format_width, format_write, format_check, format_reformat, format_indent) =
+            match &cli.command {
+                Some(Commands::Fmt(args)) => (
+                    true,
+                    args.width,
+                    args.write,
+                    args.check,
+                    args.reformat,
+                    args.indent,
+                ),
+                _ => (false, 80, false, false, false, 2),
+            };
+
+        // Extract LSP mode
+        let lsp = matches!(cli.command, Some(Commands::Lsp));
+
+        // Extract heap limit and no-dce from Run command
+        let heap_limit_mib = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.heap_limit_mib,
+            _ => None,
+        };
+
+        let no_dce = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.no_dce,
+            _ => false,
+        };
+
+        // Extract seed from Run command
+        let seed = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.seed,
+            _ => None,
+        };
+
+        // Extract trailing args from Run command
+        let args = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.args.clone(),
+            _ => Vec::new(),
+        };
+
         EucalyptOptions {
             mode: if cmd_batch.unwrap_or(cli.batch) {
                 CommandLineMode::Batch
@@ -401,6 +522,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             no_prelude: cmd_no_prelude.unwrap_or(cli.no_prelude),
             debug: cmd_debug.unwrap_or(cli.debug),
             statistics: cmd_statistics.unwrap_or(cli.statistics),
+            statistics_file: cmd_statistics_file.or(cli.statistics_file),
             target,
             output,
             evaluate,
@@ -422,10 +544,23 @@ impl From<EucalyptCli> for EucalyptOptions {
             dump_pruned,
             dump_stg,
             dump_runtime,
-            stg_settings: StgSettings::default(),
+            lsp,
+            format,
+            format_width,
+            format_write,
+            format_check,
+            format_reformat,
+            format_indent,
+            no_dce,
+            stg_settings: StgSettings {
+                heap_limit_mib,
+                ..StgSettings::default()
+            },
             explicit_inputs,
             prologue_inputs: Vec::new(),
             epilogue_inputs: Vec::new(),
+            args,
+            seed,
         }
     }
 }
@@ -448,6 +583,8 @@ impl EucalyptCli {
             "version",
             "explain",
             "list-targets",
+            "fmt",
+            "lsp",
             "help",
         ];
         if SUBCOMMANDS.contains(&args[1].as_str())
@@ -520,6 +657,30 @@ impl EucalyptOptions {
         self.dump_runtime
     }
 
+    pub fn format(&self) -> bool {
+        self.format
+    }
+
+    pub fn format_width(&self) -> usize {
+        self.format_width
+    }
+
+    pub fn format_write(&self) -> bool {
+        self.format_write
+    }
+
+    pub fn format_check(&self) -> bool {
+        self.format_check
+    }
+
+    pub fn format_reformat(&self) -> bool {
+        self.format_reformat
+    }
+
+    pub fn format_indent(&self) -> usize {
+        self.format_indent
+    }
+
     pub fn list_targets(&self) -> bool {
         self.list_targets
     }
@@ -530,6 +691,14 @@ impl EucalyptOptions {
 
     pub fn test(&self) -> bool {
         self.test
+    }
+
+    pub fn lsp(&self) -> bool {
+        self.lsp
+    }
+
+    pub fn no_dce(&self) -> bool {
+        self.no_dce
     }
 
     pub fn run(&self) -> bool {
@@ -543,6 +712,8 @@ impl EucalyptOptions {
             && !self.dump_pruned
             && !self.dump_stg
             && !self.dump_runtime
+            && !self.format
+            && !self.lsp
     }
 
     pub fn target(&self) -> Option<&str> {
@@ -601,15 +772,31 @@ impl EucalyptOptions {
         self.statistics
     }
 
+    pub fn statistics_file(&self) -> Option<&PathBuf> {
+        self.statistics_file.as_ref()
+    }
+
     pub fn stg_settings(&self) -> &StgSettings {
         &self.stg_settings
+    }
+
+    /// Get the command-line arguments passed after --
+    pub fn args(&self) -> &[String] {
+        &self.args
+    }
+
+    /// Get the seed for random number generation
+    pub fn seed(&self) -> Option<i64> {
+        self.seed
     }
 
     /// Parse command line arguments using the new clap v4 structure
     pub fn from_args() -> Self {
         let cli = EucalyptCli::parse_with_fallback();
         let mut options = EucalyptOptions::from(cli);
-        options.process_defaults().unwrap();
+        options
+            .process_defaults()
+            .expect("failed to process CLI defaults");
         options
     }
 
@@ -664,6 +851,11 @@ impl EucalyptOptions {
         self
     }
 
+    pub fn with_seed(mut self, seed: i64) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+
     /// The test flag indicates shallow desugaring only for test plan
     /// analysis. Actual execution requires the flag is reset.
     pub fn without_test_flag(mut self) -> Self {
@@ -678,7 +870,8 @@ impl EucalyptOptions {
     }
 
     pub fn build(mut self) -> Self {
-        self.process_defaults().unwrap();
+        self.process_defaults()
+            .expect("failed to process option defaults");
         self
     }
 
@@ -724,9 +917,12 @@ impl EucalyptOptions {
         // add current working directory as a lib path
         self.lib_path.insert(0, std::env::current_dir()?);
 
-        // For pipes, default json stdin
-        if self.explicit_inputs.is_empty() && !std::io::stdin().is_terminal() {
-            self.prepend_input(Input::from_str("-").unwrap());
+        // For pipes, default json stdin (but not if -e evaluand provided)
+        if self.explicit_inputs.is_empty()
+            && self.evaluate.is_none()
+            && !std::io::stdin().is_terminal()
+        {
+            self.prepend_input(Input::from_str("-").expect("stdin locator '-' is valid"));
         }
 
         // Prepend project Eufile
@@ -761,12 +957,17 @@ impl EucalyptOptions {
             Some("__io".to_string()),
             "core",
         ));
+        // add command-line arguments as __args
+        self.prepend_input(Input::new(
+            Locator::Pseudo("args".to_string()),
+            Some("__args".to_string()),
+            "core",
+        ));
 
         // Add CLI evaluand as final input if it exists
-        if self.evaluate.is_some() {
-            self.epilogue_inputs.push(Input::from(Locator::Cli(
-                self.evaluate.as_ref().unwrap().to_string(),
-            )));
+        if let Some(evaluand) = &self.evaluate {
+            self.epilogue_inputs
+                .push(Input::from(Locator::Cli(evaluand.to_string())));
         }
 
         // Set default STG settings based on debug & other settings
@@ -864,7 +1065,12 @@ impl EucalyptOptions {
         explanation.push('\n');
 
         // options
-        if self.no_prelude || self.debug || self.quote_embed || self.quote_debug || self.statistics
+        if self.no_prelude
+            || self.debug
+            || self.no_dce
+            || self.quote_embed
+            || self.quote_debug
+            || self.statistics
         {
             explanation.push_str("Other options:\n");
         }
@@ -873,6 +1079,9 @@ impl EucalyptOptions {
         }
         if self.debug {
             explanation.push_str(" • debug mode is ON \n")
+        }
+        if self.no_dce {
+            explanation.push_str(" • dead code elimination is DISABLED\n")
         }
         if self.quote_embed {
             explanation.push_str(" • dumps will use embedding format \n")

@@ -1,15 +1,30 @@
 //! Intrinsics for arithmetic functions
 
+use std::rc::Rc;
+
 use serde_json::Number;
 
-use crate::eval::{
-    emit::Emitter,
-    error::ExecutionError,
-    machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
-    memory::{mutator::MutatorHeapView, syntax::Ref},
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
+        memory::{
+            mutator::MutatorHeapView,
+            syntax::{Native, Ref},
+        },
+    },
 };
 
-use super::support::{machine_return_bool, machine_return_num, num_arg};
+use super::{
+    support::{machine_return_bool, machine_return_num, num_arg},
+    syntax::{
+        dsl::{annotated_lambda, app_bif, case, force, local, lref},
+        LambdaForm, StgSyn,
+    },
+    tags::DataConstructor,
+};
 
 /// ADD(l, r) - add l to r
 pub struct Add;
@@ -221,12 +236,105 @@ impl StgIntrinsic for Mod {
 
 impl CallGlobal2 for Mod {}
 
+/// Unbox any boxed native type (number, string, symbol, or ZDT).
+///
+/// Each branch extracts the inner native value to local(0). The
+/// fallback handles values that are already unboxed atoms.
+fn unbox_any(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
+    case(
+        scrutinee,
+        vec![
+            (DataConstructor::BoxedNumber.tag(), then.clone()),
+            (DataConstructor::BoxedString.tag(), then.clone()),
+            (DataConstructor::BoxedSymbol.tag(), then.clone()),
+            (DataConstructor::BoxedZdt.tag(), then.clone()),
+        ],
+        then,
+    )
+}
+
+/// Build a wrapper for a polymorphic two-argument comparison intrinsic.
+///
+/// Unboxes and forces both arguments for any boxed native type, then
+/// calls the BIF with the raw native values.
+fn comparison_wrapper(index: usize, annotation: Smid) -> LambdaForm {
+    // Environment evolution (matching the default wrapper pattern):
+    //
+    //   lambda args:                                          [x, y]
+    //   unbox_any x:  case on local(0)
+    //     branch matches BoxedXxx → inner ref at local(0):    [inner_x] [x, y]
+    //   force inner_x:                              [raw_x]   [inner_x] [x, y]
+    //   unbox_any y:  case on local(3) (= y from lambda args)
+    //     branch matches BoxedXxx → inner ref:  [inner_y]     [raw_x] [inner_x] [x, y]
+    //   force inner_y:                  [raw_y] [inner_y]     [raw_x] [inner_x] [x, y]
+    //
+    //   BIF args: raw_x = lref(2), raw_y = lref(0)
+    let bif_call = app_bif(index as u8, vec![lref(2), lref(0)]);
+    let force_y = force(local(0), bif_call);
+    let unbox_y = unbox_any(local(3), force_y);
+    let force_x = force(local(0), unbox_y);
+    let unbox_x = unbox_any(local(0), force_x);
+    annotated_lambda(2, unbox_x, annotation)
+}
+
+/// Ordering comparison between two numbers, trying i64, u64, then f64
+/// representations. Returns the `std::cmp::Ordering` or an error if
+/// the numbers cannot be compared.
+fn num_ord(x: &Number, y: &Number) -> Result<std::cmp::Ordering, ExecutionError> {
+    if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
+        Ok(l.cmp(&r))
+    } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
+        Ok(l.cmp(&r))
+    } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
+        l.partial_cmp(&r)
+            .ok_or_else(|| ExecutionError::NumericDomainError(x.clone(), y.clone()))
+    } else {
+        Err(ExecutionError::NumericDomainError(x.clone(), y.clone()))
+    }
+}
+
+/// Polymorphic ordered comparison. Dispatches on native type, computes
+/// the ordering, and applies the given predicate.
+fn ordered_cmp(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    args: &[Ref],
+    pred: fn(std::cmp::Ordering) -> bool,
+    name: &str,
+) -> Result<bool, ExecutionError> {
+    let x = machine.nav(view).resolve_native(&args[0])?;
+    let y = machine.nav(view).resolve_native(&args[1])?;
+    match (x, y) {
+        (Native::Num(ref nx), Native::Num(ref ny)) => Ok(pred(num_ord(nx, ny)?)),
+        (Native::Str(sx), Native::Str(sy)) => {
+            let ls = &*view.scoped(sx);
+            let rs = &*view.scoped(sy);
+            Ok(pred(ls.as_str().cmp(rs.as_str())))
+        }
+        (Native::Sym(sx), Native::Sym(sy)) => {
+            let pool = machine.symbol_pool();
+            let ls = pool.resolve(sx);
+            let rs = pool.resolve(sy);
+            Ok(pred(ls.cmp(rs)))
+        }
+        (Native::Zdt(ref dx), Native::Zdt(ref dy)) => Ok(pred(dx.cmp(dy))),
+        _ => Err(ExecutionError::Panic(format!(
+            "cannot compare values with {name}: operands must be the same type \
+             (both numbers, strings, symbols, or datetimes)"
+        ))),
+    }
+}
+
 /// GT(l, r) l > r
 pub struct Gt;
 
 impl StgIntrinsic for Gt {
     fn name(&self) -> &str {
         "GT"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index(), annotation)
     }
 
     fn execute(
@@ -236,18 +344,8 @@ impl StgIntrinsic for Gt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let x = num_arg(machine, view, &args[0])?;
-        let y = num_arg(machine, view, &args[1])?;
-
-        if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            machine_return_bool(machine, view, l > r)
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            machine_return_bool(machine, view, l > r)
-        } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-            machine_return_bool(machine, view, l > r)
-        } else {
-            Err(ExecutionError::NumericDomainError(x, y))
-        }
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_gt, "GT")?;
+        machine_return_bool(machine, view, result)
     }
 }
 
@@ -261,6 +359,10 @@ impl StgIntrinsic for Gte {
         "GTE"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -268,24 +370,14 @@ impl StgIntrinsic for Gte {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let x = num_arg(machine, view, &args[0])?;
-        let y = num_arg(machine, view, &args[1])?;
-
-        if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            machine_return_bool(machine, view, l >= r)
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            machine_return_bool(machine, view, l >= r)
-        } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-            machine_return_bool(machine, view, l >= r)
-        } else {
-            Err(ExecutionError::NumericDomainError(x, y))
-        }
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_ge, "GTE")?;
+        machine_return_bool(machine, view, result)
     }
 }
 
 impl CallGlobal2 for Gte {}
 
-/// LT(l, r) l > r
+/// LT(l, r) l < r
 pub struct Lt;
 
 impl StgIntrinsic for Lt {
@@ -293,6 +385,10 @@ impl StgIntrinsic for Lt {
         "LT"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -300,18 +396,8 @@ impl StgIntrinsic for Lt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let x = num_arg(machine, view, &args[0])?;
-        let y = num_arg(machine, view, &args[1])?;
-
-        if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            machine_return_bool(machine, view, l < r)
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            machine_return_bool(machine, view, l < r)
-        } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-            machine_return_bool(machine, view, l < r)
-        } else {
-            Err(ExecutionError::NumericDomainError(x, y))
-        }
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_lt, "LT")?;
+        machine_return_bool(machine, view, result)
     }
 }
 
@@ -325,6 +411,10 @@ impl StgIntrinsic for Lte {
         "LTE"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -332,18 +422,8 @@ impl StgIntrinsic for Lte {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let x = num_arg(machine, view, &args[0])?;
-        let y = num_arg(machine, view, &args[1])?;
-
-        if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            machine_return_bool(machine, view, l <= r)
-        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            machine_return_bool(machine, view, l <= r)
-        } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-            machine_return_bool(machine, view, l <= r)
-        } else {
-            Err(ExecutionError::NumericDomainError(x, y))
-        }
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_le, "LTE")?;
+        machine_return_bool(machine, view, result)
     }
 }
 

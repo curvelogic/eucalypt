@@ -65,7 +65,7 @@ impl Emitter for EdnEmitter<'_> {
     fn emit(&mut self, event: Event) {
         self.accum.consume(event);
         if let Some(result) = self.accum.result() {
-            writeln!(self.out, "{}", emit_str(result)).unwrap();
+            writeln!(self.out, "{}", emit_str(result)).expect("failed to write EDN output");
         }
     }
 }

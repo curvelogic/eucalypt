@@ -14,6 +14,7 @@ use crate::{
         intrinsics,
         memory::{
             mutator::MutatorHeapView,
+            symbol::SymbolPool,
             syntax::{Ref, RefPtr},
         },
         stg::syntax::{dsl, StgSyn},
@@ -41,6 +42,12 @@ pub trait IntrinsicMachine {
 
     /// Environment of current closure
     fn env(&self, view: MutatorHeapView) -> RefPtr<EnvFrame>;
+
+    /// Read-only access to the symbol pool
+    fn symbol_pool(&self) -> &SymbolPool;
+
+    /// Mutable access to the symbol pool for interning new symbols
+    fn symbol_pool_mut(&mut self) -> &mut SymbolPool;
 }
 
 /// All intrinsics have an STG syntax wrapper

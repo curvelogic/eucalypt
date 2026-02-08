@@ -47,7 +47,6 @@ impl FromPrimitive for yaml_rust::Yaml {
                     panic!("unrenderable number")
                 }
             }
-            // TODO: tags...
             Primitive::ZonedDateTime(dt) => {
                 yaml_rust::Yaml::String(metadata.into(), format!("{dt}"))
             }
@@ -92,8 +91,8 @@ impl Emitter for YamlEmitter<'_> {
             let mut output = String::new();
             yaml_rust::YamlEmitter::new(&mut output)
                 .dump(result)
-                .unwrap();
-            writeln!(self.out, "{output}").unwrap();
+                .expect("failed to emit YAML");
+            writeln!(self.out, "{output}").expect("failed to write YAML output");
         }
     }
 }

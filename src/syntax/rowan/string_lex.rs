@@ -193,6 +193,187 @@ impl<'text> Iterator for StringPatternLexer<'text> {
     }
 }
 
+/// C-String pattern lexer for parsing c-string interpolation
+/// This lexer handles backslash escapes for braces (\{ and \}) instead of {{ and }}
+/// Other escape sequences (\n, \t, etc.) are preserved for later processing
+pub struct CStringPatternLexer<'text> {
+    /// Input text (without outer quotes)
+    text: &'text str,
+    /// Character iterator
+    chars: Peekable<Chars<'text>>,
+    /// Current position
+    position: ByteIndex,
+    /// Offset to add to positions (for integration with main lexer)
+    offset: ByteOffset,
+    /// Are we inside an interpolation expression?
+    in_interpolation: bool,
+    /// Are we in a format specifier?
+    in_format_spec: bool,
+}
+
+impl<'text> CStringPatternLexer<'text> {
+    /// Create a new c-string pattern lexer
+    /// `text` should be the content inside the quotes
+    /// `offset` is the position offset to add (position of opening quote + 1)
+    pub fn new(text: &'text str, offset: ByteOffset) -> Self {
+        Self {
+            text,
+            chars: text.chars().peekable(),
+            position: ByteIndex(0),
+            offset,
+            in_interpolation: false,
+            in_format_spec: false,
+        }
+    }
+
+    /// Peek at the next character
+    fn peek(&mut self) -> Option<&char> {
+        self.chars.peek()
+    }
+
+    /// Consume the next character
+    fn bump(&mut self) -> Option<(ByteIndex, char)> {
+        if let Some(ch) = self.chars.next() {
+            let pos = self.position;
+            self.position += ByteOffset::from_char_len(ch);
+            Some((pos, ch))
+        } else {
+            None
+        }
+    }
+
+    /// Get a slice of the input text
+    fn slice(&self, start: ByteIndex, end: ByteIndex) -> &'text str {
+        &self.text[start.to_usize()..end.to_usize()]
+    }
+
+    /// Consume characters matching predicate
+    fn consume<P>(&mut self, predicate: P) -> ByteIndex
+    where
+        P: Fn(char) -> bool,
+    {
+        while let Some(&ch) = self.peek() {
+            if !predicate(ch) {
+                break;
+            }
+            self.bump();
+        }
+        self.position
+    }
+
+    /// Create a span with offset applied
+    fn make_span(&self, start: ByteIndex, end: ByteIndex) -> Span {
+        Span::new(start + self.offset, end + self.offset)
+    }
+
+    /// Parse literal content in c-string (stops at unescaped { or })
+    fn literal_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
+        // Consume characters, handling backslash escapes
+        loop {
+            match self.peek() {
+                Some(&'\\') => {
+                    // Consume the backslash
+                    self.bump();
+                    // Consume the next character (the escaped char)
+                    self.bump();
+                }
+                Some(&'{') | Some(&'}') => {
+                    // Stop at unescaped braces
+                    break;
+                }
+                Some(_) => {
+                    self.bump();
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        let end = self.position;
+        let content = self.slice(start, end);
+        (STRING_LITERAL_CONTENT, self.make_span(start, end), content)
+    }
+
+    /// Parse interpolation content (identifier, number, or dotted reference)
+    fn interpolation_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
+        let end = self.consume(|c| !c.is_whitespace() && c != '}' && c != ':' && c != '.');
+        let content = self.slice(start, end);
+        (
+            STRING_INTERPOLATION_TARGET,
+            self.make_span(start, end),
+            content,
+        )
+    }
+
+    /// Parse format specifier content after :
+    fn format_content(&mut self, start: ByteIndex) -> (SyntaxKind, Span, &'text str) {
+        let end = self.consume(|c| c != '}' && c != ':');
+        let content = self.slice(start, end);
+        (STRING_FORMAT_SPEC, self.make_span(start, end), content)
+    }
+
+    /// Skip whitespace and return true if any was found
+    fn skip_whitespace(&mut self) -> bool {
+        let start = self.position;
+        self.consume(|c| c.is_whitespace());
+        self.position != start
+    }
+}
+
+impl<'text> Iterator for CStringPatternLexer<'text> {
+    type Item = (SyntaxKind, Span, &'text str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Skip whitespace in interpolation contexts but preserve in literals
+        if self.in_interpolation {
+            self.skip_whitespace();
+        }
+
+        let (start, ch) = self.bump()?;
+
+        match ch {
+            '{' => {
+                // In c-strings, {{ is NOT an escape - it starts interpolation of {
+                // Start interpolation
+                self.in_interpolation = true;
+                self.in_format_spec = false;
+                Some((OPEN_BRACE, self.make_span(start, self.position), "{"))
+            }
+            '}' => {
+                if self.in_interpolation {
+                    // End interpolation
+                    self.in_interpolation = false;
+                    self.in_format_spec = false;
+                    Some((CLOSE_BRACE, self.make_span(start, self.position), "}"))
+                } else {
+                    // Literal } outside interpolation - include in literal content
+                    Some(self.literal_content(start))
+                }
+            }
+            ':' if self.in_interpolation => {
+                self.in_format_spec = true;
+                Some((COLON, self.make_span(start, self.position), ":"))
+            }
+            '.' if self.in_interpolation => Some((
+                OPERATOR_IDENTIFIER,
+                self.make_span(start, self.position),
+                ".",
+            )),
+            _ if self.in_interpolation => {
+                if self.in_format_spec {
+                    Some(self.format_content(start))
+                } else {
+                    Some(self.interpolation_content(start))
+                }
+            }
+            _ => {
+                // Regular literal content (includes handling backslash escapes)
+                Some(self.literal_content(start))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

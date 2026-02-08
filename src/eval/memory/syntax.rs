@@ -6,11 +6,13 @@ use crate::common::sourcemap::Smid;
 use crate::eval::{error::ExecutionError, stg::tags::Tag};
 use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
-use std::{fmt, ptr::NonNull, rc::Rc};
+use std::{collections::HashMap, fmt, ptr::NonNull, rc::Rc};
 
 use super::collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr};
 use super::infotable::InfoTagged;
+use super::set::HeapSet;
 use super::string::HeapString;
+use super::symbol::SymbolId;
 use super::{
     alloc::{ScopedPtr, StgObject},
     array::Array,
@@ -25,29 +27,50 @@ pub trait Repr {
 /// References between allocated objects use RefPtr
 pub type RefPtr<T> = NonNull<T>;
 
-/// For now keep enum based primitive storage.
-///
-/// TODO: this will be replaced by direct storage in the heap with
-/// object headers recording type information
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Block index mapping interned symbol IDs to list positions.
+pub type BlockIndex = HashMap<SymbolId, usize>;
+
+/// Enum based primitive storage.
+#[derive(Clone, Debug)]
 pub enum Native {
-    /// A symbol
-    Sym(RefPtr<HeapString>),
+    /// An interned symbol, referenced by compact ID
+    Sym(SymbolId),
     /// A string
     Str(RefPtr<HeapString>),
     /// A number
     Num(Number),
     /// A zoned datetime
     Zdt(DateTime<FixedOffset>),
+    /// A block index (cache, not semantic content)
+    Index(Rc<BlockIndex>),
+    /// A set of primitive values
+    Set(RefPtr<HeapSet>),
 }
+
+impl PartialEq for Native {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Native::Sym(a), Native::Sym(b)) => a == b,
+            (Native::Str(a), Native::Str(b)) => a == b,
+            (Native::Num(a), Native::Num(b)) => a == b,
+            (Native::Zdt(a), Native::Zdt(b)) => a == b,
+            // Index is a cache — always equal to another Index
+            (Native::Index(_), Native::Index(_)) => true,
+            (Native::Set(a), Native::Set(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Native {}
 
 impl StgObject for Native {}
 
 impl fmt::Display for Native {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Native::Sym(s) => {
-                write!(f, ":<{s:p}>")
+            Native::Sym(id) => {
+                write!(f, ":{id}")
             }
             Native::Str(s) => {
                 write!(f, "\"<{s:p}>\"")
@@ -58,21 +81,24 @@ impl fmt::Display for Native {
             Native::Zdt(t) => {
                 write!(f, "☽{t}")
             }
+            Native::Index(idx) => {
+                write!(f, "<index:{}>", idx.len())
+            }
+            Native::Set(_) => {
+                write!(f, "<set>")
+            }
         }
     }
 }
 
 /// A reference into environments or a value
-///
-/// TODO: `V` will become RefPtr into heap and L/G can be encoded
-/// using tagged pointer.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Reference<T: Clone> {
     /// Local index into environment
     L(usize),
     /// Global index
     G(usize),
-    /// Value (TODO: next this becomes a heap ref)
+    /// Value
     V(T),
 }
 
@@ -161,8 +187,11 @@ pub enum HeapSyn {
     Case {
         /// Form to be evaluated
         scrutinee: RefPtr<HeapSyn>,
-        /// Data type handlers
-        branches: Array<(Tag, RefPtr<HeapSyn>)>,
+        /// Lowest tag in the branch table
+        min_tag: Tag,
+        /// Indexed branch table: entry at `[tag - min_tag]` holds the
+        /// handler for that tag, or `None` if no branch exists
+        branch_table: Array<Option<RefPtr<HeapSyn>>>,
         /// Default handler
         fallback: Option<RefPtr<HeapSyn>>,
     },
@@ -222,13 +251,66 @@ impl GcScannable for LambdaForm {
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         let body = self.body();
         if marker.mark(body) {
-            vec![ScanPtr::from_non_null(scope, body)]
-        } else {
-            vec![]
+            out.push(ScanPtr::from_non_null(scope, body));
         }
+    }
+
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        if let Some(new_body) = heap.forwarded_to(self.body()) {
+            self.set_body(new_body);
+        }
+    }
+}
+
+/// Mark any heap pointers embedded in a Ref value.
+///
+/// Native::Str and Native::Set contain heap pointers that must be
+/// traced to ensure their lines are marked. Without this, evacuation
+/// cannot discover and update these pointers.
+fn mark_ref_heap_pointers(r: &Ref, marker: &mut CollectorHeapView<'_>) {
+    match r {
+        Ref::V(Native::Str(ptr)) => {
+            marker.mark(*ptr);
+        }
+        Ref::V(Native::Set(ptr)) => {
+            marker.mark(*ptr);
+        }
+        _ => {}
+    }
+}
+
+/// Mark heap pointers in all elements of a Ref array.
+fn mark_ref_array_heap_pointers(args: &Array<Ref>, marker: &mut CollectorHeapView<'_>) {
+    for r in args.iter() {
+        mark_ref_heap_pointers(r, marker);
+    }
+}
+
+/// Update any forwarded heap pointers in a Ref value.
+fn update_ref_heap_pointers(r: &mut Ref, heap: &CollectorHeapView<'_>) {
+    match r {
+        Ref::V(Native::Str(ptr)) => {
+            if let Some(new_ptr) = heap.forwarded_to(*ptr) {
+                *ptr = new_ptr;
+            }
+        }
+        Ref::V(Native::Set(ptr)) => {
+            if let Some(new_ptr) = heap.forwarded_to(*ptr) {
+                *ptr = new_ptr;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Update forwarded heap pointers in all elements of a Ref array.
+fn update_ref_array_heap_pointers(args: &mut Array<Ref>, heap: &CollectorHeapView<'_>) {
+    for r in args.iter_mut() {
+        update_ref_heap_pointers(r, heap);
     }
 }
 
@@ -237,88 +319,166 @@ impl GcScannable for HeapSyn {
         &'a self,
         scope: &'a dyn CollectorScope,
         marker: &mut CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         match self {
-            HeapSyn::Atom { evaluand: _ } => {}
+            HeapSyn::Atom { evaluand } => {
+                mark_ref_heap_pointers(evaluand, marker);
+            }
             HeapSyn::Case {
                 scrutinee,
-                branches,
+                branch_table,
                 fallback,
+                ..
             } => {
                 if marker.mark(*scrutinee) {
-                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                    out.push(ScanPtr::from_non_null(scope, *scrutinee));
                 }
-                if marker.mark_array(branches) {
-                    for (_, b) in branches.iter() {
+                if marker.mark_array(branch_table) {
+                    for b in branch_table.iter().flatten() {
                         if marker.mark(*b) {
-                            grey.push(ScanPtr::from_non_null(scope, *b));
+                            out.push(ScanPtr::from_non_null(scope, *b));
                         }
                     }
                 }
                 if let Some(f) = fallback {
                     if marker.mark(*f) {
-                        grey.push(ScanPtr::from_non_null(scope, *f));
+                        out.push(ScanPtr::from_non_null(scope, *f));
                     }
                 }
             }
             HeapSyn::Cons { tag: _, args } => {
                 marker.mark_array(args);
+                mark_ref_array_heap_pointers(args, marker);
             }
-            HeapSyn::App { callable: _, args } => {
+            HeapSyn::App { callable, args } => {
+                mark_ref_heap_pointers(callable, marker);
                 marker.mark_array(args);
+                mark_ref_array_heap_pointers(args, marker);
             }
             HeapSyn::Bif { intrinsic: _, args } => {
                 marker.mark_array(args);
+                mark_ref_array_heap_pointers(args, marker);
             }
             HeapSyn::Let { bindings, body } => {
                 if marker.mark_array(bindings) {
                     for bindings in bindings.iter() {
-                        grey.push(ScanPtr::new(scope, bindings));
+                        out.push(ScanPtr::new(scope, bindings));
                     }
                 }
 
                 if marker.mark(*body) {
-                    grey.push(ScanPtr::from_non_null(scope, *body));
+                    out.push(ScanPtr::from_non_null(scope, *body));
                 }
             }
             HeapSyn::LetRec { bindings, body } => {
                 if marker.mark_array(bindings) {
                     for bindings in bindings.iter() {
-                        grey.push(ScanPtr::new(scope, bindings));
+                        out.push(ScanPtr::new(scope, bindings));
                     }
                 }
 
                 if marker.mark(*body) {
-                    grey.push(ScanPtr::from_non_null(scope, *body));
+                    out.push(ScanPtr::from_non_null(scope, *body));
                 }
             }
             HeapSyn::Ann { smid: _, body } => {
                 if marker.mark(*body) {
-                    grey.push(ScanPtr::from_non_null(scope, *body));
+                    out.push(ScanPtr::from_non_null(scope, *body));
                 }
             }
-            HeapSyn::Meta { meta: _, body: _ } => {}
+            HeapSyn::Meta { meta, body } => {
+                mark_ref_heap_pointers(meta, marker);
+                mark_ref_heap_pointers(body, marker);
+            }
             HeapSyn::DeMeta {
                 scrutinee,
                 handler,
                 or_else,
             } => {
                 if marker.mark(*scrutinee) {
-                    grey.push(ScanPtr::from_non_null(scope, *scrutinee));
+                    out.push(ScanPtr::from_non_null(scope, *scrutinee));
                 }
                 if marker.mark(*handler) {
-                    grey.push(ScanPtr::from_non_null(scope, *handler));
+                    out.push(ScanPtr::from_non_null(scope, *handler));
                 }
                 if marker.mark(*or_else) {
-                    grey.push(ScanPtr::from_non_null(scope, *or_else));
+                    out.push(ScanPtr::from_non_null(scope, *or_else));
                 }
             }
             HeapSyn::BlackHole => {}
         }
+    }
 
-        grey
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        match self {
+            HeapSyn::Atom { evaluand } => {
+                update_ref_heap_pointers(evaluand, heap);
+            }
+            HeapSyn::Case {
+                scrutinee,
+                branch_table,
+                fallback,
+                ..
+            } => {
+                if let Some(new) = heap.forwarded_to(*scrutinee) {
+                    *scrutinee = new;
+                }
+                for ptr in branch_table.iter_mut().flatten() {
+                    if let Some(new) = heap.forwarded_to(*ptr) {
+                        *ptr = new;
+                    }
+                }
+                if let Some(ref mut f) = fallback {
+                    if let Some(new) = heap.forwarded_to(*f) {
+                        *f = new;
+                    }
+                }
+            }
+            HeapSyn::Cons { args, .. } => {
+                update_ref_array_heap_pointers(args, heap);
+            }
+            HeapSyn::App { callable, args } => {
+                update_ref_heap_pointers(callable, heap);
+                update_ref_array_heap_pointers(args, heap);
+            }
+            HeapSyn::Bif { args, .. } => {
+                update_ref_array_heap_pointers(args, heap);
+            }
+            HeapSyn::Let { bindings, body } | HeapSyn::LetRec { bindings, body } => {
+                for lf in bindings.iter_mut() {
+                    lf.scan_and_update(heap);
+                }
+                if let Some(new) = heap.forwarded_to(*body) {
+                    *body = new;
+                }
+            }
+            HeapSyn::Ann { body, .. } => {
+                if let Some(new) = heap.forwarded_to(*body) {
+                    *body = new;
+                }
+            }
+            HeapSyn::Meta { meta, body } => {
+                update_ref_heap_pointers(meta, heap);
+                update_ref_heap_pointers(body, heap);
+            }
+            HeapSyn::DeMeta {
+                scrutinee,
+                handler,
+                or_else,
+            } => {
+                if let Some(new) = heap.forwarded_to(*scrutinee) {
+                    *scrutinee = new;
+                }
+                if let Some(new) = heap.forwarded_to(*handler) {
+                    *handler = new;
+                }
+                if let Some(new) = heap.forwarded_to(*or_else) {
+                    *or_else = new;
+                }
+            }
+            HeapSyn::BlackHole => {}
+        }
     }
 }
 
@@ -345,9 +505,9 @@ pub mod repr {
         match r {
             memory::syntax::Ref::L(n) => stg::syntax::Ref::L(*n),
             memory::syntax::Ref::G(n) => stg::syntax::Ref::G(*n),
-            memory::syntax::Ref::V(memory::syntax::Native::Sym(s)) => {
-                let ptr = ScopedPtr::from_non_null(guard, *s);
-                stg::syntax::Ref::V(stg::syntax::Native::Sym((*ptr).as_str().to_string()))
+            memory::syntax::Ref::V(memory::syntax::Native::Sym(id)) => {
+                // Without pool access, use the ID for debug representation
+                stg::syntax::Ref::V(stg::syntax::Native::Sym(format!("sym#{}", id.as_u32())))
             }
             memory::syntax::Ref::V(memory::syntax::Native::Str(s)) => {
                 let ptr = ScopedPtr::from_non_null(guard, *s);
@@ -359,17 +519,30 @@ pub mod repr {
             memory::syntax::Ref::V(memory::syntax::Native::Zdt(d)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Zdt(*d))
             }
+            memory::syntax::Ref::V(memory::syntax::Native::Index(_)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym("<index>".to_string()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::Set(_)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym("<set>".to_string()))
+            }
         }
     }
 
     /// Represent in-heap branch table in syntax form
-    pub fn repr_branches(
+    pub fn repr_branch_table(
         guard: &dyn MutatorScope,
-        branches: Array<(u8, RefPtr<HeapSyn>)>,
+        min_tag: u8,
+        branch_table: Array<Option<RefPtr<HeapSyn>>>,
     ) -> Vec<(u8, Rc<StgSyn>)> {
-        branches
+        branch_table
             .iter()
-            .map(|(t, ptr)| (*t, ScopedPtr::from_non_null(guard, *ptr).repr()))
+            .enumerate()
+            .filter_map(|(i, entry)| {
+                entry.map(|ptr| {
+                    let tag = min_tag + i as u8;
+                    (tag, ScopedPtr::from_non_null(guard, ptr).repr())
+                })
+            })
             .collect()
     }
 
@@ -420,11 +593,12 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
             }),
             HeapSyn::Case {
                 scrutinee,
-                branches,
+                min_tag,
+                branch_table,
                 fallback,
             } => Rc::new(StgSyn::Case {
                 scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
-                branches: repr::repr_branches(self, branches.clone()),
+                branches: repr::repr_branch_table(self, *min_tag, branch_table.clone()),
                 fallback: fallback
                     .as_ref()
                     .map(|f| ScopedPtr::from_non_null(self, *f).repr()),
@@ -504,14 +678,12 @@ pub trait StgBuilder<'scope> {
         args: Array<Ref>,
     ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
 
-    /// Allocate a symbol in the heap
-    fn sym<T: AsRef<str>>(
+    /// Intern a symbol and wrap as ref
+    fn sym_ref<T: AsRef<str>>(
         &'scope self,
+        pool: &mut super::symbol::SymbolPool,
         s: T,
-    ) -> Result<ScopedPtr<'scope, HeapString>, ExecutionError>;
-
-    /// Allocate a symbol in the heap and wrap as ref
-    fn sym_ref<T: AsRef<str>>(&'scope self, s: T) -> Result<Ref, ExecutionError>;
+    ) -> Result<Ref, ExecutionError>;
 
     /// Allocate a string in the heap
     fn str<T: AsRef<str>>(
@@ -571,6 +743,7 @@ pub trait StgBuilder<'scope> {
     /// Block pair
     fn pair<T: AsRef<str>>(
         &'scope self,
+        pool: &mut super::symbol::SymbolPool,
         k: T,
         v: Ref,
     ) -> Result<ScopedPtr<'scope, HeapSyn>, ExecutionError>;
@@ -657,7 +830,7 @@ pub trait StgBuilder<'scope> {
 #[cfg(test)]
 pub mod tests {
 
-    use crate::eval::memory::{heap::Heap, mutator::MutatorHeapView};
+    use crate::eval::memory::{heap::Heap, mutator::MutatorHeapView, symbol::SymbolPool};
 
     use super::*;
 
@@ -665,6 +838,7 @@ pub mod tests {
     pub fn test_atom() {
         let heap = Heap::new();
         let view = MutatorHeapView::new(&heap);
+        let mut pool = SymbolPool::new();
 
         view.atom(Ref::lref(4)).unwrap();
         view.app(Ref::lref(1), view.array(&[Ref::lref(2)])).unwrap();
@@ -681,14 +855,20 @@ pub mod tests {
         let id = LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default());
         view.let_(
             view.singleton(id),
-            view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
-                .unwrap(),
+            view.app(
+                Ref::L(0),
+                view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
+            )
+            .unwrap(),
         )
         .unwrap();
         view.letrec(
             view.singleton(id),
-            view.app(Ref::L(0), view.singleton(view.sym_ref("foo").unwrap()))
-                .unwrap(),
+            view.app(
+                Ref::L(0),
+                view.singleton(view.sym_ref(&mut pool, "foo").unwrap()),
+            )
+            .unwrap(),
         )
         .unwrap();
     }

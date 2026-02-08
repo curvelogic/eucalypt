@@ -36,6 +36,10 @@ impl Clock {
         self.current = Some((occupation, time::Instant::now()))
     }
 
+    pub fn duration(&self, occupation: ThreadOccupation) -> time::Duration {
+        self.durations.get(&occupation).copied().unwrap_or_default()
+    }
+
     pub fn stop(&mut self) {
         self.commit();
         self.current = None

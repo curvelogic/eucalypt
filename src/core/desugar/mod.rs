@@ -12,6 +12,7 @@
 pub mod desugarable;
 pub mod desugarer;
 pub mod disembed;
+pub mod escape;
 pub mod literal;
 pub mod rowan_ast;
 pub mod rowan_disembed;

@@ -1,0 +1,92 @@
+##
+## 071: Sorting lists
+##
+## Tests for sort-nums, sort-strs, sort-zdts, sort-by, sort-by-num,
+## sort-by-str, sort-by-zdt convenience functions.
+##
+
+## sort-nums
+
+sort-nums-checks: {
+  trues: [
+    ([3, 1, 4, 1, 5, 9, 2, 6] sort-nums) = [1, 1, 2, 3, 4, 5, 6, 9],
+    ([] sort-nums) = [],
+    ([42] sort-nums) = [42],
+    ([1, 2, 3] sort-nums) = [1, 2, 3],
+    ([5, 4, 3, 2, 1] sort-nums) = [1, 2, 3, 4, 5],
+    ([3, -1, 0, -5, 2] sort-nums) = [-5, -1, 0, 2, 3],
+    ([1.5, 0.5, 2.5, 1.0] sort-nums) = [0.5, 1.0, 1.5, 2.5],
+    ([3, 1, 2] sort-nums reverse) = [3, 2, 1]
+  ]
+}
+
+## sort-strs
+
+sort-strs-checks: {
+  trues: [
+    (["cherry", "apple", "banana"] sort-strs) = ["apple", "banana", "cherry"],
+    ([] sort-strs) = [],
+    (["hello"] sort-strs) = ["hello"],
+    (["Banana", "apple", "Cherry"] sort-strs) = ["Banana", "Cherry", "apple"]
+  ]
+}
+
+## sort-zdts
+
+sort-zdts-checks: {
+  trues: [
+    {
+      t1: cal.parse("2024-06-15T00:00:00Z")
+      t2: cal.parse("2023-01-01T00:00:00Z")
+      t3: cal.parse("2025-12-31T00:00:00Z")
+      sorted: [t1, t2, t3] sort-zdts
+    }.( sorted = [t2, t1, t3] ),
+    {
+      t1: cal.parse("2024-01-01T15:00:00Z")
+      t2: cal.parse("2024-01-01T09:00:00Z")
+      t3: cal.parse("2024-01-01T21:00:00Z")
+      sorted: [t1, t2, t3] sort-zdts
+    }.( sorted = [t2, t1, t3] )
+  ]
+}
+
+## sort-by, sort-by-num, sort-by-str, sort-by-zdt
+
+sort-by-checks: {
+  trues: [
+    {
+      items: [{n: 3}, {n: 1}, {n: 2}]
+      lt(a, b): a < b
+      sorted: items sort-by(_.n, lt)
+    }.(sorted map(_.n)) = [1, 2, 3],
+    {
+      people: [{name: "Bob", age: 30}, {name: "Alice", age: 25}, {name: "Carol", age: 35}]
+      sorted: people sort-by-num(_.age)
+    }.(sorted map(_.name)) = ["Alice", "Bob", "Carol"],
+    ([] sort-by-num(_.x)) = [],
+    ([{x: 1}] sort-by-num(_.x) map(_.x)) = [1],
+    {
+      items: [{v: 3}, {v: 1}, {v: 2}]
+      sorted: items sort-by-num(_.v) reverse
+    }.(sorted map(_.v)) = [3, 2, 1],
+    {
+      items: [{name: "cherry"}, {name: "apple"}, {name: "banana"}]
+      sorted: items sort-by-str(_.name)
+    }.(sorted map(_.name)) = ["apple", "banana", "cherry"],
+    {
+      events: [ {label: "b", date: cal.parse("2024-06-15T00:00:00Z")}
+              , {label: "a", date: cal.parse("2023-01-01T00:00:00Z")}
+              , {label: "c", date: cal.parse("2025-12-31T00:00:00Z")} ]
+      sorted: events sort-by-zdt(_.date)
+    }.(sorted map(_.label)) = ["a", "b", "c"]
+  ]
+}
+
+pass: [
+  sort-nums-checks.trues all-true?,
+  sort-strs-checks.trues all-true?,
+  sort-zdts-checks.trues all-true?,
+  sort-by-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

@@ -1,3 +1,4 @@
 fib(n): if(n <= 1, 1, fib(n - 1) + fib(n - 2))
 
-fib-30: fib(30)
+` { target: :bench-naive-fib }
+bench-naive-fib: fib(30)

@@ -1,3 +1,7 @@
+# Beads / Project Management
+
+Run `bd prime` for instructions on using `bd` to manage beads
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.

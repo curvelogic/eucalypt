@@ -59,9 +59,9 @@ impl Emitter for JsonEmitter<'_> {
             writeln!(
                 self.out,
                 "{}",
-                serde_json::to_string_pretty(&result).unwrap()
+                serde_json::to_string_pretty(&result).expect("failed to serialise JSON")
             )
-            .unwrap();
+            .expect("failed to write JSON output");
         }
     }
 }

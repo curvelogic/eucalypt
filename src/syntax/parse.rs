@@ -747,7 +747,7 @@ impl EventSink for BlockEventSink {
                             swap(&mut head, &mut self.buffer);
                             self.declaration = Some(PendingDeclaration {
                                 meta: None,
-                                head, // TODO: add errors
+                                head,
                                 colon: vec![],
                                 body: vec![],
                             });
@@ -773,8 +773,6 @@ impl EventSink for BlockEventSink {
                     self.commit_declaration();
                 }
                 None => {
-                    // TODO not if we already have declarations
-
                     swap(&mut self.block_meta, &mut self.buffer);
                     self.commit_meta();
                 }
@@ -1038,8 +1036,6 @@ SOUP@0..5
     STRING@0..5 "\"foo\""
 "#,
         );
-
-        // TODO string patterns
 
         verify_expr(
             "\"إ\"",
@@ -1372,7 +1368,6 @@ SOUP@0..6
 "#,
         );
 
-        // TODO rejects
     }
 
     #[test]

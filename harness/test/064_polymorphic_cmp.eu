@@ -1,0 +1,58 @@
+"Tests for polymorphic comparison operators (numbers, strings, symbols, datetimes)."
+
+string-tests: {
+  α: "apple" < "banana" //= true
+  β: "banana" > "apple" //= true
+  γ: "apple" <= "apple" //= true
+  δ: "apple" >= "apple" //= true
+  ε: "banana" < "apple" //= false
+  ζ: "apple" > "banana" //= false
+  η: "abc" < "abd" //= true
+  θ: "z" > "a" //= true
+}
+
+string-min-max: {
+  α: min("apple", "banana") //= "apple"
+  β: max("apple", "banana") //= "banana"
+  γ: min("xyz", "abc") //= "abc"
+  δ: max("xyz", "abc") //= "xyz"
+}
+
+symbol-tests: {
+  α: :apple < :banana //= true
+  β: :banana > :apple //= true
+  γ: :apple <= :apple //= true
+  δ: :apple >= :apple //= true
+  ε: :banana < :apple //= false
+  ζ: :apple > :banana //= false
+}
+
+earlier: cal.zdt(2020, 1, 1, 0, 0, 0, "+0000")
+later: cal.zdt(2025, 6, 15, 12, 30, 0, "+0000")
+
+zdt-tests: {
+  α: earlier < later //= true
+  β: later > earlier //= true
+  γ: earlier <= earlier //= true
+  δ: later >= later //= true
+  ε: later < earlier //= false
+  ζ: earlier > later //= false
+}
+
+zdt-min-max: {
+  α: min(earlier, later) //= earlier
+  β: max(earlier, later) //= later
+}
+
+string-sort: {
+  α: ["cherry", "apple", "banana"] qsort(<) //= ["apple", "banana", "cherry"]
+}
+
+RESULT: {
+  s: string-tests values all-true?
+  sm: string-min-max values all-true?
+  sy: symbol-tests values all-true?
+  z: zdt-tests values all-true?
+  zm: zdt-min-max values all-true?
+  ss: string-sort values all-true?
+} values all-true? then(:PASS, :FAIL)

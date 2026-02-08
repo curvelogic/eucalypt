@@ -111,7 +111,12 @@ impl<'src> XmlImporter<'src> {
 
     /// A span indicating current reader position
     fn span(&self) -> Span {
-        let pos = ByteIndex(self.reader.buffer_position().try_into().unwrap());
+        let pos = ByteIndex(
+            self.reader
+                .buffer_position()
+                .try_into()
+                .expect("XML reader position should fit in ByteIndex"),
+        );
         Span::new(pos, pos)
     }
 
@@ -122,7 +127,9 @@ impl<'src> XmlImporter<'src> {
             Err(e) => {
                 let (valid, _) = raw.split_at(e.valid_up_to());
                 Err(SourceError::CharSetError(
-                    std::str::from_utf8(valid).unwrap().to_string(),
+                    std::str::from_utf8(valid)
+                        .expect("valid portion of XML should be UTF-8")
+                        .to_string(),
                     self.file_id,
                 ))
             }

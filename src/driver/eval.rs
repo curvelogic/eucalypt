@@ -179,6 +179,17 @@ impl<'a> Executor<'a> {
                     stats.set_lobs_allocated(heap_stats.lobs_allocated);
                     stats.set_blocks_used(heap_stats.used);
                     stats.set_blocks_recycled(heap_stats.recycled);
+                    stats.set_collections_count(heap_stats.collections_count);
+                    stats.set_peak_heap_blocks(heap_stats.peak_heap_blocks);
+
+                    // copy GC phase timings
+                    use crate::eval::machine::metrics::ThreadOccupation;
+                    stats.set_total_mark_time(
+                        machine.clock().duration(ThreadOccupation::CollectorMark),
+                    );
+                    stats.set_total_sweep_time(
+                        machine.clock().duration(ThreadOccupation::CollectorSweep),
+                    );
                     ret
                 };
 
@@ -200,12 +211,12 @@ impl<'a> Executor<'a> {
                 let mut notes = vec![];
 
                 if let Some(trace) = e.env_trace() {
-                    let env_trace = self.source_map.format_trace(&trace, &self.files);
+                    let env_trace = self.source_map.format_trace(trace, &self.files);
                     notes.push(format!("environment trace:\n{env_trace}"));
                 }
 
                 if let Some(trace) = e.stack_trace() {
-                    let stack_trace = self.source_map.format_trace(&trace, &self.files);
+                    let stack_trace = self.source_map.format_trace(trace, &self.files);
                     notes.push(format!("stack trace:\n{stack_trace}"));
                 }
 
@@ -230,10 +241,11 @@ impl<'a> Executor<'a> {
                     &self.files,
                     diag,
                 )
-                .unwrap();
+                .expect("failed to write diagnostic to stderr");
             }
             Some(ref mut err) => {
-                term::emit(&mut NoColor::new(err.as_mut()), &config, &self.files, diag).unwrap();
+                term::emit(&mut NoColor::new(err.as_mut()), &config, &self.files, diag)
+                    .expect("failed to write diagnostic to buffer");
             }
         }
     }

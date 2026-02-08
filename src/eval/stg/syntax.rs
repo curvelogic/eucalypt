@@ -104,11 +104,12 @@ pub enum StgSyn {
         bindings: Vec<LambdaForm>,
         body: Rc<StgSyn>,
     },
-    /// Recursive let bindings -
-    /// TODO: there is currently a circular Rc leak here
+    /// Recursive let bindings
     ///
-    /// Fix by providing a proxy obj for bindings to reference which
-    /// holds a weak rc to letrec proper?
+    /// Bindings reference each other via de Bruijn indices, not Rc
+    /// pointers, so there is no circular Rc at the compiled syntax
+    /// level. Self-reference is resolved at runtime via the heap
+    /// environment, managed by the GC.
     LetRec {
         bindings: Vec<LambdaForm>,
         body: Rc<StgSyn>,
@@ -411,9 +412,14 @@ pub mod dsl {
         )
     }
 
-    /// Block wrapper
+    /// Sentinel for "no block index" (boxed zero)
+    pub fn no_index() -> Ref {
+        num(0)
+    }
+
+    /// Block wrapper (list + no-index sentinel)
     pub fn block(inner: Ref) -> Rc<StgSyn> {
-        data(DataConstructor::Block.tag(), vec![inner])
+        data(DataConstructor::Block.tag(), vec![inner, no_index()])
     }
 
     /// Simple let

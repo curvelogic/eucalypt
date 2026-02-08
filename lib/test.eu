@@ -21,6 +21,9 @@ as described below and must return :PASS or :FAIL.
 validation: {
   ` "By default we expect a RESULT key which should be either :PASS or :FAIL"
   default-expectation(context): context.result.RESULT
+
+  ` "Benchmark targets without explicit validations are report-only and always pass"
+  bench-expectation(context): :PASS
 }
 
 
@@ -192,6 +195,19 @@ reporting: {
             padding-left: 8px;
           }}
 
+          .bench-badge {{
+            display: inline-block;
+            background: #e0ca3c;
+            color: #333;
+            font-family: Arial, Verdana, sans-serif;
+            font-weight: bold;
+            font-size: 11px;
+            border-radius: 4px;
+            padding: 2px 8px;
+            margin-left: 8px;
+            vertical-align: middle;
+          }}
+
 
   "]],
       [:body, {}, [:div, { class: "body" }]  ++ contents]]
@@ -227,7 +243,9 @@ reporting: {
 
   detail-test(name, test-data):
     [:section, { class: "test" },
-      [:h2, {}, "{name}"],
+      if(lookup-or(:benchmark, false, test-data),
+        [:h2, {}, "{name}", [:span, { class: "bench-badge" }, "BENCH"]],
+        [:h2, {}, "{name}"]),
       stdout(test-data),
       stderr(test-data),
       assertions(test-data),

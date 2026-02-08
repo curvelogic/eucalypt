@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::eval::memory::collect::{GcScannable, ScanPtr};
+use crate::eval::memory::collect::{CollectorHeapView, GcScannable, ScanPtr};
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
@@ -265,7 +265,7 @@ where
 
     /// Gather trace of annotations from top to bottom
     pub fn annotation_trace(&self, guard: &dyn MutatorScope) -> Vec<Smid> {
-        let mut trace = vec![];
+        let mut trace = Vec::with_capacity(16);
         let mut frame = ScopedPtr::from_non_null(guard, unsafe {
             RefPtr::new_unchecked(self as *const Self as *mut Self)
         });
@@ -333,20 +333,26 @@ impl GcScannable for SynClosure {
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
         marker: &mut crate::eval::memory::collect::CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         let code = self.code();
         if marker.mark(code) {
-            grey.push(ScanPtr::from_non_null(scope, code));
+            out.push(ScanPtr::from_non_null(scope, code));
         }
 
         let env = self.env();
         if marker.mark(env) {
-            grey.push(ScanPtr::from_non_null(scope, env));
+            out.push(ScanPtr::from_non_null(scope, env));
         }
+    }
 
-        grey
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        if let Some(new_code) = heap.forwarded_to(self.code()) {
+            self.0.set_body(new_code);
+        }
+        if let Some(new_env) = heap.forwarded_to(self.env()) {
+            self.1 = new_env;
+        }
     }
 }
 
@@ -359,23 +365,31 @@ impl GcScannable for EnvFrame {
         &'a self,
         scope: &'a dyn crate::eval::memory::collect::CollectorScope,
         marker: &mut crate::eval::memory::collect::CollectorHeapView<'a>,
-    ) -> Vec<ScanPtr<'a>> {
-        let mut grey = vec![];
-
+        out: &mut Vec<ScanPtr<'a>>,
+    ) {
         let bindings = &self.bindings;
 
         if marker.mark_array(bindings) {
             for binding in bindings.iter() {
-                grey.push(ScanPtr::new(scope, binding));
+                out.push(ScanPtr::new(scope, binding));
             }
         }
 
         if let Some(next) = self.next {
             if marker.mark(next) {
-                grey.push(ScanPtr::from_non_null(scope, next));
+                out.push(ScanPtr::from_non_null(scope, next));
             }
         }
+    }
 
-        grey
+    fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        for binding in self.bindings.iter_mut() {
+            binding.scan_and_update(heap);
+        }
+        if let Some(ref mut next) = self.next {
+            if let Some(new_next) = heap.forwarded_to(*next) {
+                *next = new_next;
+            }
+        }
     }
 }

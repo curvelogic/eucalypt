@@ -102,6 +102,12 @@ impl Shunter {
     /// sit comfortably with regard to precedence.
     fn seat_op(&mut self, op: RcExpr) {
         if let Expr::Operator(_, this_fixity, this_prec, _) = &*op.inner {
+            // Nullary operators apply immediately - they don't consume operands
+            if *this_fixity == Fixity::Nullary {
+                self.apply_op(op);
+                return;
+            }
+
             let top = self.peek_op().cloned();
 
             match top {
@@ -163,12 +169,17 @@ impl Shunter {
     fn apply_op(&mut self, op: RcExpr) {
         match &*op.inner {
             Expr::Operator(_, f, _, expr) => match f.arity() {
+                0 => self.apply_zero(expr.clone()),
                 1 => self.apply_one(expr.clone()),
                 2 => self.apply_two(expr.clone()),
                 _ => unreachable!(),
             },
             _ => panic!("apply_op applied to non-operator"),
         }
+    }
+
+    fn apply_zero(&mut self, expr: RcExpr) {
+        self.push_output(expr)
     }
 
     fn apply_one(&mut self, expr: RcExpr) {
@@ -234,7 +245,7 @@ impl Shunter {
     /// One step of the shunting algo
     fn shunt1(&mut self) {
         if let Some(expr) = self.pop_next() {
-            self.insert_fill(&expr); // TODO should be unnecessary
+            self.insert_fill(&expr);
             if expr.inner.is_operator() {
                 self.seat_op(expr);
             } else {

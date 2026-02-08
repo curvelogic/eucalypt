@@ -141,15 +141,15 @@ impl StgIntrinsic for Render {
                             ),
                         ),
                         (
-                            DataConstructor::Block.tag(), // [items] [tagfn tag]
+                            DataConstructor::Block.tag(), // [items index] [tagfn tag]
                             force(
                                 case(
-                                    local(2),
+                                    local(3),
                                     vec![(
-                                        DataConstructor::BoxedString.tag(), // [tagstr] [cons] [tagfn tag] [block]
+                                        DataConstructor::BoxedString.tag(), // [tagstr] [items index] [tagfn tag]
                                         force(call::bif::emit_tag_block_start(lref(0)), unit()),
                                     )],
-                                    call::bif::emit_block_start(), // [()] [cons] [tagfn tag] [block]
+                                    call::bif::emit_block_start(), // [()] [items index] [tagfn tag]
                                 ),
                                 force(
                                     RenderBlockItems.global(lref(1)),
@@ -158,7 +158,7 @@ impl StgIntrinsic for Render {
                             ),
                         ),
                     ],
-                    call::bif::panic(str("unrenderable")),
+                    EmitNative.global(lref(0)),
                 ),
             ),
         );
@@ -277,15 +277,14 @@ impl StgIntrinsic for RenderBlockItems {
 
 impl CallGlobal1 for RenderBlockItems {}
 
-/// Determine if a reference refers to a lambda (and therefore cannot
-/// be rendered) or a value / thunk.
+/// Test whether a reference is a saturated value (arity 0) rather
+/// than a lambda.
 ///
-/// HACK: Like the real STG, we do not support returning functions
-/// into case continuations but unike a properly typed language we
-/// cannot compile so as to ensure that functions are never cased
-/// rather than applied. In fact render tries to case everything.
-/// Therefore we need to allow it to test a value first to suppress
-/// render of lambdas.
+/// In the standard STG machine, returning functions into case
+/// continuations never happens because the type system prevents it.
+/// In eucalypt's dynamically-typed variant, render may case any
+/// value and discover it is a lambda. This intrinsic lets render
+/// test first and suppress rendering of unsaturated closures.
 pub struct Saturated;
 
 impl StgIntrinsic for Saturated {
@@ -324,14 +323,14 @@ impl StgIntrinsic for Suppresses {
                     local(1), // [:normal] [arg]
                     vec![(
                         DataConstructor::Block.tag(),
-                        // [xs] [:normal] [arg]
+                        // [xs index] [:normal] [arg]
                         unbox_sym(
                             LookupOr(NativeVariant::Unboxed).global(
                                 sym("export"),
-                                lref(1),
                                 lref(2),
+                                lref(3),
                             ),
-                            // [boxsym] [xs] [:normal] [arg]
+                            // [boxsym] [xs index] [:normal] [arg]
                             Eq.global(lref(0), sym("suppress")),
                         ),
                     )],
@@ -362,8 +361,8 @@ impl StgIntrinsic for Tag {
                     local(1), // [:""] [arg]
                     vec![(
                         DataConstructor::Block.tag(),
-                        // [xs] [:""] [arg]
-                        LookupOr(NativeVariant::Unboxed).global(sym("tag"), lref(1), lref(2)),
+                        // [xs index] [:""] [arg]
+                        LookupOr(NativeVariant::Unboxed).global(sym("tag"), lref(2), lref(3)),
                     )],
                     // [arg] [:""] [arg]
                     local(1),
@@ -530,7 +529,10 @@ pub mod tests {
                     DataConstructor::ListCons.tag(),
                     vec![lref(2), lref(3)],
                 )),
-                value(data(DataConstructor::Block.tag(), vec![lref(4)])),
+                value(data(
+                    DataConstructor::Block.tag(),
+                    vec![lref(4), no_index()],
+                )),
             ],
             Suppresses.global(lref(5)),
         );
@@ -556,7 +558,10 @@ pub mod tests {
                     DataConstructor::ListCons.tag(),
                     vec![lref(2), lref(3)],
                 )),
-                value(data(DataConstructor::Block.tag(), vec![lref(4)])),
+                value(data(
+                    DataConstructor::Block.tag(),
+                    vec![lref(4), no_index()],
+                )),
             ],
             Suppresses.global(lref(5)),
         );
@@ -572,7 +577,10 @@ pub mod tests {
         let syntax = letrec_(
             vec![
                 value(data(DataConstructor::ListNil.tag(), vec![])),
-                value(data(DataConstructor::Block.tag(), vec![lref(0)])),
+                value(data(
+                    DataConstructor::Block.tag(),
+                    vec![lref(0), no_index()],
+                )),
             ],
             Suppresses.global(lref(1)),
         );
@@ -642,7 +650,10 @@ pub mod tests {
                     DataConstructor::ListCons.tag(),
                     vec![lref(2), lref(7)],
                 )),
-                value(data(DataConstructor::Block.tag(), vec![lref(8)])),
+                value(data(
+                    DataConstructor::Block.tag(),
+                    vec![lref(8), no_index()],
+                )),
             ],
             Render.global(lref(9)),
         );
@@ -667,7 +678,10 @@ pub mod tests {
                     DataConstructor::ListCons.tag(),
                     vec![lref(2), lref(3)],
                 )),
-                value(data(DataConstructor::Block.tag(), vec![lref(4)])),
+                value(data(
+                    DataConstructor::Block.tag(),
+                    vec![lref(4), no_index()],
+                )),
             ],
             Render.global(lref(5)),
         );

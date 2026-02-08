@@ -2,7 +2,7 @@
 
 use rowan::ast::AstNode;
 
-use super::{ast::*, ParseError};
+use super::{ast::*, lex::parse_zdt_literal, ParseError};
 
 /// Trait for `AstNode`s and `AstToken`s that may be created for
 /// invalid source text.
@@ -70,6 +70,47 @@ impl Validatable for Str {
     }
 }
 
+impl Validatable for CStr {
+    /// C-string quotes must be closed
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        if self.text().starts_with("c\"") && !self.text().ends_with('"') {
+            errors.push(ParseError::UnclosedDoubleQuote {
+                range: self.syntax().text_range(),
+            })
+        }
+    }
+}
+
+impl Validatable for RawStr {
+    /// Raw string quotes must be closed
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        if self.text().starts_with("r\"") && !self.text().ends_with('"') {
+            errors.push(ParseError::UnclosedDoubleQuote {
+                range: self.syntax().text_range(),
+            })
+        }
+    }
+}
+
+impl Validatable for TStr {
+    /// ZDT literal must contain a valid timestamp
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        if self.text().starts_with("t\"") && !self.text().ends_with('"') {
+            errors.push(ParseError::UnclosedDoubleQuote {
+                range: self.syntax().text_range(),
+            });
+            return;
+        }
+        if let Some(content) = self.value() {
+            if parse_zdt_literal(content).is_none() {
+                errors.push(ParseError::InvalidZdtLiteral {
+                    range: self.syntax().text_range(),
+                });
+            }
+        }
+    }
+}
+
 impl Validatable for Num {}
 
 impl Validatable for LiteralValue {
@@ -77,6 +118,9 @@ impl Validatable for LiteralValue {
         match self {
             LiteralValue::Num(n) => n.validate(errors),
             LiteralValue::Str(s) => s.validate(errors),
+            LiteralValue::CStr(s) => s.validate(errors),
+            LiteralValue::RawStr(s) => s.validate(errors),
+            LiteralValue::TStr(s) => s.validate(errors),
             LiteralValue::Sym(s) => s.validate(errors),
         }
     }
@@ -305,6 +349,8 @@ impl Validatable for Element {
             Element::ParenExpr(pe) => pe.validate(errors),
             Element::Name(n) => n.validate(errors),
             Element::StringPattern(s) => s.validate(errors),
+            Element::CStringPattern(s) => s.validate(errors),
+            Element::RawStringPattern(s) => s.validate(errors),
             Element::ApplyTuple(t) => t.validate(errors),
         }
     }
@@ -312,6 +358,18 @@ impl Validatable for Element {
 
 // String pattern validation implementations
 impl Validatable for StringPattern {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for CStringPattern {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        support::no_error_children(self.syntax(), errors);
+    }
+}
+
+impl Validatable for RawStringPattern {
     fn validate(&self, errors: &mut Vec<ParseError>) {
         support::no_error_children(self.syntax(), errors);
     }
@@ -535,6 +593,60 @@ mod tests {
             );
             assert_eq!(errors, vec![]);
         }
+    }
+
+    #[test]
+    pub fn test_valid_tstring() {
+        let errors = check(r#"x: t"2023-01-15T10:30:00Z""#);
+        assert_eq!(errors, vec![]);
+    }
+
+    #[test]
+    pub fn test_valid_tstring_date_only() {
+        let errors = check(r#"x: t"2023-01-15""#);
+        assert_eq!(errors, vec![]);
+    }
+
+    #[test]
+    pub fn test_valid_tstring_with_offset() {
+        let errors = check(r#"x: t"2023-01-15T10:30:00+05:00""#);
+        assert_eq!(errors, vec![]);
+    }
+
+    #[test]
+    pub fn test_valid_tstring_leap_year() {
+        let errors = check(r#"x: t"2024-02-29""#);
+        assert_eq!(errors, vec![]);
+    }
+
+    #[test]
+    pub fn test_invalid_tstring_bad_date() {
+        let errors = check(r#"x: t"2023-02-30""#);
+        assert_matches!(errors.first(), Some(ParseError::InvalidZdtLiteral { .. }));
+    }
+
+    #[test]
+    pub fn test_invalid_tstring_bad_month() {
+        let errors = check(r#"x: t"2023-13-01""#);
+        assert_matches!(errors.first(), Some(ParseError::InvalidZdtLiteral { .. }));
+    }
+
+    #[test]
+    pub fn test_invalid_tstring_non_leap() {
+        let errors = check(r#"x: t"2023-02-29""#);
+        assert_matches!(errors.first(), Some(ParseError::InvalidZdtLiteral { .. }));
+    }
+
+    #[test]
+    pub fn test_invalid_tstring_malformed() {
+        let errors = check(r#"x: t"not-a-date""#);
+        assert_matches!(errors.first(), Some(ParseError::InvalidZdtLiteral { .. }));
+    }
+
+    #[test]
+    pub fn test_invalid_tstring_empty() {
+        let errors = check(r#"x: t"""#);
+        assert_matches!(errors.first(), Some(ParseError::InvalidZdtLiteral { .. }));
     }
 
     #[test]

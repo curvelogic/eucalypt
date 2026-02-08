@@ -147,7 +147,7 @@ impl PrefixAnaphorIncantation {
     /// return a list of binders for a lambda (including "skipped" anaphora)
     pub fn to_binding_pattern(&self, free_vars: HashSet<FreeVar<String>>) -> Vec<Binder<String>> {
         let mut vars: Vec<FreeVar<String>> = free_vars.into_iter().collect();
-        vars.sort_unstable_by_key(|v| v.pretty_name.clone()); // TODO: !?
+        vars.sort_unstable_by_key(|v| v.pretty_name.clone());
         let max = vars.last().and_then(|v| self.number(v)).unwrap();
 
         if max as usize > vars.len() - 1 {

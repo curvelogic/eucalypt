@@ -64,6 +64,12 @@ impl<T: Sized> RawArray<T> {
     ) -> Result<RawArray<T>, ExecutionError> {
         let new_ptr = Self::alloc(mem, data.len())?;
         if let Some(new) = new_ptr {
+            // SAFETY: The copy is valid because:
+            // - `data.as_ptr()` points to valid, initialised memory
+            // - `new.as_ptr()` points to freshly allocated heap memory
+            // - Both regions have size `data.len() * size_of::<T>()` bytes
+            // - The regions do not overlap (new is freshly allocated)
+            // - T is Sized, so element size is well-defined
             unsafe {
                 std::ptr::copy_nonoverlapping(data.as_ptr(), new.as_ptr(), data.len());
             }
@@ -85,6 +91,12 @@ impl<T: Sized> RawArray<T> {
 
         if let Some(old) = self.ptr {
             if let Some(new) = new_ptr {
+                // SAFETY: The copy is valid because:
+                // - `old.as_ptr()` points to previously allocated heap memory
+                // - `new.as_ptr()` points to freshly allocated heap memory
+                // - Copy count is min(old_capacity, new_capacity) elements
+                // - The regions do not overlap (new is freshly allocated)
+                // - Old memory remains valid (GC-managed, not freed here)
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         old.as_ptr(),
@@ -262,17 +274,40 @@ impl<T: Sized + Clone> Array<T> {
     /// As immutable slice
     pub fn as_slice(&self) -> &[T] {
         if let Some(ptr) = self.data.as_ptr() {
+            // SAFETY: The slice construction is valid because:
+            // - `ptr` points to heap-allocated memory (from RawArray)
+            // - `self.length` elements have been initialised (via push/from_slice)
+            // - The Array owns this memory for the lifetime of the borrow
+            // - T is Sized and properly aligned in the allocation
             unsafe { from_raw_parts(ptr, self.length) }
         } else {
             &[]
         }
     }
 
+    /// As mutable slice
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        if let Some(ptr) = self.data.as_ptr() {
+            // SAFETY: Same as as_slice(), plus we have &mut self so
+            // exclusive access is guaranteed.
+            unsafe { std::slice::from_raw_parts_mut(ptr as *mut T, self.length) }
+        } else {
+            &mut []
+        }
+    }
+
     /// Read only iterator
-    pub fn iter(&self) -> std::slice::Iter<T> {
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
         debug_assert_ne!(self.length, usize::MAX);
         debug_assert!(self.length < u32::MAX as usize);
         self.as_slice().iter()
+    }
+
+    /// Mutable iterator
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        debug_assert_ne!(self.length, usize::MAX);
+        debug_assert!(self.length < u32::MAX as usize);
+        self.as_mut_slice().iter_mut()
     }
 
     /// Return pointer for index
@@ -280,6 +315,11 @@ impl<T: Sized + Clone> Array<T> {
         if index < self.length {
             self.data
                 .as_ptr()
+                // SAFETY: Pointer arithmetic is valid because:
+                // - `index < self.length` is checked above
+                // - `self.length <= self.data.capacity` (Array invariant)
+                // - The underlying allocation has capacity for `capacity` elements
+                // - T is Sized, so offset calculation is well-defined
                 .map(|p| unsafe { p.add(index) as *mut T })
         } else {
             None
@@ -298,6 +338,11 @@ impl<T: Sized + Clone> Array<T> {
     }
 
     fn write(&mut self, index: usize, item: T) -> &T {
+        // SAFETY: The write is valid because:
+        // - `get_offset` returns None if index >= length (panic path)
+        // - `get_offset` ensures the pointer is within allocated capacity
+        // - The memory at dest is valid for writing T
+        // - After write, the reference is valid for the borrow lifetime
         unsafe {
             let dest = self.get_offset(index).expect("write: bounds error");
             std::ptr::write(dest, item);
@@ -306,6 +351,11 @@ impl<T: Sized + Clone> Array<T> {
     }
 
     fn read(&self, index: usize) -> T {
+        // SAFETY: The read is valid because:
+        // - `get_offset` returns None if index >= length (panic path)
+        // - Elements at indices < length have been initialised
+        // - T is Clone, so reading produces a valid copy
+        // - The original value remains valid (no double-free risk)
         unsafe {
             let dest = self.get_offset(index).expect("bounds error");
             std::ptr::read(dest)

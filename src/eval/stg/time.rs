@@ -8,7 +8,6 @@ use chrono::{
 };
 use chrono_tz::Tz;
 use indexmap::IndexMap;
-use regex::Regex;
 use serde_json::Number;
 
 use crate::{
@@ -37,47 +36,47 @@ use super::{
 };
 
 /// Convert a TZ representation to a FixedOffset
+///
+/// Accepts: numeric offsets (+02:00, -0500, +01:00:00), "Z" for UTC,
+/// and IANA timezone names (e.g. "UTC", "Europe/London") via chrono-tz.
 fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
-    // TODO: find a way to use chrono to do this
-    let regex = Regex::new(r#"([+-])(\d{2}):?(\d{2}):?(\d{2})?"#).unwrap();
-    if let Some(captures) = regex.captures(tz_str) {
-        let hour = captures
-            .get(2)
-            .map(|m| str::parse::<i32>(m.as_str()).unwrap())
-            .unwrap_or(0);
-        let min = captures
-            .get(3)
-            .map(|m| str::parse::<i32>(m.as_str()).unwrap())
-            .unwrap_or(0);
-        let sec = captures
-            .get(4)
-            .map(|m| str::parse::<i32>(m.as_str()).unwrap())
-            .unwrap_or(0);
-
-        let secs = hour * 3600 + min * 60 + sec;
-
-        if let Some(sign) = captures.get(1) {
-            if sign.as_str() == "-" {
-                FixedOffset::east_opt(secs)
-                    .ok_or_else(|| ExecutionError::BadTimeZone(format!("-{secs}")))
-            } else {
-                FixedOffset::west_opt(secs)
-                    .ok_or_else(|| ExecutionError::BadTimeZone(format!("{secs}")))
-            }
-        } else {
-            FixedOffset::east_opt(0).ok_or_else(|| ExecutionError::BadTimeZone(format!("{secs}")))
-        }
-    } else if let Ok(zone) = tz_str.parse::<Tz>() {
-        Ok(zone
-            .with_ymd_and_hms(2000, 1, 1, 0, 0, 0)
-            .unwrap()
-            .offset()
-            .fix())
-    } else if tz_str == "Z" {
-        FixedOffset::east_opt(0).ok_or_else(|| ExecutionError::BadTimeZone(tz_str.to_string()))
-    } else {
-        Err(ExecutionError::BadTimeZone(tz_str.to_string()))
+    // Try "Z" for UTC
+    if tz_str == "Z" {
+        return FixedOffset::east_opt(0)
+            .ok_or_else(|| ExecutionError::BadTimeZone(tz_str.to_string()));
     }
+
+    // Try parsing as a numeric offset by constructing a dummy datetime
+    // string and using chrono's built-in parser. We try several formats
+    // to handle +HH:MM, +HHMM, and +HH:MM:SS variants.
+    let dummy_formats = [
+        (
+            "%Y-%m-%dT%H:%M:%S%z",
+            format!("2000-01-01T00:00:00{tz_str}"),
+        ),
+        (
+            "%Y-%m-%dT%H:%M:%S%:z",
+            format!("2000-01-01T00:00:00{tz_str}"),
+        ),
+    ];
+
+    for (fmt, input) in &dummy_formats {
+        if let Ok(dt) = DateTime::parse_from_str(input, fmt) {
+            return Ok(*dt.offset());
+        }
+    }
+
+    // Try IANA timezone names via chrono-tz
+    if let Ok(zone) = tz_str.parse::<Tz>() {
+        return Ok(zone
+            .with_ymd_and_hms(2000, 1, 1, 0, 0, 0)
+            .single()
+            .expect("Y2K date is always valid in any timezone")
+            .offset()
+            .fix());
+    }
+
+    Err(ExecutionError::BadTimeZone(tz_str.to_string()))
 }
 
 /// ZDT(y, m, d, h, M, s, Z) - create a zoned date time
@@ -123,27 +122,17 @@ impl StgIntrinsic for Zdt {
             min.as_u64(),
             sec.as_u64(),
         ) {
-            // HACK: magic january
-            // at the moment we tolerate use of zdt to represent naive
-            // times in which case current prelude default y, m, d to
-            // 0
-            //
-            // we need to make the year, month and day valid..
-            let yy = if yy == 0 { 1 } else { yy };
-            let mm = if mm == 0 { 1 } else { mm };
-            let dd = if dd == 0 { 1 } else { dd };
-
             let date = NaiveDate::from_ymd_opt(
-                yy.try_into().unwrap(),
-                mm.try_into().unwrap(),
-                dd.try_into().unwrap(),
+                yy.try_into().expect("year must fit in i32"),
+                mm.try_into().expect("month must fit in u32"),
+                dd.try_into().expect("day must fit in u32"),
             )
             .ok_or_else(err)?;
 
             let time = NaiveTime::from_hms_opt(
-                hours.try_into().unwrap(),
-                mins.try_into().unwrap(),
-                secs.try_into().unwrap(),
+                hours.try_into().expect("hours must fit in u32"),
+                mins.try_into().expect("minutes must fit in u32"),
+                secs.try_into().expect("seconds must fit in u32"),
             )
             .ok_or_else(err)?;
 
@@ -250,7 +239,12 @@ impl StgIntrinsic for ZdtFields {
             SynClosure::new(
                 view.data(
                     DataConstructor::BoxedNumber.tag(),
-                    Array::from_slice(&view, &[Ref::num(Number::from_f64(sec).unwrap())]),
+                    Array::from_slice(
+                        &view,
+                        &[Ref::num(
+                            Number::from_f64(sec).expect("seconds must be finite"),
+                        )],
+                    ),
                 )?
                 .as_ptr(),
                 machine.root_env(),
@@ -292,7 +286,11 @@ impl StgIntrinsic for ZdtFromEpoch {
     ) -> Result<(), ExecutionError> {
         let unix = num_arg(machine, view, &args[0])?;
         if let Some(ts) = unix.as_i64() {
-            let zdt = DateTime::from(Utc.timestamp_opt(ts, 0).unwrap());
+            let zdt = DateTime::from(
+                Utc.timestamp_opt(ts, 0)
+                    .single()
+                    .expect("timestamp with zero nanoseconds is always valid"),
+            );
             machine_return_zdt(machine, view, zdt)
         } else {
             Err(ExecutionError::BadTimestamp(unix))
@@ -327,37 +325,37 @@ impl CallGlobal1 for ZdtIFields {}
 pub struct ZdtParse8601;
 
 fn zdt_from_str(repr: &str) -> Option<DateTime<FixedOffset>> {
+    // UTC offset (0) is always valid
+    let utc_offset = FixedOffset::east_opt(0).expect("UTC offset is always valid");
+
     // first try parsing a full datetime
     DateTime::parse_from_rfc3339(repr)
         .or_else(|_| DateTime::parse_from_str(repr, "%Y%m%dT%H%M%S"))
         .or_else(|_| {
-            repr.parse::<NaiveDateTime>().map(|dt| {
-                DateTime::from_naive_utc_and_offset(dt, FixedOffset::east_opt(0).unwrap())
-            })
+            repr.parse::<NaiveDateTime>()
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, utc_offset))
         })
         .or_else(|_| {
             repr.parse::<NaiveDate>().map(|d| {
                 DateTime::from_naive_utc_and_offset(
-                    d.and_hms_opt(0, 0, 0).unwrap(),
-                    FixedOffset::east_opt(0).unwrap(),
+                    d.and_hms_opt(0, 0, 0).expect("midnight is always valid"),
+                    utc_offset,
                 )
             })
         })
         .or_else(|_| {
-            NaiveDateTime::parse_from_str(repr, "%Y%m%dT%H%M%S").map(|dt| {
-                DateTime::from_naive_utc_and_offset(dt, FixedOffset::east_opt(0).unwrap())
-            })
+            NaiveDateTime::parse_from_str(repr, "%Y%m%dT%H%M%S")
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, utc_offset))
         })
         .or_else(|_| {
-            NaiveDateTime::parse_from_str(repr, "%Y%m%dT%H%M").map(|dt| {
-                DateTime::from_naive_utc_and_offset(dt, FixedOffset::east_opt(0).unwrap())
-            })
+            NaiveDateTime::parse_from_str(repr, "%Y%m%dT%H%M")
+                .map(|dt| DateTime::from_naive_utc_and_offset(dt, utc_offset))
         })
         .or_else(|_| {
             NaiveDate::parse_from_str(repr, "%Y%m%d").map(|d| {
                 DateTime::from_naive_utc_and_offset(
-                    d.and_hms_opt(0, 0, 0).unwrap(),
-                    FixedOffset::east_opt(0).unwrap(),
+                    d.and_hms_opt(0, 0, 0).expect("midnight is always valid"),
+                    utc_offset,
                 )
             })
         })
@@ -421,11 +419,11 @@ pub mod tests {
     pub fn test_tz_parse() {
         assert_eq!(
             offset_from_tz_str("-02:00").unwrap(),
-            FixedOffset::east_opt(2 * 60 * 60).unwrap()
+            FixedOffset::west_opt(2 * 60 * 60).unwrap()
         );
         assert_eq!(
             offset_from_tz_str("+02:00").unwrap(),
-            FixedOffset::west_opt(2 * 60 * 60).unwrap()
+            FixedOffset::east_opt(2 * 60 * 60).unwrap()
         );
         assert_eq!(
             offset_from_tz_str("UTC").unwrap(),

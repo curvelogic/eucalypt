@@ -2,11 +2,17 @@
 
 use crate::{
     common::sourcemap::Smid,
-    eval::machine::intrinsic::{CallGlobal1, CallGlobal2, Const, StgIntrinsic},
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
+    },
 };
 
 use super::{
     panic::Panic,
+    support::machine_return_bool,
     syntax::{
         dsl::{annotated_lambda, case, data, local, lref, str, value},
         LambdaForm,
@@ -93,3 +99,35 @@ impl StgIntrinsic for Head {
 }
 
 impl CallGlobal1 for Head {}
+
+/// ISLIST(value)
+///
+/// Return true if the value is a list (cons or nil), false otherwise
+pub struct IsList;
+
+impl StgIntrinsic for IsList {
+    fn name(&self) -> &str {
+        "ISLIST"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let is_list = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. }
+                if *tag == DataConstructor::ListCons.tag()
+                    || *tag == DataConstructor::ListNil.tag()
+        );
+        machine_return_bool(machine, view, is_list)
+    }
+}
+
+impl CallGlobal1 for IsList {}

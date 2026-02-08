@@ -2,9 +2,34 @@
 use codespan::{ByteIndex, ByteOffset, Span};
 use std::{collections::VecDeque, iter::Peekable, str::Chars};
 
-use unic_ucd_category::GeneralCategory;
+use unicode_general_category::{get_general_category, GeneralCategory};
 
 use super::kind::SyntaxKind::{self, *};
+
+/// Whether a Unicode general category is a symbol category
+fn is_symbol_category(cat: GeneralCategory) -> bool {
+    matches!(
+        cat,
+        GeneralCategory::MathSymbol
+            | GeneralCategory::CurrencySymbol
+            | GeneralCategory::ModifierSymbol
+            | GeneralCategory::OtherSymbol
+    )
+}
+
+/// Whether a Unicode general category is a punctuation category
+fn is_punctuation_category(cat: GeneralCategory) -> bool {
+    matches!(
+        cat,
+        GeneralCategory::ConnectorPunctuation
+            | GeneralCategory::DashPunctuation
+            | GeneralCategory::OpenPunctuation
+            | GeneralCategory::ClosePunctuation
+            | GeneralCategory::InitialPunctuation
+            | GeneralCategory::FinalPunctuation
+            | GeneralCategory::OtherPunctuation
+    )
+}
 
 /// Eucalypt lexer
 pub struct Lexer<C>
@@ -74,24 +99,24 @@ fn is_oper_start(c: char) -> bool {
             | ':' => false,
             // For other ASCII punctuation, check Unicode categories
             _ => {
-                let cat = GeneralCategory::of(c);
+                let cat = get_general_category(c);
                 !matches!(
                     cat,
                     GeneralCategory::OpenPunctuation
                         | GeneralCategory::ClosePunctuation
                         | GeneralCategory::InitialPunctuation
                         | GeneralCategory::FinalPunctuation
-                ) && (cat.is_symbol() || cat.is_punctuation())
+                ) && (is_symbol_category(cat) || is_punctuation_category(cat))
             }
         }
     } else {
         // Slow path for non-ASCII (Unicode) characters
-        match GeneralCategory::of(c) {
+        match get_general_category(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
             GeneralCategory::InitialPunctuation => false,
             GeneralCategory::FinalPunctuation => false,
-            cat => cat.is_symbol() || cat.is_punctuation(),
+            cat => is_symbol_category(cat) || is_punctuation_category(cat),
         }
     }
 }
@@ -120,24 +145,24 @@ fn is_oper_continuation(c: char) -> bool {
             | '}' => false,
             // For other ASCII punctuation, check Unicode categories
             _ => {
-                let cat = GeneralCategory::of(c);
+                let cat = get_general_category(c);
                 !matches!(
                     cat,
                     GeneralCategory::OpenPunctuation
                         | GeneralCategory::ClosePunctuation
                         | GeneralCategory::InitialPunctuation
                         | GeneralCategory::FinalPunctuation
-                ) && (cat.is_symbol() || cat.is_punctuation())
+                ) && (is_symbol_category(cat) || is_punctuation_category(cat))
             }
         }
     } else {
         // Slow path for non-ASCII (Unicode) characters
-        match GeneralCategory::of(c) {
+        match get_general_category(c) {
             GeneralCategory::OpenPunctuation => false,
             GeneralCategory::ClosePunctuation => false,
             GeneralCategory::InitialPunctuation => false,
             GeneralCategory::FinalPunctuation => false,
-            cat => cat.is_symbol() || cat.is_punctuation(),
+            cat => is_symbol_category(cat) || is_punctuation_category(cat),
         }
     }
 }
@@ -148,7 +173,7 @@ fn is_reserved_open(c: char) -> bool {
         matches!(c, '(' | '[' | '{')
     } else {
         matches!(
-            GeneralCategory::of(c),
+            get_general_category(c),
             GeneralCategory::OpenPunctuation | GeneralCategory::InitialPunctuation
         )
     }
@@ -160,7 +185,7 @@ fn is_reserved_close(c: char) -> bool {
         matches!(c, ')' | ']' | '}')
     } else {
         matches!(
-            GeneralCategory::of(c),
+            get_general_category(c),
             GeneralCategory::ClosePunctuation | GeneralCategory::FinalPunctuation
         )
     }
