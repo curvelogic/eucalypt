@@ -990,3 +990,262 @@ call site).
 2. **R2** (ApplyTo annotation) — moderate impact, small change.
 3. **R4** (redundant Ann) — minor reinforcement, trivial change.
 4. **R3** (lazy provenance) — hardest problem, requires design decision.
+
+
+## Analysis: Environment Trace vs Stack Trace
+
+### What Each Trace Represents
+
+The eucalypt VM captures two separate traces when a runtime error occurs, both
+stored as `Vec<Smid>` inside `ExecutionError::Traced(error, env_trace,
+stack_trace)`.
+
+#### Stack Trace: Dynamic Call Flow
+
+The stack trace is collected by `stack_trace_iter()` in
+`src/eval/machine/vm.rs:593-617`. It iterates over the continuation stack in
+reverse (most recent first) and extracts annotations from the environment
+fields of `Branch`, `Update`, and `DeMeta` continuations. `ApplyTo`
+continuations are skipped entirely because they carry no environment reference.
+
+Semantically, the stack trace represents **what the VM is currently doing** at
+the point the error occurs — the chain of pending case analyses, thunk updates,
+and metadata inspections. In practice, because of lazy evaluation, this almost
+always reflects the **rendering pipeline** rather than the user's call chain.
+Typical entries are `SATURATED`, `AND`, `EMITx`, `RENDER`, `CONS` — all
+intrinsics involved in forcing values for output.
+
+The stack trace performs inline deduplication (consecutive identical Smids are
+collapsed) and is capped at 64 entries.
+
+#### Environment Trace: Lexical Scope Chain
+
+The environment trace is collected by `env_trace()` in `vm.rs:122-124`, which
+delegates to `annotation_trace()` in `src/eval/machine/env.rs:267-283`. This
+walks the linked list of `EnvironmentFrame`s from the current frame to the root,
+collecting non-default `Smid` annotations from each frame.
+
+Semantically, the environment trace represents **the lexical nesting of the
+current closure's scope**. Each environment frame is created when the VM
+processes a `Let`, `LetRec`, function saturation, case branch binding, or
+`DeMeta` handler. The annotation stamped on each frame is `self.annotation` —
+the machine state's current annotation Smid at the time of frame creation.
+
+In theory, this should show something like "inside function `f`, inside block
+`outer`, inside the prelude" — a breadcrumb trail through the lexical structure
+of the programme. In practice, it shows almost nothing useful.
+
+### Empirical Results
+
+Twenty-two test cases were run across two categories: custom test files
+exercising various error scenarios, and the existing `harness/test/errors/`
+suite. Below is a complete summary.
+
+#### Custom Test Files
+
+| Test | Error Type | Env Trace | Stack Trace |
+|------|-----------|-----------|-------------|
+| `x: 1 + "hello"` | NoBranchForDataTag(5) | *(empty)* | SATURATED, AND |
+| `f(x): x + "hello"; main: f(42)` | NoBranchForDataTag(5) | *(empty)* | SATURATED, AND |
+| `make-adder("hello").add(42)` | NoBranchForDataTag(5) | *(empty)* | SATURATED, AND |
+| `apply(bad, 5)` where `bad(x): x / 0` | NumericRangeError | *(empty)* | EMITx |
+| `a: 1; b: a + "x"; main: b` | NoBranchForDataTag(5) | *(empty)* | SATURATED, AND |
+| `map(_ + "x", [1, 2, 3])` | NoBranchForDataTag(5) | *(empty)* | RENDER, CONS |
+| `h(x): g(x); g(x): f(x); f(x): x + "hello"` | NoBranchForDataTag(5) | *(empty)* | SATURATED, AND |
+| Deep nested blocks with `panic(...)` | Panic | **PANIC** | SATURATED, AND |
+| `f(x): panic("...")` call chain | Panic | **PANIC** | SATURATED, AND |
+| `factory("bad").worker(42).result` | NoBranchForDataTag(5) | *(empty)* | SATURATED, AND |
+
+#### Harness Error Tests (Runtime Errors Only)
+
+| Test File | Error Type | Env Trace | Stack Trace |
+|-----------|-----------|-----------|-------------|
+| 002_lists | NoBranchForDataTag | *(empty)* | SATURATED, AND |
+| 009_panic | Panic | **PANIC** | SATURATED, AND |
+| 010_assert | Panic (assertion) | **PANIC** | SATURATED, AND |
+| 011_assert_pred | Panic (assertion) | **PANIC** | SATURATED, AND |
+| 017_too_many_args | NotCallable | *(empty)* | SATURATED, AND |
+| 019_no_such_key | BlackHole | *(empty)* | LOOKUPOR#, SATURATED, AND |
+| 020_no_such_key_fn | Panic (key not found) | **PANIC** | SATURATED, AND |
+| 021_bad_num_parse | (number format) | *(empty)* | EMITx |
+| 023_arg_types | NoBranchForDataTag(3) | *(empty)* | SATURATED, AND |
+| 027_self_ref | BlackHole | *(empty)* | SATURATED, AND |
+
+### Pattern: When Is the Environment Trace Non-Empty?
+
+The environment trace is non-empty in **exactly one scenario**: when the error
+is a `Panic`. In every such case, the trace contains a single entry: `PANIC`.
+
+This occurs because `panic()` is implemented as a call to the `PANIC`
+intrinsic, whose global wrapper closure was compiled with `annotated_lambda()`
+and carries the synthetic Smid for `"PANIC"`. When the panic intrinsic
+executes, the machine's `self.annotation` is the PANIC intrinsic's Smid, and
+the current environment frames were created with that annotation.
+
+For **all other error types** (type mismatches, arithmetic errors, black holes,
+arity errors, lookup failures), the environment trace is completely empty. This
+is because:
+
+1. **`self.annotation` is almost always `Smid::default()`** at the point where
+   environment frames are created. User lambda forms use `dsl::lambda()` which
+   stores `Smid::default()` on the closure. When the closure is entered,
+   `self.annotation = self.closure.annotation()` sets it to the default. The
+   `Ann` node in the body briefly sets a valid annotation, but it is immediately
+   overwritten when the next sub-expression is entered.
+
+2. **Errors tend to occur inside intrinsic evaluation**, where the environment
+   belongs to the intrinsic machinery (rendering pipeline), not the user's
+   code. The environment chain at that point does not include frames from the
+   user's function definitions.
+
+3. **Lazy evaluation** means errors are deferred to the rendering pipeline. By
+   the time the error surfaces, the user's function frames are no longer in the
+   current environment chain — the error is being forced in a completely
+   different execution context.
+
+### Does the Environment Trace Provide Unique Value?
+
+**No.** Based on the empirical evidence:
+
+- When it is non-empty, it contains only intrinsic names (specifically
+  `PANIC`), which also appear in the stack trace or are obvious from the error
+  message itself.
+- It never contains user-defined function names, file locations, or any
+  information that would help a user locate the source of the error.
+- It never provides information that is not already available from either the
+  stack trace or the error message.
+- The one scenario where it shows something (PANIC) is precisely the scenario
+  where the error message itself already says "panic: ..." — the env trace
+  entry adds nothing.
+
+### Is It Confusing for Users?
+
+**Yes.** The environment trace is actively confusing for several reasons:
+
+1. **The label "environment trace" is opaque.** Users of a data-templating
+   language have no reason to know what an "environment" is in the context of a
+   closure-based VM. Even experienced programmers would likely think
+   "environment" refers to shell environment variables or similar.
+
+2. **It is almost always empty.** An empty trace labelled "environment trace:"
+   followed by nothing creates visual noise and suggests the tool is broken or
+   has incomplete information. Users may waste time wondering what should be
+   there.
+
+3. **When non-empty, it shows only intrinsic names.** Seeing `- PANIC` under
+   "environment trace" does not help the user understand their programme. The
+   intrinsic name is an implementation detail.
+
+4. **Two traces are harder to parse than one.** Having two separate traces with
+   unfamiliar labels forces users to understand a distinction (dynamic vs
+   lexical) that is irrelevant to debugging.
+
+### Theoretical Basis
+
+#### Why Haskell/GHC Does Not Have Environment Traces
+
+In GHC's STG machine, environment frames (closures) are the fundamental
+evaluation mechanism, just as in eucalypt. However, GHC has never implemented
+an "environment trace" for error reporting because:
+
+- **The lexical nesting of closures is visible from the source code.** If a
+  function `f` is defined inside a `where` clause of `g`, the user can see
+  that by reading the source. Walking the environment chain at runtime adds
+  nothing beyond what the source structure already shows.
+
+- **The interesting question is "how did we get here?"** — which is a dynamic
+  (call stack) question, not a lexical (scope nesting) question. GHC addresses
+  this with cost centre stacks (for profiling) and `HasCallStack` (for
+  explicit call chain tracking).
+
+- **Lazy evaluation makes the runtime environment chain misleading.** A thunk
+  created in one lexical context may be forced in a completely different
+  dynamic context. The environment chain at force time reflects the thunk's
+  *definition site* scope, not its *use site* call chain. But the definition
+  site is already visible in the source code, so walking the environment adds
+  no new information.
+
+#### Does the Environment Trace Compensate for Laziness?
+
+**In theory, it could.** The environment trace walks the closure chain from
+where the thunk was *defined*, not where it was *forced*. This could complement
+the stack trace (which shows where it was forced) by showing where it was
+created.
+
+**In practice, it does not**, because:
+
+1. The annotations on the environment frames are `Smid::default()` for
+   user-defined code (as documented in the "Root Cause 2" section above).
+2. Even if annotations were present, the environment chain shows *lexical
+   nesting* (which scopes contain which), not *creation provenance* (which
+   function call created this thunk). These are different things. Lexical
+   nesting is already visible in the source code.
+
+For the environment trace to genuinely compensate for laziness, it would need
+to carry *dynamic provenance* — recording which function call led to the
+creation of each thunk, similar to GHC's cost centre stacks. The current
+implementation does not do this; it merely records which lexical scopes are
+nested inside which, and even that information is lost due to the annotation
+overwrite issue.
+
+### Could the Two Traces Be Merged?
+
+Given that the environment trace provides no unique information, merging is
+not the right framing. The question is whether the information the environment
+trace *could theoretically provide* (if annotations were fixed) would be
+worth integrating into a single, improved trace.
+
+If the annotation issues from Root Cause 2 were fixed (via recommendation R1:
+storing annotations on lambda forms), the environment trace would show the
+lexical nesting of the current scope — e.g., "inside function `worker`, inside
+function `factory`, inside the top-level block". But this information:
+
+- Is already visible from the source code structure.
+- Would be more naturally presented as part of the error's source location
+  rather than as a separate trace.
+- Would not help with the laziness problem (it shows where the code was
+  *written*, not how execution reached it).
+
+The stack trace, if enhanced with user function annotations (via
+recommendations R1 and R2), would be strictly more useful because it shows
+the dynamic chain of evaluation — which is not visible from the source code.
+
+### Recommendation
+
+**Drop the environment trace from error output.** The specific recommendation
+is:
+
+1. **Immediately**: Stop displaying the environment trace in error output.
+   Remove the "environment trace:" note from `src/driver/eval.rs:213-216`.
+   This eliminates visual noise, removes a confusing label, and loses no
+   useful information (since the trace is almost always empty, and when
+   non-empty contains only redundant intrinsic names).
+
+2. **Short term**: Invest the effort saved into improving the stack trace
+   (recommendations R1 and R2 from the previous section), which has genuine
+   potential to show useful information if enhanced with user function
+   annotations.
+
+3. **Long term**: If a "definition site" trace is desired to complement the
+   stack trace (addressing the laziness problem), design it as a proper
+   provenance mechanism — recording which call site created each thunk —
+   rather than walking the lexical environment chain. This is a significant
+   design effort akin to GHC's cost centre system and should be treated as a
+   separate project.
+
+4. **Retain the `env_trace()` machinery internally** for now (do not delete
+   the code), in case it becomes useful for debugging the VM itself. Simply
+   stop exposing it to users.
+
+### Summary Table
+
+| Criterion | Environment Trace | Stack Trace |
+|-----------|------------------|-------------|
+| Non-empty for type errors | Never | Always |
+| Non-empty for panics | Yes (shows "PANIC") | Yes (shows "SATURATED", "AND") |
+| Shows user function names | Never | Never (fixable via R1+R2) |
+| Shows source locations | Never | Never (fixable via R1+R2) |
+| Unique information provided | None | Some (intrinsic call chain) |
+| Understandable label | No ("environment trace") | Somewhat ("stack trace") |
+| Useful after R1+R2 fixes | Marginally (lexical nesting) | Significantly (call chain) |
+| Confusing to users | Yes | Somewhat |
