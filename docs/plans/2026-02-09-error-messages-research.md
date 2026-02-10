@@ -674,3 +674,319 @@ The most impactful improvements are:
 These four changes would transform the error experience from "mostly useless
 for runtime errors" to "helpful and actionable" without requiring any library
 migration or major architectural changes.
+
+
+## Deep Investigation: Trace Machinery
+
+### Test Cases and Verbatim Output
+
+Four test programs were created to exercise user-defined function errors.
+
+**Test A** — User function calling intrinsic incorrectly:
+```eucalypt
+f(x): x + "hello"
+main: f(42)
+```
+Output:
+```
+error: no branch for data tag 5
+ = environment trace:
+ = stack trace:
+   - SATURATED
+   - AND
+```
+
+**Test B** — Nested user function calls leading to error:
+```eucalypt
+inner(x): x / 0
+middle(x): inner(x + 1)
+outer(x): middle(x * 2)
+main: outer(5)
+```
+Output:
+```
+error: out of range error operating on numbers (11, 0)
+ = environment trace:
+ = stack trace:
+   - EMITx
+```
+
+**Test C** — Higher-order function passing:
+```eucalypt
+apply(f, x): f(x)
+bad(x): x + "oops"
+main: apply(bad, 42)
+```
+Output:
+```
+error: no branch for data tag 5
+ = environment trace:
+ = stack trace:
+   - SATURATED
+   - AND
+```
+
+**Test D** — Recursive function with base-case error:
+```eucalypt
+f(x): if(x = 0, x / 0, f(x - 1))
+main: f(5)
+```
+Output:
+```
+error: out of range error operating on numbers (0, 0)
+ = environment trace:
+ = stack trace:
+   - EMITx
+```
+
+### Key Observation: No User Function Names Appear
+
+Across all four test cases:
+
+- The **environment trace is always empty** — zero entries in every case.
+- The **stack trace contains only intrinsic names** — `EMITx`, `SATURATED`,
+  `AND` — all belonging to the rendering pipeline.
+- No user-defined function name (`f`, `inner`, `middle`, `outer`, `apply`,
+  `bad`) appears anywhere in any trace.
+
+Instrumented debugging confirmed the raw Smid vectors: `env_trace` yields `[]`
+(empty) and `stack_trace` yields Smids that resolve exclusively to intrinsic
+globals.
+
+### Root Cause Analysis
+
+There are three independent root causes, all of which must be addressed for
+useful traces.
+
+#### Root Cause 1: Lazy evaluation defers errors to the rendering pipeline
+
+Eucalypt uses lazy evaluation. Computations like `x / 0` do not execute
+immediately; they are packaged as thunks. The error only surfaces when the
+rendering pipeline (EMITx, SATURATED, AND) forces the result for output.
+
+By the time the error is thrown, the machine's continuation stack and current
+environment reflect the **rendering pipeline's context**, not the user
+function call chain. The `inner`, `middle`, and `outer` function calls have
+long since returned (yielding lazy thunks), and their stack frames no longer
+exist.
+
+**Code location**: Error wrapping at `src/eval/machine/vm.rs:862-870`.
+
+#### Root Cause 2: `self.annotation` is volatile and gets overwritten on every closure entry
+
+The VM has a single `annotation: Smid` field on `MachineState` (vm.rs:154)
+that tracks the "current" source annotation. It is used to stamp environment
+frames when they are created by `Let`/`LetRec` nodes (vm.rs:281, 287).
+
+The `Ann` node (vm.rs:290-292) correctly sets `self.annotation` to the user
+function's Smid. However, at the **start of every instruction execution**
+(vm.rs:211), the annotation is unconditionally overwritten:
+
+```rust
+self.annotation = self.closure.annotation();
+```
+
+User-defined lambda forms are created via `dsl::lambda()` which passes
+`Smid::default()` (src/eval/stg/syntax.rs:437). In contrast, intrinsic
+wrappers use `annotated_lambda()` which carries a valid Smid.
+
+The effect is:
+
+1. Lambda is entered. `self.annotation` is set to `Smid::default()` (from the
+   lambda form).
+2. Lambda body starts with `Ann { smid, body }`. `self.annotation` is set to
+   the correct user Smid.
+3. The first sub-expression forces an argument (enters another closure).
+   `self.annotation` is overwritten to that closure's annotation
+   (`Smid::default()` for thunks/values).
+4. All environment frames created thereafter carry `Smid::default()`.
+
+**Code locations**:
+- `dsl::lambda` uses `Smid::default()`: `src/eval/stg/syntax.rs:436-438`
+- Annotation overwrite on entry: `src/eval/machine/vm.rs:211`
+- `Ann` node handling: `src/eval/machine/vm.rs:290-292`
+- `InfoTagged::thunk` and `::value` use `Smid::default()`:
+  `src/eval/memory/infotable.rs:97-110`
+
+#### Root Cause 3: `Continuation::ApplyTo` has no environment and is skipped in stack traces
+
+The `stack_trace_iter` function (vm.rs:593-617) collects Smids from
+continuations. It handles `Branch`, `Update`, and `DeMeta` continuations
+(which have environment fields), but **skips `ApplyTo` entirely** (line 607:
+`_ => return None`).
+
+Function applications push `ApplyTo` continuations (vm.rs:272). Since user
+function calls are function applications, they never contribute to the stack
+trace. The only continuations that DO contribute are Cases (Branch), thunk
+updates (Update), and metadata destructuring (DeMeta) — all internal
+machinery.
+
+Furthermore, `ApplyTo` (cont.rs:50) does not carry an `environment` field at
+all — it only stores the argument closures. So even if the stack trace code
+attempted to include it, there would be no environment frame to extract an
+annotation from.
+
+**Code locations**:
+- `ApplyTo` definition: `src/eval/machine/cont.rs:50`
+- Stack trace skips `ApplyTo`: `src/eval/machine/vm.rs:607`
+- App pushes `ApplyTo`: `src/eval/machine/vm.rs:272`
+
+### Supplementary Findings
+
+#### Annotations are correctly stored in the source map
+
+The desugarer creates annotated Smids for user-defined lambdas with the
+function name:
+
+```rust
+// src/core/desugar/rowan_ast.rs:928-932
+expr = core::lam(
+    desugarer.new_annotated_smid(components.span, &components.name),
+    components.arg_vars,
+    expr.clone(),
+);
+```
+
+This calls `SourceMap::add_annotated()` which stores both the byte span AND
+the annotation string (the function name). So the source map has the
+information needed to produce useful traces — it simply never receives the
+right Smids.
+
+#### The optimiser preserves Ann nodes
+
+The `AllocationPruner` (src/eval/stg/optimiser.rs:296-299) correctly
+reconstructs `Ann` nodes during its traversal:
+
+```rust
+StgSyn::Ann { smid, body } => Rc::new(StgSyn::Ann {
+    smid: *smid,
+    body: self.apply(body.clone()),
+}),
+```
+
+So `Ann` nodes are not stripped during optimisation.
+
+#### Intrinsic wrappers correctly appear because they use `annotated_lambda`
+
+Intrinsic global wrappers are compiled with `annotated_lambda()` which stores
+the annotation Smid on the `LambdaForm` itself (via `InfoTagged`). When these
+closures are entered, `self.annotation = self.closure.annotation()` picks up
+the intrinsic's Smid (e.g., "EMITx", "SATURATED"). This is why intrinsic
+names DO appear in traces — the annotation mechanism works correctly for them.
+
+The discrepancy is that user lambdas use `dsl::lambda()` (which passes
+`Smid::default()`) and rely on the `Ann` body wrapper, while intrinsic
+wrappers use `annotated_lambda()` and store the annotation on the closure
+itself.
+
+#### `format_trace` would work correctly if given valid Smids
+
+The `format_trace` function (src/common/sourcemap.rs:206-229) first checks
+for an annotation string, then falls back to extracting the source text from
+the byte span. User function Smids have both annotation strings and spans.
+The rendering logic is fine — it just never receives user function Smids.
+
+### Assessment: Fixing vs Replacing the Machinery
+
+The trace machinery does not need to be replaced wholesale. The core
+components — source map, annotation storage, `format_trace`, `Ann` nodes —
+are sound. What needs fixing are the specific gaps in the pipeline:
+
+1. **The `Ann` node's annotation is immediately overwritten.** This is the
+   most fundamental issue. The current design assumes `self.annotation` will
+   persist across sub-expression evaluation, but it does not.
+
+2. **`ApplyTo` carries no annotation information.** Function call
+   continuations are invisible to the trace machinery.
+
+3. **Lazy evaluation disconnects errors from their call sites.** This is the
+   hardest problem and is inherent to the evaluation model.
+
+### Concrete Recommendations
+
+#### R1: Store annotation on the `LambdaForm`, not (only) in the body
+
+Change `ProtoLambda::take_lambda_form` (src/eval/stg/compiler.rs:723-753) to
+use `annotated_lambda` instead of `lambda`, passing the Smid directly to the
+lambda form. This mirrors what intrinsic wrappers already do:
+
+```rust
+Ok(dsl::annotated_lambda(
+    args.try_into().or(Err(CompileError::MaxLambdaArgs))?,
+    body,
+    self.annotation,
+))
+```
+
+This ensures that when a user function closure is entered, `self.annotation`
+is set to the function's Smid, and it persists on the closure itself
+(surviving re-entry). The `Ann` body wrapper becomes redundant but harmless.
+
+**Impact**: Environment frames created inside user function bodies would carry
+the function's annotation. The env_trace would show user function names.
+
+#### R2: Add annotation support to `Continuation::ApplyTo`
+
+Extend `ApplyTo` to carry the current `self.annotation` Smid:
+
+```rust
+ApplyTo { args: Array<SynClosure>, annotation: Smid },
+```
+
+Set this when pushing the continuation (vm.rs:272):
+
+```rust
+self.push(view, Continuation::ApplyTo {
+    args: array,
+    annotation: self.annotation,
+})?;
+```
+
+Update `stack_trace_iter` to include `ApplyTo` annotations:
+
+```rust
+Continuation::ApplyTo { annotation, .. } => *annotation,
+```
+
+**Impact**: Function call sites would appear in stack traces, including user
+function calls.
+
+**Note**: This increases the size of the `Continuation` enum and adds a field
+to GC scanning. The overhead is one `Smid` (4 bytes) per `ApplyTo`
+continuation.
+
+#### R3: Consider a "source trace" independent of lazy evaluation
+
+For lazily-evaluated values, the error arises far from the call site. The
+fundamental fix would require the thunk to carry provenance information — a
+chain of Smids recording where the thunk was created and by which function.
+This is similar to how GHC's `-fprof-auto` inserts cost centres.
+
+A lighter-weight approach: when wrapping an error in `Traced`, also include
+the **thunk's closure annotation** (from `self.closure.annotation()` at error
+time). Even if `self.annotation` has been overwritten, the closure's own
+annotation may still carry useful information — particularly if R1 is
+implemented.
+
+This is the hardest problem and may warrant a longer-term design discussion
+about whether to:
+- Accept the lazy evaluation limitation and focus on making
+  compile-time/immediate errors excellent.
+- Implement cost-centre-style provenance tracking on thunks (significant
+  overhead).
+- Add a strict evaluation mode for debugging purposes.
+
+#### R4: Enrich the `Ann` node or replace it with a different mechanism
+
+As an alternative to R1, the compiler could emit the annotation Smid on the
+lambda form AND retain the `Ann` body wrapper. The `Ann` node would then serve
+as a redundant "refresh" of the annotation (useful for nested lambdas or
+higher-order cases where the closure annotation might not reflect the current
+call site).
+
+#### Priority ordering
+
+1. **R1** (lambda form annotation) — highest impact, smallest change.
+2. **R2** (ApplyTo annotation) — moderate impact, small change.
+3. **R4** (redundant Ann) — minor reinforcement, trivial change.
+4. **R3** (lazy provenance) — hardest problem, requires design decision.
