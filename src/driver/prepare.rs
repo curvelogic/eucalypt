@@ -30,12 +30,22 @@ pub fn prepare(
 
     {
         let t = Instant::now();
+        let mut parse_errors: Vec<EucalyptError> = Vec::new();
 
         for i in &inputs {
-            loader.load(i)?;
+            if let Err(e) = loader.load(i) {
+                parse_errors.push(e);
+            }
         }
 
         stats.record("parse", t.elapsed());
+
+        if !parse_errors.is_empty() {
+            // Diagnose all errors beyond the first; the caller will
+            // print the returned error as a diagnostic itself.
+            diagnose_additional(loader, &parse_errors);
+            return Err(parse_errors.into_iter().next().unwrap());
+        }
     }
 
     // If we're dumping parses, dump every file read during the load
@@ -50,12 +60,20 @@ pub fn prepare(
     // Consume the ASTs and transform into Core syntax
     {
         let t = Instant::now();
+        let mut translate_errors: Vec<EucalyptError> = Vec::new();
 
         for i in &inputs {
-            loader.translate(i)?;
+            if let Err(e) = loader.translate(i) {
+                translate_errors.push(e);
+            }
         }
 
         stats.record("translate", t.elapsed());
+
+        if !translate_errors.is_empty() {
+            diagnose_additional(loader, &translate_errors);
+            return Err(translate_errors.into_iter().next().unwrap());
+        }
     }
 
     // Optionally collect explicit inputs together
@@ -229,6 +247,19 @@ fn dump_core(expr: RcExpr, opt: &EucalyptOptions) {
     } else {
         // direct expression
         print!("{}", prettify(&expr));
+    }
+}
+
+/// Print diagnostics for all errors beyond the first.
+///
+/// The first error is returned to the caller which will print it
+/// separately, so we only diagnose errors at index 1 onwards. This
+/// allows the user to see all errors from a phase at once rather than
+/// stopping at the first one.
+fn diagnose_additional(loader: &SourceLoader, errors: &[EucalyptError]) {
+    for e in errors.iter().skip(1) {
+        let diag = e.to_diagnostic(loader.source_map());
+        loader.diagnose_to_stderr(&diag);
     }
 }
 
