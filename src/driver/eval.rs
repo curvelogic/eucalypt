@@ -212,7 +212,9 @@ impl<'a> Executor<'a> {
 
                 if let Some(trace) = e.stack_trace() {
                     let stack_trace = self.source_map.format_trace(trace, &self.files);
-                    notes.push(format!("stack trace:\n{stack_trace}"));
+                    if !stack_trace.is_empty() {
+                        notes.push(format!("stack trace:\n{stack_trace}"));
+                    }
                 }
 
                 diagnostic = diagnostic.with_notes(notes);
