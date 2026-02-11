@@ -73,6 +73,8 @@ pub enum ExecutionError {
     NumericDomainError(Number, Number),
     #[error("out of range error operating on numbers ({0}, {1})")]
     NumericRangeError(Number, Number),
+    #[error("division by zero")]
+    DivisionByZero,
     #[error("expected branch continuation")]
     ExpectedBranchContinuation,
     #[error("no branch for data tag {0}")]

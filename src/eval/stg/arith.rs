@@ -26,6 +26,11 @@ use super::{
     tags::DataConstructor,
 };
 
+/// Check if a number is zero
+fn is_zero(n: &Number) -> bool {
+    n.as_i64() == Some(0) || n.as_u64() == Some(0) || n.as_f64() == Some(0.0)
+}
+
 /// ADD(l, r) - add l to r
 pub struct Add;
 
@@ -170,6 +175,10 @@ impl StgIntrinsic for Div {
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
 
+        if is_zero(&y) {
+            return Err(ExecutionError::DivisionByZero);
+        }
+
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let result = l
                 .checked_div(r)
@@ -211,6 +220,10 @@ impl StgIntrinsic for Mod {
     ) -> Result<(), crate::eval::error::ExecutionError> {
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
+
+        if is_zero(&y) {
+            return Err(ExecutionError::DivisionByZero);
+        }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let product = l
