@@ -51,10 +51,10 @@ other installation options.
 
 Full documentation is available at https://curvelogic.github.io/eucalypt/
 
-- [Getting Started](https://curvelogic.github.io/eucalypt/getting-started/)
-- [Language Syntax](https://curvelogic.github.io/eucalypt/syntax/)
-- [Command Line](https://curvelogic.github.io/eucalypt/command-line/)
-- [Prelude Reference](docs/prelude.md)
+- [Getting Started](https://curvelogic.github.io/eucalypt/welcome/quick-start.html)
+- [Language Syntax](https://curvelogic.github.io/eucalypt/reference/syntax.html)
+- [Command Line](https://curvelogic.github.io/eucalypt/reference/cli.html)
+- [Prelude Reference](https://curvelogic.github.io/eucalypt/reference/prelude/index.html)
 
 ## Development
 
