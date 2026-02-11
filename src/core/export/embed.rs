@@ -95,6 +95,52 @@ impl EmbedBuilder {
         Some(self)
     }
 
+    /// Embed a block of key-value pairs as `{k: v, ...}`
+    fn block<E: Embed>(&mut self, entries: &[(String, E)]) -> Option<&mut Self> {
+        if self.need_comma {
+            self.builder.token(SyntaxKind::COMMA.into(), ",");
+            self.builder.token(SyntaxKind::WHITESPACE.into(), " ");
+        }
+
+        // Build block as pretty-printed text, same approach as `embed()`
+        // We construct: {k: embedded_v, ...}
+        let mut parts = Vec::new();
+        for (key, value) in entries {
+            let soup = value.embed()?;
+            let text = pretty::express(&soup);
+            parts.push(format!("{key}: {text}"));
+        }
+        let block_text = format!("{{{}}}", parts.join(", "));
+
+        self.builder.start_node(SyntaxKind::SOUP.into());
+        self.builder
+            .token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), &block_text);
+        self.builder.finish_node();
+        self.need_comma = true;
+        Some(self)
+    }
+
+    /// Embed a list of strings as `["a" "b" ...]`
+    fn string_list(&mut self, items: &[String]) -> &mut Self {
+        if self.need_comma {
+            self.builder.token(SyntaxKind::COMMA.into(), ",");
+            self.builder.token(SyntaxKind::WHITESPACE.into(), " ");
+        }
+
+        let escaped: Vec<String> = items
+            .iter()
+            .map(|s| format!("\"{}\"", s.replace('"', "\\\"")))
+            .collect();
+        let list_text = format!("[{}]", escaped.join(", "));
+
+        self.builder.start_node(SyntaxKind::SOUP.into());
+        self.builder
+            .token(SyntaxKind::UNQUOTED_IDENTIFIER.into(), &list_text);
+        self.builder.finish_node();
+        self.need_comma = true;
+        self
+    }
+
     fn finish(mut self) -> Option<rowan_ast::Soup> {
         self.builder.token(SyntaxKind::CLOSE_SQUARE.into(), "]");
         self.builder.finish_node(); // LIST
@@ -209,9 +255,42 @@ impl Embed for CoreExpr {
             CoreExpr::ErrPseudoDot => EmbedBuilder::new("e-pseudodot").finish(),
             CoreExpr::ErrPseudoCall => EmbedBuilder::new("e-pseudocall").finish(),
             CoreExpr::ErrPseudoCat => EmbedBuilder::new("e-pseudocat").finish(),
-            // Let and Lam require scope manipulation which is complex;
-            // return None for these uncommon embedding cases
-            CoreExpr::Let(..) | CoreExpr::Lam(..) | CoreExpr::Block(..) => None,
+            CoreExpr::Let(_, scope, _) => {
+                let bindings: Vec<(String, RcExpr)> = scope
+                    .unsafe_pattern
+                    .unsafe_pattern
+                    .iter()
+                    .filter_map(|(binder, embed)| {
+                        let name = binder.0.pretty_name.as_ref()?.clone();
+                        Some((name, embed.0.clone()))
+                    })
+                    .collect();
+
+                let entries: Vec<(String, RcExpr)> = bindings;
+                let mut b = EmbedBuilder::new("c-let");
+                b.block(&entries)?;
+                b.embed(&scope.unsafe_body)?;
+                b.finish()
+            }
+            CoreExpr::Lam(_, _, scope) => {
+                let param_names: Vec<String> = scope
+                    .unsafe_pattern
+                    .iter()
+                    .filter_map(|binder| binder.0.pretty_name.as_ref().cloned())
+                    .collect();
+
+                let mut b = EmbedBuilder::new("c-lam");
+                b.string_list(&param_names);
+                b.embed(&scope.unsafe_body)?;
+                b.finish()
+            }
+            CoreExpr::Block(_, bm) => {
+                let entries: Vec<(String, RcExpr)> =
+                    bm.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let mut b = EmbedBuilder::new("c-block");
+                b.block(&entries)?;
+                b.finish()
+            }
         }
     }
 }
@@ -294,5 +373,55 @@ pub mod tests {
         assert!(CoreExpr::ErrPseudoDot.embed().is_some());
         assert!(CoreExpr::ErrPseudoCall.embed().is_some());
         assert!(CoreExpr::ErrPseudoCat.embed().is_some());
+    }
+
+    #[test]
+    pub fn test_let_embedding() {
+        let x = free("x");
+        let expr = acore::let_(vec![(x, acore::num(42))], acore::bif("HEAD"));
+        let embedding = expr.embed();
+        assert!(
+            embedding.is_some(),
+            "Should be able to embed let expression"
+        );
+    }
+
+    #[test]
+    pub fn test_lam_embedding() {
+        let x = free("x");
+        let y = free("y");
+        let body = acore::app(
+            acore::bif("ADD"),
+            vec![acore::var(x.clone()), acore::var(y.clone())],
+        );
+        let expr = acore::lam(vec![x, y], body);
+        let embedding = expr.embed();
+        assert!(
+            embedding.is_some(),
+            "Should be able to embed lambda expression"
+        );
+    }
+
+    #[test]
+    pub fn test_block_embedding() {
+        let expr = acore::block(vec![
+            ("x".to_string(), acore::num(1)),
+            ("y".to_string(), acore::num(2)),
+        ]);
+        let embedding = expr.embed();
+        assert!(
+            embedding.is_some(),
+            "Should be able to embed block expression"
+        );
+    }
+
+    #[test]
+    pub fn test_nested_let_embedding() {
+        let x = free("x");
+        let y = free("y");
+        let inner = acore::let_(vec![(y, acore::num(2))], acore::bif("TAIL"));
+        let expr = acore::let_(vec![(x, acore::num(1))], inner);
+        let embedding = expr.embed();
+        assert!(embedding.is_some(), "Should be able to embed nested let");
     }
 }
