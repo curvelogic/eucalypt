@@ -1,4 +1,4 @@
-# The role of Eucalypt's syntax
+# Language Syntax Reference
 
 Eucalypt has a native syntax which emphasises the mappings-and-lists
 nature of its underlying data model but adds enhancements for
@@ -12,10 +12,9 @@ interesting with Eucalypt.
 
 A few aspects are unorthodox and experimental.
 
-# Overview
+## Overview
 
-Eucalypt syntax comes about by the an overlapping of two
-sub-languages.
+Eucalypt syntax comes about by the overlapping of two sub-languages.
 
 - the *block DSL* is how you write blocks and their declarations
 - the *expression DSL* is how you write expressions
@@ -32,11 +31,10 @@ comments.
 foo: bar # Line comments start with '#' and run till the end of the line
 ```
 
-!!! note
-
-	If you feel you need a block comment, you can use an actual block or a
-	string property within a block and mark it with annotation metadata
-	`:suppress` to ensure it doesn't appear in output.
+> **Note:** If you feel you need a block comment, you can use an
+> actual block or a string property within a block and mark it with
+> annotation metadata `:suppress` to ensure it doesn't appear in
+> output.
 
 Eucalypt has two types of names:
 
@@ -45,7 +43,7 @@ Eucalypt has two types of names:
 - operator names, which are largely symbolic (e.g. `&&&`, `∧`, `-+-|`,
   `⊚`) and are used to name operators
 
-See [Operators and Identifiers](operators-and-identifiers.md) for more.
+See [Operator Precedence Table](operators-and-identifiers.md) for more.
 
 ## The block DSL
 
@@ -70,9 +68,9 @@ A **block** is surrounded by curly braces:
 ```eu
 ... {
   foo: {
-	bar: {
-	  baz: "hello world"
-	}
+    bar: {
+      baz: "hello world"
+    }
   }
 }
 ```
@@ -86,7 +84,7 @@ c: 3
 ```
 
 So far all these declarations have been **property declarations** which
-contains a name and an expression, separated by a colon.
+contain a name and an expression, separated by a colon.
 
 Commas are entirely optional for delimiting declarations. Line endings
 are not significant. The following is a top-level block of three
@@ -130,7 +128,7 @@ in the symbol or punctuation classes are fine for operators.
 To control the precedence and associativity of user defined operators,
 you need metadata annotations.
 
-**declaration annotations** allow us to specify arbitrary metadata
+**Declaration annotations** allow us to specify arbitrary metadata
 against declarations. These can be used for documentation and similar.
 
 To attach an annotation to a declaration, squeeze it between a leading
@@ -149,8 +147,8 @@ Some metadata activate special handling, such as the `associates` and
 
 ```eu
 ` { doc: "`(f ∘ g)` - return composition of `f` and `g`"
-	associates: :right
-	precedence: 88 }
+    associates: :right
+    precedence: 88 }
 (f ∘ g): compose(f,g)
 ```
 
@@ -253,7 +251,7 @@ z: "da" &&& "dum"
 
 ### Calling functions
 
-Functions can be applied by suffixing a argument list in parens, with
+Functions can be applied by suffixing an argument list in parens, with
 *no intervening whitespace*:
 
 ```eu
@@ -275,7 +273,7 @@ In addition, functions are curried so can be partially applied:
 
 ```eu
 add(x, y): x + y
-incremement: add(1)
+increment: add(1)
 result: 2 increment
 ```
 
@@ -292,12 +290,10 @@ In fact, in many cases the underscores can be omitted, leading to a
 construct very similar to Haskell's *sections* only even brackets
 aren't necessary.
 
-!!! note
-
-	Eucalypt uses its knowledge of the fixity and associativity of
-	each operator to find "gaps" and fills them with the unwritten
-	underscores. This is great for simple cases but worth avoiding for
-	complicated expressions.
+> **Note:** Eucalypt uses its knowledge of the fixity and
+> associativity of each operator to find "gaps" and fills them with the
+> unwritten underscores. This is great for simple cases but worth
+> avoiding for complicated expressions.
 
 ```eu
 increment: + 1
@@ -313,11 +309,9 @@ result: [1, 2, 3] map(+1) filter(odd?) //=> [3]
 
 (`//=>` is an assertion operator which causes a panic if the left and
 right hand expressions aren't found to be equal at run time, but
-returns that value if they are.
+returns that value if they are.)
 
-!!! note
-
-	There are no explicit lambda expressions in Eucalypt right now.
-	For simple cases, expression or string anaphora should do the job.
-	For more involved cases, you should use a named function declaration.
-	See [Anaphora and Lambdas](anaphora-and-lambdas.md) for more.
+> **Note:** There are no explicit lambda expressions in Eucalypt right
+> now. For simple cases, expression or string anaphora should do the
+> job. For more involved cases, you should use a named function
+> declaration. See [Anaphora](../guide/anaphora.md) for more.

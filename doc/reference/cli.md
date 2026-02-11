@@ -1,4 +1,4 @@
-# `eu` command line
+# CLI Reference
 
 Eucalypt is available as a command line tool, `eu`, which reads inputs
 and writes outputs.
@@ -50,7 +50,7 @@ Inputs specify text data from:
  - files
  - stdin
  - internal resources (ignored for now)
- - (in future) HTTPS URLS or Git refs
+ - (in future) HTTPS URLs or Git refs
 
 ...of which the first two are the common case. In the simplest case,
 file inputs are specified by file name, stdin is specified by `-`.
@@ -153,7 +153,7 @@ The full input syntax is therefore:
 ```
 
 This applies at the command line and also when specifying
-[imports](imports.md) in `.eu` files.
+[imports](import-formats.md) in `.eu` files.
 
 ### *stdin* defaulting
 
@@ -204,7 +204,7 @@ The common use cases are:
 - a final input which uses functions defined in earlier inputs to
   process data provided in previous inputs
 
-If you want to __render_ contents of earlier inputs, you need a named
+If you want to render contents of earlier inputs, you need a named
 input to provide a name for that content which you can then use.
 
 For instance:
@@ -237,7 +237,7 @@ eu --collect-as inputs *.eu
 ```yaml
 inputs:
   - x: 4
-	y: 8
+    y: 8
   - z: 12
 ```
 
@@ -258,7 +258,7 @@ If you are likely to need to refer to inputs by name, you can add
 `--name-inputs` / `-N` to pass inputs as a block instead of a list:
 
 ```sh
-eu --collect-as inputs *.eu
+eu --collect-as inputs --name-inputs *.eu
 ```
 
 ...renders:
@@ -266,15 +266,15 @@ eu --collect-as inputs *.eu
 ```yaml
 inputs:
   a.eu:
-	x: 4
-	y: 8
+    x: 4
+    y: 8
   b.eu:
-	z: 12
+    z: 12
 ```
 
-This makes it possible to easier to invoke specific functions from
-named inputs although you will need single-quote name syntax to use
-the generated names which contain '.'s.
+This makes it easier to invoke specific functions from named inputs
+although you will need single-quote name syntax to use the generated
+names which contain `.`s.
 
 ## Outputs
 
@@ -301,7 +301,7 @@ There are various ways to override this. First, `:target` metadata can
 be specified in the final input to identify different parts for
 potential export.
 
-To list the **targets** found in the specified inputs, use the 
+To list the **targets** found in the specified inputs, use the
 `list-targets` subcommand.
 
 ```sh
@@ -395,11 +395,9 @@ automatically prepended to the input list.
 This can be suppressed using `-Q` if it is not required or if you
 would like to provide an alternative.
 
-!!! warning
-
-	Many very basic facilities - like the definition of `true` and
-	`false` and `if` - are provided by the prelude so suppressing it
-	leaves a very bare environment.
+> **Warning:** Many very basic facilities -- like the definition of
+> `true` and `false` and `if` -- are provided by the prelude so
+> suppressing it leaves a very bare environment.
 
 ## Debugging
 
@@ -448,7 +446,7 @@ All existing command patterns continue to work unchanged:
 
 ```sh
 eu file.eu                   # Still works (uses run subcommand)
-eu -e "expression"           # Still works (uses run subcommand)  
+eu -e "expression"           # Still works (uses run subcommand)
 eu -j file.eu                # Still works (JSON output)
 eu -S -Q file.eu             # Still works (statistics, no prelude)
 ```

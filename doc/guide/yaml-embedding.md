@@ -11,14 +11,13 @@ it is rich enough to be used for many YAML templating use cases,
 particularly when combined with the ability to specify several inputs
 on the command line.
 
-
 ## Evaluating eucalypt expressions
 
 As you would expect, YAML mappings correspond to Eucalypt blocks and
 bind names just as Eucalypt blocks do and YAML sequences correspond to
 Eucalypt lists.
 
-YAML allow a wide variety of forms of expressing these (block styles
+YAML allows a wide variety of forms of expressing these (block styles
 and flow styles), to the extent that JSON is valid YAML.
 
 Eucalypt expressions can be evaluated using the `!eu` tag and have
@@ -42,7 +41,6 @@ values:
 
 result: Hello World!
 ```
-
 
 ## Suppressing rendering
 
@@ -90,14 +88,14 @@ for larger chunks of text, combined with `!eu`. Using this workaround
 you can access capabilities of eucalypt that are not yet available in
 the YAML embedding. (Although operators cannot be made available in
 YAML blocks because of the way that operator names are bound - see
-[Operators and Identifiers](operators-and-identifiers.md).
+[Operator Precedence Table](../reference/operators-and-identifiers.md).)
 
 ```yaml
 block: !eu |
   {
-	x: 99
-	(l ^^^ r): "{l} <_> {r}"
-	f(n): n ^^^ x
+    x: 99
+    (l ^^^ r): "{l} <_> {r}"
+    f(n): n ^^^ x
   }
 
 result: block.f(99)

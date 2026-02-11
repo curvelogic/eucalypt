@@ -5,9 +5,9 @@ identifiers, like `x`, `y`, `α`, `א`, `ziggety-zaggety`, `zoom?`, and
 *operator identifiers* like `*`, `@`, `&&`, `∧`, `∘`, `⊙⊙⊙`, `<>` and
 so on.
 
-It is entirely a matter of the component characters which category and
+It is entirely a matter of the component characters which category an
 identifier falls into. Normal identifiers contain letters (including
-non-ascii characters), numbers, "-", "?", "$". Operator identifiers
+non-ASCII characters), numbers, "-", "?", "$". Operator identifiers
 contain the usual suspects and anything identified as an operator or
 symbol in unicode. Neither can contain ":" or "," or brackets which
 are special in eucalypt.
@@ -18,7 +18,6 @@ of single quotes in eucalypt. This can be useful when you want to use
 file paths or other external identifiers as block keys for instance:
 
 ```eu
-
 home: {
   '.bashrc': false
   '.emacs.d': false
@@ -26,32 +25,28 @@ home: {
 }
 
 z: home.'notes.txt'
-
 ```
 
 ## Normal identifiers
 
-Normal operators are brought into scope by declarations and can be
+Normal identifiers are brought into scope by declarations and can be
 referred to without qualification in their own block or in more
 nested blocks:
 
 ```eu
-
 x: {
   z: 99
   foo: z //=> 99
   bar: {
-	y: z //=> 99
+    y: z //=> 99
   }
 }
-
 ```
 
 They can be accessed from within other blocks using the lookup
 operator:
 
 ```eu
-
 x: {
   z: 99
 }
@@ -62,7 +57,6 @@ y: x.z //=> 99
 They can be overridden using generalised lookup:
 
 ```eu
-
 z: 99
 y: { z: 100 }."z is {z}" //=> "z is 100"
 ```
@@ -70,7 +64,6 @@ y: { z: 100 }."z is {z}" //=> "z is 100"
 They can be shadowed:
 
 ```eu
-
 z: 99
 y: { z: 100 r: z //=> 100 }
 ```
@@ -127,14 +120,12 @@ x: {
 ...and can be shadowed:
 
 ```eu
-
 (l !!! r): l + r
 
 y: {
   (l !!! r): l - r
   z: 100 !!! 1 //=> 99
 }
-
 ```
 
 But:

@@ -1,4 +1,4 @@
-# Imports
+# Import Formats
 
 Eucalypt supports importing content from other units in a variety of
 ways.
@@ -13,17 +13,15 @@ Imports are specified in declaration metadata and make the names in
 the imported unit available within the declaration that is annotated.
 
 ```eu
-
 { import: "config.eu" }
 data: {
   # names from config are available here
   x: config-value
 }
-
 ```
 
-As described in [syntax](syntax.md), declaration metadata can be
-applied at a unit level simply by including a metadata block as the
+As described in [Syntax Reference](syntax.md), declaration metadata can
+be applied at a unit level simply by including a metadata block as the
 very first thing in a eucalypt file:
 
 ```eu
@@ -32,7 +30,6 @@ very first thing in a eucalypt file:
 # names from config are available here
 
 x: config-value
-
 ```
 
 ## Import syntax
@@ -56,7 +53,7 @@ The import specification itself can be either a *simple import* or a
 ### Simple imports
 
 Simple imports are specified in exactly the same way as *inputs* are
-specified at the command line (see [command line](command-line.md)).
+specified at the command line (see [CLI Reference](cli.md)).
 
 So you can override the format of the imported file when the file
 extension is misleading:
@@ -76,7 +73,7 @@ available:
 x: cfg.x
 ```
 
-In cases, where the import format delivers a list rather than a block
+In cases where the import format delivers a list rather than a block
 ("text", "csv", "jsonl", ...) a name is mandatory:
 
 ```eu
@@ -95,11 +92,10 @@ explicitly manage a git working copy and a library path with the
 repeatability of a git SHA. A git import is specified as a block with
 the keys "git", "commit" and "import", all of which are mandatory:
 
-
 ```eu
 { import: { git: "https://github.com/gmorpheme/eu.aws"
-			commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
-			import: "aws/cloudformation.eu" } }
+            commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
+            import: "aws/cloudformation.eu" } }
 ```
 
 The `git` URL may be any format that the git command line expects.
@@ -168,7 +164,7 @@ base: &base
 ref: *base  # ref now has { x: 1, y: 2 }
 ```
 
-Nested anchors are supported—an anchored structure can itself contain
+Nested anchors are supported -- an anchored structure can itself contain
 anchored values:
 
 ```yaml

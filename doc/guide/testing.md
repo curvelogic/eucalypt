@@ -1,9 +1,9 @@
-# Test Mode
+# Testing with Eucalypt
 
-Eucalypt has an experimental built-in test runner which can be used to
-run tests embedded in eucalypt files.
+Eucalypt has a built-in test runner which can be used to run tests
+embedded in eucalypt files.
 
-Test mode is invoked by the `-T` command line flag and:
+Test mode is invoked by the `eu test` subcommand and:
 
 - analyses the file to build a test plan consisting of a list of test
   targets and validations to run
@@ -15,19 +15,17 @@ Test mode is invoked by the `-T` command line flag and:
 
 By default eucalypt searches for targets beginning with `test-` and
 runs each to render a `yaml` output. The result is parsed read back in
-a eucalypt checks for the presence of a `RESULT`' key. If it finds it
+and eucalypt checks for the presence of a `RESULT` key. If it finds it
 and the value is `PASS`, the test passes. Anything else is considered
 a fail.
 
 ```eu
-
 my-add(x, y): x + y
 
 ` { target: :test-add }
 test: {
   RESULT: (2 + 2 = 4) then(:PASS, :FAIL)
 }
-
 ```
 
 Several test targets can be embedded in one file. Each is run as a
@@ -59,16 +57,14 @@ add: {
   RESULT: (2 + 2 = 4) then(:PASS, :FAIL)
 }
 
-
 ` { target: :test-sub }
 sub: {
   RESULT: (2 - 2 = 0) then(:PASS, :FAIL)
 }
-
 ```
 
-Running this file using `-T` will result in four tests being run, two
-formats for each of the two targets.
+Running this file using `eu test` will result in four tests being run,
+two formats for each of the two targets.
 
 Using the default validator, for all formats for which eucalypt
 provides import and export capability, it shouldn't make any

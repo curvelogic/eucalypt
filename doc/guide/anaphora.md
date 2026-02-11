@@ -1,4 +1,4 @@
-# Anaphora and Lambdas
+# Anaphora (Implicit Parameters)
 
 Eucalypt doesn't have a lambda syntax in itself and prefers to
 encourage other approaches in most cases where you would use a lambda.
@@ -24,7 +24,7 @@ squares: [1, 2, 3] map(square) //=> [1, 4, 9]
 ```
 
 The drawbacks of this are:
-- polluting a namespace with a name that is need only once
+- polluting a namespace with a name that is needed only once
 - arguably, a slightly tedious verbosity
 
 The first can be dealt with as follows:
@@ -58,11 +58,10 @@ y: { a: 3 b: 4 }.{ c: a + b } //=> { c: 7 }
 z: { a: 3 b: 4 }."{a} and {b}" //=> "3 and 4"
 ```
 
-!!! warning
-
-	This is very effective for short and simple expressions but
-	quickly gets very complicated and hard to understand if you use it
-	too much. Nested or iterated generalised lookups are usually a bad idea.
+> **Warning:** This is very effective for short and simple expressions
+> but quickly gets very complicated and hard to understand if you use
+> it too much. Nested or iterated generalised lookups are usually a
+> bad idea.
 
 In the `squares` example above, generalised lookup is used to restrict
 the scope in which `square` is visible right down to the only
@@ -77,7 +76,7 @@ Any expression can become a function by referring to implicit
 parameters known as expression anaphora.
 
 These parameters are called `_0`, `_1` `_2`, and so on. There is also
-an unnumbered anaphorus, `_`, which we'll come back to.
+an unnumbered anaphor, `_`, which we'll come back to.
 
 Just referring to these parameters is enough to turn an expression
 into a lambda.
@@ -92,14 +91,13 @@ xs: zip-with(f, [1, 2, 3], [1, 2, 3]) //=> [3, 6, 9]
 xs: zip-with(_0 + 2 * _1, [1, 2, 3], [1, 2, 3]) //=> [3, 6, 9]
 ```
 
-!!! warning
-
-	Again, anaphora intended for use in simple cases where they are
-	readable and readily understood. The scope of the implicit parameters
-	is not easy to work out in complicated contexts. (It does not
-	extend past catenation or commas in lists or function application
-	tuples.) Anaphoric expressions are not, and not intended to be, a fully general lambda
-	syntax. Unlike explicit lambda constructions, you cannot nest anaphoric expressions.
+> **Warning:** Anaphora are intended for use in simple cases where
+> they are readable and readily understood. The scope of the implicit
+> parameters is not easy to work out in complicated contexts. (It does
+> not extend past catenation or commas in lists or function application
+> tuples.) Anaphoric expressions are not, and not intended to be, a
+> fully general lambda syntax. Unlike explicit lambda constructions,
+> you cannot nest anaphoric expressions.
 
 ```eu
 squares: [1, 2, 3] map(_0 * _0) //=> [1, 4, 9]
@@ -112,9 +110,9 @@ and `_0 * _1 + x * _2` can be written `_ * _ + x * _`.
 
 Each `_` represents a *different* implicit parameter, which is why we
 had to write `_0 * _0` in our squares example - it was important that
-the same parameter was reference twice.
+the same parameter was referenced twice.
 
-Sometime you need explicit parentheses to clarify the scope of
+Sometimes you need explicit parentheses to clarify the scope of
 expression anaphora:
 
 ```eu
@@ -125,7 +123,6 @@ y: block lookup(:a) //=> 1
 #
 # BUT NOT: block _.a
 #
-
 ```
 
 ## Sections
@@ -145,7 +142,7 @@ x: foldl(+, 0, [1, 2, 3]) = 6
 ```
 
 Again, use of sections is recommended only for short expressions or
-where the intention is obvious. This level of tersity can lead to
+where the intention is obvious. This level of terseness can lead to
 baffling code if abused.
 
 ## Block Anaphora
@@ -182,13 +179,13 @@ is chosen firstly because it looks like a hole and therefore makes
 sense as a placeholder, and secondly to discourage overuse of the
 feature...
 
-The following defines the function we want
+The following defines the function we want:
 
 ```eu
 f: { x: • y: • }
 ```
 
-...and can, of course, be used
+...and can, of course, be used:
 
 ```eu
 x: [[1, 2], [3, 4], [5, 6]] map({ x: • y: • } uncurry)
@@ -208,7 +205,6 @@ Indeed this does allow declaration of anonymous functions with named
 parameters and can occasionally be useful but it still falls short of
 a fully general lambda construction because it cannot (at least for
 now) be nested.
-
 
 ## String Anaphora
 

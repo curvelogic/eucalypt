@@ -4,7 +4,7 @@
 transforming structured data formats like YAML, JSON and TOML.
 
 If you use text-based templating to process these formats or you pipe
-this these formats through several different tools or build steps,
+these formats through several different tools or build steps,
 eucalypt might be able to help you generate your output more cleanly
 and with fewer cognitive somersaults.
 
@@ -14,37 +14,35 @@ easily from the command line.
 It has the following features:
 
   - a concise native syntax that allows you to define data, functions,
-	and operators
+    and operators
   - a simple embedding into YAML files to support in-place
-	manipulation of the data (a la templating)
+    manipulation of the data (a la templating)
   - facilities for manipulating blocks (think JSON objects, YAML
-	mappings)
+    mappings)
   - facilities for manipulating text including string interpolation
-	and regular expressions
+    and regular expressions
   - an ergonomic command line interface and access to environment
-	variables
+    variables
   - metadata annotations and numerous extension points
-  - a [*prelude*](prelude.md) of built in functions, acting like a standard library
+  - a [*prelude*](../reference/prelude/index.md) of built-in functions, acting like a standard library
 
 It can currently read YAML, JSON, JSON Lines, TOML, EDN, XML, CSV and
 plain text and eucalypt's own ("eu") syntax and it can export YAML, JSON,
 TOML, EDN or plain text.
 
-!!! warning
-
-	eucalypt is still in an early phase of development and subject to
-	change.
+> **Warning:** eucalypt is still in an early phase of development and
+> subject to change.
 
 ## A lightning tour
 
-Eucalypt has a native [syntax](syntax.md) for writing blocks,
+Eucalypt has a native [syntax](../reference/syntax.md) for writing blocks,
 lists and expressions. The YAML embedding consists of a few YAML tags
 used to embed eucalypt expression in YAML so a basic understanding of
 the native syntax is helpful.
 
 A few micro-examples should help give a flavour of eucalypt's
-native syntax. If you want to follow along, see [Getting
-Started](getting-started.md) for notes on installation.
+native syntax. If you want to follow along, see [Quick
+Start](quick-start.md) for notes on installation.
 
 ### Example 1
 
@@ -87,16 +85,14 @@ bit. In this example, `map` is a function of two parameters. Its first
 argument is provided in parentheses and its second argument is the
 value of what came before.
 
-!!! note
-
-	Users of languages like Elixir or OCaml may recognise an implicit
-	`|>` operator here. Clojure users may see an invisible threading
-	macro. Note that writing elements next to each other like this gives
-	you the _reverse_ of what you might expect in Haskell or OCaml or
-	Lisp: we write `x f` *not* `f x`.
+> **Note:** Users of languages like Elixir or OCaml may recognise an
+> implicit `|>` operator here. Clojure users may see an invisible
+> threading macro. Note that writing elements next to each other like
+> this gives you the _reverse_ of what you might expect in Haskell or
+> OCaml or Lisp: we write `x f` *not* `f x`.
 
 There is a lot of freedom in eucalypt to express ideas in different
-ways and develop colorful and cryptic expressions. In a larger or
+ways and develop colourful and cryptic expressions. In a larger or
 more ambitious language this could be viewed as rope to hang yourself
 with. Please be careful.
 
@@ -112,12 +108,10 @@ function, not just sequence of characters
   automatically for us, so in this case, `{}` is a convenient synonym
   for `{0}` - the first argument
 
-!!! note
-
-	Anaphora crop up in various contexts in eucalypt and are generally
-	preferable to the full generality of lambdas. If the idea is too
-	complex to be expressed with anaphora, it should generally be
-	explicitly named.
+> **Note:** Anaphora crop up in various contexts in eucalypt and are
+> generally preferable to the full generality of lambdas. If the idea
+> is too complex to be expressed with anaphora, it should generally be
+> explicitly named.
 
 So:
 
@@ -133,14 +127,12 @@ a: The answer is 42
 
 eucalypt also has *expression anaphora* and *block anaphora*
 
-!!! note
-
-	Users of Groovy or Kotlin may recognise an equivalent of the `it`
-	parameter. Seasoned Lisp hackers are familiar with anaphoric macros.
-	Clojure users will recognise the `%`, `%1`, `%2` forms from
-	`#(...)` contexts. Unlike `%` repeated uses of unnumbered
-	anaphora in eucalypt refer to different parameters. `"{}{}"` is a
-	two-argument function which concatenates strings.
+> **Note:** Users of Groovy or Kotlin may recognise an equivalent of
+> the `it` parameter. Seasoned Lisp hackers are familiar with
+> anaphoric macros. Clojure users will recognise the `%`, `%1`, `%2`
+> forms from `#(...)` contexts. Unlike `%` repeated uses of unnumbered
+> anaphora in eucalypt refer to different parameters. `"{}{}"` is a
+> two-argument function which concatenates strings.
 
 Back to:
 
@@ -184,14 +176,12 @@ ok2: { a: 1, b: 2, c: 3 }
 ok3: { a: 1, b: 2, c: 3, }
 ```
 
-!!! note
-
-	Unlike Clojure which makes commas optional by
-	treating them as whitespace, Eucalypt demands that if you are
-	going to put commas in, they have to be in the right place, at the
-	end of declarations. So you can use them if you believe it makes
-	things clearer but you are prevented from using them in ways which
-	would misguide.
+> **Note:** Unlike Clojure which makes commas optional by treating
+> them as whitespace, Eucalypt demands that if you are going to put
+> commas in, they have to be in the right place, at the end of
+> declarations. So you can use them if you believe it makes things
+> clearer but you are prevented from using them in ways which would
+> misguide.
 
 Our `target-zones` property declaration is at the **top level** so
 need not be surrounded by braces. Nevertheless it is in a block: the
@@ -300,16 +290,14 @@ same timestamps.
 
 Block merge can be a useful means of generating common content in
 objects. The common content can appear first as in this case, allowing
-it to be overridden. Or it couple be applied second allowing it to
+it to be overridden. Or it could be applied second allowing it to
 override the existing detail. Or a mixture of both. Many more
 sophisticated means of combining block data are available too.
 
-!!! note
-
-	This merge is similar to the effect of *merge keys* in YAML, where a
-	special `<<` mapping key causes a similar merge to occur. Not all
-	YAML processors support this and nor does eucalypt at present, but
-	it probably will some day.
+> **Note:** This merge is similar to the effect of *merge keys* in
+> YAML, where a special `<<` mapping key causes a similar merge to
+> occur. Not all YAML processors support this and nor does eucalypt at
+> present, but it probably will some day.
 
 Be aware that eucalypt has nothing like virtual functions. The
 functions in scope when an expression is created are the ones that are
@@ -406,14 +394,14 @@ other non-renderable content.
 It is possible to select just parts of the eucalypt for rendering:
 
   1. A declaration in the source may be identified as the **main**
-	 target using the `:main` declaration metadata and we become the
-	 part rendered by default.
+     target using the `:main` declaration metadata and we become the
+     part rendered by default.
   2. **targets** may be defined and named using the `:target`
-	 declaration metadata and those targets can then be specified
-	 using the `-t` option to `eu`
+     declaration metadata and those targets can then be specified
+     using the `-t` option to `eu`
   3. The `-e` option can be used in addition to other
-	 source file(s) to identify an expression to be rendered (e.g. `eu
-	 test.eu -e x.y.z`)
+     source file(s) to identify an expression to be rendered (e.g. `eu
+     test.eu -e x.y.z`)
 
 So `eu`'s ability to read JSON and YAML natively combined with the
 last options give a simple way to pick values out of structured data
@@ -435,4 +423,4 @@ There is much more to this story. For instance `eu` can:
 - override the default extensions: `eu yaml@info.txt`
 - automatically use `Eufile` files in the current folder hierarchy
 
-See [command line](command-line.md) for more complete documentation.
+See [CLI Reference](../reference/cli.md) for more complete documentation.

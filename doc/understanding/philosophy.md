@@ -1,6 +1,6 @@
-# eucalypt (the language)
+# Design Philosophy
 
-**eucalypt**, the language, is unorthodox in many respects - probably
+**eucalypt**, the language, is unorthodox in many respects -- probably
 more than you might realise on first acquaintance.
 
 People tend to have deep-seated and inflexible opinions about
@@ -25,7 +25,7 @@ eucalypt files that are predominantly data rather than manipulation.
 The **eucalypt** language is the depth behind these one-liners that
 allows **eucalypt** to accommodate increasingly ambitious use cases
 without breaking the paradigm and reaching for a general purpose
-imperative scripting language or the lowest common denominator or
+imperative scripting language or the lowest common denominator of
 text-based templating languages.
 
 The pre-eminence of one-liners and small annotations and "logic
@@ -35,17 +35,17 @@ wordy and transparent. This is a controversial approach.
 - **eucalypt** logic should "get out of the way" of the data. Templating
   is attractive precisely because the generating source looks very
   like the result. Template tags are often short (with "cryptic"
-  delimiters - `{{}}`, `<%= %>`, `[| ]`...) because these are "marking
+  delimiters -- `{{}}`, `<%= %>`, `[| ]`...) because these are "marking
   up" the data which is the main event. At the same time, the tags are
   often "noisy" or visually disruptive to ensure they cannot be
   ignored. **eucalypt** via operator and bracket definitions, picks and
-  chooseS from a similar palette of expressive effects to try and be a
+  chooses from a similar palette of expressive effects to try and be a
   sympathetic cohabitee with its accompanying data.
 
 - There are many cases where it makes sense to resist offering an
   incomplete understanding in favour of demanding full understanding.
   For example, it is spurious to say that `bind(x, f)` gives more
-  understanding of what is going on than `x >>= f` - unless you
+  understanding of what is going on than `x >>= f` -- unless you
   understand the monad abstraction and the role of bind in it, you
   gain nothing useful from the ideas that the word `bind` connotes
   when you are trying to understand program text.
@@ -71,7 +71,7 @@ These stances lead directly to several slightly esoteric aspects of
 
 - **eucalypt** lets you define your own operators and specify their
   precedence and associativity (which are applied at a relatively late
-  stage in the evaluation pipeline - *operator soup* persists through
+  stage in the evaluation pipeline -- *operator soup* persists through
   the initial parse). There are no ternary operators.
 
 - For absolute minimal intrusion, merely the act of placing elements
@@ -97,7 +97,7 @@ should be almost entirely data.
 
 The idea behind **eucalypt** is to adopt the basic maps-and-arrays
 organisation philosophy of these data formats but make the data
-*active* - allowing lambdas to live in and amongst it and operate on
+*active* -- allowing lambdas to live in and amongst it and operate on
 it and allowing the data to express dispositions towards its
 environment by addition of metadata that controls import, export, and
 execution preferences.
@@ -116,7 +116,7 @@ Nevertheless **eucalypt** is heavily inspired by Lisp and aims for a
 similar fluidity through:
 
 - lazy evaluation (going some way towards matching uses of Lisp macros
-  which control evaluation order - in eucalypt, `if` is just a
+  which control evaluation order -- in eucalypt, `if` is just a
   function)
 - economical syntax to facilitate (future) manipulation of code as
   data
@@ -130,7 +130,7 @@ similar fluidity through:
 
 - **eucalypt** values familiarity mostly in the "shallower" parts of
   the language where it only requires a couple of mental leaps for the
-  average programmer in these areas - the (ab)use of catenation being
+  average programmer in these areas -- the (ab)use of catenation being
   the key one.
 
 - However, **eucalypt** isn't ashamed of its dusty corners. Dusty
@@ -145,10 +145,9 @@ similar fluidity through:
 
 #### Footnotes
 
-
 [^1]: Inspired by *idiom brackets*. If I didn't call them that,
-	someone else would.
+    someone else would.
 
 [^2]: Applicative Programming with Effects, Conor McBride and Ross
-	Paterson. (2008)
-	http://www.staff.city.ac.uk/~ross/papers/Applicative.html
+    Paterson. (2008)
+    http://www.staff.city.ac.uk/~ross/papers/Applicative.html
