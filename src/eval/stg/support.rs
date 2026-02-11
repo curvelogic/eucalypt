@@ -30,7 +30,7 @@ pub fn num_arg(
     if let Native::Num(n) = native {
         Ok(n)
     } else {
-        Err(ExecutionError::NotEvaluatedNumber(Smid::default()))
+        Err(ExecutionError::NotEvaluatedNumber(machine.annotation()))
     }
 }
 
@@ -44,7 +44,7 @@ pub fn str_arg(
     if let Native::Str(s) = native {
         Ok((*view.scoped(s)).as_str().to_string())
     } else {
-        Err(ExecutionError::NotEvaluatedString(Smid::default()))
+        Err(ExecutionError::NotEvaluatedString(machine.annotation()))
     }
 }
 
@@ -58,7 +58,7 @@ pub fn sym_arg(
     if let Native::Sym(id) = native {
         Ok(machine.symbol_pool().resolve(id).to_string())
     } else {
-        Err(ExecutionError::NotEvaluatedString(Smid::default()))
+        Err(ExecutionError::NotEvaluatedString(machine.annotation()))
     }
 }
 
@@ -72,7 +72,7 @@ pub fn zdt_arg(
     if let Native::Zdt(dt) = native {
         Ok(dt)
     } else {
-        Err(ExecutionError::NotEvaluatedZdt(Smid::default()))
+        Err(ExecutionError::NotEvaluatedZdt(machine.annotation()))
     }
 }
 
@@ -277,13 +277,13 @@ pub fn resolve_native_unboxing(
                     Ok(native)
                 }
                 _ => Err(ExecutionError::NotValue(
-                    Smid::default(),
+                    machine.annotation(),
                     "non-boxed constructor".to_string(),
                 )),
             }
         }
         _ => Err(ExecutionError::NotValue(
-            Smid::default(),
+            machine.annotation(),
             "expected native value".to_string(),
         )),
     }
