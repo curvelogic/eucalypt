@@ -842,8 +842,8 @@ impl StgIntrinsic for Lookup {
                 local(0),
                 // [sym] [k block]
                 let_(
-                    vec![value(call::bif::panic(str("key not found")))],
-                    // [panic] [sym] [k block]
+                    vec![value(LookupFail.global(lref(1), lref(3)))],
+                    // [fail] [sym] [k block]
                     LookupOr(NativeVariant::Unboxed).global(lref(1), lref(0), lref(3)),
                 ),
             ),
@@ -1186,12 +1186,139 @@ impl StgIntrinsic for IsBlock {
 
 impl CallGlobal1 for IsBlock {}
 
+/// Levenshtein edit distance between two strings
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a_len = a.len();
+    let b_len = b.len();
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        swap(&mut prev, &mut curr);
+    }
+    prev[b_len]
+}
+
+/// Collect all key names from a block as strings
+fn collect_block_keys(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    block_closure: &SynClosure,
+) -> Vec<String> {
+    let nav = machine.nav(view);
+    let code = view.scoped(block_closure.code());
+    let blocklist_ref = match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => args.get(0),
+        _ => None,
+    };
+    let list_closure = blocklist_ref.and_then(|r| nav.resolve_in_closure(block_closure, r));
+    let Some(list_closure) = list_closure else {
+        return Vec::new();
+    };
+    let iter = BlockListIterator {
+        closure: list_closure,
+        nav: &nav,
+        done: false,
+    };
+    let pool = machine.symbol_pool();
+    iter.filter_map(|pair| {
+        let sym_id = pair_key_symbol_id(view, &pair)?;
+        Some(pool.resolve(sym_id).to_string())
+    })
+    .collect()
+}
+
+/// Find similar keys using edit distance
+fn suggest_similar(key: &str, available: &[String], max_suggestions: usize) -> Vec<String> {
+    let key_len = key.len();
+    let threshold = (key_len * 2 / 5).max(2);
+    let mut candidates: Vec<(usize, &str)> = available
+        .iter()
+        .filter_map(|k| {
+            let dist = edit_distance(key, k);
+            if dist > 0 && dist <= threshold {
+                Some((dist, k.as_str()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    candidates.sort_by_key(|(dist, _)| *dist);
+    candidates
+        .into_iter()
+        .take(max_suggestions)
+        .map(|(_, k)| k.to_string())
+        .collect()
+}
+
+/// Format a key-not-found error message with optional suggestions
+fn format_key_not_found(key: &str, suggestions: &[String]) -> String {
+    if suggestions.is_empty() {
+        format!("key '{key}' not found in block")
+    } else if suggestions.len() == 1 {
+        format!(
+            "key '{key}' not found in block (did you mean '{}'?)",
+            suggestions[0]
+        )
+    } else {
+        let quoted: Vec<String> = suggestions.iter().map(|n| format!("'{n}'")).collect();
+        format!(
+            "key '{key}' not found in block (did you mean one of: {}?)",
+            quoted.join(", ")
+        )
+    }
+}
+
+/// LOOKUPFAIL(key, block)
+///
+/// Called when a key lookup fails. Collects available keys from the
+/// block, computes edit distances, and produces a helpful error
+/// message with "did you mean?" suggestions.
+pub struct LookupFail;
+
+impl StgIntrinsic for LookupFail {
+    fn name(&self) -> &str {
+        "LOOKUPFAIL"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let nav = machine.nav(view);
+        let key_name = match nav.resolve_native(&args[0]) {
+            Ok(Native::Sym(sym_id)) => machine.symbol_pool().resolve(sym_id).to_string(),
+            _ => "?".to_string(),
+        };
+        let block_closure = nav.resolve(&args[1])?;
+        let available_keys = collect_block_keys(machine, view, &block_closure);
+        let suggestions = suggest_similar(&key_name, &available_keys, 3);
+        let message = format_key_not_found(&key_name, &suggestions);
+        Err(ExecutionError::Panic(message))
+    }
+}
+
+impl CallGlobal2 for LookupFail {}
+
 /// Compile a panic for a missing key
 pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
     use dsl::*;
 
     let_(
-        vec![value(box_str(format!("Key not found: {key}")))],
+        vec![value(box_str(format!("key '{}' not found in block", key)))],
         Panic.global(lref(0)),
     )
 }
