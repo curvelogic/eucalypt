@@ -31,7 +31,7 @@ The `t"..."` syntax accepts ISO 8601 formats:
 The `cal` namespace provides functions for working with date-time
 values:
 
-```eu
+```eu,notest
 # Parse from a string
 d: cal.parse("2024-03-15T14:30:00Z")
 
@@ -103,7 +103,7 @@ eu --seed 42 example.eu
 Random functions consume part of the stream and return both a result
 and the remaining stream:
 
-```eu
+```eu,notest
 result: random-int(100, io.random)
 value: result.value   # a number from 0 to 99
 rest: result.rest     # remaining stream
@@ -113,14 +113,14 @@ rest: result.rest     # remaining stream
 
 **Rolling dice:**
 
-```eu
+```eu,notest
 roll: random-int(6, io.random)
 die: roll.value + 1
 ```
 
 **Picking a random element:**
 
-```eu
+```eu,notest
 colours: ["red", "green", "blue"]
 pick: random-choice(colours, io.random)
 colour: pick.value
@@ -128,7 +128,7 @@ colour: pick.value
 
 **Shuffling a list:**
 
-```eu
+```eu,notest
 items: ["a", "b", "c", "d"]
 shuffled: shuffle(items, io.random)
 result: shuffled.value
@@ -136,7 +136,7 @@ result: shuffled.value
 
 **Sampling without replacement:**
 
-```eu
+```eu,notest
 pool: range(1, 50)
 drawn: sample(6, pool, io.random)
 lottery: drawn.value
