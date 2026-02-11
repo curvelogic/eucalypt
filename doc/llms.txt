@@ -1,0 +1,61 @@
+# Eucalypt
+
+> Eucalypt is a functional language and command-line tool for generating,
+> templating, rendering and processing structured data formats like YAML,
+> JSON and TOML. It features lazy evaluation, powerful data pipelines,
+> and first-class support for merging and transforming nested structures.
+
+Eucalypt is written in Rust and distributed as a single binary (`eu`).
+It reads structured data in multiple formats, processes it using a
+functional expression language, and outputs the result in the format
+of your choice.
+
+Key features: blocks (key-value mappings), lists, string interpolation,
+curried functions, catenation-based pipelines, operator definitions,
+metadata system, import system, lazy evaluation.
+
+## Getting Started
+
+- [What is Eucalypt?](https://curvelogic.github.io/eucalypt/welcome/what-is-eucalypt.html): Overview of eucalypt's purpose and design
+- [Quick Start](https://curvelogic.github.io/eucalypt/welcome/quick-start.html): Installation and first steps
+- [Eucalypt by Example](https://curvelogic.github.io/eucalypt/welcome/by-example.html): 15 worked examples showing real-world usage
+
+## The Eucalypt Guide
+
+- [Blocks and Declarations](https://curvelogic.github.io/eucalypt/guide/blocks-and-declarations.html): Blocks, units, property/function/operator declarations, scope, lookup
+- [Expressions and Pipelines](https://curvelogic.github.io/eucalypt/guide/expressions-and-pipelines.html): Primitives, operators, sections, currying, pipeline style
+- [Lists and Transformations](https://curvelogic.github.io/eucalypt/guide/lists-and-transformations.html): List operations, map, filter, fold, sort, zip
+- [String Interpolation](https://curvelogic.github.io/eucalypt/guide/string-interpolation.html): Interpolation syntax, string functions, anaphora
+- [Functions and Combinators](https://curvelogic.github.io/eucalypt/guide/functions-and-combinators.html): Defining, composing, identity, flip, complement
+- [Operators](https://curvelogic.github.io/eucalypt/guide/operators.html): Built-in operators, precedence, custom operator definitions
+- [Anaphora](https://curvelogic.github.io/eucalypt/guide/anaphora.html): Implicit parameters (_0, sections, block anaphora, string anaphora)
+- [Block Manipulation](https://curvelogic.github.io/eucalypt/guide/block-manipulation.html): keys, values, map-values, select, merge, deep queries
+- [Imports and Modules](https://curvelogic.github.io/eucalypt/guide/imports-and-modules.html): Importing files, named imports, git imports, streaming
+- [Working with Data](https://curvelogic.github.io/eucalypt/guide/working-with-data.html): Format conversion, data pipelines, render targets
+- [The Command Line](https://curvelogic.github.io/eucalypt/guide/command-line.html): CLI usage, subcommands, inputs, outputs, formatting
+- [YAML Embedding](https://curvelogic.github.io/eucalypt/guide/yaml-embedding.html): Integrating eucalypt with YAML workflows
+- [Testing](https://curvelogic.github.io/eucalypt/guide/testing.html): Writing and running tests with //=> assertions
+- [Date, Time, and Random Numbers](https://curvelogic.github.io/eucalypt/guide/date-time-random.html): ZDT operations, random number generation
+- [Advanced Topics](https://curvelogic.github.io/eucalypt/guide/advanced-topics.html): Metadata, sets, deep queries, lazy evaluation, encoding
+
+## Reference
+
+- [Language Syntax Reference](https://curvelogic.github.io/eucalypt/reference/syntax.html): Formal syntax description
+- [Operator Precedence Table](https://curvelogic.github.io/eucalypt/reference/operators-and-identifiers.html): All operators with precedence and associativity
+- [Prelude Reference](https://curvelogic.github.io/eucalypt/reference/prelude/index.html): All built-in functions and operators
+- [CLI Reference](https://curvelogic.github.io/eucalypt/reference/cli.html): Complete command-line documentation
+- [Import Formats](https://curvelogic.github.io/eucalypt/reference/import-formats.html): Import syntax and supported formats
+- [Export Formats](https://curvelogic.github.io/eucalypt/reference/export-formats.html): Output format options
+- [Error Messages Guide](https://curvelogic.github.io/eucalypt/reference/error-messages.html): Understanding error output
+
+## Appendices
+
+- [Syntax Cheat Sheet](https://curvelogic.github.io/eucalypt/appendices/cheat-sheet.html): Quick reference card
+- [Syntax Gotchas](https://curvelogic.github.io/eucalypt/appendices/syntax-gotchas.html): Common pitfalls and solutions
+- [FAQ](https://curvelogic.github.io/eucalypt/faq.html): Frequently asked questions
+
+## Optional
+
+- [Design Philosophy](https://curvelogic.github.io/eucalypt/understanding/philosophy.html): Why eucalypt works the way it does
+- [Lazy Evaluation](https://curvelogic.github.io/eucalypt/understanding/lazy-evaluation.html): How lazy evaluation works in eucalypt
+- [Migration from v0.2 to v0.3](https://curvelogic.github.io/eucalypt/appendices/migration.html): Breaking changes between versions
