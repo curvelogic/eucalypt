@@ -1,51 +1,29 @@
 # Booleans and Comparison
 
-## Constants
-
-- `true` -- Boolean true
-- `false` -- Boolean false
-- `null` -- Null value (exports as `null` in JSON, `~` in YAML)
-- `nil` -- Empty list `[]`
-
-## Control Flow
+## Essentials
 
 | Function | Description |
 |----------|-------------|
-| `if(c, t, f)` | If `c` is true return `t`, else `f` |
-| `then(t, f, c)` | Pipeline-friendly if: `x? then(t, f)` |
-| `when(p?, f, x)` | When `x` satisfies `p?`, apply `f`, else pass through |
-| `cond(l, d)` | Select first true condition from list of `[condition, value]` pairs, else default `d` |
+| `null` | A null value. To export as `null` in JSON or ~ in YAML |
+| `true` | Constant logical true |
+| `false` | Constant logical false |
+| `if` | If `c` is `true`, return `t` else `f` |
+| `then(t, f, c)` | For pipeline if: - `x? then(t, f)` |
+| `when(p?, f, x)` | When `x` satisfies `p?` apply `f` else pass through unchanged |
 
-## Error Handling
-
-| Function | Description |
-|----------|-------------|
-| `panic(s)` | Raise runtime error with message `s` |
-| `assert(c, s, v)` | If `c` is true return `v`, else error with message `s` |
-
-## Boolean Functions
+## Error and Debug Support
 
 | Function | Description |
 |----------|-------------|
-| `not(b)` | Toggle boolean |
-| `and(l, r)` | Logical and |
-| `or(l, r)` | Logical or |
+| `panic` | Raise runtime error with message string `s` |
+| `assert(c, s, v)` | If `c` is true then value `v` otherwise error with message `s` |
 
-## Boolean Operators
+## Boolean Logic
 
-| Operator | Description |
+| Function | Description |
 |----------|-------------|
-| `!x` or `¬x` | Not (prefix) |
-| `l && r` or `l ∧ r` | And |
-| `l \|\| r` or `l ∨ r` | Or |
-
-## Equality and Comparison
-
-| Operator | Description |
-|----------|-------------|
-| `l = r` | Equality |
-| `l != r` | Inequality |
-| `l < r` | Less than |
-| `l > r` | Greater than |
-| `l <= r` | Less than or equal |
-| `l >= r` | Greater than or equal |
+| `not` | Toggle boolean |
+| `(! b)` | Not x, toggle boolean |
+| `(¬ b)` | Not x, toggle boolean |
+| `and` | True if and only if `l` and `r` are true |
+| `or` | True if and only if `l` or `r` is true |

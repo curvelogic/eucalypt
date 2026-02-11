@@ -1,27 +1,23 @@
 # Combinators
 
-| Function | Description |
-|----------|-------------|
-| `identity(v)` | Return `v` unchanged |
-| `const(k)` | Function that always returns `k` |
-| `-> k` | Operator form of `const` |
-| `compose(f, g, x)` | Apply `f` to `g(x)` |
-| `f ∘ g` | Composition: `g` then `f` |
-| `f ; g` | Composition: `f` then `g` |
-| `l @ r` | Application: `l(r)` |
-| `apply(f, xs)` | Apply `f` to args in list |
-| `flip(f)` | Swap argument order |
-| `complement(p?)` | Invert predicate |
-| `curry(f)` | Convert `f([x,y])` to `f(x,y)` |
-| `uncurry(f)` | Convert `f(x,y)` to `f([x,y])` |
-| `juxt(f, g, x)` | Return `[f(x), g(x)]` |
-| `fnil(f, v, x)` | Replace null with `v` before applying `f` |
-
-## Pairs
+## Combinators
 
 | Function | Description |
 |----------|-------------|
-| `pair(k, v)` | Create pair `[k, v]` |
-| `bimap(f, g, pr)` | Apply `f` to first, `g` to second |
-| `map-first(f, prs)` | Apply `f` to first elements |
-| `map-second(f, prs)` | Apply `f` to second elements |
+| `identity(v)` | Identity function, return value `v` |
+| `const(k, _)` | Return single arg function that always returns `k` |
+| `(-> k)` | Const; return single arg function that always returns `k` |
+| `compose(f, g, x)` | Apply function `f` to `g(x)` |
+| `apply(f, xs)` | Apply function `f` to arguments in list `xs` |
+| `flip(f, x, y)` | Flip arguments of function `f`, flip(f)(x, y) == f(y, x) |
+| `complement(p?)` | Invert truth value of predicate function |
+| `curry(f, x, y)` | Turn f([x, y]) into f' of two parameters (x, y) |
+| `uncurry(f, l)` | Turn f(x, y) into f' that expects [x, y] as a list |
+| `cond(l, d)` | In list `l` of [condition, value] select first true condition, returning value, else default `d` |
+| `juxt(f, g, x)` | `juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)` |
+
+## Utilities
+
+| Function | Description |
+|----------|-------------|
+| `fnil(f, v, x)` | Return a function equivalent to f except it sees `x` instead of `null` when null is passed |

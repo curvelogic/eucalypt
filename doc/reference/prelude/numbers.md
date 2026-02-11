@@ -1,35 +1,25 @@
 # Numbers and Arithmetic
 
-## Operators
-
-| Operator | Description |
-|----------|-------------|
-| `l + r` | Addition |
-| `l - r` | Subtraction |
-| `l * r` | Multiplication |
-| `l / r` | Division |
-| `l % r` | Modulus |
-| `∸ n` | Unary minus (negate) |
-
-## Functions
+## Arithmetic Operators
 
 | Function | Description |
 |----------|-------------|
-| `inc(x)` | Increment by 1 |
-| `dec(x)` | Decrement by 1 |
-| `negate(n)` | Negate number |
-| `num(s)` | Parse number from string |
-| `floor(n)` | Round down to integer |
-| `ceiling(n)` | Round up to integer |
-| `max(l, r)` | Maximum of two numbers |
-| `min(l, r)` | Minimum of two numbers |
-| `max-of(l)` | Maximum in list |
-| `min-of(l)` | Minimum in list |
+| `(∸ n)` | Unary minus; negate |
 
-## Predicates
+## Numeric Functions
 
 | Function | Description |
 |----------|-------------|
-| `zero?(n)` | True if `n` is 0 |
-| `pos?(n)` | True if `n` is positive |
-| `neg?(n)` | True if `n` is negative |
+| `inc` | Increment number `x` by 1 |
+| `dec` | Decrement number `x` by 1 |
+| `negate` | Negate number `n` |
+| `zero?` | Return true if and only if number `n` is 0 |
+| `pos?` | Return true if and only if number `n` is strictly positive |
+| `neg?` | Return true if and only if number `n` is strictly negative |
+| `num` | Parse number from string |
+| `floor` | Round number downwards to nearest integer |
+| `ceiling` | Round number upwards to nearest integer |
+| `max(l, r)` | Return max of numbers `l` and `r` |
+| `max-of(l)` | `max-of(l) - return max element in list of numbers `l` - error if empty` |
+| `min(l, r)` | Return min of numbers `l` and `r` |
+| `min-of(l)` | `min-of(l) - return min element in list of numbers `l` - error if empty` |
