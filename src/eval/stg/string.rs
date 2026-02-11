@@ -33,7 +33,6 @@ use super::{
     tags::DataConstructor,
 };
 
-use itertools::Itertools;
 use regex::Regex;
 use serde_json::Number;
 
@@ -170,7 +169,9 @@ impl StgIntrinsic for Join {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let sep = str_arg(machine, view, &args[1])?;
-        let result = str_list_arg(machine, view, args[0].clone())?.join(&sep);
+        let strings: Vec<String> =
+            str_list_arg(machine, view, args[0].clone())?.collect::<Result<Vec<_>, _>>()?;
+        let result = strings.join(&sep);
         machine_return_str(machine, view, result)
     }
 }

@@ -1096,11 +1096,13 @@ impl StgIntrinsic for Merge {
         let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
         for item in l {
+            let item = item?;
             let (k, kv) = deconstruct(view, machine.symbol_pool(), &item)?;
             merge.insert(k, kv);
         }
 
         for item in r {
+            let item = item?;
             let (k, kv) = deconstruct(view, machine.symbol_pool(), &item)?;
             merge.insert(k, kv);
         }
@@ -1199,11 +1201,13 @@ impl StgIntrinsic for MergeWith {
         let mut merge: IndexMap<String, SynClosure> = IndexMap::new();
 
         for item in l {
+            let item = item?;
             let (key, value) = deconstruct(view, machine.symbol_pool(), &item)?;
             merge.insert(key, value);
         }
 
         for item in r {
+            let item = item?;
             let (key, nv) = deconstruct(view, machine.symbol_pool(), &item)?;
             if let Some(ov) = merge.get_mut(&key) {
                 let args = [ov.clone(), nv];
