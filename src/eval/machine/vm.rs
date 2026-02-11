@@ -269,7 +269,13 @@ impl MachineState {
             }
             HeapSyn::App { callable, args } => {
                 let array = view.create_arg_array(args.as_slice(), environment)?;
-                self.push(view, Continuation::ApplyTo { args: array })?;
+                self.push(
+                    view,
+                    Continuation::ApplyTo {
+                        args: array,
+                        annotation: self.annotation,
+                    },
+                )?;
                 self.closure = self.nav(view).resolve_callable(&callable)?;
             }
             HeapSyn::Bif { intrinsic, args } => {
@@ -403,8 +409,8 @@ impl MachineState {
                 Continuation::Update { environment, index } => {
                     self.update(view, environment, index)?;
                 }
-                Continuation::ApplyTo { .. } => {
-                    return Err(ExecutionError::NotCallable(Smid::default()));
+                Continuation::ApplyTo { annotation, .. } => {
+                    return Err(ExecutionError::NotCallable(annotation));
                 }
                 Continuation::DeMeta {
                     or_else,
@@ -475,7 +481,7 @@ impl MachineState {
                 Continuation::Update { environment, index } => {
                     self.update(view, environment, index)?;
                 }
-                Continuation::ApplyTo { args } => {
+                Continuation::ApplyTo { args, annotation } => {
                     // Block application: blocks can be applied as
                     // functions, delegating to __MERGE. This is the
                     // only data type with callable semantics — lists,
@@ -484,7 +490,7 @@ impl MachineState {
                     if tag == DataConstructor::Block.tag() {
                         let mut args = Array::from_slice(&view, args.as_slice());
                         args.push(&view, self.closure.clone());
-                        self.push(view, Continuation::ApplyTo { args })?;
+                        self.push(view, Continuation::ApplyTo { args, annotation })?;
                         self.closure = SynClosure::new(
                             view.atom(Ref::G(
                                 intrinsics::index("MERGE")
@@ -494,7 +500,7 @@ impl MachineState {
                             self.env(view),
                         );
                     } else {
-                        return Err(ExecutionError::NotCallable(Smid::default()));
+                        return Err(ExecutionError::NotCallable(annotation));
                     }
                 }
                 Continuation::DeMeta {
@@ -521,7 +527,7 @@ impl MachineState {
             let continuation = (*(view.scoped(cont))).clone();
 
             match continuation {
-                Continuation::ApplyTo { args } => {
+                Continuation::ApplyTo { args, annotation } => {
                     let excess = args.len() as isize - self.closure.arity() as isize;
 
                     match excess.cmp(&0) {
@@ -539,6 +545,7 @@ impl MachineState {
                                 view,
                                 Continuation::ApplyTo {
                                     args: Array::from_slice(&view, surplus),
+                                    annotation,
                                 },
                             )?;
                         }
@@ -604,7 +611,7 @@ impl MachineState {
                     let cont_env = view.scoped(*environment);
                     cont_env.annotation()
                 }
-                _ => return None,
+                Continuation::ApplyTo { annotation, .. } => *annotation,
             };
 
             if smid != Smid::default() && smid != prev {
