@@ -65,7 +65,7 @@ jobs:
 
   release-candidate-linux:
     needs: [lint, test, audit]
-    name: Release Linux
+    name: Release Linux x86_64
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     steps:
@@ -230,11 +230,59 @@ jobs:
           name: eu_darwin
           path: target/release/eu_darwin
 
+  release-candidate-linux-arm:
+    needs: [lint, test, audit]
+    name: Release Linux aarch64
+    runs-on: ubuntu-24.04-arm
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-arm-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-arm-cargo-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and install temporary eu
+        run: cargo install --path .
+      - name: Prepare build files for new version
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+
+          eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+
+          echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
+      - name: Run release tests
+        run: cargo test --release
+      - name: Build release
+        run: cargo build --all --release
+      - run: |
+          strip target/release/eu
+          mv target/release/eu target/release/eu_aarch64
+      - name: Run final test with release binary
+        run: |
+          target/release/eu_aarch64 version
+          target/release/eu_aarch64 test harness/test
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: eu_aarch64
+          path: target/release/eu_aarch64
+
   prepare-release:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     needs:
       - release-candidate-linux
+      - release-candidate-linux-arm
       - release-candidate-macos
     steps:
 
@@ -248,6 +296,10 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          name: eu_aarch64
+
+      - uses: actions/download-artifact@v4
+        with:
           name: CHANGELOG.md
 
       - name: Prepare release packages
@@ -255,9 +307,14 @@ jobs:
           mkdir eucalypt-x86_64-linux
           cp eu_amd64 eucalypt-x86_64-linux/eu
           tar -cvzf eucalypt-x86_64-linux.tgz eucalypt-x86_64-linux
-          mkdir eucalypt-x86_64-osx
-          cp eu_darwin eucalypt-x86_64-osx/eu
-          tar -cvzf eucalypt-x86_64-osx.tgz eucalypt-x86_64-osx
+
+          mkdir eucalypt-aarch64-linux
+          cp eu_aarch64 eucalypt-aarch64-linux/eu
+          tar -cvzf eucalypt-aarch64-linux.tgz eucalypt-aarch64-linux
+
+          mkdir eucalypt-aarch64-osx
+          cp eu_darwin eucalypt-aarch64-osx/eu
+          tar -cvzf eucalypt-aarch64-osx.tgz eucalypt-aarch64-osx
 
       - name: Query binary for version number
         run: |
@@ -273,6 +330,7 @@ jobs:
           body_path: CHANGELOG.md
           files: |
             eucalypt-x86_64-linux.tgz
-            eucalypt-x86_64-osx.tgz
+            eucalypt-aarch64-linux.tgz
+            eucalypt-aarch64-osx.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
