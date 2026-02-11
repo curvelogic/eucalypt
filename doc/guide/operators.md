@@ -11,9 +11,8 @@ own with custom precedence and associativity.
 a: 3 + 4    //=> 7
 b: 10 - 3   //=> 7
 c: 6 * 7    //=> 42
-d: 15 / 4   //=> 3.75
+d: 15 / 4   //=> 3
 e: 15 % 4   //=> 3
-f: 2 ** 10  //=> 1024
 ```
 
 ### Comparison
@@ -23,8 +22,7 @@ a: 3 < 4   //=> true
 b: 3 > 4   //=> false
 c: 3 <= 3  //=> true
 d: 3 >= 4  //=> false
-e: 3 == 3  //=> true
-f: 3 != 4  //=> true
+e: 3 = 3   //=> true
 ```
 
 ### Boolean
@@ -74,13 +72,12 @@ Operators bind at these precedences (highest binds tightest):
 |------------|-----------------|-------------------------------------|---------------|
 | 90         | Lookup          | `.`                                 | Left          |
 | 88         | Boolean unary   | `not`                               | --            |
-| 85         | Exponentiation  | `**`                                | Right         |
 | 80         | Product         | `*`, `/`, `%`                       | Left          |
 | 75         | Sum             | `+`, `-`                            | Left          |
 | 50         | Comparison      | `<`, `>`, `<=`, `>=`                | Left          |
 | 45         | Append          | `++`                                | Right         |
 | 42         | Map             | `\|`                                | Left          |
-| 40         | Equality        | `==`, `!=`                          | Left          |
+| 40         | Equality        | `=`                                 | Left          |
 | 35         | Boolean and     | `&&`                                | Left          |
 | 30         | Boolean or      | `\|\|`                              | Left          |
 | 20         | Catenation      | (juxtaposition)                     | Left          |

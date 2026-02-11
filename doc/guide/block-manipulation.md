@@ -10,12 +10,12 @@ transforming blocks as data.
 
 ```eu
 b: { x: 1 y: 2 z: 3 }
-ks: keys(b)     //=> ["x", "y", "z"]
+ks: keys(b)     //=> [:x, :y, :z]
 vs: values(b)   //=> [1, 2, 3]
-es: elements(b) //=> [["x", 1], ["y", 2], ["z", 3]]
+es: elements(b) //=> [[:x, 1], [:y, 2], [:z, 3]]
 ```
 
-`keys` returns a list of key names as strings. `values` returns the
+`keys` returns a list of key names as symbols. `values` returns the
 corresponding values. `elements` returns key-value pairs.
 
 ### Lookup functions
@@ -35,7 +35,7 @@ default if the key is missing. `has` tests for key existence.
 
 ```eu
 b: { x: 1 y: 2 z: 3 }
-n: len(b) //=> 3
+n: b keys count //=> 3
 ```
 
 ## Transforming blocks
@@ -73,7 +73,7 @@ result: b map-elements(k v: [str.to-upper(k), v * 10])
 
 Keep only specified keys:
 
-```eu
+```eu,notest
 b: { x: 1 y: 2 z: 3 }
 result: b select([:x, :y]) //=> { x: 1 y: 2 }
 ```
@@ -82,7 +82,7 @@ result: b select([:x, :y]) //=> { x: 1 y: 2 }
 
 Remove specified keys:
 
-```eu
+```eu,notest
 b: { x: 1 y: 2 z: 3 }
 result: b dissoc([:z]) //=> { x: 1 y: 2 }
 ```
@@ -194,7 +194,7 @@ a: block?({ x: 1 })   # => true
 b: block?([1, 2])     # => false
 ```
 
-Other type predicates: `number?`, `string?`, `list?`, `null?`,
+Other type predicates: `number?`, `string?`, `list?`, `nil?`,
 `bool?`, `sym?`.
 
 ## Practical example

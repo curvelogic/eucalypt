@@ -61,7 +61,7 @@ data: [
   { name: "Carol" age: 35 role: "dev" }
 ]
 
-devs: data filter(_.role == "dev") map(.name) //=> ["Alice", "Carol"]
+devs: data filter(_.role = "dev") map(.name) //=> ["Alice", "Carol"]
 ```
 
 ### Aggregation
@@ -69,7 +69,7 @@ devs: data filter(_.role == "dev") map(.name) //=> ["Alice", "Carol"]
 ```eu
 scores: [85, 92, 78, 96, 88]
 total: scores foldl(+, 0)     //=> 439
-count: len(scores)             //=> 5
+cnt: count(scores)             //=> 5
 ```
 
 ### Sorting
@@ -137,7 +137,7 @@ Mark a declaration as the render target to control what gets output:
 ```eu,notest
 ` :target
 summary: {
-  count: len(data)
+  count: count(data)
   names: data map(.name)
 }
 
@@ -185,7 +185,7 @@ sales: [
 report: {
   total-revenue: sales map(s: s.qty * s.price) foldl(+, 0)
   top-seller: sales sort-by-num(s: 0 - s.qty * s.price) head
-  product-count: len(sales)
+  product-count: count(sales)
 }
 
 revenue: report.total-revenue //=> 3375

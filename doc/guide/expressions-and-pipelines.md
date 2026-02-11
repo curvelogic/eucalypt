@@ -28,9 +28,9 @@ Standard numeric operators:
 a: 3 + 4     //=> 7
 b: 10 - 3    //=> 7
 c: 6 * 7     //=> 42
-d: 15 / 4    //=> 3.75
-e: 15 % 4    //=> 3
-f: 2 ** 10   //=> 1024
+d: 15 / 4    //=> 3
+e: 15.0 / 4  //=> 3.75
+f: 15 % 4    //=> 3
 ```
 
 ## Comparison
@@ -40,8 +40,7 @@ a: 3 < 4     //=> true
 b: 3 > 4     //=> false
 c: 3 <= 3    //=> true
 d: 3 >= 4    //=> false
-e: 3 == 3    //=> true
-f: 3 != 4    //=> true
+e: 3 = 3     //=> true
 ```
 
 ## Boolean logic
@@ -59,7 +58,6 @@ Double-quoted strings support embedded expressions in curly braces:
 ```eu
 name: "world"
 greeting: "hello, {name}" //=> "hello, world"
-calc: "2 + 2 = {2 + 2}"  //=> "2 + 2 = 4"
 ```
 
 See [String Interpolation](string-interpolation.md) for more detail.
@@ -125,8 +123,8 @@ one argument in parentheses to create a function:
 
 ```eu
 xs: [1, 2, 3]
-doubled: xs map (* 2)  //=> [2, 4, 6]
-bumped: xs map (+ 10)  //=> [11, 12, 13]
+doubled: xs map(* 2)  //=> [2, 4, 6]
+bumped: xs map(+ 10)  //=> [11, 12, 13]
 ```
 
 The missing operand becomes the parameter. Both left and right
@@ -162,11 +160,10 @@ Eucalypt operators have standard precedences (highest binds tightest):
 | Precedence | Operators                    |
 |------------|------------------------------|
 | 90         | `.` (lookup)                 |
-| 85         | `**` (exponentiation)        |
 | 80         | `*`, `/`, `%` (product)      |
 | 75         | `+`, `-` (sum)               |
 | 50         | `<`, `>`, `<=`, `>=` (comparison) |
-| 40         | `==`, `!=` (equality)        |
+| 40         | `=` (equality)               |
 | 35         | `&&` (boolean and)           |
 | 30         | `||` (boolean or)            |
 | 20         | catenation                   |

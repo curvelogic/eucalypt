@@ -45,8 +45,8 @@ A section is a partially applied operator written in parentheses:
 
 ```eu
 xs: [1, 2, 3]
-doubled: xs map (* 2)  //=> [2, 4, 6]
-bumped: xs map (+ 10)  //=> [11, 12, 13]
+doubled: xs map(* 2)  //=> [2, 4, 6]
+bumped: xs map(+ 10)  //=> [11, 12, 13]
 ```
 
 The missing operand becomes the parameter. Both left and right
@@ -71,33 +71,15 @@ result: 21 double negate //=> -42
 
 This reads naturally as a pipeline: take 21, double it, negate it.
 
-## Inline functions
-
-You can define anonymous functions inline using a parameter-colon
-syntax:
-
-```eu
-xs: [1, 2, 3, 4]
-evens: xs filter(n: n % 2 == 0) //=> [2, 4]
-```
-
-Multi-parameter inline functions:
-
-```eu
-xs: [3, 1, 4, 1, 5]
-desc: xs qsort(a b: b < a) //=> [5, 4, 3, 1, 1]
-```
-
 ## No lambda syntax
 
 Eucalypt has no standalone lambda syntax like `\x -> x + 1`. Instead,
 use:
 
 - **Named functions**: `double(x): x * 2`
-- **Inline functions**: `xs map(x: x * 2)`
+- **Expression anaphora**: `xs map(_0 * 2)`
 - **Sections**: `xs map(* 2)`
-- **String anaphora**: `xs map("{_}")`
-- **Block anaphora**: `xs map(_.name)`
+- **String anaphora**: `xs map("{0}")`
 
 ## Composition operators
 
@@ -125,10 +107,10 @@ negate-then-double: double ∘ negate
 
 ## Identity and const
 
-`id` returns its argument unchanged:
+`identity` returns its argument unchanged:
 
 ```eu
-result: id(42) //=> 42
+result: identity(42) //=> 42
 ```
 
 `const` takes two arguments and returns the first:
@@ -154,8 +136,9 @@ bus: flip(sub)       # now takes y first, then x
 `complement` negates a predicate:
 
 ```eu
+is-even(n): n % 2 = 0
 xs: [1, 2, 3, 4, 5, 6]
-odds: xs filter(complement(n: n % 2 == 0)) //=> [1, 3, 5]
+odds: xs filter(complement(is-even)) //=> [1, 3, 5]
 ```
 
 ## The `@` operator

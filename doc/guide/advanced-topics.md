@@ -197,7 +197,7 @@ pairs: cross(xs, ys)
 
 ```eu,notest
 xs: [1, 2, 3, 4, 5, 6]
-grouped: xs discriminate(n: n % 2 == 0)
+grouped: xs discriminate(n: n % 2 = 0)
 # => { true: [2, 4, 6] false: [1, 3, 5] }
 ```
 
@@ -215,11 +215,9 @@ b: num("3.14") //=> 3.14
 Test the type of a value:
 
 ```eu
-a: number?(42)     //=> true
-b: string?("hi")   //=> true
-c: list?([1, 2])   //=> true
-d: bool?(true)     //=> true
-e: null?(null)     //=> true
+a: list?([1, 2])   //=> true
+b: block?({x: 1})  //=> true
+c: nil?([])        //=> true
 ```
 
 ## Error handling

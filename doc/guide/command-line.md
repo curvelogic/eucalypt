@@ -99,7 +99,7 @@ Target metadata controls which declarations are rendered:
 
 ```eu,notest
 ` :target
-summary: len(data)
+summary: count(data)
 
 data: [1, 2, 3]
 ```

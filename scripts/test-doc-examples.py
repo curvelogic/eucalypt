@@ -52,7 +52,7 @@ class CodeBlock:
 
     @property
     def has_assertions(self) -> bool:
-        return '//=>' in self.code or '//!' in self.code
+        return '//=>' in self.code or '//!' in self.code or '//=?' in self.code
 
     @property
     def label(self) -> str:
@@ -126,7 +126,11 @@ def is_likely_fragment(code: str) -> bool:
     first_line = lines[0]
 
     # Check for common fragment patterns
-    # - starts with a pipe (shell command)
+    # - starts with ellipsis (pseudocode placeholder in syntax.md)
+    if first_line.startswith('...'):
+        return True
+
+    # - starts with a pipe or $ (shell command)
     if first_line.startswith('|') or first_line.startswith('$'):
         return True
 

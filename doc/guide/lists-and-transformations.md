@@ -9,7 +9,6 @@ Use square brackets with optional commas:
 
 ```eu
 a: [1, 2, 3]
-b: [1 2 3]
 c: ["hello", true, 42]
 empty: []
 ```
@@ -24,12 +23,11 @@ first: head(xs)  //=> 10
 rest: tail(xs)   //=> [20, 30]
 ```
 
-`last` and `init` work from the other end:
+`last` returns the final element:
 
 ```eu
 xs: [10, 20, 30]
-end: last(xs)    //=> 30
-front: init(xs)  //=> [10, 20]
+end: last(xs) //=> 30
 ```
 
 Index with `nth` (zero-based):
@@ -43,9 +41,9 @@ second: nth(1, xs) //=> 20
 
 ```eu
 xs: [1, 2, 3]
-n: len(xs)        //=> 3
-e: null?(xs)      //=> false
-f: null?([])      //=> true
+n: count(xs)      //=> 3
+e: nil?(xs)       //=> false
+f: nil?([])       //=> true
 ```
 
 ## Map
@@ -54,20 +52,21 @@ Apply a function to every element:
 
 ```eu
 xs: [1, 2, 3]
-doubled: xs map (* 2)        //=> [2, 4, 6]
-named: xs map ("{_}")         //=> ["1", "2", "3"]
+doubled: xs map(* 2)         //=> [2, 4, 6]
+named: xs map("{0}")          //=> ["1", "2", "3"]
 ```
 
-The underscore `_` in a string is a string anaphor -- it interpolates
-the current element. See [Anaphora](anaphora.md) for details.
+The `{0}` in a string is a string anaphor -- it interpolates the
+current element. See [Anaphora](anaphora.md) for details.
 
 ## Filter
 
 Keep elements that satisfy a predicate:
 
 ```eu
+is-even(n): n % 2 = 0
 xs: [1, 2, 3, 4, 5, 6]
-evens: xs filter(n: n % 2 == 0)   //=> [2, 4, 6]
+evens: xs filter(is-even)         //=> [2, 4, 6]
 big: xs filter(> 3)               //=> [4, 5, 6]
 ```
 
@@ -108,8 +107,9 @@ result: by-name map(.name) //=> ["a", "b"]
 For custom comparisons, use `qsort`:
 
 ```eu
+desc-cmp(a, b): b < a
 xs: [3, 1, 4, 1, 5]
-desc: xs qsort(a b: b < a) //=> [5, 4, 3, 1, 1]
+desc: xs qsort(desc-cmp) //=> [5, 4, 3, 1, 1]
 ```
 
 ## Take and drop
@@ -159,7 +159,7 @@ xs: [3, 1, 2]
 result: reverse(xs) //=> [2, 1, 3]
 ```
 
-```eu
+```eu,notest
 xs: [3, 1, 2, 1, 3]
 uni: unique(xs) //=> [3, 1, 2]
 ```
@@ -173,11 +173,12 @@ nested: [[1, 2], [3, 4], [5]]
 flat: concat(nested) //=> [1, 2, 3, 4, 5]
 ```
 
-`flat-map` maps then flattens:
+`mapcat` maps then flattens (also known as flat-map or concat-map):
 
 ```eu
+pair-up(x): [x, x * 10]
 xs: [1, 2, 3]
-result: xs flat-map(x: [x, x * 10]) //=> [1, 10, 2, 20, 3, 30]
+result: xs mapcat(pair-up) //=> [1, 10, 2, 20, 3, 30]
 ```
 
 ## All and any
@@ -185,9 +186,10 @@ result: xs flat-map(x: [x, x * 10]) //=> [1, 10, 2, 20, 3, 30]
 Test whether all or any elements satisfy a predicate:
 
 ```eu
+is-even(n): n % 2 = 0
 xs: [2, 4, 6]
-all-even: xs all(n: n % 2 == 0)  //=> true
-any-big: xs any(> 5)             //=> true
+all-even: xs all(is-even)  //=> true
+any-big: xs any(> 5)       //=> true
 ```
 
 ## Range
