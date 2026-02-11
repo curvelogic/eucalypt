@@ -89,7 +89,7 @@ fn server_capabilities() -> ServerCapabilities {
             },
         )),
         document_formatting_provider: Some(lsp_types::OneOf::Left(true)),
-        document_range_formatting_provider: None,
+        document_range_formatting_provider: Some(lsp_types::OneOf::Left(true)),
         references_provider: Some(lsp_types::OneOf::Left(true)),
         code_action_provider: None,
         inlay_hint_provider: Some(lsp_types::OneOf::Left(true)),
@@ -526,7 +526,7 @@ fn on_range_formatting(
 ) -> Option<Vec<lsp_types::TextEdit>> {
     let uri = &params.text_document.uri;
     let text = store.get(uri)?;
-    let edits = formatting::format_range(text, &params.options);
+    let edits = formatting::format_range(text, &params.range, &params.options);
     Some(edits)
 }
 
@@ -653,9 +653,9 @@ mod tests {
     }
 
     #[test]
-    fn server_capabilities_has_no_range_formatting() {
+    fn server_capabilities_has_range_formatting() {
         let caps = server_capabilities();
-        assert!(caps.document_range_formatting_provider.is_none());
+        assert!(caps.document_range_formatting_provider.is_some());
     }
 
     #[test]
