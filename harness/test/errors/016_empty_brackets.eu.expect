@@ -1,2 +1,2 @@
 exit: 1
-stderr: "EmptyExpression"
+stderr: "empty expression where a value was expected"

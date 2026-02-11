@@ -23,7 +23,7 @@ where
         let errors: Vec<String> = parse_result
             .errors()
             .iter()
-            .map(|e| format!("{e:?}"))
+            .map(|e| format!("{e}"))
             .collect();
         return Err(ParserError::Syntax(
             crate::syntax::error::SyntaxError::InvalidInputFormat(
@@ -52,7 +52,7 @@ where
         let errors: Vec<String> = parse_result
             .errors()
             .iter()
-            .map(|e| format!("{e:?}"))
+            .map(|e| format!("{e}"))
             .collect();
         return Err(ParserError::Syntax(
             crate::syntax::error::SyntaxError::InvalidInputFormat(

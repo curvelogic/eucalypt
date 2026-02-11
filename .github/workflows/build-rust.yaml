@@ -106,13 +106,15 @@ jobs:
           target/release/eu_amd64 test harness/test
       - name: Generate release notes
         run: |
+          # Fetch tags created by GitHub releases
+          git fetch --tags origin
           # Find the previous release tag
           PREV_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            echo "No previous release found, using full log"
+          if [ -z "$PREV_TAG" ] || ! git rev-parse "$PREV_TAG" >/dev/null 2>&1; then
+            echo "No resolvable previous release tag, using recent log"
             echo "# Release Notes" > CHANGELOG.md
             echo "" >> CHANGELOG.md
-            git log --pretty=format:'- %s' >> CHANGELOG.md
+            git log --pretty=format:'- %s' -20 >> CHANGELOG.md
           else
             echo "Generating changelog since $PREV_TAG"
             echo "# Release Notes" > CHANGELOG.md
