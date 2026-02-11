@@ -17,7 +17,7 @@ and commits must be public-ready from day one.
 | Name | Role | Worktree | Scope |
 |------|------|----------|-------|
 | **Aoife** | Error messages & diagnostics | `eucalypt-errors` | eu-fti1 (20 children) |
-| **Brennan** | Documentation & examples | `eucalypt-docs` | eu-wma8 (13 children), eu-zuif |
+| **Brennan** | Documentation | `eucalypt-docs` | eu-wma8 (13 children) |
 | **Ciara** | Compiler, formats, LSP, changelog | `eucalypt-compiler` | eu-vt15, eu-7n8k, eu-ntib, eu-t99l |
 | **Declan** | CI/infrastructure, then error messages | `eucalypt-ci` | eu-epe4, eu-1j9u, then joins Aoife |
 | **Eilis** | Reviewer/architect | main repo | PR gate, cross-stream, quality |
@@ -224,10 +224,6 @@ Phase 4 (agent-friendly docs — depends on content):
   - eu-4wl6: Expand AGENTS.md with language reference
   - eu-e1xm: Create dedicated agent reference page
 
-AoC 2025 (can work on this alongside Phase 3):
-  - eu-zuif: Solve Advent of Code 2025 puzzles in eucalypt
-    (solutions feed into Eucalypt by Example)
-
 DOCUMENTATION REVIEW PROTOCOL:
 Content produced for Phase 3 and Phase 4 (Guide chapters, Examples,
 FAQ, cheat sheet, agent docs) REQUIRES USER REVIEW before merge.
@@ -249,7 +245,6 @@ SPECIAL RULES:
 - Use documentation testing (once eu-iy92 is complete) to validate
 - Follow the agreed site structure exactly (see design plan)
 - Prelude reference auto-generation should split by category
-- Synergy: AoC solutions feed into Eucalypt by Example content
 - Architecture/GC docs stay in repo but NOT in published site
 ```
 
@@ -490,7 +485,6 @@ normal Eilis review and merge.
 | eu-w4s0 (type mismatches) done | Aoife | Aoife (eu-knck) | same agent, sequential |
 | eu-tzy0 (mdBook) done | Brennan | Brennan (all Phase 2+) | same agent, sequential |
 | eu-c2q5 (content migration) done | Brennan | Brennan (Guide, Examples, FAQ) | same agent, sequential |
-| eu-zuif (AoC solutions) | Brennan | Brennan (Examples content) | same agent, feeds content |
 | eu-fti1 (error messages) progress | Aoife | Brennan (Error Messages Guide) | orchestrator coordinates timing |
 | eu-lvbn + eu-w2c8 (embeds) done | Ciara | Ciara (eu-li2a docs) | same agent, sequential |
 | Install instructions available | Declan | Brennan (Quick Start docs) | orchestrator notifies |
@@ -545,7 +539,7 @@ coordination goes through the orchestrator.
 | Agent | Tasks |
 |-------|-------|
 | Aoife + Declan | Phase 4 polish (error codes, suggestions, recovery) |
-| Brennan | eu-hiig (Examples), eu-dxwb (FAQ), eu-zuif (AoC), Phase 4 agent docs |
+| Brennan | eu-hiig (Examples), eu-dxwb (FAQ), Phase 4 agent docs |
 | Ciara | eu-li2a (format docs), any remaining tasks |
 | Eilis | Final reviews, ensure all streams converge |
 
