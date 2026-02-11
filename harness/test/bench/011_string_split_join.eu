@@ -1,0 +1,28 @@
+# String split/join benchmark
+#
+# Exercises repeated split and join operations on strings,
+# measuring regex compilation, string allocation, and list processing.
+
+csv-line: "alice,bob,charlie,dave,eve,frank,grace,heidi,ivan,judy"
+
+split-rejoin(sep, line): line str.split-on(sep) str.join-on(sep)
+
+rt-1: split-rejoin(",", csv-line)
+rt-2: split-rejoin(",", rt-1)
+rt-3: split-rejoin(",", rt-2)
+rt-4: split-rejoin(",", rt-3)
+rt-5: split-rejoin(",", rt-4)
+
+words: "the quick brown fox jumps over the lazy dog near the old mill stream"
+word-list: words str.split-on("\s+")
+word-count: word-list count
+
+reassembled: word-list str.join-on("-")
+
+` { target: :bench-string-split-join }
+bench-string-split-join: {
+  preserved: rt-5
+  words: word-count
+  rejoined: reassembled
+  RESULT: if(word-count = 14, :PASS, :FAIL)
+}

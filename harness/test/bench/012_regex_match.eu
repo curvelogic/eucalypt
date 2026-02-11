@@ -1,0 +1,49 @@
+# Regex match benchmark
+#
+# Exercises regex matching, capture groups, and repeated pattern
+# application across multiple strings. Measures regex cache
+# effectiveness and string processing throughput.
+
+log-lines: [
+  "2024-01-15 10:30:45 INFO  [main] Starting application v2.1.0",
+  "2024-01-15 10:30:46 WARN  [pool-1] Connection timeout after 5000ms",
+  "2024-01-15 10:30:47 ERROR [pool-2] Failed to connect: ECONNREFUSED",
+  "2024-01-15 10:30:48 INFO  [main] Retrying connection attempt 1/3",
+  "2024-01-15 10:30:49 DEBUG [pool-1] Socket opened on port 8080",
+  "2024-01-15 10:30:50 INFO  [main] Connection established successfully",
+  "2024-01-15 10:30:51 WARN  [pool-3] Slow query detected: 2500ms",
+  "2024-01-15 10:30:52 ERROR [pool-2] Query timeout exceeded",
+  "2024-01-15 10:30:53 INFO  [main] Failover to secondary database",
+  "2024-01-15 10:30:54 DEBUG [pool-1] Health check passed",
+  "2024-01-15 10:30:55 INFO  [main] All services healthy",
+  "2024-01-15 10:30:56 WARN  [pool-4] Memory usage above 80%"
+]
+
+# Extract timestamps using match
+extract-ts(line): line str.match-with("^(\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}})") head
+
+# Extract log levels
+extract-level(line): line str.match-with("(INFO|WARN|ERROR|DEBUG)") head
+
+# Extract thread names
+extract-thread(line): line str.match-with("\[([^\]]+)\]") tail head
+
+# Process all lines
+timestamps: log-lines map(extract-ts)
+levels: log-lines map(extract-level)
+threads: log-lines map(extract-thread)
+
+n-timestamps: timestamps count
+n-levels: levels count
+n-threads: threads count
+
+` { target: :bench-regex-match }
+bench-regex-match: {
+  timestamp-count: n-timestamps
+  level-count: n-levels
+  thread-count: n-threads
+  first-ts: timestamps head
+  first-level: levels head
+  first-thread: threads head
+  RESULT: if(n-timestamps = 12, :PASS, :FAIL)
+}
