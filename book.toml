@@ -1,0 +1,24 @@
+[book]
+title = "Eucalypt"
+description = "A tool and language for generating, templating, rendering and processing structured data"
+authors = ["Greg Hawkins"]
+language = "en"
+src = "doc"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/curvelogic/eucalypt"
+edit-url-template = "https://github.com/curvelogic/eucalypt/edit/master/{path}"
+site-url = "/eucalypt/"
+no-section-label = false
+additional-css = ["doc/custom.css"]
+
+[output.html.search]
+enable = true
+limit-results = 30
+
+[output.html.fold]
+enable = true
+level = 1
