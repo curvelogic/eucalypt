@@ -176,20 +176,16 @@ eu base.yaml prod.yaml -T -e 'render-config'
 ## Practical example: data report
 
 ```eu
+line-total(s): s.qty * s.price
+
 sales: [
-  { product: "Widget" qty: 100 price: 10 }
-  { product: "Gadget" qty: 50 price: 25 }
-  { product: "Gizmo" qty: 75 price: 15 }
+  { product: "Widget", qty: 100, price: 10 },
+  { product: "Gadget", qty: 50, price: 25 },
+  { product: "Gizmo", qty: 75, price: 15 }
 ]
 
-report: {
-  total-revenue: sales map(s: s.qty * s.price) foldl(+, 0)
-  top-seller: sales sort-by-num(s: 0 - s.qty * s.price) head
-  product-count: count(sales)
-}
-
-revenue: report.total-revenue //=> 3375
-count: report.product-count   //=> 3
+revenue: sales map(line-total) foldl(+, 0) //=> 3375
+product-count: count(sales)                //=> 3
 ```
 
 ## Next steps
