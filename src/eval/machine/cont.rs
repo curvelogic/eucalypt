@@ -2,14 +2,17 @@
 
 use std::fmt;
 
-use crate::eval::{
-    memory::{
-        alloc::StgObject,
-        array::Array,
-        collect::{CollectorHeapView, GcScannable, ScanPtr},
-        syntax::{HeapSyn, RefPtr},
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        memory::{
+            alloc::StgObject,
+            array::Array,
+            collect::{CollectorHeapView, GcScannable, ScanPtr},
+            syntax::{HeapSyn, RefPtr},
+        },
+        stg::tags::Tag,
     },
-    stg::tags::Tag,
 };
 
 use super::env::{EnvFrame, SynClosure};
@@ -47,7 +50,10 @@ pub enum Continuation {
         index: usize,
     },
     /// Once callable is evaluated, apply to args
-    ApplyTo { args: Array<SynClosure> },
+    ApplyTo {
+        args: Array<SynClosure>,
+        annotation: Smid,
+    },
     /// Catch metadata and pass it (with body) to handler
     DeMeta {
         /// handler receives metdata and body as bound args
@@ -98,7 +104,7 @@ impl fmt::Display for Continuation {
             Continuation::Update { index, .. } => {
                 write!(f, "☇[ρ,{index}]")
             }
-            Continuation::ApplyTo { args } => {
+            Continuation::ApplyTo { args, .. } => {
                 write!(f, "•(×{})", args.len())
             }
             Continuation::DeMeta { .. } => {
@@ -148,7 +154,7 @@ impl GcScannable for Continuation {
                     out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
-            Continuation::ApplyTo { args } => {
+            Continuation::ApplyTo { args, .. } => {
                 if marker.mark_array(args) {
                     for arg in args.iter() {
                         out.push(ScanPtr::new(scope, arg));
@@ -202,7 +208,7 @@ impl GcScannable for Continuation {
                     *environment = new;
                 }
             }
-            Continuation::ApplyTo { args } => {
+            Continuation::ApplyTo { args, .. } => {
                 for closure in args.iter_mut() {
                     closure.scan_and_update(heap);
                 }

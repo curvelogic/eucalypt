@@ -48,6 +48,9 @@ pub trait IntrinsicMachine {
 
     /// Mutable access to the symbol pool for interning new symbols
     fn symbol_pool_mut(&mut self) -> &mut SymbolPool;
+
+    /// Current source annotation for error reporting
+    fn annotation(&self) -> Smid;
 }
 
 /// All intrinsics have an STG syntax wrapper

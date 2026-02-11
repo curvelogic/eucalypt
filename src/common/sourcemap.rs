@@ -208,8 +208,10 @@ impl SourceMap {
             .iter()
             .filter_map(|smid| {
                 if let Some(info) = self.source.get(smid.get()) {
-                    info.annotation
+                    let display_text = info
+                        .annotation
                         .as_deref()
+                        .and_then(intrinsic_display_name)
                         .or_else(|| {
                             info.file
                                 .and_then(|id| files.get(id).ok())
@@ -217,8 +219,8 @@ impl SourceMap {
                                     info.span
                                         .and_then(|span| file.source().get(Range::from(span)))
                                 })
-                        })
-                        .map(|text| format!("- {text}"))
+                        });
+                    display_text.map(|text| format!("- {text}"))
                 } else {
                     None
                 }
@@ -226,5 +228,90 @@ impl SourceMap {
             .collect();
 
         elements.as_slice().join("\n")
+    }
+}
+
+/// Map internal intrinsic names to user-facing display names.
+///
+/// Returns `None` for internal machinery that should be filtered out
+/// of user-visible traces.
+fn intrinsic_display_name(name: &str) -> Option<&str> {
+    match name {
+        // Arithmetic operators
+        "ADD" => Some("+"),
+        "SUB" => Some("-"),
+        "MUL" => Some("*"),
+        "DIV" => Some("/"),
+        "MOD" => Some("mod"),
+        "FLOOR" => Some("floor"),
+        "CEILING" => Some("ceiling"),
+
+        // Comparison operators
+        "EQ" => Some("=="),
+        "LT" => Some("<"),
+        "GT" => Some(">"),
+        "LTE" => Some("<="),
+        "GTE" => Some(">="),
+
+        // Boolean operators
+        "NOT" => Some("not"),
+
+        // String functions
+        "LETTERS" => Some("str.letters"),
+        "UPPER" => Some("str.upper"),
+        "LOWER" => Some("str.lower"),
+        "SPLIT" => Some("str.split"),
+        "MATCH" => Some("str.match"),
+        "MATCHES" => Some("str.matches"),
+        "JOIN" => Some("str.join"),
+        "FMT" => Some("fmt"),
+        "STR" => Some("str"),
+        "SYM" => Some("sym"),
+        "NUMPARSE" => Some("num.parse"),
+
+        // Collection functions
+        "LOOKUP" => Some("lookup"),
+        "LOOKUPOR" => Some("lookup-or"),
+        "HEAD" => Some("head"),
+        "TAIL" => Some("tail"),
+        "CONS" => Some("cons"),
+        "NIL" => Some("nil"),
+        "REVERSE" => Some("reverse"),
+        "MERGE" => Some("merge"),
+        "MERGEWITH" => Some("merge-with"),
+        "DEEPMERGE" => Some("deep-merge"),
+        "ELEMENTS" => Some("elements"),
+        "BLOCK" => Some("block"),
+        "KV" => Some("kv"),
+        "DEKV" => Some("de-kv"),
+
+        // Metadata
+        "META" => Some("meta"),
+        "WITHMETA" => Some("with-meta"),
+        "RAWMETA" => Some("raw-meta"),
+
+        // Type checking
+        "ISBLOCK" => Some("block?"),
+        "ISLIST" => Some("list?"),
+        "NULL" => Some("null"),
+        "TAG" => Some("tag"),
+
+        // Boolean constants
+        "TRUE" => Some("true"),
+        "FALSE" => Some("false"),
+
+        // Control flow
+        "IF" => Some("if"),
+        "PANIC" => Some("panic"),
+
+        // Date/time
+        "ZDT" => Some("zdt"),
+
+        // Internal machinery — filter out of traces
+        "AND" | "OR" | "SATURATED" | "RENDER" | "EMITT" | "EMITF" | "IFIELDS" | "SUPPRESSES"
+        | "KNIL" | "DQ" | "REQUIRES" => None,
+
+        // Unknown — show as-is
+        other => Some(other),
     }
 }
