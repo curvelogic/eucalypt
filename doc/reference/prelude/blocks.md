@@ -60,6 +60,54 @@
 | `by-key-match(re)` | Predicate matching key against regex |
 | `by-value(p?)` | Predicate on value |
 
+## Deep Find and Query
+
+These functions search recursively through nested block structures.
+
+| Function | Description |
+|----------|-------------|
+| `deep-find(k, b)` | All values for key `k` at any depth, depth-first |
+| `deep-find-first(k, d, b)` | First value for key `k`, or default `d` |
+| `deep-find-paths(k, b)` | Key paths to all occurrences of key `k` |
+| `deep-query(pattern, b)` | Query using dot-separated pattern string |
+| `deep-query-first(pattern, d, b)` | First match for pattern, or default `d` |
+| `deep-query-paths(pattern, b)` | Key paths matching pattern |
+
+### Deep Find
+
+Searches for a key at any nesting level:
+
+```eu
+config: {
+  server: { host: "localhost" port: 8080 }
+  db: { host: "db.local" port: 5432 }
+}
+
+hosts: config deep-find("host")  # ["localhost", "db.local"]
+first-host: config deep-find-first("host", "unknown")  # "localhost"
+```
+
+### Deep Query
+
+Queries using dot-separated patterns with wildcards:
+
+- Bare name `foo` is sugar for `**.foo` (find at any depth)
+- `*` matches one level
+- `**` matches any depth
+
+```eu
+data: {
+  us: { config: { host: "us.example.com" } }
+  eu: { config: { host: "eu.example.com" } }
+}
+
+# Find all hosts under any config
+hosts: data deep-query("config.host")  # ["us.example.com", "eu.example.com"]
+
+# Wildcard: any key at one level, then host
+hosts: data deep-query("*.config.host")
+```
+
 ## Mutation
 
 | Function | Description |
