@@ -1,0 +1,61 @@
+# String interpolation benchmark
+#
+# Exercises string interpolation with format specifiers,
+# nested lookups, and template-style string building.
+# Measures the overhead of the interpolation desugaring
+# and runtime string concatenation.
+
+data: {
+  name: "eucalypt"
+  version: "0.4.0"
+  port: 8080
+  host: "localhost"
+  workers: 4
+  timeout: 30
+  retries: 3
+  log-level: "info"
+}
+
+# Simple interpolation
+base-url: "http://{data.host}:{data.port}"
+
+# Multi-field interpolation
+banner-text: "{data.name} v{data.version} on {data.host}:{data.port}"
+
+# Template-style config generation
+mk-config(key, val): "{key} = {val}"
+
+cfg-lines: [
+  mk-config("name", data.name),
+  mk-config("version", data.version),
+  mk-config("host", data.host),
+  mk-config("port", data.port),
+  mk-config("workers", data.workers),
+  mk-config("timeout", data.timeout),
+  mk-config("retries", data.retries),
+  mk-config("log-level", data.log-level)
+]
+
+cfg-text: cfg-lines str.join-on("\n")
+
+# Repeated interpolation in a map
+ids: ["alpha", "beta", "gamma", "delta", "epsilon",
+      "zeta", "eta", "theta", "iota", "kappa"]
+
+prefixed: ids map("svc-{}")
+labeled: ids map("{}: active")
+
+n-cfg: cfg-lines count
+n-prefix: prefixed count
+n-label: labeled count
+
+` { target: :bench-interpolation }
+bench-interpolation: {
+  result-url: base-url
+  result-banner: banner-text
+  result-cfg-count: n-cfg
+  result-prefix-count: n-prefix
+  result-label-count: n-label
+  result-first-prefixed: prefixed head
+  RESULT: if(base-url = "http://localhost:8080", :PASS, :FAIL)
+}

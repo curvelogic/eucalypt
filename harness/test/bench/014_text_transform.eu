@@ -1,0 +1,31 @@
+# Text transformation pipeline benchmark
+#
+# Exercises case conversion, character-level processing,
+# and chained string transformations. Measures the overhead
+# of multiple string intrinsic calls in sequence.
+
+words: ["hello", "world", "eucalypt", "benchmark", "performance",
+        "string", "processing", "pipeline", "testing", "framework",
+        "alpha", "bravo", "charlie", "delta", "echo",
+        "foxtrot", "golf", "hotel", "india", "juliet"]
+
+# Case conversion pipeline
+upper-words: words map(str.to-upper)
+lower-back: upper-words map(str.to-lower)
+
+# Character processing - count letters per word
+letter-counts: words map(str.letters) map(count)
+
+n-letters: letter-counts foldl({n: • m: •}.(n + m), 0)
+
+# String concatenation
+shouted: words map(str.to-upper) str.join-on(" ")
+whispered: words map(str.to-lower) str.join-on(" ")
+
+` { target: :bench-text-transform }
+bench-text-transform: {
+  letters: n-letters
+  shouted-sample: shouted
+  whispered-sample: whispered
+  RESULT: if(n-letters > 100, :PASS, :FAIL)
+}
