@@ -37,7 +37,7 @@ pub enum ExecutionError {
     TypeMismatch(Smid, IntrinsicType, IntrinsicType),
     #[error("unknown intrinsic {1}")]
     UnknownIntrinsic(Smid, String),
-    #[error("call of not callable")]
+    #[error("tried to call a value that is not a function")]
     NotCallable(Smid),
     #[error("intrinsic {1} expected value in strict position")]
     NotValue(Smid, String),
