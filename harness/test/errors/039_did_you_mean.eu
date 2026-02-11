@@ -1,0 +1,2 @@
+b: { upper-case: "hello", lower-case: "world" }
+x: b.uper-case

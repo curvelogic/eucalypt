@@ -1313,6 +1313,20 @@ impl StgIntrinsic for LookupFail {
 
 impl CallGlobal2 for LookupFail {}
 
+/// Compile a thunk that calls LOOKUPFAIL with the key and block reference
+///
+/// This is used from the compile-time path when a static key lookup
+/// cannot find a matching key. At runtime, LookupFail will collect the
+/// available keys from the block and produce a helpful error message
+/// with "did you mean?" suggestions.
+pub fn lookup_fail_thunk(key: &str, obj_ref: super::syntax::Ref) -> Rc<StgSyn> {
+    use dsl::*;
+    let_(
+        vec![value(box_sym(key))],
+        LookupFail.global(lref(0), obj_ref.bump(1)),
+    )
+}
+
 /// Compile a panic for a missing key
 pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
     use dsl::*;

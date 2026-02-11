@@ -16,7 +16,7 @@ use moniker::{BoundVar, Embed, Var};
 use thiserror::Error;
 
 use super::{
-    block::{panic_key_not_found, LookupOr},
+    block::{lookup_fail_thunk, LookupOr},
     constant::KEmptyList,
     optimiser,
     render::{Render, RenderDoc},
@@ -967,10 +967,10 @@ impl<'rt> Compiler<'rt> {
             // the default is unused; if it fails we panic anyway.
             Some(expr) => match self.compile_binding(binder, expr.clone(), annotation, false) {
                 Ok(expr) => Ok(expr),
-                Err(CompileError::FreeVar(_)) => binder.add(panic_key_not_found(key)),
+                Err(CompileError::FreeVar(_)) => binder.add(lookup_fail_thunk(key, obj.clone())),
                 Err(e) => Err(e),
             },
-            None => binder.add(panic_key_not_found(key)),
+            None => binder.add(lookup_fail_thunk(key, obj.clone())),
         }?;
         Ok(Holder::new(LookupOr(NativeVariant::Unboxed).global(
             dsl::sym(key),
