@@ -600,3 +600,8 @@ pub fn test_error_033() {
 pub fn test_error_034() {
     run_error_test(&error_opts("034_did_you_mean.eu"));
 }
+
+#[test]
+pub fn test_error_035() {
+    run_error_test(&error_opts("035_nested_fn_trace.eu"));
+}
