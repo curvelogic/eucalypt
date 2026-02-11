@@ -605,3 +605,8 @@ pub fn test_error_034() {
 pub fn test_error_035() {
     run_error_test(&error_opts("035_nested_fn_trace.eu"));
 }
+
+#[test]
+pub fn test_error_040() {
+    run_error_test(&error_opts("040_json_error_format.eu"));
+}

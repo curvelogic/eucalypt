@@ -183,6 +183,15 @@ impl SourceMap {
         }
     }
 
+    /// Retrieve the SourceInfo for a given Smid value
+    pub fn source_info_for_smid(&self, smid: Smid) -> Option<&SourceInfo> {
+        if smid.is_valid() {
+            self.source.get(smid.get())
+        } else {
+            None
+        }
+    }
+
     /// Create a default diagnostic for an exception with a SMID
     pub fn diagnostic<E>(&self, error: &E) -> Diagnostic<usize>
     where
@@ -256,7 +265,7 @@ impl SourceMap {
 ///
 /// Returns `None` for internal machinery that should be filtered out
 /// of user-visible traces.
-fn intrinsic_display_name(name: &str) -> Option<&str> {
+pub fn intrinsic_display_name(name: &str) -> Option<&str> {
     match name {
         // Arithmetic operators
         "ADD" => Some("+"),
