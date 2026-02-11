@@ -12,7 +12,7 @@ from disk or direct from git repositories.
 Imports are specified in declaration metadata and make the names in
 the imported unit available within the declaration that is annotated.
 
-```eu
+```eu,notest
 { import: "config.eu" }
 data: {
   # names from config are available here
@@ -24,7 +24,7 @@ As described in [Syntax Reference](syntax.md), declaration metadata can
 be applied at a unit level simply by including a metadata block as the
 very first thing in a eucalypt file:
 
-```eu
+```eu,notest
 { import: "config.eu" }
 
 # names from config are available here
@@ -37,13 +37,13 @@ x: config-value
 Imports are specified using the key `import` in a declaration metadata
 block. The value may be a single import specification:
 
-```eu
+```eu,notest
 { import: "dep-a.eu"}
 ```
 
 or a list of import specifications:
 
-```eu
+```eu,notest
 { import: ["dep-a.eu", "dep-b.eu"]}
 ```
 
@@ -58,14 +58,14 @@ specified at the command line (see [CLI Reference](cli.md)).
 So you can override the format of the imported file when the file
 extension is misleading:
 
-```eu
+```eu,notest
 { import: "yaml@dep.txt" }
 ```
 
 ...and provide a name under which the imported names will be
 available:
 
-```eu
+```eu,notest
 { import: "cfg=config.eu" }
 
 # names in config.eu are available by lookup in cfg:
@@ -76,7 +76,7 @@ x: cfg.x
 In cases where the import format delivers a list rather than a block
 ("text", "csv", "jsonl", ...) a name is mandatory:
 
-```eu
+```eu,notest
 { import: "txns=transactions.csv" }
 ```
 
@@ -92,7 +92,7 @@ explicitly manage a git working copy and a library path with the
 repeatability of a git SHA. A git import is specified as a block with
 the keys "git", "commit" and "import", all of which are mandatory:
 
-```eu
+```eu,notest
 { import: { git: "https://github.com/gmorpheme/eu.aws"
             commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
             import: "aws/cloudformation.eu" } }
@@ -325,7 +325,7 @@ eu -e 'data filter(str.matches?("ERROR"))' log=text-stream@app.log
 Streaming imports can also be used via the import syntax in eucalypt
 source files:
 
-```eu
+```eu,notest
 { import: "events=jsonl-stream@events.jsonl" }
 
 recent: events take(100)

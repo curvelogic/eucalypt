@@ -84,7 +84,7 @@ into a lambda.
 So an expression that refers `_0` and `_1` actually defines a function
 accepting two parameters:
 
-```eu
+```eu,notest
 xs: zip-with(f, [1, 2, 3], [1, 2, 3]) //=> [3, 6, 9]
 
 # or more succinctly
@@ -162,7 +162,7 @@ f(x, y): {x: x y: y }
 An attempt to define this using expression anaphora would fail. This
 defines a block with two identity functions:
 
-```eu
+```eu,notest
 f: {x: _ y: _ }
 ```
 

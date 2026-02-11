@@ -27,7 +27,7 @@ and expressions (from the *expression DSL*) appear in declarations
 Comments can be interspersed throughout. Eucalypt only has line level
 comments.
 
-```eu
+```eu,notest
 foo: bar # Line comments start with '#' and run till the end of the line
 ```
 
@@ -55,7 +55,7 @@ A **block** is surrounded by curly braces:
 
 ...and contains declarations...
 
-```eu
+```eu,notest
 ... {
   a: 1
   b: 2
@@ -65,7 +65,7 @@ A **block** is surrounded by curly braces:
 
 ...which may themselves have blocks as values...
 
-```eu
+```eu,notest
 ... {
   foo: {
     bar: {
@@ -281,7 +281,7 @@ result: 2 increment
 to define simple functions without the song and dance of a function
 declaration:
 
-```eu
+```eu,notest
 f: if(tuesday?, (_ * 32 / 12), (99 / _))
 result: f(3)
 ```
@@ -303,7 +303,7 @@ result: 2 increment (126 /)
 Both styles of function application together with partial application
 and sectioning can all be applied together:
 
-```eu
+```eu,notest
 result: [1, 2, 3] map(+1) filter(odd?) //=> [3]
 ```
 
