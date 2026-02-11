@@ -262,16 +262,6 @@ eu -e '"192.168.0.1" str.matches-of("\d+")'
 - '1'
 ```
 
-### Replacing Text
-
-```sh
-eu -e '"hello world" str.replace("world", "there")'
-```
-
-```yaml
-hello there
-```
-
 ### Base64 and SHA-256
 
 ```sh

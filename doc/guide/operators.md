@@ -61,15 +61,21 @@ The prelude defines the standard precedence levels:
 |-------|------|-----------|
 | 95 | prefix | `↑` (head) |
 | 90 | lookup | `.` |
-| 75 | bool-unary | `!`, `¬` |
-| 70 | product | `*`, `/`, `%` |
-| 60 | sum | `+`, `-` |
-| 50 | append | `++`, `<<` |
-| 40 | comparison | `<`, `>`, `<=`, `>=` |
-| 35 | equality | `=`, `!=` |
-| 30 | bool-product | `&&`, `∧` |
-| 25 | bool-sum | `\|\|`, `∨` |
-| 20 | catenation | (implicit) |
+| 88 | bool-unary | `!`, `¬` |
+| 85 | exp | `!!` (nth) |
+| 80 | prod | `*`, `/`, `%` |
+| 75 | sum | `+`, `-` |
+| 60 | shift | (shift operators) |
+| 55 | bitwise | (bitwise operators) |
+| 50 | cmp | `<`, `>`, `<=`, `>=` |
+| 45 | append | `++`, `<<` |
+| 42 | map | `<$>` |
+| 40 | eq | `=`, `!=` |
+| 35 | bool-prod | `&&`, `∧` |
+| 30 | bool-sum | `\|\|`, `∨` |
+| 20 | cat | (catenation) |
+| 10 | apply | `@` |
+| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!`, `//!!` |
 
 Higher numbers bind more tightly:
 
@@ -81,7 +87,7 @@ eu -e '1 + 2 * 3'
 7
 ```
 
-Because `*` (precedence 70) binds tighter than `+` (precedence 60),
+Because `*` (precedence 80) binds tighter than `+` (precedence 75),
 this is parsed as `1 + (2 * 3)`, not `(1 + 2) * 3`.
 
 ## Associativity
@@ -110,8 +116,9 @@ associativity:
 ```
 
 Precedence can be specified as:
-- A named level: `:sum`, `:prod`, `:cmp`, `:eq`, `:bool-prod`,
-  `:bool-sum`, `:append`, `:bool-unary`
+- A named level: `:sum`, `:prod`, `:exp`, `:cmp`, `:eq`, `:bool-prod`,
+  `:bool-sum`, `:append`, `:map`, `:bool-unary`, `:cat`, `:apply`,
+  `:meta`, `:shift`, `:bitwise`
 - A numeric value: any integer (higher binds tighter)
 
 Associativity can be `:left`, `:right`, or omitted (defaults to

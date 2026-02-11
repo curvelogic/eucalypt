@@ -219,10 +219,23 @@ x-b: 2
 
 ### `filter-values`
 
-Keep only entries whose values satisfy a predicate:
+Return the list of values that satisfy a predicate (note: this returns
+a **list**, not a block):
 
 ```sh
 eu -e '{ a: 1 b: 20 c: 3 d: 40 } filter-values(> 10)'
+```
+
+```yaml
+- 20
+- 40
+```
+
+To keep matching entries as a block, use `filter-items` with
+`by-value`:
+
+```sh
+eu -e '{ a: 1 b: 20 c: 3 d: 40 } filter-items(by-value(> 10)) block'
 ```
 
 ```yaml
@@ -232,8 +245,20 @@ d: 40
 
 ### `map-kv`
 
-Transform key-value pairs. The function receives a `[key, value]`
-pair and should return a `[key, value]` pair:
+Apply a function to each key-value pair. The function receives two
+separate arguments `(key, value)` (it uses `uncurry` internally),
+and returns a transformed result:
+
+```sh
+eu -e '{ a: 1 b: 2 } map-kv("{}: {}")'
+```
+
+```yaml
+- 'a: 1'
+- 'b: 2'
+```
+
+To produce a new block, combine with `block`:
 
 ```sh
 eu -e '{ a: 1 b: 2 } map-kv(pair) block'
