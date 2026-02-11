@@ -1,5 +1,2 @@
-#!/usr/bin/env eu
-
-(l/r):__DIV(l,r)
-
-bomb: 1.0 / 0.0
+# Division by zero
+bomb: 1 / 0
