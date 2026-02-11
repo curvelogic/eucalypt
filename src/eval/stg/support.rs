@@ -112,7 +112,7 @@ pub struct DataIterator<'scope> {
 }
 
 impl Iterator for DataIterator<'_> {
-    type Item = SynClosure;
+    type Item = Result<SynClosure, ExecutionError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let code = self.view.scoped(self.closure.code());
@@ -121,25 +121,32 @@ impl Iterator for DataIterator<'_> {
             HeapSyn::Cons { tag, args } => match (*tag).try_into() {
                 Ok(DataConstructor::ListCons) => (args.get(0), args.get(1)),
                 Ok(DataConstructor::ListNil) => return None,
-                _ => panic!("Non-list data after force"),
+                _ => return Some(Err(ExecutionError::Panic("expected list data".to_string()))),
             },
-            _ => panic!("Non-list after force"),
+            _ => return Some(Err(ExecutionError::Panic("expected list data".to_string()))),
         };
 
         let head = match h_ref {
             Some(h) => self.closure.navigate_local(&self.view, h),
             None => {
-                panic!("Bad cons cell (h)")
-            } // error
+                return Some(Err(ExecutionError::Panic(
+                    "malformed cons cell".to_string(),
+                )))
+            }
         };
 
-        if let Some(t) = t_ref {
-            self.closure = self.closure.navigate_local(&self.view, t);
-        } else {
-            panic!("Bad cons cell (t)")
+        match t_ref {
+            Some(t) => {
+                self.closure = self.closure.navigate_local(&self.view, t);
+            }
+            None => {
+                return Some(Err(ExecutionError::Panic(
+                    "malformed cons cell".to_string(),
+                )))
+            }
         }
 
-        Some(head)
+        Some(Ok(head))
     }
 }
 
@@ -163,7 +170,7 @@ pub struct StrListIterator<'scope> {
 }
 
 impl Iterator for StrListIterator<'_> {
-    type Item = String;
+    type Item = Result<String, ExecutionError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let code = self.view.scoped(self.closure.code());
@@ -172,26 +179,47 @@ impl Iterator for StrListIterator<'_> {
             HeapSyn::Cons { tag, args } => match (*tag).try_into() {
                 Ok(DataConstructor::ListCons) => (args.get(0), args.get(1)),
                 Ok(DataConstructor::ListNil) => return None,
-                _ => panic!("Non-list data after seqStrList"),
+                _ => {
+                    return Some(Err(ExecutionError::Panic(
+                        "expected string list data".to_string(),
+                    )))
+                }
             },
-            _ => panic!("Non-list after seqStrList"),
+            _ => {
+                return Some(Err(ExecutionError::Panic(
+                    "expected string list data".to_string(),
+                )))
+            }
         };
 
         let native = match h_ref {
             Some(h) => self.closure.navigate_local_native(&self.view, h),
-            None => panic!("bad cons cell (h)"),
+            None => {
+                return Some(Err(ExecutionError::Panic(
+                    "malformed cons cell".to_string(),
+                )))
+            }
         };
 
-        if let Some(t) = t_ref {
-            self.closure = self.closure.navigate_local(&self.view, t);
-        } else {
-            panic!("bad cons cell (t)");
+        match t_ref {
+            Some(t) => {
+                self.closure = self.closure.navigate_local(&self.view, t);
+            }
+            None => {
+                return Some(Err(ExecutionError::Panic(
+                    "malformed cons cell".to_string(),
+                )))
+            }
         }
 
         if let Native::Str(s) = native {
-            Some((*self.view.scoped(s)).as_str().to_string())
+            Some(Ok((*self.view.scoped(s)).as_str().to_string()))
         } else {
-            panic!("Non-string item after seqStrList")
+            Some(Err(ExecutionError::TypeMismatch(
+                Smid::default(),
+                IntrinsicType::String,
+                native_type(&native),
+            )))
         }
     }
 }

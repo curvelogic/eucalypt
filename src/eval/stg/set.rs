@@ -58,7 +58,8 @@ impl StgIntrinsic for SetFromList {
     ) -> Result<(), ExecutionError> {
         let iter = data_list_arg(machine, view, args[0].clone())?;
         let mut primitives = Vec::new();
-        for item_closure in iter {
+        for item_result in iter {
+            let item_closure = item_result?;
             let code = view.scoped(item_closure.code());
             match &*code {
                 HeapSyn::Atom { evaluand } => {
