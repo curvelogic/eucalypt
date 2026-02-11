@@ -14,6 +14,7 @@
 | `second(xs)` | Second item of list |
 | `second-or(d, xs)` | Second item or default `d` |
 | `last(l)` | Last element of list |
+| `nil` | Empty list `[]` |
 | `nil?(xs)` | True if list is empty |
 | `nth(n, l)` | Return `n`th item (0-indexed) |
 | `l !! n` | Operator form of `nth` |
@@ -58,6 +59,7 @@
 | `zip(l1, l2)` | List of pairs from two lists |
 | `zip-with(f, l1, l2)` | Apply `f` to parallel elements |
 | `zip-apply(fs, vs)` | Apply functions to corresponding values |
+| `cross(f, xs, ys)` | Apply `f` to every combination from `xs` and `ys` (cartesian product) |
 
 ## Splitting Lists
 

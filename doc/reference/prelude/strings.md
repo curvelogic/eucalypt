@@ -23,6 +23,10 @@ The `str` namespace contains string functions:
 | `str.fmt(x, spec)` | Printf-style formatting |
 | `str.to-upper(s)` | Convert to upper case |
 | `str.to-lower(s)` | Convert to lower case |
+| `str.lt(a, b)` | True if `a` is lexicographically less than `b` |
+| `str.gt(a, b)` | True if `a` is lexicographically greater than `b` |
+| `str.lte(a, b)` | True if `a` is lexicographically less than or equal to `b` |
+| `str.gte(a, b)` | True if `a` is lexicographically greater than or equal to `b` |
 
 ## Encoding and Hashing
 

@@ -11,6 +11,7 @@
 | `zip-kv(ks, vs)` | Create block by zipping keys and values |
 | `with-keys(ks)` | Alias for `zip-kv` |
 | `map-as-block(f, syms)` | Map symbols and create block |
+| `sort-keys(b)` | Return block `b` with keys sorted alphabetically |
 
 ## Access
 
@@ -24,6 +25,8 @@
 | `lookup-across(s, d, bs)` | Look up in sequence of blocks |
 | `lookup-path(ks, b)` | Look up nested key path |
 | `has(s, b)` | True if block has key `s` |
+| `block?(v)` | True if `v` is a block |
+| `list?(v)` | True if `v` is a list |
 | `elements(b)` | List of `[key, value]` pairs |
 | `keys(b)` | List of keys |
 | `values(b)` | List of values |

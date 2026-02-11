@@ -11,6 +11,7 @@ import declarations, operator definitions, and testing assertions.
 | `with-meta(m, e)` | Add metadata block `m` to expression `e` |
 | `e // m` | Operator form of `with-meta` |
 | `meta(e)` | Retrieve metadata from expression |
+| `raw-meta(e)` | Retrieve immediate metadata without recursing into inner layers |
 | `merge-meta(m, e)` | Merge into existing metadata |
 | `e //<< m` | Operator form of `merge-meta` |
 
@@ -62,3 +63,11 @@ For richer metadata, use a block:
 | `e //!? f` | Assert `e` does not satisfy `f` |
 | `e //!` | Assert `e` is true |
 | `e //!!` | Assert `e` is false |
+
+### Assertion Helpers
+
+| Function | Description |
+|----------|-------------|
+| `assertions.validator(v)` | Find the validator for value `v` in its metadata |
+| `assertions.check(v)` | True if `v` is valid according to its `assert` metadata |
+| `assertions.checked(v)` | Panic if value does not satisfy its validator, else return `v` |
