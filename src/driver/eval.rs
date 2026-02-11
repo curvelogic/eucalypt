@@ -210,11 +210,6 @@ impl<'a> Executor<'a> {
 
                 let mut notes = vec![];
 
-                if let Some(trace) = e.env_trace() {
-                    let env_trace = self.source_map.format_trace(trace, &self.files);
-                    notes.push(format!("environment trace:\n{env_trace}"));
-                }
-
                 if let Some(trace) = e.stack_trace() {
                     let stack_trace = self.source_map.format_trace(trace, &self.files);
                     notes.push(format!("stack trace:\n{stack_trace}"));

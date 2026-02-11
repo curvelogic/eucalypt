@@ -31,7 +31,7 @@ use super::{
 /// Errors found during compilation
 #[derive(Debug, Error)]
 pub enum CompileError {
-    #[error("unresolved free variable reference {0}")]
+    #[error("unresolved free variable reference")]
     FreeVar(Smid),
     #[error("unresolvable bound variable reference")]
     BoundVarOverflowsContext,
