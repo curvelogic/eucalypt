@@ -20,15 +20,15 @@ results:
 eu --seed 42 example.eu
 ```
 
-## Core Functions
+## Random Number Generation
 
 | Function | Description |
 |----------|-------------|
-| `random-stream(seed)` | Infinite lazy list of floats in `[0, 1)` from integer seed |
-| `random-int(n, stream)` | Random integer in `[0, n)` from stream. Returns `{ value, rest }` |
-| `random-choice(list, stream)` | Pick a random element from list. Returns `{ value, rest }` |
-| `shuffle(list, stream)` | Randomly reorder list. Returns `{ value, rest }` |
-| `sample(n, list, stream)` | Pick `n` elements without replacement. Returns `{ value, rest }` |
+| `random-stream(seed)` | Infinite lazy stream of random floats in [0,1), seeded by the given integer |
+| `random-int(n, stream)` | Generate a random integer in [0, n) from the stream. Returns block with value and rest |
+| `random-choice(list, stream)` | Choose a random element from a list. Returns block with value and rest |
+| `shuffle(list, stream)` | Shuffle a list using repeated selection. Returns block with value and rest |
+| `sample(n, list, stream)` | Sample n elements from a list without replacement. Returns block with value and rest |
 
 ## Usage Pattern
 
