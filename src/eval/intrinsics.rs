@@ -588,6 +588,11 @@ lazy_static! {
             ty: function(vec![num(), unk()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 109
+            name: "LOOKUP_FAIL",
+            ty: function(vec![sym(), block(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
 
     ];
 }

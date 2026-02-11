@@ -1,0 +1,2 @@
+exit: 1
+stderr: "key 'bax' not found in block"
