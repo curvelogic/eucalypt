@@ -226,7 +226,9 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `filter(p?)` | Keep elements matching predicate |
 | `foldl(f, init)` | Left fold |
 | `foldr(f, init)` | Right fold |
-| `sort-by(f)` | Sort by key function |
+| `sort-nums` / `sort-strs` | Sort numbers / strings |
+| `sort-by-num(f)` / `sort-by-str(f)` | Sort by extracted key |
+| `qsort(lt)` | Sort with custom comparator |
 | `take(n)` | First n elements |
 | `drop(n)` | Remove first n |
 | `zip` | Pair elements from two lists |
@@ -295,7 +297,7 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `negate` | Negate number |
 | `inc` / `dec` | Increment / decrement |
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
-| `even?` / `odd?` | Parity predicates |
+| `num?` / `str?` | Type predicates |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceil` / `round` | Rounding |
 
