@@ -184,7 +184,7 @@ y: 8
 
 b.eu
 
-```eu
+```eu,notest
 z: x + y
 ```
 

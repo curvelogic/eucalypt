@@ -17,7 +17,7 @@ identifier by surrounding them in single quotes. This is the only use
 of single quotes in eucalypt. This can be useful when you want to use
 file paths or other external identifiers as block keys for instance:
 
-```eu
+```eu,notest
 home: {
   '.bashrc': false
   '.emacs.d': false
@@ -70,7 +70,7 @@ y: { z: 100 r: z //=> 100 }
 
 But beware trying to access the outer value:
 
-```eu
+```eu,notest
 name: "foo"
 x: { name: name } //=> infinite recursion
 ```

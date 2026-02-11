@@ -144,7 +144,7 @@ The whole line is a **declaration**. Declarations come in several
 types - this one is a **property declaration**. A **block** is written
 as a sequence of declarations enclosed in braces. For example:
 
-```eu
+```eu,notest
 {
   w: "foo" # a string
   x: 3     # a whole number
@@ -161,7 +161,7 @@ Unlike JSON, commas are not needed to separate declarations. Instead,
 the eucalypt parser determines the declarations mainly based on the
 location of colons. You can write:
 
-```eu
+```eu,notest
 { x: 1 increment negate y: 2 }
 ```
 
@@ -304,7 +304,7 @@ functions in scope when an expression is created are the ones that are
 applied. So if you redefine an `f` like this, in an overriding
 block...
 
-```eu
+```eu,notest
 { f(x): x+1 a: f(2) } { f(x): x-2 }
 ```
 

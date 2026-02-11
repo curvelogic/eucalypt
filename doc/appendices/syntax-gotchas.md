@@ -14,7 +14,7 @@ catenation (precedence 20), which can lead to unexpected parsing.
 rather than `(objects head).id`.
 
 **Example**:
-```eu
+```eu,notest
 # This doesn't work as expected:
 objects: range(0, 5) map({ id: _ })
 result: objects head.id  # Parsed as: objects (head.id)
@@ -53,7 +53,7 @@ map(λx.x + 1)        # Invalid
 
 **Correct Approach**: Use anaphora (`_`, `_0`, `_1`, etc.) or define
 named functions:
-```eu
+```eu,notest
 # Using anaphora:
 map(_ + 1)
 
@@ -85,7 +85,7 @@ developers might expect `'text'` to be a string literal.
 - String literals use double quotes (`"`) only
 
 **Examples**:
-```eu
+```eu,notest
 # Single quotes create identifiers (variable names):
 'my-file.txt': "content"     # Creates identifier: my-file.txt
 home: {
