@@ -296,3 +296,43 @@ actual_date: 2023-01-15
 # As string:
 date_label: "2023-01-15"
 ```
+
+## Streaming imports
+
+For large files, eucalypt supports streaming import formats that read
+data lazily without loading the entire file into memory. Streaming
+formats produce a lazy list of records.
+
+| Format | Description |
+|--------|-------------|
+| `jsonl-stream` | JSON Lines (one JSON object per line) |
+| `csv-stream` | CSV with headers (each row becomes a block) |
+| `text-stream` | Plain text (each line becomes a string) |
+
+Streaming formats are specified using the `format@path` syntax:
+
+```sh
+# Stream a JSONL file
+eu -e 'data take(10)' data=jsonl-stream@events.jsonl
+
+# Stream a large CSV
+eu -e 'data filter(_.age > 30) count' data=csv-stream@people.csv
+
+# Stream lines of text
+eu -e 'data filter(str.matches?("ERROR"))' log=text-stream@app.log
+```
+
+Streaming imports can also be used via the import syntax in eucalypt
+source files:
+
+```eu
+{ import: "events=jsonl-stream@events.jsonl" }
+
+recent: events take(100)
+```
+
+> **Note:** Streaming imports require a name binding (e.g., `data=`) because
+> they produce a list, not a block.
+
+> **Note:** `text-stream` supports reading from stdin using `-` as the path:
+> `eu -e 'data count' data=text-stream@-`
