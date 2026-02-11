@@ -6,6 +6,7 @@ pub mod block;
 pub mod boolean;
 pub mod compiler;
 pub mod constant;
+pub mod embed;
 pub mod emit;
 pub mod encoding;
 pub mod eq;
