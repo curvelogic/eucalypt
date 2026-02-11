@@ -236,8 +236,8 @@ age: data lookup-or(:age, 0) //=> 0
 Use `deep-find` for recursive key search:
 
 ```eu,notest
-# Finds all values for key :id at any depth
-ids: data deep-find(:id)
+# Finds all values for key "id" at any depth
+ids: data deep-find("id")
 ```
 
 Use `lookup-path` for a known sequence of keys:
