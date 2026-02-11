@@ -19,6 +19,40 @@ pub enum CommandLineMode {
     Batch,
 }
 
+/// Format for error output
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ErrorFormat {
+    /// Human-readable codespan diagnostic output (default)
+    #[default]
+    Human,
+    /// Structured JSON output for tooling integration
+    Json,
+}
+
+impl std::str::FromStr for ErrorFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "human" => Ok(ErrorFormat::Human),
+            "json" => Ok(ErrorFormat::Json),
+            _ => Err(format!(
+                "unknown error format '{}' (expected 'human' or 'json')",
+                s
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for ErrorFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorFormat::Human => write!(f, "human"),
+            ErrorFormat::Json => write!(f, "json"),
+        }
+    }
+}
+
 /// Eucalypt - A functional language for structured data
 #[derive(Parser, Debug, Clone)]
 #[command(name = "eu")]
@@ -138,6 +172,10 @@ pub struct RunArgs {
     /// Seed for random number generation (for reproducible results)
     #[arg(long = "seed")]
     pub seed: Option<i64>,
+
+    /// Error output format: 'human' (default) or 'json'
+    #[arg(long = "error-format", default_value = "human")]
+    pub error_format: ErrorFormat,
 
     /// Limit managed heap to SIZE MiB
     #[arg(long = "heap-limit-mib")]
@@ -298,6 +336,9 @@ pub struct EucalyptOptions {
 
     // Optimisation flags
     pub no_dce: bool,
+
+    // Error format
+    pub error_format: ErrorFormat,
 
     // STG settings (flattened)
     pub stg_settings: StgSettings,
@@ -506,6 +547,12 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => None,
         };
 
+        // Extract error format from Run command
+        let error_format = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.error_format.clone(),
+            _ => ErrorFormat::default(),
+        };
+
         // Extract trailing args from Run command
         let args = match &cli.command {
             Some(Commands::Run(run_args)) => run_args.args.clone(),
@@ -552,6 +599,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             format_reformat,
             format_indent,
             no_dce,
+            error_format,
             stg_settings: StgSettings {
                 heap_limit_mib,
                 ..StgSettings::default()
@@ -788,6 +836,11 @@ impl EucalyptOptions {
     /// Get the seed for random number generation
     pub fn seed(&self) -> Option<i64> {
         self.seed
+    }
+
+    /// Get the error output format
+    pub fn error_format(&self) -> &ErrorFormat {
+        &self.error_format
     }
 
     /// Parse command line arguments using the new clap v4 structure

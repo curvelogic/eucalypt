@@ -5,7 +5,11 @@
 use crate::{
     common::{prettify, sourcemap::*},
     core::expr::*,
-    driver::{error::EucalyptError, options::EucalyptOptions, source::SourceLoader},
+    driver::{
+        error::EucalyptError,
+        options::{ErrorFormat, EucalyptOptions},
+        source::SourceLoader,
+    },
     eval::{
         error::ExecutionError,
         machine::standard_machine,
@@ -15,7 +19,7 @@ use crate::{
 };
 use codespan_reporting::{
     diagnostic::Diagnostic,
-    files::SimpleFiles,
+    files::{Files, SimpleFiles},
     term::{
         self,
         termcolor::{ColorChoice, NoColor, StandardStream},
@@ -114,7 +118,7 @@ impl<'a> Executor<'a> {
         format: String,
     ) -> Result<Option<u8>, ExecutionError> {
         let result = self.try_execute(opt, stats, format);
-        self.diagnose(result)
+        self.diagnose(result, opt.error_format())
     }
 
     /// Execute using the STG machine
@@ -203,23 +207,32 @@ impl<'a> Executor<'a> {
     fn diagnose(
         &mut self,
         result: Result<Option<u8>, ExecutionError>,
+        error_format: &ErrorFormat,
     ) -> Result<Option<u8>, ExecutionError> {
         match result {
             Err(e) => {
-                let mut diagnostic = e.to_diagnostic(&self.source_map);
+                match error_format {
+                    ErrorFormat::Human => {
+                        let mut diagnostic = e.to_diagnostic(&self.source_map);
 
-                let mut notes = vec![];
+                        let mut notes = vec![];
 
-                if let Some(trace) = e.stack_trace() {
-                    let stack_trace = self.source_map.format_trace(trace, &self.files);
-                    if !stack_trace.is_empty() {
-                        notes.push(format!("stack trace:\n{stack_trace}"));
+                        if let Some(trace) = e.stack_trace() {
+                            let stack_trace = self.source_map.format_trace(trace, &self.files);
+                            if !stack_trace.is_empty() {
+                                notes.push(format!("stack trace:\n{stack_trace}"));
+                            }
+                        }
+
+                        diagnostic = diagnostic.with_notes(notes);
+
+                        self.diagnose_to_stderr(&diagnostic);
+                    }
+                    ErrorFormat::Json => {
+                        let json = self.error_to_json(&e);
+                        self.write_json_to_stderr(&json);
                     }
                 }
-
-                diagnostic = diagnostic.with_notes(notes);
-
-                self.diagnose_to_stderr(&diagnostic);
 
                 Err(e)
             }
@@ -243,6 +256,103 @@ impl<'a> Executor<'a> {
             Some(ref mut err) => {
                 term::emit(&mut NoColor::new(err.as_mut()), &config, &self.files, diag)
                     .expect("failed to write diagnostic to buffer");
+            }
+        }
+    }
+
+    /// Convert an execution error to a JSON value
+    fn error_to_json(&self, error: &ExecutionError) -> serde_json::Value {
+        let message = format!("{error}");
+
+        // Resolve source location if available
+        let location = self.source_map.source_info(error).and_then(|info| {
+            let file_id = info.file?;
+            let span = info.span?;
+            let name = self.files.name(file_id).ok()?;
+            let loc = self.files.location(file_id, span.start().to_usize()).ok()?;
+            let end_loc = self.files.location(file_id, span.end().to_usize()).ok()?;
+            Some(serde_json::json!({
+                "file": name,
+                "start": {
+                    "line": loc.line_number,
+                    "column": loc.column_number,
+                },
+                "end": {
+                    "line": end_loc.line_number,
+                    "column": end_loc.column_number,
+                }
+            }))
+        });
+
+        // Build stack trace if present, filtering internal machinery
+        let stack_trace: Option<Vec<serde_json::Value>> = error.stack_trace().map(|trace| {
+            trace
+                .iter()
+                .filter_map(|smid| {
+                    let info = self.source_map.source_info_for_smid(*smid)?;
+
+                    // Map intrinsic names to display names, filtering internal ones
+                    let display_name = info.annotation.as_deref().and_then(intrinsic_display_name);
+
+                    let source_snippet = || {
+                        let id = info.file?;
+                        let source: &str = self.files.source(id).ok()?;
+                        let span = info.span?;
+                        source.get(std::ops::Range::from(span))
+                    };
+
+                    let label = display_name.or_else(source_snippet)?;
+
+                    let file_loc = info.file.and_then(|id| {
+                        let name = self.files.name(id).ok()?;
+                        let span = info.span?;
+                        let loc = self.files.location(id, span.start().to_usize()).ok()?;
+                        Some(serde_json::json!({
+                            "file": name,
+                            "line": loc.line_number,
+                            "column": loc.column_number,
+                        }))
+                    });
+
+                    let mut entry = serde_json::Map::new();
+                    if let Some(loc) = file_loc {
+                        entry.insert("location".to_string(), loc);
+                    }
+                    entry.insert(
+                        "name".to_string(),
+                        serde_json::Value::String(label.to_string()),
+                    );
+                    Some(serde_json::Value::Object(entry))
+                })
+                .collect()
+        });
+
+        let mut result = serde_json::json!({
+            "severity": "error",
+            "message": message,
+        });
+
+        if let Some(loc) = location {
+            result["location"] = loc;
+        }
+        if let Some(trace) = stack_trace {
+            if !trace.is_empty() {
+                result["stack_trace"] = serde_json::Value::Array(trace);
+            }
+        }
+
+        result
+    }
+
+    /// Write JSON error to stderr
+    fn write_json_to_stderr(&mut self, json: &serde_json::Value) {
+        let output = serde_json::to_string(json).expect("failed to serialise error as JSON");
+        match self.err {
+            None => {
+                eprintln!("{output}");
+            }
+            Some(ref mut err) => {
+                writeln!(err, "{output}").expect("failed to write JSON error to buffer");
             }
         }
     }
