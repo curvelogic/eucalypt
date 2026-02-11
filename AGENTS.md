@@ -210,7 +210,7 @@ Special metadata keys: `:target`, `:suppress`, `:main`, `associates`,
 | 95 | `↑` (prefix) | Tight prefix (head) |
 | 90 | `.` | Field access / lookup |
 | 88 | `!`, `¬` (prefix) | Boolean negation |
-| 85 | `∘`, `;` | Composition |
+| 88 | `∘`, `;` | Composition |
 | 80 | `*`, `/`, `%` | Multiply, divide, modulo |
 | 75 | `+`, `-` | Add, subtract |
 | 50 | `<`, `>`, `<=`, `>=` | Comparison |
@@ -307,9 +307,9 @@ youngest: (by-name head).name //=> "Amy"
 ### 11. String Operations
 
 ```eu
-upper: "hello" str.upper //=> "HELLO"
-parts: "a,b,c" str.split(",") //=> ["a", "b", "c"]
-joined: ["x", "y", "z"] str.join("-") //=> "x-y-z"
+upper: "hello" str.to-upper //=> "HELLO"
+parts: "a,b,c" str.split-on(",") //=> ["a", "b", "c"]
+joined: ["x", "y", "z"] str.join-on("-") //=> "x-y-z"
 ```
 
 ### 12. Conditional Logic
@@ -329,17 +329,20 @@ vs: data values //=> [1, 2, 3]
 
 ### 14. Block Elements (Key-Value Pairs)
 
+`elements` returns a list of `[key, value]` lists (not blocks):
+
 ```eu
 data: { x: 10 y: 20 }
 pairs: data elements
+# pairs is [[:x, 10], [:y, 20]]
 ```
 
 ### 15. Type Predicates
 
 ```eu
-check1: 42 num? //=> true
-check2: "hi" str? //=> true
-check3: null null? //=> true
+check1: [1, 2] list? //=> true
+check2: { a: 1 } block? //=> true
+check3: 42 pos? //=> true
 ```
 
 ### 16. Partial Application
@@ -359,10 +362,11 @@ transform: double ∘ add-one
 result: transform(3) //=> 8
 ```
 
-### 18. List Comprehension Style
+### 18. Cartesian Product Style
 
 ```eu
-pairs: range(1, 4) map(range(1, 4) map([_0, _1]))
+pair(x): range(1, 4) map([x, _])
+pairs: range(1, 4) mapcat(pair)
 ```
 
 ### 19. Set Operations
@@ -475,12 +479,11 @@ check: is-even(4) //=> true
 | `qsort(lt)` | Sort with custom comparator |
 | `take(n)` / `drop(n)` | First n / remove first n |
 | `zip` / `zip-with(f)` | Pair / combine elements |
-| `flatten` | Flatten one level |
+| `concat` | Flatten one level (list of lists) |
 | `reverse` | Reverse list |
 | `count` | Number of elements |
 | `range(a, b)` | Integers from a to b-1 |
-| `unique` | Remove duplicates |
-| `any?(p?)` / `all?(p?)` | Any/all match predicate |
+| `any(p?)` / `all(p?)` | Any/all match predicate |
 | `nil?` | Is list empty? |
 
 ### Blocks
@@ -491,9 +494,8 @@ check: is-even(4) //=> true
 | `lookup-or(key, default)` | Look up with default |
 | `has(key)` | Does block contain key? |
 | `keys` / `values` | List of keys / values |
-| `elements` | List of `{key, value}` pairs |
-| `map-keys(f)` / `map-values(f)` | Transform keys / values |
-| `select(keys)` / `dissoc(keys)` | Keep / remove keys |
+| `elements` | List of `[key, value]` lists |
+| `map-keys(f)` / `map-values(f)` | Transform keys / values (returns list) |
 | `merge(b)` / `deep-merge(b)` | Shallow / deep merge |
 | `sort-keys` | Sort by key name |
 
@@ -501,14 +503,16 @@ check: is-even(4) //=> true
 
 | Function | Description |
 |----------|-------------|
-| `str.len(s)` | String length |
-| `str.upper(s)` / `str.lower(s)` | Case conversion |
-| `str.split(sep)` / `str.join(sep)` | Split / join |
-| `str.replace(from, to)` | Replace occurrences |
-| `str.trim` | Remove surrounding whitespace |
-| `str.starts-with?(p)` / `str.ends-with?(s)` | Prefix / suffix check |
-| `str.contains?(sub)` | Contains substring? |
+| `str.of(e)` | Convert to string |
+| `str.len(s)` | String length (in characters) |
+| `str.to-upper(s)` / `str.to-lower(s)` | Case conversion |
+| `str.split-on(sep)` / `str.join-on(sep)` | Split / join |
+| `str.prefix(p)` / `str.suffix(s)` | Prepend / append string |
+| `str.letters(s)` | Split into list of characters |
 | `str.matches?(regex)` | Matches regex? |
+| `str.match-with(regex)` | Extract match + capture groups |
+| `str.matches-of(regex)` | All occurrences of pattern |
+| `str.base64-encode(s)` / `str.sha256(s)` | Encoding / hashing |
 
 ### Numbers
 
@@ -519,7 +523,7 @@ check: is-even(4) //=> true
 | `inc` / `dec` | Increment / decrement |
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
 | `floor` / `ceil` / `round` | Rounding |
-| `num?` / `str?` / `null?` | Type predicates |
+| `block?` / `list?` | Type predicates |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 
 ### Combinators
