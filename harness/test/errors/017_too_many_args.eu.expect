@@ -1,2 +1,2 @@
 exit: 1
-stderr: "call of not callable"
+stderr: "tried to call a value that is not a function"

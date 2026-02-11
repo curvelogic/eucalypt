@@ -570,3 +570,13 @@ pub fn test_error_027() {
 pub fn test_error_028() {
     run_error_test(&error_opts("028_mutual_cycle.eu"));
 }
+
+#[test]
+pub fn test_error_029() {
+    run_error_test(&error_opts("029_type_mismatch_num.eu"));
+}
+
+#[test]
+pub fn test_error_030() {
+    run_error_test(&error_opts("030_type_mismatch_str.eu"));
+}

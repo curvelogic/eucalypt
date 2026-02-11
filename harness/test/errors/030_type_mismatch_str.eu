@@ -1,0 +1,2 @@
+# Type mismatch: pass string where number expected
+x: 1 + "hello"
