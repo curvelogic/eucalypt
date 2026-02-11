@@ -1,11 +1,59 @@
-# String Interpolation
+# Strings and Text
 
 In this chapter you will learn:
 
+- The different string literal types (standard, raw, c-strings)
 - How to embed expressions in strings using `{...}` syntax
 - How strings with anaphora become functions
 - Format specifiers for controlling output
 - The string functions available in the `str` namespace
+
+## String Literal Types
+
+Eucalypt has three kinds of string literal:
+
+### Standard Strings
+
+Standard double-quoted strings support interpolation with `{...}`:
+
+```eu
+greeting: "Hello, World!"
+```
+
+### Raw Strings (`r"..."`)
+
+Raw strings perform no escape processing — backslashes are literal.
+Useful for regular expressions and file paths:
+
+```eu
+path: r"C:\Users\alice\docs"
+regex: r"^\d+\.\d+"
+```
+
+Raw strings still support interpolation with `{...}`. Use `{{` and
+`}}` for literal braces.
+
+### C-Strings (`c"..."`)
+
+C-strings process C-style escape sequences:
+
+| Escape | Meaning |
+|--------|---------|
+| `\n` | Newline |
+| `\t` | Tab |
+| `\r` | Carriage return |
+| `\\` | Literal backslash |
+| `\"` | Literal quote |
+| `\{`, `\}` | Literal braces |
+| `\xHH` | Hex byte |
+| `\uHHHH` | Unicode code point |
+| `\UHHHHHHHH` | Extended Unicode |
+
+```eu
+multiline: c"first line\nsecond line"
+```
+
+C-strings also support interpolation with `{...}`.
 
 ## Basic Interpolation
 
@@ -51,6 +99,15 @@ data:
 label: '99'
 ```
 
+> **Note:** Interpolation braces accept names and dotted lookups, but
+> not arbitrary eucalypt expressions. If you need a computed value,
+> give it a name first, or use generalised lookup to tightly scope
+> the computation:
+>
+> ```eu
+> result: { x: 3 y: 4 }."{x + y}"
+> ```
+
 ## Escaping Braces
 
 To include a literal brace in a string, double it:
@@ -89,8 +146,9 @@ padded: '000042'
 
 ## String Anaphora
 
-When a string interpolation contains `{}` (empty braces) or `{0}`,
-`{1}`, etc., the string becomes a function:
+When a string contains `{}` (empty braces) or `{0}`, `{1}`, etc.,
+the string literal actually defines a function rather than a plain
+string value:
 
 ```sh
 eu -e '["a", "b", "c"] map("item: {}")'

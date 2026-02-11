@@ -52,6 +52,14 @@ y: x //<< { b: 2 }
 result: meta(y)
 ```
 
+```yaml
+x: 1
+y: 1
+result:
+  a: 1
+  b: 2
+```
+
 ### Declaration Metadata
 
 Declaration metadata (written with the backtick syntax) is separate
@@ -68,7 +76,8 @@ Key metadata properties:
 - `export: :suppress` -- hide from output
 - `target` -- mark as an export target
 - `import` -- import other files
-- `associates` / `precedence` -- operator fixity
+- `associates` / `precedence` -- operator fixity (see
+  [Operators](operators.md) for details)
 
 ### YAML Tags
 
@@ -415,11 +424,29 @@ items: [
 grouped: items group-by(_.type)
 ```
 
-The result is a block where keys are groups and values are lists.
+```yaml
+items:
+- type: fruit
+  name: apple
+- type: veg
+  name: carrot
+- type: fruit
+  name: banana
+grouped:
+  fruit:
+  - type: fruit
+    name: apple
+  - type: fruit
+    name: banana
+  veg:
+  - type: veg
+    name: carrot
+```
 
-## Numeric Formatting
+## Format Specifiers
 
-Format specifiers in interpolation control numeric output:
+Format specifiers in interpolation control output formatting. They use
+printf-style codes after a colon inside the interpolation braces.
 
 ```eu
 results: {
@@ -435,6 +462,31 @@ results:
   float: '3.14'
   hex: ff
 ```
+
+### Available Format Codes
+
+| Code | Description | Example |
+|------|-------------|---------|
+| `%d`, `%i` | Signed decimal integer | `{42:%d}` → `42` |
+| `%u` | Unsigned decimal integer | `{42:%u}` → `42` |
+| `%o` | Octal | `{255:%o}` → `377` |
+| `%x`, `%X` | Hexadecimal (lower/upper) | `{255:%x}` → `ff` |
+| `%f`, `%F` | Decimal notation | `{3.14:%.1f}` → `3.1` |
+| `%e`, `%E` | Scientific notation | `{1000:%e}` → `1e3` |
+| `%g`, `%G` | Auto (decimal or scientific) | `{0.001:%g}` → `0.001` |
+| `%s` | String | `{:hello:%s}` → `hello` |
+
+### Flags and Modifiers
+
+- `%-` — left-align
+- `%+` — prepend `+` for positive numbers
+- `%0` — zero-padding (e.g. `%06d`)
+- `%#` — alternate form (e.g. `0x` prefix for hex)
+- Width: `%10s` — minimum field width
+- Precision: `%.2f` — decimal places for floats
+
+See also the [Strings and Text](string-interpolation.md) chapter for
+more on string interpolation.
 
 ## Version Assertions
 

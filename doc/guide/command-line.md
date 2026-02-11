@@ -174,7 +174,8 @@ Select a target:
 eu -t summary multi-output.eu
 ```
 
-A target named `main` is rendered by default.
+A target named `main` is rendered by default. If no `:main` target
+exists, the entire unit is the target.
 
 ## Passing Arguments
 

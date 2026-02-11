@@ -21,7 +21,8 @@ Eucalypt has the following primitive types:
 
 ## Lists
 
-Lists are comma-separated values in square brackets:
+Lists are comma-separated values in square brackets (unlike in blocks,
+commas are required):
 
 ```eu
 numbers: [1, 2, 3, 4, 5]
@@ -46,7 +47,7 @@ result: 7
 
 ## Catenation: The Pipeline Style
 
-The distinctive feature of eucalypt is **catenation**: applying a
+One distinctive feature of eucalypt is **catenation**: applying a
 function by writing the argument before the function name, separated
 by whitespace.
 
@@ -156,6 +157,10 @@ host: localhost
 > Writing `list head.name` is parsed as `list (head.name)`, not
 > `(list head).name`. Use explicit parentheses when combining lookup
 > with catenation: `(list head).name`.
+>
+> The `↑` (up arrow) prefix operator, which is shorthand for `head`,
+> binds even tighter (precedence 95). So `↑xs.name` means
+> `(↑xs).name`.
 
 ## Generalised Lookup
 

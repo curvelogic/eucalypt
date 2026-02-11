@@ -13,7 +13,7 @@
 - [Blocks and Declarations](guide/blocks-and-declarations.md)
 - [Expressions and Pipelines](guide/expressions-and-pipelines.md)
 - [Lists and Transformations](guide/lists-and-transformations.md)
-- [String Interpolation](guide/string-interpolation.md)
+- [Strings and Text](guide/string-interpolation.md)
 - [Functions and Combinators](guide/functions-and-combinators.md)
 - [Operators](guide/operators.md)
 - [Anaphora (Implicit Parameters)](guide/anaphora.md)

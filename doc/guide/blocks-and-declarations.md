@@ -159,6 +159,10 @@ Operator precedence and associativity are controlled through metadata
 annotations (covered below). See the
 [Operators](operators.md) chapter for full details.
 
+> **Note:** While function declarations are namespaced to their block,
+> operators do not have a namespace and are available only where they
+> are in scope.
+
 ## Units: Top-Level Blocks
 
 The top-level of a `.eu` file is itself a block, called a **unit**.
@@ -218,10 +222,12 @@ output: {
 
 Running `eu file.eu -t my-output` renders only the `output` block.
 
-## Unit-Level Metadata
+## Block and Unit Metadata
 
-If the very first item in a file is an expression (not a declaration),
-it is treated as metadata for the entire unit:
+A single expression may precede the declarations in any block and is
+treated as metadata for that block. At the top level of a file (the
+unit), this means the first item, if it is an expression rather than a
+declaration, becomes metadata for the entire unit:
 
 ```eu
 { doc: "Configuration generator" }
@@ -265,9 +271,10 @@ inner:
   y: 2
 ```
 
-> **Warning:** Be careful with shadowing. Writing `{ name: name }` in
-> a scope where `name` is already defined creates an infinite
-> recursion, because the inner `name` refers to itself.
+> **Warning:** Be careful with self-reference. Writing `name: name`
+> inside a block creates an infinite recursion, because the
+> declaration `name` refers to itself. This is true regardless of
+> whether `name` is defined in an outer scope.
 
 ## Key Concepts
 
