@@ -41,3 +41,6 @@ editors/vscode/*.vsix
 
 # Local settings
 *.local.json
+
+# mdBook build output
+/book/

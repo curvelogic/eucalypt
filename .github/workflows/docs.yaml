@@ -5,17 +5,29 @@ on:
     types: [published]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   update-docs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.GITHUB_REF }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: generate and push docs
+          ref: ${{ github.ref }}
+
+      - name: Install mdBook
         run: |
-          python -m pip install -r docs/requirements.txt
-          python -m mkdocs gh-deploy -v -m $GITHUB_REF --force
+          mkdir -p $HOME/.local/bin
+          curl -sSL https://github.com/rust-lang/mdBook/releases/latest/download/mdbook-v0.4.44-x86_64-unknown-linux-gnu.tar.gz | tar xz -C $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Build documentation
+        run: mdbook build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./book
+          force_orphan: true
