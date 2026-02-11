@@ -104,75 +104,26 @@ jobs:
         run: |
           target/release/eu_amd64 version
           target/release/eu_amd64 test harness/test
-      - name: Ensure we have the latest tag
+      - name: Generate release notes
         run: |
-          git fetch origin latest:latest
-      - name: Generate release notes with Claude API
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          # Collect git data for analysis
-          echo "Collecting commit data between latest tag and HEAD..."
-          git log latest..HEAD --pretty=format:"%H|%an|%ad|%s|%b" --date=short > commits.txt
-          git log latest..HEAD --name-only --pretty=format:"COMMIT:%H" > changed_files.txt
-
-          # Create input for Claude API
-          echo "=== COMMIT DATA ===" > release_input.txt
-          cat commits.txt >> release_input.txt
-          echo "" >> release_input.txt
-          echo "=== CHANGED FILES ===" >> release_input.txt
-          cat changed_files.txt >> release_input.txt
-
-          # Read the prompt template
-          PROMPT_CONTENT=$(cat .github/release-notes-prompt.md)
-          INPUT_CONTENT=$(cat release_input.txt)
-
-          # Generate release notes with Anthropic API
-          echo "🔍 Creating API payload..."
-
-          # Create JSON payload with proper escaping
-          jq -n \
-            --arg prompt "$(cat .github/release-notes-prompt.md)" \
-            --arg input "$(cat release_input.txt)" \
-            '{
-              "model": "claude-3-5-sonnet-20241022",
-              "max_tokens": 4000,
-              "messages": [{
-                "role": "user",
-                "content": ($prompt + "\n\n" + $input)
-              }]
-            }' > api_payload.json
-
-          echo "📏 Payload size: $(wc -c < api_payload.json) bytes"
-
-          # Make API call with debugging
-          echo "🚀 Calling Claude API..."
-          curl -s -X POST https://api.anthropic.com/v1/messages \
-            -H "Content-Type: application/json" \
-            -H "x-api-key: $ANTHROPIC_API_KEY" \
-            -H "anthropic-version: 2023-06-01" \
-            -d @api_payload.json \
-            -w "HTTP Status: %{http_code}\n" \
-            -o api_response.json
-
-          echo "📥 API Response:"
-          cat api_response.json
-          echo ""
-
-          # Check if response contains expected content
-          if jq -e '.content[0].text' api_response.json > /dev/null 2>&1; then
-            echo "✅ Successfully extracting release notes from API response"
-            jq -r '.content[0].text' api_response.json > CHANGELOG.md
-          else
-            echo "❌ API response missing expected '.content[0].text' structure"
-            echo "🔄 Falling back to basic git log"
+          # Find the previous release tag
+          PREV_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous release found, using full log"
             echo "# Release Notes" > CHANGELOG.md
             echo "" >> CHANGELOG.md
-            git log latest..HEAD --pretty=format:"- %s" >> CHANGELOG.md
+            git log --pretty=format:'- %s' >> CHANGELOG.md
+          else
+            echo "Generating changelog since $PREV_TAG"
+            echo "# Release Notes" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            git log "${PREV_TAG}..HEAD" --pretty=format:'- %s' >> CHANGELOG.md
           fi
-
-          echo "📝 Generated CHANGELOG.md:"
+          echo ""
+          echo "Generated CHANGELOG.md:"
           cat CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload changelog
         uses: actions/upload-artifact@v4
         with:
