@@ -1,0 +1,8379 @@
+# Eucalypt - Complete Documentation
+
+> This file contains the complete eucalypt documentation concatenated
+> into a single file for use by AI agents and coding assistants.
+> Generated from the eucalypt documentation source.
+
+# eucalypt
+
+**eucalypt** is a tool, and a little language, for generating and
+transforming structured data formats like YAML, JSON and TOML.
+
+If you use text-based templating to process these formats or you pipe
+these formats through several different tools or build steps,
+eucalypt might be able to help you generate your output more cleanly
+and with fewer cognitive somersaults.
+
+**eucalypt** is a purely functional language that can be used quickly and
+easily from the command line.
+
+It has the following features:
+
+  - a concise native syntax that allows you to define data, functions,
+    and operators
+  - a simple embedding into YAML files to support in-place
+    manipulation of the data (a la templating)
+  - facilities for manipulating blocks (think JSON objects, YAML
+    mappings)
+  - facilities for manipulating text including string interpolation
+    and regular expressions
+  - an ergonomic command line interface and access to environment
+    variables
+  - metadata annotations and numerous extension points
+  - a [*prelude*](../reference/prelude/index.md) of built-in functions, acting like a standard library
+
+It can currently read YAML, JSON, JSON Lines, TOML, EDN, XML, CSV and
+plain text and eucalypt's own ("eu") syntax and it can export YAML, JSON,
+TOML, EDN or plain text.
+
+> **Warning:** eucalypt is still in an early phase of development and
+> subject to change.
+
+## A lightning tour
+
+Eucalypt has a native [syntax](../reference/syntax.md) for writing blocks,
+lists and expressions. The YAML embedding consists of a few YAML tags
+used to embed eucalypt expression in YAML so a basic understanding of
+the native syntax is helpful.
+
+A few micro-examples should help give a flavour of eucalypt's
+native syntax. If you want to follow along, see [Quick
+Start](quick-start.md) for notes on installation.
+
+### Example 1
+
+Here is a simple one:
+
+```eu
+target-zones: ["a", "b", "c"] map("eu-west-1{}")
+```
+
+You can put this in a file named `test.eu` and run it with just:
+
+```shell
+eu test.eu
+```
+
+This outputs the following YAML:
+
+```yaml
+target-zones:
+  - eu-west-1a
+  - eu-west-1b
+  - eu-west-1c
+```
+
+As an aside, although we're looking at the native eucalypt syntax
+here, this example could just as easily be embedded directly in a YAML
+file using the `!eu` tag. Pop the following in a `test.yaml` file and
+process it with: `eu test.yaml`. You'll get the same result.
+
+```yaml
+target-zones: !eu ["a", "b", "c"] map("eu-west-1{}")
+```
+
+First, this example illustrates how we apply transformations like
+`map` simply by concatenation. This "pipelining" or "catenation" is
+the natural way to apply transformations to values in eucalypt.
+
+In fact this is simply a function call with the arguments rearranged a
+bit. In this example, `map` is a function of two parameters. Its first
+argument is provided in parentheses and its second argument is the
+value of what came before.
+
+> **Note:** Users of languages like Elixir or OCaml may recognise an
+> implicit `|>` operator here. Clojure users may see an invisible
+> threading macro. Note that writing elements next to each other like
+> this gives you the _reverse_ of what you might expect in Haskell or
+> OCaml or Lisp: we write `x f` *not* `f x`.
+
+There is a lot of freedom in eucalypt to express ideas in different
+ways and develop colourful and cryptic expressions. In a larger or
+more ambitious language this could be viewed as rope to hang yourself
+with. Please be careful.
+
+The string template, `"eu-west-1{}"`, actually defines a function of
+one argument that returns a string. The key ingredients here are:
+
+- the interpolation syntax `"{...}"` which allows values to be inserted
+into the string
+- the (hidden) use of numeric *anaphora* in the interpolation syntax
+(`{0}`, `{1}`, `{2}`, ...) which cause the string to define a
+function, not just sequence of characters
+- the use of the *unnumbered anaphor* (`{}`) which is numbered
+  automatically for us, so in this case, `{}` is a convenient synonym
+  for `{0}` - the first argument
+
+> **Note:** Anaphora crop up in various contexts in eucalypt and are
+> generally preferable to the full generality of lambdas. If the idea
+> is too complex to be expressed with anaphora, it should generally be
+> explicitly named.
+
+So:
+
+```eu
+a: 42 "The answer is {0}"
+```
+
+renders as
+
+```yaml
+a: The answer is 42
+```
+
+eucalypt also has *expression anaphora* and *block anaphora*
+
+> **Note:** Users of Groovy or Kotlin may recognise an equivalent of
+> the `it` parameter. Seasoned Lisp hackers are familiar with
+> anaphoric macros. Clojure users will recognise the `%`, `%1`, `%2`
+> forms from `#(...)` contexts. Unlike `%` repeated uses of unnumbered
+> anaphora in eucalypt refer to different parameters. `"{}{}"` is a
+> two-argument function which concatenates strings.
+
+Back to:
+
+```eu
+target-zones: ["a", "b", "c"] map("eu-west-1{}")
+```
+
+The whole line is a **declaration**. Declarations come in several
+types - this one is a **property declaration**. A **block** is written
+as a sequence of declarations enclosed in braces. For example:
+
+```eu,notest
+{
+  w: "foo" # a string
+  x: 3     # a whole number
+  y: 22.2  # a floaty number
+  z: true  # the truth
+}
+```
+
+(The `#` character introduces a comment which is ignored.)
+
+Unlike YAML, indentation is never significant.
+
+Unlike JSON, commas are not needed to separate declarations. Instead,
+the eucalypt parser determines the declarations mainly based on the
+location of colons. You can write:
+
+```eu,notest
+{ x: 1 increment negate y: 2 }
+```
+
+...and eucalypt knows it's two declarations.
+
+If that's a bit too crazy for you, then feel free to insert the
+commas. Eucalypt will accept them. Any of these are okay:
+
+```eu
+ok1: { a: 1 b: 2 c: 3 }
+ok2: { a: 1, b: 2, c: 3 }
+ok3: { a: 1, b: 2, c: 3, }
+```
+
+> **Note:** Unlike Clojure which makes commas optional by treating
+> them as whitespace, Eucalypt demands that if you are going to put
+> commas in, they have to be in the right place, at the end of
+> declarations. So you can use them if you believe it makes things
+> clearer but you are prevented from using them in ways which would
+> misguide.
+
+Our `target-zones` property declaration is at the **top level** so
+need not be surrounded by braces. Nevertheless it is in a block: the
+top level block, known as a **unit**, that is defined by the file that
+contains it. You can imagine the braces to be there if you like.
+
+As a final point on this example, it is probably worthwhile
+documenting declarations. eucalypt offers an easy way to do that using
+**declaration metadata** which we squeeze in between a leading
+backtick and the declaration itself:
+
+```eu
+` "AZs to deploy alien widgets in"
+target-zones: ["a", "b", "c"] map("eu-west-1{}")
+```
+
+In fact, all sorts of things can be wedged in there, but if a string
+appears on its own, it is interpreted as documentation.
+
+### Example 2
+
+Let's look at another small example:
+
+```eu
+character(name): {
+  resource-name: name
+  created: io.epoch-time
+}
+
+prentice: character("Pirate Prentice") {
+  laser-colour: "red"
+}
+
+slothrop: character("Tyrone Slothrop") {
+  eye-count: 7
+}
+```
+
+We've introduced a new type of declaration here of the form `f(x):`.
+This is a **function declaration**.
+
+Remember we saw a **property declaration** earlier. Eucalypt also has
+**operator declarations** but we'll ignore those for now.
+
+The function declaration declares a function called `character`, which
+accepts a single parameter (`name`) and returns a block containing two
+properties.
+
+Functions, like everything else in eucalypt, are declared in and live
+in blocks but they are left out when output is rendered, so you won't
+see them in the YAML or JSON that eucalypt produces.
+
+The braces in the definition of `character` are there to delimit the
+resulting block - *not* to define a function body. A function that
+returned a number would not need them:
+
+```eu
+inc(x): x + 1 # this defines an increment function
+```
+
+The next important ingredient in this example is *block catenation*.
+
+Blocks can be treated as functions of a single parameter. When they
+are applied as functions, the effect is a *block merge*.
+
+We've already seen that functions can be applied to arguments by
+concatenation.
+
+So writing one block after another produces a merged block. It
+contains the contents of the second block merged "on top" of the
+first.
+
+There is more to be said on block merge, but for now:
+
+
+`{ a: 1 } { b: 2 }` evaluates to `{ a: 1 b: 2 }`.
+
+and
+
+`{ a: 1 } { a: 2 }` evaluates to `{ a: 2 }`.
+
+In our example, the resulting YAML is just:
+
+```yaml
+prentice:
+  resource-name: Pirate Prentice
+  created: 1526991765
+  laser-colour: red
+
+slothrop:
+  resource-name: Tyrone Slothrop
+  created: 1526991765
+  eye-count: 7
+```
+
+As you can see, `io.epoch-time` evaluates to a unix timestamp.
+
+This metadata is generated once at launch time, *not* each time the
+expression is evaluated. eucalypt the language is a pure functional
+language, and there are no side-effects or non-deterministic functions
+(although its command line driver can perform all sorts of
+side-effects as input to the evaluation and as output from the
+evaluation and there are one or two dirty tricks in the debugging
+functions). For this reason, `prentice` and `slothrop` will have the
+same timestamps.
+
+Block merge can be a useful means of generating common content in
+objects. The common content can appear first as in this case, allowing
+it to be overridden. Or it could be applied second allowing it to
+override the existing detail. Or a mixture of both. Many more
+sophisticated means of combining block data are available too.
+
+> **Note:** This merge is similar to the effect of *merge keys* in
+> YAML, where a special `<<` mapping key causes a similar merge to
+> occur. Not all YAML processors support this and nor does eucalypt at
+> present, but it probably will some day.
+
+Be aware that eucalypt has nothing like virtual functions. The
+functions in scope when an expression is created are the ones that are
+applied. So if you redefine an `f` like this, in an overriding
+block...
+
+```eu,notest
+{ f(x): x+1 a: f(2) } { f(x): x-2 }
+```
+
+...the definition of `a` will not see it.
+
+```yaml
+a: 3
+```
+
+So block merge is only very loosely related to object oriented
+inheritance. Also by default you only get a _shallow_ merge - deep
+merges are provided in the standard prelude. It is possible that a
+deep merge will become the default for block catenation in future.
+
+Many more complicated ways of processing blocks are possible using
+functions, block anaphora and standard prelude functions.
+
+## Quick tour of the command line
+
+On macOS you can install the `eu` command line tools using Homebrew
+with:
+
+```shell
+brew install curvelogic/homebrew-tap/eucalypt
+```
+
+Check the version you are running with:
+
+```shell
+eu version
+```
+
+`eu` is intended to be easy to use for common tasks and does its best
+to allow you to say what you want succinctly. The intention is to be
+easy to use in pipelines in combination with other tools like `jq`.
+
+By default, it runs in ergonomic mode which will make a few
+assumptions in order to allow you to be a little less explicit. It
+also pulls in user-specific declarations from `~/.eucalypt`. For
+repeatable builds and scripted usage, it is better to turn ergonomic
+mode *off* using the `-B (--batch)` switch.
+
+The simplest usage is to specify a eucalypt file to evaluate and leave
+the default render format (YAML) and output (standard out) alone.
+
+```shell
+> eu test.eu
+```
+
+`eu` with no arguments will generally be taken to specify that input
+is coming from standard in. So the above is equivalent to:
+
+```shell
+> cat test.eu | eu
+```
+
+There is an `-x` switch to control output format explicitly (setting
+"yaml", "json", "text", "csv" or "eu") but for the very common case of
+requiring JSON output there is a shortcut:
+
+```shell
+> eu test.eu -j
+```
+
+You can, of course, redirect standard output to a file but if you
+specify the output file explicitly (with `-o`), `eu` will infer the
+output format from the extension:
+
+```shell
+> eu test.eu -o output.json # equivalent to eu test.eu -j > output.json
+```
+
+Small snippets of eucalypt can be passed in directly using the `-e`
+switch.
+
+```shell
+> eu -e '{ a: 8 * 8 }'
+```
+
+The fact that eucalypt makes relatively infrequent use of single
+quotes makes this straightforward for most shells.
+
+By default, `eu` evaluates the entirety of the loaded source and uses
+all of it to render the result, leaving out any function values and
+other non-renderable content.
+
+It is possible to select just parts of the eucalypt for rendering:
+
+  1. A declaration in the source may be identified as the **main**
+     target using the `:main` declaration metadata and we become the
+     part rendered by default.
+  2. **targets** may be defined and named using the `:target`
+     declaration metadata and those targets can then be specified
+     using the `-t` option to `eu`
+  3. The `-e` option can be used in addition to other
+     source file(s) to identify an expression to be rendered (e.g. `eu
+     test.eu -e x.y.z`)
+
+So `eu`'s ability to read JSON and YAML natively combined with the
+last options give a simple way to pick values out of structured data
+which can be very handy for "querying" services that return YAML or
+JSON data.
+
+```shell
+> aws s3api list-buckets | eu -e 'Buckets map(lookup(:Name))'
+```
+
+There is much more to this story. For instance `eu` can:
+
+- accept several inputs to make definitions in earlier inputs
+  available to subsequent inputs `eu test1.eu test2.eu test3.eu`
+- accept YAML and JSON files as pure data to be merged in: `eu
+  data.yaml tools.eu`
+- accept YAML or JSON annotated with eucalypt to execute: `eu
+  data.yaml`
+- override the default extensions: `eu yaml@info.txt`
+- automatically use `Eufile` files in the current folder hierarchy
+
+See [CLI Reference](../reference/cli.md) for more complete documentation.
+
+---
+
+# What is Eucalypt?
+
+**Eucalypt** is a tool, and a little language, for generating,
+templating, rendering and processing structured data formats like
+YAML, JSON and TOML.
+
+If you use text-based templating to process these formats or you pipe
+these formats through several different tools or build steps,
+eucalypt might be able to help you generate your output more cleanly
+and with fewer cognitive somersaults.
+
+## Key Features
+
+- A concise native syntax for defining data, functions, and operators
+- A simple embedding into YAML files for in-place manipulation (a la
+  templating)
+- Facilities for manipulating blocks (think JSON objects, YAML mappings)
+- String interpolation and regular expressions
+- An ergonomic command line interface with environment variable access
+- Metadata annotations and numerous extension points
+- A [prelude](../reference/prelude/index.md) of built-in functions acting
+  as a standard library
+
+## Supported Formats
+
+**Input:** YAML, JSON, JSON Lines, TOML, EDN, XML, CSV, plain text,
+and eucalypt's own `.eu` syntax.
+
+**Output:** YAML, JSON, TOML, EDN, or plain text.
+
+## When to Use Eucalypt
+
+Eucalypt is a good fit when you need to:
+
+- Transform data between structured formats (e.g. JSON to YAML)
+- Generate configuration files with shared logic
+- Query and filter structured data from the command line
+- Template YAML or JSON with embedded expressions
+- Build data processing pipelines
+
+## Learn More
+
+- [Quick Start](quick-start.md) -- install eucalypt and run your first program
+- [Lightning Tour](index.md#a-lightning-tour) -- a quick taste of the syntax
+- [The Eucalypt Guide](../guide/blocks-and-declarations.md) -- a progressive tutorial
+
+---
+
+# Quick Start
+
+## Installation
+
+### On macOS via Homebrew
+
+If you use Homebrew, you can install using:
+
+```sh
+brew install curvelogic/homebrew-tap/eucalypt
+```
+
+Otherwise binaries for macOS are available on the [releases
+page](https://github.com/curvelogic/eucalypt/releases).
+
+### On Linux
+
+x86_64 and aarch64 binaries built in CI are available on the [releases
+page](https://github.com/curvelogic/eucalypt/releases).
+
+### On Windows
+
+Sorry, haven't got there yet. But you could try installing from
+source.
+
+### From source
+
+You will need a [Rust](https://rust-lang.org) installation and *cargo*.
+
+Build and install should be as simple as:
+
+```sh
+cargo install --path .
+```
+
+## Testing your installation
+
+```sh
+eu --version
+```
+
+...prints the version:
+
+```text
+eu 0.3.0
+```
+
+...and...
+
+```sh
+eu --help
+```
+
+...shows command line help:
+
+```text
+A functional language for structured data
+
+Usage: eu [OPTIONS] [FILES]... [COMMAND]
+
+Commands:
+  run           Evaluate eucalypt code (default)
+  test          Run tests
+  dump          Dump intermediate representations
+  version       Show version information
+  explain       Explain what would be executed
+  list-targets  List targets defined in the source
+  fmt           Format eucalypt source files
+  lsp           Start the Language Server Protocol server
+  help          Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [FILES]...  Files to process (used when no subcommand specified)
+
+Options:
+  -L, --lib-path <LIB_PATH>                Add directory to lib path
+  -Q, --no-prelude                         Don't load the standard prelude
+  -B, --batch                              Batch mode (no .eucalypt.d)
+  -d, --debug                              Turn on debug features
+  -S, --statistics                         Print metrics to stderr before exiting
+      --statistics-file <STATISTICS_FILE>  Write statistics as JSON to a file
+  -h, --help                               Print help
+  -V, --version                            Print version
+```
+
+Use `eu <command> --help` for detailed help on each subcommand.
+
+## Your first program
+
+Create a file called `hello.eu`:
+
+```eu
+greeting: "Hello, World!"
+```
+
+Run it:
+
+```shell
+eu hello.eu
+```
+
+Output:
+
+```yaml
+greeting: Hello, World!
+```
+
+Try JSON output:
+
+```shell
+eu hello.eu -j
+```
+
+```json
+{"greeting": "Hello, World!"}
+```
+
+## Next steps
+
+- Read the [lightning tour](index.md#a-lightning-tour) for a quick
+  taste of what eucalypt can do
+- Work through [The Eucalypt Guide](../guide/blocks-and-declarations.md)
+  for a progressive tutorial
+- Browse [Eucalypt by Example](by-example.md) for worked examples
+
+---
+
+# Eucalypt by Example
+
+This page presents a collection of worked examples showing how
+eucalypt solves real-world problems. Each example includes the
+problem, the eucalypt code, and the expected output.
+
+## 1. Format Conversion: JSON to YAML
+
+**Problem:** Convert a JSON configuration file to YAML.
+
+```sh
+echo '{"database": {"host": "db.example.com", "port": 5432}}' | eu
+```
+
+**Output:**
+
+```yaml
+database:
+  host: db.example.com
+  port: 5432
+```
+
+Eucalypt reads JSON natively and defaults to YAML output. No code
+needed.
+
+## 2. Extracting Fields from API Data
+
+**Problem:** Given a list of users in JSON, extract just their names.
+
+```sh
+eu -e 'map(_.name)' <<'JSON'
+[
+  {"name": "Alice", "role": "admin"},
+  {"name": "Bob", "role": "user"},
+  {"name": "Charlie", "role": "user"}
+]
+JSON
+```
+
+**Output:**
+
+```yaml
+- Alice
+- Bob
+- Charlie
+```
+
+The `_` is an expression anaphor -- `_.name` means "look up `name`
+in whatever the argument is".
+
+## 3. Filtering and Transforming Data
+
+**Problem:** From a list of products, find those over a price
+threshold and format them.
+
+```eu
+# products.eu
+products: [
+  { name: "Widget" price: 9.99 }
+  { name: "Gadget" price: 24.99 }
+  { name: "Gizmo" price: 49.99 }
+  { name: "Doohickey" price: 4.99 }
+]
+
+expensive: products
+  filter(_.price > 20)
+  map({name: •}.(name str.to-upper))
+```
+
+```sh
+eu products.eu -e expensive
+```
+
+**Output:**
+
+```yaml
+- GADGET
+- GIZMO
+```
+
+## 4. Generating Configuration with Shared Defaults
+
+**Problem:** Generate environment-specific configs that share common
+defaults.
+
+```eu
+# config.eu
+base: {
+  app: "my-service"
+  port: 8080
+  log-level: "info"
+  db: { host: "localhost" port: 5432 }
+}
+
+production: base << {
+  log-level: "warn"
+  db: { host: "prod-db.internal" }
+}
+
+staging: base << {
+  db: { host: "staging-db.internal" }
+}
+```
+
+```sh
+eu config.eu -e production -j
+```
+
+**Output:**
+
+```json
+{
+  "app": "my-service",
+  "port": 8080,
+  "log-level": "warn",
+  "db": {
+    "host": "prod-db.internal",
+    "port": 5432
+  }
+}
+```
+
+The `<<` operator deep-merges blocks, so nested keys like `db.port`
+are preserved while `db.host` is overridden.
+
+## 5. CSV to JSON Conversion
+
+**Problem:** Read a CSV file and output as a JSON array.
+
+Given `people.csv`:
+```csv
+name,age,city
+Alice,30,London
+Bob,25,Manchester
+Charlie,35,Edinburgh
+```
+
+```sh
+eu rows=people.csv -j -e 'rows map({name: •}.(name))'
+```
+
+**Output:**
+
+```json
+["Alice", "Bob", "Charlie"]
+```
+
+Or to transform the data:
+
+```sh
+eu rows=people.csv -j -e 'rows map({ n: • }.({name: n.name age: n.age num}))'
+```
+
+This converts age from string to number (CSV values are always
+strings).
+
+## 6. Generating Availability Zone Names
+
+**Problem:** Generate AWS availability zone names from a list of zone
+letters.
+
+```sh
+eu -e '["a", "b", "c"] map("eu-west-2{}")'
+```
+
+**Output:**
+
+```yaml
+- eu-west-2a
+- eu-west-2b
+- eu-west-2c
+```
+
+The string `"eu-west-2{}"` is a function: `{}` is a string anaphor
+that takes one argument.
+
+## 7. Merging Multiple YAML Files
+
+**Problem:** Combine values from several YAML files into a single
+output.
+
+Given `defaults.yaml`:
+```yaml
+timeout: 30
+retries: 3
+```
+
+Given `overrides.yaml`:
+```yaml
+timeout: 60
+debug: true
+```
+
+```sh
+eu defaults.yaml overrides.yaml
+```
+
+**Output:**
+
+```yaml
+timeout: 60
+retries: 3
+debug: true
+```
+
+Later inputs override earlier ones. For a merged view with both
+available, use named inputs:
+
+```sh
+eu d=defaults.yaml o=overrides.yaml -e 'd << o'
+```
+
+## 8. Data Aggregation Pipeline
+
+**Problem:** Compute summary statistics from structured data.
+
+```eu
+# sales.eu
+sales: [
+  { region: "North" amount: 1200 }
+  { region: "South" amount: 800 }
+  { region: "North" amount: 600 }
+  { region: "South" amount: 1500 }
+  { region: "East" amount: 900 }
+]
+
+` :suppress
+amounts: sales map(_.amount)
+
+summary: {
+  total: amounts foldl(+, 0)
+  count: sales count
+  average: summary.total / summary.count
+  max: amounts max-of
+  min: amounts min-of
+}
+```
+
+```sh
+eu sales.eu -e summary
+```
+
+**Output:**
+
+```yaml
+total: 5000
+count: 5
+average: 1000
+max: 1500
+min: 600
+```
+
+## 9. Querying Deeply Nested Configuration
+
+**Problem:** Find all port numbers in a complex configuration.
+
+```sh
+eu -e 'deep-query("port", {
+  web: { host: "0.0.0.0" port: 80 }
+  api: { host: "0.0.0.0" port: 8080 }
+  db: { host: "localhost" port: 5432 }
+  cache: { host: "localhost" port: 6379 }
+})'
+```
+
+**Output:**
+
+```yaml
+- 80
+- 8080
+- 5432
+- 6379
+```
+
+`deep-query` recursively searches nested blocks. You can also use
+wildcards: `deep-query("*.port", data)` matches ports one level deep,
+while `deep-query("**.port", data)` matches at any depth.
+
+## 10. String Processing: Parsing Log Lines
+
+**Problem:** Extract timestamps and levels from log lines.
+
+```eu
+# logs.eu
+lines: [
+  "2024-03-15 10:30:00 ERROR Connection timeout"
+  "2024-03-15 10:30:05 INFO Retry attempt 1"
+  "2024-03-15 10:30:10 ERROR Connection timeout"
+  "2024-03-15 10:30:15 INFO Connected"
+]
+
+` :suppress
+parse(line): line str.match-with("(\S+ \S+) (\w+) (.*)") tail
+
+parsed: lines map(parse) map({parts: •}.({
+  timestamp: parts first
+  level: parts second
+  message: parts nth(2)
+}))
+
+errors: parsed filter(_.level = "ERROR")
+```
+
+```sh
+eu logs.eu -e errors
+```
+
+**Output:**
+
+```yaml
+- timestamp: '2024-03-15 10:30:00'
+  level: ERROR
+  message: Connection timeout
+- timestamp: '2024-03-15 10:30:10'
+  level: ERROR
+  message: Connection timeout
+```
+
+## 11. Templating CloudFormation Resources
+
+**Problem:** Generate YAML with custom tags for CloudFormation.
+
+```eu
+# cfn.eu
+resource(name, type, props): {
+  'Type': type
+  'Properties': props
+}
+
+resources: {
+  MyBucket: resource("bucket", "AWS::S3::Bucket", {
+    'BucketName': :my-bucket // { tag: "!Ref AccountId" }
+  })
+  MyQueue: resource("queue", "AWS::SQS::Queue", {
+    'QueueName': "my-queue"
+  })
+}
+```
+
+This demonstrates using single-quote identifiers for keys with
+special characters and the metadata `tag` key for YAML tags.
+
+## 12. Working with Dates
+
+**Problem:** Filter events by date and format the output.
+
+```eu
+# events.eu
+events: [
+  { name: "Launch" date: t"2024-01-15" }
+  { name: "Review" date: t"2024-06-01" }
+  { name: "Release" date: t"2024-09-30" }
+]
+
+cutoff: t"2024-06-01"
+
+upcoming: events
+  filter(_.date >= cutoff)
+  map(_.name)
+```
+
+```sh
+eu events.eu -e upcoming
+```
+
+**Output:**
+
+```yaml
+- Review
+- Release
+```
+
+The `t"..."` syntax creates date-time literals that support
+comparison operators.
+
+## 13. Generating a Lookup Table
+
+**Problem:** Build a key-value mapping from two parallel lists.
+
+```sh
+eu -e 'zip-kv([:name, :age, :city], ["Alice", 30, "London"])'
+```
+
+**Output:**
+
+```yaml
+name: Alice
+age: 30
+city: London
+```
+
+`zip-kv` pairs up symbols as keys with values to produce a block.
+
+## 14. Parameterised Scripts
+
+**Problem:** Write a reusable script that accepts command-line
+arguments.
+
+```eu
+# greet.eu
+name: io.args head-or("World")
+times: io.args tail head-or("1") num
+
+greetings: repeat("Hello, {name}!") take(times)
+```
+
+```sh
+eu greet.eu -e greetings -- Alice 3
+```
+
+**Output:**
+
+```yaml
+- Hello, Alice!
+- Hello, Alice!
+- Hello, Alice!
+```
+
+Arguments after `--` are available via `io.args` as a list of
+strings. Use `num` to convert to numbers.
+
+## 15. Set Operations: Finding Unique Values
+
+**Problem:** Find the unique tags across multiple items and compute
+overlaps.
+
+```eu
+items: [
+  { name: "A" tags: ["fast", "reliable", "cheap"] }
+  { name: "B" tags: ["fast", "expensive"] }
+  { name: "C" tags: ["reliable", "cheap", "slow"] }
+]
+
+` :suppress
+tag-sets: items map(_.tags set.from-list)
+
+all-tags: tag-sets foldl(set.union, ∅) set.to-list
+common-tags: tag-sets foldl(set.intersect, tag-sets head) set.to-list
+
+result: {
+  all: all-tags
+  common: common-tags
+}
+```
+
+```sh
+eu tags.eu -e result
+```
+
+**Output:**
+
+```yaml
+all:
+- cheap
+- expensive
+- fast
+- reliable
+- slow
+common: []
+```
+
+## Next Steps
+
+- Work through [The Eucalypt Guide](../guide/blocks-and-declarations.md)
+  for a progressive tutorial
+- Browse the [Prelude Reference](../reference/prelude/index.md) for
+  the full standard library
+- See the [CLI Reference](../reference/cli.md) for all command-line
+  options
+
+---
+
+# Blocks and Declarations
+
+In this chapter you will learn:
+
+- What blocks are and how they relate to structured data formats
+- The three types of declarations: property, function, and operator
+- How top-level files work as implicit blocks (units)
+- How to annotate declarations with metadata
+
+## Blocks
+
+A **block** is eucalypt's fundamental data structure. It corresponds to
+a JSON object, a YAML mapping, or a TOML table: an ordered collection
+of named values.
+
+Blocks are written with curly braces:
+
+```eu
+person: {
+  name: "Alice"
+  age: 30
+  role: "engineer"
+}
+```
+
+Running this file produces:
+
+```yaml
+person:
+  name: Alice
+  age: 30
+  role: engineer
+```
+
+Blocks can be nested:
+
+```eu
+config: {
+  database: {
+    host: "localhost"
+    port: 5432
+  }
+  cache: {
+    host: "localhost"
+    port: 6379
+  }
+}
+```
+
+## Property Declarations
+
+The simplest declaration is a **property declaration**: a name followed
+by a colon and an expression.
+
+```eu
+greeting: "Hello, World!"
+count: 42
+pi: 3.14159
+active: true
+nothing: null
+```
+
+These declare names bound to values. The values can be any expression:
+numbers, strings, booleans, `null`, lists, blocks, or computed
+expressions.
+
+### Commas are Optional
+
+Declarations can be separated by commas or simply by whitespace.
+Line endings are not significant. All of these are equivalent:
+
+```eu
+a: { x: 1 y: 2 z: 3 }
+b: { x: 1, y: 2, z: 3 }
+c: { x: 1, y: 2, z: 3, }
+```
+
+```sh
+eu -e '{ x: 1 y: 2 z: 3 }'
+```
+
+```yaml
+x: 1
+y: 2
+z: 3
+```
+
+### Symbols
+
+Symbols are written with a colon prefix and behave like interned
+strings. They are used as keys and as lightweight identifiers:
+
+```eu
+status: :active
+tag: :important
+```
+
+```yaml
+status: active
+tag: important
+```
+
+## Function Declarations
+
+Adding a parameter list creates a **function declaration**:
+
+```eu
+greet(name): "Hello, {name}!"
+double(x): x * 2
+
+message: greet("World")
+result: double(21)
+```
+
+```yaml
+message: Hello, World!
+result: 42
+```
+
+Functions are not rendered in the output -- only property values
+appear. Functions can take multiple parameters:
+
+```eu
+add(x, y): x + y
+total: add(3, 4)
+```
+
+```yaml
+total: 7
+```
+
+## Operator Declarations
+
+You can define custom infix operators using symbolic names:
+
+```eu
+(x <+> y): [x, y]
+pair: 1 <+> 2
+```
+
+```yaml
+pair:
+- 1
+- 2
+```
+
+Prefix and postfix unary operators are also possible:
+
+```eu
+(!! x): x * x
+squared: !! 5
+```
+
+```yaml
+squared: 25
+```
+
+Operator precedence and associativity are controlled through metadata
+annotations (covered below). See the
+[Operators](operators.md) chapter for full details.
+
+> **Note:** While function declarations are namespaced to their block,
+> operators do not have a namespace and are available only where they
+> are in scope.
+
+## Units: Top-Level Blocks
+
+The top-level of a `.eu` file is itself a block, called a **unit**.
+It does not need surrounding braces. So this file:
+
+```eu
+name: "Alice"
+age: 30
+```
+
+...is equivalent to a block `{ name: "Alice" age: 30 }` and produces:
+
+```yaml
+name: Alice
+age: 30
+```
+
+## Comments
+
+Comments start with `#` and continue to the end of the line:
+
+```eu
+# This is a comment
+name: "Alice"  # inline comment
+```
+
+## Declaration Metadata
+
+Metadata can be attached to any declaration by placing it between a
+leading backtick and the declaration:
+
+```eu
+` "A friendly greeting"
+greeting: "Hello!"
+
+` { doc: "Add two numbers" }
+add(x, y): x + y
+```
+
+A bare string is shorthand for documentation metadata.
+
+Some metadata keys activate special behaviour:
+
+- `:suppress` -- hides the declaration from output
+- `:target` -- marks the declaration as an export target
+- `:main` -- marks the default target
+
+```eu
+` :suppress
+helper(x): x + 1
+
+` { target: :my-output }
+output: {
+  result: helper(41)
+}
+```
+
+Running `eu file.eu -t my-output` renders only the `output` block.
+
+## Block and Unit Metadata
+
+A single expression may precede the declarations in any block and is
+treated as metadata for that block. At the top level of a file (the
+unit), this means the first item, if it is an expression rather than a
+declaration, becomes metadata for the entire unit:
+
+```eu
+{ doc: "Configuration generator" }
+
+host: "localhost"
+port: 8080
+```
+
+## Scope and Visibility
+
+Names declared in a block are visible within that block and in any
+nested blocks:
+
+```eu
+x: 99
+inner: {
+  y: x + 1  # x is visible here
+}
+```
+
+```yaml
+x: 99
+inner:
+  y: 100
+```
+
+Names in nested blocks can shadow outer names:
+
+```eu
+x: 1
+inner: {
+  x: 2
+  y: x  # refers to inner x
+}
+```
+
+```yaml
+x: 1
+inner:
+  x: 2
+  y: 2
+```
+
+> **Warning:** Be careful with self-reference. Writing `name: name`
+> inside a block creates an infinite recursion, because the
+> declaration `name` refers to itself. This is true regardless of
+> whether `name` is defined in an outer scope.
+
+## Key Concepts
+
+- **Blocks** are ordered collections of named values (like JSON
+  objects or YAML mappings)
+- **Property declarations** bind a name to a value
+- **Function declarations** bind a name to a function (not rendered in
+  output)
+- **Operator declarations** define custom infix, prefix, or postfix
+  operators
+- **Metadata** annotations control export, documentation, and other
+  special behaviour
+- The top-level file is a unit: an implicit block without braces
+
+---
+
+# Expressions and Pipelines
+
+In this chapter you will learn:
+
+- The primitive value types in eucalypt
+- How function application works via catenation (pipelining)
+- How partial application and currying work
+- How to compose pipelines of transformations
+
+## Primitive Values
+
+Eucalypt has the following primitive types:
+
+| Type | Examples | Notes |
+|------|----------|-------|
+| Numbers | `42`, `-7`, `3.14` | Integers and floats |
+| Strings | `"hello"`, `"it's"` | Double-quoted only |
+| Symbols | `:name`, `:active` | Colon-prefixed identifiers |
+| Booleans | `true`, `false` | |
+| Null | `null` | Renders as YAML `~` or JSON `null` |
+
+## Lists
+
+Lists are comma-separated values in square brackets (unlike in blocks,
+commas are required):
+
+```eu
+numbers: [1, 2, 3, 4, 5]
+mixed: [1, "two", :three, true]
+nested: [[1, 2], [3, 4]]
+empty: []
+```
+
+## Calling Functions
+
+Functions can be called by placing arguments in parentheses directly
+after the function name (with no intervening space):
+
+```eu
+add(x, y): x + y
+result: add(3, 4)
+```
+
+```yaml
+result: 7
+```
+
+## Catenation: The Pipeline Style
+
+One distinctive feature of eucalypt is **catenation**: applying a
+function by writing the argument before the function name, separated
+by whitespace.
+
+```eu
+result: 5 inc
+```
+
+This is equivalent to `inc(5)` and produces `6`.
+
+Catenation lets you chain operations into readable pipelines:
+
+```sh
+eu -e '[1, 2, 3, 4, 5] reverse head'
+```
+
+```yaml
+5
+```
+
+Each step in the pipeline passes its result to the next function. You
+can read it left to right: "take the list, reverse it, take the head."
+
+## Combining Catenation with Arguments
+
+When a function takes multiple arguments, you can supply some in
+parentheses and the rest via catenation. The catenated value becomes
+the *last* argument:
+
+```eu
+result: [1, 2, 3] map(inc)
+```
+
+Here `map` takes two arguments: a function and a list. `inc` is
+provided in parentheses and `[1, 2, 3]` is provided by catenation.
+The result is `[2, 3, 4]`.
+
+This is the standard eucalypt pattern for data processing pipelines:
+
+```sh
+eu -e '[1, 2, 3, 4, 5] filter(> 3) map(* 10)'
+```
+
+```yaml
+- 40
+- 50
+```
+
+## Currying and Partial Application
+
+All functions in eucalypt are curried: if you provide fewer arguments
+than a function expects, you get back a partially applied function.
+
+```eu
+add(x, y): x + y
+add-five: add(5)
+result: add-five(3)
+```
+
+```yaml
+result: 8
+```
+
+Curried application also works with multi-argument calls:
+
+```eu
+f(x, y, z): x + y + z
+
+a: f(1, 2, 3)   # all at once
+b: f(1)(2)(3)    # one at a time
+c: f(1, 2)(3)    # mixed
+```
+
+All three produce `6`.
+
+## Lookup: The Dot Operator
+
+The dot operator (`.`) accesses a named property within a block:
+
+```eu
+person: { name: "Alice" age: 30 }
+name: person.name
+```
+
+```yaml
+person:
+  name: Alice
+  age: 30
+name: Alice
+```
+
+Lookups can be chained:
+
+```eu
+config: { db: { host: "localhost" port: 5432 } }
+host: config.db.host
+```
+
+```yaml
+config:
+  db:
+    host: localhost
+    port: 5432
+host: localhost
+```
+
+> **Warning:** The dot operator binds very tightly (precedence 90).
+> Writing `list head.name` is parsed as `list (head.name)`, not
+> `(list head).name`. Use explicit parentheses when combining lookup
+> with catenation: `(list head).name`.
+>
+> The `↑` (up arrow) prefix operator, which is shorthand for `head`,
+> binds even tighter (precedence 95). So `↑xs.name` means
+> `(↑xs).name`.
+
+## Generalised Lookup
+
+Lookup can be generalised: any expression after the dot is evaluated
+in the context of the block to the left.
+
+```eu
+point: { x: 3 y: 4 }
+sum: point.(x + y)
+pair: point.[x, y]
+label: point."{x},{y}"
+```
+
+```yaml
+point:
+  x: 3
+  y: 4
+sum: 7
+pair:
+- 3
+- 4
+label: 3,4
+```
+
+This is particularly useful for creating temporary scopes:
+
+```eu
+result: { a: 10 b: 20 }.(a * b)
+```
+
+```yaml
+result: 200
+```
+
+## Building Pipelines
+
+Combining catenation, partial application, and the standard prelude
+creates powerful data processing pipelines:
+
+```sh
+eu -e '["alice", "bob", "charlie"] map(str.to-upper) filter(str.matches?("^[AB]"))'
+```
+
+```yaml
+- ALICE
+- BOB
+```
+
+A more complete example:
+
+```eu
+people: [
+  { name: "Alice" age: 30 }
+  { name: "Bob" age: 25 }
+  { name: "Charlie" age: 35 }
+]
+
+over-thirty: people filter(_.age > 30) map(_.name)
+```
+
+```yaml
+people:
+- name: Alice
+  age: 30
+- name: Bob
+  age: 25
+- name: Charlie
+  age: 35
+over-thirty:
+- Charlie
+```
+
+## The `then` Function
+
+The `then` function provides a pipeline-friendly conditional:
+
+```sh
+eu -e '5 > 3 then("yes", "no")'
+```
+
+```yaml
+yes
+```
+
+It is equivalent to `if` with the condition as the last argument,
+making it natural in pipelines:
+
+```eu
+result: [1, 2, 3] count (> 2) then("many", "few")
+```
+
+```yaml
+result: many
+```
+
+## Key Concepts
+
+- **Catenation** applies a function by writing the argument before the
+  function name: `5 inc` means `inc(5)`
+- Pipelines are built by chaining catenation: `data f g h`
+- Functions are **curried**: partial application is automatic
+- The **dot operator** looks up properties: `block.key`
+- **Generalised lookup** evaluates expressions in a block's scope:
+  `block.(expr)`
+- Combine these techniques for concise data processing pipelines
+
+---
+
+# Lists and Transformations
+
+In this chapter you will learn:
+
+- How to create and deconstruct lists
+- The core list operations: `map`, `filter`, `foldl`, `foldr`
+- Other useful list functions from the prelude
+- How to combine list operations into pipelines
+
+## Creating Lists
+
+Lists are written with square brackets and commas:
+
+```eu
+numbers: [1, 2, 3, 4, 5]
+strings: ["hello", "world"]
+empty: []
+nested: [[1, 2], [3, 4]]
+```
+
+## Basic List Operations
+
+### `head` and `tail`
+
+`head` returns the first element; `tail` returns everything after it:
+
+```sh
+eu -e '[10, 20, 30] head'
+```
+
+```yaml
+10
+```
+
+```sh
+eu -e '[10, 20, 30] tail'
+```
+
+```yaml
+- 20
+- 30
+```
+
+Use `head-or` to provide a default for empty lists:
+
+```sh
+eu -e '[] head-or(0)'
+```
+
+```yaml
+0
+```
+
+### `first` and `second`
+
+`first` is an alias for `head`. `second` returns the second element:
+
+```sh
+eu -e '[:a, :b, :c] second'
+```
+
+```yaml
+b
+```
+
+### `cons`
+
+`cons` prepends an element to a list:
+
+```sh
+eu -e 'cons(0, [1, 2, 3])'
+```
+
+```yaml
+- 0
+- 1
+- 2
+- 3
+```
+
+### `nil?`
+
+Test whether a list is empty:
+
+```sh
+eu -e '[] nil?'
+```
+
+```yaml
+true
+```
+
+### `count`
+
+Count the elements:
+
+```sh
+eu -e '[10, 20, 30] count'
+```
+
+```yaml
+3
+```
+
+## Transforming Lists
+
+### `map`
+
+Apply a function to every element:
+
+```sh
+eu -e '[1, 2, 3] map(inc)'
+```
+
+```yaml
+- 2
+- 3
+- 4
+```
+
+```sh
+eu -e '[1, 2, 3] map(* 10)'
+```
+
+```yaml
+- 10
+- 20
+- 30
+```
+
+### `filter`
+
+Keep only elements satisfying a predicate:
+
+```sh
+eu -e '[1, 2, 3, 4, 5, 6] filter(> 3)'
+```
+
+```yaml
+- 4
+- 5
+- 6
+```
+
+### `remove`
+
+The opposite of `filter` -- remove elements satisfying the predicate:
+
+```sh
+eu -e '[1, 2, 3, 4, 5] remove(> 3)'
+```
+
+```yaml
+- 1
+- 2
+- 3
+```
+
+### The Functor Operator `<$>`
+
+The `<$>` operator is an alias for `map`:
+
+```sh
+eu -e 'inc <$> [1, 2, 3]'
+```
+
+```yaml
+- 2
+- 3
+- 4
+```
+
+## Folding
+
+Folds reduce a list to a single value by applying a binary function
+across all elements.
+
+### `foldl`
+
+Left fold: `foldl(op, init, list)` applies `op` from the left:
+
+```sh
+eu -e 'foldl(+, 0, [1, 2, 3, 4, 5])'
+```
+
+```yaml
+15
+```
+
+### `foldr`
+
+Right fold: `foldr(op, init, list)` applies `op` from the right:
+
+```sh
+eu -e 'foldr(++, [], [[1, 2], [3, 4], [5]])'
+```
+
+```yaml
+- 1
+- 2
+- 3
+- 4
+- 5
+```
+
+## Slicing
+
+### `take` and `drop`
+
+```sh
+eu -e '[1, 2, 3, 4, 5] take(3)'
+```
+
+```yaml
+- 1
+- 2
+- 3
+```
+
+```sh
+eu -e '[1, 2, 3, 4, 5] drop(3)'
+```
+
+```yaml
+- 4
+- 5
+```
+
+### `take-while` and `drop-while`
+
+```sh
+eu -e '[1, 2, 3, 4, 5] take-while(< 4)'
+```
+
+```yaml
+- 1
+- 2
+- 3
+```
+
+## Combining Lists
+
+### `append` and `++`
+
+```sh
+eu -e '[1, 2] ++ [3, 4]'
+```
+
+```yaml
+- 1
+- 2
+- 3
+- 4
+```
+
+### `concat`
+
+Flatten a list of lists:
+
+```sh
+eu -e 'concat([[1, 2], [3], [4, 5]])'
+```
+
+```yaml
+- 1
+- 2
+- 3
+- 4
+- 5
+```
+
+### `mapcat`
+
+Map then flatten (also known as `flatMap` or `concatMap`):
+
+```sh
+eu -e '["ab", "cd"] mapcat(str.letters)'
+```
+
+```yaml
+- a
+- b
+- c
+- d
+```
+
+## Checking Lists
+
+### `all-true?` and `any-true?`
+
+```sh
+eu -e '[true, true, false] all-true?'
+```
+
+```yaml
+false
+```
+
+```sh
+eu -e '[true, true, false] any-true?'
+```
+
+```yaml
+true
+```
+
+### `all` and `any`
+
+Test with a predicate:
+
+```sh
+eu -e '[2, 4, 6] all(> 0)'
+```
+
+```yaml
+true
+```
+
+```sh
+eu -e '[1, 2, 3] any(zero?)'
+```
+
+```yaml
+false
+```
+
+## Reordering
+
+### `reverse`
+
+```sh
+eu -e '[:a, :b, :c] reverse'
+```
+
+```yaml
+- c
+- b
+- a
+```
+
+### `zip-with`
+
+Combine two lists element by element:
+
+```sh
+eu -e 'zip-with(+, [1, 2, 3], [10, 20, 30])'
+```
+
+```yaml
+- 11
+- 22
+- 33
+```
+
+### `zip-with` and `pair` to create blocks
+
+```sh
+eu -e 'zip-with(pair, [:x, :y, :z], [1, 2, 3]) block'
+```
+
+```yaml
+x: 1
+y: 2
+z: 3
+```
+
+## Infinite Lists
+
+Eucalypt supports lazy evaluation, so you can work with infinite lists:
+
+```sh
+eu -e 'repeat(:x) take(4)'
+```
+
+```yaml
+- x
+- x
+- x
+- x
+```
+
+Use `take` to extract a finite portion.
+
+## Sorting
+
+### `qsort`
+
+Sort with a comparison function:
+
+```sh
+eu -e '[5, 3, 1, 4, 2] qsort(<)'
+```
+
+```yaml
+- 1
+- 2
+- 3
+- 4
+- 5
+```
+
+### `sort-nums`
+
+A convenience for sorting numbers in ascending order:
+
+```sh
+eu -e '[30, 10, 20] sort-nums'
+```
+
+```yaml
+- 10
+- 20
+- 30
+```
+
+## Putting It Together
+
+Here is a more complete example combining multiple list operations:
+
+```eu
+data: [
+  { name: "Alice" score: 85 }
+  { name: "Bob" score: 92 }
+  { name: "Charlie" score: 78 }
+  { name: "Diana" score: 95 }
+]
+
+top-scorers: data
+  filter(_.score >= 90)
+  map(_.name)
+```
+
+```yaml
+data:
+- name: Alice
+  score: 85
+- name: Bob
+  score: 92
+- name: Charlie
+  score: 78
+- name: Diana
+  score: 95
+top-scorers:
+- Bob
+- Diana
+```
+
+## Key Concepts
+
+- Lists are created with `[...]` and can be heterogeneous
+- `map`, `filter`, and `foldl`/`foldr` are the core transformation
+  functions
+- `take`, `drop`, `reverse`, `append` (`++`), and `concat` reshape
+  lists
+- `all`, `any`, `all-true?`, and `any-true?` test list conditions
+- Lazy evaluation allows working with infinite lists via `repeat`
+- `qsort` sorts with a custom comparator; `sort-nums` sorts numbers
+
+---
+
+# Strings and Text
+
+In this chapter you will learn:
+
+- The different string literal types (standard, raw, c-strings)
+- How to embed expressions in strings using `{...}` syntax
+- How strings with anaphora become functions
+- Format specifiers for controlling output
+- The string functions available in the `str` namespace
+
+## String Literal Types
+
+Eucalypt has three kinds of string literal:
+
+### Standard Strings
+
+Standard double-quoted strings support interpolation with `{...}`:
+
+```eu
+greeting: "Hello, World!"
+```
+
+### Raw Strings (`r"..."`)
+
+Raw strings perform no escape processing — backslashes are literal.
+Useful for regular expressions and file paths:
+
+```eu
+path: r"C:\Users\alice\docs"
+regex: r"^\d+\.\d+"
+```
+
+Raw strings still support interpolation with `{...}`. Use `{{` and
+`}}` for literal braces.
+
+### C-Strings (`c"..."`)
+
+C-strings process C-style escape sequences:
+
+| Escape | Meaning |
+|--------|---------|
+| `\n` | Newline |
+| `\t` | Tab |
+| `\r` | Carriage return |
+| `\\` | Literal backslash |
+| `\"` | Literal quote |
+| `\{`, `\}` | Literal braces |
+| `\xHH` | Hex byte |
+| `\uHHHH` | Unicode code point |
+| `\UHHHHHHHH` | Extended Unicode |
+
+```eu
+multiline: c"first line\nsecond line"
+```
+
+C-strings also support interpolation with `{...}`.
+
+## Basic Interpolation
+
+Embed any expression inside a string using curly braces:
+
+```eu
+name: "World"
+greeting: "Hello, {name}!"
+```
+
+```yaml
+name: World
+greeting: Hello, World!
+```
+
+Expressions inside the braces are evaluated:
+
+```eu
+x: 3
+y: 4
+result: "{x} + {y} = {x + y}"
+```
+
+```yaml
+x: 3
+y: 4
+result: 3 + 4 = 7
+```
+
+## Nested Lookups in Interpolation
+
+You can use dotted paths inside interpolation:
+
+```eu
+data: { foo: { bar: 99 } }
+label: "{data.foo.bar}"
+```
+
+```yaml
+data:
+  foo:
+    bar: 99
+label: '99'
+```
+
+> **Note:** Interpolation braces accept names and dotted lookups, but
+> not arbitrary eucalypt expressions. If you need a computed value,
+> give it a name first, or use generalised lookup to tightly scope
+> the computation:
+>
+> ```eu
+> result: { x: 3 y: 4 }."{x + y}"
+> ```
+
+## Escaping Braces
+
+To include a literal brace in a string, double it:
+
+```eu
+example: "Use {{braces}} for interpolation"
+```
+
+```yaml
+example: Use {braces} for interpolation
+```
+
+This is also needed in regular expressions within interpolated
+strings:
+
+```eu
+pattern: "01234" str.match-with("\d{{4}}")
+```
+
+## Format Specifiers
+
+Add a format specifier after a colon inside the interpolation braces.
+These use printf-style format codes:
+
+```eu
+pi: 3.14159
+formatted: "{pi:%.2f}"
+padded: "{42:%06d}"
+```
+
+```yaml
+pi: 3.14159
+formatted: '3.14'
+padded: '000042'
+```
+
+## String Anaphora
+
+When a string contains `{}` (empty braces) or `{0}`, `{1}`, etc.,
+the string literal actually defines a function rather than a plain
+string value:
+
+```sh
+eu -e '["a", "b", "c"] map("item: {}")'
+```
+
+```yaml
+- 'item: a'
+- 'item: b'
+- 'item: c'
+```
+
+Numbered anaphora control argument order:
+
+```eu
+reverse-pair: "{1},{0}"
+result: reverse-pair(:a, :b)
+```
+
+```yaml
+result: b,a
+```
+
+You can mix named references and anaphora:
+
+```eu
+prefix: "Hello"
+greet: "{prefix} {}!"
+result: greet("World")
+```
+
+```yaml
+prefix: Hello
+result: Hello World!
+```
+
+## String Functions
+
+The `str` namespace contains functions for working with strings.
+
+### Conversion
+
+```sh
+eu -e '42 str.of'
+```
+
+```yaml
+'42'
+```
+
+### Case Conversion
+
+```sh
+eu -e '"hello" str.to-upper'
+```
+
+```yaml
+HELLO
+```
+
+```sh
+eu -e '"GOODBYE" str.to-lower'
+```
+
+```yaml
+goodbye
+```
+
+### Splitting and Joining
+
+Split a string on a pattern:
+
+```sh
+eu -e '"one-two-three" str.split-on("-")'
+```
+
+```yaml
+- one
+- two
+- three
+```
+
+Join a list of strings:
+
+```sh
+eu -e '["a", "b", "c"] str.join-on(", ")'
+```
+
+```yaml
+a, b, c
+```
+
+### Prefix and Suffix
+
+```sh
+eu -e '"world" str.prefix("hello ")'
+```
+
+```yaml
+hello world
+```
+
+```sh
+eu -e '"hello" str.suffix("!")'
+```
+
+```yaml
+hello!
+```
+
+### Characters and Letters
+
+```sh
+eu -e '"hello" str.letters'
+```
+
+```yaml
+- h
+- e
+- l
+- l
+- o
+```
+
+```sh
+eu -e '"hello" str.letters count'
+```
+
+```yaml
+5
+```
+
+## Regular Expressions
+
+### Testing a Match
+
+```sh
+eu -e '"hello" str.matches?("^h.*o$")'
+```
+
+```yaml
+true
+```
+
+### Extracting Matches
+
+`str.match-with` returns the full match and capture groups:
+
+```sh
+eu -e '"192.168.0.1" str.match-with("(\d+)[.](\d+)[.](\d+)[.](\d+)") tail'
+```
+
+```yaml
+- '192'
+- '168'
+- '0'
+- '1'
+```
+
+`str.matches-of` returns all occurrences of a pattern:
+
+```sh
+eu -e '"192.168.0.1" str.matches-of("\d+")'
+```
+
+```yaml
+- '192'
+- '168'
+- '0'
+- '1'
+```
+
+### Base64 and SHA-256
+
+```sh
+eu -e '"hello" str.base64-encode'
+```
+
+```yaml
+aGVsbG8=
+```
+
+```sh
+eu -e '"hello" str.sha256'
+```
+
+```yaml
+2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+```
+
+## Practical Examples
+
+### Generating URLs
+
+```eu
+base: "https://api.example.com"
+endpoints: ["users", "posts", "comments"] map("{base}/{}")
+```
+
+```yaml
+base: https://api.example.com
+endpoints:
+- https://api.example.com/users
+- https://api.example.com/posts
+- https://api.example.com/comments
+```
+
+### Formatting a Table
+
+```eu
+rows: [
+  { name: "Alice" score: 85 }
+  { name: "Bob" score: 92 }
+]
+
+` :suppress
+format-row(r): "{r.name:%10s} | {r.score:%3d}"
+
+table: rows map(format-row)
+```
+
+## Key Concepts
+
+- Interpolation uses `{expression}` inside double-quoted strings
+- Empty braces `{}` and numbered braces `{0}`, `{1}` create string
+  functions (anaphora)
+- Format specifiers follow a colon: `{value:%06d}`
+- Escape literal braces by doubling them: `{{` and `}}`
+- The `str` namespace provides splitting, joining, case conversion,
+  matching, and more
+
+---
+
+# Functions and Combinators
+
+In this chapter you will learn:
+
+- How to define and call functions
+- How currying and partial application work
+- The standard combinators: `identity`, `const`, `compose`, `flip`
+- How to build functions from other functions without lambdas
+
+## Defining Functions
+
+A function declaration has a parameter list in parentheses:
+
+```eu
+square(x): x * x
+add(x, y): x + y
+greet(name, greeting): "{greeting}, {name}!"
+```
+
+Functions can be called with arguments in parentheses:
+
+```eu
+a: square(5)
+b: add(3, 4)
+c: greet("Alice", "Hello")
+```
+
+```yaml
+a: 25
+b: 7
+c: Hello, Alice!
+```
+
+Or via catenation (see [Expressions and
+Pipelines](expressions-and-pipelines.md)):
+
+```eu
+a: 5 square
+b: 4 add(3)
+```
+
+## Functions are Values
+
+Functions are first-class values. They can be passed as arguments,
+returned from other functions, and stored in blocks:
+
+```eu
+apply-twice(f, x): x f f
+result: apply-twice(inc, 5)
+```
+
+```yaml
+result: 7
+```
+
+```eu
+ops: {
+  double: * 2
+  negate: 0 -
+}
+
+result: 5 ops.double ops.negate
+```
+
+```yaml
+result: -10
+```
+
+## Currying
+
+All functions are automatically curried. Providing fewer arguments
+than expected returns a partially applied function:
+
+```eu
+add(x, y): x + y
+
+add-five: add(5)      # partially applied
+result: add-five(3)   # completes the application
+```
+
+```yaml
+result: 8
+```
+
+This is particularly useful with `map` and `filter`:
+
+```eu
+multiply(x, y): x * y
+triple: multiply(3)
+
+results: [1, 2, 3] map(triple)
+```
+
+```yaml
+results:
+- 3
+- 6
+- 9
+```
+
+## Sections
+
+Operators can be partially applied too. When an operator has a missing
+operand, eucalypt fills in an implicit parameter:
+
+```sh
+eu -e '[1, 2, 3] map(+ 10)'
+```
+
+```yaml
+- 11
+- 12
+- 13
+```
+
+Here `+ 10` is a section: a function that adds 10 to its argument.
+Similarly:
+
+```sh
+eu -e '[1, 2, 3, 4, 5] filter(> 3)'
+```
+
+```yaml
+- 4
+- 5
+```
+
+Sections can be used as standalone values:
+
+```eu
+add: +
+sub: -
+
+result: add(2, 3)
+diff: sub(8, 3)
+```
+
+```yaml
+result: 5
+diff: 5
+```
+
+## Passing operators to higher-order functions
+
+Operators can be passed as arguments using their operator name or
+as a section in parentheses:
+
+```eu
+total: foldl(+, 0, [1, 2, 3, 4, 5])
+```
+
+```yaml
+total: 15
+```
+
+## Standard Combinators
+
+The prelude provides several fundamental combinators.
+
+### `identity`
+
+Returns its argument unchanged:
+
+```sh
+eu -e '42 identity'
+```
+
+```yaml
+42
+```
+
+### `const`
+
+Returns a function that always produces the given value:
+
+```sh
+eu -e ':x const(99)'
+```
+
+```yaml
+99
+```
+
+Useful for replacing every element with a fixed value:
+
+```sh
+eu -e '[1, 2, 3] map(const(:done))'
+```
+
+```yaml
+- done
+- done
+- done
+```
+
+### `compose` and `∘`
+
+Compose two functions: `compose(f, g)` produces a function that
+applies `g` first, then `f`:
+
+```sh
+eu -e '1 compose(zero?, dec)'
+```
+
+```yaml
+true
+```
+
+The `∘` operator is an infix form:
+
+```sh
+eu -e '(str.prefix("<") ∘ str.suffix(">"))("x")'
+```
+
+```yaml
+<x>
+```
+
+### `flip`
+
+Swap the first two arguments of a function:
+
+```sh
+eu -e 'flip(-, 1, 3)'
+```
+
+```yaml
+2
+```
+
+`flip` is useful for adapting functions to a pipeline:
+
+```eu
+` :suppress
+with-tags: merge flip ({ tags: [:a, :b] })
+
+result: { name: "foo" } with-tags
+```
+
+### `complement`
+
+Negate a predicate:
+
+```sh
+eu -e '0 complement(zero?)'
+```
+
+```yaml
+false
+```
+
+### `apply`
+
+Apply a function to a list of arguments:
+
+```sh
+eu -e 'apply(+, [3, 4])'
+```
+
+```yaml
+7
+```
+
+### `uncurry`
+
+Convert a curried function to one that takes a pair (two-element list):
+
+```sh
+eu -e 'uncurry(+)([3, 4])'
+```
+
+```yaml
+7
+```
+
+### `curry`
+
+The inverse of `uncurry` -- convert a function expecting a pair to a
+curried function:
+
+```sh
+eu -e 'curry(first)("a", "b")'
+```
+
+```yaml
+a
+```
+
+## Building Functions without Lambdas
+
+Eucalypt does not have a lambda syntax. Instead, you build functions
+from:
+
+1. **Named functions** -- the clearest approach
+2. **Partial application** -- `add(5)`, `* 2`
+3. **Sections** -- `(+ 1)`, `(> 0)`
+4. **Composition** -- `f ∘ g`
+5. **Anaphora** -- `_ + 1`, `_0 * _0` (see next chapters)
+
+These compose naturally:
+
+```eu
+` :suppress
+process: filter(> 0) ∘ map(dec)
+
+result: [3, 1, 0, 5, 2] process
+```
+
+## Practical Example: Transforming Data
+
+```eu
+people: [
+  { name: "alice" age: 30 }
+  { name: "bob" age: 25 }
+  { name: "charlie" age: 35 }
+]
+
+` :suppress
+format(p): "{p.name str.to-upper}: age {p.age}"
+
+directory: people
+  filter(_.age >= 30)
+  map(format)
+```
+
+```yaml
+people:
+- name: alice
+  age: 30
+- name: bob
+  age: 25
+- name: charlie
+  age: 35
+directory:
+- 'ALICE: age 30'
+- 'CHARLIE: age 35'
+```
+
+## Key Concepts
+
+- Functions are first-class values
+- All functions are **curried**: partial application is automatic
+- **Sections** give partial application for operators: `(+ 1)`,
+  `(> 3)`
+- **Combinators** like `identity`, `const`, `compose`, `flip` build
+  new functions from existing ones
+- Prefer named functions for anything complex; use partial application
+  and sections for simple cases
+
+---
+
+# Operators
+
+In this chapter you will learn:
+
+- How to define custom binary, prefix, and postfix operators
+- How precedence and associativity work
+- How to control operator behaviour with metadata
+- The built-in operators provided by the prelude
+
+## Defining Binary Operators
+
+A binary operator is declared by writing the operand names and the
+operator symbol in parentheses:
+
+```eu
+(x <+> y): x + y + 1
+
+result: 3 <+> 4
+```
+
+```yaml
+result: 8
+```
+
+Operator names use symbolic characters: `+`, `-`, `*`, `/`, `<`, `>`,
+`|`, `&`, `!`, `@`, `#`, `~`, `^`, and any Unicode symbol or
+punctuation characters.
+
+## Prefix and Postfix Operators
+
+Prefix operators have the operator before the operand:
+
+```eu
+(¬ x): not(x)
+result: ¬ true
+```
+
+```yaml
+result: false
+```
+
+Postfix operators have the operator after the operand:
+
+```eu
+(x !!): x * x
+result: 5 !!
+```
+
+```yaml
+result: 25
+```
+
+## Precedence
+
+Without precedence rules, operator expressions would be ambiguous. In
+eucalypt, precedence determines which operators bind more tightly.
+
+The prelude defines the standard precedence levels:
+
+| Level | Name | Operators |
+|-------|------|-----------|
+| 95 | prefix | `↑` (head) |
+| 90 | lookup | `.` |
+| 88 | bool-unary | `!`, `¬` |
+| 85 | exp | `!!` (nth) |
+| 80 | prod | `*`, `/`, `%` |
+| 75 | sum | `+`, `-` |
+| 60 | shift | (shift operators) |
+| 55 | bitwise | (bitwise operators) |
+| 50 | cmp | `<`, `>`, `<=`, `>=` |
+| 45 | append | `++`, `<<` |
+| 42 | map | `<$>` |
+| 40 | eq | `=`, `!=` |
+| 35 | bool-prod | `&&`, `∧` |
+| 30 | bool-sum | `\|\|`, `∨` |
+| 20 | cat | (catenation) |
+| 10 | apply | `@` |
+| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!`, `//!!` |
+
+Higher numbers bind more tightly:
+
+```sh
+eu -e '1 + 2 * 3'
+```
+
+```yaml
+7
+```
+
+Because `*` (precedence 80) binds tighter than `+` (precedence 75),
+this is parsed as `1 + (2 * 3)`, not `(1 + 2) * 3`.
+
+## Associativity
+
+When the same operator (or operators at the same precedence) appear
+in sequence, associativity determines the grouping.
+
+- **Left-associative**: `1 - 2 - 3` = `(1 - 2) - 3` = `-4`
+- **Right-associative**: `a -> b -> c` = `a -> (b -> c)`
+
+Most arithmetic and comparison operators are left-associative.
+
+## Setting Precedence and Associativity
+
+Use declaration metadata to control your operator's precedence and
+associativity:
+
+```eu
+` { associates: :left
+    precedence: :sum }
+(x +++ y): x + y
+
+` { associates: :right
+    precedence: :prod }
+(x *** y): x * y
+```
+
+Precedence can be specified as:
+- A named level: `:sum`, `:prod`, `:exp`, `:cmp`, `:eq`, `:bool-prod`,
+  `:bool-sum`, `:append`, `:map`, `:bool-unary`, `:cat`, `:apply`,
+  `:meta`, `:shift`, `:bitwise`
+- A numeric value: any integer (higher binds tighter)
+
+Associativity can be `:left`, `:right`, or omitted (defaults to
+`:left`).
+
+## The Assertion Operators
+
+Two special operators are provided for testing:
+
+### `//=` (assert equals)
+
+Asserts that the left side equals the right side at runtime, and
+returns the value if true. Panics if false:
+
+```eu
+result: 2 + 2 //= 4
+```
+
+### `//=>` (assert equals with metadata)
+
+Like `//=` but also attaches the assertion as metadata:
+
+```eu
+checked: 2 + 2 //=> 4
+```
+
+Both are useful for embedding tests and sanity checks in code.
+
+## The Metadata Operator `//`
+
+Attach metadata to any value:
+
+```eu
+tagged: 42 // { note: "the answer" }
+```
+
+The metadata can be retrieved with `meta`:
+
+```eu
+note: meta(tagged).note
+```
+
+```yaml
+note: the answer
+```
+
+See [Advanced Topics](advanced-topics.md) for more on metadata.
+
+## The Deep Merge Operator `<<`
+
+Deep merge combines two blocks, recursively merging nested blocks:
+
+```eu
+base: { a: { x: 1 y: 2 } b: 3 }
+overlay: { a: { y: 9 z: 10 } }
+result: base << overlay
+```
+
+```yaml
+base:
+  a:
+    x: 1
+    y: 2
+  b: 3
+overlay:
+  a:
+    y: 9
+    z: 10
+result:
+  a:
+    x: 1
+    y: 9
+    z: 10
+  b: 3
+```
+
+## The Append Operator `++`
+
+Concatenate two lists:
+
+```sh
+eu -e '[1, 2] ++ [3, 4]'
+```
+
+```yaml
+- 1
+- 2
+- 3
+- 4
+```
+
+## The Functor Operator `<$>`
+
+Map a function over a list:
+
+```sh
+eu -e '(* 2) <$> [1, 2, 3]'
+```
+
+```yaml
+- 2
+- 4
+- 6
+```
+
+## Dot Sections
+
+The dot operator can be used as a section to create lookup functions:
+
+```sh
+eu -e '[{x: 1}, {x: 2}, {x: 3}] map(.x)'
+```
+
+```yaml
+- 1
+- 2
+- 3
+```
+
+## Key Concepts
+
+- Operators are declared with symbolic names in parentheses:
+  `(x op y):`, `(op x):`, `(x op):`
+- **Precedence** controls binding strength; higher numbers bind
+  tighter
+- **Associativity** determines grouping for equal-precedence
+  operators
+- Use metadata to set `precedence` and `associates` on custom
+  operators
+- The prelude provides standard arithmetic, comparison, boolean, and
+  utility operators
+
+---
+
+# Anaphora (Implicit Parameters)
+
+Eucalypt doesn't have a lambda syntax in itself and prefers to
+encourage other approaches in most cases where you would use a lambda.
+
+- named functions
+- function values from composites, combinators, partials
+- anaphoric expressions, blocks or strings
+
+However, through the combination of two Eucalypt features, namely
+*block anaphora* and *generalised lookup*, you can express arbitrary
+lambdas as we'll see below.
+
+The various alternatives are considered one by one.
+
+## Named functions
+
+Very likely, the clearest way to square a list of numbers is to map an
+explicitly named `square` function across it.
+
+```eu
+square(x): x * x
+squares: [1, 2, 3] map(square) //=> [1, 4, 9]
+```
+
+The drawbacks of this are:
+- polluting a namespace with a name that is needed only once
+- arguably, a slightly tedious verbosity
+
+The first can be dealt with as follows:
+
+```eu
+squares: { square(x): x * x }.([1, 2, 3] map(square)) //=> [1, 4, 9]
+```
+
+This exploits a feature called *generalised lookup*.
+
+Why "generalised lookup"? In the simple case below, the dot signifies
+the "lookup" of key `a` in the block preceding the dot:
+
+```eu
+x: { a: 3 b: 4 }.a //=> 3
+```
+
+We can generalise this by allowing arbitrary expressions in place of
+the `a` by evaluating the expression after the dot in the context of
+the namespace introduced by the block to the left.
+
+```eu
+x: { a: 3 b: 4 }.(a + b) //=> 7
+```
+
+It works for any expression after the dot:
+
+```eu
+x: { a: 3 b: 4 }.[a, b] //=> [3, 4]
+y: { a: 3 b: 4 }.{ c: a + b } //=> { c: 7 }
+z: { a: 3 b: 4 }."{a} and {b}" //=> "3 and 4"
+```
+
+> **Warning:** This is very effective for short and simple expressions
+> but quickly gets very complicated and hard to understand if you use
+> it too much. Nested or iterated generalised lookups are usually a
+> bad idea.
+
+In the `squares` example above, generalised lookup is used to restrict
+the scope in which `square` is visible right down to the only
+expression which needs it.
+
+However in the case of a simple expression like the squaring example,
+a neater approach is to use *expression anaphora*.
+
+## Expression Anaphora
+
+Any expression can become a function by referring to implicit
+parameters known as expression anaphora.
+
+These parameters are called `_0`, `_1` `_2`, and so on. There is also
+an unnumbered anaphor, `_`, which we'll come back to.
+
+Just referring to these parameters is enough to turn an expression
+into a lambda.
+
+So an expression that refers `_0` and `_1` actually defines a function
+accepting two parameters:
+
+```eu,notest
+xs: zip-with(f, [1, 2, 3], [1, 2, 3]) //=> [3, 6, 9]
+
+# or more succinctly
+xs: zip-with(_0 + 2 * _1, [1, 2, 3], [1, 2, 3]) //=> [3, 6, 9]
+```
+
+> **Warning:** Anaphora are intended for use in simple cases where
+> they are readable and readily understood. The scope of the implicit
+> parameters is not easy to work out in complicated contexts. (It does
+> not extend past catenation or commas in lists or function application
+> tuples.) Anaphoric expressions are not, and not intended to be, a
+> fully general lambda syntax. Unlike explicit lambda constructions,
+> you cannot nest anaphoric expressions.
+
+```eu
+squares: [1, 2, 3] map(_0 * _0) //=> [1, 4, 9]
+```
+
+In cases where the position of the anaphora in the expression matches
+the parameter positions in the function call, you can omit the
+numbers. So, for instance, `_0 + _1` can simply be written `_ + _`,
+and `_0 * _1 + x * _2` can be written `_ * _ + x * _`.
+
+Each `_` represents a *different* implicit parameter, which is why we
+had to write `_0 * _0` in our squares example - it was important that
+the same parameter was referenced twice.
+
+Sometimes you need explicit parentheses to clarify the scope of
+expression anaphora:
+
+```eu
+block: { a: 1 b: 2 }
+
+x: block (_.a) //=> 1
+y: block lookup(:a) //=> 1
+#
+# BUT NOT: block _.a
+#
+```
+
+## Sections
+
+Even more conciseness is on offer in some cases where the anaphora can
+be entirely omitted. Eucalypt will automatically insert anaphora
+when it detects *gaps* in an expression based on its knowledge of an
+operator's type.
+
+So it will automatically read `(1 +)` as `(1 + _)`, for example,
+defining a function of one parameter. Or `(*)` as `(_ * _)`, defining
+a function of two parameters. The parentheses may not even be
+necessary to delimit the expression:
+
+```eu
+x: foldl(+, 0, [1, 2, 3]) = 6
+```
+
+Again, use of sections is recommended only for short expressions or
+where the intention is obvious. This level of terseness can lead to
+baffling code if abused.
+
+## Block Anaphora
+
+Expression anaphora are scoped by an expression which is roughly
+defined as something within parentheses or something which can be the
+right hand side of a declaration.
+
+Sometimes however you would like to define a block-valued function.
+Imagine you wanted a two-parameter function which placed the
+parameters in a block with keys `x` and `y`:
+
+```eu
+f(x, y): {x: x y: y }
+```
+
+An attempt to define this using expression anaphora would fail. This
+defines a block with two identity functions:
+
+```eu,notest
+f: {x: _ y: _ }
+```
+
+Instead, you can use *block anaphora* which are scoped by the block
+that contains them.
+
+The block anaphora are named `•0`, `•1`, `•2` with a special
+unnumbered anaphor `•`, playing the same role as `_` does for
+expression anaphora.
+
+`•` is the BULLET character (usually Option-8 on a Mac but you may
+find other convenient ways to type it). The slightly awkward character
+is chosen firstly because it looks like a hole and therefore makes
+sense as a placeholder, and secondly to discourage overuse of the
+feature...
+
+The following defines the function we want:
+
+```eu
+f: { x: • y: • }
+```
+
+...and can, of course, be used:
+
+```eu
+x: [[1, 2], [3, 4], [5, 6]] map({ x: • y: • } uncurry)
+```
+
+## Pseudo-lambdas
+
+Astute observers may realise that by combining generalised lookup and
+block anaphora you end up with something that's not a million miles
+away from a lambda syntax:
+
+```eu
+f: { x: • y: • }.(x + y)
+```
+
+Indeed this does allow declaration of anonymous functions with named
+parameters and can occasionally be useful but it still falls short of
+a fully general lambda construction because it cannot (at least for
+now) be nested.
+
+## String Anaphora
+
+Analogously, Eucalypt's string interpolation syntax allows the use of
+anaphora `{0}`, `{1}`, `{2}` and the unnumbered `{}` to define
+functions which return strings.
+
+```eu
+x: [1, 2, 3] map("#{}") //=> ["#1", "#2", "#3"]
+```
+
+## Summary
+
+There are lots of ways to define functions but the clearest is just
+defining them with names using function declarations and for anything
+even slightly complicated this should be the default. The only things
+you should be tempted to define on the spot are things that are simple
+enough that the various species of anaphora can handle them neatly.
+
+---
+
+# Block Manipulation
+
+In this chapter you will learn:
+
+- How to merge blocks with catenation and `merge`
+- How to inspect, transform, and restructure blocks
+- Key prelude functions for working with blocks
+- Patterns for building and modifying configuration data
+
+## Block Merge by Catenation
+
+When two blocks appear next to each other, the result is a shallow
+merge. Later values override earlier ones:
+
+```sh
+eu -e '{ a: 1 } { b: 2 }'
+```
+
+```yaml
+a: 1
+b: 2
+```
+
+```sh
+eu -e '{ a: 1 } { a: 2 }'
+```
+
+```yaml
+a: 2
+```
+
+This is the same as calling the `merge` function:
+
+```sh
+eu -e 'merge({ a: 1 }, { b: 2 })'
+```
+
+```yaml
+a: 1
+b: 2
+```
+
+## Deep Merge
+
+Use `deep-merge` or the `<<` operator for recursive merging of nested
+blocks:
+
+```eu
+base: { server: { host: "localhost" port: 8080 } }
+override: { server: { port: 9090 debug: true } }
+config: base << override
+```
+
+```yaml
+base:
+  server:
+    host: localhost
+    port: 8080
+override:
+  server:
+    port: 9090
+    debug: true
+config:
+  server:
+    host: localhost
+    port: 9090
+    debug: true
+```
+
+Note that `<<` merges nested blocks but replaces lists entirely.
+
+## Inspecting Blocks
+
+### `elements`
+
+Break a block into its list of key-value pairs:
+
+```sh
+eu -e '{ a: 1 b: 2 } elements'
+```
+
+```yaml
+- - a
+  - 1
+- - b
+  - 2
+```
+
+Each element is a two-element list: `[key, value]`.
+
+### `keys` and `values`
+
+```sh
+eu -e '{ a: 1 b: 2 c: 3 } keys'
+```
+
+```yaml
+- a
+- b
+- c
+```
+
+```sh
+eu -e '{ a: 1 b: 2 c: 3 } values'
+```
+
+```yaml
+- 1
+- 2
+- 3
+```
+
+### `has`
+
+Check whether a block contains a key:
+
+```sh
+eu -e '{ a: 1 b: 2 } has(:a)'
+```
+
+```yaml
+true
+```
+
+### `lookup` and `lookup-or`
+
+Look up a value by symbol key:
+
+```sh
+eu -e '{ a: 1 b: 2 } lookup(:b)'
+```
+
+```yaml
+2
+```
+
+With a default for missing keys:
+
+```sh
+eu -e '{ a: 1 } lookup-or(:z, 99)'
+```
+
+```yaml
+99
+```
+
+## Reconstructing Blocks
+
+### `block`
+
+Build a block from a list of key-value pairs:
+
+```sh
+eu -e '[[:a, 1], [:b, 2], [:c, 3]] block'
+```
+
+```yaml
+a: 1
+b: 2
+c: 3
+```
+
+### `zip-kv`
+
+Build a block from separate key and value lists:
+
+```sh
+eu -e 'zip-kv([:x, :y, :z], [1, 2, 3])'
+```
+
+```yaml
+x: 1
+y: 2
+z: 3
+```
+
+### `merge-all`
+
+Merge a list of blocks into one:
+
+```sh
+eu -e '[{a: 1}, {b: 2}, {c: 3}] merge-all'
+```
+
+```yaml
+a: 1
+b: 2
+c: 3
+```
+
+## Transforming Blocks
+
+### `map-values`
+
+Apply a function to every value, keeping keys:
+
+```sh
+eu -e '{ a: 1 b: 2 c: 3 } map-values(* 10)'
+```
+
+```yaml
+a: 10
+b: 20
+c: 30
+```
+
+### `map-keys`
+
+Transform the keys of a block:
+
+```sh
+eu -e '{ a: 1 b: 2 } map-keys(sym ∘ str.prefix("x-") ∘ str.of)'
+```
+
+```yaml
+x-a: 1
+x-b: 2
+```
+
+### `filter-values`
+
+Return the list of values that satisfy a predicate (note: this returns
+a **list**, not a block):
+
+```sh
+eu -e '{ a: 1 b: 20 c: 3 d: 40 } filter-values(> 10)'
+```
+
+```yaml
+- 20
+- 40
+```
+
+To keep matching entries as a block, use `filter-items` with
+`by-value`:
+
+```sh
+eu -e '{ a: 1 b: 20 c: 3 d: 40 } filter-items(by-value(> 10)) block'
+```
+
+```yaml
+b: 20
+d: 40
+```
+
+### `map-kv`
+
+Apply a function to each key-value pair. The function receives two
+separate arguments `(key, value)` (it uses `uncurry` internally),
+and returns a transformed result:
+
+```sh
+eu -e '{ a: 1 b: 2 } map-kv("{}: {}")'
+```
+
+```yaml
+- 'a: 1'
+- 'b: 2'
+```
+
+To produce a new block, combine with `block`:
+
+```sh
+eu -e '{ a: 1 b: 2 } map-kv(pair) block'
+```
+
+```yaml
+a: 1
+b: 2
+```
+
+## Modifying Individual Values
+
+### `alter-value`
+
+Replace the value at a specific key:
+
+```eu
+config: { host: "localhost" port: 8080 }
+updated: config alter-value(:port, 9090)
+```
+
+```yaml
+config:
+  host: localhost
+  port: 8080
+updated:
+  host: localhost
+  port: 9090
+```
+
+### `update-value`
+
+Apply a function to the value at a specific key:
+
+```eu
+counters: { hits: 10 errors: 3 }
+result: counters update-value(:hits, inc)
+```
+
+```yaml
+counters:
+  hits: 10
+  errors: 3
+result:
+  hits: 11
+  errors: 3
+```
+
+### `set-value`
+
+Set a value, creating the key if it does not exist:
+
+```sh
+eu -e '{} set-value(:x, 42)'
+```
+
+```yaml
+x: 42
+```
+
+### `alter` and `update` (nested)
+
+Modify values deep in nested blocks using a key path:
+
+```eu
+config: { server: { db: { port: 5432 } } }
+changed: config alter([:server, :db, :port], 3306)
+bumped: config update([:server, :db, :port], inc)
+```
+
+```yaml
+config:
+  server:
+    db:
+      port: 5432
+changed:
+  server:
+    db:
+      port: 3306
+bumped:
+  server:
+    db:
+      port: 5433
+```
+
+### `merge-at`
+
+Merge additional keys into a nested block:
+
+```eu
+config: { server: { db: { port: 5432 } } }
+extended: config merge-at([:server, :db], { host: "10.0.0.1" })
+```
+
+```yaml
+config:
+  server:
+    db:
+      port: 5432
+extended:
+  server:
+    db:
+      port: 5432
+      host: 10.0.0.1
+```
+
+## Patterns: Configuration Templating
+
+A common pattern is to define a base configuration and layer
+environment-specific overrides on top:
+
+```eu
+base: {
+  server: {
+    host: "0.0.0.0"
+    port: 8080
+    workers: 4
+  }
+  logging: {
+    level: "info"
+    format: "json"
+  }
+}
+
+production: base << {
+  server: { workers: 16 }
+  logging: { level: "warn" }
+}
+
+development: base << {
+  server: { host: "localhost" }
+  logging: { level: "debug" format: "text" }
+}
+```
+
+## Key Concepts
+
+- **Block catenation** merges two blocks; later keys override earlier
+  ones
+- **Deep merge** (`<<`) recursively merges nested blocks
+- `elements`, `keys`, `values` decompose blocks; `block` and
+  `zip-kv` reconstruct them
+- `map-values`, `map-keys`, `filter-values` transform blocks
+- `alter-value`, `update-value`, `set-value` modify individual
+  entries
+- `alter`, `update`, `merge-at` modify deeply nested values
+
+---
+
+# Imports and Modules
+
+In this chapter you will learn:
+
+- How to import other eucalypt files and data files
+- How to scope imports to specific declarations
+- How to use named imports for namespacing
+- How git imports work for external dependencies
+
+## Basic Imports
+
+Import another eucalypt file using the `import` key in declaration
+metadata:
+
+```eu
+{ import: "helpers.eu" }
+
+# Names from helpers.eu are now available
+result: helper-function(42)
+```
+
+When the metadata is at unit level (the first item in the file), the
+imported names are available throughout the entire file.
+
+## Scoped Imports
+
+Imports can be scoped to a specific declaration, limiting where the
+imported names are visible:
+
+```eu
+` { import: "math.eu" }
+calculations: {
+  # Names from math.eu are available only within this block
+  result: advanced-calculation(10)
+}
+
+# math.eu names are NOT available here
+```
+
+## Named Imports
+
+Give an import a name to access its contents under a namespace:
+
+```eu
+{ import: "cfg=config.eu" }
+
+host: cfg.host
+port: cfg.port
+```
+
+This is especially useful when importing data files that might contain
+names which clash with your own:
+
+```eu
+{ import: "prod=production.yaml" }
+
+url: "https://{prod.host}:{prod.port}"
+```
+
+## Importing Multiple Files
+
+Supply a list to import several files at once:
+
+```eu
+{ import: ["helpers.eu", "config.eu"] }
+
+result: helper(config-value)
+```
+
+Named and unnamed imports can be mixed:
+
+```eu
+{ import: ["helpers.eu", "cfg=config.eu"] }
+
+result: helper(cfg.port)
+```
+
+## Importing Data Files
+
+Eucalypt can import files in any supported format. The format is
+inferred from the file extension:
+
+```eu
+{ import: "data=records.yaml" }
+
+first-record: data head
+```
+
+You can override the format when the extension is misleading:
+
+```eu
+{ import: "data=yaml@records.txt" }
+```
+
+### Formats That Return Lists
+
+Some formats (CSV, JSON Lines, text) produce lists rather than blocks.
+These **must** be given a name:
+
+```eu
+{ import: "rows=transactions.csv" }
+
+total: rows map(_.amount num) foldl(+, 0)
+```
+
+## Nested Imports
+
+Imports can be placed at any level of nesting:
+
+```eu
+deep: {
+  nested: {
+    ` { import: "local-config.eu" }
+    config: {
+      value: local-setting
+    }
+  }
+}
+```
+
+## Git Imports
+
+Import eucalypt code directly from a git repository. This is useful
+for sharing libraries without manually managing local copies:
+
+```eu
+{ import: { git: "https://github.com/user/eu-lib"
+            commit: "abc123def456"
+            import: "lib/helpers.eu" } }
+
+result: lib-function(42)
+```
+
+The `commit` field is mandatory and should be a full SHA. This ensures
+the import is repeatable and cacheable.
+
+Multiple git imports can be listed alongside simple imports:
+
+```eu
+{ import: [
+  "local.eu",
+  { git: "https://github.com/user/lib"
+    commit: "abc123"
+    import: "helpers.eu" }
+] }
+```
+
+## Streaming Imports
+
+For large files, streaming imports read data lazily:
+
+```eu
+{ import: "events=jsonl-stream@events.jsonl" }
+
+recent: events take(100)
+```
+
+Available streaming formats:
+
+| Format | Description |
+|--------|-------------|
+| `jsonl-stream` | JSON Lines (one object per line) |
+| `csv-stream` | CSV with headers |
+| `text-stream` | Plain text (one string per line) |
+
+## Combining Imports with the Command Line
+
+Imports in `.eu` files complement the command line input system. You
+can use both together:
+
+```sh
+eu data.yaml transform.eu
+```
+
+Here `data.yaml` is a command-line input and `transform.eu` can also
+have its own `{ import: ... }` declarations for helpers or
+configuration.
+
+See [The Command Line](command-line.md) for details on the input
+system.
+
+## Practical Example: Configuration Layering
+
+```eu
+# base.eu
+defaults: {
+  host: "0.0.0.0"
+  port: 8080
+  workers: 4
+}
+```
+
+```eu
+# deploy.eu
+{ import: "base.eu" }
+
+production: defaults << {
+  workers: 16
+  host: "prod.example.com"
+}
+
+staging: defaults << {
+  host: "staging.example.com"
+}
+```
+
+Running `eu deploy.eu` produces layered configuration with shared
+defaults.
+
+## Key Concepts
+
+- Use `{ import: "file.eu" }` in metadata to import files
+- **Named imports** (`"name=file"`) provide namespace isolation
+- Imports can be **scoped** to individual declarations
+- **Data files** (YAML, JSON, CSV, etc.) can be imported like code
+- **Git imports** pull code directly from repositories at a specific
+  commit
+- **Streaming imports** (`jsonl-stream@`, `csv-stream@`,
+  `text-stream@`) handle large files lazily
+
+---
+
+# Working with Data
+
+In this chapter you will learn:
+
+- How to process JSON, YAML, TOML, CSV, and XML data
+- How to convert between formats on the command line
+- Patterns for querying and transforming structured data
+- How to combine multiple data sources
+
+## Format Conversion
+
+The simplest use of eucalypt is converting between data formats. By
+default, output is YAML:
+
+```sh
+# JSON to YAML
+eu data.json
+
+# YAML to JSON
+eu data.yaml -j
+
+# JSON to TOML
+eu data.json -x toml
+```
+
+## Processing JSON
+
+Pipe JSON from other tools into eucalypt:
+
+```sh
+curl -s https://api.example.com/users | eu -e 'map(_.name)'
+```
+
+Or process a JSON file:
+
+```sh
+eu -e 'users filter(_.active) map(_.email)' data.json
+```
+
+## Processing YAML
+
+YAML files are read natively. All YAML features including anchors,
+aliases, and merge keys are supported:
+
+```yaml
+# config.yaml
+defaults: &defaults
+  timeout: 30
+  retries: 3
+
+production:
+  <<: *defaults
+  debug: false
+```
+
+```sh
+eu config.yaml -e 'production'
+```
+
+```yaml
+timeout: 30
+retries: 3
+debug: false
+```
+
+### YAML Timestamps
+
+YAML timestamps are automatically converted to date-time values:
+
+```yaml
+created: 2024-03-15
+updated: 2024-03-15T14:30:00Z
+```
+
+Quote the value to keep it as a string: `created: "2024-03-15"`.
+
+## Processing TOML
+
+```sh
+eu config.toml -e 'database.port'
+```
+
+```yaml
+5432
+```
+
+## Processing CSV
+
+CSV files are imported as a list of blocks, where each row becomes a
+block with column headers as keys:
+
+```sh
+eu -e 'rows filter(_.age num > 30)' rows=people.csv
+```
+
+CSV values are always strings. Use `num` to convert to numbers when
+needed.
+
+## Processing XML
+
+XML is imported as a nested list structure. Each element is
+represented as `[tag, attributes, ...children]`:
+
+```sh
+eu -e 'root' root=xml@data.xml
+```
+
+Use list functions to navigate the structure:
+
+```eu
+{ import: "root=xml@data.xml" }
+
+# Get the tag name (first element)
+tag: root first
+
+# Get attributes (second element)
+attrs: root second
+
+# Get child elements (everything after the first two)
+children: root drop(2)
+```
+
+## Named Inputs
+
+Use named inputs to make data available under a specific name:
+
+```sh
+eu users=users.json roles=roles.json -e 'users map(_.name)'
+```
+
+Named inputs are essential for list-based formats (CSV, JSON Lines,
+text):
+
+```sh
+eu lines=text@log.txt -e 'lines filter(str.matches?("ERROR")) count'
+```
+
+## Combining Multiple Sources
+
+A powerful pattern is combining data from multiple sources:
+
+```sh
+eu users.yaml roles.yaml merge.eu
+```
+
+Where `merge.eu` contains logic that uses names from both inputs:
+
+```eu
+# merge.eu
+summary: {
+  user-count: users count
+  role-count: roles count
+}
+```
+
+## Using Evaluands
+
+The `-e` flag specifies an expression to evaluate against the loaded
+inputs:
+
+```sh
+# Select a nested value
+eu config.yaml -e 'database.host'
+
+# Transform and filter
+eu data.json -e 'items filter(_.price > 100) map(_.name)'
+
+# Aggregate
+eu data.json -e 'items map(_.price) foldl(+, 0)'
+```
+
+## Collecting Inputs
+
+The `--collect-as` (`-c`) flag gathers multiple files into a list:
+
+```sh
+eu -c configs *.yaml -e 'configs map(_.name)'
+```
+
+Add `--name-inputs` (`-N`) to get a block keyed by filename:
+
+```sh
+eu -c configs -N *.yaml
+```
+
+```yaml
+configs:
+  a.yaml:
+    name: alpha
+  b.yaml:
+    name: beta
+```
+
+## Output Formats
+
+Control the output format:
+
+| Flag | Format |
+|------|--------|
+| (default) | YAML |
+| `-j` | JSON |
+| `-x json` | JSON |
+| `-x toml` | TOML |
+| `-x edn` | EDN |
+| `-x text` | Plain text |
+
+The format can also be inferred from the output file:
+
+```sh
+eu data.yaml -o output.json
+```
+
+## Practical Example: Data Pipeline
+
+Suppose you have a CSV of sales data and want to generate a JSON
+summary:
+
+```sh
+eu sales=sales.csv -j -e '{
+  total: sales map(_.amount num) foldl(+, 0)
+  count: sales count
+  regions: sales map(_.region) unique
+}'
+```
+
+Or as a reusable eucalypt file:
+
+```eu
+# report.eu
+{ import: "sales=sales.csv" }
+
+` :suppress
+amounts: sales map(_.amount num)
+
+report: {
+  total: amounts foldl(+, 0)
+  count: sales count
+  average: report.total / report.count
+}
+```
+
+```sh
+eu report.eu -j -e report
+```
+
+## Key Concepts
+
+- Eucalypt reads JSON, YAML, TOML, CSV, XML, EDN, JSON Lines, and
+  plain text
+- Output defaults to YAML; use `-j` for JSON or `-x` for other
+  formats
+- **Named inputs** (`name=file`) give data a name for reference
+- The `-e` flag evaluates expressions against loaded data
+- `--collect-as` gathers multiple files into a list or block
+- CSV values are strings; use `num` to convert to numbers
+- Combine multiple sources with the command line input system or
+  imports
+
+---
+
+# The Command Line
+
+In this chapter you will learn:
+
+- The `eu` command structure and subcommands
+- How to specify inputs, outputs, and evaluands
+- How to use targets, arguments, and environment variables
+- How to use the formatter and other tools
+
+## Command Structure
+
+```sh
+eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
+```
+
+When no subcommand is given, `run` is assumed:
+
+```sh
+eu file.eu          # same as: eu run file.eu
+```
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `run` | Evaluate and render (default) |
+| `test` | Run embedded tests |
+| `dump` | Dump intermediate representations |
+| `version` | Show version information |
+| `explain` | Show what would be executed |
+| `list-targets` | List export targets |
+| `fmt` | Format source files |
+| `lsp` | Start the Language Server Protocol server |
+
+## Inputs
+
+### File Inputs
+
+Specify one or more files to process:
+
+```sh
+eu data.yaml transform.eu
+```
+
+Inputs are merged left to right. Names from earlier inputs are
+available to later ones. The final input determines what is rendered.
+
+### stdin
+
+Use `-` to read from stdin, or simply pipe data when no files are
+specified:
+
+```sh
+curl -s https://api.example.com/data | eu -e 'items count'
+```
+
+### Format Override
+
+Override the assumed format with a `format@` prefix:
+
+```sh
+eu yaml@data.txt json@-
+```
+
+### Named Inputs
+
+Prefix with `name=` to make the input available under a name:
+
+```sh
+eu config=settings.yaml app.eu
+```
+
+In `app.eu`, the YAML content is available as `config`:
+
+```eu
+port: config.port
+```
+
+### Collecting Inputs
+
+Gather multiple files into a named collection:
+
+```sh
+eu -c data *.json -e 'data map(_.name)'
+```
+
+Add `-N` to key by filename:
+
+```sh
+eu -c data -N *.json
+```
+
+## Outputs
+
+### Format
+
+Output defaults to YAML. Common options:
+
+```sh
+eu file.eu            # YAML (default)
+eu file.eu -j         # JSON (shortcut)
+eu file.eu -x json    # JSON (explicit)
+eu file.eu -x toml    # TOML
+eu file.eu -x text    # Plain text
+```
+
+### Output File
+
+Write to a file (format inferred from extension):
+
+```sh
+eu data.eu -o output.json
+```
+
+## Evaluands
+
+The `-e` flag specifies an expression to evaluate:
+
+```sh
+eu -e '2 + 2'
+```
+
+```yaml
+4
+```
+
+When combined with file inputs, the evaluand has access to all loaded
+names:
+
+```sh
+eu data.yaml -e 'users filter(_.active) count'
+```
+
+Multiple `-e` flags are allowed; the last one determines the output.
+
+### Quick Expressions
+
+Use `-e` for quick data exploration:
+
+```sh
+# Inspect a value
+eu config.yaml -e 'database'
+
+# Count items
+eu data.json -e 'items count'
+
+# Extract and transform
+eu data.json -e 'items map(_.name) reverse'
+```
+
+## Targets
+
+Declarations annotated with `:target` metadata can be selected for
+rendering:
+
+```eu
+# multi-output.eu
+` { target: :summary }
+summary: { count: items count }
+
+` { target: :detail }
+detail: items
+```
+
+List available targets:
+
+```sh
+eu list-targets multi-output.eu
+```
+
+Select a target:
+
+```sh
+eu -t summary multi-output.eu
+```
+
+A target named `main` is rendered by default. If no `:main` target
+exists, the entire unit is the target.
+
+## Passing Arguments
+
+Arguments after `--` are available via `io.args`:
+
+```sh
+eu -e 'io.args' -- hello world
+```
+
+```yaml
+- hello
+- world
+```
+
+Use in scripts:
+
+```eu
+# greet.eu
+name: io.args head-or("World")
+greeting: "Hello, {name}!"
+```
+
+```sh
+eu greet.eu -e greeting -- Alice
+```
+
+```yaml
+Hello, Alice!
+```
+
+Arguments are strings. Use `num` to convert:
+
+```eu
+numbers: io.args map(num)
+total: numbers foldl(+, 0)
+```
+
+## Environment Variables
+
+Access environment variables through `io.env`:
+
+```eu
+home: io.env lookup-or(:HOME, "/tmp")
+path: io.env lookup(:PATH)
+```
+
+## Random Seed
+
+By default, random numbers use system entropy. Use `--seed` for
+reproducible output:
+
+```sh
+eu --seed 42 template.eu
+```
+
+## The Formatter
+
+Format eucalypt source files:
+
+```sh
+eu fmt file.eu              # print formatted to stdout
+eu fmt --write file.eu      # format in place
+eu fmt --check file.eu      # check (exit 1 if unformatted)
+eu fmt --reformat file.eu   # full reformatting
+```
+
+Options:
+- `-w, --width <N>` -- line width (default: 80)
+- `--indent <N>` -- indent size (default: 2)
+
+## Debugging
+
+### Dumping Intermediate Representations
+
+```sh
+eu dump ast file.eu         # syntax tree
+eu dump desugared file.eu   # core expression
+eu dump stg file.eu         # compiled STG
+```
+
+### Explaining Execution
+
+```sh
+eu explain file.eu          # show what would be executed
+```
+
+### Statistics
+
+```sh
+eu -S file.eu               # print metrics to stderr
+```
+
+## Batch Mode
+
+Use `-B` for repeatable builds (disables ergonomic mode and
+`~/.eucalypt`):
+
+```sh
+eu -B file.eu
+```
+
+## Suppressing the Prelude
+
+The standard prelude is loaded automatically. Suppress it with `-Q`:
+
+```sh
+eu -Q file.eu
+```
+
+> **Warning:** Without the prelude, even `true`, `false`, `if`, and
+> basic operators are unavailable.
+
+## Version Assertions
+
+Ensure a minimum `eu` version in source files:
+
+```eu
+_ : eu.requires(">=0.3.0")
+```
+
+Check the current version:
+
+```sh
+eu version
+```
+
+## LSP Server
+
+Start a Language Server Protocol server for editor integration:
+
+```sh
+eu lsp
+```
+
+Provides syntax error diagnostics and formatting support.
+
+## Key Concepts
+
+- `eu` defaults to `run` when no subcommand is given
+- Inputs are merged left to right; the final input determines output
+- Named inputs (`name=file`) provide namespace isolation
+- `-e` evaluates an expression against loaded inputs
+- `-t` selects a named target for rendering
+- `--` passes arguments available via `io.args`
+- `eu fmt` formats source files; `eu test` runs tests; `eu lsp`
+  starts the language server
+
+---
+
+# YAML Embedding
+
+Eucalypt can be embedded in YAML files via the following tags:
+
+- `eu`
+- `eu::suppress`
+- `eu::fn`
+
+The YAML embedding is not as capable as the native Eucalypt syntax but
+it is rich enough to be used for many YAML templating use cases,
+particularly when combined with the ability to specify several inputs
+on the command line.
+
+## Evaluating eucalypt expressions
+
+As you would expect, YAML mappings correspond to Eucalypt blocks and
+bind names just as Eucalypt blocks do and YAML sequences correspond to
+Eucalypt lists.
+
+YAML allows a wide variety of forms of expressing these (block styles
+and flow styles), to the extent that JSON is valid YAML.
+
+Eucalypt expressions can be evaluated using the `!eu` tag and have
+access to all the names defined in the YAML unit and any others
+brought into scope by specifying inputs on the command line.
+
+```yaml
+values:
+  x: world
+  y: hello
+
+result: !eu "{values.y} {values.x}!"
+```
+
+...will render as:
+
+```yaml
+values:
+  x: world
+  y: hello
+
+result: Hello World!
+```
+
+## Suppressing rendering
+
+Items can be hidden using the `eu::suppress` tag. This is equivalent
+to `:suppress` metadata in the eucalypt syntax.
+
+```yaml
+values: !eu::suppress
+  x: world
+  y: hello
+
+result: !eu "{values.y} {values.x}!"
+```
+
+...will render as:
+
+```yaml
+result: Hello World!
+```
+
+## Defining functions
+
+Functions can be defined using `eu::fn` and supplying an argument
+list:
+
+```yaml
+values: !eu::suppress
+  x: world
+  y: hello
+  greet: !eu::fn (h, w) "{h} {w}!"
+
+result: !eu values.greet(values.y, values.x)
+```
+
+...will render as:
+
+```yaml
+result: Hello World!
+```
+
+## The escape hatch
+
+Larger chunks of eucalypt syntax can be embedded using YAML's support
+for larger chunks of text, combined with `!eu`. Using this workaround
+you can access capabilities of eucalypt that are not yet available in
+the YAML embedding. (Although operators cannot be made available in
+YAML blocks because of the way that operator names are bound - see
+[Operator Precedence Table](../reference/operators-and-identifiers.md).)
+
+```yaml
+block: !eu |
+  {
+    x: 99
+    (l ^^^ r): "{l} <_> {r}"
+    f(n): n ^^^ x
+  }
+
+result: block.f(99)
+```
+
+---
+
+# Testing with Eucalypt
+
+Eucalypt has a built-in test runner which can be used to run tests
+embedded in eucalypt files.
+
+Test mode is invoked by the `eu test` subcommand and:
+
+- analyses the file to build a test plan consisting of a list of test
+  targets and validations to run
+- executes the test plan and generates an *evidence* file
+- applies validations against the evidence to generate a results file
+- outputs results and generates an HTML report
+
+## Simple tests
+
+By default eucalypt searches for targets beginning with `test-` and
+runs each to render a `yaml` output. The result is parsed read back in
+and eucalypt checks for the presence of a `RESULT` key. If it finds it
+and the value is `PASS`, the test passes. Anything else is considered
+a fail.
+
+```eu
+my-add(x, y): x + y
+
+` { target: :test-add }
+test: {
+  RESULT: (2 + 2 = 4) then(:PASS, :FAIL)
+}
+```
+
+Several test targets can be embedded in one file. Each is run as a
+separate test.
+
+## Test files
+
+If your intention is not to embed tests in a eucalypt file but instead
+to write a test as a single file, then you can omit the test targets.
+Eucalypt will use a `main` target or run the entire file as usual and
+then validate the result (looking for a `RESULT` key, by default).
+
+## Other formats
+
+In test mode, eucalypt processes the test subject to generate output
+and then parses that back to validate the result. This is to provide
+for validation of the rendered text and the parsing machinery.
+
+By default YAML is generated and parsed back for each test target in
+the file but other formats can be selected in header metadata.
+
+```eu
+{
+  test-targets: [:yaml, :json]
+}
+
+` { target: :test-add }
+add: {
+  RESULT: (2 + 2 = 4) then(:PASS, :FAIL)
+}
+
+` { target: :test-sub }
+sub: {
+  RESULT: (2 - 2 = 0) then(:PASS, :FAIL)
+}
+```
+
+Running this file using `eu test` will result in four tests being run,
+two formats for each of the two targets.
+
+Using the default validator, for all formats for which eucalypt
+provides import and export capability, it shouldn't make any
+difference which format is used. However, custom validators provide
+the ability to check the precise text that is rendered.
+
+## Custom validators
+
+When a test runs, the execution generates an evidence block which has
+the following keys:
+
+- `exit` the exit code (0 on success) of the eucalypt execution
+- `stdout` text as a list of strings
+- `stderr` text as a list of strings
+- `result` (the stdout parsed back)
+- `stats` some statistics from the run
+
+---
+
+# Date, Time, and Random Numbers
+
+## Zoned Date-Time (ZDT) Values
+
+Eucalypt has native support for date-time values through the ZDT
+(Zoned Date-Time) type. ZDT values represent a point in time with
+timezone information.
+
+### ZDT Literals
+
+Use the `t"..."` prefix to write date-time literals directly in
+eucalypt source:
+
+```eu
+today: t"2024-03-15"
+meeting: t"2024-03-15T14:30:00Z"
+local: t"2024-03-15T14:30:00+01:00"
+```
+
+The `t"..."` syntax accepts ISO 8601 formats:
+
+| Format | Example | Notes |
+|--------|---------|-------|
+| Date only | `t"2024-03-15"` | Midnight UTC |
+| UTC | `t"2024-03-15T14:30:00Z"` | |
+| With offset | `t"2024-03-15T14:30:00+05:00"` | |
+| Fractional seconds | `t"2024-03-15T14:30:00.123Z"` | |
+
+### Parsing and Formatting
+
+The `cal` namespace provides functions for working with date-time
+values:
+
+```eu,notest
+# Parse from a string
+d: cal.parse("2024-03-15T14:30:00Z")
+
+# Format to a custom string
+label: t"2024-03-15" cal.format("%Y-%m-%d")  # "2024-03-15"
+```
+
+### Date-Time Arithmetic
+
+ZDT values support comparison operators:
+
+```eu
+before: t"2024-01-01" < t"2024-12-31"   # true
+same: t"2024-03-15" = t"2024-03-15"     # true
+```
+
+### Sorting Date-Times
+
+```eu
+dates: [t"2024-12-25", t"2024-01-01", t"2024-07-04"]
+sorted: dates sort-zdts  # [Jan 1, Jul 4, Dec 25]
+```
+
+### YAML Timestamps
+
+When importing YAML files, unquoted timestamp values are automatically
+converted to ZDT values:
+
+```yaml
+created: 2024-03-15
+updated: 2024-03-15T14:30:00Z
+```
+
+Quote the value to keep it as a string: `created: "2024-03-15"`.
+
+See [Import Formats](../reference/import-formats.md) for full details.
+
+### Current Time
+
+The `io.epoch-time` binding provides the current Unix epoch time in
+seconds:
+
+```eu
+now: io.epoch-time
+```
+
+## Random Numbers
+
+Eucalypt provides pseudo-random number generation using a functional
+stream pattern.
+
+### The Random Stream
+
+The `io.random` binding is an infinite lazy list of random floats in
+`[0, 1)`:
+
+```eu
+first-value: io.random head
+```
+
+Each run produces different values unless you supply a seed:
+
+```sh
+eu --seed 42 example.eu
+```
+
+### Generating Random Values
+
+Random functions consume part of the stream and return both a result
+and the remaining stream:
+
+```eu,notest
+result: random-int(100, io.random)
+value: result.value   # a number from 0 to 99
+rest: result.rest     # remaining stream
+```
+
+### Practical Examples
+
+**Rolling dice:**
+
+```eu,notest
+roll: random-int(6, io.random)
+die: roll.value + 1
+```
+
+**Picking a random element:**
+
+```eu,notest
+colours: ["red", "green", "blue"]
+pick: random-choice(colours, io.random)
+colour: pick.value
+```
+
+**Shuffling a list:**
+
+```eu,notest
+items: ["a", "b", "c", "d"]
+shuffled: shuffle(items, io.random)
+result: shuffled.value
+```
+
+**Sampling without replacement:**
+
+```eu,notest
+pool: range(1, 50)
+drawn: sample(6, pool, io.random)
+lottery: drawn.value
+```
+
+See the [Random Numbers reference](../reference/prelude/random.md) for
+the full API.
+
+---
+
+# Advanced Topics
+
+In this chapter you will learn:
+
+- How the metadata system works
+- How to use sets for unique collections
+- How to search deep structures with `deep-find` and `deep-query`
+- Format specifiers and formatting techniques
+- Type predicates and other utilities
+
+## The Metadata System
+
+Every value in eucalypt can carry **metadata**: a block of additional
+information that does not appear in the rendered output but can be
+inspected and used programmatically.
+
+### Attaching Metadata
+
+Use the `//` operator to attach metadata to a value:
+
+```eu
+answer: 42 // { note: "the answer to everything" }
+```
+
+The value `42` is rendered normally; the metadata is hidden:
+
+```yaml
+answer: 42
+```
+
+### Reading Metadata
+
+Use `meta` to retrieve the metadata block:
+
+```eu
+answer: 42 // { note: "the answer to everything" }
+note: meta(answer).note
+```
+
+```yaml
+answer: 42
+note: the answer to everything
+```
+
+### Deep Merge Metadata
+
+Use `//<< ` to deep-merge additional metadata onto existing metadata:
+
+```eu
+x: 1 // { a: 1 }
+y: x //<< { b: 2 }
+result: meta(y)
+```
+
+```yaml
+x: 1
+y: 1
+result:
+  a: 1
+  b: 2
+```
+
+### Declaration Metadata
+
+Declaration metadata (written with the backtick syntax) is separate
+from value metadata. It controls how eucalypt processes the
+declaration:
+
+```eu
+` { doc: "A helper" export: :suppress }
+helper(x): x + 1
+```
+
+Key metadata properties:
+- `doc` -- documentation string
+- `export: :suppress` -- hide from output
+- `target` -- mark as an export target
+- `import` -- import other files
+- `associates` / `precedence` -- operator fixity (see
+  [Operators](operators.md) for details)
+
+### YAML Tags
+
+Metadata can carry a `tag` key which renders as a YAML tag:
+
+```eu
+ref: :my-resource // { tag: "!Ref" }
+```
+
+```yaml
+ref: !Ref my-resource
+```
+
+This is useful for generating CloudFormation, Kubernetes, and other
+tagged YAML formats.
+
+### Assertions with `//=` and `//=>`
+
+The `//=` operator asserts equality at runtime:
+
+```eu
+result: 2 + 2 //= 4  # panics if not equal
+```
+
+The `//=>` operator additionally stores the assertion as metadata:
+
+```eu
+checked: 2 + 2 //=> 4
+m: meta(checked)  # contains the assertion
+```
+
+## Sets
+
+Sets are unordered collections of unique values, provided by the
+`set` namespace.
+
+### Creating Sets
+
+```sh
+eu -e '[1, 2, 2, 3, 3, 3] set.from-list set.to-list'
+```
+
+```yaml
+- 1
+- 2
+- 3
+```
+
+Duplicates are removed and elements are sorted.
+
+The empty set is written as `∅`:
+
+```sh
+eu -e '∅ set.to-list'
+```
+
+```yaml
+[]
+```
+
+### Membership and Size
+
+```sh
+eu -e '[1, 2, 3] set.from-list set.contains?(2)'
+```
+
+```yaml
+true
+```
+
+```sh
+eu -e '[1, 2, 3] set.from-list set.size'
+```
+
+```yaml
+3
+```
+
+```sh
+eu -e '∅ set.empty?'
+```
+
+```yaml
+true
+```
+
+### Adding and Removing
+
+```sh
+eu -e '∅ set.add(1) set.add(2) set.add(1) set.to-list'
+```
+
+```yaml
+- 1
+- 2
+```
+
+```sh
+eu -e '[1, 2, 3] set.from-list set.remove(2) set.to-list'
+```
+
+```yaml
+- 1
+- 3
+```
+
+### Set Algebra
+
+**Union:**
+
+```eu
+a: [1, 2] set.from-list
+b: [2, 3] set.from-list
+result: a set.union(b) set.to-list
+```
+
+```yaml
+result:
+- 1
+- 2
+- 3
+```
+
+**Intersection:**
+
+```eu
+a: [1, 2, 3] set.from-list
+b: [2, 3, 4] set.from-list
+result: a set.intersect(b) set.to-list
+```
+
+```yaml
+result:
+- 2
+- 3
+```
+
+**Difference:**
+
+```eu
+a: [1, 2, 3] set.from-list
+b: [2, 3] set.from-list
+result: a set.diff(b) set.to-list
+```
+
+```yaml
+result:
+- 1
+```
+
+## Deep Find
+
+`deep-find` recursively searches a nested block structure for all
+values associated with a given key name:
+
+```sh
+eu -e 'deep-find("host", { server: { host: "10.0.0.1" db: { host: "10.0.0.2" } } })'
+```
+
+```yaml
+- 10.0.0.1
+- 10.0.0.2
+```
+
+### `deep-find-first`
+
+Return just the first match, or a default:
+
+```sh
+eu -e 'deep-find-first("host", "unknown", { server: { host: "10.0.0.1" } })'
+```
+
+```yaml
+10.0.0.1
+```
+
+### `deep-find-paths`
+
+Return the key paths to each match:
+
+```sh
+eu -e 'deep-find-paths("host", { server: { host: "a" db: { host: "b" } } })'
+```
+
+```yaml
+- - server
+  - host
+- - server
+  - db
+  - host
+```
+
+## Deep Query
+
+`deep-query` provides a more powerful pattern-based search using
+dot-separated patterns with wildcards.
+
+### Bare Key (Recursive Search)
+
+A bare key name searches recursively (equivalent to `**.key`):
+
+```sh
+eu -e 'deep-query("port", { web: { port: 80 } db: { port: 5432 } })'
+```
+
+```yaml
+- 80
+- 5432
+```
+
+### Dotted Path
+
+A dotted path matches a specific path:
+
+```sh
+eu -e 'deep-query("server.host", { server: { host: "10.0.0.1" port: 80 } })'
+```
+
+```yaml
+- 10.0.0.1
+```
+
+### Wildcard `*`
+
+`*` matches exactly one level:
+
+```sh
+eu -e 'deep-query("*.port", { web: { port: 80 } db: { port: 5432 } name: "app" })'
+```
+
+```yaml
+- 80
+- 5432
+```
+
+### Double Wildcard `**`
+
+`**` matches any depth:
+
+```sh
+eu -e 'deep-query("config.**.port", { config: { port: 9090 nested: { deep: { port: 3000 } } } })'
+```
+
+```yaml
+- 9090
+- 3000
+```
+
+### Variants
+
+- `deep-query-first(pattern, default, block)` -- first match or
+  default
+- `deep-query-paths(pattern, block)` -- key paths of matches
+
+## Type Predicates
+
+Test the type of a value:
+
+```sh
+eu -e '{ a: 1 } block?'
+```
+
+```yaml
+true
+```
+
+```sh
+eu -e '[1, 2] list?'
+```
+
+```yaml
+true
+```
+
+## Sorting
+
+### `qsort`
+
+Sort with a custom comparison:
+
+```sh
+eu -e '["banana", "apple", "cherry"] qsort(<)'
+```
+
+```yaml
+- apple
+- banana
+- cherry
+```
+
+Sort by a derived key:
+
+```eu
+words: ["one", "two", "three", "four", "five", "six"]
+by-length: words qsort({
+  lhs: • rhs: •
+}.( (lhs str.letters count) < (rhs str.letters count) ))
+```
+
+```yaml
+words:
+- one
+- two
+- three
+- four
+- five
+- six
+by-length:
+- one
+- two
+- six
+- four
+- five
+- three
+```
+
+### `sort-nums`
+
+Sort numbers in ascending order:
+
+```sh
+eu -e '[30, 10, 20] sort-nums'
+```
+
+```yaml
+- 10
+- 20
+- 30
+```
+
+## Grouping
+
+### `group-by`
+
+Group list elements by a key function:
+
+```eu
+items: [
+  { type: "fruit" name: "apple" }
+  { type: "veg" name: "carrot" }
+  { type: "fruit" name: "banana" }
+]
+
+grouped: items group-by(_.type)
+```
+
+```yaml
+items:
+- type: fruit
+  name: apple
+- type: veg
+  name: carrot
+- type: fruit
+  name: banana
+grouped:
+  fruit:
+  - type: fruit
+    name: apple
+  - type: fruit
+    name: banana
+  veg:
+  - type: veg
+    name: carrot
+```
+
+## Format Specifiers
+
+Format specifiers in interpolation control output formatting. They use
+printf-style codes after a colon inside the interpolation braces.
+
+```eu
+results: {
+  padded: "{42:%06d}"
+  float: "{3.14159:%.2f}"
+  hex: "{255:%x}"
+}
+```
+
+```yaml
+results:
+  padded: '000042'
+  float: '3.14'
+  hex: ff
+```
+
+### Available Format Codes
+
+| Code | Description | Example |
+|------|-------------|---------|
+| `%d`, `%i` | Signed decimal integer | `{42:%d}` → `42` |
+| `%u` | Unsigned decimal integer | `{42:%u}` → `42` |
+| `%o` | Octal | `{255:%o}` → `377` |
+| `%x`, `%X` | Hexadecimal (lower/upper) | `{255:%x}` → `ff` |
+| `%f`, `%F` | Decimal notation | `{3.14:%.1f}` → `3.1` |
+| `%e`, `%E` | Scientific notation | `{1000:%e}` → `1e3` |
+| `%g`, `%G` | Auto (decimal or scientific) | `{0.001:%g}` → `0.001` |
+| `%s` | String | `{:hello:%s}` → `hello` |
+
+### Flags and Modifiers
+
+- `%-` — left-align
+- `%+` — prepend `+` for positive numbers
+- `%0` — zero-padding (e.g. `%06d`)
+- `%#` — alternate form (e.g. `0x` prefix for hex)
+- Width: `%10s` — minimum field width
+- Precision: `%.2f` — decimal places for floats
+
+See also the [Strings and Text](string-interpolation.md) chapter for
+more on string interpolation.
+
+## Version Assertions
+
+Assert a minimum version of `eu`:
+
+```eu
+_ : eu.requires(">=0.3.0")
+```
+
+Access build metadata:
+
+```eu
+info: {
+  version: eu.build.version
+  prelude: eu.prelude.version
+}
+```
+
+## Key Concepts
+
+- **Metadata** (`//`) attaches hidden information to values; `meta`
+  retrieves it
+- **Sets** (`set.*`) provide unique collections with union,
+  intersection, and difference
+- **Deep find** recursively searches nested blocks by key name
+- **Deep query** supports pattern-based search with `*` and `**`
+  wildcards
+- **Type predicates** (`block?`, `list?`) test value types
+- `qsort` sorts with custom comparators; format specifiers control
+  numeric output
+- `eu.requires` asserts a minimum version for compatibility
+
+---
+
+# Language Syntax Reference
+
+Eucalypt has a native syntax which emphasises the mappings-and-lists
+nature of its underlying data model but adds enhancements for
+functions and expressions. Eucalypt is written in `.eu` files.
+
+While `eu` happily processes YAML inputs with embedded expressions,
+many features are not yet available in the YAML embedding and the
+embedded expressions are themselves in Eucalypt syntax, so it is
+necessary to have an overview of how the syntax works to do anything
+interesting with Eucalypt.
+
+A few aspects are unorthodox and experimental.
+
+## Overview
+
+Eucalypt syntax comes about by the overlapping of two sub-languages.
+
+- the *block DSL* is how you write blocks and their declarations
+- the *expression DSL* is how you write expressions
+
+They are entwined in a fairly typical way: block literals (from the
+*block DSL*) can be used in expressions (from the *expression DSL*)
+and expressions (from the *expression DSL*) appear in declarations
+(from the *block DSL*).
+
+Comments can be interspersed throughout. Eucalypt only has line level
+comments.
+
+```eu,notest
+foo: bar # Line comments start with '#' and run till the end of the line
+```
+
+> **Note:** If you feel you need a block comment, you can use an
+> actual block or a string property within a block and mark it with
+> annotation metadata `:suppress` to ensure it doesn't appear in
+> output.
+
+Eucalypt has two types of names:
+
+- normal names, which are largely alphanumeric (e.g. `f`, `blah`,
+  `some-thing!`, `ॵ`) and are used to name properties and functions
+- operator names, which are largely symbolic (e.g. `&&&`, `∧`, `-+-|`,
+  `⊚`) and are used to name operators
+
+See [Operator Precedence Table](operators-and-identifiers.md) for more.
+
+## The block DSL
+
+A **block** is surrounded by curly braces:
+
+```eu
+... { ... }
+```
+
+...and contains declarations...
+
+```eu,notest
+... {
+  a: 1
+  b: 2
+  c: 3
+}
+```
+
+...which may themselves have blocks as values...
+
+```eu,notest
+... {
+  foo: {
+    bar: {
+      baz: "hello world"
+    }
+  }
+}
+```
+
+The top-level block in a file (a **unit**) does not have braces:
+
+```eu
+a: 1
+b: 2
+c: 3
+```
+
+So far all these declarations have been **property declarations** which
+contain a name and an expression, separated by a colon.
+
+Commas are entirely optional for delimiting declarations. Line endings
+are not significant. The following is a top-level block of three
+**property declarations**.
+
+```eu
+a: 1 b: 2 c: 3
+```
+
+There are other types of declarations. By specifying a parameter list,
+you get a **function declaration**:
+
+```eu
+# A function declaration
+f(x, y): x + y
+
+two: f(1, 1)
+```
+
+...and using some brackets and suitable names, you can define
+operators too, either binary:
+
+```eu
+# A binary operator declaration
+(x ^|^ y): "{x} v {y}"
+```
+
+...or prefix or postfix unary operators:
+
+```eu
+# A prefix operator declaration
+(¬ x): not(x)
+
+# A postfix operator declaration
+(x ******): "maybe {x}"
+```
+
+Eucalypt should handle unicode gracefully and any unicode characters
+in the symbol or punctuation classes are fine for operators.
+
+To control the precedence and associativity of user defined operators,
+you need metadata annotations.
+
+**Declaration annotations** allow us to specify arbitrary metadata
+against declarations. These can be used for documentation and similar.
+
+To attach an annotation to a declaration, squeeze it between a leading
+backtick and the declaration itself:
+
+```eu
+` { doc: "This is a"}
+a: 1
+
+` { doc: "This is b"}
+b: 2
+```
+
+Some metadata activate special handling, such as the `associates` and
+`precedence` keys you can put on operator declarations:
+
+```eu
+` { doc: "`(f ∘ g)` - return composition of `f` and `g`"
+    associates: :right
+    precedence: 88 }
+(f ∘ g): compose(f,g)
+```
+
+Look out for other uses like `:target`, `:suppress`, `:main`.
+
+Finally, you can specify metadata at a unit level. If the first item
+in a unit is an expression, rather than a declaration, it is treated
+as metadata that is applied to the whole unit.
+
+```eu
+{ :doc "This is just an example unit" }
+a: 1 b: 2 c: 3
+```
+
+## The expression DSL
+
+Everything that can appear to the right of the colon in a declaration
+is an expression and defined by the expression DSL.
+
+### Primitives
+
+First there are primitives.
+
+...numbers...
+
+```eu
+123
+```
+
+```eu
+-123
+```
+
+```eu
+123.333
+```
+
+...double quoted strings...
+
+```eu
+"a string"
+```
+
+...**symbols**, prefixed by a colon...
+
+```eu
+:key
+```
+
+...which are currently very like strings, but used in circumstances
+where their internal structure is generally not significant (i.e. keys
+in a block's internal representation).
+
+Finally, booleans (`true` and `false`) are pre-defined constants. As
+is (`null`) which is a value which renders as YAML or JSON's version
+of null but is not used by Eucalypt itself.
+
+### Block literals
+
+Block literals (in braces, as defined in the *block DSL*) are
+expressions and can be the values of declarations or passed as
+function arguments or operands in any of the contexts below:
+
+```eu
+foo: { a: 1 b: 2 c: 3}
+```
+
+### List literals
+
+List literals are enclosed in square brackets and contain a comma
+separated sequence of expressions:
+
+```eu
+list: [1, 2, :a, "boo"]
+```
+
+### Names
+
+Then there are **names**, which refer to the surrounding context. They
+might refer to properties:
+
+```eu
+x: 22
+y: x
+```
+
+...or *functions*:
+
+```eu
+add-one(x): 1 + x
+three: add-one(2)
+```
+
+...or *operators*:
+
+```eu
+(x &&& y): [x, x, x, y]
+z: "da" &&& "dum"
+```
+
+### Calling functions
+
+Functions can be applied by suffixing an argument list in parens, with
+*no intervening whitespace*:
+
+```eu
+f(x, y): x + y
+result: f(2, 2) # no whitespace
+```
+
+In the special case of applying a single argument, *"catenation"* can
+be used:
+
+```eu
+add-one(x): 1 + x
+result: 2 add-one
+```
+
+...which allows succinct expressions of pipelines of operations.
+
+In addition, functions are curried so can be partially applied:
+
+```eu
+add(x, y): x + y
+increment: add(1)
+result: 2 increment
+```
+
+...and placeholder underscores (or *expression anaphora*) can be used
+to define simple functions without the song and dance of a function
+declaration:
+
+```eu,notest
+f: if(tuesday?, (_ * 32 / 12), (99 / _))
+result: f(3)
+```
+
+In fact, in many cases the underscores can be omitted, leading to a
+construct very similar to Haskell's *sections* only even brackets
+aren't necessary.
+
+> **Note:** Eucalypt uses its knowledge of the fixity and
+> associativity of each operator to find "gaps" and fills them with the
+> unwritten underscores. This is great for simple cases but worth
+> avoiding for complicated expressions.
+
+```eu
+increment: + 1
+result: 2 increment (126 /)
+```
+
+Both styles of function application together with partial application
+and sectioning can all be applied together:
+
+```eu,notest
+result: [1, 2, 3] map(+1) filter(odd?) //=> [3]
+```
+
+(`//=>` is an assertion operator which causes a panic if the left and
+right hand expressions aren't found to be equal at run time, but
+returns that value if they are.)
+
+> **Note:** There are no explicit lambda expressions in Eucalypt right
+> now. For simple cases, expression or string anaphora should do the
+> job. For more involved cases, you should use a named function
+> declaration. See [Anaphora](../guide/anaphora.md) for more.
+
+---
+
+# Operators and Identifiers
+
+Eucalypt distinguishes two different types of identifier, *normal*
+identifiers, like `x`, `y`, `α`, `א`, `ziggety-zaggety`, `zoom?`, and
+*operator identifiers* like `*`, `@`, `&&`, `∧`, `∘`, `⊙⊙⊙`, `<>` and
+so on.
+
+It is entirely a matter of the component characters which category an
+identifier falls into. Normal identifiers contain letters (including
+non-ASCII characters), numbers, "-", "?", "$". Operator identifiers
+contain the usual suspects and anything identified as an operator or
+symbol in unicode. Neither can contain ":" or "," or brackets which
+are special in eucalypt.
+
+Any sequence of characters at all can be treated as a normal
+identifier by surrounding them in single quotes. This is the only use
+of single quotes in eucalypt. This can be useful when you want to use
+file paths or other external identifiers as block keys for instance:
+
+```eu,notest
+home: {
+  '.bashrc': false
+  '.emacs.d': false
+  'notes.txt': true
+}
+
+z: home.'notes.txt'
+```
+
+## Normal identifiers
+
+Normal identifiers are brought into scope by declarations and can be
+referred to without qualification in their own block or in more
+nested blocks:
+
+```eu
+x: {
+  z: 99
+  foo: z //=> 99
+  bar: {
+    y: z //=> 99
+  }
+}
+```
+
+They can be accessed from within other blocks using the lookup
+operator:
+
+```eu
+x: {
+  z: 99
+}
+
+y: x.z //=> 99
+```
+
+They can be overridden using generalised lookup:
+
+```eu
+z: 99
+y: { z: 100 }."z is {z}" //=> "z is 100"
+```
+
+They can be shadowed:
+
+```eu
+z: 99
+y: { z: 100 r: z //=> 100 }
+```
+
+But beware trying to access the outer value:
+
+```eu,notest
+name: "foo"
+x: { name: name } //=> infinite recursion
+```
+
+Accessing shadowed values is not yet easily possible unless you can
+refer to an enclosing block and use a lookup.
+
+## Prefix operators
+
+Some operators are defined as prefix (unary) operators rather than
+infix (binary) operators. These bind tightly to the expression that
+follows.
+
+For example, the `↑` operator is a tight-binding prefix form of `head`:
+
+```eu
+xs: [1, 2, 3]
+first: ↑xs  //=> 1
+```
+
+Because it binds tightly (precedence 95), it works naturally in
+pipelines without parentheses:
+
+```eu
+xs: [[1, 2], [3, 4]]
+result: xs map(↑)  # map head over list of lists
+```
+
+Other prefix operators include `!` and `¬` for boolean negation, and
+`∸` for numeric negation.
+
+## Operator identifiers
+
+Operator identifiers are more limited than normal identifiers.
+
+They are brought into scope by operator declarations and available
+without qualification in their own block and more nested blocks:
+
+```eu
+( l -->> r): "{l} shoots arrow at {r}"
+
+x: {
+  y: 2 -->> 3 //=> "2 shoots arrow at 3"
+}
+```
+
+...and can be shadowed:
+
+```eu
+(l !!! r): l + r
+
+y: {
+  (l !!! r): l - r
+  z: 100 !!! 1 //=> 99
+}
+```
+
+But:
+
+- they cannot be accessed by lookup, so there is no way of forming a
+  qualified name to access an operator
+- they cannot be overridden by generalised lookup
+
+---
+
+# Prelude Reference
+
+The eucalypt **prelude** is a standard library of functions, operators,
+and constants that is automatically loaded before your code runs.
+
+You can suppress the prelude with `-Q` if needed, though this leaves
+a very bare environment (even `true`, `false`, and `if` are defined
+in the prelude).
+
+## Categories
+
+- [Lists](lists.md) -- list construction, transformation, folding, sorting (64 entries)
+- [Blocks](blocks.md) -- block construction, access, merging, transformation (52 entries)
+- [Strings](strings.md) -- string manipulation, regex, formatting (26 entries)
+- [Numbers and Arithmetic](numbers.md) -- numeric operations and predicates (14 entries)
+- [Booleans and Comparison](booleans.md) -- boolean logic and comparison operators (13 entries)
+- [Combinators](combinators.md) -- function composition, application, utilities (12 entries)
+- [Calendar](calendar.md) -- date and time functions (5 entries)
+- [Sets](sets.md) -- set operations (11 entries)
+- [Random Numbers](random.md) -- random number generation (5 entries)
+- [Metadata](metadata.md) -- metadata and assertion functions (7 entries)
+- [IO](io.md) -- environment, time, and argument access (9 entries)
+
+*218 documented entries in total.*
+
+---
+
+# Lists
+
+## Basic Operations
+
+| Function | Description |
+|----------|-------------|
+| `cons` | Construct new list by prepending item `h` to list `t` |
+| `head` | Return the head item of list `xs`, panic if empty |
+| `(↑ xs)` | Return first element of list `xs`. Tight-binding prefix operator |
+| `nil?` | `true` if list `xs` is empty, `false` otherwise |
+| `head-or(d, xs)` | Return the head item of list `xs` or default `d` if empty |
+| `tail` | Return list `xs` without the head item. [] causes error |
+| `tail-or(d, xs)` | Return list `xs` without the head item or `d` for empty list |
+| `nil` | Identical to `[]`, the empty list |
+| `first` | Return first item of list `xs` - error if the list is empty |
+| `second(xs)` | Return second item of list - error if there is none |
+| `second-or(d, xs)` | Return second item of list - default `d` if there is none |
+
+## List Construction
+
+| Function | Description |
+|----------|-------------|
+| `repeat(i)` | Return infinite list of instances of item `i` |
+| `iterate(f, i)` | Return list of `i` with subsequent repeated applications of `f` to `i` |
+| `ints-from(n)` | Return infinite list of integers from `n` upwards |
+| `range(b, e)` | Return list of ints from `b` to `e` (not including `e`) |
+| `cycle(l)` | Create infinite list by cycling elements of list `l` |
+
+## Transformations
+
+| Function | Description |
+|----------|-------------|
+| `take(n, l)` | Return initial segment of integer `n` elements from list `l` |
+| `drop(n, l)` | Return result of dropping integer `n` elements from list `l` |
+| `take-while(p?, l)` | Initial elements of list `l` while `p?` is true |
+| `take-until(p?)` | Initial elements of list `l` while `p?` is false |
+| `drop-while(p?, l)` | Skip initial elements of list `l` while `p?` is true |
+| `drop-until(p?)` | Skip initial elements of list `l` while `p?` is false |
+| `map(f, l)` | Map function `f` over list `l` |
+| `map2(f, l1, l2)` | Map function `f` over lists `l1` and `l2`, until the shorter is exhausted |
+| `cross(f, xs, ys)` | Apply `f` to every combination of elements from `xs` and `ys` (cartesian product) |
+| `filter(p?, l)` | Return list of elements of list `l` that satisfy predicate `p?` |
+| `remove(p?, l)` | Return list of elements of list `l` that do not satisfy predicate `p?` |
+| `reverse(l)` | Reverse list `l` |
+
+## Combining Lists
+
+| Function | Description |
+|----------|-------------|
+| `zip-with` | Map function `f` over lists `l1` and `l2`, until the shorter is exhausted |
+| `zip` | List of pairs of elements  `l1` and `l2`, until the shorter is exhausted |
+| `append(l1, l2)` | Concatenate two lists `l1` and `l2` |
+| `prepend` | Concatenate two lists with `l1` after `l2` |
+| `concat(ls)` | Concatenate all lists in `ls` together |
+| `mapcat(f)` | Map items in l with `f` and concatenate the resulting lists |
+| `zip-apply(fs, vs)` | Apply fns in list `fs` to corresponding values in list `vs`, until shorter is exhausted |
+
+## Splitting Lists
+
+| Function | Description |
+|----------|-------------|
+| `split-at(n, l)` | Split list in to at `n`th item and return pair |
+| `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
+| `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
+| `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offest `step` |
+| `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n` |
+| `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
+
+## Folds and Scans
+
+| Function | Description |
+|----------|-------------|
+| `foldl(op, i, l)` | Left fold operator `op` over list `l` starting from value `i`  |
+| `foldr(op, i, l)` | Right fold operator `op` over list `l` ending with value `i`  |
+| `scanl(op, i, l)` | Left scan operator `op` over list `l` starting from value `i`  |
+| `scanr(op, i, l)` | Right scan operator `op` over list `l` ending with value `i`  |
+
+## Predicates
+
+| Function | Description |
+|----------|-------------|
+| `all-true?(l)` | True if and only if all items in list `l` are true |
+| `all(p?, l)` | True if and only if all items in list `l` satisfy predicate `p?` |
+| `any-true?(l)` | True if and only if any items in list `l` are true |
+| `any(p?, l)` | True if and only if any items in list `l` satisfy predicate `p?` |
+
+## Sorting
+
+| Function | Description |
+|----------|-------------|
+| `group-by(k, xs)` | Group xs by key function returning block of key to subgroups, maintains order |
+| `qsort(lt, xs)` | Sort `xs` using 'less-than' function `lt` |
+| `sort-nums(xs)` | Sort list of numbers ascending |
+| `sort-strs(xs)` | Sort list of strings or symbols ascending |
+| `sort-zdts(xs)` | Sort list of zoned date-times ascending |
+| `sort-by(key-fn, cmp, xs)` | Sort list `xs` by key extracted with `key-fn` using comparator `cmp` |
+| `sort-by-num(key-fn)` | Sort list `xs` ascending by numeric key extracted with `key-fn` |
+| `sort-by-str(key-fn)` | Sort list `xs` ascending by string key extracted with `key-fn` |
+| `sort-by-zdt(key-fn)` | Sort list `xs` ascending by zoned date-time key extracted with `key-fn` |
+
+### Sorting Examples
+
+```eu
+nums: [3, 1, 4, 1, 5] sort-nums          # [1, 1, 3, 4, 5]
+words: ["banana", "apple", "cherry"] sort-strs  # ["apple", "banana", "cherry"]
+
+people: [{name: "Zara" age: 30}, {name: "Alice" age: 25}]
+by-name: people sort-by-str(_.name)       # sorted by name
+by-age: people sort-by-num(_.age)         # sorted by age
+```
+
+## Other
+
+| Function | Description |
+|----------|-------------|
+| `nth(n, l)` | Return `n`th item of list if it exists, otherwise panic |
+| `(l !! n)` | Return `n`th item of list if it exists, otherwise error |
+| `count(l)` | Return count of items in list `l` |
+| `last` | Return last element of list `l` |
+| `over-sliding-pairs(f, l)` | Apply binary fn `f` to each overlapping pair in `l` to form new list |
+| `differences` | Calculate difference between each overlapping pair in list of numbers `l` |
+
+---
+
+# Blocks
+
+## Block Construction and Merging
+
+| Function | Description |
+|----------|-------------|
+| `sym` | Create symbol with name given by string `s` |
+| `merge` | Shallow merge block `b2` on top of `b1` |
+| `deep-merge` | Deep merge block `b2` on top of `b1`, merges nested blocks but not lists |
+| `block?` | True if and only if `v` is a block |
+| `list?` | True if and only if `v` is a list |
+| `elements` | Expose list of elements of block `b` |
+| `block` | (re)construct block from list `kvs` of elements |
+| `has(s, b)` | True if and only if block `b` has key (symbol) `s` |
+| `lookup(s, b)` | Look up symbol `s` in block `b`, error if not found |
+| `lookup-in(b, s)` | Look up symbol `s` in block `b`, error if not found |
+| `lookup-or(s, d, b)` | Look up symbol `s` in block `b`, default `d` if not found |
+| `lookup-or-in(b, s, d)` | Look up symbol `s` in block `b`, default `d` if not found |
+| `lookup-alts(syms, d, b)` | Look up symbols `syms` in turn in block `b` until a value is found, default `d` if none |
+| `lookup-across(s, d, bs)` | Look up symbol `s` in turn in each of blocks `bs` until a value is found, default `d` if none |
+| `lookup-path(ks, b)` | Look up value at key path `ks` in block `b` |
+
+## Block Utilities
+
+| Function | Description |
+|----------|-------------|
+| `merge-all(bs)` | Merge all blocks in list `bs` together, later overriding earlier |
+| `key` | Return key in a block element / pair |
+| `value` | Return key in a block element / pair |
+| `keys(b)` | Return keys of block |
+| `values(b)` | Return values of block |
+| `sort-keys(b)` | Return block `b` with keys sorted alphabetically |
+| `bimap(f, g, pr)` | Apply f to first item of pair and g to second, return pair |
+| `map-first(f, prs)` | Apply f to first elements of all pairs in list of pairs `prs` |
+| `map-second(f, prs)` | Apply f to second elements of all pairs in list of pairs `prs` |
+| `map-kv(f, b)` | Apply `f(k, v)` to each key / value pair in block `b`, returning list |
+| `map-as-block(f, syms)` | Map each symbol in `syms` and create block mapping `syms` to mapped values |
+| `pair(k, v)` | Form a block element from key (symbol) `k` and value `v` |
+| `zip-kv(ks, vs)` | Create a block by zipping together keys `ks` and values `vs` |
+| `with-keys` | Create block from list of values by assigning list of keys `ks` against them |
+| `map-values(f, b)` | Apply `f(v)` to each value in block `b` |
+| `map-keys(f, b)` | Apply `f(k)` to each key in block `b` |
+| `filter-items(f, b)` | Return items from block `b` which match item match function `f` |
+| `by-key(p?)` | Return item match function that checks predicate `p?` against the (symbol) key |
+| `by-key-name(p?)` | Return item match function that checks predicate `p?` against string representation of the key |
+| `by-key-match(re)` | Return item match function that checks string representation of the key matches regex `re` |
+| `by-value(p?)` | Return item match runction that checks predicate `p?` against the item value |
+| `match-filter-values(re, b)` | Return list of values from block `b` with keys matching regex `re` |
+| `filter-values(p?, b)` | Return items from block `b` where values match predicate `p?` |
+
+## Block Alteration
+
+| Function | Description |
+|----------|-------------|
+| `alter-value(k, v, b)` | Alter `b.k` to value `v` |
+| `update-value(k, f, b)` | Update  `b.k` to `f(b.k)` |
+| `alter(ks, v, b)` | In nested block `b` alter value to value `v` at path-of-keys `ks` |
+| `update(ks, f, b)` | In nested block `b` applying `f` to value at path-of-keys `ks` |
+| `update-value-or(k, f, d, b)` | Set `b.k` to `f(v)` where v is current value, otherwise add with default value `d` |
+| `set-value(k, v)` | Set `b.k` to `v`, adding if absent |
+| `tongue(ks, v)` | Construct block with a single nested path-of-keys `ks` down to value `v` |
+| `merge-at(ks, v, b)` | Shallow merge block `v` into block value at path-of-keys `ks` |
+
+## Deep Find and Query
+
+| Function | Description |
+|----------|-------------|
+| `deep-find(k, b)` | Return list of all values for key `k` at any depth in block `b`, depth-first |
+| `deep-find-first(k, d, b)` | Return first value for key `k` at any depth in block `b`, or default `d` |
+| `deep-find-paths(k, b)` | Return list of key paths to all occurrences of key `k` at any depth in block `b` |
+| `deep-query(pattern, b)` | Query block `b` using dot-separated pattern string. `*` matches one level, `**` matches any depth. Bare `foo` is sugar for `**.foo` |
+| `deep-query-first(pattern, d, b)` | Return first match for `pattern` in block `b`, or default `d` |
+| `deep-query-paths(pattern, b)` | Return list of key paths matching `pattern` in block `b` |
+
+### Deep Find
+
+Searches for a key at any nesting level:
+
+```eu
+config: {
+  server: { host: "localhost" port: 8080 }
+  db: { host: "db.local" port: 5432 }
+}
+
+hosts: config deep-find("host")  # ["localhost", "db.local"]
+first-host: config deep-find-first("host", "unknown")  # "localhost"
+```
+
+### Deep Query
+
+Queries using dot-separated patterns with wildcards:
+
+- Bare name `foo` is sugar for `**.foo` (find at any depth)
+- `*` matches one level
+- `**` matches any depth
+
+```eu
+data: {
+  us: { config: { host: "us.example.com" } }
+  eu: { config: { host: "eu.example.com" } }
+}
+
+# Find all hosts under any config
+hosts: data deep-query("config.host")  # ["us.example.com", "eu.example.com"]
+
+# Wildcard: any key at one level, then host
+hosts: data deep-query("*.config.host")
+```
+
+---
+
+# Strings
+
+## String Processing
+
+| Function | Description |
+|----------|-------------|
+| `str.of` | Convert `e` to string |
+| `str.split` | Split string `s` on separators matching regex `re` |
+| `str.split-on` | Split string `s` on separators matching regex `re` |
+| `str.join` | Join list of strings `l` by interposing string s |
+| `str.join-on` | Join list of strings `l` by interposing string s |
+| `str.match` | Match string `s` using regex `re`, return list of full match then capture groups |
+| `str.match-with` | Match string `s` using regex `re`, return list of full match then capture groups |
+| `str.extract(re)` | Use regex `re` (with single capture) to extract substring of s - or error |
+| `str.extract-or(re, d, s)` | Use regex `re` (with single capture) to extract substring of `s` - or default `d` |
+| `str.matches` | Return list of all matches in string `s` of regex `re` |
+| `str.matches-of` | Return list of all matches in string `s` of regex `re` |
+| `str.matches?(re, s)` | Return true if `re` matches full string `s` |
+| `str.suffix(b, a)` | Return string `b` suffixed onto `a` |
+| `str.prefix(b, a)` | Return string `b` prefixed onto `a` |
+| `str.letters` | Return individual letters of `s` as list of strings |
+| `str.len` | Return length of string in characters |
+| `str.fmt` | Format `x` using printf-style format `spec` |
+| `str.to-upper` | Convert string `s` to upper case |
+| `str.to-lower` | Convert string `s` to lower case |
+| `str.lt(a, b)` | True if string `a` is lexicographically less than `b` |
+| `str.gt(a, b)` | True if string `a` is lexicographically greater than `b` |
+| `str.lte(a, b)` | True if string `a` is lexicographically less than or equal to `b` |
+| `str.gte(a, b)` | True if string `a` is lexicographically greater than or equal to `b` |
+| `str.base64-encode` | Encode string `s` as base64 |
+| `str.base64-decode` | Decode base64 string `s` back to its original string |
+| `str.sha256` | Return the SHA-256 hash of string `s` as lowercase hex |
+
+## Character Constants
+
+The `ch` namespace provides special characters:
+
+- `ch.n` -- Newline
+- `ch.t` -- Tab
+- `ch.dq` -- Double quote
+
+### Encoding and Hashing Examples
+
+```eu
+encoded: "hello" str.base64-encode    # "aGVsbG8="
+decoded: "aGVsbG8=" str.base64-decode # "hello"
+hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
+```
+
+---
+
+# Numbers and Arithmetic
+
+## Arithmetic Operators
+
+| Function | Description |
+|----------|-------------|
+| `(∸ n)` | Unary minus; negate |
+
+## Numeric Functions
+
+| Function | Description |
+|----------|-------------|
+| `inc` | Increment number `x` by 1 |
+| `dec` | Decrement number `x` by 1 |
+| `negate` | Negate number `n` |
+| `zero?` | Return true if and only if number `n` is 0 |
+| `pos?` | Return true if and only if number `n` is strictly positive |
+| `neg?` | Return true if and only if number `n` is strictly negative |
+| `num` | Parse number from string |
+| `floor` | Round number downwards to nearest integer |
+| `ceiling` | Round number upwards to nearest integer |
+| `max(l, r)` | Return max of numbers `l` and `r` |
+| `max-of(l)` | `max-of(l) - return max element in list of numbers `l` - error if empty` |
+| `min(l, r)` | Return min of numbers `l` and `r` |
+| `min-of(l)` | `min-of(l) - return min element in list of numbers `l` - error if empty` |
+
+---
+
+# Booleans and Comparison
+
+## Essentials
+
+| Function | Description |
+|----------|-------------|
+| `null` | A null value. To export as `null` in JSON or ~ in YAML |
+| `true` | Constant logical true |
+| `false` | Constant logical false |
+| `if` | If `c` is `true`, return `t` else `f` |
+| `then(t, f, c)` | For pipeline if: - `x? then(t, f)` |
+| `when(p?, f, x)` | When `x` satisfies `p?` apply `f` else pass through unchanged |
+
+## Error and Debug Support
+
+| Function | Description |
+|----------|-------------|
+| `panic` | Raise runtime error with message string `s` |
+| `assert(c, s, v)` | If `c` is true then value `v` otherwise error with message `s` |
+
+## Boolean Logic
+
+| Function | Description |
+|----------|-------------|
+| `not` | Toggle boolean |
+| `(! b)` | Not x, toggle boolean |
+| `(¬ b)` | Not x, toggle boolean |
+| `and` | True if and only if `l` and `r` are true |
+| `or` | True if and only if `l` or `r` is true |
+
+---
+
+# Combinators
+
+## Combinators
+
+| Function | Description |
+|----------|-------------|
+| `identity(v)` | Identity function, return value `v` |
+| `const(k, _)` | Return single arg function that always returns `k` |
+| `(-> k)` | Const; return single arg function that always returns `k` |
+| `compose(f, g, x)` | Apply function `f` to `g(x)` |
+| `apply(f, xs)` | Apply function `f` to arguments in list `xs` |
+| `flip(f, x, y)` | Flip arguments of function `f`, flip(f)(x, y) == f(y, x) |
+| `complement(p?)` | Invert truth value of predicate function |
+| `curry(f, x, y)` | Turn f([x, y]) into f' of two parameters (x, y) |
+| `uncurry(f, l)` | Turn f(x, y) into f' that expects [x, y] as a list |
+| `cond(l, d)` | In list `l` of [condition, value] select first true condition, returning value, else default `d` |
+| `juxt(f, g, x)` | `juxt(f, g) - return function of `x` returning list of `f(x)` and g(x)` |
+
+## Utilities
+
+| Function | Description |
+|----------|-------------|
+| `fnil(f, v, x)` | Return a function equivalent to f except it sees `x` instead of `null` when null is passed |
+
+---
+
+# Calendar
+
+## Date and Time Functions
+
+| Function | Description |
+|----------|-------------|
+| `cal.zdt` | Create zoned date time from datetime components and timezone string (e.g. '+0100') |
+| `cal.datetime(b)` | Convert block of time fields to zoned datetime (defaults: y=1, m=1, d=1, H=0, M=0, S=0, Z=UTC) |
+| `cal.parse` | Parse an ISO8601 formatted date string into a zoned date time |
+| `cal.format` | Format a zoned date time as ISO8601 |
+| `cal.fields` | Decompose a zoned date time into a block of its component fields (y,m,d,H,M,S,Z) |
+
+---
+
+# Sets
+
+## Set Operations
+
+| Function | Description |
+|----------|-------------|
+| `set.from-list(xs)` | Create a set from list `xs` of primitive values |
+| `set.to-list` | Return sorted list of elements in set `s` |
+| `set.add` | Add element `e` to set `s` |
+| `set.remove` | Remove element `e` from set `s` |
+| `set.contains?` | True if set `s` contains element `e` |
+| `set.size` | Return number of elements in set `s` |
+| `set.empty?(s)` | True if set `s` has no elements |
+| `set.union` | Return union of sets `a` and `b` |
+| `set.intersect` | Return intersection of sets `a` and `b` |
+| `set.diff` | Return elements in set `a` that are not in set `b` |
+| `(∅)` | The empty set |
+
+```eu
+s: set.from-list([1, 2, 3, 2, 1])
+# s contains {1, 2, 3} (duplicates removed)
+```
+
+## Set Algebra
+
+```eu
+a: set.from-list([1, 2, 3])
+b: set.from-list([2, 3, 4])
+u: set.union(a, b) set.to-list       # [1, 2, 3, 4]
+i: set.intersect(a, b) set.to-list   # [2, 3]
+d: set.diff(a, b) set.to-list        # [1]
+```
+
+---
+
+# Random Numbers
+
+Eucalypt provides pseudo-random number generation through the `io.random`
+stream and a set of prelude functions.
+
+## The Random Stream
+
+The `io.random` binding is an infinite lazy list of random floats in
+`[0, 1)`, seeded from system entropy or the `--seed` command-line flag.
+
+```eu
+first-random: io.random head
+```
+
+Because `io.random` is seeded from the system clock by default, it
+produces different values on each run. Use `--seed` for reproducible
+results:
+
+```sh
+eu --seed 42 example.eu
+```
+
+## Random Number Generation
+
+| Function | Description |
+|----------|-------------|
+| `random-stream(seed)` | Infinite lazy stream of random floats in [0,1), seeded by the given integer |
+| `random-int(n, stream)` | Generate a random integer in [0, n) from the stream. Returns block with value and rest |
+| `random-choice(list, stream)` | Choose a random element from a list. Returns block with value and rest |
+| `shuffle(list, stream)` | Shuffle a list using repeated selection. Returns block with value and rest |
+| `sample(n, list, stream)` | Sample n elements from a list without replacement. Returns block with value and rest |
+
+## Usage Pattern
+
+The random functions use a functional random stream pattern. Each
+function consumes some random values and returns both a result and the
+remaining stream in a block with `value` and `rest` keys:
+
+```eu,notest
+result: random-int(6, io.random)
+die-roll: result.value    # a number from 0 to 5
+remaining: result.rest    # unconsumed stream for further use
+```
+
+To chain multiple random operations, thread the `rest` through:
+
+```eu,notest
+rolls: {
+  first: random-int(6, io.random)
+  second: random-int(6, first.rest)
+  value: [first.value + 1, second.value + 1]
+}
+two-dice: rolls.value
+```
+
+## Shuffling and Sampling
+
+```eu,notest
+deck: range(1, 53)
+shuffled: shuffle(deck, io.random)
+hand: shuffled.value take(5)
+```
+
+```eu,notest
+colours: ["red", "green", "blue", "yellow", "purple"]
+picked: sample(2, colours, io.random)
+two-colours: picked.value
+```
+
+## Deterministic Seeds
+
+For reproducible output (useful in tests), pass a fixed seed:
+
+```eu,notest
+stream: random-stream(12345)
+x: random-int(100, stream)
+# x.value is always the same for seed 12345
+```
+
+Or use `--seed` on the command line, which sets `io.RANDOM_SEED`:
+
+```sh
+eu --seed 42 my-template.eu
+```
+
+---
+
+# Metadata
+
+Metadata is a powerful mechanism for attaching auxiliary information to
+any eucalypt expression. It is used for documentation, export control,
+import declarations, operator definitions, and testing assertions.
+
+## Attaching and Reading Metadata
+
+## Metadata Basics
+
+| Function | Description |
+|----------|-------------|
+| `with-meta` | Add metadata block `m` to expression `e` |
+| `meta` | Retrieve expression metadata for e |
+| `raw-meta` | Retrieve immediate metadata of e without recursing into inner layers |
+| `merge-meta(m, e)` | Merge block `m` into `e`'s metadata |
+| `validator(v)` | Find the validator for a value `v` in its metadata |
+| `check(v)` | True if v is valid according to assert metadata |
+| `checked(v)` | Panic if value doesn't satisfy its validator |
+
+## Documentation Metadata
+
+The backtick (`` ` ``) before a declaration attaches metadata. When the
+value is a string, it sets the `doc` key:
+
+```eu
+` "Add two numbers together"
+add(a, b): a + b
+```
+
+This is equivalent to:
+
+```eu
+` { doc: "Add two numbers together" }
+add(a, b): a + b
+```
+
+For richer metadata, use a block:
+
+```eu
+` { doc: "Infix addition operator"
+    precedence: :sum
+    associates: :left }
+(a + b): __ADD(a, b)
+```
+
+### Common Metadata Keys
+
+| Key | Purpose |
+|-----|---------|
+| `doc` | Documentation string |
+| `import` | Import specification |
+| `target` | Export target name |
+| `export` | Export control (`:suppress` to hide) |
+| `precedence` | Operator precedence level |
+| `associates` | Operator associativity (`:left`, `:right`) |
+| `parse-embed` | Embedded representation format |
+
+---
+
+# IO
+
+## Prelude Versioning
+
+| Function | Description |
+|----------|-------------|
+| `eu.prelude` | Metadata about this version of the standard prelude |
+| `eu.build` | Metadata about this version of the eucalypt executable |
+| `eu.requires` | Assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0') |
+
+## IO Functions
+
+| Function | Description |
+|----------|-------------|
+| `io.env` | Read access to environent variables at time of launch |
+| `io.args` | Line arguments passed after -- separator |
+| `io.RANDOM_SEED` | Seed for random number generation (from --seed or system time) |
+| `io.random` | Infinite lazy stream of random floats in [0,1), seeded from system entropy or --seed flag |
+
+## Other
+
+| Function | Description |
+|----------|-------------|
+| `alter?(k?, v!, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
+| `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
+
+---
+
+# CLI Reference
+
+Eucalypt is available as a command line tool, `eu`, which reads inputs
+and writes outputs.
+
+Everything it does in between is purely functional and there is no
+mutable state.
+
+It is intended to be simple to use in unix pipelines.
+
+```sh
+eu --version # shows the current eu version
+eu --help # lists command line options
+```
+
+## Command Structure
+
+The `eu` command uses a subcommand structure for clarity and extensibility:
+
+```sh
+eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
+```
+
+### Subcommands
+
+- `run` (default) - Evaluate eucalypt code
+- `test` - Run tests
+- `dump` - Dump intermediate representations
+- `version` - Show version information
+- `explain` - Explain what would be executed
+- `list-targets` - List targets defined in the source
+- `fmt` - Format eucalypt source files
+- `lsp` - Start the Language Server Protocol server
+
+When no subcommand is specified, `run` is used by default, so these are equivalent:
+
+```sh
+eu file.eu
+eu run file.eu
+```
+
+## Inputs
+
+### Files / *stdin*
+
+`eu` can read several inputs, specified by command line arguments.
+
+Inputs specify text data from:
+
+ - files
+ - stdin
+ - internal resources (ignored for now)
+ - (in future) HTTPS URLs or Git refs
+
+...of which the first two are the common case. In the simplest case,
+file inputs are specified by file name, stdin is specified by `-`.
+
+So
+
+```sh
+eu a.yaml - b.eu
+```
+
+...will read input from `a.yaml`, stdin and `b.eu`.
+Each will be read into **eucalypt**'s core representation and merged
+before output is rendered.
+
+### Input format
+
+Inputs must be one of the formats that **eucalypt** supports, which
+at present, are:
+
+ - yaml
+ - json
+ - jsonl (JSON Lines)
+ - toml
+ - edn
+ - xml
+ - csv
+ - text
+
+Of these yaml, json, toml, edn and xml return blocks; jsonl, csv and
+text return lists. Inputs that return lists frequently need to be named (see
+below) to allow them to be used.
+
+Usually the format is inferred from file extension but it can be
+overridden on an input by input basis using a `format@` prefix.
+
+For instance:
+
+```sh
+eu yaml@a.txt json@- yaml@b.txt
+```
+
+...will read YAML from `a.txt`, JSON from stdin and YAML from `b.txt`.
+
+### Named inputs
+
+Finally inputs can be *named* using a `name=` prefix. This alters the
+way that data is merged by making the contents of an input available
+in a block or list with the specified name, instead of at the top
+level.
+
+Suppose we have two inputs:
+
+```yaml
+foo: bar
+```
+
+```eu
+x: 42
+```
+
+then
+
+```sh
+eu a.yaml b.eu
+```
+
+would generate:
+
+```yaml
+foo: bar
+x: 42
+```
+
+but
+
+```sh
+eu data=a.yaml b.eu
+```
+
+would generate:
+
+```yaml
+data:
+  foo: bar
+
+x: 42
+```
+
+This can be useful for various reasons, particularly when:
+
+- the form of the input's content is not known in advance
+- the input's content is a list rather than a block
+
+### Full input syntax
+
+The full input syntax is therefore:
+
+```
+[name=][format@][URL/file]
+```
+
+This applies at the command line and also when specifying
+[imports](import-formats.md) in `.eu` files.
+
+### *stdin* defaulting
+
+When no inputs are specified and `eu` is being used in a pipeline, it
+will accept input from *stdin* by default, making it easy to pipe JSON
+or YAML from other tools into eu.
+
+For example, this takes JSON from the `aws` CLI and formats it as YAML
+to stdout.
+
+```sh
+aws s3-api list-buckets | eu
+```
+
+### How inputs are merged
+
+When several inputs are listed, names from earlier inputs become
+available to later inputs, but the content that will be rendered is
+that of the final input.
+
+So for instance:
+
+a.eu
+```eu
+x: 4
+y: 8
+```
+
+b.eu
+
+```eu,notest
+z: x + y
+```
+
+```sh
+eu a.eu b.eu
+```
+
+will output
+
+```yaml
+z: 12
+```
+
+The common use cases are:
+- a final input containing logic to inspect or process data
+  provided by previous inputs
+- a final input which uses functions defined in earlier inputs to
+  process data provided in previous inputs
+
+If you want to render contents of earlier inputs, you need a named
+input to provide a name for that content which you can then use.
+
+For instance:
+
+```sh
+eu r=a.eu b.eu -e r
+```
+
+will render:
+
+```yaml
+x: 4
+y: 8
+```
+
+#### `--collect-as` and `--name-inputs`
+
+Occasionally it is useful to aggregate data from an arbitrary number
+of sources files, typically specified by shell wildcards. To refer to
+this data we need to introduce a name for the collection of data.
+
+This is what the command line switch `--collect-as` / `-c` is for.
+
+```sh
+eu --collect-as inputs *.eu
+```
+
+...will render:
+
+```yaml
+inputs:
+  - x: 4
+    y: 8
+  - z: 12
+```
+
+It is common to use `-e` to select an item to render:
+
+```sh
+eu -c inputs *.eu -e 'inputs head'
+```
+
+...renders:
+
+```yaml
+x: 4
+y: 8
+```
+
+If you are likely to need to refer to inputs by name, you can add
+`--name-inputs` / `-N` to pass inputs as a block instead of a list:
+
+```sh
+eu --collect-as inputs --name-inputs *.eu
+```
+
+...renders:
+
+```yaml
+inputs:
+  a.eu:
+    x: 4
+    y: 8
+  b.eu:
+    z: 12
+```
+
+This makes it easier to invoke specific functions from named inputs
+although you will need single-quote name syntax to use the generated
+names which contain `.`s.
+
+## Outputs
+
+In the current version, `eu` can only generate one output.
+
+### Output format
+
+Output is rendered as YAML by default. Other formats can be specified
+using the `-x` command line option:
+
+```sh
+eu -x json # for JSON
+eu -x text # for plain text
+```
+
+JSON is such a common case that there is a shortcut: `-j`.
+
+### Output targets
+
+By default, **eucalypt** renders all the content of the final input to
+output.
+
+There are various ways to override this. First, `:target` metadata can
+be specified in the final input to identify different parts for
+potential export.
+
+To list the **targets** found in the specified inputs, use the
+`list-targets` subcommand.
+
+```sh
+eu list-targets file.eu
+```
+
+...and a particular target can be selected for render using `-t`.
+
+```sh
+eu -t my-target
+```
+
+If there is a **target** called "main" it will be used by default
+unless another target is specified.
+
+## Evaluands
+
+In addition to inputs, an *evaluand* can be specified at the command
+line. This is a **eucalypt** expression which has access to all names
+defined in the inputs and replaces the input body or targets as the
+data to export.
+
+It can be used to select content or derive values from data in the
+inputs:
+
+```console
+$ aws s3api list-buckets | eu -e 'Buckets map(lookup(:CreationDate)) head'
+2016-12-25T14:22:30.000Z
+```
+
+...or just to test out short expressions or command line features:
+
+```console
+$ eu -e '{a: 1 b: 2 * 2}' -j
+{"a": 1, "b": 4}
+```
+
+## Passing Arguments to Programs
+
+You can pass command-line arguments to your eucalypt program using the
+`--` separator. Arguments after `--` are available via `io.args`:
+
+```console
+$ eu -e 'io.args' -- foo bar baz
+---
+- foo
+- bar
+- baz
+```
+
+This is useful for writing eucalypt scripts that accept parameters:
+
+```eu
+# greet.eu
+name: io.args head-or("World")
+greeting: "Hello, {name}!"
+```
+
+```console
+$ eu greet.eu -e greeting -- Alice
+---
+Hello, Alice!
+```
+
+Arguments are passed as strings. Use `num` to convert numeric arguments:
+
+```eu
+# sum.eu
+total: io.args map(num) foldl((+), 0)
+```
+
+```console
+$ eu sum.eu -e total -- 1 2 3 4 5
+---
+15
+```
+
+When no arguments are passed, `io.args` is an empty list:
+
+```console
+$ eu -e 'io.args nil?'
+---
+true
+```
+
+## Random Seed
+
+By default, random numbers are seeded from system entropy and produce
+different results on each run. Use `--seed` for reproducible output:
+
+```sh
+eu --seed 42 template.eu
+```
+
+This sets `io.RANDOM_SEED` and seeds the `io.random` stream. See
+[Random Numbers](prelude/random.md) for the full random API.
+
+## Suppressing prelude
+
+A standard *prelude* containing many functions and operators is
+automatically prepended to the input list.
+
+This can be suppressed using `-Q` if it is not required or if you
+would like to provide an alternative.
+
+> **Warning:** Many very basic facilities -- like the definition of
+> `true` and `false` and `if` -- are provided by the prelude so
+> suppressing it leaves a very bare environment.
+
+## Debugging
+
+`eu` has a variety of command line switches for dumping out internal
+representations or tracing execution. The `dump` subcommand provides
+access to intermediate representations:
+
+```sh
+eu dump ast file.eu          # Parse and dump syntax tree
+eu dump desugared file.eu    # Dump core expression
+eu dump stg file.eu          # Dump compiled STG syntax
+eu list-targets file.eu      # List available targets
+```
+
+Use `eu --help` and `eu <subcommand> --help` for complete option lists.
+
+## Formatting Source Files
+
+The `fmt` subcommand formats eucalypt source files for consistent style:
+
+```sh
+eu fmt file.eu              # Print formatted output to stdout
+eu fmt --write file.eu      # Format in place
+eu fmt --check file.eu      # Check formatting (exit 1 if not formatted)
+eu fmt *.eu --write         # Format multiple files in place
+```
+
+### Options
+
+- `-w, --width <WIDTH>` - Line width for formatting (default: 80)
+- `--write` - Modify files in place
+- `--check` - Check if files are formatted (exit 1 if not)
+- `--reformat` - Full reformatting mode (instead of conservative)
+- `--indent <INDENT>` - Indent size in spaces (default: 2)
+
+The formatter has two modes:
+
+- **Conservative mode** (default) - Preserves original formatting choices
+  where possible, only reformatting where necessary
+- **Reformat mode** (`--reformat`) - Full reformatting that applies
+  consistent style throughout
+
+## Language Server Protocol
+
+The `lsp` subcommand starts an LSP server for use with editors that
+support the Language Server Protocol (e.g., VS Code, Neovim):
+
+```sh
+eu lsp
+```
+
+The LSP server provides:
+
+- Syntax error diagnostics
+- Formatting support (via `textDocument/formatting`)
+
+Configure your editor to use `eu lsp` as the language server command
+for `.eu` files. A VS Code extension is available in the `editors/vscode/`
+directory of the repository.
+
+## Version Assertions
+
+The `eu.requires` function allows eucalypt source files to assert a
+minimum version of the eucalypt executable:
+
+```eu
+{ import: [] }  # unit-level metadata not required for eu.requires
+
+# Assert that eu version satisfies semver constraint
+_ : eu.requires(">=0.3.0")
+```
+
+If the running version of `eu` does not satisfy the constraint, an
+error is raised immediately. This is useful for library code that
+depends on features introduced in a particular version.
+
+The `eu` namespace also provides build metadata:
+
+```eu
+version: eu.build.version    # e.g., "0.3.0"
+```
+
+## Backward Compatibility
+
+All existing command patterns continue to work unchanged:
+
+```sh
+eu file.eu                   # Still works (uses run subcommand)
+eu -e "expression"           # Still works (uses run subcommand)
+eu -j file.eu                # Still works (JSON output)
+eu -S -Q file.eu             # Still works (statistics, no prelude)
+```
+
+---
+
+# Import Formats
+
+Eucalypt supports importing content from other units in a variety of
+ways.
+
+Imported names can be scoped to specific declarations, they may be
+made accessible under a specific namespace, and they may be imported
+from disk or direct from git repositories.
+
+## Import scopes
+
+Imports are specified in declaration metadata and make the names in
+the imported unit available within the declaration that is annotated.
+
+```eu,notest
+{ import: "config.eu" }
+data: {
+  # names from config are available here
+  x: config-value
+}
+```
+
+As described in [Syntax Reference](syntax.md), declaration metadata can
+be applied at a unit level simply by including a metadata block as the
+very first thing in a eucalypt file:
+
+```eu,notest
+{ import: "config.eu" }
+
+# names from config are available here
+
+x: config-value
+```
+
+## Import syntax
+
+Imports are specified using the key `import` in a declaration metadata
+block. The value may be a single import specification:
+
+```eu,notest
+{ import: "dep-a.eu"}
+```
+
+or a list of import specifications:
+
+```eu,notest
+{ import: ["dep-a.eu", "dep-b.eu"]}
+```
+
+The import specification itself can be either a *simple import* or a
+*git import*.
+
+### Simple imports
+
+Simple imports are specified in exactly the same way as *inputs* are
+specified at the command line (see [CLI Reference](cli.md)).
+
+So you can override the format of the imported file when the file
+extension is misleading:
+
+```eu,notest
+{ import: "yaml@dep.txt" }
+```
+
+...and provide a name under which the imported names will be
+available:
+
+```eu,notest
+{ import: "cfg=config.eu" }
+
+# names in config.eu are available by lookup in cfg:
+
+x: cfg.x
+```
+
+In cases where the import format delivers a list rather than a block
+("text", "csv", "jsonl", ...) a name is mandatory:
+
+```eu,notest
+{ import: "txns=transactions.csv" }
+```
+
+Simple imports support exactly the same inputs as the command line,
+with the proviso that the stdin input ("-") will not be consumable if
+it has already been specified in the command line or another unit.
+
+### Git imports
+
+Git imports allow you to import eucalypt direct from a git repository
+at a specified commit, combining the convenience of not having to
+explicitly manage a git working copy and a library path with the
+repeatability of a git SHA. A git import is specified as a block with
+the keys "git", "commit" and "import", all of which are mandatory:
+
+```eu,notest
+{ import: { git: "https://github.com/gmorpheme/eu.aws"
+            commit: "0140232cf882a922bdd67b520ed56f0cddbd0637"
+            import: "aws/cloudformation.eu" } }
+```
+
+The `git` URL may be any format that the git command line expects.
+
+`commit` is required and should be a SHA. It is intended to ensure the
+import is repeatable and cacheable.
+
+`import` identifies the file within the repository to import.
+
+Just as with simple imports, several git imports may be listed:
+
+```eu
+{ import: [{ git: ... }, { git: ... }]}
+```
+
+...and simple imports and git imports may be freely mixed.
+
+## YAML import features
+
+When importing YAML files, eucalypt supports several YAML features that
+help reduce repetition and express data more naturally.
+
+### Anchors and aliases
+
+YAML anchors (`&name`) and aliases (`*name`) allow you to define a value
+once and reference it multiple times. When eucalypt imports a YAML file
+with anchors and aliases, the aliased values are resolved to copies of
+the anchored expression.
+
+```yaml
+# config.yaml
+defaults: &defaults
+  timeout: 30
+  retries: 3
+
+development:
+  <<: *defaults
+  debug: true
+
+production:
+  <<: *defaults
+  debug: false
+```
+
+Anchors can be applied to any YAML value: scalars, lists, or mappings.
+
+```yaml
+# Anchor on a scalar
+name: &author "Alice"
+books:
+  - title: "First Book"
+    author: *author
+  - title: "Second Book"
+    author: *author
+
+# Anchor on a list
+colours: &primary [red, green, blue]
+palette:
+  primary: *primary
+  secondary: [yellow, cyan, magenta]
+
+# Anchor on a mapping (block)
+base: &base
+  x: 1
+  y: 2
+ref: *base  # ref now has { x: 1, y: 2 }
+```
+
+Nested anchors are supported -- an anchored structure can itself contain
+anchored values:
+
+```yaml
+outer: &outer
+  inner: &inner 42
+ref_outer: *outer   # { inner: 42 }
+ref_inner: *inner   # 42
+```
+
+If you reference an undefined alias, eucalypt reports an error:
+
+```yaml
+# This will fail: *undefined is not defined
+value: *undefined
+```
+
+### Merge keys
+
+The YAML merge key (`<<`) allows you to merge entries from one or more
+mappings into another. This is useful for creating configuration
+variations that share a common base.
+
+**Single merge:**
+
+```yaml
+base: &base
+  host: localhost
+  port: 8080
+
+server:
+  <<: *base
+  name: main
+# server = { host: localhost, port: 8080, name: main }
+```
+
+**Multiple merge:**
+
+When merging multiple mappings, later ones override earlier ones:
+
+```yaml
+defaults: &defaults
+  timeout: 30
+  retries: 3
+
+overrides: &overrides
+  timeout: 60
+
+config:
+  <<: [*defaults, *overrides]
+  name: myapp
+# config = { timeout: 60, retries: 3, name: myapp }
+```
+
+**Explicit keys override merged values:**
+
+Keys defined explicitly in the mapping (before or after the merge)
+always take precedence over merged values:
+
+```yaml
+base: &base
+  x: 1
+  y: 2
+
+derived:
+  <<: *base
+  y: 99
+# derived = { x: 1, y: 99 }
+```
+
+**Inline merge:**
+
+You can also merge an inline mapping directly:
+
+```yaml
+config:
+  <<: { timeout: 30, retries: 3 }
+  name: myapp
+```
+
+The merge key value must be a mapping (or list of mappings). Attempting
+to merge a non-mapping value (e.g., `<<: 42`) results in an error.
+
+### Timestamps
+
+Eucalypt automatically converts YAML timestamps to ZDT (zoned date-time)
+expressions. Plain scalar values matching timestamp patterns are parsed
+and converted; quoted strings are left as strings.
+
+**Supported formats:**
+
+| Format | Example | Notes |
+|--------|---------|-------|
+| Date only | `2023-01-15` | Midnight UTC |
+| ISO 8601 UTC | `2023-01-15T10:30:00Z` | |
+| ISO 8601 offset | `2023-01-15T10:30:00+05:00` | |
+| Space separator | `2023-01-15 10:30:00` | Treated as UTC |
+| Fractional seconds | `2023-01-15T10:30:00.123456Z` | |
+
+**Examples:**
+
+```yaml
+# These are converted to ZDT expressions:
+created: 2023-01-15
+updated: 2023-01-15T10:30:00Z
+scheduled: 2023-06-01 09:00:00
+
+# This remains a string (quoted):
+date_string: "2023-01-15T10:30:00Z"
+```
+
+**Invalid timestamps fall back to strings:**
+
+If a value looks like a timestamp but has invalid date components
+(e.g., month 13 or day 45), it remains a string:
+
+```yaml
+invalid: 2023-13-45  # Remains string "2023-13-45"
+```
+
+**To keep timestamps as strings:**
+
+If you need to preserve a timestamp-like value as a string rather than
+converting it to a ZDT, quote it:
+
+```yaml
+# As ZDT:
+actual_date: 2023-01-15
+
+# As string:
+date_label: "2023-01-15"
+```
+
+## Streaming imports
+
+For large files, eucalypt supports streaming import formats that read
+data lazily without loading the entire file into memory. Streaming
+formats produce a lazy list of records.
+
+| Format | Description |
+|--------|-------------|
+| `jsonl-stream` | JSON Lines (one JSON object per line) |
+| `csv-stream` | CSV with headers (each row becomes a block) |
+| `text-stream` | Plain text (each line becomes a string) |
+
+Streaming formats are specified using the `format@path` syntax:
+
+```sh
+# Stream a JSONL file
+eu -e 'data take(10)' data=jsonl-stream@events.jsonl
+
+# Stream a large CSV
+eu -e 'data filter(_.age > 30) count' data=csv-stream@people.csv
+
+# Stream lines of text
+eu -e 'data filter(str.matches?("ERROR"))' log=text-stream@app.log
+```
+
+Streaming imports can also be used via the import syntax in eucalypt
+source files:
+
+```eu,notest
+{ import: "events=jsonl-stream@events.jsonl" }
+
+recent: events take(100)
+```
+
+> **Note:** Streaming imports require a name binding (e.g., `data=`) because
+> they produce a list, not a block.
+
+> **Note:** `text-stream` supports reading from stdin using `-` as the path:
+> `eu -e 'data count' data=text-stream@-`
+
+---
+
+# Export Formats
+
+*Detailed export format documentation is under construction.*
+
+Eucalypt can export to the following formats:
+
+| Format | Flag | Notes |
+|--------|------|-------|
+| YAML | (default) | Default output format |
+| JSON | `-j` or `-x json` | Compact JSON output |
+| TOML | `-x toml` | TOML output |
+| EDN | `-x edn` | EDN output |
+| Text | `-x text` | Plain text output |
+
+The output format can also be inferred from the output file extension
+when using `-o`:
+
+```sh
+eu input.eu -o output.json  # infers JSON format
+eu input.eu -o output.toml  # infers TOML format
+```
+
+---
+
+# Error Messages Guide
+
+*This reference is under construction. It will provide a guide to
+understanding eucalypt error messages with examples and solutions.*
+
+---
+
+# Design Philosophy
+
+**eucalypt**, the language, is unorthodox in many respects -- probably
+more than you might realise on first acquaintance.
+
+People tend to have deep-seated and inflexible opinions about
+programming languages and language design and will quite possibly find
+something in here that they have a kneejerk reaction against.
+
+However, the design is not unprincipled and, while it is experimental
+in some respects, I believe it's internally consistent. Several
+aspects of the design and the aesthetic are driven by the primary use
+case, templating and generating YAML. Maybe by exploring some of the
+inspiration and philosophy behind the language itself, I can pre-empt
+some of the knee jerks.
+
+## Accept crypticality for minimal intrusion
+
+**eucalypt** is first and foremost a *tool*, rather than a language. It is
+intended to replace generation and transformation processes on
+semi-structured data formats. Many or most uses of **eucalypt** the
+language should just be simple one-liner tags in YAML files, or maybe
+eucalypt files that are predominantly data rather than manipulation.
+
+The **eucalypt** language is the depth behind these one-liners that
+allows **eucalypt** to accommodate increasingly ambitious use cases
+without breaking the paradigm and reaching for a general purpose
+imperative scripting language or the lowest common denominator of
+text-based templating languages.
+
+The pre-eminence of one-liners and small annotations and "logic
+mark-up", means that **eucalypt** often favours concise and cryptic over
+wordy and transparent. This is a controversial approach.
+
+- **eucalypt** logic should "get out of the way" of the data. Templating
+  is attractive precisely because the generating source looks very
+  like the result. Template tags are often short (with "cryptic"
+  delimiters -- `{{}}`, `<%= %>`, `[| ]`...) because these are "marking
+  up" the data which is the main event. At the same time, the tags are
+  often "noisy" or visually disruptive to ensure they cannot be
+  ignored. **eucalypt** via operator and bracket definitions, picks and
+  chooses from a similar palette of expressive effects to try and be a
+  sympathetic cohabitee with its accompanying data.
+
+- There are many cases where it makes sense to resist offering an
+  incomplete understanding in favour of demanding full understanding.
+  For example, it is spurious to say that `bind(x, f)` gives more
+  understanding of what is going on than `x >>= f` -- unless you
+  understand the monad abstraction and the role of bind in it, you
+  gain nothing useful from the ideas that the word `bind` connotes
+  when you are trying to understand program text.
+
+- **eucalypt** just plain ignores the notion that program text should
+  be readable *as English text*. This (well motivated) idea has made a
+  resurgence in recent years through the back door of internal DSLs
+  and "fluent" Java interfaces. There is much merit in languages
+  supple enough to allow the APIs to approach the natural means of
+  expression of the problem domain. However, problem domains
+  frequently have their own technical jargon and notation which suit
+  their purpose better than natural language so it cuts both ways.
+  Program text should be approachable by its target audience but that
+  does not mean it should make no demands of its target audience.
+
+These stances lead directly to several slightly esoteric aspects of
+**eucalypt** that may be obnoxious to some:
+
+- **eucalypt** tends to be operator-heavy. Operators are concise (if
+  cryptic) and the full range of unicode is available to call upon.
+  Using operators keeps custom logic visually out of the way of the
+  data whilst also signposting it to attract closer attention.
+
+- **eucalypt** lets you define your own operators and specify their
+  precedence and associativity (which are applied at a relatively late
+  stage in the evaluation pipeline -- *operator soup* persists through
+  the initial parse). There are no ternary operators.
+
+- For absolute minimal intrusion, merely the act of placing elements
+  next to each other ("catenation"), `x f`, is meaningful in
+  **eucalypt**. By default this is pipeline-order function
+  application, but blocks can be applied as functions to make common
+  transformations, like block merge, very succinct.
+
+- For even more power, **eucalypt** might soon let you alter the
+  meaning of concatenation via overloaded *idiot brackets* [^1]. (`«x y»: ...`). This is inspired by the *idiom brackets* that can be used
+  to express applicative styles in functional programming [^2]. These
+  may also provide an acceptable proxy for ternary and other operators
+  too.
+
+- An equivalent generalisation of **eucalypt** block syntax to provide
+  a capability similar to Haskell's `do` notation could conceivably
+  follow.
+
+## Cohabitation of code and data
+
+Just like templates, **eucalypt** source (or **eucalypt**-tagged YAML)
+should be almost entirely data.
+
+The idea behind **eucalypt** is to adopt the basic maps-and-arrays
+organisation philosophy of these data formats but make the data
+*active* -- allowing lambdas to live in and amongst it and operate on
+it and allowing the data to express dispositions towards its
+environment by addition of metadata that controls import, export, and
+execution preferences.
+
+**eucalypt** therefore collapses the separation of code and data to some
+degree. You can run `eu` against a mixture of YAML, JSON and eucalypt
+files and all the data and logic appears there together in the same
+namespace hierarchy. The namespace hierarchy just *is* the data.
+
+However, code and data aren't unified in the sense of Lisp for
+instance. **eucalypt** is not homoiconic. The relationship is more like
+cohabitation; code lives in amongst the data it operates on but is
+stripped out before export.
+
+Nevertheless **eucalypt** is heavily inspired by Lisp and aims for a
+similar fluidity through:
+
+- lazy evaluation (going some way towards matching uses of Lisp macros
+  which control evaluation order -- in eucalypt, `if` is just a
+  function)
+- economical syntax to facilitate (future) manipulation of code as
+  data
+
+## Simplicity
+
+- **eucalypt** values simplicity in the sense of fewer moving parts (and
+  therefore, hopefully, fewer things to go wrong). It values ease of
+  use in the sense of offering a rich and powerful toolkit. You may
+  not think it achieves either.
+
+- **eucalypt** values familiarity mostly in the "shallower" parts of
+  the language where it only requires a couple of mental leaps for the
+  average programmer in these areas -- the (ab)use of catenation being
+  the key one.
+
+- However, **eucalypt** isn't ashamed of its dusty corners. Dusty
+  corners are areas where novices and experts alike can get trapped
+  and lose time but they're also rich seams for experimentation,
+  innovation and discovery. If you have to venture too far off-piste
+  to find what you need, we'll find a way to bring it onto the nursery
+  slopes but we won't close off the mountain.
+
+
+---
+
+#### Footnotes
+
+[^1]: Inspired by *idiom brackets*. If I didn't call them that,
+    someone else would.
+
+[^2]: Applicative Programming with Effects, Conor McBride and Ross
+    Paterson. (2008)
+    http://www.staff.city.ac.uk/~ross/papers/Applicative.html
+
+---
+
+# Lazy Evaluation
+
+*This chapter is under construction.*
+
+Eucalypt uses lazy evaluation, meaning expressions are only evaluated
+when their values are needed. This has important consequences:
+
+- `if` is just a function (both branches are not evaluated)
+- Infinite lists are possible (e.g. `repeat(1)`, `ints-from(0)`)
+- Unused computations have no cost
+
+---
+
+# Frequently Asked Questions
+
+## Getting Started
+
+### How do I install eucalypt?
+
+On macOS, use Homebrew:
+
+```sh
+brew install curvelogic/homebrew-tap/eucalypt
+```
+
+On other platforms, download a binary from the
+[GitHub releases](https://github.com/curvelogic/eucalypt/releases)
+page, or build from source with `cargo install --path .`.
+
+Verify installation with:
+
+```sh
+eu version
+```
+
+### How do I convert between data formats?
+
+Pass a file in one format and specify the output format with `-x` or
+`-j`:
+
+```sh
+# YAML to JSON
+eu data.yaml -j
+
+# JSON to YAML (default output)
+eu data.json
+
+# YAML to TOML
+eu data.yaml -x toml
+```
+
+### What data formats does eucalypt support?
+
+**Input formats**: YAML, JSON, JSON Lines (jsonl), TOML, EDN, XML,
+CSV, plain text, and eucalypt's own `.eu` syntax.
+
+**Output formats**: YAML (default), JSON, TOML, EDN, and plain text.
+
+**Streaming input formats** (for large files): `jsonl-stream`,
+`csv-stream`, `text-stream`.
+
+### How do I use eucalypt in a pipeline?
+
+`eu` reads from stdin by default when used in a pipe and writes to
+stdout:
+
+```sh
+# Filter JSON from an API
+curl -s https://api.example.com/data | eu -e 'items filter(_.active)'
+
+# Transform and re-export
+cat data.yaml | eu transform.eu -j > output.json
+```
+
+Use `-e` to specify an expression to evaluate against the input data.
+
+### How do I pass arguments to a eucalypt program?
+
+Use `--` to separate `eu` flags from program arguments:
+
+```sh
+eu program.eu -- arg1 arg2 arg3
+```
+
+Inside your program, access them via `io.args`:
+
+```eu
+name: io.args head-or("World")
+greeting: "Hello, {name}!"
+```
+
+## Language
+
+### How do functions work in eucalypt?
+
+Define functions with a parameter list after the name:
+
+```eu
+double(x): x * 2
+result: double(21) //=> 42
+```
+
+Functions are curried -- applying fewer arguments than expected returns
+a partially applied function:
+
+```eu
+add(x, y): x + y
+increment: add(1)
+result: increment(9) //=> 10
+```
+
+### What is catenation?
+
+Catenation is eucalypt's pipeline syntax. Writing `x f` applies `f` to
+`x` as a single argument:
+
+```eu
+add-one(x): x + 1
+result: 5 add-one //=> 6
+```
+
+Chain multiple transforms by writing them in sequence:
+
+```eu
+double(x): x * 2
+add-one(x): x + 1
+result: 5 double add-one //=> 11
+```
+
+This reads left to right: start with 5, double it (10), add one (11).
+
+### What are anaphora and when should I use them?
+
+Anaphora are implicit parameters that let you define simple functions
+without naming them. There are three kinds:
+
+**Expression anaphora** (`_`, `_0`, `_1`): turn an expression into a
+function.
+
+```eu
+squares: [1, 2, 3] map(_0 * _0) //=> [1, 4, 9]
+```
+
+**String anaphora** (`{}`, `{0}`, `{1}`): turn a string template into
+a function.
+
+```eu
+labels: [1, 2, 3] map("item-{}") //=> ["item-1", "item-2", "item-3"]
+```
+
+**Block anaphora** (`•`, `•0`, `•1`): turn a block into a function.
+
+Use anaphora for simple, readable cases. For anything more complex,
+prefer a named function. See [Anaphora](guide/anaphora.md) for details.
+
+### Why is there no lambda syntax?
+
+Eucalypt deliberately omits lambda expressions. Instead, use:
+
+1. **Named functions** for anything non-trivial
+2. **Anaphora** (`_`, `{}`) for simple one-liners
+3. **Sections** (`(+ 1)`, `(* 2)`) for operator-based functions
+4. **Partial application** (`add(1)`) for curried functions
+
+```eu
+# All equivalent ways to add one:
+add-one(x): x + 1
+result1: [1, 2, 3] map(add-one) //=> [2, 3, 4]
+result2: [1, 2, 3] map(_ + 1) //=> [2, 3, 4]
+result3: [1, 2, 3] map(+ 1) //=> [2, 3, 4]
+```
+
+### How does block merging work?
+
+When you write one block after another (catenation), they merge:
+
+```eu
+base: { a: 1 b: 2 }
+overlay: { b: 3 c: 4 }
+merged: base overlay //=> { a: 1 b: 3 c: 4 }
+```
+
+The second block's values override the first. This is a **shallow**
+merge. For recursive deep merge, use the `<<` operator:
+
+```eu
+base: { x: { a: 1 b: 2 } }
+extra: { x: { c: 3 } }
+result: base << extra
+```
+
+### How do I handle the lookup precedence gotcha?
+
+The `.` (lookup) operator has higher precedence than catenation, so
+`xs head.id` parses as `xs (head.id)`, not `(xs head).id`.
+
+Use explicit parentheses:
+
+```eu
+data: [{ id: 1 }, { id: 2 }]
+first-id: (data head).id //=> 1
+```
+
+See [Syntax Gotchas](appendices/syntax-gotchas.md) for more.
+
+## Data Processing
+
+### How do I filter and transform lists?
+
+Use `map` to transform and `filter` to select:
+
+```eu
+numbers: [1, 2, 3, 4, 5, 6]
+small: numbers filter(< 4) //=> [1, 2, 3]
+doubled: numbers map(* 2) //=> [2, 4, 6, 8, 10, 12]
+```
+
+Combine them in a pipeline:
+
+```eu
+result: [1, 2, 3, 4, 5, 6] filter(> 3) map(* 10) //=> [40, 50, 60]
+```
+
+### How do I look up values in nested blocks?
+
+Use chained `.` lookups for known paths:
+
+```eu
+config: { db: { host: "localhost" port: 5432 } }
+host: config.db.host //=> "localhost"
+```
+
+For dynamic key lookup, use `lookup` with a symbol:
+
+```eu
+data: { name: "Alice" age: 30 }
+field: data lookup(:name) //=> "Alice"
+```
+
+Use `lookup-or` to provide a default:
+
+```eu
+data: { name: "Alice" }
+age: data lookup-or(:age, 0) //=> 0
+```
+
+### How do I search deeply nested data?
+
+Use `deep-find` for recursive key search:
+
+```eu,notest
+# Finds all values for key "id" at any depth
+ids: data deep-find("id")
+```
+
+Use `lookup-path` for a known sequence of keys:
+
+```eu
+data: { a: { b: { c: 42 } } }
+result: data lookup-path([:a, :b, :c]) //=> 42
+```
+
+### How do I sort data?
+
+Sort lists with `sort-nums` or `sort-strs`:
+
+```eu
+names: ["Charlie", "Alice", "Bob"]
+sorted: names sort-strs //=> ["Alice", "Bob", "Charlie"]
+```
+
+```eu
+nums: [5, 1, 3, 2, 4]
+sorted: nums sort-nums //=> [1, 2, 3, 4, 5]
+```
+
+For sorting by a key, use `sort-by-str` or `sort-by-num`:
+
+```eu
+people: [{ name: "Zoe" age: 25 }, { name: "Amy" age: 30 }]
+by-name: people sort-by-str(_.name)
+youngest: (by-name head).name //=> "Amy"
+```
+
+### How do I work with dates?
+
+Use `t"..."` literals for date-time values:
+
+```eu
+meeting: t"2024-03-15T14:30:00Z"
+date-only: t"2024-03-15"
+before: t"2024-01-01" < t"2024-12-31" //=> true
+```
+
+See [Date, Time, and Random Numbers](guide/date-time-random.md) for
+parsing, formatting, and arithmetic.
+
+## Advanced
+
+### How do I attach metadata to declarations?
+
+Use the backtick (`` ` ``) prefix:
+
+```eu
+` "Compute the square of a number"
+square(x): x * x
+
+result: square(5) //=> 25
+```
+
+Metadata can be a string (documentation) or a block with structured
+data:
+
+```eu,notest
+` { doc: "Custom operator" associates: :left precedence: 75 }
+(l <+> r): l + r
+```
+
+### How do imports work?
+
+Imports are specified in declaration metadata using the `import` key:
+
+```eu,notest
+{ import: "helpers.eu" }
+
+result: helper-function(42)
+```
+
+For named imports (scoped access):
+
+```eu,notest
+{ import: "cfg=config.eu" }
+
+host: cfg.host
+```
+
+See [Import Formats](reference/import-formats.md) for the full syntax
+including git imports.
+
+### How do I write tests?
+
+Use the `//=>` assertion operator to check values inline:
+
+```eu
+double(x): x * 2
+result: double(21) //=> 42
+```
+
+If the assertion fails, eucalypt panics with a non-zero exit code.
+Other assertion operators:
+
+```eu
+x: 5
+check1: (x > 3) //!
+check2: (x = 0) //!!
+check3: x //=? pos?
+```
+
+### How do I generate random values?
+
+Use `io.random` for a stream of random floats, or pass `--seed` for
+reproducible output:
+
+```eu,notest
+roll: random-int(6, io.random)
+die: roll.value + 1
+```
+
+```sh
+eu --seed 42 game.eu
+```
+
+See [Random Numbers](reference/prelude/random.md) for the full API.
+
+### What are sets and how do I use them?
+
+The `set` namespace provides set operations. Convert lists to sets
+with `set.from-list`:
+
+```eu
+sa: set.from-list([1, 2, 3, 4])
+sb: set.from-list([3, 4, 5, 6])
+common: sa set.intersect(sb) set.to-list //=> [3, 4]
+combined: sa set.union(sb) set.to-list sort-nums //=> [1, 2, 3, 4, 5, 6]
+diff: sa set.diff(sb) set.to-list sort-nums //=> [1, 2]
+```
+
+---
+
+# Syntax Cheat Sheet
+
+A dense single-page reference covering all syntax forms, operators,
+common patterns, and key prelude functions.
+
+## Primitives
+
+| Type | Syntax | Examples |
+|------|--------|----------|
+| Integer | digits | `42`, `-7`, `0` |
+| Float | digits with `.` | `3.14`, `-0.5` |
+| String | double quotes | `"hello"`, `"line\nbreak"` |
+| Symbol | colon prefix | `:key`, `:name` |
+| Boolean | keywords | `true`, `false` |
+| Null | keyword | `null` |
+| ZDT | `t"..."` prefix | `t"2024-03-15"`, `t"2024-03-15T14:30:00Z"` |
+
+## Blocks
+
+```eu,notest
+# Property declaration
+name: expression
+
+# Function declaration
+f(x, y): expression
+
+# Operator declaration (binary)
+(l ++ r): expression
+
+# Operator declaration (prefix / postfix)
+(! x): expression
+(x ******): expression
+
+# Block literal
+{ a: 1 b: 2 c: 3 }
+
+# Commas are optional
+{ a: 1, b: 2, c: 3 }
+
+# Nested blocks
+{ outer: { inner: "value" } }
+```
+
+**Top-level unit**: the file itself is an implicit block (no braces needed).
+
+## Lists
+
+```eu,notest
+# List literal
+[1, 2, 3]
+
+# Empty list
+[]
+
+# Mixed types
+[1, "two", :three, true]
+```
+
+## String Interpolation
+
+```eu,notest
+# Insert expressions with {braces}
+"Hello, {name}!"
+
+# String anaphora (defines a function)
+"#{}"           # one-parameter function
+"{0} and {1}"   # two-parameter function
+```
+
+## Comments
+
+```eu,notest
+# Line comment (to end of line)
+x: 42 # inline comment
+```
+
+## Declarations
+
+| Form | Syntax | Notes |
+|------|--------|-------|
+| Property | `name: expr` | Defines a named value |
+| Function | `f(x, y): expr` | Named function with parameters |
+| Binary operator | `(l op r): expr` | Infix operator |
+| Prefix operator | `(op x): expr` | Unary prefix |
+| Postfix operator | `(x op): expr` | Unary postfix |
+
+## Metadata Annotations
+
+```eu,notest
+# Declaration metadata (backtick prefix)
+` "Documentation string"
+name: value
+
+# Structured metadata
+` { doc: "description" associates: :left precedence: 50 }
+(l op r): expr
+
+# Unit-level metadata (first expression in file)
+{ :doc "Unit description" }
+a: 1
+```
+
+**Special metadata keys**: `:target`, `:suppress`, `:main`,
+`associates`, `precedence`, `import`.
+
+## Function Application
+
+```eu,notest
+# Parenthesised application (no whitespace before paren)
+f(x, y)
+
+# Catenation (pipeline style, single argument)
+x f              # equivalent to f(x)
+x f g h          # equivalent to h(g(f(x)))
+
+# Partial application (curried)
+add(1)           # returns a function adding 1
+
+# Sections (operator with gaps)
+(+ 1)            # function: add 1
+(* 2)            # function: multiply by 2
+(/)              # function: divide (two params)
+```
+
+## Lookup and Generalised Lookup
+
+```eu,notest
+# Simple lookup
+block.key
+
+# Generalised lookup (evaluate RHS in block's scope)
+{ a: 3 b: 4 }.(a + b)        # 7
+{ a: 3 b: 4 }.[a, b]         # [3, 4]
+{ a: 3 b: 4 }."{a} and {b}"  # "3 and 4"
+```
+
+## Anaphora (Implicit Parameters)
+
+| Type | Numbered | Unnumbered | Scope |
+|------|----------|------------|-------|
+| Expression | `_0`, `_1`, `_2` | `_` (each use = new param) | Expression |
+| Block | `•0`, `•1`, `•2` | `•` (each use = new param) | Block |
+| String | `{0}`, `{1}`, `{2}` | `{}` (each use = new param) | String |
+
+```eu,notest
+# Expression anaphora
+map(_0 * _0)        # square each element
+map(_ + 1)          # increment (each _ is a new param)
+
+# Block anaphora (bullet = Option-8 on Mac)
+{ x: •0 y: •1 }    # two-parameter block function
+
+# String anaphora
+map("item: {}")     # format each element
+```
+
+## Operator Precedence Table
+
+From highest to lowest binding:
+
+| Prec | Name | Assoc | Operators | Description |
+|------|------|-------|-----------|-------------|
+| 95 | -- | prefix | `↑` | Tight prefix (head) |
+| 90 | lookup | left | `.` | Field access / lookup |
+| 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
+| 85 | exp | right | `∘`, `;` | Composition |
+| 80 | prod | left | `*`, `/`, `%` | Multiplication, division, modulo |
+| 75 | sum | left | `+`, `-` | Addition, subtraction |
+| 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
+| 45 | append | right | `++`, `<<` | List append, deep merge |
+| 42 | map | left | `<$>` | Functor map |
+| 40 | eq | left | `=`, `!=` | Equality |
+| 35 | bool-prod | left | `&&`, `∧` | Logical AND |
+| 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
+| 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
+| 10 | apply | right | `@` | Function application |
+| 5 | meta | right | `//`, `//<< `, `//=`, `//=>` | Metadata / assertions |
+
+**User-defined operators** default to left-associative, precedence 50.
+Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
+
+**Named precedence levels** for use in metadata: `lookup`, `call`,
+`bool-unary`, `exp`, `prod`, `sum`, `shift`, `bitwise`, `cmp`,
+`append`, `map`, `eq`, `bool-prod`, `bool-sum`, `cat`, `apply`, `meta`.
+
+## Block Merge
+
+```eu,notest
+# Catenation of blocks performs a shallow merge
+{ a: 1 } { b: 2 }       # { a: 1 b: 2 }
+{ a: 1 } { a: 2 }       # { a: 2 }
+
+# Deep merge operator
+{ a: { x: 1 } } << { a: { y: 2 } }  # { a: { x: 1 y: 2 } }
+```
+
+## Imports
+
+```eu,notest
+# Unit-level import
+{ import: "lib.eu" }
+
+# Named import
+{ import: "cfg=config.eu" }
+
+# Multiple imports
+{ import: ["dep-a.eu", "dep-b.eu"] }
+
+# Format override
+{ import: "yaml@data.txt" }
+
+# Git import
+{ import: { git: "https://..." commit: "sha..." import: "file.eu" } }
+```
+
+## Key Prelude Functions
+
+### Lists
+
+| Function | Description |
+|----------|-------------|
+| `head` | First element |
+| `tail` | All but first |
+| `cons(x, xs)` | Prepend element |
+| `map(f)` | Transform each element |
+| `filter(p?)` | Keep elements matching predicate |
+| `foldl(f, init)` | Left fold |
+| `foldr(f, init)` | Right fold |
+| `sort-by(f)` | Sort by key function |
+| `take(n)` | First n elements |
+| `drop(n)` | Remove first n |
+| `zip` | Pair elements from two lists |
+| `zip-with(f)` | Combine elements with function |
+| `flatten` | Flatten nested lists one level |
+| `reverse` | Reverse a list |
+| `count` | Number of elements |
+| `range(a, b)` | Integers from a to b-1 |
+| `nil?` | Is the list empty? |
+| `any?(p?)` | Does any element match? |
+| `all?(p?)` | Do all elements match? |
+| `unique` | Remove duplicates |
+
+### Blocks
+
+| Function | Description |
+|----------|-------------|
+| `lookup(key)` | Look up a key (symbol) |
+| `lookup-or(key, default)` | Look up with default |
+| `has(key)` | Does block contain key? |
+| `keys` | List of keys (as symbols) |
+| `values` | List of values |
+| `elements` | List of `{key, value}` pairs |
+| `map-keys(f)` | Transform keys |
+| `map-values(f)` | Transform values |
+| `select(keys)` | Keep only listed keys |
+| `dissoc(keys)` | Remove listed keys |
+| `merge(b)` | Shallow merge |
+| `deep-merge(b)` | Deep recursive merge |
+| `sort-keys` | Sort by key name |
+
+### Strings (`str` namespace)
+
+| Function | Description |
+|----------|-------------|
+| `str.len(s)` | String length |
+| `str.upper(s)` | Upper case |
+| `str.lower(s)` | Lower case |
+| `str.starts-with?(prefix)` | Starts with prefix? |
+| `str.ends-with?(suffix)` | Ends with suffix? |
+| `str.contains?(sub)` | Contains substring? |
+| `str.matches?(regex)` | Matches regex? |
+| `str.split(sep)` | Split by separator |
+| `str.join(sep)` | Join list with separator |
+| `str.replace(from, to)` | Replace occurrences |
+| `str.trim` | Remove surrounding whitespace |
+
+### Combinators
+
+| Function | Description |
+|----------|-------------|
+| `identity` | Returns its argument unchanged |
+| `const(k)` | Always returns k |
+| `compose(f, g)` or `f ∘ g` | Compose functions |
+| `flip(f)` | Swap argument order |
+| `complement(p?)` | Negate a predicate |
+| `curry(f)` | Curry a function taking a pair |
+| `uncurry(f)` | Uncurry to take a pair |
+
+### Numbers
+
+| Function | Description |
+|----------|-------------|
+| `num` | Parse string to number |
+| `abs` | Absolute value |
+| `negate` | Negate number |
+| `inc` / `dec` | Increment / decrement |
+| `max(a, b)` / `min(a, b)` | Maximum / minimum |
+| `even?` / `odd?` | Parity predicates |
+| `zero?` / `pos?` / `neg?` | Sign predicates |
+| `floor` / `ceil` / `round` | Rounding |
+
+### IO
+
+| Binding | Description |
+|---------|-------------|
+| `io.env` | Block of environment variables |
+| `io.epoch-time` | Unix timestamp at launch |
+| `io.args` | Command-line arguments (after `--`) |
+| `io.random` | Infinite lazy stream of random floats |
+| `io.RANDOM_SEED` | Current random seed |
+
+## Assertion Operators
+
+| Operator | Description |
+|----------|-------------|
+| `e //=> v` | Assert `e` equals `v` (panic if not) |
+| `e //= v` | Assert equals (silent, returns `e`) |
+| `e //!` | Assert `e` is `true` |
+| `e //!!` | Assert `e` is `false` |
+| `e //=? f` | Assert `f(e)` is `true` |
+| `e //!? f` | Assert `f(e)` is `false` |
+
+## Command Line Quick Reference
+
+```sh
+eu file.eu                  # Evaluate file, output YAML
+eu -j file.eu               # Output JSON
+eu -x text file.eu          # Output plain text
+eu -e 'expression'          # Evaluate expression
+eu a.yaml b.eu              # Merge inputs
+eu -t target file.eu        # Render specific target
+eu list-targets file.eu     # List targets
+eu --seed 42 file.eu        # Deterministic random
+eu -Q file.eu               # Suppress prelude
+eu fmt file.eu              # Format source
+eu dump stg file.eu         # Dump STG syntax
+eu -- arg1 arg2             # Pass arguments (io.args)
+```
+
+---
+
+# Syntax Gotchas
+
+This document records unintuitive consequences of Eucalypt's syntax
+design decisions that can lead to subtle bugs or confusion.
+
+## Operator Precedence Issues
+
+### Field Access vs Catenation
+
+**Problem**: The lookup operator (`.`) has higher precedence (90) than
+catenation (precedence 20), which can lead to unexpected parsing.
+
+**Gotcha**: Writing `objects head.id` is parsed as `objects (head.id)`
+rather than `(objects head).id`.
+
+**Example**:
+```eu,notest
+# This doesn't work as expected:
+objects: range(0, 5) map({ id: _ })
+result: objects head.id  # Parsed as: objects (head.id)
+
+# Correct syntax requires parentheses:
+result: (objects head).id  # Explicitly groups the field access
+```
+
+**Error Message**: When this occurs, you may see confusing errors like:
+- `cannot return function into case table without default`
+- `bad index 18446744073709551615 into environment` (under memory pressure)
+
+**Solution**: Always use parentheses to group the expression you want to
+access fields from:
+- Use `(expression).field` instead of `expression target.field`
+- Be explicit about precedence when combining catenation with field access
+
+## Anaphora and Function Syntax
+
+### Lambda Syntax Does Not Exist
+
+**Problem**: Eucalypt does not have lambda expressions like other
+functional languages.
+
+**Gotcha**: Attempting to write lambda-style syntax will cause syntax
+errors.
+
+**Invalid Examples**:
+```eu
+# These syntaxes DO NOT exist in Eucalypt:
+map(\x -> x + 1)     # Invalid
+map(|x| x + 1)       # Invalid
+map(fn(x) => x + 1)  # Invalid
+map(λx.x + 1)        # Invalid
+```
+
+**Correct Approach**: Use anaphora (`_`, `_0`, `_1`, etc.) or define
+named functions:
+```eu,notest
+# Using anaphora:
+map(_ + 1)
+
+# Using named function:
+add-one(x): x + 1
+map(add-one)
+
+# Using block with anaphora for complex expressions:
+map({ result: _ + 1, doubled: _ * 2 })
+```
+
+**Reference**: See [Anaphora](../guide/anaphora.md) for detailed
+explanation of anaphora usage.
+
+## Single Quote Identifiers
+
+### Single Quotes Are Not String Delimiters
+
+**Problem**: Single quotes (`'`) in Eucalypt are used to create
+identifiers, not strings.
+
+**Gotcha**: Coming from languages where single quotes delimit strings,
+developers might expect `'text'` to be a string literal.
+
+**Key Rules**:
+- Single quotes create **normal identifiers** that can contain any characters
+- The identifier name is the content *between* the quotes (quotes are stripped)
+- This is the only use of single quotes in Eucalypt
+- String literals use double quotes (`"`) only
+
+**Examples**:
+```eu,notest
+# Single quotes create identifiers (variable names):
+'my-file.txt': "content"     # Creates identifier: my-file.txt
+home: {
+  '.bashrc': false           # Creates identifier: .bashrc
+  '.emacs.d': false          # Creates identifier: .emacs.d
+  'notes.txt': true          # Creates identifier: notes.txt
+}
+
+# Access using lookup:
+z: home.'notes.txt'          # Looks up identifier: notes.txt
+
+# NOT string literals:
+'hello' = 'hello'            # Compares two variable references (not strings)
+"hello" = "hello"            # Compares two string literals (correct)
+```
+
+## Future Improvements
+
+These gotchas highlight areas where the language could benefit from:
+
+1. **Better Error Messages**: More specific error messages when
+   precedence issues occur
+2. **Linting Rules**: Static analysis to catch common precedence
+   mistakes
+3. **IDE Support**: Syntax highlighting and warnings for ambiguous
+   expressions
+4. **Documentation**: Better examples showing correct precedence usage
+
+---
+
+# Migration from v0.2 to v0.3
+
+*Migration guide is under construction.*
+
+Key changes in v0.3:
+
+- Subcommand structure: `eu test` replaces `-T`, `eu dump` replaces
+  `-p`/`--dump-xxx`
+- All existing command patterns continue to work (backward compatible)
+- New `eu fmt` and `eu lsp` subcommands
