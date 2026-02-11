@@ -47,6 +47,7 @@ metadata system, import system, lazy evaluation.
 - [Import Formats](https://curvelogic.github.io/eucalypt/reference/import-formats.html): Import syntax and supported formats
 - [Export Formats](https://curvelogic.github.io/eucalypt/reference/export-formats.html): Output format options
 - [Error Messages Guide](https://curvelogic.github.io/eucalypt/reference/error-messages.html): Understanding error output
+- [Agent Reference](https://curvelogic.github.io/eucalypt/reference/agent-reference.html): Dense syntax/function reference for AI coding agents
 
 ## Appendices
 

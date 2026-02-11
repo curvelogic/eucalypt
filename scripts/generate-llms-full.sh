@@ -73,7 +73,8 @@ OUTPUT="${1:-$DOC_DIR/llms-full.txt}"
         reference/cli.md \
         reference/import-formats.md \
         reference/export-formats.md \
-        reference/error-messages.md; do
+        reference/error-messages.md \
+        reference/agent-reference.md; do
         if [ -f "$DOC_DIR/$f" ]; then
             echo "---"
             echo ""
