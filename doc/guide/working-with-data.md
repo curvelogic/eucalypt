@@ -56,9 +56,9 @@ eu -e 'data filter(_.age > 30) map(.name)' data=people.csv -j
 
 ```eu
 data: [
-  { name: "Alice" age: 30 role: "dev" }
-  { name: "Bob" age: 25 role: "ops" }
-  { name: "Carol" age: 35 role: "dev" }
+  { name: "Alice", age: 30, role: "dev" },
+  { name: "Bob", age: 25, role: "ops" },
+  { name: "Carol", age: 35, role: "dev" }
 ]
 
 devs: data filter(_.role = "dev") map(.name) //=> ["Alice", "Carol"]
@@ -76,9 +76,9 @@ cnt: count(scores)             //=> 5
 
 ```eu
 items: [
-  { name: "cherry" price: 3 }
-  { name: "apple" price: 1 }
-  { name: "banana" price: 2 }
+  { name: "cherry", price: 3 },
+  { name: "apple", price: 1 },
+  { name: "banana", price: 2 }
 ]
 sorted: items sort-by-str(.name)
 result: sorted map(.name) //=> ["apple", "banana", "cherry"]
