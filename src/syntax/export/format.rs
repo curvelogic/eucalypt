@@ -77,6 +77,20 @@ impl Formatter {
         Ok(result)
     }
 
+    /// Format a single top-level declaration.
+    ///
+    /// Returns the formatted text for the declaration (without trailing
+    /// newline). Used by range formatting to reformat individual
+    /// declarations rather than the entire file.
+    pub fn format_declaration(&self, decl: &rowan_ast::Declaration) -> Result<String, String> {
+        let doc = if self.config.reformat {
+            self.reformat_declaration(decl)
+        } else {
+            self.fix_whitespace_violations(decl.syntax())
+        };
+        self.render_doc(doc)
+    }
+
     /// Format a Soup (expression)
     pub fn format_soup(&self, soup: &rowan_ast::Soup) -> Result<String, String> {
         let doc = self.format_soup_doc(soup);
