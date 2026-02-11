@@ -14,6 +14,7 @@ edit-url-template = "https://github.com/curvelogic/eucalypt/edit/master/{path}"
 site-url = "/eucalypt/"
 no-section-label = false
 additional-css = ["doc/custom.css"]
+additional-js = ["doc/theme/eucalypt-highlight.js"]
 
 [output.html.search]
 enable = true
