@@ -169,8 +169,8 @@ pub enum ExecutionError {
     DivisionByZero,
     #[error("expected branch continuation")]
     ExpectedBranchContinuation,
-    #[error("type mismatch: expected {}, found {}", display_expected_tags(.1), display_data_tag(*.0))]
-    NoBranchForDataTag(u8, Vec<u8>),
+    #[error("type mismatch: expected {}, found {}", display_expected_tags(.2), display_data_tag(*.1))]
+    NoBranchForDataTag(Smid, u8, Vec<u8>),
     #[error("no branch for native")]
     NoBranchForNative,
     #[error("cannot return function into case table without default")]
@@ -236,6 +236,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotCallable(s) => *s,
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
+            ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
         }

@@ -43,6 +43,8 @@ pub enum Continuation {
         fallback: Option<RefPtr<HeapSyn>>,
         /// Environment of case statement
         environment: RefPtr<EnvFrame>,
+        /// Source annotation at the point the case was pushed
+        annotation: Smid,
     },
     /// Update thunk in environment at index i
     Update {

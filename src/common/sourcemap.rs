@@ -199,15 +199,26 @@ impl SourceMap {
     {
         let diag = Diagnostic::error().with_message(format!("{error}"));
 
-        if let Some(&SourceInfo {
-            file: Some(file),
-            span: Some(span),
-            ..
-        }) = self.source_info(error)
-        {
-            diag.with_labels(vec![Label::primary(file, span)])
-        } else {
-            diag
+        match self.source_info(error) {
+            Some(&SourceInfo {
+                file: Some(file),
+                span: Some(span),
+                ..
+            }) => diag.with_labels(vec![Label::primary(file, span)]),
+            Some(SourceInfo {
+                file: None,
+                annotation: Some(ref ann),
+                ..
+            }) => {
+                // No source location, but we have an intrinsic name.
+                // Show the user-facing name as context if available.
+                if let Some(display) = intrinsic_display_name(ann) {
+                    diag.with_notes(vec![format!("in {display}")])
+                } else {
+                    diag
+                }
+            }
+            _ => diag,
         }
     }
 
@@ -361,16 +372,27 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         // Lookup error path
         "LOOKUP_FAIL" => Some("lookup"),
 
-        // Internal machinery — filter out of traces
-        "AND" | "OR" | "SATURATED" | "SUPPRESSES" | "IFIELDS" | "KNIL" | "DQ" | "REQUIRES"
-        | "RENDER" | "RENDER_ITEMS" | "RENDER_BLOCK_ITEMS" | "RENDER_KV" | "RENDER_DOC"
-        | "EMIT0" | "EMITT" | "EMITF" | "EMITx" | "EMIT[" | "EMIT]" | "EMIT{" | "EMIT}"
-        | "EMIT<" | "EMIT>" | "EMITTAGx" | "EMITTAG[" | "EMITTAG{" | "NV.EMIT[*]"
-        | "NV.EMIT{*}" | "NV.ALL[*]" | "Emit.RenderKV" | "MATCHES_KEY" | "EXTRACT_VALUE"
-        | "EXTRACT_KEY" | "PACK_PAIR" | "BLOCK_PAIR" | "seqStrList" | "LOOKUPOR#" | "K[]"
-        | "K{}" | "PRNG_NEXT" | "PRNG_FLOAT" | "STREAM_NEXT" => None,
+        // Random / streams
+        "PRNG_NEXT" => Some("prng.next"),
+        "PRNG_FLOAT" => Some("prng.float"),
+        "STREAM_NEXT" => Some("stream.next"),
 
-        // Unknown — show as-is (user-defined or newly-added intrinsics)
+        // Internal machinery — filter out of traces
+        //
+        // Emit and render pipeline
+        "EMIT0" | "EMITx" | "EMITT" | "EMITF" | "EMIT[" | "EMIT]" | "EMIT{" | "EMIT}" | "EMIT<"
+        | "EMIT>" | "EMITTAGx" | "EMITTAG[" | "EMITTAG{" | "NV.EMIT[*]" | "NV.EMIT{*}"
+        | "Emit.RenderKV" | "RENDER" | "RENDER_ITEMS" | "RENDER_BLOCK_ITEMS" | "RENDER_KV"
+        | "RENDER_DOC" => None,
+        // Boolean / saturation / internal control
+        "AND" | "OR" | "SATURATED" => None,
+        // Internal block/list helpers
+        "LOOKUPOR#" | "MATCHES_KEY" | "EXTRACT_VALUE" | "EXTRACT_KEY" | "PACK_PAIR"
+        | "BLOCK_PAIR" | "seqStrList" | "NV.ALL[*]" => None,
+        // Internal constants and data constructors
+        "KNIL" | "K[]" | "K{}" | "DQ" | "IFIELDS" | "SUPPRESSES" | "REQUIRES" => None,
+
+        // Unknown — show as-is (should not normally appear)
         other => Some(other),
     }
 }

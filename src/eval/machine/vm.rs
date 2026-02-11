@@ -260,6 +260,7 @@ impl MachineState {
                         branch_table,
                         fallback,
                         environment,
+                        annotation: self.annotation,
                     },
                 )?;
                 self.closure = SynClosure::new(scrutinee, environment);
@@ -280,6 +281,14 @@ impl MachineState {
             }
             HeapSyn::Bif { intrinsic, args } => {
                 let bif = intrinsics[intrinsic as usize];
+                // Set annotation to the BIF's own annotation so errors
+                // report the correct intrinsic context (e.g. "in (+)")
+                if let Ok(global_closure) = self.nav(view).global(intrinsic as usize) {
+                    let bif_ann = global_closure.annotation();
+                    if bif_ann.is_valid() {
+                        self.annotation = bif_ann;
+                    }
+                }
                 bif.execute(self, view, emitter, args.as_slice())?;
             }
             HeapSyn::Let { bindings, body } => {
@@ -450,6 +459,7 @@ impl MachineState {
                     branch_table,
                     fallback,
                     environment,
+                    annotation,
                 } => {
                     if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
                         let env = if args.is_empty() {
@@ -480,7 +490,14 @@ impl MachineState {
                             .filter(|i| branch_table.get(*i).flatten().is_some())
                             .map(|i| min_tag + i as u8)
                             .collect();
-                        return Err(ExecutionError::NoBranchForDataTag(tag, expected_tags));
+                        // Use the Branch annotation if valid, otherwise search
+                        // the remaining stack for the nearest call context
+                        let ann = if annotation.is_valid() {
+                            annotation
+                        } else {
+                            self.nearest_stack_annotation(view)
+                        };
+                        return Err(ExecutionError::NoBranchForDataTag(ann, tag, expected_tags));
                     }
                 }
                 Continuation::Update { environment, index } => {
@@ -597,6 +614,29 @@ impl MachineState {
         Ok(())
     }
 
+    /// Find the nearest valid annotation on the remaining stack.
+    ///
+    /// Used as a fallback when the immediate continuation has no
+    /// annotation, to attribute errors to their enclosing call context.
+    fn nearest_stack_annotation(&self, view: MutatorHeapView) -> Smid {
+        for cont in self.stack.iter().rev() {
+            let c = view.scoped(*cont);
+            let smid = match &*c {
+                Continuation::Branch { annotation, .. }
+                | Continuation::ApplyTo { annotation, .. } => *annotation,
+                Continuation::Update { environment, .. }
+                | Continuation::DeMeta { environment, .. } => {
+                    let cont_env = view.scoped(*environment);
+                    cont_env.annotation()
+                }
+            };
+            if smid.is_valid() {
+                return smid;
+            }
+        }
+        Smid::default()
+    }
+
     /// Returns a lazy iterator over stack trace annotations.
     ///
     /// This avoids allocation during error handling - the caller can collect
@@ -610,8 +650,8 @@ impl MachineState {
         self.stack.iter().rev().filter_map(move |cont| {
             let c = view.scoped(*cont);
             let smid = match &*c {
-                Continuation::Branch { environment, .. }
-                | Continuation::Update { environment, .. }
+                Continuation::Branch { annotation, .. } => *annotation,
+                Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
                     let cont_env = view.scoped(*environment);
                     cont_env.annotation()
