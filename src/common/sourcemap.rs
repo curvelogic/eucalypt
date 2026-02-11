@@ -215,10 +215,7 @@ impl SourceMap {
                 let info = self.source.get(smid.get())?;
 
                 // Determine the display name: intrinsic name or source snippet
-                let display_name = info
-                    .annotation
-                    .as_deref()
-                    .and_then(intrinsic_display_name);
+                let display_name = info.annotation.as_deref().and_then(intrinsic_display_name);
 
                 let source_snippet = || {
                     let id = info.file?;
@@ -232,7 +229,11 @@ impl SourceMap {
                     let name = files.name(id).ok()?;
                     let span = info.span?;
                     let loc = files.location(id, span.start().to_usize()).ok()?;
-                    Some(format!("{name}:{line}:{col}", line = loc.line_number, col = loc.column_number))
+                    Some(format!(
+                        "{name}:{line}:{col}",
+                        line = loc.line_number,
+                        col = loc.column_number
+                    ))
                 });
 
                 let label = display_name.or_else(source_snippet)?;
