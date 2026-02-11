@@ -595,3 +595,8 @@ pub fn test_error_032() {
 pub fn test_error_033() {
     run_error_test(&error_opts("033_type_mismatch_str_as_num.eu"));
 }
+
+#[test]
+pub fn test_error_034() {
+    run_error_test(&error_opts("034_nested_fn_trace.eu"));
+}

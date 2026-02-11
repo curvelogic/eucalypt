@@ -238,10 +238,10 @@ impl SourceMap {
 
                 let label = display_name.or_else(source_snippet)?;
 
-                let entry = if let Some(prefix) = location_prefix {
-                    format!("- {prefix} ({label})")
-                } else {
-                    format!("- {label}")
+                let entry = match (location_prefix, display_name) {
+                    (Some(prefix), Some(name)) => format!("- {prefix} (in '{name}')"),
+                    (Some(prefix), None) => format!("- {prefix} ({label})"),
+                    (None, _) => format!("- {label}"),
                 };
 
                 Some(entry)
@@ -327,12 +327,41 @@ fn intrinsic_display_name(name: &str) -> Option<&str> {
 
         // Date/time
         "ZDT" => Some("zdt"),
+        "ZDT.FROM_EPOCH" => Some("zdt.from-epoch"),
+        "ZDT.FIELDS" => Some("zdt.fields"),
+        "ZDT.PARSE" => Some("zdt.parse"),
+        "ZDT.FORMAT" => Some("zdt.format"),
+
+        // Encoding / hashing
+        "BASE64_ENCODE" => Some("base64.encode"),
+        "BASE64_DECODE" => Some("base64.decode"),
+        "SHA256" => Some("sha256"),
+
+        // Set operations
+        "SET.EMPTY" => Some("set.empty"),
+        "SET.FROM_LIST" => Some("set.from-list"),
+        "SET.TO_LIST" => Some("set.to-list"),
+        "SET.ADD" => Some("set.add"),
+        "SET.REMOVE" => Some("set.remove"),
+        "SET.CONTAINS" => Some("set.contains"),
+        "SET.SIZE" => Some("set.size"),
+        "SET.UNION" => Some("set.union"),
+        "SET.INTERSECT" => Some("set.intersect"),
+        "SET.DIFF" => Some("set.diff"),
+
+        // Lookup error path
+        "LOOKUPFAIL" => Some("lookup"),
 
         // Internal machinery — filter out of traces
-        "AND" | "OR" | "SATURATED" | "RENDER" | "EMITT" | "EMITF" | "IFIELDS" | "SUPPRESSES"
-        | "KNIL" | "DQ" | "REQUIRES" => None,
+        "AND" | "OR" | "SATURATED" | "SUPPRESSES" | "IFIELDS" | "KNIL" | "DQ" | "REQUIRES"
+        | "RENDER" | "RENDER_ITEMS" | "RENDER_BLOCK_ITEMS" | "RENDER_KV" | "RENDER_DOC"
+        | "EMIT0" | "EMITT" | "EMITF" | "EMITx" | "EMIT[" | "EMIT]" | "EMIT{" | "EMIT}"
+        | "EMIT<" | "EMIT>" | "EMITTAGx" | "EMITTAG[" | "EMITTAG{" | "NV.EMIT[*]"
+        | "NV.EMIT{*}" | "NV.ALL[*]" | "Emit.RenderKV" | "MATCHES_KEY" | "EXTRACT_VALUE"
+        | "EXTRACT_KEY" | "PACK_PAIR" | "BLOCK_PAIR" | "seqStrList" | "LOOKUPOR#" | "K[]"
+        | "K{}" | "PRNG_NEXT" | "PRNG_FLOAT" | "STREAM_NEXT" => None,
 
-        // Unknown — show as-is
+        // Unknown — show as-is (user-defined or newly-added intrinsics)
         other => Some(other),
     }
 }
