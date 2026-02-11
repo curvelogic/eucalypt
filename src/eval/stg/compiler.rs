@@ -746,9 +746,10 @@ impl ProtoSyntax for ProtoLambda {
             body = dsl::ann(self.annotation, body);
         }
 
-        Ok(dsl::lambda(
+        Ok(dsl::annotated_lambda(
             args.try_into().or(Err(CompileError::MaxLambdaArgs))?,
             body,
+            self.annotation,
         ))
     }
 }
