@@ -842,8 +842,8 @@ impl StgIntrinsic for Lookup {
                 local(0),
                 // [sym] [k block]
                 let_(
-                    vec![value(call::bif::panic(str("key not found")))],
-                    // [panic] [sym] [k block]
+                    vec![thunk(LookupFail.global(lref(0), lref(2)))],
+                    // [fail] [sym] [k block]
                     LookupOr(NativeVariant::Unboxed).global(lref(1), lref(0), lref(3)),
                 ),
             ),
@@ -853,6 +853,128 @@ impl StgIntrinsic for Lookup {
 }
 
 impl CallGlobal2 for Lookup {}
+
+/// LOOKUP_FAIL(key_sym, block)
+///
+/// Generate a helpful "key not found" error with "did you mean?"
+/// suggestions based on edit distance from the block's actual keys.
+pub struct LookupFail;
+
+impl StgIntrinsic for LookupFail {
+    fn name(&self) -> &str {
+        "LOOKUP_FAIL"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        use dsl::*;
+
+        // Custom wrapper: takes [sym, block], forces the block, then
+        // calls the BIF with the unboxed sym and the forced block.
+        annotated_lambda(
+            2, // [sym block]
+            force(
+                local(1), // force block
+                // [forced-block] [sym block]
+                app_bif(
+                    intrinsics::index(self.name())
+                        .expect("LOOKUP_FAIL must be registered")
+                        .try_into()
+                        .unwrap(),
+                    vec![lref(1), lref(0)],
+                ),
+            ),
+            annotation,
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // Resolve the key symbol to a string. The sym arg may arrive as
+        // either a direct Ref::V(Native::Sym) or as a closure wrapping
+        // a native value.
+        let key_name = match &args[0] {
+            Ref::V(Native::Sym(id)) => machine.symbol_pool().resolve(*id).to_string(),
+            other => match machine.nav(view).resolve_native(other) {
+                Ok(Native::Sym(id)) => machine.symbol_pool().resolve(id).to_string(),
+                _ => "<unknown>".to_string(),
+            },
+        };
+
+        // Collect keys from the block. The block arg has been forced by
+        // the wrapper, so it should be a Block cons cell accessible via
+        // resolve.
+        let available_keys = collect_block_keys_from_args(machine, view, &args[1]);
+
+        // Compute suggestions via edit distance
+        let max_distance = (key_name.len() / 2).clamp(2, 4);
+        let suggestions =
+            crate::eval::error::suggest_similar(&key_name, &available_keys, 3, max_distance);
+
+        Err(ExecutionError::LookupFailure(
+            machine.annotation(),
+            key_name,
+            suggestions,
+        ))
+    }
+}
+
+impl CallGlobal2 for LookupFail {}
+
+/// Collect all key names from a block that has been resolved to a closure.
+///
+/// The closure should point to a `Block` cons cell. This is the main
+/// implementation used by both the BIF args path and direct closure path.
+fn collect_block_keys_from_closure(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    closure: &SynClosure,
+) -> Vec<String> {
+    let nav = machine.nav(view);
+    let code = view.scoped(closure.code());
+    let blocklist_ref = match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => match args.get(0) {
+            Some(r) => r.clone(),
+            None => return vec![],
+        },
+        _ => return vec![],
+    };
+
+    let list_closure = match nav.resolve_in_closure(closure, blocklist_ref) {
+        Some(c) => c,
+        None => return vec![],
+    };
+
+    let iter = BlockListIterator {
+        closure: list_closure,
+        nav: &nav,
+        done: false,
+    };
+
+    iter.filter_map(|pair| {
+        let sym_id = pair_key_symbol_id(view, &pair)?;
+        Some(machine.symbol_pool().resolve(sym_id).to_string())
+    })
+    .collect()
+}
+
+/// Collect block keys from a BIF arg ref. Resolves the ref to a closure
+/// first, then delegates to `collect_block_keys_from_closure`.
+fn collect_block_keys_from_args(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    block_ref: &Ref,
+) -> Vec<String> {
+    let nav = machine.nav(view);
+    match nav.resolve(block_ref) {
+        Ok(closure) => collect_block_keys_from_closure(machine, view, &closure),
+        Err(_) => vec![],
+    }
+}
 
 /// MERGE(l, r)
 ///
@@ -1182,7 +1304,20 @@ impl StgIntrinsic for IsBlock {
 
 impl CallGlobal1 for IsBlock {}
 
-/// Compile a panic for a missing key
+/// Compile a lookup failure for a statically known missing key.
+///
+/// Generates a PANIC("key 'X' not found in block") call. This produces
+/// a clearer error message than the previous generic "Key not found".
+pub fn lookup_fail(key: &str, _obj: super::syntax::Ref) -> Rc<StgSyn> {
+    use dsl::*;
+
+    let_(
+        vec![value(box_str(format!("key '{key}' not found in block")))],
+        Panic.global(lref(0)),
+    )
+}
+
+/// Compile a panic for a missing key (legacy fallback, kept for tests)
 pub fn panic_key_not_found(key: &str) -> Rc<StgSyn> {
     use dsl::*;
 

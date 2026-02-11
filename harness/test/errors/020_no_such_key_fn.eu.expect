@@ -1,2 +1,2 @@
 exit: 1
-stderr: "Key not found"
+stderr: "key 'g' not found in block"

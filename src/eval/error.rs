@@ -10,6 +10,81 @@ use thiserror::Error;
 
 use super::{memory::bump, stg::compiler::CompileError};
 
+/// Compute the Levenshtein edit distance between two strings.
+///
+/// This is a simple dynamic programming implementation suitable for
+/// short identifier names in error messages.
+pub fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_len = a.len();
+    let b_len = b.len();
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    // Use a single row with rolling update to save memory
+    let mut prev_row: Vec<usize> = (0..=b_len).collect();
+    let mut curr_row = vec![0; b_len + 1];
+
+    for (i, a_ch) in a.chars().enumerate() {
+        curr_row[0] = i + 1;
+        for (j, b_ch) in b.chars().enumerate() {
+            let cost = if a_ch == b_ch { 0 } else { 1 };
+            curr_row[j + 1] = (prev_row[j] + cost)
+                .min(prev_row[j + 1] + 1)
+                .min(curr_row[j] + 1);
+        }
+        std::mem::swap(&mut prev_row, &mut curr_row);
+    }
+
+    prev_row[b_len]
+}
+
+/// Find similar names from a list of candidates, ranked by edit distance.
+///
+/// Returns up to `max_suggestions` candidates with edit distance at most
+/// `max_distance`. Results are sorted by distance (closest first).
+pub fn suggest_similar(
+    target: &str,
+    candidates: &[String],
+    max_suggestions: usize,
+    max_distance: usize,
+) -> Vec<String> {
+    let mut scored: Vec<(usize, &String)> = candidates
+        .iter()
+        .map(|c| (levenshtein_distance(target, c), c))
+        .filter(|(d, _)| *d > 0 && *d <= max_distance)
+        .collect();
+
+    scored.sort_by_key(|(d, _)| *d);
+    scored
+        .into_iter()
+        .take(max_suggestions)
+        .map(|(_, name)| name.clone())
+        .collect()
+}
+
+/// Format a "did you mean?" hint from a list of suggestions.
+pub fn format_suggestions(suggestions: &[String]) -> Option<String> {
+    if suggestions.is_empty() {
+        return None;
+    }
+    let quoted: Vec<String> = suggestions.iter().map(|s| format!("'{s}'")).collect();
+    Some(format!("similar keys: {}", quoted.join(", ")))
+}
+
+/// Format a lookup failure message, including suggestions if available
+fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
+    let mut msg = format!("key '{key}' not found in block");
+    if let Some(hint) = format_suggestions(suggestions) {
+        msg.push_str(&format!("\n  help: {hint}"));
+    }
+    msg
+}
+
 /// Convert a data tag number to a human-readable type name for error messages
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
@@ -54,8 +129,8 @@ pub enum ExecutionError {
     FreeVar(Smid, String),
     #[error("code not valid for execution")]
     InvalidCode(Smid),
-    #[error("lookup failure")]
-    LookupFailure(Smid),
+    #[error("{}", format_lookup_failure(.1, .2))]
+    LookupFailure(Smid, String, Vec<String>),
     #[error("type mismatch: expected {1}, found {2}")]
     TypeMismatch(Smid, IntrinsicType, IntrinsicType),
     #[error("unknown intrinsic {1}")]
@@ -155,7 +230,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotFound(s) => *s,
             ExecutionError::FreeVar(s, _) => *s,
             ExecutionError::InvalidCode(s) => *s,
-            ExecutionError::LookupFailure(s) => *s,
+            ExecutionError::LookupFailure(s, _, _) => *s,
             ExecutionError::TypeMismatch(s, _, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s) => *s,
