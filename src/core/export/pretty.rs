@@ -70,7 +70,7 @@ impl ToPretty for Truncated<Primitive> {
 }
 
 impl ToPretty for RcExpr {
-    /// Arrange core expression into pretty doc
+    /// Arrange core expression into compact symbolic pretty doc
     fn pretty<'b, D, A>(&'b self, allocator: &'b D) -> DocBuilder<'b, D, A>
     where
         D: DocAllocator<'b, A>,
@@ -81,7 +81,6 @@ impl ToPretty for RcExpr {
             Expr::Var(_, v) => v.pretty(allocator),
             Expr::Name(_, n) => allocator.text(n),
             Expr::Let(_, scope, _) => {
-                let body_doc = scope.unsafe_body.pretty(allocator);
                 let binding_docs =
                     scope
                         .unsafe_pattern
@@ -95,19 +94,18 @@ impl ToPretty for RcExpr {
                         });
 
                 allocator
-                    .text("let")
-                    .append(allocator.space())
+                    .text("let ")
                     .append(
                         allocator
-                            .intersperse(binding_docs, allocator.text(",").append(allocator.line()))
-                            .align()
-                            .append(allocator.line()),
+                            .intersperse(binding_docs, allocator.text(";").append(allocator.line()))
+                            .align(),
                     )
-                    .append(allocator.text(" in").append(allocator.line()))
-                    .align()
-                    .append(body_doc.indent(4))
+                    .append(allocator.line())
+                    .append(allocator.text("in "))
+                    .append(scope.unsafe_body.pretty(allocator))
+                    .group()
             }
-            Expr::Intrinsic(_, name) => allocator.text("__").append(allocator.text(name)),
+            Expr::Intrinsic(_, name) => allocator.text(name),
             Expr::Literal(_, prim) => prim.pretty(allocator),
             Expr::Lookup(_, target, field, fallback) => {
                 let base_doc = target
@@ -117,48 +115,63 @@ impl ToPretty for RcExpr {
                 match fallback {
                     None => base_doc,
                     Some(fb) => base_doc
-                        .append(allocator.text("?"))
+                        .append(allocator.text(" ? "))
                         .append(fb.pretty(allocator)),
                 }
             }
             Expr::Block(_, bm) => {
+                if bm.is_empty() {
+                    return allocator.text("{}");
+                }
                 let decl_docs = bm.iter().map(|(k, v)| {
                     allocator
                         .text(k)
-                        .append(":")
-                        .append(allocator.space())
+                        .append(allocator.text(": "))
                         .append(v.pretty(allocator))
                         .group()
                 });
                 allocator
-                    .line()
+                    .text("{")
                     .append(
                         allocator
-                            .intersperse(decl_docs, allocator.text(",").append(allocator.line()))
-                            .align()
-                            .indent(2),
+                            .line()
+                            .append(
+                                allocator
+                                    .intersperse(
+                                        decl_docs,
+                                        allocator.text(",").append(allocator.line()),
+                                    )
+                                    .align(),
+                            )
+                            .nest(2),
                     )
                     .append(allocator.line())
-                    .braces()
-                    .align()
+                    .append(allocator.text("}"))
+                    .group()
             }
             Expr::List(_, xs) => {
+                if xs.is_empty() {
+                    return allocator.text("[]");
+                }
                 let elements_docs = xs.iter().map(|x| x.pretty(allocator));
                 allocator
                     .text("[")
                     .append(
-                        allocator.intersperse(elements_docs, allocator.text(",").group().nest(2)),
+                        allocator
+                            .intersperse(
+                                elements_docs,
+                                allocator.text(",").append(allocator.space()),
+                            )
+                            .group()
+                            .nest(1),
                     )
                     .append(allocator.text("]"))
+                    .group()
             }
-            Expr::BlockAnaphor(_, anaphor) => allocator.text(format!("•{anaphor}")),
+            Expr::BlockAnaphor(_, anaphor) => allocator.text(format!("\u{2022}{anaphor}")),
             Expr::ExprAnaphor(_, anaphor) => allocator.text(format!("{anaphor}")),
             Expr::Meta(_, e, m) => {
-                let meta_doc = allocator
-                    .text("`")
-                    .append(allocator.space())
-                    .append(m.pretty(allocator))
-                    .group();
+                let meta_doc = allocator.text("`").append(m.pretty(allocator)).group();
 
                 meta_doc
                     .append(allocator.softline())
@@ -170,7 +183,13 @@ impl ToPretty for RcExpr {
                 allocator
                     .text("(")
                     .append(
-                        allocator.intersperse(elements_docs, allocator.text(",").group().nest(2)),
+                        allocator
+                            .intersperse(
+                                elements_docs,
+                                allocator.text(",").append(allocator.space()),
+                            )
+                            .group()
+                            .nest(1),
                     )
                     .append(allocator.text(")"))
             }
@@ -181,20 +200,18 @@ impl ToPretty for RcExpr {
                     .map(|Binder(fv)| fv.pretty(allocator));
 
                 allocator
-                    .text("λ")
-                    .append(allocator.space())
-                    .append(allocator.intersperse(parameter_docs, allocator.space()))
-                    .append(allocator.space())
-                    .append(allocator.text("."))
+                    .text("\u{03bb}(")
+                    .append(allocator.intersperse(parameter_docs, allocator.text(", ")))
+                    .append(allocator.text(")."))
                     .append(allocator.line())
-                    .append(scope.unsafe_body.pretty(allocator))
+                    .append(scope.unsafe_body.pretty(allocator).nest(2))
                     .group()
             }
             Expr::App(_, f, xs) => {
                 let args_docs = xs.iter().map(|x| x.pretty(allocator));
 
-                // parenthesise if not simple
-                let target = if let Expr::Lam(_, _, _) = &*f.inner {
+                // parenthesise lambdas
+                let target = if matches!(&*f.inner, Expr::Lam(_, _, _)) {
                     allocator
                         .text("(")
                         .append(f.pretty(allocator))
@@ -207,7 +224,7 @@ impl ToPretty for RcExpr {
                     .append(allocator.text("("))
                     .append(
                         allocator
-                            .intersperse(args_docs, allocator.text(",").append(allocator.space()))
+                            .intersperse(args_docs, allocator.text(", "))
                             .group()
                             .nest(2),
                     )
@@ -229,11 +246,15 @@ impl ToPretty for RcExpr {
             Expr::Operator(_, f, p, e) => allocator
                 .text(format!("^{f}({p})^"))
                 .append(e.pretty(allocator)),
-            Expr::ErrUnresolved(_, name) => allocator.text(format!("⚠unresolved:{name}⚠")),
-            Expr::ErrRedeclaration(_, name) => allocator.text(format!("⚠redecl:{name}⚠")),
-            Expr::ErrEliminated => allocator.text("⃝"),
+            Expr::ErrUnresolved(_, name) => {
+                allocator.text(format!("\u{26a0}unresolved:{name}\u{26a0}"))
+            }
+            Expr::ErrRedeclaration(_, name) => {
+                allocator.text(format!("\u{26a0}redecl:{name}\u{26a0}"))
+            }
+            Expr::ErrEliminated => allocator.text("\u{20dd}"),
             Expr::ErrPseudoDot => allocator.text("."),
-            Expr::ErrPseudoCat => allocator.text("__CAT"),
+            Expr::ErrPseudoCat => allocator.text("CAT"),
             Expr::ErrPseudoCall => allocator.nil(),
         }
     }
@@ -258,7 +279,7 @@ pub mod tests {
     #[test]
     pub fn test_core_exprs() {
         assert_eq!(prettify(&num(20)), "20\n");
-        assert_eq!(prettify(&bif("HEAD")), "__HEAD\n");
+        assert_eq!(prettify(&bif("HEAD")), "HEAD\n");
 
         let pseudocat = RcExpr::from(Expr::ErrPseudoCat);
         let sample = app(
@@ -279,7 +300,7 @@ pub mod tests {
         );
         assert_eq!(
             prettify(&sample),
-            "__HEAD(__CONS(__CAT([1,2,3], __HEAD), __CAT([1,2,3], __TAIL)))\n"
+            "HEAD(CONS(CAT([1, 2, 3], HEAD), CAT([1, 2, 3], TAIL)))\n"
         );
     }
 }
