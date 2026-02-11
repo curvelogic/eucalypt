@@ -1,7 +1,7 @@
 use codespan::Span;
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
-    files::SimpleFiles,
+    files::{Files, SimpleFiles},
 };
 use moniker::*;
 use std::fmt::Display;
@@ -203,27 +203,47 @@ impl SourceMap {
     }
 
     /// Format a stack / environment trace
+    ///
+    /// Produces source-level references where file locations are
+    /// available, e.g. `example.eu:5:3 (+)` for an intrinsic call at
+    /// line 5 column 3, or `example.eu:2:10 (str.letters(99))` for a
+    /// source expression.
     pub fn format_trace(&self, trace: &[Smid], files: &SimpleFiles<String, String>) -> String {
         let elements: Vec<_> = trace
             .iter()
             .filter_map(|smid| {
-                if let Some(info) = self.source.get(smid.get()) {
-                    let display_text = info
-                        .annotation
-                        .as_deref()
-                        .and_then(intrinsic_display_name)
-                        .or_else(|| {
-                            info.file
-                                .and_then(|id| files.get(id).ok())
-                                .and_then(|file| {
-                                    info.span
-                                        .and_then(|span| file.source().get(Range::from(span)))
-                                })
-                        });
-                    display_text.map(|text| format!("- {text}"))
+                let info = self.source.get(smid.get())?;
+
+                // Determine the display name: intrinsic name or source snippet
+                let display_name = info
+                    .annotation
+                    .as_deref()
+                    .and_then(intrinsic_display_name);
+
+                let source_snippet = || {
+                    let id = info.file?;
+                    let source: &str = files.source(id).ok()?;
+                    let span = info.span?;
+                    source.get(Range::from(span))
+                };
+
+                // Build file:line:col prefix if we have a file location
+                let location_prefix = info.file.and_then(|id| {
+                    let name = files.name(id).ok()?;
+                    let span = info.span?;
+                    let loc = files.location(id, span.start().to_usize()).ok()?;
+                    Some(format!("{name}:{line}:{col}", line = loc.line_number, col = loc.column_number))
+                });
+
+                let label = display_name.or_else(source_snippet)?;
+
+                let entry = if let Some(prefix) = location_prefix {
+                    format!("- {prefix} ({label})")
                 } else {
-                    None
-                }
+                    format!("- {label}")
+                };
+
+                Some(entry)
             })
             .collect();
 

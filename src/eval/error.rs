@@ -51,12 +51,6 @@ pub enum ExecutionError {
     NotCallable(Smid),
     #[error("intrinsic {1} expected value in strict position")]
     NotValue(Smid, String),
-    #[error("intrinsic expected numeric value in strict position")]
-    NotEvaluatedNumber(Smid),
-    #[error("intrinsic expected string value in strict position")]
-    NotEvaluatedString(Smid),
-    #[error("intrinsic expected zoned datetime value in strict position")]
-    NotEvaluatedZdt(Smid),
     #[error("bad regex ({0})")]
     BadRegex(String),
     #[error("bad date / time components ({0}, {1}, {2}, {3}, {4}, {5}, {6})")]

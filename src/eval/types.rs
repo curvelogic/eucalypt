@@ -21,15 +21,15 @@ pub enum IntrinsicType {
 impl fmt::Display for IntrinsicType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IntrinsicType::Unknown => write!(f, "?"),
-            IntrinsicType::Any => write!(f, "⊤"),
-            IntrinsicType::Unit => write!(f, "()"),
-            IntrinsicType::Bool => write!(f, "Bool"),
-            IntrinsicType::String => write!(f, "Str"),
-            IntrinsicType::Symbol => write!(f, "Sym"),
-            IntrinsicType::Number => write!(f, "Num"),
-            IntrinsicType::ZonedDateTime => write!(f, "Zdt"),
-            IntrinsicType::List(t) => write!(f, "[{}]", *t),
+            IntrinsicType::Unknown => write!(f, "unknown"),
+            IntrinsicType::Any => write!(f, "any"),
+            IntrinsicType::Unit => write!(f, "null"),
+            IntrinsicType::Bool => write!(f, "boolean"),
+            IntrinsicType::String => write!(f, "string"),
+            IntrinsicType::Symbol => write!(f, "symbol"),
+            IntrinsicType::Number => write!(f, "number"),
+            IntrinsicType::ZonedDateTime => write!(f, "datetime"),
+            IntrinsicType::List(t) => write!(f, "list of {}", *t),
             IntrinsicType::Function(i, o) => write!(f, "{i} -> {o}"),
             IntrinsicType::Record(hm) => {
                 write!(f, "{{")?;
