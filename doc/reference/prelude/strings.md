@@ -24,6 +24,20 @@ The `str` namespace contains string functions:
 | `str.to-upper(s)` | Convert to upper case |
 | `str.to-lower(s)` | Convert to lower case |
 
+## Encoding and Hashing
+
+| Function | Description |
+|----------|-------------|
+| `str.base64-encode(s)` | Encode string `s` as base64 |
+| `str.base64-decode(s)` | Decode base64 string `s` |
+| `str.sha256(s)` | SHA-256 hash of string `s` as lowercase hex |
+
+```eu
+encoded: "hello" str.base64-encode    # "aGVsbG8="
+decoded: "aGVsbG8=" str.base64-decode # "hello"
+hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
+```
+
 ## Character Constants
 
 The `ch` namespace provides special characters:

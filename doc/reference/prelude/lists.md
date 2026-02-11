@@ -93,7 +93,23 @@
 | Function | Description |
 |----------|-------------|
 | `qsort(lt, xs)` | Sort using less-than function `lt` |
+| `sort-nums(xs)` | Sort numbers ascending |
+| `sort-strs(xs)` | Sort strings/symbols ascending |
+| `sort-zdts(xs)` | Sort zoned date-times ascending |
+| `sort-by(key-fn, cmp, xs)` | Sort by key extracted with `key-fn` using comparator `cmp` |
+| `sort-by-num(key-fn, xs)` | Sort ascending by numeric key |
+| `sort-by-str(key-fn, xs)` | Sort ascending by string key |
+| `sort-by-zdt(key-fn, xs)` | Sort ascending by date-time key |
 | `group-by(k, xs)` | Group by key function, returns block |
+
+```eu
+nums: [3, 1, 4, 1, 5] sort-nums          # [1, 1, 3, 4, 5]
+words: ["banana", "apple", "cherry"] sort-strs  # ["apple", "banana", "cherry"]
+
+people: [{name: "Zara" age: 30}, {name: "Alice" age: 25}]
+by-name: people sort-by-str(_.name)       # sorted by name
+by-age: people sort-by-num(_.age)         # sorted by age
+```
 
 ## Other
 

@@ -387,6 +387,18 @@ $ eu -e 'io.args nil?'
 true
 ```
 
+## Random Seed
+
+By default, random numbers are seeded from system entropy and produce
+different results on each run. Use `--seed` for reproducible output:
+
+```sh
+eu --seed 42 template.eu
+```
+
+This sets `io.RANDOM_SEED` and seeds the `io.random` stream. See
+[Random Numbers](prelude/random.md) for the full random API.
+
 ## Suppressing prelude
 
 A standard *prelude* containing many functions and operators is
@@ -439,6 +451,46 @@ The formatter has two modes:
   where possible, only reformatting where necessary
 - **Reformat mode** (`--reformat`) - Full reformatting that applies
   consistent style throughout
+
+## Language Server Protocol
+
+The `lsp` subcommand starts an LSP server for use with editors that
+support the Language Server Protocol (e.g., VS Code, Neovim):
+
+```sh
+eu lsp
+```
+
+The LSP server provides:
+
+- Syntax error diagnostics
+- Formatting support (via `textDocument/formatting`)
+
+Configure your editor to use `eu lsp` as the language server command
+for `.eu` files. A VS Code extension is available in the `editors/vscode/`
+directory of the repository.
+
+## Version Assertions
+
+The `eu.requires` function allows eucalypt source files to assert a
+minimum version of the eucalypt executable:
+
+```eu
+{ import: [] }  # unit-level metadata not required for eu.requires
+
+# Assert that eu version satisfies semver constraint
+_ : eu.requires(">=0.3.0")
+```
+
+If the running version of `eu` does not satisfy the constraint, an
+error is raised immediately. This is useful for library code that
+depends on features introduced in a particular version.
+
+The `eu` namespace also provides build metadata:
+
+```eu
+version: eu.build.version    # e.g., "0.3.0"
+```
 
 ## Backward Compatibility
 
