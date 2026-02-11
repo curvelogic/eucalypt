@@ -1,12 +1,22 @@
 //! Execution errors
 use crate::common::sourcemap::{HasSmid, Smid, SourceMap};
+use crate::eval::stg::tags::DataConstructor;
 use crate::eval::types::IntrinsicType;
 use codespan_reporting::diagnostic::Diagnostic;
 use serde_json::Number;
+use std::convert::TryFrom;
 use std::io;
 use thiserror::Error;
 
 use super::{memory::bump, stg::compiler::CompileError};
+
+/// Convert a data tag number to a human-readable type name for error messages
+fn display_data_tag(tag: u8) -> String {
+    match DataConstructor::try_from(tag) {
+        Ok(dc) => dc.to_string(),
+        Err(()) => format!("unknown type (tag {tag})"),
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum ExecutionError {
@@ -77,7 +87,7 @@ pub enum ExecutionError {
     DivisionByZero,
     #[error("expected branch continuation")]
     ExpectedBranchContinuation,
-    #[error("no branch for data tag {0}")]
+    #[error("type mismatch: unexpected {}", display_data_tag(*.0))]
     NoBranchForDataTag(u8),
     #[error("no branch for native")]
     NoBranchForNative,

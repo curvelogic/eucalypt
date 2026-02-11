@@ -1,6 +1,7 @@
 //! Predefined data tags and arities
 
 use std::convert::TryFrom;
+use std::fmt;
 
 /// Datatype tag
 pub type Tag = u8;
@@ -30,6 +31,25 @@ pub enum DataConstructor {
     BlockKvList = 10,
     /// Boxed zoned datetime
     BoxedZdt = 11,
+}
+
+impl fmt::Display for DataConstructor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DataConstructor::Unit => write!(f, "null"),
+            DataConstructor::BoolTrue => write!(f, "true"),
+            DataConstructor::BoolFalse => write!(f, "false"),
+            DataConstructor::BoxedNumber => write!(f, "number"),
+            DataConstructor::BoxedSymbol => write!(f, "symbol"),
+            DataConstructor::BoxedString => write!(f, "string"),
+            DataConstructor::ListNil => write!(f, "empty list"),
+            DataConstructor::ListCons => write!(f, "list"),
+            DataConstructor::Block => write!(f, "block"),
+            DataConstructor::BlockPair => write!(f, "key-value pair"),
+            DataConstructor::BlockKvList => write!(f, "key-value list"),
+            DataConstructor::BoxedZdt => write!(f, "datetime"),
+        }
+    }
 }
 
 impl DataConstructor {
