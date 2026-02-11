@@ -671,6 +671,11 @@ impl IntrinsicMachine for MachineState {
     fn symbol_pool_mut(&mut self) -> &mut SymbolPool {
         &mut self.symbol_pool
     }
+
+    /// Current source annotation for error reporting
+    fn annotation(&self) -> Smid {
+        self.annotation
+    }
 }
 
 /// MachineState contains all the garbage collection roots
