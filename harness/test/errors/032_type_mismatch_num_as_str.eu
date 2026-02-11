@@ -1,0 +1,2 @@
+# Type mismatch: pass number where string expected (str.split)
+x: str.split(42, ",")

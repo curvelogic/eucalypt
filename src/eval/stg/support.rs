@@ -18,7 +18,21 @@ use crate::eval::{
     },
     stg::tags::DataConstructor,
 };
-use crate::{common::sourcemap::Smid, eval::memory::syntax::*};
+use crate::{
+    common::sourcemap::Smid,
+    eval::{memory::syntax::*, types::IntrinsicType},
+};
+
+/// Map a resolved native value to its intrinsic type for error reporting
+fn native_type(native: &Native) -> IntrinsicType {
+    match native {
+        Native::Num(_) => IntrinsicType::Number,
+        Native::Str(_) => IntrinsicType::String,
+        Native::Sym(_) => IntrinsicType::Symbol,
+        Native::Zdt(_) => IntrinsicType::ZonedDateTime,
+        Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
+    }
+}
 
 /// Helper for intrinsics to access a numeric arg
 pub fn num_arg(
@@ -30,7 +44,11 @@ pub fn num_arg(
     if let Native::Num(n) = native {
         Ok(n)
     } else {
-        Err(ExecutionError::NotEvaluatedNumber(machine.annotation()))
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            IntrinsicType::Number,
+            native_type(&native),
+        ))
     }
 }
 
@@ -44,7 +62,11 @@ pub fn str_arg(
     if let Native::Str(s) = native {
         Ok((*view.scoped(s)).as_str().to_string())
     } else {
-        Err(ExecutionError::NotEvaluatedString(machine.annotation()))
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            IntrinsicType::String,
+            native_type(&native),
+        ))
     }
 }
 
@@ -58,7 +80,11 @@ pub fn sym_arg(
     if let Native::Sym(id) = native {
         Ok(machine.symbol_pool().resolve(id).to_string())
     } else {
-        Err(ExecutionError::NotEvaluatedString(machine.annotation()))
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            IntrinsicType::Symbol,
+            native_type(&native),
+        ))
     }
 }
 
@@ -72,7 +98,11 @@ pub fn zdt_arg(
     if let Native::Zdt(dt) = native {
         Ok(dt)
     } else {
-        Err(ExecutionError::NotEvaluatedZdt(machine.annotation()))
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            IntrinsicType::ZonedDateTime,
+            native_type(&native),
+        ))
     }
 }
 

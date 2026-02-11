@@ -18,6 +18,19 @@ fn display_data_tag(tag: u8) -> String {
     }
 }
 
+/// Format expected tags as a human-readable list
+fn display_expected_tags(tags: &[u8]) -> String {
+    let names: Vec<String> = tags.iter().map(|t| display_data_tag(*t)).collect();
+    match names.len() {
+        0 => "unknown".to_string(),
+        1 => names[0].clone(),
+        _ => {
+            let (last, rest) = names.split_last().unwrap();
+            format!("{} or {}", rest.join(", "), last)
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ExecutionError {
     /// wrapped, env trace and stack trace
@@ -51,12 +64,6 @@ pub enum ExecutionError {
     NotCallable(Smid),
     #[error("intrinsic {1} expected value in strict position")]
     NotValue(Smid, String),
-    #[error("intrinsic expected numeric value in strict position")]
-    NotEvaluatedNumber(Smid),
-    #[error("intrinsic expected string value in strict position")]
-    NotEvaluatedString(Smid),
-    #[error("intrinsic expected zoned datetime value in strict position")]
-    NotEvaluatedZdt(Smid),
     #[error("bad regex ({0})")]
     BadRegex(String),
     #[error("bad date / time components ({0}, {1}, {2}, {3}, {4}, {5}, {6})")]
@@ -87,8 +94,8 @@ pub enum ExecutionError {
     DivisionByZero,
     #[error("expected branch continuation")]
     ExpectedBranchContinuation,
-    #[error("type mismatch: unexpected {}", display_data_tag(*.0))]
-    NoBranchForDataTag(u8),
+    #[error("type mismatch: expected {}, found {}", display_expected_tags(.1), display_data_tag(*.0))]
+    NoBranchForDataTag(u8, Vec<u8>),
     #[error("no branch for native")]
     NoBranchForNative,
     #[error("cannot return function into case table without default")]

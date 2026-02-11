@@ -580,3 +580,18 @@ pub fn test_error_029() {
 pub fn test_error_030() {
     run_error_test(&error_opts("030_type_mismatch_str.eu"));
 }
+
+#[test]
+pub fn test_error_031() {
+    run_error_test(&error_opts("031_type_mismatch_block_as_num.eu"));
+}
+
+#[test]
+pub fn test_error_032() {
+    run_error_test(&error_opts("032_type_mismatch_num_as_str.eu"));
+}
+
+#[test]
+pub fn test_error_033() {
+    run_error_test(&error_opts("033_type_mismatch_str_as_num.eu"));
+}

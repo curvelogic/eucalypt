@@ -475,7 +475,12 @@ impl MachineState {
                             view.from_closure(self.closure.clone(), environment, self.annotation)?,
                         );
                     } else {
-                        return Err(ExecutionError::NoBranchForDataTag(tag));
+                        // Collect the tags that the branch table can handle
+                        let expected_tags: Vec<u8> = (0..branch_table.len())
+                            .filter(|i| branch_table.get(*i).flatten().is_some())
+                            .map(|i| min_tag + i as u8)
+                            .collect();
+                        return Err(ExecutionError::NoBranchForDataTag(tag, expected_tags));
                     }
                 }
                 Continuation::Update { environment, index } => {
