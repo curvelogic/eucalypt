@@ -267,6 +267,10 @@ jobs:
           cp eu_darwin eucalypt-aarch64-osx/eu
           tar -cvzf eucalypt-aarch64-osx.tgz eucalypt-aarch64-osx
 
+      - name: Generate SHA256SUMS
+        run: |
+          sha256sum *.tgz > SHA256SUMS
+
       - name: Query binary for version number
         run: |
           chmod +x eu_amd64
@@ -283,5 +287,6 @@ jobs:
             eucalypt-x86_64-linux.tgz
             eucalypt-aarch64-linux.tgz
             eucalypt-aarch64-osx.tgz
+            SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
