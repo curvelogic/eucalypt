@@ -1,2 +1,2 @@
 exit: 1
-stderr: "type mismatch: unexpected number"
+stderr: "type mismatch: expected string, found number"
