@@ -164,7 +164,7 @@ From highest to lowest binding:
 | 95 | -- | prefix | `↑` | Tight prefix (head) |
 | 90 | lookup | left | `.` | Field access / lookup |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
-| 85 | exp | right | `∘`, `;` | Composition |
+| 85 | exp | right | `^`, `∘`, `;` | Power, composition |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
 | 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |

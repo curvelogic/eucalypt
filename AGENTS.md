@@ -211,6 +211,7 @@ Special metadata keys: `:target`, `:suppress`, `:main`, `associates`,
 | 90 | `.` | Field access / lookup |
 | 88 | `!`, `¬` (prefix) | Boolean negation |
 | 88 | `∘`, `;` | Composition |
+| 85 | `^` | Power |
 | 80 | `*`, `/`, `÷`, `%` | Multiply, floor divide, precise divide, floor modulo |
 | 75 | `+`, `-` | Add, subtract |
 | 50 | `<`, `>`, `<=`, `>=` | Comparison |

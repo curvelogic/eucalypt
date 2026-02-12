@@ -229,6 +229,7 @@ From highest (tightest) to lowest binding:
 | 90 | call | left | (built-in) | Function call |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
 | 88 | -- | -- | `∘`, `;` | Composition (actual prec 88 from prelude) |
+| 85 | exp | right | `^` | Power |
 | 85 | exp | -- | `!!` (nth) | Indexing |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |

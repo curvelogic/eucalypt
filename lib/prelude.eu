@@ -380,6 +380,12 @@ or: __OR
     precedence: :sum }
 (l - r): __SUB(l, r)
 
+` { doc: "`l ^ r` - raise `l` to the power `r`."
+    export: :suppress
+    associates: :right
+    precedence: :exp }
+(l ^ r): __POW(l, r)
+
 ` { doc: "`l * r` - multiplies `l` and `r`; both must be numbers."
     export: :suppress
     associates: :left
