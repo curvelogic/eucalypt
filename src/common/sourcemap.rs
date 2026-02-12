@@ -283,9 +283,13 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "SUB" => Some("-"),
         "MUL" => Some("*"),
         "DIV" => Some("/"),
-        "MOD" => Some("mod"),
+        "PDIV" => Some("\u{00f7}"),
+        "MOD" => Some("%"),
+        "QUOT" => Some("quot"),
+        "REM" => Some("rem"),
         "FLOOR" => Some("floor"),
         "CEILING" => Some("ceiling"),
+        "POW" => Some("pow"),
 
         // Comparison operators
         "EQ" => Some("=="),

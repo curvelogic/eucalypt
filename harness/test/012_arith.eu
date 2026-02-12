@@ -5,6 +5,7 @@
 (l - r): __SUB(l, r)
 (l * r): __MUL(l, r)
 (l / r): __DIV(l, r)
+(l ÷ r): __PDIV(l, r)
 (l % r): __MOD(l, r)
 
 (l > r): __GT(l, r)
@@ -37,6 +38,8 @@ integer-arithmetic: {
     three: 5 - 2 //= 3
     twelve: 24 / 2 //= 12
     two: 5 % 3 //= 2
+    floor-neg: -7 / 2 //= -4
+    floor-mod-neg: -7 % 3 //= 2
   }
 
   pass: (trues values all-true?) ∧ (falses values map(not) all-true?) ∧ (true-calcs values all-true?)
@@ -65,11 +68,10 @@ floating-point-arithmetic: {
     fourish: (2.01 + 2.01) - 4 < 0.1
     also-fourish: (2.01 * 2.01) - 4 < 0.1
     threeish: (5.01 - 2.01) - 3 < 0.1
-    twelveish: (24.01 / 2.01) - 12 < 0.1
-    twoish: (5.01 % 3) - 2 < 0.1
+    twelveish: (24.01 ÷ 2.01) - 12 < 0.1
   }
 
-  pass: (trues values all-true?) ∧ (falses values map(not) all-true?)
+  pass: (trues values all-true?) ∧ (falses values map(not) all-true?) ∧ (vals values all-true?)
 }
 
 mixed-arithmetic: {
@@ -113,12 +115,12 @@ mixed-arithmetic: {
     fourish: (2.01 + 2) - 4 < 0.1
     also-fourish: (2.01 * 2) - 4 < 0.1
     threeish: (5.01 - 2) - 3 < 0.1
-    twelveish: (24.01 / 2) - 12 < 0.1
-    twoish: (5.01 % 3) - 2 < 0.1
+    twelveish: (24.01 ÷ 2) - 12 < 0.1
   }
 
   pass: ((trues values) ++ (trues2 values) all-true?) ∧
-        ((falses values) ++ (falses2 values) map(not) all-true?)
+        ((falses values) ++ (falses2 values) map(not) all-true?) ∧
+        (vals values all-true?)
 }
 
 RESULT: if(integer-arithmetic.pass ∧ floating-point-arithmetic.pass ∧ mixed-arithmetic.pass, :PASS, :FAIL)

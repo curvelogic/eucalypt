@@ -593,6 +593,26 @@ lazy_static! {
             ty: function(vec![sym(), block(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 110
+            name: "POW",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 111
+            name: "PDIV",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 112
+            name: "QUOT",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 113
+            name: "REM",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
 
     ];
 }

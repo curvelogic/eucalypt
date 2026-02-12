@@ -1,0 +1,3 @@
+[submodule "aoc"]
+	path = aoc
+	url = git@github.com:gmorpheme/aoc-2025-eucalypt.git

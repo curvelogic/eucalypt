@@ -215,6 +215,10 @@ pub struct DumpArgs {
     #[arg(value_enum)]
     pub phase: DumpPhase,
 
+    /// Target to dump (identified by target metadata in eucalypt source)
+    #[arg(short = 't', long = "target")]
+    pub target: Option<String>,
+
     /// When outputting AST or Core expressions, quote-embed as eucalypt
     #[arg(long = "embed")]
     pub quote_embed: bool,
@@ -222,6 +226,10 @@ pub struct DumpArgs {
     /// When outputting AST or Core expressions, quote as debug print of structure
     #[arg(long = "debug-format")]
     pub quote_debug: bool,
+
+    /// Batch mode (no Eufile)
+    #[arg(short = 'B', long = "batch")]
+    pub batch: bool,
 
     /// Files to dump
     #[arg(value_name = "FILES")]
@@ -432,7 +440,7 @@ impl From<EucalyptCli> for EucalyptOptions {
                 None,
             ),
             Some(Commands::Dump(args)) => (
-                None,
+                args.target.clone(),
                 None,
                 None,
                 None,
@@ -444,7 +452,7 @@ impl From<EucalyptCli> for EucalyptOptions {
                 false,
                 None,
                 None,
-                None,
+                Some(args.batch),
                 None,
                 None,
                 None,
@@ -978,9 +986,11 @@ impl EucalyptOptions {
             self.prepend_input(Input::from_str("-").expect("stdin locator '-' is valid"));
         }
 
-        // Prepend project Eufile
-        if let Some(eufile) = project::eufile() {
-            self.prepend_input(Input::new(Locator::Fs(eufile), None, "eu"));
+        // Prepend project Eufile (unless in batch mode)
+        if self.mode != CommandLineMode::Batch {
+            if let Some(eufile) = project::eufile() {
+                self.prepend_input(Input::new(Locator::Fs(eufile), None, "eu"));
+            }
         }
 
         // In ergonomic mode prepend user .eucalypt

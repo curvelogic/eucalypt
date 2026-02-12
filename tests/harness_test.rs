@@ -395,6 +395,16 @@ pub fn test_harness_079() {
 }
 
 #[test]
+pub fn test_harness_080() {
+    run_test(&opts("080_pow.eu"));
+}
+
+#[test]
+pub fn test_harness_081() {
+    run_test(&opts("081_division.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

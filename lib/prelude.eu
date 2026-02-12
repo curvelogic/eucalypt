@@ -386,13 +386,19 @@ or: __OR
     precedence: :prod }
 (l * r): __MUL(l, r)
 
-` { doc: "`l / r` - divides `l` by `r`; both must be numbers; error `r` is zero."
+` { doc: "`l / r` - floor division of `l` by `r`; rounds toward negative infinity; always returns integer."
     export: :suppress
     associates: :left
     precedence: :prod }
 (l / r): __DIV(l, r)
 
-` { doc: "`l % r` - modulus of `l` by `r`; both must be numbers; error `r` is zero."
+` { doc: "`l ÷ r` - precise division of `l` by `r`; returns exact result."
+    export: :suppress
+    associates: :left
+    precedence: :prod }
+(l ÷ r): __PDIV(l, r)
+
+` { doc: "`l % r` - floor modulus of `l` by `r`; result has same sign as `r`."
     export: :suppress
     associates: :left
     precedence: :prod }
@@ -434,6 +440,9 @@ negate: 0 -
 ` "`∸ n` - unary minus; negate."
 (∸ n): negate(n)
 
+` "`abs(n)` - absolute value of number `n`."
+abs(n): if(n < 0, 0 - n, n)
+
 ` "`zero?(n)` - return true if and only if number `n` is 0."
 zero?: = 0
 
@@ -451,6 +460,24 @@ floor: __FLOOR
 
 ` "`ceiling(n)` - round number upwards to nearest integer"
 ceiling: __CEILING
+
+` "`pow(b, e)` - raise `b` to the power `e`"
+pow(b, e): __POW(b, e)
+
+` "`div(a, b)` - floor division; same as `a / b`"
+div(a, b): __DIV(a, b)
+
+` "`mod(a, b)` - floor modulus; same as `a % b`"
+mod(a, b): __MOD(a, b)
+
+` "`quot(a, b)` - truncation division; rounds toward zero"
+quot(a, b): __QUOT(a, b)
+
+` "`rem(a, b)` - truncation remainder; result has same sign as dividend"
+rem(a, b): __REM(a, b)
+
+` "`sum(l)` - sum a list of numbers"
+sum(l): foldl(+, 0, l)
 
 ` "`max(l, r) - return max of numbers `l` and `r`"
 max(l, r): if(l > r, l, r)

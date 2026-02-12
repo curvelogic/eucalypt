@@ -31,6 +31,47 @@ fn is_zero(n: &Number) -> bool {
     n.as_i64() == Some(0) || n.as_u64() == Some(0) || n.as_f64() == Some(0.0)
 }
 
+/// Floor division for signed integers (rounds toward negative infinity).
+///
+/// Differs from Rust's truncating `/` for negative dividends:
+/// `-7 floor_div 2 = -4` vs `-7 / 2 = -3`.
+fn floor_div_i64(a: i64, b: i64) -> Option<i64> {
+    let d = a.checked_div(b)?;
+    let r = a.checked_rem(b)?;
+    // If remainder is non-zero and its sign differs from the divisor,
+    // truncation rounded the wrong way — correct by subtracting 1.
+    if r != 0 && ((r ^ b) < 0) {
+        Some(d - 1)
+    } else {
+        Some(d)
+    }
+}
+
+/// Floor modulus for signed integers (result has same sign as divisor).
+///
+/// Differs from Rust's truncating `%` for negative dividends:
+/// `-7 floor_mod 3 = 2` vs `-7 % 3 = -1`.
+fn floor_mod_i64(a: i64, b: i64) -> Option<i64> {
+    let r = a.checked_rem(b)?;
+    if r != 0 && ((r ^ b) < 0) {
+        Some(r + b)
+    } else {
+        Some(r)
+    }
+}
+
+/// Convert a floored/truncated f64 to an integer Number when possible,
+/// falling back to f64 representation for values outside i64 range.
+fn num_from_floored(val: f64) -> Option<Number> {
+    if val.is_finite() && val >= i64::MIN as f64 && val <= i64::MAX as f64 {
+        let i = val as i64;
+        if (i as f64) == val {
+            return Some(Number::from(i));
+        }
+    }
+    Number::from_f64(val)
+}
+
 /// ADD(l, r) - add l to r
 pub struct Add;
 
@@ -157,7 +198,7 @@ impl StgIntrinsic for Mul {
 
 impl CallGlobal2 for Mul {}
 
-/// DIV(l, r) - div l by r
+/// DIV(l, r) - floor division (rounds toward negative infinity, always integer)
 pub struct Div;
 
 impl StgIntrinsic for Div {
@@ -180,9 +221,7 @@ impl StgIntrinsic for Div {
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let result = l
-                .checked_div(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = floor_div_i64(l, r).ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l
@@ -190,8 +229,9 @@ impl StgIntrinsic for Div {
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-            if let Some(ret) = Number::from_f64(l / r) {
-                machine_return_num(machine, view, ret)
+            let result = (l / r).floor();
+            if let Some(n) = num_from_floored(result) {
+                machine_return_num(machine, view, n)
             } else {
                 Err(ExecutionError::NumericDomainError(x, y))
             }
@@ -203,7 +243,7 @@ impl StgIntrinsic for Div {
 
 impl CallGlobal2 for Div {}
 
-/// MOD(l, r) - mod r from l
+/// MOD(l, r) - floor modulus (result has same sign as divisor)
 pub struct Mod;
 
 impl StgIntrinsic for Mod {
@@ -226,17 +266,17 @@ impl StgIntrinsic for Mod {
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let product = l
-                .checked_rem(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(product))
+            let result = floor_mod_i64(l, r).ok_or(ExecutionError::NumericRangeError(x, y))?;
+            machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let product = l
+            let result = l
                 .checked_rem(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(product))
+            machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-            if let Some(ret) = Number::from_f64(l % r) {
+            let q = (l / r).floor();
+            let result = l - r * q;
+            if let Some(ret) = Number::from_f64(result) {
                 machine_return_num(machine, view, ret)
             } else {
                 Err(ExecutionError::NumericDomainError(x, y))
@@ -508,6 +548,190 @@ impl StgIntrinsic for Floor {
 
 impl CallGlobal1 for Floor {}
 
+/// POW(base, exp) - raise base to the power exp
+///
+/// For integer base and non-negative integer exponent, returns an
+/// integer result. Otherwise uses f64 arithmetic via powf.
+pub struct Pow;
+
+impl StgIntrinsic for Pow {
+    fn name(&self) -> &str {
+        "POW"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let base = num_arg(machine, view, &args[0])?;
+        let exp = num_arg(machine, view, &args[1])?;
+
+        // Integer base with non-negative integer exponent: integer result
+        if let (Some(b), Some(e)) = (base.as_i64(), exp.as_u64()) {
+            if let Some(result) = checked_int_pow(b, e) {
+                return machine_return_num(machine, view, Number::from(result));
+            }
+        } else if let (Some(b), Some(e)) = (base.as_u64(), exp.as_u64()) {
+            if let Some(result) = b.checked_pow(e.try_into().unwrap_or(u32::MAX)) {
+                return machine_return_num(machine, view, Number::from(result));
+            }
+        }
+
+        // Fall back to f64
+        if let (Some(b), Some(e)) = (base.as_f64(), exp.as_f64()) {
+            if let Some(ret) = Number::from_f64(b.powf(e)) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(base, exp))
+            }
+        } else {
+            Err(ExecutionError::NumericDomainError(base, exp))
+        }
+    }
+}
+
+/// Integer exponentiation with overflow checking
+fn checked_int_pow(base: i64, exp: u64) -> Option<i64> {
+    if exp > u32::MAX as u64 {
+        return None;
+    }
+    base.checked_pow(exp as u32)
+}
+
+impl CallGlobal2 for Pow {}
+
+/// PDIV(l, r) - precise division (always returns exact float result)
+pub struct PreciseDiv;
+
+impl StgIntrinsic for PreciseDiv {
+    fn name(&self) -> &str {
+        "PDIV"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+
+        if is_zero(&y) {
+            return Err(ExecutionError::DivisionByZero);
+        }
+
+        if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
+            if let Some(ret) = Number::from_f64(l / r) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, y))
+            }
+        } else {
+            Err(ExecutionError::NumericDomainError(x, y))
+        }
+    }
+}
+
+impl CallGlobal2 for PreciseDiv {}
+
+/// QUOT(l, r) - truncation division (rounds toward zero)
+pub struct Quot;
+
+impl StgIntrinsic for Quot {
+    fn name(&self) -> &str {
+        "QUOT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+
+        if is_zero(&y) {
+            return Err(ExecutionError::DivisionByZero);
+        }
+
+        if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
+            let result = l
+                .checked_div(r)
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
+            let result = l
+                .checked_div(r)
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
+            let result = (l / r).trunc();
+            if let Some(n) = num_from_floored(result) {
+                machine_return_num(machine, view, n)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, y))
+            }
+        } else {
+            Err(ExecutionError::NumericDomainError(x, y))
+        }
+    }
+}
+
+impl CallGlobal2 for Quot {}
+
+/// REM(l, r) - truncation remainder (result has same sign as dividend)
+pub struct Rem;
+
+impl StgIntrinsic for Rem {
+    fn name(&self) -> &str {
+        "REM"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+
+        if is_zero(&y) {
+            return Err(ExecutionError::DivisionByZero);
+        }
+
+        if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
+            let result = l
+                .checked_rem(r)
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
+            let result = l
+                .checked_rem(r)
+                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            machine_return_num(machine, view, Number::from(result))
+        } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
+            if let Some(ret) = Number::from_f64(l % r) {
+                machine_return_num(machine, view, ret)
+            } else {
+                Err(ExecutionError::NumericDomainError(x, y))
+            }
+        } else {
+            Err(ExecutionError::NumericDomainError(x, y))
+        }
+    }
+}
+
+impl CallGlobal2 for Rem {}
+
 #[cfg(test)]
 pub mod tests {
 
@@ -519,7 +743,7 @@ pub mod tests {
     };
 
     pub fn runtime() -> Box<dyn Runtime> {
-        testing::runtime(vec![Box::new(Add), Box::new(Panic)])
+        testing::runtime(vec![Box::new(Add), Box::new(Pow), Box::new(Panic)])
     }
 
     #[test]
@@ -551,5 +775,57 @@ pub mod tests {
         let mut m = testing::machine(rt.as_ref(), syntax);
         m.run(Some(100)).unwrap();
         assert_eq!(m.native_return(), Some(Native::Num(4.into())));
+    }
+
+    #[test]
+    pub fn test_unboxed_pow_int() {
+        let syntax = letrec_(
+            vec![],
+            app_bif(intrinsics::index_u8("POW"), vec![num(2), num(10)]),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.native_return(), Some(Native::Num(1024.into())));
+    }
+
+    #[test]
+    pub fn test_unboxed_pow_zero_exp() {
+        let syntax = letrec_(
+            vec![],
+            app_bif(intrinsics::index_u8("POW"), vec![num(5), num(0)]),
+        );
+        let rt = runtime();
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(100)).unwrap();
+        assert_eq!(m.native_return(), Some(Native::Num(1.into())));
+    }
+
+    #[test]
+    fn test_floor_div_i64() {
+        assert_eq!(floor_div_i64(7, 2), Some(3));
+        assert_eq!(floor_div_i64(-7, 2), Some(-4));
+        assert_eq!(floor_div_i64(7, -2), Some(-4));
+        assert_eq!(floor_div_i64(-7, -2), Some(3));
+        assert_eq!(floor_div_i64(6, 3), Some(2));
+        assert_eq!(floor_div_i64(-6, 3), Some(-2));
+        assert_eq!(floor_div_i64(0, 5), Some(0));
+    }
+
+    #[test]
+    fn test_floor_mod_i64() {
+        assert_eq!(floor_mod_i64(7, 3), Some(1));
+        assert_eq!(floor_mod_i64(-7, 3), Some(2));
+        assert_eq!(floor_mod_i64(7, -3), Some(-2));
+        assert_eq!(floor_mod_i64(-7, -3), Some(-1));
+        assert_eq!(floor_mod_i64(6, 3), Some(0));
+        assert_eq!(floor_mod_i64(0, 5), Some(0));
+    }
+
+    #[test]
+    fn test_num_from_floored() {
+        assert_eq!(num_from_floored(3.0), Some(Number::from(3_i64)));
+        assert_eq!(num_from_floored(-4.0), Some(Number::from(-4_i64)));
+        assert_eq!(num_from_floored(0.0), Some(Number::from(0_i64)));
     }
 }
