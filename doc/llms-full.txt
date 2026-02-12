@@ -6195,6 +6195,12 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 | `num` | Parse number from string |
 | `floor` | Round number downwards to nearest integer |
 | `ceiling` | Round number upwards to nearest integer |
+| `pow(b, e)` | Raise `b` to the power `e` |
+| `div(a, b)` | Floor division; same as `a / b` |
+| `mod(a, b)` | Floor modulus; same as `a % b` |
+| `quot(a, b)` | Truncation division; rounds toward zero |
+| `rem(a, b)` | Truncation remainder; result has same sign as dividend |
+| `sum` | Sum a list of numbers |
 | `max(l, r)` | Return max of numbers `l` and `r` |
 | `max-of(l)` | `max-of(l) - return max element in list of numbers `l` - error if empty` |
 | `min(l, r)` | Return min of numbers `l` and `r` |
@@ -8074,7 +8080,7 @@ From highest to lowest binding:
 | 90 | lookup | left | `.` | Field access / lookup |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
 | 85 | exp | right | `∘`, `;` | Composition |
-| 80 | prod | left | `*`, `/`, `%` | Multiplication, division, modulo |
+| 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
 | 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
 | 45 | append | right | `++`, `<<` | List append, deep merge |

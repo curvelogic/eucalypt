@@ -211,7 +211,7 @@ Special metadata keys: `:target`, `:suppress`, `:main`, `associates`,
 | 90 | `.` | Field access / lookup |
 | 88 | `!`, `¬` (prefix) | Boolean negation |
 | 88 | `∘`, `;` | Composition |
-| 80 | `*`, `/`, `%` | Multiply, divide, modulo |
+| 80 | `*`, `/`, `÷`, `%` | Multiply, floor divide, precise divide, floor modulo |
 | 75 | `+`, `-` | Add, subtract |
 | 50 | `<`, `>`, `<=`, `>=` | Comparison |
 | 45 | `++`, `<<` | List append, deep merge |
@@ -522,7 +522,11 @@ check: is-even(4) //=> true
 | `abs` / `negate` | Absolute value / negate |
 | `inc` / `dec` | Increment / decrement |
 | `max(a, b)` / `min(a, b)` | Maximum / minimum |
-| `floor` / `ceil` / `round` | Rounding |
+| `floor` / `ceiling` | Round down / up to integer |
+| `pow(b, e)` | Exponentiation |
+| `div` / `mod` | Floor division / modulus (same as `/`, `%`) |
+| `quot` / `rem` | Truncation division / remainder |
+| `sum` | Sum a list of numbers |
 | `block?` / `list?` | Type predicates |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 

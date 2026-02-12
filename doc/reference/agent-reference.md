@@ -230,7 +230,7 @@ From highest (tightest) to lowest binding:
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
 | 88 | -- | -- | `∘`, `;` | Composition (actual prec 88 from prelude) |
 | 85 | exp | -- | `!!` (nth) | Indexing |
-| 80 | prod | left | `*`, `/`, `%` | Multiplication, division, modulo |
+| 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
 | 60 | shift | -- | (shift ops) | Reserved |
 | 55 | bitwise | -- | (bitwise ops) | Reserved |

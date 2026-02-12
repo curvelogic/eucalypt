@@ -119,7 +119,8 @@ add(1)           # returns a function adding 1
 # Sections (operator with gaps)
 (+ 1)            # function: add 1
 (* 2)            # function: multiply by 2
-(/)              # function: divide (two params)
+(/)              # function: floor divide (two params)
+(÷)              # function: precise divide (two params)
 ```
 
 ## Lookup and Generalised Lookup
@@ -164,7 +165,7 @@ From highest to lowest binding:
 | 90 | lookup | left | `.` | Field access / lookup |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
 | 85 | exp | right | `∘`, `;` | Composition |
-| 80 | prod | left | `*`, `/`, `%` | Multiplication, division, modulo |
+| 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
 | 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
 | 45 | append | right | `++`, `<<` | List append, deep merge |

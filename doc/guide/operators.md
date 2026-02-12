@@ -63,7 +63,7 @@ The prelude defines the standard precedence levels:
 | 90 | lookup | `.` |
 | 88 | bool-unary | `!`, `¬` |
 | 85 | exp | `!!` (nth) |
-| 80 | prod | `*`, `/`, `%` |
+| 80 | prod | `*`, `/`, `÷`, `%` |
 | 75 | sum | `+`, `-` |
 | 60 | shift | (shift operators) |
 | 55 | bitwise | (bitwise operators) |

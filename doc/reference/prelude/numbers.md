@@ -19,6 +19,12 @@
 | `num` | Parse number from string |
 | `floor` | Round number downwards to nearest integer |
 | `ceiling` | Round number upwards to nearest integer |
+| `pow(b, e)` | Raise `b` to the power `e` |
+| `div(a, b)` | Floor division; same as `a / b` |
+| `mod(a, b)` | Floor modulus; same as `a % b` |
+| `quot(a, b)` | Truncation division; rounds toward zero |
+| `rem(a, b)` | Truncation remainder; result has same sign as dividend |
+| `sum` | Sum a list of numbers |
 | `max(l, r)` | Return max of numbers `l` and `r` |
 | `max-of(l)` | `max-of(l) - return max element in list of numbers `l` - error if empty` |
 | `min(l, r)` | Return min of numbers `l` and `r` |
