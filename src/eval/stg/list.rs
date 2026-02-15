@@ -1,5 +1,7 @@
 //! List intrinsics
 
+use std::convert::TryInto;
+
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -11,10 +13,11 @@ use crate::{
 };
 
 use super::{
+    force::SeqNumList,
     panic::Panic,
-    support::machine_return_bool,
+    support::{data_list_arg, machine_return_bool},
     syntax::{
-        dsl::{annotated_lambda, case, data, local, lref, str, value},
+        dsl::{annotated_lambda, app_bif, case, data, force, local, lref, str, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -131,3 +134,139 @@ impl StgIntrinsic for IsList {
 }
 
 impl CallGlobal1 for IsList {}
+
+/// SORT_NUM_LIST — sort a list of numbers in Rust
+///
+/// The wrapper first applies SeqNumList to force and unbox all elements,
+/// then calls the execute method which sorts in Rust and returns a
+/// sorted list of boxed numbers.
+pub struct SortNumList;
+
+impl StgIntrinsic for SortNumList {
+    fn name(&self) -> &str {
+        "SORT_NUM_LIST"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            1, // [xs]
+            force(
+                SeqNumList.global(lref(0)),
+                // [concrete_list] [xs]
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+            annotation,
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::{
+            alloc::ScopedAllocator,
+            array::Array,
+            syntax::{HeapSyn, LambdaForm, Native, StgBuilder},
+        };
+
+        // Walk the concrete list and collect numbers
+        let iter = data_list_arg(machine, view, args[0].clone())?;
+        let mut numbers: Vec<f64> = Vec::new();
+        for item_result in iter {
+            let item_closure = item_result?;
+            let code = view.scoped(item_closure.code());
+            match &*code {
+                HeapSyn::Atom { evaluand } => {
+                    let native = item_closure.navigate_local_native(&view, evaluand.clone());
+                    match native {
+                        Native::Num(n) => {
+                            numbers.push(n.as_f64().unwrap_or(0.0));
+                        }
+                        _ => {
+                            return Err(ExecutionError::Panic(
+                                "non-numeric value in sort".to_string(),
+                            ))
+                        }
+                    }
+                }
+                HeapSyn::Cons {
+                    tag: _,
+                    args: cargs,
+                } => {
+                    // Handle boxed numbers
+                    let inner_ref = cargs.get(0).ok_or_else(|| {
+                        ExecutionError::Panic("empty boxed value in sort".to_string())
+                    })?;
+                    let native = item_closure.navigate_local_native(&view, inner_ref.clone());
+                    match native {
+                        Native::Num(n) => {
+                            numbers.push(n.as_f64().unwrap_or(0.0));
+                        }
+                        _ => {
+                            return Err(ExecutionError::Panic(
+                                "non-numeric value in sort".to_string(),
+                            ))
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ExecutionError::Panic(
+                        "unexpected value in sort".to_string(),
+                    ))
+                }
+            }
+        }
+
+        // Sort
+        numbers.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Build sorted list of boxed numbers in reverse
+        let mut bindings = vec![LambdaForm::value(
+            view.alloc(HeapSyn::Cons {
+                tag: DataConstructor::ListNil.tag(),
+                args: Array::default(),
+            })?
+            .as_ptr(),
+        )];
+
+        for &num in numbers.iter().rev() {
+            let n =
+                serde_json::Number::from_f64(num).unwrap_or_else(|| serde_json::Number::from(0));
+            // Box the number
+            bindings.push(LambdaForm::value(
+                view.alloc(HeapSyn::Cons {
+                    tag: DataConstructor::BoxedNumber.tag(),
+                    args: Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
+                })?
+                .as_ptr(),
+            ));
+            // Cons it onto the list
+            let len = bindings.len();
+            bindings.push(LambdaForm::value(
+                view.alloc(HeapSyn::Cons {
+                    tag: DataConstructor::ListCons.tag(),
+                    args: Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
+                })?
+                .as_ptr(),
+            ));
+        }
+
+        let list_index = bindings.len() - 1;
+        let syn = view
+            .letrec(
+                Array::from_slice(&view, &bindings),
+                view.atom(Ref::L(list_index))?,
+            )?
+            .as_ptr();
+        machine.set_closure(crate::eval::machine::env::SynClosure::new(
+            syn,
+            machine.root_env(),
+        ))
+    }
+}
+
+impl CallGlobal1 for SortNumList {}

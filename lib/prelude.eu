@@ -911,8 +911,8 @@ qsort(lt, xs): if(xs nil?,
                     bigger: partitions second qsort(lt)
                   }.(smaller ++ [h] ++ bigger))
 
-` "`sort-nums(xs)` - sort list of numbers ascending."
-sort-nums(xs): xs qsort(<)
+` "`sort-nums(xs)` - sort list of numbers ascending (Rust-level intrinsic)."
+sort-nums: '__SORT_NUM_LIST'
 
 ` "`sort-strs(xs)` - sort list of strings or symbols ascending."
 sort-strs(xs): xs qsort(<)

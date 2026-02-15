@@ -155,6 +155,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(prng::PrngFloat));
     rt.add(Box::new(stream_intrinsic::StreamNext));
     rt.add(Box::new(block::LookupFail));
+    rt.add(Box::new(force::SeqNumList));
+    rt.add(Box::new(list::SortNumList));
     rt.prepare(source_map);
     Box::new(rt)
 }

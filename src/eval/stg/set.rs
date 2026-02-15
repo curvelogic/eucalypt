@@ -3,22 +3,75 @@
 //! These intrinsics operate on `Native::Set` values, providing
 //! construction, membership, mutation, and set algebra.
 
-use crate::eval::{
-    emit::Emitter,
-    error::ExecutionError,
-    machine::intrinsic::{CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
-    memory::{
-        mutator::MutatorHeapView,
-        set::HeapSet,
-        syntax::{HeapSyn, Native, Ref},
+use std::convert::TryInto;
+
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{
+            CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
+        },
+        memory::{
+            mutator::MutatorHeapView,
+            set::HeapSet,
+            syntax::{HeapSyn, Native, Ref},
+        },
+        stg::tags::DataConstructor,
     },
-    stg::tags::DataConstructor,
 };
 
-use super::support::{
-    data_list_arg, machine_return_bool, machine_return_num, machine_return_set,
-    native_to_set_primitive, resolve_native_unboxing, set_arg, set_primitive_to_native,
+use super::{
+    support::{
+        data_list_arg, machine_return_bool, machine_return_num, machine_return_set,
+        native_to_set_primitive, resolve_native_unboxing, set_arg, set_primitive_to_native,
+    },
+    syntax::{
+        dsl::{annotated_lambda, app_bif, case, force, local, lref},
+        LambdaForm,
+    },
 };
+
+/// Create a wrapper for a 2-arg set intrinsic that deeply forces arg 0
+/// (the element) and forces arg 1 (the set).
+///
+/// The standard `force` only evaluates to WHNF, which for a computed
+/// number leaves `BoxedNumber(thunk)` — the inner thunk is not
+/// evaluated. This wrapper adds case branches for all box types to
+/// force the inner value before calling the intrinsic.
+fn element_set_wrapper(index: usize, annotation: Smid) -> LambdaForm {
+    let bif_index: u8 = index.try_into().unwrap();
+
+    // After force(set) + case(element) + force(inner):
+    //   env = [forced_inner][inner][forced_set][element, set]
+    //   element at lref(0), set at lref(2)
+    let bif_box = app_bif(bif_index, vec![lref(0), lref(2)]);
+    let force_inner = force(local(0), bif_box);
+
+    // After force(set) + fallback(element):
+    //   env = [forced_element][forced_set][element, set]
+    //   element at lref(0), set at lref(1)
+    let bif_fallback = app_bif(bif_index, vec![lref(0), lref(1)]);
+
+    annotated_lambda(
+        2, // [element, set]
+        force(
+            local(1), // force set
+            case(
+                local(1), // case on element (shifted by 1 due to force)
+                vec![
+                    (DataConstructor::BoxedNumber.tag(), force_inner.clone()),
+                    (DataConstructor::BoxedSymbol.tag(), force_inner.clone()),
+                    (DataConstructor::BoxedString.tag(), force_inner.clone()),
+                    (DataConstructor::BoxedZdt.tag(), force_inner),
+                ],
+                bif_fallback,
+            ),
+        ),
+        annotation,
+    )
+}
 
 /// SET.EMPTY — return an empty set
 pub struct SetEmpty;
@@ -181,6 +234,10 @@ impl StgIntrinsic for SetAdd {
         "SET.ADD"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        element_set_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -205,6 +262,10 @@ impl StgIntrinsic for SetRemove {
         "SET.REMOVE"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        element_set_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -227,6 +288,10 @@ pub struct SetContains;
 impl StgIntrinsic for SetContains {
     fn name(&self) -> &str {
         "SET.CONTAINS"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        element_set_wrapper(self.index(), annotation)
     }
 
     fn execute(
