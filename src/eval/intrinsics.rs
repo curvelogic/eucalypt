@@ -623,6 +623,11 @@ lazy_static! {
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 116
+            name: "KRUSKAL_LAST",
+            ty: function(vec![list(), list(), num()]).unwrap(),
+            strict: vec![],
+    },
 
     ];
 }
