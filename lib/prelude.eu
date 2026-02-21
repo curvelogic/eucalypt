@@ -485,6 +485,9 @@ rem(a, b): __REM(a, b)
 ` "`sum(l)` - sum a list of numbers"
 sum(l): foldl(+, 0, l)
 
+` "`product(l)` - multiply a list of numbers"
+product(l): foldl(*, 1, l)
+
 ` "`max(l, r) - return max of numbers `l` and `r`"
 max(l, r): if(l > r, l, r)
 
@@ -645,6 +648,7 @@ curry(f, x, y): f([x, y])
 
 ` "`uncurry(f)` - turn f(x, y) into f' that expects [x, y] as a list."
 uncurry(f, l): f(first(l), second(l))
+
 
 ` "`cond(l)` - in list `l` of [condition, value] select first true condition, returning value, else default `d`."
 cond(l, d): l foldr(uncurry(if), d)
