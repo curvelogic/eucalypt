@@ -129,6 +129,9 @@ head: __HEAD
 ` "`nil?(xs)` - `true` if list `xs` is empty, `false` otherwise."
 nil?: = []
 
+` "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
+non-nil?: nil? complement
+
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
 head-or(d, xs): xs nil? then(d, xs head)
 
@@ -803,11 +806,17 @@ scanr(op, i, l): if(l nil?, [i], { scan: scanr(op, i, l tail) }.(cons(op(l head,
 ` "`iterate(f, i) - return list of `i` with subsequent repeated applications of `f` to `i`"
 iterate(f, i): cons(i, iterate(f, f(i)))
 
+` "`tails(l)` - return list of successive tails of `l`: `[l, tail(l), tail(tail(l)), ...]`."
+tails(l): iterate(tail, l) take-while(non-nil?)
+
 ` "`iota(n)` - return infinite list of integers from `n` upwards"
 iota(n): cons(n, iota(n + 1))
 
 ` "`ints-from(n)` - return infinite list of integers from `n` upwards, alias `iota` for backwards compatibility`"
 ints-from: iota
+
+` "`ℕ` - the natural numbers: `[0, 1, 2, ...]`."
+ℕ: iota(0)
 
 ` "range(b, e)` - return list of ints from `b` to `e` (not including `e`)"
 range(b, e): ints-from(b) take(e - b)
