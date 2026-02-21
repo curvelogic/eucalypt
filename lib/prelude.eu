@@ -499,6 +499,9 @@ max-of(l): cond( [[l nil?,      panic("max of empty list")]
                , [count(l) = 1, l head]]
 	       , max(l head, max-of(l tail)))
 
+` "`max-of-by(f, l)` - return maximum value of `f(x)` across elements of `l`."
+max-of-by(f, l): l map(f) max-of
+
 ` "`min(l, r) - return min of numbers `l` and `r`"
 min(l, r): if(l < r, l, r)
 
@@ -506,6 +509,9 @@ min(l, r): if(l < r, l, r)
 min-of(l): cond( [[l nil?,      panic("min of empty list")]
                , [count(l) = 1, l head]]
 	       , min(l head, min-of(l tail)))
+
+` "`min-of-by(f, l)` - return minimum value of `f(x)` across elements of `l`."
+min-of-by(f, l): l map(f) min-of
 
 ##
 ## Text and regexes
