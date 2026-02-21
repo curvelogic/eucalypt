@@ -921,6 +921,20 @@ group-by(k, xs): {
   acc(a, e): a update-value-or(e._k, cons(e._v), [e._v])
 }.(xs map({ _k: k(•0), _v: •0 }) foldl(acc, {}) map-values(reverse))
 
+` "`group-consecutive-by(f, xs)` - group consecutive elements where `f` returns equal values into sublists."
+group-consecutive-by(f, xs): if(xs nil?, [],
+  if(tail(xs) nil?, [xs], {
+    rest: group-consecutive-by(f, tail(xs))
+  }.(if(f(head(xs)) = f(head(head(rest))),
+    cons(cons(head(xs), head(rest)), tail(rest)),
+    cons([head(xs)], rest)))))
+
+` "`group-consecutive(xs)` - group consecutive equal elements into sublists."
+group-consecutive: group-consecutive-by(identity)
+
+` "`uniq(xs)` - remove consecutive duplicates from a list."
+uniq(xs): xs group-consecutive map(head)
+
 ` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`"
 qsort(lt, xs): if(xs nil?,
                   xs,
