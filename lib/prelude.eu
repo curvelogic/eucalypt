@@ -502,6 +502,9 @@ max-of(l): cond( [[l nil?,      panic("max of empty list")]
 ` "`max-of-by(f, l)` - return maximum value of `f(x)` across elements of `l`."
 max-of-by(f, l): l map(f) max-of
 
+` "`max-of-or(d, l)` - return max element in list `l`, or default `d` if empty."
+max-of-or(d, l): l nil? then(d, max-of(l))
+
 ` "`min(l, r) - return min of numbers `l` and `r`"
 min(l, r): if(l < r, l, r)
 
@@ -512,6 +515,9 @@ min-of(l): cond( [[l nil?,      panic("min of empty list")]
 
 ` "`min-of-by(f, l)` - return minimum value of `f(x)` across elements of `l`."
 min-of-by(f, l): l map(f) min-of
+
+` "`min-of-or(d, l)` - return min element in list `l`, or default `d` if empty."
+min-of-or(d, l): l nil? then(d, min-of(l))
 
 ##
 ## Text and regexes
@@ -758,6 +764,9 @@ take(n, l): __IF((n zero?) ∨ (l nil?), [], cons(l head, take(n dec, l tail)))
 ` "`drop(n, l)` - return result of dropping integer `n` elements from list `l`."
 drop(n, l): __IF((n zero?), l, drop(n dec, l tail))
 
+` "`rotate(n, l)` - rotate list `l` left by `n` positions."
+rotate(n, l): { s: split-at(n, l) }.(second(s) ++ first(s))
+
 ` "'split-at(n, l) - split list in to at `n`th item and return pair."
 split-at(n, l): {
   aux(n, xs, prefix): if((xs nil?) ∨ (n zero?), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
@@ -949,6 +958,18 @@ qsort(lt, xs): if(xs nil?,
 
 ` "`sort-nums(xs)` - sort list of numbers ascending (Rust-level intrinsic)."
 sort-nums: '__SORT_NUM_LIST'
+
+` "`running-max(nums)` - running maximum over a number list.
+`[3, 1, 4, 1]` → `[3, 3, 4, 4]`. (Rust-level intrinsic)."
+running-max: '__RUNNING_MAX'
+
+` "`running-min(nums)` - running minimum over a number list.
+`[3, 1, 4, 1]` → `[3, 1, 1, 1]`. (Rust-level intrinsic)."
+running-min: '__RUNNING_MIN'
+
+` "`running-sum(nums)` - cumulative sum over a number list.
+`[3, 1, 4, 1]` → `[3, 4, 8, 9]`. (Rust-level intrinsic)."
+running-sum: '__RUNNING_SUM'
 
 ` "`sort-strs(xs)` - sort list of strings or symbols ascending."
 sort-strs(xs): xs qsort(<)
@@ -1166,3 +1187,28 @@ set: {
 
 ` "`∅` - the empty set."
 (∅): '__SET.EMPTY'
+
+
+
+##
+## Graph algorithms
+##
+
+` { export: :suppress
+    doc: "Graph algorithms on integer-indexed nodes [0..n-1]. EXPERIMENTAL." }
+graph: {
+  ` "`graph.union-find(n, edges)` - connected components via union-find.
+  Given `n` nodes and `edges` as `[[i,j],...]`, return list of n component labels."
+  union-find(n, edges): __GRAPH_UNION_FIND(edges concat, [n])
+
+  ` "`graph.topo-sort(n, edges)` - topological ordering via Kahn's algorithm.
+  Given `n` nodes and directed `edges` as `[[from,to],...]`, return node ordering.
+  Partial result if cycle exists (check count(result) = n)."
+  topo-sort(n, edges): __GRAPH_TOPO_SORT(edges concat, [n])
+
+  ` "`graph.kruskal-edges(n, edges)` - Kruskal-order merge history.
+  Process `edges` in order via union-find. Return flat list of
+  `[edge-index, remaining-components, ...]` for each edge that merges
+  two distinct components."
+  kruskal-edges(n, edges): __GRAPH_KRUSKAL_EDGES(edges concat, [n])
+}

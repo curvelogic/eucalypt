@@ -11,6 +11,9 @@ pub mod emit;
 pub mod encoding;
 pub mod eq;
 pub mod force;
+pub mod graph;
+pub mod pack;
+pub mod running;
 pub mod json_to_stg;
 pub mod list;
 pub mod meta;
@@ -157,7 +160,13 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(block::LookupFail));
     rt.add(Box::new(force::SeqNumList));
     rt.add(Box::new(list::SortNumList));
-    rt.add(Box::new(list::KruskalLast));
+    rt.add(Box::new(graph::GraphUnionFind));
+    rt.add(Box::new(graph::GraphTopoSort));
+    rt.add(Box::new(graph::GraphKruskalEdges));
+    rt.add(Box::new(pack::PackCheck));
+    rt.add(Box::new(running::RunningMax));
+    rt.add(Box::new(running::RunningMin));
+    rt.add(Box::new(running::RunningSum));
     rt.prepare(source_map);
     Box::new(rt)
 }

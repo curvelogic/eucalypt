@@ -624,11 +624,40 @@ lazy_static! {
             strict: vec![0],
     },
     Intrinsic { // 116
-            name: "KRUSKAL_LAST",
-            ty: function(vec![list(), list(), num()]).unwrap(),
+            name: "GRAPH_UNION_FIND",
+            ty: function(vec![list(), num(), list()]).unwrap(),
             strict: vec![],
     },
-
+    Intrinsic { // 117
+            name: "GRAPH_TOPO_SORT",
+            ty: function(vec![list(), num(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 118
+            name: "GRAPH_KRUSKAL_EDGES",
+            ty: function(vec![list(), num(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 119
+            name: "RUNNING_MAX",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 120
+            name: "RUNNING_MIN",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 121
+            name: "RUNNING_SUM",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 122
+            name: "PACK_CHECK",
+            ty: function(vec![list(), list(), bool_()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

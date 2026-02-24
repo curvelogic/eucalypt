@@ -1,0 +1,53 @@
+##
+## 083: Running aggregate intrinsics — running-max, running-min, running-sum
+##
+
+tests: {
+
+  running-max-basic: {
+    ` "Running maximum tracks the max seen so far"
+    a: [3, 1, 4, 1, 5, 9] running-max //= [3, 3, 4, 4, 5, 9]
+  }
+
+  running-max-empty: {
+    ` "Empty list returns empty"
+    a: [] running-max //= []
+  }
+
+  running-max-single: {
+    ` "Single element passes through"
+    a: [7] running-max //= [7]
+  }
+
+  running-max-descending: {
+    ` "Descending input: all elements equal the first"
+    a: [5, 4, 3, 2, 1] running-max //= [5, 5, 5, 5, 5]
+  }
+
+  running-min-basic: {
+    ` "Running minimum tracks the min seen so far"
+    a: [3, 1, 4, 1, 5, 9] running-min //= [3, 1, 1, 1, 1, 1]
+  }
+
+  running-min-ascending: {
+    ` "Ascending input: all elements equal the first"
+    a: [1, 2, 3, 4, 5] running-min //= [1, 1, 1, 1, 1]
+  }
+
+  running-sum-basic: {
+    ` "Cumulative sum"
+    a: [3, 1, 4, 1, 5] running-sum //= [3, 4, 8, 9, 14]
+  }
+
+  running-sum-empty: {
+    ` "Empty list returns empty"
+    a: [] running-sum //= []
+  }
+
+  running-sum-negatives: {
+    ` "Handles negative numbers"
+    a: [1, -2, 3, -4] running-sum //= [1, -1, 2, -2]
+  }
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)
