@@ -840,6 +840,11 @@ split-at(n, l): {
   aux(n, xs, prefix): if((xs nil?) ∨ (n zero?), [prefix reverse, xs], aux(n dec, xs tail, cons(xs head, prefix)))
 }.aux(n, l, [])
 
+` "`transpose(rows)` - transpose a matrix (list of lists)."
+transpose(rows): {
+  aux(rs): if(rs head nil?, [], cons(rs map(head), aux(rs map(tail))))
+}.aux(rows)
+
 ` "`take-while(p?, l)` - initial elements of list `l` while `p?` is true."
 take-while(p?, l): {
   aux(xs, prefix): if(not(xs nil?) ∧ (xs head p?), aux(xs tail, cons(xs head, prefix)), prefix reverse)
@@ -877,6 +882,9 @@ repeat(i): __CONS(i, repeat(i))
 ` "`foldl(op, i, l)` - left fold operator `op` over list `l` starting from value `i` "
 foldl(op, i, l): if(l nil?, i, foldl(op, op(i, l head), l tail))
 
+` "`reduce(op, l)` - left fold with no initial value; uses first element as seed. Panics on empty list."
+reduce(op, l): foldl(op, l head, l tail)
+
 ` "`foldr(op, i, l)` - right fold operator `op` over list `l` ending with value `i` "
 foldr(op, i, l): if(l nil?, i, op(l head, foldr(op, i, l tail)))
 
@@ -909,6 +917,9 @@ count(l): foldl({ n: • el: •}.(n inc), 0, l)
 
 ` "`last(l)` - return last element of list `l`"
 last: head ∘ reverse
+
+` "`butlast(l)` - return all elements of list `l` except the last."
+butlast(l): l reverse tail reverse
 
 ` "`cycle(l)` - create infinite list by cycling elements of list `l`"
 cycle(l): if(l nil?, [], l ++ cycle(l))
