@@ -485,6 +485,74 @@ quot(a, b): __QUOT(a, b)
 ` "`rem(a, b)` - truncation remainder; result has same sign as dividend"
 rem(a, b): __REM(a, b)
 
+# --- Bitwise operators ---
+
+` { doc: "`l & r` - bitwise AND of integers `l` and `r`."
+    export: :suppress
+    associates: :left
+    precedence: :bitwise }
+(l & r): __BITAND(l, r)
+
+` { doc: "`l | r` - bitwise OR of integers `l` and `r`."
+    export: :suppress
+    associates: :left
+    precedence: :bitwise }
+(l | r): __BITOR(l, r)
+
+` { doc: "`l ⊕ r` - bitwise XOR of integers `l` and `r`."
+    export: :suppress
+    associates: :left
+    precedence: :bitwise }
+(l ⊕ r): __BITXOR(l, r)
+
+` { doc: "`~ n` - bitwise NOT of integer `n`."
+    export: :suppress
+    precedence: :bool-unary }
+(~ n): __BITNOT(n)
+
+` { doc: "`n ≪ k` - left shift `n` by `k` bits."
+    export: :suppress
+    associates: :left
+    precedence: :shift }
+(n ≪ k): __SHL(n, k)
+
+` { doc: "`n ≫ k` - arithmetic right shift `n` by `k` bits."
+    export: :suppress
+    associates: :left
+    precedence: :shift }
+(n ≫ k): __SHR(n, k)
+
+` { export: :suppress
+    doc: "Bitwise utility functions for integer bit manipulation." }
+bit: {
+  ` "Bitwise AND of integers `l` and `r`."
+  and(l, r): __BITAND(l, r)
+
+  ` "Bitwise OR of integers `l` and `r`."
+  or(l, r): __BITOR(l, r)
+
+  ` "Bitwise XOR of integers `l` and `r`."
+  xor(l, r): __BITXOR(l, r)
+
+  ` "Bitwise NOT of integer `n`."
+  not(n): __BITNOT(n)
+
+  ` "Left shift `n` by `k` bits."
+  shl(n, k): __SHL(n, k)
+
+  ` "Arithmetic right shift `n` by `k` bits."
+  shr(n, k): __SHR(n, k)
+
+  ` "Count set bits in integer `n`."
+  popcount(n): __POPCOUNT(n)
+
+  ` "Count trailing zeros in integer `n` (position of lowest set bit). Returns 64 if n is 0."
+  ctz(n): __CTZ(n)
+
+  ` "Count leading zeros in integer `n`."
+  clz(n): __CLZ(n)
+}
+
 ` "`sum(l)` - sum a list of numbers"
 sum(l): foldl(+, 0, l)
 

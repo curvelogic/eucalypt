@@ -415,6 +415,11 @@ pub fn test_harness_083() {
 }
 
 #[test]
+pub fn test_harness_084() {
+    run_test(&opts("084_bitwise.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

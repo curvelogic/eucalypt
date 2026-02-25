@@ -654,9 +654,49 @@ lazy_static! {
             strict: vec![],
     },
     Intrinsic { // 122
-            name: "PACK_CHECK",
-            ty: function(vec![list(), list(), bool_()]).unwrap(),
-            strict: vec![],
+            name: "BITAND",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 123
+            name: "BITOR",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 124
+            name: "BITXOR",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 125
+            name: "BITNOT",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 126
+            name: "SHL",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 127
+            name: "SHR",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 128
+            name: "POPCOUNT",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 129
+            name: "CTZ",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 130
+            name: "CLZ",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
     },
     ];
 }

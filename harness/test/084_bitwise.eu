@@ -1,0 +1,83 @@
+##
+## 084: Bitwise intrinsics — AND, OR, XOR, NOT, shifts, popcount, ctz, clz
+##
+
+tests: {
+
+  bitwise-and: {
+    ` "Basic AND"
+    a: (12 & 10) //= 8
+    ` "AND with zero"
+    b: (255 & 0) //= 0
+    ` "AND identity"
+    c: (255 & 255) //= 255
+  }
+
+  bitwise-or: {
+    ` "Basic OR"
+    a: (12 | 10) //= 14
+    ` "OR with zero"
+    b: (0 | 42) //= 42
+  }
+
+  bitwise-xor: {
+    ` "Basic XOR"
+    a: (12 ⊕ 10) //= 6
+    ` "XOR with self is zero"
+    b: (42 ⊕ 42) //= 0
+  }
+
+  bitwise-not: {
+    ` "NOT of zero is -1"
+    a: (~ 0) //= (0 - 1)
+    ` "NOT of -1 is zero"
+    b: (~ (0 - 1)) //= 0
+  }
+
+  shifts: {
+    ` "Left shift 1 by 10"
+    a: (1 ≪ 10) //= 1024
+    ` "Left shift by 0 is identity"
+    b: (42 ≪ 0) //= 42
+    ` "Right shift 1024 by 5"
+    c: (1024 ≫ 5) //= 32
+    ` "Right shift by 0 is identity"
+    d: (42 ≫ 0) //= 42
+  }
+
+  popcount: {
+    ` "popcount of 255 is 8"
+    a: bit.popcount(255) //= 8
+    ` "popcount of 0 is 0"
+    b: bit.popcount(0) //= 0
+    ` "popcount of 1 is 1"
+    c: bit.popcount(1) //= 1
+  }
+
+  ctz: {
+    ` "ctz of 0 is 64"
+    a: bit.ctz(0) //= 64
+    ` "ctz of 8 is 3"
+    b: bit.ctz(8) //= 3
+    ` "ctz of 1 is 0"
+    c: bit.ctz(1) //= 0
+  }
+
+  clz: {
+    ` "clz of 1 is 63"
+    a: bit.clz(1) //= 63
+    ` "clz of 0 is 64"
+    b: bit.clz(0) //= 64
+  }
+
+  combined: {
+    ` "Set and test a bit"
+    a: { mask: 1 ≪ 5
+         val: 0 | mask
+       }.(val & mask) //= 32
+    ` "popcount after OR"
+    b: bit.popcount(3 | 12) //= 4
+  }
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)
