@@ -1023,6 +1023,34 @@ group-consecutive: group-consecutive-by(identity)
 ` "`uniq(xs)` - remove consecutive duplicates from a list."
 uniq(xs): xs group-consecutive map(head)
 
+` "`nub-by(key, xs)` - remove duplicates from `xs`, keeping the first
+occurrence of each distinct `key(x)` value. Unlike `uniq`, works on
+non-consecutive duplicates."
+nub-by(key, xs): {
+  step(acc, x): {
+    seen: acc first
+    result: acc second
+    k: key(x)
+  }.(seen any(= k) then(acc, [seen ++ [k], result ++ [x]]))
+}.(foldl(step, [[], []], xs) second)
+
+` "`split-on(pred, xs)` - split list `xs` into sublists, breaking on
+elements that satisfy `pred`. Matching elements are discarded."
+split-on(pred, xs): {
+  step(acc, x):
+    pred(x) then(acc ++ [[]], {
+      groups: butlast(acc)
+      current: last(acc)
+    }.(groups ++ [current ++ [x]]))
+}.(foldl(step, [[]], xs))
+
+` "`list-update(ls, i, f)` - replace element at index `i` in list `ls`
+with `f` applied to it. Returns unmodified list if `i` is out of range."
+list-update(ls, i, f):
+  ls nil? then([],
+    i = 0 then([f(head(ls))] ++ tail(ls),
+               [head(ls)] ++ list-update(tail(ls), i - 1, f)))
+
 ` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`"
 qsort(lt, xs): if(xs nil?,
                   xs,
@@ -1108,6 +1136,9 @@ map-as-block(f, syms): syms map({k: •}.[k, f(k)]) block
 
 ` "`pair(k, v)` - form a block element from key (symbol) `k` and value `v`."
 pair(k, v): [k, v]
+
+` "`kv-block(k, v)` - create a single-entry block from key `k` and value `v`."
+kv-block(k, v): block([[k, v]])
 
 ` "`zip-kv(ks, vs)` - create a block by zipping together keys `ks` and values `vs`."
 zip-kv(ks, vs): zip-with(pair, ks, vs) block
