@@ -1,0 +1,75 @@
+##
+## 082: Graph algorithm intrinsics — union-find, topo-sort, kruskal-edges
+##
+
+tests: {
+
+  union-find-no-edges: {
+    ` "No edges: every node is its own component"
+    a: graph.union-find(3, []) //= [0, 1, 2]
+  }
+
+  union-find-self-loop: {
+    ` "Self-loops have no effect"
+    a: graph.union-find(2, [[0,0], [1,1]]) //= [0, 1]
+  }
+
+  union-find-single-component: {
+    ` "All nodes connected: single distinct label"
+    a: count(graph.union-find(3, [[0,1], [1,2]])) //= 3
+    b: graph.union-find(3, [[0,1], [1,2]]) sort-nums uniq count //= 1
+  }
+
+  union-find-two-components: {
+    ` "Two separate components: two distinct labels"
+    a: count(graph.union-find(4, [[0,1], [2,3]])) //= 4
+    b: graph.union-find(4, [[0,1], [2,3]]) sort-nums uniq count //= 2
+  }
+
+  topo-sort-linear: {
+    ` "Linear chain 0→1→2"
+    a: graph.topo-sort(3, [[0,1], [1,2]]) //= [0, 1, 2]
+  }
+
+  topo-sort-no-edges: {
+    ` "No edges: all nodes appear"
+    a: count(graph.topo-sort(3, [])) //= 3
+  }
+
+  topo-sort-diamond: {
+    ` "Diamond DAG: first is 0, last is 3"
+    a: count(graph.topo-sort(4, [[0,1], [0,2], [1,3], [2,3]])) //= 4
+    b: graph.topo-sort(4, [[0,1], [0,2], [1,3], [2,3]]) !! 0 //= 0
+    c: graph.topo-sort(4, [[0,1], [0,2], [1,3], [2,3]]) !! 3 //= 3
+  }
+
+  topo-sort-cycle: {
+    ` "Cycle: partial result (count < n)"
+    a: count(graph.topo-sort(3, [[0,1], [1,2], [2,0]])) < 3
+  }
+
+  kruskal-edges-triangle: {
+    ` "Triangle: 3 nodes, 3 edges. Two merges needed (n-1=2)."
+    a: count(graph.kruskal-edges(3, [[0,1], [1,2], [0,2]])) //= 4
+    ` "First merge: edge 0 reduces components from 3 to 2"
+    b: graph.kruskal-edges(3, [[0,1], [1,2], [0,2]]) !! 0 //= 0
+    c: graph.kruskal-edges(3, [[0,1], [1,2], [0,2]]) !! 1 //= 2
+    ` "Second merge: edge 1 reduces components from 2 to 1"
+    d: graph.kruskal-edges(3, [[0,1], [1,2], [0,2]]) !! 2 //= 1
+    e: graph.kruskal-edges(3, [[0,1], [1,2], [0,2]]) !! 3 //= 1
+  }
+
+  kruskal-edges-no-edges: {
+    ` "No edges: no merges"
+    a: graph.kruskal-edges(3, []) //= []
+  }
+
+  kruskal-edges-redundant: {
+    ` "Redundant edge: only one merge for already-connected pair"
+    a: count(graph.kruskal-edges(2, [[0,1], [0,1]])) //= 2
+    b: graph.kruskal-edges(2, [[0,1], [0,1]]) !! 0 //= 0
+    c: graph.kruskal-edges(2, [[0,1], [0,1]]) !! 1 //= 1
+  }
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

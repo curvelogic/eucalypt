@@ -430,6 +430,96 @@ pub fn machine_return_bool(
     ))
 }
 
+/// Extract f64 values from a concrete (forced) number list.
+///
+/// Works with both raw `Atom(Ref::V(Native::Num(...)))` items and
+/// boxed `Cons { tag: BoxedNumber, args: [...] }` items, as produced
+/// by `SeqNumList`.
+pub fn collect_num_list(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    list_ref: Ref,
+) -> Result<Vec<f64>, ExecutionError> {
+    let iter = data_list_arg(machine, view, list_ref)?;
+    let mut numbers = Vec::new();
+    for item_result in iter {
+        let item_closure = item_result?;
+        let code = view.scoped(item_closure.code());
+        match &*code {
+            HeapSyn::Atom { evaluand } => {
+                let native = item_closure.navigate_local_native(&view, evaluand.clone());
+                match native {
+                    Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
+                    _ => {
+                        return Err(ExecutionError::Panic(
+                            "non-numeric value in number list".to_string(),
+                        ))
+                    }
+                }
+            }
+            HeapSyn::Cons {
+                tag: _,
+                args: cargs,
+            } => {
+                let inner_ref = cargs.get(0).ok_or_else(|| {
+                    ExecutionError::Panic("empty boxed value in number list".to_string())
+                })?;
+                let native = item_closure.navigate_local_native(&view, inner_ref.clone());
+                match native {
+                    Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
+                    _ => {
+                        return Err(ExecutionError::Panic(
+                            "non-numeric value in number list".to_string(),
+                        ))
+                    }
+                }
+            }
+            _ => {
+                return Err(ExecutionError::Panic(
+                    "unexpected value in number list".to_string(),
+                ))
+            }
+        }
+    }
+    Ok(numbers)
+}
+
+/// Return a number list from intrinsic, following the same pattern
+/// as `machine_return_str_list` but for boxed numbers.
+pub fn machine_return_num_list(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    list: Vec<f64>,
+) -> Result<(), ExecutionError> {
+    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for item in list.into_iter().rev() {
+        let n = Number::from_f64(item).unwrap_or_else(|| Number::from(0));
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::BoxedNumber.tag(),
+                Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
+            )?
+            .as_ptr(),
+        ));
+        let len = bindings.len();
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+    let list_index = bindings.len() - 1;
+    let syn = view
+        .letrec(
+            Array::from_slice(&view, &bindings),
+            view.atom(Ref::L(list_index))?,
+        )?
+        .as_ptr();
+    machine.set_closure(SynClosure::new(syn, machine.root_env()))
+}
+
 /// Return a string list from an iterator, streaming strings directly
 /// to the heap without an intermediate `Vec<String>`.
 ///

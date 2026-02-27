@@ -11,6 +11,7 @@ pub mod emit;
 pub mod encoding;
 pub mod eq;
 pub mod force;
+pub mod graph;
 pub mod json_to_stg;
 pub mod list;
 pub mod meta;
@@ -21,6 +22,7 @@ pub mod pretty;
 pub mod printf;
 pub mod prng;
 pub mod render;
+pub mod running;
 pub mod runtime;
 pub mod set;
 pub mod stream;
@@ -157,7 +159,21 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(block::LookupFail));
     rt.add(Box::new(force::SeqNumList));
     rt.add(Box::new(list::SortNumList));
-    rt.add(Box::new(list::KruskalLast));
+    rt.add(Box::new(graph::GraphUnionFind));
+    rt.add(Box::new(graph::GraphTopoSort));
+    rt.add(Box::new(graph::GraphKruskalEdges));
+    rt.add(Box::new(arith::BitAnd));
+    rt.add(Box::new(arith::BitOr));
+    rt.add(Box::new(arith::BitXor));
+    rt.add(Box::new(arith::BitNot));
+    rt.add(Box::new(arith::Shl));
+    rt.add(Box::new(arith::Shr));
+    rt.add(Box::new(arith::PopCount));
+    rt.add(Box::new(arith::Ctz));
+    rt.add(Box::new(arith::Clz));
+    rt.add(Box::new(running::RunningMax));
+    rt.add(Box::new(running::RunningMin));
+    rt.add(Box::new(running::RunningSum));
     rt.prepare(source_map);
     Box::new(rt)
 }

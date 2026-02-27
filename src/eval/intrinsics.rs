@@ -624,11 +624,80 @@ lazy_static! {
             strict: vec![0],
     },
     Intrinsic { // 116
-            name: "KRUSKAL_LAST",
-            ty: function(vec![list(), list(), num()]).unwrap(),
+            name: "GRAPH_UNION_FIND",
+            ty: function(vec![list(), num(), list()]).unwrap(),
             strict: vec![],
     },
-
+    Intrinsic { // 117
+            name: "GRAPH_TOPO_SORT",
+            ty: function(vec![list(), num(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 118
+            name: "GRAPH_KRUSKAL_EDGES",
+            ty: function(vec![list(), num(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 119
+            name: "RUNNING_MAX",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 120
+            name: "RUNNING_MIN",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 121
+            name: "RUNNING_SUM",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 122
+            name: "BITAND",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 123
+            name: "BITOR",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 124
+            name: "BITXOR",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 125
+            name: "BITNOT",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 126
+            name: "SHL",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 127
+            name: "SHR",
+            ty: function(vec![num(), num(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 128
+            name: "POPCOUNT",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 129
+            name: "CTZ",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 130
+            name: "CLZ",
+            ty: function(vec![num(), num()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

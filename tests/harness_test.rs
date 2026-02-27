@@ -405,6 +405,21 @@ pub fn test_harness_081() {
 }
 
 #[test]
+pub fn test_harness_082() {
+    run_test(&opts("082_graph.eu"));
+}
+
+#[test]
+pub fn test_harness_083() {
+    run_test(&opts("083_running.eu"));
+}
+
+#[test]
+pub fn test_harness_084() {
+    run_test(&opts("084_bitwise.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

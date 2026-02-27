@@ -1,0 +1,66 @@
+"Solutions for Advent of Code 2025, Day 05.
+
+Part 1: Count available ingredient IDs that fall within any fresh range.
+
+Part 2: Count total distinct IDs covered by any range. Sort ranges by
+start, merge overlapping intervals, sum their lengths.
+
+Approach: Part 1 filters IDs against ranges directly. Part 2 uses
+interval merging — sort by start, fold to merge overlapping intervals,
+sum their lengths.
+
+Notable eucalypt techniques:
+- `split-when` to partition input at a blank line
+- `bimap` to apply different parsers to each section
+- `uncurry` to feed a parsed pair into a two-argument solver
+- partial application for predicate filtering: `is-fresh?(ranges)`
+
+Running time: ~3s (part 1), < 1s (part 2)
+"
+
+parse-range(s): str.split(s, "-") map(num)
+
+contains-id?(id, r): id >= first(r) ∧ id <= second(r)
+
+is-fresh?(ranges, id): ranges any(contains-id?(id))
+
+parse(data): data split-when(= "") bimap(map(parse-range), filter(!= "") ; map(num))
+
+solve(ranges, ids): ids filter(is-fresh?(ranges)) count
+
+` "Merge a new range into [merged-so-far, current-range].  If the new
+range overlaps or is adjacent, extend current; otherwise emit current
+and start fresh."
+merge-step(state, r): {
+  merged: first(state)
+  cur: second(state)
+  cur-hi: second(cur)
+}.(if(first(r) <= cur-hi + 1,
+     [merged, [first(cur), max(cur-hi, second(r))]],
+     [merged ++ [cur], r]))
+
+` "Sort ranges by start, then fold to merge overlapping intervals."
+merge-ranges(ranges): {
+  sorted: ranges sort-by-num(first)
+  result: sorted tail foldl(merge-step, [[], sorted head])
+}.(first(result) ++ [second(result)])
+
+range-size(r): second(r) - first(r) + 1
+
+solve2(ranges): merge-ranges(ranges) map(range-size) sum
+
+` { target: :test
+    import: "ex1=inputs/day05-ex1.txt" }
+test: {
+  part-1: ex1 parse uncurry(solve) //= 3
+  part-2: ex1 parse first solve2 //= 14
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day05.txt" }
+part-1: input parse uncurry(solve)
+
+` { target: :part-2
+    import: "input=inputs/day05.txt" }
+part-2: input parse first solve2

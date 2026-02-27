@@ -84,6 +84,12 @@ tests: {
     b: [] sum //= 0
     c: [10] sum //= 10
   }
+
+  product-function: {
+    a: [2, 3, 4] product //= 24
+    b: [] product //= 1
+    c: [7] product //= 7
+  }
 }
 
 RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

@@ -732,6 +732,258 @@ impl StgIntrinsic for Rem {
 
 impl CallGlobal2 for Rem {}
 
+/// Extract an i64 from a Number, accepting integer-valued floats
+/// (which arise from intrinsics like `sort-nums` that convert via f64).
+fn require_i64(n: &Number) -> Result<i64, ExecutionError> {
+    if let Some(i) = n.as_i64() {
+        Ok(i)
+    } else if let Some(u) = n.as_u64() {
+        i64::try_from(u)
+            .map_err(|_| ExecutionError::Panic(format!("bitwise: value {u} out of i64 range")))
+    } else if let Some(f) = n.as_f64() {
+        if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+            Ok(f as i64)
+        } else {
+            Err(ExecutionError::Panic(
+                "bitwise operations require integer arguments (got non-integer float)".to_string(),
+            ))
+        }
+    } else {
+        Err(ExecutionError::Panic(
+            "bitwise operations require integer arguments".to_string(),
+        ))
+    }
+}
+
+/// BITAND(l, r) - bitwise AND
+pub struct BitAnd;
+
+impl StgIntrinsic for BitAnd {
+    fn name(&self) -> &str {
+        "BITAND"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+        let result = require_i64(&x)? & require_i64(&y)?;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal2 for BitAnd {}
+
+/// BITOR(l, r) - bitwise OR
+pub struct BitOr;
+
+impl StgIntrinsic for BitOr {
+    fn name(&self) -> &str {
+        "BITOR"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+        let result = require_i64(&x)? | require_i64(&y)?;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal2 for BitOr {}
+
+/// BITXOR(l, r) - bitwise XOR
+pub struct BitXor;
+
+impl StgIntrinsic for BitXor {
+    fn name(&self) -> &str {
+        "BITXOR"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+        let result = require_i64(&x)? ^ require_i64(&y)?;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal2 for BitXor {}
+
+/// BITNOT(n) - bitwise NOT (flip all 64 bits)
+pub struct BitNot;
+
+impl StgIntrinsic for BitNot {
+    fn name(&self) -> &str {
+        "BITNOT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let result = !require_i64(&x)?;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal1 for BitNot {}
+
+/// SHL(n, k) - left shift n by k bits
+pub struct Shl;
+
+impl StgIntrinsic for Shl {
+    fn name(&self) -> &str {
+        "SHL"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+        let n = require_i64(&x)?;
+        let k = require_i64(&y)?;
+        if !(0..64).contains(&k) {
+            return Err(ExecutionError::Panic(format!(
+                "SHL: shift amount {k} out of range 0..63"
+            )));
+        }
+        let result = n << k;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal2 for Shl {}
+
+/// SHR(n, k) - arithmetic right shift n by k bits
+pub struct Shr;
+
+impl StgIntrinsic for Shr {
+    fn name(&self) -> &str {
+        "SHR"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let y = num_arg(machine, view, &args[1])?;
+        let n = require_i64(&x)?;
+        let k = require_i64(&y)?;
+        if !(0..64).contains(&k) {
+            return Err(ExecutionError::Panic(format!(
+                "SHR: shift amount {k} out of range 0..63"
+            )));
+        }
+        let result = n >> k;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal2 for Shr {}
+
+/// POPCOUNT(n) - count set bits
+pub struct PopCount;
+
+impl StgIntrinsic for PopCount {
+    fn name(&self) -> &str {
+        "POPCOUNT"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let n = require_i64(&x)?;
+        let result = n.count_ones() as i64;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal1 for PopCount {}
+
+/// CTZ(n) - count trailing zeros (position of lowest set bit; 64 if zero)
+pub struct Ctz;
+
+impl StgIntrinsic for Ctz {
+    fn name(&self) -> &str {
+        "CTZ"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let n = require_i64(&x)?;
+        let result = n.trailing_zeros() as i64;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal1 for Ctz {}
+
+/// CLZ(n) - count leading zeros
+pub struct Clz;
+
+impl StgIntrinsic for Clz {
+    fn name(&self) -> &str {
+        "CLZ"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let x = num_arg(machine, view, &args[0])?;
+        let n = require_i64(&x)?;
+        let result = n.leading_zeros() as i64;
+        machine_return_num(machine, view, Number::from(result))
+    }
+}
+
+impl CallGlobal1 for Clz {}
+
 #[cfg(test)]
 pub mod tests {
 

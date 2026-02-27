@@ -1,0 +1,53 @@
+"Solutions for Advent of Code 2025, Day 03.
+
+Part 1: Pick exactly two batteries from each bank to form the largest
+two-digit joltage. Sum the maximums across all banks.
+
+Part 2: Pick exactly twelve batteries to form the largest twelve-digit
+joltage. Sum across all banks.
+
+Approach: greedy selection — at each step, find the largest digit in
+the window of positions still early enough to leave k-1 picks remaining,
+skip to its first occurrence, take it, and recurse.
+
+Notable eucalypt techniques:
+- `;` forward compose for point-free pipelines: `batteries ; pick(2) ; digits-to-num`
+- `drop-while` for scanning to the best digit
+- `foldl` with block accumulator for digit-to-number conversion
+
+Running time: ~1s (both parts)
+"
+
+batteries(line): line str.letters map(num)
+
+` "Greedily pick k batteries to maximise the k-digit joltage.  At each
+step, find the largest digit in the window of positions still early
+enough to leave k-1 picks remaining, skip forward to its first
+occurrence, take it, and recurse on the suffix."
+pick(k, ds): {
+
+  best: take(count(ds) - k + 1, ds) max-of
+  at-best: drop-while(!= best, ds)
+
+}.((k = 0) then([], cons(best, pick(k - 1, at-best tail))))
+
+` "Convert a list of digits to a number: [9,8,7] -> 987."
+digits-to-num(ds): ds foldl({ acc: • d: • }.(acc * 10 + d), 0)
+
+solve(data, n): data map(batteries ; pick(n) ; digits-to-num) sum
+
+` { target: :test
+    import: "ex1=inputs/day03-ex1.txt" }
+test: {
+  part-1: solve(ex1, 2) //= 357
+  part-2: solve(ex1, 12) //= 3121910778619
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day03.txt" }
+part-1: solve(input, 2)
+
+` { target: :part-2
+    import: "input=inputs/day03.txt" }
+part-2: solve(input, 12)

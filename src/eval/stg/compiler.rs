@@ -852,7 +852,10 @@ impl<'rt> Compiler<'rt> {
             Expr::Let(_, _, _) => Ok(Box::new(ProtoLet::new(expr))),
             Expr::Var(s, v) => Ok(Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone()))),
             Expr::App(s, f, args) => {
-                let proto_app = self.compile_application(binder, *s, f, args, false)?;
+                // single_use: true — a let body is evaluated exactly once,
+                // so no Update frame is needed. (Bindings use false because
+                // they may be shared.)
+                let proto_app = self.compile_application(binder, *s, f, args, true)?;
                 Ok(proto_app)
             }
             Expr::Literal(_, n) => Ok(Box::new(Holder::new(compile_boxed_literal(n)))),

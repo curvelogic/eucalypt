@@ -1,0 +1,57 @@
+"Solutions for Advent of Code 2025, Day 01.
+
+Part 1: Parse L/R instructions with magnitudes, track cumulative
+position modulo 100, and count how many times it lands on a multiple
+of 100.
+
+Part 2: Count the total number of zero crossings — times the
+cumulative position crosses a multiple of 100 between consecutive
+steps.
+
+Approach: scanl to build cumulative positions, then filter (part 1)
+or window-and-sum (part 2) to count crossings.
+
+Notable eucalypt techniques:
+- `scanl` for running totals
+- sections `(% 100 = 0)` for divisibility predicates
+- `window(2, 1)` for consecutive-pair analysis
+- scoped imports with target metadata
+
+Running time: ~3s (part 1), ~10s (part 2)
+"
+
+` "Convert Lxx / Rxx instructions to numeric offsets."
+to-offset(m): {
+  magnitude: m second num
+  sign: ((m first) = "L") then(-1, 1)
+}.(sign * magnitude)
+
+parse-instruction(s): s str.match-with("([LR])([0-9]+)") tail to-offset
+
+solve(data): data map(parse-instruction) scanl(+, 50) filter(% 100 = 0) count
+
+` "Count zero crossings between consecutive positions. Shift by 1 when
+moving left so that starting on a multiple of 100 is not counted."
+zeros(pair): {
+  a: pair first
+  b: pair second
+  s: (b < a) then(1, 0)
+}.(abs((b - s) / 100 - (a - s) / 100))
+
+solve2(data): data map(parse-instruction) scanl(+, 50) window(2, 1) map(zeros) sum
+
+` { target: :test
+    import: "ex1=inputs/day01-ex1.txt" }
+test: {
+  part-1: solve(ex1) //= 3
+  part-2: solve2(ex1) //= 6
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day01.txt" }
+part-1: solve(input)
+
+` { target: :part-2
+    import: "input=inputs/day01.txt"}
+part-2: solve2(input)
