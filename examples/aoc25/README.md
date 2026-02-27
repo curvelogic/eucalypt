@@ -27,4 +27,4 @@ run from here (where `inputs/` is visible).
 
 ## Style
 
-The AoC style guide lives in the eucalypt repo at `docs/aoc-style.md`.
+The AoC style guide lives in the eucalypt repo at `docs/eucalypt-style.md`.

@@ -738,9 +738,8 @@ fn require_i64(n: &Number) -> Result<i64, ExecutionError> {
     if let Some(i) = n.as_i64() {
         Ok(i)
     } else if let Some(u) = n.as_u64() {
-        i64::try_from(u).map_err(|_| {
-            ExecutionError::Panic(format!("bitwise: value {u} out of i64 range"))
-        })
+        i64::try_from(u)
+            .map_err(|_| ExecutionError::Panic(format!("bitwise: value {u} out of i64 range")))
     } else if let Some(f) = n.as_f64() {
         if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
             Ok(f as i64)

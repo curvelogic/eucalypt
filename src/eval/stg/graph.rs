@@ -1,4 +1,8 @@
 //! Graph algorithm intrinsics
+//!
+//! Node indices are represented as f64 (the eucalypt number type), so
+//! precision is limited to 2^53. This is fine for typical use but
+//! would silently lose precision for very large graphs.
 
 use std::convert::TryInto;
 
@@ -229,9 +233,10 @@ impl StgIntrinsic for GraphKruskalEdges {
     ) -> Result<(), ExecutionError> {
         let edges = collect_num_list(machine, view, args[0].clone())?;
         let n_list = collect_num_list(machine, view, args[1].clone())?;
-        let n = n_list.first().copied().ok_or_else(|| {
-            ExecutionError::Panic("graph.kruskal-edges: n list empty".to_string())
-        })? as usize;
+        let n =
+            n_list.first().copied().ok_or_else(|| {
+                ExecutionError::Panic("graph.kruskal-edges: n list empty".to_string())
+            })? as usize;
 
         let mut parent: Vec<usize> = (0..n).collect();
         let mut rank: Vec<usize> = vec![0; n];

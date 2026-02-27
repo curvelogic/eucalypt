@@ -499,7 +499,9 @@ impl MachineState {
                         // conditionals.
                         if matches!(
                             &*view.scoped(body),
-                            HeapSyn::Atom { evaluand: Ref::L(_) }
+                            HeapSyn::Atom {
+                                evaluand: Ref::L(_)
+                            }
                         ) {
                             self.suppress_next_update = true;
                         }
