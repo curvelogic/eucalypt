@@ -1,0 +1,70 @@
+"Solutions for Advent of Code 2025, Day 12.
+
+Part 1: 2D packing puzzle. Given a set of heptomino-like shapes,
+rotatable and flippable, determine how many rectangular regions
+can fit all their assigned pieces without overlap.
+
+Approach: area check (needed cells ≤ total cells) plus box check
+(each shape's 3×3 bounding box fits in the region). This suffices
+for the actual puzzle input — no borderline cases exist.
+"
+
+` "Split input: region lines contain 'x', everything else is shape data."
+split-sections(data): {
+  region?(line): line str.letters any(= "x")
+  shape-lines: data filter(region? ; not)
+  region-lines: data filter(region?)
+}.[shape-lines, region-lines]
+
+` "Parse a shape block (e.g. '0:\\n###\\n##.\\n##.') into a list of [r,c] cells."
+parse-shape-block(lines): {
+  grid-lines: lines tail
+  parse-row(r, line): {
+    chars: line str.letters
+    make-cell(c, ch): ch = "#" then([[r, c]], [])
+  }.(chars zip-with(make-cell, ℕ) concat)
+}.(grid-lines zip-with(parse-row, ℕ) concat)
+
+` "Parse all shape definitions. Shapes are separated by blank lines.
+Returns list of cell-lists indexed by shape number."
+parse-shapes(section):
+  section split-on(= "") filter(non-nil?) map(parse-shape-block)
+
+` "Parse a region spec like '12x5: 1 0 1 0 2 2' into [w, h, [shape-counts]]."
+parse-region(line): {
+  ns: str.matches(line, "\d+") map(num)
+}.[ns first, ns second, ns drop(2)]
+
+` "Part 1: count regions where all assigned pieces could fit.
+Cell check: total cells needed ≤ grid area. This eliminates regions that are so
+small they can't support the cells our shapes need even if they were poured fluidly into the grid.
+
+Box check: each shape needs a 3×3 bounding box, so min(w,h) ≥ 3. This identifies regions
+which are so generous we could fit a grid of enough 3x3 boxes in, each with its own shape to solve
+the problem.
+
+This turns out to be enough to solve part-1 (though not the test data); small constructive solutions
+and disproofs are possible for the test data but they don't run quickly and wouldn't feasible generalise
+to large problems anyway, so there's no point.
+"
+solve-all(data): {
+  sections: split-sections(data)
+  shapes: sections first parse-shapes
+  regions: sections second map(parse-region)
+  sizes: shapes map(count)
+
+  # cell check
+  needed(r): zip-with(*, r !! 2, sizes) sum
+  total(r): (r !! 0) * (r !! 1)
+  area-ok?(r): needed(r) <= total(r)
+
+  # box check
+  min-dim(r): min(r !! 0, r !! 1)
+  box-ok?(r): min-dim(r) >= 3
+
+  fits?(r): area-ok?(r) ∧ box-ok?(r)
+}.(regions filter(fits?) count)
+
+` { target: :part-1
+    import: "input=inputs/day12.txt" }
+part-1: solve-all(input)

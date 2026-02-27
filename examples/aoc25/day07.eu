@@ -1,0 +1,91 @@
+"Solutions for Advent of Code 2025, Day 07.
+
+Part 1: A tachyon beam enters at S and moves downward. Splitters (^)
+stop the beam and emit new beams left and right. Count total splits.
+
+Part 2: Each split creates a new timeline. Track the count of timelines
+at each position using addition instead of max, and sum for the total.
+
+Approach: represent beam state as a bit-vector (part 1) or count-vector
+(part 2) across each row. Fold downward through the grid: at each row,
+detect hits on splitters, remove hit beams, emit left/right, and merge.
+Swapping `max` for `+` switches from deduplication to timeline counting.
+
+Notable eucalypt techniques:
+- `zip-with(*, beam, sp)` for element-wise hit detection
+- list shifting (`shift-left`, `shift-right`) for beam emission
+- `foldl` over grid rows with `[beam, count]` state
+- same structure, different combiner for parts 1 and 2
+
+Running time: ~2s (part 1), ~4s (part 2)
+"
+
+` "1 if the character is a splitter, 0 otherwise."
+split?(c): (c = "^") then(1, 0)
+
+` "Convert a row string to a splitter bit-vector."
+to-splitters(row): row str.letters map(split?)
+
+` "Find the column index of S in a row."
+find-s(row): row str.letters take-while(!= "S") count
+
+` "Build a beam vector of width w with a single 1 at column col."
+init-beam(w, col): (repeat(0) take(col)) ++ [1] ++ (repeat(0) take(w - col - 1))
+
+` "Shift a list left by one, filling with 0."
+shift-left(xs): (xs tail) ++ [0]
+
+` "Shift a list right by one, filling with 0."
+shift-right(xs): [0] ++ xs butlast
+
+` "Parse input into [rows, initial-beam]."
+parse(data): {
+  lines: data filter(!= "")
+  w: lines head str.letters count
+  s: lines head find-s
+}.([lines tail, init-beam(w, s)])
+
+` "Process one row: update beam positions and accumulate split count.
+State is [beam-vector, total-splits]."
+row-step(state, row): {
+  beam: first(state)
+  total: second(state)
+  sp: to-splitters(row)
+  ` "Hits: beam positions that coincide with splitters."
+  h: zip-with(*, beam, sp)
+  ` "Pass-through: beam positions minus hits."
+  p: zip-with(-, beam, h)
+  emitted: zip-with(max, shift-left(h), shift-right(h))
+  new-beam: zip-with(max, p, emitted)
+}.([ new-beam, total + sum(h) ])
+
+` "Count total splits as the beam propagates down the grid."
+solve(rows, b0): rows foldl(row-step, [b0, 0]) second
+
+` "Process one row for Part 2: count timelines instead of bits.
+State is just the beam count-vector."
+row-step2(beam, row): {
+  sp: to-splitters(row)
+  h: zip-with(*, beam, sp)
+  p: zip-with(-, beam, h)
+  emitted: zip-with(+, shift-left(h), shift-right(h))
+}.(zip-with(+, p, emitted))
+
+` "Sum timeline counts after propagating the beam down the grid."
+solve2(rows, b0): rows foldl(row-step2, b0) sum
+
+` { target: :test
+    import: "ex1=inputs/day07-ex1.txt" }
+test: {
+  part-1: ex1 parse uncurry(solve) //= 21
+  part-2: ex1 parse uncurry(solve2) //= 40
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day07.txt" }
+part-1: input parse uncurry(solve)
+
+` { target: :part-2
+    import: "input=inputs/day07.txt" }
+part-2: input parse uncurry(solve2)

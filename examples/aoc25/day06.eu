@@ -1,0 +1,91 @@
+"Solutions for Advent of Code 2025, Day 06.
+
+Part 1: Problems are arranged in columns — numbers stacked vertically,
+operator at the bottom. Extract per-row numbers, transpose to get each
+problem's column, apply its operator, and sum the results.
+
+Part 2: Cephalopod math reads right-to-left. Each column holds one
+digit per row; transpose, reverse, and fold to group digits into
+numbers by operator, then sum.
+
+Approach: transpose the grid to convert column-oriented layout into
+row-oriented data. Part 1 transposes number rows; Part 2 transposes
+the character grid and folds right-to-left with state accumulation.
+
+Notable eucalypt techniques:
+- `transpose` for matrix pivoting
+- `zip-with` to pair operators with number lists
+- `foldl` with `[total, nums]` state for right-to-left grouping
+- expression anaphora `_0 * 10 + _1` as inline two-arg function
+- `pad-to` for ragged-row normalisation
+
+Running time: ~1s (both parts)
+"
+
+` "Extract all numbers from a line, splitting on whitespace."
+line-nums(line): str.split(line, " +") filter(!= "") map(num)
+
+` "Extract operators from the operator line."
+ops(line): line str.letters filter(!= " ")
+
+` "Apply an operator to a list of numbers."
+apply-op(op, nums): (op = "*") then(nums foldl(*, 1), nums sum)
+
+solve(data): {
+  lines: data filter(!= "")
+  num-lines: lines butlast
+  op-line: lines last
+  problems: num-lines map(line-nums) transpose
+}.(zip-with(apply-op, ops(op-line), problems) sum)
+
+` "Convert each character of a line to a list."
+chars(line): line str.letters
+
+` "Pad a row to length n with spaces."
+pad-to(n, row): row ++ (repeat(" ") take(n - count(row)))
+
+` "Convert a list of digit values to a number: [3,6,9] -> 369."
+digits-to-num(ds): ds foldl(_0 * 10 + _1, 0)
+
+op?(c): c = "*" ∨ c = "+"
+
+` "Parse a column into [op, number] where op is the bottom character
+and number is formed from the non-space digits above it. Returns []
+for columns with no digits."
+parse-col(col): {
+  digits: col butlast filter(!= " ")
+}.(digits nil? then([], [col last, digits map(num) digits-to-num]))
+
+` "Process one column in the right-to-left fold.  State is [total, nums]."
+col-step(state, entry): {
+  total: first(state)
+  nums: second(state)
+  op: first(entry)
+  n: second(entry)
+}.(if(op?(op),
+     [total + apply-op(op, nums ++ [n]), []],
+     [total, nums ++ [n]]))
+
+solve2(data): {
+  lines: data filter(!= "")
+  grid: lines map(chars)
+  w: grid map(count) max-of
+  padded: grid map(pad-to(w))
+  cols: transpose(padded) reverse map(parse-col) filter(non-nil?)
+}.(cols foldl(col-step, [0, []]) first)
+
+` { target: :test
+    import: "ex1=inputs/day06-ex1.txt" }
+test: {
+  part-1: solve(ex1) //= 4277556
+  part-2: solve2(ex1) //= 3263827
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day06.txt" }
+part-1: solve(input)
+
+` { target: :part-2
+    import: "input=inputs/day06.txt" }
+part-2: solve2(input)

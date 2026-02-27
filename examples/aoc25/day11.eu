@@ -1,0 +1,115 @@
+"Solutions for Advent of Code 2025, Day 11.
+
+Part 1: Count all distinct paths from 'you' to 'out' in a directed
+graph (DAG). Input is an adjacency list: each line gives a device
+name followed by the devices its outputs connect to.
+
+Part 2: Count paths from 'svr' to 'out' that visit both 'dac' and
+'fft' (in any order). Uses inclusion-exclusion:
+  paths(both) = total - no_dac - no_fft + neither
+where each term is a dynamic programming path count on a graph variant with nodes
+removed.
+
+Approach: DFS-based topological sort, then dynamic programming path counting over
+reverse topological order. Block-based lookup tables (sym(name) keys)
+provide O(log n) access. Part 2 runs four dynamic programming passes on graph variants
+with required nodes removed.
+
+Notable eucalypt techniques:
+- `sym` for dynamic symbol creation as block keys
+- `block` to build O(log n) lookup tables from `[key, value]` pairs
+- `set.add` / `set.contains?` for O(log n) visited tracking
+- `merge` for incremental block table construction
+- `filter-items(by-key(...))` and `map-values` for graph manipulation
+- inclusion-exclusion as four independent dynamic programming computations
+
+Running time: ~2s (part 1), ~3 min (part 2)
+"
+
+` "Parse 'name: d1 d2 ...' into [name, [d1, d2, ...]]."
+parse-line(line): {
+  parts: str.split(line, ": ")
+  name: parts first
+  dests: str.split(parts second, " ")
+}.[name, dests]
+
+` "Parse input into a block mapping sym(name) to [dest_strs] for O(log n) lookup."
+parse-graph(data):
+  data filter(!= "") map(parse-line) map-first(sym) block
+
+` "Get destinations for a node. Returns [] for nodes not in graph (e.g. 'out').
+Graph is a block (sym(name) -> [dest_strs]) for O(log n) lookups.
+NB: use merge(a, b) not `a merge b` — catenation parses the latter
+as a(merge)(b) which fails."
+dests-of(g, name): lookup-or(sym(name), [], g)
+
+` "Remove node x: delete its entry and strip it from all destination lists."
+remove-node(x, g):
+  g filter-items(by-key(!= sym(x))) block map-values(filter(!= x))
+
+` "DFS from node. Skips already-visited nodes. Prepends node to
+order AFTER all descendants, giving forward topological order.
+State threaded as [order_list, visited_set] using set for O(log n) membership.
+Parameters ordered so partial application dfs-topo(g) matches foldl(acc, elem).
+NB: graph.topo-sort works on numeric adjacency lists; converting to/from
+string-keyed blocks is slower than processing directly."
+dfs-topo(g, state, node): {
+  order: state first
+  visited: state second
+}.(set.contains?(node, visited) then(state, {
+    new-vis: visited set.add(node)
+    after: foldl(dfs-topo(g), [order, new-vis], dests-of(g, node))
+  }.[cons(node, after first), after second]))
+
+` "Look up path count for a node in the dynamic programming block table."
+lookup-count(table, name): lookup-or(sym(name), 0, table)
+
+` "Dynamic programming step: compute count for one node and merge into block table.
+At 'out' the count is 1; otherwise sum counts of all destinations."
+dp-step(g, table, node): {
+  c: node = "out" then(1,
+    dests-of(g, node) map(lookup-count(table)) sum)
+}.(merge(table, kv-block(sym(node), c)))
+
+` "Count all paths from start to 'out' using dynamic programming.
+DFS gives forward topo order; reverse it so sinks are processed first."
+count-paths(start, g): {
+  order: dfs-topo(g, [[], ∅], start) first reverse
+  table: foldl(dp-step(g), {}, order)
+}.(lookup-count(table, start))
+
+` "Part 1: count all distinct paths from 'you' to 'out'."
+solve(data): data parse-graph count-paths("you")
+
+` { target: :test
+    import: "ex1=inputs/day11-ex1.txt" }
+test: {
+  part-1: solve(ex1) //= 5
+  RESULT: part-1 then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day11.txt" }
+part-1: solve(input)
+
+` "Count paths from 'svr' to 'out' visiting both 'dac' and 'fft'.
+By inclusion-exclusion over graph variants with required nodes removed:
+  through_both = total - no_dac - no_fft + neither"
+solve2(data): {
+  g: parse-graph(data)
+  total: g count-paths("svr")
+  no-dac: g remove-node("dac") count-paths("svr")
+  no-fft: g remove-node("fft") count-paths("svr")
+  neither: g remove-node("dac") remove-node("fft") count-paths("svr")
+}.(total - no-dac - no-fft + neither)
+
+` { target: :test2
+    import: "ex2=inputs/day11-ex2.txt" }
+test2: {
+  part-2: solve2(ex2) //= 2
+  RESULT: part-2 then(:PASS, :FAIL)
+}
+
+` { target: :part-2
+    import: "input=inputs/day11.txt" }
+part-2: solve2(input)

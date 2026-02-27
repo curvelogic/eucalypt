@@ -1,0 +1,128 @@
+"Solutions for Advent of Code 2025, Day 02.
+
+Part 1: Sum all invalid product IDs in given ranges, where an
+invalid ID has its digits repeated exactly twice (e.g. 1212).
+
+Part 2: Same but an invalid ID is any digit sequence repeated at
+least twice. Uses inclusion-exclusion over distinct prime factors
+of the digit count to avoid double-counting.
+
+Approach: closed-form arithmetic series summation. A d-digit ID
+built from a p-digit pattern repeated d/p times equals n * m where
+m = (10^d - 1) / (10^p - 1). Sum valid n values via the series
+formula. Part 2 extends with Mobius-style inclusion-exclusion.
+
+Notable eucalypt techniques:
+- `^` power operator for digit-count arithmetic
+- `÷` exact division vs `/` floor division
+- `foldl` to build inclusion-exclusion terms from prime factors
+- `uncurry` to feed parsed pairs into two-argument solvers
+
+Running time: < 1s (both parts)
+"
+
+parse-range(s): str.split(s, "-") map(num)
+
+` "Sum of invalid IDs in [a,b] that are a p-digit pattern repeated
+d/p times.  We find the range of n values whose IDs land in [a,b]
+and sum them with the arithmetic series formula."
+invalid-for(a, b, d, p): {
+
+  ` "The multiplier: n * m gives n repeated d/p times as a d-digit ID."
+  m: (10 ^ d - 1) / (10 ^ p - 1)
+
+  ` "Smallest p-digit n whose ID (n*m) is >= a."
+  lo: max(ceiling(a ÷ m), 10 ^ (p - 1))
+
+  ` "Largest p-digit n whose ID (n*m) is <= b."
+  hi: min(b / m, 10 ^ p - 1)
+
+  ` "Sum arithmetic series to total the invalid IDs in the range."
+  total: m * (hi - lo + 1) * (lo + hi) / 2
+
+}.((hi >= lo) then(total, 0))
+
+` "Part 1: only pattern-repeated-twice, so d = 2k, p = k."
+repeated-twice(a, b, k): invalid-for(a, b, 2 * k, k)
+invalid-sum(a, b): range(1, 10) map(repeated-twice(a, b)) sum
+
+` "Check if d is divisible by p."
+divides?(d, p): d % p = 0
+
+` "Distinct prime factors of d (sufficient for d <= 20)."
+prime-factors(d): [2, 3, 5, 7, 11, 13, 17, 19] filter(divides?(d))
+
+` "Inclusion-exclusion to avoid double-counting patterns.
+
+Intuitively, we add up all IDs that are some pattern repeated for
+each 'maximal' pattern length (one per prime factor of d).  But some
+IDs match multiple pattern lengths — e.g. 111111 is '1' repeated six
+times AND '111' repeated twice — so we subtract those we counted more
+than once, add back any we subtracted too many times, and so on.
+
+For example with 6-digit numbers (primes 2 and 3):
+  + patterns of length 3, repeated twice  (e.g. 123123)
+  + patterns of length 2, repeated thrice (e.g. 121212)
+  - patterns of length 1, repeated six times (e.g. 111111)
+    …because single-digit repeats were already counted in both above.
+
+The fold builds [sign, divisor] terms from the prime factors.  Each
+new prime doubles the list with the sign flipped, generating every
+subset.  The seed (empty set = whole ID unrepeated) is dropped.
+
+For the 6-digit case, terms([2, 3]) returns:
+  [[+1, 2], [+1, 3], [-1, 6]]
+meaning: add invalid-for(d=6, p=3), add invalid-for(d=6, p=2),
+subtract invalid-for(d=6, p=1)."
+include-exclude: {
+
+  ` "Flip the sign and multiply divisor by prime p."
+  extend-one(p, term): [negate(first(term)), second(term) * p]
+
+  ` "Each prime doubles the terms: keep existing, add flipped copies."
+  extend(terms, p): terms ++ (terms map(extend-one(p)))
+
+  ` "Build all IE terms from primes, then drop the seed (empty set)."
+  terms(primes): foldl(extend, [[-1, 1]], primes) tail
+
+  ` "Evaluate one term: sign * (sum of IDs with pattern length d/divisor)."
+  apply(a, b, d, term): first(term) * invalid-for(a, b, d, d / second(term))
+}
+
+` "Sum of invalid d-digit IDs in [a,b].  Generate IE terms from the
+prime factors of d, then sum each term's contribution."
+invalid-for-d(a, b, d):
+  include-exclude.terms(prime-factors(d))
+    map(include-exclude.apply(a, b, d))
+    sum
+
+` "Part 2: pattern repeated at least twice, all digit counts up to 12."
+invalid-sum2(a, b): range(1, 12) map(invalid-for-d(a, b)) sum
+
+solve(data):
+  str.split(data first, ",")
+    map(parse-range)
+    map(uncurry(invalid-sum))
+    sum
+
+solve2(data):
+  str.split(data first, ",")
+    map(parse-range)
+    map(uncurry(invalid-sum2))
+    sum
+
+` { target: :test
+    import: "ex1=inputs/day02-ex1.txt" }
+test: {
+  part-1: solve(ex1) //= 1227775554
+  part-2: solve2(ex1) //= 4174379265
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day02.txt" }
+part-1: solve(input)
+
+` { target: :part-2
+    import: "input=inputs/day02.txt" }
+part-2: solve2(input)

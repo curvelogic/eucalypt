@@ -1,0 +1,380 @@
+"Solutions for Advent of Code 2025, Day 10.
+
+Part 1: Each machine has indicator lights (initially off), a target
+pattern, and buttons that toggle subsets of lights (XOR). Pressing a
+button twice cancels out, so each is pressed 0 or 1 times. Find the
+minimum total presses across all machines.
+
+Part 2: Each button can be pressed any number of times. Each press
+increments listed counters by 1. Find minimum total presses to reach
+joltage targets — an integer linear program: minimise sum(x) subject
+to A*x = b, x >= 0.
+
+Approach: Part 1 uses DFS subset enumeration in GF(2) with
+incremental XOR. Part 2 uses Gaussian elimination in two forms:
+float reduced row echelon form (exact `÷` division) for structure
+detection and pruning bounds, and integer row echelon form (Bareiss
+algorithm) for exact back-
+substitution. Branch-and-bound over free variables with slope-based
+pruning.
+
+Notable eucalypt techniques:
+- `÷` exact division for row echelon normalisation
+- block-scoped modules (`gauss`, `gauss-int`) for matrix algorithms
+- lazy `∨` for short-circuit DFS (part 1)
+- `range` and `map` for matrix construction and row operations
+- deep nesting of block intermediates for solver state
+
+Running time: ~6s (part 1), ~80s (part 2)
+"
+
+` "Build toggle vector of length `n`: 1 at each listed index, 0 elsewhere."
+bit-vec(n, indices): {
+  bit(i): indices any(= i) then(1, 0)
+}.(ℕ take(n) map(bit))
+
+` "Parse a machine line into [target, buttons]."
+parse-machine(line): {
+  parts: str.matches(line, "[.#]+|[(][0-9,]+[)]")
+  target: parts head str.letters map((= "#") ; then(1, 0))
+  n: target count
+  parse-btn(s): str.matches(s, "[0-9]+") map(num) bit-vec(n)
+  buttons: parts tail map(parse-btn)
+}.[target, buttons]
+
+` "XOR bit: (a + b) mod 2."
+xor-bit(a, b): (a + b) % 2
+xor-vec(a, b): zip-with(xor-bit, a, b)
+
+` "Is there a size-k subset of buttons whose combined toggles match target?
+DFS with the target XOR'd incrementally; short-circuits via lazy ∨."
+has-solution?(k, target, buttons): {
+  all-off: sum(target) = 0
+  more?: (k > 0) ∧ (buttons non-nil?)
+  trivial-solution: (k = 0 ∧ all-off)
+  solution-with-head: (has-solution?(k - 1, xor-vec(target, buttons head), buttons tail))
+  solution-without-head: has-solution?(k, target, buttons tail)
+}.(trivial-solution ∨ (more? ∧ (solution-with-head ∨ solution-without-head)))
+
+` "Minimum presses for one machine (Part 1).
+Find the smallest subset size k with a valid solution."
+solve-machine(m): {
+  target: first(m)
+  buttons: second(m)
+  nb: buttons count
+  solved?(k): has-solution?(k, target, buttons)
+}.(ℕ take(nb + 1) filter(solved?) min-of-or(nb + 1))
+
+solve(data):
+  data filter(!= "") map(parse-machine ; solve-machine) sum
+
+` { target: :test
+    import: "ex1=inputs/day10-ex1.txt" }
+test: {
+  part-1: solve(ex1) //= 7
+  RESULT: part-1 then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day10.txt" }
+part-1: solve(input)
+
+` "Parse machine for Part 2: [joltage-targets, button-bit-vectors]."
+parse-machine2(line): {
+  joltage: str.split(line, " ") last str.matches-of("[0-9]+") map(num)
+  n: joltage count
+  parse-btn(s): str.matches(s, "[0-9]+") map(num) bit-vec(n)
+  buttons: str.matches(line, "[(][0-9,]+[)]") map(parse-btn)
+}.[joltage, buttons]
+
+` "Gaussian elimination on an augmented matrix.
+Produces reduced row echelon form by dividing each pivot row by its pivot entry (using ÷)
+then eliminating all other rows. Tracks pivot columns.
+Returns [reduced-matrix, pivot-column-list]."
+gauss: {
+  ` "Normalise row: divide all entries by the pivot at column `c`."
+  norm(c, row): row map(÷ (row !! c))
+
+  ` "Eliminate column `c` in target row using a normalised pivot row."
+  elim(pivot, target, c): zip-with(_1 - (target !! c) * _0, pivot, target)
+
+  ` "Find first row >= `start` with non-zero entry in column `c`."
+  find-pivot(c, start, mat):
+    mat drop(start) zip(ℕ drop(start))
+      filter(second ; (_ !! c != 0))
+      map(first)
+      head-or(-1)
+
+  ` "Swap rows at indices `i` and `j`."
+  swap(i, j, mat): {
+    ri: mat !! i
+    rj: mat !! j
+    nr: mat count
+    pick(k): if(k = i, rj, if(k = j, ri, mat !! k))
+  }.(ℕ take(nr) map(pick))
+
+  ` "Process column `c` with pivot at row `p`, placing result at row `r`.
+  Normalises pivot row then eliminates column `c` from ALL other rows."
+  process-column(r, c, p, mat): {
+    smat: p = r then(mat, swap(r, p, mat))
+    prow: norm(c, smat !! r)
+    nr: smat count
+    sub-row(k): if(smat !! k !! c = 0, smat !! k, elim(prow, smat !! k, c))
+    row(k): k = r then(prow, sub-row(k))
+  }.(ℕ take(nr) map(row))
+
+  ` "Forward elimination tracking pivot columns.
+  Returns [reduced-matrix, pivot-column-list]."
+  forward(ncols, mat): {
+    nr: mat count
+
+    step(r, c, m, pivs):
+      if((r >= nr) ∨ (c >= ncols), [m, pivs], {
+        p: find-pivot(c, r, m)
+        step-next-column: step(r, c + 1, m, pivs)
+        step-new-pivot: step(r + 1, c + 1, process-column(r, c, p, m), pivs ++ [c])
+      }.(if(p < 0, step-next-column, step-new-pivot)))
+
+  }.(step(0, 0, mat, []))
+}
+
+` "Bareiss (fraction-free) Gaussian elimination.
+Keeps all matrix entries as exact integers throughout. Each elimination
+step computes (pv*t - tc*p) / prev where prev is the previous pivot,
+and this division is always exact. Rows with zero coefficient in the
+pivot column are scaled by pv/prev to maintain the Bareiss invariant.
+Returns [ref-matrix, pivot-column-list]."
+gauss-int: {
+  find-pivot: gauss.find-pivot
+  swap: gauss.swap
+
+  ` "Bareiss elimination of one row: (pv*t - tc*p) / prev for each entry."
+  elim(pivot-row, target-row, c, prev): {
+    pv: pivot-row !! c
+    tc: target-row !! c
+    f(p, t): (pv * t - tc * p) / prev
+  }.(zip-with(f, pivot-row, target-row))
+
+  ` "Scale a zero-coefficient row by pv/prev to maintain Bareiss invariant.
+  Without this, subsequent divisions by prev would not be exact."
+  scale-row(pivot-row, row, c, prev):
+    row map((* (pivot-row !! c)) ; (/ prev))
+
+  ` "Process column `c`: swap pivot to row `r`, eliminate/scale all rows below."
+  process-column(r, c, p, mat, prev): {
+    smat: p = r then(mat, swap(r, p, mat))
+    prow: smat !! r
+    nr: smat count
+
+    sub-row(k):
+      if(smat !! k !! c = 0,
+        scale-row(prow, smat !! k, c, prev),
+        elim(prow, smat !! k, c, prev))
+
+    row(k): k <= r then(smat !! k, sub-row(k))
+  }.(ℕ take(nr) map(row))
+
+  ` "Bareiss forward elimination. Returns [ref-matrix, pivot-column-list].
+  `prev` tracks the previous pivot value (starts at 1 by convention)."
+  forward(ncols, mat): {
+    nr: mat count
+
+    step(r, c, m, pivs, prev):
+      if((r >= nr) ∨ (c >= ncols), [m, pivs], {
+        p: find-pivot(c, r, m)
+
+        step-next-column:
+          step(r, c + 1, m, pivs, prev)
+
+        step-new-pivot: {
+          nm: process-column(r, c, p, m, prev)
+        }.(step(r + 1, c + 1, nm, pivs ++ [c], nm !! r !! c))
+
+      }.(if(p < 0, step-next-column, step-new-pivot)))
+
+  }.(step(0, 0, mat, [], 1))
+}
+
+` "Find minimum total button presses for one machine (Part 2).
+
+The system A*x = b (nc counters, nb buttons) is solved by:
+1. Float reduced row echelon form identifies pivot/free columns, computes slopes and bounds
+2. Integer row echelon form (Bareiss) provides exact back-substitution
+3. Branch-and-bound searches over free variable assignments
+
+The cost of a solution is the total number of button presses (sum of x).
+
+For nfree = 0: unique solution, just back-substitute.
+For nfree > 0: cost = base-cost + sum(slope_j * f_j).
+  The search iterates outer free variables with cost-based pruning,
+  and exhaustively searches the last free variable over [lo, hi]."
+solve-machine2(m): {
+  target: first(m)
+  buttons: second(m)
+  nc: count(target)
+  nb: count(buttons)
+  INF: 999999
+
+  # Build augmented matrix [A|b]: rows = counters, cols = buttons + target.
+  row(j): (buttons map(_ !! j)) ++ [target !! j]
+  mat: ℕ take(nc) map(row)
+
+  # Use basic gaussian elimination to find pivots and free indices
+  result: gauss.forward(nb, mat)
+  reduced: first(result)
+  pivots: second(result)
+  rank: count(pivots)
+  nfree: nb - rank
+
+  col-free?(c): pivots filter(= c) nil?
+
+  ` "Free columns: button indices not among pivot columns."
+  frees: ℕ take(nb) filter(col-free?)
+
+  ` "Reduced row echelon coefficient of free variable `fi` in pivot row `i`."
+  rcoeff(i, fi): reduced !! i !! (frees !! fi)
+
+  # Approximate presses per pivot button when all free vars = 0.
+  solution-vec: reduced take(rank) map(last)
+  # Total presses (cost) at this baseline, used for pruning.
+  base-cost: solution-vec sum
+
+  ` "Lower bound per free var: if reduced row echelon coeff < 0 in some pivot row,
+  the free var must be large enough to keep that pivot non-negative."
+  free-lower-bound(fi): {
+    lo-from-row(i): {
+      c: rcoeff(i, fi)
+      r: last(reduced !! i)
+    }.(c < 0 then(ceiling(r ÷ c), 0))
+  }.(ℕ take(rank) map(lo-from-row) max-of-or(0))
+
+  ` "Upper bound per free var: presses can't exceed any counter target
+  that the corresponding button affects."
+  free-upper-bound(fi): {
+    fc: frees !! fi
+    btn: buttons !! fc
+    cap(b, t): b = 0 then(INF, t)
+  }.(zip-with(cap, btn, target) min-of-or(INF))
+
+  lowers: ℕ take(nfree) map(free-lower-bound)
+  uppers: ℕ take(nfree) map(free-upper-bound)
+
+  ` "Slope: change in total presses per unit increase of free variable `fi`.
+  Total presses = base-cost + sum(slope_j * f_j)."
+  free-slope(fi): {
+    col-val(i): rcoeff(i, fi)
+  }.(1 - (ℕ take(rank) map(col-val) sum))
+  slopes: ℕ take(nfree) map(free-slope)
+
+  # Integer gaussian elimination for exact back-substitution
+  result-int: gauss-int.forward(nb, mat)
+  iref: first(result-int)
+
+  ` "Total button presses for a given free-variable assignment, or INF if infeasible.
+  Uses exact integer back-substitution from row rank-1 up to row 0 in the
+  Bareiss row echelon form.
+
+  NB: Named functions are used instead of block anaphora for the map
+  callbacks because of a bug where {{k: •}}.(expr) fails when expr
+  combines the anaphor with outer-scope variables in infix operators
+  (see eu-dobu)."
+  eval-free(fvs): {
+    ` "Contribution of previously-solved pivot `k` to current row."
+    prev-term(ref-row, i, xs, k): ref-row !! (pivots !! (i + 1 + k)) * (xs !! k)
+    ` "Contribution of free variable `k` to current row."
+    free-term(ref-row, k): ref-row !! (frees !! k) * (fvs !! k)
+
+    ` "Back-substitute: `xs` is solved pivots (newest first), `acc` is running sum."
+    step(i, xs, acc):
+      if(i < 0, acc, {
+        ref-row: iref !! i
+        nprev: count(xs)
+        prev-contrib: ℕ take(nprev) map(prev-term(ref-row, i, xs)) sum
+        free-contrib: ℕ take(nfree) map(free-term(ref-row)) sum
+        numer: (last(ref-row)) - prev-contrib - free-contrib
+        denom: ref-row !! (pivots !! i)
+        val: numer / denom
+        unsolvable?: (numer % denom) != 0 || val < 0
+      }.(if(unsolvable?, INF, step(i - 1, [val] ++ xs, acc + val))))
+
+    psum: step(rank - 1, [], 0)
+    fsum: sum(fvs)
+  }.(psum >= INF then(INF, psum + fsum))
+
+  ` "Adjusted target for pivot row `i` after partially assigning outer free vars."
+  adjusted-target(i, fvs): {
+    base: last(reduced !! i)
+    nv: count(fvs)
+    contrib(k): rcoeff(i, k) * (fvs !! k)
+  }.(base - (ℕ take(nv) map(contrib) sum))
+
+  ` "Lower bound for the last free variable given all others assigned."
+  adjusted-lower-bound(fvs): {
+    lfi: nfree - 1
+    lo-from-row(i): {
+      c: rcoeff(i, lfi)
+      ar: adjusted-target(i, fvs)
+    }.(c < 0 then(ceiling(ar ÷ c), 0))
+  }.(ℕ take(rank) map(lo-from-row) max-of-or(0))
+
+  ` "Upper bound for the last free variable given all others assigned."
+  adjusted-upper-bound(fvs): {
+    lfi: nfree - 1
+    hi-from-row(i): {
+      c: rcoeff(i, lfi)
+      ar: adjusted-target(i, fvs)
+    }.(c > 0 then(floor(ar ÷ c), INF))
+  }.(min(uppers !! (nfree - 1), ℕ take(rank) map(hi-from-row) min-of-or(INF)))
+
+  ` "Minimum total presses over all assignments of the last free variable.
+  Exhaustively searches [lo-1, hi+1]; the ±1 buffer compensates for
+  float row echelon bound imprecision."
+  inner-solve(fvs): {
+    lo: max(0, (adjusted-lower-bound(fvs)) - 1)
+    hi: (adjusted-upper-bound(fvs)) + 1
+    cost(k): eval-free(fvs ++ [k])
+  }.(range(lo, hi + 1) map(cost) min-of-or(INF))
+
+  cost-lower-bound(fi): {
+    sl: slopes !! fi
+    ub: uppers !! fi
+  }.(sl < 0 then(sl * ub, 0))
+
+  ` "Lower bound on remaining presses from free vars fi..nfree-1.
+  Negative-slope vars contribute most at their upper bound; positive at 0."
+  remaining-cost-lower-bound(from): range(from, nfree) map(cost-lower-bound) sum
+
+  ` "Minimum total presses over all feasible assignments of free variables fi..nfree-1.
+  Searches variables 0..nfree-2 with pruning based on lower bound of total presses;
+  the last variable is solved exhaustively by `inner-solve`.
+  `partial-cost` = sum of slope_j * f_j for previously assigned free vars."
+  search(fi, fvs, partial-cost, best): {
+    last-free-var?: fi >= nfree - 1
+    sl: slopes !! fi
+    hi: uppers !! fi
+    rlb: remaining-cost-lower-bound(fi + 1)
+
+    ` "Try assigning `k` presses to free variable `fi`, pruning when cost exceeds `b`."
+    try(k, b): {
+      cost-lower: base-cost + partial-cost + sl * k + rlb
+      pruned?: (k > hi) ∨ (cost-lower >= b)
+      nb: search(fi + 1, fvs ++ [k], partial-cost + sl * k, b)
+    }.(pruned? then(b, try(k + 1, nb)))
+
+  }.(last-free-var? then(min(best, inner-solve(fvs)), try(0, best)))
+
+}.(nfree = 0 then(eval-free([]), search(0, [], 0, INF)))
+
+solve2(data):
+  data filter(!= "") map(parse-machine2 ; solve-machine2) sum
+
+` { target: :test2
+    import: "ex1=inputs/day10-ex1.txt" }
+test2: {
+  part-2: solve2(ex1) //= 33
+  RESULT: part-2 then(:PASS, :FAIL)
+}
+
+` { target: :part-2
+    import: "input=inputs/day10.txt" }
+part-2: solve2(input)

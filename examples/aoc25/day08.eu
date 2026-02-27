@@ -1,0 +1,119 @@
+"Solutions for Advent of Code 2025, Day 08.
+
+Part 1: Given ~500 3D junction-box positions, connect the 1000 closest
+pairs via union-find. Return the product of the three largest component
+sizes.
+
+Part 2: Build a minimum spanning tree (Kruskal). The last edge to
+connect all components is the 'bridge'. Return the product of the
+x co-ordinates of its two endpoints.
+
+Approach: x-sorted windowing reduces O(n^2) candidate pairs to O(n*w).
+Encode (distance, i, j) triples as single f64 values so `sort-nums`
+(an intrinsic with no evaluator callbacks) handles distance ordering.
+Union-find and Kruskal are provided by the `graph` prelude module.
+
+Notable eucalypt techniques:
+- `graph.union-find` and `graph.kruskal-edges` prelude intrinsics
+- single-number encoding for sort-by-distance without callbacks
+- `tails` and `zip-with` for candidate-pair generation
+- `;` for point-free function definition: `group-consecutive ; map(count)`
+- `iota` and `ℕ` for index generation alongside `zip-with`
+- dynamic generalised lookup: `prepare` returns a block used as namespace for solver pipelines
+
+Running time: ~17s (part 1), ~5 min (part 2)
+"
+
+` "Parse a comma-separated line into a list of numbers."
+parse-point(line): str.split(line, ",") map(num)
+
+` "Squared Euclidean distance between two 3D points."
+dist2(a, b): zip-with(-, a, b) map(^ 2) sum
+
+` "Encode a (distance, i, j) triple as a single f64.
+Formula: (dist2/10)*10^6 + i*10^3 + j.
+Fits in f64 exact integers (max ~3*10^15 < 2^53).
+Injective for i,j < 1000: i*1000+j < 10^6 so no cross-pair collisions.
+Sorting these numbers sorts primarily by distance, breaking ties by i then j."
+encode(d, i, j): (d / 10) * 1000000 + i * 1000 + j
+
+` "Decode an encoded pair back to [i, j] vertex indices."
+decode-edge(key): [key / 1000 % 1000, key % 1000]
+
+` "Encode the distance between points p (at index i) and q (at index j)."
+encode-pair(p, i, q, j): encode(dist2(p, q), i, j)
+
+` "Encoded distance pairs from point p (index i) to each point in window (starting at index j)."
+point-pairs(p, window, i, j): zip-with(encode-pair(p, i), window, iota(j))
+
+` "Encoded pairs for the head of ps (index i) against the next w points."
+pairs-at(w, i, ps): point-pairs(ps head, (ps tail) take(w), i, i + 1)
+
+` "Generate candidate pairs: each point paired with the next w points.
+Requires pts to be x-sorted so that nearby indices approximate spatial
+proximity. Low values of w may miss close pairs that are far apart in x."
+window-pairs(w, pts):
+  tails(pts)
+    zip-with(pairs-at(w), ℕ)
+    concat
+
+` "Count elements in each consecutive group (run-length encoding)."
+count-groups: group-consecutive ; map(count)
+
+` "Common preparation: parse input, x-sort vertices, generate candidate
+edge pairs sorted by distance.
+  - n: number of vertices
+  - vertices: 3D points, sorted by x co-ordinate
+  - edges: [[i,j],...] vertex-index pairs, sorted by distance (nearest first)"
+prepare(w, data): {
+  pts: data filter(!= "") map(parse-point)
+  n: pts count
+  vertices: pts sort-by-num(first)
+  edges: vertices window-pairs(w) sort-nums map(decode-edge)
+}
+
+` "Part 1: take k closest edges, union-find components, return product of
+three largest component sizes."
+solve-n(k, w, data): prepare(w, data).(
+  edges
+    take(k)
+    graph.union-find(n)
+    sort-nums
+    count-groups
+    sort-by-num(negate)
+    take(3)
+    product)
+
+solve(data): solve-n(1000, 150, data)
+
+` "Index of the last edge that connects all components (the MST bridge)."
+last-edge-idx(edges, n):
+  edges
+    graph.kruskal-edges(n)
+    (reverse ; nth(1))
+
+` "Part 2: process all edges via Kruskal. Find the last edge that reduces
+the component count to 1 (the MST bridge). Return the product of the
+x co-ordinates of the bridge's two endpoints."
+solve2-n(w, data): prepare(w, data).(
+  (edges !! last-edge-idx(edges, n))
+    map((vertices !! _) ; first)
+    apply(*))
+
+solve2(data): solve2-n(999, data)
+
+` { target: :test
+    import: "ex1=inputs/day08-ex1.txt" }
+test: {
+  part-1: solve-n(10, 20, ex1) //= 40
+  part-2: solve2-n(20, ex1) //= 25272
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day08.txt" }
+part-1: solve(input)
+
+` { target: :part-2
+    import: "input=inputs/day08.txt" }
+part-2: solve2(input)

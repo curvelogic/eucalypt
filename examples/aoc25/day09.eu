@@ -1,0 +1,215 @@
+"Solutions for Advent of Code 2025, Day 09.
+
+Part 1: Find the largest axis-aligned rectangle using two red tiles as
+opposite corners. Area = (|x1-x2|+1) * (|y1-y2|+1).
+
+Part 2: Red tiles form a rectilinear polygon whose interior is green.
+Find the largest rectangle using two red tiles as corners that fits
+entirely within the red/green region.
+
+Approach: Part 1 is brute-force over all tile pairs via `tails` and
+`max-of-by`. Part 2 builds polygon 'levels' (cross-sections at each
+y-coordinate), then sweeps all start/end level pairs with corridor
+narrowing and area-based pruning to find the maximum inscribed
+rectangle.
+
+Notable eucalypt techniques:
+- `tails` for generating all suffix pairs
+- `max-of-by` for finding best pair without explicit recursion
+- `product` for 2D area from dimension list
+- block-scoped modules (`levels`, `search`) for organising complex logic
+- `cross` for Cartesian product of tile x-coords
+- `foldr` with accumulator for gap-level insertion
+
+Running time: ~3 min (part 1), ~3 min (part 2)
+"
+
+parse-coord(line): str.split(line, ",") map(num)
+
+area(a, b): zip-with(-, a, b) map(abs ; (+ 1)) product
+
+` "Max area from head of a list to any later element."
+best-from(ps): ps tail map(area(ps head)) max-of
+
+` "Max area over all distinct pairs of points."
+best-area(pts):
+  tails(pts)
+    filter(count ; (> 1))
+    max-of-by(best-from)
+
+parse(data): data filter(!= "") map(parse-coord)
+
+solve(pts): best-area(pts)
+
+` { target: :test
+    import: "ex1=inputs/day09-ex1.txt" }
+test: {
+  part-1: ex1 parse solve //= 50
+  RESULT: part-1 then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day09.txt" }
+part-1: input parse solve
+
+` "Level-building machinery for the polygon sweep.
+A level is [y, left, right, tile-xs] representing the polygon
+cross-section and red tile positions at a given y-coordinate."
+levels: {
+  INF: 999999
+
+  ` "Does vertical edge `v` [x, y-lo, y-hi] span y-coordinate `y`?"
+  v-spans?(y, v): (second(v) <= y) ∧ (y < v !! 2)
+
+  ` "Does horizontal edge `h` [y, x-lo, x-hi] lie at y-coordinate `y`?"
+  has-y?(y, h): first(h) = y
+
+  ` "Does point `p` [x, y] lie at y-coordinate `y`?"
+  at-y?(y, p): second(p) = y
+
+  ` "Build edge list from consecutive vertex pairs, wrapping last to first."
+  make-edges(pts): zip(pts, pts rotate(1))
+
+  ` "Is edge vertical / horizontal?"
+  vertical?(e): first(first(e)) = first(second(e))
+  horizontal?(e): second(first(e)) = second(second(e))
+
+  ` "Extract vertical edges as [x, y-lo, y-hi]."
+  vert-edge(e): {
+    p: first(e)
+    q: second(e)
+  }.([first(p), min(second(p), second(q)), max(second(p), second(q))])
+
+  ` "Extract horizontal edges as [y, x-lo, x-hi]."
+  horiz-edge(e): {
+    p: first(e)
+    q: second(e)
+  }.([second(p), min(first(p), first(q)), max(first(p), first(q))])
+
+  ` "Cross-section at `y`: [left, right] assuming single interval."
+  xsect(y, ves, hes): {
+    vxs: ves filter(v-spans?(y)) map(first)
+    hs: hes filter(has-y?(y))
+    al: vxs ++ (hs map(second))
+    ar: vxs ++ (hs map(!! 2))
+  }.[al min-of-or(INF), ar max-of-or(0)]
+
+  ` "Red tile x-coordinates at a given `y`."
+  tile-xs-at(y, pts): pts filter(at-y?(y)) map(first)
+
+  ` "Build a level [y, left, right, tile-xs] at a given `y`."
+  make-level(y, ves, hes, pts): {
+    cs: xsect(y, ves, hes)
+  }.[y, first(cs), second(cs), tile-xs-at(y, pts)]
+
+  ` "Insert gap levels between non-adjacent levels.
+  Folds right so each level can peek at the next via the accumulator."
+  insert-gaps(ves, lvs): {
+    step(lv, acc): {
+      needs-gap: (acc non-nil?) ∧ (first(head(acc)) > first(lv) + 1)
+      gap: make-level(first(lv) + 1, ves, [], [])
+    }.(needs-gap then(cons(lv, cons(gap, acc)),
+                      cons(lv, acc)))
+  }.(foldr(step, [], lvs))
+
+  ` "Build level list from polygon vertices."
+  from-points(pts): {
+    es: make-edges(pts)
+    ves: es filter(vertical?) map(vert-edge)
+    hes: es filter(horizontal?) map(horiz-edge)
+    ys: pts map(second) sort-nums uniq
+    level-at(y): make-level(y, ves, hes, pts)
+  }.(ys map(level-at) insert-gaps(ves))
+}
+
+` "Largest-rectangle search over polygon levels.
+
+The search considers every pair of levels (start, end) as potential top
+and bottom rows of a rectangle. A 'corridor' tracks the narrowest
+polygon cross-section between start and end; the rectangle must fit
+within this corridor. The outer sweep picks each tile-bearing level as
+a start; the inner sweep folds downward through subsequent levels,
+narrowing the corridor and computing the best rectangle at each step.
+Pruning skips any pair whose maximum possible area cannot beat the
+current best."
+search: {
+
+  ` "Filter `xs` to elements within [`lo`, `hi`]."
+  in-range?(lo, hi, x): (x >= lo) ∧ (x <= hi)
+  clamp-to(lo, hi, xs): xs filter(in-range?(lo, hi))
+
+  ` "Max rectangle area for a start/end level pair. Clamps each level's
+  tile x-coords to the corridor bounds, then takes the widest pair of
+  tiles (one from each level) times the height."
+  max-rect(sy, st, ey, et, cl, cr): {
+    si: clamp-to(cl, cr, st)
+    ei: clamp-to(cl, cr, et)
+    pair-width(a, b): max(a - b, b - a) + 1
+    w: cross(pair-width, si, ei) max-of-or(0)
+    h: ey - sy + 1
+  }.(w * h)
+
+  ` "Inner fold step: process one level as a candidate end row.
+  The corridor `[left, right]` is the narrowest polygon cross-section
+  seen so far between the start level and here; it can only narrow
+  (never widen) as we descend. State is `[left, right, best]`.
+  Pruned when the corridor has closed or the remaining area cannot
+  beat `best`."
+  inner-step(sy, start-tiles, ymax, state, lv): {
+    left: state !! 0
+    right: state !! 1
+    best: state !! 2
+    # narrow corridor to this level's bounds
+    new-left: max(left, lv !! 1)
+    new-right: min(right, lv !! 2)
+    max-possible: (ymax - sy + 1) * (new-right - new-left + 1)
+    tiles: lv !! 3
+    area: tiles nil? then(0, max-rect(sy, start-tiles, lv !! 0, tiles, new-left, new-right))
+    pruned?: (left > right) ∨ (max-possible <= best)
+  }.(pruned? then(state,
+    [new-left, new-right, max(best, area)]))
+
+  ` "Inner sweep: fold downward from a fixed start level, narrowing
+  the corridor at each step. Returns the best area found."
+  inner(sy, st, cl, cr, ymax, lvs, best):
+    (lvs foldl(inner-step(sy, st, ymax), [cl, cr, best])) !! 2
+
+  ` "Outer fold step: try a level as the start row. Receives a suffix
+  of the level list so `rest` gives the levels below this one for the
+  inner sweep. Pruned when the level has no tiles or the maximum
+  possible area (full height times full width) cannot beat `best`."
+  outer-step(ymax, maxw, best, suffix): {
+    level: suffix head
+    rest: suffix tail
+    tiles: level !! 3
+    max-possible: (ymax - (level !! 0) + 1) * maxw
+    pruned?: (max-possible <= best) ∨ (tiles nil?)
+  }.(pruned? then(best,
+    inner(level !! 0, tiles, level !! 1, level !! 2, ymax, rest, best)))
+
+  ` "Maximum width spanned by tiles within bounds at a single level."
+  row-width(lv): {
+    ti: lv tail apply(clamp-to)
+  }.((ti count) > 1 then((ti max-of) - (ti min-of) + 1, 0))
+
+  ` "Find the maximum inscribed rectangle area across all level pairs.
+  Seeds `best` with the widest single-level row as a lower bound."
+  find-max(lvs): {
+    ymax: lvs map(!! 0) max-of
+    maxw: lvs map(_0 !! 2 - _0 !! 1 + 1) max-of
+    rm: lvs map(row-width) max-of
+  }.(lvs tails foldl(outer-step(ymax, maxw), rm))
+}
+
+solve2(pts): pts levels.from-points search.find-max
+
+` { target: :test2
+    import: "ex1=inputs/day09-ex1.txt" }
+test2: {
+  part-2: ex1 parse solve2 //= 24
+  RESULT: part-2 then(:PASS, :FAIL)
+}
+
+` { target: :part-2
+    import: "input=inputs/day09.txt" }
+part-2: input parse solve2

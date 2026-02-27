@@ -1,0 +1,83 @@
+"Solutions for Advent of Code 2025, Day 04.
+
+Part 1: Count rolls of paper accessible by forklift (fewer than four
+neighbours that are also rolls).
+
+Part 2: Repeatedly remove accessible rolls until none remain. Count
+the total removed.
+
+Approach: 2D convolution — compute 3x3 block sums via horizontal
+windowing then vertical stacking. A cell is accessible if it is a
+roll with block sum < 5. Part 2 iterates removal until stable.
+
+Notable eucalypt techniques:
+- `window(3, 1)` for horizontal sliding-window sums
+- `zip-with` for element-wise grid arithmetic
+- padding with zero rows/columns for uniform edge handling
+- recursive grid simulation for iterative removal
+
+Running time: ~3s (part 1), ~3.5 min (part 2)
+"
+
+roll?(c): (c = "@") then(1, 0)
+
+` "Parse a line into a list of 1s (roll) and 0s (empty)."
+to-bits(line): line str.letters map(roll?)
+
+` "Pad a row with a 0 on each side."
+pad(row): [0] ++ row ++ [0]
+
+` "A row of zeros the same length as the (padded) rows."
+zero-row(row): row map(const(0))
+
+` "Horizontal sums: for each position, sum of the 3-wide window."
+h-sums(row): row pad window(3, 1) map(sum)
+
+` "Element-wise sum of two lists."
+add-rows(a, b): zip-with(+, a, b)
+
+` "Sum three rows element-wise."
+sum3(rows): rows reduce(add-rows)
+
+` "Compute the 3x3 block sums for each cell in the grid."
+block-sums(grid): {
+  w: grid head count
+  hs: grid map(h-sums)
+  zr: repeat(0) take(w)
+}.(([zr] ++ hs ++ [zr]) window(3, 1) map(sum3))
+
+` "A cell is accessible if it is a roll (1) with fewer than 4 neighbours."
+accessible?(cell, s): (cell = 1 ∧ s < 5) then(1, 0)
+
+` "Grid of accessible rolls: 1 where a roll can be reached, 0 elsewhere."
+survivals(grid): zip-with(zip-with(accessible?), grid, block-sums(grid))
+
+parse(data): data map(to-bits)
+
+solve(grid): survivals(grid) map(sum) sum
+
+` "One removal step: returns [new-grid, count-removed]."
+remove-step(state): {
+  grid: state first
+  removed: survivals(grid)
+  n: removed map(sum) sum
+  new-grid: zip-with(zip-with(-), grid, removed)
+}.([new-grid, n])
+
+solve2(grid): [grid, 1] iterate(remove-step) tail map(second) take-while(!= 0) sum
+
+` { target: :test
+    import: "ex1=inputs/day04-ex1.txt" }
+test: {
+  part-1: ex1 parse solve //= 13
+  part-2: ex1 parse solve2 //= 43
+  RESULT: (part-1 ∧ part-2) then(:PASS, :FAIL)
+}
+
+` { target: :part-1
+    import: "input=inputs/day04.txt" }
+part-1: input parse solve
+
+` { target: :part-2
+    import: "input=inputs/day04.txt" }
+part-2: input parse solve2
