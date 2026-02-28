@@ -74,19 +74,30 @@ chains.
 ### 3. Bracket Pair Assignment
 
 A Unicode bracket pair can be assigned to a specific monad via a
-property declaration:
+property declaration using an empty block destructure `{}` as the
+parameter:
 
 ```eucalypt
-⟦⟧: { :monad  bind: rand-bind  return: rand-return }
+⟦{}⟧: { :monad  bind: rand-bind  return: rand-return }
 ```
 
-This follows the same mechanism as idiot brackets — the bracket pair
-is a named declaration in scope. The value is a monad spec block
-instead of a function. The desugarer distinguishes by the `:monad`
-metadata tag:
+The `{}` in the definition signals that this bracket pair expects
+**block content** (declarations). The parser uses the definition's
+parameter shape to determine parse mode:
 
-- Block with `:monad` tag → monadic block brackets
-- Function definition → idiot brackets (expression mode)
+- **Block parameter** (`⟦{}⟧:`) → block mode (declarations with
+  colons, currently only monadic)
+- **List parameter** (`⟦[x : xs]⟧:`) → expression mode (idiot
+  brackets, spaces collect items into a list)
+- **Plain parameter** (`⟦xs⟧:`) → expression mode (idiot brackets)
+
+This cleanly resolves the parse-time disambiguation problem: the
+parser inspects the bracket definition to determine how to parse
+content within the brackets.
+
+The `{}` parameter is forward-compatible — a future non-monadic block
+bracket override would also use `{}` but with a different body (no
+`:monad` tag).
 
 Bracket pairs follow operator scoping rules — defined in any block
 scope, visible in the defining scope and nested scopes.
@@ -169,7 +180,7 @@ list-bind(xs, f): xs mapcat(f)
 list-return(x): [x]
 
 # Assign bracket pair
-⟦⟧: { :monad  bind: list-bind  return: list-return }
+⟦{}⟧: { :monad  bind: list-bind  return: list-return }
 
 # Usage: all combinations of x and y
 combinations: ⟦
@@ -215,7 +226,7 @@ rand-return(x): (stream): { value: x  rest: stream }
 # so random-int(6) is already a random action
 
 # Assign bracket pair
-⟦⟧: { :monad  bind: rand-bind  return: rand-return }
+⟦{}⟧: { :monad  bind: rand-bind  return: rand-return }
 
 # Roll three dice
 three-dice: ⟦
@@ -254,14 +265,17 @@ a block with `:monad` metadata:
 
 Monadic bracket pairs share the same lexer and parser infrastructure
 as idiot brackets (Unicode Ps/Pe recognition). The distinction is in
-the definition's value:
+the definition's parameter shape:
 
-- Idiot bracket: definition has a function body
-- Monadic bracket: definition is a block with `:monad` metadata
+- **Block parameter** (`⟦{}⟧:`) → parse contents as declarations
+  (block mode)
+- **List or plain parameter** (`⟦[...]⟧:` or `⟦xs⟧:`) → parse
+  contents as expressions (expression mode)
 
-When the parser encounters a user-defined bracket pair containing
-declarations (colons), it checks whether the bracket is defined as a
-monadic bracket and desugars accordingly.
+The parser inspects the bracket definition before parsing the
+contents, using the parameter shape to determine the parse mode.
+Any bracket defined with `{}` parses its contents as block
+declarations; all other definitions parse as expression lists.
 
 ### Pipeline Position
 

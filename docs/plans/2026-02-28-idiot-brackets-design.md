@@ -110,7 +110,21 @@ Bracket functions follow the same scoping rules as operators:
 - Can be overridden in inner scopes
 - Resolved during name resolution (cook phase)
 
-### 5. Desugaring
+### 5. Parse-Mode Disambiguation
+
+A bracket pair's definition parameter shape determines how the parser
+treats the content:
+
+- **List parameter** (`«[x : xs]»:`) or **plain parameter** (`«xs»:`)
+  → expression mode: top-level spaces collect items into a list
+- **Block parameter** (`«{}»:`) → block mode: contents are parsed as
+  declarations (used by monadic blocks — see monadic blocks design)
+
+This means the parser must resolve the bracket definition before
+parsing the content. Any bracket defined without `{}` in parameter
+position is an idiot bracket (expression mode).
+
+### 6. Desugaring
 
 `«a b c»` desugars to:
 
@@ -122,7 +136,7 @@ The bracket function is a normal function taking a single list
 argument. All list-processing semantics (folding, destructuring, etc.)
 are expressed in the function body using standard eucalypt.
 
-### 6. Fusion
+### 7. Fusion
 
 The destructure fusion pass from the destructuring design applies
 directly. Since the bracket function will typically destructure its
