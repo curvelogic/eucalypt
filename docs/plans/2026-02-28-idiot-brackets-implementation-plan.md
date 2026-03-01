@@ -978,3 +978,60 @@ Tasks 8-11 (tests) are additive and can be combined if desired.
   implementation. Currently all user brackets are expression-mode
   (idiot brackets). The `{}` parameter recognition will be added
   when monadic blocks are implemented.
+
+---
+
+## Editor Support Tasks
+
+### Task 12: Update tree-sitter grammar for bracket expressions
+
+**Files:**
+- Modify: `editors/tree-sitter-eucalypt/grammar.js`
+
+**Changes required:**
+
+1. Add a `bracket_expr` rule to the grammar as an alternative in
+   `_element`. This uses `RESERVED_OPEN` and `RESERVED_CLOSE` tokens
+   (which the grammar doesn't currently handle — they cause parse
+   errors). The new rule:
+
+   ```javascript
+   bracket_expr: $ => seq(
+     $.reserved_open,
+     optional($.soup),
+     $.reserved_close,
+   ),
+   ```
+
+2. Add `reserved_open` and `reserved_close` token rules. These match
+   non-ASCII Unicode opening/closing punctuation characters. The exact
+   regex should mirror the Rust lexer's `is_reserved_open` /
+   `is_reserved_close` logic, but for tree-sitter a practical
+   character class covering common brackets suffices (see eu-fbyk for
+   full Unicode category support via external scanner).
+
+3. Add bracket pair declarations to `declaration_head`:
+
+   ```javascript
+   // Bracket pair declaration: «xs»:
+   seq($.reserved_open, $.identifier, $.reserved_close),
+   ```
+
+4. Regenerate the parser: `cd editors/tree-sitter-eucalypt && npx tree-sitter generate`
+
+5. Test with sample `.eu` files containing bracket expressions.
+
+### Task 13: Update VS Code extension for bracket expressions
+
+**Files:**
+- Modify: `editors/vscode/syntaxes/eucalypt.tmLanguage.json`
+- Modify: `editors/vscode/language-configuration.json`
+
+**Changes required:**
+
+1. Add TextMate scope for bracket expressions and bracket pair
+   declarations (matching the tree-sitter grammar changes).
+
+2. Add Unicode bracket pairs to `language-configuration.json`
+   `brackets` and `autoClosingPairs` arrays for common pairs:
+   `⟨⟩`, `⟦⟧`, `«»`, `⌈⌉`, `⌊⌋`, `‹›`.

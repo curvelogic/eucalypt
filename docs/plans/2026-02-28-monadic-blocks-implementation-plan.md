@@ -1144,3 +1144,53 @@ Tasks 7-11 are additive and can be combined.
 - **No new core-to-core pass**: The monadic desugaring emits standard
   core expressions (applications, lambdas, names). The cook phase
   and downstream passes handle them normally.
+
+---
+
+## Editor Support Tasks
+
+### Task 12: Update tree-sitter grammar for block-mode brackets
+
+**Files:**
+- Modify: `editors/tree-sitter-eucalypt/grammar.js`
+
+**Changes required:**
+
+1. Extend the `bracket_expr` rule (added by idiot brackets) to support
+   block-mode brackets. Block mode is detected by the presence of
+   declarations (colons) inside the brackets. Add a `bracket_block`
+   alternative:
+
+   ```javascript
+   bracket_block: $ => seq(
+     $.reserved_open,
+     repeat(seq($.declaration, optional(','))),
+     $.reserved_close,
+   ),
+   ```
+
+2. Add `bracket_block` as an alternative in `_element`.
+
+3. Add `{}` parameter pattern for bracket pair definitions that signal
+   block mode:
+
+   ```javascript
+   // Block-mode bracket pair: ⟦{}⟧:
+   seq($.reserved_open, '{', '}', $.reserved_close),
+   ```
+
+4. Add highlighting for `:monad` metadata tag.
+
+5. Regenerate the parser.
+
+### Task 13: Update VS Code extension for monadic brackets
+
+**Files:**
+- Modify: `editors/vscode/syntaxes/eucalypt.tmLanguage.json`
+
+**Changes required:**
+
+1. Add TextMate scopes for `bracket_block` (distinct from
+   `bracket_expr` to allow different colouring if desired).
+
+2. Add highlighting for `:monad` as a keyword/metadata tag.

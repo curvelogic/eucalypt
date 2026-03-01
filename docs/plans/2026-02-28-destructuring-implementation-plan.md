@@ -700,3 +700,62 @@ Task 1 (infrastructure)
 ```
 
 Tasks 6 (cons operator) can proceed in parallel with Tasks 3-5.
+
+---
+
+## Editor Support Tasks
+
+### Task 11: Update tree-sitter grammar for destructuring patterns
+
+**Files:**
+- Modify: `editors/tree-sitter-eucalypt/grammar.js`
+
+**Changes required:**
+
+1. Allow block and list nodes inside `parameter_list`. Currently
+   `parameter_list` only accepts `identifier` children. Extend it to
+   accept `block` and `list` as alternatives:
+
+   ```javascript
+   parameter_list: $ => seq(
+     '(',
+     commaSep(choice($.identifier, $.block, $.list)),
+     ')',
+   ),
+   ```
+
+2. Add `‖` (U+2016, DOUBLE VERTICAL LINE) to the operator character
+   class in `OPER_CHARS` (line 14) and the `operator` rule (line 280).
+   This is a stopgap — eu-fbyk tracks the proper fix via external
+   scanner for full Unicode category support.
+
+3. Extend juxtaposed call syntax: when a `block` or `list` immediately
+   follows a `name` without whitespace, parse as application. This may
+   require the same lexer-level "apply" token distinction used for
+   `OPEN_PAREN_APPLY`, or a parser-level rule:
+
+   ```javascript
+   juxtaposed_call: $ => prec.left(2, seq(
+     $.name,
+     choice($.block, $.list),
+   )),
+   ```
+
+4. Regenerate the parser: `cd editors/tree-sitter-eucalypt && npx tree-sitter generate`
+
+5. Test with sample `.eu` files containing destructuring patterns and
+   juxtaposed calls.
+
+### Task 12: Update VS Code extension for destructuring
+
+**Files:**
+- Modify: `editors/vscode/syntaxes/eucalypt.tmLanguage.json`
+- Modify: `editors/vscode/language-configuration.json`
+
+**Changes required:**
+
+1. Add TextMate scopes for destructuring patterns in function parameter
+   positions (block and list patterns should highlight field names as
+   parameters, not property declarations).
+
+2. Add `‖` to the operator character matching patterns.
