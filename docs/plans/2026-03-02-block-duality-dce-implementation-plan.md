@@ -4,7 +4,7 @@
 
 **Goal:** Investigate whether the dual nature of blocks (namespace vs data structure) prevents effective dead code elimination, quantify the impact, explore approaches to unlock intra-block DCE, and decide whether to pursue a solution for 0.4.0.
 
-**Architecture:** Eucalypt blocks serve two roles: (1) **namespace/module** -- accessed via static dot notation (`ns.member`), compiled to `Expr::Lookup` with a known key string; (2) **data structure** -- passed to functions, merged, iterated via `ELEMENTS`/`KEYS`/`VALUES`/`MERGE`, accessed dynamically via `LOOKUP`. The existing block-level DCE in `prune.rs` (using `BlockAccessTracker`) already handles the easy case: `DefaultBlockLet` bindings accessed *only* via static `Lookup` patterns get their block body filtered. The deeper problem is that the prelude (1324 lines, ~43KB, ~205 top-level + ~130 nested declarations) is merged into every compilation unit via `merge_in`/`rebody`, and many of its nested blocks (e.g. `str`, `cal`, `set`, `graph`) escape dynamically through patterns like `str join(...)` (catenation applies the block as a function argument) or through the `dynamise` transform which turns free variables into runtime lookups.
+**Architecture:** Eucalypt blocks serve two roles: (1) **namespace/module** — accessed via static dot notation (`ns.member`), compiled to `Expr::Lookup` with a known key string; (2) **data structure** — passed to functions, merged, iterated via `ELEMENTS`/`KEYS`/`VALUES`/`MERGE`, accessed dynamically via `LOOKUP`. The existing block-level DCE in `prune.rs` (using `BlockAccessTracker`) already handles the easy case: `DefaultBlockLet` bindings accessed *only* via static `Lookup` patterns get their block body filtered. The investigation needs to determine exactly where and why the existing DCE fails — the primary suspect is the `dynamise` transform (`src/core/transform/dynamise.rs`) which converts free variables into `Lookup(target, key, Some(Var(Bound(original))))` patterns. The fallback `Some(Var(Bound(original)))` is traversed during the prune mark phase, hitting the bare `Var(Bound(bv))` case which calls `encounter()` and disqualifies the binding from block-level DCE, even though the fallback is never reached when the lookup succeeds. This needs empirical verification before any fix is attempted.
 
 **Tech Stack:** Rust, existing core expression and STG infrastructure
 
@@ -619,35 +619,40 @@ Record:
 
 ---
 
-### Task 8: Investigate other escape paths (catenation/application patterns)
+### Task 8: Investigate remaining escape paths after dynamise fix
 
 **Files:**
 - No files modified (investigation only)
 
-**Step 1: Understand catenation**
-
-In eucalypt, `xs f(a)` is catenation -- `f` is applied to each element of `xs` (or `xs` is passed to `f`). When a user writes `str join(",")`, this compiles to `App(Var(str), [App(Var(join), [Str(",")])])` after cooking. The `Var(str)` in function position is a bare reference that causes escape.
-
-**Step 2: Determine if catenation patterns could be specialised**
-
-If the analyser detects that a block binding is *only* used in catenation patterns like `ns.member(args)` -- i.e. the dot access is immediately followed by application -- then the block still only needs the accessed member. But the current desugarer may not emit `Lookup` for dot-in-catenation; it may emit `App(Var(ns), [Name(member), ...])`.
-
-Check the cooked output:
+**Step 1: Run the block usage analysis after the Task 6 fix**
 
 ```bash
-cargo run -- --dump-cooked -e 'str join(",")'  2>/dev/null | head -30
+cargo run -- --debug-block-usage harness/test/006_str.eu 2>&1
+cargo run -- --debug-block-usage harness/test/010_prelude.eu 2>&1
 ```
 
-**Step 3: Assess feasibility**
+Examine which blocks still escape and what their escape sites are.
 
-If `str.join(",")` desugars to `Lookup(Var(str), "join", ...)` applied to `","`, then the existing DCE handles it. If it desugars to `App(Var(str), [Var(join), Str(",")])`, then `str` escapes via bare `Var` and can't be DCE'd without a deeper change.
+**Step 2: Trace each remaining escape to its source**
 
-**Step 4: Document findings and decision**
+For each escaping block, determine the root cause:
+- Is it a genuine dynamic use (block passed to merge, elements, etc.)?
+- Is it another transform introducing bare `Var` references?
+- Is it a catenation pattern? (Check what `str.join(",")` actually
+  compiles to — it likely desugars to `Lookup` not bare `Var`)
+
+Use `--dump-cooked` or `--dump-stg` to inspect specific expressions:
+
+```bash
+cargo run -- --dump-cooked -e 'str.join(",")' 2>/dev/null | head -30
+```
+
+**Step 3: Document findings and decide**
 
 At this point we should have enough data to decide:
-- **Option A: Sufficient** -- The dynamise fallback fix (Task 6) recovers most DCE opportunities. Ship it.
-- **Option B: Moderate** -- Additional patterns need handling (catenation specialisation). File follow-up tasks.
-- **Option C: Fundamental** -- Block duality is deeply entrenched. Would require language-level changes (module system, import qualifiers). Not worth pursuing for 0.4.0.
+- **Option A: Sufficient** — The dynamise fallback fix (Task 6) recovers most DCE opportunities. Ship it.
+- **Option B: Moderate** — Additional specific patterns need handling. File follow-up tasks with concrete root causes.
+- **Option C: Fundamental** — Block duality is deeply entrenched. Would require language-level changes (module system, import qualifiers). Not worth pursuing for 0.4.0.
 
 ---
 
@@ -815,10 +820,11 @@ Write a summary for the task ticket documenting:
 
 1. **Quantitative findings**: How many block members are eliminated by the existing DCE, how many more are eliminated by the dynamise-fallback fix, and how many remain uneliminated due to genuine dynamic access.
 
-2. **Root causes of remaining waste**:
-   - Catenation patterns (`block member(args)`) that desugar to `App(Var(block), ...)` -- bare variable escape
-   - Blocks used as merge targets -- genuine dynamic access
-   - Blocks passed as function arguments -- genuine escape
+2. **Root causes of remaining waste** (to be determined empirically):
+   - Dynamise fallback patterns (confirmed suspect)
+   - Blocks used as merge targets — genuine dynamic access
+   - Blocks passed as function arguments — genuine escape
+   - Any other transform-introduced bare `Var` references
 
 3. **Recommendation**: Whether to:
    - Ship the dynamise-fallback fix as a quick win
