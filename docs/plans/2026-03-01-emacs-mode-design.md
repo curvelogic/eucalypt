@@ -149,6 +149,10 @@ A custom `eucalypt` input method for entering Unicode operators:
  ("//"  ?÷)    ; exact division (input method only, // is assertion)
  ;; Composition
  (".."  ?∘)    ; compose
+ ;; Anaphora
+ ("**"  ?•)    ; block anaphor (bullet)
+ ;; Sets
+ ("{}"  ?∅)    ; empty set
  ;; Brackets (common pairs)
  ("(("  ?⟨)   ("<|"  ?⟨)
  ("))"  ?⟩)   ("|>"  ?⟩)
@@ -179,6 +183,8 @@ Unicode operators by category:
   ["Arithmetic"
    ("-" "∸ negate"  (lambda () (interactive) (insert "∸")))
    ("d" "÷ divide"  (lambda () (interactive) (insert "÷")))]
+  ["Anaphora"
+   ("b" "• bullet"  (lambda () (interactive) (insert "•")))]
   ["Other"
    ("c" "∘ compose" (lambda () (interactive) (insert "∘")))
    ("e" "∅ empty"   (lambda () (interactive) (insert "∅")))])
@@ -245,7 +251,70 @@ Tree-sitter font-lock rule:
 
 ---
 
-## Section 6: Bug Fixes
+## Section 6: Docstring Markdown Rendering
+
+Eucalypt docstrings (`` ` "..." `` and `` ` { doc: "..." } ``) are
+assumed to contain Markdown content. Two complementary rendering
+approaches:
+
+### 6.1 Inline Font-Lock Sub-Highlighting
+
+A `jit-lock` function post-processes tree-sitter `metadata` regions
+containing string nodes, applying Markdown-like faces to their
+content:
+
+- `` `code` `` → `font-lock-constant-face` (or a custom
+  `eucalypt-doc-code-face`)
+- `*bold*` / `**bold**` → bold weight
+- `_italic_` → italic slant
+
+The function identifies doc string regions by checking whether a
+`metadata` node's child is a `string` node (for `` ` "..." ``) or a
+`block` node containing a `doc` key (for `` ` { doc: "..." } ``).
+Only the string content is sub-highlighted, not the backtick or block
+structure.
+
+```elisp
+(defun eucalypt--fontify-doc-markdown (start end)
+  "Apply lightweight Markdown highlighting inside docstrings."
+  (goto-char start)
+  (let ((case-fold-search nil))
+    ;; Inline code
+    (while (re-search-forward "`\\([^`]+\\)`" end t)
+      (when (eucalypt--in-doc-string-p (match-beginning 0))
+        (put-text-property (match-beginning 1) (match-end 1)
+                           'face 'eucalypt-doc-code-face)))
+    ;; Bold
+    (goto-char start)
+    (while (re-search-forward "\\*\\*?\\([^*]+\\)\\*\\*?" end t)
+      (when (eucalypt--in-doc-string-p (match-beginning 0))
+        (put-text-property (match-beginning 1) (match-end 1)
+                           'face '(:weight bold))))
+    ;; Italic
+    (goto-char start)
+    (while (re-search-forward "\\_<_\\([^_]+\\)_\\_>" end t)
+      (when (eucalypt--in-doc-string-p (match-beginning 0))
+        (put-text-property (match-beginning 1) (match-end 1)
+                           'face '(:slant italic))))))
+```
+
+The `eucalypt--in-doc-string-p` helper uses `treesit-node-at` to
+check whether the point is inside a metadata string node.
+
+### 6.2 LSP Hover Documentation
+
+When eglot is active, LSP `textDocument/hover` can return docstrings
+as Markdown. Eglot renders Markdown in the eldoc popup natively —
+no Emacs mode work needed beyond ensuring the LSP server extracts and
+returns doc metadata. This gives full Markdown rendering (headings,
+lists, code blocks) on hover without any buffer modification.
+
+The LSP server enhancement is out of scope for the Emacs mode — it's
+a `eu lsp` feature tracked separately.
+
+---
+
+## Section 7: Bug Fixes
 
 ### Bug A: `#` in Strings Treated as Comment
 
@@ -288,12 +357,12 @@ structure; test with real files.
 
 ---
 
-## Section 7: Editor Updates for 0.4.0 Features
+## Section 8: Editor Updates for 0.4.0 Features
 
 Cross-review of all 0.4.0 implementation plans identified the
 following editor work needed:
 
-### 7.1 Tree-Sitter Grammar Updates
+### 8.1 Tree-Sitter Grammar Updates
 
 **Idiot brackets (eu-wenf):** Tasks 12-13 added to plan.
 - `bracket_expr` rule with `reserved_open` / `reserved_close` tokens
@@ -313,12 +382,12 @@ following editor work needed:
 functions are standard prelude identifiers. Prelude function names for
 highlighting can be updated in the Emacs mode's keyword list.
 
-### 7.2 VS Code Extension Updates
+### 8.2 VS Code Extension Updates
 
 Each plan above includes a VS Code extension task for TextMate grammar
 and language configuration updates.
 
-### 7.3 Tree-Sitter Unicode Operator Coverage
+### 8.3 Tree-Sitter Unicode Operator Coverage
 
 Bead eu-fbyk tracks replacing the hardcoded `OPER_CHARS` character
 class in `grammar.js` with an external scanner that uses Unicode
