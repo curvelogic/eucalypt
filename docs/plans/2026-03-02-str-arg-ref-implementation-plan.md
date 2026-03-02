@@ -4,11 +4,11 @@
 
 **Goal:** Introduce a `str_arg_ref()` helper that returns `&str` borrowed directly from the heap string, eliminating the intermediate Rust `String` allocation that the current `str_arg()` performs. Migrate SPLIT, MATCH, MATCHES, and LETTERS intrinsics to use the new zero-copy helper.
 
-**Architecture:** The current `str_arg()` in `src/eval/stg/support.rs` resolves a `Ref` to a `Native::Str(RefPtr<HeapString>)`, then calls `view.scoped(s).as_str().to_string()` — creating an owned `String` copy. The new `str_arg_ref()` returns a `&str` that borrows directly from the heap `HeapString`. Because eucalypt currently uses mark-and-sweep GC without evacuation (objects never move), and GC cannot trigger while an intrinsic is executing (single-threaded stop-the-world model), the `&str` borrow is safe for the duration of intrinsic execution. When the block pinning API (eu-skjg) lands, `str_arg_ref()` will be updated to pin the containing block, making it safe even under future evacuation-based GC.
+**Architecture:** The current `str_arg()` in `src/eval/stg/support.rs` resolves a `Ref` to a `Native::Str(RefPtr<HeapString>)`, then calls `view.scoped(s).as_str().to_string()` — creating an owned `String` copy. The new `str_arg_ref()` returns a `&str` that borrows directly from the heap `HeapString`, using the block pinning API (eu-skjg) to pin the containing block and prevent the GC from moving it during the borrow. Although the current GC does not evacuate objects, pinning is REQUIRED as a correctness-by-construction principle — introducing zero-copy borrows without pinning would create a latent safety hole that could cause unsound behaviour if a future GC change introduces evacuation.
 
-**Tech Stack:** Rust, existing STG intrinsic infrastructure, `HeapString` heap type
+**Tech Stack:** Rust, existing STG intrinsic infrastructure, `HeapString` heap type, block pinning API (eu-skjg)
 
-**Dependency on eu-skjg:** This plan does NOT require the block pinning API. The current GC does not evacuate (move) objects, so borrowing from the heap is safe today. The pinning API will be a future-proofing addition. We proceed with the zero-copy helper now and add pinning when eu-skjg completes.
+**Dependency on eu-skjg:** This plan REQUIRES the block pinning API (eu-skjg) to be implemented first. The `str_arg_ref()` helper uses `PinGuard` to pin the heap block containing the borrowed string, ensuring correctness even under future GC evolution. Do not implement this plan until eu-skjg is complete.
 
 ---
 
@@ -29,12 +29,9 @@ After the existing `str_arg()` function (after line 71), add a new function:
 /// Helper for intrinsics to borrow a &str directly from the heap.
 ///
 /// Unlike `str_arg()`, this returns a reference into the heap-allocated
-/// `HeapString` without copying to a Rust `String`. This is safe because:
-/// - GC cannot trigger during intrinsic execution (single-threaded model)
-/// - The current GC does not evacuate (move) objects
-///
-/// When block pinning (eu-skjg) lands, this function will pin the
-/// containing block to remain safe under evacuation-based GC.
+/// `HeapString` without copying to a Rust `String`. The containing heap
+/// block is pinned via `PinGuard` to prevent the GC from moving it
+/// during the borrow.
 pub fn str_arg_ref<'guard>(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'guard>,
@@ -42,7 +39,8 @@ pub fn str_arg_ref<'guard>(
 ) -> Result<&'guard str, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
     if let Native::Str(s) = native {
-        Ok(view.scoped(s).as_str_ref())
+        view.pin(s);
+        Ok(view.scoped(s).as_ref().as_str())
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
@@ -69,14 +67,14 @@ In `src/eval/memory/mutator.rs`, add:
 ///
 /// # Safety considerations
 ///
-/// Safe because the 'guard lifetime ties the returned reference to the
-/// heap's lifetime. The heap cannot deallocate the string during this
-/// scope, and GC does not run during intrinsic execution.
+/// The caller MUST pin the containing block (via `view.pin(ptr)`)
+/// before calling this method. Pinning prevents the GC from moving
+/// the block during the borrow.
 pub fn str_ref(self, ptr: RefPtr<HeapString>) -> &'guard str {
     let scoped = self.scoped(ptr);
     // SAFETY: The HeapString data lives on the heap for at least 'guard.
     // ScopedPtr.value is &'guard HeapString, so the str data within has
-    // the same lifetime. We re-derive the reference to bind to 'guard.
+    // the same lifetime. The block is pinned by the caller.
     let heap_str: &'guard HeapString = scoped.value;
     heap_str.as_str()
 }
@@ -134,6 +132,7 @@ pub fn str_arg_ref<'guard>(
 ) -> Result<&'guard str, ExecutionError> {
     let native = machine.nav(view).resolve_native(arg)?;
     if let Native::Str(s) = native {
+        view.pin(s);
         Ok(view.scoped(s).as_ref().as_str())
     } else {
         Err(ExecutionError::TypeMismatch(
@@ -606,13 +605,11 @@ No commit needed if no changes were made.
 
 **Total estimated time: ~24 minutes**
 
-## Future Work (eu-skjg dependency)
+## Future Work
 
-When the block pinning API lands:
+Once the zero-copy pattern is proven with these four intrinsics, consider
+migrating additional string intrinsics (`Join`, `Upper`, `Lower`, `Fmt`,
+`Sym`, `NumParse`) where the owned `String` copy is unnecessary.
 
-1. Add `pin()` call in `str_arg_ref()` before dereferencing
-2. Return a wrapper type (e.g., `PinnedStr<'guard>`) that holds both the `&str` and the `PinGuard`
-3. Update all callers to use the pinned wrapper
-4. Add GC stress tests with string-heavy workloads to verify pinning correctness under evacuation
-
-This is out of scope for the current task.
+GC stress tests with string-heavy workloads would provide additional
+confidence in the pinning-based borrowing model under pressure.
