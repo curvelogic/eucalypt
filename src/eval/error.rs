@@ -85,6 +85,23 @@ fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
     msg
 }
 
+/// Format a "not a value" error message when a non-value expression is found
+/// where a primitive value was expected.
+fn format_not_value(context: &str) -> String {
+    if context.is_empty() {
+        "expected a value but found an unevaluated expression\n  \
+         help: this can occur when a function or structured value appears \
+         where a primitive (number, string, etc.) was expected"
+            .to_string()
+    } else {
+        format!(
+            "expected a value but found {context}\n  \
+             help: this can occur when a function or structured value appears \
+             where a primitive (number, string, etc.) was expected"
+        )
+    }
+}
+
 /// Format a "not callable" error message with the actual type of value found
 fn format_not_callable(actual_type: &str) -> String {
     if actual_type.is_empty() {
@@ -173,7 +190,7 @@ pub enum ExecutionError {
     UnknownIntrinsic(Smid, String),
     #[error("{}", format_not_callable(.1))]
     NotCallable(Smid, String),
-    #[error("intrinsic {1} expected value in strict position")]
+    #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
     #[error("bad regex ({0})")]
     BadRegex(String),
