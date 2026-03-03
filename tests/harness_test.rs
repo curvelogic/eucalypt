@@ -690,3 +690,8 @@ pub fn test_error_043() {
 pub fn test_error_044() {
     run_error_test(&error_opts("044_double_colon_type_annot.eu"));
 }
+
+#[test]
+pub fn test_error_045() {
+    run_error_test(&error_opts("045_list_plus_concat.eu"));
+}
