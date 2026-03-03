@@ -64,9 +64,11 @@ impl CompileError {
         match self {
             CompileError::FreeVar(_, name) => {
                 let mut notes = vec!["check that the variable is defined and in scope".to_string()];
-                // If the name looks like a short identifier (typical lambda
-                // parameter), hint about the common '->' mistake.
-                if name.len() <= 3 && name.chars().all(|c| c.is_alphanumeric()) {
+                // If the name is a single letter it almost certainly comes from an
+                // arrow-function expression like `x -> x + 1`.  Avoid showing this
+                // hint for longer names (e.g. `xs`, `zdt`) that are more likely
+                // genuine unresolved identifiers rather than misused lambda parameters.
+                if name.len() == 1 && name.chars().all(|c| c.is_alphanumeric()) {
                     notes.push(
                         "note: eucalypt has no arrow functions; '->' is the const \
                          operator, not lambda syntax"

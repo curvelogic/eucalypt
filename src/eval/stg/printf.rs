@@ -207,8 +207,11 @@ fn parse_length(sub: &[u8]) -> (Length, &[u8]) {
 
 /// Parse a format parameter and write it somewhere.
 ///
+/// Returns `None` if the string is not a valid printf-style format specifier.
 fn parse_format(format: &str) -> Option<Argument> {
-    assert!(format.starts_with('%'));
+    if !format.starts_with('%') {
+        return None;
+    }
     let sub = next_char(format.as_bytes());
 
     let (flags, sub) = parse_flags(sub);
@@ -448,7 +451,13 @@ pub fn fmt(
             }
         }
         Ok(output)
+    } else if !fmt_string.starts_with('%') {
+        Err(PrintfError::InvalidFormatString(format!(
+            "'{fmt_string}' is not a printf specifier (must start with '%', e.g. '%d', '%s', '%.2f')"
+        )))
     } else {
-        Err(PrintfError::InvalidFormatString(fmt_string.to_string()))
+        Err(PrintfError::InvalidFormatString(format!(
+            "'{fmt_string}' is not a recognised printf specifier"
+        )))
     }
 }
