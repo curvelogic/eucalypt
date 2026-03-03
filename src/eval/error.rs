@@ -155,7 +155,8 @@ fn format_not_callable(actual_type: &str) -> String {
     } else {
         format!(
             "tried to call a {actual_type} as a function\n  \
-             help: only functions and blocks can be called with arguments"
+             help: only functions and blocks can be called with arguments\n  \
+             help: this often means too many arguments were passed to a function"
         )
     }
 }
