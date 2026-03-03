@@ -186,10 +186,17 @@ impl<T: BoundTerm<String> + Clone> IntoIterator for BlockMap<T> {
 
 /// Used to tag lets that have a default block as body, to support
 /// optimisations that don't then need to work with the body.
+///
+/// `DestructureBlockLet` and `DestructureListLet` mark lets generated
+/// by desugaring a destructuring parameter pattern.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LetType {
     DefaultBlockLet,
     OtherLet,
+    /// Let generated from a block destructuring parameter `{x y}`
+    DestructureBlockLet,
+    /// Let generated from a list destructuring parameter `[a, b, c]`
+    DestructureListLet,
 }
 
 impl_bound_term_ignore!(LetType);

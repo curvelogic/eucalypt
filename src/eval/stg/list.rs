@@ -7,7 +7,10 @@ use crate::{
     eval::{
         emit::Emitter,
         error::ExecutionError,
-        machine::intrinsic::{CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic},
+        machine::{
+            env::SynClosure,
+            intrinsic::{CallGlobal1, CallGlobal2, Const, IntrinsicMachine, StgIntrinsic},
+        },
         memory::{mutator::MutatorHeapView, syntax::Ref},
     },
 };
@@ -15,13 +18,17 @@ use crate::{
 use super::{
     force::SeqNumList,
     panic::Panic,
-    support::{collect_num_list, machine_return_bool, machine_return_num_list},
+    support::{
+        collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
+    },
     syntax::{
         dsl::{annotated_lambda, app_bif, case, data, force, local, lref, str, value},
         LambdaForm,
     },
     tags::DataConstructor,
 };
+
+use crate::eval::memory::syntax::HeapSyn;
 
 /// A constant for CONS
 pub struct Cons;
@@ -174,3 +181,106 @@ impl StgIntrinsic for SortNumList {
 }
 
 impl CallGlobal1 for SortNumList {}
+
+/// LIST.NTH(list, n) — return the nth element (0-indexed) of a list.
+///
+/// Both arguments are forced (strict: [0, 1]). The list must be a
+/// fully-evaluated cons structure. Panics if the list has fewer than
+/// n+1 elements.
+pub struct ListNth;
+
+impl StgIntrinsic for ListNth {
+    fn name(&self) -> &str {
+        "LIST.NTH"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let n = {
+            let num = num_arg(machine, view, &args[1])?;
+            num.as_u64().unwrap_or(0) as usize
+        };
+        let mut iter = data_list_arg(machine, view, args[0].clone())?;
+        let mut current: Option<SynClosure> = None;
+        for _ in 0..=n {
+            current = iter.next().transpose()?;
+        }
+        match current {
+            Some(closure) => machine.set_closure(closure),
+            None => Err(ExecutionError::Panic(format!(
+                "LIST.NTH: index {} out of bounds",
+                n
+            ))),
+        }
+    }
+}
+
+impl CallGlobal2 for ListNth {}
+
+/// LIST.DROP(n, list) — drop the first n elements and return the remainder.
+///
+/// Both arguments are forced (strict: [0, 1]). The list must be a
+/// fully-evaluated cons structure. Returns an empty list if n exceeds
+/// the list length.
+pub struct ListDrop;
+
+impl StgIntrinsic for ListDrop {
+    fn name(&self) -> &str {
+        "LIST.DROP"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let n = {
+            let num = num_arg(machine, view, &args[0])?;
+            num.as_u64().unwrap_or(0) as usize
+        };
+
+        // Navigate through the cons structure, skipping n elements.
+        // We traverse the tail links directly so we can return the
+        // remaining cons cell (rather than reconstructing the list).
+        let mut closure = machine.nav(view).resolve(&args[1])?;
+        for _ in 0..n {
+            let code = view.scoped(closure.code());
+            match &*code {
+                HeapSyn::Cons { tag, args: cons_args } => {
+                    match (*tag).try_into() {
+                        Ok(DataConstructor::ListCons) => {
+                            let tail_ref = cons_args.get(1).ok_or_else(|| {
+                                ExecutionError::Panic("malformed cons cell".to_string())
+                            })?;
+                            closure = closure.navigate_local(&view, tail_ref);
+                        }
+                        Ok(DataConstructor::ListNil) => {
+                            // Ran out of elements — return the nil (empty list)
+                            return machine.set_closure(closure);
+                        }
+                        _ => {
+                            return Err(ExecutionError::Panic(
+                                "LIST.DROP: expected list".to_string(),
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ExecutionError::Panic(
+                        "LIST.DROP: expected list".to_string(),
+                    ));
+                }
+            }
+        }
+        machine.set_closure(closure)
+    }
+}
+
+impl CallGlobal2 for ListDrop {}
