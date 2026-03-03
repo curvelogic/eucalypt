@@ -21,7 +21,12 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
                 .to_string(),
         ],
         (Number, String) => {
-            vec!["if you need to convert a string to a number, use 'parse-num'".to_string()]
+            vec![
+                "if you need to convert a string to a number, use 'parse-num'".to_string(),
+                "to concatenate strings, use string interpolation or 'join-on' \
+                 instead of '+'"
+                    .to_string(),
+            ]
         }
         (String, Number) => vec!["if you need to convert a number to a string, use 'str' or \
              string interpolation"
@@ -48,7 +53,12 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
                 .to_string(),
         ]
     } else if is_string && expects_number {
-        vec!["to convert a string to a number, use 'parse-num'".to_string()]
+        vec![
+            "to convert a string to a number, use 'parse-num'".to_string(),
+            "to concatenate strings, use string interpolation or 'join-on' \
+             instead of '+'"
+                .to_string(),
+        ]
     } else if is_number && expects_string {
         vec!["to convert a number to a string, use 'str' or string interpolation".to_string()]
     } else {
