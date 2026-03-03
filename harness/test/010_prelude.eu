@@ -94,18 +94,18 @@ tests: {
   }
 
   unicode-comparison: {
-    # \u2260 (not equal)
-    t1: 1 \u2260 2
-    t2: not(1 \u2260 1)
-    t3: "a" \u2260 "b"
-    # \u2264 (less than or equal)
-    t4: 1 \u2264 2
-    t5: 1 \u2264 1
-    t6: not(2 \u2264 1)
-    # \u2265 (greater than or equal)
-    t7: 2 \u2265 1
-    t8: 1 \u2265 1
-    t9: not(1 \u2265 2)
+    # ≠ (not equal)
+    t1: 1 ≠ 2
+    t2: not(1 ≠ 1)
+    t3: "a" ≠ "b"
+    # ≤ (less than or equal)
+    t4: 1 ≤ 2
+    t5: 1 ≤ 1
+    t6: not(2 ≤ 1)
+    # ≥ (greater than or equal)
+    t7: 2 ≥ 1
+    t8: 1 ≥ 1
+    t9: not(1 ≥ 2)
 
     pass: [t1, t2, t3, t4, t5, t6, t7, t8, t9] all-true?
   }
