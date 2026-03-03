@@ -740,3 +740,8 @@ pub fn test_error_053() {
 pub fn test_error_054() {
     run_error_test(&error_opts("054_num_merge_hint.eu"));
 }
+
+#[test]
+pub fn test_error_055() {
+    run_error_test(&error_opts("055_list_not_callable.eu"));
+}
