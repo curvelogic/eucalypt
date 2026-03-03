@@ -404,15 +404,24 @@ impl ExecutionError {
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
                 data_tag_mismatch_notes(*actual, expected)
             }
-            ExecutionError::NoBranchForNative(_, _) => {
-                vec![
+            ExecutionError::NoBranchForNative(_, type_name) => {
+                let mut notes = vec![
                     "list operations such as 'head', 'tail', '++', 'map', 'filter' require \
                      list arguments"
                         .to_string(),
                     "check that the value is a list before applying list operations; \
                      use 'nil?' to test for an empty list"
                         .to_string(),
-                ]
+                ];
+                if type_name == "string" {
+                    notes.push(
+                        "if you are trying to concatenate strings, use string interpolation \
+                         (e.g. 'join-on' or string patterns with variable references) \
+                         rather than '++'"
+                            .to_string(),
+                    );
+                }
+                notes
             }
             ExecutionError::BlackHole(_) => {
                 vec![
