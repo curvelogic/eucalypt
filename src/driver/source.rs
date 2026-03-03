@@ -8,6 +8,7 @@ use crate::core::inline::reduce;
 use crate::core::inline::tag;
 use crate::core::simplify::compress;
 use crate::core::simplify::prune;
+use crate::core::transform::destructure_fusion;
 use crate::core::unit::TranslationUnit;
 use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
@@ -405,6 +406,13 @@ impl SourceLoader {
     /// application tree and to handle expression anaphora
     pub fn cook(&mut self) -> Result<(), EucalyptError> {
         self.core.expr = cook::cook(self.core.expr.clone())?;
+        Ok(())
+    }
+
+    /// Run the destructure fusion pass to elide block/list construction when
+    /// a destructuring function is called with a literal argument.
+    pub fn fuse_destructuring(&mut self) -> Result<(), EucalyptError> {
+        self.core.expr = destructure_fusion::destructure_fusion(&self.core.expr)?;
         Ok(())
     }
 

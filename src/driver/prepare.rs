@@ -149,6 +149,15 @@ pub fn prepare(
         return Ok(Command::Exit);
     }
 
+    // Fuse destructuring patterns with literal block/list arguments
+    {
+        let t = Instant::now();
+
+        loader.fuse_destructuring()?;
+
+        stats.record("fuse-destructuring", t.elapsed());
+    }
+
     // Prune unused bindings to reduce inline overhead
     if !opt.no_dce() {
         let t = Instant::now();
