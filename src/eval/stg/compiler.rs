@@ -205,7 +205,7 @@ impl CompileError {
                     // Common Haskell/ML keywords that don't exist in eucalypt
                     "else" | "then" => {
                         notes.push(
-                            "note: eucalypt does not use 'if…then…else' syntax; \
+                            "note: eucalypt does not use 'if\u{2026}then\u{2026}else' syntax; \
                              use the 'if' function: 'if(condition, then-value, else-value)'"
                                 .to_string(),
                         );
@@ -213,8 +213,33 @@ impl CompileError {
                     "return" => {
                         notes.push(
                             "note: eucalypt has no 'return' statement; \
-                             functions evaluate to their body expression — the last \
+                             functions evaluate to their body expression \u{2014} the last \
                              binding value is the function result"
+                                .to_string(),
+                        );
+                    }
+                    // Python 'lambda' keyword — eucalypt uses anaphora or named functions
+                    "lambda" => {
+                        notes.push(
+                            "eucalypt has no 'lambda' keyword; use anaphora for anonymous \
+                             functions: '(_ * 2)' is a doubling function, or define a named \
+                             function with 'double(x): x * 2'"
+                                .to_string(),
+                        );
+                    }
+                    // Python/Haskell 'for'/'in' keywords (list comprehension / for-loop)
+                    "for" => {
+                        notes.push(
+                            "eucalypt has no for-loop or list comprehension; use 'map' to \
+                             transform lists, e.g. 'xs map(_ * 2)' doubles each element, \
+                             or 'xs filter(_ > 0)' to select elements"
+                                .to_string(),
+                        );
+                    }
+                    "in" => {
+                        notes.push(
+                            "eucalypt has no 'in' keyword for list comprehensions; \
+                             use 'map' and 'filter' instead: 'xs filter(_ > 0) map(_ * 2)'"
                                 .to_string(),
                         );
                     }
