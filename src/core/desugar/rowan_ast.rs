@@ -35,6 +35,259 @@ fn text_range_to_span(range: TextRange) -> Span {
     Span::new(start, end)
 }
 
+/// Return type of `desugar_declaration_body_with_patterns`:
+/// `(body_expr, lambda_param_names, lambda_param_vars)`
+type PatternBodyResult = (RcExpr, Vec<String>, Vec<moniker::FreeVar<String>>);
+
+/// Entry for a single field binding in a destructuring let.
+struct FieldBinding {
+    /// Name of the field in the source block (for Lookup)
+    field_name: String,
+    /// FreeVar for the binding name in the body
+    binding_var: moniker::FreeVar<String>,
+}
+
+/// Entry for a destructuring block let: synthetic param + field bindings.
+struct DestructureEntry {
+    /// Synthetic parameter name (e.g. `__p0`)
+    synthetic_name: String,
+    /// Field bindings to generate
+    fields: Vec<FieldBinding>,
+}
+
+/// A parsed parameter pattern in a function declaration
+enum ParamPattern {
+    /// Simple identifier: `x`
+    Simple(String),
+    /// Block destructuring: `{x y}` or `{x: a  y: b}`.
+    ///
+    /// Each entry is `(field_name, binding_name)`. For shorthand `{x}`,
+    /// field and binding are both `"x"`. For rename `{x: a}`,
+    /// field is `"x"` and binding is `"a"`.
+    Block(Vec<(String, String)>),
+}
+
+/// Parse a block parameter pattern `{x y}` or `{x: a  y: b}` from a
+/// Rowan `Block` AST node in a function parameter position.
+///
+/// Block patterns may contain:
+/// - Shorthand names in block metadata: `{x y}` → `[(x, x), (y, y)]`
+/// - Rename declarations: `{x: a  y: b}` → `[(x, a), (y, b)]`
+/// - Mixed: `{x  y: b}` → `[(x, x), (y, b)]`
+fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>, CoreError> {
+    let mut fields: Vec<(String, String)> = Vec::new();
+
+    // Extract shorthand names from block metadata soup (e.g. `x y` in `{x y}`)
+    if let Some(meta) = block.meta() {
+        if let Some(soup) = meta.soup() {
+            for element in soup.elements() {
+                if let rowan_ast::Element::Name(name) = element {
+                    if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier()
+                    {
+                        let field_name = normal.text().to_string();
+                        // Shorthand: field name = binding name
+                        fields.push((field_name.clone(), field_name));
+                    }
+                }
+            }
+        }
+    }
+
+    // Extract rename fields from declarations (e.g. `x: a  y: b`)
+    for decl in block.declarations() {
+        if let Some(head) = decl.head() {
+            let kind = head.classify_declaration();
+            if let rowan_ast::DeclarationKind::Property(prop) = kind {
+                let field_name = prop.text().to_string();
+                // Check if there's a body (rename) or not
+                let binding_name = if let Some(body) = decl.body() {
+                    if let Some(body_soup) = body.soup() {
+                        // Body should be a single normal identifier (the binding name)
+                        if let Some(rowan_ast::Element::Name(name)) = body_soup.singleton() {
+                            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
+                                name.identifier()
+                            {
+                                normal.text().to_string()
+                            } else {
+                                // Not a normal identifier — use field name as fallback
+                                field_name.clone()
+                            }
+                        } else {
+                            // Complex expression in body — use field name as fallback
+                            field_name.clone()
+                        }
+                    } else {
+                        field_name.clone()
+                    }
+                } else {
+                    // No body in declaration — field name = binding name (shorthand)
+                    field_name.clone()
+                };
+                fields.push((field_name, binding_name));
+            }
+        }
+    }
+
+    Ok(fields)
+}
+
+/// Parse a function parameter soup into a `ParamPattern`.
+///
+/// Returns `None` if the soup is not a valid single-element parameter.
+fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
+    match soup.singleton() {
+        Some(rowan_ast::Element::Name(name)) => {
+            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                Some(ParamPattern::Simple(normal.text().to_string()))
+            } else {
+                None
+            }
+        }
+        Some(rowan_ast::Element::Block(block)) => {
+            parse_block_pattern(&block).ok().map(ParamPattern::Block)
+        }
+        _ => None,
+    }
+}
+
+/// Desugar a function body with support for destructuring parameter patterns.
+///
+/// For simple parameter patterns, this behaves like `desugar_declaration_body`.
+/// For block patterns, a synthetic parameter (`__pN`) is introduced as the
+/// lambda binder, and let bindings for each field are added around the body.
+///
+/// Returns `(body_expr, lambda_param_names, lambda_param_vars)`.
+fn desugar_declaration_body_with_patterns(
+    decl: &rowan_ast::Declaration,
+    desugarer: &mut Desugarer,
+    patterns: &[ParamPattern],
+    span: Span,
+) -> Result<PatternBodyResult, CoreError> {
+    // Build the complete list of names to push into the environment,
+    // tracking which ones are lambda binders (synthetic params) and
+    // which are only binding names for let bindings.
+    let mut all_env_names: Vec<String> = Vec::new();
+    let mut lambda_param_names: Vec<String> = Vec::new();
+    // For each pattern, record the synthetic param name (if any) and
+    // the field-to-binding mappings (for DestructureBlockLet).
+    let mut destructure_entries: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    // Will be built from destructure_entries after env push
+    let mut synthetic_counter = 0usize;
+
+    for pattern in patterns {
+        match pattern {
+            ParamPattern::Simple(name) => {
+                all_env_names.push(name.clone());
+                lambda_param_names.push(name.clone());
+            }
+            ParamPattern::Block(fields) => {
+                let synthetic_name = format!("__p{}", synthetic_counter);
+                synthetic_counter += 1;
+                all_env_names.push(synthetic_name.clone());
+                lambda_param_names.push(synthetic_name.clone());
+                for (_, binding_name) in fields {
+                    all_env_names.push(binding_name.clone());
+                }
+                destructure_entries.push((synthetic_name, fields.clone()));
+            }
+        }
+    }
+
+    // Push all names into the environment as a single frame
+    if !all_env_names.is_empty() {
+        desugarer.env_mut().push_keys(all_env_names.iter().cloned());
+    }
+
+    // Collect FreeVars for lambda binders (before desugaring body)
+    let lambda_param_vars: Vec<moniker::FreeVar<String>> = lambda_param_names
+        .iter()
+        .map(|name| desugarer.env().get(name).unwrap().clone())
+        .collect();
+
+    // Collect FreeVars for binding names (needed for let bindings)
+    let mut destructure_lets: Vec<DestructureEntry> = Vec::new();
+    for (synthetic_name, fields) in &destructure_entries {
+        let field_bindings: Vec<FieldBinding> = fields
+            .iter()
+            .map(|(field_name, binding_name)| {
+                let binding_var = desugarer.env().get(binding_name).unwrap().clone();
+                FieldBinding {
+                    field_name: field_name.clone(),
+                    binding_var,
+                }
+            })
+            .collect();
+        destructure_lets.push(DestructureEntry {
+            synthetic_name: synthetic_name.clone(),
+            fields: field_bindings,
+        });
+    }
+
+    // Desugar body with all names in scope
+    let mut body = if let Some(body_node) = decl.body() {
+        if let Some(body_soup) = body_node.soup() {
+            body_soup.desugar(desugarer)?
+        } else {
+            return Err(CoreError::InvalidEmbedding(
+                "empty declaration body".to_string(),
+                desugarer.new_smid(span),
+            ));
+        }
+    } else {
+        return Err(CoreError::InvalidEmbedding(
+            "missing declaration body".to_string(),
+            desugarer.new_smid(span),
+        ));
+    };
+
+    // Apply varify to convert Name expressions to Var expressions
+    body = desugarer.varify(body);
+
+    // Pop environment frame
+    if !all_env_names.is_empty() {
+        desugarer.env_mut().pop();
+    }
+
+    // Wrap body in DestructureBlockLet for each destructuring pattern,
+    // innermost first (last pattern wraps outermost).
+    // Each binding is: binding_var = Lookup(Var(synthetic), "field_name", None)
+    for entry in destructure_lets.iter().rev() {
+        // Look up the synthetic param FreeVar from the lambda_param_vars
+        // (the env frame has already been popped)
+        let synthetic_fv = lambda_param_vars
+            .iter()
+            .zip(lambda_param_names.iter())
+            .find(|(_, n)| **n == entry.synthetic_name)
+            .map(|(fv, _)| fv.clone())
+            .unwrap();
+
+        let smid = desugarer.new_smid(span);
+        let synthetic_var = RcExpr::from(Expr::Var(smid, moniker::Var::Free(synthetic_fv)));
+
+        let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+            .fields
+            .iter()
+            .map(|fb| {
+                let lookup = RcExpr::from(Expr::Lookup(
+                    smid,
+                    synthetic_var.clone(),
+                    fb.field_name.clone(),
+                    None,
+                ));
+                (Binder(fb.binding_var.clone()), Embed(lookup))
+            })
+            .collect();
+
+        body = RcExpr::from(Expr::Let(
+            smid,
+            Scope::new(Rec::new(bindings), body),
+            LetType::DestructureBlockLet,
+        ));
+    }
+
+    Ok((body, lambda_param_names, lambda_param_vars))
+}
+
 /// Literals desugar into core Primitives
 impl Desugarable for rowan_ast::Literal {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
@@ -331,37 +584,57 @@ fn extract_rowan_declaration_components(
                 })
             }
             rowan_ast::DeclarationKind::Function(func, args_tuple) => {
-                // Extract argument names from the apply tuple
-                let arg_names: Vec<String> = args_tuple
+                // Parse each argument into a ParamPattern (simple name or
+                // destructuring pattern). Fall back to simple name extraction
+                // for any arg that doesn't parse as a pattern (shouldn't
+                // happen after Task 2 validation, but be defensive).
+                let patterns: Vec<ParamPattern> = args_tuple
                     .items()
-                    .filter_map(|soup| {
-                        // Each argument should be a single name
-                        if let Some(rowan_ast::Element::Name(name)) = soup.singleton() {
-                            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
-                                name.identifier()
-                            {
-                                Some(normal.text().to_string())
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
+                    .filter_map(|soup| parse_param_pattern(&soup))
                     .collect();
 
-                let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &arg_names, span)?;
+                // If all patterns are Simple (no destructuring), use the
+                // existing fast path so as not to disturb existing behaviour.
+                let all_simple = patterns
+                    .iter()
+                    .all(|p| matches!(p, ParamPattern::Simple(_)));
 
-                Ok(RowanDeclarationComponents {
-                    span,
-                    metadata,
-                    name: func.text().to_string(),
-                    args: arg_names,
-                    body,
-                    arg_vars,
-                    is_operator: false,
-                    fixity: None,
-                })
+                if all_simple {
+                    let arg_names: Vec<String> = patterns
+                        .into_iter()
+                        .map(|p| match p {
+                            ParamPattern::Simple(n) => n,
+                            _ => unreachable!(),
+                        })
+                        .collect();
+                    let (body, arg_vars) =
+                        desugar_declaration_body(decl, desugarer, &arg_names, span)?;
+                    Ok(RowanDeclarationComponents {
+                        span,
+                        metadata,
+                        name: func.text().to_string(),
+                        args: arg_names,
+                        body,
+                        arg_vars,
+                        is_operator: false,
+                        fixity: None,
+                    })
+                } else {
+                    // At least one destructuring pattern — use pattern-aware
+                    // desugaring which injects synthetic params and let bindings.
+                    let (body, lambda_param_names, lambda_param_vars) =
+                        desugar_declaration_body_with_patterns(decl, desugarer, &patterns, span)?;
+                    Ok(RowanDeclarationComponents {
+                        span,
+                        metadata,
+                        name: func.text().to_string(),
+                        args: lambda_param_names,
+                        body,
+                        arg_vars: lambda_param_vars,
+                        is_operator: false,
+                        fixity: None,
+                    })
+                }
             }
             rowan_ast::DeclarationKind::Prefix(_, op, arg) => {
                 let args = vec![arg.text().to_string()];
