@@ -207,6 +207,14 @@ fn format_division_by_zero(operation: &str) -> String {
     }
 }
 
+/// Format an unknown format error message listing valid export formats
+fn format_unknown_format(name: &str) -> String {
+    format!(
+        "unknown export format '{name}'\n  \
+         help: supported formats are: yaml, json, toml, text, edn, html"
+    )
+}
+
 /// Format a bad format string error message with help about valid specifiers
 fn format_bad_format_string(detail: &str) -> String {
     format!(
@@ -290,7 +298,7 @@ pub enum ExecutionError {
     FormatError(String, Number),
     #[error("expected scalar value")]
     NotScalar(Smid),
-    #[error("unknown format ({0})")]
+    #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
     #[error("cannot combine numbers ({0}, {1}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
     NumericDomainError(Number, Number),
