@@ -202,6 +202,7 @@ impl MachineState {
     }
 
     /// Handle an instruction
+    #[inline]
     fn handle_instruction<'guard>(
         &mut self,
         view: MutatorHeapView<'guard>,
@@ -293,15 +294,22 @@ impl MachineState {
             }
             HeapSyn::Bif { intrinsic, args } => {
                 let bif = intrinsics[intrinsic as usize];
-                // Set annotation to the BIF's own annotation so errors
-                // report the correct intrinsic context (e.g. "in (+)")
-                if let Ok(global_closure) = self.nav(view).global(intrinsic as usize) {
-                    let bif_ann = global_closure.annotation();
-                    if bif_ann.is_valid() {
-                        self.annotation = bif_ann;
-                    }
-                }
-                bif.execute(self, view, emitter, args.as_slice())?;
+                // Defer the BIF annotation lookup to the error path.
+                // Looking up the global closure annotation involves
+                // constructing a HeapNavigator and walking the global
+                // environment chain -- wasted work when the BIF
+                // succeeds (the common case).
+                bif.execute(self, view, emitter, args.as_slice())
+                    .inspect_err(|_| {
+                        // Set annotation to the BIF's own annotation so
+                        // errors report the correct intrinsic context
+                        if let Ok(global_closure) = self.nav(view).global(intrinsic as usize) {
+                            let bif_ann = global_closure.annotation();
+                            if bif_ann.is_valid() {
+                                self.annotation = bif_ann;
+                            }
+                        }
+                    })?;
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
@@ -875,6 +883,7 @@ impl<'a> Machine<'a> {
     }
 
     /// Split reference into separate facilities (state, heap)
+    #[inline]
     fn facilities(
         &mut self,
     ) -> (
@@ -927,6 +936,7 @@ impl<'a> Machine<'a> {
     }
 
     /// Execute one step
+    #[inline]
     pub fn step(&mut self) -> Result<(), ExecutionError> {
         let (state, view, emitter, metrics, settings, intrinsics) = self.facilities();
 
@@ -958,7 +968,12 @@ impl<'a> Machine<'a> {
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
         self.clock.switch(ThreadOccupation::Mutator);
 
-        let gc_check_freq = 500;
+        // Use a countdown counter instead of modulo check on every
+        // tick. This replaces `ticks % 500 == 0` with a simple
+        // decrement-and-compare, avoiding integer division on every
+        // VM step.
+        let gc_check_freq: u32 = 500;
+        let mut gc_countdown: u32 = gc_check_freq;
 
         while !self.state.terminated {
             if let Some(limit) = limit {
@@ -967,16 +982,18 @@ impl<'a> Machine<'a> {
                 }
             }
 
-            if self.metrics.ticks().is_multiple_of(gc_check_freq)
-                && self.heap().policy_requires_collection()
-            {
-                collect::collect(
-                    &mut self.state,
-                    &mut self.heap,
-                    &mut self.clock,
-                    self.settings.dump_heap,
-                );
-                self.clock.switch(ThreadOccupation::Mutator);
+            gc_countdown -= 1;
+            if gc_countdown == 0 {
+                gc_countdown = gc_check_freq;
+                if self.heap().policy_requires_collection() {
+                    collect::collect(
+                        &mut self.state,
+                        &mut self.heap,
+                        &mut self.clock,
+                        self.settings.dump_heap,
+                    );
+                    self.clock.switch(ThreadOccupation::Mutator);
+                }
             }
 
             self.step()?;
