@@ -773,7 +773,9 @@ fn build_index(
     map
 }
 
-/// Extract the symbol ID from a block pair's key
+/// Extract the symbol ID from a block pair's key, handling both raw
+/// symbol natives and boxed symbols (from dynamically constructed
+/// blocks).
 fn pair_key_symbol_id(
     view: MutatorHeapView<'_>,
     pair: &SynClosure,
@@ -784,11 +786,35 @@ fn pair_key_symbol_id(
     match &*code {
         HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
             let k = args.get(0)?;
-            let native = pair.navigate_local_native(&view, k);
-            if let Native::Sym(id) = native {
-                Some(id)
-            } else {
-                None
+
+            // Fast path: key is a direct native symbol
+            if let Ref::V(Native::Sym(id)) = k {
+                return Some(id);
+            }
+
+            // Follow the key reference to its closure
+            let key_closure = pair.navigate_local(&view, k.clone());
+            let key_code = view.scoped(key_closure.code());
+
+            match &*key_code {
+                // Raw atom containing a symbol
+                HeapSyn::Atom {
+                    evaluand: Ref::V(Native::Sym(id)),
+                } => Some(*id),
+                // Boxed symbol (from dynamically-constructed blocks)
+                HeapSyn::Cons {
+                    tag: inner_tag,
+                    args: inner_args,
+                } if *inner_tag == DataConstructor::BoxedSymbol.tag() => {
+                    let inner = inner_args.get(0)?;
+                    let native = key_closure.navigate_local_native(&view, inner);
+                    if let Native::Sym(id) = native {
+                        Some(id)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
             }
         }
         _ => None,
@@ -982,6 +1008,51 @@ fn collect_block_keys_from_args(
 /// from r overriding those in l
 pub struct Merge;
 
+/// Extract the symbol name from a block pair key, handling both raw
+/// symbol natives and boxed symbols (as produced by dynamically
+/// constructed blocks via `block()`).
+fn resolve_pair_key_symbol(
+    view: MutatorHeapView,
+    pool: &crate::eval::memory::symbol::SymbolPool,
+    pair_closure: &SynClosure,
+    k: Ref,
+) -> Result<String, ExecutionError> {
+    use crate::eval::memory::syntax;
+
+    // Fast path: key is a direct native value
+    if let Ref::V(syntax::Native::Sym(id)) = &k {
+        return Ok(pool.resolve(*id).to_string());
+    }
+
+    // Follow the key reference to its closure
+    let key_closure = pair_closure.navigate_local(&view, k);
+    let key_code = view.scoped(key_closure.code());
+
+    match &*key_code {
+        // Raw atom containing a symbol
+        syntax::HeapSyn::Atom {
+            evaluand: Ref::V(syntax::Native::Sym(id)),
+        } => Ok(pool.resolve(*id).to_string()),
+        // Boxed symbol (from dynamically-constructed blocks)
+        syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedSymbol.tag() => {
+            let inner = args.get(0).ok_or_else(|| {
+                ExecutionError::Panic("empty boxed symbol in block pair key".to_string())
+            })?;
+            let native = key_closure.navigate_local_native(&view, inner);
+            if let syntax::Native::Sym(id) = native {
+                Ok(pool.resolve(id).to_string())
+            } else {
+                Err(ExecutionError::Panic(
+                    "boxed symbol contained non-symbol native".to_string(),
+                ))
+            }
+        }
+        _ => Err(ExecutionError::Panic(
+            "bad block_pair passed to merge intrinsic: non-symbolic key".to_string(),
+        )),
+    }
+}
+
 /// Items are passed to the MERGE intrinsic as block_pairs of k and
 /// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
 /// and v. The same function can deconstruct either.
@@ -998,20 +1069,14 @@ fn deconstruct(
             let k = args.get(0).unwrap();
             let kv = args.get(1).unwrap();
 
-            let sym = if let syntax::Native::Sym(id) = pair_closure.navigate_local_native(&view, k)
-            {
-                pool.resolve(id).to_string()
-            } else {
-                panic!("bad block_pair passed to merge intrinsic: non-symbolic key")
-            };
-
+            let sym = resolve_pair_key_symbol(view, pool, pair_closure, k)?;
             let kv_closure = pair_closure.navigate_local(&view, kv);
 
             Ok((sym, kv_closure))
         }
-        _ => {
-            panic!("bad block_pair passed to merge intrinsic: non-data type")
-        }
+        _ => Err(ExecutionError::Panic(
+            "bad block_pair passed to merge intrinsic: non-data type".to_string(),
+        )),
     }
 }
 
