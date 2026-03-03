@@ -28,13 +28,13 @@ M-x treesit-install-language-grammar RET eucalypt RET
 
 ```elisp
 (add-to-list 'load-path "/path/to/eucalypt/editors/emacs")
-(require 'eucalypt-ts-mode)
+(require 'eucalypt-mode)
 ```
 
 Or with `use-package`:
 
 ```elisp
-(use-package eucalypt-ts-mode
+(use-package eucalypt-mode
   :load-path "/path/to/eucalypt/editors/emacs")
 ```
 
