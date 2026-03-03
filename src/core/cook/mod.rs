@@ -450,4 +450,32 @@ pub mod tests {
             )
         );
     }
+
+    #[test]
+    pub fn test_contains_expr_anaphora_scan() {
+        // ExprAnaphor at top level
+        assert!(Cooker::contains_expr_anaphora(&core::expr_anaphor(
+            Smid::fake(1),
+            Some(0)
+        )));
+
+        // ExprAnaphor nested in Soup (paren group)
+        let inner = soup(vec![
+            core::expr_anaphor(Smid::fake(2), Some(0)),
+            core::infixl(Smid::fake(3), 50, bif("ADD")),
+            core::expr_anaphor(Smid::fake(4), Some(1)),
+        ]);
+        assert!(Cooker::contains_expr_anaphora(&inner));
+
+        // Plain number — no anaphora
+        assert!(!Cooker::contains_expr_anaphora(&num(42)));
+
+        // Soup without anaphora
+        let plain = soup(vec![num(1), core::infixl(Smid::fake(5), 50, bif("ADD")), num(2)]);
+        assert!(!Cooker::contains_expr_anaphora(&plain));
+
+        // ArgTuple is a scope boundary — anaphora inside should NOT be detected
+        let arg = arg_tuple(vec![core::expr_anaphor(Smid::fake(6), Some(0))]);
+        assert!(!Cooker::contains_expr_anaphora(&arg));
+    }
 }
