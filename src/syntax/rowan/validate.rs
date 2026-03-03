@@ -2,7 +2,29 @@
 
 use rowan::ast::AstNode;
 
-use super::{ast::*, lex::parse_zdt_literal, ParseError};
+use super::{ast::*, error::ZdtInvalidReason, lex::parse_zdt_literal, ParseError};
+
+/// Classify why a `t"..."` date/time literal is invalid.
+///
+/// Heuristic: if the string is empty, report `Empty`; if it looks like a
+/// date/time pattern (starts with four digits followed by `-`) but fails
+/// to parse, report `InvalidDate`; otherwise report `Malformed`.
+fn zdt_invalid_reason(content: &str) -> ZdtInvalidReason {
+    if content.is_empty() {
+        return ZdtInvalidReason::Empty;
+    }
+    // A rough check: starts with YYYY- (four digits then a hyphen), which
+    // suggests the user intended to write a date/time literal in the right
+    // format but with an impossible calendar value.
+    let looks_like_date = content.len() >= 5
+        && content.as_bytes()[..4].iter().all(|b| b.is_ascii_digit())
+        && content.as_bytes()[4] == b'-';
+    if looks_like_date {
+        ZdtInvalidReason::InvalidDate
+    } else {
+        ZdtInvalidReason::Malformed
+    }
+}
 
 /// Trait for `AstNode`s and `AstToken`s that may be created for
 /// invalid source text.
@@ -103,8 +125,10 @@ impl Validatable for TStr {
         }
         if let Some(content) = self.value() {
             if parse_zdt_literal(content).is_none() {
+                let reason = zdt_invalid_reason(content);
                 errors.push(ParseError::InvalidZdtLiteral {
                     range: self.syntax().text_range(),
+                    reason,
                 });
             }
         }
