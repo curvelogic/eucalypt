@@ -423,7 +423,11 @@ impl MachineState {
         Ok(())
     }
 
-    /// Return a native value into continuation or terminate
+    /// Return a native value into continuation or terminate.
+    ///
+    /// The current closure already wraps the native in an Atom on the
+    /// heap, so we reuse that closure when building the env frame for
+    /// Branch/DeMeta fallbacks instead of allocating a fresh Atom.
     fn return_native(
         &mut self,
         view: MutatorHeapView<'_>,
@@ -440,13 +444,12 @@ impl MachineState {
                 } => {
                     // case fallbacks can handle natives
                     if let Some(fb) = fallback {
+                        // Reuse the existing closure (already an Atom
+                        // wrapping the native value) instead of allocating
+                        // a new HeapSyn::Atom via from_args.
                         self.closure = SynClosure::new(
                             fb,
-                            view.from_args(
-                                &[Ref::vref(value.clone())],
-                                environment,
-                                self.annotation,
-                            )?,
+                            view.from_closure(self.closure.clone(), environment, self.annotation)?,
                         );
                     } else {
                         return Err(ExecutionError::NoBranchForNative(
@@ -469,10 +472,10 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    // demeta or_else can accept natives
+                    // Reuse existing Atom closure as above
                     self.closure = SynClosure::new(
                         or_else,
-                        view.from_args(&[Ref::vref(value.clone())], environment, self.annotation)?,
+                        view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
             }
