@@ -174,7 +174,9 @@ impl StgIntrinsic for EmitNative {
                     }
                     memory::syntax::Native::Num(n) => Primitive::Num(n),
                     memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
-                    memory::syntax::Native::Index(_) | memory::syntax::Native::Set(_) => {
+                    memory::syntax::Native::Index(_)
+                    | memory::syntax::Native::Set(_)
+                    | memory::syntax::Native::NdArray(_) => {
                         return Err(ExecutionError::NotScalar(Smid::default()))
                     }
                 };
@@ -220,7 +222,9 @@ impl StgIntrinsic for EmitTagNative {
                     }
                     memory::syntax::Native::Num(n) => Primitive::Num(n),
                     memory::syntax::Native::Zdt(dt) => Primitive::ZonedDateTime(dt),
-                    memory::syntax::Native::Index(_) | memory::syntax::Native::Set(_) => {
+                    memory::syntax::Native::Index(_)
+                    | memory::syntax::Native::Set(_)
+                    | memory::syntax::Native::NdArray(_) => {
                         return Err(ExecutionError::NotScalar(Smid::default()))
                     }
                 };

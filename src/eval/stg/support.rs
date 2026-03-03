@@ -13,6 +13,7 @@ use crate::eval::{
         alloc::{ScopedAllocator, ScopedPtr},
         array::Array,
         mutator::MutatorHeapView,
+        ndarray::HeapNdArray,
         set::HeapSet,
         syntax::StgBuilder,
     },
@@ -30,7 +31,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Str(_) => IntrinsicType::String,
         Native::Sym(_) => IntrinsicType::Symbol,
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
-        Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
+        Native::Index(_) | Native::Set(_) | Native::NdArray(_) => IntrinsicType::Unknown,
     }
 }
 
@@ -464,6 +465,36 @@ pub fn machine_return_set(
     machine.set_closure(SynClosure::new(
         view.alloc(HeapSyn::Atom {
             evaluand: Ref::V(Native::Set(ptr)),
+        })?
+        .as_ptr(),
+        machine.root_env(),
+    ))
+}
+
+/// Helper for intrinsics to access an ndarray arg
+pub fn ndarray_arg<'guard>(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'guard>,
+    arg: &Ref,
+) -> Result<ScopedPtr<'guard, HeapNdArray>, ExecutionError> {
+    let native = machine.nav(view).resolve_native(arg)?;
+    if let Native::NdArray(ptr) = native {
+        Ok(view.scoped(ptr))
+    } else {
+        Err(ExecutionError::Panic("expected array argument".to_string()))
+    }
+}
+
+/// Return an ndarray from intrinsic
+pub fn machine_return_ndarray(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    arr: HeapNdArray,
+) -> Result<(), ExecutionError> {
+    let ptr = view.alloc(arr)?.as_ptr();
+    machine.set_closure(SynClosure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: Ref::V(Native::NdArray(ptr)),
         })?
         .as_ptr(),
         machine.root_env(),

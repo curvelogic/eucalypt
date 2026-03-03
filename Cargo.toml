@@ -53,6 +53,7 @@ sha2 = "0.10"
 rowan = "0.15.3"
 lsp-server = "0.7"
 lsp-types = "0.95"
+ndarray = "0.16"
 
 [[bench]]
 harness = false
