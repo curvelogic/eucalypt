@@ -45,6 +45,10 @@ pub enum CoreError {
     TargetNotFound(String),
     #[error("target {0} could not be referenced")]
     BadTarget(String),
+    #[error("monadic block used without a monad spec — bracket pair '{0}' has no 'bind'/'return' metadata")]
+    NoMonadSpec(String, Smid),
+    #[error("monadic block must contain at least one declaration")]
+    EmptyMonadicBlock(Smid),
 }
 
 impl HasSmid for CoreError {
@@ -58,6 +62,8 @@ impl HasSmid for CoreError {
             MixedAnaphora(s) => s,
             UnresolvedVariable(s, _) => s,
             RedeclaredVariable(s, _) => s,
+            NoMonadSpec(_, s) => s,
+            EmptyMonadicBlock(s) => s,
             _ => Smid::default(),
         }
     }

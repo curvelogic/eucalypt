@@ -4,11 +4,30 @@ use crate::common::sourcemap::*;
 use crate::core::error::*;
 use crate::core::expr::*;
 use crate::syntax::input::*;
+use moniker;
 
 /// Read typed metadata out of core expressions, mutating to persist
 /// any evaluations or transformations made along the way.
 pub trait ReadMetadata<M> {
     fn read_metadata(&mut self) -> Result<M, CoreError>;
+}
+
+/// Extract a function name from a metadata value.
+///
+/// Accepts:
+/// - String literal `"name"` → `"name"`
+/// - Symbol literal `:name` → `"name"`
+/// - Var expression (desugared identifier) → the pretty name
+fn extract_function_name(expr: &RcExpr) -> Option<String> {
+    // Try string or symbol literal first
+    if let Some(s) = (expr as &dyn Extract<String>).extract() {
+        return Some(s);
+    }
+    // Then try Var (desugared identifier reference)
+    if let Expr::Var(_, moniker::Var::Free(fv)) = &*expr.inner {
+        return fv.pretty_name.clone();
+    }
+    None
 }
 
 /// Support a few shortcuts for metadata
@@ -53,6 +72,8 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "import"
                             | "embedding"
                             | "parse-embed"
+                            | "bind"
+                            | "return"
                     )
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -90,6 +111,10 @@ pub struct DesugarPhaseDeclarationMetadata {
     pub doc: Option<String>,
     /// Embedding - describes how / what is embedded (e.g. core quote-embed)
     pub embedding: Option<String>,
+    /// Monad bind function name (for bracket pair monad specs)
+    pub bind: Option<String>,
+    /// Monad return function name (for bracket pair monad specs)
+    pub monad_return: Option<String>,
 }
 
 impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
@@ -108,6 +133,8 @@ impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
                 imports: imap.get("import").and_then(|e| e.extract()),
                 doc: imap.get("doc").and_then(|e| e.extract()),
                 embedding: imap.get("embedding").and_then(|e| e.extract()),
+                bind: imap.get("bind").and_then(extract_function_name),
+                monad_return: imap.get("return").and_then(extract_function_name),
             }),
             Expr::Let(_, _, _) => {
                 self.inner = self.clone().instantiate_lets().inner;

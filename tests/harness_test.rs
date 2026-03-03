@@ -450,6 +450,11 @@ pub fn test_harness_095() {
 }
 
 #[test]
+pub fn test_harness_096() {
+    run_test(&opts("096_monadic_blocks.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
