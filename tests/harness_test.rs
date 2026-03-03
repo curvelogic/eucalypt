@@ -760,3 +760,8 @@ pub fn test_error_055() {
 pub fn test_error_056() {
     run_error_test(&error_opts("056_fold_hint.eu"));
 }
+
+#[test]
+pub fn test_error_057() {
+    run_error_test(&error_opts("057_head_empty_list.eu"));
+}

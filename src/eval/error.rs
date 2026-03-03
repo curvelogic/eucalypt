@@ -503,16 +503,32 @@ impl ExecutionError {
                     "list operations such as 'head', 'tail', '++', 'map', 'filter' require \
                      list arguments"
                         .to_string(),
-                    "check that the value is a list before applying list operations; \
-                     use 'nil?' to test for an empty list"
-                        .to_string(),
                 ];
-                // When the value is a string, the user may be trying to concatenate
-                // strings using '++' (which is list append). Suggest alternatives.
                 if type_desc == "string" {
+                    // This type description arises in two common scenarios:
+                    // 1. The user passed an actual string to a list operation (e.g. '++').
+                    // 2. The user called 'head' or 'tail' on an empty list — eucalypt
+                    //    represents the empty-list sentinel internally as a string native,
+                    //    so the error message mentions "string" even though the user wrote [].
+                    notes.push(
+                        "if you called 'head' or 'tail' on an empty list '[]', that is the \
+                         likely cause — 'head' and 'tail' are only defined on non-empty lists"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "guard against empty lists with 'nil?', e.g. \
+                         'if(xs nil?, default, xs head)'"
+                            .to_string(),
+                    );
                     notes.push(
                         "note: to concatenate strings, use string interpolation \
                          or 'join-on' on a list of strings; '++' is for list append"
+                            .to_string(),
+                    );
+                } else {
+                    notes.push(
+                        "check that the value is a list before applying list operations; \
+                         use 'nil?' to test for an empty list"
                             .to_string(),
                     );
                 }
