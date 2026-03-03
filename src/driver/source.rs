@@ -180,10 +180,10 @@ impl SourceLoader {
             Locator::Fs(p) => self.resolve_fs_path(p)?,
             Locator::StdIn => "-".to_string(),
             _ => {
-                return Err(EucalyptError::FileCouldNotBeRead(format!(
-                    "streaming not supported for locator: {}",
-                    input.locator()
-                )))
+                return Err(EucalyptError::FileCouldNotBeRead(
+                    format!("streaming not supported for locator: {}", input.locator()),
+                    None,
+                ))
             }
         };
 
@@ -215,6 +215,7 @@ impl SourceLoader {
         }
         Err(EucalyptError::FileCouldNotBeRead(
             path.to_string_lossy().to_string(),
+            None,
         ))
     }
 
@@ -501,24 +502,24 @@ impl SourceLoader {
     }
 
     /// Read text from the filesystem, using lib-path to resolve the
-    /// filesnames.
+    /// filenames.
     fn read_fs_input(&mut self, path: &Path) -> Result<String, EucalyptError> {
         for libdir in &self.lib_path {
             let mut filename = libdir.to_path_buf();
             filename.push(path);
-            if let Ok(text) = fs::read_to_string(filename) {
+            if let Ok(text) = fs::read_to_string(&filename) {
                 return Ok(text);
             }
         }
 
         // lastly - absolute files are ok with empty lib path
-        if let Ok(text) = fs::read_to_string(path) {
-            return Ok(text);
+        match fs::read_to_string(path) {
+            Ok(text) => Ok(text),
+            Err(e) => Err(EucalyptError::FileCouldNotBeRead(
+                path.to_string_lossy().to_string(),
+                Some(e.to_string()),
+            )),
         }
-
-        Err(EucalyptError::FileCouldNotBeRead(
-            path.to_string_lossy().to_string(),
-        ))
     }
 
     /// Read source from stdin
