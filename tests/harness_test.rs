@@ -647,11 +647,6 @@ pub fn test_error_036() {
 }
 
 #[test]
-pub fn test_error_037() {
-    run_error_test(&error_opts("037_double_anaphora.eu"));
-}
-
-#[test]
 pub fn test_error_038() {
     run_error_test(&error_opts("038_double_equals.eu"));
 }

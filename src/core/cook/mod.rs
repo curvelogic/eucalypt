@@ -163,24 +163,6 @@ impl Cooker {
 
     /// Wrap a lambda around an expr-anaphoric expression
     fn process_expr_anaphora(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
-        // Detect multiple bare '_' in a single expression — each introduces
-        // a separate parameter which is almost never the user's intent.
-        let anonymous_count = self
-            .pending_expr_anaphora
-            .keys()
-            .filter(|a| matches!(a, Anaphor::ExplicitAnonymous(_)))
-            .count();
-        if anonymous_count > 1 {
-            let smid = self
-                .pending_expr_anaphora
-                .keys()
-                .find_map(|a| match a {
-                    Anaphor::ExplicitAnonymous(s) => Some(*s),
-                    _ => None,
-                })
-                .unwrap_or_default();
-            return Err(CoreError::DuplicateAnonymousAnaphor(smid));
-        }
         let binders = anaphora::to_binding_pattern(&self.pending_expr_anaphora)?;
         self.pending_expr_anaphora.clear();
         Ok(core::lam(expr.smid(), binders, succ::succ(&expr)?))
