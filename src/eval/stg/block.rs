@@ -1034,9 +1034,7 @@ fn resolve_pair_key_symbol(
             evaluand: Ref::V(syntax::Native::Sym(id)),
         } => Ok(pool.resolve(*id).to_string()),
         // Boxed symbol (from dynamically-constructed blocks)
-        syntax::HeapSyn::Cons { tag, args }
-            if *tag == DataConstructor::BoxedSymbol.tag() =>
-        {
+        syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedSymbol.tag() => {
             let inner = args.get(0).ok_or_else(|| {
                 ExecutionError::Panic("empty boxed symbol in block pair key".to_string())
             })?;
