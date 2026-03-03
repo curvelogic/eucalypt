@@ -70,6 +70,62 @@ pub fn str_arg(
     }
 }
 
+/// A string borrowed directly from the heap with its block pinned.
+///
+/// The `PinGuard` keeps the underlying heap block from being evacuated
+/// during GC, so the `&str` remains valid even across allocations.
+/// Derefs to `&str` for ergonomic use.
+pub struct PinnedString {
+    data: *const str,
+    _guard: crate::eval::memory::mutator::PinGuard,
+}
+
+impl std::ops::Deref for PinnedString {
+    type Target = str;
+    fn deref(&self) -> &str {
+        // SAFETY: The PinGuard keeps the heap block alive and unmoved.
+        // The data pointer was obtained from a valid HeapString on the
+        // heap, and the block cannot be evacuated while pinned.
+        unsafe { &*self.data }
+    }
+}
+
+impl AsRef<str> for PinnedString {
+    fn as_ref(&self) -> &str {
+        self
+    }
+}
+
+/// Helper for intrinsics to borrow a str arg directly from the heap.
+///
+/// Returns a `PinnedString` that derefs to `&str` without cloning.
+/// The underlying heap block is pinned for the lifetime of the
+/// returned value, preventing GC evacuation.
+pub fn str_arg_ref(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<PinnedString, ExecutionError> {
+    let native = machine.nav(view).resolve_native(arg)?;
+    if let Native::Str(s) = native {
+        let guard = view.pin(s);
+        // SAFETY: The scoped pointer dereferences the HeapString on the
+        // heap. We extract a raw pointer to the str slice, which remains
+        // valid because the PinGuard prevents the block from moving.
+        let str_ptr: *const str = (*view.scoped(s)).as_str() as *const str;
+        Ok(PinnedString {
+            data: str_ptr,
+            _guard: guard,
+        })
+    } else {
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            IntrinsicType::String,
+            native_type(&native),
+        ))
+    }
+}
+
 /// Helper for intrinsics to access a sym arg
 pub fn sym_arg(
     machine: &mut dyn IntrinsicMachine,

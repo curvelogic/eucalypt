@@ -21,7 +21,7 @@ use super::{
     printf::{self, PrintfError},
     support::{
         machine_return_num, machine_return_str, machine_return_str_iter, machine_return_str_list,
-        machine_return_sym, str_arg, str_list_arg,
+        machine_return_sym, str_arg, str_arg_ref, str_list_arg,
     },
     syntax::{
         dsl::{
@@ -195,9 +195,9 @@ impl StgIntrinsic for Match {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, view, &args[0])?;
-        let regex = str_arg(machine, view, &args[1])?;
-        let re = cached_regex(machine, regex)?;
+        let string = str_arg_ref(machine, view, &args[0])?;
+        let regex = str_arg_ref(machine, view, &args[1])?;
+        let re = cached_regex(machine, &*regex)?;
         let v: Vec<String> = if let Some(captures) = re.captures(&string) {
             captures
                 .iter()
@@ -230,9 +230,9 @@ impl StgIntrinsic for Matches {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, view, &args[0])?;
-        let regex = str_arg(machine, view, &args[1])?;
-        let re = cached_regex(machine, regex)?;
+        let string = str_arg_ref(machine, view, &args[0])?;
+        let regex = str_arg_ref(machine, view, &args[1])?;
+        let re = cached_regex(machine, &*regex)?;
 
         let v: Vec<String> = re
             .find_iter(&string)
@@ -265,13 +265,13 @@ impl StgIntrinsic for Split {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, view, &args[0])?;
-        let regex = str_arg(machine, view, &args[1])?;
+        let string = str_arg_ref(machine, view, &args[0])?;
+        let regex = str_arg_ref(machine, view, &args[1])?;
 
         if regex.is_empty() {
-            machine_return_str_list(machine, view, vec![string])
+            machine_return_str_list(machine, view, vec![string.to_string()])
         } else {
-            let re = cached_regex(machine, regex)?;
+            let re = cached_regex(machine, &*regex)?;
             let v: Vec<String> = re.split(&string).map(|it| it.to_string()).collect();
             machine_return_str_iter(machine, view, v.into_iter())
         }
@@ -430,7 +430,7 @@ impl StgIntrinsic for Letters {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let string = str_arg(machine, view, &args[0])?;
+        let string = str_arg_ref(machine, view, &args[0])?;
         let iter = string.chars().map(|c| c.to_string());
         machine_return_str_iter(machine, view, iter)
     }
