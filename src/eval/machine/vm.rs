@@ -449,7 +449,10 @@ impl MachineState {
                             )?,
                         );
                     } else {
-                        return Err(ExecutionError::NoBranchForNative);
+                        return Err(ExecutionError::NoBranchForNative(
+                            self.annotation,
+                            value.type_description().to_string(),
+                        ));
                     }
                 }
                 Continuation::Update { environment, index } => {

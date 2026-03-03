@@ -270,8 +270,8 @@ pub enum ExecutionError {
     ExpectedBranchContinuation,
     #[error("type mismatch: expected {}, found {}", display_expected_tags(.2), display_data_tag(*.1))]
     NoBranchForDataTag(Smid, u8, Vec<u8>),
-    #[error("no branch for native")]
-    NoBranchForNative,
+    #[error("type mismatch: received a {1} where a structured value (block or list) was expected")]
+    NoBranchForNative(Smid, String),
     #[error("{}", format_cannot_return_fun(.1))]
     CannotReturnFunToCase(Smid, Vec<u8>),
     #[error("panic: {0}")]
@@ -336,6 +336,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
+            ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
