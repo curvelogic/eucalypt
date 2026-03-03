@@ -47,8 +47,8 @@ fn cached_regex<T: AsRef<str>>(
     let text_ref = text.as_ref();
 
     if !rcache.contains(text_ref) {
-        let re =
-            Regex::new(text_ref).map_err(|_| ExecutionError::BadRegex(text_ref.to_string()))?;
+        let re = Regex::new(text_ref)
+            .map_err(|e| ExecutionError::BadRegex(text_ref.to_string(), e.to_string()))?;
         rcache.put(text_ref.to_string(), re);
     }
 
