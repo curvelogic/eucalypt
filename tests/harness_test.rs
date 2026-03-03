@@ -770,3 +770,13 @@ pub fn test_error_057() {
 pub fn test_error_058() {
     run_error_test(&error_opts("058_python_true.eu"));
 }
+
+#[test]
+pub fn test_error_059() {
+    run_error_test(&error_opts("059_else_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_060() {
+    run_error_test(&error_opts("060_return_keyword.eu"));
+}
