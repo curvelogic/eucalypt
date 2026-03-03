@@ -735,3 +735,8 @@ pub fn test_error_052() {
 pub fn test_error_053() {
     run_error_test(&error_opts("053_block_in_arithmetic.eu"));
 }
+
+#[test]
+pub fn test_error_054() {
+    run_error_test(&error_opts("054_num_merge_hint.eu"));
+}
