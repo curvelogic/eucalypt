@@ -420,6 +420,16 @@ pub fn test_harness_084() {
 }
 
 #[test]
+pub fn test_harness_085() {
+    run_test(&opts("085_deep_merge_dynamic.eu"));
+}
+
+#[test]
+pub fn test_harness_086() {
+    run_test(&opts("086_expr_anaphora_parens.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

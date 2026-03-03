@@ -1,0 +1,28 @@
+# Expression anaphora inside parenthesised sub-expressions
+# Bug eu-mi8d: parens truncate anaphora infection
+
+# Basic case: binary op after paren group
+α: zip-with((_0 + _1) / 2, [2, 4, 6], [4, 8, 12]) //= [3, 6, 9]
+
+# Multiplication after paren group
+β: zip-with((_0 + _1) * 2, [1, 2, 3], [4, 5, 6]) //= [10, 14, 18]
+
+# Subtraction after paren group
+γ: zip-with((_0 + _1) - 1, [1, 2, 3], [4, 5, 6]) //= [4, 6, 8]
+
+# Single anaphor in parens with outer operator
+δ: [10, 20, 30] map((_0) + 1) //= [11, 21, 31]
+
+# Deeply nested parens
+ε: zip-with(((_0 + _1)) / 2, [2, 4], [4, 8]) //= [3, 6]
+
+# Outer-scope variable with paren anaphor
+c: 2
+ζ: zip-with((_0 + _1) / c, [2, 4, 6], [4, 8, 12]) //= [3, 6, 9]
+
+# Mixed: one anaphor at outer level, one in parens (already works, regression check)
+η: zip-with(_0 * (_1 + 2), [1, 2, 3], [4, 5, 6]) //= [6, 14, 24]
+
+RESULT: [α, β, γ, δ, ε, ζ, η]
+          all-true?
+          then(:PASS, :FAIL)
