@@ -377,17 +377,17 @@ or: __OR
 ## Arithmetic
 ##
 
-` { doc: "`l + r` - adds `l` and `r`; both must be numbers."
+` { doc: "`l + r` - adds `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise addition; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :sum }
-(l + r): __ADD(l, r)
+(l + r): if(is-array?(l) || is-array?(r), arr.add(l, r), __ADD(l, r))
 
-` { doc: "`l - r` - subtracts `r` from `l`; both must be numbers."
+` { doc: "`l - r` - subtracts `r` from `l`. For numbers, both must be numeric. For arrays, performs element-wise subtraction; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :sum }
-(l - r): __SUB(l, r)
+(l - r): if(is-array?(l) || is-array?(r), arr.sub(l, r), __SUB(l, r))
 
 ` { doc: "`l ^ r` - raise `l` to the power `r`."
     export: :suppress
@@ -395,17 +395,17 @@ or: __OR
     precedence: :exp }
 (l ^ r): __POW(l, r)
 
-` { doc: "`l * r` - multiplies `l` and `r`; both must be numbers."
+` { doc: "`l * r` - multiplies `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise multiplication; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :prod }
-(l * r): __MUL(l, r)
+(l * r): if(is-array?(l) || is-array?(r), arr.mul(l, r), __MUL(l, r))
 
-` { doc: "`l / r` - floor division of `l` by `r`; rounds toward negative infinity; always returns integer."
+` { doc: "`l / r` - floor division of `l` by `r` for numbers (rounds toward negative infinity; always returns integer). For arrays, performs element-wise division; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :prod }
-(l / r): __DIV(l, r)
+(l / r): if(is-array?(l) || is-array?(r), arr.div(l, r), __DIV(l, r))
 
 ` { doc: "`l ÷ r` - precise division of `l` by `r`; returns exact result."
     export: :suppress
@@ -890,9 +890,9 @@ split-when(p?, l): split-after(p? complement, l)
 ` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
 nth(n, l): l drop(n) head
 
-` { doc: "`l !! n` - return `n`th item of list if it exists, otherwise error."
+` { doc: "`l !! n` - return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get`."
     precedence: :exp }
-(l !! n): l nth(n)
+(l !! n): if(l is-array?, l arr.get(n), l nth(n))
 
 ` "`repeat(i)` - return infinite list of instances of item `i`."
 repeat(i): __CONS(i, repeat(i))
