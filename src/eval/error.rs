@@ -404,6 +404,16 @@ impl ExecutionError {
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
                 data_tag_mismatch_notes(*actual, expected)
             }
+            ExecutionError::NoBranchForNative(_, _) => {
+                vec![
+                    "list operations such as 'head', 'tail', '++', 'map', 'filter' require \
+                     list arguments"
+                        .to_string(),
+                    "check that the value is a list before applying list operations; \
+                     use 'nil?' to test for an empty list"
+                        .to_string(),
+                ]
+            }
             ExecutionError::BlackHole(_) => {
                 vec![
                     "a binding that references itself directly or indirectly creates an infinite loop"
