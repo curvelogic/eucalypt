@@ -765,3 +765,8 @@ pub fn test_error_056() {
 pub fn test_error_057() {
     run_error_test(&error_opts("057_head_empty_list.eu"));
 }
+
+#[test]
+pub fn test_error_058() {
+    run_error_test(&error_opts("058_python_true.eu"));
+}

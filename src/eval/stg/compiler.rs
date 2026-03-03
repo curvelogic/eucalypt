@@ -189,6 +189,35 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // Capitalized boolean literals from Python/Ruby/Haskell.
+                    // Eucalypt uses lowercase 'true' and 'false'.
+                    "True" => {
+                        notes.push("note: eucalypt uses lowercase 'true', not 'True'".to_string())
+                    }
+                    "False" => {
+                        notes.push("note: eucalypt uses lowercase 'false', not 'False'".to_string())
+                    }
+                    // Null/None from Python, Java, JavaScript, Ruby
+                    "None" | "NULL" | "Null" | "undefined" | "Undefined" => notes.push(
+                        "note: eucalypt uses 'null' for the null/nil value, not 'None'/'NULL'"
+                            .to_string(),
+                    ),
+                    // Common Haskell/ML keywords that don't exist in eucalypt
+                    "else" | "then" => {
+                        notes.push(
+                            "note: eucalypt does not use 'if…then…else' syntax; \
+                             use the 'if' function: 'if(condition, then-value, else-value)'"
+                                .to_string(),
+                        );
+                    }
+                    "return" => {
+                        notes.push(
+                            "note: eucalypt has no 'return' statement; \
+                             functions evaluate to their body expression — the last \
+                             binding value is the function result"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
