@@ -720,3 +720,13 @@ pub fn test_error_049() {
 pub fn test_error_050() {
     run_error_test(&error_opts("050_dot_on_string.eu"));
 }
+
+#[test]
+pub fn test_error_051() {
+    run_error_test(&error_opts("051_missing_flatten.eu"));
+}
+
+#[test]
+pub fn test_error_052() {
+    run_error_test(&error_opts("052_missing_length.eu"));
+}
