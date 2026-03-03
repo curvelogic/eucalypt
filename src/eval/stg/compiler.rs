@@ -243,6 +243,26 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    "even?" | "even" | "isEven" | "is_even" => {
+                        notes.push(
+                            "eucalypt has no built-in 'even?' predicate; \
+                             test with the modulo operator: '(_ % 2 = 0)'"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "example: 'xs filter(_ % 2 = 0)' to keep even numbers".to_string(),
+                        );
+                    }
+                    "odd?" | "odd" | "isOdd" | "is_odd" => {
+                        notes.push(
+                            "eucalypt has no built-in 'odd?' predicate; \
+                             test with the modulo operator: '(_ % 2 = 1)'"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "example: 'xs filter(_ % 2 = 1)' to keep odd numbers".to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
