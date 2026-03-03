@@ -466,6 +466,46 @@ impl MachineState {
         Ok(())
     }
 
+    /// Build an env frame from data constructor args, resolving refs
+    /// directly without an intermediate Vec allocation.
+    ///
+    /// For `Ref::L` and `Ref::G`, reuses the existing closure from
+    /// the current environment. For `Ref::V`, allocates a minimal
+    /// atom closure. This avoids the heap allocation that
+    /// `HeapNavigator::resolve` performs for value refs.
+    #[inline]
+    fn env_from_data_args(
+        &self,
+        view: MutatorHeapView<'_>,
+        args: &[Ref],
+        next: RefPtr<EnvFrame>,
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
+        let local_env = view.scoped(self.closure.env());
+        let global_env = view.scoped(self.globals);
+
+        let mut array = Array::with_capacity(&view, args.len());
+        for r in args {
+            let closure = match r {
+                Ref::L(index) => (*local_env)
+                    .get(&view, *index)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(*index))?,
+                Ref::G(index) => (*global_env)
+                    .get(&view, *index)
+                    .ok_or(ExecutionError::BadGlobalIndex(*index))?,
+                Ref::V(_) => SynClosure::new(
+                    view.alloc(HeapSyn::Atom {
+                        evaluand: r.clone(),
+                    })?
+                    .as_ptr(),
+                    self.closure.env(),
+                ),
+            };
+            array.push(&view, closure);
+        }
+
+        view.from_saturation(array, next, self.annotation)
+    }
+
     /// Return data into an appropriate branch handler
     ///
     /// Data is destructured for tag handlers but not for the default
@@ -492,17 +532,7 @@ impl MachineState {
                             // 0-arity constructor: reuse parent env directly
                             environment
                         } else {
-                            let closures = args
-                                .iter()
-                                .map(|r| self.nav(view).resolve(r))
-                                .collect::<Result<Vec<SynClosure>, ExecutionError>>()?;
-                            let len = closures.len();
-                            view.from_closures(
-                                closures.into_iter(),
-                                len,
-                                environment,
-                                self.annotation,
-                            )?
+                            self.env_from_data_args(view, args, environment)?
                         };
                         // When a case branch directly enters a local
                         // reference, suppress the Update on the next
