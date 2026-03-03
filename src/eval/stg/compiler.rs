@@ -103,6 +103,21 @@ impl CompileError {
                             .to_string(),
                     );
                 }
+                // Hint for import-style idioms from other languages.
+                // In eucalypt, imports use metadata attached to the importing block.
+                if matches!(
+                    name.as_str(),
+                    "import" | "use" | "require" | "include" | "load"
+                ) {
+                    notes.push(
+                        "note: eucalypt does not have an import statement; \
+                         use import metadata to bring a file into scope in a block"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "example: ` { import: path/to/file.eu }  my-block: { ... }".to_string(),
+                    );
+                }
                 diag.with_notes(notes)
             }
             _ => diag,
