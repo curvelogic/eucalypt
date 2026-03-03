@@ -204,6 +204,69 @@ fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
     msg
 }
 
+/// Generate contextual notes for lookup failure errors.
+///
+/// Recognises common Python/Ruby string method names used as block keys and
+/// suggests the correct eucalypt equivalents in the `str` namespace.
+fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
+    // Only produce extra notes when there are no edit-distance suggestions,
+    // i.e. the key is genuinely unknown and not a near-miss of an existing key.
+    if !suggestions.is_empty() {
+        return vec![];
+    }
+    match key {
+        "upper" | "toUpper" | "toUpperCase" | "toupper" => vec![
+            "to convert a string to upper case, use 'str.to-upper', \
+             e.g. 'text str.to-upper'"
+                .to_string(),
+        ],
+        "lower" | "toLower" | "toLowerCase" | "tolower" => vec![
+            "to convert a string to lower case, use 'str.to-lower', \
+             e.g. 'text str.to-lower'"
+                .to_string(),
+        ],
+        "replace" | "sub" | "gsub" => vec![
+            "eucalypt has no 'replace' function; \
+             use 'str.matches-of(re, s)' to find matches, or construct a replacement \
+             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+                .to_string(),
+        ],
+        "strip" | "trim" | "rstrip" | "lstrip" => vec![
+            "eucalypt has no 'trim'/'strip' function; \
+             to remove surrounding whitespace use a regex: \
+             'text str.extract(\"^\\\\s*(.*?)\\\\s*$\")'"
+                .to_string(),
+        ],
+        "startswith" | "starts_with" | "startsWith" | "hasPrefix" => vec![
+            "to test if a string starts with a prefix, use 'str.matches?(re, s)' \
+             with an anchored regex, e.g. 'text str.matches?(\"^prefix\")'"
+                .to_string(),
+        ],
+        "endswith" | "ends_with" | "endsWith" | "hasSuffix" => vec![
+            "to test if a string ends with a suffix, use 'str.matches?(re, s)' \
+             with an anchored regex, e.g. 'text str.matches?(\"suffix$\")'"
+                .to_string(),
+        ],
+        "find" | "index" | "indexOf" | "indexof" => vec![
+            "eucalypt has no string 'find'/'index' function; \
+             to extract a substring use 'str.extract(re, s)' with a capture group, \
+             e.g. 'text str.extract(\"(pattern)\")'"
+                .to_string(),
+        ],
+        "encode" | "decode" => vec![
+            "to encode a string as base64 use 'str.base64-encode', \
+             to decode use 'str.base64-decode'"
+                .to_string(),
+        ],
+        "format" | "sprintf" | "printf" => vec![
+            "to format a value as a string, use 'str.fmt', \
+             e.g. 'str.fmt(x, \"%.2f\")' for two decimal places"
+                .to_string(),
+        ],
+        _ => vec![],
+    }
+}
+
 /// Format a "not a value" error message when a non-value expression is found
 /// where a primitive value was expected.
 fn format_not_value(context: &str) -> String {
@@ -552,6 +615,9 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
+            ExecutionError::LookupFailure(_, key, suggestions) => {
+                lookup_failure_notes(key, suggestions)
+            }
             _ => vec![],
         };
         if notes.is_empty() {
