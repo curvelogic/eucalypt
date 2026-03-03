@@ -820,3 +820,8 @@ pub fn test_error_067() {
 pub fn test_error_068() {
     run_error_test(&error_opts("068_str_lower_hint.eu"));
 }
+
+#[test]
+pub fn test_error_069() {
+    run_error_test(&error_opts("069_parse_num_hint.eu"));
+}
