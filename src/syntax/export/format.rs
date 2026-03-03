@@ -292,6 +292,10 @@ impl Formatter {
                     .append(RcDoc::text(y.syntax().text().to_string()))
                     .append(RcDoc::text(")"))
             }
+            rowan_ast::DeclarationKind::BracketPair(paren, _, _) => {
+                // Format: (⟦ x ⟧) — preserve from the paren expression
+                RcDoc::text(paren.syntax().text().to_string())
+            }
             rowan_ast::DeclarationKind::MalformedHead(_) => {
                 // Preserve original for malformed heads
                 RcDoc::text(head.syntax().text().to_string())
@@ -403,6 +407,10 @@ impl Formatter {
                 RcDoc::text(rsp.syntax().text().to_string())
             }
             rowan_ast::Element::ApplyTuple(at) => self.reformat_apply_tuple(at),
+            rowan_ast::Element::BracketExpr(be) => {
+                // Preserve bracket expressions as-is from source text
+                RcDoc::text(be.syntax().text().to_string())
+            }
         }
     }
 

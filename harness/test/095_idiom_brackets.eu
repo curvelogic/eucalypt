@@ -1,0 +1,64 @@
+##
+## 095: Idiom bracket declarations and usage
+##
+## Idiom brackets allow applicative functor application to be expressed
+## using Unicode bracket pairs.  A bracket pair is declared with:
+##
+##   (⟦ x ⟧): some-function(x)
+##
+## and then used as:
+##
+##   ⟦ expression ⟧
+##
+## which desugars to a call to the named bracket pair function.
+##
+
+# Simple identity bracket pair using white square brackets ⟦⟧
+(⟦ x ⟧): x
+
+# Doubling bracket pair using ceiling brackets ⌈⌉
+(⌈ x ⌉): x * 2
+
+# List-wrapping bracket pair using angle brackets ⟨⟩
+(⟨ x ⟩): [x]
+
+# Increment bracket pair using floor brackets ⌊⌋
+(⌊ x ⌋): x + 1
+
+tests: {
+
+  ` "Identity bracket pair"
+  identity: {
+    ` "identity of 42"
+    a: ⟦ 42 ⟧ //= 42
+    ` "identity of a computed value"
+    b: ⟦ 3 + 4 ⟧ //= 7
+  }
+
+  ` "Doubling bracket pair"
+  doubling: {
+    ` "double 5"
+    a: ⌈ 5 ⌉ //= 10
+    ` "double a computation"
+    b: ⌈ 3 + 2 ⌉ //= 10
+  }
+
+  ` "List-wrapping bracket pair"
+  listing: {
+    ` "wrap 7 in a list"
+    a: ⟨ 7 ⟩ //= [7]
+    ` "wrap a string"
+    b: ⟨ :hello ⟩ //= [:hello]
+  }
+
+  ` "Increment bracket pair"
+  increment: {
+    ` "increment 0"
+    a: ⌊ 0 ⌋ //= 1
+    ` "increment 9"
+    b: ⌊ 9 ⌋ //= 10
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)
