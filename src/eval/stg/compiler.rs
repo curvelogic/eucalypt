@@ -243,6 +243,46 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // Type predicates from Haskell/Clojure/Racket/Ruby.
+                    // Eucalypt has 'block?' and 'list?' but not type predicates for
+                    // primitives.  Users must use pattern matching or error handling.
+                    "number?" | "num?" | "isNum" | "is_num" | "isNumber" | "is_number"
+                    | "isnumber" | "numeric?" => {
+                        notes.push(
+                            "eucalypt has no 'number?' type predicate; \
+                             the 'block?' and 'list?' predicates test structured types, \
+                             but primitive types (number, string, symbol) have no predicates"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "if you need type-safe dispatch, restructure your data so the type \
+                             is explicit, e.g. use a tagged block '{kind: \"num\", value: 42}'"
+                                .to_string(),
+                        );
+                    }
+                    "string?" | "str?" | "isStr" | "is_str" | "isString" | "is_string"
+                    | "isstring" => {
+                        notes.push(
+                            "eucalypt has no 'string?' type predicate; \
+                             the 'block?' and 'list?' predicates test structured types, \
+                             but primitive types (number, string, symbol) have no predicates"
+                                .to_string(),
+                        );
+                    }
+                    "symbol?" | "sym?" | "isSym" | "is_sym" | "isSymbol" | "is_symbol" => {
+                        notes.push(
+                            "eucalypt has no 'symbol?' type predicate; \
+                             to test if a block has a given symbol key, use 'has(:key)'"
+                                .to_string(),
+                        );
+                    }
+                    "bool?" | "boolean?" | "isBool" | "is_bool" | "isBoolean" => {
+                        notes.push(
+                            "eucalypt has no 'bool?' type predicate; \
+                             use 'if(v, true-branch, false-branch)' — 'if' coerces its condition"
+                                .to_string(),
+                        );
+                    }
                     "even?" | "even" | "isEven" | "is_even" => {
                         notes.push(
                             "eucalypt has no built-in 'even?' predicate; \

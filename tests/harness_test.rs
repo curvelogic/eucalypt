@@ -835,3 +835,8 @@ pub fn test_error_070() {
 pub fn test_error_071() {
     run_error_test(&error_opts("071_def_keyword.eu"));
 }
+
+#[test]
+pub fn test_error_072() {
+    run_error_test(&error_opts("072_number_type_pred.eu"));
+}
