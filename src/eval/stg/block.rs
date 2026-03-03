@@ -1398,7 +1398,13 @@ pub mod tests {
 
     use super::*;
     use crate::eval::stg::{
-        constant::KEmptyList, eq::Eq, panic::Panic, runtime::Runtime, syntax::dsl::*, testing,
+        boolean::{False, True},
+        constant::KEmptyList,
+        eq::Eq,
+        panic::Panic,
+        runtime::Runtime,
+        syntax::dsl::*,
+        testing,
     };
 
     pub fn runtime() -> Box<dyn Runtime> {
@@ -1412,6 +1418,8 @@ pub mod tests {
             Box::new(Panic),
             Box::new(Eq),
             Box::new(KEmptyList),
+            Box::new(True),
+            Box::new(False),
         ])
     }
 
