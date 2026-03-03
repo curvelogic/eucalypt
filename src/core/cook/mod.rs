@@ -484,4 +484,64 @@ pub mod tests {
         let arg = arg_tuple(vec![core::expr_anaphor(Smid::fake(6), Some(0))]);
         assert!(!Cooker::contains_expr_anaphora(&arg));
     }
+
+    #[test]
+    pub fn test_anaphora_through_parens() {
+        // Simulates (_0 + _1) / 2 where parens create a nested Soup
+        let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
+        let l60 = core::infixl(Smid::fake(2), 60, bif("DIV"));
+        let ana0 = free("_e_n0");
+        let ana1 = free("_e_n1");
+
+        // Inner soup: _0 + _1 (from parens)
+        let inner = soup(vec![
+            core::expr_anaphor(Smid::fake(3), Some(0)),
+            l50.clone(),
+            core::expr_anaphor(Smid::fake(4), Some(1)),
+        ]);
+
+        // Outer soup: (inner) / 2
+        let outer = soup(vec![inner, l60, num(2)]);
+
+        // Should produce: lam([_0, _1], DIV(ADD(_0, _1), 2))
+        let result = cook(outer).unwrap();
+        assert_term_eq!(
+            result,
+            lam(
+                vec![ana0.clone(), ana1.clone()],
+                app(
+                    bif("DIV"),
+                    vec![app(bif("ADD"), vec![var(ana0), var(ana1)]), num(2)]
+                )
+            )
+        );
+    }
+
+    #[test]
+    pub fn test_section_contained_by_parens() {
+        // Simulates (+ 1) / 2 — section should stay inside parens
+        let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
+        let l60 = core::infixl(Smid::fake(2), 60, bif("DIV"));
+        let ana0 = free("_e_i_l0");
+
+        // Inner soup: + 1 (section — fill_gaps adds implicit anaphor)
+        let inner = soup(vec![l50, num(1)]);
+
+        // Outer soup: (inner) / 2
+        let outer = soup(vec![inner, l60, num(2)]);
+
+        // Should produce: DIV(lam([_0], ADD(_0, 1)), 2)
+        // The section lambda stays inside — NOT lam([_0], DIV(ADD(_0, 1), 2))
+        let result = cook(outer).unwrap();
+        assert_term_eq!(
+            result,
+            app(
+                bif("DIV"),
+                vec![
+                    lam(vec![ana0.clone()], app(bif("ADD"), vec![var(ana0), num(1)])),
+                    num(2)
+                ]
+            )
+        );
+    }
 }
