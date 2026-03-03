@@ -19,6 +19,8 @@ pub enum CoreError {
     TooFewOperands(Smid),
     #[error("cannot mix anaphora types (numberless, numbered and section)")]
     MixedAnaphora(Smid),
+    #[error("'_' used more than once in a single expression")]
+    DuplicateAnonymousAnaphor(Smid),
     #[error("found temporary pseudo-operators remaining in evaluand")]
     UneliminatedPseudoOperators,
     #[error("found operator soup within unresolved precedence")]
@@ -48,6 +50,7 @@ impl HasSmid for CoreError {
             InvalidEmbedding(_, s) => s,
             TooFewOperands(s) => s,
             MixedAnaphora(s) => s,
+            DuplicateAnonymousAnaphor(s) => s,
             UnresolvedVariable(s, _) => s,
             RedeclaredVariable(s, _) => s,
             _ => Smid::default(),
@@ -58,6 +61,13 @@ impl HasSmid for CoreError {
 impl CoreError {
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
         match self {
+            CoreError::DuplicateAnonymousAnaphor(_) => {
+                source_map.diagnostic(self).with_notes(vec![
+                    "each '_' in an expression introduces a separate parameter".to_string(),
+                    "use numbered anaphora (_0, _1) for multiple parameters, or a named function"
+                        .to_string(),
+                ])
+            }
             CoreError::InvalidMergeBase() => source_map.diagnostic(self).with_notes(vec![
                 "some input formats (csv, text, etc.) that read as lists need to be assigned names"
                     .to_string(),
