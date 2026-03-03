@@ -49,8 +49,11 @@ fn error_range(error: &ParseError) -> TextRange {
         | ParseError::ReservedCharacter { range }
         | ParseError::EmptyExpression { range }
         | ParseError::UnclosedStringInterpolation { range }
-        | ParseError::InvalidZdtLiteral { range, .. } => *range,
+        | ParseError::InvalidZdtLiteral { range, .. }
+        | ParseError::UnclosedBracketExpr { range }
+        | ParseError::UnknownBracketPair { range, .. } => *range,
         ParseError::MissingDeclarationColon { head_range } => *head_range,
+        ParseError::MismatchedBrackets { open_range, .. } => *open_range,
     }
 }
 
@@ -79,6 +82,17 @@ fn error_message(error: &ParseError) -> String {
             "unclosed string interpolation (missing closing brace)".to_string()
         }
         ParseError::InvalidZdtLiteral { .. } => "invalid ZDT literal".to_string(),
+        ParseError::UnclosedBracketExpr { .. } => {
+            "unclosed bracket expression (missing closing bracket)".to_string()
+        }
+        ParseError::MismatchedBrackets {
+            expected_close,
+            actual_close,
+            ..
+        } => format!("mismatched brackets: expected '{expected_close}' but found '{actual_close}'"),
+        ParseError::UnknownBracketPair { open_char, .. } => {
+            format!("unknown bracket pair starting with '{open_char}'")
+        }
     }
 }
 
