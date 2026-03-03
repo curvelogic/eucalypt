@@ -710,3 +710,13 @@ pub fn test_error_047() {
 pub fn test_error_048() {
     run_error_test(&error_opts("048_unclosed_interpolation.eu"));
 }
+
+#[test]
+pub fn test_error_049() {
+    run_error_test(&error_opts("049_dot_on_number.eu"));
+}
+
+#[test]
+pub fn test_error_050() {
+    run_error_test(&error_opts("050_dot_on_string.eu"));
+}

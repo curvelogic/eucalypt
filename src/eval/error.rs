@@ -20,6 +20,22 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              pipeline functions like 'head', 'nth'"
                 .to_string(),
         ],
+        (Record(_), Number) => vec![
+            "the '.' operator performs key lookup on blocks; \
+             numbers do not have fields"
+                .to_string(),
+            "to apply a function to a number, use pipeline catenation, \
+             e.g. 'x abs' or 'x negate' instead of 'x.abs'"
+                .to_string(),
+        ],
+        (Record(_), String) => vec![
+            "the '.' operator performs key lookup on blocks; \
+             strings do not have fields"
+                .to_string(),
+            "to apply string functions, use pipeline catenation, \
+             e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
+                .to_string(),
+        ],
         (Number, String) => {
             vec![
                 "if you need to convert a string to a number, use 'parse-num'".to_string(),
@@ -60,6 +76,24 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         vec![
             "arithmetic operators like '+' work on numbers, not lists".to_string(),
             "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
+        ]
+    } else if is_number && expects_block {
+        vec![
+            "the '.' operator performs key lookup on blocks; \
+             numbers do not have fields"
+                .to_string(),
+            "to apply a function to a number, use pipeline catenation, \
+             e.g. 'x abs' or 'x negate' instead of 'x.abs'"
+                .to_string(),
+        ]
+    } else if is_string && expects_block {
+        vec![
+            "the '.' operator performs key lookup on blocks; \
+             strings do not have fields"
+                .to_string(),
+            "to apply string functions, use pipeline catenation, \
+             e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
+                .to_string(),
         ]
     } else if is_string && expects_number {
         vec![
