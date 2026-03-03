@@ -121,27 +121,74 @@ impl CompileError {
                 // Suggest eucalypt equivalents for functions common in other languages
                 // that have different names or do not exist in eucalypt.
                 match name.as_str() {
-                    "flatten" | "flat" => notes.push(
-                        "to flatten a list of lists, use 'concat', e.g. 'xs concat'".to_string(),
-                    ),
-                    "length" | "len" | "size" => notes.push(
-                        "to count the elements of a list, use 'count', e.g. 'xs count'".to_string(),
-                    ),
-                    "contains" | "includes" => notes.push(
-                        "to test if a list contains a value, use 'any', \
-                         e.g. xs any(42 = _) to test for element 42"
-                            .to_string(),
-                    ),
-                    "join" => notes.push(
-                        "to join strings with a separator, use 'join-on', \
-                         e.g. xs join-on(sep) where sep is the separator string"
-                            .to_string(),
-                    ),
-                    "index" | "get" | "at" => notes.push(
-                        "to index into a list, use 'nth', e.g. 'xs nth(0)' for \
-                         the first element, or the '!!' operator: xs !! 0"
-                            .to_string(),
-                    ),
+                    "fold" | "reduce" | "foldLeft" | "foldRight" => {
+                        notes.push(
+                            "to fold a list, use 'foldl' (left fold) or 'foldr' (right fold), \
+                             e.g. 'foldl(+, 0, xs)' to sum a list"
+                                .to_string(),
+                        );
+                    }
+                    "sort" | "sorted" => {
+                        notes.push(
+                            "to sort a list of numbers, use 'sort-nums', e.g. 'xs sort-nums'; \
+                             for custom ordering use 'sort-by-num(f, xs)' or 'sort-by(f, xs)'"
+                                .to_string(),
+                        );
+                    }
+                    "slice" => {
+                        notes.push(
+                            "to take the first n elements of a list use 'take', e.g. 'xs take(n)'; \
+                             to drop the first n elements use 'drop', e.g. 'xs drop(n)'"
+                                .to_string(),
+                        );
+                    }
+                    "split" | "splitOn" | "split_on" => {
+                        notes.push(
+                            "to split a string, use 'str.split-on', e.g. \
+                             'text str.split-on(\" \")' (the separator is a regex pattern)"
+                                .to_string(),
+                        );
+                    }
+                    "flatten" | "flat" => {
+                        notes.push(
+                            "to flatten a list of lists, use 'concat', e.g. 'xs concat'"
+                                .to_string(),
+                        );
+                    }
+                    "length" | "len" | "size" => {
+                        notes.push(
+                            "to count the elements of a list, use 'count', e.g. 'xs count'"
+                                .to_string(),
+                        );
+                    }
+                    "contains" | "includes" => {
+                        notes.push(
+                            "to test if a list contains a value, use 'any', \
+                             e.g. 'xs any(42 = _)' to test for element 42"
+                                .to_string(),
+                        );
+                    }
+                    "join" => {
+                        notes.push(
+                            "to join strings with a separator, use 'join-on', \
+                             e.g. 'xs join-on(sep)' where sep is the separator string"
+                                .to_string(),
+                        );
+                    }
+                    "index" | "get" | "at" => {
+                        notes.push(
+                            "to index into a list, use 'nth', e.g. 'xs nth(0)' for \
+                             the first element, or the '!!' operator: 'xs !! 0'"
+                                .to_string(),
+                        );
+                    }
+                    "print" | "println" | "puts" | "console" => {
+                        notes.push(
+                            "eucalypt has no print function; outputs are produced by rendering \
+                             the result value — set the RESULT target to what you want to output"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)

@@ -750,3 +750,8 @@ pub fn test_error_054() {
 pub fn test_error_055() {
     run_error_test(&error_opts("055_list_not_callable.eu"));
 }
+
+#[test]
+pub fn test_error_056() {
+    run_error_test(&error_opts("056_fold_hint.eu"));
+}
