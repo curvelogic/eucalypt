@@ -63,9 +63,7 @@ impl CompileError {
         let diag = source_map.diagnostic(self);
         match self {
             CompileError::FreeVar(_, name) => {
-                let mut notes = vec![
-                    "check that the variable is defined and in scope".to_string(),
-                ];
+                let mut notes = vec!["check that the variable is defined and in scope".to_string()];
                 // If the name looks like a short identifier (typical lambda
                 // parameter), hint about the common '->' mistake.
                 if name.len() <= 3 && name.chars().all(|c| c.is_alphanumeric()) {
