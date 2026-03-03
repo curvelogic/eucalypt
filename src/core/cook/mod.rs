@@ -6,7 +6,7 @@ use crate::core::error::CoreError;
 use crate::core::expr::*;
 use crate::core::transform::succ;
 use moniker::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub mod fill;
 pub mod fixity;
@@ -52,6 +52,20 @@ impl Cooker {
         fixity::distribute(expr)
     }
 
+    /// Check whether an expression tree contains explicitly numbered
+    /// ExprAnaphor nodes (`_0`, `_1`, etc.), recursing only through
+    /// Soup nodes (from paren groups). Anonymous `_` and implicit
+    /// section anaphora are NOT detected — they should resolve within
+    /// their own paren scope. Other constructs (ArgTuple, Let, List,
+    /// Block) remain scope boundaries and are not traversed.
+    fn contains_numbered_expr_anaphora(expr: &RcExpr) -> bool {
+        match &*expr.inner {
+            Expr::ExprAnaphor(_, Anaphor::ExplicitNumbered(_)) => true,
+            Expr::Soup(_, xs) => xs.iter().any(Self::contains_numbered_expr_anaphora),
+            _ => false,
+        }
+    }
+
     /// Infer anaphora in gaps and insert them explicitly.
     ///
     /// e.g.
@@ -95,9 +109,16 @@ impl Cooker {
 
     /// Resolve precedence and handle expression anaphora
     fn cook_soup(&mut self, exprs: &[RcExpr]) -> Result<RcExpr, CoreError> {
+        // Pre-scan for explicitly numbered anaphora (_0, _1, etc.) in
+        // nested sub-expressions (paren groups) BEFORE fill_gaps, so
+        // implicit section anaphora and anonymous _ are not detected.
+        let has_deep_anaphora =
+            !self.in_expr_anaphor_scope && exprs.iter().any(Self::contains_numbered_expr_anaphora);
+
         let (filled, naked_anaphora) = self.insert_anaphora(exprs);
 
-        let wrap_lambda = !self.in_expr_anaphor_scope && !naked_anaphora.is_empty();
+        let wrap_lambda =
+            !self.in_expr_anaphor_scope && (!naked_anaphora.is_empty() || has_deep_anaphora);
 
         if wrap_lambda {
             self.in_expr_anaphor_scope = true;
@@ -165,10 +186,50 @@ impl Cooker {
         Ok(core::lam(expr.smid(), binders, succ::succ(&expr)?))
     }
 
-    /// Wrap a lambda around an block-anaphoric expression
+    /// Wrap a lambda around a block-anaphoric expression, collapsing
+    /// redundant inner lets where possible.
+    ///
+    /// When a single block anaphor like `{k: •}` is used with a dot
+    /// lookup, desugaring produces `let k = • in body`. After cooking,
+    /// this becomes `let k = _b_a in body`. Wrapping naively gives
+    /// `lam(_b_a, succ(let k = _b_a in body))` which has a redundant
+    /// let scope that confuses STG compilation of outer-scope variable
+    /// references. We collapse to `lam(_b_a, body)` when the single
+    /// let binding is a simple alias of the anaphor var.
     fn process_block_anaphora(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         let binders = anaphora::to_binding_pattern(&self.pending_block_anaphora)?;
+        let anaphora_vars: HashSet<String> = self
+            .pending_block_anaphora
+            .values()
+            .filter_map(|v| v.pretty_name.clone())
+            .collect();
         self.pending_block_anaphora.clear();
+
+        // Try to collapse: if the expression is a Let with a single
+        // binding whose value is our anaphor var, eliminate the let
+        // and bind directly as a lambda parameter.
+        if let Expr::Let(_, scope, _) = &*expr.inner {
+            let bindings = &scope.unsafe_pattern.unsafe_pattern;
+            let body = &scope.unsafe_body;
+
+            let all_alias = bindings.iter().all(|(_, Embed(val))| {
+                if let Expr::Var(_, Var::Free(fv)) = &*val.inner {
+                    fv.pretty_name
+                        .as_ref()
+                        .is_some_and(|n| anaphora_vars.contains(n))
+                } else {
+                    false
+                }
+            });
+
+            if all_alias && bindings.len() == 1 && binders.len() == 1 {
+                // Single binding: the lambda directly replaces the let
+                // scope, so the body's bound variable indices are already
+                // correct (scope 0 index 0 targets the one lambda param).
+                return Ok(core::lam(expr.smid(), binders, body.clone()));
+            }
+        }
+
         Ok(core::lam(expr.smid(), binders, succ::succ(&expr)?))
     }
 }
@@ -453,6 +514,110 @@ pub mod tests {
             lam(
                 vec![ana0.clone()],
                 app(bif("MUL"), vec![var(ana0.clone()), var(ana0)])
+            )
+        );
+    }
+
+    #[test]
+    pub fn test_contains_numbered_expr_anaphora_scan() {
+        // Numbered ExprAnaphor (_0) at top level
+        assert!(Cooker::contains_numbered_expr_anaphora(
+            &core::expr_anaphor(Smid::fake(1), Some(0))
+        ));
+
+        // Numbered ExprAnaphor nested in Soup (paren group)
+        let inner = soup(vec![
+            core::expr_anaphor(Smid::fake(2), Some(0)),
+            core::infixl(Smid::fake(3), 50, bif("ADD")),
+            core::expr_anaphor(Smid::fake(4), Some(1)),
+        ]);
+        assert!(Cooker::contains_numbered_expr_anaphora(&inner));
+
+        // Plain number — no anaphora
+        assert!(!Cooker::contains_numbered_expr_anaphora(&num(42)));
+
+        // Soup without anaphora
+        let plain = soup(vec![
+            num(1),
+            core::infixl(Smid::fake(5), 50, bif("ADD")),
+            num(2),
+        ]);
+        assert!(!Cooker::contains_numbered_expr_anaphora(&plain));
+
+        // ArgTuple is a scope boundary — anaphora inside should NOT be detected
+        let arg = arg_tuple(vec![core::expr_anaphor(Smid::fake(6), Some(0))]);
+        assert!(!Cooker::contains_numbered_expr_anaphora(&arg));
+
+        // Anonymous ExprAnaphor (_) should NOT be detected
+        assert!(!Cooker::contains_numbered_expr_anaphora(
+            &core::expr_anaphor(Smid::fake(7), None)
+        ));
+
+        // Anonymous _ nested in Soup should NOT be detected
+        let anon_inner = soup(vec![
+            core::expr_anaphor(Smid::fake(8), None),
+            core::infixl(Smid::fake(9), 50, bif("COMPOSE")),
+            bif("F"),
+        ]);
+        assert!(!Cooker::contains_numbered_expr_anaphora(&anon_inner));
+    }
+
+    #[test]
+    pub fn test_anaphora_through_parens() {
+        // Simulates (_0 + _1) / 2 where parens create a nested Soup
+        let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
+        let l60 = core::infixl(Smid::fake(2), 60, bif("DIV"));
+        let ana0 = free("_e_n0");
+        let ana1 = free("_e_n1");
+
+        // Inner soup: _0 + _1 (from parens)
+        let inner = soup(vec![
+            core::expr_anaphor(Smid::fake(3), Some(0)),
+            l50.clone(),
+            core::expr_anaphor(Smid::fake(4), Some(1)),
+        ]);
+
+        // Outer soup: (inner) / 2
+        let outer = soup(vec![inner, l60, num(2)]);
+
+        // Should produce: lam([_0, _1], DIV(ADD(_0, _1), 2))
+        let result = cook(outer).unwrap();
+        assert_term_eq!(
+            result,
+            lam(
+                vec![ana0.clone(), ana1.clone()],
+                app(
+                    bif("DIV"),
+                    vec![app(bif("ADD"), vec![var(ana0), var(ana1)]), num(2)]
+                )
+            )
+        );
+    }
+
+    #[test]
+    pub fn test_section_contained_by_parens() {
+        // Simulates (+ 1) / 2 — section should stay inside parens
+        let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
+        let l60 = core::infixl(Smid::fake(2), 60, bif("DIV"));
+        let ana0 = free("_e_i_l0");
+
+        // Inner soup: + 1 (section — fill_gaps adds implicit anaphor)
+        let inner = soup(vec![l50, num(1)]);
+
+        // Outer soup: (inner) / 2
+        let outer = soup(vec![inner, l60, num(2)]);
+
+        // Should produce: DIV(lam([_0], ADD(_0, 1)), 2)
+        // The section lambda stays inside — NOT lam([_0], DIV(ADD(_0, 1), 2))
+        let result = cook(outer).unwrap();
+        assert_term_eq!(
+            result,
+            app(
+                bif("DIV"),
+                vec![
+                    lam(vec![ana0.clone()], app(bif("ADD"), vec![var(ana0), num(1)])),
+                    num(2)
+                ]
             )
         );
     }
