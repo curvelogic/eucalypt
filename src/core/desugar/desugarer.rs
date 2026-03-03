@@ -14,6 +14,19 @@ use codespan::Span;
 use moniker::FreeVar;
 use std::collections::{HashMap, HashSet};
 
+/// A monad specification registered for a bracket pair.
+///
+/// When a bracket pair declaration includes `bind` and `return` metadata keys,
+/// it is recorded here so that monadic block desugaring (`⟦ { a: ma, b: mb } ⟧`)
+/// can emit bind chains using the nominated functions.
+#[derive(Debug, Clone)]
+pub struct MonadSpec {
+    /// Name of the monadic bind function (e.g. `"list-bind"`)
+    pub bind_name: String,
+    /// Name of the monadic return function (e.g. `"list-return"`)
+    pub return_name: String,
+}
+
 /// State kept during desugaring pass
 pub struct Desugarer<'smap> {
     /// While in the scope of anaphoric string pattern, collect all the
@@ -33,6 +46,11 @@ pub struct Desugarer<'smap> {
     env: DefaultingEnvironment<String, FreeVar<String>>,
     /// Current usize
     file: Vec<usize>,
+    /// Registry mapping bracket pair names (e.g. `"⟦⟧"`) to their monad spec.
+    ///
+    /// Populated when a bracket pair declaration with `bind` and `return` metadata
+    /// is desugared.  Consulted when desugaring `⟦ { ... } ⟧` block expressions.
+    monad_registry: HashMap<String, MonadSpec>,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -51,7 +69,21 @@ impl<'smap> Desugarer<'smap> {
             source_map,
             env: DefaultingEnvironment::new(|k| FreeVar::fresh_named(k)),
             file: vec![],
+            monad_registry: HashMap::new(),
         }
+    }
+
+    /// Register a monad spec for a bracket pair.
+    ///
+    /// Called when a bracket pair declaration with `bind` and `return` metadata
+    /// is processed so that subsequent monadic block usages can look up the spec.
+    pub fn register_monad_spec(&mut self, pair_name: String, spec: MonadSpec) {
+        self.monad_registry.insert(pair_name, spec);
+    }
+
+    /// Look up the monad spec for a bracket pair, if one has been registered.
+    pub fn monad_spec(&self, pair_name: &str) -> Option<&MonadSpec> {
+        self.monad_registry.get(pair_name)
     }
 
     /// Desugar content at locator (and imports) to create a new
