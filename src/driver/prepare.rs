@@ -176,6 +176,15 @@ pub fn prepare(
         stats.record("inline", t.elapsed());
     }
 
+    // Run destructure fusion pass: fold static Lookup(Block{...}, key) and
+    // HEAD/TAIL(List[...]) patterns that arise after the inline pass
+    // distributes destructuring lambdas to their call sites.
+    {
+        let t = Instant::now();
+        loader.fuse_destructure()?;
+        stats.record("fuse-destructure", t.elapsed());
+    }
+
     if opt.dump_inlined() {
         let c = loader.core();
         dump_core(c.expr.clone(), opt);
