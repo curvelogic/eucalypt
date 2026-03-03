@@ -698,6 +698,16 @@ lazy_static! {
             ty: function(vec![num(), num()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 131
+            name: "LIST.NTH",
+            ty: function(vec![list(), num(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 132
+            name: "LIST.DROP",
+            ty: function(vec![num(), list(), list()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 
