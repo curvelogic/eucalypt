@@ -10,6 +10,52 @@ use thiserror::Error;
 
 use super::{memory::bump, stg::compiler::CompileError};
 
+/// Generate contextual help notes for type mismatch errors
+fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<String> {
+    use IntrinsicType::*;
+    match (expected, actual) {
+        (Record(_), List(_)) => vec![
+            "the '.' operator performs key lookup on blocks, not lists".to_string(),
+            "for lists, use the index operator for indexing (e.g. xs index 0) or \
+             pipeline functions like 'head', 'nth'"
+                .to_string(),
+        ],
+        (Number, String) => {
+            vec!["if you need to convert a string to a number, use 'parse-num'".to_string()]
+        }
+        (String, Number) => vec!["if you need to convert a number to a string, use 'str' or \
+             string interpolation"
+            .to_string()],
+        _ => vec![],
+    }
+}
+
+/// Generate contextual help notes for data tag mismatch errors
+fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
+    let is_list =
+        actual == DataConstructor::ListCons.tag() || actual == DataConstructor::ListNil.tag();
+    let is_string = actual == DataConstructor::BoxedString.tag();
+    let is_number = actual == DataConstructor::BoxedNumber.tag();
+    let expects_block = expected.contains(&DataConstructor::Block.tag());
+    let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
+    let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
+
+    if is_list && expects_block {
+        vec![
+            "the '.' operator performs key lookup on blocks, not lists".to_string(),
+            "for lists, use the index operator for indexing (e.g. xs index 0) or \
+             pipeline functions like 'head', 'nth'"
+                .to_string(),
+        ]
+    } else if is_string && expects_number {
+        vec!["to convert a string to a number, use 'parse-num'".to_string()]
+    } else if is_number && expects_string {
+        vec!["to convert a number to a string, use 'str' or string interpolation".to_string()]
+    } else {
+        vec![]
+    }
+}
+
 /// Compute the Levenshtein edit distance between two strings.
 ///
 /// This is a simple dynamic programming implementation suitable for
@@ -299,9 +345,29 @@ impl HasSmid for ExecutionError {
 
 impl ExecutionError {
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
-        match self {
-            ExecutionError::Compile(e) => e.to_diagnostic(source_map),
-            _ => source_map.diagnostic(self),
+        // Delegate CompileError to its own diagnostic
+        if let ExecutionError::Compile(e) = self {
+            return e.to_diagnostic(source_map);
+        }
+        let diag = source_map.diagnostic(self);
+        // Unwrap Traced to get at the inner error for note generation
+        let inner = match self {
+            ExecutionError::Traced(e, _, _) => e.as_ref(),
+            other => other,
+        };
+        let notes = match inner {
+            ExecutionError::TypeMismatch(_, expected, actual) => {
+                type_mismatch_notes(expected, actual)
+            }
+            ExecutionError::NoBranchForDataTag(_, actual, expected) => {
+                data_tag_mismatch_notes(*actual, expected)
+            }
+            _ => vec![],
+        };
+        if notes.is_empty() {
+            diag
+        } else {
+            diag.with_notes(notes)
         }
     }
 
