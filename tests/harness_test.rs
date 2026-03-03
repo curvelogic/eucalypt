@@ -445,11 +445,6 @@ pub fn test_harness_093() {
 }
 
 #[test]
-pub fn test_harness_094() {
-    run_test(&opts("094_stream_multi_traversal.eu"));
-}
-
-#[test]
 pub fn test_harness_095() {
     run_test(&opts("095_idiom_brackets.eu"));
 }

@@ -66,43 +66,10 @@ pub fn register_stream(producer: Box<dyn StreamProducer>) -> u32 {
     STREAM_TABLE.with(|table| table.borrow_mut().register(producer))
 }
 
-/// Advance a stream producer by exactly one element.
-///
-/// Returns the next value from the producer, or `None` if the
-/// stream is exhausted or the handle is unknown.
-///
-/// This is the single-step counterpart to `stream_drain`. The
-/// `STREAM_NEXT` intrinsic uses `stream_drain` to eagerly build
-/// a complete list; `stream_next` is available for callers that
-/// want to consume one element at a time.
-pub fn stream_next(handle: u32) -> Option<Rc<StgSyn>> {
-    STREAM_TABLE.with(|table| {
-        let table = table.borrow();
-        table
-            .get(handle)
-            .and_then(|producer| producer.borrow_mut().next())
-    })
-}
-
 /// Drain all remaining values from a stream producer.
 ///
 /// Returns a vector of all STG syntax values, consuming the
 /// producer to exhaustion.
-///
-/// # Architectural note
-///
-/// True lazy streaming via cons-cell thunks is not feasible in the
-/// current STG machine. When a `Cons` data constructor is destructured
-/// by a `case` expression, `env_from_data_args` copies the closures
-/// from the constructor's environment into a fresh branch frame. The
-/// `Update` mechanism then writes the memoised result back to the
-/// branch frame, not the original slot. On re-traversal a new copy is
-/// made from the un-updated original, breaking memoisation.
-///
-/// The eager drain is correct for this architecture: the entire list
-/// is built once, the caller's thunk is updated to point to the
-/// complete list on first force, and subsequent accesses reuse that
-/// memoised list without any re-reading from the IO source.
 pub fn stream_drain(handle: u32) -> Vec<Rc<StgSyn>> {
     STREAM_TABLE.with(|table| {
         let table = table.borrow();
