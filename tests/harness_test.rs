@@ -745,3 +745,23 @@ pub fn test_error_053() {
 pub fn test_error_054() {
     run_error_test(&error_opts("054_num_merge_hint.eu"));
 }
+
+#[test]
+pub fn test_error_055() {
+    run_error_test(&error_opts("055_array_oob.eu"));
+}
+
+#[test]
+pub fn test_error_056() {
+    run_error_test(&error_opts("056_array_shape_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_057() {
+    run_error_test(&error_opts("057_array_reshape_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_058() {
+    run_error_test(&error_opts("058_array_arith_mismatch.eu"));
+}
