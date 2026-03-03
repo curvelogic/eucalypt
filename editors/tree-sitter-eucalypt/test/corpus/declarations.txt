@@ -235,3 +235,88 @@ greeting: c"Hello {name}!\n"
               (identifier)))
           (c_string_content)
           (c_escape_sequence))))))
+
+================================================================================
+Block destructuring parameter
+================================================================================
+
+f({x y}): x + y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (block_pattern
+          (declaration
+            (declaration_head
+              (identifier))))))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+List destructuring parameter
+================================================================================
+
+f([a, b]): a + b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (list_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Cons destructuring parameter
+================================================================================
+
+f([h : t]): h
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (cons_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Idiom bracket expression
+================================================================================
+
+result: ⟦ x ⟧
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (bracket_expr
+        (soup
+          (name
+            (identifier)))))))
