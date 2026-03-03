@@ -328,11 +328,28 @@ impl<'expr> ScopeTracker<'expr> {
                 // Check for static access pattern: Lookup(Var(Bound(bv)), member, ...)
                 if let Expr::Var(_, Var::Bound(bound_var)) = &*e.inner {
                     self.encounter_lookup(bound_var, member);
+                    // For fallbacks that reference the SAME binding as the
+                    // target, treat as a static lookup rather than an escape.
+                    // This handles dynamise-generated patterns:
+                    //   Lookup(target, key, Some(Var(Bound(target))))
+                    if let Some(fallback) = fb {
+                        if let Expr::Var(_, Var::Bound(fb_var)) = &*fallback.inner {
+                            if fb_var.scope == bound_var.scope && fb_var.binder == bound_var.binder
+                            {
+                                // Same binding — not an escape, just a lookup fallback
+                                self.encounter_lookup(fb_var, member);
+                            } else {
+                                self.traverse(fallback);
+                            }
+                        } else {
+                            self.traverse(fallback);
+                        }
+                    }
                 } else {
                     self.traverse(e);
-                }
-                if let Some(fallback) = fb {
-                    self.traverse(fallback);
+                    if let Some(fallback) = fb {
+                        self.traverse(fallback);
+                    }
                 }
             }
             Expr::List(_, xs) => {
@@ -767,6 +784,106 @@ pub mod tests {
                                 assert!(block_map.get("a").is_some());
                                 assert!(block_map.get("c").is_some());
                                 assert!(block_map.get("b").is_none());
+                            }
+                            other => panic!("expected Block body, got: {other:?}"),
+                        }
+                    }
+                    other => panic!("expected DefaultBlockLet, got: {other:?}"),
+                }
+            }
+            other => panic!("expected outer Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    pub fn test_dynamise_fallback_allows_block_dce() {
+        // Simulates the dynamise pattern:
+        //   ns = DefaultBlockLet { used: 42, unused: 99 }
+        //   result = Lookup(Var(ns), "used", Some(Var(ns)))
+        //
+        // The fallback Var(ns) should NOT prevent block-level DCE
+        // because it refers to the same binding as the lookup target.
+        let used = free("used");
+        let unused = free("unused");
+        let ns = free("ns");
+        let result = free("result");
+
+        let ns_var = || var(ns.clone());
+
+        let expr = let_(
+            vec![
+                (
+                    ns.clone(),
+                    default_let(vec![(used.clone(), num(42)), (unused.clone(), num(99))]),
+                ),
+                (result.clone(), lookup(ns_var(), "used", Some(ns_var()))),
+            ],
+            var(result.clone()),
+        );
+
+        let pruned = prune(&expr);
+
+        // Verify the block body is filtered (only "used" member)
+        match &*pruned.inner {
+            Expr::Let(_, scope, _) => {
+                let (_, Embed(ref ns_val)) = scope.unsafe_pattern.unsafe_pattern[0];
+                match &*ns_val.inner {
+                    Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
+                        match &*inner_scope.unsafe_body.inner {
+                            Expr::Block(_, block_map) => {
+                                assert_eq!(block_map.len(), 1);
+                                assert!(block_map.get("used").is_some());
+                                assert!(block_map.get("unused").is_none());
+                            }
+                            other => panic!("expected Block body, got: {other:?}"),
+                        }
+                    }
+                    other => panic!("expected DefaultBlockLet, got: {other:?}"),
+                }
+            }
+            other => panic!("expected outer Let, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    pub fn test_different_binding_fallback_does_not_prevent_dce() {
+        // Lookup(Var(ns), "used", Some(Var(other)))
+        // Different fallback binding should NOT cause ns to escape
+        // because the fallback is just another variable
+        let used = free("used");
+        let unused = free("unused");
+        let ns = free("ns");
+        let other = free("other");
+        let result = free("result");
+
+        let expr = let_(
+            vec![
+                (
+                    ns.clone(),
+                    default_let(vec![(used.clone(), num(42)), (unused.clone(), num(99))]),
+                ),
+                (other.clone(), num(0)),
+                (
+                    result.clone(),
+                    lookup(var(ns.clone()), "used", Some(var(other.clone()))),
+                ),
+            ],
+            var(result.clone()),
+        );
+
+        let pruned = prune(&expr);
+
+        // ns should still have block-level DCE applied since only
+        // "used" is accessed — the fallback references "other", not "ns"
+        match &*pruned.inner {
+            Expr::Let(_, scope, _) => {
+                let (_, Embed(ref ns_val)) = scope.unsafe_pattern.unsafe_pattern[0];
+                match &*ns_val.inner {
+                    Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
+                        match &*inner_scope.unsafe_body.inner {
+                            Expr::Block(_, block_map) => {
+                                assert_eq!(block_map.len(), 1);
+                                assert!(block_map.get("used").is_some());
                             }
                             other => panic!("expected Block body, got: {other:?}"),
                         }

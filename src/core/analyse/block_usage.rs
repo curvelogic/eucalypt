@@ -154,11 +154,27 @@ impl BlockUsageAnalyser {
                 // Check for static access: Lookup(Var(Bound(bv)), member, ...)
                 if let Expr::Var(_, Var::Bound(bound_var)) = &*e.inner {
                     self.record_static_access(bound_var, member);
+                    // For fallbacks that reference the SAME binding as the
+                    // target (dynamise-generated pattern), treat as static
+                    // access rather than escape.
+                    if let Some(fallback) = fb {
+                        if let Expr::Var(_, Var::Bound(fb_var)) = &*fallback.inner {
+                            if fb_var.scope == bound_var.scope && fb_var.binder == bound_var.binder
+                            {
+                                // Same binding — not an escape
+                                self.record_static_access(fb_var, member);
+                            } else {
+                                self.walk(fallback);
+                            }
+                        } else {
+                            self.walk(fallback);
+                        }
+                    }
                 } else {
                     self.walk(e);
-                }
-                if let Some(fallback) = fb {
-                    self.walk(fallback);
+                    if let Some(fallback) = fb {
+                        self.walk(fallback);
+                    }
                 }
             }
             Expr::Var(_, Var::Bound(bound_var)) => {
