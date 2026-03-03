@@ -259,8 +259,8 @@ pub enum ExecutionError {
     NotCallable(Smid, String),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
-    #[error("bad regex ({0})")]
-    BadRegex(String),
+    #[error("bad regex: {1}\n  help: the pattern '{0}' is not a valid regular expression")]
+    BadRegex(String, String),
     #[error("bad date / time components ({0}, {1}, {2}, {3}, {4}, {5}, {6})")]
     BadDateTimeComponents(Number, Number, Number, Number, Number, Number, String),
     #[error("bad time zone ({0})")]
