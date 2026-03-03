@@ -471,19 +471,24 @@ pub fn machine_return_set(
 }
 
 /// Return boolean from intrinsic
+///
+/// Reuses the pre-allocated TRUE/FALSE global closures rather than
+/// allocating a fresh Cons node on each call, saving one heap
+/// allocation per boolean-returning intrinsic invocation.
 pub fn machine_return_bool(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView,
     b: bool,
 ) -> Result<(), ExecutionError> {
-    machine.set_closure(SynClosure::new(
-        if b {
-            view.t()?.as_ptr()
-        } else {
-            view.f()?.as_ptr()
-        },
-        machine.root_env(),
-    ))
+    use std::sync::OnceLock;
+    static TRUE_IDX: OnceLock<usize> = OnceLock::new();
+    static FALSE_IDX: OnceLock<usize> = OnceLock::new();
+    let idx = if b {
+        *TRUE_IDX.get_or_init(|| crate::eval::intrinsics::index("TRUE").unwrap())
+    } else {
+        *FALSE_IDX.get_or_init(|| crate::eval::intrinsics::index("FALSE").unwrap())
+    };
+    machine.set_closure(machine.nav(view).global(idx)?)
 }
 
 /// Extract f64 values from a concrete (forced) number list.
