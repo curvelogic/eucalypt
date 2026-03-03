@@ -201,6 +201,15 @@ calculations: { result: advanced-calc(10) }
 { import: "lines=text-stream@log.txt" }
 ```
 
+**Import resolution order**: relative paths are resolved by searching:
+1. The directory containing the importing `.eu` file (source-relative)
+2. The directories on the lib path (`-L` flags and CWD)
+
+This means a file at `lib/utils.eu` that imports `"helpers/misc.eu"` will find
+`lib/helpers/misc.eu` without needing `-L lib` on the command line. This works
+transitively, so `lib/helpers/misc.eu` can in turn import `"sub/detail.eu"` and
+it will resolve as `lib/helpers/sub/detail.eu`.
+
 ### 1.10 Quoted Identifiers
 
 Single quotes turn any character sequence into a normal identifier:

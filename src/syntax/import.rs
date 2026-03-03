@@ -28,16 +28,38 @@ impl Default for ImportGraph {
 
 impl ImportGraph {
     /// Analyse the Rowan AST for imports and add to graph, returning
-    /// inputs for further load and analysis
+    /// inputs for further load and analysis.
+    ///
+    /// Import paths are taken verbatim from the AST. For source-relative
+    /// resolution, scrape imports with `scrape_rowan_ast_imports`, resolve
+    /// them, then call `register_imports`.
     pub fn analyse_rowan_ast(
         &mut self,
         input: Input,
         ast: &ParsedAst,
     ) -> Result<Vec<Input>, ImportError> {
-        let source_node = self.encounter_input(input);
-
         let mut imports: Vec<Input> = vec![];
         read_rowan_ast_imports(ast, &mut imports)?;
+        self.register_imports(input, imports)
+    }
+
+    /// Scrape import `Input`s from a Rowan AST without registering them in
+    /// the graph. Allows the caller to resolve paths (e.g. to absolute
+    /// paths for source-relative imports) before registration.
+    pub fn scrape_rowan_ast_imports(ast: &ParsedAst) -> Result<Vec<Input>, ImportError> {
+        let mut imports = Vec::new();
+        read_rowan_ast_imports(ast, &mut imports)?;
+        Ok(imports)
+    }
+
+    /// Register a set of (already-resolved) import `Input`s for a source
+    /// input in the graph, and return them for further loading.
+    pub fn register_imports(
+        &mut self,
+        input: Input,
+        imports: Vec<Input>,
+    ) -> Result<Vec<Input>, ImportError> {
+        let source_node = self.encounter_input(input);
 
         for i in &imports {
             let target_node = self.encounter_input(i.clone());
