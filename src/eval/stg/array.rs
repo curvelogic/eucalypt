@@ -3,21 +3,35 @@
 //! Provides construction, access, query, and transformation operations
 //! on n-dimensional arrays backed by ndarray.
 
+use std::convert::TryInto;
+
 use serde_json::Number;
 
-use crate::eval::{
-    emit::Emitter,
-    error::ExecutionError,
-    machine::intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic},
-    memory::{
-        mutator::MutatorHeapView,
-        ndarray::HeapNdArray,
-        syntax::{Native, Ref},
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{
+            CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
+        },
+        memory::{
+            mutator::MutatorHeapView,
+            ndarray::HeapNdArray,
+            syntax::{Native, Ref},
+        },
     },
 };
 
-use super::support::{
-    machine_return_bool, machine_return_ndarray, machine_return_num, ndarray_arg, num_arg,
+use super::{
+    force::SeqNumList,
+    support::{
+        machine_return_bool, machine_return_ndarray, machine_return_num, ndarray_arg, num_arg,
+    },
+    syntax::{
+        dsl::{annotated_lambda, app_bif, force, local, lref, unbox_num},
+        LambdaForm,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -30,6 +44,20 @@ pub struct ArrayZeros;
 impl StgIntrinsic for ArrayZeros {
     fn name(&self) -> &str {
         "ARRAY.ZEROS"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Force SeqNumList on the shape arg before calling execute
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            1, // [shape]
+            force(
+                SeqNumList.global(lref(0)),
+                // [concrete_shape] [shape]
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+            annotation,
+        )
     }
 
     fn execute(
@@ -54,6 +82,30 @@ impl StgIntrinsic for ArrayFill {
         "ARRAY.FILL"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Force SeqNumList on shape arg, then unbox+force value arg.
+        //
+        // Env trace (force uses from_closure, unbox uses env_from_data_args):
+        // lambda:              lref(0)=shape, lref(1)=val
+        // force(SeqNumList(shape)): lref(0)=concrete_shape, lref(1)=shape, lref(2)=val
+        // unbox_num(val=lref(2)):   lref(0)=inner_num, lref(1)=concrete_shape, lref(2)=shape, lref(3)=val
+        // force(inner_num):         lref(0)=raw_num, lref(1)=inner_num, lref(2)=concrete_shape, ...
+        //
+        // execute args: (shape=lref(2), val=lref(0))
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            2, // [shape, val]
+            force(
+                SeqNumList.global(lref(0)),
+                unbox_num(
+                    local(2),
+                    force(local(0), app_bif(bif_index, vec![lref(2), lref(0)])),
+                ),
+            ),
+            annotation,
+        )
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -75,6 +127,24 @@ pub struct ArrayFromFlat;
 impl StgIntrinsic for ArrayFromFlat {
     fn name(&self) -> &str {
         "ARRAY.FROM_FLAT"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Force SeqNumList on both shape and values args.
+        // After first force: lref(0)=concrete_shape, lref(1)=shape, lref(2)=vals
+        // After second force: lref(0)=concrete_vals, lref(1)=concrete_shape, lref(2)=shape, lref(3)=vals
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            2, // [shape, vals]
+            force(
+                SeqNumList.global(lref(0)),
+                force(
+                    SeqNumList.global(lref(2)),
+                    app_bif(bif_index, vec![lref(1), lref(0)]),
+                ),
+            ),
+            annotation,
+        )
     }
 
     fn execute(
@@ -109,6 +179,24 @@ impl StgIntrinsic for ArrayGet {
         "ARRAY.GET"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Force array arg, then SeqNumList on coords arg.
+        // After first force: lref(0)=forced_array, lref(1)=array, lref(2)=coords
+        // After second force: lref(0)=concrete_coords, lref(1)=forced_array, lref(2)=array, lref(3)=coords
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            2, // [array, coords]
+            force(
+                local(0),
+                force(
+                    SeqNumList.global(lref(2)),
+                    app_bif(bif_index, vec![lref(1), lref(0)]),
+                ),
+            ),
+            annotation,
+        )
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -139,6 +227,37 @@ pub struct ArraySet;
 impl StgIntrinsic for ArraySet {
     fn name(&self) -> &str {
         "ARRAY.SET"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Force array, SeqNumList coords, unbox+force value.
+        //
+        // Env trace (force uses from_closure, switch/unbox uses env_from_data_args):
+        // lambda:           lref(0)=array, lref(1)=coords, lref(2)=val
+        // force(array):     lref(0)=forced_array, lref(1)=array, lref(2)=coords, lref(3)=val
+        // force(SeqNumList(coords)): lref(0)=concrete_coords, lref(1)=forced_array, lref(2)=array, lref(3)=coords, lref(4)=val
+        // unbox_num(val=lref(4)): lref(0)=inner_num, lref(1)=concrete_coords, lref(2)=forced_array, lref(3)=array, lref(4)=coords, lref(5)=val
+        // force(inner_num): lref(0)=raw_num, lref(1)=inner_num, lref(2)=concrete_coords, lref(3)=forced_array, ...
+        //
+        // execute args: (array=lref(3), coords=lref(2), val=lref(0))
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            3, // [array, coords, val]
+            force(
+                local(0),
+                force(
+                    SeqNumList.global(lref(2)),
+                    unbox_num(
+                        local(4),
+                        force(
+                            local(0),
+                            app_bif(bif_index, vec![lref(3), lref(2), lref(0)]),
+                        ),
+                    ),
+                ),
+            ),
+            annotation,
+        )
     }
 
     fn execute(
@@ -306,6 +425,29 @@ pub struct ArrayReshape;
 impl StgIntrinsic for ArrayReshape {
     fn name(&self) -> &str {
         "ARRAY.RESHAPE"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Force array arg, then SeqNumList on new_shape arg.
+        //
+        // Env trace:
+        // lambda:           lref(0)=array, lref(1)=new_shape
+        // force(array):     lref(0)=forced_array, lref(1)=array, lref(2)=new_shape
+        // force(SeqNumList(new_shape)): lref(0)=concrete_shape, lref(1)=forced_array, lref(2)=array, lref(3)=new_shape
+        //
+        // execute args: (array=lref(1), new_shape=lref(0))
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            2, // [array, new_shape]
+            force(
+                local(0),
+                force(
+                    SeqNumList.global(lref(2)),
+                    app_bif(bif_index, vec![lref(1), lref(0)]),
+                ),
+            ),
+            annotation,
+        )
     }
 
     fn execute(

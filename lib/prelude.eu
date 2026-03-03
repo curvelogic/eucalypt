@@ -1319,6 +1319,72 @@ set: {
 
 
 ##
+## N-dimensional arrays (tensors)
+##
+
+` { export: :suppress
+    doc: "Functions for working with n-dimensional arrays of numbers." }
+arr: {
+
+  ` "`arr.zeros(shape)` - create an array of zeros with the given shape list."
+  zeros: '__ARRAY.ZEROS'
+
+  ` "`arr.fill(shape, val)` - create an array filled with `val` with the given shape list."
+  fill: '__ARRAY.FILL'
+
+  ` "`arr.from-flat(shape, vals)` - create an array from a flat list of numbers with the given shape."
+  from-flat: '__ARRAY.FROM_FLAT'
+
+  ` "`arr.get(a, coords)` - get element at coordinate list `coords` in array `a`."
+  get: '__ARRAY.GET'
+
+  ` "`arr.set(a, coords, val)` - return new array with element at `coords` set to `val`."
+  set: '__ARRAY.SET'
+
+  ` "`arr.shape(a)` - return shape of array `a` as a list of integers."
+  shape: '__ARRAY.SHAPE'
+
+  ` "`arr.rank(a)` - return number of dimensions of array `a`."
+  rank: '__ARRAY.RANK'
+
+  ` "`arr.length(a)` - return total number of elements in array `a`."
+  length: '__ARRAY.LENGTH'
+
+  ` "`arr.to-list(a)` - return flat list of elements in row-major order."
+  to-list: '__ARRAY.TO_LIST'
+
+  ` "`arr.array?(x)` - true if `x` is an array."
+  array?: '__ARRAY.ISARRAY'
+
+  ` "`arr.transpose(a)` - reverse all axes of array `a`."
+  transpose: '__ARRAY.TRANSPOSE'
+
+  ` "`arr.reshape(a, shape)` - reshape array `a` to new shape (total elements must match)."
+  reshape: '__ARRAY.RESHAPE'
+
+  ` "`arr.slice(a, axis, idx)` - take a slice along `axis` at `idx`, reducing rank by 1."
+  slice: '__ARRAY.SLICE'
+
+  ` "`arr.add(a, b)` - element-wise addition; `b` may be a scalar."
+  add: '__ARRAY.ADD'
+
+  ` "`arr.sub(a, b)` - element-wise subtraction; `b` may be a scalar."
+  sub: '__ARRAY.SUB'
+
+  ` "`arr.mul(a, b)` - element-wise multiplication; `b` may be a scalar."
+  mul: '__ARRAY.MUL'
+
+  ` "`arr.div(a, b)` - element-wise division; `b` may be a scalar."
+  div: '__ARRAY.DIV'
+
+}
+
+` "`is-array?(x)` - true if `x` is an n-dimensional array."
+is-array?(x): x arr.array?
+
+
+
+##
 ## Graph algorithms
 ##
 
