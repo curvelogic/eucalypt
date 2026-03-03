@@ -64,6 +64,20 @@ impl PartialEq for Native {
 
 impl Eq for Native {}
 
+impl Native {
+    /// Return a human-readable type name for use in error messages
+    pub fn type_description(&self) -> &'static str {
+        match self {
+            Native::Sym(_) => "symbol",
+            Native::Str(_) => "string",
+            Native::Num(_) => "number",
+            Native::Zdt(_) => "datetime",
+            Native::Index(_) => "block index",
+            Native::Set(_) => "set",
+        }
+    }
+}
+
 impl StgObject for Native {}
 
 impl fmt::Display for Native {
