@@ -92,6 +92,9 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "to apply a function to a number, use pipeline catenation, \
              e.g. 'x abs' or 'x negate' instead of 'x.abs'"
                 .to_string(),
+            "note: 'str' is a namespace of string functions, not a type conversion function; \
+             to convert a number to a string use 'str.of(x)' or string interpolation"
+                .to_string(),
         ]
     } else if is_string && expects_block {
         vec![
@@ -100,6 +103,9 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
                 .to_string(),
             "to apply string functions, use pipeline catenation, \
              e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
+                .to_string(),
+            "note: 'str' is a namespace of string functions, not a type conversion function; \
+             use 'str.of(x)' or string interpolation to convert values to strings"
                 .to_string(),
         ]
     } else if is_block && expects_number {
