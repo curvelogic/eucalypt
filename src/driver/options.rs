@@ -643,11 +643,17 @@ impl EucalyptCli {
             "lsp",
             "help",
         ];
+        // Rewrite --version/-V to the version subcommand so the
+        // rich build banner from build-meta.yaml is shown instead
+        // of clap's bare CARGO_PKG_VERSION.
+        if args[1] == "--version" || args[1] == "-V" {
+            let modified_args = vec![args[0].clone(), "version".to_string()];
+            return Self::try_parse_from(modified_args).unwrap_or_else(|e| e.exit());
+        }
+
         if SUBCOMMANDS.contains(&args[1].as_str())
             || args[1] == "--help"
             || args[1] == "-h"
-            || args[1] == "--version"
-            || args[1] == "-V"
         {
             return Self::parse();
         }

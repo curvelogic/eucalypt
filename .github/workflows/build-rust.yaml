@@ -89,10 +89,10 @@ jobs:
           export OSTYPE=$(uname)
           export HOSTTYPE=$(uname -m)
 
-          eu -t build-meta > build-meta.yaml.new
+          eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
 
-          echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Run release tests
         run: cargo test --release
       - name: Build release
@@ -162,10 +162,10 @@ jobs:
           export OSTYPE=$(uname)
           export HOSTTYPE=$(uname -m)
 
-          eu -t build-meta > build-meta.yaml.new
+          eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
 
-          echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Run release tests
         run: cargo test --release
       - name: Build release
@@ -209,10 +209,10 @@ jobs:
           export OSTYPE=$(uname)
           export HOSTTYPE=$(uname -m)
 
-          eu -t build-meta > build-meta.yaml.new
+          eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
 
-          echo "TAG_NAME=$(eu -t version)" >> $GITHUB_ENV
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Run release tests
         run: cargo test --release
       - name: Build release

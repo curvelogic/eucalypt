@@ -67,7 +67,7 @@ build-meta: {
   version: new-version
   commit: build.commit
   url: build.url
-  banner: "eu - Eucalypt (Rust Impl: v{version})"
+  banner: "eu - Eucalypt v{version}"
   eu-build: build
 }
 
