@@ -31,6 +31,10 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
         (String, Number) => vec!["if you need to convert a number to a string, use 'str' or \
              string interpolation"
             .to_string()],
+        (Number, List(_)) => vec![
+            "arithmetic operators like '+' work on numbers, not lists".to_string(),
+            "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -51,6 +55,11 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
              pipeline functions like 'head', 'nth'"
                 .to_string(),
+        ]
+    } else if is_list && expects_number {
+        vec![
+            "arithmetic operators like '+' work on numbers, not lists".to_string(),
+            "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
         ]
     } else if is_string && expects_number {
         vec![
