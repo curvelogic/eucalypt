@@ -55,6 +55,22 @@ struct DestructureEntry {
     fields: Vec<FieldBinding>,
 }
 
+/// Entry for a single list element binding.
+struct ListElementBinding {
+    /// Zero-based index of the element
+    index: usize,
+    /// FreeVar for the binding name in the body
+    binding_var: moniker::FreeVar<String>,
+}
+
+/// Entry for a destructuring list let: synthetic param + element bindings.
+struct ListDestructureEntry {
+    /// Synthetic parameter name (e.g. `__p0`)
+    synthetic_name: String,
+    /// Element bindings at each position
+    elements: Vec<ListElementBinding>,
+}
+
 /// A parsed parameter pattern in a function declaration
 enum ParamPattern {
     /// Simple identifier: `x`
@@ -65,6 +81,10 @@ enum ParamPattern {
     /// field and binding are both `"x"`. For rename `{x: a}`,
     /// field is `"x"` and binding is `"a"`.
     Block(Vec<(String, String)>),
+    /// Fixed-length list destructuring: `[a, b, c]`.
+    ///
+    /// Contains the binding names for each positional element.
+    List(Vec<String>),
 }
 
 /// Parse a block parameter pattern `{x y}` or `{x: a  y: b}` from a
@@ -131,6 +151,31 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
     Ok(fields)
 }
 
+/// Parse a fixed-length list parameter pattern `[a, b, c]` from a
+/// Rowan `List` AST node in a function parameter position.
+///
+/// Each item in the list should be a single normal identifier.
+/// Returns a list of binding names in positional order.
+fn parse_list_pattern(list: &rowan_ast::List) -> Option<Vec<String>> {
+    let mut elements: Vec<String> = Vec::new();
+    for item in list.items() {
+        if let Some(rowan_ast::Element::Name(name)) = item.singleton() {
+            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                elements.push(normal.text().to_string());
+            } else {
+                return None; // Not a normal identifier — invalid pattern
+            }
+        } else {
+            return None; // Not a single name — invalid pattern
+        }
+    }
+    if elements.is_empty() {
+        None // Empty list pattern not valid
+    } else {
+        Some(elements)
+    }
+}
+
 /// Parse a function parameter soup into a `ParamPattern`.
 ///
 /// Returns `None` if the soup is not a valid single-element parameter.
@@ -146,7 +191,25 @@ fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
         Some(rowan_ast::Element::Block(block)) => {
             parse_block_pattern(&block).ok().map(ParamPattern::Block)
         }
+        Some(rowan_ast::Element::List(list)) => parse_list_pattern(&list).map(ParamPattern::List),
         _ => None,
+    }
+}
+
+/// Ordered record of a destructuring let to emit after the body is desugared.
+enum DestructureLet {
+    /// Block destructuring: lookup each field by name.
+    Block(DestructureEntry),
+    /// List destructuring: index each element with LIST.NTH.
+    List(ListDestructureEntry),
+}
+
+impl DestructureLet {
+    fn synthetic_name(&self) -> &str {
+        match self {
+            DestructureLet::Block(e) => &e.synthetic_name,
+            DestructureLet::List(e) => &e.synthetic_name,
+        }
     }
 }
 
@@ -155,6 +218,8 @@ fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
 /// For simple parameter patterns, this behaves like `desugar_declaration_body`.
 /// For block patterns, a synthetic parameter (`__pN`) is introduced as the
 /// lambda binder, and let bindings for each field are added around the body.
+/// For list patterns, the same synthetic-parameter approach is used, with
+/// `LIST.NTH` calls for each positional element.
 ///
 /// Returns `(body_expr, lambda_param_names, lambda_param_vars)`.
 fn desugar_declaration_body_with_patterns(
@@ -168,10 +233,12 @@ fn desugar_declaration_body_with_patterns(
     // which are only binding names for let bindings.
     let mut all_env_names: Vec<String> = Vec::new();
     let mut lambda_param_names: Vec<String> = Vec::new();
-    // For each pattern, record the synthetic param name (if any) and
-    // the field-to-binding mappings (for DestructureBlockLet).
-    let mut destructure_entries: Vec<(String, Vec<(String, String)>)> = Vec::new();
-    // Will be built from destructure_entries after env push
+    // Raw data for block patterns: (synthetic_name, [(field_name, binding_name)])
+    let mut block_raw: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    // Raw data for list patterns: (synthetic_name, [binding_name])
+    let mut list_raw: Vec<(String, Vec<String>)> = Vec::new();
+    // Ordered sequence of lets to emit — preserves argument order for correct nesting.
+    let mut let_order: Vec<DestructureLet> = Vec::new();
     let mut synthetic_counter = 0usize;
 
     for pattern in patterns {
@@ -188,7 +255,27 @@ fn desugar_declaration_body_with_patterns(
                 for (_, binding_name) in fields {
                     all_env_names.push(binding_name.clone());
                 }
-                destructure_entries.push((synthetic_name, fields.clone()));
+                block_raw.push((synthetic_name.clone(), fields.clone()));
+                // Placeholder — resolved after env push
+                let_order.push(DestructureLet::Block(DestructureEntry {
+                    synthetic_name,
+                    fields: Vec::new(),
+                }));
+            }
+            ParamPattern::List(element_names) => {
+                let synthetic_name = format!("__p{}", synthetic_counter);
+                synthetic_counter += 1;
+                all_env_names.push(synthetic_name.clone());
+                lambda_param_names.push(synthetic_name.clone());
+                for binding_name in element_names {
+                    all_env_names.push(binding_name.clone());
+                }
+                list_raw.push((synthetic_name.clone(), element_names.clone()));
+                // Placeholder — resolved after env push
+                let_order.push(DestructureLet::List(ListDestructureEntry {
+                    synthetic_name,
+                    elements: Vec::new(),
+                }));
             }
         }
     }
@@ -204,23 +291,36 @@ fn desugar_declaration_body_with_patterns(
         .map(|name| desugarer.env().get(name).unwrap().clone())
         .collect();
 
-    // Collect FreeVars for binding names (needed for let bindings)
-    let mut destructure_lets: Vec<DestructureEntry> = Vec::new();
-    for (synthetic_name, fields) in &destructure_entries {
-        let field_bindings: Vec<FieldBinding> = fields
-            .iter()
-            .map(|(field_name, binding_name)| {
-                let binding_var = desugarer.env().get(binding_name).unwrap().clone();
-                FieldBinding {
-                    field_name: field_name.clone(),
-                    binding_var,
-                }
-            })
-            .collect();
-        destructure_lets.push(DestructureEntry {
-            synthetic_name: synthetic_name.clone(),
-            fields: field_bindings,
-        });
+    // Resolve block destructure entries now that names are in the environment.
+    let mut block_raw_iter = block_raw.into_iter();
+    let mut list_raw_iter = list_raw.into_iter();
+    for slot in &mut let_order {
+        match slot {
+            DestructureLet::Block(entry) => {
+                let (_, fields) = block_raw_iter.next().unwrap();
+                entry.fields = fields
+                    .iter()
+                    .map(|(field_name, binding_name)| {
+                        let binding_var = desugarer.env().get(binding_name).unwrap().clone();
+                        FieldBinding {
+                            field_name: field_name.clone(),
+                            binding_var,
+                        }
+                    })
+                    .collect();
+            }
+            DestructureLet::List(entry) => {
+                let (_, element_names) = list_raw_iter.next().unwrap();
+                entry.elements = element_names
+                    .iter()
+                    .enumerate()
+                    .map(|(index, binding_name)| {
+                        let binding_var = desugarer.env().get(binding_name).unwrap().clone();
+                        ListElementBinding { index, binding_var }
+                    })
+                    .collect();
+            }
+        }
     }
 
     // Desugar body with all names in scope
@@ -248,41 +348,74 @@ fn desugar_declaration_body_with_patterns(
         desugarer.env_mut().pop();
     }
 
-    // Wrap body in DestructureBlockLet for each destructuring pattern,
-    // innermost first (last pattern wraps outermost).
-    // Each binding is: binding_var = Lookup(Var(synthetic), "field_name", None)
-    for entry in destructure_lets.iter().rev() {
+    // Wrap body in destructuring lets for each pattern, innermost first
+    // (last pattern wraps outermost), preserving argument order.
+    for slot in let_order.iter().rev() {
         // Look up the synthetic param FreeVar from the lambda_param_vars
         // (the env frame has already been popped)
         let synthetic_fv = lambda_param_vars
             .iter()
             .zip(lambda_param_names.iter())
-            .find(|(_, n)| **n == entry.synthetic_name)
+            .find(|(_, n)| **n == slot.synthetic_name())
             .map(|(fv, _)| fv.clone())
             .unwrap();
 
         let smid = desugarer.new_smid(span);
         let synthetic_var = RcExpr::from(Expr::Var(smid, moniker::Var::Free(synthetic_fv)));
 
-        let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
-            .fields
-            .iter()
-            .map(|fb| {
-                let lookup = RcExpr::from(Expr::Lookup(
-                    smid,
-                    synthetic_var.clone(),
-                    fb.field_name.clone(),
-                    None,
-                ));
-                (Binder(fb.binding_var.clone()), Embed(lookup))
-            })
-            .collect();
+        match slot {
+            DestructureLet::Block(entry) => {
+                // Each binding is: binding_var = Lookup(Var(synthetic), "field_name", None)
+                let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+                    .fields
+                    .iter()
+                    .map(|fb| {
+                        let lookup = RcExpr::from(Expr::Lookup(
+                            smid,
+                            synthetic_var.clone(),
+                            fb.field_name.clone(),
+                            None,
+                        ));
+                        (Binder(fb.binding_var.clone()), Embed(lookup))
+                    })
+                    .collect();
 
-        body = RcExpr::from(Expr::Let(
-            smid,
-            Scope::new(Rec::new(bindings), body),
-            LetType::DestructureBlockLet,
-        ));
+                body = RcExpr::from(Expr::Let(
+                    smid,
+                    Scope::new(Rec::new(bindings), body),
+                    LetType::DestructureBlockLet,
+                ));
+            }
+            DestructureLet::List(entry) => {
+                // Each binding uses HEAD/TAIL chaining:
+                //   a = HEAD(__p0)
+                //   b = HEAD(TAIL(__p0))
+                //   c = HEAD(TAIL(TAIL(__p0)))
+                //
+                // This correctly handles lists built by the STG compiler
+                // where the nil tail is a global ref, not a local ref.
+                let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+                    .elements
+                    .iter()
+                    .map(|eb| {
+                        // Build TAIL applied `index` times to synthetic_var
+                        let mut list_expr = synthetic_var.clone();
+                        for _ in 0..eb.index {
+                            list_expr = core::app(smid, core::bif(smid, "TAIL"), vec![list_expr]);
+                        }
+                        // Apply HEAD to get the element at this position
+                        let head_call = core::app(smid, core::bif(smid, "HEAD"), vec![list_expr]);
+                        (Binder(eb.binding_var.clone()), Embed(head_call))
+                    })
+                    .collect();
+
+                body = RcExpr::from(Expr::Let(
+                    smid,
+                    Scope::new(Rec::new(bindings), body),
+                    LetType::DestructureListLet,
+                ));
+            }
+        }
     }
 
     Ok((body, lambda_param_names, lambda_param_vars))

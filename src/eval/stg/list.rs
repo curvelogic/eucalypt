@@ -253,7 +253,10 @@ impl StgIntrinsic for ListDrop {
         for _ in 0..n {
             let code = view.scoped(closure.code());
             match &*code {
-                HeapSyn::Cons { tag, args: cons_args } => {
+                HeapSyn::Cons {
+                    tag,
+                    args: cons_args,
+                } => {
                     match (*tag).try_into() {
                         Ok(DataConstructor::ListCons) => {
                             let tail_ref = cons_args.get(1).ok_or_else(|| {

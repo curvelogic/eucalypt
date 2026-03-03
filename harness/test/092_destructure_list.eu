@@ -1,0 +1,29 @@
+##
+## 092: List destructuring in function parameters
+##
+
+f-sum([a, b, c]): a + b + c
+f-first([a, b]): a
+f-second([a, b]): b
+
+tests: {
+
+  ` "Fixed-length list destructuring"
+  fixed: {
+    ` "sum of three elements"
+    a: f-sum([10, 20, 30]) //= 60
+    ` "sum of different values"
+    b: f-sum([1, 2, 3]) //= 6
+  }
+
+  ` "Two-element list"
+  pair: {
+    ` "first element"
+    a: f-first([1, 2]) //= 1
+    ` "second element"
+    b: f-second([1, 2]) //= 2
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)
