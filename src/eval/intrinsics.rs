@@ -708,6 +708,11 @@ lazy_static! {
             ty: function(vec![num(), list(), list()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 133
+            name: "ASSERT_FAIL",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 
