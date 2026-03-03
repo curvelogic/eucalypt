@@ -665,3 +665,8 @@ pub fn test_error_041() {
 pub fn test_error_042() {
     run_error_test(&error_opts("042_map_non_list.eu"));
 }
+
+#[test]
+pub fn test_error_043() {
+    run_error_test(&error_opts("043_assignment_syntax.eu"));
+}

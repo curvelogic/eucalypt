@@ -85,6 +85,24 @@ impl CompileError {
                 if name == "==" {
                     notes.push("eucalypt uses '=' for equality, not '=='".to_string());
                 }
+                // Detect assignment-style declarations (e.g. `x = 42`) which
+                // are not valid eucalypt syntax: eucalypt uses `:` for
+                // declarations, not `=`.
+                if name == "=" {
+                    notes.push(
+                        "note: eucalypt uses ':' for declarations, not '='; \
+                         write 'x: 42' instead of 'x = 42'"
+                            .to_string(),
+                    );
+                }
+                // Also handle `+=`, `-=`, etc. from other languages
+                if matches!(name.as_str(), "+=" | "-=" | "*=" | "/=" | "%=") {
+                    notes.push(
+                        "note: eucalypt has no compound assignment operators; \
+                         eucalypt values are immutable — bind a new name with ':'"
+                            .to_string(),
+                    );
+                }
                 diag.with_notes(notes)
             }
             _ => diag,
