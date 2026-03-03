@@ -184,6 +184,27 @@ fn format_cannot_return_fun(expected_tags: &[u8]) -> String {
     msg
 }
 
+/// Format a division by zero error message with the operation context
+fn format_division_by_zero(operation: &str) -> String {
+    if operation.is_empty() {
+        "division by zero".to_string()
+    } else {
+        format!(
+            "division by zero in {operation}\n  \
+             help: the divisor evaluated to zero"
+        )
+    }
+}
+
+/// Format a bad format string error message with help about valid specifiers
+fn format_bad_format_string(detail: &str) -> String {
+    format!(
+        "bad format string: {detail}\n  \
+         help: format strings use printf-style %-specifiers, \
+         e.g. %d (integer), %f (float), %s (string), %e (scientific)"
+    )
+}
+
 /// Convert a data tag number to a human-readable type name for error messages
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
@@ -222,7 +243,7 @@ pub enum ExecutionError {
     BadEnvironmentIndex(usize),
     #[error("bad index {0} into globals")]
     BadGlobalIndex(usize),
-    #[error("bad format string: {0}")]
+    #[error("{}", format_bad_format_string(.0))]
     BadFormatString(String),
     #[error("found free var {1}")]
     FreeVar(Smid, String),
@@ -264,8 +285,8 @@ pub enum ExecutionError {
     NumericDomainError(Number, Number),
     #[error("out of range error operating on numbers ({0}, {1})")]
     NumericRangeError(Number, Number),
-    #[error("division by zero")]
-    DivisionByZero,
+    #[error("{}", format_division_by_zero(.0))]
+    DivisionByZero(String),
     #[error("expected branch continuation")]
     ExpectedBranchContinuation,
     #[error("type mismatch: expected {}, found {}", display_expected_tags(.2), display_data_tag(*.1))]

@@ -217,7 +217,9 @@ impl StgIntrinsic for Div {
         let y = num_arg(machine, view, &args[1])?;
 
         if is_zero(&y) {
-            return Err(ExecutionError::DivisionByZero);
+            return Err(ExecutionError::DivisionByZero(
+                "floor division (/)".to_string(),
+            ));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
@@ -262,7 +264,7 @@ impl StgIntrinsic for Mod {
         let y = num_arg(machine, view, &args[1])?;
 
         if is_zero(&y) {
-            return Err(ExecutionError::DivisionByZero);
+            return Err(ExecutionError::DivisionByZero("modulo (%)".to_string()));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
@@ -622,7 +624,9 @@ impl StgIntrinsic for PreciseDiv {
         let y = num_arg(machine, view, &args[1])?;
 
         if is_zero(&y) {
-            return Err(ExecutionError::DivisionByZero);
+            return Err(ExecutionError::DivisionByZero(
+                "precise division (\u{00f7})".to_string(),
+            ));
         }
 
         if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
@@ -658,7 +662,9 @@ impl StgIntrinsic for Quot {
         let y = num_arg(machine, view, &args[1])?;
 
         if is_zero(&y) {
-            return Err(ExecutionError::DivisionByZero);
+            return Err(ExecutionError::DivisionByZero(
+                "truncation division (quot)".to_string(),
+            ));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
@@ -705,7 +711,9 @@ impl StgIntrinsic for Rem {
         let y = num_arg(machine, view, &args[1])?;
 
         if is_zero(&y) {
-            return Err(ExecutionError::DivisionByZero);
+            return Err(ExecutionError::DivisionByZero(
+                "remainder (rem)".to_string(),
+            ));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {

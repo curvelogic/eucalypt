@@ -650,3 +650,13 @@ pub fn test_error_037() {
 pub fn test_error_040() {
     run_error_test(&error_opts("040_json_error_format.eu"));
 }
+
+#[test]
+pub fn test_error_041() {
+    run_error_test(&error_opts("041_modulo_by_zero.eu"));
+}
+
+#[test]
+pub fn test_error_042() {
+    run_error_test(&error_opts("042_bad_format_string.eu"));
+}
