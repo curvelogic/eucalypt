@@ -221,6 +221,37 @@ fn format_not_value(context: &str) -> String {
     }
 }
 
+/// Generate contextual notes for "not callable" errors based on the actual type
+fn not_callable_notes(actual_type: &str) -> Vec<String> {
+    match actual_type {
+        "list" => vec![
+            "lists are not callable; to access elements by index use 'nth(index, list)' \
+             or pipeline form 'list nth(index)'"
+                .to_string(),
+            "for the first element use 'list head'; for the rest use 'list tail'".to_string(),
+        ],
+        "true" | "false" => vec![
+            format!(
+                "a {actual_type} value is not a function; if this result of a boolean \
+                 expression, check operator precedence"
+            ),
+            "note: 'and' and 'or' are identifiers in eucalypt, not logical operators; \
+             use '&&' and '||' for logical conjunction and disjunction"
+                .to_string(),
+        ],
+        "number" | "string" | "symbol" | "datetime" | "empty list" => vec![
+            format!(
+                "a {actual_type} value is not a function; check for a missing operator or \
+                 extra argument"
+            ),
+            "note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as \
+             'f(a + 1)'; add parentheses to disambiguate"
+                .to_string(),
+        ],
+        _ => vec![],
+    }
+}
+
 /// Format a "not callable" error message with the actual type of value found
 fn format_not_callable(actual_type: &str) -> String {
     if actual_type.is_empty() {
@@ -504,6 +535,7 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
+            ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
             _ => vec![],
         };
         if notes.is_empty() {
