@@ -31,6 +31,15 @@ with-expr-anaphora: {
 #   α: { t: •1 * •1 }(0, 2)
 # }
 
-RESULT: [unnumbered, numbered, lambdas, with-expr-anaphora]
+# Block anaphor with outer scope variable in infix (eu-dobu)
+n: 10
+outer-scope: {
+  γ: [1, 2, 3] map({k: •}.(k + n)) //= [11, 12, 13]
+  δ: [5, 10, 15] map({k: •}.(k - n)) //= [-5, 0, 5]
+  ε: [2, 3, 4] map({k: •}.(k * n)) //= [20, 30, 40]
+  ζ: [1, 2, 3] map({k: •}.(n + k)) //= [11, 12, 13]
+}
+
+RESULT: [unnumbered, numbered, lambdas, with-expr-anaphora, outer-scope]
           all(all-true? ∘ values)
           then(:PASS, :FAIL)
