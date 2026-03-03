@@ -169,6 +169,10 @@ pub struct RunArgs {
     #[arg(long = "no-dce")]
     pub no_dce: bool,
 
+    /// Dump block usage analysis (static vs dynamic access patterns)
+    #[arg(long = "debug-block-usage")]
+    pub debug_block_usage: bool,
+
     /// Seed for random number generation (for reproducible results)
     #[arg(long = "seed")]
     pub seed: Option<i64>,
@@ -344,6 +348,9 @@ pub struct EucalyptOptions {
 
     // Optimisation flags
     pub no_dce: bool,
+
+    // Debug analysis flags
+    pub debug_block_usage: bool,
 
     // Error format
     pub error_format: ErrorFormat,
@@ -549,6 +556,11 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => false,
         };
 
+        let debug_block_usage = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.debug_block_usage,
+            _ => false,
+        };
+
         // Extract seed from Run command
         let seed = match &cli.command {
             Some(Commands::Run(run_args)) => run_args.seed,
@@ -607,6 +619,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             format_reformat,
             format_indent,
             no_dce,
+            debug_block_usage,
             error_format,
             stg_settings: StgSettings {
                 heap_limit_mib,
@@ -758,6 +771,10 @@ impl EucalyptOptions {
 
     pub fn no_dce(&self) -> bool {
         self.no_dce
+    }
+
+    pub fn debug_block_usage(&self) -> bool {
+        self.debug_block_usage
     }
 
     pub fn run(&self) -> bool {
