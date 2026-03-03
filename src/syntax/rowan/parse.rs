@@ -83,6 +83,23 @@ impl<'text> Parser<'text> {
         TextRange::at(ch, TextSize::of(self.tokens[self.next_token].1))
     }
 
+    /// Calculate a text range covering the last consumed token and the next token.
+    /// Used for reporting errors that span two adjacent tokens (e.g. `::` is two COLON tokens).
+    fn prev_and_next_range(&self) -> TextRange {
+        let mut ch: TextSize = 0.into();
+        let start_token = self.next_token.saturating_sub(1);
+        for (_, s) in &self.tokens[0..start_token] {
+            ch += TextSize::of(*s);
+        }
+        let start = ch;
+        // span from prev token start to end of next token
+        ch += TextSize::of(self.tokens[start_token].1);
+        if self.next_token < self.tokens.len() {
+            ch += TextSize::of(self.tokens[self.next_token].1);
+        }
+        TextRange::new(start, ch)
+    }
+
     /// Operate on the event sink at the top of the stack
     fn sink(&mut self) -> &mut dyn EventSink {
         self.sink_stack.last_mut().unwrap().as_mut()
@@ -410,9 +427,27 @@ impl<'text> Parser<'text> {
     /// Parse a temporary protoblock element
     fn parse_protoblock_element(&mut self) -> bool {
         match self.next() {
-            Some((k, _))
-                if k == BACKTICK || k == COMMA || k == COLON || k == WHITESPACE || k == COMMENT =>
-            {
+            Some((COLON, _)) => {
+                // Check for '::' — this is not valid eucalypt syntax and, if both
+                // COLON tokens reach the BlockEventSink unguarded, causes a panic in
+                // token accounting. Catch it here: wrap both tokens in an ERROR node so
+                // the BlockEventSink treats them as ordinary buffered content rather
+                // than declaration separators.
+                if let Some((COLON, _)) = self.peek() {
+                    let range = self.prev_and_next_range();
+                    self.next(); // consume second COLON
+                    self.errors.push(ParseError::InvalidDoubleColon { range });
+                    self.sink().start_node(ERROR_STOWAWAYS);
+                    self.sink().token(COLON);
+                    self.sink().token(COLON);
+                    self.sink().finish_node();
+                } else {
+                    self.sink().token(COLON);
+                }
+                self.add_trivia();
+                true
+            }
+            Some((k, _)) if k == BACKTICK || k == COMMA || k == WHITESPACE || k == COMMENT => {
                 self.sink().token(k);
                 self.add_trivia();
                 true
