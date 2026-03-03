@@ -77,7 +77,8 @@ impl HeaderBits {
 ///  - a mark bit (for mark phase)
 ///  - a forwarded bit (to support evacuation)
 ///  - forwarding pointer (to support evacuation)
-///  - optionally a pinning bit (which we don't support)
+///  - pinning (supported at the block level via Heap::pin_block /
+///    Heap::unpin_block, not per-object)
 #[derive(Default, Debug)]
 pub struct AllocHeader {
     /// Header bits for object state

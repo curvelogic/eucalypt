@@ -194,6 +194,11 @@ impl CollectorHeapView<'_> {
         }
     }
 
+    /// Check whether the block containing `ptr` is currently pinned.
+    pub fn is_pinned<T>(&self, ptr: NonNull<T>) -> bool {
+        self.heap.is_ptr_in_pinned_block(ptr)
+    }
+
     /// Check whether an object resides in a candidate block.
     pub fn is_in_candidate_block<T>(&self, ptr: NonNull<T>, candidates: &[usize]) -> bool {
         self.heap.is_in_candidate_block(ptr, candidates)
@@ -499,6 +504,10 @@ fn try_evacuate(heap_view: &mut CollectorHeapView<'_>, data_ptr: *const u8, cand
         return;
     };
     if !heap_view.is_in_candidate_block(ptr, candidates) {
+        return;
+    }
+    // Skip evacuation for pinned blocks
+    if heap_view.is_pinned(ptr) {
         return;
     }
     // Evacuate: copy header + payload, set forwarding pointer in old header
@@ -1061,5 +1070,64 @@ pub mod tests {
         assert!(stats_a.recycled < stats_b.recycled,
                "Second collection should recycle more blocks after removing let_ptr root. stats_a.recycled ({}) < stats_b.recycled ({})",
                stats_a.recycled, stats_b.recycled);
+    }
+    /// Test that a pinned block is NOT evacuated during collection.
+    #[test]
+    pub fn test_pinned_block_not_evacuated() {
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        clock.switch(ThreadOccupation::Mutator);
+
+        let pinned_ptr = {
+            let view = MutatorHeapView::new(&heap);
+            let _garbage: Vec<_> = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(512)
+            .collect();
+            let pinned = view.atom(Ref::L(42)).unwrap().as_ptr();
+            let _others: Vec<_> = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(256)
+            .collect();
+            pinned
+        };
+
+        let original_addr = pinned_ptr.as_ptr() as usize;
+
+        let _pin_guard = {
+            let view = MutatorHeapView::new(&heap);
+            view.pin(pinned_ptr)
+        };
+
+        collect(&mut vec![pinned_ptr], &mut heap, &mut clock, false);
+        heap.flush_unswept();
+
+        let rest_count = heap.rest_block_count();
+        if rest_count > 0 {
+            let candidates: Vec<usize> = (0..rest_count + 2).collect();
+            collect_with_evacuation(
+                &mut vec![pinned_ptr],
+                &mut heap,
+                &mut clock,
+                &candidates,
+                false,
+            );
+        }
+
+        let final_addr = pinned_ptr.as_ptr() as usize;
+        assert_eq!(
+            original_addr, final_addr,
+            "pinned object should not have been evacuated"
+        );
+
+        let obj: &HeapSyn = unsafe { &*pinned_ptr.as_ptr() };
+        match obj {
+            HeapSyn::Atom {
+                evaluand: Ref::L(42),
+            } => {}
+            other => panic!("pinned object has wrong data: {:?}", other),
+        }
     }
 }
