@@ -273,6 +273,16 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // Function definition keywords from Python, Ruby, Rust, JavaScript, Haskell.
+                    // In eucalypt, functions are declared with a colon: 'square(x): x * x'.
+                    "def" | "fn" | "fun" | "func" | "function" | "defn" | "define" => {
+                        notes.push(
+                            "eucalypt does not use a 'def' or 'fn' keyword for functions; \
+                             define a function with 'name(args): body', \
+                             e.g. 'square(x): x * x'"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
