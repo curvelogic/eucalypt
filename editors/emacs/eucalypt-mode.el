@@ -38,6 +38,14 @@
 (require 'quail)
 (require 'transient)
 
+;; Optional dependencies — declare to suppress byte-compile warnings.
+;; These are loaded conditionally at runtime via `with-eval-after-load'
+;; or `commandp' guards.
+(defvar eglot-server-programs)
+(declare-function rainbow-delimiters-mode "rainbow-delimiters" ())
+(declare-function yaml-mode "yaml-mode" ())
+(declare-function json-mode "json-mode" ())
+
 ;;; Group
 
 (defgroup eucalypt nil
