@@ -632,6 +632,11 @@ pub fn test_error_035() {
 }
 
 #[test]
+pub fn test_error_036() {
+    run_error_test(&error_opts("036_arrow_as_lambda.eu"));
+}
+
+#[test]
 pub fn test_error_040() {
     run_error_test(&error_opts("040_json_error_format.eu"));
 }

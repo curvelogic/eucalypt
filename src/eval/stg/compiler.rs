@@ -62,12 +62,26 @@ impl CompileError {
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
         let diag = source_map.diagnostic(self);
         match self {
-            CompileError::FreeVar(_, _) => diag.with_notes(vec![
-                "if you intended '->' as lambda syntax, note that eucalypt has no \
-                 arrow functions; '->' is the const operator"
-                    .to_string(),
-                "use anaphora (_ + 1), sections (+ 1), or named functions instead".to_string(),
-            ]),
+            CompileError::FreeVar(_, name) => {
+                let mut notes = vec![
+                    "check that the variable is defined and in scope".to_string(),
+                ];
+                // If the name looks like a short identifier (typical lambda
+                // parameter), hint about the common '->' mistake.
+                if name.len() <= 3 && name.chars().all(|c| c.is_alphanumeric()) {
+                    notes.push(
+                        "note: eucalypt has no arrow functions; '->' is the const \
+                         operator, not lambda syntax"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "use anaphora (_ + 1), sections (+ 1), or named functions \
+                         instead"
+                            .to_string(),
+                    );
+                }
+                diag.with_notes(notes)
+            }
             _ => diag,
         }
     }

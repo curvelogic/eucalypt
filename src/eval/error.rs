@@ -282,7 +282,10 @@ impl HasSmid for ExecutionError {
 
 impl ExecutionError {
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
-        source_map.diagnostic(self)
+        match self {
+            ExecutionError::Compile(e) => e.to_diagnostic(source_map),
+            _ => source_map.diagnostic(self),
+        }
     }
 
     /// Access environment trace if present
