@@ -1,2 +1,0 @@
-# Bad format string
-x: 42 fmt("%z")
