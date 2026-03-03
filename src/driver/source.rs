@@ -8,6 +8,7 @@ use crate::core::inline::reduce;
 use crate::core::inline::tag;
 use crate::core::simplify::compress;
 use crate::core::simplify::prune;
+use crate::core::transform::fuse;
 use crate::core::unit::TranslationUnit;
 use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
@@ -413,6 +414,22 @@ impl SourceLoader {
     pub fn inline(&mut self) -> Result<(), EucalyptError> {
         self.core.expr = tag::tag_combinators(&self.core.expr)?;
         self.core.expr = reduce::inline_pass(&self.core.expr)?;
+        Ok(())
+    }
+
+    /// Run the destructure fusion pass.
+    ///
+    /// This folds static patterns that arise after the inline pass
+    /// distributes destructuring lambdas to their call sites:
+    /// - `Lookup(Block{...}, "key")` → the corresponding value
+    /// - `HEAD(List[v0, ...])` → `v0`
+    /// - `TAIL(List[v0, v1, ...])` → `List[v1, ...]`
+    ///
+    /// Running this pass after `inline` completes the fusion of block and
+    /// list destructuring parameter patterns, eliminating intermediate
+    /// allocations.
+    pub fn fuse_destructure(&mut self) -> Result<(), EucalyptError> {
+        self.core.expr = fuse::fuse(&self.core.expr)?;
         Ok(())
     }
 
