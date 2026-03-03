@@ -84,7 +84,10 @@ impl HeapNavigator<'_> {
         match r {
             Ref::L(index) => self.get(*index),
             Ref::G(index) => self.global(*index),
-            Ref::V(_) => Err(ExecutionError::NotCallable(Smid::default())),
+            Ref::V(n) => Err(ExecutionError::NotCallable(
+                Smid::default(),
+                n.type_description().to_string(),
+            )),
         }
     }
 
@@ -431,7 +434,10 @@ impl MachineState {
                     self.update(view, environment, index)?;
                 }
                 Continuation::ApplyTo { annotation, .. } => {
-                    return Err(ExecutionError::NotCallable(annotation));
+                    return Err(ExecutionError::NotCallable(
+                        annotation,
+                        value.type_description().to_string(),
+                    ));
                 }
                 Continuation::DeMeta {
                     or_else,
@@ -549,7 +555,10 @@ impl MachineState {
                             self.env(view),
                         );
                     } else {
-                        return Err(ExecutionError::NotCallable(annotation));
+                        let type_name = DataConstructor::try_from(tag)
+                            .map(|dc| dc.to_string())
+                            .unwrap_or_else(|()| format!("data (tag {tag})"));
+                        return Err(ExecutionError::NotCallable(annotation, type_name));
                     }
                 }
                 Continuation::DeMeta {

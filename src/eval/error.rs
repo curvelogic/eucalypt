@@ -85,6 +85,18 @@ fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
     msg
 }
 
+/// Format a "not callable" error message with the actual type of value found
+fn format_not_callable(actual_type: &str) -> String {
+    if actual_type.is_empty() {
+        "tried to call a value that is not a function".to_string()
+    } else {
+        format!(
+            "tried to call a {actual_type} as a function\n  \
+             help: only functions and blocks can be called with arguments"
+        )
+    }
+}
+
 /// Convert a data tag number to a human-readable type name for error messages
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
@@ -135,8 +147,8 @@ pub enum ExecutionError {
     TypeMismatch(Smid, IntrinsicType, IntrinsicType),
     #[error("unknown intrinsic {1}")]
     UnknownIntrinsic(Smid, String),
-    #[error("tried to call a value that is not a function")]
-    NotCallable(Smid),
+    #[error("{}", format_not_callable(.1))]
+    NotCallable(Smid, String),
     #[error("intrinsic {1} expected value in strict position")]
     NotValue(Smid, String),
     #[error("bad regex ({0})")]
@@ -233,7 +245,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::LookupFailure(s, _, _) => *s,
             ExecutionError::TypeMismatch(s, _, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
-            ExecutionError::NotCallable(s) => *s,
+            ExecutionError::NotCallable(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,

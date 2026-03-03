@@ -1,2 +1,2 @@
 exit: 1
-stderr: "tried to call a value that is not a function"
+stderr: "tried to call a number as a function"
