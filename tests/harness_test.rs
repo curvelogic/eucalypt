@@ -785,3 +785,18 @@ pub fn test_error_060() {
 pub fn test_error_061() {
     run_error_test(&error_opts("061_lambda_keyword.eu"));
 }
+
+#[test]
+pub fn test_error_062() {
+    run_error_test(&error_opts("062_str_contains_hint.eu"));
+}
+
+#[test]
+pub fn test_error_063() {
+    run_error_test(&error_opts("063_str_trim_hint.eu"));
+}
+
+#[test]
+pub fn test_error_064() {
+    run_error_test(&error_opts("064_has_string_not_sym.eu"));
+}
