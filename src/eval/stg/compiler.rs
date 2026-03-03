@@ -137,6 +137,11 @@ impl CompileError {
                          e.g. xs join-on(sep) where sep is the separator string"
                             .to_string(),
                     ),
+                    "index" | "get" | "at" => notes.push(
+                        "to index into a list, use 'nth', e.g. 'xs nth(0)' for \
+                         the first element, or the '!!' operator: xs !! 0"
+                            .to_string(),
+                    ),
                     _ => {}
                 }
                 diag.with_notes(notes)
