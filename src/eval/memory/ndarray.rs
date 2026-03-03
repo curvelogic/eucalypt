@@ -116,6 +116,64 @@ impl HeapNdArray {
         self.data.iter().copied().collect()
     }
 
+    /// Return all coordinate lists in row-major order.
+    ///
+    /// For an array of shape [d0, d1, ..., dn], returns a Vec of Vec<usize>
+    /// where each inner Vec has length n.
+    pub fn indices(&self) -> Vec<Vec<usize>> {
+        let shape = self.data.shape();
+        if shape.is_empty() {
+            return vec![vec![]];
+        }
+        let n = self.data.len();
+        // Compute strides: stride[k] = product(shape[k+1..])
+        let mut strides = vec![1usize; shape.len()];
+        for k in (0..shape.len().saturating_sub(1)).rev() {
+            strides[k] = strides[k + 1] * shape[k + 1];
+        }
+        (0..n)
+            .map(|flat| {
+                shape
+                    .iter()
+                    .zip(strides.iter())
+                    .map(|(&dim, &stride)| (flat / stride) % dim)
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Return values at valid neighbouring coordinates.
+    ///
+    /// Given a coordinate list and a list of offset lists, adds each offset
+    /// to the coordinate and returns the value at that position if it is
+    /// within bounds (out-of-bounds neighbours are silently skipped).
+    pub fn neighbours_values(&self, coords: &[usize], offsets: &[Vec<i64>]) -> Vec<f64> {
+        let shape = self.data.shape();
+        offsets
+            .iter()
+            .filter_map(|offset| {
+                if offset.len() != coords.len() {
+                    return None;
+                }
+                // Compute neighbour coords, checking bounds
+                let neighbour: Vec<usize> = coords
+                    .iter()
+                    .zip(offset.iter())
+                    .zip(shape.iter())
+                    .map(|((&c, &o), &dim)| {
+                        let nc = c as i64 + o;
+                        if nc < 0 || nc >= dim as i64 {
+                            None
+                        } else {
+                            Some(nc as usize)
+                        }
+                    })
+                    .collect::<Option<Vec<usize>>>()?;
+                self.data.get(IxDyn(&neighbour)).copied()
+            })
+            .collect()
+    }
+
     /// Element-wise map with a function.
     pub fn map<F: Fn(f64) -> f64>(&self, f: F) -> Self {
         HeapNdArray {

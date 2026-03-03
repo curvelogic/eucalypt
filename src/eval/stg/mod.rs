@@ -194,6 +194,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(array::ArraySub));
     rt.add(Box::new(array::ArrayMul));
     rt.add(Box::new(array::ArrayDiv));
+    rt.add(Box::new(array::ArrayIndices));
+    rt.add(Box::new(array::ArrayNeighbours));
     rt.prepare(source_map);
     Box::new(rt)
 }

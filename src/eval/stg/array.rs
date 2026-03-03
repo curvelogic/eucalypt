@@ -26,7 +26,8 @@ use crate::{
 use super::{
     force::SeqNumList,
     support::{
-        machine_return_bool, machine_return_ndarray, machine_return_num, ndarray_arg, num_arg,
+        machine_return_bool, machine_return_ndarray, machine_return_num,
+        machine_return_num_list_of_lists, ndarray_arg, num_arg,
     },
     syntax::{
         dsl::{annotated_lambda, app_bif, data, force, let_, local, lref, unbox_num, value},
@@ -599,8 +600,128 @@ impl StgIntrinsic for ArrayDiv {
 impl CallGlobal2 for ArrayDiv {}
 
 // ---------------------------------------------------------------------------
+// Higher-order support
+// ---------------------------------------------------------------------------
+
+/// ARRAY.INDICES(array) — return list of coordinate lists in row-major order
+///
+/// For an array of shape [d0, d1, ..., dn], returns a eucalypt list of
+/// n-element number lists, one per element, in row-major (C) order.
+/// This enables `arr.map-indexed` in the prelude.
+pub struct ArrayIndices;
+
+impl StgIntrinsic for ArrayIndices {
+    fn name(&self) -> &str {
+        "ARRAY_INDICES"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let arr = ndarray_arg(machine, view, &args[0])?;
+        let indices: Vec<Vec<f64>> = arr
+            .indices()
+            .into_iter()
+            .map(|coords| coords.into_iter().map(|c| c as f64).collect())
+            .collect();
+        machine_return_num_list_of_lists(machine, view, indices)
+    }
+}
+
+impl CallGlobal1 for ArrayIndices {}
+
+/// ARRAY.NEIGHBOURS(coords_list, offsets_flat_list, rank_num, array)
+///
+/// Given a coordinate list, a flat list of offsets (length = n_offsets * rank),
+/// the rank, and an array, returns the values at all valid neighbouring
+/// coordinates. Out-of-bounds neighbours are silently omitted.
+///
+/// The prelude wrapper `arr.neighbours(a, coords, offsets)` handles
+/// flattening the offsets list-of-lists via `offsets concat` and extracts
+/// `a arr.rank` before calling this intrinsic.
+pub struct ArrayNeighbours;
+
+impl StgIntrinsic for ArrayNeighbours {
+    fn name(&self) -> &str {
+        "ARRAY_NEIGHBOURS"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Args: (coords, offsets_flat, rank, array)
+        //
+        // Env trace:
+        // lambda(4):                    lref(0)=coords, lref(1)=offsets_flat, lref(2)=rank, lref(3)=array
+        // force(SeqNumList(coords)):    lref(0)=c_coords, lref(1)=coords, lref(2)=offsets_flat, lref(3)=rank, lref(4)=array
+        // force(SeqNumList(offsets)):   lref(0)=c_offsets, lref(1)=c_coords, lref(2)=coords, lref(3)=offsets_flat, lref(4)=rank, lref(5)=array
+        // unbox_num(rank=local(4)):     lref(0)=inner_rank, lref(1)=c_offsets, lref(2)=c_coords, lref(3)=coords, lref(4)=offsets_flat, lref(5)=rank, lref(6)=array
+        // force(inner_rank=local(0)):   lref(0)=forced_rank, lref(1)=inner_rank, lref(2)=c_offsets, lref(3)=c_coords, lref(4)=coords, lref(5)=offsets_flat, lref(6)=rank, lref(7)=array
+        // force(array=local(7)):        lref(0)=forced_array, lref(1)=forced_rank, lref(2)=inner_rank, lref(3)=c_offsets, lref(4)=c_coords, ...
+        //
+        // execute args: (coords=lref(4), offsets=lref(3), rank=lref(1), array=lref(0))
+        let bif_index: u8 = self.index().try_into().unwrap();
+        annotated_lambda(
+            4, // [coords, offsets_flat, rank, array]
+            force(
+                SeqNumList.global(lref(0)),
+                force(
+                    SeqNumList.global(lref(2)),
+                    unbox_num(
+                        local(4),
+                        force(
+                            local(0),
+                            force(
+                                local(7),
+                                app_bif(bif_index, vec![lref(4), lref(3), lref(1), lref(0)]),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            annotation,
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let offsets_flat = num_list_to_i64_vec(machine, view, &args[1])?;
+        let rank = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
+        let arr = ndarray_arg(machine, view, &args[3])?;
+
+        // Reshape flat offsets into Vec<Vec<i64>> using rank
+        let offsets: Vec<Vec<i64>> = if rank == 0 || offsets_flat.is_empty() {
+            vec![]
+        } else {
+            offsets_flat.chunks(rank).map(|c| c.to_vec()).collect()
+        };
+
+        let values = arr.neighbours_values(&coords, &offsets);
+        f64_vec_to_list(machine, view, &values)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Extract a list of numbers from a cons-list, converting to i64
+fn num_list_to_i64_vec(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Result<Vec<i64>, ExecutionError> {
+    let nums = super::support::collect_num_list(machine, view, arg.clone())?;
+    Ok(nums.into_iter().map(|n| n as i64).collect())
+}
 
 /// Extract a list of numbers from a cons-list, converting to usize
 fn num_list_to_usize_vec(

@@ -163,6 +163,63 @@ poly-arith-checks: {
   ]
 }
 
+## arr.indices — list of coordinate lists
+
+indices-checks: {
+  trues: [
+    # 1D array: indices should be [[0], [1], [2]]
+    (arr.from-flat([3], [10, 20, 30]) arr.indices) = [[0], [1], [2]],
+    # 2D array: row-major coordinate lists
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.indices) = [[0, 0], [0, 1], [1, 0], [1, 1]]
+  ]
+}
+
+## arr.map — apply function to each element
+
+map-checks: {
+  trues: [
+    # Double each element
+    {
+      a: arr.from-flat([3], [1, 2, 3])
+      b: arr.map((_ * 2), a)
+    }.(b arr.to-list) = [2, 4, 6],
+    # Shape is preserved
+    {
+      a: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+      b: arr.map((_ + 10), a)
+    }.(b arr.shape) = [2, 3]
+  ]
+}
+
+## arr.fold — left-fold over all elements
+
+fold-checks: {
+  trues: [
+    # Sum of elements
+    (arr.from-flat([4], [1, 2, 3, 4]) arr.fold((+), 0)) = 10,
+    # Product of elements
+    (arr.from-flat([3], [2, 3, 4]) arr.fold((*), 1)) = 24
+  ]
+}
+
+## arr.neighbours — values at valid neighbouring coordinates
+
+neighbours-checks: {
+  trues: [
+    # In a 1D array [10, 20, 30], neighbours of index [1] with offsets [[-1], [1]]
+    # should give [10, 30] (both in bounds)
+    {
+      a: arr.from-flat([3], [10, 20, 30])
+      ns: arr.neighbours(a, [1], [[-1], [1]])
+    }.(ns sort-nums) = [10, 30],
+    # Neighbours of boundary element [0]: only [1] offset is in bounds
+    {
+      a: arr.from-flat([3], [10, 20, 30])
+      ns: arr.neighbours(a, [0], [[-1], [1]])
+    }.ns = [20]
+  ]
+}
+
 pass: [
   construction-checks.trues all-true?,
   type-checks.trues all-true?,
@@ -172,7 +229,11 @@ pass: [
   transform-checks.trues all-true?,
   arithmetic-checks.trues all-true?,
   bang-bang-checks.trues all-true?,
-  poly-arith-checks.trues all-true?
+  poly-arith-checks.trues all-true?,
+  indices-checks.trues all-true?,
+  map-checks.trues all-true?,
+  fold-checks.trues all-true?,
+  neighbours-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

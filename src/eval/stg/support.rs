@@ -576,6 +576,79 @@ pub fn collect_num_list(
     Ok(numbers)
 }
 
+/// Build a heap cons-list of boxed numbers from a slice of f64, returning
+/// the raw heap pointer to the head of the list.
+///
+/// Used internally to construct inner lists for `machine_return_num_list_of_lists`.
+fn build_num_list_ptr(
+    view: MutatorHeapView<'_>,
+    nums: &[f64],
+) -> Result<RefPtr<HeapSyn>, ExecutionError> {
+    let mut bindings: Vec<LambdaForm> = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for &item in nums.iter().rev() {
+        let n = Number::from_f64(item).unwrap_or_else(|| Number::from(0));
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::BoxedNumber.tag(),
+                Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
+            )?
+            .as_ptr(),
+        ));
+        let len = bindings.len();
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+    let list_index = bindings.len() - 1;
+    Ok(view
+        .letrec(
+            Array::from_slice(&view, &bindings),
+            view.atom(Ref::L(list_index))?,
+        )?
+        .as_ptr())
+}
+
+/// Return a list of number-lists from an intrinsic.
+///
+/// Used for `ARRAY.INDICES` which returns a list of coordinate lists.
+pub fn machine_return_num_list_of_lists(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    lists: Vec<Vec<f64>>,
+) -> Result<(), ExecutionError> {
+    // Build each inner list as a heap object and collect raw pointers.
+    let inner_ptrs: Vec<RefPtr<HeapSyn>> = lists
+        .iter()
+        .map(|inner| build_num_list_ptr(view, inner))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Build the outer cons list from these pointers.
+    let mut bindings: Vec<LambdaForm> = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for ptr in inner_ptrs.into_iter().rev() {
+        bindings.push(LambdaForm::value(ptr));
+        let len = bindings.len();
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+    let list_index = bindings.len() - 1;
+    let syn = view
+        .letrec(
+            Array::from_slice(&view, &bindings),
+            view.atom(Ref::L(list_index))?,
+        )?
+        .as_ptr();
+    machine.set_closure(SynClosure::new(syn, machine.root_env()))
+}
+
 /// Return a number list from intrinsic, following the same pattern
 /// as `machine_return_str_list` but for boxed numbers.
 pub fn machine_return_num_list(

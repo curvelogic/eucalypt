@@ -793,6 +793,16 @@ lazy_static! {
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 150
+            name: "ARRAY_INDICES",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 151
+            name: "ARRAY_NEIGHBOURS",
+            ty: function(vec![list(), list(), num(), unk(), list()]).unwrap(),
+            strict: vec![0, 1, 2, 3],
+    },
     ];
 }
 
