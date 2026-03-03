@@ -17,7 +17,15 @@ pub enum CoreError {
     NoParsedAstFor(Box<Input>),
     #[error("too few operands available for operator")]
     TooFewOperands(Smid),
-    #[error("cannot mix anaphora types (numberless, numbered and section)")]
+    /// Anaphora of different kinds ('_', '_0', sections) were mixed in one expression.
+    ///
+    /// The three anaphora kinds are:
+    /// - *Numberless*: `_` — creates a single anonymous parameter
+    /// - *Numbered*: `_0`, `_1`, `_2`, … — creates explicitly-indexed parameters
+    /// - *Section*: `(+ 1)`, `(< 5)` — creates an operator section
+    #[error(
+        "mixed anaphora: cannot use '_', '_0'/'_N', and section expressions in the same expression"
+    )]
     MixedAnaphora(Smid),
     #[error("'_' used more than once in a single expression")]
     DuplicateAnonymousAnaphor(Smid),
@@ -61,6 +69,15 @@ impl HasSmid for CoreError {
 impl CoreError {
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
         match self {
+            CoreError::MixedAnaphora(_) => source_map.diagnostic(self).with_notes(vec![
+                "each kind of anaphora creates a different sort of anonymous function".to_string(),
+                "'_' creates a single-parameter function; '_0', '_1', … create multi-parameter \
+                 functions; sections like (+ 1) create operator partials"
+                    .to_string(),
+                "to use two parameters, switch to numbered anaphora: e.g. `_0 > _1` instead \
+                 of `_0 > _`"
+                    .to_string(),
+            ]),
             CoreError::DuplicateAnonymousAnaphor(_) => {
                 source_map.diagnostic(self).with_notes(vec![
                     "each '_' in an expression introduces a separate parameter".to_string(),
