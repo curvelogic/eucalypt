@@ -20,17 +20,7 @@ where
     let parse_result = rowan::parse_unit(text);
 
     if !parse_result.errors().is_empty() {
-        let errors: Vec<String> = parse_result
-            .errors()
-            .iter()
-            .map(|e| format!("{e}"))
-            .collect();
-        return Err(ParserError::Syntax(
-            crate::syntax::error::SyntaxError::InvalidInputFormat(
-                id,
-                format!("Parse errors: {}", errors.join(", ")),
-            ),
-        ));
+        return Err(ParserError::ParseErrors(id, parse_result.errors().clone()));
     }
 
     Ok(parse_result.tree())
@@ -49,17 +39,7 @@ where
     let parse_result = rowan::parse_expr(text);
 
     if !parse_result.errors().is_empty() {
-        let errors: Vec<String> = parse_result
-            .errors()
-            .iter()
-            .map(|e| format!("{e}"))
-            .collect();
-        return Err(ParserError::Syntax(
-            crate::syntax::error::SyntaxError::InvalidInputFormat(
-                id,
-                format!("Parse errors: {}", errors.join(", ")),
-            ),
-        ));
+        return Err(ParserError::ParseErrors(id, parse_result.errors().clone()));
     }
 
     Ok(parse_result.tree())

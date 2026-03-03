@@ -1,3 +1,4 @@
+use crate::syntax::rowan::ParseError as RowanParseError;
 use crate::syntax::span::HasSpan;
 use codespan::{ByteIndex, Span};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -84,6 +85,42 @@ impl SyntaxError {
     }
 }
 
+/// Convert a `rowan::TextRange` byte offset to a `codespan::ByteIndex`.
+fn text_size_to_byte_index(ts: rowan::TextSize) -> ByteIndex {
+    ByteIndex(u32::from(ts))
+}
+
+/// Convert a `rowan::TextRange` to a `codespan::Span`.
+fn text_range_to_span(range: rowan::TextRange) -> Span {
+    Span::new(
+        text_size_to_byte_index(range.start()),
+        text_size_to_byte_index(range.end()),
+    )
+}
+
+/// Extract the primary text range from a Rowan parse error.
+fn rowan_error_range(error: &RowanParseError) -> Option<rowan::TextRange> {
+    use crate::syntax::rowan::error::ParseError::*;
+    match error {
+        UnexpectedToken { range, .. }
+        | UnclosedSingleQuote { range }
+        | UnclosedDoubleQuote { range }
+        | InvalidParenExpr { range, .. }
+        | UnterminatedBlock { range, .. }
+        | EmptyDeclarationBody { range }
+        | MalformedDeclarationHead { range }
+        | InvalidFormalParameter { range, .. }
+        | InvalidOperatorName { range, .. }
+        | InvalidPropertyName { range, .. }
+        | SurplusContent { range }
+        | ReservedCharacter { range }
+        | EmptyExpression { range }
+        | UnclosedStringInterpolation { range }
+        | InvalidZdtLiteral { range } => Some(*range),
+        MissingDeclarationColon { head_range } => Some(*head_range),
+    }
+}
+
 /// A canonicalised error for all parse related errors, parse, IO,
 /// AST, free of token references.
 #[derive(Debug, Error)]
@@ -92,6 +129,13 @@ pub enum ParserError {
     Io(io::Error),
     #[error(transparent)]
     Syntax(SyntaxError),
+    /// Parse errors from the Rowan parser, with source location information.
+    ///
+    /// Carries the file id and the list of parse errors with their `TextRange`
+    /// positions so that diagnostics can show the actual error location rather
+    /// than defaulting to the start of the file.
+    #[error("{}", .1.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    ParseErrors(usize, Vec<RowanParseError>),
 }
 
 impl ParserError {
@@ -100,6 +144,33 @@ impl ParserError {
         match self {
             ParserError::Syntax(e) => e.to_diagnostic(),
             ParserError::Io(e) => Diagnostic::error().with_message(format!("IO Error: {e}")),
+            ParserError::ParseErrors(file_id, errors) => {
+                if let Some(first) = errors.first() {
+                    let message = first.to_string();
+                    let mut diag = Diagnostic::error().with_message(message);
+                    if let Some(range) = rowan_error_range(first) {
+                        diag = diag
+                            .with_labels(vec![Label::primary(*file_id, text_range_to_span(range))]);
+                    }
+                    // Add secondary labels for additional errors if any
+                    let secondary_labels: Vec<Label<usize>> = errors
+                        .iter()
+                        .skip(1)
+                        .filter_map(|e| {
+                            rowan_error_range(e).map(|r| {
+                                Label::secondary(*file_id, text_range_to_span(r))
+                                    .with_message(e.to_string())
+                            })
+                        })
+                        .collect();
+                    if !secondary_labels.is_empty() {
+                        diag = diag.with_labels(secondary_labels);
+                    }
+                    diag
+                } else {
+                    Diagnostic::error().with_message("parse error")
+                }
+            }
         }
     }
 }
