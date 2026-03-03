@@ -780,3 +780,8 @@ pub fn test_error_059() {
 pub fn test_error_060() {
     run_error_test(&error_opts("060_return_keyword.eu"));
 }
+
+#[test]
+pub fn test_error_061() {
+    run_error_test(&error_opts("061_lambda_keyword.eu"));
+}
