@@ -440,6 +440,21 @@ pub fn test_harness_092() {
 }
 
 #[test]
+pub fn test_harness_093() {
+    run_test(&opts("093_cons_operator.eu"));
+}
+
+#[test]
+pub fn test_harness_094() {
+    run_test(&opts("094_juxtaposed_call.eu"));
+}
+
+#[test]
+pub fn test_harness_095() {
+    run_test(&opts("095_destructuring_integration.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -674,4 +689,19 @@ pub fn test_error_040() {
 #[test]
 pub fn test_error_041() {
     run_error_test(&error_opts("041_modulo_by_zero.eu"));
+}
+
+#[test]
+pub fn test_error_042() {
+    run_error_test(&error_opts("042_destructure_missing_field.eu"));
+}
+
+#[test]
+pub fn test_error_043() {
+    run_error_test(&error_opts("043_destructure_short_list.eu"));
+}
+
+#[test]
+pub fn test_error_044() {
+    run_error_test(&error_opts("044_destructure_empty_cons.eu"));
 }

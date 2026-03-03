@@ -233,6 +233,16 @@ impl<'text> Parser<'text> {
                 self.parse_block_expression();
                 true
             }
+            Some((OPEN_BRACE_APPLY, _)) => {
+                // f{x: 1} — juxtaposed block call: sugar for f({x: 1})
+                self.parse_block_apply_tuple();
+                true
+            }
+            Some((OPEN_SQUARE_APPLY, _)) => {
+                // f[1, 2] — juxtaposed list call: sugar for f([1, 2])
+                self.parse_list_apply_tuple();
+                true
+            }
             Some((RESERVED_OPEN, _)) => {
                 self.parse_reserved_paren_expression();
                 true
@@ -250,10 +260,17 @@ impl<'text> Parser<'text> {
                 self.sink().token(k);
                 self.add_trivia();
                 while self.try_parse_soup() {
-                    if !self.try_accept(COMMA) {
+                    if self.try_accept(COMMA) {
+                        self.add_trivia();
+                    } else if self.try_accept(COLON) {
+                        // Head/tail separator in list pattern: [heads... : tail]
+                        // Emit the colon token and parse exactly one more soup.
+                        self.add_trivia();
+                        self.try_parse_soup();
+                        break;
+                    } else {
                         break;
                     }
-                    self.add_trivia();
                 }
                 self.add_trivia();
                 self.expect(CLOSE_SQUARE);
@@ -350,6 +367,53 @@ impl<'text> Parser<'text> {
         // if instead unterminated, there will be a missing close paren
 
         self.sink().finish_node();
+    }
+
+    /// Parse a juxtaposed block call `f{x: 1}` as an `ARG_TUPLE` containing a single block.
+    ///
+    /// This desugars `f{x: 1}` to the same AST as `f({x: 1})`.
+    fn parse_block_apply_tuple(&mut self) {
+        self.sink().start_node(ARG_TUPLE);
+        self.sink().start_node(SOUP);
+        self.sink().start_node(BLOCK);
+        // Consume the OPEN_BRACE_APPLY token as-is.
+        self.expect(OPEN_BRACE_APPLY);
+        self.add_trivia();
+        self.parse_block_content();
+        self.add_trivia();
+        self.expect(CLOSE_BRACE);
+        self.sink().finish_node(); // BLOCK
+        self.sink().finish_node(); // SOUP
+        self.sink().finish_node(); // ARG_TUPLE
+    }
+
+    /// Parse a juxtaposed list call `f[1, 2]` as an `ARG_TUPLE` containing a single list.
+    ///
+    /// This desugars `f[1, 2]` to the same AST as `f([1, 2])`.
+    fn parse_list_apply_tuple(&mut self) {
+        self.sink().start_node(ARG_TUPLE);
+        self.sink().start_node(SOUP);
+        self.sink().start_node(LIST);
+        // Consume the OPEN_SQUARE_APPLY token as-is.
+        self.expect(OPEN_SQUARE_APPLY);
+        self.add_trivia();
+        while self.try_parse_soup() {
+            if self.try_accept(COMMA) {
+                self.add_trivia();
+            } else if self.try_accept(COLON) {
+                // Head/tail separator inside a list apply argument
+                self.add_trivia();
+                self.try_parse_soup();
+                break;
+            } else {
+                break;
+            }
+        }
+        self.add_trivia();
+        self.expect(CLOSE_SQUARE);
+        self.sink().finish_node(); // LIST
+        self.sink().finish_node(); // SOUP
+        self.sink().finish_node(); // ARG_TUPLE
     }
 
     /// Parse a block expression (next token is '{')

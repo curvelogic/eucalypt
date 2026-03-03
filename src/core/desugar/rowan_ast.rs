@@ -63,12 +63,22 @@ struct ListElementBinding {
     binding_var: moniker::FreeVar<String>,
 }
 
+/// Entry for the tail binding in a head/tail list pattern.
+struct ListTailBinding {
+    /// Number of head elements to skip (i.e., the drop count)
+    drop_count: usize,
+    /// FreeVar for the tail binding name in the body
+    binding_var: moniker::FreeVar<String>,
+}
+
 /// Entry for a destructuring list let: synthetic param + element bindings.
 struct ListDestructureEntry {
     /// Synthetic parameter name (e.g. `__p0`)
     synthetic_name: String,
     /// Element bindings at each position
     elements: Vec<ListElementBinding>,
+    /// Optional tail binding for head/tail patterns (`[x : xs]`)
+    tail: Option<ListTailBinding>,
 }
 
 /// A parsed parameter pattern in a function declaration
@@ -84,7 +94,8 @@ enum ParamPattern {
     /// Fixed-length list destructuring: `[a, b, c]`.
     ///
     /// Contains the binding names for each positional element.
-    List(Vec<String>),
+    /// The optional tail is `None` for fixed-length patterns.
+    List(Vec<String>, Option<String>),
 }
 
 /// Parse a block parameter pattern `{x y}` or `{x: a  y: b}` from a
@@ -151,28 +162,70 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
     Ok(fields)
 }
 
-/// Parse a fixed-length list parameter pattern `[a, b, c]` from a
-/// Rowan `List` AST node in a function parameter position.
+/// Parse a list parameter pattern from a Rowan `List` AST node in a
+/// function parameter position.
 ///
-/// Each item in the list should be a single normal identifier.
-/// Returns a list of binding names in positional order.
-fn parse_list_pattern(list: &rowan_ast::List) -> Option<Vec<String>> {
-    let mut elements: Vec<String> = Vec::new();
-    for item in list.items() {
-        if let Some(rowan_ast::Element::Name(name)) = item.singleton() {
-            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
-                elements.push(normal.text().to_string());
+/// Handles both fixed-length patterns `[a, b, c]` and head/tail
+/// patterns `[x : xs]` and `[a, b : rest]`.
+///
+/// Returns `(head_elements, tail)` where `tail` is `None` for
+/// fixed-length patterns and `Some(tail_name)` for head/tail patterns.
+fn parse_list_pattern(list: &rowan_ast::List) -> Option<(Vec<String>, Option<String>)> {
+    let has_colon = list.has_colon();
+    let all_items: Vec<_> = list.items().collect();
+
+    if has_colon {
+        // Head/tail pattern: items before the colon are heads,
+        // the last item after the colon is the tail.
+        // The List node's items() returns all Soup children in order:
+        // for [a, b : rest], items are: a, b, rest (colon is a token, not a child node).
+        // We collect all items; the last is the tail, the rest are heads.
+        if all_items.len() < 2 {
+            return None; // Need at least one head and one tail
+        }
+        let mut heads = Vec::new();
+        for item in &all_items[..all_items.len() - 1] {
+            if let Some(rowan_ast::Element::Name(name)) = item.singleton() {
+                if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                    heads.push(normal.text().to_string());
+                } else {
+                    return None;
+                }
             } else {
-                return None; // Not a normal identifier — invalid pattern
+                return None;
+            }
+        }
+        // Last item is the tail binding
+        let tail_item = all_items.last().unwrap();
+        if let Some(rowan_ast::Element::Name(name)) = tail_item.singleton() {
+            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                let tail = normal.text().to_string();
+                Some((heads, Some(tail)))
+            } else {
+                None
             }
         } else {
-            return None; // Not a single name — invalid pattern
+            None
         }
-    }
-    if elements.is_empty() {
-        None // Empty list pattern not valid
     } else {
-        Some(elements)
+        // Fixed-length pattern: all items are positional bindings
+        let mut elements = Vec::new();
+        for item in &all_items {
+            if let Some(rowan_ast::Element::Name(name)) = item.singleton() {
+                if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+                    elements.push(normal.text().to_string());
+                } else {
+                    return None; // Not a normal identifier — invalid pattern
+                }
+            } else {
+                return None; // Not a single name — invalid pattern
+            }
+        }
+        if elements.is_empty() {
+            None // Empty list pattern not valid
+        } else {
+            Some((elements, None))
+        }
     }
 }
 
@@ -191,7 +244,9 @@ fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
         Some(rowan_ast::Element::Block(block)) => {
             parse_block_pattern(&block).ok().map(ParamPattern::Block)
         }
-        Some(rowan_ast::Element::List(list)) => parse_list_pattern(&list).map(ParamPattern::List),
+        Some(rowan_ast::Element::List(list)) => {
+            parse_list_pattern(&list).map(|(heads, tail)| ParamPattern::List(heads, tail))
+        }
         _ => None,
     }
 }
@@ -235,8 +290,8 @@ fn desugar_declaration_body_with_patterns(
     let mut lambda_param_names: Vec<String> = Vec::new();
     // Raw data for block patterns: (synthetic_name, [(field_name, binding_name)])
     let mut block_raw: Vec<(String, Vec<(String, String)>)> = Vec::new();
-    // Raw data for list patterns: (synthetic_name, [binding_name])
-    let mut list_raw: Vec<(String, Vec<String>)> = Vec::new();
+    // Raw data for list patterns: (synthetic_name, [head_names], tail_name?)
+    let mut list_raw: Vec<(String, Vec<String>, Option<String>)> = Vec::new();
     // Ordered sequence of lets to emit — preserves argument order for correct nesting.
     let mut let_order: Vec<DestructureLet> = Vec::new();
     let mut synthetic_counter = 0usize;
@@ -262,7 +317,7 @@ fn desugar_declaration_body_with_patterns(
                     fields: Vec::new(),
                 }));
             }
-            ParamPattern::List(element_names) => {
+            ParamPattern::List(element_names, tail_name) => {
                 let synthetic_name = format!("__p{}", synthetic_counter);
                 synthetic_counter += 1;
                 all_env_names.push(synthetic_name.clone());
@@ -270,11 +325,19 @@ fn desugar_declaration_body_with_patterns(
                 for binding_name in element_names {
                     all_env_names.push(binding_name.clone());
                 }
-                list_raw.push((synthetic_name.clone(), element_names.clone()));
+                if let Some(tail) = tail_name {
+                    all_env_names.push(tail.clone());
+                }
+                list_raw.push((
+                    synthetic_name.clone(),
+                    element_names.clone(),
+                    tail_name.clone(),
+                ));
                 // Placeholder — resolved after env push
                 let_order.push(DestructureLet::List(ListDestructureEntry {
                     synthetic_name,
                     elements: Vec::new(),
+                    tail: None,
                 }));
             }
         }
@@ -310,7 +373,8 @@ fn desugar_declaration_body_with_patterns(
                     .collect();
             }
             DestructureLet::List(entry) => {
-                let (_, element_names) = list_raw_iter.next().unwrap();
+                let (_, element_names, tail_name) = list_raw_iter.next().unwrap();
+                let drop_count = element_names.len();
                 entry.elements = element_names
                     .iter()
                     .enumerate()
@@ -319,6 +383,13 @@ fn desugar_declaration_body_with_patterns(
                         ListElementBinding { index, binding_var }
                     })
                     .collect();
+                entry.tail = tail_name.as_ref().map(|tail_name| {
+                    let binding_var = desugarer.env().get(tail_name).unwrap().clone();
+                    ListTailBinding {
+                        drop_count,
+                        binding_var,
+                    }
+                });
             }
         }
     }
@@ -392,9 +463,13 @@ fn desugar_declaration_body_with_patterns(
                 //   b = HEAD(TAIL(__p0))
                 //   c = HEAD(TAIL(TAIL(__p0)))
                 //
+                // For head/tail patterns, the tail binding uses TAIL applied
+                // `drop_count` times:
+                //   xs = TAIL(TAIL(__p0))   (for [a, b : xs])
+                //
                 // This correctly handles lists built by the STG compiler
                 // where the nil tail is a global ref, not a local ref.
-                let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+                let mut bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
                     .elements
                     .iter()
                     .map(|eb| {
@@ -408,6 +483,15 @@ fn desugar_declaration_body_with_patterns(
                         (Binder(eb.binding_var.clone()), Embed(head_call))
                     })
                     .collect();
+
+                // Add the tail binding if present
+                if let Some(tb) = &entry.tail {
+                    let mut tail_expr = synthetic_var.clone();
+                    for _ in 0..tb.drop_count {
+                        tail_expr = core::app(smid, core::bif(smid, "TAIL"), vec![tail_expr]);
+                    }
+                    bindings.push((Binder(tb.binding_var.clone()), Embed(tail_expr)));
+                }
 
                 body = RcExpr::from(Expr::Let(
                     smid,

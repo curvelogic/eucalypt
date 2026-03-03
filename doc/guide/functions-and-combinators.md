@@ -113,6 +113,100 @@ result: third([1, 2, 3])
 result: 3
 ```
 
+### Head/tail list destructuring
+
+A head/tail pattern separates a list into its first element and the
+remaining list. A colon inside square brackets separates the fixed
+elements (heads) from the tail binding:
+
+```eu
+first-of([x : xs]): x
+rest-of([x : xs]): xs
+
+a: first-of([1, 2, 3])
+b: rest-of([1, 2, 3])
+```
+
+```yaml
+a: 1
+b: [2, 3]
+```
+
+Multiple heads are separated by commas before the colon:
+
+```eu
+sum-first-two([a, b : rest]): a + b
+
+result: sum-first-two([10, 20, 30])
+```
+
+```yaml
+result: 30
+```
+
+### Juxtaposed call syntax
+
+When a function takes a block or list argument, you may call it by
+placing the block or list immediately after the function name with no
+space:
+
+```eu
+sum-xy({x y}): x + y
+
+a: sum-xy{x: 3 y: 4}    # same as sum-xy({x: 3 y: 4})
+```
+
+```yaml
+a: 7
+```
+
+Similarly for list arguments:
+
+```eu
+add-pair([a, b]): a + b
+
+b: add-pair[10, 20]      # same as add-pair([10, 20])
+```
+
+```yaml
+b: 30
+```
+
+Combined with block destructuring, juxtaposed calls give named
+arguments as an emergent pattern — no extra language concept needed:
+
+```eu
+greet({name greeting}): "{greeting}, {name}!"
+
+result: greet{name: "Alice" greeting: "Hello"}
+```
+
+```yaml
+result: Hello, Alice!
+```
+
+### The cons operator `‖`
+
+The `‖` operator (U+2016, DOUBLE VERTICAL LINE) prepends a single
+element to a list. It is right-associative, so chains build lists
+left-to-right without parentheses:
+
+```eu
+a: 1 ‖ [2, 3]          # [1, 2, 3]
+b: 1 ‖ 2 ‖ [3]         # [1, 2, 3]
+c: 1 ‖ []              # [1]
+```
+
+```yaml
+a: [1, 2, 3]
+b: [1, 2, 3]
+c: [1]
+```
+
+The precedence of `‖` (55) is between comparison (50) and arithmetic
+(75), so it binds more tightly than comparisons but less tightly than
+addition or multiplication.
+
 ### Mixing patterns
 
 Normal parameters and destructuring patterns can be combined in any

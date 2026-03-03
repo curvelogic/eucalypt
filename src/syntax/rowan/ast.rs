@@ -784,7 +784,13 @@ impl Block {
     }
 
     pub fn open_brace(&self) -> Option<SyntaxToken> {
-        support::syntax_token(self.syntax(), SyntaxKind::OPEN_BRACE)
+        // Accept both OPEN_BRACE and OPEN_BRACE_APPLY (juxtaposed call sugar)
+        self.0
+            .children_with_tokens()
+            .filter_map(|it| it.into_token())
+            .find(|t| {
+                t.kind() == SyntaxKind::OPEN_BRACE || t.kind() == SyntaxKind::OPEN_BRACE_APPLY
+            })
     }
 
     pub fn close_brace(&self) -> Option<SyntaxToken> {
@@ -802,6 +808,16 @@ impl List {
     pub fn items(&self) -> AstChildren<Soup> {
         support::children::<Soup>(&self.0)
     }
+
+    /// Returns true if this list contains a `:` head/tail separator.
+    ///
+    /// Used to detect `[x : xs]` and `[a, b : rest]` patterns in
+    /// function parameter positions.
+    pub fn has_colon(&self) -> bool {
+        self.0
+            .children_with_tokens()
+            .any(|it| it.as_token().is_some_and(|t| t.kind() == SyntaxKind::COLON))
+    }
 }
 
 // Function application arguments tuple
@@ -817,6 +833,20 @@ impl ApplyTuple {
 
     pub fn open_paren(&self) -> Option<SyntaxToken> {
         support::syntax_token(self.syntax(), SyntaxKind::OPEN_PAREN_APPLY)
+    }
+
+    /// Returns true if this tuple was created from juxtaposed `f{...}` syntax.
+    pub fn is_block_apply(&self) -> bool {
+        self.0
+            .first_token()
+            .is_some_and(|t| t.kind() == SyntaxKind::OPEN_BRACE_APPLY)
+    }
+
+    /// Returns true if this tuple was created from juxtaposed `f[...]` syntax.
+    pub fn is_list_apply(&self) -> bool {
+        self.0
+            .first_token()
+            .is_some_and(|t| t.kind() == SyntaxKind::OPEN_SQUARE_APPLY)
     }
 
     pub fn close_paren(&self) -> Option<SyntaxToken> {

@@ -5,10 +5,12 @@
 #[repr(u16)]
 pub enum SyntaxKind {
     OPEN_BRACE,              // '{'
+    OPEN_BRACE_APPLY,        // '{' in application context (f{...})
     CLOSE_BRACE,             // '}
     BACKTICK,                // '`'`
     COLON,                   // ':'
     OPEN_SQUARE,             // '['
+    OPEN_SQUARE_APPLY,       // '[' in application context (f[...])
     CLOSE_SQUARE,            // ']'
     COMMA,                   // ','
     WHITESPACE,              // any unicode whitespace
@@ -116,6 +118,7 @@ impl SyntaxKind {
     pub fn is_callable_terminal(&self) -> bool {
         *self == CLOSE_PAREN
             || *self == CLOSE_BRACE
+            || *self == CLOSE_SQUARE
             || *self == UNQUOTED_IDENTIFIER
             || *self == STRING_PATTERN_END
             || *self == C_STRING_PATTERN_END

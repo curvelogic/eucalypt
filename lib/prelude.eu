@@ -119,6 +119,11 @@ when(p?, f, x): if(x p?, x f, x)
 ` "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
 cons: __CONS
 
+` { doc: "`x ‖ xs` - prepend element `x` to list `xs`. Right-associative cons operator."
+    associates: :right
+    precedence: 55 }
+(x ‖ xs): __CONS(x, xs)
+
 ` "`head(xs)` - return the head item of list `xs`, panic if empty."
 head: __HEAD
 

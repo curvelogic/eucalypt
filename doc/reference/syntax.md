@@ -122,12 +122,44 @@ mixed({x  y: b}): x + b
 # Fixed-length list destructuring
 f-sum([a, b, c]): a + b + c
 f-first([a, b]): a
+
+# Head/tail list destructuring — colon separates fixed heads from tail
+get-head([x : xs]): x
+get-tail([x : xs]): xs
+drop-two([a, b : rest]): rest
+```
+
+Juxtaposed call syntax passes a block or list literal as a single
+argument without parentheses. No space between the function name and
+the opening bracket:
+
+```eu
+# f{...} is sugar for f({...})
+sum-xy{x: 10 y: 20}
+
+# f[...] is sugar for f([...])
+add-pair[1, 2]
+```
+
+Combined with block destructuring, this gives named arguments:
+
+```eu
+greet({name greeting}): "{greeting}, {name}!"
+greet{name: "Alice" greeting: "Hello"}    # => "Hello, Alice!"
 ```
 
 Destructuring patterns can be mixed with normal parameters:
 
 ```eu
 f(n, [a, b]): n * (a + b)
+```
+
+The `‖` operator (U+2016, DOUBLE VERTICAL LINE) prepends an element to
+a list. It is right-associative:
+
+```eu
+1 ‖ [2, 3]        # => [1, 2, 3]
+1 ‖ 2 ‖ [3]       # => [1, 2, 3]
 ```
 
 See [Functions and Combinators](../guide/functions-and-combinators.md)
