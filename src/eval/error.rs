@@ -281,9 +281,9 @@ pub enum ExecutionError {
     NotScalar(Smid),
     #[error("unknown format ({0})")]
     UnknownFormat(String),
-    #[error("cannot combine numbers ({0}, {1}) into same numeric domain")]
+    #[error("cannot combine numbers ({0}, {1}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
     NumericDomainError(Number, Number),
-    #[error("out of range error operating on numbers ({0}, {1})")]
+    #[error("numeric overflow: result of operating on {0} and {1} is out of range\n  help: the result exceeds the representable range for this numeric type")]
     NumericRangeError(Number, Number),
     #[error("{}", format_division_by_zero(.0))]
     DivisionByZero(String),
