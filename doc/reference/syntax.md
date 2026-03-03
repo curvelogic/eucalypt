@@ -159,6 +159,50 @@ operators too, either binary:
 Eucalypt should handle unicode gracefully and any unicode characters
 in the symbol or punctuation classes are fine for operators.
 
+In addition to named operators, you can define **idiom brackets** —
+Unicode bracket pairs that define applicative functor lifting.  A
+bracket pair declaration uses a Unicode bracket pair wrapping a single
+parameter:
+
+```eu
+# Ceiling brackets lift into a "double" functor
+(⌈ x ⌉): x * 2
+
+# Floor brackets lift into an "increment" functor
+(⌊ x ⌋): x + 1
+```
+
+Once declared, the bracket pair can be used as an expression:
+
+```eu
+doubled: ⌈ 3 + 4 ⌉    # => 14
+bumped:  ⌊ 5 ⌋         # => 6
+```
+
+The declaration `(⟦ x ⟧): body` defines a function named `⟦⟧` (open
+then close bracket) that takes one argument `x` and returns `body`.
+Using `⟦ expr ⟧` in an expression calls that function with `expr`.
+
+The following Unicode bracket pairs are built-in and can be used for
+idiom brackets without any registration:
+
+| Open | Close | Name |
+|------|-------|------|
+| `⟦`  | `⟧`   | Mathematical white square brackets |
+| `⟨`  | `⟩`   | Mathematical angle brackets |
+| `⟪`  | `⟫`   | Mathematical double angle brackets |
+| `⌈`  | `⌉`   | Ceiling brackets |
+| `⌊`  | `⌋`   | Floor brackets |
+| `⦃`  | `⦄`   | Mathematical white curly brackets |
+| `⦇`  | `⦈`   | Mathematical white tortoise shell brackets |
+| `⦉`  | `⦊`   | Mathematical flattened parentheses |
+| `«`  | `»`   | French guillemets |
+| `【` | `】`  | CJK lenticular brackets |
+| `〔` | `〕`  | CJK tortoise shell brackets |
+| `〖` | `〗`  | CJK white lenticular brackets |
+| `〘` | `〙`  | CJK white tortoise shell brackets |
+| `〚` | `〛`  | CJK white square brackets |
+
 To control the precedence and associativity of user defined operators,
 you need metadata annotations.
 

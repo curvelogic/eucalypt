@@ -3,6 +3,7 @@
 use std::marker::PhantomData;
 use std::mem::swap;
 
+use super::brackets;
 use super::kind::SyntaxKind::{self, *};
 
 use super::lex::Lexer;
@@ -259,6 +260,10 @@ impl<'text> Parser<'text> {
                 self.parse_block_expression();
                 true
             }
+            Some((BRACKET_OPEN, _)) => {
+                self.parse_bracket_expression();
+                true
+            }
             Some((RESERVED_OPEN, _)) => {
                 self.parse_reserved_paren_expression();
                 true
@@ -335,7 +340,7 @@ impl<'text> Parser<'text> {
         if let Some((k, _)) = self.peek() {
             if matches!(
                 k,
-                CLOSE_BRACE | CLOSE_PAREN | CLOSE_SQUARE | RESERVED_CLOSE | COMMA
+                CLOSE_BRACE | CLOSE_PAREN | CLOSE_SQUARE | RESERVED_CLOSE | BRACKET_CLOSE | COMMA
             ) {
                 return false;
             }
@@ -392,6 +397,45 @@ impl<'text> Parser<'text> {
 
         self.parse_soup();
         self.expect(RESERVED_CLOSE);
+        self.sink().finish_node();
+    }
+
+    /// Parse a bracket expression using a Unicode idiom bracket pair.
+    ///
+    /// For example: `⟦ x ⟧` or `⌈ x ⌉`.
+    ///
+    /// The opening `BRACKET_OPEN` token is consumed, followed by a soup
+    /// expression, followed by a `BRACKET_CLOSE` token.  The pair of
+    /// bracket characters stored in the tokens is used at desugar time
+    /// to look up the bracket pair function.
+    fn parse_bracket_expression(&mut self) {
+        self.sink().start_node(BRACKET_EXPR);
+
+        // Consume the open bracket token; determine expected close char
+        let expected_close = if let Some((BRACKET_OPEN, open_text)) = self.peek() {
+            let open_char = open_text.chars().next().unwrap_or('⟦');
+            brackets::close_for_open(open_char)
+        } else {
+            None
+        };
+
+        self.expect(BRACKET_OPEN);
+        self.add_trivia();
+        self.parse_soup();
+
+        // Attempt to consume the close bracket token
+        if !self.try_accept(BRACKET_CLOSE) {
+            self.errors.push(ParseError::UnclosedBracketExpr {
+                range: self.next_range(),
+            });
+        } else if let Some(expected) = expected_close {
+            // Validate that the close bracket matches the open
+            // (The close token has already been consumed so we check
+            //  the token we just emitted via the events list — instead we
+            //  do a post-parse validation check in the AST validator)
+            let _ = expected; // validation deferred to validate.rs
+        }
+
         self.sink().finish_node();
     }
 

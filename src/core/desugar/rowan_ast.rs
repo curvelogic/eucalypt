@@ -702,6 +702,42 @@ impl Desugarable for Element {
                     desugarer,
                 )
             }
+            Element::BracketExpr(bracket) => {
+                // A bracket expression ⟦ x ⟧ desugars to applying the bracket pair function
+                // (named e.g. "⟦⟧") to the inner soup expression.
+                //
+                // This is equivalent to: ⟦⟧(x)  where ⟦⟧ is looked up in scope.
+                let span = text_range_to_span(bracket.syntax().text_range());
+                let smid = desugarer.new_smid(span);
+
+                let pair_name = bracket.bracket_pair_name().ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "bracket expression missing bracket characters".to_string(),
+                        smid,
+                    )
+                })?;
+
+                // Desugar the inner soup
+                let inner = if let Some(soup) = bracket.soup() {
+                    soup.desugar(desugarer)?
+                } else {
+                    return Err(CoreError::InvalidEmbedding(
+                        "empty bracket expression".to_string(),
+                        smid,
+                    ));
+                };
+
+                // Build: name(⟦⟧) applied to inner
+                // Desugars the bracket expression ⟦ x ⟧ as a call to the
+                // bracket pair function by name, with the inner expression as
+                // the sole argument.  Both the function name and the argument
+                // must be varified so that Name nodes are resolved to Var
+                // references before the STG compiler sees them.
+                let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name));
+                let bracket_fn = desugarer.varify(bracket_fn_name);
+                let arg = desugarer.varify(inner);
+                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![arg])))
+            }
             Element::ApplyTuple(tuple) => {
                 let span = text_range_to_span(tuple.syntax().text_range());
                 let args: Result<Vec<RcExpr>, CoreError> = tuple
@@ -933,6 +969,27 @@ fn extract_rowan_declaration_components(
                     arg_vars,
                     is_operator: true,
                     fixity: Some(crate::core::expr::Fixity::Nullary),
+                })
+            }
+            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param) => {
+                let pair_name = bracket_expr.bracket_pair_name().ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "bracket pair declaration has no bracket pair name".to_string(),
+                        desugarer.new_smid(span),
+                    )
+                })?;
+                let args = vec![param.text().to_string()];
+                let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
+
+                Ok(RowanDeclarationComponents {
+                    span,
+                    metadata,
+                    name: pair_name,
+                    args,
+                    body,
+                    arg_vars,
+                    is_operator: false,
+                    fixity: None,
                 })
             }
             rowan_ast::DeclarationKind::MalformedHead(_) => Err(CoreError::InvalidEmbedding(
@@ -1336,6 +1393,14 @@ fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, Cor
             rowan_ast::DeclarationKind::Postfix(_, _, op) => Ok(op.text().to_string()),
             rowan_ast::DeclarationKind::Binary(_, _, op, _) => Ok(op.text().to_string()),
             rowan_ast::DeclarationKind::Nullary(_, op) => Ok(op.text().to_string()),
+            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, _) => {
+                bracket_expr.bracket_pair_name().ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "bracket pair declaration has no bracket pair name".to_string(),
+                        Smid::default(),
+                    )
+                })
+            }
             rowan_ast::DeclarationKind::MalformedHead(_) => Err(CoreError::InvalidEmbedding(
                 "malformed declaration head".to_string(),
                 Smid::default(),
@@ -1542,6 +1607,9 @@ impl Desugarable for rowan_ast::Block {
                             Some(op.text().to_string())
                         }
                         rowan_ast::DeclarationKind::Nullary(_, op) => Some(op.text().to_string()),
+                        rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, _) => {
+                            bracket_expr.bracket_pair_name()
+                        }
                         rowan_ast::DeclarationKind::MalformedHead(_) => None,
                     }
                 } else {
@@ -1660,6 +1728,9 @@ impl Desugarable for rowan_ast::Unit {
                             Some(op.text().to_string())
                         }
                         rowan_ast::DeclarationKind::Nullary(_, op) => Some(op.text().to_string()),
+                        rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, _) => {
+                            bracket_expr.bracket_pair_name()
+                        }
                         rowan_ast::DeclarationKind::MalformedHead(_) => None,
                     }
                 } else {
