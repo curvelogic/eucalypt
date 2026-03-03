@@ -104,6 +104,35 @@ f(x, y): x + y
 two: f(1, 1)
 ```
 
+Function parameters can be **destructuring patterns** as well as
+simple names. A block pattern extracts named fields from a block
+argument; a list pattern extracts positional elements from a list
+argument:
+
+```eu
+# Block destructuring — shorthand binds field name as variable name
+sum-xy({x y}): x + y
+
+# Block destructuring — rename binds field under a new variable name
+product-ab({x: a  y: b}): a * b
+
+# Mixed shorthand and rename
+mixed({x  y: b}): x + b
+
+# Fixed-length list destructuring
+f-sum([a, b, c]): a + b + c
+f-first([a, b]): a
+```
+
+Destructuring patterns can be mixed with normal parameters:
+
+```eu
+f(n, [a, b]): n * (a + b)
+```
+
+See [Functions and Combinators](../guide/functions-and-combinators.md)
+for more detail on destructuring.
+
 ...and using some brackets and suitable names, you can define
 operators too, either binary:
 

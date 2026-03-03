@@ -80,6 +80,9 @@ x: 42 # inline comment
 |------|--------|-------|
 | Property | `name: expr` | Defines a named value |
 | Function | `f(x, y): expr` | Named function with parameters |
+| Block pattern | `f({x y}): expr` | Destructures block argument fields |
+| Block rename | `f({x: a  y: b}): expr` | Destructures with renamed bindings |
+| List pattern | `f([a, b, c]): expr` | Destructures fixed-length list |
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
