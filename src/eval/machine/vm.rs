@@ -119,7 +119,21 @@ impl HeapNavigator<'_> {
             scoped_code = self.view.scoped(closure.code());
         }
 
-        Err(ExecutionError::NotValue(Smid::default(), "".to_string()))
+        let description = match &*scoped_code {
+            HeapSyn::Cons { .. } => "a data constructor (e.g. block or list)",
+            HeapSyn::App { .. } => "a function application",
+            HeapSyn::Bif { .. } => "an intrinsic function call",
+            HeapSyn::Case { .. } => "a case expression",
+            HeapSyn::Let { .. } | HeapSyn::LetRec { .. } => "a let binding",
+            HeapSyn::Meta { .. } | HeapSyn::DeMeta { .. } => "a metadata expression",
+            HeapSyn::BlackHole => "an uninitialised value (possible cycle)",
+            HeapSyn::Ann { .. } => "an annotated expression",
+            HeapSyn::Atom { .. } => "an atom",
+        };
+        Err(ExecutionError::NotValue(
+            Smid::default(),
+            description.to_string(),
+        ))
     }
 
     pub fn env_trace(&self) -> Vec<Smid> {
