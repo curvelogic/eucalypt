@@ -722,7 +722,7 @@ fn extract_value_from_pair(
     match &*code {
         HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
             let v = args.get(1)?;
-            machine.nav(view).resolve_in_closure(pair, v)
+            machine.nav(view).resolve_in_closure(pair, v.clone())
         }
         _ => None,
     }
@@ -1400,72 +1400,43 @@ impl StgIntrinsic for PBlockFromPairs {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // args[0] = cons-list of BlockPair closures
-        let list = data_list_arg(machine, view, args[0].clone())?;
+        // args[0] = cons-list of BlockPair closures.
+        //
+        // Use BlockListIterator (not DataIterator) so that global refs
+        // to KEmptyList and lazy-evaluated map results are resolved
+        // correctly. DataIterator only handles local refs (Ref::L) and
+        // panics on Ref::G or unevaluated closures.
+        let nav = machine.nav(view);
+        let list_closure = nav.resolve(&args[0])?;
+        let iter = BlockListIterator {
+            closure: list_closure,
+            nav: &nav,
+            done: false,
+        };
+
         let mut block = HeapBlock::empty();
-        let env = machine.env(view);
 
-        for item in list {
-            let pair = item?;
-            let code = view.scoped(pair.code());
+        for pair in iter {
+            // Extract key symbol ID using the shared helper (handles both
+            // Ref::V native symbols and boxed symbols from dynamic blocks).
+            let sym_id = match pair_key_symbol_id(view, &pair) {
+                Some(id) => id,
+                None => continue,
+            };
 
-            if let HeapSyn::Cons {
-                tag,
-                args: pair_args,
-            } = &*code
-            {
-                if *tag != DataConstructor::BlockPair.tag() {
-                    continue;
-                }
-                let key_ref = match pair_args.get(0) {
-                    Some(r) => r,
-                    None => continue,
-                };
-                let val_ref = match pair_args.get(1) {
-                    Some(r) => r,
-                    None => continue,
-                };
+            // Resolve the value closure within the pair's environment.
+            // The returned SynClosure carries both the value's code pointer
+            // and the correct environment frame. Store both so PBlockLookup
+            // can reconstruct the full closure without needing the machine env.
+            let val_closure = match extract_value_from_pair(machine, view, &pair) {
+                Some(c) => c,
+                None => continue,
+            };
 
-                // Resolve the key to a symbol ID
-                let sym_id = match key_ref {
-                    Ref::V(Native::Sym(id)) => id,
-                    other => {
-                        // Follow local ref through pair's environment
-                        let resolved = pair.navigate_local(&view, other.clone());
-                        let resolved_code = view.scoped(resolved.code());
-                        match &*resolved_code {
-                            HeapSyn::Atom {
-                                evaluand: Ref::V(Native::Sym(id)),
-                            } => *id,
-                            HeapSyn::Cons {
-                                tag: inner_tag,
-                                args: inner_args,
-                            } if *inner_tag == DataConstructor::BoxedSymbol.tag() => {
-                                let inner_ref = match inner_args.get(0) {
-                                    Some(r) => r,
-                                    None => continue,
-                                };
-                                let native =
-                                    resolved.navigate_local_native(&view, inner_ref.clone());
-                                match native {
-                                    Native::Sym(id) => id,
-                                    _ => continue,
-                                }
-                            }
-                            _ => continue,
-                        }
-                    }
-                };
-
-                // Resolve the value to a closure: navigate to the value
-                // within the pair's environment, then get code + env.
-                let val_closure = pair.navigate_local(&view, val_ref.clone());
-                // Store the value's code pointer paired with the current
-                // env (the letrec env that holds all block bindings).
-                // SAFETY: env is a valid RefPtr<EnvFrame> from the machine.
-                let env_raw = env.as_ptr() as *mut u8;
-                block = block.with_entry(sym_id, val_closure.code(), env_raw);
-            }
+            // SAFETY: val_closure.env() is a valid RefPtr<EnvFrame> from the
+            // GC-managed heap, reachable from the active machine stack.
+            let env_raw = val_closure.env().as_ptr() as *mut u8;
+            block = block.with_entry(sym_id, val_closure.code(), env_raw);
         }
 
         machine_return_block(machine, view, block)
@@ -1473,6 +1444,50 @@ impl StgIntrinsic for PBlockFromPairs {
 }
 
 impl CallGlobal1 for PBlockFromPairs {}
+
+/// PBLOCK_FROM_BLOCK(block)
+///
+/// Convert a standard cons-list block (`DataConstructor::Block`) to a
+/// persistent `HeapBlock`. Extracts the raw cons-list of `BlockPair`
+/// entries and delegates to `PBLOCK_FROM_PAIRS`.
+pub struct PBlockFromBlock;
+
+impl StgIntrinsic for PBlockFromBlock {
+    fn name(&self) -> &str {
+        "PBLOCK_FROM_BLOCK"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        use dsl::*;
+
+        let pblock_from_pairs_idx =
+            intrinsics::index("PBLOCK_FROM_PAIRS").expect("PBLOCK_FROM_PAIRS must be registered");
+
+        // Force the block, switch on Block tag, extract the cons-list
+        // (args[0] of the Block data constructor), and call PBLOCK_FROM_PAIRS.
+        annotated_lambda(
+            1, // [block]
+            force(
+                local(0),
+                // [forced-block] [block]
+                switch(
+                    local(0),
+                    vec![(
+                        DataConstructor::Block.tag(),
+                        // [cons-list index] [forced-block] [block]
+                        app(
+                            gref(pblock_from_pairs_idx),
+                            vec![lref(0)], // pass the cons-list to PBLOCK_FROM_PAIRS
+                        ),
+                    )],
+                ),
+            ),
+            annotation,
+        )
+    }
+}
+
+impl CallGlobal1 for PBlockFromBlock {}
 
 /// PBLOCK_LOOKUP(key, default, block)
 ///
@@ -1488,23 +1503,41 @@ impl StgIntrinsic for PBlockLookup {
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        // Wrapper: force the block, then call BIF(key, default, block)
+        // Wrapper: force the block, switch on Block (persistent 1-arg form),
+        // then unbox the key symbol, then call BIF(native_sym, default, block_native_ref).
+        //
+        // Symbol literals in eucalypt are compiled as DataConstructor::BoxedSymbol{[native_sym]},
+        // so we must unbox the key before calling the BIF which expects a raw Native::Sym.
+        //
+        // Frame layout at each stage:
+        //   annotated_lambda(3):  L(0)=key(BoxedSym), L(1)=default, L(2)=block
+        //   force(local(2)):      L(0)=forced_block,  L(1)=key,     L(2)=default, L(3)=block
+        //   switch Block(1 arg):  L(0)=block_native,  L(1)=forced_block, L(2)=key, L(3)=default, L(4)=block
+        //   unbox_sym(lref(2)):   L(0)=native_sym, L(1)=block_native, L(2)=forced_block, L(3)=key, L(4)=default, L(5)=block
+        //
+        // BIF args: [native_sym=L(0), default=L(4), block_native=L(1)]
         annotated_lambda(
-            3, // [key default block]
+            3, // [key(BoxedSym), default, block]
             force(
                 local(2),
-                // [forced-block] [key default block]
+                // [forced_block] [key default block]
                 switch(
                     local(0),
                     vec![(
                         DataConstructor::Block.tag(),
-                        // [block_ref] [forced-block] [key default block]
-                        app_bif(
-                            intrinsics::index(self.name())
-                                .expect("PBLOCK_LOOKUP must be registered")
-                                .try_into()
-                                .unwrap(),
-                            vec![lref(3), lref(4), lref(0)],
+                        // [block_native] [forced_block] [key default block]
+                        // L(0)=block_native, L(1)=forced_block, L(2)=key, L(3)=default, L(4)=block
+                        unbox_sym(
+                            local(2),
+                            // [native_sym] [block_native] [forced_block] [key default block]
+                            // L(0)=native_sym, L(1)=block_native, L(2)=forced_block, L(3)=key, L(4)=default, L(5)=block
+                            app_bif(
+                                intrinsics::index(self.name())
+                                    .expect("PBLOCK_LOOKUP must be registered")
+                                    .try_into()
+                                    .unwrap(),
+                                vec![lref(0), lref(4), lref(1)],
+                            ),
                         ),
                     )],
                 ),
@@ -1520,33 +1553,29 @@ impl StgIntrinsic for PBlockLookup {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // args: [key_sym, default_ref, block_native_ref]
-        // The block arg arrives as the raw Ref::V(Native::Block(ptr)) from
-        // the switched Block args[0] (the single-arg persistent form).
-        let sym_id = match &args[0] {
-            Ref::V(Native::Sym(id)) => *id,
-            other => {
-                match machine.nav(view).resolve_native(other) {
-                    Ok(Native::Sym(id)) => id,
-                    _ => {
-                        // Key not found — return default
-                        let default = machine.nav(view).resolve(&args[1])?;
-                        return machine.set_closure(default);
-                    }
-                }
-            }
-        };
-
-        let block_ptr = match &args[2] {
-            Ref::V(Native::Block(ptr)) => *ptr,
+        // args: [native_sym, default_ref, block_native_ref]
+        // The wrapper unboxes the key symbol before calling the BIF, so args[0]
+        // is a Ref::L pointing to an Atom { Ref::V(Native::Sym(id)) } from the
+        // BoxedSymbol unboxing branch. Use resolve_native to follow it.
+        // args[2] is a Ref::L pointing to Atom { Ref::V(Native::Block(ptr)) }
+        // from the Block switch branch — use block_arg to resolve.
+        let sym_id = match machine.nav(view).resolve_native(&args[0]) {
+            Ok(Native::Sym(id)) => id,
             _ => {
+                // Key could not be resolved as a symbol — return default.
                 let default = machine.nav(view).resolve(&args[1])?;
                 return machine.set_closure(default);
             }
         };
 
-        // SAFETY: block_ptr is a valid HeapBlock allocated on the GC heap.
-        let block = unsafe { block_ptr.as_ref() };
+        let block = match block_arg(machine, view, &args[2]) {
+            Ok(b) => b,
+            Err(_) => {
+                let default = machine.nav(view).resolve(&args[1])?;
+                return machine.set_closure(default);
+            }
+        };
+
         match block.get(&sym_id) {
             Some(entry) => {
                 // Reconstruct the closure from stored code + env pointers.
@@ -1610,18 +1639,10 @@ impl StgIntrinsic for PBlockToList {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // args[0] = Ref::V(Native::Block(ptr)) (the persistent block native)
-        let block_ptr = match &args[0] {
-            Ref::V(Native::Block(ptr)) => *ptr,
-            _ => {
-                // Not a persistent block — return empty list
-                let nil = view.nil()?;
-                return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
-            }
-        };
-
-        // SAFETY: block_ptr is valid for the duration of this intrinsic call.
-        let block = unsafe { block_ptr.as_ref() };
+        // args[0] is a Ref::L pointing to an Atom { Ref::V(Native::Block(ptr)) }
+        // after the switch branch in the wrapper. Use block_arg to resolve via
+        // resolve_native, which handles both Ref::V and Ref::L forms.
+        let block = block_arg(machine, view, &args[0])?;
 
         // Build an IndexMap of (symbol_name, SynClosure) in insertion order.
         let ordered = block.ordered_entries();
@@ -1654,6 +1675,14 @@ impl StgIntrinsic for PBlockMerge {
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
+        // Frame layout:
+        //   annotated_lambda(2): L(0)=l, L(1)=r
+        //   force(local(0)):     L(0)=fl, L(1)=l, L(2)=r
+        //   switch Block(1 arg): L(0)=lref, L(1)=fl, L(2)=l, L(3)=r
+        //   force(local(3)):     L(0)=fr, L(1)=lref, L(2)=fl, L(3)=l, L(4)=r
+        //   switch Block(1 arg): L(0)=rref, L(1)=fr, L(2)=lref, L(3)=fl, L(4)=l, L(5)=r
+        //
+        // BIF args: [lref=L(2), rref=L(0)]
         annotated_lambda(
             2, // [l r]
             force(
@@ -1664,8 +1693,9 @@ impl StgIntrinsic for PBlockMerge {
                     vec![(
                         DataConstructor::Block.tag(),
                         // [lref] [fl] [l r]
+                        // L(0)=lref, L(1)=fl, L(2)=l, L(3)=r
                         force(
-                            local(4),
+                            local(3),
                             // [fr] [lref] [fl] [l r]
                             switch(
                                 local(0),
