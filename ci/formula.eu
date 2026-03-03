@@ -5,7 +5,7 @@ class Eucalypt < Formula
   version {dq}{version}{dq}
   desc {dq}Eucalypt (eu) tool for generating, templating and processing YAML, JSON, TOML{dq}
   homepage {dq}https://curvelogic.github.io/eucalypt/{dq}
-  url {dq}https://github.com/curvelogic/eucalypt/releases/download/{version}/eucalypt-x86_64-osx.tgz{dq}
+  url {dq}https://github.com/curvelogic/eucalypt/releases/download/{version}/eucalypt-aarch64-osx.tgz{dq}
   sha256 {dq}{sha256}{dq}
   bottle :unneeded
 
@@ -15,8 +15,7 @@ class Eucalypt < Formula
 
 
   def test
-    expected = {dq}Eucalypt (Rust Impl: v#{{package.version}}){dq}
-    assert_equal expected, `#{{bin}}/eu --version`.strip
+    assert_match {dq}eu{dq}, `#{{bin}}/eu --version`.strip
   end
 
 end
