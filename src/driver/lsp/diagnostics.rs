@@ -49,7 +49,7 @@ fn error_range(error: &ParseError) -> TextRange {
         | ParseError::ReservedCharacter { range }
         | ParseError::EmptyExpression { range }
         | ParseError::UnclosedStringInterpolation { range }
-        | ParseError::InvalidZdtLiteral { range } => *range,
+        | ParseError::InvalidZdtLiteral { range, .. } => *range,
         ParseError::MissingDeclarationColon { head_range } => *head_range,
     }
 }

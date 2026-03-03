@@ -116,7 +116,7 @@ fn rowan_error_range(error: &RowanParseError) -> Option<rowan::TextRange> {
         | ReservedCharacter { range }
         | EmptyExpression { range }
         | UnclosedStringInterpolation { range }
-        | InvalidZdtLiteral { range } => Some(*range),
+        | InvalidZdtLiteral { range, .. } => Some(*range),
         MissingDeclarationColon { head_range } => Some(*head_range),
     }
 }

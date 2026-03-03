@@ -1,2 +1,2 @@
 exit: 1
-stderr: "invalid date/time literal"
+stderr: "date/time literal contains an invalid date"
