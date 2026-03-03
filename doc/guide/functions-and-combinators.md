@@ -113,6 +113,54 @@ result: third([1, 2, 3])
 result: 3
 ```
 
+### Head/tail cons destructuring
+
+A cons pattern `[h : t]` binds the head (first element) and the tail
+(remainder of the list) of a list argument:
+
+```eu
+list-head([h : t]): h
+list-tail([h : t]): t
+
+first:  list-head([10, 20, 30])
+rest:   list-tail([10, 20, 30])
+second: list-head(list-tail([10, 20, 30]))
+```
+
+```yaml
+first: 10
+rest:
+  - 20
+  - 30
+second: 20
+```
+
+The cons pattern is particularly useful for writing recursive
+functions over lists:
+
+```eu
+sum([h : t]): h + (t sum)
+sum([]): 0
+
+result: sum([1, 2, 3, 4, 5])
+```
+
+```yaml
+result: 15
+```
+
+The names `h` and `t` are arbitrary — use any valid identifiers:
+
+```eu
+greet([name : others]): "Hello, {name}!"
+
+result: greet(["Alice", "Bob", "Carol"])
+```
+
+```yaml
+result: "Hello, Alice!"
+```
+
 ### Mixing patterns
 
 Normal parameters and destructuring patterns can be combined in any

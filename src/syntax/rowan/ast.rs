@@ -796,11 +796,36 @@ impl Block {
 //
 // AST embedding syntax:
 // - `[:a-list items...]` - List containing comma-separated items
+//
+// A list node may also represent a cons pattern `[h : t]` (head/tail
+// destructuring).  In that case the node has a COLON token child instead of
+// COMMA, and exactly two SOUP children (head and tail).  Use `is_cons_pattern`
+// to distinguish the two forms.
 ast_node!(List, LIST);
 
 impl List {
     pub fn items(&self) -> AstChildren<Soup> {
         support::children::<Soup>(&self.0)
+    }
+
+    /// Return `true` if this list node is a cons pattern `[h : t]`.
+    ///
+    /// Cons patterns are distinguished from normal lists by the presence of a
+    /// COLON token child (rather than COMMA tokens between items).
+    pub fn is_cons_pattern(&self) -> bool {
+        support::syntax_token(self.syntax(), SyntaxKind::COLON).is_some()
+    }
+
+    /// Return the head and tail soups of a cons pattern `[h : t]`, or `None`
+    /// if this is not a cons pattern or the structure is malformed.
+    pub fn cons_parts(&self) -> Option<(Soup, Soup)> {
+        if !self.is_cons_pattern() {
+            return None;
+        }
+        let mut soups = self.items();
+        let head = soups.next()?;
+        let tail = soups.next()?;
+        Some((head, tail))
     }
 }
 

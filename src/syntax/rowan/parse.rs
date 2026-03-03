@@ -242,22 +242,58 @@ impl<'text> Parser<'text> {
         }
     }
 
-    /// Parse a list expression [x, y, z]
+    /// Parse a list expression `[x, y, z]` or a cons pattern `[h : t]`.
+    ///
+    /// A cons pattern has exactly one soup item before a `:` token (with no
+    /// preceding comma), and one soup item after the `:`.  Everything else is
+    /// a normal comma-separated list.
     fn try_parse_list_expression(&mut self) -> bool {
         if let Some((k, _)) = self.next() {
             if k == OPEN_SQUARE {
+                // Speculatively parse the first soup item, then decide
+                // whether this is a cons pattern or a normal list.
                 self.sink().start_node(LIST);
                 self.sink().token(k);
                 self.add_trivia();
-                while self.try_parse_soup() {
-                    if !self.try_accept(COMMA) {
-                        break;
+
+                if self.try_parse_soup() {
+                    // Peek at what follows the first soup item.
+                    if self.try_accept(COLON) {
+                        // This is a cons pattern `[head : tail]`.
+                        // Rewrite the containing node as LIST_CONS.
+                        // Unfortunately Rowan's builder API doesn't allow
+                        // retroactively changing the node kind, so we use
+                        // a checkpoint approach: we already started LIST,
+                        // so we finish it and re-wrap.  Instead, use the
+                        // simpler strategy: emit COLON into the LIST node
+                        // and parse the tail soup.  The desugarer will
+                        // detect the COLON child to identify cons patterns.
+                        self.add_trivia();
+                        let _ = self.try_parse_soup();
+                        self.add_trivia();
+                        self.expect(CLOSE_SQUARE);
+                        self.sink().finish_node();
+                        // Retroactively mark as LIST_CONS: not possible with
+                        // GreenNodeBuilder directly. We detect it in the
+                        // desugarer by looking for a COLON token child of LIST.
+                    } else {
+                        // Normal list — continue with commas
+                        while self.try_accept(COMMA) {
+                            self.add_trivia();
+                            if !self.try_parse_soup() {
+                                break;
+                            }
+                        }
+                        self.add_trivia();
+                        self.expect(CLOSE_SQUARE);
+                        self.sink().finish_node();
                     }
+                } else {
+                    // Empty list []
                     self.add_trivia();
+                    self.expect(CLOSE_SQUARE);
+                    self.sink().finish_node();
                 }
-                self.add_trivia();
-                self.expect(CLOSE_SQUARE);
-                self.sink().finish_node();
                 true
             } else {
                 false
@@ -2326,6 +2362,39 @@ UNIT@0..105
             parse.errors().is_empty(),
             "Date-only t-string should parse without errors: {:?}",
             parse.errors()
+        );
+    }
+
+    #[test]
+    pub fn test_cons_pattern_in_list() {
+        // A cons pattern [h : t] should parse without errors inside a function param
+        let text = r#"{ f([h : t]): h }"#;
+        let parse = parse_expr(text);
+
+        assert!(
+            parse.errors().is_empty(),
+            "Cons pattern [h : t] should parse without errors: {:?}",
+            parse.errors()
+        );
+
+        // Verify the shape: LIST with COLON token child
+        verify_expr(
+            "[x : xs]",
+            r#"
+SOUP@0..8
+  LIST@0..8
+    OPEN_SQUARE@0..1 "["
+    SOUP@1..3
+      NAME@1..2
+        UNQUOTED_IDENTIFIER@1..2 "x"
+      WHITESPACE@2..3 " "
+    COLON@3..4 ":"
+    WHITESPACE@4..5 " "
+    SOUP@5..7
+      NAME@5..7
+        UNQUOTED_IDENTIFIER@5..7 "xs"
+    CLOSE_SQUARE@7..8 "]"
+"#,
         );
     }
 }
