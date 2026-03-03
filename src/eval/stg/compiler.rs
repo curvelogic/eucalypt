@@ -78,6 +78,11 @@ impl CompileError {
                             .to_string(),
                     );
                 }
+                // Suggest eucalypt equivalents for common operators from other
+                // languages.
+                if name == "==" {
+                    notes.push("eucalypt uses '=' for equality, not '=='".to_string());
+                }
                 diag.with_notes(notes)
             }
             _ => diag,
