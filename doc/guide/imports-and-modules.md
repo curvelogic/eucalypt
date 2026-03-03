@@ -118,6 +118,67 @@ deep: {
 }
 ```
 
+## Import Resolution Order
+
+When an import path is a relative string (e.g. `"helpers.eu"` rather than an
+absolute path or a git import), eucalypt resolves it by searching in this order:
+
+1. **Source-relative directory** — the directory containing the file that
+   contains the `import` declaration.
+2. **Global lib path** — the directories supplied via `-L` flags and the current
+   working directory, searched in the order they were specified.
+
+If the file is found in the source-relative directory it is used immediately and
+the global lib path is not consulted.
+
+### Transitive resolution
+
+Resolution is always relative to the *importing* file, not to the entry-point
+file passed on the command line. This means:
+
+- `main.eu` imports `"lib/utils.eu"` → resolved as `<dir-of-main>/lib/utils.eu`
+- `lib/utils.eu` imports `"helpers/misc.eu"` → resolved as
+  `<dir-of-main>/lib/helpers/misc.eu` (relative to `utils.eu`, not to `main.eu`)
+- `lib/helpers/misc.eu` imports `"sub/detail.eu"` → resolved as
+  `<dir-of-main>/lib/helpers/sub/detail.eu`
+
+Each file sees its own directory as the base for relative imports, no matter how
+deep the chain goes.
+
+### Practical example
+
+Suppose your project is laid out as follows:
+
+```
+project/
+  main.eu
+  lib/
+    utils.eu
+    helpers/
+      misc.eu
+```
+
+`main.eu` can import `lib/utils.eu` using a path relative to itself:
+
+```eu
+{ import: "lib/utils.eu" }
+
+result: util-function(42)
+```
+
+`lib/utils.eu` can import from `lib/helpers/misc.eu` using a path relative to
+*its own* location:
+
+```eu
+{ import: "helpers/misc.eu" }
+
+util-function(x): misc-helper(x)
+```
+
+No `-L` flags or absolute paths are needed. If a file is not found
+source-relatively, eucalypt falls back to the global lib path, so existing
+projects that rely on `-L` continue to work without modification.
+
 ## Git Imports
 
 Import eucalypt code directly from a git repository. This is useful
@@ -213,6 +274,8 @@ defaults.
 - **Named imports** (`"name=file"`) provide namespace isolation
 - Imports can be **scoped** to individual declarations
 - **Data files** (YAML, JSON, CSV, etc.) can be imported like code
+- **Relative paths** resolve against the importing file's directory first,
+  then the global lib path — no `-L` flags needed for co-located helpers
 - **Git imports** pull code directly from repositories at a specific
   commit
 - **Streaming imports** (`jsonl-stream@`, `csv-stream@`,
