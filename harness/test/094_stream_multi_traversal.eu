@@ -1,0 +1,35 @@
+{ import: ["jl=jsonl-stream@aux/aux_import.jsonl",
+           "txt=text-stream@aux/aux_import.txt"] }
+
+# Multi-traversal memoisation test
+#
+# Verifies that streaming imports are memoised after the first forced
+# evaluation. Accessing the same stream binding multiple times must
+# produce identical results — the IO source is read exactly once and
+# the result is cached by the standard thunk-update mechanism.
+
+# Traverse jl twice — counts must be consistent
+jl-count-1: jl count
+jl-count-2: jl count
+counts-equal: jl-count-1 = jl-count-2 //= true
+
+# Read names via two independent traversals of the same binding
+jl-names-1: jl map(_.name)
+jl-names-2: jl map(_.name)
+names-equal: jl-names-1 = jl-names-2 //= true
+
+# Count and head are consistent across accesses
+jl-first: (jl head).name //= "Alice"
+jl-len: jl count //= 3
+
+# Text stream multi-traversal
+txt-count-1: txt count
+txt-count-2: txt count
+txt-counts-equal: txt-count-1 = txt-count-2 //= true
+
+txt-first-1: txt head
+txt-first-2: txt head
+txt-heads-equal: txt-first-1 = txt-first-2 //= true
+
+RESULT: [counts-equal, names-equal, jl-first, jl-len,
+         txt-counts-equal, txt-heads-equal] all-true? then(:PASS, :FAIL)

@@ -445,6 +445,11 @@ pub fn test_harness_093() {
 }
 
 #[test]
+pub fn test_harness_094() {
+    run_test(&opts("094_stream_multi_traversal.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
