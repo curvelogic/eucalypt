@@ -17,6 +17,25 @@ use crate::{
 
 use super::{string::HeapString, syntax::Native};
 
+/// RAII guard that keeps a heap block pinned (non-evacuatable).
+pub struct PinGuard {
+    base_address: usize,
+    heap: *const super::heap::Heap,
+}
+
+impl Drop for PinGuard {
+    fn drop(&mut self) {
+        let heap = unsafe { &*self.heap };
+        heap.unpin_block(self.base_address);
+    }
+}
+
+impl std::fmt::Debug for PinGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PinGuard(block @ {:#x})", self.base_address)
+    }
+}
+
 /// A view onto the heap for code that needs mutator access (as
 /// opposed to collector access)
 ///
@@ -48,6 +67,15 @@ impl<'guard> MutatorHeapView<'guard> {
         let mut array = Array::with_capacity(&self, 1);
         array.push(&self, object);
         array
+    }
+
+    /// Pin the block containing `ptr`, preventing evacuation.
+    pub fn pin<T>(&self, ptr: std::ptr::NonNull<T>) -> PinGuard {
+        self.heap.pin_block(ptr);
+        PinGuard {
+            base_address: super::bump::block_base_of(ptr),
+            heap: self.heap as *const super::heap::Heap,
+        }
     }
 }
 
