@@ -203,6 +203,59 @@ idiom brackets without any registration:
 | `〘` | `〙`  | CJK white tortoise shell brackets |
 | `〚` | `〛`  | CJK white square brackets |
 
+### Monadic blocks
+
+When a bracket pair declaration is annotated with `bind` and `return`
+metadata naming monad functions, the bracket pair gains a **monad
+spec**.  A bracket expression whose inner content is a block then
+desugars as a bind chain (analogous to Haskell's `do`-notation):
+
+```eu
+` { bind: my-bind return: my-return }
+(⟦ x ⟧): x
+
+result: ⟦ { a: ma, b: mb, r: expr } ⟧
+```
+
+The block inner desugars to:
+
+```
+my-bind(ma, (a): my-bind(mb, (b): my-return(expr)))
+```
+
+The **last declaration** in the block is treated as the return value:
+its value is wrapped in `return`.  All earlier declarations are bind
+steps whose bound names are in scope for later declarations and the
+final expression.
+
+**Example — identity monad:**
+
+```eu
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+` { bind: id-bind return: id-return }
+(⟦ x ⟧): x
+
+result: ⟦ { x: 10, r: x + 5 } ⟧     # => 15
+```
+
+**Example — maybe monad (optional lists):**
+
+```eu
+maybe-bind(ma, f): if(ma = [], [], f(ma head))
+maybe-return(a): [a]
+
+` { bind: maybe-bind return: maybe-return }
+(⌈ x ⌉): x
+
+just:    ⌈ { x: [1], y: [2], r: x + y } ⌉   # => [3]
+nothing: ⌈ { x: [],  y: [2], r: x + y } ⌉   # => []
+```
+
+If the bracket pair has no monad spec but a block is used as the
+inner, eucalypt raises an error at compile time.
+
 To control the precedence and associativity of user defined operators,
 you need metadata annotations.
 
