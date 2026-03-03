@@ -825,3 +825,8 @@ pub fn test_error_068() {
 pub fn test_error_069() {
     run_error_test(&error_opts("069_parse_num_hint.eu"));
 }
+
+#[test]
+pub fn test_error_070() {
+    run_error_test(&error_opts("070_str_upper_method.eu"));
+}
