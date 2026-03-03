@@ -3,6 +3,7 @@
 In this chapter you will learn:
 
 - How to define and call functions
+- How destructuring parameters work
 - How currying and partial application work
 - The standard combinators: `identity`, `const`, `compose`, `flip`
 - How to build functions from other functions without lambdas
@@ -37,6 +38,106 @@ Pipelines](expressions-and-pipelines.md)):
 ```eu
 a: 5 square
 b: 4 add(3)
+```
+
+## Destructuring Parameters
+
+Function parameters can be **destructuring patterns** that extract
+structure from an argument inline, binding its components as named
+variables in the function body.
+
+### Block destructuring
+
+A block pattern binds named fields from a block argument. Shorthand
+form binds the field name directly:
+
+```eu
+sum-of-point({x y}): x + y
+
+p: { x: 3 y: 4 }
+result: sum-of-point(p)
+```
+
+```yaml
+result: 7
+```
+
+A rename form binds a field under a different local name, using a
+colon between the field name and the binding name:
+
+```eu
+scaled({x: a  y: b}, scale): a * scale + b * scale
+
+result: scaled({x: 2  y: 3}, 10)
+```
+
+```yaml
+result: 50
+```
+
+Shorthand and rename can be mixed freely:
+
+```eu
+describe({x  y: height}): "x={x} h={height}"
+
+result: describe({x: 1  y: 5})
+```
+
+```yaml
+result: x=1 h=5
+```
+
+### Fixed-length list destructuring
+
+A list pattern binds positional elements from a list argument:
+
+```eu
+add-pair([a, b]): a + b
+
+result: add-pair([10, 20])
+```
+
+```yaml
+result: 30
+```
+
+Multiple elements at any position are supported:
+
+```eu
+third([a, b, c]): c
+
+result: third([1, 2, 3])
+```
+
+```yaml
+result: 3
+```
+
+### Mixing patterns
+
+Normal parameters and destructuring patterns can be combined in any
+order:
+
+```eu
+weighted-sum(w, [a, b, c]): w * a + w * b + w * c
+
+result: weighted-sum(2, [1, 3, 5])
+```
+
+```yaml
+result: 18
+```
+
+Multiple destructuring parameters are also allowed:
+
+```eu
+combine({x}, [a, b]): x + a + b
+
+result: combine({x: 10}, [3, 7])
+```
+
+```yaml
+result: 20
 ```
 
 ## Functions are Values
