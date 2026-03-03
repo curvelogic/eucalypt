@@ -685,3 +685,8 @@ pub fn test_error_042() {
 pub fn test_error_043() {
     run_error_test(&error_opts("043_assignment_syntax.eu"));
 }
+
+#[test]
+pub fn test_error_044() {
+    run_error_test(&error_opts("044_double_colon_type_annot.eu"));
+}

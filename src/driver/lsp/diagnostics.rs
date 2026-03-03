@@ -49,7 +49,8 @@ fn error_range(error: &ParseError) -> TextRange {
         | ParseError::ReservedCharacter { range }
         | ParseError::EmptyExpression { range }
         | ParseError::UnclosedStringInterpolation { range }
-        | ParseError::InvalidZdtLiteral { range, .. } => *range,
+        | ParseError::InvalidZdtLiteral { range, .. }
+        | ParseError::InvalidDoubleColon { range } => *range,
         ParseError::MissingDeclarationColon { head_range } => *head_range,
     }
 }
@@ -79,6 +80,9 @@ fn error_message(error: &ParseError) -> String {
             "unclosed string interpolation (missing closing brace)".to_string()
         }
         ParseError::InvalidZdtLiteral { .. } => "invalid ZDT literal".to_string(),
+        ParseError::InvalidDoubleColon { .. } => {
+            "'::' is not valid syntax; use ':' for declarations".to_string()
+        }
     }
 }
 

@@ -64,6 +64,9 @@ pub enum ParseError {
         /// A brief description of why the literal is invalid
         reason: ZdtInvalidReason,
     },
+    InvalidDoubleColon {
+        range: TextRange,
+    },
 }
 
 /// The reason a `t"..."` date/time literal is invalid
@@ -137,6 +140,13 @@ impl fmt::Display for ParseError {
                      YYYY-MM-DDTHH:MM:SS+HH:MM"
                 ),
             },
+            ParseError::InvalidDoubleColon { .. } => write!(
+                f,
+                "'::' is not valid syntax in eucalypt\n  \
+                 help: use ':' for declarations (e.g. `name: value`)\n  \
+                 help: '::' is used in Haskell/Rust for type annotations, \
+                 but eucalypt does not have type annotations"
+            ),
         }
     }
 }
