@@ -52,6 +52,18 @@ impl Cooker {
         fixity::distribute(expr)
     }
 
+    /// Check whether an expression tree contains explicit ExprAnaphor
+    /// nodes, recursing only through Soup nodes (from paren groups).
+    /// Other constructs (ArgTuple, Let, List, Block) remain scope
+    /// boundaries and are not traversed.
+    fn contains_expr_anaphora(expr: &RcExpr) -> bool {
+        match &*expr.inner {
+            Expr::ExprAnaphor(_, _) => true,
+            Expr::Soup(_, xs) => xs.iter().any(Self::contains_expr_anaphora),
+            _ => false,
+        }
+    }
+
     /// Infer anaphora in gaps and insert them explicitly.
     ///
     /// e.g.
