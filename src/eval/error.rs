@@ -412,6 +412,15 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
+            ExecutionError::BadNumberFormat(_) => {
+                vec![
+                    "valid number formats are: integers (e.g. 42), decimals (e.g. 3.14), and \
+                     scientific notation (e.g. 1.5e10)"
+                        .to_string(),
+                    "use 'str' to convert numbers to strings; to convert strings to numbers use 'num'"
+                        .to_string(),
+                ]
+            }
             _ => vec![],
         };
         if notes.is_empty() {
