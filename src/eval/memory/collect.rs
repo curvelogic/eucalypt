@@ -4,7 +4,7 @@
 //! tracing, marking and potentially, in future, moving.
 //!
 
-use std::{collections::VecDeque, mem::size_of, ptr::NonNull};
+use std::{mem::size_of, ptr::NonNull};
 
 use crate::eval::machine::metrics::{Clock, ThreadOccupation};
 
@@ -300,18 +300,22 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
     // clear line maps
     heap_view.reset();
 
-    let mut queue = VecDeque::default();
+    // Use a Vec as a DFS stack instead of VecDeque BFS queue.
+    // DFS (pop from end) is more cache-friendly: recently discovered
+    // objects are spatially close on the heap and scanned next, and
+    // Vec::pop() is O(1) without ring buffer overhead.
+    let mut stack: Vec<ScanPtr> = Vec::new();
     let mut scan_buffer = Vec::new();
 
     let scope = Scope();
 
     // find and queue the roots
     roots.scan(&scope, &mut heap_view, &mut scan_buffer);
-    queue.extend(scan_buffer.drain(..));
+    stack.append(&mut scan_buffer);
 
-    while let Some(scanptr) = queue.pop_front() {
+    while let Some(scanptr) = stack.pop() {
         scanptr.get().scan(&scope, &mut heap_view, &mut scan_buffer);
-        queue.extend(scan_buffer.drain(..));
+        stack.append(&mut scan_buffer);
     }
 
     if dump_heap {
@@ -370,14 +374,16 @@ pub fn collect_with_evacuation(
         let mut heap_view = CollectorHeapView { heap: &mut *heap };
         heap_view.reset();
 
-        let mut queue = VecDeque::default();
+        // Use DFS stack (Vec::pop) for better cache locality, matching
+        // the non-evacuating collect() path.
+        let mut stack: Vec<ScanPtr> = Vec::new();
         let mut scan_buffer = Vec::new();
         let scope = Scope();
 
         roots.scan(&scope, &mut heap_view, &mut scan_buffer);
-        queue.extend(scan_buffer.drain(..));
+        stack.append(&mut scan_buffer);
 
-        while let Some(scanptr) = queue.pop_front() {
+        while let Some(scanptr) = stack.pop() {
             let obj = scanptr.get();
 
             if scanptr.is_heap_object() {
@@ -391,7 +397,7 @@ pub fn collect_with_evacuation(
             }
 
             obj.scan(&scope, &mut heap_view, &mut scan_buffer);
-            queue.extend(scan_buffer.drain(..));
+            stack.append(&mut scan_buffer);
         }
 
         if dump_heap {
