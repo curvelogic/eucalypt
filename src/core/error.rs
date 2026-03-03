@@ -35,7 +35,7 @@ pub enum CoreError {
     EmptyMerge(),
     #[error("merge base was not valid for merge")]
     InvalidMergeBase(),
-    #[error("target {0} not found")]
+    #[error("target '{0}' not found\n  help: use 'eu list-targets' to see available targets")]
     TargetNotFound(String),
     #[error("target {0} could not be referenced")]
     BadTarget(String),
