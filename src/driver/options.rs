@@ -651,10 +651,7 @@ impl EucalyptCli {
             return Self::try_parse_from(modified_args).unwrap_or_else(|e| e.exit());
         }
 
-        if SUBCOMMANDS.contains(&args[1].as_str())
-            || args[1] == "--help"
-            || args[1] == "-h"
-        {
+        if SUBCOMMANDS.contains(&args[1].as_str()) || args[1] == "--help" || args[1] == "-h" {
             return Self::parse();
         }
 
