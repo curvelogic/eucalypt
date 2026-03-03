@@ -800,3 +800,13 @@ pub fn test_error_063() {
 pub fn test_error_064() {
     run_error_test(&error_opts("064_has_string_not_sym.eu"));
 }
+
+#[test]
+pub fn test_error_065() {
+    run_error_test(&error_opts("065_even_predicate_hint.eu"));
+}
+
+#[test]
+pub fn test_error_066() {
+    run_error_test(&error_opts("066_odd_predicate_hint.eu"));
+}
