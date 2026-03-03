@@ -100,6 +100,15 @@ impl<'text> Parser<'text> {
         TextRange::new(start, ch)
     }
 
+    /// Calculate the start offset of the token at the given index.
+    fn token_start_at(&self, idx: usize) -> TextSize {
+        let mut ch: TextSize = 0.into();
+        for (_, s) in &self.tokens[0..idx] {
+            ch += TextSize::of(*s);
+        }
+        ch
+    }
+
     /// Operate on the event sink at the top of the stack
     fn sink(&mut self) -> &mut dyn EventSink {
         self.sink_stack.last_mut().unwrap().as_mut()
@@ -588,7 +597,8 @@ impl<'text> Parser<'text> {
                     self.sink().finish_node();
                 }
                 OPEN_BRACE => {
-                    // Start of interpolation
+                    // Start of interpolation — record the token index before consuming
+                    let open_brace_idx = self.next_token;
                     self.sink().start_node(STRING_INTERPOLATION);
                     self.sink().token(OPEN_BRACE);
                     self.next(); // consume {
@@ -600,6 +610,44 @@ impl<'text> Parser<'text> {
                     if let Some((CLOSE_BRACE, _)) = self.peek() {
                         self.sink().token(CLOSE_BRACE);
                         self.next();
+                    } else {
+                        // No closing brace immediately — consume any stray
+                        // interpolation tokens that the content parser did not
+                        // consume.  We stop if we encounter a closing brace (which
+                        // means the format spec or dotted path was merely malformed,
+                        // not truly unclosed) or the end of the enclosing string.
+                        let mut found_close = false;
+                        while let Some((k, _)) = self.peek() {
+                            if k == CLOSE_BRACE {
+                                // A closing brace is present; consume it and stop.
+                                // This handles malformed-but-closed interpolations
+                                // such as `{x:.2f}` where the parser cannot parse
+                                // the full format spec.
+                                self.sink().token(CLOSE_BRACE);
+                                self.next();
+                                found_close = true;
+                                break;
+                            }
+                            if k == STRING_LITERAL_CONTENT
+                                || k == STRING_PATTERN_END
+                                || k == C_STRING_PATTERN_END
+                                || k == RAW_STRING_PATTERN_END
+                                || k == end_kind
+                            {
+                                // Stop before the end of the string — these
+                                // will be consumed by the outer loop.
+                                break;
+                            }
+                            self.sink().token(k);
+                            self.next();
+                        }
+                        if !found_close {
+                            let open_start = self.token_start_at(open_brace_idx);
+                            let open_len = TextSize::of(self.tokens[open_brace_idx].1);
+                            self.errors.push(ParseError::UnclosedStringInterpolation {
+                                range: TextRange::at(open_start, open_len),
+                            });
+                        }
                     }
 
                     self.sink().finish_node(); // end STRING_INTERPOLATION
