@@ -122,6 +122,16 @@ fn str_lookup_notes(key: &str) -> Vec<String> {
              e.g. `42 str.fmt(\"%10d\")` for right-padding"
                 .to_string(),
         ],
+        "upper" | "upper-case" | "toUpperCase" | "to_upper_case" | "uppercase" => {
+            vec!["to convert a string to upper case, use 'str.to-upper', \
+             e.g. 'text str.to-upper'"
+                .to_string()]
+        }
+        "lower" | "lower-case" | "toLowerCase" | "to_lower_case" | "lowercase" => {
+            vec!["to convert a string to lower case, use 'str.to-lower', \
+             e.g. 'text str.to-lower'"
+                .to_string()]
+        }
         _ => vec![],
     }
 }
@@ -169,7 +179,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
              strings do not have fields"
                 .to_string(),
             "to apply string functions, use pipeline catenation, \
-             e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
+             e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
                 .to_string(),
             "note: 'str' is a namespace of string functions, not a type conversion function; \
              use 'str.of(x)' or string interpolation to convert values to strings"

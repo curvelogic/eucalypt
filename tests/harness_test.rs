@@ -810,3 +810,13 @@ pub fn test_error_065() {
 pub fn test_error_066() {
     run_error_test(&error_opts("066_odd_predicate_hint.eu"));
 }
+
+#[test]
+pub fn test_error_067() {
+    run_error_test(&error_opts("067_str_upper_hint.eu"));
+}
+
+#[test]
+pub fn test_error_068() {
+    run_error_test(&error_opts("068_str_lower_hint.eu"));
+}
