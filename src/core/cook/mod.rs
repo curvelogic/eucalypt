@@ -107,9 +107,15 @@ impl Cooker {
 
     /// Resolve precedence and handle expression anaphora
     fn cook_soup(&mut self, exprs: &[RcExpr]) -> Result<RcExpr, CoreError> {
+        // Pre-scan for explicit anaphora in nested sub-expressions
+        // BEFORE fill_gaps, so implicit section anaphora are not detected.
+        let has_deep_anaphora =
+            !self.in_expr_anaphor_scope && exprs.iter().any(Self::contains_expr_anaphora);
+
         let (filled, naked_anaphora) = self.insert_anaphora(exprs);
 
-        let wrap_lambda = !self.in_expr_anaphor_scope && !naked_anaphora.is_empty();
+        let wrap_lambda =
+            !self.in_expr_anaphor_scope && (!naked_anaphora.is_empty() || has_deep_anaphora);
 
         if wrap_lambda {
             self.in_expr_anaphor_scope = true;
