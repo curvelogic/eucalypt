@@ -637,6 +637,11 @@ pub fn test_error_036() {
 }
 
 #[test]
+pub fn test_error_037() {
+    run_error_test(&error_opts("037_double_anaphora.eu"));
+}
+
+#[test]
 pub fn test_error_040() {
     run_error_test(&error_opts("040_json_error_format.eu"));
 }
