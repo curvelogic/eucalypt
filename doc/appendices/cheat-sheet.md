@@ -304,6 +304,29 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceil` / `round` | Rounding |
 
+### Arrays (`arr` namespace)
+
+| Function | Description |
+|----------|-------------|
+| `arr.zeros(shape)` | Create array of zeros; `shape` is a list of integers |
+| `arr.fill(shape, val)` | Create array filled with `val` |
+| `arr.from-flat(shape, vals)` | Create array from flat list of numbers |
+| `arr.get(a, coords)` | Element at coordinate list `coords` |
+| `arr.set(a, coords, val)` | New array with element at `coords` set to `val` |
+| `arr.shape(a)` | Shape as list of integers |
+| `arr.rank(a)` | Number of dimensions |
+| `arr.length(a)` | Total number of elements |
+| `arr.to-list(a)` | Flat list of elements in row-major order |
+| `arr.array?(x)` / `is-array?(x)` | Is `x` an array? |
+| `arr.transpose(a)` | Reverse all axes |
+| `arr.reshape(a, shape)` | Reshape (total elements must match) |
+| `arr.slice(a, axis, idx)` | Slice along `axis` at `idx` (reduces rank by 1) |
+| `arr.add(a, b)` / `arr.sub` / `arr.mul` / `arr.div` | Element-wise arithmetic; `b` may be scalar |
+| `a !! coords` | Index operator; for arrays, `coords` is a list e.g. `[row, col]` |
+
+The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
+either operand is an array. Scalar broadcasting is supported.
+
 ### IO
 
 | Binding | Description |
