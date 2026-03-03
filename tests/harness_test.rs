@@ -695,3 +695,8 @@ pub fn test_error_044() {
 pub fn test_error_045() {
     run_error_test(&error_opts("045_list_plus_concat.eu"));
 }
+
+#[test]
+pub fn test_error_046() {
+    run_error_test(&error_opts("046_import_keyword.eu"));
+}
