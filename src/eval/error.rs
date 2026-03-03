@@ -97,6 +97,30 @@ fn format_not_callable(actual_type: &str) -> String {
     }
 }
 
+/// Format a "function where value expected" error message.
+///
+/// This error typically occurs when operator precedence causes a
+/// function (e.g. a partially applied operator) to be passed where a
+/// scalar value was expected. The most common trigger is the low
+/// precedence of catenation (juxtaposition) in expressions like
+/// `xs head + 1` which parses as `xs (head + 1)` rather than the
+/// intended `(xs head) + 1`.
+fn format_cannot_return_fun(expected_tags: &[u8]) -> String {
+    let mut msg = if expected_tags.is_empty() {
+        "type mismatch: received a function where a value was expected".to_string()
+    } else {
+        format!(
+            "type mismatch: received a function where {} was expected",
+            display_expected_tags(expected_tags)
+        )
+    };
+    msg.push_str(
+        "\n  help: this often happens due to operator precedence; \
+         try adding parentheses, e.g. `(xs f) + 1` instead of `xs f + 1`",
+    );
+    msg
+}
+
 /// Convert a data tag number to a human-readable type name for error messages
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
@@ -185,8 +209,8 @@ pub enum ExecutionError {
     NoBranchForDataTag(Smid, u8, Vec<u8>),
     #[error("no branch for native")]
     NoBranchForNative,
-    #[error("cannot return function into case table without default")]
-    CannotReturnFunToCase,
+    #[error("{}", format_cannot_return_fun(.1))]
+    CannotReturnFunToCase(Smid, Vec<u8>),
     #[error("panic: {0}")]
     Panic(String),
     #[error("machine did not terminate after {0} steps")]
@@ -249,6 +273,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
+            ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
         }
