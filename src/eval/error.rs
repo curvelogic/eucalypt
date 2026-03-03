@@ -279,7 +279,7 @@ pub enum ExecutionError {
     #[error("machine did not terminate after {0} steps")]
     DidntTerminate(usize),
     #[error("infinite loop detected: binding refers to itself")]
-    BlackHole,
+    BlackHole(Smid),
     #[error(transparent)]
     Compile(#[from] CompileError),
     #[error(transparent)]
@@ -338,6 +338,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
+            ExecutionError::BlackHole(s) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
         }
@@ -362,6 +363,14 @@ impl ExecutionError {
             }
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
                 data_tag_mismatch_notes(*actual, expected)
+            }
+            ExecutionError::BlackHole(_) => {
+                vec![
+                    "a binding that references itself directly or indirectly creates an infinite loop"
+                        .to_string(),
+                    "use a function parameter instead of self-reference, or break the cycle"
+                        .to_string(),
+                ]
             }
             _ => vec![],
         };
