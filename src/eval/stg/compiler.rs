@@ -118,6 +118,32 @@ impl CompileError {
                         "example: ` { import: path/to/file.eu }  my-block: { ... }".to_string(),
                     );
                 }
+                // Suggest eucalypt equivalents for functions common in other languages
+                // that have different names or do not exist in eucalypt.
+                match name.as_str() {
+                    "flatten" | "flat" => notes.push(
+                        "to flatten a list of lists, use 'concat', e.g. 'xs concat'".to_string(),
+                    ),
+                    "length" | "len" | "size" => notes.push(
+                        "to count the elements of a list, use 'count', e.g. 'xs count'".to_string(),
+                    ),
+                    "contains" | "includes" => notes.push(
+                        "to test if a list contains a value, use 'any', \
+                         e.g. xs any(42 = _) to test for element 42"
+                            .to_string(),
+                    ),
+                    "join" => notes.push(
+                        "to join strings with a separator, use 'join-on', \
+                         e.g. xs join-on(sep) where sep is the separator string"
+                            .to_string(),
+                    ),
+                    "index" | "get" | "at" => notes.push(
+                        "to index into a list, use 'nth', e.g. 'xs nth(0)' for \
+                         the first element, or the '!!' operator: xs !! 0"
+                            .to_string(),
+                    ),
+                    _ => {}
+                }
                 diag.with_notes(notes)
             }
             _ => diag,
