@@ -122,12 +122,17 @@ mixed({x  y: b}): x + b
 # Fixed-length list destructuring
 f-sum([a, b, c]): a + b + c
 f-first([a, b]): a
+
+# Head/tail cons destructuring — h binds to the first element, t to the rest
+list-head([h : t]): h
+list-tail([h : t]): t
 ```
 
 Destructuring patterns can be mixed with normal parameters:
 
 ```eu
 f(n, [a, b]): n * (a + b)
+f(n, [h : t]): n + h
 ```
 
 See [Functions and Combinators](../guide/functions-and-combinators.md)

@@ -1,0 +1,44 @@
+##
+## 093: Head/tail cons destructuring in function parameters
+##
+
+# Extract the head of a list
+list-head([h : t]): h
+
+# Extract the tail of a list
+list-tail([h : t]): t
+
+# Sum all elements by cons destructuring (recursive via standard library)
+head-val([h : t]): h
+tail-val([h : t]): t
+
+tests: {
+
+  ` "Head extraction"
+  heads: {
+    ` "head of a three-element list"
+    a: list-head([10, 20, 30]) //= 10
+    ` "head of a two-element list"
+    b: list-head([1, 2]) //= 1
+    ` "head of a single-element list"
+    c: list-head([42]) //= 42
+  }
+
+  ` "Tail extraction"
+  tails: {
+    ` "tail of a two-element list is a list"
+    a: list-tail([1, 2]) //= [2]
+    ` "tail head — second element"
+    b: list-head(list-tail([10, 20, 30])) //= 20
+  }
+
+  ` "Multiple parameters with cons pattern"
+  multi: {
+    ` "head and tail of different lists"
+    a: head-val([5, 6, 7]) //= 5
+    b: tail-val([5, 6, 7]) head-val //= 6
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

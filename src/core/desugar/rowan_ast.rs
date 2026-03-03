@@ -71,6 +71,16 @@ struct ListDestructureEntry {
     elements: Vec<ListElementBinding>,
 }
 
+/// Entry for a head/tail cons destructuring let.
+struct ConsDestructureEntry {
+    /// Synthetic parameter name (e.g. `__p0`)
+    synthetic_name: String,
+    /// FreeVar for the head binding (`HEAD(__p0)`)
+    head_var: moniker::FreeVar<String>,
+    /// FreeVar for the tail binding (`TAIL(__p0)`)
+    tail_var: moniker::FreeVar<String>,
+}
+
 /// A parsed parameter pattern in a function declaration
 enum ParamPattern {
     /// Simple identifier: `x`
@@ -85,6 +95,15 @@ enum ParamPattern {
     ///
     /// Contains the binding names for each positional element.
     List(Vec<String>),
+    /// Head/tail cons destructuring: `[h : t]`.
+    ///
+    /// `head_name` binds to `HEAD(param)` and `tail_name` binds to `TAIL(param)`.
+    Cons {
+        /// Name to bind to the head element.
+        head_name: String,
+        /// Name to bind to the tail list.
+        tail_name: String,
+    },
 }
 
 /// Parse a block parameter pattern `{x y}` or `{x: a  y: b}` from a
@@ -176,6 +195,37 @@ fn parse_list_pattern(list: &rowan_ast::List) -> Option<Vec<String>> {
     }
 }
 
+/// Parse a head/tail cons parameter pattern `[h : t]` from a Rowan `List`
+/// AST node that was identified as a cons pattern (has a COLON child token).
+///
+/// Both the head soup and the tail soup must be single normal identifiers.
+/// Returns `(head_name, tail_name)` or `None` if the pattern is malformed.
+fn parse_cons_pattern(list: &rowan_ast::List) -> Option<(String, String)> {
+    let (head_soup, tail_soup) = list.cons_parts()?;
+
+    let head_name = if let Some(rowan_ast::Element::Name(name)) = head_soup.singleton() {
+        if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+            normal.text().to_string()
+        } else {
+            return None; // Head is not a normal identifier
+        }
+    } else {
+        return None; // Head is not a single name
+    };
+
+    let tail_name = if let Some(rowan_ast::Element::Name(name)) = tail_soup.singleton() {
+        if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
+            normal.text().to_string()
+        } else {
+            return None; // Tail is not a normal identifier
+        }
+    } else {
+        return None; // Tail is not a single name
+    };
+
+    Some((head_name, tail_name))
+}
+
 /// Parse a function parameter soup into a `ParamPattern`.
 ///
 /// Returns `None` if the soup is not a valid single-element parameter.
@@ -191,7 +241,16 @@ fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
         Some(rowan_ast::Element::Block(block)) => {
             parse_block_pattern(&block).ok().map(ParamPattern::Block)
         }
-        Some(rowan_ast::Element::List(list)) => parse_list_pattern(&list).map(ParamPattern::List),
+        Some(rowan_ast::Element::List(list)) => {
+            if list.is_cons_pattern() {
+                parse_cons_pattern(&list).map(|(head_name, tail_name)| ParamPattern::Cons {
+                    head_name,
+                    tail_name,
+                })
+            } else {
+                parse_list_pattern(&list).map(ParamPattern::List)
+            }
+        }
         _ => None,
     }
 }
@@ -202,6 +261,8 @@ enum DestructureLet {
     Block(DestructureEntry),
     /// List destructuring: index each element with LIST.NTH.
     List(ListDestructureEntry),
+    /// Cons destructuring: bind head and tail via HEAD/TAIL.
+    Cons(ConsDestructureEntry),
 }
 
 impl DestructureLet {
@@ -209,6 +270,7 @@ impl DestructureLet {
         match self {
             DestructureLet::Block(e) => &e.synthetic_name,
             DestructureLet::List(e) => &e.synthetic_name,
+            DestructureLet::Cons(e) => &e.synthetic_name,
         }
     }
 }
@@ -237,6 +299,8 @@ fn desugar_declaration_body_with_patterns(
     let mut block_raw: Vec<(String, Vec<(String, String)>)> = Vec::new();
     // Raw data for list patterns: (synthetic_name, [binding_name])
     let mut list_raw: Vec<(String, Vec<String>)> = Vec::new();
+    // Raw data for cons patterns: (synthetic_name, head_name, tail_name)
+    let mut cons_raw: Vec<(String, String, String)> = Vec::new();
     // Ordered sequence of lets to emit — preserves argument order for correct nesting.
     let mut let_order: Vec<DestructureLet> = Vec::new();
     let mut synthetic_counter = 0usize;
@@ -277,6 +341,24 @@ fn desugar_declaration_body_with_patterns(
                     elements: Vec::new(),
                 }));
             }
+            ParamPattern::Cons {
+                head_name,
+                tail_name,
+            } => {
+                let synthetic_name = format!("__p{}", synthetic_counter);
+                synthetic_counter += 1;
+                all_env_names.push(synthetic_name.clone());
+                lambda_param_names.push(synthetic_name.clone());
+                all_env_names.push(head_name.clone());
+                all_env_names.push(tail_name.clone());
+                cons_raw.push((synthetic_name.clone(), head_name.clone(), tail_name.clone()));
+                // Placeholder — resolved after env push
+                let_order.push(DestructureLet::Cons(ConsDestructureEntry {
+                    synthetic_name,
+                    head_var: moniker::FreeVar::fresh_named("__head_placeholder"),
+                    tail_var: moniker::FreeVar::fresh_named("__tail_placeholder"),
+                }));
+            }
         }
     }
 
@@ -294,6 +376,7 @@ fn desugar_declaration_body_with_patterns(
     // Resolve block destructure entries now that names are in the environment.
     let mut block_raw_iter = block_raw.into_iter();
     let mut list_raw_iter = list_raw.into_iter();
+    let mut cons_raw_iter = cons_raw.into_iter();
     for slot in &mut let_order {
         match slot {
             DestructureLet::Block(entry) => {
@@ -319,6 +402,11 @@ fn desugar_declaration_body_with_patterns(
                         ListElementBinding { index, binding_var }
                     })
                     .collect();
+            }
+            DestructureLet::Cons(entry) => {
+                let (_, head_name, tail_name) = cons_raw_iter.next().unwrap();
+                entry.head_var = desugarer.env().get(&head_name).unwrap().clone();
+                entry.tail_var = desugarer.env().get(&tail_name).unwrap().clone();
             }
         }
     }
@@ -408,6 +496,25 @@ fn desugar_declaration_body_with_patterns(
                         (Binder(eb.binding_var.clone()), Embed(head_call))
                     })
                     .collect();
+
+                body = RcExpr::from(Expr::Let(
+                    smid,
+                    Scope::new(Rec::new(bindings), body),
+                    LetType::DestructureListLet,
+                ));
+            }
+            DestructureLet::Cons(entry) => {
+                // Cons pattern `[h : t]` desugars to:
+                //   h = HEAD(__p0)
+                //   t = TAIL(__p0)
+                let head_call =
+                    core::app(smid, core::bif(smid, "HEAD"), vec![synthetic_var.clone()]);
+                let tail_call = core::app(smid, core::bif(smid, "TAIL"), vec![synthetic_var]);
+
+                let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = vec![
+                    (Binder(entry.head_var.clone()), Embed(head_call)),
+                    (Binder(entry.tail_var.clone()), Embed(tail_call)),
+                ];
 
                 body = RcExpr::from(Expr::Let(
                     smid,

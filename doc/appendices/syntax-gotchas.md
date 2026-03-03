@@ -221,6 +221,28 @@ division), not precise division.
 **Rule**: Use `÷` for exact/precise division. Use `/` only when you
 want integer (floor) division.
 
+## Cons Patterns vs Normal Lists
+
+The `[h : t]` cons pattern is only valid in a **function parameter position**.
+A colon inside a list literal in an expression context is not valid:
+
+```eu
+# Valid — cons pattern in a function parameter
+list-head([h : t]): h
+
+# Invalid — colon is not a list separator in expression context
+bad: [1 : rest]   # parse error
+```
+
+In expression context, use `cons`, `head`, and `tail` from the prelude
+instead:
+
+```eu
+xs: [1, 2, 3]
+first: xs head    # = 1
+rest: xs tail     # = [2, 3]
+```
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:
