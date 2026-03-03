@@ -425,6 +425,11 @@ pub fn test_harness_086() {
 }
 
 #[test]
+pub fn test_harness_090() {
+    run_test(&opts("090_relative_imports.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

@@ -1,0 +1,6 @@
+` { import: "aux/aux_relative_import.eu" }
+rel: relative-value
+
+` :suppress
+pass: rel = 42
+RESULT: if(pass, :PASS, :FAIL)

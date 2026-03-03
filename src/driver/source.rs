@@ -229,10 +229,46 @@ impl SourceLoader {
         let inputs = self.imports.analyse_rowan_ast(input.clone(), ast)?;
         self.imports.check_for_cycles()?;
 
-        for import_input in inputs {
-            self.load(&import_input)?;
+        // Resolve imports relative to the importing file's directory.
+        //
+        // When a file at `dir/foo.eu` imports `sub/bar.eu`, the path
+        // `sub/bar.eu` should be resolved relative to `dir/` in addition
+        // to the global lib_path. We achieve this by temporarily extending
+        // the lib_path with the importing file's directory whilst loading
+        // its transitive imports.
+        let import_dir = self.find_source_dir(locator);
+        if let Some(dir) = import_dir {
+            self.lib_path.push(dir);
+            for import_input in inputs {
+                self.load(&import_input)?;
+            }
+            self.lib_path.pop();
+        } else {
+            for import_input in inputs {
+                self.load(&import_input)?;
+            }
         }
+
         Ok(file_id)
+    }
+
+    /// Find the directory containing the source file identified by `locator`,
+    /// searching the lib_path. Returns `None` for non-filesystem locators.
+    fn find_source_dir(&self, locator: &Locator) -> Option<PathBuf> {
+        if let Locator::Fs(path) = locator {
+            // Search lib_path entries
+            for libdir in &self.lib_path {
+                let candidate = libdir.join(path);
+                if candidate.exists() {
+                    return candidate.parent().map(|p| p.to_path_buf());
+                }
+            }
+            // Try the path directly (absolute or CWD-relative)
+            if path.exists() {
+                return path.parent().map(|p| p.to_path_buf());
+            }
+        }
+        None
     }
 
     /// Load and parse the source from a source specified by locator
