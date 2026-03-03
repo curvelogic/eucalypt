@@ -32,7 +32,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Sym(_) => IntrinsicType::Symbol,
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
         Native::NdArray(_) => IntrinsicType::Array,
-        Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
+        Native::Index(_) | Native::Set(_) | Native::Block(_) => IntrinsicType::Unknown,
     }
 }
 

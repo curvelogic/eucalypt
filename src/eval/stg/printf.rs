@@ -454,6 +454,11 @@ pub fn fmt(
                     "cannot format array".to_string(),
                 ))
             }
+            Native::Block(_) => {
+                return Err(PrintfError::InvalidFormatString(
+                    "cannot format block".to_string(),
+                ))
+            }
         }
         Ok(output)
     } else if !fmt_string.starts_with('%') {
