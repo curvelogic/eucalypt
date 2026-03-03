@@ -1375,15 +1375,12 @@ impl CallGlobal1 for IsBlock {}
 
 /// Compile a lookup failure for a statically known missing key.
 ///
-/// Generates a PANIC("key 'X' not found in block") call. This produces
-/// a clearer error message than the previous generic "Key not found".
-pub fn lookup_fail(key: &str, _obj: super::syntax::Ref) -> Rc<StgSyn> {
+/// Uses the LookupFail intrinsic so that the runtime can collect
+/// block keys and offer "did you mean?" suggestions via edit distance.
+pub fn lookup_fail(key: &str, obj: super::syntax::Ref) -> Rc<StgSyn> {
     use dsl::*;
 
-    let_(
-        vec![value(box_str(format!("key '{key}' not found in block")))],
-        Panic.global(lref(0)),
-    )
+    LookupFail.global(sym(key), obj)
 }
 
 /// Compile a panic for a missing key (legacy fallback, kept for tests)
