@@ -367,6 +367,12 @@ or: __OR
     precedence: :eq }
 (l != r): not(__EQ(l, r))
 
+` { doc: "`l ≠ r` - `true` if and only if value `l` is not equal to value `r`."
+    export: :suppress
+    associates: :left
+    precedence: :eq }
+(l ≠ r): l != r
+
 ##
 ## Arithmetic
 ##
@@ -431,11 +437,23 @@ or: __OR
     precedence: :cmp }
 (l <= r): __LTE(l, r)
 
+` { doc: "`l ≤ r` - `true` if `l` is less than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
+    export: :suppress
+    associates: :left
+    precedence: :cmp }
+(l ≤ r): l <= r
+
 ` { doc: "`l >= r` - `true` if `l` is greater than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
     export: :suppress
     associates: :left
     precedence: :cmp }
 (l >= r): __GTE(l, r)
+
+` { doc: "`l ≥ r` - `true` if `l` is greater than or equal to `r`. Works on numbers, strings, symbols, and datetimes."
+    export: :suppress
+    associates: :left
+    precedence: :cmp }
+(l ≥ r): l >= r
 
 ` "`inc(x)` - increment number `x` by 1."
 inc: _ + 1
