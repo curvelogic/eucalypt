@@ -6,6 +6,7 @@ pub mod bump;
 pub mod collect;
 pub mod header;
 pub mod heap;
+pub mod heap_block;
 pub mod infotable;
 pub mod loader;
 pub mod lob;
