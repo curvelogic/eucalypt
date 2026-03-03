@@ -163,8 +163,8 @@ pub struct MachineState {
     closure: SynClosure,
     /// Globals (primarily STG wrappers for intrinsics)
     globals: RefPtr<EnvFrame>,
-    /// Stack of continuations (outside heap)
-    stack: Vec<RefPtr<Continuation>>,
+    /// Stack of continuations (stored inline, not on the eucalypt heap)
+    stack: Vec<Continuation>,
     /// Termination flag. Set when machine has terminated
     terminated: bool,
     /// Annotation to paint on any environments we create
@@ -212,9 +212,8 @@ impl MachineState {
     }
 
     /// Push a new continuation onto the stack
-    fn push(&mut self, view: MutatorHeapView, cont: Continuation) -> Result<(), ExecutionError> {
-        let ptr = view.alloc(cont)?.as_ptr();
-        self.stack.push(ptr);
+    fn push(&mut self, _view: MutatorHeapView, cont: Continuation) -> Result<(), ExecutionError> {
+        self.stack.push(cont);
         Ok(())
     }
 
@@ -386,9 +385,7 @@ impl MachineState {
         meta: &Ref,
         body: &Ref,
     ) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::DeMeta {
                     handler,
@@ -410,9 +407,9 @@ impl MachineState {
                 Continuation::Update { environment, index } => {
                     self.update(view, environment, index)?;
                 }
-                _ => {
+                other => {
                     self.closure = self.nav(view).resolve(body)?;
-                    self.stack.push(cont);
+                    self.stack.push(other);
                 }
             }
         } else {
@@ -433,9 +430,7 @@ impl MachineState {
         view: MutatorHeapView<'_>,
         value: &Native,
     ) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::Branch {
                     fallback,
@@ -536,9 +531,7 @@ impl MachineState {
         tag: Tag,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::Branch {
                     min_tag,
@@ -639,9 +632,7 @@ impl MachineState {
 
     /// Return function to either apply to args or default case branch
     fn return_fun(&mut self, view: MutatorHeapView) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::ApplyTo { args, annotation } => {
                     let excess = args.len() as isize - self.closure.arity() as isize;
@@ -725,8 +716,7 @@ impl MachineState {
     /// annotation, to attribute errors to their enclosing call context.
     fn nearest_stack_annotation(&self, view: MutatorHeapView) -> Smid {
         for cont in self.stack.iter().rev() {
-            let c = view.scoped(*cont);
-            let smid = match &*c {
+            let smid = match cont {
                 Continuation::Branch { annotation, .. }
                 | Continuation::ApplyTo { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
@@ -753,15 +743,14 @@ impl MachineState {
     ) -> impl Iterator<Item = Smid> + 'a {
         let mut prev = Smid::default();
         self.stack.iter().rev().filter_map(move |cont| {
-            let c = view.scoped(*cont);
-            let smid = match &*c {
-                Continuation::Branch { annotation, .. } => *annotation,
+            let smid = match cont {
+                Continuation::Branch { annotation, .. }
+                | Continuation::ApplyTo { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
                     let cont_env = view.scoped(*environment);
                     cont_env.annotation()
                 }
-                Continuation::ApplyTo { annotation, .. } => *annotation,
             };
 
             if smid != Smid::default() && smid != prev {
@@ -849,10 +838,11 @@ impl GcScannable for MachineState {
 
         out.push(ScanPtr::new(scope, &self.closure));
 
+        // Continuations are stored inline in the Vec (off the eucalypt heap).
+        // Scan their internal heap pointers directly instead of marking the
+        // continuations themselves as heap objects.
         for cont in &self.stack {
-            if marker.mark(*cont) {
-                out.push(ScanPtr::from_non_null(scope, *cont));
-            }
+            cont.scan(scope, marker, out);
         }
     }
 
@@ -864,10 +854,9 @@ impl GcScannable for MachineState {
             self.globals = new;
         }
         self.closure.scan_and_update(heap);
+        // Update forwarded pointers within each continuation's internal fields.
         for cont in &mut self.stack {
-            if let Some(new) = heap.forwarded_to(*cont) {
-                *cont = new;
-            }
+            cont.scan_and_update(heap);
         }
     }
 }
@@ -1011,12 +1000,7 @@ impl<'a> Machine<'a> {
         let (state, view, emitter, metrics, settings, intrinsics) = self.facilities();
 
         if settings.trace_steps {
-            let stack = state
-                .stack
-                .iter()
-                .rev()
-                .map(|p| (*(view.scoped(*p))).to_string())
-                .format(":");
+            let stack = state.stack.iter().rev().map(|c| c.to_string()).format(":");
             eprintln!("M ⟪{}⟫ <{}>", ScopeAndClosure(&view, &state.closure), stack);
         }
 
