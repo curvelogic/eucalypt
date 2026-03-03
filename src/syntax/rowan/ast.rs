@@ -708,11 +708,11 @@ impl DeclarationHead {
                     if let Some(args) = args {
                         let mut errors = vec![];
                         for arg in args.items() {
-                            if arg
+                            let valid = arg
                                 .singleton()
-                                .and_then(|e| e.as_normal_identifier())
-                                .is_none()
-                            {
+                                .map(|e| e.is_valid_param_pattern())
+                                .unwrap_or(false);
+                            if !valid {
                                 errors.push(ParseError::InvalidFormalParameter {
                                     head_range: self.syntax().text_range(),
                                     range: arg.syntax().text_range(),
@@ -1138,6 +1138,27 @@ impl Element {
                 _ => None,
             }),
             _ => None,
+        }
+    }
+
+    /// Return true if this element is a valid formal parameter pattern.
+    ///
+    /// A valid parameter is one of:
+    /// - A normal identifier: `x`
+    /// - A block pattern (block destructuring): `{x y}`
+    /// - A list pattern (list destructuring): `[a, b, c]`
+    pub fn is_valid_param_pattern(&self) -> bool {
+        match self {
+            Element::Name(n) => n
+                .identifier()
+                .and_then(|id| match id {
+                    Identifier::NormalIdentifier(_) => Some(()),
+                    _ => None,
+                })
+                .is_some(),
+            Element::Block(_) => true,
+            Element::List(_) => true,
+            _ => false,
         }
     }
 }
