@@ -52,9 +52,10 @@ pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
             return Ok(0);
         }
         Err(e) => {
-            return Err(EucalyptError::FileCouldNotBeRead(format!(
-                "failed to load .expect sidecar: {e}"
-            )));
+            return Err(EucalyptError::FileCouldNotBeRead(
+                "failed to load .expect sidecar".to_string(),
+                Some(e.to_string()),
+            ));
         }
     };
 
@@ -76,9 +77,10 @@ pub fn resolve_input(opt: &EucalyptOptions, input: &Input) -> Result<PathBuf, Eu
         }
         Err(EucalyptError::FileCouldNotBeRead(
             path.to_string_lossy().to_string(),
+            None,
         ))
     } else {
-        Err(EucalyptError::FileCouldNotBeRead(format!("{input}")))
+        Err(EucalyptError::FileCouldNotBeRead(format!("{input}"), None))
     }
 }
 
