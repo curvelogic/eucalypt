@@ -29,9 +29,10 @@ use super::{
         machine_return_bool, machine_return_ndarray, machine_return_num, ndarray_arg, num_arg,
     },
     syntax::{
-        dsl::{annotated_lambda, app_bif, force, local, lref, unbox_num},
+        dsl::{annotated_lambda, app_bif, data, force, let_, local, lref, unbox_num, value},
         LambdaForm,
     },
+    tags::DataConstructor,
 };
 
 // ---------------------------------------------------------------------------
@@ -171,7 +172,10 @@ impl CallGlobal2 for ArrayFromFlat {}
 // Access and query
 // ---------------------------------------------------------------------------
 
-/// ARRAY.GET(array, coords_list) — get element at coordinates
+/// ARRAY.GET(coords_list, array) — get element at coordinates
+///
+/// Arg order is (coords, array) so pipeline style works:
+/// `my_array arr.get([0, 1])` = `ARRAY.GET([0, 1], my_array)`
 pub struct ArrayGet;
 
 impl StgIntrinsic for ArrayGet {
@@ -180,17 +184,23 @@ impl StgIntrinsic for ArrayGet {
     }
 
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        // Force array arg, then SeqNumList on coords arg.
-        // After first force: lref(0)=forced_array, lref(1)=array, lref(2)=coords
-        // After second force: lref(0)=concrete_coords, lref(1)=forced_array, lref(2)=array, lref(3)=coords
+        // SeqNumList on coords (lref(0)), force array (lref(1)).
+        // After SeqNumList force: lref(0)=concrete_coords, lref(1)=coords, lref(2)=array
+        // After force(array):     lref(0)=forced_array, lref(1)=concrete_coords, lref(2)=coords, lref(3)=array
+        //
+        // execute args: (coords=lref(1), array=lref(0))
+        // Result is boxed as BoxedNumber to match the default wrapper convention.
         let bif_index: u8 = self.index().try_into().unwrap();
         annotated_lambda(
-            2, // [array, coords]
+            2, // [coords, array]
             force(
-                local(0),
+                SeqNumList.global(lref(0)),
                 force(
-                    SeqNumList.global(lref(2)),
-                    app_bif(bif_index, vec![lref(1), lref(0)]),
+                    local(2),
+                    let_(
+                        vec![value(app_bif(bif_index, vec![lref(1), lref(0)]))],
+                        data(DataConstructor::BoxedNumber.tag(), vec![lref(0)]),
+                    ),
                 ),
             ),
             annotation,
@@ -204,8 +214,8 @@ impl StgIntrinsic for ArrayGet {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let arr = ndarray_arg(machine, view, &args[0])?;
-        let coords = num_list_to_usize_vec(machine, view, &args[1])?;
+        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let arr = ndarray_arg(machine, view, &args[1])?;
         match arr.get(&coords) {
             Some(val) => machine_return_num(
                 machine,
@@ -230,28 +240,29 @@ impl StgIntrinsic for ArraySet {
     }
 
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        // Force array, SeqNumList coords, unbox+force value.
+        // Arg order: (coords, val, array) for pipeline use.
+        // SeqNumList on coords (lref(0)), unbox+force val (lref(1)), force array (lref(2)).
         //
-        // Env trace (force uses from_closure, switch/unbox uses env_from_data_args):
-        // lambda:           lref(0)=array, lref(1)=coords, lref(2)=val
-        // force(array):     lref(0)=forced_array, lref(1)=array, lref(2)=coords, lref(3)=val
-        // force(SeqNumList(coords)): lref(0)=concrete_coords, lref(1)=forced_array, lref(2)=array, lref(3)=coords, lref(4)=val
-        // unbox_num(val=lref(4)): lref(0)=inner_num, lref(1)=concrete_coords, lref(2)=forced_array, lref(3)=array, lref(4)=coords, lref(5)=val
-        // force(inner_num): lref(0)=raw_num, lref(1)=inner_num, lref(2)=concrete_coords, lref(3)=forced_array, ...
+        // Env trace:
+        // lambda:                    lref(0)=coords, lref(1)=val, lref(2)=array
+        // force(SeqNumList(coords)): lref(0)=concrete_coords, lref(1)=coords, lref(2)=val, lref(3)=array
+        // unbox_num(val=lref(2)):    lref(0)=inner_num, lref(1)=concrete_coords, lref(2)=coords, lref(3)=val, lref(4)=array
+        // force(inner_num):          lref(0)=raw_num, lref(1)=inner_num, lref(2)=concrete_coords, lref(3)=coords, lref(4)=val, lref(5)=array
+        // force(array=lref(5)):      lref(0)=forced_array, lref(1)=raw_num, lref(2)=inner_num, lref(3)=concrete_coords, ...
         //
-        // execute args: (array=lref(3), coords=lref(2), val=lref(0))
+        // execute args: (coords=lref(3), val=lref(1), array=lref(0))
         let bif_index: u8 = self.index().try_into().unwrap();
         annotated_lambda(
-            3, // [array, coords, val]
+            3, // [coords, val, array]
             force(
-                local(0),
-                force(
-                    SeqNumList.global(lref(2)),
-                    unbox_num(
-                        local(4),
+                SeqNumList.global(lref(0)),
+                unbox_num(
+                    local(2),
+                    force(
+                        local(0),
                         force(
-                            local(0),
-                            app_bif(bif_index, vec![lref(3), lref(2), lref(0)]),
+                            local(5),
+                            app_bif(bif_index, vec![lref(3), lref(1), lref(0)]),
                         ),
                     ),
                 ),
@@ -267,9 +278,9 @@ impl StgIntrinsic for ArraySet {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let arr = ndarray_arg(machine, view, &args[0])?;
-        let coords = num_list_to_usize_vec(machine, view, &args[1])?;
-        let value = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0);
+        let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
+        let arr = ndarray_arg(machine, view, &args[2])?;
         match arr.with_set(&coords, value) {
             Some(new_arr) => machine_return_ndarray(machine, view, new_arr),
             None => Err(ExecutionError::Panic(
@@ -386,8 +397,14 @@ impl StgIntrinsic for ArrayIsArray {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let native = machine.nav(view).resolve_native(&args[0])?;
-        machine_return_bool(machine, view, matches!(native, Native::NdArray(_)))
+        // resolve_native returns Err for non-natives (e.g. lists, blocks).
+        // In that case, the value is definitely not an array.
+        let is_array = machine
+            .nav(view)
+            .resolve_native(&args[0])
+            .map(|n| matches!(n, Native::NdArray(_)))
+            .unwrap_or(false);
+        machine_return_bool(machine, view, is_array)
     }
 }
 
@@ -428,23 +445,21 @@ impl StgIntrinsic for ArrayReshape {
     }
 
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        // Force array arg, then SeqNumList on new_shape arg.
+        // Arg order: (new_shape, array) for pipeline use.
+        // SeqNumList on new_shape (lref(0)), force array (lref(1)).
         //
         // Env trace:
-        // lambda:           lref(0)=array, lref(1)=new_shape
-        // force(array):     lref(0)=forced_array, lref(1)=array, lref(2)=new_shape
-        // force(SeqNumList(new_shape)): lref(0)=concrete_shape, lref(1)=forced_array, lref(2)=array, lref(3)=new_shape
+        // lambda:                       lref(0)=new_shape, lref(1)=array
+        // force(SeqNumList(new_shape)): lref(0)=concrete_shape, lref(1)=new_shape, lref(2)=array
+        // force(array=lref(2)):         lref(0)=forced_array, lref(1)=concrete_shape, lref(2)=new_shape, lref(3)=array
         //
-        // execute args: (array=lref(1), new_shape=lref(0))
+        // execute args: (new_shape=lref(1), array=lref(0))
         let bif_index: u8 = self.index().try_into().unwrap();
         annotated_lambda(
-            2, // [array, new_shape]
+            2, // [new_shape, array]
             force(
-                local(0),
-                force(
-                    SeqNumList.global(lref(2)),
-                    app_bif(bif_index, vec![lref(1), lref(0)]),
-                ),
+                SeqNumList.global(lref(0)),
+                force(local(2), app_bif(bif_index, vec![lref(1), lref(0)])),
             ),
             annotation,
         )
@@ -457,8 +472,8 @@ impl StgIntrinsic for ArrayReshape {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let arr = ndarray_arg(machine, view, &args[0])?;
-        let new_shape = num_list_to_usize_vec(machine, view, &args[1])?;
+        let new_shape = num_list_to_usize_vec(machine, view, &args[0])?;
+        let arr = ndarray_arg(machine, view, &args[1])?;
         match arr.reshape(&new_shape) {
             Some(reshaped) => machine_return_ndarray(machine, view, reshaped),
             None => Err(ExecutionError::Panic(

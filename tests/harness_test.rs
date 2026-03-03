@@ -425,6 +425,11 @@ pub fn test_harness_086() {
 }
 
 #[test]
+pub fn test_harness_087() {
+    run_test(&opts("087_arrays.eu"));
+}
+
+#[test]
 pub fn test_harness_090() {
     run_test(&opts("090_relative_imports.eu"));
 }
