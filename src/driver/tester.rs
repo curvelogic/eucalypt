@@ -416,8 +416,14 @@ impl InProcessTester {
         // report generator. The report generator (lib/test.eu) expects
         // each test entry to have stdout, stderr, validation, and stats
         // keys.
-        let escaped_reason = reason.replace('"', "\\\"").replace('\n', "\\n");
-        let escaped_stderr = actual_stderr.replace('"', "\\\"").replace('\n', "\\n");
+        let escaped_reason = reason
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
+        let escaped_stderr = actual_stderr
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
         let result_yaml = format!(
             r#"overall: {overall}
 title: {title}

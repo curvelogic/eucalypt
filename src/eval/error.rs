@@ -57,6 +57,71 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
             "arithmetic operators like '+' work on numbers, not lists".to_string(),
             "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
         ],
+        (Symbol, String) => vec![
+            "eucalypt uses symbol literals (`:name`) not strings for key names".to_string(),
+            "for example, use `has(:x)` instead of `has(\"x\")`; \
+             symbols are written with a leading colon"
+                .to_string(),
+        ],
+        _ => vec![],
+    }
+}
+
+/// Generate contextual help notes for lookup failures on common missing str.* keys.
+///
+/// Users from Python, Ruby, JavaScript, and similar languages often try
+/// method names that do not exist in eucalypt's `str` namespace.  This
+/// function returns targeted suggestions for the most common cases.
+fn str_lookup_notes(key: &str) -> Vec<String> {
+    match key {
+        "contains?" | "contains" | "includes?" | "includes" => vec![
+            "to test if a string contains a pattern, use 'str.matches?', \
+             e.g. `text str.matches?(\"pattern\")`"
+                .to_string(),
+            "note: 'str.matches?' uses a regular expression, so special \
+             characters like '.', '+', '*' must be escaped with '\\'"
+                .to_string(),
+        ],
+        "trim" | "strip" => vec!["eucalypt has no built-in trim function; \
+             use 'str.matches?' with a capture to extract without whitespace, \
+             or 'str.extract(re)' with a pattern like `\"^\\\\s*(.*?)\\\\s*$\"`"
+            .to_string()],
+        "replace" | "replace-all" | "substitute" => vec!["eucalypt has no replace function; \
+             to transform strings, use 'str.matches?' to extract groups and rebuild, \
+             or produce the output with string interpolation"
+            .to_string()],
+        "starts-with?" | "starts-with" | "start-with?" | "startswith" | "startswith?" => vec![
+            "to test if a string starts with a prefix, use 'str.matches?', \
+             e.g. `text str.matches?(\"^prefix\")`"
+                .to_string(),
+        ],
+        "ends-with?" | "ends-with" | "end-with?" | "endswith" | "endswith?" => vec![
+            "to test if a string ends with a suffix, use 'str.matches?', \
+             e.g. `text str.matches?(\"suffix$\")`"
+                .to_string(),
+        ],
+        "substring" | "substr" | "slice" => vec!["eucalypt has no substring function; \
+             use 'str.extract(re)' with a capturing regex to extract a portion of a string"
+            .to_string()],
+        "reverse" => vec!["eucalypt has no built-in string reverse function; \
+             use 'str.letters' to get individual characters, then 'reverse' the list, \
+             then 'str.join-on(\"\")'"
+            .to_string()],
+        "to-string" | "to_string" | "toString" => vec![
+            "to convert a value to a string, use 'str.of', e.g. `str.of(42)`, \
+             or string interpolation: `\"{42}\"`"
+                .to_string(),
+        ],
+        "format" => vec![
+            "to format a value with a printf-style format string, use 'str.fmt', \
+             e.g. `42 str.fmt(\"%05d\")`"
+                .to_string(),
+        ],
+        "pad" | "pad-left" | "pad-right" | "rpad" | "lpad" | "padStart" | "padEnd" => vec![
+            "to pad a string, use 'str.fmt' with a printf width specifier, \
+             e.g. `42 str.fmt(\"%10d\")` for right-padding"
+                .to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -68,9 +133,11 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_string = actual == DataConstructor::BoxedString.tag();
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
+    let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
+    let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
 
     if is_list && expects_block {
         vec![
@@ -124,6 +191,20 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         ]
     } else if is_number && expects_string {
         vec!["to convert a number to a string, use 'str' or string interpolation".to_string()]
+    } else if is_string && expects_symbol {
+        vec![
+            "eucalypt uses symbol literals (`:name`) not strings for key names".to_string(),
+            "for example, use `has(:x)` instead of `has(\"x\")`; \
+             symbols are written with a leading colon"
+                .to_string(),
+        ]
+    } else if is_symbol && expects_string {
+        vec![
+            "a symbol (`:name`) was found where a string was expected".to_string(),
+            "to convert a symbol to a string, use 'str.of', e.g. `str.of(:name)` \
+             gives the string `\"name\"`"
+                .to_string(),
+        ]
     } else {
         vec![]
     }
@@ -495,6 +576,7 @@ impl ExecutionError {
             ExecutionError::TypeMismatch(_, expected, actual) => {
                 type_mismatch_notes(expected, actual)
             }
+            ExecutionError::LookupFailure(_, key, _) => str_lookup_notes(key),
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
                 data_tag_mismatch_notes(*actual, expected)
             }
