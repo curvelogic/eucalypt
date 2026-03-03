@@ -31,8 +31,8 @@ use super::{
 /// Errors found during compilation
 #[derive(Debug, Error)]
 pub enum CompileError {
-    #[error("unresolved free variable reference")]
-    FreeVar(Smid),
+    #[error("unresolved variable '{1}'")]
+    FreeVar(Smid, String),
     #[error("unresolvable bound variable reference")]
     BoundVarOverflowsContext,
     #[error("exceed maximum number of lambda args")]
@@ -50,7 +50,7 @@ impl HasSmid for CompileError {
         use self::CompileError::*;
 
         match *self {
-            FreeVar(s) => s,
+            FreeVar(s, _) => s,
             BadSoupExpression(s) => s,
             BadArgTupleExpression(s) => s,
             _ => Smid::default(),
@@ -60,7 +60,28 @@ impl HasSmid for CompileError {
 
 impl CompileError {
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
-        source_map.diagnostic(self)
+        let diag = source_map.diagnostic(self);
+        match self {
+            CompileError::FreeVar(_, name) => {
+                let mut notes = vec!["check that the variable is defined and in scope".to_string()];
+                // If the name looks like a short identifier (typical lambda
+                // parameter), hint about the common '->' mistake.
+                if name.len() <= 3 && name.chars().all(|c| c.is_alphanumeric()) {
+                    notes.push(
+                        "note: eucalypt has no arrow functions; '->' is the const \
+                         operator, not lambda syntax"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "use anaphora (_ + 1), sections (+ 1), or named functions \
+                         instead"
+                            .to_string(),
+                    );
+                }
+                diag.with_notes(notes)
+            }
+            _ => diag,
+        }
     }
 }
 
@@ -680,7 +701,13 @@ pub fn extract_bound_var<'a>(
 ) -> Result<&'a BoundVar<String>, CompileError> {
     match var {
         Var::Bound(bound_var) => Ok(bound_var),
-        Var::Free(_free_var) => Err(CompileError::FreeVar(*smid)),
+        Var::Free(free_var) => Err(CompileError::FreeVar(
+            *smid,
+            free_var
+                .pretty_name
+                .clone()
+                .unwrap_or_else(|| "<unknown>".to_string()),
+        )),
     }
 }
 
@@ -970,7 +997,7 @@ impl<'rt> Compiler<'rt> {
             // the default is unused; if it fails we panic anyway.
             Some(expr) => match self.compile_binding(binder, expr.clone(), annotation, false) {
                 Ok(expr) => Ok(expr),
-                Err(CompileError::FreeVar(_)) => binder.add(lookup_fail(key, obj.clone())),
+                Err(CompileError::FreeVar(..)) => binder.add(lookup_fail(key, obj.clone())),
                 Err(e) => Err(e),
             },
             None => binder.add(lookup_fail(key, obj.clone())),
