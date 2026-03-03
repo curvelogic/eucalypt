@@ -484,13 +484,21 @@ tests:
 
             if in_stderr {
                 if let Some(item) = trimmed.strip_prefix("- ") {
-                    // Strip surrounding quotes
-                    let item = item
-                        .strip_prefix('"')
-                        .and_then(|v| v.strip_suffix('"'))
-                        .or_else(|| item.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-                        .unwrap_or(item);
-                    stderr_lines.push(item.to_string());
+                    // Strip surrounding double quotes and unescape YAML
+                    // double-quoted string escape sequences so that the
+                    // extracted text matches the original stderr content.
+                    let item = if let Some(inner) =
+                        item.strip_prefix('"').and_then(|v| v.strip_suffix('"'))
+                    {
+                        Self::unescape_yaml_dq_string(inner)
+                    } else if let Some(inner) =
+                        item.strip_prefix('\'').and_then(|v| v.strip_suffix('\''))
+                    {
+                        inner.to_string()
+                    } else {
+                        item.to_string()
+                    };
+                    stderr_lines.push(item);
                 } else if !trimmed.starts_with('-') {
                     in_stderr = false;
                 }
@@ -498,6 +506,50 @@ tests:
         }
 
         (exit_code, stderr_lines.join("\n"))
+    }
+
+    /// Unescape YAML double-quoted string escape sequences.
+    ///
+    /// Handles the common sequences produced by the eucalypt YAML exporter:
+    /// `\\` → `\`, `\"` → `"`, `\n` → newline, `\t` → tab,
+    /// `\uXXXX` → UTF-8 character.
+    fn unescape_yaml_dq_string(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch != '\\' {
+                result.push(ch);
+                continue;
+            }
+            match chars.next() {
+                Some('"') => result.push('"'),
+                Some('\\') => result.push('\\'),
+                Some('n') => result.push('\n'),
+                Some('r') => result.push('\r'),
+                Some('t') => result.push('\t'),
+                Some('u') => {
+                    // \uXXXX — collect 4 hex digits
+                    let hex: String = (0..4).filter_map(|_| chars.next()).collect();
+                    if let Ok(code_point) = u32::from_str_radix(&hex, 16) {
+                        if let Some(c) = char::from_u32(code_point) {
+                            result.push(c);
+                        } else {
+                            result.push_str("\\u");
+                            result.push_str(&hex);
+                        }
+                    } else {
+                        result.push_str("\\u");
+                        result.push_str(&hex);
+                    }
+                }
+                Some(other) => {
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        }
+        result
     }
 }
 
@@ -524,10 +576,14 @@ impl Tester for InProcessTester {
 
                 if let Err(e) = prep_result {
                     if plan.is_error_test() {
+                        // Use None for exit_code so that create_evidence_yaml does
+                        // not attempt to parse the empty stdout as YAML output.
+                        // extract_error_evidence uses unwrap_or(1) so the exit
+                        // code recorded in the evidence is still 1.
                         results.push(TestResult {
                             target: t,
                             format: f.to_string(),
-                            exit_code: Some(1),
+                            exit_code: None,
                             stdout: String::new(),
                             stderr: format!("{e}"),
                             statistics,

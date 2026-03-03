@@ -182,7 +182,7 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
-                    "print" | "println" | "puts" | "console" => {
+                    "print" | "println" | "printf" | "puts" | "console" => {
                         notes.push(
                             "eucalypt has no print function; outputs are produced by rendering \
                              the result value — set the RESULT target to what you want to output"
