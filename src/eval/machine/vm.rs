@@ -361,7 +361,7 @@ impl MachineState {
                 )?;
                 self.closure = SynClosure::new(scrutinee, environment);
             }
-            HeapSyn::BlackHole => return Err(ExecutionError::BlackHole),
+            HeapSyn::BlackHole => return Err(ExecutionError::BlackHole(self.annotation)),
         }
 
         Ok(())
