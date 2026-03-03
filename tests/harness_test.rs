@@ -730,3 +730,8 @@ pub fn test_error_051() {
 pub fn test_error_052() {
     run_error_test(&error_opts("052_missing_length.eu"));
 }
+
+#[test]
+pub fn test_error_053() {
+    run_error_test(&error_opts("053_block_in_arithmetic.eu"));
+}

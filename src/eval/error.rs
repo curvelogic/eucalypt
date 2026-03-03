@@ -36,6 +36,12 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
                 .to_string(),
         ],
+        (Number, Record(_)) => vec![
+            "blocks (structured values) cannot be used in arithmetic".to_string(),
+            "did you mean to access a specific field? use 'block.field' to extract a value \
+             before applying arithmetic"
+                .to_string(),
+        ],
         (Number, String) => {
             vec![
                 "if you need to convert a string to a number, use 'parse-num'".to_string(),
@@ -61,6 +67,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         actual == DataConstructor::ListCons.tag() || actual == DataConstructor::ListNil.tag();
     let is_string = actual == DataConstructor::BoxedString.tag();
     let is_number = actual == DataConstructor::BoxedNumber.tag();
+    let is_block = actual == DataConstructor::Block.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
@@ -93,6 +100,13 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
                 .to_string(),
             "to apply string functions, use pipeline catenation, \
              e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
+                .to_string(),
+        ]
+    } else if is_block && expects_number {
+        vec![
+            "blocks (structured values) cannot be used in arithmetic".to_string(),
+            "did you mean to access a specific field? use 'block.field' to extract a value \
+             before applying arithmetic"
                 .to_string(),
         ]
     } else if is_string && expects_number {
