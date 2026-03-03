@@ -13,6 +13,10 @@
 // Notable: ? (for //=?, //!?), $ (for <$>), ∸ (unary minus)
 const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘→←⊕⊗⊙⊡⊞⊟⟨⟩⟪⟫⟦⟧⌈⌉⌊⌋¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
 
+// Unicode idiom bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS)
+const BRACKET_OPEN_RE = /[⟦⟨⟪⌈⌊⦃⦇⦉«【〔〖〘〚]/;
+const BRACKET_CLOSE_RE = /[⟧⟩⟫⌉⌋⦄⦈⦊»】〕〗〙〛]/;
+
 module.exports = grammar({
   name: 'eucalypt',
 
@@ -81,7 +85,7 @@ module.exports = grammar({
       // Simple property: name (identifier or quoted)
       $.identifier,
       $.quoted_identifier,
-      // Function: name(params)
+      // Function: name(params) — params may include destructuring patterns
       seq(choice($.identifier, $.quoted_identifier), $.parameter_list),
       // Operator declarations in parentheses
       $.operator_declaration,
@@ -91,6 +95,8 @@ module.exports = grammar({
     operator_declaration: $ => seq(
       '(',
       choice(
+        // Idiom bracket operator: (⟦ x ⟧) — declares a bracket-pair function
+        seq(BRACKET_OPEN_RE, $.identifier, BRACKET_CLOSE_RE),
         // Binary operator: (l op r)
         seq($.identifier, $.operator, $.identifier),
         // Unary prefix operator: (op x)
@@ -103,14 +109,60 @@ module.exports = grammar({
       ')',
     ),
 
+    // A parameter in a function declaration may be:
+    //   - a simple identifier: f(x, y)
+    //   - a block destructuring pattern: f({x y}) or f({x: a  y: b})
+    //   - a fixed-length list destructuring pattern: f([a, b])
+    //   - a head/tail cons pattern: f([h : t])
+    _param: $ => choice(
+      $.identifier,
+      $.block_pattern,
+      $.list_pattern,
+      $.cons_pattern,
+    ),
+
     parameter_list: $ => seq(
       '(',
       optional(seq(
-        $.identifier,
-        repeat(seq(',', $.identifier)),
+        $._param,
+        repeat(seq(',', $._param)),
         optional(','),
       )),
       ')',
+    ),
+
+    // Block destructuring pattern in parameter position: {x y} or {x: a  y: b}
+    // A block_pattern has the same surface syntax as a block but only appears
+    // as a function parameter.  Fields may be shorthand (`x` binds field x) or
+    // renamed (`x: a` binds field x as local variable a).
+    block_pattern: $ => seq(
+      '{',
+      repeat(seq(
+        $.declaration,
+        optional(','),
+      )),
+      '}',
+    ),
+
+    // Fixed-length list destructuring pattern: [a, b, c]
+    list_pattern: $ => seq(
+      '[',
+      seq(
+        $.identifier,
+        repeat(seq(',', $.identifier)),
+        optional(','),
+      ),
+      ']',
+    ),
+
+    // Head/tail cons destructuring pattern: [h : t]
+    // Uses ':' as the separator (not ',') to distinguish from list_pattern.
+    cons_pattern: $ => seq(
+      '[',
+      $.identifier,
+      ':',
+      $.identifier,
+      ']',
     ),
 
     // === Expressions (soup) ===
@@ -131,6 +183,7 @@ module.exports = grammar({
       $.list,
       $.paren_expr,
       $.application,
+      $.bracket_expr,
     ),
 
     // Parenthesized expression
@@ -151,6 +204,14 @@ module.exports = grammar({
       )),
       ')',
     )),
+
+    // Idiom bracket expression: ⟦ expr ⟧, «expr», ⌈ expr ⌉, etc.
+    // The bracket pair determines which bracket-pair function is applied.
+    bracket_expr: $ => seq(
+      BRACKET_OPEN_RE,
+      optional($.soup),
+      BRACKET_CLOSE_RE,
+    ),
 
     // === Literals ===
 
