@@ -263,6 +263,16 @@ impl CompileError {
                             "example: 'xs filter(_ % 2 = 1)' to keep odd numbers".to_string(),
                         );
                     }
+                    // Common names for string-to-number conversion from other languages.
+                    // In eucalypt the function is simply 'num'.
+                    "parse-num" | "parseInt" | "parseFloat" | "parseNumber" | "parse_int"
+                    | "parse_float" | "to-num" | "to_num" | "atoi" | "atof" => {
+                        notes.push(
+                            "to convert a string to a number in eucalypt, use 'num', \
+                             e.g. 's num'"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
