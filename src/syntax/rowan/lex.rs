@@ -521,6 +521,32 @@ where
         }
     }
 
+    /// Read `{` as either an open brace or the start of a juxtaposed block call.
+    ///
+    /// `f{x: 1}` (no space between `f` and `{`) is sugar for `f({x: 1})`.
+    fn brace(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
+        let brace_offset = ByteOffset::from_char_len('{');
+        match self.last_token {
+            Some(ref tok) if tok.is_callable_terminal() && !self.whitespace_since_last_token => {
+                (OPEN_BRACE_APPLY, Span::new(i, i + brace_offset))
+            }
+            _ => (OPEN_BRACE, Span::new(i, i + brace_offset)),
+        }
+    }
+
+    /// Read `[` as either an open square bracket or the start of a juxtaposed list call.
+    ///
+    /// `f[1, 2]` (no space between `f` and `[`) is sugar for `f([1, 2])`.
+    fn square(&mut self, i: ByteIndex) -> (SyntaxKind, Span) {
+        let square_offset = ByteOffset::from_char_len('[');
+        match self.last_token {
+            Some(ref tok) if tok.is_callable_terminal() && !self.whitespace_since_last_token => {
+                (OPEN_SQUARE_APPLY, Span::new(i, i + square_offset))
+            }
+            _ => (OPEN_SQUARE, Span::new(i, i + square_offset)),
+        }
+    }
+
     /// check whether next character matches supplied predicate
     fn lookahead<P>(&mut self, predicate: P) -> bool
     where
@@ -582,9 +608,9 @@ where
         }
 
         let ret = match self.bump() {
-            Some((i, '{')) => Some((OPEN_BRACE, Span::new(i, i + ONE_BYTE))),
+            Some((i, '{')) => Some(self.brace(i)),
             Some((i, '}')) => Some((CLOSE_BRACE, Span::new(i, i + ONE_BYTE))),
-            Some((i, '[')) => Some((OPEN_SQUARE, Span::new(i, i + ONE_BYTE))),
+            Some((i, '[')) => Some(self.square(i)),
             Some((i, ']')) => Some((CLOSE_SQUARE, Span::new(i, i + ONE_BYTE))),
             Some((i, '(')) => Some(self.paren(i)),
             Some((i, ')')) => Some((CLOSE_PAREN, Span::new(i, i + ONE_BYTE))),

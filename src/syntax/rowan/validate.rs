@@ -343,7 +343,10 @@ impl Validatable for ApplyTuple {
         for item in self.items() {
             item.validate(errors);
         }
-        if self.close_paren().is_none() {
+        // Block/list apply tuples (`f{...}` and `f[...]`) have no close paren —
+        // their closing delimiter is `}` or `]` respectively.
+        let is_juxtaposed = self.is_block_apply() || self.is_list_apply();
+        if !is_juxtaposed && self.close_paren().is_none() {
             errors.push(ParseError::InvalidParenExpr {
                 open_paren_range: self.open_paren().map(|op| op.text_range()),
                 range: self.syntax().text_range(),

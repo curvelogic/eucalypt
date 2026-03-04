@@ -260,6 +260,16 @@ impl<'text> Parser<'text> {
                 self.parse_block_expression();
                 true
             }
+            Some((OPEN_BRACE_APPLY, _)) => {
+                // f{x: 1} — juxtaposed block call: sugar for f({x: 1})
+                self.parse_block_apply_tuple();
+                true
+            }
+            Some((OPEN_SQUARE_APPLY, _)) => {
+                // f[1, 2] — juxtaposed list call: sugar for f([1, 2])
+                self.parse_list_apply_tuple();
+                true
+            }
             Some((BRACKET_OPEN, _)) => {
                 self.parse_bracket_expression();
                 true
@@ -286,45 +296,22 @@ impl<'text> Parser<'text> {
                 self.sink().start_node(LIST);
                 self.sink().token(k);
                 self.add_trivia();
-
-                if self.try_parse_soup() {
-                    // Peek at what follows the first soup item.
-                    if self.try_accept(COLON) {
-                        // This is a cons pattern `[head : tail]`.
-                        // Rewrite the containing node as LIST_CONS.
-                        // Unfortunately Rowan's builder API doesn't allow
-                        // retroactively changing the node kind, so we use
-                        // a checkpoint approach: we already started LIST,
-                        // so we finish it and re-wrap.  Instead, use the
-                        // simpler strategy: emit COLON into the LIST node
-                        // and parse the tail soup.  The desugarer will
-                        // detect the COLON child to identify cons patterns.
+                while self.try_parse_soup() {
+                    if self.try_accept(COMMA) {
                         self.add_trivia();
-                        let _ = self.try_parse_soup();
+                    } else if self.try_accept(COLON) {
+                        // Head/tail separator in list pattern: [heads... : tail]
+                        // Emit the colon token and parse exactly one more soup.
                         self.add_trivia();
-                        self.expect(CLOSE_SQUARE);
-                        self.sink().finish_node();
-                        // Retroactively mark as LIST_CONS: not possible with
-                        // GreenNodeBuilder directly. We detect it in the
-                        // desugarer by looking for a COLON token child of LIST.
+                        self.try_parse_soup();
+                        break;
                     } else {
-                        // Normal list — continue with commas
-                        while self.try_accept(COMMA) {
-                            self.add_trivia();
-                            if !self.try_parse_soup() {
-                                break;
-                            }
-                        }
-                        self.add_trivia();
-                        self.expect(CLOSE_SQUARE);
-                        self.sink().finish_node();
+                        break;
                     }
-                } else {
-                    // Empty list []
-                    self.add_trivia();
-                    self.expect(CLOSE_SQUARE);
-                    self.sink().finish_node();
                 }
+                self.add_trivia();
+                self.expect(CLOSE_SQUARE);
+                self.sink().finish_node();
                 true
             } else {
                 false
@@ -456,6 +443,53 @@ impl<'text> Parser<'text> {
         // if instead unterminated, there will be a missing close paren
 
         self.sink().finish_node();
+    }
+
+    /// Parse a juxtaposed block call `f{x: 1}` as an `ARG_TUPLE` containing a single block.
+    ///
+    /// This desugars `f{x: 1}` to the same AST as `f({x: 1})`.
+    fn parse_block_apply_tuple(&mut self) {
+        self.sink().start_node(ARG_TUPLE);
+        self.sink().start_node(SOUP);
+        self.sink().start_node(BLOCK);
+        // Consume the OPEN_BRACE_APPLY token as-is.
+        self.expect(OPEN_BRACE_APPLY);
+        self.add_trivia();
+        self.parse_block_content();
+        self.add_trivia();
+        self.expect(CLOSE_BRACE);
+        self.sink().finish_node(); // BLOCK
+        self.sink().finish_node(); // SOUP
+        self.sink().finish_node(); // ARG_TUPLE
+    }
+
+    /// Parse a juxtaposed list call `f[1, 2]` as an `ARG_TUPLE` containing a single list.
+    ///
+    /// This desugars `f[1, 2]` to the same AST as `f([1, 2])`.
+    fn parse_list_apply_tuple(&mut self) {
+        self.sink().start_node(ARG_TUPLE);
+        self.sink().start_node(SOUP);
+        self.sink().start_node(LIST);
+        // Consume the OPEN_SQUARE_APPLY token as-is.
+        self.expect(OPEN_SQUARE_APPLY);
+        self.add_trivia();
+        while self.try_parse_soup() {
+            if self.try_accept(COMMA) {
+                self.add_trivia();
+            } else if self.try_accept(COLON) {
+                // Head/tail separator inside a list apply argument
+                self.add_trivia();
+                self.try_parse_soup();
+                break;
+            } else {
+                break;
+            }
+        }
+        self.add_trivia();
+        self.expect(CLOSE_SQUARE);
+        self.sink().finish_node(); // LIST
+        self.sink().finish_node(); // SOUP
+        self.sink().finish_node(); // ARG_TUPLE
     }
 
     /// Parse a block expression (next token is '{')

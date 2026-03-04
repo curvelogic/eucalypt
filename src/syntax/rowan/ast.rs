@@ -859,7 +859,13 @@ impl Block {
     }
 
     pub fn open_brace(&self) -> Option<SyntaxToken> {
-        support::syntax_token(self.syntax(), SyntaxKind::OPEN_BRACE)
+        // Accept both OPEN_BRACE and OPEN_BRACE_APPLY (juxtaposed call sugar)
+        self.0
+            .children_with_tokens()
+            .filter_map(|it| it.into_token())
+            .find(|t| {
+                t.kind() == SyntaxKind::OPEN_BRACE || t.kind() == SyntaxKind::OPEN_BRACE_APPLY
+            })
     }
 
     pub fn close_brace(&self) -> Option<SyntaxToken> {
@@ -883,12 +889,22 @@ impl List {
         support::children::<Soup>(&self.0)
     }
 
+    /// Returns true if this list contains a `:` head/tail separator.
+    ///
+    /// Used to detect `[x : xs]` and `[a, b : rest]` patterns in
+    /// function parameter positions.
+    pub fn has_colon(&self) -> bool {
+        self.0
+            .children_with_tokens()
+            .any(|it| it.as_token().is_some_and(|t| t.kind() == SyntaxKind::COLON))
+    }
+
     /// Return `true` if this list node is a cons pattern `[h : t]`.
     ///
     /// Cons patterns are distinguished from normal lists by the presence of a
     /// COLON token child (rather than COMMA tokens between items).
     pub fn is_cons_pattern(&self) -> bool {
-        support::syntax_token(self.syntax(), SyntaxKind::COLON).is_some()
+        self.has_colon()
     }
 
     /// Return the head and tail soups of a cons pattern `[h : t]`, or `None`
@@ -917,6 +933,20 @@ impl ApplyTuple {
 
     pub fn open_paren(&self) -> Option<SyntaxToken> {
         support::syntax_token(self.syntax(), SyntaxKind::OPEN_PAREN_APPLY)
+    }
+
+    /// Returns true if this tuple was created from juxtaposed `f{...}` syntax.
+    pub fn is_block_apply(&self) -> bool {
+        self.0
+            .first_token()
+            .is_some_and(|t| t.kind() == SyntaxKind::OPEN_BRACE_APPLY)
+    }
+
+    /// Returns true if this tuple was created from juxtaposed `f[...]` syntax.
+    pub fn is_list_apply(&self) -> bool {
+        self.0
+            .first_token()
+            .is_some_and(|t| t.kind() == SyntaxKind::OPEN_SQUARE_APPLY)
     }
 
     pub fn close_paren(&self) -> Option<SyntaxToken> {

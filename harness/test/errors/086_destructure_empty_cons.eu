@@ -1,0 +1,3 @@
+# Error test: head/tail pattern applied to empty list
+f([x : xs]): x
+RESULT: f([])

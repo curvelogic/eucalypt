@@ -204,6 +204,7 @@ From highest to lowest binding:
 | 85 | exp | right | `^`, `∘`, `;` | Power, composition |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
+| 55 | -- | right | `‖` | List cons (prepend element) |
 | 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |

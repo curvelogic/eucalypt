@@ -446,17 +446,27 @@ pub fn test_harness_092() {
 
 #[test]
 pub fn test_harness_093() {
-    run_test(&opts("093_destructure_cons.eu"));
+    run_test(&opts("093_cons_operator.eu"));
+}
+
+#[test]
+pub fn test_harness_094() {
+    run_test(&opts("094_juxtaposed_call.eu"));
 }
 
 #[test]
 pub fn test_harness_095() {
-    run_test(&opts("095_idiom_brackets.eu"));
+    run_test(&opts("095_destructuring_integration.eu"));
 }
 
 #[test]
 pub fn test_harness_096() {
     run_test(&opts("096_monadic_blocks.eu"));
+}
+
+#[test]
+pub fn test_harness_097() {
+    run_test(&opts("097_idiom_brackets.eu"));
 }
 
 #[test]
@@ -899,4 +909,19 @@ pub fn test_error_082() {
 #[test]
 pub fn test_error_083() {
     run_error_test(&error_opts("083_array_arith_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_084() {
+    run_error_test(&error_opts("084_destructure_missing_field.eu"));
+}
+
+#[test]
+pub fn test_error_085() {
+    run_error_test(&error_opts("085_destructure_short_list.eu"));
+}
+
+#[test]
+pub fn test_error_086() {
+    run_error_test(&error_opts("086_destructure_empty_cons.eu"));
 }
