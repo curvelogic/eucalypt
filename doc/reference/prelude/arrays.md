@@ -83,6 +83,38 @@ d: a * 2          # scalar broadcast: [2, 4, 6]
 Note: `/` on arrays performs element-wise float division (not floor
 division as it does for plain integers).
 
+## Higher-order Operations
+
+| Function | Description |
+|----------|-------------|
+| `arr.indices(a)` | Return list of coordinate lists for every element, in row-major order |
+| `arr.map(f, a)` | Apply `f` to each element; return new array of same shape |
+| `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element; return new array of same shape |
+| `arr.fold(f, init, a)` | Left-fold `f` over all elements in row-major order, starting from `init` |
+| `arr.neighbours(a, coords, offsets)` | Return list of values at valid in-bounds neighbours of `coords`, given a list of offset vectors |
+
+`arr.indices` returns coordinates as lists; for a 2D array of shape `[rows, cols]`, each entry is `[row, col]`.
+
+`arr.neighbours` silently skips any out-of-bounds coordinates, so it is safe to call on border elements without special-casing.
+
+```eu
+# Double every element of a 1D array
+a: arr.from-flat([3], [1, 2, 3])
+b: arr.map((_ * 2), a)   # => [2, 4, 6] (same shape)
+
+# Sum all elements
+total: arr.fold((+), 0, a)   # => 6
+
+# List all coordinates of a 2×2 array
+coords: arr.from-flat([2, 2], [0, 0, 0, 0]) arr.indices
+# => [[0, 0], [0, 1], [1, 0], [1, 1]]
+
+# Neighbours of centre cell in a 3×3 grid (4-connected)
+grid: arr.from-flat([3, 3], [1, 2, 3, 4, 5, 6, 7, 8, 9])
+ns: arr.neighbours(grid, [1, 1], [[-1, 0], [1, 0], [0, -1], [0, 1]])
+# => [2, 8, 4, 6]
+```
+
 ## Example
 
 ```eu

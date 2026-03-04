@@ -323,6 +323,11 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `arr.slice(a, axis, idx)` | Slice along `axis` at `idx` (reduces rank by 1) |
 | `arr.add(a, b)` / `arr.sub` / `arr.mul` / `arr.div` | Element-wise arithmetic; `b` may be scalar |
 | `a !! coords` | Index operator; for arrays, `coords` is a list e.g. `[row, col]` |
+| `arr.indices(a)` | List of coordinate lists for every element (row-major) |
+| `arr.map(f, a)` | Apply `f` to each element; same shape |
+| `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element; same shape |
+| `arr.fold(f, init, a)` | Left-fold over all elements in row-major order |
+| `arr.neighbours(a, coords, offsets)` | Values at valid in-bounds neighbours given offset vectors |
 
 The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
 either operand is an array. Scalar broadcasting is supported.
