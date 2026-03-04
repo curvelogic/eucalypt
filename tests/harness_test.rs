@@ -855,3 +855,13 @@ pub fn test_error_074() {
 pub fn test_error_075() {
     run_error_test(&error_opts("075_let_keyword.eu"));
 }
+
+#[test]
+pub fn test_error_076() {
+    run_error_test(&error_opts("076_fn_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_077() {
+    run_error_test(&error_opts("077_double_anaphora.eu"));
+}
