@@ -63,8 +63,22 @@ jobs:
         run: cargo test
 
 
+  wasm:
+    name: WASM Compilation Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - name: Build library for WASM
+        run: cargo build --target wasm32-unknown-unknown --lib
+      - name: Clippy for WASM
+        run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings
+
   release-candidate-linux:
-    needs: [lint, test, audit]
+    needs: [lint, test, audit, wasm]
     name: Release Linux x86_64
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
@@ -143,7 +157,7 @@ jobs:
 
 
   release-candidate-macos:
-    needs: [lint, test, audit]
+    needs: [lint, test, audit, wasm]
     name: Release MacOS
     runs-on: macos-latest
     if: github.ref == 'refs/heads/master'
@@ -188,7 +202,7 @@ jobs:
           path: target/release/eu_darwin
 
   release-candidate-linux-arm:
-    needs: [lint, test, audit]
+    needs: [lint, test, audit, wasm]
     name: Release Linux aarch64
     runs-on: ubuntu-24.04-arm
     if: github.ref == 'refs/heads/master'
