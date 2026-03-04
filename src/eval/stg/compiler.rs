@@ -340,6 +340,38 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // 'where' clause from Haskell, OCaml, SQL.
+                    // Eucalypt uses inline block bindings instead.
+                    "where" => {
+                        notes.push(
+                            "eucalypt has no 'where' clause; define helper bindings inside \
+                             a block: '{ helper: 1  result: helper + 2 }'"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "or bind before use at the top level: \
+                             'helper: 1  result: helper + 2'"
+                                .to_string(),
+                        );
+                    }
+                    // 'let'/'in' from Haskell, Scheme, OCaml, ML.
+                    // Eucalypt uses block declarations instead of let-bindings.
+                    "let" => {
+                        notes.push(
+                            "eucalypt has no 'let' expression; use block bindings instead: \
+                             '{ x: 1  y: x + 2 }' or top-level declarations 'x: 1  y: x + 2'"
+                                .to_string(),
+                        );
+                    }
+                    // 'do' keyword from Haskell, Rust, or Ruby.
+                    // Eucalypt has no do-notation or do-blocks.
+                    "do" => {
+                        notes.push(
+                            "eucalypt has no 'do' keyword; use block declarations \
+                             'x: 1  y: x + 2' or function pipelines 'xs map(_ * 2)'"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)

@@ -845,3 +845,13 @@ pub fn test_error_072() {
 pub fn test_error_073() {
     run_error_test(&error_opts("073_sprintf_hint.eu"));
 }
+
+#[test]
+pub fn test_error_074() {
+    run_error_test(&error_opts("074_where_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_075() {
+    run_error_test(&error_opts("075_let_keyword.eu"));
+}
