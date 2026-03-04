@@ -865,3 +865,8 @@ pub fn test_error_076() {
 pub fn test_error_077() {
     run_error_test(&error_opts("077_double_anaphora.eu"));
 }
+
+#[test]
+pub fn test_error_078() {
+    run_error_test(&error_opts("078_anon_anaphor_scope.eu"));
+}
