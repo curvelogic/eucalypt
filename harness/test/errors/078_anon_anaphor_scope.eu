@@ -1,0 +1,3 @@
+# Mistake: using '_' inside a function call argument where its scope does not extend
+double(x): x * 2
+result: [1, 2, 3] map(double(_))
