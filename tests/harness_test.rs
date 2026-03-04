@@ -870,3 +870,8 @@ pub fn test_error_077() {
 pub fn test_error_078() {
     run_error_test(&error_opts("078_anon_anaphor_scope.eu"));
 }
+
+#[test]
+pub fn test_error_079() {
+    run_error_test(&error_opts("079_camelcase_take_while.eu"));
+}
