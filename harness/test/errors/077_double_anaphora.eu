@@ -1,0 +1,5 @@
+# Error test: using '_' twice in a predicate expression
+# Each '_' creates a separate parameter, making a 2-arg function not a 1-arg predicate
+xs: [1, 2, 3, 4]
+result: xs filter(_ > _ - 1)
+RESULT: result

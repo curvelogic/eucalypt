@@ -661,6 +661,23 @@ impl ExecutionError {
             ExecutionError::LookupFailure(_, key, suggestions) => {
                 lookup_failure_notes(key, suggestions)
             }
+            ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
+                let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
+                    || expected_tags.contains(&DataConstructor::BoolFalse.tag());
+                if expects_bool {
+                    vec![
+                        "if using '_' anaphora in a predicate, note that each '_' creates a \
+                         separate parameter — '(_ > _ - 1)' is a two-argument function, not \
+                         a one-argument predicate"
+                            .to_string(),
+                        "to reuse the same value, use '_0' (or '_1', '_2' for multiple \
+                         parameters): '(_0 > _0 - 1)' correctly compares the argument to itself"
+                            .to_string(),
+                    ]
+                } else {
+                    vec![]
+                }
+            }
             _ => vec![],
         };
         if notes.is_empty() {

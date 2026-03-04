@@ -363,12 +363,62 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
-                    // 'do' keyword from Haskell, Rust, or Ruby.
-                    // Eucalypt has no do-notation or do-blocks.
-                    "do" => {
+                    // 'val' and 'const' are Scala/Kotlin/Java keywords for bindings;
+                    // eucalypt uses ':' for all declarations.
+                    "val" | "const" => {
                         notes.push(
-                            "eucalypt has no 'do' keyword; use block declarations \
-                             'x: 1  y: x + 2' or function pipelines 'xs map(_ * 2)'"
+                            "eucalypt has no 'val'/'const' keyword; use ':' for \
+                             declarations, e.g. 'x: 42' instead of 'val x = 42'"
+                                .to_string(),
+                        );
+                    }
+                    // 'do', 'begin', 'end' are sequencing/block keywords from
+                    // Haskell, Ruby, Lua.  Eucalypt uses blocks for structure.
+                    "do" | "begin" | "end" => {
+                        notes.push(
+                            "eucalypt has no 'do'/'begin'/'end' keywords; \
+                             group related declarations in a block: '{ x: 1, y: 2 }'"
+                                .to_string(),
+                        );
+                    }
+                    // 'class', 'struct', 'type', 'record' are from OOP/typed-FP.
+                    // Eucalypt uses blocks for structured data.
+                    "class" | "struct" | "record" => {
+                        notes.push(
+                            "eucalypt has no 'class'/'struct'/'record' keyword; use a block \
+                             to group related values: '{ name: \"Alice\", age: 30 }'"
+                                .to_string(),
+                        );
+                    }
+                    // 'module', 'namespace', 'package' are from ML/Haskell/Java.
+                    // Eucalypt uses blocks for namespacing, accessible via dot notation.
+                    "module" | "namespace" | "package" => {
+                        notes.push(
+                            "eucalypt has no 'module'/'namespace' keyword; use a named block \
+                             for namespacing: 'my-ns: { f(x): x + 1 }' then call 'my-ns.f(5)'"
+                                .to_string(),
+                        );
+                    }
+                    // 'otherwise' is a Haskell catch-all guard pattern.
+                    // In eucalypt, use the 'if' function for conditional dispatch.
+                    "otherwise" => {
+                        notes.push(
+                            "eucalypt has no 'otherwise' guard keyword; \
+                             use 'if(condition, then-value, else-value)' for conditional logic"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "example: 'if(x < 0, \"negative\", if(x > 0, \"positive\", \"zero\"))'"
+                                .to_string(),
+                        );
+                    }
+                    // 'match'/'case' are from Haskell/Rust/Scala pattern matching.
+                    // Eucalypt uses 'if' for conditional dispatch.
+                    "match" | "case" => {
+                        notes.push(
+                            "eucalypt has no 'match'/'case' expression; \
+                             use nested 'if' calls for dispatch: \
+                             'if(x = 1, \"one\", if(x = 2, \"two\", \"other\"))'"
                                 .to_string(),
                         );
                     }
