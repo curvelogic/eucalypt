@@ -1,0 +1,3 @@
+# Mistake: using a block (structured value) in arithmetic
+config: { timeout: 30 }
+result: config + 5

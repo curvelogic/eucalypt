@@ -382,17 +382,17 @@ or: __OR
 ## Arithmetic
 ##
 
-` { doc: "`l + r` - adds `l` and `r`; both must be numbers."
+` { doc: "`l + r` - adds `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise addition; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :sum }
-(l + r): __ADD(l, r)
+(l + r): if(is-array?(l) || is-array?(r), arr.add(l, r), __ADD(l, r))
 
-` { doc: "`l - r` - subtracts `r` from `l`; both must be numbers."
+` { doc: "`l - r` - subtracts `r` from `l`. For numbers, both must be numeric. For arrays, performs element-wise subtraction; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :sum }
-(l - r): __SUB(l, r)
+(l - r): if(is-array?(l) || is-array?(r), arr.sub(l, r), __SUB(l, r))
 
 ` { doc: "`l ^ r` - raise `l` to the power `r`."
     export: :suppress
@@ -400,17 +400,17 @@ or: __OR
     precedence: :exp }
 (l ^ r): __POW(l, r)
 
-` { doc: "`l * r` - multiplies `l` and `r`; both must be numbers."
+` { doc: "`l * r` - multiplies `l` and `r`. For numbers, both must be numeric. For arrays, performs element-wise multiplication; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :prod }
-(l * r): __MUL(l, r)
+(l * r): if(is-array?(l) || is-array?(r), arr.mul(l, r), __MUL(l, r))
 
-` { doc: "`l / r` - floor division of `l` by `r`; rounds toward negative infinity; always returns integer."
+` { doc: "`l / r` - floor division of `l` by `r` for numbers (rounds toward negative infinity; always returns integer). For arrays, performs element-wise division; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :prod }
-(l / r): __DIV(l, r)
+(l / r): if(is-array?(l) || is-array?(r), arr.div(l, r), __DIV(l, r))
 
 ` { doc: "`l ÷ r` - precise division of `l` by `r`; returns exact result."
     export: :suppress
@@ -812,38 +812,47 @@ assertions: {
 }
 
 ` { doc: "`e //= v` - add metadata to check expression `e` evaluates to `v` and return whether valid"
-    export: :suppress 
+    export: :suppress
     associates: :left
     precedence: :meta }
 (e //= v): e with-meta({ assert: (= v)}) assertions.check
 
-` { doc: "`e //=> v` - add metadata to assert expression `e` evaluates to `v` and return `e`."
-    export: :suppress 
+` { doc: "`e //=> v` - assert expression `e` evaluates to `v` and return `e`.
+
+    On failure, reports the expected and actual values:
+    `assertion failed: expected <v>, got <e>`"
+    export: :suppress
     associates: :left
     precedence: :meta }
-(e //=> v): e with-meta({ assert: (= v)}) assertions.checked
+(e //=> v): if(e = v, e, __ASSERT_FAIL(e, v))
 
 ` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies predicate `f` and return `e`."
-    export: :suppress 
+    export: :suppress
     associates: :left
     precedence: :meta }
 (e //=? f): e with-meta({ assert: f}) assertions.checked
 
 ` { doc: "`e //!? f` - add metadata to assert expression `e` does not satisfy predicate `f` and return `e`."
-    export: :suppress 
+    export: :suppress
     associates: :left
     precedence: :meta }
 (e //!? f): e with-meta({ assert: complement(f)}) assertions.checked
 
-` { doc: "`e //! f` - add metadata to assert expression `e` is true and return `e`."
-    export: :suppress 
-    precedence: :meta }
-(e //!): e with-meta({ assert: (= true) }) assertions.checked
+` { doc: "`e //!` - assert expression `e` is true and return `e`.
 
-` { doc: "`e //!! f` - add metadata to assert expression `e` is false and return `e`."
-    export: :suppress 
+    On failure, reports the actual value:
+    `assertion failed: expected true, got <e>`"
+    export: :suppress
     precedence: :meta }
-(e //!!): e with-meta({ assert: (= false) }) assertions.checked
+(e //!): if(e = true, e, __ASSERT_FAIL(e, true))
+
+` { doc: "`e //!!` - assert expression `e` is false and return `e`.
+
+    On failure, reports the actual value:
+    `assertion failed: expected false, got <e>`"
+    export: :suppress
+    precedence: :meta }
+(e //!!): if(e = false, e, __ASSERT_FAIL(e, false))
 
 #
 # List library functions, maps and folds
@@ -895,9 +904,9 @@ split-when(p?, l): split-after(p? complement, l)
 ` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
 nth(n, l): l drop(n) head
 
-` { doc: "`l !! n` - return `n`th item of list if it exists, otherwise error."
+` { doc: "`l !! n` - return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get`."
     precedence: :exp }
-(l !! n): l nth(n)
+(l !! n): if(l is-array?, l arr.get(n), l nth(n))
 
 ` "`repeat(i)` - return infinite list of instances of item `i`."
 repeat(i): __CONS(i, repeat(i))
@@ -1320,6 +1329,88 @@ set: {
 
 ` "`∅` - the empty set."
 (∅): '__SET.EMPTY'
+
+
+
+##
+## N-dimensional arrays (tensors)
+##
+
+` { export: :suppress
+    doc: "Functions for working with n-dimensional arrays of numbers." }
+arr: {
+
+  ` "`arr.zeros(shape)` - create an array of zeros with the given shape list."
+  zeros: '__ARRAY.ZEROS'
+
+  ` "`arr.fill(shape, val)` - create an array filled with `val` with the given shape list."
+  fill: '__ARRAY.FILL'
+
+  ` "`arr.from-flat(shape, vals)` - create an array from a flat list of numbers with the given shape."
+  from-flat: '__ARRAY.FROM_FLAT'
+
+  ` "`arr.get(a, coords)` - get element at coordinate list `coords` in array `a`."
+  get: '__ARRAY.GET'
+
+  ` "`arr.set(a, coords, val)` - return new array with element at `coords` set to `val`."
+  set: '__ARRAY.SET'
+
+  ` "`arr.shape(a)` - return shape of array `a` as a list of integers."
+  shape: '__ARRAY.SHAPE'
+
+  ` "`arr.rank(a)` - return number of dimensions of array `a`."
+  rank: '__ARRAY.RANK'
+
+  ` "`arr.length(a)` - return total number of elements in array `a`."
+  length: '__ARRAY.LENGTH'
+
+  ` "`arr.to-list(a)` - return flat list of elements in row-major order."
+  to-list: '__ARRAY.TO_LIST'
+
+  ` "`arr.array?(x)` - true if `x` is an array."
+  array?: '__ARRAY.ISARRAY'
+
+  ` "`arr.transpose(a)` - reverse all axes of array `a`."
+  transpose: '__ARRAY.TRANSPOSE'
+
+  ` "`arr.reshape(a, shape)` - reshape array `a` to new shape (total elements must match)."
+  reshape: '__ARRAY.RESHAPE'
+
+  ` "`arr.slice(a, axis, idx)` - take a slice along `axis` at `idx`, reducing rank by 1."
+  slice: '__ARRAY.SLICE'
+
+  ` "`arr.add(a, b)` - element-wise addition; `b` may be a scalar."
+  add: '__ARRAY.ADD'
+
+  ` "`arr.sub(a, b)` - element-wise subtraction; `b` may be a scalar."
+  sub: '__ARRAY.SUB'
+
+  ` "`arr.mul(a, b)` - element-wise multiplication; `b` may be a scalar."
+  mul: '__ARRAY.MUL'
+
+  ` "`arr.div(a, b)` - element-wise division; `b` may be a scalar."
+  div: '__ARRAY.DIV'
+
+  ` "`arr.indices(a)` - return list of coordinate lists for all elements in row-major order."
+  indices: '__ARRAY_INDICES'
+
+  ` "`arr.map(f, a)` - apply `f` to each element, return new array of same shape."
+  map(f, a): arr.from-flat(arr.shape(a), f <$> (a arr.to-list))
+
+  ` "`arr.map-indexed(f, a)` - apply `f(coords, val)` to each element, return new array of same shape."
+  map-indexed(f, a): arr.from-flat(arr.shape(a), (f uncurry) <$> zip(arr.indices(a), a arr.to-list))
+
+  ` "`arr.fold(f, init, a)` - left-fold `f` over all elements of `a` in row-major order."
+  fold(f, init, a): a arr.to-list foldl(f, init)
+
+  ` "`arr.neighbours(a, coords, offsets)` - return list of values at valid neighbouring coordinates.
+  `offsets` is a list of offset lists (one per neighbour direction). Out-of-bounds neighbours are omitted."
+  neighbours(a, coords, offsets): __ARRAY_NEIGHBOURS(coords, offsets concat, a arr.rank, a)
+
+}
+
+` "`is-array?(x)` - true if `x` is an n-dimensional array."
+is-array?(x): x arr.array?
 
 
 

@@ -5,6 +5,7 @@ use std::{collections::VecDeque, iter::Peekable, str::Chars};
 
 use unicode_general_category::{get_general_category, GeneralCategory};
 
+use super::brackets;
 use super::kind::SyntaxKind::{self, *};
 
 /// Whether a Unicode general category is a symbol category
@@ -624,14 +625,29 @@ where
             Some((i, c)) if is_normal_start(c) => Some(self.normal(i, c)),
             Some((i, c)) if is_oper_start(c) => Some(self.oper(i)),
             Some((i, c)) if c.is_whitespace() => Some(self.whitespace(i)),
-            Some((i, c)) if is_reserved_open(c) => Some((
-                RESERVED_OPEN,
-                Span::new(i, i + ByteOffset::from_char_len(c)),
-            )),
-            Some((i, c)) if is_reserved_close(c) => Some((
-                RESERVED_CLOSE,
-                Span::new(i, i + ByteOffset::from_char_len(c)),
-            )),
+            Some((i, c)) if is_reserved_open(c) => {
+                if brackets::is_bracket_open(c) {
+                    Some((BRACKET_OPEN, Span::new(i, i + ByteOffset::from_char_len(c))))
+                } else {
+                    Some((
+                        RESERVED_OPEN,
+                        Span::new(i, i + ByteOffset::from_char_len(c)),
+                    ))
+                }
+            }
+            Some((i, c)) if is_reserved_close(c) => {
+                if brackets::is_bracket_close(c) {
+                    Some((
+                        BRACKET_CLOSE,
+                        Span::new(i, i + ByteOffset::from_char_len(c)),
+                    ))
+                } else {
+                    Some((
+                        RESERVED_CLOSE,
+                        Span::new(i, i + ByteOffset::from_char_len(c)),
+                    ))
+                }
+            }
             None => None,
             Some((i, c)) => Some((
                 ERROR_RESERVED_CHAR,

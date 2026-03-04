@@ -2,7 +2,29 @@
 
 use rowan::ast::AstNode;
 
-use super::{ast::*, lex::parse_zdt_literal, ParseError};
+use super::{ast::*, error::ZdtInvalidReason, lex::parse_zdt_literal, ParseError};
+
+/// Classify why a `t"..."` date/time literal is invalid.
+///
+/// Heuristic: if the string is empty, report `Empty`; if it looks like a
+/// date/time pattern (starts with four digits followed by `-`) but fails
+/// to parse, report `InvalidDate`; otherwise report `Malformed`.
+fn zdt_invalid_reason(content: &str) -> ZdtInvalidReason {
+    if content.is_empty() {
+        return ZdtInvalidReason::Empty;
+    }
+    // A rough check: starts with YYYY- (four digits then a hyphen), which
+    // suggests the user intended to write a date/time literal in the right
+    // format but with an impossible calendar value.
+    let looks_like_date = content.len() >= 5
+        && content.as_bytes()[..4].iter().all(|b| b.is_ascii_digit())
+        && content.as_bytes()[4] == b'-';
+    if looks_like_date {
+        ZdtInvalidReason::InvalidDate
+    } else {
+        ZdtInvalidReason::Malformed
+    }
+}
 
 /// Trait for `AstNode`s and `AstToken`s that may be created for
 /// invalid source text.
@@ -103,8 +125,10 @@ impl Validatable for TStr {
         }
         if let Some(content) = self.value() {
             if parse_zdt_literal(content).is_none() {
+                let reason = zdt_invalid_reason(content);
                 errors.push(ParseError::InvalidZdtLiteral {
                     range: self.syntax().text_range(),
+                    reason,
                 });
             }
         }
@@ -343,6 +367,45 @@ impl Validatable for List {
     }
 }
 
+impl Validatable for BracketExpr {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        // Validate that the open bracket is a known bracket pair
+        if let Some(open_char) = self.open_char() {
+            if !super::brackets::is_bracket_open(open_char) {
+                errors.push(ParseError::UnknownBracketPair {
+                    range: self.syntax().text_range(),
+                    open_char,
+                });
+                return;
+            }
+
+            // Validate that the close bracket matches the open bracket
+            if let Some(close_char) = self.close_char() {
+                let expected_close = super::brackets::close_for_open(open_char);
+                if expected_close != Some(close_char) {
+                    let open_token = self.open_bracket();
+                    let close_token = self.close_bracket();
+                    errors.push(ParseError::MismatchedBrackets {
+                        open_range: open_token
+                            .map(|t| t.text_range())
+                            .unwrap_or_else(|| self.syntax().text_range()),
+                        close_range: close_token
+                            .map(|t| t.text_range())
+                            .unwrap_or_else(|| self.syntax().text_range()),
+                        expected_close: expected_close.unwrap_or(')'),
+                        actual_close: close_char,
+                    });
+                }
+            }
+        }
+
+        // Validate inner soup
+        if let Some(soup) = self.soup() {
+            soup.validate(errors);
+        }
+    }
+}
+
 impl Validatable for Element {
     fn validate(&self, errors: &mut Vec<ParseError>) {
         match self {
@@ -355,6 +418,7 @@ impl Validatable for Element {
             Element::CStringPattern(s) => s.validate(errors),
             Element::RawStringPattern(s) => s.validate(errors),
             Element::ApplyTuple(t) => t.validate(errors),
+            Element::BracketExpr(be) => be.validate(errors),
         }
     }
 }
@@ -480,22 +544,25 @@ mod tests {
     }
 
     #[test]
-    pub fn test_exotic_quotes() {
+    pub fn test_bracket_expression_valid() {
+        // «»  is a registered idiom bracket pair — should parse cleanly
         let errors = check("« a b c »");
-        assert_eq!(
-            errors,
-            vec![
-                ParseError::InvalidParenExpr {
-                    open_paren_range: None,
-                    range: TextRange::new(0.into(), 11.into())
-                },
-                ParseError::ReservedCharacter {
-                    range: TextRange::new(0.into(), 2.into())
-                },
-                ParseError::ReservedCharacter {
-                    range: TextRange::new(9.into(), 11.into())
-                }
-            ]
+        assert_eq!(errors, vec![]);
+    }
+
+    #[test]
+    pub fn test_bracket_expression_mismatched() {
+        // «⟧ — open «, close ⟧ — mismatched bracket pair
+        let errors = check("« a b c ⟧");
+        assert!(
+            !errors.is_empty(),
+            "mismatched brackets should produce an error"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, ParseError::MismatchedBrackets { .. })),
+            "should contain a MismatchedBrackets error"
         );
     }
 

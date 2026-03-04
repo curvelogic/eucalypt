@@ -224,6 +224,12 @@ fn symbol_from_declaration(
             },
             Vec::new(),
         ),
+        DeclarationKind::BracketPair(_, bracket_expr, _) => {
+            let name = bracket_expr
+                .bracket_pair_name()
+                .unwrap_or_else(|| "bracket".to_string());
+            (name, DeclKind::Function { arity: 1 }, Vec::new())
+        }
         DeclarationKind::MalformedHead(_) => return None,
     };
 

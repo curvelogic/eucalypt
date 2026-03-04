@@ -121,7 +121,7 @@ For specific topics, also consult:
 1. **Catenation precedence is LOW (20)**: ALL infix operators bind tighter. `xs f(a) + 1` parses as `xs(f(a) + 1)` NOT `(xs f(a)) + 1`. Fix: use parentheses or split into named bindings.
 2. **Dot `.` binds tighter (90) than catenation (20)**: `list head.name` parses as `list (head.name)`. Fix: `(list head).name`.
 3. **NO lambda/arrow syntax**: `->` is the `const` operator, NOT lambda. Use sections `(+ 1)`, expression anaphora `(_ + 1)`, or named functions.
-4. **Single `_` creates a new param each time**: Two `_` in one expression is an error. Use `_0` for reuse.
+4. **Each `_` creates a new param**: `_ + _` means `_0 + _1` (two params). Use `_0 * _0` to reference the same param twice.
 5. **Backtick is metadata, not comment**: `` ` "text" `` attaches to the NEXT declaration. Use `#` for comments.
 6. **`/` is floor division**: Use `÷` for exact division.
 7. **Many "obvious" functions don't exist**: No `str.replace`, `str.trim`, `str.contains?`, `flatten`, `abs`, `even?`. Check agent-reference.md section 5.11.

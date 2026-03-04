@@ -106,6 +106,13 @@ pub enum SyntaxKind {
     /// ZDT (timestamp) string literal e.g. t"2023-01-15T10:30:00Z"
     T_STRING,
 
+    /// Open token of a Unicode bracket pair (idiom bracket expression)
+    BRACKET_OPEN,
+    /// Close token of a Unicode bracket pair (idiom bracket expression)
+    BRACKET_CLOSE,
+    /// A bracket expression using a Unicode bracket pair e.g. ⟦ x ⟧
+    BRACKET_EXPR,
+
     /// Extraneous tokens tagging along for the ride
     ERROR_STOWAWAYS,
     /// Characters (brackets and quotes) reserved for future use
@@ -145,7 +152,7 @@ impl SyntaxKind {
     }
 
     pub fn from_raw(raw: rowan::SyntaxKind) -> Self {
-        assert!(raw.0 <= SyntaxKind::ERROR_STOWAWAYS as u16);
+        assert!(raw.0 <= SyntaxKind::ERROR_RESERVED_CHAR as u16);
         unsafe { std::mem::transmute::<u16, SyntaxKind>(raw.0) }
     }
 }

@@ -1,6 +1,7 @@
 //! Rowan based parsing of eucalypt syntax
 
 pub mod ast;
+pub mod brackets;
 pub mod dotted_lookup_tests;
 pub mod error;
 pub mod kind;
@@ -186,6 +187,30 @@ mod tests {
         assert!(parse_expr("{f(x): x #\n}").ok().is_ok());
         dbg!(parse_expr("{ #\n f( #\n x #\n )#\n   : x}").errors());
         assert!(parse_expr("{ #\n f( #\n x #\n )#\n   : x}").ok().is_ok());
+
+        // bracket pair declarations
+        assert!(parse_expr("{ (⟦ x ⟧): x + 1 }").ok().is_ok());
+        assert!(parse_expr("{ (⌈ x ⌉): x * 2 }").ok().is_ok());
+        assert!(parse_expr("{ (« x »): x }").ok().is_ok());
+    }
+
+    #[test]
+    pub fn test_bracket_expressions() {
+        // valid bracket expressions
+        assert!(parse_expr("⟦ x ⟧").ok().is_ok());
+        assert!(parse_expr("⌈ x + 1 ⌉").ok().is_ok());
+        assert!(parse_expr("« a b c »").ok().is_ok());
+
+        // bracket expressions inside blocks and soups
+        assert!(parse_expr("{ x: ⟦ 5 ⟧ }").ok().is_ok());
+        assert!(parse_expr("f ⟦ x ⟧").ok().is_ok());
+
+        // mismatched bracket pairs should produce validation errors
+        assert!(parse_expr("⟦ x ⟧").ok().is_ok()); // matched — ok
+        assert!(parse_expr("« x »").ok().is_ok()); // matched — ok
+
+        // unknown bracket open chars that were previously reserved
+        // should be handled by RESERVED_OPEN/CLOSE tokens, not BRACKET tokens
     }
 
     #[test]

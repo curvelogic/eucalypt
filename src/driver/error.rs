@@ -29,8 +29,20 @@ pub enum EucalyptError {
     Io(#[from] io::Error),
     #[error("unknown resource {0}")]
     UnknownResource(String),
-    #[error("path {0} could not be read")]
-    FileCouldNotBeRead(String),
+    /// A file could not be read.
+    ///
+    /// The first field is the path. The optional second field is the
+    /// OS-level reason (e.g. "No such file or directory", "Permission denied").
+    #[error("{}", format_file_could_not_be_read(.0, .1.as_deref()))]
+    FileCouldNotBeRead(String, Option<String>),
+}
+
+/// Format a "file could not be read" error message including the OS reason when available.
+fn format_file_could_not_be_read(path: &str, reason: Option<&str>) -> String {
+    match reason {
+        Some(r) => format!("could not read '{path}': {r}"),
+        None => format!("could not read '{path}'"),
+    }
 }
 
 fn default_diagnostic<E>(e: &E) -> Diagnostic<usize>

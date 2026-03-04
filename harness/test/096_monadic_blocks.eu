@@ -1,0 +1,74 @@
+##
+## 096: Monadic block expressions
+##
+## When a bracket pair declaration includes `bind` and `return` metadata,
+## it gains a monad spec.  A bracket expression whose inner is a block
+## then desugars as a bind chain:
+##
+##   ⟦ { a: ma, b: mb, r: expr } ⟧
+##   →  bind(ma, (a): bind(mb, (b): return(expr)))
+##
+
+# ---------------------------------------------------------------------------
+# Identity monad: bind(ma, f) = f(ma), return(a) = a
+# Under the identity monad the block expressions are equivalent to let-bindings.
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+` { bind: id-bind return: id-return }
+(⟦ x ⟧): x
+
+# ---------------------------------------------------------------------------
+# Maybe monad implemented as optional lists: Just(a) = [a], Nothing = []
+# bind([a], f) = f(a)   bind([], f) = []
+# return(a) = [a]
+maybe-bind(ma, f): if(ma = [], [], f(ma head))
+maybe-return(a): [a]
+
+` { bind: maybe-bind return: maybe-return }
+(⌈ x ⌉): x
+
+# ---------------------------------------------------------------------------
+tests: {
+
+  ` "Identity monad — single declaration"
+  id-single: {
+    ` "return wraps a literal"
+    a: ⟦ { r: 42 } ⟧ //= 42
+    ` "return wraps an expression"
+    b: ⟦ { r: 1 + 2 } ⟧ //= 3
+  }
+
+  ` "Identity monad — two declarations"
+  id-two: {
+    ` "bind a value then return computed expression"
+    a: ⟦ { x: 10, r: x + 5 } ⟧ //= 15
+    ` "bind a string and reference it"
+    b: ⟦ { s: "hello", r: s } ⟧ //= "hello"
+  }
+
+  ` "Identity monad — three declarations"
+  id-three: {
+    ` "bind two values and combine them"
+    a: ⟦ { a: 1, b: 2, r: a + b } ⟧ //= 3
+    ` "bind two values and use only first"
+    b: ⟦ { a: 7, b: 3, r: a } ⟧ //= 7
+  }
+
+  ` "Maybe monad — value present"
+  maybe-just: {
+    ` "bind through two Just values"
+    a: ⌈ { x: [1], y: [2], r: x + y } ⌉ //= [3]
+  }
+
+  ` "Maybe monad — short-circuits on Nothing"
+  maybe-nothing: {
+    ` "bind with first argument Nothing"
+    a: ⌈ { x: [], y: [2], r: x + y } ⌉ //= []
+    ` "bind with second argument Nothing"
+    b: ⌈ { x: [1], y: [], r: x + y } ⌉ //= []
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

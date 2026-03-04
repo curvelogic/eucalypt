@@ -10,6 +10,7 @@ use std::{collections::HashMap, fmt, ptr::NonNull, rc::Rc};
 
 use super::collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr};
 use super::infotable::InfoTagged;
+use super::ndarray::HeapNdArray;
 use super::set::HeapSet;
 use super::string::HeapString;
 use super::symbol::SymbolId;
@@ -45,6 +46,8 @@ pub enum Native {
     Index(Rc<BlockIndex>),
     /// A set of primitive values
     Set(RefPtr<HeapSet>),
+    /// An n-dimensional array of f64 values
+    NdArray(RefPtr<HeapNdArray>),
 }
 
 impl PartialEq for Native {
@@ -57,6 +60,7 @@ impl PartialEq for Native {
             // Index is a cache — always equal to another Index
             (Native::Index(_), Native::Index(_)) => true,
             (Native::Set(a), Native::Set(b)) => a == b,
+            (Native::NdArray(a), Native::NdArray(b)) => a == b,
             _ => false,
         }
     }
@@ -74,6 +78,7 @@ impl Native {
             Native::Zdt(_) => "datetime",
             Native::Index(_) => "block index",
             Native::Set(_) => "set",
+            Native::NdArray(_) => "array",
         }
     }
 }
@@ -100,6 +105,9 @@ impl fmt::Display for Native {
             }
             Native::Set(_) => {
                 write!(f, "<set>")
+            }
+            Native::NdArray(_) => {
+                write!(f, "<array>")
             }
         }
     }
@@ -293,6 +301,9 @@ fn mark_ref_heap_pointers(r: &Ref, marker: &mut CollectorHeapView<'_>) {
         Ref::V(Native::Set(ptr)) => {
             marker.mark(*ptr);
         }
+        Ref::V(Native::NdArray(ptr)) => {
+            marker.mark(*ptr);
+        }
         _ => {}
     }
 }
@@ -313,6 +324,11 @@ fn update_ref_heap_pointers(r: &mut Ref, heap: &CollectorHeapView<'_>) {
             }
         }
         Ref::V(Native::Set(ptr)) => {
+            if let Some(new_ptr) = heap.forwarded_to(*ptr) {
+                *ptr = new_ptr;
+            }
+        }
+        Ref::V(Native::NdArray(ptr)) => {
             if let Some(new_ptr) = heap.forwarded_to(*ptr) {
                 *ptr = new_ptr;
             }
@@ -538,6 +554,9 @@ pub mod repr {
             }
             memory::syntax::Ref::V(memory::syntax::Native::Set(_)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Sym("<set>".to_string()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::NdArray(_)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym("<array>".to_string()))
             }
         }
     }

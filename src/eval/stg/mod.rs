@@ -2,6 +2,8 @@
 //! compiler for core syntax that targets it.
 //!
 pub mod arith;
+pub mod array;
+pub mod assert;
 pub mod block;
 pub mod boolean;
 pub mod compiler;
@@ -71,6 +73,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(boolean::Not));
     rt.add(Box::new(boolean::If));
     rt.add(Box::new(panic::Panic));
+    rt.add(Box::new(assert::AssertFail));
     rt.add(Box::new(block::Block));
     rt.add(Box::new(block::Kv));
     rt.add(Box::new(block::Dekv));
@@ -176,6 +179,25 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(running::RunningSum));
     rt.add(Box::new(list::ListNth));
     rt.add(Box::new(list::ListDrop));
+    rt.add(Box::new(array::ArrayZeros));
+    rt.add(Box::new(array::ArrayFill));
+    rt.add(Box::new(array::ArrayFromFlat));
+    rt.add(Box::new(array::ArrayGet));
+    rt.add(Box::new(array::ArraySet));
+    rt.add(Box::new(array::ArrayShape));
+    rt.add(Box::new(array::ArrayRank));
+    rt.add(Box::new(array::ArrayLength));
+    rt.add(Box::new(array::ArrayToList));
+    rt.add(Box::new(array::ArrayIsArray));
+    rt.add(Box::new(array::ArrayTranspose));
+    rt.add(Box::new(array::ArrayReshape));
+    rt.add(Box::new(array::ArraySlice));
+    rt.add(Box::new(array::ArrayAdd));
+    rt.add(Box::new(array::ArraySub));
+    rt.add(Box::new(array::ArrayMul));
+    rt.add(Box::new(array::ArrayDiv));
+    rt.add(Box::new(array::ArrayIndices));
+    rt.add(Box::new(array::ArrayNeighbours));
     rt.prepare(source_map);
     Box::new(rt)
 }

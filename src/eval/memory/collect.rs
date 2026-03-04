@@ -123,7 +123,7 @@ impl CollectorHeapView<'_> {
     /// Mark object if not already marked and return whether marked
     pub fn mark<T>(&mut self, obj: NonNull<T>) -> bool {
         debug_assert!(obj != NonNull::dangling());
-        debug_assert!(obj.as_ptr() as usize != 0xffffffffffffffff);
+        debug_assert!(obj.as_ptr() as usize != usize::MAX);
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
@@ -137,7 +137,7 @@ impl CollectorHeapView<'_> {
     pub fn mark_array<T: Clone>(&mut self, arr: &Array<T>) -> bool {
         if let Some(ptr) = arr.allocated_data() {
             debug_assert!(ptr != NonNull::dangling());
-            debug_assert!(ptr.as_ptr() as usize != 0xffffffffffffffff);
+            debug_assert!(ptr.as_ptr() as usize != usize::MAX);
             if !self.heap.is_marked(ptr) {
                 self.heap.mark_object(ptr);
                 self.heap.mark_lines_for_bytes(ptr);

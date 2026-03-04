@@ -3,6 +3,7 @@
 use std::marker::PhantomData;
 use std::mem::swap;
 
+use super::brackets;
 use super::kind::SyntaxKind::{self, *};
 
 use super::lex::Lexer;
@@ -81,6 +82,32 @@ impl<'text> Parser<'text> {
             ch += TextSize::of(*s);
         }
         TextRange::at(ch, TextSize::of(self.tokens[self.next_token].1))
+    }
+
+    /// Calculate a text range covering the last consumed token and the next token.
+    /// Used for reporting errors that span two adjacent tokens (e.g. `::` is two COLON tokens).
+    fn prev_and_next_range(&self) -> TextRange {
+        let mut ch: TextSize = 0.into();
+        let start_token = self.next_token.saturating_sub(1);
+        for (_, s) in &self.tokens[0..start_token] {
+            ch += TextSize::of(*s);
+        }
+        let start = ch;
+        // span from prev token start to end of next token
+        ch += TextSize::of(self.tokens[start_token].1);
+        if self.next_token < self.tokens.len() {
+            ch += TextSize::of(self.tokens[self.next_token].1);
+        }
+        TextRange::new(start, ch)
+    }
+
+    /// Calculate the start offset of the token at the given index.
+    fn token_start_at(&self, idx: usize) -> TextSize {
+        let mut ch: TextSize = 0.into();
+        for (_, s) in &self.tokens[0..idx] {
+            ch += TextSize::of(*s);
+        }
+        ch
     }
 
     /// Operate on the event sink at the top of the stack
@@ -243,6 +270,10 @@ impl<'text> Parser<'text> {
                 self.parse_list_apply_tuple();
                 true
             }
+            Some((BRACKET_OPEN, _)) => {
+                self.parse_bracket_expression();
+                true
+            }
             Some((RESERVED_OPEN, _)) => {
                 self.parse_reserved_paren_expression();
                 true
@@ -252,10 +283,16 @@ impl<'text> Parser<'text> {
         }
     }
 
-    /// Parse a list expression [x, y, z]
+    /// Parse a list expression `[x, y, z]` or a cons pattern `[h : t]`.
+    ///
+    /// A cons pattern has exactly one soup item before a `:` token (with no
+    /// preceding comma), and one soup item after the `:`.  Everything else is
+    /// a normal comma-separated list.
     fn try_parse_list_expression(&mut self) -> bool {
         if let Some((k, _)) = self.next() {
             if k == OPEN_SQUARE {
+                // Speculatively parse the first soup item, then decide
+                // whether this is a cons pattern or a normal list.
                 self.sink().start_node(LIST);
                 self.sink().token(k);
                 self.add_trivia();
@@ -290,7 +327,7 @@ impl<'text> Parser<'text> {
         if let Some((k, _)) = self.peek() {
             if matches!(
                 k,
-                CLOSE_BRACE | CLOSE_PAREN | CLOSE_SQUARE | RESERVED_CLOSE | COMMA
+                CLOSE_BRACE | CLOSE_PAREN | CLOSE_SQUARE | RESERVED_CLOSE | BRACKET_CLOSE | COMMA
             ) {
                 return false;
             }
@@ -347,6 +384,45 @@ impl<'text> Parser<'text> {
 
         self.parse_soup();
         self.expect(RESERVED_CLOSE);
+        self.sink().finish_node();
+    }
+
+    /// Parse a bracket expression using a Unicode idiom bracket pair.
+    ///
+    /// For example: `⟦ x ⟧` or `⌈ x ⌉`.
+    ///
+    /// The opening `BRACKET_OPEN` token is consumed, followed by a soup
+    /// expression, followed by a `BRACKET_CLOSE` token.  The pair of
+    /// bracket characters stored in the tokens is used at desugar time
+    /// to look up the bracket pair function.
+    fn parse_bracket_expression(&mut self) {
+        self.sink().start_node(BRACKET_EXPR);
+
+        // Consume the open bracket token; determine expected close char
+        let expected_close = if let Some((BRACKET_OPEN, open_text)) = self.peek() {
+            let open_char = open_text.chars().next().unwrap_or('⟦');
+            brackets::close_for_open(open_char)
+        } else {
+            None
+        };
+
+        self.expect(BRACKET_OPEN);
+        self.add_trivia();
+        self.parse_soup();
+
+        // Attempt to consume the close bracket token
+        if !self.try_accept(BRACKET_CLOSE) {
+            self.errors.push(ParseError::UnclosedBracketExpr {
+                range: self.next_range(),
+            });
+        } else if let Some(expected) = expected_close {
+            // Validate that the close bracket matches the open
+            // (The close token has already been consumed so we check
+            //  the token we just emitted via the events list — instead we
+            //  do a post-parse validation check in the AST validator)
+            let _ = expected; // validation deferred to validate.rs
+        }
+
         self.sink().finish_node();
     }
 
@@ -438,9 +514,27 @@ impl<'text> Parser<'text> {
     /// Parse a temporary protoblock element
     fn parse_protoblock_element(&mut self) -> bool {
         match self.next() {
-            Some((k, _))
-                if k == BACKTICK || k == COMMA || k == COLON || k == WHITESPACE || k == COMMENT =>
-            {
+            Some((COLON, _)) => {
+                // Check for '::' — this is not valid eucalypt syntax and, if both
+                // COLON tokens reach the BlockEventSink unguarded, causes a panic in
+                // token accounting. Catch it here: wrap both tokens in an ERROR node so
+                // the BlockEventSink treats them as ordinary buffered content rather
+                // than declaration separators.
+                if let Some((COLON, _)) = self.peek() {
+                    let range = self.prev_and_next_range();
+                    self.next(); // consume second COLON
+                    self.errors.push(ParseError::InvalidDoubleColon { range });
+                    self.sink().start_node(ERROR_STOWAWAYS);
+                    self.sink().token(COLON);
+                    self.sink().token(COLON);
+                    self.sink().finish_node();
+                } else {
+                    self.sink().token(COLON);
+                }
+                self.add_trivia();
+                true
+            }
+            Some((k, _)) if k == BACKTICK || k == COMMA || k == WHITESPACE || k == COMMENT => {
                 self.sink().token(k);
                 self.add_trivia();
                 true
@@ -581,7 +675,8 @@ impl<'text> Parser<'text> {
                     self.sink().finish_node();
                 }
                 OPEN_BRACE => {
-                    // Start of interpolation
+                    // Start of interpolation — record the token index before consuming
+                    let open_brace_idx = self.next_token;
                     self.sink().start_node(STRING_INTERPOLATION);
                     self.sink().token(OPEN_BRACE);
                     self.next(); // consume {
@@ -593,6 +688,44 @@ impl<'text> Parser<'text> {
                     if let Some((CLOSE_BRACE, _)) = self.peek() {
                         self.sink().token(CLOSE_BRACE);
                         self.next();
+                    } else {
+                        // No closing brace immediately — consume any stray
+                        // interpolation tokens that the content parser did not
+                        // consume.  We stop if we encounter a closing brace (which
+                        // means the format spec or dotted path was merely malformed,
+                        // not truly unclosed) or the end of the enclosing string.
+                        let mut found_close = false;
+                        while let Some((k, _)) = self.peek() {
+                            if k == CLOSE_BRACE {
+                                // A closing brace is present; consume it and stop.
+                                // This handles malformed-but-closed interpolations
+                                // such as `{x:.2f}` where the parser cannot parse
+                                // the full format spec.
+                                self.sink().token(CLOSE_BRACE);
+                                self.next();
+                                found_close = true;
+                                break;
+                            }
+                            if k == STRING_LITERAL_CONTENT
+                                || k == STRING_PATTERN_END
+                                || k == C_STRING_PATTERN_END
+                                || k == RAW_STRING_PATTERN_END
+                                || k == end_kind
+                            {
+                                // Stop before the end of the string — these
+                                // will be consumed by the outer loop.
+                                break;
+                            }
+                            self.sink().token(k);
+                            self.next();
+                        }
+                        if !found_close {
+                            let open_start = self.token_start_at(open_brace_idx);
+                            let open_len = TextSize::of(self.tokens[open_brace_idx].1);
+                            self.errors.push(ParseError::UnclosedStringInterpolation {
+                                range: TextRange::at(open_start, open_len),
+                            });
+                        }
                     }
 
                     self.sink().finish_node(); // end STRING_INTERPOLATION
@@ -2390,6 +2523,39 @@ UNIT@0..105
             parse.errors().is_empty(),
             "Date-only t-string should parse without errors: {:?}",
             parse.errors()
+        );
+    }
+
+    #[test]
+    pub fn test_cons_pattern_in_list() {
+        // A cons pattern [h : t] should parse without errors inside a function param
+        let text = r#"{ f([h : t]): h }"#;
+        let parse = parse_expr(text);
+
+        assert!(
+            parse.errors().is_empty(),
+            "Cons pattern [h : t] should parse without errors: {:?}",
+            parse.errors()
+        );
+
+        // Verify the shape: LIST with COLON token child
+        verify_expr(
+            "[x : xs]",
+            r#"
+SOUP@0..8
+  LIST@0..8
+    OPEN_SQUARE@0..1 "["
+    SOUP@1..3
+      NAME@1..2
+        UNQUOTED_IDENTIFIER@1..2 "x"
+      WHITESPACE@2..3 " "
+    COLON@3..4 ":"
+    WHITESPACE@4..5 " "
+    SOUP@5..7
+      NAME@5..7
+        UNQUOTED_IDENTIFIER@5..7 "xs"
+    CLOSE_SQUARE@7..8 "]"
+"#,
         );
     }
 }

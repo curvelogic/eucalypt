@@ -6,18 +6,28 @@
 //! means we cannot cache core output. However it'll do for now.
 
 use crate::core::expr::{acore, RcExpr};
+
+#[cfg(not(target_arch = "wasm32"))]
 use chrono::{offset::Local, TimeZone};
+#[cfg(not(target_arch = "wasm32"))]
 use std::{
     env,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 /// A core block of environment variables
+#[cfg(not(target_arch = "wasm32"))]
 fn env_vars() -> RcExpr {
     acore::block(env::vars().map(|(k, v)| (k, acore::str(&v))))
 }
 
+#[cfg(target_arch = "wasm32")]
+fn env_vars() -> RcExpr {
+    acore::block(std::iter::empty::<(String, RcExpr)>())
+}
+
 /// Duration since unix epoch in seconds
+#[cfg(not(target_arch = "wasm32"))]
 fn epoch_time() -> RcExpr {
     if let Ok(secs) = SystemTime::now().duration_since(UNIX_EPOCH) {
         acore::num(secs.as_secs())
@@ -26,7 +36,13 @@ fn epoch_time() -> RcExpr {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+fn epoch_time() -> RcExpr {
+    acore::num(0i64)
+}
+
 /// Current timezone information
+#[cfg(not(target_arch = "wasm32"))]
 fn tz() -> RcExpr {
     let offset = format!(
         "{}",
@@ -39,7 +55,13 @@ fn tz() -> RcExpr {
     acore::block(vec![("offset".to_string(), acore::str(&offset))])
 }
 
+#[cfg(target_arch = "wasm32")]
+fn tz() -> RcExpr {
+    acore::block(vec![("offset".to_string(), acore::str("+00:00"))])
+}
+
 /// Generate a random seed from the current time
+#[cfg(not(target_arch = "wasm32"))]
 fn random_seed(explicit_seed: Option<i64>) -> RcExpr {
     if let Some(seed) = explicit_seed {
         acore::num(seed)
@@ -48,6 +70,11 @@ fn random_seed(explicit_seed: Option<i64>) -> RcExpr {
     } else {
         acore::num(0i64)
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn random_seed(explicit_seed: Option<i64>) -> RcExpr {
+    acore::num(explicit_seed.unwrap_or(0))
 }
 
 /// Construct a core block containing environment data for merging

@@ -207,6 +207,7 @@ The precedence of `‖` (55) is between comparison (50) and arithmetic
 (75), so it binds more tightly than comparisons but less tightly than
 addition or multiplication.
 
+
 ### Mixing patterns
 
 Normal parameters and destructuring patterns can be combined in any

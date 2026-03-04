@@ -76,9 +76,26 @@
   (operator) @function
   (identifier) @parameter)
 
-; Function parameters
+; Function parameters — simple identifiers
 (parameter_list
   (identifier) @parameter)
+
+; Destructuring parameters — block pattern field names
+(block_pattern
+  (declaration
+    (declaration_head
+      (identifier) @parameter)))
+
+; Destructuring parameters — list pattern element names
+(list_pattern
+  (identifier) @parameter)
+
+; Destructuring parameters — cons pattern head and tail names
+(cons_pattern
+  (identifier) @parameter)
+
+; Idiom bracket expressions — highlight the bracket delimiters distinctively
+(bracket_expr) @punctuation.special
 
 ; Function application
 (application

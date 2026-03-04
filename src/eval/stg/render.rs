@@ -481,6 +481,8 @@ pub mod tests {
             Box::new(panic::Panic),
             Box::new(boolean::And),
             Box::new(boolean::Not),
+            Box::new(boolean::True),
+            Box::new(boolean::False),
         ])
     }
 

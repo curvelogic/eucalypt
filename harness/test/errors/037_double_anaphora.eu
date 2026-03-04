@@ -1,2 +1,0 @@
-# Error: using _ more than once creates multiple parameters
-result: [1,2,3] map(_ + _)

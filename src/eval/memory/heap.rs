@@ -2396,7 +2396,7 @@ impl Heap {
 
     /// Mark an object as live
     pub fn mark_object<T>(&self, ptr: NonNull<T>) {
-        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
+        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != usize::MAX);
         let header: NonNull<AllocHeader> = self.get_header(ptr);
         let current_mark_state = self.mark_state();
         // SAFETY: Mutable access to header's mark bit during GC.
@@ -2409,7 +2409,7 @@ impl Heap {
 
     /// Unmark object
     pub fn unmark_object<T>(&self, ptr: NonNull<T>) {
-        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
+        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != usize::MAX);
         let header = self.get_header(ptr);
         let current_mark_state = self.mark_state();
         // SAFETY: Mutable access to header's mark bit during GC.

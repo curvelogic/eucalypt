@@ -708,6 +708,106 @@ lazy_static! {
             ty: function(vec![num(), list(), list()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 133
+            name: "ASSERT_FAIL",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 134
+            name: "ARRAY.ZEROS",
+            ty: function(vec![list(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 135
+            name: "ARRAY.FILL",
+            ty: function(vec![list(), num(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 136
+            name: "ARRAY.FROM_FLAT",
+            ty: function(vec![list(), list(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 137
+            name: "ARRAY.GET",
+            ty: function(vec![unk(), list(), num()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 138
+            name: "ARRAY.SET",
+            ty: function(vec![unk(), list(), num(), unk()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 139
+            name: "ARRAY.SHAPE",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 140
+            name: "ARRAY.RANK",
+            ty: function(vec![unk(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 141
+            name: "ARRAY.LENGTH",
+            ty: function(vec![unk(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 142
+            name: "ARRAY.TO_LIST",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 143
+            name: "ARRAY.ISARRAY",
+            ty: function(vec![unk(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 144
+            name: "ARRAY.TRANSPOSE",
+            ty: function(vec![unk(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 145
+            name: "ARRAY.RESHAPE",
+            ty: function(vec![unk(), list(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 146
+            name: "ARRAY.SLICE",
+            ty: function(vec![unk(), num(), num(), unk()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 147
+            name: "ARRAY.ADD",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 148
+            name: "ARRAY.SUB",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 149
+            name: "ARRAY.MUL",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 150
+            name: "ARRAY.DIV",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 151
+            name: "ARRAY_INDICES",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 152
+            name: "ARRAY_NEIGHBOURS",
+            ty: function(vec![list(), list(), num(), unk(), list()]).unwrap(),
+            strict: vec![0, 1, 2, 3],
+    },
     ];
 }
 

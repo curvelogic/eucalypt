@@ -425,6 +425,11 @@ pub fn test_harness_086() {
 }
 
 #[test]
+pub fn test_harness_087() {
+    run_test(&opts("087_arrays.eu"));
+}
+
+#[test]
 pub fn test_harness_090() {
     run_test(&opts("090_relative_imports.eu"));
 }
@@ -452,6 +457,16 @@ pub fn test_harness_094() {
 #[test]
 pub fn test_harness_095() {
     run_test(&opts("095_destructuring_integration.eu"));
+}
+
+#[test]
+pub fn test_harness_096() {
+    run_test(&opts("096_monadic_blocks.eu"));
+}
+
+#[test]
+pub fn test_harness_097() {
+    run_test(&opts("097_idiom_brackets.eu"));
 }
 
 #[test]
@@ -672,11 +687,6 @@ pub fn test_error_036() {
 }
 
 #[test]
-pub fn test_error_037() {
-    run_error_test(&error_opts("037_double_anaphora.eu"));
-}
-
-#[test]
 pub fn test_error_038() {
     run_error_test(&error_opts("038_double_equals.eu"));
 }
@@ -693,15 +703,225 @@ pub fn test_error_041() {
 
 #[test]
 pub fn test_error_042() {
-    run_error_test(&error_opts("042_destructure_missing_field.eu"));
+    run_error_test(&error_opts("042_map_non_list.eu"));
 }
 
 #[test]
 pub fn test_error_043() {
-    run_error_test(&error_opts("043_destructure_short_list.eu"));
+    run_error_test(&error_opts("043_assignment_syntax.eu"));
 }
 
 #[test]
 pub fn test_error_044() {
-    run_error_test(&error_opts("044_destructure_empty_cons.eu"));
+    run_error_test(&error_opts("044_double_colon_type_annot.eu"));
+}
+
+#[test]
+pub fn test_error_045() {
+    run_error_test(&error_opts("045_list_plus_concat.eu"));
+}
+
+#[test]
+pub fn test_error_046() {
+    run_error_test(&error_opts("046_import_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_047() {
+    run_error_test(&error_opts("047_str_plus_plus.eu"));
+}
+
+#[test]
+pub fn test_error_048() {
+    run_error_test(&error_opts("048_unclosed_interpolation.eu"));
+}
+
+#[test]
+pub fn test_error_049() {
+    run_error_test(&error_opts("049_dot_on_number.eu"));
+}
+
+#[test]
+pub fn test_error_050() {
+    run_error_test(&error_opts("050_dot_on_string.eu"));
+}
+
+#[test]
+pub fn test_error_051() {
+    run_error_test(&error_opts("051_missing_flatten.eu"));
+}
+
+#[test]
+pub fn test_error_052() {
+    run_error_test(&error_opts("052_missing_length.eu"));
+}
+
+#[test]
+pub fn test_error_053() {
+    run_error_test(&error_opts("053_block_in_arithmetic.eu"));
+}
+
+#[test]
+pub fn test_error_054() {
+    run_error_test(&error_opts("054_num_merge_hint.eu"));
+}
+
+#[test]
+pub fn test_error_055() {
+    run_error_test(&error_opts("055_list_not_callable.eu"));
+}
+
+#[test]
+pub fn test_error_056() {
+    run_error_test(&error_opts("056_fold_hint.eu"));
+}
+
+#[test]
+pub fn test_error_057() {
+    run_error_test(&error_opts("057_head_empty_list.eu"));
+}
+
+#[test]
+pub fn test_error_058() {
+    run_error_test(&error_opts("058_python_true.eu"));
+}
+
+#[test]
+pub fn test_error_059() {
+    run_error_test(&error_opts("059_else_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_060() {
+    run_error_test(&error_opts("060_return_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_061() {
+    run_error_test(&error_opts("061_lambda_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_062() {
+    run_error_test(&error_opts("062_str_contains_hint.eu"));
+}
+
+#[test]
+pub fn test_error_063() {
+    run_error_test(&error_opts("063_str_trim_hint.eu"));
+}
+
+#[test]
+pub fn test_error_064() {
+    run_error_test(&error_opts("064_has_string_not_sym.eu"));
+}
+
+#[test]
+pub fn test_error_065() {
+    run_error_test(&error_opts("065_even_predicate_hint.eu"));
+}
+
+#[test]
+pub fn test_error_066() {
+    run_error_test(&error_opts("066_odd_predicate_hint.eu"));
+}
+
+#[test]
+pub fn test_error_067() {
+    run_error_test(&error_opts("067_str_upper_hint.eu"));
+}
+
+#[test]
+pub fn test_error_068() {
+    run_error_test(&error_opts("068_str_lower_hint.eu"));
+}
+
+#[test]
+pub fn test_error_069() {
+    run_error_test(&error_opts("069_parse_num_hint.eu"));
+}
+
+#[test]
+pub fn test_error_070() {
+    run_error_test(&error_opts("070_str_upper_method.eu"));
+}
+
+#[test]
+pub fn test_error_071() {
+    run_error_test(&error_opts("071_def_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_072() {
+    run_error_test(&error_opts("072_number_type_pred.eu"));
+}
+
+#[test]
+pub fn test_error_073() {
+    run_error_test(&error_opts("073_sprintf_hint.eu"));
+}
+
+#[test]
+pub fn test_error_074() {
+    run_error_test(&error_opts("074_where_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_075() {
+    run_error_test(&error_opts("075_let_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_076() {
+    run_error_test(&error_opts("076_fn_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_077() {
+    run_error_test(&error_opts("077_double_anaphora.eu"));
+}
+
+#[test]
+pub fn test_error_078() {
+    run_error_test(&error_opts("078_anon_anaphor_scope.eu"));
+}
+
+#[test]
+pub fn test_error_079() {
+    run_error_test(&error_opts("079_camelcase_take_while.eu"));
+}
+
+#[test]
+pub fn test_error_080() {
+    run_error_test(&error_opts("080_array_oob.eu"));
+}
+
+#[test]
+pub fn test_error_081() {
+    run_error_test(&error_opts("081_array_shape_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_082() {
+    run_error_test(&error_opts("082_array_reshape_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_083() {
+    run_error_test(&error_opts("083_array_arith_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_084() {
+    run_error_test(&error_opts("084_destructure_missing_field.eu"));
+}
+
+#[test]
+pub fn test_error_085() {
+    run_error_test(&error_opts("085_destructure_short_list.eu"));
+}
+
+#[test]
+pub fn test_error_086() {
+    run_error_test(&error_opts("086_destructure_empty_cons.eu"));
 }
