@@ -445,6 +445,54 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // CamelCase names for list functions that have kebab-case equivalents.
+                    // Haskell, Scala, and JavaScript all use camelCase for these.
+                    "takeWhile" | "take_while" => {
+                        notes.push(
+                            "eucalypt uses kebab-case: 'take-while', e.g. \
+                             'xs take-while(_ < 4)'"
+                                .to_string(),
+                        );
+                    }
+                    "dropWhile" | "drop_while" => {
+                        notes.push(
+                            "eucalypt uses kebab-case: 'drop-while', e.g. \
+                             'xs drop-while(_ < 4)'"
+                                .to_string(),
+                        );
+                    }
+                    "zipWith" | "zip_with" => {
+                        notes.push(
+                            "eucalypt uses kebab-case: 'zip-with', e.g. \
+                             'zip-with(+, xs, ys)' or 'xs zip-with(+, ys)'"
+                                .to_string(),
+                        );
+                    }
+                    "groupBy" | "group_by" => {
+                        notes.push(
+                            "eucalypt uses kebab-case: 'group-by', e.g. \
+                             'xs group-by(_ % 2)' to group by remainder"
+                                .to_string(),
+                        );
+                    }
+                    "sortBy" | "sort_by" => {
+                        notes.push(
+                            "eucalypt uses kebab-case: 'sort-by' (for general ordering) or \
+                             'sort-by-num' (for numeric keys), e.g. \
+                             'xs sort-by-num(.score)'"
+                                .to_string(),
+                        );
+                    }
+                    // Common names for prefix sum / running total / cumulative sum.
+                    // In eucalypt, use 'scanl' with the '+' operator.
+                    "running-total" | "running_total" | "prefix-sum" | "prefix_sum" | "cumsum"
+                    | "cumulative-sum" | "cumulative_sum" | "scan" => {
+                        notes.push(
+                            "to compute a running total, use 'scanl', e.g. \
+                             'xs scanl(+, 0)' produces prefix sums"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
