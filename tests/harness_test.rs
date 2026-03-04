@@ -425,6 +425,11 @@ pub fn test_harness_086() {
 }
 
 #[test]
+pub fn test_harness_087() {
+    run_test(&opts("087_arrays.eu"));
+}
+
+#[test]
 pub fn test_harness_090() {
     run_test(&opts("090_relative_imports.eu"));
 }
@@ -874,4 +879,24 @@ pub fn test_error_078() {
 #[test]
 pub fn test_error_079() {
     run_error_test(&error_opts("079_camelcase_take_while.eu"));
+}
+
+#[test]
+pub fn test_error_080() {
+    run_error_test(&error_opts("080_array_oob.eu"));
+}
+
+#[test]
+pub fn test_error_081() {
+    run_error_test(&error_opts("081_array_shape_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_082() {
+    run_error_test(&error_opts("082_array_reshape_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_083() {
+    run_error_test(&error_opts("083_array_arith_mismatch.eu"));
 }

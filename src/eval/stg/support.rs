@@ -13,6 +13,7 @@ use crate::eval::{
         alloc::{ScopedAllocator, ScopedPtr},
         array::Array,
         mutator::MutatorHeapView,
+        ndarray::HeapNdArray,
         set::HeapSet,
         syntax::StgBuilder,
     },
@@ -30,7 +31,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Str(_) => IntrinsicType::String,
         Native::Sym(_) => IntrinsicType::Symbol,
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
-        Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
+        Native::Index(_) | Native::Set(_) | Native::NdArray(_) => IntrinsicType::Unknown,
     }
 }
 
@@ -470,6 +471,36 @@ pub fn machine_return_set(
     ))
 }
 
+/// Helper for intrinsics to access an ndarray arg
+pub fn ndarray_arg<'guard>(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'guard>,
+    arg: &Ref,
+) -> Result<ScopedPtr<'guard, HeapNdArray>, ExecutionError> {
+    let native = machine.nav(view).resolve_native(arg)?;
+    if let Native::NdArray(ptr) = native {
+        Ok(view.scoped(ptr))
+    } else {
+        Err(ExecutionError::Panic("expected array argument".to_string()))
+    }
+}
+
+/// Return an ndarray from intrinsic
+pub fn machine_return_ndarray(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    arr: HeapNdArray,
+) -> Result<(), ExecutionError> {
+    let ptr = view.alloc(arr)?.as_ptr();
+    machine.set_closure(SynClosure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: Ref::V(Native::NdArray(ptr)),
+        })?
+        .as_ptr(),
+        machine.root_env(),
+    ))
+}
+
 /// Return boolean from intrinsic
 ///
 /// Reuses the pre-allocated TRUE/FALSE global closures rather than
@@ -543,6 +574,79 @@ pub fn collect_num_list(
         }
     }
     Ok(numbers)
+}
+
+/// Build a heap cons-list of boxed numbers from a slice of f64, returning
+/// the raw heap pointer to the head of the list.
+///
+/// Used internally to construct inner lists for `machine_return_num_list_of_lists`.
+fn build_num_list_ptr(
+    view: MutatorHeapView<'_>,
+    nums: &[f64],
+) -> Result<RefPtr<HeapSyn>, ExecutionError> {
+    let mut bindings: Vec<LambdaForm> = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for &item in nums.iter().rev() {
+        let n = Number::from_f64(item).unwrap_or_else(|| Number::from(0));
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::BoxedNumber.tag(),
+                Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
+            )?
+            .as_ptr(),
+        ));
+        let len = bindings.len();
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+    let list_index = bindings.len() - 1;
+    Ok(view
+        .letrec(
+            Array::from_slice(&view, &bindings),
+            view.atom(Ref::L(list_index))?,
+        )?
+        .as_ptr())
+}
+
+/// Return a list of number-lists from an intrinsic.
+///
+/// Used for `ARRAY.INDICES` which returns a list of coordinate lists.
+pub fn machine_return_num_list_of_lists(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    lists: Vec<Vec<f64>>,
+) -> Result<(), ExecutionError> {
+    // Build each inner list as a heap object and collect raw pointers.
+    let inner_ptrs: Vec<RefPtr<HeapSyn>> = lists
+        .iter()
+        .map(|inner| build_num_list_ptr(view, inner))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Build the outer cons list from these pointers.
+    let mut bindings: Vec<LambdaForm> = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for ptr in inner_ptrs.into_iter().rev() {
+        bindings.push(LambdaForm::value(ptr));
+        let len = bindings.len();
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+    let list_index = bindings.len() - 1;
+    let syn = view
+        .letrec(
+            Array::from_slice(&view, &bindings),
+            view.atom(Ref::L(list_index))?,
+        )?
+        .as_ptr();
+    machine.set_closure(SynClosure::new(syn, machine.root_env()))
 }
 
 /// Return a number list from intrinsic, following the same pattern

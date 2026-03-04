@@ -1,0 +1,4 @@
+# Element-wise arithmetic with different-shaped arrays
+a: arr.from-flat([2], [1, 2])
+b: arr.from-flat([3], [1, 2, 3])
+c: arr.add(a, b)

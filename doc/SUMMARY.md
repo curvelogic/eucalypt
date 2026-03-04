@@ -42,6 +42,7 @@
   - [Random Numbers](reference/prelude/random.md)
   - [Metadata](reference/prelude/metadata.md)
   - [IO](reference/prelude/io.md)
+  - [N-Dimensional Arrays](reference/prelude/arrays.md)
 - [CLI Reference](reference/cli.md)
 - [Import Formats](reference/import-formats.md)
 - [Export Formats](reference/export-formats.md)

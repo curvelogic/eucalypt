@@ -114,7 +114,7 @@ by-age: people sort-by-num(_.age)         # sorted by age
 | Function | Description |
 |----------|-------------|
 | `nth(n, l)` | Return `n`th item of list if it exists, otherwise panic |
-| `(l !! n)` | Return `n`th item of list if it exists, otherwise error |
+| `(l !! n)` | Return `n`th item of list if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and delegates to `arr.get`. |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
 | `over-sliding-pairs(f, l)` | Apply binary fn `f` to each overlapping pair in `l` to form new list |

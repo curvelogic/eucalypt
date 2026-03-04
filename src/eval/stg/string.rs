@@ -127,6 +127,7 @@ impl StgIntrinsic for Str {
             Native::Zdt(d) => format!("{d}"),
             Native::Index(idx) => format!("<index:{}>", idx.len()),
             Native::Set(_) => "<set>".to_string(),
+            Native::NdArray(_) => "<array>".to_string(),
         };
         machine_return_str(machine, view, text)
     }

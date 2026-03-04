@@ -6,6 +6,8 @@
 |----------|-------------|
 | `(∸ n)` | Unary minus; negate |
 
+The binary arithmetic operators `+`, `-`, `*`, and `/` are polymorphic: when either operand is an n-dimensional array, the operation is performed element-wise. One operand may be a scalar number. For purely numeric operands, the operators behave as before (`/` performs floor division for numbers, but element-wise float division for arrays).
+
 ## Numeric Functions
 
 | Function | Description |
