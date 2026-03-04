@@ -830,3 +830,8 @@ pub fn test_error_069() {
 pub fn test_error_070() {
     run_error_test(&error_opts("070_str_upper_method.eu"));
 }
+
+#[test]
+pub fn test_error_071() {
+    run_error_test(&error_opts("071_def_keyword.eu"));
+}
