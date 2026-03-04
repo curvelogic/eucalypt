@@ -807,38 +807,47 @@ assertions: {
 }
 
 ` { doc: "`e //= v` - add metadata to check expression `e` evaluates to `v` and return whether valid"
-    export: :suppress 
+    export: :suppress
     associates: :left
     precedence: :meta }
 (e //= v): e with-meta({ assert: (= v)}) assertions.check
 
-` { doc: "`e //=> v` - add metadata to assert expression `e` evaluates to `v` and return `e`."
-    export: :suppress 
+` { doc: "`e //=> v` - assert expression `e` evaluates to `v` and return `e`.
+
+    On failure, reports the expected and actual values:
+    `assertion failed: expected <v>, got <e>`"
+    export: :suppress
     associates: :left
     precedence: :meta }
-(e //=> v): e with-meta({ assert: (= v)}) assertions.checked
+(e //=> v): if(e = v, e, __ASSERT_FAIL(e, v))
 
 ` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies predicate `f` and return `e`."
-    export: :suppress 
+    export: :suppress
     associates: :left
     precedence: :meta }
 (e //=? f): e with-meta({ assert: f}) assertions.checked
 
 ` { doc: "`e //!? f` - add metadata to assert expression `e` does not satisfy predicate `f` and return `e`."
-    export: :suppress 
+    export: :suppress
     associates: :left
     precedence: :meta }
 (e //!? f): e with-meta({ assert: complement(f)}) assertions.checked
 
-` { doc: "`e //! f` - add metadata to assert expression `e` is true and return `e`."
-    export: :suppress 
-    precedence: :meta }
-(e //!): e with-meta({ assert: (= true) }) assertions.checked
+` { doc: "`e //!` - assert expression `e` is true and return `e`.
 
-` { doc: "`e //!! f` - add metadata to assert expression `e` is false and return `e`."
-    export: :suppress 
+    On failure, reports the actual value:
+    `assertion failed: expected true, got <e>`"
+    export: :suppress
     precedence: :meta }
-(e //!!): e with-meta({ assert: (= false) }) assertions.checked
+(e //!): if(e = true, e, __ASSERT_FAIL(e, true))
+
+` { doc: "`e //!!` - assert expression `e` is false and return `e`.
+
+    On failure, reports the actual value:
+    `assertion failed: expected false, got <e>`"
+    export: :suppress
+    precedence: :meta }
+(e //!!): if(e = false, e, __ASSERT_FAIL(e, false))
 
 #
 # List library functions, maps and folds

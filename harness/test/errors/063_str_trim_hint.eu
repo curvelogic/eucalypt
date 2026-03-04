@@ -1,0 +1,3 @@
+# Mistake: using str.trim (Python/JavaScript style) — does not exist in eucalypt
+text: "  hello  "
+trimmed: text str.trim

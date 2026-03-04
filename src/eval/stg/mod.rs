@@ -3,6 +3,7 @@
 //!
 pub mod arith;
 pub mod array;
+pub mod assert;
 pub mod block;
 pub mod boolean;
 pub mod compiler;
@@ -72,6 +73,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(boolean::Not));
     rt.add(Box::new(boolean::If));
     rt.add(Box::new(panic::Panic));
+    rt.add(Box::new(assert::AssertFail));
     rt.add(Box::new(block::Block));
     rt.add(Box::new(block::Kv));
     rt.add(Box::new(block::Dekv));

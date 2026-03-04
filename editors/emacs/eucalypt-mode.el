@@ -38,6 +38,14 @@
 (require 'quail)
 (require 'transient)
 
+;; Optional dependencies — declare to suppress byte-compile warnings.
+;; These are loaded conditionally at runtime via `with-eval-after-load'
+;; or `commandp' guards.
+(defvar eglot-server-programs)
+(declare-function rainbow-delimiters-mode "rainbow-delimiters" ())
+(declare-function yaml-mode "yaml-mode" ())
+(declare-function json-mode "json-mode" ())
+
 ;;; Group
 
 (defgroup eucalypt nil
@@ -154,7 +162,9 @@ Set via file-local variables, e.g.:
    :feature 'bracket
    '(["(" ")" "[" "]" "{" "}"] @font-lock-bracket-face
      [":" ","] @font-lock-delimiter-face
-     ["`"] @font-lock-preprocessor-face)
+     ["`"] @font-lock-preprocessor-face
+     ;; Idiom bracket expressions: ⟦ expr ⟧, «expr», etc.
+     (bracket_expr) @eucalypt-unicode-bracket-face)
 
    :language 'eucalypt
    :feature 'interpolation
@@ -179,8 +189,16 @@ Set via file-local variables, e.g.:
 
    :language 'eucalypt
    :feature 'parameter
-   '((parameter_list (identifier) @font-lock-variable-name-face)
-     (operator_declaration (identifier) @font-lock-variable-name-face))
+   '(;; Simple parameters
+     (parameter_list (identifier) @font-lock-variable-name-face)
+     (operator_declaration (identifier) @font-lock-variable-name-face)
+     ;; Block destructuring pattern: {x y} or {x: a  y: b}
+     (block_pattern
+      (declaration (declaration_head (identifier) @font-lock-variable-name-face)))
+     ;; Fixed-length list destructuring pattern: [a, b, c]
+     (list_pattern (identifier) @font-lock-variable-name-face)
+     ;; Cons pattern: [h : t]
+     (cons_pattern (identifier) @font-lock-variable-name-face))
 
    :language 'eucalypt
    :feature 'function-call
@@ -224,8 +242,12 @@ Set via file-local variables, e.g.:
      ((parent-is "source_file") column-0 0)
      ;; Inside blocks, indent declarations
      ((parent-is "block") parent-bol eucalypt-indent-offset)
+     ;; Inside block destructuring patterns
+     ((parent-is "block_pattern") parent-bol eucalypt-indent-offset)
      ;; Inside lists, indent elements
      ((parent-is "list") parent-bol eucalypt-indent-offset)
+     ;; Inside idiom bracket expressions
+     ((parent-is "bracket_expr") parent-bol eucalypt-indent-offset)
      ;; Inside parentheses, indent contents
      ((parent-is "paren_expr") parent-bol eucalypt-indent-offset)
      ((parent-is "argument_list") parent-bol eucalypt-indent-offset)

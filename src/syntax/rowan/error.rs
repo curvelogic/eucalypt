@@ -67,6 +67,24 @@ pub enum ParseError {
     InvalidDoubleColon {
         range: TextRange,
     },
+    /// A bracket expression was opened but not closed
+    UnclosedBracketExpr {
+        range: TextRange,
+    },
+    /// A bracket expression uses a close bracket that does not match the open
+    MismatchedBrackets {
+        open_range: TextRange,
+        close_range: TextRange,
+        /// The character that was expected
+        expected_close: char,
+        /// The character that was found
+        actual_close: char,
+    },
+    /// An unknown bracket pair was used — not defined as an idiom bracket
+    UnknownBracketPair {
+        range: TextRange,
+        open_char: char,
+    },
 }
 
 /// The reason a `t"..."` date/time literal is invalid
@@ -146,6 +164,24 @@ impl fmt::Display for ParseError {
                  help: use ':' for declarations (e.g. `name: value`)\n  \
                  help: '::' is used in Haskell/Rust for type annotations, \
                  but eucalypt does not have type annotations"
+            ),
+            ParseError::UnclosedBracketExpr { .. } => {
+                write!(f, "unclosed bracket expression (missing closing bracket)")
+            }
+            ParseError::MismatchedBrackets {
+                expected_close,
+                actual_close,
+                ..
+            } => write!(
+                f,
+                "mismatched brackets: expected '{expected_close}' but found '{actual_close}'\n  \
+                 help: bracket pairs must match, e.g. '⟦' must be closed with '⟧'"
+            ),
+            ParseError::UnknownBracketPair { open_char, .. } => write!(
+                f,
+                "unknown bracket pair starting with '{open_char}'\n  \
+                 help: bracket pairs must be declared before use, \
+                 e.g. '(⟦ x ⟧): my-functor(x)'"
             ),
         }
     }

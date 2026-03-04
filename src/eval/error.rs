@@ -44,7 +44,7 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
         ],
         (Number, String) => {
             vec![
-                "if you need to convert a string to a number, use 'parse-num'".to_string(),
+                "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
                 "to concatenate strings, use string interpolation or 'join-on' \
                  instead of '+'"
                     .to_string(),
@@ -57,6 +57,12 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
             "arithmetic operators like '+' work on numbers, not lists".to_string(),
             "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
         ],
+        (Symbol, String) => vec![
+            "eucalypt uses symbol literals (`:name`) not strings for key names".to_string(),
+            "for example, use `has(:x)` instead of `has(\"x\")`; \
+             symbols are written with a leading colon"
+                .to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -68,9 +74,11 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_string = actual == DataConstructor::BoxedString.tag();
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
+    let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
+    let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
 
     if is_list && expects_block {
         vec![
@@ -102,7 +110,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
              strings do not have fields"
                 .to_string(),
             "to apply string functions, use pipeline catenation, \
-             e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
+             e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
                 .to_string(),
             "note: 'str' is a namespace of string functions, not a type conversion function; \
              use 'str.of(x)' or string interpolation to convert values to strings"
@@ -117,13 +125,27 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         ]
     } else if is_string && expects_number {
         vec![
-            "to convert a string to a number, use 'parse-num'".to_string(),
+            "to convert a string to a number, use 'num', e.g. 's num'".to_string(),
             "to concatenate strings, use string interpolation or 'join-on' \
              instead of '+'"
                 .to_string(),
         ]
     } else if is_number && expects_string {
         vec!["to convert a number to a string, use 'str' or string interpolation".to_string()]
+    } else if is_string && expects_symbol {
+        vec![
+            "eucalypt uses symbol literals (`:name`) not strings for key names".to_string(),
+            "for example, use `has(:x)` instead of `has(\"x\")`; \
+             symbols are written with a leading colon"
+                .to_string(),
+        ]
+    } else if is_symbol && expects_string {
+        vec![
+            "a symbol (`:name`) was found where a string was expected".to_string(),
+            "to convert a symbol to a string, use 'str.of', e.g. `str.of(:name)` \
+             gives the string `\"name\"`"
+                .to_string(),
+        ]
     } else {
         vec![]
     }
@@ -204,6 +226,90 @@ fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
     msg
 }
 
+/// Generate contextual notes for lookup failure errors.
+///
+/// Recognises common Python/Ruby string method names used as block keys and
+/// suggests the correct eucalypt equivalents in the `str` namespace.
+fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
+    // Only produce extra notes when there are no edit-distance suggestions,
+    // i.e. the key is genuinely unknown and not a near-miss of an existing key.
+    if !suggestions.is_empty() {
+        return vec![];
+    }
+    match key {
+        "upper" | "toUpper" | "toUpperCase" | "toupper" => {
+            vec!["to convert a string to upper case, use 'str.to-upper', \
+             e.g. 'text str.to-upper'"
+                .to_string()]
+        }
+        "lower" | "toLower" | "toLowerCase" | "tolower" => {
+            vec!["to convert a string to lower case, use 'str.to-lower', \
+             e.g. 'text str.to-lower'"
+                .to_string()]
+        }
+        "replace" | "sub" | "gsub" => vec!["eucalypt has no 'replace' function; \
+             use 'str.matches-of(re, s)' to find matches, or construct a replacement \
+             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+            .to_string()],
+        "strip" | "trim" | "rstrip" | "lstrip" => vec!["eucalypt has no 'trim'/'strip' function; \
+             to remove surrounding whitespace use a regex: \
+             'text str.extract(\"^\\\\s*(.*?)\\\\s*$\")'"
+            .to_string()],
+        "startswith" | "starts_with" | "startsWith" | "hasPrefix" => vec![
+            "to test if a string starts with a prefix, use 'str.matches?(re, s)' \
+             with an anchored regex, e.g. 'text str.matches?(\"^prefix\")'"
+                .to_string(),
+        ],
+        "endswith" | "ends_with" | "endsWith" | "hasSuffix" => vec![
+            "to test if a string ends with a suffix, use 'str.matches?(re, s)' \
+             with an anchored regex, e.g. 'text str.matches?(\"suffix$\")'"
+                .to_string(),
+        ],
+        "find" | "index" | "indexOf" | "indexof" => {
+            vec!["eucalypt has no string 'find'/'index' function; \
+             to extract a substring use 'str.extract(re, s)' with a capture group, \
+             e.g. 'text str.extract(\"(pattern)\")'"
+                .to_string()]
+        }
+        "encode" | "decode" => vec!["to encode a string as base64 use 'str.base64-encode', \
+             to decode use 'str.base64-decode'"
+            .to_string()],
+        "format" | "sprintf" | "printf" => vec!["to format a value as a string, use 'str.fmt', \
+             e.g. 'str.fmt(x, \"%.2f\")' for two decimal places"
+            .to_string()],
+        "contains?" | "contains" | "includes?" | "includes" => vec![
+            "to test if a string contains a pattern, use 'str.matches?', \
+             e.g. `text str.matches?(\"pattern\")`"
+                .to_string(),
+            "note: 'str.matches?' uses a regular expression, so special \
+             characters like '.', '+', '*' must be escaped with '\\'"
+                .to_string(),
+        ],
+        "replace-all" | "substitute" => vec!["eucalypt has no 'replace' function; \
+             use 'str.matches-of(re, s)' to find matches, or construct a replacement \
+             by splitting and re-joining: 's str.split-on(re) join-on(replacement)'"
+            .to_string()],
+        "substring" | "substr" => vec!["eucalypt has no substring function; \
+             use 'str.extract(re)' with a capturing regex to extract a portion of a string"
+            .to_string()],
+        "reverse" => vec!["eucalypt has no built-in string reverse function; \
+             use 'str.letters' to get individual characters, then 'reverse' the list, \
+             then 'str.join-on(\"\")'"
+            .to_string()],
+        "to-string" | "to_string" | "toString" => vec![
+            "to convert a value to a string, use 'str.of', e.g. `str.of(42)`, \
+             or string interpolation: `\"{42}\"`"
+                .to_string(),
+        ],
+        "pad" | "pad-left" | "pad-right" | "rpad" | "lpad" | "padStart" | "padEnd" => vec![
+            "to pad a string, use 'str.fmt' with a printf width specifier, \
+             e.g. `42 str.fmt(\"%10d\")` for right-padding"
+                .to_string(),
+        ],
+        _ => vec![],
+    }
+}
+
 /// Format a "not a value" error message when a non-value expression is found
 /// where a primitive value was expected.
 fn format_not_value(context: &str) -> String {
@@ -218,6 +324,37 @@ fn format_not_value(context: &str) -> String {
              help: this can occur when a function or structured value appears \
              where a primitive (number, string, etc.) was expected"
         )
+    }
+}
+
+/// Generate contextual notes for "not callable" errors based on the actual type
+fn not_callable_notes(actual_type: &str) -> Vec<String> {
+    match actual_type {
+        "list" => vec![
+            "lists are not callable; to access elements by index use 'nth(index, list)' \
+             or pipeline form 'list nth(index)'"
+                .to_string(),
+            "for the first element use 'list head'; for the rest use 'list tail'".to_string(),
+        ],
+        "true" | "false" => vec![
+            format!(
+                "a {actual_type} value is not a function; if this result of a boolean \
+                 expression, check operator precedence"
+            ),
+            "note: 'and' and 'or' are identifiers in eucalypt, not logical operators; \
+             use '&&' and '||' for logical conjunction and disjunction"
+                .to_string(),
+        ],
+        "number" | "string" | "symbol" | "datetime" | "empty list" => vec![
+            format!(
+                "a {actual_type} value is not a function; check for a missing operator or \
+                 extra argument"
+            ),
+            "note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as \
+             'f(a + 1)'; add parentheses to disambiguate"
+                .to_string(),
+        ],
+        _ => vec![],
     }
 }
 
@@ -472,16 +609,32 @@ impl ExecutionError {
                     "list operations such as 'head', 'tail', '++', 'map', 'filter' require \
                      list arguments"
                         .to_string(),
-                    "check that the value is a list before applying list operations; \
-                     use 'nil?' to test for an empty list"
-                        .to_string(),
                 ];
-                // When the value is a string, the user may be trying to concatenate
-                // strings using '++' (which is list append). Suggest alternatives.
                 if type_desc == "string" {
+                    // This type description arises in two common scenarios:
+                    // 1. The user passed an actual string to a list operation (e.g. '++').
+                    // 2. The user called 'head' or 'tail' on an empty list — eucalypt
+                    //    represents the empty-list sentinel internally as a string native,
+                    //    so the error message mentions "string" even though the user wrote [].
+                    notes.push(
+                        "if you called 'head' or 'tail' on an empty list '[]', that is the \
+                         likely cause — 'head' and 'tail' are only defined on non-empty lists"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "guard against empty lists with 'nil?', e.g. \
+                         'if(xs nil?, default, xs head)'"
+                            .to_string(),
+                    );
                     notes.push(
                         "note: to concatenate strings, use string interpolation \
                          or 'join-on' on a list of strings; '++' is for list append"
+                            .to_string(),
+                    );
+                } else {
+                    notes.push(
+                        "check that the value is a list before applying list operations; \
+                         use 'nil?' to test for an empty list"
                             .to_string(),
                     );
                 }
@@ -503,6 +656,27 @@ impl ExecutionError {
                     "use 'str' to convert numbers to strings; to convert strings to numbers use 'num'"
                         .to_string(),
                 ]
+            }
+            ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
+            ExecutionError::LookupFailure(_, key, suggestions) => {
+                lookup_failure_notes(key, suggestions)
+            }
+            ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
+                let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
+                    || expected_tags.contains(&DataConstructor::BoolFalse.tag());
+                if expects_bool {
+                    vec![
+                        "if using '_' anaphora in a predicate, note that each '_' creates a \
+                         separate parameter — '(_ > _ - 1)' is a two-argument function, not \
+                         a one-argument predicate"
+                            .to_string(),
+                        "to reuse the same value, use '_0' (or '_1', '_2' for multiple \
+                         parameters): '(_0 > _0 - 1)' correctly compares the argument to itself"
+                            .to_string(),
+                    ]
+                } else {
+                    vec![]
+                }
             }
             _ => vec![],
         };

@@ -348,6 +348,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         // Control flow
         "IF" => Some("if"),
         "PANIC" => Some("panic"),
+        "ASSERT_FAIL" => Some("assert.fail"),
 
         // Date/time
         "ZDT" => Some("zdt"),

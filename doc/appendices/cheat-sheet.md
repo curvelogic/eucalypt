@@ -87,6 +87,39 @@ x: 42 # inline comment
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
+| Idiom bracket | `(⟦ x ⟧): expr` | Unicode bracket pair functor |
+
+## Idiom Brackets
+
+Idiom brackets allow applicative functor lifting using Unicode bracket pairs.
+
+```eu,notest
+# Declare a bracket pair function
+(⟦ x ⟧): my-functor(x)
+
+# Use the bracket pair in expressions
+result: ⟦ some-expression ⟧  # calls my-functor(some-expression)
+```
+
+Built-in bracket pairs: `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
+`【】`, `〔〕`, `〖〗`, `〘〙`, `〚〛`.
+
+## Monadic Blocks
+
+When a bracket pair declaration carries `bind` and `return` metadata, using that
+bracket pair with a block inner desugars as a bind chain (like `do`-notation).
+
+```eu,notest
+` { bind: my-bind return: my-return }
+(⟦ x ⟧): x
+
+# ⟦ { a: ma, b: mb, r: expr } ⟧
+# desugars to: my-bind(ma, (a): my-bind(mb, (b): my-return(expr)))
+result: ⟦ { a: ma, b: mb, r: a + b } ⟧
+```
+
+The last declaration is the return step; all earlier declarations are bind steps
+whose names are in scope for subsequent declarations.
 
 ## Metadata Annotations
 
