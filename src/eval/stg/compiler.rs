@@ -323,6 +323,23 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // String formatting functions from C, Python, Ruby, JavaScript.
+                    // Eucalypt uses string interpolation with {name} placeholders.
+                    // Note: 'printf' is matched by the print/println arm above.
+                    "sprintf" | "format" | "string_format" | "str.format" | "fmt"
+                    | "format_string" => {
+                        notes.push(
+                            "eucalypt has no sprintf/format function; use string \
+                             interpolation instead: \"Hello, {name}!\" where 'name' is \
+                             a binding in scope"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "example: 'greeting: \"Hello, {name}!\"' where \
+                             'name: \"Alice\"' is declared nearby"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)

@@ -840,3 +840,8 @@ pub fn test_error_071() {
 pub fn test_error_072() {
     run_error_test(&error_opts("072_number_type_pred.eu"));
 }
+
+#[test]
+pub fn test_error_073() {
+    run_error_test(&error_opts("073_sprintf_hint.eu"));
+}
