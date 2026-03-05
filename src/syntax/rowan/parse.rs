@@ -977,16 +977,11 @@ impl EventSink for BlockEventSink {
                             }
                         }
                         None => {
-                            // error case '{ x , ... }'
-                            let mut head = vec![];
-                            swap(&mut head, &mut self.buffer);
-                            self.declaration = Some(PendingDeclaration {
-                                meta: None,
-                                head,
-                                colon: vec![],
-                                body: vec![],
-                            });
-                            self.commit_declaration();
+                            // Bare names separated by commas, e.g. `{x, y}` in a
+                            // block pattern. Commas are optional separators just as
+                            // in block literals, so leave the buffer as-is and let
+                            // complete() accumulate everything into block metadata,
+                            // producing the same result as `{x y}`.
                         }
                     }
                 }

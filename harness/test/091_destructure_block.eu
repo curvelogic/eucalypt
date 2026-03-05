@@ -5,6 +5,8 @@
 f-basic({x y}): x + y
 f-rename({x: a  y: b}): a * b
 f-mixed({x  y: b}): x + b
+f-comma({x, y}): x + y
+f-comma-rename({x: a, y: b}): a * b
 
 tests: {
 
@@ -30,6 +32,22 @@ tests: {
     a: f-mixed({x: 10 y: 20}) //= 30
     ` "sum with different values"
     b: f-mixed({x: 7 y: 3}) //= 10
+  }
+
+  ` "Comma-separated shorthand (commas optional as in block literals)"
+  comma: {
+    ` "sum via comma-separated pattern"
+    a: f-comma({x: 1, y: 2}) //= 3
+    ` "sum with larger values"
+    b: f-comma({x: 10, y: 20}) //= 30
+  }
+
+  ` "Comma-separated rename pattern"
+  comma-rename: {
+    ` "product via comma-separated rename pattern"
+    a: f-comma-rename({x: 3, y: 4}) //= 12
+    ` "product with different values"
+    b: f-comma-rename({x: 5, y: 6}) //= 30
   }
 
 }
