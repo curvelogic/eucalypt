@@ -1,0 +1,3 @@
+# Error: target not found — asking for a target that does not exist
+foo: 42
+bar: 99

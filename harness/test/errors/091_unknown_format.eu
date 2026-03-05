@@ -1,0 +1,3 @@
+# Error: unknown export format requested via -x
+# This file is valid but will fail when exported with an unknown format
+x: 42
