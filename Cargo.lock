@@ -574,6 +574,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "toml",
+ "unicode-bidi-mirroring",
  "unicode-general-category",
  "url",
  "uuid 1.20.0",
@@ -1901,6 +1902,12 @@ checksum = "e1b88fcfe09e89d3866a5c11019378088af2d24c3fbd4f0543f96b479ec90697"
 dependencies = [
  "version_check",
 ]
+
+[[package]]
+name = "unicode-bidi-mirroring"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dfa6e8c60bb66d49db113e0125ee8711b7647b5579dc7f5f19c42357ed039fe"
 
 [[package]]
 name = "unicode-general-category"

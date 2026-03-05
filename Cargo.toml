@@ -23,6 +23,7 @@ codespan-reporting = "0.11.1"
 serde_json = "1.0.85"
 yaml-rust = { git = "https://github.com/curvelogic/yaml-rust", rev = "e3a9b432c43fcf9a19f1836657091caf7ae3b15f" }
 unicode-general-category = "1"
+unicode-bidi-mirroring = "0.4.0"
 itertools = "0.10.5"
 thiserror = "1.0.37"
 url = "2.3.1"
