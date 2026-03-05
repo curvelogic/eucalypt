@@ -8,12 +8,24 @@
  * rendering structured data formats (YAML, JSON, TOML).
  */
 
-// Helper to define operator characters
-// Includes: standard punctuation operators, unicode math/arrows, and special chars used in prelude
-// Notable: ? (for //=?, //!?), $ (for <$>), ∸ (unary minus)
-const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘→←⊕⊗⊙⊡⊞⊟⟨⟩⟪⟫⟦⟧⌈⌉⌊⌋¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
+// Helper to define operator characters.
+// Includes: standard punctuation operators, Unicode math/arrows, and
+// special characters used in the prelude.
+// Notable inclusions: ? (for //=?, //!?), $ (for <$>), ∸ (unary minus),
+// ‖ (U+2016 DOUBLE VERTICAL LINE — the cons operator).
+// Note: bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋) are intentionally excluded here;
+// they are handled by the bracket_expr rule instead.
+const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
 
-// Unicode idiom bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS)
+// Unicode idiom bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS).
+//
+// NOTE ON BRACKET DETECTION LIMITATIONS:
+// The Rust parser uses dynamic Unicode Ps/Pe category detection, meaning any
+// Unicode bracket pair (Open/Close punctuation categories) works automatically.
+// This tree-sitter grammar hardcodes specific pairs instead.  To add a new
+// bracket pair, add the open character to BRACKET_OPEN_RE and the corresponding
+// close character to BRACKET_CLOSE_RE, then regenerate parser.c with
+// `tree-sitter generate`.
 const BRACKET_OPEN_RE = /[⟦⟨⟪⌈⌊⦃⦇⦉«【〔〖〘〚]/;
 const BRACKET_CLOSE_RE = /[⟧⟩⟫⌉⌋⦄⦈⦊»】〕〗〙〛]/;
 
@@ -183,6 +195,8 @@ module.exports = grammar({
       $.list,
       $.paren_expr,
       $.application,
+      $.block_application,
+      $.list_application,
       $.bracket_expr,
     ),
 
@@ -205,11 +219,52 @@ module.exports = grammar({
       ')',
     )),
 
+    // Juxtaposed block call: f{x: 1, y: 2} — sugar for f({x: 1, y: 2}).
+    // The Rust parser handles this via OPEN_BRACE_APPLY token ('{' immediately
+    // following a name/expression, with no whitespace).
+    block_application: $ => prec(2, seq(
+      choice($.name, $.paren_expr),
+      $.block_argument,
+    )),
+
+    block_argument: $ => prec(2, seq(
+      token.immediate('{'),
+      repeat(seq(
+        $.declaration,
+        optional(','),
+      )),
+      '}',
+    )),
+
+    // Juxtaposed list call: f[1, 2] — sugar for f([1, 2]).
+    // The Rust parser handles this via OPEN_SQUARE_APPLY token ('[' immediately
+    // following a name/expression, with no whitespace).
+    list_application: $ => prec(2, seq(
+      choice($.name, $.paren_expr),
+      $.list_argument,
+    )),
+
+    list_argument: $ => prec(2, seq(
+      token.immediate('['),
+      optional(seq(
+        $.soup,
+        repeat(seq(',', $.soup)),
+        optional(','),
+      )),
+      ']',
+    )),
+
     // Idiom bracket expression: ⟦ expr ⟧, «expr», ⌈ expr ⌉, etc.
     // The bracket pair determines which bracket-pair function is applied.
+    //
+    // Monadic blocks use bracket syntax and may contain declarations rather
+    // than plain expressions, so we allow either soup or declarations inside.
     bracket_expr: $ => seq(
       BRACKET_OPEN_RE,
-      optional($.soup),
+      optional(choice(
+        $.soup,
+        repeat1(seq($.declaration, optional(','))),
+      )),
       BRACKET_CLOSE_RE,
     ),
 
@@ -336,9 +391,11 @@ module.exports = grammar({
       "'",
     ),
 
-    // Operators: sequences of operator characters
-    // Must match OPER_CHARS above - includes ?, $, ∸ for prelude operators
-    operator: $ => token(prec(-1, /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘→←⊕⊗⊙⊡⊞⊟⟨⟩⟪⟫⟦⟧⌈⌉⌊⌋¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪¡££€⨈∅∏]+/)),
+    // Operators: sequences of operator characters.
+    // Bracket characters (⟦⟧⟨⟩⟪⟫⌈⌉⌊⌋) are deliberately excluded here;
+    // they are matched by the bracket_expr rule via BRACKET_OPEN_RE/BRACKET_CLOSE_RE.
+    // ‖ (U+2016 DOUBLE VERTICAL LINE) is included as the cons operator.
+    operator: $ => token(prec(-1, /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/)),
 
     // Anaphora: _ or _0, _1, etc., or • or •0, •1, etc.
     anaphor: $ => choice(

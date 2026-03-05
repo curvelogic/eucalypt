@@ -39,6 +39,9 @@ editors/vscode/node_modules/
 editors/vscode/out/
 editors/vscode/*.vsix
 
+# Byte-compiled Emacs Lisp
+*.elc
+
 # Local settings
 *.local.json
 
