@@ -1,12 +1,13 @@
 ##
 ## 096: Monadic block expressions
 ##
-## When a bracket pair declaration includes `bind` and `return` metadata,
-## it gains a monad spec.  A bracket expression whose inner is a block
-## then desugars as a bind chain:
+## A bracket pair defined with an empty block `{}` as its parameter
+## gains a monad spec.  A bracket expression whose inner content contains
+## top-level colons is parsed as a BRACKET_BLOCK.  The closing bracket
+## may be followed by a dot-expression which becomes the return value:
 ##
-##   ⟦ { a: ma, b: mb, r: expr } ⟧
-##   →  bind(ma, (a): bind(mb, (b): return(expr)))
+##   ⟦ a: ma  b: mb ⟧.return_expr
+##   →  bind(ma, (λa): bind(mb, (λb): return(return_expr)))
 ##
 
 # ---------------------------------------------------------------------------
@@ -15,8 +16,7 @@
 id-bind(ma, f): f(ma)
 id-return(a): a
 
-` { bind: id-bind return: id-return }
-(⟦ x ⟧): x
+(⟦{}⟧): { bind: id-bind  return: id-return }
 
 # ---------------------------------------------------------------------------
 # Maybe monad implemented as optional lists: Just(a) = [a], Nothing = []
@@ -25,8 +25,7 @@ id-return(a): a
 maybe-bind(ma, f): if(ma = [], [], f(ma head))
 maybe-return(a): [a]
 
-` { bind: maybe-bind return: maybe-return }
-(⌈ x ⌉): x
+(⌈{}⌉): { bind: maybe-bind  return: maybe-return }
 
 # ---------------------------------------------------------------------------
 tests: {
@@ -34,39 +33,39 @@ tests: {
   ` "Identity monad — single declaration"
   id-single: {
     ` "return wraps a literal"
-    a: ⟦ { r: 42 } ⟧ //= 42
+    a: ⟦ r: 42 ⟧.r //= 42
     ` "return wraps an expression"
-    b: ⟦ { r: 1 + 2 } ⟧ //= 3
+    b: ⟦ r: 1 + 2 ⟧.r //= 3
   }
 
   ` "Identity monad — two declarations"
   id-two: {
     ` "bind a value then return computed expression"
-    a: ⟦ { x: 10, r: x + 5 } ⟧ //= 15
+    a: ⟦ x: 10  r: x + 5 ⟧.r //= 15
     ` "bind a string and reference it"
-    b: ⟦ { s: "hello", r: s } ⟧ //= "hello"
+    b: ⟦ s: "hello"  r: s ⟧.r //= "hello"
   }
 
   ` "Identity monad — three declarations"
   id-three: {
     ` "bind two values and combine them"
-    a: ⟦ { a: 1, b: 2, r: a + b } ⟧ //= 3
+    a: ⟦ a: 1  b: 2  r: a + b ⟧.r //= 3
     ` "bind two values and use only first"
-    b: ⟦ { a: 7, b: 3, r: a } ⟧ //= 7
+    b: ⟦ a: 7  b: 3  r: a ⟧.r //= 7
   }
 
   ` "Maybe monad — value present"
   maybe-just: {
-    ` "bind through two Just values"
-    a: ⌈ { x: [1], y: [2], r: x + y } ⌉ //= [3]
+    ` "bind through two Just values and return computed expression"
+    a: ⌈ x: [1]  y: [2] ⌉.(x + y) //= [3]
   }
 
   ` "Maybe monad — short-circuits on Nothing"
   maybe-nothing: {
     ` "bind with first argument Nothing"
-    a: ⌈ { x: [], y: [2], r: x + y } ⌉ //= []
+    a: ⌈ x: []  y: [2] ⌉.(x + y) //= []
     ` "bind with second argument Nothing"
-    b: ⌈ { x: [1], y: [], r: x + y } ⌉ //= []
+    b: ⌈ x: [1]  y: [] ⌉.(x + y) //= []
   }
 
 }

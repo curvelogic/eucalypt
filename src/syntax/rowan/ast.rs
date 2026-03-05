@@ -573,6 +573,47 @@ impl BracketExpr {
 
 impl HasSoup for BracketExpr {}
 
+// A user-defined bracket block expression e.g. ⟦ a: x  b: y ⟧
+//
+// Parsed like a block (with declarations) but delimited by user brackets
+// instead of braces. Used for monadic blocks.
+ast_node!(BracketBlock, BRACKET_BLOCK);
+
+impl BracketBlock {
+    pub fn open_bracket(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::BRACKET_OPEN)
+    }
+
+    pub fn close_bracket(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::BRACKET_CLOSE)
+    }
+
+    pub fn open_char(&self) -> Option<char> {
+        self.open_bracket().and_then(|t| t.text().chars().next())
+    }
+
+    pub fn close_char(&self) -> Option<char> {
+        self.close_bracket().and_then(|t| t.text().chars().next())
+    }
+
+    pub fn bracket_pair_name(&self) -> Option<String> {
+        let open = self.open_char()?;
+        let close = self.close_char()?;
+        let mut s = String::with_capacity(open.len_utf8() + close.len_utf8());
+        s.push(open);
+        s.push(close);
+        Some(s)
+    }
+
+    pub fn declarations(&self) -> AstChildren<Declaration> {
+        support::children::<Declaration>(self.syntax())
+    }
+
+    pub fn meta(&self) -> Option<BlockMetadata> {
+        support::child::<BlockMetadata>(self.syntax())
+    }
+}
+
 // Metadata for a block expression
 //
 // AST embedding syntax:
@@ -622,6 +663,9 @@ pub enum DeclarationKind {
     ///
     /// The `BracketExpr` contains the bracket pair characters and the single formal parameter.
     BracketPair(ParenExpr, BracketExpr, NormalIdentifier),
+    /// Monadic bracket block definition (e.g. (⟦{}⟧): ...) — an empty block `{}` as the parameter
+    /// signals that this bracket pair expects block content (declarations) for monadic use.
+    BracketBlockDef(ParenExpr, BracketExpr),
     /// Invalid declaration head - Embedding: `[:a-decl-malformed errors...]`
     MalformedHead(Vec<ParseError>),
 }
@@ -656,6 +700,10 @@ fn classify_operator(pe: ParenExpr) -> DeclarationKind {
                 if inner_elements.len() == 1 {
                     if let Some(param) = inner_elements[0].as_normal_identifier() {
                         DeclarationKind::BracketPair(pe, bracket.clone(), param)
+                    } else if let Element::Block(_) = &inner_elements[0] {
+                        // Block-mode bracket pair definition: (⟦{}⟧): ...
+                        // The `{}` parameter signals block content (declarations) mode.
+                        DeclarationKind::BracketBlockDef(pe, bracket.clone())
                     } else {
                         DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
                             head_range: pe.syntax().text_range(),
@@ -1178,6 +1226,8 @@ pub enum Element {
     ParenExpr(ParenExpr),
     /// Bracket expression using a Unicode idiom bracket pair - Embedding: `[:a-bracket-expr ...]`
     BracketExpr(BracketExpr),
+    /// Monadic bracket block with declarations - Embedding: `[:a-bracket-block ...]`
+    BracketBlock(BracketBlock),
     /// Identifier reference - Embedding: `[:a-name identifier]`
     Name(Name),
     /// String with interpolation - Embedding: `[:a-string-pattern chunks...]`
@@ -1204,6 +1254,7 @@ impl AstNode for Element {
                 | SyntaxKind::LIST
                 | SyntaxKind::PAREN_EXPR
                 | SyntaxKind::BRACKET_EXPR
+                | SyntaxKind::BRACKET_BLOCK
                 | SyntaxKind::NAME
                 | SyntaxKind::STRING_PATTERN
                 | SyntaxKind::C_STRING_PATTERN
@@ -1222,6 +1273,7 @@ impl AstNode for Element {
             SyntaxKind::BLOCK => Block::cast(node).map(Element::Block),
             SyntaxKind::PAREN_EXPR => ParenExpr::cast(node).map(Element::ParenExpr),
             SyntaxKind::BRACKET_EXPR => BracketExpr::cast(node).map(Element::BracketExpr),
+            SyntaxKind::BRACKET_BLOCK => BracketBlock::cast(node).map(Element::BracketBlock),
             SyntaxKind::ARG_TUPLE => ApplyTuple::cast(node).map(Element::ApplyTuple),
             SyntaxKind::NAME => Name::cast(node).map(Element::Name),
             SyntaxKind::STRING_PATTERN => StringPattern::cast(node).map(Element::StringPattern),
@@ -1240,6 +1292,7 @@ impl AstNode for Element {
             Element::List(l) => l.syntax(),
             Element::ParenExpr(e) => e.syntax(),
             Element::BracketExpr(e) => e.syntax(),
+            Element::BracketBlock(e) => e.syntax(),
             Element::Name(n) => n.syntax(),
             Element::StringPattern(s) => s.syntax(),
             Element::CStringPattern(s) => s.syntax(),

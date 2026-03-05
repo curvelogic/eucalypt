@@ -296,6 +296,10 @@ impl Formatter {
                 // Format: (⟦ x ⟧) — preserve from the paren expression
                 RcDoc::text(paren.syntax().text().to_string())
             }
+            rowan_ast::DeclarationKind::BracketBlockDef(paren, _) => {
+                // Format: (⟦{}⟧) — preserve from the paren expression
+                RcDoc::text(paren.syntax().text().to_string())
+            }
             rowan_ast::DeclarationKind::MalformedHead(_) => {
                 // Preserve original for malformed heads
                 RcDoc::text(head.syntax().text().to_string())
@@ -410,6 +414,10 @@ impl Formatter {
             rowan_ast::Element::BracketExpr(be) => {
                 // Preserve bracket expressions as-is from source text
                 RcDoc::text(be.syntax().text().to_string())
+            }
+            rowan_ast::Element::BracketBlock(bb) => {
+                // Preserve bracket blocks as-is from source text
+                RcDoc::text(bb.syntax().text().to_string())
             }
         }
     }

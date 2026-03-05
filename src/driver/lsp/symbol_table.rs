@@ -230,6 +230,12 @@ fn symbol_from_declaration(
                 .unwrap_or_else(|| "bracket".to_string());
             (name, DeclKind::Function { arity: 1 }, Vec::new())
         }
+        DeclarationKind::BracketBlockDef(_, bracket_expr) => {
+            let name = bracket_expr
+                .bracket_pair_name()
+                .unwrap_or_else(|| "bracket".to_string());
+            (name, DeclKind::Function { arity: 0 }, Vec::new())
+        }
         DeclarationKind::MalformedHead(_) => return None,
     };
 

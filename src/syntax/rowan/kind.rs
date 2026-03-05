@@ -112,6 +112,8 @@ pub enum SyntaxKind {
     BRACKET_CLOSE,
     /// A bracket expression using a Unicode bracket pair e.g. ⟦ x ⟧
     BRACKET_EXPR,
+    /// A bracket block — bracket pair with declarations as content e.g. ⟦ a: x  b: y ⟧
+    BRACKET_BLOCK,
 
     /// Extraneous tokens tagging along for the ride
     ERROR_STOWAWAYS,
