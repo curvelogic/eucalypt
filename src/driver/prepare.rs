@@ -158,13 +158,6 @@ pub fn prepare(
         stats.record("eliminate-1", t.elapsed());
     }
 
-    // Dump block usage analysis if requested
-    if opt.debug_block_usage() {
-        use crate::core::analyse::block_usage;
-        let report = block_usage::analyse_block_usage(&loader.core().expr);
-        report.print_report();
-    }
-
     // Run inline pass
     {
         let t = Instant::now();
