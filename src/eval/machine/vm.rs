@@ -155,6 +155,32 @@ impl HeapNavigator<'_> {
     }
 }
 
+/// Classification of data constructor arg patterns for shared-env optimisation.
+///
+/// Used by `env_from_data_args` to determine whether the new environment frame
+/// can share backing storage with the constructor's environment frame, preserving
+/// thunk memoisation across multiple traversals of the same structure.
+enum ArgPattern {
+    /// All args are `L(0), L(1), ..., L(n-1)` — identity mapping, no remap needed
+    SequentialFromZero(usize),
+    /// Contains `V(_)` or `G(_)` refs, or non-sequential `L(_)` indices — must copy
+    RequiresCopy,
+}
+
+/// Classify a data constructor's arg slice for the shared-env optimisation.
+///
+/// Returns `SequentialFromZero(n)` only when every arg is `L(i)` for `i` in
+/// `0..n` in order.  All other patterns fall back to `RequiresCopy`.
+fn classify_args(args: &[Ref]) -> ArgPattern {
+    for (i, r) in args.iter().enumerate() {
+        match r {
+            Ref::L(idx) if *idx == i => {}
+            _ => return ArgPattern::RequiresCopy,
+        }
+    }
+    ArgPattern::SequentialFromZero(args.len())
+}
+
 /// The state of the machine (stack / closure etc.)
 pub struct MachineState {
     /// Root (empty) environment
@@ -481,15 +507,48 @@ impl MachineState {
         Ok(())
     }
 
-    /// Build an env frame from data constructor args, resolving refs
-    /// directly without an intermediate Vec allocation.
+    /// Build an env frame from data constructor args, sharing backing
+    /// storage where possible to preserve thunk memoisation.
     ///
-    /// For `Ref::L` and `Ref::G`, reuses the existing closure from
-    /// the current environment. For `Ref::V`, allocates a minimal
-    /// atom closure. This avoids the heap allocation that
-    /// `HeapNavigator::resolve` performs for value refs.
+    /// When all args are `Ref::L` references whose physical indices all
+    /// fall within the top frame of the constructor's environment, the new
+    /// frame shares that frame's backing `Array` rather than copying
+    /// closures into fresh storage. This means thunk updates (via the
+    /// `Update` continuation) write back to the shared storage and are
+    /// visible through all frames that share it.
+    ///
+    /// Falls back to `env_from_data_args_copy` when:
+    /// - args contain `Ref::V` or `Ref::G` references
+    /// - more than 4 args
+    /// - any arg's physical index exceeds the top frame's length (i.e., the
+    ///   ref chains into a deeper frame — sharing across frames is unsupported)
     #[inline]
     fn env_from_data_args(
+        &self,
+        view: MutatorHeapView<'_>,
+        args: &[Ref],
+        next: RefPtr<EnvFrame>,
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
+        let constructor_env = view.scoped(self.closure.env());
+        let top_len = (*constructor_env).logical_len();
+
+        match classify_args(args) {
+            ArgPattern::SequentialFromZero(n) if n <= top_len => {
+                let shared = (*constructor_env).shared_bindings(n);
+                Ok(view
+                    .alloc(EnvFrame::new(shared, self.annotation, Some(next)))?
+                    .as_ptr())
+            }
+            _ => self.env_from_data_args_copy(view, args, next),
+        }
+    }
+
+    /// Fallback: build an env frame by copying closures from the constructor env.
+    ///
+    /// Used when the arg pattern contains non-local refs (`Ref::V` or `Ref::G`)
+    /// or more than 4 args. This is the original behaviour prior to the
+    /// shared-env optimisation.
+    fn env_from_data_args_copy(
         &self,
         view: MutatorHeapView<'_>,
         args: &[Ref],

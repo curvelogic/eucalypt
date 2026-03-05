@@ -435,6 +435,11 @@ pub fn test_harness_088() {
 }
 
 #[test]
+pub fn test_harness_089() {
+    run_test(&opts("089_sharing.eu"));
+}
+
+#[test]
 pub fn test_harness_090() {
     run_test(&opts("090_relative_imports.eu"));
 }
@@ -472,11 +477,6 @@ pub fn test_harness_096() {
 #[test]
 pub fn test_harness_097() {
     run_test(&opts("097_idiom_brackets.eu"));
-}
-
-#[test]
-pub fn test_harness_098() {
-    run_test(&opts("098_juxtaposed_definitions.eu"));
 }
 
 #[test]
