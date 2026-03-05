@@ -180,7 +180,17 @@ Set via file-local variables, e.g.:
      (declaration
       (declaration_head
        (identifier) @font-lock-function-name-face
-       (parameter_list))))
+       (parameter_list)))
+     ;; Juxtaposed block definition: f{x y}: ...
+     (declaration
+      (declaration_head
+       (identifier) @font-lock-function-name-face
+       (block_param)))
+     ;; Juxtaposed list definition: f[x, y]: ...
+     (declaration
+      (declaration_head
+       (identifier) @font-lock-function-name-face
+       (list_param))))
 
    :language 'eucalypt
    :feature 'operator-declaration
@@ -198,7 +208,11 @@ Set via file-local variables, e.g.:
      ;; Fixed-length list destructuring pattern: [a, b, c]
      (list_pattern (identifier) @font-lock-variable-name-face)
      ;; Cons pattern: [h : t]
-     (cons_pattern (identifier) @font-lock-variable-name-face))
+     (cons_pattern (identifier) @font-lock-variable-name-face)
+     ;; Juxtaposed block param: f{x y}
+     (block_param (identifier) @font-lock-variable-name-face)
+     ;; Juxtaposed list param: f[x, y] or f[h : t]
+     (list_param (identifier) @font-lock-variable-name-face))
 
    :language 'eucalypt
    :feature 'function-call

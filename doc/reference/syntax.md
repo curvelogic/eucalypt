@@ -148,6 +148,21 @@ greet({name greeting}): "{greeting}, {name}!"
 greet{name: "Alice" greeting: "Hello"}    # => "Hello, Alice!"
 ```
 
+Juxtaposed syntax also works in definitions — the bracket or brace
+is written directly against the function name with no space. This is
+sugar for the parenthesised destructuring form:
+
+```eu
+# f[x, y]: ...  is sugar for  f([x, y]): ...
+add-pair[a, b]: a + b
+
+# f{x y}: ...   is sugar for  f({x y}): ...
+add-block{x y}: x + y
+
+# f[h : t]: ... is sugar for  f([h : t]): ...
+my-head[h : t]: h
+```
+
 Destructuring patterns can be mixed with normal parameters:
 
 ```eu

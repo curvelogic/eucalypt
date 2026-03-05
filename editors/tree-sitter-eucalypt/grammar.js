@@ -44,9 +44,11 @@ module.exports = grammar({
   word: $ => $.identifier,
 
   conflicts: $ => [
-    [$.declaration_head],
+    [$.declaration_head, $.name],
+    [$.declaration_head, $.block_param],
+    [$.operator_declaration, $.name],
+    [$.operator_declaration, $.soup],
     [$.soup],
-    [$.dotted_reference, $.interpolation_content],
   ],
 
   rules: {
@@ -99,8 +101,43 @@ module.exports = grammar({
       $.quoted_identifier,
       // Function: name(params) — params may include destructuring patterns
       seq(choice($.identifier, $.quoted_identifier), $.parameter_list),
+      // Juxtaposed destructuring definitions:
+      //   f{x y}: ...  — single block-destructured parameter (sugar for f({x y}): ...)
+      //   f[x, y]: ... — single list-destructured parameter (sugar for f([x, y]): ...)
+      //   f[h : t]: ... — single cons-destructured parameter (sugar for f([h : t]): ...)
+      seq(choice($.identifier, $.quoted_identifier), $.block_param),
+      seq(choice($.identifier, $.quoted_identifier), $.list_param),
       // Operator declarations in parentheses
       $.operator_declaration,
+    ),
+
+    // Block destructuring parameter in juxtaposed position: f{x y} or f{x, y}
+    // Uses token.immediate to require no whitespace (matching Rust parser).
+    // Bare identifiers are allowed as shorthand bindings (like block_pattern).
+    block_param: $ => seq(
+      token.immediate('{'),
+      repeat(seq(
+        choice($.declaration, $.identifier),
+        optional(','),
+      )),
+      '}',
+    ),
+
+    // List or cons destructuring parameter in juxtaposed position: f[x, y] or f[h : t]
+    // Uses token.immediate to require no whitespace.
+    list_param: $ => seq(
+      token.immediate('['),
+      choice(
+        // Cons pattern: [h : t]
+        seq($.identifier, ':', $.identifier),
+        // List pattern: [x, y, ...]
+        seq(
+          $.identifier,
+          repeat(seq(',', $.identifier)),
+          optional(','),
+        ),
+      ),
+      ']',
     ),
 
     // Operator declaration patterns
@@ -150,7 +187,7 @@ module.exports = grammar({
     block_pattern: $ => seq(
       '{',
       repeat(seq(
-        $.declaration,
+        choice($.declaration, $.identifier),  // bare identifier = shorthand binding
         optional(','),
       )),
       '}',
@@ -382,8 +419,10 @@ module.exports = grammar({
       $.quoted_identifier,
     ),
 
-    // Identifiers support Unicode letters including Latin Extended, Greek, Cyrillic
-    identifier: $ => /[•$?_a-zA-Z\u00C0-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF][•$?_!*\-a-zA-Z0-9\u00C0-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF]*/,
+    // Identifiers support Unicode letters including Latin Extended, Greek, Cyrillic.
+    // The Latin Extended range U+00C0-U+02AF is split to exclude × (U+00D7) and
+    // ÷ (U+00F7) which are operator characters.
+    identifier: $ => /[•$?_a-zA-Z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF][•$?_!*\-a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u04FF\u1F00-\u1FFF]*/,
 
     quoted_identifier: $ => seq(
       "'",
@@ -398,6 +437,12 @@ module.exports = grammar({
     operator: $ => token(prec(-1, /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/)),
 
     // Anaphora: _ or _0, _1, etc., or • or •0, •1, etc.
+    // NOTE: bare _ and • also match the identifier regex.  Because tree-sitter's
+    // lexer cannot use context to disambiguate, anaphors that overlap with
+    // identifiers (_, _0, •, •0) will be lexed as identifiers.  Downstream
+    // consumers (e.g. the emacs mode) can treat standalone _ / • identifiers as
+    // anaphors for highlighting purposes.  The anaphor rule still exists for use
+    // inside string interpolation where identifier is not an alternative.
     anaphor: $ => choice(
       /\u2022[0-9]*/,  // • followed by optional digits
       /_[0-9]*/,       // _ followed by optional digits

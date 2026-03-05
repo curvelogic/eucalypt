@@ -54,6 +54,11 @@ interpolation.
 |------|--------|-------|
 | Property | `name: expr` | Defines a named value, rendered in output |
 | Function | `f(x, y): expr` | Not rendered in output |
+| List destructure | `f([a, b]): expr` | Single param, list destructured |
+| Block destructure | `f({x y}): expr` | Single param, block destructured |
+| Cons destructure | `f([h : t]): expr` | Single param, head/tail split |
+| Juxtaposed list | `f[a, b]: expr` | Sugar for `f([a, b]): expr` |
+| Juxtaposed block | `f{x y}: expr` | Sugar for `f({x y}): expr` |
 | Binary operator | `(l op r): expr` | Symbolic name required |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |

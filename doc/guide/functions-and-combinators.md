@@ -185,6 +185,19 @@ result: greet{name: "Alice" greeting: "Hello"}
 result: Hello, Alice!
 ```
 
+### Juxtaposed definition syntax
+
+The juxtaposed bracket syntax also works on the definition side. Writing
+the bracket or brace directly against the function name (no space) is
+sugar for the parenthesised destructuring form:
+
+```eu
+# These pairs are equivalent:
+add-pair[a, b]: a + b         # sugar for add-pair([a, b]): a + b
+add-block{x y}: x + y        # sugar for add-block({x y}): x + y
+my-head[h : t]: h             # sugar for my-head([h : t]): h
+```
+
 ### The cons operator `‖`
 
 The `‖` operator (U+2016, DOUBLE VERTICAL LINE) prepends a single
