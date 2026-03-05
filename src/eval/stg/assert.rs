@@ -118,7 +118,16 @@ fn format_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicM
         Native::Zdt(dt) => dt.to_rfc3339(),
         Native::Index(_) => "<block-index>".to_string(),
         Native::Set(_) => "<set>".to_string(),
-        Native::NdArray(_) => "<array>".to_string(),
+        Native::NdArray(ptr) => {
+            let arr = view.scoped(*ptr);
+            let shape = arr
+                .shape()
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("<array [{shape}]>")
+        }
     }
 }
 

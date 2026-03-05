@@ -723,14 +723,27 @@ fn num_list_to_i64_vec(
     Ok(nums.into_iter().map(|n| n as i64).collect())
 }
 
-/// Extract a list of numbers from a cons-list, converting to usize
+/// Extract a list of numbers from a cons-list, converting to usize.
+///
+/// Returns an error if any value is negative, since negative indices
+/// have no meaning for array dimensions or coordinates.
 fn num_list_to_usize_vec(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<Vec<usize>, ExecutionError> {
     let nums = super::support::collect_num_list(machine, view, arg.clone())?;
-    Ok(nums.into_iter().map(|n| n as usize).collect())
+    nums.into_iter()
+        .map(|n| {
+            if n < 0.0 {
+                Err(ExecutionError::Panic(format!(
+                    "negative array index or dimension: {n}"
+                )))
+            } else {
+                Ok(n as usize)
+            }
+        })
+        .collect()
 }
 
 /// Extract a list of numbers as f64 from a cons-list

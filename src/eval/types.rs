@@ -13,6 +13,7 @@ pub enum IntrinsicType {
     Symbol,
     Number,
     ZonedDateTime,
+    Array,
     List(Box<IntrinsicType>),
     Function(Box<IntrinsicType>, Box<IntrinsicType>),
     Record(HashMap<String, IntrinsicType>),
@@ -29,6 +30,7 @@ impl fmt::Display for IntrinsicType {
             IntrinsicType::Symbol => write!(f, "symbol"),
             IntrinsicType::Number => write!(f, "number"),
             IntrinsicType::ZonedDateTime => write!(f, "datetime"),
+            IntrinsicType::Array => write!(f, "array"),
             IntrinsicType::List(t) => write!(f, "list of {}", *t),
             IntrinsicType::Function(i, o) => write!(f, "{i} -> {o}"),
             IntrinsicType::Record(hm) => {
@@ -151,6 +153,10 @@ pub fn any() -> Box<IntrinsicType> {
 
 pub fn list() -> Box<IntrinsicType> {
     Box::new(IntrinsicType::List(any()))
+}
+
+pub fn arr() -> Box<IntrinsicType> {
+    Box::new(IntrinsicType::Array)
 }
 
 pub fn block() -> Box<IntrinsicType> {

@@ -31,7 +31,8 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Str(_) => IntrinsicType::String,
         Native::Sym(_) => IntrinsicType::Symbol,
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
-        Native::Index(_) | Native::Set(_) | Native::NdArray(_) => IntrinsicType::Unknown,
+        Native::NdArray(_) => IntrinsicType::Array,
+        Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
     }
 }
 
@@ -481,7 +482,11 @@ pub fn ndarray_arg<'guard>(
     if let Native::NdArray(ptr) = native {
         Ok(view.scoped(ptr))
     } else {
-        Err(ExecutionError::Panic("expected array argument".to_string()))
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            IntrinsicType::Array,
+            native_type(&native),
+        ))
     }
 }
 
