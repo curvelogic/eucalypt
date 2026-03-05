@@ -184,14 +184,6 @@ where
 {
     /// Indexed bindings (may share backing storage with another frame)
     bindings: Array<C>,
-    /// Logical-to-physical index remap for shared-backing frames.
-    ///
-    /// When `remap_len > 0`, logical index `i` maps to physical index
-    /// `remap[i]`. When `remap_len == 0`, logical index equals physical
-    /// index (identity mapping).
-    remap: [u8; 4],
-    /// Number of active remap entries. 0 means identity mapping.
-    remap_len: u8,
     /// Source code annotation
     annotation: Smid,
     /// Reference to next environment
@@ -205,8 +197,6 @@ where
     fn default() -> Self {
         Self {
             bindings: Default::default(),
-            remap: [0; 4],
-            remap_len: 0,
             annotation: Default::default(),
             next: Default::default(),
         }
@@ -221,58 +211,15 @@ where
         debug_assert!(next.is_none() || (next.unwrap() != RefPtr::dangling()));
         Self {
             bindings,
-            remap: [0; 4],
-            remap_len: 0,
             annotation,
             next,
         }
     }
 
-    /// Construct a shared-backing frame with an explicit index remap.
-    ///
-    /// The `remap` slice must have at most 4 entries. Logical index `i`
-    /// maps to physical index `remap[i]` in the shared backing array.
-    pub fn new_remapped(
-        bindings: Array<C>,
-        remap: &[u8],
-        annotation: Smid,
-        next: Option<RefPtr<Self>>,
-    ) -> Self {
-        debug_assert!(remap.len() <= 4);
-        debug_assert!(next.is_none() || (next.unwrap() != RefPtr::dangling()));
-        let mut map = [0u8; 4];
-        map[..remap.len()].copy_from_slice(remap);
-        Self {
-            bindings,
-            remap: map,
-            remap_len: remap.len() as u8,
-            annotation,
-            next,
-        }
-    }
-
-    /// Logical length of this frame for cactus-stack index chaining.
-    ///
-    /// When remapping is active, this is the number of logical bindings
-    /// exposed by this frame (which may be less than the physical backing
-    /// array length).
+    /// Length of this frame for cactus-stack index chaining.
     #[inline]
-    pub(crate) fn logical_len(&self) -> usize {
-        if self.remap_len > 0 {
-            self.remap_len as usize
-        } else {
-            self.bindings.len()
-        }
-    }
-
-    /// Translate a logical index to a physical index in the backing array.
-    #[inline]
-    fn physical_index(&self, logical: usize) -> usize {
-        if self.remap_len > 0 {
-            self.remap[logical] as usize
-        } else {
-            logical
-        }
+    pub(crate) fn len(&self) -> usize {
+        self.bindings.len()
     }
 
     /// Return a shared view of the bindings array with logical length `n`.
@@ -287,9 +234,9 @@ where
 
     /// Navigate down the environment stack to find the referenced cell
     fn cell(&self, guard: &dyn MutatorScope, idx: usize) -> Option<(Array<C>, usize)> {
-        let len = self.logical_len();
+        let len = self.bindings.len();
         if idx < len {
-            Some((self.bindings.clone(), self.physical_index(idx)))
+            Some((self.bindings.clone(), idx))
         } else {
             match self.next {
                 Some(ref env) => (*ScopedPtr::from_non_null(guard, *env)).cell(guard, idx - len),
@@ -357,20 +304,19 @@ where
     C: Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let len = self.logical_len();
-        let suffix = if self.remap_len > 0 { "R" } else { "" };
+        let len = self.bindings.len();
 
         match self.next {
             None => {
                 if len > 0 {
-                    write!(f, "[×{len}{suffix}]→•")
+                    write!(f, "[×{len}]→•")
                 } else {
                     write!(f, "•")
                 }
             }
             Some(env) => {
                 let env = ScopedPtr::from_non_null(self, env);
-                write!(f, "[×{len}{suffix}]→{env}")
+                write!(f, "[×{len}]→{env}")
             }
         }
     }
@@ -381,16 +327,15 @@ where
     C: Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let len = self.logical_len();
-        let suffix = if self.remap_len > 0 { "R" } else { "" };
+        let len = self.bindings.len();
 
         match self.next {
             None => {
-                write!(f, "[{:p} × {}{suffix}]→•", self.as_ptr(), len)
+                write!(f, "[{:p} × {}]→•", self.as_ptr(), len)
             }
             Some(env) => {
                 let env = ScopedPtr::from_non_null(self, env);
-                write!(f, "[{:p} × {}{suffix}]→{:?}", self.as_ptr(), len, env)
+                write!(f, "[{:p} × {}]→{:?}", self.as_ptr(), len, env)
             }
         }
     }
