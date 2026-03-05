@@ -178,6 +178,16 @@ impl fmt::Display for ScopedPtr<'_, SynClosure> {
 /// The compiler has to juggle these indexes and closures have no
 /// record of the free variables they reference as in the standard
 /// STG.
+///
+/// ## Shared-backing frames
+///
+/// A frame may share its backing `Array` with the constructor's
+/// environment frame to preserve thunk memoisation.  In that case
+/// `remap_len > 0` and the `remap` table maps logical index `i` to
+/// physical index `remap[i]` in the shared array.  The shared array
+/// always has `length == top_len` (the constructor frame's full
+/// length) so the GC scans all slots regardless of which frame it
+/// encounters first.
 pub struct EnvironmentFrame<C>
 where
     C: Clone,
@@ -187,10 +197,10 @@ where
     /// Logical-to-physical index remap for shared-backing frames.
     ///
     /// When `remap_len > 0`, logical index `i` maps to physical index
-    /// `remap[i]`. When `remap_len == 0`, logical index equals physical
-    /// index (identity mapping).
+    /// `remap[i]` in the shared backing array.  When `remap_len == 0`,
+    /// logical index equals physical index (identity mapping).
     remap: [u8; 4],
-    /// Number of active remap entries. 0 means identity mapping.
+    /// Number of active remap entries.  0 means identity mapping.
     remap_len: u8,
     /// Source code annotation
     annotation: Smid,
@@ -228,10 +238,14 @@ where
         }
     }
 
-    /// Construct a shared-backing frame with an explicit index remap.
+    /// Construct a shared-backing frame with an explicit logical→physical index remap.
     ///
-    /// The `remap` slice must have at most 4 entries. Logical index `i`
+    /// The `remap` slice must have at most 4 entries.  Logical index `i`
     /// maps to physical index `remap[i]` in the shared backing array.
+    ///
+    /// The `bindings` array **must** have `length == top_len` (the constructor
+    /// frame's full binding count) so the GC scans all live slots regardless of
+    /// which frame it encounters first.
     pub fn new_remapped(
         bindings: Array<C>,
         remap: &[u8],
@@ -253,9 +267,10 @@ where
 
     /// Logical length of this frame for cactus-stack index chaining.
     ///
-    /// When remapping is active, this is the number of logical bindings
-    /// exposed by this frame (which may be less than the physical backing
-    /// array length).
+    /// When a remap is active, this is the number of logical bindings
+    /// exposed by this frame (`remap_len`).  For normal frames it is
+    /// the physical binding count.  Indices `>= logical_len()` chain
+    /// through to the `next` frame.
     #[inline]
     pub(crate) fn logical_len(&self) -> usize {
         if self.remap_len > 0 {
@@ -265,9 +280,13 @@ where
         }
     }
 
-    /// Translate a logical index to a physical index in the backing array.
+    /// Translate a logical index to the physical index in the backing array.
+    ///
+    /// When a remap is active (`remap_len > 0`), logical index `i` maps to
+    /// physical index `remap[i]`.  Otherwise the mapping is the identity.
+    /// The caller must ensure `logical < logical_len()`.
     #[inline]
-    fn physical_index(&self, logical: usize) -> usize {
+    pub fn physical_index(&self, logical: usize) -> usize {
         if self.remap_len > 0 {
             self.remap[logical] as usize
         } else {
@@ -275,12 +294,38 @@ where
         }
     }
 
-    /// Return a shared view of the bindings array with logical length `n`.
+    /// Physical (backing) length of this frame.
+    ///
+    /// Always equals `self.bindings.len()`, regardless of any remap table.
+    /// This is the count of slots that the GC must trace and the count used
+    /// when sharing the full backing array for GC correctness.
+    #[inline]
+    pub fn backing_len(&self) -> usize {
+        self.bindings.len()
+    }
+
+    /// Return a shared view of the bindings array covering all physical slots.
     ///
     /// The returned `Array` shares backing storage with this frame, so
     /// mutations through the returned handle are visible through this frame
-    /// and vice versa. Used to create shared-backing environment frames for
+    /// and vice versa.  Used to create shared-backing environment frames for
     /// data constructor destructuring without copying thunks.
+    ///
+    /// The returned array always has `length == self.bindings.len()` so that the
+    /// GC traces every live slot regardless of which frame it encounters first.
+    pub fn shared_bindings_full(&self) -> Array<C> {
+        self.bindings.clone()
+    }
+
+    /// Return a shared view of the bindings array with the given logical length.
+    ///
+    /// The returned `Array` shares backing storage with this frame, so
+    /// mutations through the returned handle are visible through this frame
+    /// and vice versa.  Used to create shared-backing environment frames for
+    /// data constructor destructuring without copying thunks.
+    ///
+    /// For GC correctness the returned array length should equal the
+    /// constructor frame's full binding count so all live slots are traced.
     pub fn shared_bindings(&self, n: usize) -> Array<C> {
         self.bindings.clone_with_length(n)
     }

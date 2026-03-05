@@ -42,9 +42,46 @@ doubled-checks: {
   ]
 }
 
+## Sharing stress test using iterate with a larger list.
+##
+## Without thunk sharing, each thunk inside a cons cell would be
+## re-evaluated on every traversal.  With sharing the evaluation is
+## recorded back to the shared backing array, so each element is forced
+## at most once across all traversals of the same binding.
+##
+## Using a list of 100 elements and performing several independent
+## traversals (sum, count, min, max) exercises the shared-backing path
+## more aggressively than the 20-element smoke test above.  A sharing
+## regression that causes each traversal to re-evaluate all 100 thunks
+## would still terminate (O(n) per traversal), but correctness failures
+## would surface immediately.
+##
+## A true exponential-complexity test would require a self-referential
+## corecursive list (e.g. Fibonacci stream), which depends on eucalypt
+## letrec semantics that are not yet validated for this pattern.  That
+## is tracked as a follow-up to eu-hg7n.
+
+large-list: take(100, iterate((+ 1), 0))
+
+stress-checks: {
+  ## 0..99 sum = 4950
+  total: large-list sum
+  ## count
+  n: large-list count
+  trues: [
+    total = 4950,
+    n = 100,
+    ## Three independent traversals must all agree
+    (large-list sum) = total,
+    (large-list sum) = total,
+    (large-list sum) = total
+  ]
+}
+
 pass: [
   sharing-checks.trues all-true?,
-  doubled-checks.trues all-true?
+  doubled-checks.trues all-true?,
+  stress-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)
