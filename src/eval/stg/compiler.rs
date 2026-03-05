@@ -190,6 +190,11 @@ impl CompileError {
                              e.g. 'xs any(42 = _)' to test for element 42"
                                 .to_string(),
                         );
+                        notes.push(
+                            "to test if a string contains a pattern, use 'str.matches?', \
+                             e.g. 'text str.matches?(\"pattern\")'"
+                                .to_string(),
+                        );
                     }
                     "join" => {
                         notes.push(
@@ -313,14 +318,14 @@ impl CompileError {
                     "sprintf" | "format" | "string_format" | "str.format" | "fmt"
                     | "format_string" => {
                         notes.push(
-                            "eucalypt has no sprintf/format function; use string \
-                             interpolation instead: \"Hello, {name}!\" where 'name' is \
-                             a binding in scope"
+                            "eucalypt has no sprintf/format function; for printf-style \
+                             numeric formatting use 'str.fmt', e.g. 'x str.fmt(\"%.2f\")' \
+                             for two decimal places"
                                 .to_string(),
                         );
                         notes.push(
-                            "example: 'greeting: \"Hello, {name}!\"' where \
-                             'name: \"Alice\"' is declared nearby"
+                            "for string interpolation of named values, use \
+                             \"Hello, {name}!\" where 'name' is a binding in scope"
                                 .to_string(),
                         );
                     }

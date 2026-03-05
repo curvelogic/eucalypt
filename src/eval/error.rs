@@ -33,7 +33,7 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              strings do not have fields"
                 .to_string(),
             "to apply string functions, use pipeline catenation, \
-             e.g. 'x str.upper' or 'str.lower(x)' instead of 'x.upper'"
+             e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
                 .to_string(),
         ],
         (Number, Record(_)) => vec![

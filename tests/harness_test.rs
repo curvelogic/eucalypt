@@ -920,3 +920,57 @@ pub fn test_error_085() {
 pub fn test_error_086() {
     run_error_test(&error_opts("086_destructure_empty_cons.eu"));
 }
+
+#[test]
+pub fn test_error_087() {
+    run_error_test(&error_opts("087_bad_regex.eu"));
+}
+
+#[test]
+pub fn test_error_088() {
+    run_error_test(&error_opts("088_numeric_range.eu"));
+}
+
+#[test]
+pub fn test_error_089() {
+    run_error_test(&error_opts("089_numeric_domain.eu"));
+}
+
+#[test]
+pub fn test_error_090() {
+    run_error_test(&error_opts("090_bad_format_string.eu"));
+}
+
+#[test]
+pub fn test_error_091() {
+    // UnknownFormat: verify the error message text directly from the error type.
+    // The full pipeline test would require running with -x xml, which the standard
+    // harness cannot express, so we test the error variant message directly.
+    let err = eucalypt::eval::error::ExecutionError::UnknownFormat("xml".to_string());
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("unknown export format"),
+        "expected 'unknown export format' in error, got: {msg}"
+    );
+    assert!(
+        msg.contains("xml"),
+        "expected format name 'xml' in error, got: {msg}"
+    );
+}
+
+#[test]
+pub fn test_error_092() {
+    // TargetNotFound: verify the error message text directly from the error type.
+    // The full pipeline test would require -t nonexistent, which the standard
+    // harness cannot express, so we test the error variant message directly.
+    let err = eucalypt::core::error::CoreError::TargetNotFound("nonexistent".to_string());
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("not found"),
+        "expected 'not found' in error, got: {msg}"
+    );
+    assert!(
+        msg.contains("list-targets"),
+        "expected 'list-targets' hint in error, got: {msg}"
+    );
+}

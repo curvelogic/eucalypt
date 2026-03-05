@@ -1,0 +1,2 @@
+# Error: bad regex pattern - unclosed character class
+x: "hello" str.matches?("[invalid")
