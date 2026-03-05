@@ -49,6 +49,7 @@ semver = "1"
 base64 = "0.22"
 sha2 = "0.10"
 rowan = "0.15.3"
+ndarray = "0.16"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clap = { version = "4.5", features = ["derive"] }
@@ -56,13 +57,16 @@ dirs = "4.0.0"
 webbrowser = "0.8.0"
 lsp-server = "0.7"
 lsp-types = "0.95"
-ndarray = "0.16"
 uuid = { version = "1.1.2", features = ["v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 
 [lib]
+# cdylib is required for WASM targets (produces the .wasm file usable from JS).
+# It is harmless on native platforms — it produces an additional shared library
+# that is simply not deployed. Cargo does not support target-conditional crate-type,
+# so we include both types unconditionally.
 crate-type = ["cdylib", "rlib"]
 
 [[bench]]
