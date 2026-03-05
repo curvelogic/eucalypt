@@ -58,6 +58,7 @@ webbrowser = "0.8.0"
 lsp-server = "0.7"
 lsp-types = "0.95"
 uuid = { version = "1.1.2", features = ["v4"] }
+im-rc = "15"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }

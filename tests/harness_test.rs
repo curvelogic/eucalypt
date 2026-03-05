@@ -430,6 +430,11 @@ pub fn test_harness_087() {
 }
 
 #[test]
+pub fn test_harness_088() {
+    run_test(&opts("088_persistent_blocks.eu"));
+}
+
+#[test]
 pub fn test_harness_090() {
     run_test(&opts("090_relative_imports.eu"));
 }
