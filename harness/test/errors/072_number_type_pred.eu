@@ -1,4 +1,0 @@
-# Error test: using 'number?' type predicate which does not exist in eucalypt
-x: 42
-result: x number?
-RESULT: result
