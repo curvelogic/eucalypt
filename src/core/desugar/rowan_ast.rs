@@ -605,25 +605,68 @@ impl Desugarable for rowan_ast::Literal {
     }
 }
 
+/// Extract bind and return names from a desugared monad spec body.
+///
+/// Expects the body to be a desugared block like:
+/// ```eucalypt
+/// { bind: rand-bind  return: rand-return }
+/// ```
+/// The desugared form is `Expr::Let(bindings, body)`.
+/// The function names are in the binding `Embed` values, not in the body map.
+/// Returns `Some((bind_name, return_name))` if both are present as resolvable names.
+fn extract_monad_spec_from_body(body: &RcExpr) -> Option<(String, String)> {
+    find_monad_names_in_bindings(body)
+}
+
+/// Find bind and return names from the let-bindings of a desugared block.
+fn find_monad_names_in_bindings(expr: &RcExpr) -> Option<(String, String)> {
+    use crate::core::metadata::extract_function_name_from_expr;
+    match &*expr.inner {
+        Expr::Let(_, scope, _) => {
+            // The bindings are the Rec values in the scope
+            let bindings = scope.unsafe_pattern.unsafe_pattern.clone();
+            let mut bind_name = None;
+            let mut return_name = None;
+            for (binder, embed) in &bindings {
+                let key = binder.0.pretty_name.as_deref().unwrap_or("");
+                let val = extract_function_name_from_expr(&embed.0);
+                if key == "bind" {
+                    bind_name = val;
+                } else if key == "return" {
+                    return_name = val;
+                }
+            }
+            if let (Some(b), Some(r)) = (bind_name, return_name) {
+                Some((b, r))
+            } else {
+                None
+            }
+        }
+        Expr::Meta(_, inner, _) => find_monad_names_in_bindings(inner),
+        _ => None,
+    }
+}
+
 /// Desugar a monadic block using a registered monad spec.
 ///
-/// Given `⟦ { a: ma, b: mb, r: expr } ⟧` and a monad spec `{ bind, return }`,
+/// Given `⟦ a: ma  b: mb ⟧.return_expr` and a monad spec `{ bind, return }`,
 /// produces:
 /// ```text
-/// bind(ma, (a): bind(mb, (b): return(expr)))
+/// bind(ma, λa. bind(mb, λb. return(return_expr)))
 /// ```
 ///
-/// All declarations except the last are desugared as monadic bind steps,
-/// with the declaration name becoming a lambda parameter.  The last
-/// declaration's value is wrapped in `return`; its name is not bound.
+/// All declarations are desugared as monadic bind steps,
+/// with each declaration name becoming a lambda parameter.
+/// The return expression (from `.expr` after the bracket) is wrapped in `return`.
 fn desugar_monadic_block(
     smid: Smid,
-    block: &rowan_ast::Block,
+    bracket: &rowan_ast::BracketBlock,
+    return_elem: &Element,
     spec: &super::desugarer::MonadSpec,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
     // Collect all declarations in order
-    let decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
+    let decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
 
     if decls.is_empty() {
         return Err(CoreError::EmptyMonadicBlock(smid));
@@ -631,8 +674,8 @@ fn desugar_monadic_block(
 
     // We need to push all bind-names into the environment before desugaring
     // any bodies, so that later bodies can reference earlier names.
-    // The bind names are all declaration names except the last.
-    let bind_names: Vec<String> = decls[..decls.len() - 1]
+    // All declaration names become bind names (the return expr is separate).
+    let bind_names: Vec<String> = decls
         .iter()
         .map(extract_declaration_name)
         .collect::<Result<Vec<_>, CoreError>>()?;
@@ -651,11 +694,7 @@ fn desugar_monadic_block(
     // Desugar all declaration bodies (in order) with bind names in scope
     let mut name_value_pairs: Vec<(String, RcExpr)> = Vec::with_capacity(decls.len());
     for (i, decl) in decls.iter().enumerate() {
-        let decl_name = if i < bind_names.len() {
-            bind_names[i].clone()
-        } else {
-            extract_declaration_name(decl)?
-        };
+        let decl_name = bind_names[i].clone();
         let span = text_range_to_span(decl.syntax().text_range());
         let value = if let Some(body) = decl.body() {
             if let Some(soup) = body.soup() {
@@ -682,21 +721,24 @@ fn desugar_monadic_block(
         name_value_pairs.push((decl_name, value));
     }
 
+    // Desugar the return expression now that bind names are in scope
+    let return_expr = {
+        let ret = return_elem.desugar(desugarer)?;
+        desugarer.varify(ret)
+    };
+
     // Pop bind names from environment
     if !bind_names.is_empty() {
         desugarer.env_mut().pop();
     }
 
-    // Build the bind chain right-to-left:
-    //   Last declaration: return(last_value)
-    //   Each prior declaration: bind(value, (name): rest)
-    let (_, last_value) = name_value_pairs.pop().unwrap();
-
-    // Build the return function call
+    // Build the bind chain right-to-left.
+    // The return expression is the provided `.expr` lookup (desugared with bind names in scope).
+    // Each declaration: bind(value, λname. rest)
     let return_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, spec.return_name.clone())));
-    let mut result = RcExpr::from(Expr::App(smid, return_fn, vec![last_value]));
+    let mut result = RcExpr::from(Expr::App(smid, return_fn, vec![return_expr]));
 
-    // Build bind chain from right-to-left using the remaining pairs
+    // Build bind chain from right-to-left using all pairs
     for ((_, value), bind_var) in name_value_pairs
         .into_iter()
         .zip(bind_vars.into_iter())
@@ -796,49 +838,37 @@ impl Desugarable for Element {
                     )
                 })?;
 
-                // Detect monadic block mode: inner soup is a single Block element.
+                // Simple expression mode: ⟦ x ⟧ → ⟦⟧(x)
                 //
-                // ⟦ { a: ma, b: mb, r: expr } ⟧
-                // desugars (when ⟦⟧ has a monad spec) to:
-                //   bind(ma, (a): bind(mb, (b): return(expr)))
-                let inner_block: Option<rowan_ast::Block> =
-                    bracket.soup().and_then(|s| s.singleton()).and_then(|e| {
-                        if let Element::Block(b) = e {
-                            Some(b)
-                        } else {
-                            None
-                        }
-                    });
-
-                if let Some(block) = inner_block {
-                    // Monadic block mode — look up the monad spec
-                    let spec = desugarer
-                        .monad_spec(&pair_name)
-                        .cloned()
-                        .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
-
-                    desugar_monadic_block(smid, &block, &spec, desugarer)
+                // Desugar the inner soup and apply the bracket pair function.
+                // Both the function name and the argument must be varified so
+                // that Name nodes are resolved to Var references before the
+                // STG compiler sees them.
+                let inner = if let Some(soup) = bracket.soup() {
+                    soup.desugar(desugarer)?
                 } else {
-                    // Simple expression mode: ⟦ x ⟧ → ⟦⟧(x)
-                    //
-                    // Desugar the inner soup and apply the bracket pair function.
-                    // Both the function name and the argument must be varified so
-                    // that Name nodes are resolved to Var references before the
-                    // STG compiler sees them.
-                    let inner = if let Some(soup) = bracket.soup() {
-                        soup.desugar(desugarer)?
-                    } else {
-                        return Err(CoreError::InvalidEmbedding(
-                            "empty bracket expression".to_string(),
-                            smid,
-                        ));
-                    };
+                    return Err(CoreError::InvalidEmbedding(
+                        "empty bracket expression".to_string(),
+                        smid,
+                    ));
+                };
 
-                    let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name));
-                    let bracket_fn = desugarer.varify(bracket_fn_name);
-                    let arg = desugarer.varify(inner);
-                    Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![arg])))
-                }
+                let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name));
+                let bracket_fn = desugarer.varify(bracket_fn_name);
+                let arg = desugarer.varify(inner);
+                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![arg])))
+            }
+            Element::BracketBlock(_) => {
+                // BracketBlock elements appearing in isolation (not preceded by soup context)
+                // should not occur — they should be consumed by desugar_rowan_soup lookahead.
+                // If we reach here, it means the BracketBlock has no following .expr.
+                let span = text_range_to_span(self.syntax().text_range());
+                let smid = desugarer.new_smid(span);
+                Err(CoreError::InvalidEmbedding(
+                    "monadic bracket block requires a return expression (e.g. ⟦ ... ⟧.expr)"
+                        .to_string(),
+                    smid,
+                ))
             }
             Element::ApplyTuple(tuple) => {
                 let span = text_range_to_span(tuple.syntax().text_range());
@@ -1088,6 +1118,27 @@ fn extract_rowan_declaration_components(
                     metadata,
                     name: pair_name,
                     args,
+                    body,
+                    arg_vars,
+                    is_operator: false,
+                    fixity: None,
+                })
+            }
+            rowan_ast::DeclarationKind::BracketBlockDef(_, bracket_expr) => {
+                let pair_name = bracket_expr.bracket_pair_name().ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "bracket block definition has no bracket pair name".to_string(),
+                        desugarer.new_smid(span),
+                    )
+                })?;
+                // No formal args — the body is the monad spec block.
+                let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &[], span)?;
+
+                Ok(RowanDeclarationComponents {
+                    span,
+                    metadata,
+                    name: pair_name,
+                    args: vec![],
                     body,
                     arg_vars,
                     is_operator: false,
@@ -1391,8 +1442,64 @@ fn desugar_rowan_soup(
     let mut soup: Vec<RcExpr> = Vec::with_capacity(elements.len() * 2);
     let mut lookup = PendingLookup::None;
 
-    for element in elements {
-        let expr = element.desugar(desugarer)?;
+    let mut idx = 0;
+    while idx < elements.len() {
+        // Check for BracketBlock — needs lookahead to consume the return expr
+        if let Element::BracketBlock(ref bracket) = elements[idx] {
+            let bracket_span = text_range_to_span(bracket.syntax().text_range());
+            let smid = desugarer.new_smid(bracket_span);
+
+            let pair_name = bracket.bracket_pair_name().ok_or_else(|| {
+                CoreError::InvalidEmbedding(
+                    "bracket block missing bracket pair name".to_string(),
+                    smid,
+                )
+            })?;
+
+            // Consume return expression: expect `.name`, `.(expr)`, `.[list]`
+            // The return expr follows in the soup as dot-operator + expression.
+            // We pass the raw element to desugar_monadic_block so it can be
+            // desugared with bind names in scope.
+            let return_elem_idx = if idx + 2 < elements.len() {
+                // Next should be dot operator, then an expression
+                let dot_elem = &elements[idx + 1];
+                let is_dot = dot_elem
+                    .as_operator_identifier()
+                    .map(|op| op.text() == ".")
+                    .unwrap_or(false);
+                if is_dot {
+                    let ret_idx = idx + 2;
+                    idx += 3; // consume bracket + dot + return_expr
+                    ret_idx
+                } else {
+                    return Err(CoreError::InvalidEmbedding(
+                        "monadic bracket block requires a return expression (e.g. ⟦ ... ⟧.expr)"
+                            .to_string(),
+                        smid,
+                    ));
+                }
+            } else {
+                return Err(CoreError::InvalidEmbedding(
+                    "monadic bracket block requires a return expression (e.g. ⟦ ... ⟧.expr)"
+                        .to_string(),
+                    smid,
+                ));
+            };
+
+            // Look up the monad spec and desugar the bind chain
+            let spec = desugarer
+                .monad_spec(&pair_name)
+                .cloned()
+                .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
+
+            let monadic_expr =
+                desugar_monadic_block(smid, bracket, &elements[return_elem_idx], &spec, desugarer)?;
+            soup.push(monadic_expr);
+            continue;
+        }
+
+        idx += 1;
+        let expr = elements[idx - 1].desugar(desugarer)?;
         let top: Option<RcExpr> = soup.last().cloned();
 
         match &*expr.inner {
@@ -1503,6 +1610,14 @@ fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, Cor
                     )
                 })
             }
+            rowan_ast::DeclarationKind::BracketBlockDef(_, bracket_expr) => {
+                bracket_expr.bracket_pair_name().ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "bracket block definition has no bracket pair name".to_string(),
+                        Smid::default(),
+                    )
+                })
+            }
             rowan_ast::DeclarationKind::MalformedHead(_) => Err(CoreError::InvalidEmbedding(
                 "malformed declaration head".to_string(),
                 Smid::default(),
@@ -1571,7 +1686,7 @@ fn rowan_declaration_to_binding(
         }
     }
 
-    // Register monad spec if this is a bracket pair declaration with bind/return metadata
+    // Register monad spec from declaration metadata (old-style: `bind` and `return` in metadata block)
     if let (Some(bind_name), Some(return_name)) = (metadata.bind, metadata.monad_return) {
         desugarer.register_monad_spec(
             components.name.clone(),
@@ -1580,6 +1695,25 @@ fn rowan_declaration_to_binding(
                 return_name,
             },
         );
+    }
+
+    // Register monad spec from BracketBlockDef body (new-style: (⟦{}⟧): { :monad bind: f return: r })
+    // The body is a block with :monad unit metadata and bind/return declarations.
+    if let Some(head) = decl.head() {
+        if matches!(
+            head.classify_declaration(),
+            rowan_ast::DeclarationKind::BracketBlockDef(_, _)
+        ) {
+            if let Some((bind_name, return_name)) = extract_monad_spec_from_body(&components.body) {
+                desugarer.register_monad_spec(
+                    components.name.clone(),
+                    super::desugarer::MonadSpec {
+                        bind_name,
+                        return_name,
+                    },
+                );
+            }
+        }
     }
 
     // Note: argument names were already resolved during body desugaring
@@ -1723,6 +1857,9 @@ impl Desugarable for rowan_ast::Block {
                         rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, _) => {
                             bracket_expr.bracket_pair_name()
                         }
+                        rowan_ast::DeclarationKind::BracketBlockDef(_, bracket_expr) => {
+                            bracket_expr.bracket_pair_name()
+                        }
                         rowan_ast::DeclarationKind::MalformedHead(_) => None,
                     }
                 } else {
@@ -1842,6 +1979,9 @@ impl Desugarable for rowan_ast::Unit {
                         }
                         rowan_ast::DeclarationKind::Nullary(_, op) => Some(op.text().to_string()),
                         rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, _) => {
+                            bracket_expr.bracket_pair_name()
+                        }
+                        rowan_ast::DeclarationKind::BracketBlockDef(_, bracket_expr) => {
                             bracket_expr.bracket_pair_name()
                         }
                         rowan_ast::DeclarationKind::MalformedHead(_) => None,

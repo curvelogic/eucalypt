@@ -117,6 +117,10 @@ pub struct DesugarPhaseDeclarationMetadata {
     pub monad_return: Option<String>,
 }
 
+/// Public wrapper for extract_function_name for use in other modules.
+pub fn extract_function_name_from_expr(expr: &RcExpr) -> Option<String> {
+    extract_function_name(expr)
+}
 impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
     /// Read desugar phase metadata. At this point we cannot evaluate
     /// anything, but we can expand out top level lets to inline

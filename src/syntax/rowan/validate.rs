@@ -406,6 +406,45 @@ impl Validatable for BracketExpr {
     }
 }
 
+impl Validatable for BracketBlock {
+    fn validate(&self, errors: &mut Vec<ParseError>) {
+        // Validate that the open bracket is a known bracket pair
+        if let Some(open_char) = self.open_char() {
+            if !super::brackets::is_bracket_open(open_char) {
+                errors.push(ParseError::UnknownBracketPair {
+                    range: self.syntax().text_range(),
+                    open_char,
+                });
+                return;
+            }
+
+            // Validate that the close bracket matches the open bracket
+            if let Some(close_char) = self.close_char() {
+                let expected_close = super::brackets::close_for_open(open_char);
+                if expected_close != Some(close_char) {
+                    let open_token = self.open_bracket();
+                    let close_token = self.close_bracket();
+                    errors.push(ParseError::MismatchedBrackets {
+                        open_range: open_token
+                            .map(|t| t.text_range())
+                            .unwrap_or_else(|| self.syntax().text_range()),
+                        close_range: close_token
+                            .map(|t| t.text_range())
+                            .unwrap_or_else(|| self.syntax().text_range()),
+                        expected_close: expected_close.unwrap_or(')'),
+                        actual_close: close_char,
+                    });
+                }
+            }
+        }
+
+        // Validate declarations
+        for decl in self.declarations() {
+            decl.validate(errors);
+        }
+    }
+}
+
 impl Validatable for Element {
     fn validate(&self, errors: &mut Vec<ParseError>) {
         match self {
@@ -419,6 +458,7 @@ impl Validatable for Element {
             Element::RawStringPattern(s) => s.validate(errors),
             Element::ApplyTuple(t) => t.validate(errors),
             Element::BracketExpr(be) => be.validate(errors),
+            Element::BracketBlock(bb) => bb.validate(errors),
         }
     }
 }

@@ -61,6 +61,16 @@ fn declaration_symbol(source: &str, decl: &Declaration) -> Option<DocumentSymbol
                 .unwrap_or_else(|| "bracket".to_string());
             (name, SymbolKind::FUNCTION, Some("bracket pair".to_string()))
         }
+        DeclarationKind::BracketBlockDef(_, bracket_expr) => {
+            let name = bracket_expr
+                .bracket_pair_name()
+                .unwrap_or_else(|| "bracket".to_string());
+            (
+                name,
+                SymbolKind::FUNCTION,
+                Some("bracket block def".to_string()),
+            )
+        }
         DeclarationKind::MalformedHead(_) => return None,
     };
 

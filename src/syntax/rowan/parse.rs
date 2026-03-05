@@ -391,39 +391,126 @@ impl<'text> Parser<'text> {
     ///
     /// For example: `⟦ x ⟧` or `⌈ x ⌉`.
     ///
-    /// The opening `BRACKET_OPEN` token is consumed, followed by a soup
-    /// expression, followed by a `BRACKET_CLOSE` token.  The pair of
-    /// bracket characters stored in the tokens is used at desugar time
-    /// to look up the bracket pair function.
+    /// If the bracket content contains top-level colons (at depth 0), the
+    /// contents are parsed as block declarations and the node is emitted as
+    /// `BRACKET_BLOCK`.  Otherwise the contents are parsed as a soup
+    /// expression and the node is `BRACKET_EXPR`.
     fn parse_bracket_expression(&mut self) {
-        self.sink().start_node(BRACKET_EXPR);
+        // Peek ahead to detect block mode (top-level colons inside the brackets)
+        let is_block_mode = self.peek_for_top_level_colon_in_bracket();
 
-        // Consume the open bracket token; determine expected close char
-        let expected_close = if let Some((BRACKET_OPEN, open_text)) = self.peek() {
-            let open_char = open_text.chars().next().unwrap_or('⟦');
-            brackets::close_for_open(open_char)
+        if is_block_mode {
+            self.sink().start_node(BRACKET_BLOCK);
+            self.expect(BRACKET_OPEN);
+            self.add_trivia();
+            self.parse_block_content_until_bracket_close();
+            self.add_trivia();
+            if !self.try_accept(BRACKET_CLOSE) {
+                self.errors.push(ParseError::UnclosedBracketExpr {
+                    range: self.next_range(),
+                });
+            }
+            self.sink().finish_node();
         } else {
-            None
-        };
-
-        self.expect(BRACKET_OPEN);
-        self.add_trivia();
-        self.parse_soup();
-
-        // Attempt to consume the close bracket token
-        if !self.try_accept(BRACKET_CLOSE) {
-            self.errors.push(ParseError::UnclosedBracketExpr {
-                range: self.next_range(),
-            });
-        } else if let Some(expected) = expected_close {
-            // Validate that the close bracket matches the open
-            // (The close token has already been consumed so we check
-            //  the token we just emitted via the events list — instead we
-            //  do a post-parse validation check in the AST validator)
-            let _ = expected; // validation deferred to validate.rs
+            self.sink().start_node(BRACKET_EXPR);
+            // Determine expected close char for validation
+            let expected_close = if let Some((BRACKET_OPEN, open_text)) = self.peek() {
+                let open_char = open_text.chars().next().unwrap_or('⟦');
+                brackets::close_for_open(open_char)
+            } else {
+                None
+            };
+            self.expect(BRACKET_OPEN);
+            self.add_trivia();
+            self.parse_soup();
+            if !self.try_accept(BRACKET_CLOSE) {
+                self.errors.push(ParseError::UnclosedBracketExpr {
+                    range: self.next_range(),
+                });
+            } else if let Some(expected) = expected_close {
+                let _ = expected; // validation deferred to validate.rs
+            }
+            self.sink().finish_node();
         }
+    }
 
-        self.sink().finish_node();
+    /// Peek forward through the token stream to detect whether the bracket
+    /// content (at depth 0 relative to the opening bracket) contains a COLON.
+    ///
+    /// Returns `true` if a COLON is found at depth 0 before the matching
+    /// BRACKET_CLOSE, `false` otherwise.
+    fn peek_for_top_level_colon_in_bracket(&self) -> bool {
+        let mut depth: i32 = 0;
+        let mut idx = self.next_token;
+        // The current token should be BRACKET_OPEN; skip it
+        if idx < self.tokens.len() && self.tokens[idx].0 == BRACKET_OPEN {
+            idx += 1;
+        } else {
+            return false;
+        }
+        while idx < self.tokens.len() {
+            match self.tokens[idx].0 {
+                BRACKET_OPEN | OPEN_BRACE | OPEN_PAREN | OPEN_SQUARE | OPEN_BRACE_APPLY
+                | OPEN_PAREN_APPLY | OPEN_SQUARE_APPLY => {
+                    depth += 1;
+                }
+                BRACKET_CLOSE if depth == 0 => {
+                    return false;
+                }
+                BRACKET_CLOSE | CLOSE_BRACE | CLOSE_PAREN | CLOSE_SQUARE => {
+                    depth -= 1;
+                }
+                COLON if depth == 0 => {
+                    return true;
+                }
+                _ => {}
+            }
+            idx += 1;
+        }
+        false
+    }
+
+    /// Parse block content terminated by BRACKET_CLOSE instead of CLOSE_BRACE.
+    fn parse_block_content_until_bracket_close(&mut self) {
+        self.sink_stack.push(Box::new(BlockEventSink::default()));
+        while self.parse_protoblock_element_until_bracket_close() {}
+        let events = self.finish_sink();
+        self.sink().accept(events);
+    }
+
+    /// Like `parse_protoblock_element` but stops at BRACKET_CLOSE instead of CLOSE_BRACE.
+    fn parse_protoblock_element_until_bracket_close(&mut self) -> bool {
+        match self.next() {
+            Some((COLON, _)) => {
+                if let Some((COLON, _)) = self.peek() {
+                    let range = self.prev_and_next_range();
+                    self.next();
+                    self.errors.push(ParseError::InvalidDoubleColon { range });
+                    self.sink().start_node(ERROR_STOWAWAYS);
+                    self.sink().token(COLON);
+                    self.sink().token(COLON);
+                    self.sink().finish_node();
+                } else {
+                    self.sink().token(COLON);
+                }
+                self.add_trivia();
+                true
+            }
+            Some((k, _)) if k == BACKTICK || k == COMMA || k == WHITESPACE || k == COMMENT => {
+                self.sink().token(k);
+                self.add_trivia();
+                true
+            }
+            Some((BRACKET_CLOSE, _)) => {
+                self.push_back();
+                false
+            }
+            Some(_) => {
+                self.push_back();
+                self.try_parse_element()
+            }
+            None => false,
+        }
     }
 
     /// Parse an apply tuple [...](x, y, z)
