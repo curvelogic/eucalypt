@@ -267,45 +267,6 @@ impl CompileError {
                         );
                     }
                     // Type predicates from Haskell/Clojure/Racket/Ruby.
-                    // Eucalypt has 'block?' and 'list?' but not type predicates for
-                    // primitives.  Users must use pattern matching or error handling.
-                    "number?" | "num?" | "isNum" | "is_num" | "isNumber" | "is_number"
-                    | "isnumber" | "numeric?" => {
-                        notes.push(
-                            "eucalypt has no 'number?' type predicate; \
-                             the 'block?' and 'list?' predicates test structured types, \
-                             but primitive types (number, string, symbol) have no predicates"
-                                .to_string(),
-                        );
-                        notes.push(
-                            "if you need type-safe dispatch, restructure your data so the type \
-                             is explicit, e.g. use a tagged block '{kind: \"num\", value: 42}'"
-                                .to_string(),
-                        );
-                    }
-                    "string?" | "str?" | "isStr" | "is_str" | "isString" | "is_string"
-                    | "isstring" => {
-                        notes.push(
-                            "eucalypt has no 'string?' type predicate; \
-                             the 'block?' and 'list?' predicates test structured types, \
-                             but primitive types (number, string, symbol) have no predicates"
-                                .to_string(),
-                        );
-                    }
-                    "symbol?" | "sym?" | "isSym" | "is_sym" | "isSymbol" | "is_symbol" => {
-                        notes.push(
-                            "eucalypt has no 'symbol?' type predicate; \
-                             to test if a block has a given symbol key, use 'has(:key)'"
-                                .to_string(),
-                        );
-                    }
-                    "bool?" | "boolean?" | "isBool" | "is_bool" | "isBoolean" => {
-                        notes.push(
-                            "eucalypt has no 'bool?' type predicate; \
-                             use 'if(v, true-branch, false-branch)' — 'if' coerces its condition"
-                                .to_string(),
-                        );
-                    }
                     "even?" | "even" | "isEven" | "is_even" => {
                         notes.push(
                             "eucalypt has no built-in 'even?' predicate; \
@@ -386,65 +347,6 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
-                    // 'val' and 'const' are Scala/Kotlin/Java keywords for bindings;
-                    // eucalypt uses ':' for all declarations.
-                    "val" | "const" => {
-                        notes.push(
-                            "eucalypt has no 'val'/'const' keyword; use ':' for \
-                             declarations, e.g. 'x: 42' instead of 'val x = 42'"
-                                .to_string(),
-                        );
-                    }
-                    // 'do', 'begin', 'end' are sequencing/block keywords from
-                    // Haskell, Ruby, Lua.  Eucalypt uses blocks for structure.
-                    "do" | "begin" | "end" => {
-                        notes.push(
-                            "eucalypt has no 'do'/'begin'/'end' keywords; \
-                             group related declarations in a block: '{ x: 1, y: 2 }'"
-                                .to_string(),
-                        );
-                    }
-                    // 'class', 'struct', 'type', 'record' are from OOP/typed-FP.
-                    // Eucalypt uses blocks for structured data.
-                    "class" | "struct" | "record" => {
-                        notes.push(
-                            "eucalypt has no 'class'/'struct'/'record' keyword; use a block \
-                             to group related values: '{ name: \"Alice\", age: 30 }'"
-                                .to_string(),
-                        );
-                    }
-                    // 'module', 'namespace', 'package' are from ML/Haskell/Java.
-                    // Eucalypt uses blocks for namespacing, accessible via dot notation.
-                    "module" | "namespace" | "package" => {
-                        notes.push(
-                            "eucalypt has no 'module'/'namespace' keyword; use a named block \
-                             for namespacing: 'my-ns: { f(x): x + 1 }' then call 'my-ns.f(5)'"
-                                .to_string(),
-                        );
-                    }
-                    // 'otherwise' is a Haskell catch-all guard pattern.
-                    // In eucalypt, use the 'if' function for conditional dispatch.
-                    "otherwise" => {
-                        notes.push(
-                            "eucalypt has no 'otherwise' guard keyword; \
-                             use 'if(condition, then-value, else-value)' for conditional logic"
-                                .to_string(),
-                        );
-                        notes.push(
-                            "example: 'if(x < 0, \"negative\", if(x > 0, \"positive\", \"zero\"))'"
-                                .to_string(),
-                        );
-                    }
-                    // 'match'/'case' are from Haskell/Rust/Scala pattern matching.
-                    // Eucalypt uses 'if' for conditional dispatch.
-                    "match" | "case" => {
-                        notes.push(
-                            "eucalypt has no 'match'/'case' expression; \
-                             use nested 'if' calls for dispatch: \
-                             'if(x = 1, \"one\", if(x = 2, \"two\", \"other\"))'"
-                                .to_string(),
-                        );
-                    }
                     // CamelCase names for list functions that have kebab-case equivalents.
                     // Haskell, Scala, and JavaScript all use camelCase for these.
                     "takeWhile" | "take_while" => {
@@ -480,16 +382,6 @@ impl CompileError {
                             "eucalypt uses kebab-case: 'sort-by' (for general ordering) or \
                              'sort-by-num' (for numeric keys), e.g. \
                              'xs sort-by-num(.score)'"
-                                .to_string(),
-                        );
-                    }
-                    // Common names for prefix sum / running total / cumulative sum.
-                    // In eucalypt, use 'scanl' with the '+' operator.
-                    "running-total" | "running_total" | "prefix-sum" | "prefix_sum" | "cumsum"
-                    | "cumulative-sum" | "cumulative_sum" | "scan" => {
-                        notes.push(
-                            "to compute a running total, use 'scanl', e.g. \
-                             'xs scanl(+, 0)' produces prefix sums"
                                 .to_string(),
                         );
                     }
