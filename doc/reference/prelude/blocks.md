@@ -106,3 +106,28 @@ hosts: data deep-query("config.host")  # ["us.example.com", "eu.example.com"]
 # Wildcard: any key at one level, then host
 hosts: data deep-query("*.config.host")
 ```
+
+## Persistent Blocks (Experimental)
+
+The `pb:` namespace provides persistent (immutable, structurally-shared) blocks backed by
+`im::OrdMap`. These offer O(log n) lookup and merge operations with structural sharing.
+This feature is **experimental** and is not included in generated documentation exports.
+
+| Function | Description |
+|----------|-------------|
+| `pb.from-block(b)` | Convert a standard block `b` into a persistent block |
+| `pb.lookup(k, d, p)` | Look up key (symbol) `k` in persistent block `p`, returning default `d` if absent |
+| `pb.to-list(p)` | Return an ordered list of `[key, value]` pairs from persistent block `p` |
+| `pb.merge(l, r)` | Merge persistent blocks `l` and `r`; left-hand values win on key conflicts |
+| `pb.merge-with(f, l, r)` | Merge persistent blocks `l` and `r`, resolving conflicts with `f(left-val, right-val)` |
+
+```eu
+# Round-trip a standard block through a persistent block
+p: {a: 1, b: 2} pb.from-block
+v: p pb.lookup(:a, 0)           # 1
+l: p pb.to-list block           # {a: 1, b: 2}
+
+# Merge two persistent blocks (left wins on conflict)
+merged: ({a: 1} pb.from-block) pb.merge({a: 99, b: 2} pb.from-block)
+# pb.lookup(:a, 0) merged => 1
+```

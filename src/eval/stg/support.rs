@@ -542,7 +542,6 @@ pub fn block_arg<'guard>(
     }
 }
 
-
 /// Return boolean from intrinsic
 ///
 /// Reuses the pre-allocated TRUE/FALSE global closures rather than
