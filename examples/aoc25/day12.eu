@@ -33,7 +33,10 @@ parse-shapes(section):
 ` "Parse a region spec like '12x5: 1 0 1 0 2 2' into [w, h, [shape-counts]]."
 parse-region(line): {
   ns: str.matches(line, "\d+") map(num)
-}.[ns first, ns second, ns drop(2)]
+  w: ns first
+  h: ns second
+  counts: ns drop(2)
+}.[w, h, counts]
 
 ` "Part 1: count regions where all assigned pieces could fit.
 Cell check: total cells needed ≤ grid area. This eliminates regions that are so
@@ -54,12 +57,12 @@ solve-all(data): {
   sizes: shapes map(count)
 
   # cell check
-  needed(r): zip-with(*, r !! 2, sizes) sum
-  total(r): (r !! 0) * (r !! 1)
+  needed([w, h, counts]): zip-with(*, counts, sizes) sum
+  total([w, h, _]): w * h
   area-ok?(r): needed(r) <= total(r)
 
   # box check
-  min-dim(r): min(r !! 0, r !! 1)
+  min-dim([w, h, _]): min(w, h)
   box-ok?(r): min-dim(r) >= 3
 
   fits?(r): area-ok?(r) ∧ box-ok?(r)

@@ -77,7 +77,7 @@ subtract invalid-for(d=6, p=1)."
 include-exclude: {
 
   ` "Flip the sign and multiply divisor by prime p."
-  extend-one(p, term): [negate(first(term)), second(term) * p]
+  extend-one(p, [sign, divisor]): [negate(sign), divisor * p]
 
   ` "Each prime doubles the terms: keep existing, add flipped copies."
   extend(terms, p): terms ++ (terms map(extend-one(p)))
@@ -86,7 +86,7 @@ include-exclude: {
   terms(primes): foldl(extend, [[-1, 1]], primes) tail
 
   ` "Evaluate one term: sign * (sum of IDs with pattern length d/divisor)."
-  apply(a, b, d, term): first(term) * invalid-for(a, b, d, d / second(term))
+  apply(a, b, d, [sign, divisor]): sign * invalid-for(a, b, d, d / divisor)
 }
 
 ` "Sum of invalid d-digit IDs in [a,b].  Generate IE terms from the
