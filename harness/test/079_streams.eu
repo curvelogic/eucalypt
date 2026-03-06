@@ -12,4 +12,25 @@ csv-a-first: (csv head).a //= "1"
 txt-count: txt count //= 3
 txt-first: txt head //= "line 1, some text"
 
-RESULT: [jsonl-count, jsonl-names, jsonl-ages, csv-count, csv-a-first, txt-count, txt-first] all-true? then(:PASS, :FAIL)
+# Memoisation verification: the stream head thunk must be evaluated only
+# once. aux_import.jsonl has Alice first (age 30), then Bob (age 25).
+# Without memoisation, the second access to `jl head` would re-advance
+# the producer and return Bob's record instead of Alice's.
+#
+# `jl-head` is bound once; both field accesses share the same thunk.
+# If age returned 25 (Bob), memoisation is broken.
+jl-head: jl head
+memo-head-name: jl-head.name //= "Alice"
+memo-head-age: jl-head.age //= 30
+
+# Cross-binding sharing: `jl head` evaluated twice must still return Alice.
+# Without memoisation the second call advances the producer to Bob.
+memo-head-name-again: (jl head).name //= "Alice"
+memo-head-age-again: (jl head).age //= 30
+
+# Traversal consistency: count and map must agree on length.
+memo-count-after-map: ((jl map(_.name) count) = (jl count)) //= true
+
+RESULT: [jsonl-count, jsonl-names, jsonl-ages, csv-count, csv-a-first, txt-count, txt-first,
+         memo-head-name, memo-head-age, memo-head-name-again, memo-head-age-again,
+         memo-count-after-map] all-true? then(:PASS, :FAIL)
