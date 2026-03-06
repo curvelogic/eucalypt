@@ -15,16 +15,14 @@ Notable eucalypt techniques:
 - `scanl` for running totals
 - sections `(% 100 = 0)` for divisibility predicates
 - `window(2, 1)` for consecutive-pair analysis
+- list destructuring in `to-offset([dir, mag])` and `zeros([a, b])`
 - scoped imports with target metadata
 
 Running time: ~3s (part 1), ~10s (part 2)
 "
 
 ` "Convert Lxx / Rxx instructions to numeric offsets."
-to-offset(m): {
-  magnitude: m second num
-  sign: ((m first) = "L") then(-1, 1)
-}.(sign * magnitude)
+to-offset([dir, mag]): ((dir = "L") then(-1, 1)) * (mag num)
 
 parse-instruction(s): s str.match-with("([LR])([0-9]+)") tail to-offset
 
