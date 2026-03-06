@@ -54,8 +54,16 @@ pipe-times: 5 pipe-times-f //= 10
 sub-f: _ + (_ * _)
 sub: sub-f(1, 2, 3) //= 7
 
+# Composition with opaque parens — the motivating example for the
+# opaque-parens design. `(_ = :quux) ∘ tag` must parse as
+# (λx. x = :quux) composed with tag, NOT as a single 2-param function.
+tag(x): { t: x }
+is-quux: (_ = :quux) ∘ (.t)
+comp-true: is-quux({t: :quux}) //= true
+comp-false: is-quux({t: :foo}) //= false
+
 RESULT: [id-map, plus-one, times-two, filter-gt, anon-plus,
          two-param, numbered-add, same-param, num-soup,
-         pipe-section, pipe-times, sub]
+         pipe-section, pipe-times, sub, comp-true, comp-false]
           all-true?
           then(:PASS, :FAIL)
