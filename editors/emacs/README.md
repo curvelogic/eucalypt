@@ -103,7 +103,7 @@ Then install the tree-sitter grammar:
 ```elisp
 (add-to-list 'treesit-language-source-alist
              '(eucalypt "https://github.com/curvelogic/eucalypt"
-                        nil nil "editors/tree-sitter-eucalypt/src"))
+                        nil "editors/tree-sitter-eucalypt/src"))
 (treesit-install-language-grammar 'eucalypt)
 ```
 
@@ -121,7 +121,7 @@ git clone https://github.com/curvelogic/eucalypt.git ~/path/to/eucalypt
 
 (add-to-list 'treesit-language-source-alist
              '(eucalypt "~/path/to/eucalypt"
-                        nil nil "editors/tree-sitter-eucalypt/src"))
+                        nil "editors/tree-sitter-eucalypt/src"))
 (treesit-install-language-grammar 'eucalypt)
 
 (require 'eucalypt-mode)

@@ -24,7 +24,7 @@
 ;; Installation of the grammar:
 ;;   (add-to-list 'treesit-language-source-alist
 ;;                '(eucalypt "https://github.com/curvelogic/eucalypt"
-;;                           nil nil "editors/tree-sitter-eucalypt/src"))
+;;                           nil "editors/tree-sitter-eucalypt/src"))
 ;;   (treesit-install-language-grammar 'eucalypt)
 ;;
 ;; Then add to your init file:
