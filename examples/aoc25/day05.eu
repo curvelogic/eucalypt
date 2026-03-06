@@ -18,7 +18,7 @@ Notable eucalypt techniques:
 Running time: ~3s (part 1), < 1s (part 2)
 "
 
-parse-range(s): str.split(s, "-") map(num)
+parse-range(s): s str.split-on("-") map(num)
 
 contains-id?(id, [lo, hi]): id >= lo ∧ id <= hi
 

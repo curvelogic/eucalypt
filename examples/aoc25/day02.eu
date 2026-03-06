@@ -21,7 +21,7 @@ Notable eucalypt techniques:
 Running time: < 1s (both parts)
 "
 
-parse-range(s): str.split(s, "-") map(num)
+parse-range(s): s str.split-on("-") map(num)
 
 ` "Sum of invalid IDs in [a,b] that are a p-digit pattern repeated
 d/p times.  We find the range of n values whose IDs land in [a,b]
@@ -100,13 +100,13 @@ invalid-for-d(a, b, d):
 invalid-sum2(a, b): range(1, 12) map(invalid-for-d(a, b)) sum
 
 solve(data):
-  str.split(data first, ",")
+  data first str.split-on(",")
     map(parse-range)
     map(uncurry(invalid-sum))
     sum
 
 solve2(data):
-  str.split(data first, ",")
+  data first str.split-on(",")
     map(parse-range)
     map(uncurry(invalid-sum2))
     sum

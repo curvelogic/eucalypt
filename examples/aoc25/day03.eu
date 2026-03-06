@@ -13,7 +13,7 @@ skip to its first occurrence, take it, and recurse.
 Notable eucalypt techniques:
 - `;` forward compose for point-free pipelines: `batteries ; pick(2) ; digits-to-num`
 - `drop-while` for scanning to the best digit
-- `foldl` with block accumulator for digit-to-number conversion
+- `foldl` with expression anaphora `_0 * 10 + _1` for digit-to-number conversion
 
 Running time: ~1s (both parts)
 "
@@ -26,13 +26,13 @@ enough to leave k-1 picks remaining, skip forward to its first
 occurrence, take it, and recurse on the suffix."
 pick(k, ds): {
 
-  best: take(count(ds) - k + 1, ds) max-of
-  at-best: drop-while(!= best, ds)
+  best: ds take((ds count) - k + 1) max-of
+  at-best: ds drop-while(!= best)
 
 }.((k = 0) then([], cons(best, pick(k - 1, at-best tail))))
 
 ` "Convert a list of digits to a number: [9,8,7] -> 987."
-digits-to-num(ds): ds foldl({ acc: • d: • }.(acc * 10 + d), 0)
+digits-to-num(ds): ds foldl(_0 * 10 + _1, 0)
 
 solve(data, n): data map(batteries ; pick(n) ; digits-to-num) sum
 

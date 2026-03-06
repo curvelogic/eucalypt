@@ -24,7 +24,7 @@ Notable eucalypt techniques:
 Running time: ~3 min (part 1), ~3 min (part 2)
 "
 
-parse-coord(line): str.split(line, ",") map(num)
+parse-coord(line): line str.split-on(",") map(num)
 
 area(a, b): zip-with(-, a, b) map(abs ; (+ 1)) product
 
