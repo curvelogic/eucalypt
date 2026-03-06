@@ -490,6 +490,11 @@ pub fn test_harness_099() {
 }
 
 #[test]
+pub fn test_harness_100() {
+    run_test(&opts("100_if_tail_recursion.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
