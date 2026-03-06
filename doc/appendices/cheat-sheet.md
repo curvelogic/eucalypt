@@ -87,7 +87,7 @@ x: 42 # inline comment
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
-| Idiot bracket | `(⟦ x ⟧): expr` | Unicode bracket pair functor |
+| Idiot bracket | `⟦ x ⟧: expr` | Unicode bracket pair functor |
 
 ## Idiot Brackets
 
@@ -95,7 +95,7 @@ Idiot brackets allow applicative functor lifting using Unicode bracket pairs.
 
 ```eu,notest
 # Declare a bracket pair function
-(⟦ x ⟧): my-functor(x)
+⟦ x ⟧: my-functor(x)
 
 # Use the bracket pair in expressions
 result: ⟦ some-expression ⟧  # calls my-functor(some-expression)
@@ -111,7 +111,7 @@ spec.  A bracket block (declarations directly inside brackets) followed by `.exp
 desugars as a bind chain (like `do`-notation).
 
 ```eu,notest
-(⟦{}⟧): { bind: my-bind  return: my-return }
+⟦{}⟧: { :monad bind: my-bind  return: my-return }
 
 # ⟦ a: ma  b: mb ⟧.return_expr
 # desugars to: my-bind(ma, (a): my-bind(mb, (b): my-return(return_expr)))
