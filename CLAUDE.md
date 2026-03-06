@@ -129,6 +129,12 @@ For specific topics, also consult:
 9. **`str.split-on` uses regex**: `"a.b" str.split-on(".")` matches any char. Use `"[.]"`.
 10. **No whitespace before `(`**: `f(x)` is a call, `f (x)` is catenation.
 
+## Running the `eu` Binary (Process Safety)
+
+- The `eu` binary defaults to a 32 GiB managed heap limit (`--heap-limit-mib 32768`). Use `--heap-limit-mib 0` for unbounded.
+- **Always wrap `eu` in `timeout`** to guard against divergent programs: `timeout 60 ./target/release/eu ...`
+- **Benchmark verification**: Agent-reported benchmark numbers MUST be independently verified before acceptance. Always do a clean build (`cargo clean && cargo build --release`) when verifying.
+
 ## Code Quality Rules
 
 - **ABSOLUTELY NEVER allow clippy warnings unless explicitly permitted by the user**
