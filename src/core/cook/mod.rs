@@ -52,16 +52,16 @@ impl Cooker {
         fixity::distribute(expr)
     }
 
-    /// Check whether an expression tree contains explicit ExprAnaphor
-    /// nodes (`_`, `_0`, `_1`, etc.), recursing only through Soup nodes
+    /// Check whether an expression tree contains numbered ExprAnaphor
+    /// nodes (`_0`, `_1`, etc.), recursing only through Soup nodes
     /// (from paren groups). Implicit section anaphora are NOT detected —
-    /// they resolve within their own paren scope. Other constructs
-    /// (ArgTuple, Let, List, Block) remain scope boundaries and are not
-    /// traversed.
+    /// they resolve within their own paren scope. Anonymous anaphora (`_`)
+    /// are also NOT detected — they are self-contained within their paren
+    /// group and do not propagate outward. Other constructs (ArgTuple, Let,
+    /// List, Block) remain scope boundaries and are not traversed.
     ///
-    /// Both anonymous (`_`) and numbered (`_0`, `_1`) variants are
-    /// detected so that expressions like `(_ + _) / 2` or `(_0 + _1) / 2`
-    /// propagate their anaphora upward to the enclosing scope correctly.
+    /// Only numbered anaphora propagate upward so that expressions like
+    /// `(_0 + _1) / 2` form a 2-arg lambda at the enclosing scope level.
     fn contains_expr_anaphora(expr: &RcExpr) -> bool {
         match &*expr.inner {
             Expr::ExprAnaphor(_, Anaphor::ExplicitNumbered(_)) => true,
