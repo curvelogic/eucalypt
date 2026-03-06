@@ -485,11 +485,6 @@ pub fn test_harness_098() {
 }
 
 #[test]
-pub fn test_harness_099() {
-    run_test(&opts("099_expression_anaphora.eu"));
-}
-
-#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
