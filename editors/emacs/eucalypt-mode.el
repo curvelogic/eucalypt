@@ -508,8 +508,11 @@ region is active.  Skips replacements inside strings and comments."
   "Face for Unicode bracket characters in Eucalypt mode."
   :group 'eucalypt)
 
-(with-eval-after-load 'rainbow-delimiters
-  (add-hook 'eucalypt-mode-hook #'rainbow-delimiters-mode))
+;; rainbow-delimiters is NOT auto-enabled because it uses the syntax
+;; table (not tree-sitter) to find brackets, causing brackets inside
+;; string literals to be coloured incorrectly.  Users who want it can
+;; add (add-hook 'eucalypt-mode-hook #'rainbow-delimiters-mode) to
+;; their init file.
 
 ;;; Mode definition
 
