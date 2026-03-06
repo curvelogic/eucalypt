@@ -1169,16 +1169,37 @@
       ]
     },
     "string_content": {
-      "type": "PATTERN",
-      "value": "[^\"{}]+"
+      "type": "IMMEDIATE_TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 1,
+        "content": {
+          "type": "PATTERN",
+          "value": "[^\"{}]+"
+        }
+      }
     },
     "c_string_content": {
-      "type": "PATTERN",
-      "value": "[^\"{}\\\\]+"
+      "type": "IMMEDIATE_TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 1,
+        "content": {
+          "type": "PATTERN",
+          "value": "[^\"{}\\\\]+"
+        }
+      }
     },
     "r_string_content": {
-      "type": "PATTERN",
-      "value": "[^\"{}]+"
+      "type": "IMMEDIATE_TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 1,
+        "content": {
+          "type": "PATTERN",
+          "value": "[^\"{}]+"
+        }
+      }
     },
     "interpolation": {
       "type": "SEQ",

@@ -355,11 +355,14 @@ module.exports = grammar({
       '"',
     ),
 
-    string_content: $ => /[^"{}]+/,
+    // String content rules use token.immediate() to prevent extras
+    // (especially comments starting with #) from being injected inside
+    // string literals.
+    string_content: $ => token.immediate(prec(1, /[^"{}]+/)),
 
-    c_string_content: $ => /[^"{}\\]+/,
+    c_string_content: $ => token.immediate(prec(1, /[^"{}\\]+/)),
 
-    r_string_content: $ => /[^"{}]+/,
+    r_string_content: $ => token.immediate(prec(1, /[^"{}]+/)),
 
     interpolation: $ => seq(
       '{',
