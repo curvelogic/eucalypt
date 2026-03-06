@@ -161,7 +161,7 @@ impl HeapNavigator<'_> {
 /// can share backing storage with the constructor's environment frame, preserving
 /// thunk memoisation across multiple traversals of the same structure.
 enum ArgPattern {
-    /// All args are `L(0), L(1), ..., L(n-1)` — sequential from zero, can share backing
+    /// All args are `L(0), L(1), ..., L(n-1)` — identity mapping, no remap needed
     SequentialFromZero(usize),
     /// Contains `V(_)` or `G(_)` refs, or non-sequential `L(_)` indices — must copy
     RequiresCopy,
@@ -519,9 +519,9 @@ impl MachineState {
     ///
     /// Falls back to `env_from_data_args_copy` when:
     /// - args contain `Ref::V` or `Ref::G` references
-    /// - the arg count does not equal the top frame's logical length (i.e.,
-    ///   sharing would expose a partial view of the backing array, which the
-    ///   GC cannot scan correctly)
+    /// - more than 4 args
+    /// - any arg's physical index exceeds the top frame's length (i.e., the
+    ///   ref chains into a deeper frame — sharing across frames is unsupported)
     #[inline]
     fn env_from_data_args(
         &self,
@@ -530,10 +530,10 @@ impl MachineState {
         next: RefPtr<EnvFrame>,
     ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         let constructor_env = view.scoped(self.closure.env());
-        let top_len = (*constructor_env).len();
+        let top_len = (*constructor_env).logical_len();
 
         match classify_args(args) {
-            ArgPattern::SequentialFromZero(n) if n == top_len => {
+            ArgPattern::SequentialFromZero(n) if n <= top_len => {
                 let shared = (*constructor_env).shared_bindings(n);
                 Ok(view
                     .alloc(EnvFrame::new(shared, self.annotation, Some(next)))?
