@@ -607,18 +607,49 @@ impl Desugarable for rowan_ast::Literal {
 
 /// Extract bind and return names from a desugared monad spec body.
 ///
-/// Expects the body to be a desugared block like:
+/// Expects the body to be a desugared block marked with `:monad` unit metadata:
 /// ```eucalypt
-/// { bind: rand-bind  return: rand-return }
+/// { :monad bind: rand-bind  return: rand-return }
 /// ```
-/// The desugared form is `Expr::Let(bindings, body)`.
-/// The function names are in the binding `Embed` values, not in the body map.
-/// Returns `Some((bind_name, return_name))` if both are present as resolvable names.
-fn extract_monad_spec_from_body(body: &RcExpr) -> Option<(String, String)> {
-    find_monad_names_in_bindings(body)
+/// The desugared form is `Expr::Meta(_, Expr::Let(bindings, body), Expr::Literal(_, Sym("monad")))`.
+///
+/// Returns:
+/// - `Ok(Some((bind_name, return_name)))` when both bind/return are present and `:monad` marker is present
+/// - `Ok(None)` when bind/return are absent (not a monad spec body)
+/// - `Err(MonadSpecMissingMarker(...))` when bind/return are present but `:monad` marker is absent
+fn extract_monad_spec_from_body(
+    body: &RcExpr,
+    smid: Smid,
+) -> Result<Option<(String, String)>, crate::core::error::CoreError> {
+    // Check if the outermost expression is a Meta with Sym("monad") metadata
+    let has_monad_marker = matches!(
+        &*body.inner,
+        Expr::Meta(_, _, meta) if matches!(&*meta.inner, Expr::Literal(_, Primitive::Sym(s)) if s == "monad")
+    );
+
+    // Extract bind/return names regardless of marker to detect misuse
+    let names = find_monad_names_in_bindings(body);
+
+    match (has_monad_marker, names) {
+        (true, Some(names)) => Ok(Some(names)),
+        (true, None) => Ok(None),
+        (false, Some((bind_name, return_name))) => {
+            // Bind/return present but no :monad marker — error
+            Err(crate::core::error::CoreError::MonadSpecMissingMarker(
+                bind_name,
+                return_name,
+                smid,
+            ))
+        }
+        (false, None) => Ok(None),
+    }
 }
 
 /// Find bind and return names from the let-bindings of a desugared block.
+///
+/// Traverses through `Expr::Meta` wrappers to reach the `Expr::Let` bindings.
+/// Does NOT check for `:monad` marker — that is the responsibility of
+/// `extract_monad_spec_from_body`.
 fn find_monad_names_in_bindings(expr: &RcExpr) -> Option<(String, String)> {
     use crate::core::metadata::extract_function_name_from_expr;
     match &*expr.inner {
@@ -763,13 +794,11 @@ impl Desugarable for Element {
                 let items: Result<Vec<RcExpr>, CoreError> = list
                     .items()
                     .map(|soup| {
-                        // Each item is a Soup, get its singleton element if it exists
-                        let expr = if let Some(elem) = soup.singleton() {
-                            elem.desugar(desugarer)?
-                        } else {
-                            // Multiple elements in soup - desugar as soup
-                            soup.desugar(desugarer)?
-                        };
+                        // Always desugar through the soup path so that anaphora
+                        // in list items (e.g. `[_0 + 1, _1]`) are handled by
+                        // cook_soup's fill_gaps/wrap_lambda logic. The singleton
+                        // shortcut is unsafe for anaphora.
+                        let expr = soup.desugar(desugarer)?;
                         // Apply varify to convert Name expressions to Var expressions
                         Ok(desugarer.varify(expr))
                     })
@@ -875,11 +904,13 @@ impl Desugarable for Element {
                 let args: Result<Vec<RcExpr>, CoreError> = tuple
                     .items()
                     .map(|soup| {
-                        let expr = if let Some(elem) = soup.singleton() {
-                            elem.desugar(desugarer)?
-                        } else {
-                            soup.desugar(desugarer)?
-                        };
+                        // Always desugar through the soup path so that anaphora
+                        // in args (e.g. `map(_)`, `filter(_ > 0)`) are handled
+                        // by cook_soup's fill_gaps/wrap_lambda logic. The
+                        // singleton shortcut is unsafe because a bare `_` in
+                        // `f(_)` would bypass cook_soup and become an orphaned
+                        // free variable.
+                        let expr = soup.desugar(desugarer)?;
                         // Apply varify to convert Name expressions to Var expressions
                         Ok(desugarer.varify(expr))
                     })
@@ -1698,13 +1729,15 @@ fn rowan_declaration_to_binding(
     }
 
     // Register monad spec from BracketBlockDef body (new-style: (⟦{}⟧): { :monad bind: f return: r })
-    // The body is a block with :monad unit metadata and bind/return declarations.
+    // The body must have ':monad' unit metadata to be recognised as a monad spec.
     if let Some(head) = decl.head() {
         if matches!(
             head.classify_declaration(),
             rowan_ast::DeclarationKind::BracketBlockDef(_, _)
         ) {
-            if let Some((bind_name, return_name)) = extract_monad_spec_from_body(&components.body) {
+            let spec_smid = desugarer.new_smid(components.span);
+            let spec = extract_monad_spec_from_body(&components.body, spec_smid)?;
+            if let Some((bind_name, return_name)) = spec {
                 desugarer.register_monad_spec(
                     components.name.clone(),
                     super::desugarer::MonadSpec {

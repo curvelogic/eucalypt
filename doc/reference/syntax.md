@@ -248,12 +248,15 @@ idiot brackets without any registration:
 ### Monadic blocks
 
 A bracket pair gains a **monad spec** when declared with an empty
-block `{}` as its parameter and a body supplying `bind` and `return`
-function names:
+block `{}` as its parameter and a body marked with the `:monad` unit
+annotation and supplying `bind` and `return` function names:
 
 ```eu
-(⟦{}⟧): { bind: my-bind  return: my-return }
+(⟦{}⟧): { :monad bind: my-bind  return: my-return }
 ```
+
+The `:monad` marker is required.  A bracket block definition body with
+`bind` and `return` but without `:monad` is an error.
 
 A bracket expression whose inner content contains top-level colons is
 parsed as a **bracket block** — a sequence of `name: monadic-action`
@@ -281,7 +284,7 @@ may be any single element: a name (`.r`), a parenthesised expression
 id-bind(ma, f): f(ma)
 id-return(a): a
 
-(⟦{}⟧): { bind: id-bind  return: id-return }
+(⟦{}⟧): { :monad bind: id-bind  return: id-return }
 
 result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 ```
@@ -292,7 +295,7 @@ result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 maybe-bind(ma, f): if(ma = [], [], f(ma head))
 maybe-return(a): [a]
 
-(⌈{}⌉): { bind: maybe-bind  return: maybe-return }
+(⌈{}⌉): { :monad bind: maybe-bind  return: maybe-return }
 
 just:    ⌈ x: [1]  y: [2] ⌉.(x + y)   # => [3]
 nothing: ⌈ x: []   y: [2] ⌉.(x + y)   # => []

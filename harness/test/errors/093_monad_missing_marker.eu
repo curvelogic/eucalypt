@@ -1,0 +1,5 @@
+# Error: bracket block def with bind/return but no :monad marker
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+(⟦{}⟧): { bind: id-bind  return: id-return }

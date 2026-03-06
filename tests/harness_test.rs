@@ -984,3 +984,8 @@ pub fn test_error_092() {
         "expected 'list-targets' hint in error, got: {msg}"
     );
 }
+
+#[test]
+pub fn test_error_093() {
+    run_error_test(&error_opts("093_monad_missing_marker.eu"));
+}
