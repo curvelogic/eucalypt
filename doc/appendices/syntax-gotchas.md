@@ -124,8 +124,21 @@ map(+ 1)             # Section: adds 1
 map(^ 2)             # Section: squares
 filter(> 0)          # Section: positive?
 
-# Using anaphora (single use of _ only):
+# Identity anaphor — passes an identity function:
+map(_)               # Same as map(identity)
+
+# Anaphora in expressions:
 map(_ + 1)           # Anonymous single-parameter function
+filter(_ > 0)        # Anonymous predicate
+
+# Multiple `_` — each is a separate parameter:
+f: (_ * _)           # f is a 2-arg multiply function
+f(3, 4)              # => 12
+
+# Numbered anaphora — use _0, _1 to reference specific positions,
+# or when a lambda needs to span across an infix operator:
+avg: (_0 + _1) / 2   # 2-arg averaging function (numbered propagates)
+avg(4, 6)            # => 5
 
 # Using named function + partial application:
 add-one(x): x + 1
@@ -136,8 +149,14 @@ has-y(y, h): first(h) = y
 filter(has-y(target-y))   # Partial application
 ```
 
-**Important**: `_` can only appear **once** in an anonymous function.
-Two occurrences of `_` is an error. Use a named function instead.
+**Important**: Each `_` introduces a **separate** parameter. `_ * _`
+is a 2-arg function (like `(_0 * _1)`), not `(_0 * _0)`. Use numbered
+anaphora `_0 * _0` when you need to reference the same parameter twice.
+
+**Anonymous vs. numbered propagation**: Anonymous anaphora (`_`) are
+self-contained in their paren group. Numbered anaphora (`_0`, `_1`)
+propagate across infix operators. Use `(_0 + _1) / 2` for a 2-arg
+average function, not `(_ + _) / 2`.
 
 **Reference**: See [Anaphora](../guide/anaphora.md) for detailed
 explanation of anaphora usage.

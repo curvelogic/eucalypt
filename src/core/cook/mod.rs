@@ -52,18 +52,39 @@ impl Cooker {
         fixity::distribute(expr)
     }
 
-    /// Check whether an expression tree contains explicitly numbered
-    /// ExprAnaphor nodes (`_0`, `_1`, etc.), recursing only through
-    /// Soup nodes (from paren groups). Anonymous `_` and implicit
-    /// section anaphora are NOT detected — they should resolve within
-    /// their own paren scope. Other constructs (ArgTuple, Let, List,
-    /// Block) remain scope boundaries and are not traversed.
-    fn contains_numbered_expr_anaphora(expr: &RcExpr) -> bool {
+    /// Check whether an expression tree contains explicit ExprAnaphor
+    /// nodes (`_`, `_0`, `_1`, etc.), recursing only through Soup nodes
+    /// (from paren groups). Implicit section anaphora are NOT detected —
+    /// they resolve within their own paren scope. Other constructs
+    /// (ArgTuple, Let, List, Block) remain scope boundaries and are not
+    /// traversed.
+    ///
+    /// Both anonymous (`_`) and numbered (`_0`, `_1`) variants are
+    /// detected so that expressions like `(_ + _) / 2` or `(_0 + _1) / 2`
+    /// propagate their anaphora upward to the enclosing scope correctly.
+    fn contains_expr_anaphora(expr: &RcExpr) -> bool {
         match &*expr.inner {
             Expr::ExprAnaphor(_, Anaphor::ExplicitNumbered(_)) => true,
-            Expr::Soup(_, xs) => xs.iter().any(Self::contains_numbered_expr_anaphora),
+            Expr::Soup(_, xs) => xs.iter().any(Self::contains_expr_anaphora),
             _ => false,
         }
+    }
+
+    /// Check whether any element of a soup slice is a pseudo-call operator
+    /// (the operator inserted before an ArgTuple to represent `f(args)`).
+    ///
+    /// When a soup contains a call operator, the preceding expression is a
+    /// function being applied to explicit arguments. In this case deep
+    /// anaphora in the preceding expression must form their own lambda body
+    /// and must NOT be propagated to the enclosing scope.
+    fn soup_has_call_op(exprs: &[RcExpr]) -> bool {
+        exprs.iter().any(|e| {
+            if let Expr::Operator(_, _, _, body) = &*e.inner {
+                body.inner.is_pseudocall()
+            } else {
+                false
+            }
+        })
     }
 
     /// Infer anaphora in gaps and insert them explicitly.
@@ -109,11 +130,24 @@ impl Cooker {
 
     /// Resolve precedence and handle expression anaphora
     fn cook_soup(&mut self, exprs: &[RcExpr]) -> Result<RcExpr, CoreError> {
-        // Pre-scan for explicitly numbered anaphora (_0, _1, etc.) in
-        // nested sub-expressions (paren groups) BEFORE fill_gaps, so
-        // implicit section anaphora and anonymous _ are not detected.
-        let has_deep_anaphora =
-            !self.in_expr_anaphor_scope && exprs.iter().any(Self::contains_numbered_expr_anaphora);
+        // Pre-scan for explicit numbered anaphora (`_0`, `_1`, etc.) in nested
+        // sub-expressions (paren groups) BEFORE fill_gaps runs, so that
+        // implicit section anaphora are not counted.
+        //
+        // Only NUMBERED anaphora propagate upward to allow expressions like
+        // `(_0 + _1) / 2` to produce a 2-arg lambda. Anonymous anaphora (`_`)
+        // are self-contained within their paren group so that patterns like
+        // `(_ = :quux) ∘ tag` produce a correctly composed function rather
+        // than absorbing the composition into an outer lambda.
+        //
+        // Propagation is suppressed when the soup contains a call operator
+        // (e.g. `f(args)`). A call operator signals that the paren group to
+        // its left is a function being called with explicit arguments. Its
+        // anaphora must form their own lambda and must NOT propagate to the
+        // enclosing scope.
+        let has_deep_anaphora = !self.in_expr_anaphor_scope
+            && !Self::soup_has_call_op(exprs)
+            && exprs.iter().any(Self::contains_expr_anaphora);
 
         let (filled, naked_anaphora) = self.insert_anaphora(exprs);
 
@@ -222,6 +256,7 @@ pub mod tests {
     use super::*;
     use crate::core::expr::acore::*;
     use crate::core::expr::core;
+    use crate::core::expr::ops;
     use crate::core::expr::RcExpr;
     use moniker::assert_term_eq;
 
@@ -501,22 +536,23 @@ pub mod tests {
     }
 
     #[test]
-    pub fn test_contains_numbered_expr_anaphora_scan() {
-        // Numbered ExprAnaphor (_0) at top level
-        assert!(Cooker::contains_numbered_expr_anaphora(
-            &core::expr_anaphor(Smid::fake(1), Some(0))
-        ));
+    pub fn test_contains_expr_anaphora_scan() {
+        // Numbered ExprAnaphor (_0) at top level IS detected
+        assert!(Cooker::contains_expr_anaphora(&core::expr_anaphor(
+            Smid::fake(1),
+            Some(0)
+        )));
 
-        // Numbered ExprAnaphor nested in Soup (paren group)
+        // Numbered ExprAnaphor nested in Soup (paren group) IS detected
         let inner = soup(vec![
             core::expr_anaphor(Smid::fake(2), Some(0)),
             core::infixl(Smid::fake(3), 50, bif("ADD")),
             core::expr_anaphor(Smid::fake(4), Some(1)),
         ]);
-        assert!(Cooker::contains_numbered_expr_anaphora(&inner));
+        assert!(Cooker::contains_expr_anaphora(&inner));
 
         // Plain number — no anaphora
-        assert!(!Cooker::contains_numbered_expr_anaphora(&num(42)));
+        assert!(!Cooker::contains_expr_anaphora(&num(42)));
 
         // Soup without anaphora
         let plain = soup(vec![
@@ -524,29 +560,34 @@ pub mod tests {
             core::infixl(Smid::fake(5), 50, bif("ADD")),
             num(2),
         ]);
-        assert!(!Cooker::contains_numbered_expr_anaphora(&plain));
+        assert!(!Cooker::contains_expr_anaphora(&plain));
 
         // ArgTuple is a scope boundary — anaphora inside should NOT be detected
         let arg = arg_tuple(vec![core::expr_anaphor(Smid::fake(6), Some(0))]);
-        assert!(!Cooker::contains_numbered_expr_anaphora(&arg));
+        assert!(!Cooker::contains_expr_anaphora(&arg));
 
-        // Anonymous ExprAnaphor (_) should NOT be detected
-        assert!(!Cooker::contains_numbered_expr_anaphora(
-            &core::expr_anaphor(Smid::fake(7), None)
-        ));
+        // Anonymous ExprAnaphor (_) is NOT detected — anonymous anaphora are
+        // self-contained in their paren group and do not propagate upward.
+        // Use numbered anaphora (_0, _1) when propagation across infix
+        // operators is needed (e.g. `(_0 + _1) / 2`).
+        assert!(!Cooker::contains_expr_anaphora(&core::expr_anaphor(
+            Smid::fake(7),
+            None
+        )));
 
-        // Anonymous _ nested in Soup should NOT be detected
+        // Anonymous _ nested in Soup is also NOT detected
         let anon_inner = soup(vec![
             core::expr_anaphor(Smid::fake(8), None),
             core::infixl(Smid::fake(9), 50, bif("COMPOSE")),
             bif("F"),
         ]);
-        assert!(!Cooker::contains_numbered_expr_anaphora(&anon_inner));
+        assert!(!Cooker::contains_expr_anaphora(&anon_inner));
     }
 
     #[test]
     pub fn test_anaphora_through_parens() {
-        // Simulates (_0 + _1) / 2 where parens create a nested Soup
+        // Simulates (_0 + _1) / 2 where parens create a nested Soup.
+        // No call operator in outer soup — anaphora propagate upward.
         let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
         let l60 = core::infixl(Smid::fake(2), 60, bif("DIV"));
         let ana0 = free("_e_n0");
@@ -559,7 +600,7 @@ pub mod tests {
             core::expr_anaphor(Smid::fake(4), Some(1)),
         ]);
 
-        // Outer soup: (inner) / 2
+        // Outer soup: (inner) / 2 — no call op, so deep anaphora propagate
         let outer = soup(vec![inner, l60, num(2)]);
 
         // Should produce: lam([_0, _1], DIV(ADD(_0, _1), 2))
@@ -572,6 +613,75 @@ pub mod tests {
                     bif("DIV"),
                     vec![app(bif("ADD"), vec![var(ana0), var(ana1)]), num(2)]
                 )
+            )
+        );
+    }
+
+    #[test]
+    pub fn test_anon_anaphora_self_contained_in_parens() {
+        // Simulates (_ + _) / 2 — anonymous anaphora are self-contained in
+        // their paren group. The paren group forms its own lambda, and the
+        // outer soup sees a lambda value divided by 2.
+        //
+        // This preserves patterns like `(_ = :quux) ∘ tag` where the paren
+        // group is a complete predicate being composed with another function.
+        // Use numbered anaphora (`(_0 + _1) / 2`) when propagation is needed.
+        let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
+        let l60 = core::infixl(Smid::fake(2), 60, bif("DIV"));
+
+        // Inner soup: _ + _ (two anonymous anaphora)
+        let inner = soup(vec![
+            core::expr_anaphor(Smid::fake(3), None),
+            l50.clone(),
+            core::expr_anaphor(Smid::fake(4), None),
+        ]);
+
+        // Outer soup: (inner) / 2 — no call op
+        let outer = soup(vec![inner, l60, num(2)]);
+
+        // Should produce: DIV(lam([_0, _1], ADD(_0, _1)), 2)
+        // The inner anonymous anaphora form a lambda that is then divided by 2.
+        // NOT a lambda wrapping the entire outer expression.
+        let result = cook(outer).unwrap();
+        assert!(
+            !matches!(&*result.inner, Expr::Lam(_, _, _)),
+            "expected NOT a lambda (anon anaphora are self-contained), got: {result:?}"
+        );
+    }
+
+    #[test]
+    pub fn test_anaphora_not_absorbed_past_call_op() {
+        // Simulates (_0 + _1)(3, 4) — the paren group is followed by a call
+        // operator and ArgTuple. The call boundary stops deep anaphora from
+        // leaking to the outer scope; the paren group forms its own lambda
+        // and the ArgTuple applies explicit arguments to it.
+        let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
+        let ana0 = free("_e_n0");
+        let ana1 = free("_e_n1");
+
+        // Paren soup: _0 + _1
+        let paren = soup(vec![
+            core::expr_anaphor(Smid::fake(2), Some(0)),
+            l50.clone(),
+            core::expr_anaphor(Smid::fake(3), Some(1)),
+        ]);
+
+        // Outer soup: (paren) call (3, 4)
+        let arg_t = arg_tuple(vec![num(3), num(4)]);
+        let call_op = RcExpr::from(ops::call());
+        let outer = soup(vec![paren, call_op, arg_t]);
+
+        // Should produce: App(lam([_0, _1], ADD(_0, _1)), [3, 4])
+        // NOT: lam([_0, _1], App(ADD(_0, _1), (3, 4)))
+        let result = cook(outer).unwrap();
+        assert_term_eq!(
+            result,
+            app(
+                lam(
+                    vec![ana0.clone(), ana1.clone()],
+                    app(bif("ADD"), vec![var(ana0), var(ana1)])
+                ),
+                vec![num(3), num(4)]
             )
         );
     }
