@@ -86,3 +86,17 @@ pub fn stream_drain(handle: u32) -> Vec<Rc<StgSyn>> {
         }
     })
 }
+
+/// Advance a stream producer by a single step.
+///
+/// Returns `Some(value)` if the producer yielded an element, or
+/// `None` if the stream is exhausted or the handle is invalid.
+pub fn stream_next(handle: u32) -> Option<Rc<StgSyn>> {
+    STREAM_TABLE.with(|table| {
+        let table = table.borrow();
+        match table.get(handle) {
+            Some(producer) => producer.borrow_mut().next(),
+            None => None,
+        }
+    })
+}
