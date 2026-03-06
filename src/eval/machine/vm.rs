@@ -161,24 +161,70 @@ impl HeapNavigator<'_> {
 /// can share backing storage with the constructor's environment frame, preserving
 /// thunk memoisation across multiple traversals of the same structure.
 enum ArgPattern {
-    /// All args are `L(0), L(1), ..., L(n-1)` — sequential from zero, can share backing
+    /// All args map to physical slots `0, 1, ..., n-1` (after composing with the
+    /// constructor env's remap if any) and `n == backing_len` — identity physical
+    /// mapping, shares full backing with no remap overhead.
     SequentialFromZero(usize),
-    /// Contains `V(_)` or `G(_)` refs, or non-sequential `L(_)` indices — must copy
+    /// All args are `L(_)` indices within the constructor's top frame, up to 4 args.
+    /// Shares the full backing array and uses a physical remap table for
+    /// logical→physical translation.
+    Remapped { remap: [u8; 4], len: usize },
+    /// Contains `Ref::V` or `Ref::G` refs, has more than 4 args, or a logical index
+    /// exceeds the constructor's top frame — must copy into fresh storage.
     RequiresCopy,
 }
 
 /// Classify a data constructor's arg slice for the shared-env optimisation.
 ///
-/// Returns `SequentialFromZero(n)` only when every arg is `L(i)` for `i` in
-/// `0..n` in order.  All other patterns fall back to `RequiresCopy`.
-fn classify_args(args: &[Ref]) -> ArgPattern {
-    for (i, r) in args.iter().enumerate() {
+/// Computes the *physical* remap by composing each `L(i)` arg with the
+/// constructor frame's own remap (if any).  Then checks:
+///
+/// - If the physical slots are `0, 1, ..., n-1` and `n == backing_len` → `SequentialFromZero`.
+/// - If all args are `L(idx)` within the top frame and `len <= 4` → `Remapped`.
+/// - Otherwise → `RequiresCopy`.
+///
+/// The `backing_len` parameter is the physical slot count of the constructor's top
+/// frame.  `logical_len` is its exposed (logical) slot count.  They differ when the
+/// constructor frame itself has a remap table.
+fn classify_args(
+    args: &[Ref],
+    logical_len: usize,
+    backing_len: usize,
+    env_physical_index: impl Fn(usize) -> usize,
+) -> ArgPattern {
+    if args.len() > 4 {
+        return ArgPattern::RequiresCopy;
+    }
+
+    let mut phys_remap = [0u8; 4];
+    let mut is_identity = true;
+
+    for (j, r) in args.iter().enumerate() {
         match r {
-            Ref::L(idx) if *idx == i => {}
+            Ref::L(idx) if *idx < logical_len => {
+                let phys = env_physical_index(*idx);
+                if phys > u8::MAX as usize {
+                    // Physical index doesn't fit in the u8 remap table —
+                    // fall back to copying for correctness.
+                    return ArgPattern::RequiresCopy;
+                }
+                phys_remap[j] = phys as u8;
+                if phys != j {
+                    is_identity = false;
+                }
+            }
             _ => return ArgPattern::RequiresCopy,
         }
     }
-    ArgPattern::SequentialFromZero(args.len())
+
+    if is_identity && args.len() == backing_len {
+        ArgPattern::SequentialFromZero(args.len())
+    } else {
+        ArgPattern::Remapped {
+            remap: phys_remap,
+            len: args.len(),
+        }
+    }
 }
 
 /// The state of the machine (stack / closure etc.)
@@ -513,15 +559,23 @@ impl MachineState {
     /// When all args are `Ref::L` references whose physical indices all
     /// fall within the top frame of the constructor's environment, the new
     /// frame shares that frame's backing `Array` rather than copying
-    /// closures into fresh storage. This means thunk updates (via the
-    /// `Update` continuation) write back to the shared storage and are
-    /// visible through all frames that share it.
+    /// closures into fresh storage.  Thunk updates (via the `Update`
+    /// continuation) write back to the shared storage and are visible
+    /// through all frames that share it.
+    ///
+    /// **GC safety**: the shared array always has `length == backing_len`
+    /// (the constructor frame's full physical binding count) so the GC
+    /// scans all live slots regardless of which frame it encounters first.
+    /// For identity-mapped frames the new frame exposes all slots directly.
+    /// For remapped frames the remap table restricts *logical* access to
+    /// the relevant indices without affecting the GC's view of the full
+    /// physical backing.
     ///
     /// Falls back to `env_from_data_args_copy` when:
     /// - args contain `Ref::V` or `Ref::G` references
-    /// - the arg count does not equal the top frame's logical length (i.e.,
-    ///   sharing would expose a partial view of the backing array, which the
-    ///   GC cannot scan correctly)
+    /// - any arg's logical index reaches beyond the constructor's top frame
+    ///   (it chains into a deeper frame — sharing across frames is unsupported)
+    /// - more than 4 args (remap table capacity)
     #[inline]
     fn env_from_data_args(
         &self,
@@ -530,24 +584,54 @@ impl MachineState {
         next: RefPtr<EnvFrame>,
     ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
         let constructor_env = view.scoped(self.closure.env());
-        let top_len = (*constructor_env).len();
+        let logical_len = (*constructor_env).logical_len();
+        let backing_len = (*constructor_env).backing_len();
 
-        match classify_args(args) {
-            ArgPattern::SequentialFromZero(n) if n == top_len => {
-                let shared = (*constructor_env).shared_bindings(n);
+        match classify_args(args, logical_len, backing_len, |i| {
+            (*constructor_env).physical_index(i)
+        }) {
+            ArgPattern::SequentialFromZero(n) => {
+                // Physical slots are 0, 1, ..., n-1 and n == backing_len — identity
+                // mapping covering the full physical backing.  Share the full backing
+                // so the GC traces every live slot regardless of which frame it sees
+                // first.  Since args.len() == backing_len the new frame's logical_len
+                // also equals backing_len, exposing all slots before chaining to next.
+                let shared = (*constructor_env).shared_bindings_full();
+                debug_assert_eq!(n, backing_len);
                 Ok(view
                     .alloc(EnvFrame::new(shared, self.annotation, Some(next)))?
                     .as_ptr())
             }
-            _ => self.env_from_data_args_copy(view, args, next),
+            ArgPattern::Remapped { remap, len } => {
+                // Non-sequential, offset, or fewer args than backing_len.  Share the
+                // full physical backing for GC correctness and store the physical remap
+                // so the branch body's L(i) refs resolve to the correct physical slots.
+                //
+                // The remap table holds *physical* slot indices (already composed with
+                // any remap in the constructor env), so no further indirection is needed.
+                //
+                // GC safety: shared array length == backing_len so all live slots are
+                // traced regardless of which frame the collector encounters first.
+                let shared = (*constructor_env).shared_bindings_full();
+                Ok(view
+                    .alloc(EnvFrame::new_remapped(
+                        shared,
+                        &remap[..len],
+                        self.annotation,
+                        Some(next),
+                    ))?
+                    .as_ptr())
+            }
+            ArgPattern::RequiresCopy => self.env_from_data_args_copy(view, args, next),
         }
     }
 
     /// Fallback: build an env frame by copying closures from the constructor env.
     ///
-    /// Used when the arg pattern contains non-local refs (`Ref::V` or `Ref::G`)
-    /// or more than 4 args. This is the original behaviour prior to the
-    /// shared-env optimisation.
+    /// Used when the arg pattern cannot use shared backing: non-local refs
+    /// (`Ref::V` or `Ref::G`), more than 4 args, or physical indices that reach
+    /// beyond the constructor's top frame.  This is the original behaviour prior
+    /// to the shared-env optimisation.
     fn env_from_data_args_copy(
         &self,
         view: MutatorHeapView<'_>,
