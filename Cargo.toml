@@ -1,6 +1,6 @@
 [package]
 name = "eucalypt"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["gmorpheme <github@gmorpheme.net>"]
 edition = "2021"
 
@@ -50,6 +50,7 @@ base64 = "0.22"
 sha2 = "0.10"
 rowan = "0.15.3"
 ndarray = "0.16"
+im-rc = "15"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clap = { version = "4.5", features = ["derive"] }
@@ -58,7 +59,6 @@ webbrowser = "0.8.0"
 lsp-server = "0.7"
 lsp-types = "0.95"
 uuid = { version = "1.1.2", features = ["v4"] }
-im-rc = "15"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
