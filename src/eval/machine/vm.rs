@@ -245,6 +245,13 @@ pub struct MachineState {
     rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
     symbol_pool: SymbolPool,
+    /// When set, suppress the next Update continuation push.
+    ///
+    /// Set by `return_data` when processing a Branch with
+    /// `suppress_update=true` and a branch body that is a bare local
+    /// atom. Prevents O(N) Update accumulation in tail-recursive
+    /// conditional loops such as countdown(n) = if(n=0, 0, countdown(n-1)).
+    suppress_next_update: bool,
 }
 
 impl Default for MachineState {
@@ -260,6 +267,7 @@ impl Default for MachineState {
                 NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
             ),
             symbol_pool: SymbolPool::new(),
+            suppress_next_update: false,
         }
     }
 }
@@ -305,10 +313,28 @@ impl MachineState {
 
         match code {
             HeapSyn::Atom { evaluand } => {
+                // Consume suppress_next_update flag set by return_data
+                // when processing a suppress_update Branch continuation.
+                let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
                 match evaluand {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
-                        let updateable = self.closure.update();
+                        let is_thunk = self.closure.update();
+                        let updateable = is_thunk && !suppress_update;
+                        // When suppress_update is active but the loaded closure is
+                        // not itself a thunk (e.g. a synthetic value-Atom closure
+                        // created by create_arg_array), propagate the flag to the
+                        // next Atom step so the full indirection chain is covered.
+                        //
+                        // This handles the two-level case that arises when IF args
+                        // are passed via App (not inlined): the Branch body is
+                        // Atom{L(i)} in IF's arg env → value closure → Atom{L(j)}
+                        // in the caller's let env → actual thunk.  Without
+                        // propagation, only the first hop is suppressed and the
+                        // second hop pushes an unwanted Update continuation.
+                        if suppress_update && !is_thunk {
+                            self.suppress_next_update = true;
+                        }
                         if updateable {
                             // Overwrite the env slot with a BlackHole
                             // closure to catch cyclic thunk re-entry.
@@ -341,6 +367,7 @@ impl MachineState {
                 min_tag,
                 branch_table,
                 fallback,
+                suppress_update: case_suppress,
             } => {
                 self.push(
                     view,
@@ -350,6 +377,7 @@ impl MachineState {
                         fallback,
                         environment,
                         annotation: self.annotation,
+                        suppress_update: case_suppress,
                     },
                 )?;
                 self.closure = SynClosure::new(scrutinee, environment);
@@ -670,6 +698,7 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    suppress_update,
                 } => {
                     if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
                         let env = if args.is_empty() {
@@ -678,6 +707,18 @@ impl MachineState {
                         } else {
                             self.env_from_data_args(view, args, environment)?
                         };
+                        // When suppress_update is set on this Branch and the
+                        // branch body is a bare local atom, suppress the next
+                        // Update push. This prevents O(N) Update accumulation
+                        // in tail-recursive conditionals (e.g. IF branches).
+                        if suppress_update {
+                            if let HeapSyn::Atom {
+                                evaluand: Ref::L(_),
+                            } = &*view.scoped(body)
+                            {
+                                self.suppress_next_update = true;
+                            }
+                        }
                         self.closure = SynClosure::new(body, env);
                     } else if let Some(body) = fallback {
                         self.closure = SynClosure::new(
@@ -780,6 +821,7 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    ..
                 } => {
                     // In a statically typed STG machine, functions
                     // never enter case continuations. With dynamic
@@ -1121,7 +1163,27 @@ impl<'a> Machine<'a> {
         }
 
         metrics.tick();
-        metrics.stack(state.stack.len());
+        let stack_len = state.stack.len();
+        let prev_max = metrics.max_stack();
+        metrics.stack(stack_len);
+        // Diagnostic: dump stack composition when a new max is reached
+        if std::env::var("EU_STACK_DIAG").is_ok() && stack_len > prev_max && stack_len > 5 {
+            let counts = state.stack.iter().fold(
+                (0usize, 0usize, 0usize, 0usize),
+                |(branch, update, apply, demeta), cont| match cont {
+                    super::cont::Continuation::Branch { .. } => (branch + 1, update, apply, demeta),
+                    super::cont::Continuation::Update { .. } => (branch, update + 1, apply, demeta),
+                    super::cont::Continuation::ApplyTo { .. } => {
+                        (branch, update, apply + 1, demeta)
+                    }
+                    super::cont::Continuation::DeMeta { .. } => (branch, update, apply, demeta + 1),
+                },
+            );
+            eprintln!(
+                "STACK_MAX depth={} Branch={} Update={} ApplyTo={} DeMeta={}",
+                stack_len, counts.0, counts.1, counts.2, counts.3
+            );
+        }
 
         state
             .handle_instruction(view, emitter, intrinsics, metrics)

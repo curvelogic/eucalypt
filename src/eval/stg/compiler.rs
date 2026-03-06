@@ -898,7 +898,6 @@ impl ProtoSyntax for ProtoAppGroup {
     ) -> Result<Rc<StgSyn>, CompileError> {
         let mut intrinsic_index = None;
         let mut strict_args = &vec![];
-        let mut single_use_args = &vec![];
         let mut local_binder = LetBinder::synthetic_let(context);
 
         // Find a reference for the function
@@ -910,7 +909,6 @@ impl ProtoSyntax for ProtoAppGroup {
                     intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
                 let info = intrinsics::intrinsic(n);
                 strict_args = info.strict_args();
-                single_use_args = info.single_use_args();
                 Box::new(ProtoRef::new(gref(n)))
             }
             _ => Box::new(ProtoRef::new(compiler.compile_binding(
@@ -920,6 +918,12 @@ impl ProtoSyntax for ProtoAppGroup {
                 false,
             )?)),
         };
+
+        // Determine which args are single-use for this intrinsic
+        let single_use_args: &[usize] = intrinsic_index
+            .and_then(|idx| compiler.intrinsics.get(idx))
+            .map(|bif| bif.single_use_args())
+            .unwrap_or(&[]);
 
         // Get references for args, compiling into the local binder if necessary
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
@@ -934,15 +938,12 @@ impl ProtoSyntax for ProtoAppGroup {
                     arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
                 }
                 _ => {
-                    // Strict args are evaluated immediately and so are trivially
-                    // single-use. Single-use args are lazy but will be evaluated
-                    // at most once, so neither benefits from an Update continuation.
-                    let is_single_use = strict_args.contains(&i) || single_use_args.contains(&i);
+                    let is_strict = strict_args.contains(&i) || single_use_args.contains(&i);
                     let index = compiler.compile_binding(
                         &mut local_binder,
                         arg.clone(),
                         self.smid,
-                        is_single_use,
+                        is_strict,
                     )?;
                     arg_indexes.push(Box::new(ProtoRef::new(index)));
                 }

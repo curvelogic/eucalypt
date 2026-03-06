@@ -208,6 +208,7 @@ impl AllocationPruner {
                 scrutinee,
                 branches,
                 fallback,
+                suppress_update,
             } => {
                 // Single-branch case elimination for 0-arity constructors:
                 // case scrutinee of { Tag -> body } (no fallback, arity 0)
@@ -279,6 +280,7 @@ impl AllocationPruner {
                     scrutinee,
                     branches,
                     fallback,
+                    suppress_update: *suppress_update,
                 })
             }
             StgSyn::Cons { tag, args } => Rc::new(StgSyn::Cons {
