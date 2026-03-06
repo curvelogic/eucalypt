@@ -1198,7 +1198,9 @@ impl BlockEventSink {
                 ParseEvent::StartNode(_) if depth > 1 => {
                     depth -= 1;
                 }
-                ParseEvent::StartNode(PAREN_EXPR) | ParseEvent::StartNode(NAME) => {
+                ParseEvent::StartNode(PAREN_EXPR)
+                | ParseEvent::StartNode(NAME)
+                | ParseEvent::StartNode(BRACKET_EXPR) => {
                     break;
                 }
                 ParseEvent::StartNode(ARG_TUPLE) => {
