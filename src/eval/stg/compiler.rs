@@ -903,7 +903,18 @@ impl ProtoSyntax for ProtoAppGroup {
 
         // Find a reference for the function
         let f_index: Box<dyn ProtoReference> = match &*self.f.inner {
-            Expr::Var(s, v) => Box::new(ProtoVar::new(extract_bound_var(s, v)?.clone())),
+            Expr::Var(s, v) => {
+                let bound_var = extract_bound_var(s, v)?.clone();
+                // If this var resolves to a global intrinsic, look up its
+                // argument metadata. This covers calls like `if(c, t, e)`
+                // where `if` is a prelude binding backed by the IF intrinsic.
+                if let Ok(Ref::G(n)) = context.lookup(&bound_var) {
+                    let info = intrinsics::intrinsic(n);
+                    strict_args = info.strict_args();
+                    single_use_args = info.single_use_args();
+                }
+                Box::new(ProtoVar::new(bound_var))
+            }
             Expr::Intrinsic(_, bif) => {
                 intrinsic_index = intrinsics::index(bif);
                 let n =
