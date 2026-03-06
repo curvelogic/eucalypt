@@ -1,0 +1,58 @@
+# Expression anaphor scoping tests
+#
+# Verifies that `_`, `_0`, `_1` work correctly in arg positions,
+# paren groups, and that scope boundaries are respected.
+#
+# Design notes:
+# - Anonymous anaphora (`_`) are self-contained in their paren group or
+#   expression. Each `_` introduces a fresh parameter left-to-right.
+# - Numbered anaphora (`_0`, `_1`) propagate through infix operators so
+#   that `(_0 + _1) / 2` becomes a 2-arg averaging lambda.
+# - Use numbered anaphora when you need the lambda to span across operators
+#   at a higher level in the expression.
+
+# Basic identity anaphor in args (Bug 1: bare `_` in apply arg position)
+id-map: [1, 2, 3] map(_) //= [1, 2, 3]
+
+# Sections (existing behaviour must still work)
+plus-one: [1, 2, 3] map(+ 1) //= [2, 3, 4]
+times-two: [1, 2, 3] map(* 2) //= [2, 4, 6]
+
+# Anonymous anaphor in filter predicate
+filter-gt: [1, 2, 3, 4, 5] filter(_ > 2) //= [3, 4, 5]
+
+# Anonymous anaphor in map expression
+anon-plus: [1, 2, 3] map(_ + 1) //= [2, 3, 4]
+
+# Multiple anonymous anaphors: each _ introduces a new parameter
+# `(_ * _)` is a 2-arg multiply function
+two-param-f: (_ * _)
+two-param: two-param-f(3, 4) //= 12
+
+# Numbered anaphors for multi-param functions
+numbered-add-f: (_0 + _1)
+numbered-add: numbered-add-f(3, 4) //= 7
+same-param-f: (_0 * _0)
+same-param: same-param-f(5) //= 25
+
+# Numbered anaphors propagate across infix operators:
+# `(_0 + _1) / 2` forms a 2-arg averaging lambda
+avg-numbered-f: (_0 + _1) / 2
+avg-numbered: avg-numbered-f(4, 6) //= 5
+
+# Call position: paren group as function applied to arguments
+# `(_0 + _1)(3, 4)` — explicit call applies the lambda immediately
+numbered-call: (_0 + _1)(3, 4) //= 7
+
+# Pipeline with section (existing behaviour)
+pipe-section: 5 (+ 1) //= 6
+
+# Named anaphoric function in catenation position
+pipe-times-f: (_ * 2)
+pipe-times: 5 pipe-times-f //= 10
+
+RESULT: [id-map, plus-one, times-two, filter-gt, anon-plus,
+         two-param, numbered-add, same-param, avg-numbered,
+         numbered-call, pipe-section, pipe-times]
+          all-true?
+          then(:PASS, :FAIL)

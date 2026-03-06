@@ -763,13 +763,14 @@ impl Desugarable for Element {
                 let items: Result<Vec<RcExpr>, CoreError> = list
                     .items()
                     .map(|soup| {
-                        // Each item is a Soup, get its singleton element if it exists
-                        let expr = if let Some(elem) = soup.singleton() {
-                            elem.desugar(desugarer)?
-                        } else {
-                            // Multiple elements in soup - desugar as soup
-                            soup.desugar(desugarer)?
-                        };
+                        // Always desugar through the soup path so that anaphora
+                        // in list items are handled by cook_soup's
+                        // fill_gaps/wrap_lambda logic.
+                        //
+                        // Wrap bare ExprAnaphor results in Soup so the cooker
+                        // calls cook_soup on them and can wrap a lambda.
+                        let expr = soup.desugar(desugarer)?;
+                        let expr = ensure_anaphor_in_soup(expr);
                         // Apply varify to convert Name expressions to Var expressions
                         Ok(desugarer.varify(expr))
                     })
@@ -875,11 +876,18 @@ impl Desugarable for Element {
                 let args: Result<Vec<RcExpr>, CoreError> = tuple
                     .items()
                     .map(|soup| {
-                        let expr = if let Some(elem) = soup.singleton() {
-                            elem.desugar(desugarer)?
-                        } else {
-                            soup.desugar(desugarer)?
-                        };
+                        // Always desugar through the soup path so that anaphora
+                        // in args (e.g. `map(_)`, `filter(_ > 0)`) are handled
+                        // by cook_soup's fill_gaps/wrap_lambda logic.
+                        //
+                        // Additionally, if the result is a bare ExprAnaphor (from a
+                        // single-element soup like `(_)` or just `_`), we wrap it in
+                        // Expr::Soup so the cooker sees a Soup and calls cook_soup,
+                        // which is where fill_gaps and lambda-wrapping happen.
+                        // Without this, a bare `_` in `f(_)` would bypass cook_soup
+                        // and become an orphaned free variable.
+                        let expr = soup.desugar(desugarer)?;
+                        let expr = ensure_anaphor_in_soup(expr);
                         // Apply varify to convert Name expressions to Var expressions
                         Ok(desugarer.varify(expr))
                     })
@@ -1422,6 +1430,27 @@ impl Desugarable for rowan_ast::Soup {
             // Multiple elements - desugar as operator soup
             desugar_rowan_soup(span, elements, desugarer)
         }
+    }
+}
+
+/// Ensure a bare `ExprAnaphor` is wrapped in an `Expr::Soup` so that the
+/// cooker's `cook_soup` is called on it and can wrap a lambda around it.
+///
+/// When a single-element soup (e.g. `(_)` or bare `_`) is desugared, the
+/// `Soup::desugar` fast-path returns the element directly without wrapping it
+/// in an `Expr::Soup`. The cooker only calls `cook_soup` (where `fill_gaps`
+/// and lambda-wrapping happen) when it encounters `Expr::Soup` nodes. A bare
+/// `ExprAnaphor` outside a `Soup` hits `cook_expr_anaphor` instead, which
+/// records the anaphor but never produces the wrapping lambda.
+///
+/// This helper is used when desugaring `ApplyTuple` args and list items so
+/// that `map(_)` and `[_]` work correctly.
+fn ensure_anaphor_in_soup(expr: RcExpr) -> RcExpr {
+    if matches!(&*expr.inner, crate::core::expr::Expr::ExprAnaphor(_, _)) {
+        let smid = expr.smid();
+        RcExpr::from(crate::core::expr::Expr::Soup(smid, vec![expr]))
+    } else {
+        expr
     }
 }
 
