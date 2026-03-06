@@ -58,9 +58,7 @@ has-solution?(k, target, buttons): {
 
 ` "Minimum presses for one machine (Part 1).
 Find the smallest subset size k with a valid solution."
-solve-machine(m): {
-  target: first(m)
-  buttons: second(m)
+solve-machine([target, buttons]): {
   nb: buttons count
   solved?(k): has-solution?(k, target, buttons)
 }.(ℕ take(nb + 1) filter(solved?) min-of-or(nb + 1))
@@ -81,7 +79,7 @@ part-1: solve(input)
 
 ` "Parse machine for Part 2: [joltage-targets, button-bit-vectors]."
 parse-machine2(line): {
-  joltage: str.split(line, " ") last str.matches-of("[0-9]+") map(num)
+  joltage: line str.split-on(" ") last str.matches-of("[0-9]+") map(num)
   n: joltage count
   parse-btn(s): str.matches(s, "[0-9]+") map(num) bit-vec(n)
   buttons: str.matches(line, "[(][0-9,]+[)]") map(parse-btn)
@@ -208,11 +206,9 @@ For nfree = 0: unique solution, just back-substitute.
 For nfree > 0: cost = base-cost + sum(slope_j * f_j).
   The search iterates outer free variables with cost-based pruning,
   and exhaustively searches the last free variable over [lo, hi]."
-solve-machine2(m): {
-  target: first(m)
-  buttons: second(m)
-  nc: count(target)
-  nb: count(buttons)
+solve-machine2([target, buttons]): {
+  nc: target count
+  nb: buttons count
   INF: 999999
 
   # Build augmented matrix [A|b]: rows = counters, cols = buttons + target.
@@ -221,9 +217,9 @@ solve-machine2(m): {
 
   # Use basic gaussian elimination to find pivots and free indices
   result: gauss.forward(nb, mat)
-  reduced: first(result)
-  pivots: second(result)
-  rank: count(pivots)
+  reduced: result first
+  pivots: result second
+  rank: pivots count
   nfree: nb - rank
 
   col-free?(c): pivots filter(= c) nil?
@@ -268,7 +264,7 @@ solve-machine2(m): {
 
   # Integer gaussian elimination for exact back-substitution
   result-int: gauss-int.forward(nb, mat)
-  iref: first(result-int)
+  iref: result-int first
 
   ` "Total button presses for a given free-variable assignment, or INF if infeasible.
   Uses exact integer back-substitution from row rank-1 up to row 0 in the

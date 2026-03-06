@@ -23,7 +23,7 @@ Running time: ~1s (both parts)
 "
 
 ` "Extract all numbers from a line, splitting on whitespace."
-line-nums(line): str.split(line, " +") filter(!= "") map(num)
+line-nums(line): line str.split-on(" +") filter(!= "") map(num)
 
 ` "Extract operators from the operator line."
 ops(line): line str.letters filter(!= " ")
@@ -42,7 +42,7 @@ solve(data): {
 chars(line): line str.letters
 
 ` "Pad a row to length n with spaces."
-pad-to(n, row): row ++ (repeat(" ") take(n - count(row)))
+pad-to(n, row): row ++ (repeat(" ") take(n - (row count)))
 
 ` "Convert a list of digit values to a number: [3,6,9] -> 369."
 digits-to-num(ds): ds foldl(_0 * 10 + _1, 0)
@@ -57,14 +57,10 @@ parse-col(col): {
 }.(digits nil? then([], [col last, digits map(num) digits-to-num]))
 
 ` "Process one column in the right-to-left fold.  State is [total, nums]."
-col-step(state, entry): {
-  total: first(state)
-  nums: second(state)
-  op: first(entry)
-  n: second(entry)
-}.(if(op?(op),
+col-step([total, nums], [op, n]):
+  if(op?(op),
      [total + apply-op(op, nums ++ [n]), []],
-     [total, nums ++ [n]]))
+     [total, nums ++ [n]])
 
 solve2(data): {
   lines: data filter(!= "")

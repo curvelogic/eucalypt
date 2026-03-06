@@ -47,9 +47,7 @@ parse(data): {
 
 ` "Process one row: update beam positions and accumulate split count.
 State is [beam-vector, total-splits]."
-row-step(state, row): {
-  beam: first(state)
-  total: second(state)
+row-step([beam, total], row): {
   sp: to-splitters(row)
   ` "Hits: beam positions that coincide with splitters."
   h: zip-with(*, beam, sp)
@@ -57,7 +55,7 @@ row-step(state, row): {
   p: zip-with(-, beam, h)
   emitted: zip-with(max, shift-left(h), shift-right(h))
   new-beam: zip-with(max, p, emitted)
-}.([ new-beam, total + sum(h) ])
+}.([ new-beam, total + (h sum) ])
 
 ` "Count total splits as the beam propagates down the grid."
 solve(rows, b0): rows foldl(row-step, [b0, 0]) second
