@@ -20,6 +20,8 @@ Notable eucalypt techniques:
 - block-scoped modules (`levels`, `search`) for organising complex logic
 - `cross` for Cartesian product of tile x-coords
 - `foldr` with accumulator for gap-level insertion
+- list destructuring in function parameters: `v-spans?(y, [_, y_lo, y_hi])`,
+  `inner-step(... [left, right, best], [lv-y, lv-l, lv-r, tiles])`
 
 Running time: ~3 min (part 1), ~3 min (part 2)
 "
@@ -59,13 +61,13 @@ levels: {
   INF: 999999
 
   ` "Does vertical edge `v` [x, y-lo, y-hi] span y-coordinate `y`?"
-  v-spans?(y, v): (second(v) <= y) ∧ (y < v !! 2)
+  v-spans?(y, [_, y_lo, y_hi]): y_lo <= y ∧ y < y_hi
 
   ` "Does horizontal edge `h` [y, x-lo, x-hi] lie at y-coordinate `y`?"
-  has-y?(y, h): first(h) = y
+  has-y?(y, [hy, _, _]): hy = y
 
   ` "Does point `p` [x, y] lie at y-coordinate `y`?"
-  at-y?(y, p): second(p) = y
+  at-y?(y, [_, py]): py = y
 
   ` "Build edge list from consecutive vertex pairs, wrapping last to first."
   make-edges(pts): zip(pts, pts rotate(1))
@@ -92,9 +94,8 @@ levels: {
   tile-xs-at(y, pts): pts filter(at-y?(y)) map(first)
 
   ` "Build a level [y, left, right, tile-xs] at a given `y`."
-  make-level(y, ves, hes, pts): {
-    cs: xsect(y, ves, hes)
-  }.[y, first(cs), second(cs), tile-xs-at(y, pts)]
+  make-level(y, ves, hes, pts):
+    [y] ++ xsect(y, ves, hes) ++ [tile-xs-at(y, pts)]
 
   ` "Insert gap levels between non-adjacent levels.
   Folds right so each level can peek at the next via the accumulator."
@@ -149,18 +150,14 @@ search: {
   (never widen) as we descend. State is `[left, right, best]`.
   Pruned when the corridor has closed or the remaining area cannot
   beat `best`."
-  inner-step(sy, start-tiles, ymax, state, lv): {
-    left: state !! 0
-    right: state !! 1
-    best: state !! 2
+  inner-step(sy, start-tiles, ymax, [left, right, best], [lv-y, lv-l, lv-r, tiles]): {
     # narrow corridor to this level's bounds
-    new-left: max(left, lv !! 1)
-    new-right: min(right, lv !! 2)
+    new-left: max(left, lv-l)
+    new-right: min(right, lv-r)
     max-possible: (ymax - sy + 1) * (new-right - new-left + 1)
-    tiles: lv !! 3
-    area: tiles nil? then(0, max-rect(sy, start-tiles, lv !! 0, tiles, new-left, new-right))
+    area: tiles nil? then(0, max-rect(sy, start-tiles, lv-y, tiles, new-left, new-right))
     pruned?: (left > right) ∨ (max-possible <= best)
-  }.(pruned? then(state,
+  }.(pruned? then([left, right, best],
     [new-left, new-right, max(best, area)]))
 
   ` "Inner sweep: fold downward from a fixed start level, narrowing
