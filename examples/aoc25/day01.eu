@@ -15,14 +15,14 @@ Notable eucalypt techniques:
 - `scanl` for running totals
 - sections `(% 100 = 0)` for divisibility predicates
 - `window(2, 1)` for consecutive-pair analysis
-- list destructuring in `to-offset([dir, mag])` and `zeros([a, b])`
+- juxtaposed call syntax in `to-offset[dir, mag]:` and `zeros[a, b]:`
 - scoped imports with target metadata
 
 Running time: ~3s (part 1), ~10s (part 2)
 "
 
 ` "Convert Lxx / Rxx instructions to numeric offsets."
-to-offset([dir, mag]): ((dir = "L") then(-1, 1)) * (mag num)
+to-offset[dir, mag]: ((dir = "L") then(-1, 1)) * (mag num)
 
 parse-instruction(s): s str.match-with("([LR])([0-9]+)") tail to-offset
 
@@ -30,7 +30,7 @@ solve(data): data map(parse-instruction) scanl(+, 50) filter(% 100 = 0) count
 
 ` "Count zero crossings between consecutive positions. Shift by 1 when
 moving left so that starting on a multiple of 100 is not counted."
-zeros([a, b]): {
+zeros[a, b]: {
   s: (b < a) then(1, 0)
 }.(abs((b - s) / 100 - (a - s) / 100))
 

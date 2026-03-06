@@ -24,6 +24,8 @@ Notable eucalypt techniques:
 - lazy `∨` for short-circuit DFS (part 1)
 - `range` and `map` for matrix construction and row operations
 - deep nesting of block intermediates for solver state
+- juxtaposed list-destructuring syntax `solve-machine[target, buttons]:`
+- juxtaposed empty-list call syntax `eval-free[]`
 
 Running time: ~6s (part 1), ~80s (part 2)
 "
@@ -58,7 +60,7 @@ has-solution?(k, target, buttons): {
 
 ` "Minimum presses for one machine (Part 1).
 Find the smallest subset size k with a valid solution."
-solve-machine([target, buttons]): {
+solve-machine[target, buttons]: {
   nb: buttons count
   solved?(k): has-solution?(k, target, buttons)
 }.(ℕ take(nb + 1) filter(solved?) min-of-or(nb + 1))
@@ -206,7 +208,7 @@ For nfree = 0: unique solution, just back-substitute.
 For nfree > 0: cost = base-cost + sum(slope_j * f_j).
   The search iterates outer free variables with cost-based pruning,
   and exhaustively searches the last free variable over [lo, hi]."
-solve-machine2([target, buttons]): {
+solve-machine2[target, buttons]: {
   nc: target count
   nb: buttons count
   INF: 999999
@@ -359,7 +361,7 @@ solve-machine2([target, buttons]): {
 
   }.(last-free-var? then(min(best, inner-solve(fvs)), try(0, best)))
 
-}.(nfree = 0 then(eval-free([]), search(0, [], 0, INF)))
+}.(nfree = 0 then(eval-free[], search(0, [], 0, INF)))
 
 solve2(data):
   data filter(!= "") map(parse-machine2 ; solve-machine2) sum
