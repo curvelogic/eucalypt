@@ -368,9 +368,11 @@ impl Formatter {
         if elements[idx].as_operator_identifier().is_none() {
             return false;
         }
-        // Prefix operator is either at position 0, or follows another operator
+        // An operator at position 0 is NOT necessarily prefix — it may be the
+        // operator in a section like `(+ 1)`. Returning true here would suppress
+        // the space between `+` and `1`, producing `(+1)` which is wrong.
         if idx == 0 {
-            return true;
+            return false;
         }
         // If the previous element is also an operator, this could be a prefix op
         // (e.g., in "x + -y", the "-" after "+" is a prefix operator)
@@ -500,6 +502,20 @@ impl Formatter {
             return RcDoc::text("[]");
         }
 
+        // Preserve cons patterns: `[x : xs]` or `[a, b : rest]`.
+        // These have different semantics from fixed-length lists and must NOT be
+        // reformatted as `[x, xs]`.
+        if list.is_cons_pattern() && items.len() >= 2 {
+            let (heads, tail_slice) = items.split_at(items.len() - 1);
+            let tail = &tail_slice[0];
+            let head_docs: Vec<_> = heads.iter().map(|s| self.reformat_soup(s)).collect();
+            return RcDoc::text("[")
+                .append(RcDoc::intersperse(head_docs, RcDoc::text(", ")))
+                .append(RcDoc::text(" : "))
+                .append(self.reformat_soup(tail))
+                .append(RcDoc::text("]"));
+        }
+
         // Estimate single-line length
         let single_line_len: usize = items
             .iter()
@@ -538,6 +554,15 @@ impl Formatter {
 
         if items.is_empty() {
             return RcDoc::text("()");
+        }
+
+        // Juxtaposed apply sugar: `f{...}` and `f[...]` must be preserved as such.
+        // The ApplyTuple wraps the block/list content — emit with the appropriate
+        // brackets rather than canonical parentheses.
+        if at.is_block_apply() || at.is_list_apply() {
+            // Preserve the original source text to avoid losing shorthand patterns
+            // like `{x y}` (which have no declarations, only block meta).
+            return RcDoc::text(at.syntax().text().to_string());
         }
 
         let docs: Vec<_> = items.iter().map(|s| self.reformat_soup(s)).collect();
@@ -1227,6 +1252,103 @@ mod tests {
         assert!(
             formatted.contains("\n\n"),
             "Multiple blank lines should preserve separation"
+        );
+    }
+}
+
+#[cfg(test)]
+mod correctness_tests {
+    use super::*;
+
+    fn reformat(source: &str) -> String {
+        let config = FormatterConfig::new(80, 2, true);
+        format_source(source, &config).unwrap()
+    }
+
+    #[test]
+    fn test_cons_pattern_preserved() {
+        let source = "f([h : t]): h\n";
+        let result = reformat(source);
+        assert!(
+            result.contains(" : "),
+            "Cons pattern colon must be preserved: {}",
+            result
+        );
+        assert!(
+            !result.contains("[h, t]"),
+            "Cons pattern must not become a list: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_multi_head_cons_pattern_preserved() {
+        let source = "f([a, b : rest]): a\n";
+        let result = reformat(source);
+        assert!(
+            result.contains(" : "),
+            "Multi-head cons pattern must preserve colon: {}",
+            result
+        );
+        assert!(
+            !result.contains("[a, b, rest]"),
+            "Multi-head cons must not become a plain list: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_section_spacing_preserved() {
+        let source = "f: (+ 1)\n";
+        let result = reformat(source);
+        assert!(
+            result.contains("(+ 1)"),
+            "Section spacing must be preserved: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_juxtaposed_block_call_preserved() {
+        let source = "result: f{x: 1}\n";
+        let result = reformat(source);
+        assert!(
+            !result.contains("f({"),
+            "Juxtaposed block call must not gain parens: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_juxtaposed_list_call_preserved() {
+        let source = "result: f[1, 2]\n";
+        let result = reformat(source);
+        assert!(
+            !result.contains("f(["),
+            "Juxtaposed list call must not gain parens: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_juxtaposed_block_definition_preserved() {
+        let source = "f{x, y}: x + y\n";
+        let result = reformat(source);
+        assert!(
+            !result.contains("f({"),
+            "Juxtaposed block definition must not gain parens: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_juxtaposed_list_definition_preserved() {
+        let source = "f[x, y]: x + y\n";
+        let result = reformat(source);
+        assert!(
+            !result.contains("f(["),
+            "Juxtaposed list definition must not gain parens: {}",
+            result
         );
     }
 }
