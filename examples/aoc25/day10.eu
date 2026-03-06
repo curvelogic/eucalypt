@@ -26,6 +26,7 @@ Notable eucalypt techniques:
 - deep nesting of block intermediates for solver state
 - juxtaposed list-destructuring syntax `solve-machine[target, buttons]:`
 - juxtaposed empty-list call syntax `eval-free[]`
+- `str.matches-of` (pipeline-friendly) for pattern matching
 
 Running time: ~6s (part 1), ~80s (part 2)
 "
@@ -37,7 +38,7 @@ bit-vec(n, indices): {
 
 ` "Parse a machine line into [target, buttons]."
 parse-machine(line): {
-  parts: str.matches(line, "[.#]+|[(][0-9,]+[)]")
+  parts: line str.matches-of("[.#]+|[(][0-9,]+[)]")
   target: parts head str.letters map((= "#") ; then(1, 0))
   n: target count
   parse-btn(s): str.matches(s, "[0-9]+") map(num) bit-vec(n)
@@ -84,7 +85,7 @@ parse-machine2(line): {
   joltage: line str.split-on(" ") last str.matches-of("[0-9]+") map(num)
   n: joltage count
   parse-btn(s): str.matches(s, "[0-9]+") map(num) bit-vec(n)
-  buttons: str.matches(line, "[(][0-9,]+[)]") map(parse-btn)
+  buttons: line str.matches-of("[(][0-9,]+[)]") map(parse-btn)
 }.[joltage, buttons]
 
 ` "Gaussian elimination on an augmented matrix.
