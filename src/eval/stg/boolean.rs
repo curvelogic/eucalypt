@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-    syntax::{dsl::*, LambdaForm},
+    syntax::{dsl, dsl::*, LambdaForm},
     tags::DataConstructor,
 };
 
@@ -144,7 +144,7 @@ impl StgIntrinsic for If {
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         annotated_lambda(
             3,
-            switch(
+            dsl::switch_suppress(
                 local(0),
                 vec![
                     (DataConstructor::BoolTrue.tag(), local(1)),

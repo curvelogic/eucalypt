@@ -63,6 +63,7 @@ impl ToPretty for StgSyn {
                 scrutinee,
                 branches,
                 fallback,
+                ..
             } => {
                 let scrutinee_doc = allocator
                     .text("case ")

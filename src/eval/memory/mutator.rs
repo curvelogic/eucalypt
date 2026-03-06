@@ -268,6 +268,7 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
             min_tag,
             branch_table,
             fallback: Some(fallback.as_ptr()),
+            suppress_update: false,
         })
     }
 
@@ -283,6 +284,7 @@ impl<'guard> StgBuilder<'guard> for MutatorHeapView<'guard> {
             min_tag,
             branch_table,
             fallback: None,
+            suppress_update: false,
         })
     }
 

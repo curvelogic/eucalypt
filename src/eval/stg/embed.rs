@@ -125,6 +125,7 @@ fn embed_stg(syn: &StgSyn) -> Option<rowan_ast::Soup> {
             scrutinee,
             branches,
             fallback,
+            ..
         } => {
             let mut b = StgEmbedBuilder::new("s-case");
             let scrutinee_soup = embed_stg(scrutinee)?;

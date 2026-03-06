@@ -92,6 +92,13 @@ pub enum StgSyn {
         branches: Vec<(Tag, Rc<StgSyn>)>,
         /// Default handler
         fallback: Option<Rc<StgSyn>>,
+        /// When true, suppress the next Update continuation push after
+        /// entering a branch whose body is a local atom (Ref::L(_)).
+        /// Used by the boolean IF intrinsic to prevent Update continuations
+        /// accumulating during tail-recursive conditionals.  Must NOT be set
+        /// on any case that might return an updatable thunk that needs
+        /// memoisation (e.g. TAIL on a lazy stream).
+        suppress_update: bool,
     },
     /// Saturated data constructor
     Cons { tag: Tag, args: Vec<Ref> },
@@ -157,6 +164,7 @@ impl fmt::Display for StgSyn {
                 scrutinee,
                 branches,
                 fallback,
+                ..
             } => {
                 let mut tags: Vec<String> = branches.iter().map(|b| format!("{}", b.0)).collect();
                 if fallback.is_some() {
@@ -462,6 +470,7 @@ pub mod dsl {
             scrutinee,
             branches,
             fallback: Some(fallback),
+            suppress_update: false,
         })
     }
 
@@ -471,6 +480,21 @@ pub mod dsl {
             scrutinee,
             branches,
             fallback: None,
+            suppress_update: false,
+        })
+    }
+
+    /// Case statement without default that suppresses the next Update push.
+    ///
+    /// For use by the boolean IF intrinsic only — prevents Update continuations
+    /// from accumulating during tail-recursive conditionals while leaving stream
+    /// tail thunks free to memoise normally.
+    pub fn switch_suppress(scrutinee: Rc<StgSyn>, branches: Vec<(Tag, Rc<StgSyn>)>) -> Rc<StgSyn> {
+        Rc::new(StgSyn::Case {
+            scrutinee,
+            branches,
+            fallback: None,
+            suppress_update: true,
         })
     }
 

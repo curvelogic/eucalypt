@@ -245,6 +245,10 @@ pub struct MachineState {
     rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
     symbol_pool: SymbolPool,
+    /// When true, the next thunk Update push is suppressed.
+    /// Set by branch return when the matched body is a local atom and
+    /// the Branch continuation had suppress_update set.
+    suppress_next_update: bool,
 }
 
 impl Default for MachineState {
@@ -260,6 +264,7 @@ impl Default for MachineState {
                 NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
             ),
             symbol_pool: SymbolPool::new(),
+            suppress_next_update: false,
         }
     }
 }
@@ -291,6 +296,10 @@ impl MachineState {
         intrinsics: &[&'guard dyn StgIntrinsic],
         metrics: &mut Metrics,
     ) -> Result<(), ExecutionError> {
+        // Consume suppress flag set by a prior Branch return.  Must be
+        // read before any early returns so the flag is always cleared.
+        let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
+
         // Load "op code"
         let code = (*view.scoped(self.closure.code())).clone();
         let environment = self.closure.env();
@@ -309,7 +318,7 @@ impl MachineState {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
                         let updateable = self.closure.update();
-                        if updateable {
+                        if updateable && !suppress_update {
                             // Overwrite the env slot with a BlackHole
                             // closure to catch cyclic thunk re-entry.
                             // The Update continuation will replace it
@@ -341,6 +350,7 @@ impl MachineState {
                 min_tag,
                 branch_table,
                 fallback,
+                suppress_update: case_suppress,
             } => {
                 self.push(
                     view,
@@ -350,6 +360,7 @@ impl MachineState {
                         fallback,
                         environment,
                         annotation: self.annotation,
+                        suppress_update: case_suppress,
                     },
                 )?;
                 self.closure = SynClosure::new(scrutinee, environment);
@@ -670,6 +681,7 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    suppress_update,
                 } => {
                     if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
                         let env = if args.is_empty() {
@@ -678,6 +690,21 @@ impl MachineState {
                         } else {
                             self.env_from_data_args(view, args, environment)?
                         };
+                        // If this branch has suppress_update set and the
+                        // matched body is a local reference (an atom Ref::L),
+                        // suppress the next Update push.  This prevents O(N)
+                        // Update accumulation during tail-recursive conditionals
+                        // (e.g. boolean IF).
+                        if suppress_update
+                            && matches!(
+                                &*view.scoped(body),
+                                HeapSyn::Atom {
+                                    evaluand: Ref::L(_)
+                                }
+                            )
+                        {
+                            self.suppress_next_update = true;
+                        }
                         self.closure = SynClosure::new(body, env);
                     } else if let Some(body) = fallback {
                         self.closure = SynClosure::new(
@@ -780,6 +807,7 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    ..
                 } => {
                     // In a statically typed STG machine, functions
                     // never enter case continuations. With dynamic
