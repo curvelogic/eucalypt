@@ -850,17 +850,34 @@ All functions verified against `lib/prelude.eu`:
 
 ---
 
-## 8. Assertion Operators
+## 8. Assertion and Test Operators
 
-For testing and debugging. All at precedence 5 (`:meta`).
+All at precedence 5 (`:meta`).
+
+**Test expectations** (return booleans, for use in test harnesses):
 
 | Operator | Description |
 |----------|-------------|
-| `e //=> v` | Assert `e` equals `v`, panic if not, return `e` |
-| `e //= v` | Check `e` equals `v`, return boolean |
-| `e //!` | Assert `e` is `true` |
-| `e //!!` | Assert `e` is `false` |
-| `e //=? f` | Assert `f(e)` is `true`, return `e` |
-| `e //!? f` | Assert `f(e)` is `false`, return `e` |
+| `e //= v` | Test `e` equals `v`, return boolean |
+| `e //=? f` | Test `f(e)` is `true`, return boolean |
+
+**Assertions** (panic on failure, return `e` on success):
+
+| Operator | Description |
+|----------|-------------|
+| `e //=> v` | Assert `e` equals `v`, panic with expected/actual on failure |
+| `e //!` | Assert `e` is `true`, panic on failure |
+
+**Deprecated** (use complement with positive forms instead):
+
+| Operator | Replacement |
+|----------|-------------|
+| `e //!? f` | `e //=? complement(f)` |
+| `e //!!` | Removed — negate the condition instead |
+
+**Metadata operators:**
+
+| Operator | Description |
+|----------|-------------|
 | `e // m` | Attach metadata block `m` to value `e` |
 | `e //<< m` | Merge `m` into existing metadata of `e` |

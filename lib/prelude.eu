@@ -811,11 +811,25 @@ assertions: {
   checked(v): if(check(v), v, panic("Assertion failed"))
 }
 
-` { doc: "`e //= v` - add metadata to check expression `e` evaluates to `v` and return whether valid"
+#
+# Test expectations (return booleans, for use in test harnesses)
+#
+
+` { doc: "`e //= v` - test that expression `e` evaluates to `v`, return boolean"
     export: :suppress
     associates: :left
     precedence: :meta }
 (e //= v): e with-meta({ assert: (= v)}) assertions.check
+
+` { doc: "`e //=? f` - test that expression `e` satisfies predicate `f`, return boolean"
+    export: :suppress
+    associates: :left
+    precedence: :meta }
+(e //=? f): e with-meta({ assert: f}) assertions.checked
+
+#
+# Assertions (panic on failure, return the value on success)
+#
 
 ` { doc: "`e //=> v` - assert expression `e` evaluates to `v` and return `e`.
 
@@ -826,18 +840,6 @@ assertions: {
     precedence: :meta }
 (e //=> v): if(e = v, e, __ASSERT_FAIL(e, v))
 
-` { doc: "`e //=? f` - add metadata to assert expression `e` satisfies predicate `f` and return `e`."
-    export: :suppress
-    associates: :left
-    precedence: :meta }
-(e //=? f): e with-meta({ assert: f}) assertions.checked
-
-` { doc: "`e //!? f` - add metadata to assert expression `e` does not satisfy predicate `f` and return `e`."
-    export: :suppress
-    associates: :left
-    precedence: :meta }
-(e //!? f): e with-meta({ assert: complement(f)}) assertions.checked
-
 ` { doc: "`e //!` - assert expression `e` is true and return `e`.
 
     On failure, reports the actual value:
@@ -846,11 +848,20 @@ assertions: {
     precedence: :meta }
 (e //!): if(e = true, e, __ASSERT_FAIL(e, true))
 
-` { doc: "`e //!!` - assert expression `e` is false and return `e`.
+#
+# Deprecated operators (use complement with the positive forms instead)
+#
 
-    On failure, reports the actual value:
-    `assertion failed: expected false, got <e>`"
+` { doc: "DEPRECATED: use `e //=? complement(f)` instead."
     export: :suppress
+    deprecated: true
+    associates: :left
+    precedence: :meta }
+(e //!? f): e with-meta({ assert: complement(f)}) assertions.checked
+
+` { doc: "DEPRECATED: use `if(e, __ASSERT_FAIL(e, false), e)` instead."
+    export: :suppress
+    deprecated: true
     precedence: :meta }
 (e //!!): if(e = false, e, __ASSERT_FAIL(e, false))
 
