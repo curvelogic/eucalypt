@@ -227,6 +227,9 @@ pub enum HeapSyn {
         branch_table: Array<Option<RefPtr<HeapSyn>>>,
         /// Default handler
         fallback: Option<RefPtr<HeapSyn>>,
+        /// When true, suppress the next Update push after entering a
+        /// branch whose body is a bare local atom. See StgSyn::Case.
+        suppress_update: bool,
     },
     /// Saturated data constructor
     Cons { tag: Tag, args: Array<Ref> },
@@ -723,12 +726,14 @@ impl Repr for ScopedPtr<'_, HeapSyn> {
                 min_tag,
                 branch_table,
                 fallback,
+                suppress_update,
             } => Rc::new(StgSyn::Case {
                 scrutinee: ScopedPtr::from_non_null(self, *scrutinee).repr(),
                 branches: repr::repr_branch_table(self, *min_tag, branch_table.clone()),
                 fallback: fallback
                     .as_ref()
                     .map(|f| ScopedPtr::from_non_null(self, *f).repr()),
+                suppress_update: *suppress_update,
             }),
             HeapSyn::Cons { tag, args } => Rc::new(StgSyn::Cons {
                 tag: *tag,

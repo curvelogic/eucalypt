@@ -245,6 +245,13 @@ pub struct MachineState {
     rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
     symbol_pool: SymbolPool,
+    /// When set, suppress the next Update continuation push.
+    ///
+    /// Set by `return_data` when processing a Branch with
+    /// `suppress_update=true` and a branch body that is a bare local
+    /// atom. Prevents O(N) Update accumulation in tail-recursive
+    /// conditional loops such as countdown(n) = if(n=0, 0, countdown(n-1)).
+    suppress_next_update: bool,
 }
 
 impl Default for MachineState {
@@ -260,6 +267,7 @@ impl Default for MachineState {
                 NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
             ),
             symbol_pool: SymbolPool::new(),
+            suppress_next_update: false,
         }
     }
 }
@@ -305,10 +313,13 @@ impl MachineState {
 
         match code {
             HeapSyn::Atom { evaluand } => {
+                // Consume suppress_next_update flag set by return_data
+                // when processing a suppress_update Branch continuation.
+                let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
                 match evaluand {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
-                        let updateable = self.closure.update();
+                        let updateable = self.closure.update() && !suppress_update;
                         if updateable {
                             // Overwrite the env slot with a BlackHole
                             // closure to catch cyclic thunk re-entry.
@@ -341,6 +352,7 @@ impl MachineState {
                 min_tag,
                 branch_table,
                 fallback,
+                suppress_update: case_suppress,
             } => {
                 self.push(
                     view,
@@ -350,6 +362,7 @@ impl MachineState {
                         fallback,
                         environment,
                         annotation: self.annotation,
+                        suppress_update: case_suppress,
                     },
                 )?;
                 self.closure = SynClosure::new(scrutinee, environment);
@@ -670,6 +683,7 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    suppress_update,
                 } => {
                     if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
                         let env = if args.is_empty() {
@@ -678,6 +692,18 @@ impl MachineState {
                         } else {
                             self.env_from_data_args(view, args, environment)?
                         };
+                        // When suppress_update is set on this Branch and the
+                        // branch body is a bare local atom, suppress the next
+                        // Update push. This prevents O(N) Update accumulation
+                        // in tail-recursive conditionals (e.g. IF branches).
+                        if suppress_update {
+                            if let HeapSyn::Atom {
+                                evaluand: Ref::L(_),
+                            } = &*view.scoped(body)
+                            {
+                                self.suppress_next_update = true;
+                            }
+                        }
                         self.closure = SynClosure::new(body, env);
                     } else if let Some(body) = fallback {
                         self.closure = SynClosure::new(
@@ -780,6 +806,7 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    ..
                 } => {
                     // In a statically typed STG machine, functions
                     // never enter case continuations. With dynamic
