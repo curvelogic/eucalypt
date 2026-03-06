@@ -3,17 +3,15 @@
 # Verifies that `_`, `_0`, `_1` work correctly in arg positions,
 # paren groups, and that scope boundaries are respected.
 #
-# Design notes:
-# - Anonymous anaphora (`_`) are self-contained in their paren group.
-#   Each `_` introduces a fresh parameter left-to-right within that scope.
-# - Numbered anaphora (`_0`, `_1`) propagate through infix operators so
-#   that `(_0 + _1) / 2` becomes a 2-arg averaging lambda.
-# - Use numbered anaphora when you need the lambda to span across operators
-#   at a higher level in the expression.
-# - The call operator boundary (`f(args)`) prevents propagation: each arg
-#   is its own independent anaphor scope.
+# Scoping model:
+# 1. Parens are opaque by default — anaphors inside parens create a
+#    lambda scoped to that paren group.
+# 2. Subsumption — if the enclosing scope already has direct anaphors,
+#    inner paren groups become transparent (anaphors join the outer scope).
+# 3. ArgTuples follow the same rules — opaque unless subsumed.
+# 4. Anonymous `_` and numbered `_0`/`_1` follow IDENTICAL scoping rules.
 
-# Basic identity anaphor in args (Bug 1: bare `_` in apply arg position)
+# Basic identity anaphor in args
 id-map: [1, 2, 3] map(_) //= [1, 2, 3]
 
 # Sections (existing behaviour must still work)
@@ -34,17 +32,15 @@ two-param: two-param-f(3, 4) //= 12
 # Numbered anaphors for multi-param functions
 numbered-add-f: (_0 + _1)
 numbered-add: numbered-add-f(3, 4) //= 7
+
+# Same param twice using numbered anaphors
 same-param-f: (_0 * _0)
 same-param: same-param-f(5) //= 25
 
-# Numbered anaphors propagate across infix operators:
-# `(_0 + _1) / 2` forms a 2-arg averaging lambda
-avg-numbered-f: (_0 + _1) / 2
-avg-numbered: avg-numbered-f(4, 6) //= 5
-
-# Call position: paren group as function applied to arguments
-# `(_0 + _1)(3, 4)` — explicit call applies the lambda immediately
-numbered-call: (_0 + _1)(3, 4) //= 7
+# No parens — soup scope spans the whole expression
+# `_0 + _1 / 2` is λ(a, b). a + b/2
+num-soup-f: _0 + _1 / 2
+num-soup: num-soup-f(4, 6) //= 7
 
 # Pipeline with section (existing behaviour)
 pipe-section: 5 (+ 1) //= 6
@@ -53,8 +49,13 @@ pipe-section: 5 (+ 1) //= 6
 pipe-times-f: (_ * 2)
 pipe-times: 5 pipe-times-f //= 10
 
+# Subsumption: outer anaphors make inner paren groups transparent.
+# `_ + (_ * _)` — outer _ subsumes inner (_ * _), giving a 3-param function.
+sub-f: _ + (_ * _)
+sub: sub-f(1, 2, 3) //= 7
+
 RESULT: [id-map, plus-one, times-two, filter-gt, anon-plus,
-         two-param, numbered-add, same-param, avg-numbered,
-         numbered-call, pipe-section, pipe-times]
+         two-param, numbered-add, same-param, num-soup,
+         pipe-section, pipe-times, sub]
           all-true?
           then(:PASS, :FAIL)

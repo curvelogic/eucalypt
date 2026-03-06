@@ -135,10 +135,8 @@ filter(_ > 0)        # Anonymous predicate
 f: (_ * _)           # f is a 2-arg multiply function
 f(3, 4)              # => 12
 
-# Numbered anaphora — use _0, _1 to reference specific positions,
-# or when a lambda needs to span across an infix operator:
-avg: (_0 + _1) / 2   # 2-arg averaging function (numbered propagates)
-avg(4, 6)            # => 5
+# Numbered anaphora for same-param reuse:
+sq: (_0 * _0)        # sq(5) => 25
 
 # Using named function + partial application:
 add-one(x): x + 1
@@ -153,13 +151,63 @@ filter(has-y(target-y))   # Partial application
 is a 2-arg function (like `(_0 * _1)`), not `(_0 * _0)`. Use numbered
 anaphora `_0 * _0` when you need to reference the same parameter twice.
 
-**Anonymous vs. numbered propagation**: Anonymous anaphora (`_`) are
-self-contained in their paren group. Numbered anaphora (`_0`, `_1`)
-propagate across infix operators. Use `(_0 + _1) / 2` for a 2-arg
-average function, not `(_ + _) / 2`.
-
 **Reference**: See [Anaphora](../guide/anaphora.md) for detailed
 explanation of anaphora usage.
+
+### Anaphor Scoping: Parens Are Opaque
+
+**Problem**: Parentheses create an anaphor scope boundary. Anaphors
+inside parens form a lambda at the paren level, not at the enclosing
+expression.
+
+**Scoping rules**:
+
+1. **Parens are opaque by default** — anaphors inside parens create a
+   lambda scoped to that paren group. This applies to both `_` and
+   `_0`/`_1`.
+
+2. **Subsumption** — if the enclosing expression already has direct
+   anaphors, inner paren groups become transparent (their anaphors
+   join the outer scope).
+
+3. **ArgTuples follow the same rules** — function call arguments are
+   opaque unless subsumed by an outer anaphoric scope.
+
+**Examples**:
+```eu,notest
+# Parens opaque — paren group forms its own lambda:
+(_ + 1)               # λ(a). a + 1
+(_ * _)               # λ(a, b). a * b
+(_ = :quux) ∘ tag     # (λ(a). a = :quux) ∘ tag  ✓ composition works
+
+# Without parens — whole expression is the lambda body:
+_ + 1                 # λ(a). a + 1   (same result here)
+_ * _                 # λ(a, b). a * b
+
+# Parens opaque breaks cross-operator average:
+(_0 + _1) / 2         # (λ(a,b). a+b) / 2  — type error!
+# Correct idiom (no parens):
+_0 + _1 / 2           # λ(a, b). a + b/2  — note: b is halved, not sum
+
+# Subsumption: outer _ makes inner (_ * _) transparent:
+_ + (_ * _)           # λ(a, b, c). a + (b * c)  ✓
+
+# ArgTuple opaque by default:
+map(_ + 1)            # map(λ(a). a + 1)   ✓
+filter(_ > 0)         # filter(λ(a). a > 0)  ✓
+
+# ArgTuple subsumed when outer has anaphors:
+_0 * (_1 + 2)         # λ(a, b). a * (b + 2)  ✓
+```
+
+**Common mistake**: Expecting `(_0 + _1) / 2` to be a 2-argument
+averaging function. Under the opaque parens model, `(_0 + _1)` forms
+its own lambda and `/ 2` tries to divide that lambda by 2 — a type
+error. Use a named helper instead:
+```eu,notest
+avg2(a, b): (a + b) / 2
+zip-with(avg2, xs, ys)
+```
 
 ## Metadata vs Comments
 
