@@ -245,12 +245,6 @@ pub struct MachineState {
     rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
     symbol_pool: SymbolPool,
-    /// Suppress the next Update continuation push. Set when a case
-    /// branch directly enters a local reference — the thunk is
-    /// one-shot and doesn't benefit from memoisation. This prevents
-    /// Update continuations accumulating during tail recursion
-    /// through conditionals.
-    suppress_next_update: bool,
 }
 
 impl Default for MachineState {
@@ -266,7 +260,6 @@ impl Default for MachineState {
                 NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
             ),
             symbol_pool: SymbolPool::new(),
-            suppress_next_update: false,
         }
     }
 }
@@ -298,11 +291,6 @@ impl MachineState {
         intrinsics: &[&'guard dyn StgIntrinsic],
         metrics: &mut Metrics,
     ) -> Result<(), ExecutionError> {
-        // Consume the suppress-update flag (set by case branch
-        // resolution to avoid Update accumulation in tail recursion)
-        let suppress_update = self.suppress_next_update;
-        self.suppress_next_update = false;
-
         // Load "op code"
         let code = (*view.scoped(self.closure.code())).clone();
         let environment = self.closure.env();
@@ -321,7 +309,7 @@ impl MachineState {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
                         let updateable = self.closure.update();
-                        if updateable && !suppress_update {
+                        if updateable {
                             // Overwrite the env slot with a BlackHole
                             // closure to catch cyclic thunk re-entry.
                             // The Update continuation will replace it
@@ -690,21 +678,6 @@ impl MachineState {
                         } else {
                             self.env_from_data_args(view, args, environment)?
                         };
-                        // When a case branch directly enters a local
-                        // reference, suppress the Update on the next
-                        // Atom enter. Case branches are one-shot so
-                        // the entered thunk need not be memoised.
-                        // This prevents Update continuations from
-                        // accumulating during tail recursion through
-                        // conditionals.
-                        if matches!(
-                            &*view.scoped(body),
-                            HeapSyn::Atom {
-                                evaluand: Ref::L(_)
-                            }
-                        ) {
-                            self.suppress_next_update = true;
-                        }
                         self.closure = SynClosure::new(body, env);
                     } else if let Some(body) = fallback {
                         self.closure = SynClosure::new(
