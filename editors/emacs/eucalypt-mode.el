@@ -91,8 +91,11 @@ Set via file-local variables, e.g.:
 ;; with c\"...\" and r\"...\" prefix strings by incorrectly pairing quotes.
 (defvar eucalypt-mode--syntax-table
   (let ((table (make-syntax-table)))
-    ;; Comments
-    (modify-syntax-entry ?# "<" table)
+    ;; Do NOT mark # as comment-start in the syntax table — tree-sitter
+    ;; handles highlighting, and the syntax table entry causes # inside
+    ;; string literals (e.g. "#") to be misidentified as comment-start,
+    ;; corrupting highlighting for subsequent lines.  Instead, comment
+    ;; syntax is applied via `syntax-propertize' for actual comment nodes.
     (modify-syntax-entry ?\n ">" table)
     (modify-syntax-entry ?\r ">" table)
     ;; Quotes are just punctuation in tree-sitter mode
@@ -291,25 +294,20 @@ Set via file-local variables, e.g.:
           (when (string= (treesit-node-type name) "identifier")
             (treesit-node-text name t)))))))
 
-;;; Syntax propertize — fix # inside strings
+;;; Syntax propertize — mark # as comment-start only in actual comments
 
 (defun eucalypt-mode--syntax-propertize (start end)
-  "Override syntax for `#' inside tree-sitter string nodes.
-Between START and END, any `#' that falls inside a string node
-has its syntax class changed from comment-start to punctuation."
+  "Apply comment syntax to `#' only where tree-sitter confirms a comment.
+Between START and END, any `#' that begins a tree-sitter comment
+node gets comment-start syntax.  All other `#' characters (e.g.
+inside string literals) are left as default syntax."
   (goto-char start)
   (while (re-search-forward "#" end t)
     (let ((node (treesit-node-at (1- (point)))))
       (when (and node
-                 (member (treesit-node-type node)
-                         '("string_content" "c_string_content"
-                           "r_string_content")))
-        ;; Only override if directly inside a string (not an actual comment)
-        (when (member (treesit-node-type
-                       (treesit-node-parent node))
-                      '("string" "c_string" "r_string"))
-          (put-text-property (1- (point)) (point)
-                             'syntax-table '(1 . nil)))))))
+                 (string= (treesit-node-type node) "comment"))
+        (put-text-property (1- (point)) (point)
+                           'syntax-table '(11 . nil))))))
 
 ;;; Command integration
 
