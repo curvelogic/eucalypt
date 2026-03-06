@@ -1,7 +1,7 @@
 ##
-## 095: Idiom bracket declarations and usage
+## 095: Idiot bracket declarations and usage
 ##
-## Idiom brackets allow applicative functor application to be expressed
+## Idiot brackets allow applicative functor application to be expressed
 ## using Unicode bracket pairs.  A bracket pair is declared with:
 ##
 ##   (⟦ x ⟧): some-function(x)

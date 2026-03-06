@@ -17,7 +17,7 @@
 // they are handled by the bracket_expr rule instead.
 const OPER_CHARS = /[.!@£%^&*|><\/+\=\-~;?$∸∧∨∘‖→←⊕⊗⊙⊡⊞⊟¬∀∃∈∉⊂⊃⊆⊇∪∩∼≈≠≡≤≥≪≫±×÷√∞∂∫∑∏∇△▽⊥⊤⊢⊣⊨⊩⊸⊺⋀⋁⋂⋃⋄⋅⋆⋈⋉⋊⋮⋯⋰⋱⟵⟶⟷⟸⟹⟺⟻⟼⟽⟾⟿←→↑↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪⊂⊃⊄⊅⊆⊇⊈⊉⊊⊋¡££€⨈∅∏]+/;
 
-// Unicode idiom bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS).
+// Unicode idiot bracket open characters (must match brackets.rs BUILTIN_BRACKET_PAIRS).
 //
 // NOTE ON BRACKET DETECTION LIMITATIONS:
 // The Rust parser uses dynamic Unicode Ps/Pe category detection, meaning any
@@ -144,7 +144,7 @@ module.exports = grammar({
     operator_declaration: $ => seq(
       '(',
       choice(
-        // Idiom bracket operator: (⟦ x ⟧) — declares a bracket-pair function
+        // Idiot bracket operator: (⟦ x ⟧) — declares a bracket-pair function
         seq(BRACKET_OPEN_RE, $.identifier, BRACKET_CLOSE_RE),
         // Binary operator: (l op r)
         seq($.identifier, $.operator, $.identifier),
@@ -291,7 +291,7 @@ module.exports = grammar({
       ']',
     )),
 
-    // Idiom bracket expression: ⟦ expr ⟧, «expr», ⌈ expr ⌉, etc.
+    // Idiot bracket expression: ⟦ expr ⟧, «expr», ⌈ expr ⌉, etc.
     // The bracket pair determines which bracket-pair function is applied.
     //
     // Monadic blocks use bracket syntax and may contain declarations rather

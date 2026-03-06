@@ -87,11 +87,11 @@ x: 42 # inline comment
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
-| Idiom bracket | `(⟦ x ⟧): expr` | Unicode bracket pair functor |
+| Idiot bracket | `(⟦ x ⟧): expr` | Unicode bracket pair functor |
 
-## Idiom Brackets
+## Idiot Brackets
 
-Idiom brackets allow applicative functor lifting using Unicode bracket pairs.
+Idiot brackets allow applicative functor lifting using Unicode bracket pairs.
 
 ```eu,notest
 # Declare a bracket pair function

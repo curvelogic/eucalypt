@@ -17,7 +17,7 @@ Full tree-sitter-based font-lock with four levels of detail:
 ### Indentation
 
 Automatic indentation for blocks, lists, parenthesised expressions,
-declaration bodies, and idiom bracket expressions.
+declaration bodies, and idiot bracket expressions.
 
 ### Navigation and Imenu
 

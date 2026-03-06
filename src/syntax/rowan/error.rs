@@ -80,7 +80,7 @@ pub enum ParseError {
         /// The character that was found
         actual_close: char,
     },
-    /// An unknown bracket pair was used — not defined as an idiom bracket
+    /// An unknown bracket pair was used — not defined as an idiot bracket
     UnknownBracketPair {
         range: TextRange,
         open_char: char,

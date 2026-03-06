@@ -163,7 +163,7 @@ Set via file-local variables, e.g.:
    '(["(" ")" "[" "]" "{" "}"] @font-lock-bracket-face
      [":" ","] @font-lock-delimiter-face
      ["`"] @font-lock-preprocessor-face
-     ;; Idiom bracket expressions: ⟦ expr ⟧, «expr», etc.
+     ;; Idiot bracket expressions: ⟦ expr ⟧, «expr», etc.
      (bracket_expr) @eucalypt-unicode-bracket-face)
 
    :language 'eucalypt
@@ -260,7 +260,7 @@ Set via file-local variables, e.g.:
      ((parent-is "block_pattern") parent-bol eucalypt-indent-offset)
      ;; Inside lists, indent elements
      ((parent-is "list") parent-bol eucalypt-indent-offset)
-     ;; Inside idiom bracket expressions
+     ;; Inside idiot bracket expressions
      ((parent-is "bracket_expr") parent-bol eucalypt-indent-offset)
      ;; Inside parentheses, indent contents
      ((parent-is "paren_expr") parent-bol eucalypt-indent-offset)

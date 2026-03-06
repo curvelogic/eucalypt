@@ -1,6 +1,6 @@
-//! Unicode bracket pair detection for idiom brackets.
+//! Unicode bracket pair detection for idiot brackets.
 //!
-//! Idiom brackets allow user-defined bracket pair expressions, e.g. `«x»` or `⟦x⟧`.
+//! Idiot brackets allow user-defined bracket pair expressions, e.g. `«x»` or `⟦x⟧`.
 //!
 //! Bracket pair recognition uses Unicode general categories:
 //! - **Opening**: any character in Unicode category Ps (OpenPunctuation) or Pi (InitialPunctuation)
@@ -15,7 +15,7 @@ use unicode_bidi_mirroring::get_mirrored;
 use unicode_general_category::{get_general_category, GeneralCategory};
 
 /// Return true if `c` is a Unicode bracket open character eligible for use as
-/// an idiom bracket.
+/// an idiot bracket.
 ///
 /// This includes any character in Unicode categories Ps (OpenPunctuation) or
 /// Pi (InitialPunctuation), excluding the ASCII brackets reserved by the
@@ -31,7 +31,7 @@ pub fn is_bracket_open(c: char) -> bool {
 }
 
 /// Return true if `c` is a Unicode bracket close character eligible for use as
-/// an idiom bracket.
+/// an idiot bracket.
 ///
 /// This includes any character in Unicode categories Pe (ClosePunctuation) or
 /// Pf (FinalPunctuation), excluding the ASCII brackets reserved by the

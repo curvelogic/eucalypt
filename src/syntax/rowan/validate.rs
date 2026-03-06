@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     pub fn test_bracket_expression_valid() {
-        // «»  is a registered idiom bracket pair — should parse cleanly
+        // «»  is a registered idiot bracket pair — should parse cleanly
         let errors = check("« a b c »");
         assert_eq!(errors, vec![]);
     }

@@ -530,7 +530,7 @@ impl ParenExpr {
 
 impl HasSoup for ParenExpr {}
 
-// A bracket expression using a Unicode idiom bracket pair
+// A bracket expression using a Unicode idiot bracket pair
 //
 // AST embedding syntax:
 // - `[:a-bracket-expr open-char soup close-char]` - Expression enclosed in a Unicode bracket pair
@@ -659,7 +659,7 @@ pub enum DeclarationKind {
         OperatorIdentifier,
         NormalIdentifier,
     ),
-    /// Idiom bracket pair definition (e.g. (⟦ x ⟧): ...) - Embedding: `[:a-decl-bracket paren bracket param]`
+    /// Idiot bracket pair definition (e.g. (⟦ x ⟧): ...) - Embedding: `[:a-decl-bracket paren bracket param]`
     ///
     /// The `BracketExpr` contains the bracket pair characters and the single formal parameter.
     BracketPair(ParenExpr, BracketExpr, NormalIdentifier),
@@ -1224,7 +1224,7 @@ pub enum Element {
     List(List),
     /// Parenthesised expression - Embedding: `[:a-paren-expr soup]`
     ParenExpr(ParenExpr),
-    /// Bracket expression using a Unicode idiom bracket pair - Embedding: `[:a-bracket-expr ...]`
+    /// Bracket expression using a Unicode idiot bracket pair - Embedding: `[:a-bracket-expr ...]`
     BracketExpr(BracketExpr),
     /// Monadic bracket block with declarations - Embedding: `[:a-bracket-block ...]`
     BracketBlock(BracketBlock),

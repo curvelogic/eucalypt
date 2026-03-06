@@ -106,9 +106,9 @@ pub enum SyntaxKind {
     /// ZDT (timestamp) string literal e.g. t"2023-01-15T10:30:00Z"
     T_STRING,
 
-    /// Open token of a Unicode bracket pair (idiom bracket expression)
+    /// Open token of a Unicode bracket pair (idiot bracket expression)
     BRACKET_OPEN,
-    /// Close token of a Unicode bracket pair (idiom bracket expression)
+    /// Close token of a Unicode bracket pair (idiot bracket expression)
     BRACKET_CLOSE,
     /// A bracket expression using a Unicode bracket pair e.g. ⟦ x ⟧
     BRACKET_EXPR,

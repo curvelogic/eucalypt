@@ -387,7 +387,7 @@ impl<'text> Parser<'text> {
         self.sink().finish_node();
     }
 
-    /// Parse a bracket expression using a Unicode idiom bracket pair.
+    /// Parse a bracket expression using a Unicode idiot bracket pair.
     ///
     /// For example: `⟦ x ⟧` or `⌈ x ⌉`.
     ///

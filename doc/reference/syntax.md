@@ -201,7 +201,7 @@ operators too, either binary:
 Eucalypt should handle unicode gracefully and any unicode characters
 in the symbol or punctuation classes are fine for operators.
 
-In addition to named operators, you can define **idiom brackets** —
+In addition to named operators, you can define **idiot brackets** —
 Unicode bracket pairs that define applicative functor lifting.  A
 bracket pair declaration uses a Unicode bracket pair wrapping a single
 parameter:
@@ -226,7 +226,7 @@ then close bracket) that takes one argument `x` and returns `body`.
 Using `⟦ expr ⟧` in an expression calls that function with `expr`.
 
 The following Unicode bracket pairs are built-in and can be used for
-idiom brackets without any registration:
+idiot brackets without any registration:
 
 | Open | Close | Name |
 |------|-------|------|

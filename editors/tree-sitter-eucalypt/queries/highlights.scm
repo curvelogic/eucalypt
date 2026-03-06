@@ -94,7 +94,7 @@
 (cons_pattern
   (identifier) @parameter)
 
-; Idiom bracket expressions — highlight the bracket delimiters distinctively
+; Idiot bracket expressions — highlight the bracket delimiters distinctively
 (bracket_expr) @punctuation.special
 
 ; Function application
