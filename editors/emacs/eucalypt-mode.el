@@ -91,13 +91,12 @@ Set via file-local variables, e.g.:
 ;; with c\"...\" and r\"...\" prefix strings by incorrectly pairing quotes.
 (defvar eucalypt-mode--syntax-table
   (let ((table (make-syntax-table)))
-    ;; Do NOT mark # as comment-start in the syntax table — tree-sitter
-    ;; handles highlighting, and the syntax table entry causes # inside
-    ;; string literals (e.g. "#") to be misidentified as comment-start,
-    ;; corrupting highlighting for subsequent lines.  Instead, comment
-    ;; syntax is applied via `syntax-propertize' for actual comment nodes.
-    (modify-syntax-entry ?\n ">" table)
-    (modify-syntax-entry ?\r ">" table)
+    ;; No comment syntax entries at all — tree-sitter handles all
+    ;; highlighting.  The syntax table must not mark # as comment-start
+    ;; because Emacs applies syntactic faces (comment-face) based on
+    ;; the syntax table even in tree-sitter modes, and # inside string
+    ;; literals would be misidentified.
+    ;;
     ;; Quotes are just punctuation in tree-sitter mode
     (modify-syntax-entry ?\" "." table)
     (modify-syntax-entry ?\' "." table)
@@ -294,20 +293,10 @@ Set via file-local variables, e.g.:
           (when (string= (treesit-node-type name) "identifier")
             (treesit-node-text name t)))))))
 
-;;; Syntax propertize — mark # as comment-start only in actual comments
-
-(defun eucalypt-mode--syntax-propertize (start end)
-  "Apply comment syntax to `#' only where tree-sitter confirms a comment.
-Between START and END, any `#' that begins a tree-sitter comment
-node gets comment-start syntax.  All other `#' characters (e.g.
-inside string literals) are left as default syntax."
-  (goto-char start)
-  (while (re-search-forward "#" end t)
-    (let ((node (treesit-node-at (1- (point)))))
-      (when (and node
-                 (string= (treesit-node-type node) "comment"))
-        (put-text-property (1- (point)) (point)
-                           'syntax-table '(11 . nil))))))
+;;; Syntax propertize — not needed
+;;
+;; Tree-sitter handles all comment and string detection for
+;; highlighting.  No syntax-propertize function is required.
 
 ;;; Command integration
 
@@ -564,10 +553,6 @@ Key bindings:
   ;; Imenu
   (setq-local treesit-simple-imenu-settings
               '(("Declaration" "\\`declaration\\'" nil eucalypt-mode--defun-name)))
-
-  ;; Syntax propertize (fix # inside strings)
-  (setq-local syntax-propertize-function
-              #'eucalypt-mode--syntax-propertize)
 
   ;; Enable tree-sitter features
   (treesit-major-mode-setup))
