@@ -57,12 +57,12 @@ solve-all(data): {
   sizes: shapes map(count)
 
   # cell check
-  needed([w, h, counts]): zip-with(*, counts, sizes) sum
-  total([w, h, _]): w * h
+  needed[w, h, counts]: zip-with(*, counts, sizes) sum
+  total[w, h, _]: w * h
   area-ok?(r): needed(r) <= total(r)
 
   # box check
-  min-dim([w, h, _]): min(w, h)
+  min-dim[w, h, _]: min(w, h)
   box-ok?(r): min-dim(r) >= 3
 
   fits?(r): area-ok?(r) ∧ box-ok?(r)

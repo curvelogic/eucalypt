@@ -22,6 +22,7 @@ Notable eucalypt techniques:
 - `foldr` with accumulator for gap-level insertion
 - list destructuring in function parameters: `v-spans?(y, [_, y_lo, y_hi])`,
   `inner-step(... [left, right, best], [lv-y, lv-l, lv-r, tiles])`
+- juxtaposed list-destructuring syntax `vertical?[p, q]:`, `vert-edge[p, q]:`
 
 Running time: ~3 min (part 1), ~3 min (part 2)
 "
@@ -73,14 +74,14 @@ levels: {
   make-edges(pts): zip(pts, pts rotate(1))
 
   ` "Is edge vertical / horizontal?"
-  vertical?([p, q]): first(p) = first(q)
-  horizontal?([p, q]): second(p) = second(q)
+  vertical?[p, q]: first(p) = first(q)
+  horizontal?[p, q]: second(p) = second(q)
 
   ` "Extract vertical edges as [x, y-lo, y-hi]."
-  vert-edge([p, q]): [first(p), min(second(p), second(q)), max(second(p), second(q))]
+  vert-edge[p, q]: [first(p), min(second(p), second(q)), max(second(p), second(q))]
 
   ` "Extract horizontal edges as [y, x-lo, x-hi]."
-  horiz-edge([p, q]): [second(p), min(first(p), first(q)), max(first(p), first(q))]
+  horiz-edge[p, q]: [second(p), min(first(p), first(q)), max(first(p), first(q))]
 
   ` "Cross-section at `y`: [left, right] assuming single interval."
   xsect(y, ves, hes): {
