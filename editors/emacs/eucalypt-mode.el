@@ -293,10 +293,44 @@ Set via file-local variables, e.g.:
           (when (string= (treesit-node-type name) "identifier")
             (treesit-node-text name t)))))))
 
-;;; Syntax propertize — not needed
+;;; Syntax propertize — mark string boundaries for syntax-ppss
 ;;
-;; Tree-sitter handles all comment and string detection for
-;; highlighting.  No syntax-propertize function is required.
+;; The syntax table deliberately does not mark " as a string delimiter
+;; (it would break c"..." and r"..." prefix strings).  But packages
+;; like rainbow-delimiters use `syntax-ppss' to detect strings.  This
+;; function walks tree-sitter string nodes and applies string-fence
+;; syntax (class 15) to their opening and closing quotes so that
+;; `syntax-ppss' correctly reports "inside string" for those regions.
+
+(defun eucalypt-mode--syntax-propertize (start end)
+  "Mark string delimiters with string-fence syntax between START and END.
+Uses tree-sitter to find string nodes (string, c_string, r_string)
+and applies syntax class 15 (string fence) to the opening and closing
+quote characters.  This allows `syntax-ppss' to detect string context
+without relying on the buffer syntax table."
+  (let ((root (treesit-buffer-root-node)))
+    (dolist (type '("string" "c_string" "r_string"))
+      (dolist (node (treesit-query-capture
+                     root
+                     (format "((%s) @s)" type)
+                     start end))
+        (let* ((n (cdr node))
+               (ns (treesit-node-start n))
+               (ne (treesit-node-end n)))
+          ;; Find the opening quote (last " before content)
+          (when (>= ne start)
+            ;; Opening quote: for c" and r", the quote is at ns+1; for plain ", at ns
+            (let ((q-start (save-excursion
+                             (goto-char ns)
+                             (if (memq (char-after) '(?c ?r))
+                                 (1+ ns)
+                               ns))))
+              (put-text-property q-start (1+ q-start)
+                                 'syntax-table '(15 . nil))
+              ;; Closing quote
+              (put-text-property (1- ne) ne
+                                 'syntax-table '(15 . nil)))))))))
+
 
 ;;; Command integration
 
@@ -508,11 +542,8 @@ region is active.  Skips replacements inside strings and comments."
   "Face for Unicode bracket characters in Eucalypt mode."
   :group 'eucalypt)
 
-;; rainbow-delimiters is NOT auto-enabled because it uses the syntax
-;; table (not tree-sitter) to find brackets, causing brackets inside
-;; string literals to be coloured incorrectly.  Users who want it can
-;; add (add-hook 'eucalypt-mode-hook #'rainbow-delimiters-mode) to
-;; their init file.
+(with-eval-after-load 'rainbow-delimiters
+  (add-hook 'eucalypt-mode-hook #'rainbow-delimiters-mode))
 
 ;;; Mode definition
 
@@ -556,6 +587,11 @@ Key bindings:
   ;; Imenu
   (setq-local treesit-simple-imenu-settings
               '(("Declaration" "\\`declaration\\'" nil eucalypt-mode--defun-name)))
+
+  ;; Syntax propertize — mark string boundaries for syntax-ppss
+  ;; so rainbow-delimiters and other packages can detect strings
+  (setq-local syntax-propertize-function
+              #'eucalypt-mode--syntax-propertize)
 
   ;; Enable tree-sitter features
   (treesit-major-mode-setup))
