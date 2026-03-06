@@ -57,8 +57,7 @@ parse(data): data map(to-bits)
 solve(grid): survivals(grid) map(sum) sum
 
 ` "One removal step: returns [new-grid, count-removed]."
-remove-step(state): {
-  grid: state first
+remove-step([grid, _]): {
   removed: survivals(grid)
   n: removed map(sum) sum
   new-grid: zip-with(zip-with(-), grid, removed)

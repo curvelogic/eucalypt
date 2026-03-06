@@ -57,11 +57,7 @@ parse-col(col): {
 }.(digits nil? then([], [col last, digits map(num) digits-to-num]))
 
 ` "Process one column in the right-to-left fold.  State is [total, nums]."
-col-step(state, entry): {
-  total: first(state)
-  nums: second(state)
-  op: first(entry)
-  n: second(entry)
+col-step([total, nums], [op, n]): {
 }.(if(op?(op),
      [total + apply-op(op, nums ++ [n]), []],
      [total, nums ++ [n]]))

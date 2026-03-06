@@ -71,20 +71,14 @@ levels: {
   make-edges(pts): zip(pts, pts rotate(1))
 
   ` "Is edge vertical / horizontal?"
-  vertical?(e): first(first(e)) = first(second(e))
-  horizontal?(e): second(first(e)) = second(second(e))
+  vertical?([p, q]): first(p) = first(q)
+  horizontal?([p, q]): second(p) = second(q)
 
   ` "Extract vertical edges as [x, y-lo, y-hi]."
-  vert-edge(e): {
-    p: first(e)
-    q: second(e)
-  }.([first(p), min(second(p), second(q)), max(second(p), second(q))])
+  vert-edge([p, q]): [first(p), min(second(p), second(q)), max(second(p), second(q))]
 
   ` "Extract horizontal edges as [y, x-lo, x-hi]."
-  horiz-edge(e): {
-    p: first(e)
-    q: second(e)
-  }.([second(p), min(first(p), first(q)), max(first(p), first(q))])
+  horiz-edge([p, q]): [second(p), min(first(p), first(q)), max(first(p), first(q))]
 
   ` "Cross-section at `y`: [left, right] assuming single interval."
   xsect(y, ves, hes): {
