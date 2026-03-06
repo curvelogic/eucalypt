@@ -13,7 +13,7 @@ row-oriented data. Part 1 transposes number rows; Part 2 transposes
 the character grid and folds right-to-left with state accumulation.
 
 Notable eucalypt techniques:
-- `transpose` for matrix pivoting
+- `transpose` for matrix pivoting (pipeline form `padded transpose`)
 - `zip-with` to pair operators with number lists
 - `foldl` with `[total, nums]` state for right-to-left grouping
 - expression anaphora `_0 * 10 + _1` as inline two-arg function
@@ -67,7 +67,7 @@ solve2(data): {
   grid: lines map(chars)
   w: grid map(count) max-of
   padded: grid map(pad-to(w))
-  cols: transpose(padded) reverse map(parse-col) filter(non-nil?)
+  cols: padded transpose reverse map(parse-col) filter(non-nil?)
 }.(cols foldl(col-step, [0, []]) first)
 
 ` { target: :test
