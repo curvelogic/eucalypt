@@ -213,6 +213,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn heap_ndarray_fits_in_gc_block() {
+        // HeapNdArray must fit in a GC bump block (32 KiB).
+        // ndarray 0.16 ArrayD<f64>: OwnedRepr<f64> (24 bytes) + 2×IxDyn.
+        // IxDyn uses a small-vec-like structure; on 64-bit this is ≤ 64 bytes each.
+        // The GC block is 32 KiB so any reasonable struct size is fine — this
+        // assertion just guards against a future ndarray version balloon.
+        assert!(
+            std::mem::size_of::<HeapNdArray>() < 1024,
+            "HeapNdArray unexpectedly large: {} bytes",
+            std::mem::size_of::<HeapNdArray>()
+        );
+    }
+
+    #[test]
     fn zeros_creates_correct_shape() {
         let a = HeapNdArray::zeros(&[2, 3]);
         assert_eq!(a.shape(), &[2, 3]);

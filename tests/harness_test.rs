@@ -544,6 +544,11 @@ pub fn test_gc_010() {
     run_test(&opts("gc/gc_010_comprehensive_stress.eu"));
 }
 
+#[test]
+pub fn test_gc_011() {
+    run_test(&opts("gc/gc_011_ndarray_evacuation.eu"));
+}
+
 // Error tests — validate against `.expect` sidecars when present
 
 #[test]
