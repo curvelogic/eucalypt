@@ -55,7 +55,7 @@ row-step([beam, total], row): {
   p: zip-with(-, beam, h)
   emitted: zip-with(max, shift-left(h), shift-right(h))
   new-beam: zip-with(max, p, emitted)
-}.([ new-beam, total + sum(h) ])
+}.([ new-beam, total + (h sum) ])
 
 ` "Count total splits as the beam propagates down the grid."
 solve(rows, b0): rows foldl(row-step, [b0, 0]) second

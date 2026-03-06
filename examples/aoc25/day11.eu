@@ -28,9 +28,9 @@ Running time: ~2s (part 1), ~3 min (part 2)
 
 ` "Parse 'name: d1 d2 ...' into [name, [d1, d2, ...]]."
 parse-line(line): {
-  parts: str.split(line, ": ")
+  parts: line str.split-on(": ")
   name: parts first
-  dests: str.split(parts second, " ")
+  dests: parts second str.split-on(" ")
 }.[name, dests]
 
 ` "Parse input into a block mapping sym(name) to [dest_strs] for O(log n) lookup."
