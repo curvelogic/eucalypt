@@ -66,6 +66,7 @@ impl Block {
 
     /// Fill areas that are meant to be dead with 0xff to aid debugging
     pub fn fill(&self, offset_bytes: usize, size_bytes: usize) {
+        let _ = (&offset_bytes, &size_bytes);
         #[cfg(debug_assertions)]
         // SAFETY: This is only called from bump allocation with valid offsets:
         // - `offset_bytes` is within the block (cursor position from bump())

@@ -1761,6 +1761,7 @@ impl Heap {
 
     /// Ultra-fast allocation counter update (minimal overhead for hot path)
     fn update_allocation_counters_fast(&self, size_bytes: usize, size_class: SizeClass) {
+        let _ = (&size_bytes, &size_class);
         // Only update counters in debug builds or with gc-telemetry feature
         #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {
@@ -1854,6 +1855,7 @@ impl Heap {
         success: bool,
         bytes_freed: u64,
     ) {
+        let _ = (&emergency_time, &success, &bytes_freed);
         // Only update metrics in debug builds or with gc-telemetry feature
         #[cfg(any(debug_assertions, feature = "gc-telemetry"))]
         {
