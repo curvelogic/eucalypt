@@ -919,6 +919,12 @@ impl ProtoSyntax for ProtoAppGroup {
             )?)),
         };
 
+        // Determine which args are single-use for this intrinsic
+        let single_use_args: &[usize] = intrinsic_index
+            .and_then(|idx| compiler.intrinsics.get(idx))
+            .map(|bif| bif.single_use_args())
+            .unwrap_or(&[]);
+
         // Get references for args, compiling into the local binder if necessary
         let mut arg_indexes: Vec<Box<dyn ProtoReference>> = vec![];
         for (i, arg) in self.args.iter().enumerate() {
@@ -932,7 +938,7 @@ impl ProtoSyntax for ProtoAppGroup {
                     arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
                 }
                 _ => {
-                    let is_strict = strict_args.contains(&i);
+                    let is_strict = strict_args.contains(&i) || single_use_args.contains(&i);
                     let index = compiler.compile_binding(
                         &mut local_binder,
                         arg.clone(),

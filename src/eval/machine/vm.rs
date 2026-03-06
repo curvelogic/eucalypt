@@ -319,7 +319,22 @@ impl MachineState {
                 match evaluand {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
-                        let updateable = self.closure.update() && !suppress_update;
+                        let is_thunk = self.closure.update();
+                        let updateable = is_thunk && !suppress_update;
+                        // When suppress_update is active but the loaded closure is
+                        // not itself a thunk (e.g. a synthetic value-Atom closure
+                        // created by create_arg_array), propagate the flag to the
+                        // next Atom step so the full indirection chain is covered.
+                        //
+                        // This handles the two-level case that arises when IF args
+                        // are passed via App (not inlined): the Branch body is
+                        // Atom{L(i)} in IF's arg env → value closure → Atom{L(j)}
+                        // in the caller's let env → actual thunk.  Without
+                        // propagation, only the first hop is suppressed and the
+                        // second hop pushes an unwanted Update continuation.
+                        if suppress_update && !is_thunk {
+                            self.suppress_next_update = true;
+                        }
                         if updateable {
                             // Overwrite the env slot with a BlackHole
                             // closure to catch cyclic thunk re-entry.
@@ -1148,7 +1163,27 @@ impl<'a> Machine<'a> {
         }
 
         metrics.tick();
-        metrics.stack(state.stack.len());
+        let stack_len = state.stack.len();
+        let prev_max = metrics.max_stack();
+        metrics.stack(stack_len);
+        // Diagnostic: dump stack composition when a new max is reached
+        if std::env::var("EU_STACK_DIAG").is_ok() && stack_len > prev_max && stack_len > 5 {
+            let counts = state.stack.iter().fold(
+                (0usize, 0usize, 0usize, 0usize),
+                |(branch, update, apply, demeta), cont| match cont {
+                    super::cont::Continuation::Branch { .. } => (branch + 1, update, apply, demeta),
+                    super::cont::Continuation::Update { .. } => (branch, update + 1, apply, demeta),
+                    super::cont::Continuation::ApplyTo { .. } => {
+                        (branch, update, apply + 1, demeta)
+                    }
+                    super::cont::Continuation::DeMeta { .. } => (branch, update, apply, demeta + 1),
+                },
+            );
+            eprintln!(
+                "STACK_MAX depth={} Branch={} Update={} ApplyTo={} DeMeta={}",
+                stack_len, counts.0, counts.1, counts.2, counts.3
+            );
+        }
 
         state
             .handle_instruction(view, emitter, intrinsics, metrics)
