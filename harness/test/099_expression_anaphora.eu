@@ -4,12 +4,14 @@
 # paren groups, and that scope boundaries are respected.
 #
 # Design notes:
-# - Anonymous anaphora (`_`) are self-contained in their paren group or
-#   expression. Each `_` introduces a fresh parameter left-to-right.
+# - Anonymous anaphora (`_`) are self-contained in their paren group.
+#   Each `_` introduces a fresh parameter left-to-right within that scope.
 # - Numbered anaphora (`_0`, `_1`) propagate through infix operators so
 #   that `(_0 + _1) / 2` becomes a 2-arg averaging lambda.
 # - Use numbered anaphora when you need the lambda to span across operators
 #   at a higher level in the expression.
+# - The call operator boundary (`f(args)`) prevents propagation: each arg
+#   is its own independent anaphor scope.
 
 # Basic identity anaphor in args (Bug 1: bare `_` in apply arg position)
 id-map: [1, 2, 3] map(_) //= [1, 2, 3]

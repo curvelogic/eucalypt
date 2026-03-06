@@ -60,8 +60,11 @@ impl Cooker {
     /// group and do not propagate outward. Other constructs (ArgTuple, Let,
     /// List, Block) remain scope boundaries and are not traversed.
     ///
-    /// Only numbered anaphora propagate upward so that expressions like
-    /// `(_0 + _1) / 2` form a 2-arg lambda at the enclosing scope level.
+    /// Only numbered anaphora propagate upward. This is deliberate:
+    /// anonymous `_` in a paren group like `(_ = :quux) ∘ tag` forms a
+    /// complete predicate that is then composed — propagation would break
+    /// this pattern. Use numbered anaphora (`(_0 + _1) / 2`) when you
+    /// explicitly need the lambda to span across infix operators.
     fn contains_expr_anaphora(expr: &RcExpr) -> bool {
         match &*expr.inner {
             Expr::ExprAnaphor(_, Anaphor::ExplicitNumbered(_)) => true,
@@ -134,11 +137,11 @@ impl Cooker {
         // sub-expressions (paren groups) BEFORE fill_gaps runs, so that
         // implicit section anaphora are not counted.
         //
-        // Only NUMBERED anaphora propagate upward to allow expressions like
-        // `(_0 + _1) / 2` to produce a 2-arg lambda. Anonymous anaphora (`_`)
-        // are self-contained within their paren group so that patterns like
-        // `(_ = :quux) ∘ tag` produce a correctly composed function rather
-        // than absorbing the composition into an outer lambda.
+        // Only NUMBERED anaphora propagate upward, allowing `(_0 + _1) / 2`
+        // to form a 2-arg lambda at the enclosing scope. Anonymous anaphora
+        // (`_`) are self-contained within their paren group so that patterns
+        // like `(_ = :quux) ∘ tag` produce a correctly composed function
+        // rather than absorbing the composition into an outer lambda.
         //
         // Propagation is suppressed when the soup contains a call operator
         // (e.g. `f(args)`). A call operator signals that the paren group to
@@ -567,9 +570,9 @@ pub mod tests {
         assert!(!Cooker::contains_expr_anaphora(&arg));
 
         // Anonymous ExprAnaphor (_) is NOT detected — anonymous anaphora are
-        // self-contained in their paren group and do not propagate upward.
-        // Use numbered anaphora (_0, _1) when propagation across infix
-        // operators is needed (e.g. `(_0 + _1) / 2`).
+        // self-contained in their paren group. This preserves patterns like
+        // `(_ = :quux) ∘ tag` where the paren group is a complete predicate.
+        // Use numbered anaphora when propagation across infix operators is needed.
         assert!(!Cooker::contains_expr_anaphora(&core::expr_anaphor(
             Smid::fake(7),
             None
@@ -620,12 +623,14 @@ pub mod tests {
     #[test]
     pub fn test_anon_anaphora_self_contained_in_parens() {
         // Simulates (_ + _) / 2 — anonymous anaphora are self-contained in
-        // their paren group. The paren group forms its own lambda, and the
-        // outer soup sees a lambda value divided by 2.
+        // their paren group. The paren group `(_ + _)` forms its own 2-arg
+        // lambda, and the outer soup sees `lam / 2` rather than propagating
+        // the anaphora outward.
         //
         // This preserves patterns like `(_ = :quux) ∘ tag` where the paren
         // group is a complete predicate being composed with another function.
-        // Use numbered anaphora (`(_0 + _1) / 2`) when propagation is needed.
+        // Use numbered anaphora (`(_0 + _1) / 2`) when explicit propagation
+        // across an outer infix operator is required.
         let l50 = core::infixl(Smid::fake(1), 50, bif("ADD"));
         let l60 = core::infixl(Smid::fake(2), 60, bif("DIV"));
 
@@ -639,9 +644,8 @@ pub mod tests {
         // Outer soup: (inner) / 2 — no call op
         let outer = soup(vec![inner, l60, num(2)]);
 
-        // Should produce: DIV(lam([_0, _1], ADD(_0, _1)), 2)
-        // The inner anonymous anaphora form a lambda that is then divided by 2.
-        // NOT a lambda wrapping the entire outer expression.
+        // The outer expression should NOT be a lambda — the inner paren group
+        // self-contains its anaphora.
         let result = cook(outer).unwrap();
         assert!(
             !matches!(&*result.inner, Expr::Lam(_, _, _)),
