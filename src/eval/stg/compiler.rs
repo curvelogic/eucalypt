@@ -898,6 +898,7 @@ impl ProtoSyntax for ProtoAppGroup {
     ) -> Result<Rc<StgSyn>, CompileError> {
         let mut intrinsic_index = None;
         let mut strict_args = &vec![];
+        let mut single_use_args = &vec![];
         let mut local_binder = LetBinder::synthetic_let(context);
 
         // Find a reference for the function
@@ -909,6 +910,7 @@ impl ProtoSyntax for ProtoAppGroup {
                     intrinsic_index.ok_or_else(|| CompileError::UnknownIntrinsic(bif.clone()))?;
                 let info = intrinsics::intrinsic(n);
                 strict_args = info.strict_args();
+                single_use_args = info.single_use_args();
                 Box::new(ProtoRef::new(gref(n)))
             }
             _ => Box::new(ProtoRef::new(compiler.compile_binding(
@@ -932,14 +934,15 @@ impl ProtoSyntax for ProtoAppGroup {
                     arg_indexes.push(Box::new(ProtoRef::new(gref(global_index))))
                 }
                 _ => {
-                    // if the argument position is strict, assume
-                    // it'll be evaluated once only and so won't
-                    // benefit from a thunk
+                    // Strict args are evaluated immediately and so are trivially
+                    // single-use. Single-use args are lazy but will be evaluated
+                    // at most once, so neither benefits from an Update continuation.
+                    let is_single_use = strict_args.contains(&i) || single_use_args.contains(&i);
                     let index = compiler.compile_binding(
                         &mut local_binder,
                         arg.clone(),
                         self.smid,
-                        strict_args.contains(&i),
+                        is_single_use,
                     )?;
                     arg_indexes.push(Box::new(ProtoRef::new(index)));
                 }
