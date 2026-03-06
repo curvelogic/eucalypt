@@ -1500,7 +1500,6 @@ impl Heap {
 
     pub fn with_limit(limit_mib: usize) -> Self {
         let block_limit = (limit_mib * 1_048_576) / BLOCK_SIZE_BYTES;
-        println!("block limit {block_limit:?}");
         Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: Some(block_limit),
