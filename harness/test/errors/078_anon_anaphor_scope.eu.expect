@@ -1,2 +1,2 @@
 exit: 1
-stderr: "anonymous function parameter"
+stderr: "type mismatch"

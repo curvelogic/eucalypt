@@ -480,6 +480,16 @@ pub fn test_harness_097() {
 }
 
 #[test]
+pub fn test_harness_098() {
+    run_test(&opts("098_juxtaposed_definitions.eu"));
+}
+
+#[test]
+pub fn test_harness_099() {
+    run_test(&opts("099_expression_anaphora.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -983,9 +993,4 @@ pub fn test_error_092() {
         msg.contains("list-targets"),
         "expected 'list-targets' hint in error, got: {msg}"
     );
-}
-
-#[test]
-pub fn test_error_093() {
-    run_error_test(&error_opts("093_monad_missing_marker.eu"));
 }
