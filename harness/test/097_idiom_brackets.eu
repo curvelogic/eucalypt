@@ -1,8 +1,13 @@
 ##
-## 095: Idiot bracket declarations and usage
+## 097: Idiot bracket declarations and usage
 ##
 ## Idiot brackets allow applicative functor application to be expressed
-## using Unicode bracket pairs.  A bracket pair is declared with:
+## using Unicode bracket pairs.  A bracket pair is declared with either
+## paren-free style (preferred):
+##
+##   ⟦ x ⟧: some-function(x)
+##
+## or the older paren style (still supported):
 ##
 ##   (⟦ x ⟧): some-function(x)
 ##
@@ -13,17 +18,17 @@
 ## which desugars to a call to the named bracket pair function.
 ##
 
-# Simple identity bracket pair using white square brackets ⟦⟧
-(⟦ x ⟧): x
+# Simple identity bracket pair using white square brackets ⟦⟧ (paren-free)
+⟦ x ⟧: x
 
-# Doubling bracket pair using ceiling brackets ⌈⌉
-(⌈ x ⌉): x * 2
+# Doubling bracket pair using ceiling brackets ⌈⌉ (paren-free)
+⌈ x ⌉: x * 2
 
-# List-wrapping bracket pair using angle brackets ⟨⟩
+# List-wrapping bracket pair using angle brackets ⟨⟩ (paren style — still valid)
 (⟨ x ⟩): [x]
 
-# Increment bracket pair using floor brackets ⌊⌋
-(⌊ x ⌋): x + 1
+# Increment bracket pair using floor brackets ⌊⌋ (paren-free)
+⌊ x ⌋: x + 1
 
 tests: {
 

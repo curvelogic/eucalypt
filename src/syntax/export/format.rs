@@ -292,13 +292,21 @@ impl Formatter {
                     .append(RcDoc::text(y.syntax().text().to_string()))
                     .append(RcDoc::text(")"))
             }
-            rowan_ast::DeclarationKind::BracketPair(paren, _, _) => {
-                // Format: (⟦ x ⟧) — preserve from the paren expression
-                RcDoc::text(paren.syntax().text().to_string())
+            rowan_ast::DeclarationKind::BracketPair(paren, bracket, _) => {
+                // Format: preserve source text (with or without surrounding parens)
+                if let Some(p) = paren {
+                    RcDoc::text(p.syntax().text().to_string())
+                } else {
+                    RcDoc::text(bracket.syntax().text().to_string())
+                }
             }
-            rowan_ast::DeclarationKind::BracketBlockDef(paren, _) => {
-                // Format: (⟦{}⟧) — preserve from the paren expression
-                RcDoc::text(paren.syntax().text().to_string())
+            rowan_ast::DeclarationKind::BracketBlockDef(paren, bracket) => {
+                // Format: preserve source text (with or without surrounding parens)
+                if let Some(p) = paren {
+                    RcDoc::text(p.syntax().text().to_string())
+                } else {
+                    RcDoc::text(bracket.syntax().text().to_string())
+                }
             }
             rowan_ast::DeclarationKind::MalformedHead(_) => {
                 // Preserve original for malformed heads

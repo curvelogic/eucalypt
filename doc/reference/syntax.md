@@ -204,14 +204,20 @@ in the symbol or punctuation classes are fine for operators.
 In addition to named operators, you can define **idiot brackets** —
 Unicode bracket pairs that define applicative functor lifting.  A
 bracket pair declaration uses a Unicode bracket pair wrapping a single
-parameter:
+parameter directly (paren-free style):
 
 ```eu
 # Ceiling brackets lift into a "double" functor
-(⌈ x ⌉): x * 2
+⌈ x ⌉: x * 2
 
 # Floor brackets lift into an "increment" functor
-(⌊ x ⌋): x + 1
+⌊ x ⌋: x + 1
+```
+
+The older paren-wrapped style is still supported for backwards compatibility:
+
+```eu
+(⌈ x ⌉): x * 2    # paren style — still valid
 ```
 
 Once declared, the bracket pair can be used as an expression:
@@ -221,9 +227,9 @@ doubled: ⌈ 3 + 4 ⌉    # => 14
 bumped:  ⌊ 5 ⌋         # => 6
 ```
 
-The declaration `(⟦ x ⟧): body` defines a function named `⟦⟧` (open
+The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` (open
 then close bracket) that takes one argument `x` and returns `body`.
-Using `⟦ expr ⟧` in an expression calls that function with `expr`.
+Using `⌈ expr ⌉` in an expression calls that function with `expr`.
 
 The following Unicode bracket pairs are built-in and can be used for
 idiot brackets without any registration:
@@ -249,10 +255,16 @@ idiot brackets without any registration:
 
 A bracket pair gains a **monad spec** when declared with an empty
 block `{}` as its parameter and a body supplying `bind` and `return`
-function names:
+function names (paren-free style):
 
 ```eu
-(⟦{}⟧): { bind: my-bind  return: my-return }
+⟦{}⟧: { bind: my-bind  return: my-return }
+```
+
+The paren-wrapped style is also supported:
+
+```eu
+(⟦{}⟧): { bind: my-bind  return: my-return }    # still valid
 ```
 
 A bracket expression whose inner content contains top-level colons is
@@ -281,7 +293,7 @@ may be any single element: a name (`.r`), a parenthesised expression
 id-bind(ma, f): f(ma)
 id-return(a): a
 
-(⟦{}⟧): { bind: id-bind  return: id-return }
+⟦{}⟧: { bind: id-bind  return: id-return }
 
 result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 ```
@@ -292,7 +304,7 @@ result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 maybe-bind(ma, f): if(ma = [], [], f(ma head))
 maybe-return(a): [a]
 
-(⌈{}⌉): { bind: maybe-bind  return: maybe-return }
+⌈{}⌉: { bind: maybe-bind  return: maybe-return }
 
 just:    ⌈ x: [1]  y: [2] ⌉.(x + y)   # => [3]
 nothing: ⌈ x: []   y: [2] ⌉.(x + y)   # => []

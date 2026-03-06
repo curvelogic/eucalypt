@@ -659,13 +659,18 @@ pub enum DeclarationKind {
         OperatorIdentifier,
         NormalIdentifier,
     ),
-    /// Idiot bracket pair definition (e.g. (⟦ x ⟧): ...) - Embedding: `[:a-decl-bracket paren bracket param]`
+    /// Idiot bracket pair definition — e.g. `⟦ x ⟧: body` or `(⟦ x ⟧): body`
     ///
+    /// The optional `ParenExpr` is `Some` when parens were written and `None` when the
+    /// bracket appears directly in the head (paren-free style).
     /// The `BracketExpr` contains the bracket pair characters and the single formal parameter.
-    BracketPair(ParenExpr, BracketExpr, NormalIdentifier),
-    /// Monadic bracket block definition (e.g. (⟦{}⟧): ...) — an empty block `{}` as the parameter
-    /// signals that this bracket pair expects block content (declarations) for monadic use.
-    BracketBlockDef(ParenExpr, BracketExpr),
+    BracketPair(Option<ParenExpr>, BracketExpr, NormalIdentifier),
+    /// Monadic bracket block definition — e.g. `⟦{}⟧: body` or `(⟦{}⟧): body`
+    ///
+    /// The optional `ParenExpr` is `Some` when parens were written and `None` for paren-free style.
+    /// An empty block `{}` as the parameter signals that this bracket pair expects block content
+    /// (declarations) for monadic use.
+    BracketBlockDef(Option<ParenExpr>, BracketExpr),
     /// Invalid declaration head - Embedding: `[:a-decl-malformed errors...]`
     MalformedHead(Vec<ParseError>),
 }
@@ -675,6 +680,37 @@ pub enum DeclarationKind {
 // AST embedding syntax:
 // - `[:a-decl-head elements...]` - Declaration head containing name and parameter patterns
 ast_node!(DeclarationHead, DECL_HEAD);
+
+/// Classify a `BracketExpr` that appears directly at the declaration head level
+/// (paren-free style, e.g. `⟦ x ⟧: body` or `⟦{}⟧: body`).
+fn classify_bracket_direct(bracket: BracketExpr, head_range: TextRange) -> DeclarationKind {
+    let inner_elements: Vec<_> = bracket
+        .soup()
+        .map(|s| s.elements().collect())
+        .unwrap_or_default();
+    if inner_elements.len() == 1 {
+        if let Some(param) = inner_elements[0].as_normal_identifier() {
+            DeclarationKind::BracketPair(None, bracket, param)
+        } else if let Element::Block(_) = &inner_elements[0] {
+            // Block-mode bracket pair definition: ⟦{}⟧: ...
+            DeclarationKind::BracketBlockDef(None, bracket)
+        } else {
+            DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
+                head_range,
+                range: inner_elements[0].syntax().text_range(),
+            }])
+        }
+    } else if inner_elements.is_empty() {
+        DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+            range: head_range,
+        }])
+    } else {
+        // Multiple elements inside the bracket — invalid for a declaration head
+        DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+            range: head_range,
+        }])
+    }
+}
 
 // Classify a paren expression into a DeclarationKind
 fn classify_operator(pe: ParenExpr) -> DeclarationKind {
@@ -699,11 +735,11 @@ fn classify_operator(pe: ParenExpr) -> DeclarationKind {
                     .unwrap_or_default();
                 if inner_elements.len() == 1 {
                     if let Some(param) = inner_elements[0].as_normal_identifier() {
-                        DeclarationKind::BracketPair(pe, bracket.clone(), param)
+                        DeclarationKind::BracketPair(Some(pe), bracket.clone(), param)
                     } else if let Element::Block(_) = &inner_elements[0] {
                         // Block-mode bracket pair definition: (⟦{}⟧): ...
                         // The `{}` parameter signals block content (declarations) mode.
-                        DeclarationKind::BracketBlockDef(pe, bracket.clone())
+                        DeclarationKind::BracketBlockDef(Some(pe), bracket.clone())
                     } else {
                         DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
                             head_range: pe.syntax().text_range(),
@@ -815,6 +851,9 @@ impl DeclarationHead {
                     }
                 } else if let Some(pe) = ParenExpr::cast(items[0].clone()) {
                     classify_operator(pe)
+                } else if let Some(bracket) = BracketExpr::cast(items[0].clone()) {
+                    // Paren-free bracket pair declaration: ⟦ x ⟧: body
+                    classify_bracket_direct(bracket, self.syntax().text_range())
                 } else {
                     malformed()
                 }
