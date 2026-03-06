@@ -9,6 +9,7 @@ pub mod csv;
 pub mod edn;
 pub mod error;
 pub mod jsonl;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod stream;
 pub mod text;
 pub mod toml;
@@ -44,8 +45,15 @@ pub fn read_to_core<'smap>(
 }
 
 /// Returns true if the format is a streaming format.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn is_stream_format(format: &str) -> bool {
     matches!(format, "jsonl-stream" | "csv-stream" | "text-stream")
+}
+
+/// Streaming imports are not supported on WASM.
+#[cfg(target_arch = "wasm32")]
+pub fn is_stream_format(_format: &str) -> bool {
+    false
 }
 
 /// Create a streaming import by registering a producer and returning
@@ -53,6 +61,7 @@ pub fn is_stream_format(format: &str) -> bool {
 ///
 /// The `path` must be a resolved filesystem path (or "-" for stdin
 /// with text-stream).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn create_stream_import(format: &str, path: &str) -> Result<RcExpr, SourceError> {
     use crate::core::expr::acore;
     use crate::eval::stg::stream::register_stream;

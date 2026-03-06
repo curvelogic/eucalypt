@@ -119,7 +119,21 @@ impl HeapNavigator<'_> {
             scoped_code = self.view.scoped(closure.code());
         }
 
-        Err(ExecutionError::NotValue(Smid::default(), "".to_string()))
+        let description = match &*scoped_code {
+            HeapSyn::Cons { .. } => "a data constructor (e.g. block or list)",
+            HeapSyn::App { .. } => "a function application",
+            HeapSyn::Bif { .. } => "an intrinsic function call",
+            HeapSyn::Case { .. } => "a case expression",
+            HeapSyn::Let { .. } | HeapSyn::LetRec { .. } => "a let binding",
+            HeapSyn::Meta { .. } | HeapSyn::DeMeta { .. } => "a metadata expression",
+            HeapSyn::BlackHole => "an uninitialised value (possible cycle)",
+            HeapSyn::Ann { .. } => "an annotated expression",
+            HeapSyn::Atom { .. } => "an atom",
+        };
+        Err(ExecutionError::NotValue(
+            Smid::default(),
+            description.to_string(),
+        ))
     }
 
     pub fn env_trace(&self) -> Vec<Smid> {
@@ -141,6 +155,78 @@ impl HeapNavigator<'_> {
     }
 }
 
+/// Classification of data constructor arg patterns for shared-env optimisation.
+///
+/// Used by `env_from_data_args` to determine whether the new environment frame
+/// can share backing storage with the constructor's environment frame, preserving
+/// thunk memoisation across multiple traversals of the same structure.
+enum ArgPattern {
+    /// All args map to physical slots `0, 1, ..., n-1` (after composing with the
+    /// constructor env's remap if any) and `n == backing_len` — identity physical
+    /// mapping, shares full backing with no remap overhead.
+    SequentialFromZero(usize),
+    /// All args are `L(_)` indices within the constructor's top frame, up to 4 args.
+    /// Shares the full backing array and uses a physical remap table for
+    /// logical→physical translation.
+    Remapped { remap: [u8; 4], len: usize },
+    /// Contains `Ref::V` or `Ref::G` refs, has more than 4 args, or a logical index
+    /// exceeds the constructor's top frame — must copy into fresh storage.
+    RequiresCopy,
+}
+
+/// Classify a data constructor's arg slice for the shared-env optimisation.
+///
+/// Computes the *physical* remap by composing each `L(i)` arg with the
+/// constructor frame's own remap (if any).  Then checks:
+///
+/// - If the physical slots are `0, 1, ..., n-1` and `n == backing_len` → `SequentialFromZero`.
+/// - If all args are `L(idx)` within the top frame and `len <= 4` → `Remapped`.
+/// - Otherwise → `RequiresCopy`.
+///
+/// The `backing_len` parameter is the physical slot count of the constructor's top
+/// frame.  `logical_len` is its exposed (logical) slot count.  They differ when the
+/// constructor frame itself has a remap table.
+fn classify_args(
+    args: &[Ref],
+    logical_len: usize,
+    backing_len: usize,
+    env_physical_index: impl Fn(usize) -> usize,
+) -> ArgPattern {
+    if args.len() > 4 {
+        return ArgPattern::RequiresCopy;
+    }
+
+    let mut phys_remap = [0u8; 4];
+    let mut is_identity = true;
+
+    for (j, r) in args.iter().enumerate() {
+        match r {
+            Ref::L(idx) if *idx < logical_len => {
+                let phys = env_physical_index(*idx);
+                if phys > u8::MAX as usize {
+                    // Physical index doesn't fit in the u8 remap table —
+                    // fall back to copying for correctness.
+                    return ArgPattern::RequiresCopy;
+                }
+                phys_remap[j] = phys as u8;
+                if phys != j {
+                    is_identity = false;
+                }
+            }
+            _ => return ArgPattern::RequiresCopy,
+        }
+    }
+
+    if is_identity && args.len() == backing_len {
+        ArgPattern::SequentialFromZero(args.len())
+    } else {
+        ArgPattern::Remapped {
+            remap: phys_remap,
+            len: args.len(),
+        }
+    }
+}
+
 /// The state of the machine (stack / closure etc.)
 pub struct MachineState {
     /// Root (empty) environment
@@ -149,8 +235,8 @@ pub struct MachineState {
     closure: SynClosure,
     /// Globals (primarily STG wrappers for intrinsics)
     globals: RefPtr<EnvFrame>,
-    /// Stack of continuations (outside heap)
-    stack: Vec<RefPtr<Continuation>>,
+    /// Stack of continuations (stored inline, not on the eucalypt heap)
+    stack: Vec<Continuation>,
     /// Termination flag. Set when machine has terminated
     terminated: bool,
     /// Annotation to paint on any environments we create
@@ -159,11 +245,12 @@ pub struct MachineState {
     rcache: LruCache<String, Regex>,
     /// Interned symbol pool for fast symbol comparison
     symbol_pool: SymbolPool,
-    /// Suppress the next Update continuation push. Set when a case
-    /// branch directly enters a local reference — the thunk is
-    /// one-shot and doesn't benefit from memoisation. This prevents
-    /// Update continuations accumulating during tail recursion
-    /// through conditionals.
+    /// When set, suppress the next Update continuation push.
+    ///
+    /// Set by `return_data` when processing a Branch with
+    /// `suppress_update=true` and a branch body that is a bare local
+    /// atom. Prevents O(N) Update accumulation in tail-recursive
+    /// conditional loops such as countdown(n) = if(n=0, 0, countdown(n-1)).
     suppress_next_update: bool,
 }
 
@@ -198,9 +285,8 @@ impl MachineState {
     }
 
     /// Push a new continuation onto the stack
-    fn push(&mut self, view: MutatorHeapView, cont: Continuation) -> Result<(), ExecutionError> {
-        let ptr = view.alloc(cont)?.as_ptr();
-        self.stack.push(ptr);
+    fn push(&mut self, _view: MutatorHeapView, cont: Continuation) -> Result<(), ExecutionError> {
+        self.stack.push(cont);
         Ok(())
     }
 
@@ -213,11 +299,6 @@ impl MachineState {
         intrinsics: &[&'guard dyn StgIntrinsic],
         metrics: &mut Metrics,
     ) -> Result<(), ExecutionError> {
-        // Consume the suppress-update flag (set by case branch
-        // resolution to avoid Update accumulation in tail recursion)
-        let suppress_update = self.suppress_next_update;
-        self.suppress_next_update = false;
-
         // Load "op code"
         let code = (*view.scoped(self.closure.code())).clone();
         let environment = self.closure.env();
@@ -232,11 +313,29 @@ impl MachineState {
 
         match code {
             HeapSyn::Atom { evaluand } => {
+                // Consume suppress_next_update flag set by return_data
+                // when processing a suppress_update Branch continuation.
+                let suppress_update = std::mem::replace(&mut self.suppress_next_update, false);
                 match evaluand {
                     Ref::L(i) => {
                         self.closure = self.nav(view).get(i)?;
-                        let updateable = self.closure.update();
-                        if updateable && !suppress_update {
+                        let is_thunk = self.closure.update();
+                        let updateable = is_thunk && !suppress_update;
+                        // When suppress_update is active but the loaded closure is
+                        // not itself a thunk (e.g. a synthetic value-Atom closure
+                        // created by create_arg_array), propagate the flag to the
+                        // next Atom step so the full indirection chain is covered.
+                        //
+                        // This handles the two-level case that arises when IF args
+                        // are passed via App (not inlined): the Branch body is
+                        // Atom{L(i)} in IF's arg env → value closure → Atom{L(j)}
+                        // in the caller's let env → actual thunk.  Without
+                        // propagation, only the first hop is suppressed and the
+                        // second hop pushes an unwanted Update continuation.
+                        if suppress_update && !is_thunk {
+                            self.suppress_next_update = true;
+                        }
+                        if updateable {
                             // Overwrite the env slot with a BlackHole
                             // closure to catch cyclic thunk re-entry.
                             // The Update continuation will replace it
@@ -268,6 +367,7 @@ impl MachineState {
                 min_tag,
                 branch_table,
                 fallback,
+                suppress_update: case_suppress,
             } => {
                 self.push(
                     view,
@@ -277,6 +377,7 @@ impl MachineState {
                         fallback,
                         environment,
                         annotation: self.annotation,
+                        suppress_update: case_suppress,
                     },
                 )?;
                 self.closure = SynClosure::new(scrutinee, environment);
@@ -347,7 +448,7 @@ impl MachineState {
                 )?;
                 self.closure = SynClosure::new(scrutinee, environment);
             }
-            HeapSyn::BlackHole => return Err(ExecutionError::BlackHole),
+            HeapSyn::BlackHole => return Err(ExecutionError::BlackHole(self.annotation)),
         }
 
         Ok(())
@@ -372,9 +473,7 @@ impl MachineState {
         meta: &Ref,
         body: &Ref,
     ) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::DeMeta {
                     handler,
@@ -396,9 +495,9 @@ impl MachineState {
                 Continuation::Update { environment, index } => {
                     self.update(view, environment, index)?;
                 }
-                _ => {
+                other => {
                     self.closure = self.nav(view).resolve(body)?;
-                    self.stack.push(cont);
+                    self.stack.push(other);
                 }
             }
         } else {
@@ -409,15 +508,17 @@ impl MachineState {
         Ok(())
     }
 
-    /// Return a native value into continuation or terminate
+    /// Return a native value into continuation or terminate.
+    ///
+    /// The current closure already wraps the native in an Atom on the
+    /// heap, so we reuse that closure when building the env frame for
+    /// Branch/DeMeta fallbacks instead of allocating a fresh Atom.
     fn return_native(
         &mut self,
         view: MutatorHeapView<'_>,
         value: &Native,
     ) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::Branch {
                     fallback,
@@ -426,16 +527,18 @@ impl MachineState {
                 } => {
                     // case fallbacks can handle natives
                     if let Some(fb) = fallback {
+                        // Reuse the existing closure (already an Atom
+                        // wrapping the native value) instead of allocating
+                        // a new HeapSyn::Atom via from_args.
                         self.closure = SynClosure::new(
                             fb,
-                            view.from_args(
-                                &[Ref::vref(value.clone())],
-                                environment,
-                                self.annotation,
-                            )?,
+                            view.from_closure(self.closure.clone(), environment, self.annotation)?,
                         );
                     } else {
-                        return Err(ExecutionError::NoBranchForNative);
+                        return Err(ExecutionError::NoBranchForNative(
+                            self.annotation,
+                            value.type_description().to_string(),
+                        ));
                     }
                 }
                 Continuation::Update { environment, index } => {
@@ -452,10 +555,10 @@ impl MachineState {
                     environment,
                     ..
                 } => {
-                    // demeta or_else can accept natives
+                    // Reuse existing Atom closure as above
                     self.closure = SynClosure::new(
                         or_else,
-                        view.from_args(&[Ref::vref(value.clone())], environment, self.annotation)?,
+                        view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
             }
@@ -464,6 +567,117 @@ impl MachineState {
         }
 
         Ok(())
+    }
+
+    /// Build an env frame from data constructor args, sharing backing
+    /// storage where possible to preserve thunk memoisation.
+    ///
+    /// When all args are `Ref::L` references whose physical indices all
+    /// fall within the top frame of the constructor's environment, the new
+    /// frame shares that frame's backing `Array` rather than copying
+    /// closures into fresh storage.  Thunk updates (via the `Update`
+    /// continuation) write back to the shared storage and are visible
+    /// through all frames that share it.
+    ///
+    /// **GC safety**: the shared array always has `length == backing_len`
+    /// (the constructor frame's full physical binding count) so the GC
+    /// scans all live slots regardless of which frame it encounters first.
+    /// For identity-mapped frames the new frame exposes all slots directly.
+    /// For remapped frames the remap table restricts *logical* access to
+    /// the relevant indices without affecting the GC's view of the full
+    /// physical backing.
+    ///
+    /// Falls back to `env_from_data_args_copy` when:
+    /// - args contain `Ref::V` or `Ref::G` references
+    /// - any arg's logical index reaches beyond the constructor's top frame
+    ///   (it chains into a deeper frame — sharing across frames is unsupported)
+    /// - more than 4 args (remap table capacity)
+    #[inline]
+    fn env_from_data_args(
+        &self,
+        view: MutatorHeapView<'_>,
+        args: &[Ref],
+        next: RefPtr<EnvFrame>,
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
+        let constructor_env = view.scoped(self.closure.env());
+        let logical_len = (*constructor_env).logical_len();
+        let backing_len = (*constructor_env).backing_len();
+
+        match classify_args(args, logical_len, backing_len, |i| {
+            (*constructor_env).physical_index(i)
+        }) {
+            ArgPattern::SequentialFromZero(n) => {
+                // Physical slots are 0, 1, ..., n-1 and n == backing_len — identity
+                // mapping covering the full physical backing.  Share the full backing
+                // so the GC traces every live slot regardless of which frame it sees
+                // first.  Since args.len() == backing_len the new frame's logical_len
+                // also equals backing_len, exposing all slots before chaining to next.
+                let shared = (*constructor_env).shared_bindings_full();
+                debug_assert_eq!(n, backing_len);
+                Ok(view
+                    .alloc(EnvFrame::new(shared, self.annotation, Some(next)))?
+                    .as_ptr())
+            }
+            ArgPattern::Remapped { remap, len } => {
+                // Non-sequential, offset, or fewer args than backing_len.  Share the
+                // full physical backing for GC correctness and store the physical remap
+                // so the branch body's L(i) refs resolve to the correct physical slots.
+                //
+                // The remap table holds *physical* slot indices (already composed with
+                // any remap in the constructor env), so no further indirection is needed.
+                //
+                // GC safety: shared array length == backing_len so all live slots are
+                // traced regardless of which frame the collector encounters first.
+                let shared = (*constructor_env).shared_bindings_full();
+                Ok(view
+                    .alloc(EnvFrame::new_remapped(
+                        shared,
+                        &remap[..len],
+                        self.annotation,
+                        Some(next),
+                    ))?
+                    .as_ptr())
+            }
+            ArgPattern::RequiresCopy => self.env_from_data_args_copy(view, args, next),
+        }
+    }
+
+    /// Fallback: build an env frame by copying closures from the constructor env.
+    ///
+    /// Used when the arg pattern cannot use shared backing: non-local refs
+    /// (`Ref::V` or `Ref::G`), more than 4 args, or physical indices that reach
+    /// beyond the constructor's top frame.  This is the original behaviour prior
+    /// to the shared-env optimisation.
+    fn env_from_data_args_copy(
+        &self,
+        view: MutatorHeapView<'_>,
+        args: &[Ref],
+        next: RefPtr<EnvFrame>,
+    ) -> Result<RefPtr<EnvFrame>, ExecutionError> {
+        let local_env = view.scoped(self.closure.env());
+        let global_env = view.scoped(self.globals);
+
+        let mut array = Array::with_capacity(&view, args.len());
+        for r in args {
+            let closure = match r {
+                Ref::L(index) => (*local_env)
+                    .get(&view, *index)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(*index))?,
+                Ref::G(index) => (*global_env)
+                    .get(&view, *index)
+                    .ok_or(ExecutionError::BadGlobalIndex(*index))?,
+                Ref::V(_) => SynClosure::new(
+                    view.alloc(HeapSyn::Atom {
+                        evaluand: r.clone(),
+                    })?
+                    .as_ptr(),
+                    self.closure.env(),
+                ),
+            };
+            array.push(&view, closure);
+        }
+
+        view.from_saturation(array, next, self.annotation)
     }
 
     /// Return data into an appropriate branch handler
@@ -476,9 +690,7 @@ impl MachineState {
         tag: Tag,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::Branch {
                     min_tag,
@@ -486,38 +698,26 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    suppress_update,
                 } => {
                     if let Some(body) = match_tag(tag, min_tag, branch_table.as_slice()) {
                         let env = if args.is_empty() {
                             // 0-arity constructor: reuse parent env directly
                             environment
                         } else {
-                            let closures = args
-                                .iter()
-                                .map(|r| self.nav(view).resolve(r))
-                                .collect::<Result<Vec<SynClosure>, ExecutionError>>()?;
-                            let len = closures.len();
-                            view.from_closures(
-                                closures.into_iter(),
-                                len,
-                                environment,
-                                self.annotation,
-                            )?
+                            self.env_from_data_args(view, args, environment)?
                         };
-                        // When a case branch directly enters a local
-                        // reference, suppress the Update on the next
-                        // Atom enter. Case branches are one-shot so
-                        // the entered thunk need not be memoised.
-                        // This prevents Update continuations from
-                        // accumulating during tail recursion through
-                        // conditionals.
-                        if matches!(
-                            &*view.scoped(body),
-                            HeapSyn::Atom {
-                                evaluand: Ref::L(_)
+                        // When suppress_update is set on this Branch and the
+                        // branch body is a bare local atom, suppress the next
+                        // Update push. This prevents O(N) Update accumulation
+                        // in tail-recursive conditionals (e.g. IF branches).
+                        if suppress_update {
+                            if let HeapSyn::Atom {
+                                evaluand: Ref::L(_),
+                            } = &*view.scoped(body)
+                            {
+                                self.suppress_next_update = true;
                             }
-                        ) {
-                            self.suppress_next_update = true;
                         }
                         self.closure = SynClosure::new(body, env);
                     } else if let Some(body) = fallback {
@@ -589,9 +789,7 @@ impl MachineState {
 
     /// Return function to either apply to args or default case branch
     fn return_fun(&mut self, view: MutatorHeapView) -> Result<(), ExecutionError> {
-        if let Some(cont) = self.stack.pop() {
-            let continuation = (*(view.scoped(cont))).clone();
-
+        if let Some(continuation) = self.stack.pop() {
             match continuation {
                 Continuation::ApplyTo { args, annotation } => {
                     let excess = args.len() as isize - self.closure.arity() as isize;
@@ -623,6 +821,7 @@ impl MachineState {
                     fallback,
                     environment,
                     annotation,
+                    ..
                 } => {
                     // In a statically typed STG machine, functions
                     // never enter case continuations. With dynamic
@@ -675,8 +874,7 @@ impl MachineState {
     /// annotation, to attribute errors to their enclosing call context.
     fn nearest_stack_annotation(&self, view: MutatorHeapView) -> Smid {
         for cont in self.stack.iter().rev() {
-            let c = view.scoped(*cont);
-            let smid = match &*c {
+            let smid = match cont {
                 Continuation::Branch { annotation, .. }
                 | Continuation::ApplyTo { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
@@ -703,15 +901,14 @@ impl MachineState {
     ) -> impl Iterator<Item = Smid> + 'a {
         let mut prev = Smid::default();
         self.stack.iter().rev().filter_map(move |cont| {
-            let c = view.scoped(*cont);
-            let smid = match &*c {
-                Continuation::Branch { annotation, .. } => *annotation,
+            let smid = match cont {
+                Continuation::Branch { annotation, .. }
+                | Continuation::ApplyTo { annotation, .. } => *annotation,
                 Continuation::Update { environment, .. }
                 | Continuation::DeMeta { environment, .. } => {
                     let cont_env = view.scoped(*environment);
                     cont_env.annotation()
                 }
-                Continuation::ApplyTo { annotation, .. } => *annotation,
             };
 
             if smid != Smid::default() && smid != prev {
@@ -799,10 +996,11 @@ impl GcScannable for MachineState {
 
         out.push(ScanPtr::new(scope, &self.closure));
 
+        // Continuations are stored inline in the Vec (off the eucalypt heap).
+        // Scan their internal heap pointers directly instead of marking the
+        // continuations themselves as heap objects.
         for cont in &self.stack {
-            if marker.mark(*cont) {
-                out.push(ScanPtr::from_non_null(scope, *cont));
-            }
+            cont.scan(scope, marker, out);
         }
     }
 
@@ -814,10 +1012,9 @@ impl GcScannable for MachineState {
             self.globals = new;
         }
         self.closure.scan_and_update(heap);
+        // Update forwarded pointers within each continuation's internal fields.
         for cont in &mut self.stack {
-            if let Some(new) = heap.forwarded_to(*cont) {
-                *cont = new;
-            }
+            cont.scan_and_update(heap);
         }
     }
 }
@@ -961,17 +1158,32 @@ impl<'a> Machine<'a> {
         let (state, view, emitter, metrics, settings, intrinsics) = self.facilities();
 
         if settings.trace_steps {
-            let stack = state
-                .stack
-                .iter()
-                .rev()
-                .map(|p| (*(view.scoped(*p))).to_string())
-                .format(":");
+            let stack = state.stack.iter().rev().map(|c| c.to_string()).format(":");
             eprintln!("M ⟪{}⟫ <{}>", ScopeAndClosure(&view, &state.closure), stack);
         }
 
         metrics.tick();
-        metrics.stack(state.stack.len());
+        let stack_len = state.stack.len();
+        let prev_max = metrics.max_stack();
+        metrics.stack(stack_len);
+        // Diagnostic: dump stack composition when a new max is reached
+        if std::env::var("EU_STACK_DIAG").is_ok() && stack_len > prev_max && stack_len > 5 {
+            let counts = state.stack.iter().fold(
+                (0usize, 0usize, 0usize, 0usize),
+                |(branch, update, apply, demeta), cont| match cont {
+                    super::cont::Continuation::Branch { .. } => (branch + 1, update, apply, demeta),
+                    super::cont::Continuation::Update { .. } => (branch, update + 1, apply, demeta),
+                    super::cont::Continuation::ApplyTo { .. } => {
+                        (branch, update, apply + 1, demeta)
+                    }
+                    super::cont::Continuation::DeMeta { .. } => (branch, update, apply, demeta + 1),
+                },
+            );
+            eprintln!(
+                "STACK_MAX depth={} Branch={} Update={} ApplyTo={} DeMeta={}",
+                stack_len, counts.0, counts.1, counts.2, counts.3
+            );
+        }
 
         state
             .handle_instruction(view, emitter, intrinsics, metrics)

@@ -228,10 +228,22 @@ pub mod tests {
     use serde_json::Number;
 
     use super::*;
-    use crate::eval::stg::{boolean::And, eq::Eq, panic::Panic, runtime::Runtime, testing};
+    use crate::eval::stg::{
+        boolean::{And, False, True},
+        eq::Eq,
+        panic::Panic,
+        runtime::Runtime,
+        testing,
+    };
 
     pub fn runtime() -> Box<dyn Runtime> {
-        testing::runtime(vec![Box::new(Eq), Box::new(And), Box::new(Panic)])
+        testing::runtime(vec![
+            Box::new(Eq),
+            Box::new(And),
+            Box::new(Panic),
+            Box::new(True),
+            Box::new(False),
+        ])
     }
 
     #[test]

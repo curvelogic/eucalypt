@@ -54,6 +54,11 @@ interpolation.
 |------|--------|-------|
 | Property | `name: expr` | Defines a named value, rendered in output |
 | Function | `f(x, y): expr` | Not rendered in output |
+| List destructure | `f([a, b]): expr` | Single param, list destructured |
+| Block destructure | `f({x y}): expr` | Single param, block destructured |
+| Cons destructure | `f([h : t]): expr` | Single param, head/tail split |
+| Juxtaposed list | `f[a, b]: expr` | Sugar for `f([a, b]): expr` |
+| Juxtaposed block | `f{x y}: expr` | Sugar for `f({x y}): expr` |
 | Binary operator | `(l op r): expr` | Symbolic name required |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
@@ -200,6 +205,15 @@ calculations: { result: advanced-calc(10) }
 { import: "rows=csv-stream@big.csv" }
 { import: "lines=text-stream@log.txt" }
 ```
+
+**Import resolution order**: relative paths are resolved by searching:
+1. The directory containing the importing `.eu` file (source-relative)
+2. The directories on the lib path (`-L` flags and CWD)
+
+This means a file at `lib/utils.eu` that imports `"helpers/misc.eu"` will find
+`lib/helpers/misc.eu` without needing `-L lib` on the command line. This works
+transitively, so `lib/helpers/misc.eu` can in turn import `"sub/detail.eu"` and
+it will resolve as `lib/helpers/sub/detail.eu`.
 
 ### 1.10 Quoted Identifiers
 
@@ -836,17 +850,34 @@ All functions verified against `lib/prelude.eu`:
 
 ---
 
-## 8. Assertion Operators
+## 8. Assertion and Test Operators
 
-For testing and debugging. All at precedence 5 (`:meta`).
+All at precedence 5 (`:meta`).
+
+**Test expectations** (return booleans, for use in test harnesses):
 
 | Operator | Description |
 |----------|-------------|
-| `e //=> v` | Assert `e` equals `v`, panic if not, return `e` |
-| `e //= v` | Check `e` equals `v`, return boolean |
-| `e //!` | Assert `e` is `true` |
-| `e //!!` | Assert `e` is `false` |
-| `e //=? f` | Assert `f(e)` is `true`, return `e` |
-| `e //!? f` | Assert `f(e)` is `false`, return `e` |
+| `e //= v` | Test `e` equals `v`, return boolean |
+| `e //=? f` | Test `f(e)` is `true`, return boolean |
+
+**Assertions** (panic on failure, return `e` on success):
+
+| Operator | Description |
+|----------|-------------|
+| `e //=> v` | Assert `e` equals `v`, panic with expected/actual on failure |
+| `e //!` | Assert `e` is `true`, panic on failure |
+
+**Deprecated** (use complement with positive forms instead):
+
+| Operator | Replacement |
+|----------|-------------|
+| `e //!? f` | `e //=? complement(f)` |
+| `e //!!` | Removed — negate the condition instead |
+
+**Metadata operators:**
+
+| Operator | Description |
+|----------|-------------|
 | `e // m` | Attach metadata block `m` to value `e` |
 | `e //<< m` | Merge `m` into existing metadata of `e` |

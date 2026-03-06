@@ -28,9 +28,9 @@ Running time: ~2s (part 1), ~3 min (part 2)
 
 ` "Parse 'name: d1 d2 ...' into [name, [d1, d2, ...]]."
 parse-line(line): {
-  parts: str.split(line, ": ")
+  parts: line str.split-on(": ")
   name: parts first
-  dests: str.split(parts second, " ")
+  dests: parts second str.split-on(" ")
 }.[name, dests]
 
 ` "Parse input into a block mapping sym(name) to [dest_strs] for O(log n) lookup."
@@ -53,10 +53,8 @@ State threaded as [order_list, visited_set] using set for O(log n) membership.
 Parameters ordered so partial application dfs-topo(g) matches foldl(acc, elem).
 NB: graph.topo-sort works on numeric adjacency lists; converting to/from
 string-keyed blocks is slower than processing directly."
-dfs-topo(g, state, node): {
-  order: state first
-  visited: state second
-}.(set.contains?(node, visited) then(state, {
+dfs-topo(g, [order, visited], node): {
+}.(set.contains?(node, visited) then([order, visited], {
     new-vis: visited set.add(node)
     after: foldl(dfs-topo(g), [order, new-vis], dests-of(g, node))
   }.[cons(node, after first), after second]))

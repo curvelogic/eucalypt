@@ -177,9 +177,9 @@ pub struct RunArgs {
     #[arg(long = "error-format", default_value = "human")]
     pub error_format: ErrorFormat,
 
-    /// Limit managed heap to SIZE MiB
-    #[arg(long = "heap-limit-mib")]
-    pub heap_limit_mib: Option<usize>,
+    /// Limit managed heap to SIZE MiB (default: 32768, i.e. 32 GiB; use 0 for unbounded)
+    #[arg(long = "heap-limit-mib", default_value = "32768")]
+    pub heap_limit_mib: usize,
 
     /// Files to process
     #[arg(value_name = "FILES")]
@@ -539,8 +539,12 @@ impl From<EucalyptCli> for EucalyptOptions {
         let lsp = matches!(cli.command, Some(Commands::Lsp));
 
         // Extract heap limit and no-dce from Run command
+        // 0 means unbounded; any other value is the limit in MiB
         let heap_limit_mib = match &cli.command {
-            Some(Commands::Run(run_args)) => run_args.heap_limit_mib,
+            Some(Commands::Run(run_args)) => match run_args.heap_limit_mib {
+                0 => None,
+                n => Some(n),
+            },
             _ => None,
         };
 

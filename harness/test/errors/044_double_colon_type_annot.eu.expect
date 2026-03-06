@@ -1,0 +1,2 @@
+exit: 1
+stderr: "'::' is not valid syntax in eucalypt"

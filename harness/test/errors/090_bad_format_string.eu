@@ -1,0 +1,2 @@
+# Error: str.fmt called with a full template instead of a bare %-specifier
+x: str.fmt(42, "Value is %d")

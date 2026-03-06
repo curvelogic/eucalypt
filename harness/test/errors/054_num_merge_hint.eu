@@ -1,0 +1,6 @@
+# Error test: merge a number with a block (common mistake: "x str" to convert number to string)
+# Users from other languages may write "x str" expecting to convert x to a string,
+# but "str" is a block of string functions, not a conversion function.
+x: 42
+result: x str
+RESULT: result

@@ -1,2 +1,2 @@
 exit: 1
-stderr: "division by zero"
+stderr: "division by zero in floor division"

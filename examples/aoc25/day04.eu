@@ -15,6 +15,7 @@ Notable eucalypt techniques:
 - `zip-with` for element-wise grid arithmetic
 - padding with zero rows/columns for uniform edge handling
 - recursive grid simulation for iterative removal
+- juxtaposed list-destructuring syntax `remove-step[grid, _]:`
 
 Running time: ~3s (part 1), ~3.5 min (part 2)
 "
@@ -57,8 +58,7 @@ parse(data): data map(to-bits)
 solve(grid): survivals(grid) map(sum) sum
 
 ` "One removal step: returns [new-grid, count-removed]."
-remove-step(state): {
-  grid: state first
+remove-step[grid, _]: {
   removed: survivals(grid)
   n: removed map(sum) sum
   new-grid: zip-with(zip-with(-), grid, removed)

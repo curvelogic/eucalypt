@@ -1,8 +1,8 @@
 //! __STREAM_NEXT intrinsic implementation
 //!
-//! Eagerly drains a stream producer and builds a complete list,
-//! avoiding thunk-update issues with lazy cons cells in the STG
-//! machine.
+//! Produces a lazy cons cell for each stream element, allowing the
+//! STG machine's Update mechanism to memoise the result of each
+//! tail thunk.
 
 use crate::eval::{
     emit::Emitter,
@@ -19,15 +19,19 @@ use crate::eval::{
     },
 };
 
-use super::{stream::stream_drain, support::num_arg, tags::DataConstructor};
+use super::{stream::stream_next, support::num_arg, tags::DataConstructor};
 
 /// STREAM_NEXT(handle)
 ///
-/// Eagerly drains all remaining values from the stream producer
-/// identified by the numeric handle, then builds and returns the
-/// complete list. This avoids the STG thunk-update issue where
-/// lazy tail thunks in `Let` bindings are not memoised across
-/// multiple traversals of the same cons cell.
+/// Advances the stream producer by one element. If the stream is
+/// exhausted, returns Nil. Otherwise, builds a lazy cons cell whose
+/// head is the current value and whose tail is an updatable thunk
+/// that calls STREAM_NEXT(handle) again when forced.
+///
+/// The `update=true` flag on the tail thunk ensures the STG
+/// machine's Update continuation memoises the result, so repeated
+/// traversals of the same cons cell share work and the producer is
+/// advanced at most once per list position.
 pub struct StreamNext;
 
 impl StgIntrinsic for StreamNext {
@@ -54,44 +58,45 @@ impl StgIntrinsic for StreamNext {
             ExecutionError::Panic("stream handle must be a positive integer".to_string())
         })? as u32;
 
-        // Eagerly drain all values from the stream producer
-        let values = stream_drain(handle);
+        // Advance the stream by one element
+        let value_stg = match stream_next(handle) {
+            Some(v) => v,
+            None => {
+                // Stream exhausted — return Nil
+                let nil = view.nil()?;
+                return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
+            }
+        };
 
-        if values.is_empty() {
-            let nil = view.nil()?;
-            return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
-        }
-
-        // Build a complete list in reverse: start with Nil, then
-        // prepend each element as a Cons cell.
+        // Build a lazy cons cell:
         //
-        // Layout: LetRec([nil, v_n, cons_n, ..., v_0, cons_0], Atom(L(last)))
-        let mut bindings: Vec<LambdaForm> = Vec::with_capacity(1 + values.len() * 2);
+        //   Let([value, tail_thunk],
+        //       Cons(ListCons, [L(0), L(1)]))
+        //
+        // - Binding 0 (value): the current element, as a non-updatable value
+        // - Binding 1 (tail_thunk): an updatable thunk (arity=0, update=true)
+        //   whose body calls STREAM_NEXT(handle) again — memoised by the STG
+        //   Update continuation so the producer advances at most once per position
+        let value_ptr = load(&view, machine.symbol_pool_mut(), value_stg)?;
 
-        // Binding 0: Nil
-        let nil_ptr = view.nil()?.as_ptr();
-        bindings.push(LambdaForm::value(nil_ptr));
+        let handle_ref = Ref::num(handle as u64);
+        let bif_index = self.index() as u8;
+        let tail_body = view.app_bif(bif_index, Array::from_slice(&view, &[handle_ref]))?;
 
-        // Build cons cells from last to first
-        for value_stg in values.into_iter().rev() {
-            let value_ptr = load(&view, machine.symbol_pool_mut(), value_stg)?;
-            bindings.push(LambdaForm::value(value_ptr));
-            let val_idx = bindings.len() - 1;
-            let prev_idx = val_idx - 1; // previous cons cell (or nil)
+        let bindings = Array::from_slice(
+            &view,
+            &[
+                LambdaForm::value(value_ptr),
+                LambdaForm::thunk(tail_body.as_ptr()),
+            ],
+        );
 
-            let cons_node = view
-                .data(
-                    DataConstructor::ListCons.tag(),
-                    Array::from_slice(&view, &[Ref::L(val_idx), Ref::L(prev_idx)]),
-                )?
-                .as_ptr();
-            bindings.push(LambdaForm::value(cons_node));
-        }
+        let cons_body = view.data(
+            DataConstructor::ListCons.tag(),
+            Array::from_slice(&view, &[Ref::L(0), Ref::L(1)]),
+        )?;
 
-        // The last binding is the outermost cons cell
-        let list_idx = bindings.len() - 1;
-        let body = view.atom(Ref::L(list_idx))?;
-        let result = view.letrec(Array::from_slice(&view, &bindings), body)?;
+        let result = view.let_(bindings, cons_body)?;
 
         machine.set_closure(SynClosure::new(result.as_ptr(), machine.root_env()))
     }

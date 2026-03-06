@@ -1,0 +1,3 @@
+# Mistake: applying a list operation (map) to a non-list value
+x: 42
+result: x map((+ 1))

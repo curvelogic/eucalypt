@@ -25,7 +25,7 @@
 //! - Header is always at `object_ptr - size_of::<AllocHeader>()`
 //! - Allocations are properly aligned for their types
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
@@ -1028,6 +1028,8 @@ pub struct Heap {
     emergency_state: UnsafeCell<EmergencyState>,
     /// GC performance metrics and telemetry
     gc_metrics: UnsafeCell<GCMetrics>,
+    /// Pin counts by block base address.
+    pin_counts: UnsafeCell<HashMap<usize, usize>>,
 }
 
 #[cfg(test)]
@@ -1492,6 +1494,7 @@ impl Heap {
             mark_state: AtomicBool::new(false),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
+            pin_counts: UnsafeCell::new(HashMap::new()),
         }
     }
 
@@ -1504,6 +1507,7 @@ impl Heap {
             mark_state: AtomicBool::new(false),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
+            pin_counts: UnsafeCell::new(HashMap::new()),
         }
     }
 
@@ -1526,6 +1530,36 @@ impl Heap {
     /// Flip the mark state for this heap (called after each collection)
     pub fn flip_mark_state(&self) {
         self.mark_state.fetch_xor(true, SeqCst);
+    }
+
+    /// Increment the pin count for the block containing `ptr`.
+    pub fn pin_block<T>(&self, ptr: NonNull<T>) {
+        let base = bump::block_base_of(ptr);
+        let pin_counts = unsafe { &mut *self.pin_counts.get() };
+        *pin_counts.entry(base).or_insert(0) += 1;
+    }
+
+    /// Decrement the pin count for the block at `base_address`.
+    pub fn unpin_block(&self, base_address: usize) {
+        let pin_counts = unsafe { &mut *self.pin_counts.get() };
+        if let Some(count) = pin_counts.get_mut(&base_address) {
+            *count -= 1;
+            if *count == 0 {
+                pin_counts.remove(&base_address);
+            }
+        }
+    }
+
+    /// Check whether a block is currently pinned.
+    pub fn is_block_pinned(&self, base_address: usize) -> bool {
+        let pin_counts = unsafe { &*self.pin_counts.get() };
+        pin_counts.contains_key(&base_address)
+    }
+
+    /// Check whether the block containing `ptr` is pinned.
+    pub fn is_ptr_in_pinned_block<T>(&self, ptr: NonNull<T>) -> bool {
+        let base = bump::block_base_of(ptr);
+        self.is_block_pinned(base)
     }
 
     /// Bump-allocate into the evacuation target block during collection.
@@ -1636,7 +1670,23 @@ impl Heap {
                 if fragmented_blocks.is_empty() {
                     CollectionStrategy::MarkInPlace
                 } else {
-                    CollectionStrategy::SelectiveEvacuation(fragmented_blocks)
+                    // Exclude pinned blocks from evacuation candidates
+                    let unpinned_candidates: Vec<usize> = fragmented_blocks
+                        .into_iter()
+                        .filter(|&idx| {
+                            let base = match idx {
+                                0 => heap_state.head.as_ref().map(|b| b.base_address()),
+                                1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
+                                n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
+                            };
+                            base.is_none_or(|addr| !self.is_block_pinned(addr))
+                        })
+                        .collect();
+                    if unpinned_candidates.is_empty() {
+                        CollectionStrategy::MarkInPlace
+                    } else {
+                        CollectionStrategy::SelectiveEvacuation(unpinned_candidates)
+                    }
                 }
             }
 
@@ -2346,7 +2396,7 @@ impl Heap {
 
     /// Mark an object as live
     pub fn mark_object<T>(&self, ptr: NonNull<T>) {
-        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
+        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != usize::MAX);
         let header: NonNull<AllocHeader> = self.get_header(ptr);
         let current_mark_state = self.mark_state();
         // SAFETY: Mutable access to header's mark bit during GC.
@@ -2359,7 +2409,7 @@ impl Heap {
 
     /// Unmark object
     pub fn unmark_object<T>(&self, ptr: NonNull<T>) {
-        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != 0xffffffffffffffff);
+        debug_assert!(ptr != NonNull::dangling() && ptr.as_ptr() as usize != usize::MAX);
         let header = self.get_header(ptr);
         let current_mark_state = self.mark_state();
         // SAFETY: Mutable access to header's mark bit during GC.
@@ -3118,5 +3168,32 @@ pub mod tests {
 
         // Should be capped at the limit
         assert_eq!(state.recycled_lobs.len(), 16);
+    }
+    #[test]
+    pub fn test_pin_and_unpin_block() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let ptr = view.atom(Ref::L(0)).unwrap().as_ptr();
+        let base = crate::eval::memory::bump::block_base_of(ptr);
+        assert!(!heap.is_block_pinned(base));
+        let guard = view.pin(ptr);
+        assert!(heap.is_block_pinned(base));
+        drop(guard);
+        assert!(!heap.is_block_pinned(base));
+    }
+
+    #[test]
+    pub fn test_pin_ref_counting() {
+        let heap = Heap::new();
+        let view = MutatorHeapView::new(&heap);
+        let ptr = view.atom(Ref::L(0)).unwrap().as_ptr();
+        let base = crate::eval::memory::bump::block_base_of(ptr);
+        let guard1 = view.pin(ptr);
+        let guard2 = view.pin(ptr);
+        assert!(heap.is_block_pinned(base));
+        drop(guard1);
+        assert!(heap.is_block_pinned(base));
+        drop(guard2);
+        assert!(!heap.is_block_pinned(base));
     }
 }

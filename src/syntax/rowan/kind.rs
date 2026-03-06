@@ -5,10 +5,12 @@
 #[repr(u16)]
 pub enum SyntaxKind {
     OPEN_BRACE,              // '{'
+    OPEN_BRACE_APPLY,        // '{' in application context (f{...})
     CLOSE_BRACE,             // '}
     BACKTICK,                // '`'`
     COLON,                   // ':'
     OPEN_SQUARE,             // '['
+    OPEN_SQUARE_APPLY,       // '[' in application context (f[...])
     CLOSE_SQUARE,            // ']'
     COMMA,                   // ','
     WHITESPACE,              // any unicode whitespace
@@ -104,6 +106,15 @@ pub enum SyntaxKind {
     /// ZDT (timestamp) string literal e.g. t"2023-01-15T10:30:00Z"
     T_STRING,
 
+    /// Open token of a Unicode bracket pair (idiot bracket expression)
+    BRACKET_OPEN,
+    /// Close token of a Unicode bracket pair (idiot bracket expression)
+    BRACKET_CLOSE,
+    /// A bracket expression using a Unicode bracket pair e.g. ⟦ x ⟧
+    BRACKET_EXPR,
+    /// A bracket block — bracket pair with declarations as content e.g. ⟦ a: x  b: y ⟧
+    BRACKET_BLOCK,
+
     /// Extraneous tokens tagging along for the ride
     ERROR_STOWAWAYS,
     /// Characters (brackets and quotes) reserved for future use
@@ -116,6 +127,7 @@ impl SyntaxKind {
     pub fn is_callable_terminal(&self) -> bool {
         *self == CLOSE_PAREN
             || *self == CLOSE_BRACE
+            || *self == CLOSE_SQUARE
             || *self == UNQUOTED_IDENTIFIER
             || *self == STRING_PATTERN_END
             || *self == C_STRING_PATTERN_END
@@ -142,7 +154,7 @@ impl SyntaxKind {
     }
 
     pub fn from_raw(raw: rowan::SyntaxKind) -> Self {
-        assert!(raw.0 <= SyntaxKind::ERROR_STOWAWAYS as u16);
+        assert!(raw.0 <= SyntaxKind::ERROR_RESERVED_CHAR as u16);
         unsafe { std::mem::transmute::<u16, SyntaxKind>(raw.0) }
     }
 }

@@ -1,0 +1,2 @@
+exit: 1
+stderr: "blocks.*cannot be used in arithmetic"

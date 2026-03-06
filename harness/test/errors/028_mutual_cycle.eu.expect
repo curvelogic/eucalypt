@@ -1,2 +1,2 @@
 exit: 1
-stderr: "unresolved free variable"
+stderr: "unresolved variable"

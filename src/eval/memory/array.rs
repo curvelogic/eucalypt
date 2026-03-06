@@ -271,6 +271,18 @@ impl<T: Sized + Clone> Array<T> {
         self.write(index, item);
     }
 
+    /// Clone sharing backing storage, with a different logical length.
+    ///
+    /// The physical capacity is unchanged; only the logical bound moves.
+    /// Both the original and the clone share the same backing memory, so
+    /// mutations through either are visible through the other.
+    pub fn clone_with_length(&self, n: usize) -> Self {
+        Array {
+            length: n.min(self.length),
+            data: self.data,
+        }
+    }
+
     /// As immutable slice
     pub fn as_slice(&self) -> &[T] {
         if let Some(ptr) = self.data.as_ptr() {

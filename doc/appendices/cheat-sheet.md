@@ -80,9 +80,47 @@ x: 42 # inline comment
 |------|--------|-------|
 | Property | `name: expr` | Defines a named value |
 | Function | `f(x, y): expr` | Named function with parameters |
+| Block pattern | `f({x y}): expr` | Destructures block argument fields |
+| Block rename | `f({x: a  y: b}): expr` | Destructures with renamed bindings |
+| List pattern | `f([a, b, c]): expr` | Destructures fixed-length list |
+| Cons pattern | `f([h : t]): expr` | Destructures head and tail of list |
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
+| Idiot bracket | `⟦ x ⟧: expr` | Unicode bracket pair functor |
+
+## Idiot Brackets
+
+Idiot brackets allow applicative functor lifting using Unicode bracket pairs.
+
+```eu,notest
+# Declare a bracket pair function
+⟦ x ⟧: my-functor(x)
+
+# Use the bracket pair in expressions
+result: ⟦ some-expression ⟧  # calls my-functor(some-expression)
+```
+
+Built-in bracket pairs: `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
+`【】`, `〔〕`, `〖〗`, `〘〙`, `〚〛`.
+
+## Monadic Blocks
+
+A bracket pair declared with an empty block `{}` as its parameter gains a monad
+spec.  A bracket block (declarations directly inside brackets) followed by `.expr`
+desugars as a bind chain (like `do`-notation).
+
+```eu,notest
+⟦{}⟧: { :monad bind: my-bind  return: my-return }
+
+# ⟦ a: ma  b: mb ⟧.return_expr
+# desugars to: my-bind(ma, (a): my-bind(mb, (b): my-return(return_expr)))
+result: ⟦ a: ma  b: mb ⟧.(a + b)
+```
+
+All declarations are bind steps whose names are in scope for later declarations
+and the return expression.  The return expression follows the closing bracket as
+`.name`, `.(expr)`, or `.[list]`.
 
 ## Metadata Annotations
 
@@ -167,6 +205,7 @@ From highest to lowest binding:
 | 85 | exp | right | `^`, `∘`, `;` | Power, composition |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
+| 55 | -- | right | `‖` | List cons (prepend element) |
 | 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |
@@ -299,6 +338,34 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `even?` / `odd?` | Parity predicates |
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceil` / `round` | Rounding |
+
+### Arrays (`arr` namespace)
+
+| Function | Description |
+|----------|-------------|
+| `arr.zeros(shape)` | Create array of zeros; `shape` is a list of integers |
+| `arr.fill(shape, val)` | Create array filled with `val` |
+| `arr.from-flat(shape, vals)` | Create array from flat list of numbers |
+| `arr.get(a, coords)` | Element at coordinate list `coords` |
+| `arr.set(a, coords, val)` | New array with element at `coords` set to `val` |
+| `arr.shape(a)` | Shape as list of integers |
+| `arr.rank(a)` | Number of dimensions |
+| `arr.length(a)` | Total number of elements |
+| `arr.to-list(a)` | Flat list of elements in row-major order |
+| `arr.array?(x)` / `is-array?(x)` | Is `x` an array? |
+| `arr.transpose(a)` | Reverse all axes |
+| `arr.reshape(a, shape)` | Reshape (total elements must match) |
+| `arr.slice(a, axis, idx)` | Slice along `axis` at `idx` (reduces rank by 1) |
+| `arr.add(a, b)` / `arr.sub` / `arr.mul` / `arr.div` | Element-wise arithmetic; `b` may be scalar |
+| `a !! coords` | Index operator; for arrays, `coords` is a list e.g. `[row, col]` |
+| `arr.indices(a)` | List of coordinate lists for every element (row-major) |
+| `arr.map(f, a)` | Apply `f` to each element; same shape |
+| `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element; same shape |
+| `arr.fold(f, init, a)` | Left-fold over all elements in row-major order |
+| `arr.neighbours(a, coords, offsets)` | Values at valid in-bounds neighbours given offset vectors |
+
+The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
+either operand is an array. Scalar broadcasting is supported.
 
 ### IO
 

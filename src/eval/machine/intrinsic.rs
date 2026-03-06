@@ -68,6 +68,15 @@ pub trait StgIntrinsic: Sync {
         true
     }
 
+    /// Argument indices that are single-use (entered at most once).
+    ///
+    /// Single-use args are compiled as `value` lambda forms rather
+    /// than thunks, preventing `Update` continuations from
+    /// accumulating on the stack during tail recursion.
+    fn single_use_args(&self) -> &[usize] {
+        &[]
+    }
+
     /// Index of the intrinsic
     fn index(&self) -> usize {
         intrinsics::index(self.name()).unwrap()

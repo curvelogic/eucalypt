@@ -17,6 +17,7 @@ Notable eucalypt techniques:
 - `graph.union-find` and `graph.kruskal-edges` prelude intrinsics
 - single-number encoding for sort-by-distance without callbacks
 - `tails` and `zip-with` for candidate-pair generation
+- cons destructuring `[h : t]` in `pairs-at` to split head from tail
 - `;` for point-free function definition: `group-consecutive ; map(count)`
 - `iota` and `ℕ` for index generation alongside `zip-with`
 - dynamic generalised lookup: `prepare` returns a block used as namespace for solver pipelines
@@ -25,7 +26,7 @@ Running time: ~17s (part 1), ~5 min (part 2)
 "
 
 ` "Parse a comma-separated line into a list of numbers."
-parse-point(line): str.split(line, ",") map(num)
+parse-point(line): line str.split-on(",") map(num)
 
 ` "Squared Euclidean distance between two 3D points."
 dist2(a, b): zip-with(-, a, b) map(^ 2) sum
@@ -47,7 +48,7 @@ encode-pair(p, i, q, j): encode(dist2(p, q), i, j)
 point-pairs(p, window, i, j): zip-with(encode-pair(p, i), window, iota(j))
 
 ` "Encoded pairs for the head of ps (index i) against the next w points."
-pairs-at(w, i, ps): point-pairs(ps head, (ps tail) take(w), i, i + 1)
+pairs-at(w, i, [h : t]): point-pairs(h, t take(w), i, i + 1)
 
 ` "Generate candidate pairs: each point paired with the next w points.
 Requires pts to be x-sorted so that nearby indices approximate spatial

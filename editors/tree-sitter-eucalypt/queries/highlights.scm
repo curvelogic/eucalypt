@@ -76,9 +76,26 @@
   (operator) @function
   (identifier) @parameter)
 
-; Function parameters
+; Function parameters — simple identifiers
 (parameter_list
   (identifier) @parameter)
+
+; Destructuring parameters — block pattern field names
+(block_pattern
+  (declaration
+    (declaration_head
+      (identifier) @parameter)))
+
+; Destructuring parameters — list pattern element names
+(list_pattern
+  (identifier) @parameter)
+
+; Destructuring parameters — cons pattern head and tail names
+(cons_pattern
+  (identifier) @parameter)
+
+; Idiot bracket expressions — highlight the bracket delimiters distinctively
+(bracket_expr) @punctuation.special
 
 ; Function application
 (application
@@ -96,14 +113,38 @@
     "true" "false" "null" "nil"
     "cons" "head" "tail" "first" "second"
     "head-or" "tail-or" "second-or"
-    "map" "filter" "foldl" "foldr" "reduce" "scanl" "scanr"
+    "map" "filter" "foldl" "foldr" "scanl" "scanr"
     "and" "or" "not"
     "merge" "concat" "append" "prepend"
     "identity" "const" "compose" "apply" "flip"
     "take" "drop" "take-while" "drop-while"
     "all" "any" "all-true?" "any-true?"
     "keys" "values" "lookup" "has"
-    "range" "repeat" "iterate" "cycle"))
+    "range" "repeat" "iterate" "cycle"
+    "zip" "zip-with" "reverse" "remove"
+    "mapcat" "group-by" "qsort" "partition"
+    "negate" "inc" "dec" "floor" "ceiling"
+    "max" "min" "abs" "num"
+    "panic" "assert"
+    "deep-merge" "merge-all" "elements" "block"
+    "lookup-in" "lookup-or" "lookup-or-in" "lookup-alts" "lookup-across" "lookup-path"
+    "complement" "curry" "uncurry" "juxt" "fnil"
+    "with-meta" "meta" "merge-meta" "assertions"
+    "split-at" "take-until" "drop-until"
+    "split-after" "split-when" "nth" "count" "last"
+    "map2" "zip-apply"
+    "window" "over-sliding-pairs" "differences"
+    "discriminate"
+    "key" "value" "bimap" "map-first" "map-second" "map-kv" "map-as-block"
+    "pair" "zip-kv" "with-keys" "map-values" "map-keys"
+    "filter-items" "by-key" "by-key-name" "by-key-match" "by-value"
+    "match-filter-values" "filter-values"
+    "alter-value" "update-value" "alter" "update" "update-value-or"
+    "set-value" "tongue" "merge-at"
+    "nil?" "zero?" "pos?" "neg?"
+    "max-of" "min-of"
+    "sym" "ch" "str"
+    "eu" "io" "cal" "iosm"))
 
 ; Metadata
 (metadata

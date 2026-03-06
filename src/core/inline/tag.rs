@@ -1,24 +1,33 @@
 //! Tag selected lambdas as inlinable for inline pass
 use crate::core::error::CoreError;
-use crate::core::expr::{Expr, RcExpr};
+use crate::core::expr::{Expr, LetType, RcExpr};
 use moniker::*;
 
-/// Walk the expression tagging combinators.
+/// Walk the expression tagging combinators and destructuring lambdas.
 ///
-/// Lambdas are combinator if they are simple types of combinators.
+/// A lambda is tagged inlinable if:
+/// - Its body is a simple combinator form (variable or intrinsic application
+///   to variables/literals); or
+/// - It has exactly one parameter and its body is a destructuring let (a
+///   `DestructureBlockLet` or `DestructureListLet`). This allows the inline
+///   pass to distribute destructuring functions to their call sites so that
+///   the subsequent fusion pass can simplify the resulting static lookups.
 pub fn tag_combinators(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
         Expr::Lam(s, false, scope) => {
-            if combinator(scope) {
+            if combinator(scope) || destructuring(scope) {
                 Ok(RcExpr::from(Expr::Lam(*s, true, scope.clone())))
             } else {
-                Ok(expr.clone())
+                // Recurse into the lambda body even if not itself inlinable
+                expr.walk_safe(&mut |e| tag_combinators(&e))
             }
         }
         _ => expr.walk_safe(&mut |e| tag_combinators(&e)),
     }
 }
 
+/// A lambda is a combinator if its body is a variable or a simple
+/// intrinsic/variable application to variables and literals.
 fn combinator(lam_scope: &Scope<Vec<Binder<String>>, RcExpr>) -> bool {
     let body = &lam_scope.unsafe_body;
 
@@ -33,6 +42,25 @@ fn combinator(lam_scope: &Scope<Vec<Binder<String>>, RcExpr>) -> bool {
         }
         _ => false,
     }
+}
+
+/// A lambda is a destructuring lambda if it takes exactly one parameter and
+/// its body is a `DestructureBlockLet` or `DestructureListLet`. Such lambdas
+/// are safe to inline because destructuring is deterministic and the fusion
+/// pass will subsequently simplify the resulting static lookups.
+fn destructuring(lam_scope: &Scope<Vec<Binder<String>>, RcExpr>) -> bool {
+    if lam_scope.unsafe_pattern.len() != 1 {
+        return false;
+    }
+    let body = &lam_scope.unsafe_body;
+    matches!(
+        &*body.inner,
+        Expr::Let(
+            _,
+            _,
+            LetType::DestructureBlockLet | LetType::DestructureListLet
+        )
+    )
 }
 
 #[cfg(test)]

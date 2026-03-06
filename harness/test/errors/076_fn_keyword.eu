@@ -1,0 +1,4 @@
+# Error test: using Rust's 'fn' keyword for function definition
+# In eucalypt, use 'double(x): x * 2' instead
+result: fn(42)
+RESULT: result

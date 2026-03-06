@@ -1,0 +1,6 @@
+# This file imports from a sub-directory using a relative path.
+# The path "sub/sub_helper.eu" should resolve relative to this file's
+# directory (aux/) rather than requiring the caller to add aux/ to
+# the lib path.
+` { import: "sub/sub_helper.eu" }
+relative-value: sub-value

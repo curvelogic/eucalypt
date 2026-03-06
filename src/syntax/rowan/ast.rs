@@ -530,6 +530,90 @@ impl ParenExpr {
 
 impl HasSoup for ParenExpr {}
 
+// A bracket expression using a Unicode idiot bracket pair
+//
+// AST embedding syntax:
+// - `[:a-bracket-expr open-char soup close-char]` - Expression enclosed in a Unicode bracket pair
+//
+// The bracket pair characters (e.g. `⟦` and `⟧`) are stored as BRACKET_OPEN and BRACKET_CLOSE
+// tokens inside the node.  During desugaring, the bracket pair name (e.g. `⟦⟧`) is used to
+// look up the bracket pair function defined in the enclosing or an imported scope.
+ast_node!(BracketExpr, BRACKET_EXPR);
+
+impl BracketExpr {
+    pub fn open_bracket(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::BRACKET_OPEN)
+    }
+
+    pub fn close_bracket(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::BRACKET_CLOSE)
+    }
+
+    /// Return the open bracket character if present
+    pub fn open_char(&self) -> Option<char> {
+        self.open_bracket().and_then(|t| t.text().chars().next())
+    }
+
+    /// Return the close bracket character if present
+    pub fn close_char(&self) -> Option<char> {
+        self.close_bracket().and_then(|t| t.text().chars().next())
+    }
+
+    /// Return the bracket pair name (e.g. `"⟦⟧"`) used to identify the
+    /// bracket pair function in scope.
+    pub fn bracket_pair_name(&self) -> Option<String> {
+        let open = self.open_char()?;
+        let close = self.close_char()?;
+        let mut s = String::with_capacity(open.len_utf8() + close.len_utf8());
+        s.push(open);
+        s.push(close);
+        Some(s)
+    }
+}
+
+impl HasSoup for BracketExpr {}
+
+// A user-defined bracket block expression e.g. ⟦ a: x  b: y ⟧
+//
+// Parsed like a block (with declarations) but delimited by user brackets
+// instead of braces. Used for monadic blocks.
+ast_node!(BracketBlock, BRACKET_BLOCK);
+
+impl BracketBlock {
+    pub fn open_bracket(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::BRACKET_OPEN)
+    }
+
+    pub fn close_bracket(&self) -> Option<SyntaxToken> {
+        support::syntax_token(self.syntax(), SyntaxKind::BRACKET_CLOSE)
+    }
+
+    pub fn open_char(&self) -> Option<char> {
+        self.open_bracket().and_then(|t| t.text().chars().next())
+    }
+
+    pub fn close_char(&self) -> Option<char> {
+        self.close_bracket().and_then(|t| t.text().chars().next())
+    }
+
+    pub fn bracket_pair_name(&self) -> Option<String> {
+        let open = self.open_char()?;
+        let close = self.close_char()?;
+        let mut s = String::with_capacity(open.len_utf8() + close.len_utf8());
+        s.push(open);
+        s.push(close);
+        Some(s)
+    }
+
+    pub fn declarations(&self) -> AstChildren<Declaration> {
+        support::children::<Declaration>(self.syntax())
+    }
+
+    pub fn meta(&self) -> Option<BlockMetadata> {
+        support::child::<BlockMetadata>(self.syntax())
+    }
+}
+
 // Metadata for a block expression
 //
 // AST embedding syntax:
@@ -555,6 +639,7 @@ impl HasSoup for DeclarationMetadata {}
 // - `Prefix`: `[:a-decl-prefix paren op param]` - Prefix operator (e.g. `(!x): ...`)
 // - `Postfix`: `[:a-decl-postfix paren param op]` - Postfix operator (e.g. `(x^^): ...`)
 // - `Binary`: `[:a-decl-binary paren left op right]` - Binary operator (e.g. `(x + y): ...`)
+// - `BracketPair`: `[:a-decl-bracket paren bracket param]` - Bracket pair (e.g. `(⟦ x ⟧): ...`)
 // - `MalformedHead`: `[:a-decl-malformed errors...]` - Invalid declaration head
 pub enum DeclarationKind {
     /// Property declaration (e.g. x: ...) - Embedding: `[:a-decl-prop name]`
@@ -574,6 +659,18 @@ pub enum DeclarationKind {
         OperatorIdentifier,
         NormalIdentifier,
     ),
+    /// Idiot bracket pair definition — e.g. `⟦ x ⟧: body` or `(⟦ x ⟧): body`
+    ///
+    /// The optional `ParenExpr` is `Some` when parens were written and `None` when the
+    /// bracket appears directly in the head (paren-free style).
+    /// The `BracketExpr` contains the bracket pair characters and the single formal parameter.
+    BracketPair(Option<ParenExpr>, BracketExpr, NormalIdentifier),
+    /// Monadic bracket block definition — e.g. `⟦{}⟧: body` or `(⟦{}⟧): body`
+    ///
+    /// The optional `ParenExpr` is `Some` when parens were written and `None` for paren-free style.
+    /// An empty block `{}` as the parameter signals that this bracket pair expects block content
+    /// (declarations) for monadic use.
+    BracketBlockDef(Option<ParenExpr>, BracketExpr),
     /// Invalid declaration head - Embedding: `[:a-decl-malformed errors...]`
     MalformedHead(Vec<ParseError>),
 }
@@ -583,6 +680,37 @@ pub enum DeclarationKind {
 // AST embedding syntax:
 // - `[:a-decl-head elements...]` - Declaration head containing name and parameter patterns
 ast_node!(DeclarationHead, DECL_HEAD);
+
+/// Classify a `BracketExpr` that appears directly at the declaration head level
+/// (paren-free style, e.g. `⟦ x ⟧: body` or `⟦{}⟧: body`).
+fn classify_bracket_direct(bracket: BracketExpr, head_range: TextRange) -> DeclarationKind {
+    let inner_elements: Vec<_> = bracket
+        .soup()
+        .map(|s| s.elements().collect())
+        .unwrap_or_default();
+    if inner_elements.len() == 1 {
+        if let Some(param) = inner_elements[0].as_normal_identifier() {
+            DeclarationKind::BracketPair(None, bracket, param)
+        } else if let Element::Block(_) = &inner_elements[0] {
+            // Block-mode bracket pair definition: ⟦{}⟧: ...
+            DeclarationKind::BracketBlockDef(None, bracket)
+        } else {
+            DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
+                head_range,
+                range: inner_elements[0].syntax().text_range(),
+            }])
+        }
+    } else if inner_elements.is_empty() {
+        DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+            range: head_range,
+        }])
+    } else {
+        // Multiple elements inside the bracket — invalid for a declaration head
+        DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+            range: head_range,
+        }])
+    }
+}
 
 // Classify a paren expression into a DeclarationKind
 fn classify_operator(pe: ParenExpr) -> DeclarationKind {
@@ -595,9 +723,40 @@ fn classify_operator(pe: ParenExpr) -> DeclarationKind {
             range: pe.syntax().text_range(),
         }]),
         1 => {
-            // nullary
+            // Could be nullary operator or a bracket pair definition
             if let Some(op) = elements[0].as_operator_identifier() {
                 DeclarationKind::Nullary(pe, op)
+            } else if let Element::BracketExpr(ref bracket) = elements[0] {
+                // Bracket pair declaration: (⟦ x ⟧): ...
+                // The bracket expr must contain exactly one normal identifier
+                let inner_elements: Vec<_> = bracket
+                    .soup()
+                    .map(|s| s.elements().collect())
+                    .unwrap_or_default();
+                if inner_elements.len() == 1 {
+                    if let Some(param) = inner_elements[0].as_normal_identifier() {
+                        DeclarationKind::BracketPair(Some(pe), bracket.clone(), param)
+                    } else if let Element::Block(_) = &inner_elements[0] {
+                        // Block-mode bracket pair definition: (⟦{}⟧): ...
+                        // The `{}` parameter signals block content (declarations) mode.
+                        DeclarationKind::BracketBlockDef(Some(pe), bracket.clone())
+                    } else {
+                        DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
+                            head_range: pe.syntax().text_range(),
+                            range: inner_elements[0].syntax().text_range(),
+                        }])
+                    }
+                } else if inner_elements.is_empty() {
+                    // Empty bracket pair declaration: (⟦⟧): ...
+                    DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+                        range: pe.syntax().text_range(),
+                    }])
+                } else {
+                    // Too many elements inside the bracket
+                    DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+                        range: pe.syntax().text_range(),
+                    }])
+                }
             } else {
                 DeclarationKind::MalformedHead(vec![ParseError::InvalidOperatorName {
                     head_range: pe.syntax().text_range(),
@@ -692,6 +851,9 @@ impl DeclarationHead {
                     }
                 } else if let Some(pe) = ParenExpr::cast(items[0].clone()) {
                     classify_operator(pe)
+                } else if let Some(bracket) = BracketExpr::cast(items[0].clone()) {
+                    // Paren-free bracket pair declaration: ⟦ x ⟧: body
+                    classify_bracket_direct(bracket, self.syntax().text_range())
                 } else {
                     malformed()
                 }
@@ -708,11 +870,11 @@ impl DeclarationHead {
                     if let Some(args) = args {
                         let mut errors = vec![];
                         for arg in args.items() {
-                            if arg
+                            let valid = arg
                                 .singleton()
-                                .and_then(|e| e.as_normal_identifier())
-                                .is_none()
-                            {
+                                .map(|e| e.is_valid_param_pattern())
+                                .unwrap_or(false);
+                            if !valid {
                                 errors.push(ParseError::InvalidFormalParameter {
                                     head_range: self.syntax().text_range(),
                                     range: arg.syntax().text_range(),
@@ -784,7 +946,13 @@ impl Block {
     }
 
     pub fn open_brace(&self) -> Option<SyntaxToken> {
-        support::syntax_token(self.syntax(), SyntaxKind::OPEN_BRACE)
+        // Accept both OPEN_BRACE and OPEN_BRACE_APPLY (juxtaposed call sugar)
+        self.0
+            .children_with_tokens()
+            .filter_map(|it| it.into_token())
+            .find(|t| {
+                t.kind() == SyntaxKind::OPEN_BRACE || t.kind() == SyntaxKind::OPEN_BRACE_APPLY
+            })
     }
 
     pub fn close_brace(&self) -> Option<SyntaxToken> {
@@ -796,11 +964,46 @@ impl Block {
 //
 // AST embedding syntax:
 // - `[:a-list items...]` - List containing comma-separated items
+//
+// A list node may also represent a cons pattern `[h : t]` (head/tail
+// destructuring).  In that case the node has a COLON token child instead of
+// COMMA, and exactly two SOUP children (head and tail).  Use `is_cons_pattern`
+// to distinguish the two forms.
 ast_node!(List, LIST);
 
 impl List {
     pub fn items(&self) -> AstChildren<Soup> {
         support::children::<Soup>(&self.0)
+    }
+
+    /// Returns true if this list contains a `:` head/tail separator.
+    ///
+    /// Used to detect `[x : xs]` and `[a, b : rest]` patterns in
+    /// function parameter positions.
+    pub fn has_colon(&self) -> bool {
+        self.0
+            .children_with_tokens()
+            .any(|it| it.as_token().is_some_and(|t| t.kind() == SyntaxKind::COLON))
+    }
+
+    /// Return `true` if this list node is a cons pattern `[h : t]`.
+    ///
+    /// Cons patterns are distinguished from normal lists by the presence of a
+    /// COLON token child (rather than COMMA tokens between items).
+    pub fn is_cons_pattern(&self) -> bool {
+        self.has_colon()
+    }
+
+    /// Return the head and tail soups of a cons pattern `[h : t]`, or `None`
+    /// if this is not a cons pattern or the structure is malformed.
+    pub fn cons_parts(&self) -> Option<(Soup, Soup)> {
+        if !self.is_cons_pattern() {
+            return None;
+        }
+        let mut soups = self.items();
+        let head = soups.next()?;
+        let tail = soups.next()?;
+        Some((head, tail))
     }
 }
 
@@ -817,6 +1020,20 @@ impl ApplyTuple {
 
     pub fn open_paren(&self) -> Option<SyntaxToken> {
         support::syntax_token(self.syntax(), SyntaxKind::OPEN_PAREN_APPLY)
+    }
+
+    /// Returns true if this tuple was created from juxtaposed `f{...}` syntax.
+    pub fn is_block_apply(&self) -> bool {
+        self.0
+            .first_token()
+            .is_some_and(|t| t.kind() == SyntaxKind::OPEN_BRACE_APPLY)
+    }
+
+    /// Returns true if this tuple was created from juxtaposed `f[...]` syntax.
+    pub fn is_list_apply(&self) -> bool {
+        self.0
+            .first_token()
+            .is_some_and(|t| t.kind() == SyntaxKind::OPEN_SQUARE_APPLY)
     }
 
     pub fn close_paren(&self) -> Option<SyntaxToken> {
@@ -1046,6 +1263,10 @@ pub enum Element {
     List(List),
     /// Parenthesised expression - Embedding: `[:a-paren-expr soup]`
     ParenExpr(ParenExpr),
+    /// Bracket expression using a Unicode idiot bracket pair - Embedding: `[:a-bracket-expr ...]`
+    BracketExpr(BracketExpr),
+    /// Monadic bracket block with declarations - Embedding: `[:a-bracket-block ...]`
+    BracketBlock(BracketBlock),
     /// Identifier reference - Embedding: `[:a-name identifier]`
     Name(Name),
     /// String with interpolation - Embedding: `[:a-string-pattern chunks...]`
@@ -1071,6 +1292,8 @@ impl AstNode for Element {
                 | SyntaxKind::BLOCK
                 | SyntaxKind::LIST
                 | SyntaxKind::PAREN_EXPR
+                | SyntaxKind::BRACKET_EXPR
+                | SyntaxKind::BRACKET_BLOCK
                 | SyntaxKind::NAME
                 | SyntaxKind::STRING_PATTERN
                 | SyntaxKind::C_STRING_PATTERN
@@ -1088,6 +1311,8 @@ impl AstNode for Element {
             SyntaxKind::LIST => List::cast(node).map(Element::List),
             SyntaxKind::BLOCK => Block::cast(node).map(Element::Block),
             SyntaxKind::PAREN_EXPR => ParenExpr::cast(node).map(Element::ParenExpr),
+            SyntaxKind::BRACKET_EXPR => BracketExpr::cast(node).map(Element::BracketExpr),
+            SyntaxKind::BRACKET_BLOCK => BracketBlock::cast(node).map(Element::BracketBlock),
             SyntaxKind::ARG_TUPLE => ApplyTuple::cast(node).map(Element::ApplyTuple),
             SyntaxKind::NAME => Name::cast(node).map(Element::Name),
             SyntaxKind::STRING_PATTERN => StringPattern::cast(node).map(Element::StringPattern),
@@ -1105,6 +1330,8 @@ impl AstNode for Element {
             Element::Block(b) => b.syntax(),
             Element::List(l) => l.syntax(),
             Element::ParenExpr(e) => e.syntax(),
+            Element::BracketExpr(e) => e.syntax(),
+            Element::BracketBlock(e) => e.syntax(),
             Element::Name(n) => n.syntax(),
             Element::StringPattern(s) => s.syntax(),
             Element::CStringPattern(s) => s.syntax(),
@@ -1138,6 +1365,27 @@ impl Element {
                 _ => None,
             }),
             _ => None,
+        }
+    }
+
+    /// Return true if this element is a valid formal parameter pattern.
+    ///
+    /// A valid parameter is one of:
+    /// - A normal identifier: `x`
+    /// - A block pattern (block destructuring): `{x y}`
+    /// - A list pattern (list destructuring): `[a, b, c]`
+    pub fn is_valid_param_pattern(&self) -> bool {
+        match self {
+            Element::Name(n) => n
+                .identifier()
+                .and_then(|id| match id {
+                    Identifier::NormalIdentifier(_) => Some(()),
+                    _ => None,
+                })
+                .is_some(),
+            Element::Block(_) => true,
+            Element::List(_) => true,
+            _ => false,
         }
     }
 }

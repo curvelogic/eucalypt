@@ -42,6 +42,7 @@ static bool is_operator_char(int32_t c) {
     if (c >= 0x2200 && c <= 0x22FF) return true;  // Mathematical operators
     if (c >= 0x27F0 && c <= 0x27FF) return true;  // Supplemental arrows
     if (c == 0x2227 || c == 0x2228 || c == 0x2218) return true;  // ∧ ∨ ∘
+    if (c == 0x2016) return true;  // ‖ DOUBLE VERTICAL LINE (cons operator)
     return false;
 }
 

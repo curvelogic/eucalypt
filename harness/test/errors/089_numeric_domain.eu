@@ -1,0 +1,2 @@
+# Error: numeric domain - raising negative float to fractional power
+x: (-1.0) ^ 0.5

@@ -1,0 +1,55 @@
+##
+## 091: Block destructuring in function parameters
+##
+
+f-basic({x y}): x + y
+f-rename({x: a  y: b}): a * b
+f-mixed({x  y: b}): x + b
+f-comma({x, y}): x + y
+f-comma-rename({x: a, y: b}): a * b
+
+tests: {
+
+  ` "Basic block destructuring"
+  basic: {
+    ` "sum of fields x and y"
+    a: f-basic({x: 1 y: 2}) //= 3
+    ` "sum with larger values"
+    b: f-basic({x: 10 y: 20}) //= 30
+  }
+
+  ` "Block destructuring with renaming"
+  rename: {
+    ` "product via renamed fields"
+    a: f-rename({x: 3 y: 4}) //= 12
+    ` "product with different values"
+    b: f-rename({x: 5 y: 6}) //= 30
+  }
+
+  ` "Mixed shorthand and rename"
+  mixed: {
+    ` "sum of shorthand x and renamed y"
+    a: f-mixed({x: 10 y: 20}) //= 30
+    ` "sum with different values"
+    b: f-mixed({x: 7 y: 3}) //= 10
+  }
+
+  ` "Comma-separated shorthand (commas optional as in block literals)"
+  comma: {
+    ` "sum via comma-separated pattern"
+    a: f-comma({x: 1, y: 2}) //= 3
+    ` "sum with larger values"
+    b: f-comma({x: 10, y: 20}) //= 30
+  }
+
+  ` "Comma-separated rename pattern"
+  comma-rename: {
+    ` "product via comma-separated rename pattern"
+    a: f-comma-rename({x: 3, y: 4}) //= 12
+    ` "product with different values"
+    b: f-comma-rename({x: 5, y: 6}) //= 30
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

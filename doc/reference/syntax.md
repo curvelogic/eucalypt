@@ -104,6 +104,82 @@ f(x, y): x + y
 two: f(1, 1)
 ```
 
+Function parameters can be **destructuring patterns** as well as
+simple names. A block pattern extracts named fields from a block
+argument; a list pattern extracts positional elements from a list
+argument:
+
+```eu
+# Block destructuring — shorthand binds field name as variable name
+sum-xy({x y}): x + y
+
+# Block destructuring — rename binds field under a new variable name
+product-ab({x: a  y: b}): a * b
+
+# Mixed shorthand and rename
+mixed({x  y: b}): x + b
+
+# Fixed-length list destructuring
+f-sum([a, b, c]): a + b + c
+f-first([a, b]): a
+
+# Head/tail list destructuring — colon separates fixed heads from tail
+get-head([x : xs]): x
+get-tail([x : xs]): xs
+drop-two([a, b : rest]): rest
+```
+
+Juxtaposed call syntax passes a block or list literal as a single
+argument without parentheses. No space between the function name and
+the opening bracket:
+
+```eu
+# f{...} is sugar for f({...})
+sum-xy{x: 10 y: 20}
+
+# f[...] is sugar for f([...])
+add-pair[1, 2]
+```
+
+Combined with block destructuring, this gives named arguments:
+
+```eu
+greet({name greeting}): "{greeting}, {name}!"
+greet{name: "Alice" greeting: "Hello"}    # => "Hello, Alice!"
+```
+
+Juxtaposed syntax also works in definitions — the bracket or brace
+is written directly against the function name with no space. This is
+sugar for the parenthesised destructuring form:
+
+```eu
+# f[x, y]: ...  is sugar for  f([x, y]): ...
+add-pair[a, b]: a + b
+
+# f{x y}: ...   is sugar for  f({x y}): ...
+add-block{x y}: x + y
+
+# f[h : t]: ... is sugar for  f([h : t]): ...
+my-head[h : t]: h
+```
+
+Destructuring patterns can be mixed with normal parameters:
+
+```eu
+f(n, [a, b]): n * (a + b)
+```
+
+The `‖` operator (U+2016, DOUBLE VERTICAL LINE) prepends an element to
+a list. It is right-associative:
+
+```eu
+1 ‖ [2, 3]        # => [1, 2, 3]
+1 ‖ 2 ‖ [3]       # => [1, 2, 3]
+```
+
+See [Functions and Combinators](../guide/functions-and-combinators.md)
+for more detail on destructuring.
+
 ...and using some brackets and suitable names, you can define
 operators too, either binary:
 
@@ -124,6 +200,115 @@ operators too, either binary:
 
 Eucalypt should handle unicode gracefully and any unicode characters
 in the symbol or punctuation classes are fine for operators.
+
+In addition to named operators, you can define **idiot brackets** —
+Unicode bracket pairs that define applicative functor lifting.  A
+bracket pair declaration uses a Unicode bracket pair wrapping a single
+parameter directly (paren-free style):
+
+```eu
+# Ceiling brackets lift into a "double" functor
+⌈ x ⌉: x * 2
+
+# Floor brackets lift into an "increment" functor
+⌊ x ⌋: x + 1
+```
+
+The older paren-wrapped style is still supported for backwards compatibility:
+
+```eu
+(⌈ x ⌉): x * 2    # paren style — still valid
+```
+
+Once declared, the bracket pair can be used as an expression:
+
+```eu
+doubled: ⌈ 3 + 4 ⌉    # => 14
+bumped:  ⌊ 5 ⌋         # => 6
+```
+
+The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` (open
+then close bracket) that takes one argument `x` and returns `body`.
+Using `⌈ expr ⌉` in an expression calls that function with `expr`.
+
+The following Unicode bracket pairs are built-in and can be used for
+idiot brackets without any registration:
+
+| Open | Close | Name |
+|------|-------|------|
+| `⟦`  | `⟧`   | Mathematical white square brackets |
+| `⟨`  | `⟩`   | Mathematical angle brackets |
+| `⟪`  | `⟫`   | Mathematical double angle brackets |
+| `⌈`  | `⌉`   | Ceiling brackets |
+| `⌊`  | `⌋`   | Floor brackets |
+| `⦃`  | `⦄`   | Mathematical white curly brackets |
+| `⦇`  | `⦈`   | Mathematical white tortoise shell brackets |
+| `⦉`  | `⦊`   | Mathematical flattened parentheses |
+| `«`  | `»`   | French guillemets |
+| `【` | `】`  | CJK lenticular brackets |
+| `〔` | `〕`  | CJK tortoise shell brackets |
+| `〖` | `〗`  | CJK white lenticular brackets |
+| `〘` | `〙`  | CJK white tortoise shell brackets |
+| `〚` | `〛`  | CJK white square brackets |
+
+### Monadic blocks
+
+A bracket pair gains a **monad spec** when declared with an empty
+block `{}` as its parameter and a body supplying `bind` and `return`
+function names (paren-free style):
+
+```eu
+⟦{}⟧: { bind: my-bind  return: my-return }
+```
+
+The paren-wrapped style is also supported:
+
+```eu
+(⟦{}⟧): { bind: my-bind  return: my-return }    # still valid
+```
+
+A bracket expression whose inner content contains top-level colons is
+parsed as a **bracket block** — a sequence of `name: monadic-action`
+declarations.  The closing bracket must be followed by a dot and a
+return expression:
+
+```eu
+result: ⟦ a: ma  b: mb ⟧.return_expr
+```
+
+This desugars to a bind chain (analogous to Haskell's `do`-notation):
+
+```
+my-bind(ma, (a): my-bind(mb, (b): my-return(return_expr)))
+```
+
+All declarations are bind steps.  Each bound name is in scope for
+later actions and for the return expression.  The return expression
+may be any single element: a name (`.r`), a parenthesised expression
+(`.(x + y)`), a list, or a block.
+
+**Example — identity monad:**
+
+```eu
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+⟦{}⟧: { bind: id-bind  return: id-return }
+
+result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
+```
+
+**Example — maybe monad (optional lists):**
+
+```eu
+maybe-bind(ma, f): if(ma = [], [], f(ma head))
+maybe-return(a): [a]
+
+⌈{}⌉: { bind: maybe-bind  return: maybe-return }
+
+just:    ⌈ x: [1]  y: [2] ⌉.(x + y)   # => [3]
+nothing: ⌈ x: []   y: [2] ⌉.(x + y)   # => []
+```
 
 To control the precedence and associativity of user defined operators,
 you need metadata annotations.

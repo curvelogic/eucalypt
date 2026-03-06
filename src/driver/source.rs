@@ -8,6 +8,7 @@ use crate::core::inline::reduce;
 use crate::core::inline::tag;
 use crate::core::simplify::compress;
 use crate::core::simplify::prune;
+use crate::core::transform::fuse;
 use crate::core::unit::TranslationUnit;
 use crate::core::verify::content;
 use crate::driver::error::EucalyptError;
@@ -180,10 +181,10 @@ impl SourceLoader {
             Locator::Fs(p) => self.resolve_fs_path(p)?,
             Locator::StdIn => "-".to_string(),
             _ => {
-                return Err(EucalyptError::FileCouldNotBeRead(format!(
-                    "streaming not supported for locator: {}",
-                    input.locator()
-                )))
+                return Err(EucalyptError::FileCouldNotBeRead(
+                    format!("streaming not supported for locator: {}", input.locator()),
+                    None,
+                ))
             }
         };
 
@@ -215,6 +216,7 @@ impl SourceLoader {
         }
         Err(EucalyptError::FileCouldNotBeRead(
             path.to_string_lossy().to_string(),
+            None,
         ))
     }
 
@@ -229,10 +231,46 @@ impl SourceLoader {
         let inputs = self.imports.analyse_rowan_ast(input.clone(), ast)?;
         self.imports.check_for_cycles()?;
 
-        for import_input in inputs {
-            self.load(&import_input)?;
+        // Resolve imports relative to the importing file's directory.
+        //
+        // When a file at `dir/foo.eu` imports `sub/bar.eu`, the path
+        // `sub/bar.eu` should be resolved relative to `dir/` in addition
+        // to the global lib_path. We achieve this by temporarily extending
+        // the lib_path with the importing file's directory whilst loading
+        // its transitive imports.
+        let import_dir = self.find_source_dir(locator);
+        if let Some(dir) = import_dir {
+            self.lib_path.push(dir);
+            for import_input in inputs {
+                self.load(&import_input)?;
+            }
+            self.lib_path.pop();
+        } else {
+            for import_input in inputs {
+                self.load(&import_input)?;
+            }
         }
+
         Ok(file_id)
+    }
+
+    /// Find the directory containing the source file identified by `locator`,
+    /// searching the lib_path. Returns `None` for non-filesystem locators.
+    fn find_source_dir(&self, locator: &Locator) -> Option<PathBuf> {
+        if let Locator::Fs(path) = locator {
+            // Search lib_path entries
+            for libdir in &self.lib_path {
+                let candidate = libdir.join(path);
+                if candidate.exists() {
+                    return candidate.parent().map(|p| p.to_path_buf());
+                }
+            }
+            // Try the path directly (absolute or CWD-relative)
+            if path.exists() {
+                return path.parent().map(|p| p.to_path_buf());
+            }
+        }
+        None
     }
 
     /// Load and parse the source from a source specified by locator
@@ -379,6 +417,22 @@ impl SourceLoader {
         Ok(())
     }
 
+    /// Run the destructure fusion pass.
+    ///
+    /// This folds static patterns that arise after the inline pass
+    /// distributes destructuring lambdas to their call sites:
+    /// - `Lookup(Block{...}, "key")` → the corresponding value
+    /// - `HEAD(List[v0, ...])` → `v0`
+    /// - `TAIL(List[v0, v1, ...])` → `List[v1, ...]`
+    ///
+    /// Running this pass after `inline` completes the fusion of block and
+    /// list destructuring parameter patterns, eliminating intermediate
+    /// allocations.
+    pub fn fuse_destructure(&mut self) -> Result<(), EucalyptError> {
+        self.core.expr = fuse::fuse(&self.core.expr)?;
+        Ok(())
+    }
+
     /// Prune definitions of any unused bindings prior to run.
     ///
     /// The single `prune` pass handles both binding-level DCE and
@@ -465,24 +519,24 @@ impl SourceLoader {
     }
 
     /// Read text from the filesystem, using lib-path to resolve the
-    /// filesnames.
+    /// filenames.
     fn read_fs_input(&mut self, path: &Path) -> Result<String, EucalyptError> {
         for libdir in &self.lib_path {
             let mut filename = libdir.to_path_buf();
             filename.push(path);
-            if let Ok(text) = fs::read_to_string(filename) {
+            if let Ok(text) = fs::read_to_string(&filename) {
                 return Ok(text);
             }
         }
 
         // lastly - absolute files are ok with empty lib path
-        if let Ok(text) = fs::read_to_string(path) {
-            return Ok(text);
+        match fs::read_to_string(path) {
+            Ok(text) => Ok(text),
+            Err(e) => Err(EucalyptError::FileCouldNotBeRead(
+                path.to_string_lossy().to_string(),
+                Some(e.to_string()),
+            )),
         }
-
-        Err(EucalyptError::FileCouldNotBeRead(
-            path.to_string_lossy().to_string(),
-        ))
     }
 
     /// Read source from stdin

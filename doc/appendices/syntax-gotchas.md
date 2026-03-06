@@ -124,8 +124,19 @@ map(+ 1)             # Section: adds 1
 map(^ 2)             # Section: squares
 filter(> 0)          # Section: positive?
 
-# Using anaphora (single use of _ only):
+# Identity anaphor — passes an identity function:
+map(_)               # Same as map(identity)
+
+# Anaphora in expressions:
 map(_ + 1)           # Anonymous single-parameter function
+filter(_ > 0)        # Anonymous predicate
+
+# Multiple `_` — each is a separate parameter:
+f: (_ * _)           # f is a 2-arg multiply function
+f(3, 4)              # => 12
+
+# Numbered anaphora for same-param reuse:
+sq: (_0 * _0)        # sq(5) => 25
 
 # Using named function + partial application:
 add-one(x): x + 1
@@ -136,11 +147,67 @@ has-y(y, h): first(h) = y
 filter(has-y(target-y))   # Partial application
 ```
 
-**Important**: `_` can only appear **once** in an anonymous function.
-Two occurrences of `_` is an error. Use a named function instead.
+**Important**: Each `_` introduces a **separate** parameter. `_ * _`
+is a 2-arg function (like `(_0 * _1)`), not `(_0 * _0)`. Use numbered
+anaphora `_0 * _0` when you need to reference the same parameter twice.
 
 **Reference**: See [Anaphora](../guide/anaphora.md) for detailed
 explanation of anaphora usage.
+
+### Anaphor Scoping: Parens Are Opaque
+
+**Problem**: Parentheses create an anaphor scope boundary. Anaphors
+inside parens form a lambda at the paren level, not at the enclosing
+expression.
+
+**Scoping rules**:
+
+1. **Parens are opaque by default** — anaphors inside parens create a
+   lambda scoped to that paren group. This applies to both `_` and
+   `_0`/`_1`.
+
+2. **Subsumption** — if the enclosing expression already has direct
+   anaphors, inner paren groups become transparent (their anaphors
+   join the outer scope).
+
+3. **ArgTuples follow the same rules** — function call arguments are
+   opaque unless subsumed by an outer anaphoric scope.
+
+**Examples**:
+```eu,notest
+# Parens opaque — paren group forms its own lambda:
+(_ + 1)               # λ(a). a + 1
+(_ * _)               # λ(a, b). a * b
+(_ = :quux) ∘ tag     # (λ(a). a = :quux) ∘ tag  ✓ composition works
+
+# Without parens — whole expression is the lambda body:
+_ + 1                 # λ(a). a + 1   (same result here)
+_ * _                 # λ(a, b). a * b
+
+# Parens opaque breaks cross-operator average:
+(_0 + _1) / 2         # (λ(a,b). a+b) / 2  — type error!
+# Correct idiom (no parens):
+_0 + _1 / 2           # λ(a, b). a + b/2  — note: b is halved, not sum
+
+# Subsumption: outer _ makes inner (_ * _) transparent:
+_ + (_ * _)           # λ(a, b, c). a + (b * c)  ✓
+
+# ArgTuple opaque by default:
+map(_ + 1)            # map(λ(a). a + 1)   ✓
+filter(_ > 0)         # filter(λ(a). a > 0)  ✓
+
+# ArgTuple subsumed when outer has anaphors:
+_0 * (_1 + 2)         # λ(a, b). a * (b + 2)  ✓
+```
+
+**Common mistake**: Expecting `(_0 + _1) / 2` to be a 2-argument
+averaging function. Under the opaque parens model, `(_0 + _1)` forms
+its own lambda and `/ 2` tries to divide that lambda by 2 — a type
+error. Use a named helper instead:
+```eu,notest
+avg2(a, b): (a + b) / 2
+zip-with(avg2, xs, ys)
+```
 
 ## Metadata vs Comments
 
@@ -220,6 +287,28 @@ division), not precise division.
 
 **Rule**: Use `÷` for exact/precise division. Use `/` only when you
 want integer (floor) division.
+
+## Cons Patterns vs Normal Lists
+
+The `[h : t]` cons pattern is only valid in a **function parameter position**.
+A colon inside a list literal in an expression context is not valid:
+
+```eu
+# Valid — cons pattern in a function parameter
+list-head([h : t]): h
+
+# Invalid — colon is not a list separator in expression context
+bad: [1 : rest]   # parse error
+```
+
+In expression context, use `cons`, `head`, and `tail` from the prelude
+instead:
+
+```eu
+xs: [1, 2, 3]
+first: xs head    # = 1
+rest: xs tail     # = [2, 3]
+```
 
 ## Future Improvements
 

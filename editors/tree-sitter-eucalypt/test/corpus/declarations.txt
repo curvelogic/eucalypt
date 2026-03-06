@@ -235,3 +235,449 @@ greeting: c"Hello {name}!\n"
               (identifier)))
           (c_string_content)
           (c_escape_sequence))))))
+
+================================================================================
+Block destructuring parameter
+================================================================================
+
+f({x y}): x + y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (block_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+List destructuring parameter
+================================================================================
+
+f([a, b]): a + b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (list_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Cons destructuring parameter
+================================================================================
+
+f([h : t]): h
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (parameter_list
+        (cons_pattern
+          (identifier)
+          (identifier))))
+    (soup
+      (name
+        (identifier)))))
+
+================================================================================
+Idiot bracket expression
+================================================================================
+
+result: ⟦ x ⟧
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (bracket_expr
+        (soup
+          (name
+            (identifier)))))))
+
+================================================================================
+Anaphor underscore
+================================================================================
+
+f: _ + 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (literal
+        (number)))))
+
+================================================================================
+Anaphor numbered
+================================================================================
+
+f: _0 + _1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Bullet anaphor
+================================================================================
+
+f: • + 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (literal
+        (number)))))
+
+================================================================================
+Unicode operators — arithmetic
+================================================================================
+
+x: a ÷ b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Unicode operators — comparison
+================================================================================
+
+check: a ≠ b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Unicode operators — ordering
+================================================================================
+
+check: a ≤ b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Unicode operators — logical
+================================================================================
+
+check: a ∧ b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Unicode operators — negation
+================================================================================
+
+check: ¬ a
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Unicode operators — composition
+================================================================================
+
+h: f ∘ g
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Unicode cons operator
+================================================================================
+
+xs: h ‖ t
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Nested block
+================================================================================
+
+config: { x: 1 y: { a: 2 } }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (block
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (block
+              (declaration
+                (declaration_head
+                  (identifier))
+                (soup
+                  (literal
+                    (number)))))))))))
+
+================================================================================
+Nested list
+================================================================================
+
+matrix: [[1, 2], [3, 4]]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (list
+        (soup
+          (list
+            (soup
+              (literal
+                (number)))
+            (soup
+              (literal
+                (number)))))
+        (soup
+          (list
+            (soup
+              (literal
+                (number)))
+            (soup
+              (literal
+                (number)))))))))
+
+================================================================================
+Juxtaposed block call
+================================================================================
+
+result: f{x: 1}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (block_application
+        (name
+          (identifier))
+        (block_argument
+          (declaration
+            (declaration_head
+              (identifier))
+            (soup
+              (literal
+                (number)))))))))
+
+================================================================================
+Juxtaposed list call
+================================================================================
+
+result: f[1, 2]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (list_application
+        (name
+          (identifier))
+        (list_argument
+          (soup
+            (literal
+              (number)))
+          (soup
+            (literal
+              (number))))))))
+
+================================================================================
+Juxtaposed list definition
+================================================================================
+
+f[x, y]: x + y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Juxtaposed block definition
+================================================================================
+
+f{x, y}: x + y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (block_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier))
+      (operator)
+      (name
+        (identifier)))))
+
+================================================================================
+Juxtaposed cons definition
+================================================================================
+
+f[h : t]: h
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier)
+      (list_param
+        (identifier)
+        (identifier)))
+    (soup
+      (name
+        (identifier)))))

@@ -1,0 +1,2 @@
+# Reshape to incompatible shape
+a: arr.from-flat([2, 2], [1, 2, 3, 4]) arr.reshape([5])

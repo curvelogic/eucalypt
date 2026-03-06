@@ -28,9 +28,9 @@ impl<K: Eq + Hash, V> SimpleEnvironment<K, V> {
         self.envs.last_mut().unwrap().insert(key, value)
     }
 
-    /// Get topmost binding for the key
+    /// Get topmost binding for the key (most recently pushed frame takes precedence)
     pub fn get(&self, key: &K) -> Option<&V> {
-        for env in &self.envs {
+        for env in self.envs.iter().rev() {
             if let Some(v) = env.get(key) {
                 return Some(v);
             }

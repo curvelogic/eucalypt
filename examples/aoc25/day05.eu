@@ -14,13 +14,14 @@ Notable eucalypt techniques:
 - `bimap` to apply different parsers to each section
 - `uncurry` to feed a parsed pair into a two-argument solver
 - partial application for predicate filtering: `is-fresh?(ranges)`
+- juxtaposed list-destructuring syntax `range-size[lo, hi]:`
 
 Running time: ~3s (part 1), < 1s (part 2)
 "
 
-parse-range(s): str.split(s, "-") map(num)
+parse-range(s): s str.split-on("-") map(num)
 
-contains-id?(id, r): id >= first(r) ∧ id <= second(r)
+contains-id?(id, [lo, hi]): id >= lo ∧ id <= hi
 
 is-fresh?(ranges, id): ranges any(contains-id?(id))
 
@@ -31,21 +32,22 @@ solve(ranges, ids): ids filter(is-fresh?(ranges)) count
 ` "Merge a new range into [merged-so-far, current-range].  If the new
 range overlaps or is adjacent, extend current; otherwise emit current
 and start fresh."
-merge-step(state, r): {
-  merged: first(state)
-  cur: second(state)
-  cur-hi: second(cur)
-}.(if(first(r) <= cur-hi + 1,
-     [merged, [first(cur), max(cur-hi, second(r))]],
-     [merged ++ [cur], r]))
+merge-step([merged, cur], [r-lo, r-hi]): {
+  cur-lo: cur first
+  cur-hi: cur second
+}.(if(r-lo <= cur-hi + 1,
+     [merged, [cur-lo, max(cur-hi, r-hi)]],
+     [merged ++ [cur], [r-lo, r-hi]]))
 
 ` "Sort ranges by start, then fold to merge overlapping intervals."
 merge-ranges(ranges): {
   sorted: ranges sort-by-num(first)
   result: sorted tail foldl(merge-step, [[], sorted head])
-}.(first(result) ++ [second(result)])
+  completed: result first
+  last: result second
+}.(completed ++ [last])
 
-range-size(r): second(r) - first(r) + 1
+range-size[lo, hi]: hi - lo + 1
 
 solve2(ranges): merge-ranges(ranges) map(range-size) sum
 

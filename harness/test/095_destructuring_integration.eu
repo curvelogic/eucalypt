@@ -1,0 +1,68 @@
+##
+## 095: Comprehensive integration tests for destructuring and named args
+##
+
+sum-xy({x y}): x + y
+sum-xy-renamed({x: px  y: py}): px + py
+add-pair([a, b]): a + b
+get-head([x : xs]): x
+get-rest([x : xs]): xs
+sum-multi([a, b : rest]): a + b + (rest head)
+prepend-zero([x : xs]): 0 ‖ xs
+plain-add(a, b): a + b
+
+data-blocks: [{x: 1 y: 2}, {x: 3 y: 4}]
+data-pairs: [[1, 2], [3, 4], [5, 6]]
+data-lists: [[1, 2, 3], [4, 5, 6]]
+
+tests: {
+
+  ` "Destructuring in pipeline"
+  pipeline: {
+    ` "map block destructuring over list"
+    a: (data-blocks map(sum-xy)) //= [3, 7]
+    ` "map renamed block destructuring over list"
+    b: (data-blocks map(sum-xy-renamed)) //= [3, 7]
+  }
+
+  ` "Positional and destructured functions coexist"
+  coexist: {
+    ` "plain positional function"
+    a: plain-add(1, 2) //= 3
+    ` "block destructuring function"
+    b: sum-xy({x: 1 y: 2}) //= 3
+    ` "juxtaposed block call"
+    c: sum-xy{x: 10 y: 20} //= 30
+  }
+
+  ` "List destructuring in pipeline"
+  list-pipeline: {
+    ` "map list destructuring over list of pairs"
+    a: (data-pairs map(add-pair)) //= [3, 7, 11]
+  }
+
+  ` "Head/tail in pipeline"
+  head-tail-pipeline: {
+    ` "extract heads from each list"
+    a: (data-lists map(get-head)) //= [1, 4]
+    ` "extract rests from each list"
+    b: (data-lists map(get-rest)) //= [[2, 3], [5, 6]]
+  }
+
+  ` "Cons operator in context"
+  cons-context: {
+    ` "build list using cons"
+    a: (1 ‖ 2 ‖ [3]) //= [1, 2, 3]
+    ` "prepend zero to tail of destructured list"
+    b: (prepend-zero([1, 2, 3])) //= [0, 2, 3]
+  }
+
+  ` "Mixed fixed and head/tail"
+  mixed-patterns: {
+    ` "sum first two and include third via rest"
+    a: sum-multi([10, 20, 30, 40]) //= 60
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)
