@@ -1,6 +1,0 @@
-# requires prelude
-
-'~': io.env.HOME
-lang: io.env.LANG
-
-RESULT: if((io.env lookup-or(:HOME, "~")) != "~", :PASS, :FAIL)

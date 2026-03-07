@@ -44,7 +44,7 @@ bd sync               # Sync with git
 
 Eucalypt is a functional language for generating, templating, and processing
 structured data (YAML, JSON, TOML). This reference covers what agents need
-to read and write `.eu` files in `harness/test/` and `lib/`.
+to read and write `.eu` files in `tests/harness/` and `lib/`.
 
 ### Primitives
 
@@ -54,8 +54,8 @@ to read and write `.eu` files in `harness/test/` and `lib/`.
 | Float | digits with `.` | `3.14`, `-0.5` |
 | String | double quotes | `"hello"`, `"line\nbreak"` |
 | Symbol | colon prefix | `:key`, `:name` |
-| Boolean | keywords | `true`, `false` |
-| Null | keyword | `null` |
+| Boolean | literals | `true`, `false` |
+| Null | literal | `null` |
 | DateTime | `t"..."` prefix | `t"2024-03-15"`, `t"2024-03-15T14:30:00Z"` |
 
 ### Blocks (Objects/Maps)
@@ -554,7 +554,7 @@ check: is-even(4) //=> true
 
 ## Harness Test Patterns
 
-Test files live in `harness/test/`. Each `.eu` file is a test case.
+Test files live in `tests/harness/`. Each `.eu` file is a test case.
 
 **Basic test structure:**
 
@@ -577,7 +577,7 @@ cargo test test_harness_001                     # specific test
 cargo test -- --nocapture test_harness_001      # with output
 ```
 
-**Error tests** in `harness/test/errors/` verify that specific inputs
+**Error tests** in `tests/harness/errors/` verify that specific inputs
 produce expected error messages. Each `.eu` file has a matching `.eu.expect`
 file containing the expected error output.
 

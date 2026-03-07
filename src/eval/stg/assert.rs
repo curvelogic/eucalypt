@@ -23,7 +23,7 @@ use super::tags::DataConstructor;
 ///
 /// Resolves the closure at `r` to WHNF and formats it:
 /// - Boxed scalars (number, string, symbol, zdt) — their literal form
-/// - Booleans and null — their keyword form
+/// - Booleans and null — their literal form
 /// - Lists and blocks — a type label such as `[list]` or `{block}`
 /// - Unevaluated / unknown — `<unevaluated>`
 fn format_ref(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref) -> String {

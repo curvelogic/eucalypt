@@ -40,7 +40,7 @@ fn run_bench_file(path: &Path) {
 }
 
 fn bench_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("harness/test/bench")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/harness/bench")
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {

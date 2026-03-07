@@ -1,0 +1,58 @@
+"Expression anaphor scoping tests. Verifies that anaphora work correctly in arg positions and paren groups, and that scope boundaries are respected."
+
+# Basic identity anaphor in args
+id-map: [1, 2, 3] map(_) //= [1, 2, 3]
+
+# Sections (existing behaviour must still work)
+plus-one: [1, 2, 3] map(+ 1) //= [2, 3, 4]
+times-two: [1, 2, 3] map(* 2) //= [2, 4, 6]
+
+# Anonymous anaphor in filter predicate
+filter-gt: [1, 2, 3, 4, 5] filter(_ > 2) //= [3, 4, 5]
+
+# Anonymous anaphor in map expression
+anon-plus: [1, 2, 3] map(_ + 1) //= [2, 3, 4]
+
+# Multiple anonymous anaphors: each _ introduces a new parameter
+# `(_ * _)` is a 2-arg multiply function
+two-param-f: (_ * _)
+two-param: two-param-f(3, 4) //= 12
+
+# Numbered anaphors for multi-param functions
+numbered-add-f: (_0 + _1)
+numbered-add: numbered-add-f(3, 4) //= 7
+
+# Same param twice using numbered anaphors
+same-param-f: (_0 * _0)
+same-param: same-param-f(5) //= 25
+
+# No parens — soup scope spans the whole expression
+# `_0 + _1 / 2` is λ(a, b). a + b/2
+num-soup-f: _0 + _1 / 2
+num-soup: num-soup-f(4, 6) //= 7
+
+# Pipeline with section (existing behaviour)
+pipe-section: 5 (+ 1) //= 6
+
+# Named anaphoric function in catenation position
+pipe-times-f: (_ * 2)
+pipe-times: 5 pipe-times-f //= 10
+
+# Subsumption: outer anaphors make inner paren groups transparent.
+# `_ + (_ * _)` — outer _ subsumes inner (_ * _), giving a 3-param function.
+sub-f: _ + (_ * _)
+sub: sub-f(1, 2, 3) //= 7
+
+# Composition with opaque parens — the motivating example for the
+# opaque-parens design. `(_ = :quux) ∘ tag` must parse as
+# (λx. x = :quux) composed with tag, NOT as a single 2-param function.
+tag(x): { t: x }
+is-quux: (_ = :quux) ∘ (.t)
+comp-true: is-quux({t: :quux}) //= true
+comp-false: is-quux({t: :foo}) //= false
+
+RESULT: [id-map, plus-one, times-two, filter-gt, anon-plus,
+         two-param, numbered-add, same-param, num-soup,
+         pipe-section, pipe-times, sub, comp-true, comp-false]
+          all-true?
+          then(:PASS, :FAIL)

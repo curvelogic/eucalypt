@@ -580,7 +580,7 @@ pub mod tests {
     fn eu_paths() -> Vec<PathBuf> {
         let mut paths = vec![];
 
-        if let Ok(entries) = fs::read_dir("./harness/test") {
+        if let Ok(entries) = fs::read_dir("./tests/harness") {
             for f in entries.flatten() {
                 let path = f.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("eu") {
@@ -606,7 +606,7 @@ pub mod tests {
     fn test_parse_harness_tests() {
         let mut loader = SourceLoader::new(vec![
             std::env::current_dir().unwrap(),
-            Path::new("./harness").to_path_buf(),
+            Path::new("./tests").to_path_buf(),
         ]);
 
         for f in eu_paths() {
@@ -619,7 +619,7 @@ pub mod tests {
 
     #[test]
     fn test_desugar_tests() {
-        let mut loader = SourceLoader::new(vec![Path::new("./harness/test").to_path_buf()]);
+        let mut loader = SourceLoader::new(vec![Path::new("./tests/harness").to_path_buf()]);
 
         for f in eu_paths() {
             let loc = Locator::Fs(f.clone());

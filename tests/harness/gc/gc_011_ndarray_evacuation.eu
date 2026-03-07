@@ -1,0 +1,52 @@
+"GC 011 — ndarray object GC survival test. Verifies that HeapNdArray objects survive GC collection and evacuation with their data intact. Creates ndarray objects early, forces GC pressure with many allocations, then checks array correctness."
+
+# Helper: create many cons-cell/block/string allocations to force GC
+alloc-noise(n): if(n <= 0, [], cons({id: n, s: str.of(n)}, alloc-noise(n - 1)))
+
+# Create ndarray early — it will be in an early block candidate for evacuation
+a: arr.from-flat([4, 4], [1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16])
+
+# Force GC pressure (100 blocks+string allocations)
+_gc-noise-1: alloc-noise(100) count
+
+# Now verify array data survived GC
+a-checks: {
+  a-shape: a arr.shape
+  a-len: a arr.length
+  a-sum: (a arr.to-list) sum
+  trues: [
+    a-shape = [4, 4],
+    a-len = 16,
+    a-sum = 136
+  ]
+}
+
+# Create another ndarray after GC pressure and verify it
+b: arr.from-flat([2, 2], [10, 20, 30, 40])
+b-checks: {
+  b-sum: (b arr.to-list) sum
+  trues: [
+    b-sum = 100
+  ]
+}
+
+# arr.map under GC pressure
+c: arr.from-flat([3], [1, 2, 3])
+_gc-noise-2: alloc-noise(50) count
+c-doubled: c arr.map(_ * 2)
+map-checks: {
+  cd-sum: (c-doubled arr.to-list) sum
+  cd-shape: c-doubled arr.shape
+  trues: [
+    cd-sum = 12,
+    cd-shape = [3]
+  ]
+}
+
+pass: [
+  a-checks.trues all-true?,
+  b-checks.trues all-true?,
+  map-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

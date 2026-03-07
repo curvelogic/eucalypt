@@ -1,0 +1,50 @@
+"Juxtaposed definition syntax. Shorthand for defining functions with destructuring parameters."
+
+# List destructuring definition
+add-pair[a, b]: a + b
+
+# Block destructuring definition
+add-block{x y}: x + y
+
+# Cons destructuring definition
+my-head[h : t]: h
+my-tail[h : t]: t
+
+# Block with renaming
+magnitude-sq{x: px  y: py}: px * px + py * py
+
+tests: {
+
+  ` "Juxtaposed list definition"
+  list-def: {
+    ` "basic list destructuring"
+    a: add-pair([3, 4]) //= 7
+    ` "list destructuring via juxtaposed call"
+    b: add-pair[10, 20] //= 30
+  }
+
+  ` "Juxtaposed block definition"
+  block-def: {
+    ` "basic block destructuring"
+    a: add-block({x: 1 y: 2}) //= 3
+    ` "block destructuring via juxtaposed call"
+    b: add-block{x: 5 y: 6} //= 11
+  }
+
+  ` "Juxtaposed cons definition"
+  cons-def: {
+    ` "head of list"
+    a: my-head([1, 2, 3]) //= 1
+    ` "tail of list"
+    b: my-tail([1, 2, 3]) //= [2, 3]
+  }
+
+  ` "Block definition with renaming"
+  rename-def: {
+    ` "magnitude squared"
+    a: magnitude-sq{x: 3 y: 4} //= 25
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

@@ -1,0 +1,42 @@
+"Juxtaposed call syntax."
+
+f-block({x y}): x + y
+f-list([a, b]): a + b
+greet({name greeting}): "{greeting}, {name}!"
+f-rename({x: px  y: py}): px * px + py * py
+
+tests: {
+
+  ` "Juxtaposed block call"
+  block-call: {
+    ` "basic block apply"
+    a: f-block{x: 1 y: 2} //= 3
+    ` "block apply with larger values"
+    b: f-block{x: 10 y: 20} //= 30
+  }
+
+  ` "Juxtaposed list call"
+  list-call: {
+    ` "basic list apply"
+    a: f-list[10, 20] //= 30
+    ` "list apply with different values"
+    b: f-list[1, 2] //= 3
+  }
+
+  ` "Named argument style"
+  named-args: {
+    ` "greet with named arguments"
+    a: greet{name: "World" greeting: "Hello"} //= "Hello, World!"
+    ` "greet with different arguments"
+    b: greet{name: "Alice" greeting: "Hi"} //= "Hi, Alice!"
+  }
+
+  ` "Named args with renaming"
+  renamed: {
+    ` "point distance squared"
+    a: f-rename{x: 3 y: 4} //= 25
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)
