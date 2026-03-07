@@ -157,7 +157,7 @@ tagged: 42 // { note: "the answer" }
 
 The metadata can be retrieved with `meta`:
 
-```eu
+```eu,notest
 note: meta(tagged).note
 ```
 

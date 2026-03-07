@@ -72,7 +72,7 @@ eu config=settings.yaml app.eu
 
 In `app.eu`, the YAML content is available as `config`:
 
-```eu
+```eu,notest
 port: config.port
 ```
 
@@ -153,7 +153,7 @@ eu data.json -e 'items map(_.name) reverse'
 Declarations annotated with `:target` metadata can be selected for
 rendering:
 
-```eu
+```eu,notest
 # multi-output.eu
 ` { target: :summary }
 summary: { count: items count }

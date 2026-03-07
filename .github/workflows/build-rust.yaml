@@ -61,6 +61,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run tests
         run: cargo test
+      - name: Test doc examples
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --release
+          python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
 
 
   wasm:

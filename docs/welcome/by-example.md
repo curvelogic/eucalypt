@@ -217,20 +217,21 @@ eu d=defaults.yaml o=overrides.yaml -e 'd << o'
 ```eu
 # sales.eu
 sales: [
-  { region: "North" amount: 1200 }
-  { region: "South" amount: 800 }
-  { region: "North" amount: 600 }
-  { region: "South" amount: 1500 }
+  { region: "North" amount: 1200 },
+  { region: "South" amount: 800 },
+  { region: "North" amount: 600 },
+  { region: "South" amount: 1500 },
   { region: "East" amount: 900 }
 ]
 
 ` :suppress
 amounts: sales map(_.amount)
+n: sales count
 
 summary: {
-  total: amounts foldl(+, 0)
-  count: sales count
-  average: summary.total / summary.count
+  total: amounts sum
+  count: n
+  average: (amounts sum) / n
   max: amounts max-of
   min: amounts min-of
 }
@@ -280,7 +281,7 @@ while `deep-query("**.port", data)` matches at any depth.
 
 **Problem:** Extract timestamps and levels from log lines.
 
-```eu
+```eu,notest
 # logs.eu
 lines: [
   "2024-03-15 10:30:00 ERROR Connection timeout"
@@ -396,7 +397,7 @@ city: London
 **Problem:** Write a reusable script that accepts command-line
 arguments.
 
-```eu
+```eu,notest
 # greet.eu
 name: io.args head-or("World")
 times: io.args tail head-or("1") num

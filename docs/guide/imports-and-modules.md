@@ -12,7 +12,7 @@ In this chapter you will learn:
 Import another eucalypt file using the `import` key in declaration
 metadata:
 
-```eu
+```eu,notest
 { import: "helpers.eu" }
 
 # Names from helpers.eu are now available
@@ -27,7 +27,7 @@ imported names are available throughout the entire file.
 Imports can be scoped to a specific declaration, limiting where the
 imported names are visible:
 
-```eu
+```eu,notest
 ` { import: "math.eu" }
 calculations: {
   # Names from math.eu are available only within this block
@@ -41,7 +41,7 @@ calculations: {
 
 Give an import a name to access its contents under a namespace:
 
-```eu
+```eu,notest
 { import: "cfg=config.eu" }
 
 host: cfg.host
@@ -51,7 +51,7 @@ port: cfg.port
 This is especially useful when importing data files that might contain
 names which clash with your own:
 
-```eu
+```eu,notest
 { import: "prod=production.yaml" }
 
 url: "https://{prod.host}:{prod.port}"
@@ -61,7 +61,7 @@ url: "https://{prod.host}:{prod.port}"
 
 Supply a list to import several files at once:
 
-```eu
+```eu,notest
 { import: ["helpers.eu", "config.eu"] }
 
 result: helper(config-value)
@@ -69,7 +69,7 @@ result: helper(config-value)
 
 Named and unnamed imports can be mixed:
 
-```eu
+```eu,notest
 { import: ["helpers.eu", "cfg=config.eu"] }
 
 result: helper(cfg.port)
@@ -80,7 +80,7 @@ result: helper(cfg.port)
 Eucalypt can import files in any supported format. The format is
 inferred from the file extension:
 
-```eu
+```eu,notest
 { import: "data=records.yaml" }
 
 first-record: data head
@@ -88,7 +88,7 @@ first-record: data head
 
 You can override the format when the extension is misleading:
 
-```eu
+```eu,notest
 { import: "data=yaml@records.txt" }
 ```
 
@@ -97,7 +97,7 @@ You can override the format when the extension is misleading:
 Some formats (CSV, JSON Lines, text) produce lists rather than blocks.
 These **must** be given a name:
 
-```eu
+```eu,notest
 { import: "rows=transactions.csv" }
 
 total: rows map(_.amount num) foldl(+, 0)
@@ -107,7 +107,7 @@ total: rows map(_.amount num) foldl(+, 0)
 
 Imports can be placed at any level of nesting:
 
-```eu
+```eu,notest
 deep: {
   nested: {
     ` { import: "local-config.eu" }
@@ -160,7 +160,7 @@ project/
 
 `main.eu` can import `lib/utils.eu` using a path relative to itself:
 
-```eu
+```eu,notest
 { import: "lib/utils.eu" }
 
 result: util-function(42)
@@ -169,7 +169,7 @@ result: util-function(42)
 `lib/utils.eu` can import from `lib/helpers/misc.eu` using a path relative to
 *its own* location:
 
-```eu
+```eu,notest
 { import: "helpers/misc.eu" }
 
 util-function(x): misc-helper(x)
@@ -184,7 +184,7 @@ projects that rely on `-L` continue to work without modification.
 Import eucalypt code directly from a git repository. This is useful
 for sharing libraries without manually managing local copies:
 
-```eu
+```eu,notest
 { import: { git: "https://github.com/user/eu-lib"
             commit: "abc123def456"
             import: "lib/helpers.eu" } }
@@ -197,7 +197,7 @@ the import is repeatable and cacheable.
 
 Multiple git imports can be listed alongside simple imports:
 
-```eu
+```eu,notest
 { import: [
   "local.eu",
   { git: "https://github.com/user/lib"
@@ -210,7 +210,7 @@ Multiple git imports can be listed alongside simple imports:
 
 For large files, streaming imports read data lazily:
 
-```eu
+```eu,notest
 { import: "events=jsonl-stream@events.jsonl" }
 
 recent: events take(100)
@@ -242,7 +242,7 @@ system.
 
 ## Practical Example: Configuration Layering
 
-```eu
+```eu,notest
 # base.eu
 defaults: {
   host: "0.0.0.0"
@@ -251,7 +251,7 @@ defaults: {
 }
 ```
 
-```eu
+```eu,notest
 # deploy.eu
 { import: "base.eu" }
 

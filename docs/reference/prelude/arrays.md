@@ -73,7 +73,7 @@ Array-specific arithmetic (explicit namespace):
 The standard arithmetic operators `+`, `-`, `*`, `/` are polymorphic:
 when either operand is an array, the operation is applied element-wise.
 
-```eu
+```eu,notest
 a: arr.from-flat([3], [1, 2, 3])
 b: arr.from-flat([3], [10, 20, 30])
 c: a + b          # element-wise: [11, 22, 33]

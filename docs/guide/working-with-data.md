@@ -107,7 +107,7 @@ eu -e 'root' root=xml@data.xml
 
 Use list functions to navigate the structure:
 
-```eu
+```eu,notest
 { import: "root=xml@data.xml" }
 
 # Get the tag name (first element)
@@ -145,7 +145,7 @@ eu users.yaml roles.yaml merge.eu
 
 Where `merge.eu` contains logic that uses names from both inputs:
 
-```eu
+```eu,notest
 # merge.eu
 summary: {
   user-count: users count
@@ -225,7 +225,7 @@ eu sales=sales.csv -j -e '{
 
 Or as a reusable eucalypt file:
 
-```eu
+```eu,notest
 # report.eu
 { import: "sales=sales.csv" }
 

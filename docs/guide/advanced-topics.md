@@ -450,9 +450,12 @@ printf-style codes after a colon inside the interpolation braces.
 
 ```eu
 results: {
-  padded: "{42:%06d}"
-  float: "{3.14159:%.2f}"
-  hex: "{255:%x}"
+  n: 42
+  padded: "{n:%06d}"
+  pi: 3.14159
+  float: "{pi:%.2f}"
+  h: 255
+  hex: "{h:%x}"
 }
 ```
 

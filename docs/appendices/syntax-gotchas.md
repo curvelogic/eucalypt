@@ -293,7 +293,7 @@ want integer (floor) division.
 The `[h : t]` cons pattern is only valid in a **function parameter position**.
 A colon inside a list literal in an expression context is not valid:
 
-```eu
+```eu,notest
 # Valid — cons pattern in a function parameter
 list-head([h : t]): h
 

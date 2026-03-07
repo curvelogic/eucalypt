@@ -20,7 +20,7 @@ greet(name, greeting): "{greeting}, {name}!"
 
 Functions can be called with arguments in parentheses:
 
-```eu
+```eu,notest
 a: square(5)
 b: add(3, 4)
 c: greet("Alice", "Hello")
@@ -35,7 +35,7 @@ c: Hello, Alice!
 Or via catenation (see [Expressions and
 Pipelines](expressions-and-pipelines.md)):
 
-```eu
+```eu,notest
 a: 5 square
 b: 4 add(3)
 ```
@@ -51,7 +51,7 @@ variables in the function body.
 A block pattern binds named fields from a block argument. Shorthand
 form binds the field name directly:
 
-```eu
+```eu,notest
 sum-of-point({x y}): x + y
 
 p: { x: 3 y: 4 }
@@ -439,7 +439,7 @@ eu -e 'flip(-, 1, 3)'
 
 `flip` is useful for adapting functions to a pipeline:
 
-```eu
+```eu,notest
 ` :suppress
 with-tags: merge flip ({ tags: [:a, :b] })
 

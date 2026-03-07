@@ -148,7 +148,7 @@ Juxtaposed call syntax passes a block or list literal as a single
 argument without parentheses. No space between the function name and
 the opening bracket:
 
-```eu
+```eu,notest
 # f{...} is sugar for f({...})
 sum-xy{x: 10 y: 20}
 
@@ -237,7 +237,7 @@ The older paren-wrapped style is still supported for backwards compatibility:
 
 Once declared, the bracket pair can be used as an expression:
 
-```eu
+```eu,notest
 doubled: ⌈ 3 + 4 ⌉    # => 14
 bumped:  ⌊ 5 ⌋         # => 6
 ```
@@ -272,13 +272,13 @@ A bracket pair gains a **monad spec** when declared with an empty
 block `{}` as its parameter and a body supplying `bind` and `return`
 function names (paren-free style):
 
-```eu
+```eu,notest
 ⟦{}⟧: { bind: my-bind  return: my-return }
 ```
 
 The paren-wrapped style is also supported:
 
-```eu
+```eu,notest
 (⟦{}⟧): { bind: my-bind  return: my-return }    # still valid
 ```
 
@@ -287,7 +287,7 @@ parsed as a **bracket block** — a sequence of `name: monadic-action`
 declarations.  The closing bracket must be followed by a dot and a
 return expression:
 
-```eu
+```eu,notest
 result: ⟦ a: ma  b: mb ⟧.return_expr
 ```
 

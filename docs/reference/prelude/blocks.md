@@ -121,7 +121,7 @@ This feature is **experimental** and is not included in generated documentation 
 | `pb.merge(l, r)` | Merge persistent blocks `l` and `r`; left-hand values win on key conflicts |
 | `pb.merge-with(f, l, r)` | Merge persistent blocks `l` and `r`, resolving conflicts with `f(left-val, right-val)` |
 
-```eu
+```eu,notest
 # Round-trip a standard block through a persistent block
 p: {a: 1, b: 2} pb.from-block
 v: p pb.lookup(:a, 0)           # 1
