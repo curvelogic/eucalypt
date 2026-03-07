@@ -2,6 +2,114 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.4.0] - Destructuring, Monadic Blocks, Arrays, Error Messages
+
+### Added
+
+- **Destructuring Parameters** - Pattern matching in function parameters
+  - Block destructuring: `f({x y}): x + y`
+  - Fixed-length list destructuring: `f([a, b]): a + b`
+  - Head/tail cons destructuring: `f([h : t]): h` with `‖` operator
+  - Juxtaposed call syntax: `f{x: 1 y: 2}` and `f[1, 2]`
+  - Juxtaposed definition syntax: `f{x y}: x + y` and `f[a, b]: a + b`
+  - Destructure fusion pass to elide intermediate allocations
+
+- **Monadic Blocks** - Do-notation via bracket metadata
+  - `⟦ a: ma  b: mb ⟧.expr` desugars to bind/return chains
+  - User-defined bracket pairs with `:monad` marker
+  - Paren-free bracket pair declarations
+
+- **Idiot Brackets** - User-defined Unicode bracket pairs
+  - Unicode Ps/Pe category detection for bracket support
+  - Custom evaluation semantics via bracket metadata
+
+- **N-dimensional Arrays** - `arr.*` namespace for tensor operations
+  - `arr.from-flat`, `arr.reshape`, `arr.map`, `arr.fold`, `arr.neighbours`
+  - Polymorphic arithmetic: `+`, `-`, `*`, `/` work element-wise on arrays
+  - Heap-backed `HeapNdArray` with GC integration
+
+- **Persistent Blocks** - Functional map data type
+  - `pb.from-block`, `pb.lookup`, `pb.to-list`, `pb.merge`, `pb.merge-with`
+  - O(log n) lookup backed by `im-rc` persistent data structures
+
+- **Expression Anaphora Scoping** - Refined `_` semantics
+  - Multiple `_` creates multiple parameters (`_ + _` means `_0 + _1`)
+  - Parentheses are opaque boundaries for anaphora scoping
+  - Propagation through paren-free constructs
+
+- **Relative Imports** - Resolve imports relative to source file directory
+
+- **Power Operator** - `^` for exponentiation with `pow` intrinsic
+
+- **Division Semantics** - `/` is floor division, `÷` is exact division
+
+- **Unicode Operator Aliases** - `≤`, `≥`, `≠` for comparison operators
+
+- **`product`** - Multiply elements in a list (complement to `sum`)
+
+- **Contextual Error Messages** - Comprehensive error improvement programme
+  - Did-you-mean suggestions for key lookup failures
+  - Expected vs actual type in type mismatch errors
+  - Structured error output with `--error-format=json`
+  - Multiple parse/translate errors reported in one pass
+  - Hints for common mistakes: `==` → `=`, `->` is const not lambda,
+    `import`/`use`/`require` as unresolved variables, camelCase function
+    names, missing parity functions, string method patterns
+  - Source locations in parse errors and BlackHole (infinite loop) errors
+  - Contextual help for operator precedence issues
+
+- **Documentation**
+  - Eucalypt Guide (15 tutorial chapters)
+  - Eucalypt by Example (15 worked examples)
+  - FAQ (20 common questions)
+  - Agent reference page for AI coding agents
+  - Syntax cheat sheet
+  - `llms.txt` and `llms-full.txt` for LLM context
+  - mdBook migration with syntax highlighting
+  - Documentation example testing (`scripts/test-doc-examples.py`)
+
+- **Editor Support**
+  - Unified Emacs mode with tree-sitter and traditional variants
+  - Tree-sitter grammar updates for 0.4.0 syntax
+  - VS Code extension improvements
+
+- **Platform**
+  - aarch64-linux release binary
+  - Curl-installable install script
+  - WASM compilation gate in CI
+
+### Changed
+
+- **Default heap limit** reduced from 64 GiB to 32 GiB managed heap
+- **Assertion operators** reorganised; falsy variants deprecated
+- **Stack traces** - Lazy iterators, pre-allocated buffers, auto-filtered
+  intrinsic frames, suppressed empty traces
+
+### Performance
+
+- **VM execution hot loop** optimisation
+- **Continuations** stored inline in Vec, off the eucalypt heap
+- **Boolean returns** use pre-allocated global closures
+- **`return_native`** reuses existing Atom closures
+- **Thunk memoisation** preserved through shared constructor env backing
+- **Update accumulation** prevented in IF branches via `suppress_update`
+- **`str_arg_ref()`** zero-copy string borrowing for intrinsics
+
+### Fixed
+
+- Expression anaphor scoping for `_`, `_0`, `_1` in arg positions
+- Cons pattern mangling in EU formatter
+- `HeapNdArray` GC evacuation correctness
+- `u8` overflow for large frames in constructor env
+- `set.add` for computed values
+- Deep merge handling of boxed symbols in dynamic blocks
+- Unclosed string interpolation converted from panic to proper error
+- `::` converted from panic to proper error
+- `#` inside string literals no longer parsed as comment (tree-sitter, Emacs)
+- Rainbow-delimiters restored with string-aware syntax-propertize
+- Stray debug `println` corrupting CI version output
+- Block-level DCE handling of dynamise fallbacks
+
 ## [0.3.0] - Runtime v2, GC, Random Numbers, Streaming Imports
 
 ### Added

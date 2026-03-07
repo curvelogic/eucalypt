@@ -1,8 +1,8 @@
 /target/
 **/*.rs.bk
 /.idea
-/harness/test/.result/
-/harness/test/**/.result/
+/tests/harness/.result/
+/tests/harness/**/.result/
 /src/syntax/grammar.rs
 /src/syntax/string_pattern.rs
 
@@ -47,3 +47,4 @@ editors/vscode/*.vsix
 
 # mdBook build output
 /book/
+#*#

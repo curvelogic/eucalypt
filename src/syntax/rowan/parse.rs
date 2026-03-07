@@ -2376,8 +2376,8 @@ UNIT@0..105
     fn test_specific_string_pattern_files() {
         // Test specific files known to contain string patterns
         let test_files = [
-            "harness/test/024_interpolation.eu",
-            "harness/test/041_numeric_formats.eu",
+            "tests/harness/024_interpolation.eu",
+            "tests/harness/041_numeric_formats.eu",
         ];
 
         for file_path in &test_files {
@@ -2429,7 +2429,7 @@ UNIT@0..105
         );
 
         // Test the actual harness file
-        let content = std::fs::read_to_string("harness/test/031_block_anaphora.eu").unwrap();
+        let content = std::fs::read_to_string("tests/harness/031_block_anaphora.eu").unwrap();
         let parse = parse_unit(&content);
 
         if !parse.errors().is_empty() {
@@ -2523,7 +2523,7 @@ UNIT@0..105
 
     #[test]
     pub fn parse_harness_eucalypt_files() {
-        for entry in std::fs::read_dir(Path::new("harness/test"))
+        for entry in std::fs::read_dir(Path::new("tests/harness"))
             .unwrap()
             .flatten()
         {

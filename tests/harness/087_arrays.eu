@@ -1,0 +1,221 @@
+"Arrays (tensors). Tests for n-dimensional array construction, access, query, transformation, arithmetic, and rendering."
+
+` "Construction and basic queries"
+construction-checks: {
+  trues: [
+    (arr.zeros([3]) arr.shape) = [3],
+    (arr.zeros([2, 3]) arr.shape) = [2, 3],
+    (arr.zeros([2, 3]) arr.rank) = 2,
+    (arr.zeros([2, 3]) arr.length) = 6,
+    (arr.fill([3], 5) arr.to-list) = [5, 5, 5],
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.shape) = [2, 2],
+    (arr.from-flat([4], [1, 2, 3, 4]) arr.rank) = 1
+  ]
+}
+
+` "Type checking"
+type-checks: {
+  trues: [
+    (arr.zeros([2]) arr.array?) = true,
+    (42 arr.array?) = false,
+    ("hello" arr.array?) = false,
+    ([1, 2] arr.array?) = false,
+    is-array?(arr.zeros([1])) = true,
+    is-array?(99) = false
+  ]
+}
+
+` "Element access"
+access-checks: {
+  trues: [
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, 0])) = 1,
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([0, 1])) = 2,
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([1, 0])) = 3,
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.get([1, 1])) = 4,
+    (arr.from-flat([3], [10, 20, 30]) arr.get([2])) = 30
+  ]
+}
+
+` "Element mutation (functional, returns new array)"
+set-checks: {
+  trues: [
+    {
+      a: arr.from-flat([3], [1, 2, 3])
+      b: a arr.set([1], 99)
+    }.(b arr.get([1])) = 99,
+    {
+      a: arr.from-flat([3], [1, 2, 3])
+      b: a arr.set([1], 99)
+    }.(a arr.get([1])) = 2
+  ]
+}
+
+` "to-list conversion"
+to-list-checks: {
+  trues: [
+    (arr.from-flat([3], [10, 20, 30]) arr.to-list) = [10, 20, 30],
+    (arr.zeros([3]) arr.to-list) = [0, 0, 0],
+    (arr.fill([4], 7) arr.to-list) = [7, 7, 7, 7]
+  ]
+}
+
+` "Transformations"
+transform-checks: {
+  trues: [
+    {
+      a: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+      t: a arr.transpose
+    }.(t arr.shape) = [3, 2],
+    {
+      a: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+      t: a arr.transpose
+    }.(t arr.get([0, 1])) = 4,
+    {
+      a: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+      r: a arr.reshape([6])
+    }.(r arr.shape) = [6],
+    {
+      a: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+      r: a arr.reshape([6])
+    }.(r arr.to-list) = [1, 2, 3, 4, 5, 6]
+  ]
+}
+
+` "Arithmetic"
+arithmetic-checks: {
+  trues: [
+    {
+      a: arr.from-flat([3], [1, 2, 3])
+      b: arr.from-flat([3], [10, 20, 30])
+    }.(arr.add(a, b) arr.to-list) = [11, 22, 33],
+    {
+      a: arr.from-flat([3], [10, 20, 30])
+      b: arr.from-flat([3], [1, 2, 3])
+    }.(arr.sub(a, b) arr.to-list) = [9, 18, 27],
+    {
+      a: arr.from-flat([3], [2, 3, 4])
+      b: arr.from-flat([3], [5, 6, 7])
+    }.(arr.mul(a, b) arr.to-list) = [10, 18, 28],
+    {
+      a: arr.from-flat([2], [10, 20])
+      b: arr.from-flat([2], [2, 4])
+    }.(arr.div(a, b) arr.to-list) = [5, 5]
+  ]
+}
+
+` "!! operator for array access (eu-4azf)"
+bang-bang-checks: {
+  trues: [
+    # 1D array: !! with single-element coord list
+    (arr.from-flat([3], [10, 20, 30]) !! [0]) = 10,
+    (arr.from-flat([3], [10, 20, 30]) !! [2]) = 30,
+    # 2D array: !! with [row, col] coord list
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) !! [0, 0]) = 1,
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) !! [1, 1]) = 4,
+    # List !! still works for plain lists
+    ([10, 20, 30] !! 1) = 20,
+    ([10, 20, 30] !! 0) = 10
+  ]
+}
+
+` "Operator arithmetic polymorphism (eu-a1hu)"
+poly-arith-checks: {
+  trues: [
+    # Array + array (element-wise)
+    {
+      a: arr.from-flat([3], [1, 2, 3])
+      b: arr.from-flat([3], [10, 20, 30])
+    }.((a + b) arr.to-list) = [11, 22, 33],
+    # Array - array (element-wise)
+    {
+      a: arr.from-flat([3], [10, 20, 30])
+      b: arr.from-flat([3], [1, 2, 3])
+    }.((a - b) arr.to-list) = [9, 18, 27],
+    # Array * array (element-wise)
+    {
+      a: arr.from-flat([3], [2, 3, 4])
+      b: arr.from-flat([3], [5, 6, 7])
+    }.((a * b) arr.to-list) = [10, 18, 28],
+    # Array / array (element-wise)
+    {
+      a: arr.from-flat([2], [10.0, 20.0])
+      b: arr.from-flat([2], [2.0, 4.0])
+    }.((a / b) arr.to-list) = [5, 5],
+    # Scalar arithmetic still works
+    2 + 3 = 5,
+    10 - 4 = 6,
+    3 * 7 = 21,
+    10 / 2 = 5
+  ]
+}
+
+` "arr.indices — list of coordinate lists"
+indices-checks: {
+  trues: [
+    # 1D array: indices should be [[0], [1], [2]]
+    (arr.from-flat([3], [10, 20, 30]) arr.indices) = [[0], [1], [2]],
+    # 2D array: row-major coordinate lists
+    (arr.from-flat([2, 2], [1, 2, 3, 4]) arr.indices) = [[0, 0], [0, 1], [1, 0], [1, 1]]
+  ]
+}
+
+` "arr.map — apply function to each element"
+map-checks: {
+  trues: [
+    # Double each element
+    {
+      a: arr.from-flat([3], [1, 2, 3])
+      b: arr.map((_ * 2), a)
+    }.(b arr.to-list) = [2, 4, 6],
+    # Shape is preserved
+    {
+      a: arr.from-flat([2, 3], [1, 2, 3, 4, 5, 6])
+      b: arr.map((_ + 10), a)
+    }.(b arr.shape) = [2, 3]
+  ]
+}
+
+` "arr.fold — left-fold over all elements"
+fold-checks: {
+  trues: [
+    # Sum of elements
+    (arr.from-flat([4], [1, 2, 3, 4]) arr.fold((+), 0)) = 10,
+    # Product of elements
+    (arr.from-flat([3], [2, 3, 4]) arr.fold((*), 1)) = 24
+  ]
+}
+
+` "arr.neighbours — values at valid neighbouring coordinates"
+neighbours-checks: {
+  trues: [
+    # In a 1D array [10, 20, 30], neighbours of index [1] with offsets [[-1], [1]]
+    # should give [10, 30] (both in bounds)
+    {
+      a: arr.from-flat([3], [10, 20, 30])
+      ns: arr.neighbours(a, [1], [[-1], [1]])
+    }.(ns sort-nums) = [10, 30],
+    # Neighbours of boundary element [0]: only [1] offset is in bounds
+    {
+      a: arr.from-flat([3], [10, 20, 30])
+      ns: arr.neighbours(a, [0], [[-1], [1]])
+    }.ns = [20]
+  ]
+}
+
+pass: [
+  construction-checks.trues all-true?,
+  type-checks.trues all-true?,
+  access-checks.trues all-true?,
+  set-checks.trues all-true?,
+  to-list-checks.trues all-true?,
+  transform-checks.trues all-true?,
+  arithmetic-checks.trues all-true?,
+  bang-bang-checks.trues all-true?,
+  poly-arith-checks.trues all-true?,
+  indices-checks.trues all-true?,
+  map-checks.trues all-true?,
+  fold-checks.trues all-true?,
+  neighbours-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

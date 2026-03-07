@@ -5,8 +5,8 @@ use std::{path::PathBuf, str::FromStr};
 
 /// Common options for all tests
 pub fn opts(filename: &str) -> EucalyptOptions {
-    let lib_path = vec![PathBuf::from("harness/test")];
-    let path = format!("harness/test/{filename}");
+    let lib_path = vec![PathBuf::from("tests/harness")];
+    let path = format!("tests/harness/{filename}");
 
     EucalyptOptions::default()
         .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
@@ -16,8 +16,8 @@ pub fn opts(filename: &str) -> EucalyptOptions {
 
 /// Common options for error tests
 pub fn error_opts(filename: &str) -> EucalyptOptions {
-    let lib_path = vec![PathBuf::from("harness/test/errors")];
-    let path = format!("harness/test/errors/{filename}");
+    let lib_path = vec![PathBuf::from("tests/harness/errors")];
+    let path = format!("tests/harness/errors/{filename}");
 
     EucalyptOptions::default()
         .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
@@ -476,7 +476,7 @@ pub fn test_harness_096() {
 
 #[test]
 pub fn test_harness_097() {
-    run_test(&opts("097_idiom_brackets.eu"));
+    run_test(&opts("097_idiot_brackets.eu"));
 }
 
 #[test]

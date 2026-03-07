@@ -1,0 +1,31 @@
+"Cons operator for list construction."
+
+tests: {
+
+  ` "Cons single element onto list"
+  single: {
+    ` "prepend 1 to [2, 3]"
+    a: (1 ‖ [2, 3]) //= [1, 2, 3]
+    ` "prepend :a to [:b :c]"
+    b: (:a ‖ [:b, :c]) //= [:a, :b, :c]
+  }
+
+  ` "Cons chain right-associative"
+  chain: {
+    ` "1 ‖ 2 ‖ [3] should be [1, 2, 3]"
+    a: (1 ‖ 2 ‖ [3]) //= [1, 2, 3]
+    ` "chaining three elements"
+    b: (10 ‖ 20 ‖ 30 ‖ []) //= [10, 20, 30]
+  }
+
+  ` "Cons onto empty list"
+  empty: {
+    ` "single element from empty"
+    a: (1 ‖ []) //= [1]
+    ` "two elements from empty"
+    b: (1 ‖ 2 ‖ []) //= [1, 2]
+  }
+
+}
+
+RESULT: tests values map(values) map(all-true?) all-true? then(:PASS, :FAIL)

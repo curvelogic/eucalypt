@@ -73,6 +73,12 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 - Use `#` comments for inline explanatory notes within blocks (e.g. section separators, notes that apply to a group of bindings rather than one declaration) and for disabling code.
 - Doc metadata should be markdown: use backquotes for `param` and `function` names.
 
+## Sections and anaphora
+
+- Prefer sections over superfluous brackets: `iterate(+ 2, 0)` not `iterate((+ 2), 0)`, `map(* 2)` not `map((* 2))`.
+- Prefer sections over anaphora when a section suffices: `map(* 2)` not `map(_ * 2)`.
+- Use anaphora when the expression genuinely needs more than a simple section: `filter(_ > threshold)`, `map(_ * _ + 1)`.
+
 ## Blocks
 
 - Use blocks for local bindings: `{ x: ... y: ... }.(x + y)`, but limit to one block, do not stack this construct

@@ -218,7 +218,7 @@ def main():
     # Determine paths
     script_dir = Path(__file__).parent
     project_dir = script_dir.parent
-    doc_dir = str(project_dir / "doc")
+    doc_dir = str(project_dir / "docs")
 
     # Check eu binary
     if not args.list:

@@ -1,0 +1,61 @@
+"Persistent Blocks (experimental). Tests for the pb: namespace: construction from standard blocks, O(log n) lookup, to-list round-trip, and left-biased merge."
+
+` "Construction"
+construction-checks: {
+  trues: [
+    ({a: 1, b: 2} pb.from-block pb.to-list count) = 2,
+    ({} pb.from-block pb.to-list count) = 0,
+    ({x: 42} pb.from-block pb.to-list block) = {x: 42}
+  ]
+}
+
+` "Lookup"
+lookup-checks: {
+  trues: [
+    ({a: 1, b: 2} pb.from-block pb.lookup(:a, 99)) = 1,
+    ({a: 1, b: 2} pb.from-block pb.lookup(:b, 99)) = 2,
+    ({a: 1, b: 2} pb.from-block pb.lookup(:c, 99)) = 99,
+    ({x: "hello"} pb.from-block pb.lookup(:x, "default")) = "hello"
+  ]
+}
+
+` "Round-trip to standard block and back"
+roundtrip-checks: {
+  trues: [
+    {
+      original: {a: 1, b: 2, c: 3}
+      trip: original pb.from-block pb.to-list block
+    }.(trip = original),
+    {
+      original: {}
+      trip: original pb.from-block pb.to-list block
+    }.(trip = original)
+  ]
+}
+
+` "Merge (left-biased: catenated left-hand value wins for duplicate keys)"
+merge-checks: {
+  trues: [
+    {
+      l: {a: 1} pb.from-block
+      r: {b: 2} pb.from-block
+    }.((l pb.merge(r) pb.to-list count) = 2),
+    {
+      l: {a: 1} pb.from-block
+      r: {a: 99, b: 2} pb.from-block
+    }.((l pb.merge(r) pb.lookup(:a, 0)) = 1),
+    {
+      l: {a: 1} pb.from-block
+      r: {a: 99, b: 2} pb.from-block
+    }.((l pb.merge(r) pb.lookup(:b, 0)) = 2)
+  ]
+}
+
+pass: [
+  construction-checks.trues all-true?,
+  lookup-checks.trues all-true?,
+  roundtrip-checks.trues all-true?,
+  merge-checks.trues all-true?
+] all-true?
+
+RESULT: if(pass, :PASS, :FAIL)

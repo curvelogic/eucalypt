@@ -3,7 +3,7 @@ title = "Eucalypt"
 description = "A tool and language for generating, templating, rendering and processing structured data"
 authors = ["Greg Hawkins"]
 language = "en"
-src = "doc"
+src = "docs"
 
 [build]
 build-dir = "book"
@@ -13,8 +13,8 @@ git-repository-url = "https://github.com/curvelogic/eucalypt"
 edit-url-template = "https://github.com/curvelogic/eucalypt/edit/master/{path}"
 site-url = "/eucalypt/"
 no-section-label = false
-additional-css = ["doc/custom.css"]
-additional-js = ["doc/theme/eucalypt-highlight.js"]
+additional-css = ["docs/custom.css"]
+additional-js = ["docs/theme/eucalypt-highlight.js"]
 
 [output.html.search]
 enable = true

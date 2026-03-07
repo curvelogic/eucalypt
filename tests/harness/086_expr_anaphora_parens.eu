@@ -1,0 +1,35 @@
+"Expression anaphora scoping in parenthesised sub-expressions. Under the new scoping model, parens are opaque by default for BOTH anonymous and numbered anaphora. Subsumption makes inner parens transparent when the outer scope already has anaphors."
+
+# Basic: no parens — soup scope spans the whole expression
+# _0 + _1 binds both params at this level; / 2 is floor division
+α: zip-with(_0 + _1, [1, 2, 3], [4, 5, 6]) //= [5, 7, 9]
+
+# ArgTuple element with naked anaphora forms a lambda
+β: zip-with(_0 * _1, [1, 2, 3], [2, 3, 4]) //= [2, 6, 12]
+
+# Single anaphor in parens — parens opaque, forms lambda; outer + 1 applies to result
+# (_0) in parens becomes lam(a). a; then the outer arg soup is `lam + 1` (section)
+# which is a section with the lambda as the partial application.
+# Simplest: use no parens for this
+γ: [10, 20, 30] map(_0 + 1) //= [11, 21, 31]
+
+# Outer-scope anaphor with outer variable reference
+c: 2
+δ: [1, 2, 3] map(_ * c) //= [2, 4, 6]
+
+# Mixed: one anaphor at outer level, one in inner subsumed paren group
+# _ + (_ * _) — outer _ subsumes inner (_ * _) giving a 3-param function
+ε: zip-with(_0 + _1 - 1, [2, 3, 4], [5, 6, 7]) //= [6, 8, 10]
+
+# Subsumption: outer anaphors make inner transparent
+# `_0 * (_1 + 2)` — outer _0 subsumes inner (_1 + 2)
+# Wait: (_1 + 2) has NO direct anaphors at the outer level — the _ is inside parens.
+# But _0 is a direct anaphor at the outer soup level.
+# So in_expr_anaphor_scope = true when we descend into (_1 + 2).
+# The inner soup (_1 + 2) sees in_expr_anaphor_scope = true and does NOT wrap.
+# Its _1 anaphor joins the outer scope → 2-param function.
+η: zip-with(_0 * (_1 + 2), [1, 2, 3], [4, 5, 6]) //= [6, 14, 24]
+
+RESULT: [α, β, γ, δ, ε, η]
+          all-true?
+          then(:PASS, :FAIL)

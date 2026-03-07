@@ -761,7 +761,7 @@ mod tests {
 
     #[test]
     pub fn check_harness_eucalypt_files() {
-        for entry in std::fs::read_dir(Path::new("harness/test"))
+        for entry in std::fs::read_dir(Path::new("tests/harness"))
             .unwrap()
             .flatten()
         {
