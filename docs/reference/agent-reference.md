@@ -611,8 +611,11 @@ config alter([:server, :db, :port], 3306)
 # Apply a function to a nested value
 config update([:server, :db, :port], inc)
 
-# Merge into a nested block
+# Shallow merge into a nested block (replaces nested blocks)
 config merge-at([:server, :db], { host: "10.0.0.1" })
+
+# Deep merge into a nested block (preserves nested blocks)
+config deep-merge-at([:server, :db], { host: "10.0.0.1" })
 ```
 
 ### 4.8 Grouping and Sorting

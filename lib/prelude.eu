@@ -1267,6 +1267,13 @@ merge-at(ks, v, b): if(ks nil?,
 		                                        merge-at(ks tail, v),
                                             tongue(ks tail, v)))
 
+` "deep-merge-at(ks, v, b) - deep merge block `v` into block value at path-of-keys `ks`"
+deep-merge-at(ks, v, b): if(ks nil?,
+                             deep-merge(b, v),
+                             b update-value-or(ks head,
+                                               deep-merge-at(ks tail, v),
+                                               tongue(ks tail, v)))
+
 
 
 ` { export: :suppress
