@@ -87,9 +87,6 @@ sample(n, list, stream): {
 ` "`panic(s)` - raise runtime error with message string `s`."
 panic: __PANIC
 
-` "`assert(c, s, v)` - if `c` is true then value `v` otherwise error with message `s`."
-assert(c, s, v): if(c, v, panic(s))
-
 ##
 ## Essentials
 ##
@@ -795,6 +792,13 @@ merge-meta(m, e): e // (meta(e) m)
     associates: :left
     precedence: :meta }
 (e //<< m): e merge-meta(m)
+
+##
+## Assertions
+##
+
+` "`assert(p?, s, v)` - if `v p?` is true then return `v` otherwise error with message `s`."
+assert(p?, s, v): if(v p?, v, panic(s))
 
 assertions: {
   # In debug mode maybe the machine checks every return value against
