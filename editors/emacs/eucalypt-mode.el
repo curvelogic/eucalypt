@@ -270,7 +270,9 @@ Set via file-local variables, e.g.:
      ((parent-is "parameter_list") parent-bol eucalypt-indent-offset)
      ;; Soup continuation
      ((parent-is "soup") parent-bol eucalypt-indent-offset)
-     ;; Metadata is part of declaration — don't indent the body extra
+     ;; Backtick metadata begins a declaration — align with declaration, not inside it
+     ((node-is "metadata") parent-bol 0)
+     ;; Content within a metadata annotation (e.g. block after backtick)
      ((parent-is "metadata") parent-bol 0)
      ;; Declaration body continuation
      ((parent-is "declaration") parent-bol eucalypt-indent-offset)
