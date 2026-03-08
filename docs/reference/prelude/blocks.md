@@ -60,6 +60,7 @@
 | `set-value(k, v)` | Set `b.k` to `v`, adding if absent |
 | `tongue(ks, v)` | Construct block with a single nested path-of-keys `ks` down to value `v` |
 | `merge-at(ks, v, b)` | Shallow merge block `v` into block value at path-of-keys `ks` |
+| `deep-merge-at(ks, v, b)` | Deep merge block `v` into block value at path-of-keys `ks` (preserves nested blocks) |
 
 ## Deep Find and Query
 
@@ -82,8 +83,8 @@ config: {
   db: { host: "db.local" port: 5432 }
 }
 
-hosts: config deep-find("host")  # ["localhost", "db.local"]
-first-host: config deep-find-first("host", "unknown")  # "localhost"
+hosts: config deep-find(:host)  # ["localhost", "db.local"]
+first-host: config deep-find-first(:host, "unknown")  # "localhost"
 ```
 
 ### Deep Query
