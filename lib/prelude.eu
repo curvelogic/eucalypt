@@ -278,20 +278,30 @@ deep-query-first(pattern, d, b): b deep-query(pattern) head-or(d)
 
 ` "`deep-query-paths(pattern, b)` - return list of key paths matching `pattern` in block `b`."
 deep-query-paths(pattern, b): {
+
   segs: pattern str.split-on("[.]")
-  first-seg: segs head
-  norm: if(first-seg = "**", segs, cons("**", segs))
-  all-keyed(v): if(v block?, v keys map({k: •}.[k, v lookup(k)]), [])
-  match-key-pair(seg, p): {path: p first, val: p second}.(
-    if(val block?, if(val has(sym(seg)), [[path ++ [sym(seg)], val lookup(sym(seg))]], []), []))
-  expand-star(p): {path: p first, val: p second}.(
+  norm: if((segs head) = "**", segs, cons("**", segs))
+
+  pair(v, k): [k, v lookup(k)]
+  all-keyed(v): if(v block?, v keys map(pair(v)), [])
+
+  prepend-path(path, kv): [path ++ [kv first], kv second]
+
+  match-key-pair(seg, [path, val]):
     if(val block?,
-       val keys map({k: •}.[path ++ [k], val lookup(k)]),
-       []))
+       if(val has(sym(seg)), [[path ++ [sym(seg)], val lookup(sym(seg))]], []),
+       [])
+
+  expand-star([path, val]):
+    if(val block?,
+       val keys map(pair(val)) map(prepend-path(path)),
+       [])
+
   desc-pairs(p): {path: p first, val: p second}.(
     if(val block?,
        cons(p, all-keyed(val) mapcat({kv: •}.(desc-pairs([path ++ [kv first], kv second])))),
        []))
+
   step(pairs, remaining):
     if(remaining nil?,
        pairs map(first),
@@ -303,7 +313,9 @@ deep-query-paths(pattern, b): {
              if(seg = "*",
                 step(pairs mapcat(expand-star), rest),
                 step(pairs mapcat(match-key-pair(seg)), rest)))))
+
   result: step([[[], b]], norm)
+
 }.result
 
 ##
