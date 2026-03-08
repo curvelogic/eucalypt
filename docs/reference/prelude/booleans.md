@@ -16,7 +16,7 @@
 | Function | Description |
 |----------|-------------|
 | `panic` | Raise runtime error with message string `s` |
-| `assert(c, s, v)` | If `c` is true then value `v` otherwise error with message `s` |
+| `assert(p?, s, v)` | If `v p?` is true then return `v` otherwise error with message `s`. Composable in pipelines: `x assert(non-nil?, "expected non-nil")` |
 
 ## Boolean Logic
 
