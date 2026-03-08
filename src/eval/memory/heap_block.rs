@@ -45,7 +45,7 @@ use super::syntax::RefPtr;
 pub struct BlockEntry {
     /// Insertion order for restoring declaration order at render time.
     pub order: usize,
-    /// Code pointer (HeapSyn node) for this value's thunk.
+    /// Code pointer (HeapSyn node) for this value's thunk or lambda body.
     pub code: RefPtr<super::syntax::HeapSyn>,
     /// Environment frame pointer at block construction time.
     ///
@@ -53,6 +53,12 @@ pub struct BlockEntry {
     /// `memory/` and `machine/`. The intrinsic layer casts this back
     /// to `RefPtr<EnvFrame>` when constructing the returned `SynClosure`.
     pub env: *mut u8,
+    /// Arity of the stored closure (0 for thunks/values, N for lambdas).
+    ///
+    /// Preserved so that `SynClosure::new_annotated_lambda` can reconstruct
+    /// the closure with the correct arity, avoiding incorrect `Saturated`
+    /// checks that would treat un-applied lambdas as evaluatable thunks.
+    pub arity: u8,
 }
 
 // SAFETY: HeapBlock is only used in the single-threaded eucalypt VM.
@@ -109,9 +115,15 @@ impl HeapBlock {
         key: SymbolId,
         code: RefPtr<super::syntax::HeapSyn>,
         env: *mut u8,
+        arity: u8,
     ) -> Self {
         let order = self.next_order;
-        let entry = BlockEntry { order, code, env };
+        let entry = BlockEntry {
+            order,
+            code,
+            env,
+            arity,
+        };
         HeapBlock {
             entries: self.entries.update(key, entry),
             next_order: order + 1,
@@ -153,6 +165,7 @@ impl HeapBlock {
                     order,
                     code: entry.code,
                     env: entry.env,
+                    arity: entry.arity,
                 },
             );
         }
@@ -217,6 +230,7 @@ impl HeapBlock {
                     order: e.order,
                     code: new_code,
                     env: new_env,
+                    arity: e.arity,
                 },
             );
         }
@@ -256,7 +270,7 @@ mod tests {
         let k = pool.intern("x");
         let dummy_code = NonNull::dangling();
         let dummy_env = std::ptr::null_mut();
-        let b = HeapBlock::empty().with_entry(k, dummy_code, dummy_env);
+        let b = HeapBlock::empty().with_entry(k, dummy_code, dummy_env, 0);
         assert_eq!(b.len(), 1);
         let entry = b.get(&k).unwrap();
         assert_eq!(entry.code, dummy_code);
@@ -275,10 +289,10 @@ mod tests {
             NonNull::new_unchecked(std::ptr::dangling_mut::<super::super::syntax::HeapSyn>().add(1))
         };
 
-        let left = HeapBlock::empty().with_entry(k1, code1, std::ptr::null_mut());
+        let left = HeapBlock::empty().with_entry(k1, code1, std::ptr::null_mut(), 0);
         let right = HeapBlock::empty()
-            .with_entry(k1, code2, std::ptr::null_mut())
-            .with_entry(k2, code1, std::ptr::null_mut());
+            .with_entry(k1, code2, std::ptr::null_mut(), 0)
+            .with_entry(k2, code1, std::ptr::null_mut(), 0);
 
         let merged = left.merge(&right);
         assert_eq!(merged.len(), 2);
@@ -290,7 +304,7 @@ mod tests {
     fn without_removes_key() {
         let mut pool = SymbolPool::new();
         let k = pool.intern("x");
-        let b = HeapBlock::empty().with_entry(k, NonNull::dangling(), std::ptr::null_mut());
+        let b = HeapBlock::empty().with_entry(k, NonNull::dangling(), std::ptr::null_mut(), 0);
         let b2 = b.without(&k);
         assert!(b2.is_empty());
         assert_eq!(b.len(), 1); // original unchanged
@@ -303,9 +317,9 @@ mod tests {
         let k2 = pool.intern("a");
         let k3 = pool.intern("m");
         let b = HeapBlock::empty()
-            .with_entry(k1, NonNull::dangling(), std::ptr::null_mut())
-            .with_entry(k2, NonNull::dangling(), std::ptr::null_mut())
-            .with_entry(k3, NonNull::dangling(), std::ptr::null_mut());
+            .with_entry(k1, NonNull::dangling(), std::ptr::null_mut(), 0)
+            .with_entry(k2, NonNull::dangling(), std::ptr::null_mut(), 0)
+            .with_entry(k3, NonNull::dangling(), std::ptr::null_mut(), 0);
         let ordered = b.ordered_entries();
         // Should be in insertion order: z, a, m
         assert_eq!(ordered[0].0, k1);
@@ -320,11 +334,11 @@ mod tests {
         let k2 = pool.intern("a");
         let k3 = pool.intern("c");
         let left = HeapBlock::empty()
-            .with_entry(k1, NonNull::dangling(), std::ptr::null_mut())
-            .with_entry(k2, NonNull::dangling(), std::ptr::null_mut());
+            .with_entry(k1, NonNull::dangling(), std::ptr::null_mut(), 0)
+            .with_entry(k2, NonNull::dangling(), std::ptr::null_mut(), 0);
         let right = HeapBlock::empty()
-            .with_entry(k3, NonNull::dangling(), std::ptr::null_mut())
-            .with_entry(k2, NonNull::dangling(), std::ptr::null_mut());
+            .with_entry(k3, NonNull::dangling(), std::ptr::null_mut(), 0)
+            .with_entry(k2, NonNull::dangling(), std::ptr::null_mut(), 0);
         let merged = left.merge(&right);
         let ordered = merged.ordered_entries();
         // b (order 0), a (order 1 from left), c (order 2 new from right)

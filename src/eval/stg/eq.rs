@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    block::{ExtractKey, ExtractValue},
+    block::{ExtractKey, ExtractValue, PBlockToList},
     boolean::And,
     support::machine_return_bool,
     syntax::StgSyn,
@@ -115,12 +115,57 @@ impl StgIntrinsic for Eq {
                         // [x-list x-index] [x y]
                         case(
                             local(3),
-                            vec![(
-                                DataConstructor::Block.tag(),
-                                // [y-list y-index] [x-list x-index] [x y]
-                                Eq.global(lref(2), lref(0)),
-                            )],
+                            vec![
+                                (
+                                    DataConstructor::Block.tag(),
+                                    // [y-list y-index] [x-list x-index] [x y]
+                                    Eq.global(lref(2), lref(0)),
+                                ),
+                                (
+                                    DataConstructor::PersistentBlock.tag(),
+                                    // [y-block-ref] [x-list x-index] [x y]
+                                    // Convert y to sorted list then compare with x-list
+                                    force(
+                                        PBlockToList.global(lref(4)),
+                                        // [y-list] [y-block-ref] [x-list x-index] [x y]
+                                        Eq.global(lref(2), lref(0)),
+                                    ),
+                                ),
+                            ],
                             f(),
+                        ),
+                    ),
+                    // persistent block: convert both sides to sorted lists and compare
+                    (
+                        DataConstructor::PersistentBlock.tag(),
+                        // [x-block-ref] [x y]
+                        force(
+                            PBlockToList.global(lref(1)),
+                            // [x-list] [x-block-ref] [x y]
+                            // L(0)=x-list, L(1)=x-block-ref, L(2)=x, L(3)=y
+                            case(
+                                local(3),
+                                vec![
+                                    (
+                                        DataConstructor::Block.tag(),
+                                        // [y-list y-index] [x-list] [x-block-ref] [x y]
+                                        // L(0)=y-list, L(1)=y-index, L(2)=x-list
+                                        Eq.global(lref(2), lref(0)),
+                                    ),
+                                    (
+                                        DataConstructor::PersistentBlock.tag(),
+                                        // [y-block-ref] [x-list] [x-block-ref] [x y]
+                                        // L(0)=y-block-ref, L(1)=x-list, L(2)=x-block-ref, L(3)=x, L(4)=y
+                                        force(
+                                            PBlockToList.global(lref(4)),
+                                            // [y-list] [y-block-ref] [x-list] [x-block-ref] [x y]
+                                            // L(0)=y-list, L(1)=y-block-ref, L(2)=x-list
+                                            Eq.global(lref(2), lref(0)),
+                                        ),
+                                    ),
+                                ],
+                                f(),
+                            ),
                         ),
                     ),
                     unary_branch(DataConstructor::BoxedNumber.tag()),

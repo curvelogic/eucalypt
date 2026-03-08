@@ -746,28 +746,32 @@ impl MachineState {
                 }
                 Continuation::ApplyTo { args, annotation } => {
                     // Block application: blocks can be applied as
-                    // functions, delegating to __MERGE. This is the
+                    // functions, delegating to __MERGE (cons-list blocks)
+                    // or __PBLOCK_MERGE (persistent blocks). This is the
                     // only data type with callable semantics — lists,
                     // numbers, strings, etc. have no natural
                     // application behaviour.
-                    if tag == DataConstructor::Block.tag() {
-                        let mut args = Array::from_slice(&view, args.as_slice());
-                        args.push(&view, self.closure.clone());
-                        self.push(view, Continuation::ApplyTo { args, annotation })?;
-                        self.closure = SynClosure::new(
-                            view.atom(Ref::G(
-                                intrinsics::index("MERGE")
-                                    .expect("MERGE intrinsic must be registered"),
-                            ))?
-                            .as_ptr(),
-                            self.env(view),
-                        );
+                    let merge_name = if tag == DataConstructor::Block.tag() {
+                        "MERGE"
+                    } else if tag == DataConstructor::PersistentBlock.tag() {
+                        "PBLOCK_MERGE"
                     } else {
                         let type_name = DataConstructor::try_from(tag)
                             .map(|dc| dc.to_string())
                             .unwrap_or_else(|()| format!("data (tag {tag})"));
                         return Err(ExecutionError::NotCallable(annotation, type_name));
-                    }
+                    };
+                    let mut args = Array::from_slice(&view, args.as_slice());
+                    args.push(&view, self.closure.clone());
+                    self.push(view, Continuation::ApplyTo { args, annotation })?;
+                    self.closure = SynClosure::new(
+                        view.atom(Ref::G(
+                            intrinsics::index(merge_name)
+                                .expect("MERGE intrinsic must be registered"),
+                        ))?
+                        .as_ptr(),
+                        self.env(view),
+                    );
                 }
                 Continuation::DeMeta {
                     or_else,

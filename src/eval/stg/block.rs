@@ -13,12 +13,15 @@ use crate::{
         machine::{
             env::SynClosure,
             env_builder::EnvBuilder,
-            intrinsic::{CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic},
+            intrinsic::{
+                CallGlobal1, CallGlobal2, CallGlobal3, Const, IntrinsicMachine, StgIntrinsic,
+            },
             vm::HeapNavigator,
         },
         memory::{
             array::Array,
             heap_block::HeapBlock,
+            infotable::InfoTable,
             mutator::MutatorHeapView,
             syntax::{HeapSyn, Native, Ref, StgBuilder},
         },
@@ -217,16 +220,34 @@ impl StgIntrinsic for Elements {
             ),
         );
 
+        let pblock_to_list_idx: u8 = intrinsics::index("PBLOCK_TO_LIST")
+            .expect("PBLOCK_TO_LIST must be registered")
+            .try_into()
+            .unwrap();
+
         annotated_lambda(
             1, // [block]
             letrec_(
                 vec![map_list], // [map_list] [block]
                 case(
                     local(1),
-                    vec![(
-                        DataConstructor::Block.tag(), // [list index]  [map_list] [block]
-                        app(lref(2), vec![lref(0), lref(2)]),
-                    )],
+                    vec![
+                        (
+                            DataConstructor::Block.tag(), // [list index]  [map_list] [block]
+                            app(lref(2), vec![lref(0), lref(2)]),
+                        ),
+                        (
+                            DataConstructor::PersistentBlock.tag(),
+                            // [block_native] [map_list] [block]
+                            // Convert to cons-list via PBLOCK_TO_LIST, then apply map_list.
+                            // L(0)=block_native, L(1)=map_list, L(2)=block
+                            force(
+                                app_bif(pblock_to_list_idx, vec![lref(0)]),
+                                // [cons_list] [block_native] [map_list] [block]
+                                app(lref(2), vec![lref(0), lref(2)]),
+                            ),
+                        ),
+                    ],
                     call::bif::panic(str("elements called on non-block")),
                 ),
             ),
@@ -505,73 +526,115 @@ impl StgIntrinsic for LookupOr {
             ),
         );
 
+        let pblock_lookup_idx: u8 = intrinsics::index("PBLOCK_LOOKUP")
+            .expect("PBLOCK_LOOKUP must be registered")
+            .try_into()
+            .unwrap();
+
         annotated_lambda(
             3, // [k d block]
             switch(
                 local(2),
-                vec![(
-                    DataConstructor::Block.tag(),
-                    // [blocklist blockindex] [k d block]
-                    letrec_(
-                        vec![find], // [find] [blocklist blockindex] [k d block]
-                        match self.0 {
-                            NativeVariant::Unboxed => {
-                                // Try index lookup via BIF first
-                                // env: [find] [blocklist blockindex] [k d block]
-                                // BIF args: sym=L(3)=k, blocklist=L(1), blockindex=L(2), block=L(5)
-                                case(
-                                    app_bif(bif_index, vec![lref(3), lref(1), lref(2), lref(5)]),
-                                    vec![
-                                        (
-                                            DataConstructor::ListCons.tag(),
-                                            // [value _] [find] [blocklist blockindex] [k d block]
-                                            local(0),
-                                        ),
-                                        (
-                                            DataConstructor::ListNil.tag(),
-                                            // [] [find] [blocklist blockindex] [k d block]
-                                            app(lref(0), vec![lref(1), lref(3), lref(4), lref(0)]),
-                                        ),
-                                    ],
-                                    // fallback (native return — shouldn't happen)
-                                    // [native] [find] [blocklist blockindex] [k d block]
-                                    app(lref(1), vec![lref(2), lref(4), lref(5), lref(1)]),
-                                )
-                            }
-                            NativeVariant::Boxed => {
-                                unbox_sym(
-                                    local(3),
-                                    // [sym] [find] [blocklist blockindex] [k d block]
-                                    // BIF args: sym=L(0), blocklist=L(2), blockindex=L(3), block=L(6)
+                vec![
+                    (
+                        DataConstructor::Block.tag(),
+                        // [blocklist blockindex] [k d block]
+                        letrec_(
+                            vec![find], // [find] [blocklist blockindex] [k d block]
+                            match self.0 {
+                                NativeVariant::Unboxed => {
+                                    // Try index lookup via BIF first
+                                    // env: [find] [blocklist blockindex] [k d block]
+                                    // BIF args: sym=L(3)=k, blocklist=L(1), blockindex=L(2), block=L(5)
                                     case(
                                         app_bif(
                                             bif_index,
-                                            vec![lref(0), lref(2), lref(3), lref(6)],
+                                            vec![lref(3), lref(1), lref(2), lref(5)],
                                         ),
                                         vec![
                                             (
                                                 DataConstructor::ListCons.tag(),
-                                                // [value _] [sym] [find] [blocklist blockindex] [k d block]
+                                                // [value _] [find] [blocklist blockindex] [k d block]
                                                 local(0),
                                             ),
                                             (
                                                 DataConstructor::ListNil.tag(),
-                                                // [] [sym] [find] [blocklist blockindex] [k d block]
+                                                // [] [find] [blocklist blockindex] [k d block]
                                                 app(
-                                                    lref(1),
-                                                    vec![lref(2), lref(0), lref(5), lref(1)],
+                                                    lref(0),
+                                                    vec![lref(1), lref(3), lref(4), lref(0)],
                                                 ),
                                             ),
                                         ],
                                         // fallback (native return — shouldn't happen)
-                                        // [native] [sym] [find] [blocklist blockindex] [k d block]
-                                        app(lref(2), vec![lref(3), lref(1), lref(6), lref(2)]),
+                                        // [native] [find] [blocklist blockindex] [k d block]
+                                        app(lref(1), vec![lref(2), lref(4), lref(5), lref(1)]),
+                                    )
+                                }
+                                NativeVariant::Boxed => {
+                                    unbox_sym(
+                                        local(3),
+                                        // [sym] [find] [blocklist blockindex] [k d block]
+                                        // BIF args: sym=L(0), blocklist=L(2), blockindex=L(3), block=L(6)
+                                        case(
+                                            app_bif(
+                                                bif_index,
+                                                vec![lref(0), lref(2), lref(3), lref(6)],
+                                            ),
+                                            vec![
+                                                (
+                                                    DataConstructor::ListCons.tag(),
+                                                    // [value _] [sym] [find] [blocklist blockindex] [k d block]
+                                                    local(0),
+                                                ),
+                                                (
+                                                    DataConstructor::ListNil.tag(),
+                                                    // [] [sym] [find] [blocklist blockindex] [k d block]
+                                                    app(
+                                                        lref(1),
+                                                        vec![lref(2), lref(0), lref(5), lref(1)],
+                                                    ),
+                                                ),
+                                            ],
+                                            // fallback (native return — shouldn't happen)
+                                            // [native] [sym] [find] [blocklist blockindex] [k d block]
+                                            app(lref(2), vec![lref(3), lref(1), lref(6), lref(2)]),
+                                        ),
+                                    )
+                                }
+                            },
+                        ),
+                    ),
+                    (
+                        DataConstructor::PersistentBlock.tag(),
+                        // [block_native] [k d block]
+                        // L(0)=block_native, L(1)=k, L(2)=d, L(3)=block
+                        // Delegate to PBLOCK_LOOKUP BIF (args: native_sym, default, block_native).
+                        match self.0 {
+                            NativeVariant::Unboxed => {
+                                // k is already an unboxed sym at L(1).
+                                // force to ensure it's evaluated (it may be a thunk).
+                                // After force: L(0)=native_sym, L(1)=block_native, L(2)=k, L(3)=d, L(4)=block
+                                force(
+                                    local(1),
+                                    app_bif(pblock_lookup_idx, vec![lref(0), lref(3), lref(1)]),
+                                )
+                            }
+                            NativeVariant::Boxed => {
+                                // k is a BoxedSym at L(1); unbox then force.
+                                // After unbox_sym: L(0)=sym_thunk, L(1)=block_native, L(2)=k, L(3)=d, L(4)=block
+                                // After force(local(0)): L(0)=native_sym, L(1)=sym_thunk, L(2)=block_native, L(3)=k, L(4)=d, L(5)=block
+                                unbox_sym(
+                                    local(1),
+                                    force(
+                                        local(0),
+                                        app_bif(pblock_lookup_idx, vec![lref(0), lref(4), lref(2)]),
                                     ),
                                 )
                             }
                         },
                     ),
-                )],
+                ],
             ),
             annotation,
         )
@@ -954,8 +1017,9 @@ impl CallGlobal2 for LookupFail {}
 
 /// Collect all key names from a block that has been resolved to a closure.
 ///
-/// The closure should point to a `Block` cons cell. This is the main
-/// implementation used by both the BIF args path and direct closure path.
+/// The closure should point to a `Block` cons cell or `PersistentBlock`
+/// data constructor. This is the main implementation used by both the BIF
+/// args path and direct closure path.
 fn collect_block_keys_from_closure(
     machine: &dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
@@ -963,30 +1027,45 @@ fn collect_block_keys_from_closure(
 ) -> Vec<String> {
     let nav = machine.nav(view);
     let code = view.scoped(closure.code());
-    let blocklist_ref = match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => match args.get(0) {
-            Some(r) => r.clone(),
-            None => return vec![],
-        },
-        _ => return vec![],
-    };
-
-    let list_closure = match nav.resolve_in_closure(closure, blocklist_ref) {
-        Some(c) => c,
-        None => return vec![],
-    };
-
-    let iter = BlockListIterator {
-        closure: list_closure,
-        nav: &nav,
-        done: false,
-    };
-
-    iter.filter_map(|pair| {
-        let sym_id = pair_key_symbol_id(view, &pair)?;
-        Some(machine.symbol_pool().resolve(sym_id).to_string())
-    })
-    .collect()
+    match &*code {
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => {
+            let blocklist_ref = match args.get(0) {
+                Some(r) => r.clone(),
+                None => return vec![],
+            };
+            let list_closure = match nav.resolve_in_closure(closure, blocklist_ref) {
+                Some(c) => c,
+                None => return vec![],
+            };
+            let iter = BlockListIterator {
+                closure: list_closure,
+                nav: &nav,
+                done: false,
+            };
+            iter.filter_map(|pair| {
+                let sym_id = pair_key_symbol_id(view, &pair)?;
+                Some(machine.symbol_pool().resolve(sym_id).to_string())
+            })
+            .collect()
+        }
+        HeapSyn::Cons { tag, args } if *tag == DataConstructor::PersistentBlock.tag() => {
+            let block_native_ref = match args.get(0) {
+                Some(r) => r.clone(),
+                None => return vec![],
+            };
+            match nav.resolve_native(&block_native_ref) {
+                Ok(crate::eval::memory::syntax::Native::Block(ptr)) => {
+                    let heap_block = view.scoped(ptr);
+                    heap_block
+                        .keys()
+                        .map(|sym_id| machine.symbol_pool().resolve(*sym_id).to_string())
+                        .collect()
+                }
+                _ => vec![],
+            }
+        }
+        _ => vec![],
+    }
 }
 
 /// Collect block keys from a BIF arg ref. Resolves the ref to a closure
@@ -1090,60 +1169,99 @@ impl StgIntrinsic for Merge {
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        let pack_items = lambda(
-            2, // [list self]
-            switch(
-                local(0),
-                vec![
-                    (
-                        DataConstructor::ListCons.tag(), // [h t] [list self]
+        let pack_items_body = switch(
+            local(0),
+            vec![
+                (
+                    DataConstructor::ListCons.tag(), // [h t] [list self]
+                    force(
+                        PackPair.global(lref(0)),
+                        // [pp-h] [h t] [list self]
                         force(
-                            PackPair.global(lref(0)),
-                            // [pp-h] [h t] [list self]
-                            force(
-                                app(lref(4), vec![lref(2), lref(4)]),
-                                // [p-t] [pp-h] [h t] [list self]
-                                data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
-                            ),
+                            app(lref(4), vec![lref(2), lref(4)]),
+                            // [p-t] [pp-h] [h t] [list self]
+                            data(DataConstructor::ListCons.tag(), vec![lref(1), lref(0)]),
                         ),
                     ),
-                    (DataConstructor::ListNil.tag(), local(0)),
-                ],
-            ),
+                ),
+                (DataConstructor::ListNil.tag(), local(0)),
+            ],
         );
+        let pack_items = lambda(2, Rc::clone(&pack_items_body));
 
         annotated_lambda(
             2, // [l r]
             switch(
                 local(0),
-                vec![(
-                    DataConstructor::Block.tag(), // [lcons lindex] [l r]
-                    switch(
-                        local(3),
-                        vec![(
-                            DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l r]
-                            let_(
-                                vec![pack_items],
-                                // [pack] [rcons rindex] [lcons lindex]
-                                force(
-                                    app(lref(0), vec![lref(3), lref(0)]),
-                                    // [p-l] [pack] [rcons rindex] [lcons lindex]
-                                    force(
-                                        app(lref(1), vec![lref(2), lref(1)]),
-                                        // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex]
+                vec![
+                    (
+                        DataConstructor::Block.tag(), // [lcons lindex] [l r]
+                        switch(
+                            local(3),
+                            vec![
+                                (
+                                    DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l r]
+                                    let_(
+                                        vec![lambda(2, Rc::clone(&pack_items_body))],
+                                        // [pack] [rcons rindex] [lcons lindex]
                                         force(
-                                            call::bif::merge(lref(1), lref(0)),
-                                            data(
-                                                DataConstructor::Block.tag(),
-                                                vec![lref(0), no_index()],
+                                            app(lref(0), vec![lref(3), lref(0)]),
+                                            // [p-l] [pack] [rcons rindex] [lcons lindex]
+                                            force(
+                                                app(lref(1), vec![lref(2), lref(1)]),
+                                                // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex]
+                                                force(
+                                                    call::bif::merge(lref(1), lref(0)),
+                                                    data(
+                                                        DataConstructor::Block.tag(),
+                                                        vec![lref(0), no_index()],
+                                                    ),
+                                                ),
                                             ),
                                         ),
                                     ),
                                 ),
-                            ),
-                        )],
+                                (
+                                    DataConstructor::PersistentBlock.tag(),
+                                    // [rref] [lcons lindex] [l r]
+                                    // L(0)=rref, L(1)=lcons, L(2)=lindex, L(3)=l, L(4)=r
+                                    force(
+                                        PBlockToList.global(lref(4)),
+                                        // [rlist] [rref] [lcons lindex] [l r]
+                                        // L(0)=rlist, L(1)=rref, L(2)=lcons, L(3)=lindex
+                                        let_(
+                                            vec![pack_items],
+                                            // [pack] [rlist] [rref] [lcons lindex]
+                                            // L(0)=pack, L(1)=rlist, L(2)=rref, L(3)=lcons
+                                            force(
+                                                app(lref(0), vec![lref(3), lref(0)]),
+                                                // [p-l] [pack] [rlist] [rref] [lcons lindex]
+                                                // L(0)=p-l, L(1)=pack, L(2)=rlist
+                                                force(
+                                                    app(lref(1), vec![lref(2), lref(1)]),
+                                                    // [p-r] [p-l] [pack] [rlist] ...
+                                                    force(
+                                                        call::bif::merge(lref(1), lref(0)),
+                                                        data(
+                                                            DataConstructor::Block.tag(),
+                                                            vec![lref(0), no_index()],
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ],
+                        ),
                     ),
-                )],
+                    (
+                        DataConstructor::PersistentBlock.tag(),
+                        // [lref] [l r] — delegate to PBLOCK_MERGE
+                        // L(0)=lref, L(1)=l, L(2)=r
+                        PBlockMerge.global(lref(1), lref(2)),
+                    ),
+                ],
             ),
             annotation,
         )
@@ -1220,34 +1338,42 @@ impl StgIntrinsic for MergeWith {
             3, // [l r f]
             switch(
                 local(0),
-                vec![(
-                    DataConstructor::Block.tag(), // [lcons lindex] [l r f]
-                    switch(
-                        local(3),
-                        vec![(
-                            DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l r f]
-                            let_(
-                                vec![pair_items],
-                                // [pack] [rcons rindex] [lcons lindex] [l r f]
-                                force(
-                                    app(lref(0), vec![lref(3), lref(0)]),
-                                    // [p-l] [pack] [rcons rindex] [lcons lindex] [l r f]
+                vec![
+                    (
+                        DataConstructor::Block.tag(), // [lcons lindex] [l r f]
+                        switch(
+                            local(3),
+                            vec![(
+                                DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l r f]
+                                let_(
+                                    vec![pair_items],
+                                    // [pack] [rcons rindex] [lcons lindex] [l r f]
                                     force(
-                                        app(lref(1), vec![lref(2), lref(1)]),
-                                        // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex] [l r f]
+                                        app(lref(0), vec![lref(3), lref(0)]),
+                                        // [p-l] [pack] [rcons rindex] [lcons lindex] [l r f]
                                         force(
-                                            call::bif::merge_with(lref(1), lref(0), lref(9)),
-                                            data(
-                                                DataConstructor::Block.tag(),
-                                                vec![lref(0), no_index()],
+                                            app(lref(1), vec![lref(2), lref(1)]),
+                                            // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex] [l r f]
+                                            force(
+                                                call::bif::merge_with(lref(1), lref(0), lref(9)),
+                                                data(
+                                                    DataConstructor::Block.tag(),
+                                                    vec![lref(0), no_index()],
+                                                ),
                                             ),
                                         ),
                                     ),
                                 ),
-                            ),
-                        )],
+                            )],
+                        ),
                     ),
-                )],
+                    (
+                        DataConstructor::PersistentBlock.tag(),
+                        // [lref] [l r f] — delegate to PBLOCK_MERGEWITH
+                        // L(0)=lref, L(1)=l, L(2)=r, L(3)=f
+                        PBlockMergeWith.global(lref(1), lref(2), lref(3)),
+                    ),
+                ],
             ),
             annotation,
         )
@@ -1320,20 +1446,38 @@ impl StgIntrinsic for DeepMerge {
             2,
             case(
                 local(0),
-                vec![(
-                    DataConstructor::Block.tag(),
-                    // [lcons lindex] [l r]
-                    case(
-                        local(3),
-                        vec![(
-                            DataConstructor::Block.tag(),
-                            // [rcons rindex] [lcons lindex] [l r]
-                            MergeWith.global(lref(4), lref(5), gref(self.index())),
-                        )],
-                        // [r] [lcons lindex] [l r]
-                        local(0),
+                vec![
+                    (
+                        DataConstructor::Block.tag(),
+                        // [lcons lindex] [l r]
+                        case(
+                            local(3),
+                            vec![(
+                                DataConstructor::Block.tag(),
+                                // [rcons rindex] [lcons lindex] [l r]
+                                MergeWith.global(lref(4), lref(5), gref(self.index())),
+                            )],
+                            // [r] [lcons lindex] [l r]
+                            local(0),
+                        ),
                     ),
-                )],
+                    (
+                        DataConstructor::PersistentBlock.tag(),
+                        // [lref] [l r]
+                        // L(0)=lref, L(1)=l, L(2)=r
+                        case(
+                            local(2),
+                            vec![(
+                                DataConstructor::PersistentBlock.tag(),
+                                // [rref] [lref] [l r]
+                                // Both sides are persistent blocks: delegate to PBLOCK_MERGEWITH
+                                PBlockMergeWith.global(lref(2), lref(3), gref(self.index())),
+                            )],
+                            // r is not a persistent block — use r as-is
+                            local(0),
+                        ),
+                    ),
+                ],
                 // [l] [l r]
                 local(2),
             ),
@@ -1366,7 +1510,9 @@ impl StgIntrinsic for IsBlock {
         let code = view.scoped(closure.code());
         let is_block = matches!(
             &*code,
-            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::Block.tag()
+            syntax::HeapSyn::Cons { tag, .. }
+                if *tag == DataConstructor::Block.tag()
+                    || *tag == DataConstructor::PersistentBlock.tag()
         );
         machine_return_bool(machine, view, is_block)
     }
@@ -1375,6 +1521,48 @@ impl StgIntrinsic for IsBlock {
 impl CallGlobal1 for IsBlock {}
 
 // ── Persistent block intrinsics (experimental eu-m59i branch) ─────────────
+
+/// PBLOCK_EMPTY
+///
+/// Returns an empty persistent block. Used wherever an empty block constant
+/// is needed in contexts that consume PersistentBlock values (e.g. the
+/// metadata system's fallback when no metadata is attached).
+///
+/// Unlike `KEmptyBlock` (which creates an old-style cons-list Block), this
+/// BIF allocates an empty `HeapBlock` at runtime and wraps it in the
+/// `PersistentBlock` data constructor.
+pub struct PBlockEmpty;
+
+impl StgIntrinsic for PBlockEmpty {
+    fn name(&self) -> &str {
+        "PBLOCK_EMPTY"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        use dsl::*;
+        // Use value() so global() generates atom(G(N)) with no ApplyTo
+        // continuation — avoids spurious block-application semantics.
+        value(app_bif(
+            intrinsics::index(self.name())
+                .expect("PBLOCK_EMPTY must be registered")
+                .try_into()
+                .unwrap(),
+            vec![],
+        ))
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        _args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        machine_return_block(machine, view, HeapBlock::empty())
+    }
+}
+
+impl Const for PBlockEmpty {}
 
 /// PBLOCK_FROM_PAIRS(list)
 ///
@@ -1436,7 +1624,8 @@ impl StgIntrinsic for PBlockFromPairs {
             // SAFETY: val_closure.env() is a valid RefPtr<EnvFrame> from the
             // GC-managed heap, reachable from the active machine stack.
             let env_raw = val_closure.env().as_ptr() as *mut u8;
-            block = block.with_entry(sym_id, val_closure.code(), env_raw);
+            let arity = val_closure.arity();
+            block = block.with_entry(sym_id, val_closure.code(), env_raw, arity);
         }
 
         machine_return_block(machine, view, block)
@@ -1463,8 +1652,9 @@ impl StgIntrinsic for PBlockFromBlock {
         let pblock_from_pairs_idx =
             intrinsics::index("PBLOCK_FROM_PAIRS").expect("PBLOCK_FROM_PAIRS must be registered");
 
-        // Force the block, switch on Block tag, extract the cons-list
-        // (args[0] of the Block data constructor), and call PBLOCK_FROM_PAIRS.
+        // Force the block, switch on Block or PersistentBlock tag.
+        // - Block(8): extract the cons-list and call PBLOCK_FROM_PAIRS.
+        // - PersistentBlock(12): already in persistent form, return as-is.
         annotated_lambda(
             1, // [block]
             force(
@@ -1472,14 +1662,22 @@ impl StgIntrinsic for PBlockFromBlock {
                 // [forced-block] [block]
                 switch(
                     local(0),
-                    vec![(
-                        DataConstructor::Block.tag(),
-                        // [cons-list index] [forced-block] [block]
-                        app(
-                            gref(pblock_from_pairs_idx),
-                            vec![lref(0)], // pass the cons-list to PBLOCK_FROM_PAIRS
+                    vec![
+                        (
+                            DataConstructor::Block.tag(),
+                            // [cons-list index] [forced-block] [block]
+                            app(
+                                gref(pblock_from_pairs_idx),
+                                vec![lref(0)], // pass the cons-list to PBLOCK_FROM_PAIRS
+                            ),
                         ),
-                    )],
+                        (
+                            DataConstructor::PersistentBlock.tag(),
+                            // [block-ref] [forced-block] [block]
+                            // Already a PersistentBlock — return the forced form.
+                            local(1),
+                        ),
+                    ],
                 ),
             ),
             annotation,
@@ -1510,12 +1708,16 @@ impl StgIntrinsic for PBlockLookup {
         // so we must unbox the key before calling the BIF which expects a raw Native::Sym.
         //
         // Frame layout at each stage:
-        //   annotated_lambda(3):  L(0)=key(BoxedSym), L(1)=default, L(2)=block
-        //   force(local(2)):      L(0)=forced_block,  L(1)=key,     L(2)=default, L(3)=block
-        //   switch Block(1 arg):  L(0)=block_native,  L(1)=forced_block, L(2)=key, L(3)=default, L(4)=block
-        //   unbox_sym(lref(2)):   L(0)=native_sym, L(1)=block_native, L(2)=forced_block, L(3)=key, L(4)=default, L(5)=block
+        //   annotated_lambda(3):    L(0)=key(BoxedSym), L(1)=default, L(2)=block
+        //   force(local(2)):        L(0)=forced_block,  L(1)=key,     L(2)=default, L(3)=block
+        //   switch Block(1 arg):    L(0)=block_native,  L(1)=forced_block, L(2)=key, L(3)=default, L(4)=block
+        //   unbox_sym(local(2)):    L(0)=sym_thunk, L(1)=block_native, L(2)=forced_block, L(3)=key, L(4)=default, L(5)=block
+        //   force(local(0)):        L(0)=native_sym, L(1)=sym_thunk, L(2)=block_native, L(3)=forced_block, L(4)=key, L(5)=default, L(6)=block
         //
-        // BIF args: [native_sym=L(0), default=L(4), block_native=L(1)]
+        // The force after unbox_sym is required because the BoxedSymbol arg may be an
+        // unevaluated thunk (e.g. from `sym("x")` which wraps a Bif call in a value lambda).
+        //
+        // BIF args: [native_sym=L(0), default=L(5), block_native=L(2)]
         annotated_lambda(
             3, // [key(BoxedSym), default, block]
             force(
@@ -1524,19 +1726,24 @@ impl StgIntrinsic for PBlockLookup {
                 switch(
                     local(0),
                     vec![(
-                        DataConstructor::Block.tag(),
+                        DataConstructor::PersistentBlock.tag(),
                         // [block_native] [forced_block] [key default block]
                         // L(0)=block_native, L(1)=forced_block, L(2)=key, L(3)=default, L(4)=block
                         unbox_sym(
                             local(2),
-                            // [native_sym] [block_native] [forced_block] [key default block]
-                            // L(0)=native_sym, L(1)=block_native, L(2)=forced_block, L(3)=key, L(4)=default, L(5)=block
-                            app_bif(
-                                intrinsics::index(self.name())
-                                    .expect("PBLOCK_LOOKUP must be registered")
-                                    .try_into()
-                                    .unwrap(),
-                                vec![lref(0), lref(4), lref(1)],
+                            // [sym_thunk] [block_native] [forced_block] [key default block]
+                            // L(0)=sym_thunk, L(1)=block_native, L(2)=forced_block, L(3)=key, L(4)=default, L(5)=block
+                            force(
+                                local(0),
+                                // [native_sym] [sym_thunk] [block_native] [forced_block] [key default block]
+                                // L(0)=native_sym, L(1)=sym_thunk, L(2)=block_native, L(3)=forced_block, L(4)=key, L(5)=default, L(6)=block
+                                app_bif(
+                                    intrinsics::index(self.name())
+                                        .expect("PBLOCK_LOOKUP must be registered")
+                                        .try_into()
+                                        .unwrap(),
+                                    vec![lref(0), lref(5), lref(2)],
+                                ),
                             ),
                         ),
                     )],
@@ -1578,10 +1785,15 @@ impl StgIntrinsic for PBlockLookup {
 
         match block.get(&sym_id) {
             Some(entry) => {
-                // Reconstruct the closure from stored code + env pointers.
+                // Reconstruct the closure from stored code + env + arity.
                 // SAFETY: entry.env is a valid RefPtr<EnvFrame> stored as *mut u8.
                 let env = unsafe { std::ptr::NonNull::new_unchecked(entry.env as *mut _) };
-                machine.set_closure(SynClosure::new(entry.code, env))
+                machine.set_closure(SynClosure::new_annotated_lambda(
+                    entry.code,
+                    entry.arity,
+                    env,
+                    crate::common::sourcemap::Smid::default(),
+                ))
             }
             None => {
                 let default = machine.nav(view).resolve(&args[1])?;
@@ -1616,7 +1828,7 @@ impl StgIntrinsic for PBlockToList {
                 switch(
                     local(0),
                     vec![(
-                        DataConstructor::Block.tag(),
+                        DataConstructor::PersistentBlock.tag(),
                         // [block_ref] [forced-block] [block]
                         app_bif(
                             intrinsics::index(self.name())
@@ -1651,7 +1863,12 @@ impl StgIntrinsic for PBlockToList {
             let key_name = machine.symbol_pool().resolve(*sym_id).to_string();
             // SAFETY: entry.env is a valid RefPtr<EnvFrame>.
             let env = unsafe { std::ptr::NonNull::new_unchecked(entry.env as *mut _) };
-            let closure = SynClosure::new(entry.code, env);
+            let closure = SynClosure::new_annotated_lambda(
+                entry.code,
+                entry.arity,
+                env,
+                crate::common::sourcemap::Smid::default(),
+            );
             closure_map.insert(key_name, closure);
         }
 
@@ -1691,7 +1908,7 @@ impl StgIntrinsic for PBlockMerge {
                 switch(
                     local(0),
                     vec![(
-                        DataConstructor::Block.tag(),
+                        DataConstructor::PersistentBlock.tag(),
                         // [lref] [fl] [l r]
                         // L(0)=lref, L(1)=fl, L(2)=l, L(3)=r
                         force(
@@ -1700,7 +1917,7 @@ impl StgIntrinsic for PBlockMerge {
                             switch(
                                 local(0),
                                 vec![(
-                                    DataConstructor::Block.tag(),
+                                    DataConstructor::PersistentBlock.tag(),
                                     // [rref] [fr] [lref] [fl] [l r]
                                     app_bif(
                                         intrinsics::index(self.name())
@@ -1750,6 +1967,54 @@ pub struct PBlockMergeWith;
 impl StgIntrinsic for PBlockMergeWith {
     fn name(&self) -> &str {
         "PBLOCK_MERGEWITH"
+    }
+
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        use dsl::*;
+
+        // Frame layout:
+        //   annotated_lambda(3): L(0)=l, L(1)=r, L(2)=combine_fn
+        //   force(local(0)):     L(0)=fl, L(1)=l, L(2)=r, L(3)=combine_fn
+        //   switch PersistentBlock(1 arg): L(0)=lref, L(1)=fl, L(2)=l, L(3)=r, L(4)=combine_fn
+        //   force(local(3)):     L(0)=fr, L(1)=lref, L(2)=fl, L(3)=l, L(4)=r, L(5)=combine_fn
+        //   switch PersistentBlock(1 arg): L(0)=rref, L(1)=fr, L(2)=lref, L(3)=fl, L(4)=l, L(5)=r, L(6)=combine_fn
+        //
+        // BIF args: [lref=L(2), rref=L(0), combine_fn=L(6)]
+        annotated_lambda(
+            3, // [l r combine_fn]
+            force(
+                local(0),
+                // [fl] [l r combine_fn]
+                switch(
+                    local(0),
+                    vec![(
+                        DataConstructor::PersistentBlock.tag(),
+                        // [lref] [fl] [l r combine_fn]
+                        // L(0)=lref, L(1)=fl, L(2)=l, L(3)=r, L(4)=combine_fn
+                        force(
+                            local(3),
+                            // [fr] [lref] [fl] [l r combine_fn]
+                            switch(
+                                local(0),
+                                vec![(
+                                    DataConstructor::PersistentBlock.tag(),
+                                    // [rref] [fr] [lref] [fl] [l r combine_fn]
+                                    // L(0)=rref, L(1)=fr, L(2)=lref, L(3)=fl, L(4)=l, L(5)=r, L(6)=combine_fn
+                                    app_bif(
+                                        intrinsics::index(self.name())
+                                            .expect("PBLOCK_MERGEWITH must be registered")
+                                            .try_into()
+                                            .unwrap(),
+                                        vec![lref(2), lref(0), lref(6)],
+                                    ),
+                                )],
+                            ),
+                        ),
+                    )],
+                ),
+            ),
+            annotation,
+        )
     }
 
     fn execute(

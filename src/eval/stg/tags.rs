@@ -31,6 +31,10 @@ pub enum DataConstructor {
     BlockKvList = 10,
     /// Boxed zoned datetime
     BoxedZdt = 11,
+    /// Persistent block: wraps a `Native::Block(HeapBlock)` pointer with
+    /// arity 1. Distinct from `Block` (arity 2, cons-list form) so that
+    /// switch branches can dispatch on the representation without ambiguity.
+    PersistentBlock = 12,
 }
 
 impl fmt::Display for DataConstructor {
@@ -48,6 +52,7 @@ impl fmt::Display for DataConstructor {
             DataConstructor::BlockPair => write!(f, "key-value pair"),
             DataConstructor::BlockKvList => write!(f, "key-value list"),
             DataConstructor::BoxedZdt => write!(f, "datetime"),
+            DataConstructor::PersistentBlock => write!(f, "block"),
         }
     }
 }
@@ -71,6 +76,7 @@ impl DataConstructor {
             DataConstructor::BlockPair => 2,
             DataConstructor::BlockKvList => 2,
             DataConstructor::BoxedZdt => 1,
+            DataConstructor::PersistentBlock => 1,
         }
     }
 }
@@ -100,6 +106,9 @@ impl TryFrom<Tag> for DataConstructor {
                 Ok(DataConstructor::BlockKvList)
             }
             value if value == DataConstructor::BoxedZdt as Tag => Ok(DataConstructor::BoxedZdt),
+            value if value == DataConstructor::PersistentBlock as Tag => {
+                Ok(DataConstructor::PersistentBlock)
+            }
             _ => Err(()),
         }
     }

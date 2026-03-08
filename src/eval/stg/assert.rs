@@ -47,7 +47,9 @@ fn format_ref(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref
                 Ok(DataConstructor::Unit) => "null".to_string(),
                 Ok(DataConstructor::ListNil) => "[]".to_string(),
                 Ok(DataConstructor::ListCons) => "[list]".to_string(),
-                Ok(DataConstructor::Block) => "{block}".to_string(),
+                Ok(DataConstructor::Block) | Ok(DataConstructor::PersistentBlock) => {
+                    "{block}".to_string()
+                }
                 Ok(DataConstructor::BlockPair) | Ok(DataConstructor::BlockKvList) => {
                     "{block}".to_string()
                 }

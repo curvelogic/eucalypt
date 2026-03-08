@@ -1391,6 +1391,9 @@ impl<'rt> Compiler<'rt> {
     }
 
     /// Compile a block
+    ///
+    /// Emits a call to `PBLOCK_FROM_PAIRS` to construct a persistent
+    /// `HeapBlock` from the cons-list of compiled key-value pairs.
     pub fn compile_block(
         &self,
         binder: &mut LetBinder,
@@ -1405,7 +1408,9 @@ impl<'rt> Compiler<'rt> {
             let kv_index = binder.add(dsl::pair(k, v_index))?;
             index = binder.add(dsl::cons(kv_index, index))?;
         }
-        Ok(Holder::new(dsl::block(index)))
+        let pblock_idx =
+            intrinsics::index("PBLOCK_FROM_PAIRS").expect("PBLOCK_FROM_PAIRS must be registered");
+        Ok(Holder::new(dsl::app(dsl::gref(pblock_idx), vec![index])))
     }
 
     /// Compile a function application
@@ -1560,6 +1565,10 @@ pub mod tests {
             ("x".to_string(), acore::num(20)),
             ("y".to_string(), acore::num(30)),
         ]);
+        // compile_block now emits PBLOCK_FROM_PAIRS(cons_list) rather than
+        // dsl::block(cons_list) so that all block literals are persistent blocks.
+        let pblock_idx =
+            intrinsics::index("PBLOCK_FROM_PAIRS").expect("PBLOCK_FROM_PAIRS must be registered");
         let syntax = dsl::letrec_(
             vec![
                 dsl::value(dsl::box_num(30)),
@@ -1569,7 +1578,7 @@ pub mod tests {
                 dsl::value(dsl::pair("x", dsl::lref(3))),
                 dsl::value(dsl::cons(dsl::lref(4), dsl::lref(2))),
             ],
-            dsl::block(dsl::lref(5)),
+            dsl::app(dsl::gref(pblock_idx), vec![dsl::lref(5)]),
         );
 
         assert_eq!(compile(core).unwrap(), syntax);

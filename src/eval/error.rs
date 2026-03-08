@@ -73,9 +73,11 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         actual == DataConstructor::ListCons.tag() || actual == DataConstructor::ListNil.tag();
     let is_string = actual == DataConstructor::BoxedString.tag();
     let is_number = actual == DataConstructor::BoxedNumber.tag();
-    let is_block = actual == DataConstructor::Block.tag();
+    let is_block =
+        actual == DataConstructor::Block.tag() || actual == DataConstructor::PersistentBlock.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
-    let expects_block = expected.contains(&DataConstructor::Block.tag());
+    let expects_block = expected.contains(&DataConstructor::Block.tag())
+        || expected.contains(&DataConstructor::PersistentBlock.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());

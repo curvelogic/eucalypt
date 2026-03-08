@@ -816,6 +816,11 @@ lazy_static! {
     },
     // Persistent block intrinsics (experimental eu-m59i branch)
     Intrinsic { // 153
+            name: "PBLOCK_EMPTY",
+            ty: record(),
+            strict: vec![],
+    },
+    Intrinsic { // 154
             name: "PBLOCK_FROM_PAIRS",
             ty: function(vec![any(), block()]).unwrap(),
             strict: vec![0],

@@ -156,6 +156,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(set::SetDiff));
     rt.add(Box::new(block::IsBlock));
     // Persistent block intrinsics (experimental eu-m59i branch)
+    rt.add(Box::new(block::PBlockEmpty));
     rt.add(Box::new(block::PBlockFromPairs));
     rt.add(Box::new(block::PBlockFromBlock));
     rt.add(Box::new(block::PBlockLookup));

@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-    block::LookupOr,
+    block::{LookupOr, PBlockToList},
     boolean::{And, Not},
     emit::EmitNative,
     eq::Eq,
@@ -154,6 +154,34 @@ impl StgIntrinsic for Render {
                                 force(
                                     RenderBlockItems.global(lref(1)),
                                     call::bif::emit_block_end(),
+                                ),
+                            ),
+                        ),
+                        (
+                            DataConstructor::PersistentBlock.tag(), // [block_native] [tagfn tag x]
+                            // Full frame: L(0)=block_native, L(1)=tagfn, L(2)=tag, L(3)=x
+                            // Convert to cons-list via PBLOCK_TO_LIST, then render.
+                            //
+                            // We pass the original `x` ref (L(3)) to PBlockToList so the
+                            // wrapper can force and switch on the full PersistentBlock
+                            // constructor. After the tag-emit force, x shifts to L(4).
+                            force(
+                                case(
+                                    local(2),
+                                    vec![(
+                                        DataConstructor::BoxedString.tag(), // [tagstr] [block_native] [tagfn tag x]
+                                        force(call::bif::emit_tag_block_start(lref(0)), unit()),
+                                    )],
+                                    call::bif::emit_block_start(), // [()] [block_native] [tagfn tag x]
+                                ),
+                                // After force: L(0)=(), L(1)=block_native, L(2)=tagfn, L(3)=tag, L(4)=x
+                                force(
+                                    PBlockToList.global(lref(4)),
+                                    // [cons_list] [()] [block_native] [tagfn tag x]
+                                    force(
+                                        RenderBlockItems.global(lref(0)),
+                                        call::bif::emit_block_end(),
+                                    ),
                                 ),
                             ),
                         ),
@@ -321,19 +349,34 @@ impl StgIntrinsic for Suppresses {
                 vec![value(box_sym("normal"))],
                 case(
                     local(1), // [:normal] [arg]
-                    vec![(
-                        DataConstructor::Block.tag(),
-                        // [xs index] [:normal] [arg]
-                        unbox_sym(
-                            LookupOr(NativeVariant::Unboxed).global(
-                                sym("export"),
-                                lref(2),
-                                lref(3),
+                    vec![
+                        (
+                            DataConstructor::Block.tag(),
+                            // [xs index] [:normal] [arg]
+                            unbox_sym(
+                                LookupOr(NativeVariant::Unboxed).global(
+                                    sym("export"),
+                                    lref(2),
+                                    lref(3),
+                                ),
+                                // [boxsym] [xs index] [:normal] [arg]
+                                Eq.global(lref(0), sym("suppress")),
                             ),
-                            // [boxsym] [xs index] [:normal] [arg]
-                            Eq.global(lref(0), sym("suppress")),
                         ),
-                    )],
+                        (
+                            DataConstructor::PersistentBlock.tag(),
+                            // [block_native] [:normal] [arg]
+                            // L(0)=block_native, L(1)=:normal(def), L(2)=arg
+                            unbox_sym(
+                                LookupOr(NativeVariant::Unboxed).global(
+                                    sym("export"),
+                                    lref(1),
+                                    lref(2),
+                                ),
+                                Eq.global(lref(0), sym("suppress")),
+                            ),
+                        ),
+                    ],
                     f(),
                 ),
             ),
@@ -359,11 +402,19 @@ impl StgIntrinsic for Tag {
                 vec![value(box_sym(""))],
                 case(
                     local(1), // [:""] [arg]
-                    vec![(
-                        DataConstructor::Block.tag(),
-                        // [xs index] [:""] [arg]
-                        LookupOr(NativeVariant::Unboxed).global(sym("tag"), lref(2), lref(3)),
-                    )],
+                    vec![
+                        (
+                            DataConstructor::Block.tag(),
+                            // [xs index] [:""] [arg]
+                            LookupOr(NativeVariant::Unboxed).global(sym("tag"), lref(2), lref(3)),
+                        ),
+                        (
+                            DataConstructor::PersistentBlock.tag(),
+                            // [block_native] [:""] [arg]
+                            // L(0)=block_native, L(1)="" default, L(2)=arg
+                            LookupOr(NativeVariant::Unboxed).global(sym("tag"), lref(1), lref(2)),
+                        ),
+                    ],
                     // [arg] [:""] [arg]
                     local(1),
                 ),

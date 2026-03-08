@@ -520,7 +520,7 @@ pub fn machine_return_block(
     let block_ref = Ref::V(Native::Block(ptr));
     machine.set_closure(SynClosure::new(
         view.data(
-            DataConstructor::Block.tag(),
+            DataConstructor::PersistentBlock.tag(),
             Array::from_slice(&view, &[block_ref]),
         )?
         .as_ptr(),

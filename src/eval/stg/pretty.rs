@@ -24,6 +24,7 @@ fn tag_name(tag: u8) -> String {
         Ok(DataConstructor::BlockPair) => "Pair".to_string(),
         Ok(DataConstructor::BlockKvList) => "KvList".to_string(),
         Ok(DataConstructor::BoxedZdt) => "Zdt".to_string(),
+        Ok(DataConstructor::PersistentBlock) => "PBlock".to_string(),
         Err(()) => format!("#{tag}"),
     }
 }
