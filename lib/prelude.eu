@@ -220,9 +220,9 @@ lookup-path(ks, b): foldl(lookup-in, b, ks)
 ## Deep find — recursive key search
 ##
 
-` "`deep-find(k, b)` - return list of all values for key `k` at any depth in block `b`, depth-first. `k` may be a symbol or string."
+` "`deep-find(k, b)` - return list of all values for key `k` (a symbol) at any depth in block `b`, depth-first."
 deep-find(k, b): {
-  s: sym(str.of(k))
+  s: k
   children(v): v elements map({el: •}.(el value)) mapcat(walk)
   walk(v): if(v block?,
               if(v has(s),
@@ -233,12 +233,12 @@ deep-find(k, b): {
                  []))
 }.walk(b)
 
-` "`deep-find-first(k, d, b)` - return first value for key `k` at any depth in block `b`, or default `d`. `k` may be a symbol or string."
+` "`deep-find-first(k, d, b)` - return first value for key `k` (a symbol) at any depth in block `b`, or default `d`."
 deep-find-first(k, d, b): b deep-find(k) head-or(d)
 
-` "`deep-find-paths(k, b)` - return list of key paths to all occurrences of key `k` at any depth in block `b`. `k` may be a symbol or string."
+` "`deep-find-paths(k, b)` - return list of key paths to all occurrences of key `k` (a symbol) at any depth in block `b`."
 deep-find-paths(k, b): {
-  s: sym(str.of(k))
+  s: k
   walk-children(path, v): v keys mapcat({ck: •}.(walk(path ++ [ck], v lookup(ck))))
   walk(path, v): if(v block?,
                     if(v has(s),

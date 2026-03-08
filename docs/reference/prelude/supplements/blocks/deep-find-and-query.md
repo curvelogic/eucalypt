@@ -8,8 +8,8 @@ config: {
   db: { host: "db.local" port: 5432 }
 }
 
-hosts: config deep-find("host")  # ["localhost", "db.local"]
-first-host: config deep-find-first("host", "unknown")  # "localhost"
+hosts: config deep-find(:host)  # ["localhost", "db.local"]
+first-host: config deep-find-first(:host, "unknown")  # "localhost"
 ```
 
 ### Deep Query
