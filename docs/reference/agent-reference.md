@@ -448,11 +448,8 @@ merge({ a: 1 }, { b: 2 })    # { a: 1 b: 2 }
 
 #### `deep-find(k, b)` — find all values for key k at any depth
 
-Key `k` may be a symbol (preferred) or string.
-
 ```
 { a: { x: 1 } b: { x: 2 } } deep-find(:x)    # [1, 2]
-{ a: { x: 1 } b: { x: 2 } } deep-find("x")   # [1, 2] (also works)
 ```
 
 #### `deep-query(pattern, b)` — query with dot-separated glob pattern
@@ -745,18 +742,15 @@ variable.
 
 Use `sym("a")` to convert a string to a symbol if needed.
 
-### 5.8 deep-find Accepts Both Symbols and Strings
+### 5.8 deep-find Takes a Symbol, Not a String
 
 ```eu,notest
-{ a: { x: 1 } } deep-find(:x)     # [1] — correct (symbol, preferred)
-{ a: { x: 1 } } deep-find("x")    # [1] — also correct (string, legacy)
+{ a: { x: 1 } } deep-find(:x)     # [1] — correct
+{ a: { x: 1 } } deep-find("x")    # WRONG — takes a symbol
 ```
 
-`deep-find`, `deep-find-first`, and `deep-find-paths` accept either a
-symbol (`:key`) or a string (`"key"`) as the key argument. Symbols are
-preferred, matching the rest of the prelude convention (`has(:key)`,
-`lookup-or(:key, ...)`). Strings are accepted for backwards
-compatibility.
+`deep-find`, `deep-find-first`, and `deep-find-paths` take a symbol key,
+matching the rest of the prelude (`has(:key)`, `lookup-or(:key, ...)`).
 
 ### 5.9 Self-Reference Creates Infinite Recursion
 
