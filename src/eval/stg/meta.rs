@@ -6,7 +6,8 @@ use crate::{
 };
 
 use super::{
-    block::{Merge, PBlockEmpty},
+    block::Merge,
+    constant::KEmptyBlock,
     syntax::{
         dsl::{annotated_lambda, demeta, let_, local, lref, value, with_meta},
         LambdaForm,
@@ -33,7 +34,7 @@ impl StgIntrinsic for Meta {
                     // [inner-meta] [meta body] [...]
                     Merge.global(lref(0), lref(1)),
                 ),
-                PBlockEmpty.global(),
+                KEmptyBlock.global(),
             ),
             annotation,
         )
@@ -62,7 +63,7 @@ impl StgIntrinsic for RawMeta {
                 // Return just the immediate metadata without recursing
                 // [meta body] — return meta (local(0))
                 local(0),
-                PBlockEmpty.global(),
+                KEmptyBlock.global(),
             ),
             annotation,
         )
