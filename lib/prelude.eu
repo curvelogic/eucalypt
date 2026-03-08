@@ -134,6 +134,10 @@ nil?: = []
 ` "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
 non-nil?: nil? complement
 
+` { doc: "`x‼` - `true` if `x` is non-nil, `false` otherwise. Postfix non-nil predicate operator."
+    precedence: :bool-unary }
+(x ‼): x non-nil?
+
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
 head-or(d, xs): xs nil? then(d, xs head)
 
@@ -216,9 +220,9 @@ lookup-path(ks, b): foldl(lookup-in, b, ks)
 ## Deep find — recursive key search
 ##
 
-` "`deep-find(k, b)` - return list of all values for key `k` at any depth in block `b`, depth-first. `k` may be a symbol or string."
+` "`deep-find(k, b)` - return list of all values for key `k` at any depth in block `b`, depth-first. `k` must be a symbol."
 deep-find(k, b): {
-  s: sym(str.of(k))
+  s: k
   children(v): v elements map({el: •}.(el value)) mapcat(walk)
   walk(v): if(v block?,
               if(v has(s),
@@ -229,12 +233,12 @@ deep-find(k, b): {
                  []))
 }.walk(b)
 
-` "`deep-find-first(k, d, b)` - return first value for key `k` at any depth in block `b`, or default `d`. `k` may be a symbol or string."
+` "`deep-find-first(k, d, b)` - return first value for key `k` at any depth in block `b`, or default `d`. `k` must be a symbol."
 deep-find-first(k, d, b): b deep-find(k) head-or(d)
 
-` "`deep-find-paths(k, b)` - return list of key paths to all occurrences of key `k` at any depth in block `b`. `k` may be a symbol or string."
+` "`deep-find-paths(k, b)` - return list of key paths to all occurrences of key `k` at any depth in block `b`. `k` must be a symbol."
 deep-find-paths(k, b): {
-  s: sym(str.of(k))
+  s: k
   walk-children(path, v): v keys mapcat({ck: •}.(walk(path ++ [ck], v lookup(ck))))
   walk(path, v): if(v block?,
                     if(v has(s),
@@ -278,30 +282,20 @@ deep-query-first(pattern, d, b): b deep-query(pattern) head-or(d)
 
 ` "`deep-query-paths(pattern, b)` - return list of key paths matching `pattern` in block `b`."
 deep-query-paths(pattern, b): {
-
   segs: pattern str.split-on("[.]")
-  norm: if((segs head) = "**", segs, cons("**", segs))
-
-  pair(v, k): [k, v lookup(k)]
-  all-keyed(v): if(v block?, v keys map(pair(v)), [])
-
-  prepend-path(path, kv): [path ++ [kv first], kv second]
-
-  match-key-pair(seg, [path, val]):
+  first-seg: segs head
+  norm: if(first-seg = "**", segs, cons("**", segs))
+  all-keyed(v): if(v block?, v keys map({k: •}.[k, v lookup(k)]), [])
+  match-key-pair(seg, p): {path: p first, val: p second}.(
+    if(val block?, if(val has(sym(seg)), [[path ++ [sym(seg)], val lookup(sym(seg))]], []), []))
+  expand-star(p): {path: p first, val: p second}.(
     if(val block?,
-       if(val has(sym(seg)), [[path ++ [sym(seg)], val lookup(sym(seg))]], []),
-       [])
-
-  expand-star([path, val]):
-    if(val block?,
-       val keys map(pair(val)) map(prepend-path(path)),
-       [])
-
+       val keys map({k: •}.[path ++ [k], val lookup(k)]),
+       []))
   desc-pairs(p): {path: p first, val: p second}.(
     if(val block?,
        cons(p, all-keyed(val) mapcat({kv: •}.(desc-pairs([path ++ [kv first], kv second])))),
        []))
-
   step(pairs, remaining):
     if(remaining nil?,
        pairs map(first),
@@ -313,9 +307,7 @@ deep-query-paths(pattern, b): {
              if(seg = "*",
                 step(pairs mapcat(expand-star), rest),
                 step(pairs mapcat(match-key-pair(seg)), rest)))))
-
   result: step([[[], b]], norm)
-
 }.result
 
 ##
@@ -1278,13 +1270,6 @@ merge-at(ks, v, b): if(ks nil?,
                        b update-value-or(ks head,
 		                                        merge-at(ks tail, v),
                                             tongue(ks tail, v)))
-
-` "deep-merge-at(ks, v, b) - deep merge block `v` into block value at path-of-keys `ks`"
-deep-merge-at(ks, v, b): if(ks nil?,
-                             deep-merge(b, v),
-                             b update-value-or(ks head,
-                                               deep-merge-at(ks tail, v),
-                                               tongue(ks tail, v)))
 
 
 
