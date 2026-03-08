@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-use super::{string::HeapString, syntax::Native};
+use super::{heap_block::HeapBlock, string::HeapString, syntax::Native};
 
 /// RAII guard that keeps a heap block pinned (non-evacuatable).
 pub struct PinGuard {
@@ -76,6 +76,16 @@ impl<'guard> MutatorHeapView<'guard> {
             base_address: super::bump::block_base_of(ptr),
             heap: self.heap as *const super::heap::Heap,
         }
+    }
+
+    /// Register a `HeapBlock` pointer for GC finalisation.
+    ///
+    /// Must be called after every `alloc::<HeapBlock>()` so that the GC
+    /// knows to run `Drop` on the `im_rc::OrdMap` inside when the object
+    /// becomes unreachable. Without this, OrdMap Rc nodes accumulate on
+    /// the Rust heap indefinitely (memory leak / GC regression).
+    pub fn register_heap_block(&self, ptr: std::ptr::NonNull<HeapBlock>) {
+        self.heap.register_heap_block(ptr);
     }
 }
 

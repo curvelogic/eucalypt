@@ -517,6 +517,11 @@ pub fn machine_return_block(
     block: HeapBlock,
 ) -> Result<(), ExecutionError> {
     let ptr = view.alloc(block)?.as_ptr();
+    // Register for GC finalisation so that the OrdMap Rc nodes inside the
+    // HeapBlock are properly dropped when the object becomes unreachable.
+    // Without this, im_rc::OrdMap internal Rc nodes accumulate on Rust's
+    // heap indefinitely, causing a severe GC performance regression.
+    view.register_heap_block(ptr);
     let block_ref = Ref::V(Native::Block(ptr));
     machine.set_closure(SynClosure::new(
         view.data(

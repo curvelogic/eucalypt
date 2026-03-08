@@ -325,6 +325,10 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
 
     clock.switch(ThreadOccupation::CollectorSweep);
 
+    // Drop dead HeapBlock allocations before the sweep phase overwrites
+    // their memory. This frees the im_rc::OrdMap Rc nodes on the Rust heap.
+    heap_view.heap.finalise_dead_heap_blocks();
+
     // Defer sweep to allocation time (lazy sweeping)
     heap_view.defer_sweep();
 
@@ -460,9 +464,21 @@ pub fn collect_with_evacuation(
 
         // Finalise evacuation: integrate target blocks, reclaim candidates
         heap_view.heap.finalise_evacuation();
+
+        // Update finaliser list: rewrite any HeapBlock pointers that were
+        // forwarded during evacuation so future finalisation inspects the
+        // correct (new) locations.
+        heap_view
+            .heap
+            .update_heap_block_finalisers_after_evacuation();
     }
 
     clock.switch(ThreadOccupation::CollectorSweep);
+
+    // Drop dead HeapBlock allocations (those not marked during the mark phase)
+    // before the sweep phase overwrites their memory. This frees im_rc::OrdMap
+    // Rc nodes on the Rust heap, preventing the memory leak.
+    heap.finalise_dead_heap_blocks();
 
     // Defer sweep to allocation time (lazy sweeping)
     {

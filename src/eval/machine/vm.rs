@@ -356,6 +356,29 @@ impl MachineState {
                     }
                     Ref::G(i) => {
                         self.closure = self.nav(view).global(i)?;
+                        let is_thunk = self.closure.update();
+                        let updateable = is_thunk && !suppress_update;
+                        if updateable {
+                            // Memoise global thunks just like local thunks.
+                            // Without this, every evaluation of a Ref::G that
+                            // points to a thunk (e.g. a compiled block literal
+                            // or PBLOCK_FROM_PAIRS call) re-executes the thunk
+                            // body on each access, causing O(n) re-allocation
+                            // of persistent blocks for programs that access them
+                            // repeatedly.
+                            let hole = view.alloc(HeapSyn::BlackHole)?;
+                            let black_hole = SynClosure::new(hole.as_ptr(), self.globals);
+                            let global_env = view.scoped(self.globals);
+                            global_env.update(&view, i, black_hole)?;
+
+                            self.push(
+                                view,
+                                Continuation::Update {
+                                    environment: self.globals,
+                                    index: i,
+                                },
+                            )?;
+                        }
                     }
                     Ref::V(v) => {
                         self.return_native(view, &v)?;
@@ -496,13 +519,85 @@ impl MachineState {
                     self.update(view, environment, index)?;
                 }
                 other => {
+                    // Save the Meta closure's env before overwriting self.closure.
+                    // We may need it to push an Update for the body thunk.
+                    let meta_env = self.closure.env();
                     self.closure = self.nav(view).resolve(body)?;
+                    // Push `other` first (below on the stack) so it is processed
+                    // after the thunk body finishes evaluating. Then push the
+                    // Update continuation on top so it fires when the thunk returns.
+                    //
+                    // Without this body-thunk update, annotated thunks such as
+                    // `Meta { body: L(N) }` where N is a PBLOCK_FROM_PAIRS thunk
+                    // are re-evaluated on every meta-strip, producing O(n) persistent
+                    // block allocations instead of O(1).
                     self.stack.push(other);
+                    match body {
+                        Ref::L(i) if self.closure.update() => {
+                            let hole = view.alloc(HeapSyn::BlackHole)?;
+                            let black_hole = SynClosure::new(hole.as_ptr(), meta_env);
+                            let meta_env_scoped = view.scoped(meta_env);
+                            meta_env_scoped.update(&view, *i, black_hole)?;
+                            self.push(
+                                view,
+                                Continuation::Update {
+                                    environment: meta_env,
+                                    index: *i,
+                                },
+                            )?;
+                        }
+                        Ref::G(i) if self.closure.update() => {
+                            let hole = view.alloc(HeapSyn::BlackHole)?;
+                            let black_hole = SynClosure::new(hole.as_ptr(), self.globals);
+                            let global_env = view.scoped(self.globals);
+                            global_env.update(&view, *i, black_hole)?;
+                            self.push(
+                                view,
+                                Continuation::Update {
+                                    environment: self.globals,
+                                    index: *i,
+                                },
+                            )?;
+                        }
+                        _ => {}
+                    }
                 }
             }
         } else {
+            // Save the Meta closure's env before overwriting.
+            let meta_env = self.closure.env();
             self.closure = self.nav(view).resolve(body)?;
-            // Don't terminate at metadata, carrying processing
+            // Same thunk-update logic as in the `other` branch above.
+            match body {
+                Ref::L(i) if self.closure.update() => {
+                    let hole = view.alloc(HeapSyn::BlackHole)?;
+                    let black_hole = SynClosure::new(hole.as_ptr(), meta_env);
+                    let meta_env_scoped = view.scoped(meta_env);
+                    meta_env_scoped.update(&view, *i, black_hole)?;
+                    self.push(
+                        view,
+                        Continuation::Update {
+                            environment: meta_env,
+                            index: *i,
+                        },
+                    )?;
+                }
+                Ref::G(i) if self.closure.update() => {
+                    let hole = view.alloc(HeapSyn::BlackHole)?;
+                    let black_hole = SynClosure::new(hole.as_ptr(), self.globals);
+                    let global_env = view.scoped(self.globals);
+                    global_env.update(&view, *i, black_hole)?;
+                    self.push(
+                        view,
+                        Continuation::Update {
+                            environment: self.globals,
+                            index: *i,
+                        },
+                    )?;
+                }
+                _ => {}
+            }
+            // Don't terminate at metadata, carry processing
         }
 
         Ok(())

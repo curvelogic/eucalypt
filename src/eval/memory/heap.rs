@@ -38,6 +38,7 @@ use super::{
     alloc::{Allocator, MutatorScope},
     bump::{self, BumpBlock},
     header::AllocHeader,
+    heap_block::HeapBlock,
     lob::LargeObjectBlock,
 };
 
@@ -1030,6 +1031,16 @@ pub struct Heap {
     gc_metrics: UnsafeCell<GCMetrics>,
     /// Pin counts by block base address.
     pin_counts: UnsafeCell<HashMap<usize, usize>>,
+    /// Finaliser list: all live `HeapBlock` allocations on the managed heap.
+    ///
+    /// Each `HeapBlock` wraps an `im_rc::OrdMap` whose internal `Rc` nodes
+    /// are on Rust's regular heap. The GC never calls `Drop` on heap objects,
+    /// so without this list those `Rc` nodes would leak indefinitely.
+    ///
+    /// After every mark phase we iterate this list, call `drop_in_place` on
+    /// every pointer that is no longer marked (i.e. dead), and retain only
+    /// the live pointers (updating forwarding pointers after evacuation).
+    heap_block_finalisers: UnsafeCell<Vec<NonNull<HeapBlock>>>,
 }
 
 #[cfg(test)]
@@ -1495,6 +1506,7 @@ impl Heap {
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
+            heap_block_finalisers: UnsafeCell::new(Vec::new()),
         }
     }
 
@@ -1507,6 +1519,7 @@ impl Heap {
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
+            heap_block_finalisers: UnsafeCell::new(Vec::new()),
         }
     }
 
@@ -2331,6 +2344,89 @@ impl Heap {
     }
 
     // GC functions
+
+    /// Register a `HeapBlock` allocation for finalisation.
+    ///
+    /// Must be called immediately after every `alloc::<HeapBlock>()` call
+    /// so that the GC knows to run `Drop` on the `im_rc::OrdMap` inside
+    /// when the object becomes unreachable.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be a valid pointer to a `HeapBlock` on the managed heap.
+    /// It will be called with `drop_in_place` when the object is determined
+    /// dead, so the caller must not use `ptr` after it has been determined
+    /// unreachable.
+    pub fn register_heap_block(&self, ptr: NonNull<HeapBlock>) {
+        // SAFETY: Single-threaded mutator. No concurrent access to this list.
+        let finalisers = unsafe { &mut *self.heap_block_finalisers.get() };
+        finalisers.push(ptr);
+    }
+
+    /// Drop all dead `HeapBlock` allocations and retain live ones.
+    ///
+    /// Must be called after the mark phase is complete (so that liveness
+    /// information is current) and before the sweep phase overwrites any
+    /// dead cells.
+    ///
+    /// For each registered pointer:
+    /// - If marked (live): keep in the list unchanged.
+    /// - If not marked (dead): call `drop_in_place` to run the `HeapBlock`'s
+    ///   `Drop` impl, which decrements `Rc` reference counts in the `OrdMap`
+    ///   and frees any now-unreferenced `Rc` nodes on Rust's regular heap.
+    ///
+    /// This prevents the unbounded accumulation of `im_rc::OrdMap` nodes
+    /// that caused a 430–580% GC performance regression with persistent blocks.
+    pub fn finalise_dead_heap_blocks(&self) {
+        // SAFETY: Stop-the-world collection — no concurrent mutation of the
+        // heap. The mark phase has completed so `is_marked` is authoritative.
+        // We only call `drop_in_place` on truly dead objects; live objects are
+        // untouched. After `drop_in_place` the memory bytes in the bump block
+        // are considered dead/unallocated by the GC line map, so the pointer
+        // is never dereferenced again.
+        let finalisers = unsafe { &mut *self.heap_block_finalisers.get() };
+        let current_mark_state = self.mark_state();
+
+        finalisers.retain_mut(|ptr| {
+            let header_ptr: *mut AllocHeader =
+                unsafe { ptr.cast::<AllocHeader>().as_ptr().offset(-1) };
+            let is_live = unsafe { (*header_ptr).is_marked_with_state(current_mark_state) };
+            if is_live {
+                true // Keep in list
+            } else {
+                // SAFETY: Object is dead — the GC will not touch it again.
+                // Calling `drop_in_place` runs `HeapBlock::drop()` which
+                // decrements the OrdMap's Rc nodes. The bump-block memory
+                // itself is not freed here — it will be reused by the GC
+                // via its normal block-recycling path.
+                unsafe { std::ptr::drop_in_place(ptr.as_ptr()) };
+                false // Remove from list
+            }
+        });
+    }
+
+    /// Update finaliser list pointers after an evacuating collection.
+    ///
+    /// After evacuation, live `HeapBlock` objects may have been copied to
+    /// new locations. This method rewrites any forwarded pointers in the
+    /// finaliser list so that future `finalise_dead_heap_blocks` calls
+    /// inspect the correct (new) location.
+    pub fn update_heap_block_finalisers_after_evacuation(&self) {
+        // SAFETY: Stop-the-world collection. Forwarding pointers were set
+        // during the evacuate phase and are stable for the rest of the GC
+        // pause. We only update pointers, never dropping or allocating.
+        let finalisers = unsafe { &mut *self.heap_block_finalisers.get() };
+        for ptr in finalisers.iter_mut() {
+            let header_ptr: *mut AllocHeader =
+                unsafe { ptr.cast::<AllocHeader>().as_ptr().offset(-1) };
+            let header = unsafe { &*header_ptr };
+            if header.is_forwarded() {
+                if let Some(new_ptr) = header.forwarded_to() {
+                    *ptr = new_ptr.cast::<HeapBlock>();
+                }
+            }
+        }
+    }
 
     /// Reset all region marks ready for a fresh GC
     pub fn reset_region_marks(&self) {
