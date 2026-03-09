@@ -7,13 +7,14 @@ use crate::{
     core::expr::*,
     driver::{
         error::EucalyptError,
+        io_run::io_run_and_render,
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
     },
     eval::{
         error::ExecutionError,
         machine::standard_machine,
-        stg::{self, make_standard_runtime},
+        stg::{self, make_standard_runtime, RenderType, StgSettings},
     },
     export,
 };
@@ -146,9 +147,23 @@ impl<'a> Executor<'a> {
             println!("{}", prettify::prettify(rt.as_ref()));
             Ok(None)
         } else {
+            // When IO monad execution is permitted, compile in headless mode
+            // so that IO constructors can yield to the io-run driver rather
+            // than being passed to RENDER_DOC (which would not recognise them).
+            // After io-run completes, the final value is fed back through
+            // RENDER_DOC explicitly.
+            let stg_settings = if opt.allow_io {
+                StgSettings {
+                    render_type: RenderType::Headless,
+                    ..opt.stg_settings().clone()
+                }
+            } else {
+                opt.stg_settings().clone()
+            };
+
             let syn = {
                 let t = Instant::now();
-                let syn = stg::compile(opt.stg_settings(), self.evaluand.clone(), rt.as_ref())?;
+                let syn = stg::compile(&stg_settings, self.evaluand.clone(), rt.as_ref())?;
                 stats.timings_mut().record("stg-compile", t.elapsed());
                 syn
             };
@@ -158,7 +173,7 @@ impl<'a> Executor<'a> {
                 Ok(None)
             } else {
                 emitter.stream_start();
-                let mut machine = standard_machine(opt.stg_settings(), syn, emitter, rt.as_ref())?;
+                let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
 
                 let ret = {
                     let t = Instant::now();
@@ -194,6 +209,19 @@ impl<'a> Executor<'a> {
                     stats.set_total_sweep_time(
                         machine.clock().duration(ThreadOccupation::CollectorSweep),
                     );
+
+                    // If the machine yielded on an IO constructor, run the
+                    // io-run interpret loop to execute IO actions and extract
+                    // the final pure value, then render it.
+                    if let Ok(None) = ret {
+                        if machine.io_yielded() {
+                            let io_result = io_run_and_render(&mut machine, opt.allow_io)
+                                .map_err(|e| ExecutionError::Panic(e.to_string()));
+                            machine.take_emitter().stream_end();
+                            return io_result;
+                        }
+                    }
+
                     ret
                 };
 
