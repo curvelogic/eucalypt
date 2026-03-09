@@ -1,0 +1,60 @@
+"Test that merged blocks retain O(1) index lookup for all key positions.
+ When MERGE produces a block with >= 16 keys, an index is built eagerly.
+ This test verifies every key position is accessible after merge."
+
+# Enclose the large merged block inside a local block expression and
+# extract only the boolean result. The YAML renderer then sees only
+# booleans, not the 16-key merged block itself. This avoids a
+# debug-build stack overflow that occurs when the YAML serialiser
+# recursively traverses merged blocks whose env-frame chain is deeper
+# than that of statically compiled blocks.
+
+check-merge: {
+  base: {
+    k01: 1   k02: 2   k03: 3   k04: 4   k05: 5
+    k06: 6   k07: 7   k08: 8   k09: 9   k10: 10
+    k11: 11  k12: 12  k13: 13  k14: 14  k15: 15
+  }
+  # 15-key base block merged with 1 more key produces exactly 16 (the
+  # index threshold). All 16 positions must be accessible.
+  merged: base { k16: 16 }
+
+  # Access every key position and verify the returned value.
+  # Previously k03-k15 would crash: the index mapped them to their
+  # position, but extract_value_from_pair failed on the raw KV closure
+  # form and fell back to the find loop, which panicked in MatchesKey.
+  c01: merged.k01 = 1
+  c02: merged.k02 = 2
+  c03: merged.k03 = 3
+  c04: merged.k04 = 4
+  c05: merged.k05 = 5
+  c06: merged.k06 = 6
+  c07: merged.k07 = 7
+  c08: merged.k08 = 8
+  c09: merged.k09 = 9
+  c10: merged.k10 = 10
+  c11: merged.k11 = 11
+  c12: merged.k12 = 12
+  c13: merged.k13 = 13
+  c14: merged.k14 = 14
+  c15: merged.k15 = 15
+  c16: merged.k16 = 16
+
+  result: [c01, c02, c03, c04, c05, c06, c07, c08,
+           c09, c10, c11, c12, c13, c14, c15, c16] all-true?
+}.result
+
+# Deep merge (<<) goes through MERGEWITH — verify it also builds a
+# correct index. Kept in a separate local block for the same reason.
+check-deep-merge: {
+  da: {a: 1 b: 2 c: 3 d: 4 e: 5 f: 6 g: 7 h: 8}
+  db: {i: 9 j: 10 k: 11 l: 12 m: 13 n: 14 o: 15 p: 16}
+  dm: da << db
+  dm-a: dm.a = 1
+  dm-h: dm.h = 8
+  dm-i: dm.i = 9
+  dm-p: dm.p = 16
+  result: [dm-a, dm-h, dm-i, dm-p] all-true?
+}.result
+
+RESULT: [check-merge, check-deep-merge] all-true? then(:PASS, :FAIL)
