@@ -814,6 +814,21 @@ lazy_static! {
             ty: function(vec![list(), list(), num(), unk(), list()]).unwrap(),
             strict: vec![0, 1, 2, 3],
     },
+    Intrinsic { // 153
+            name: "IO_RETURN",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 154
+            name: "IO_BIND",
+            ty: function(vec![unk(), unk(), unk(), unk()]).unwrap(),
+            strict: vec![],
+    },
+    Intrinsic { // 155
+            name: "IO_ACTION",
+            ty: function(vec![unk(), unk(), unk()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 

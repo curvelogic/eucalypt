@@ -14,6 +14,7 @@ pub mod encoding;
 pub mod eq;
 pub mod force;
 pub mod graph;
+pub mod io;
 pub mod json_to_stg;
 pub mod list;
 pub mod meta;
@@ -198,6 +199,9 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(array::ArrayDiv));
     rt.add(Box::new(array::ArrayIndices));
     rt.add(Box::new(array::ArrayNeighbours));
+    rt.add(Box::new(io::IoReturn));
+    rt.add(Box::new(io::IoBind));
+    rt.add(Box::new(io::IoAction));
     rt.prepare(source_map);
     Box::new(rt)
 }
