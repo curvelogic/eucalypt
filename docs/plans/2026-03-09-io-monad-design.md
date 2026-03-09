@@ -67,7 +67,7 @@ Plus one pure intrinsic:
 
 ## Eucalypt API
 
-```eu
+```text
 # Pure prelude functions
 render(value): __render_to_string(value, :yaml)
 render-as(value, fmt): __render_to_string(value, fmt)
@@ -89,13 +89,13 @@ io: {
 
 ### Result Shape
 
-```eu
+```text
 {stdout: Str, stderr: Str, exit-code: Num}
 ```
 
 ### Usage Examples
 
-```eu
+```text
 # Simple command
 files: { :io result: io.shell("ls -la") }.result.stdout
 
