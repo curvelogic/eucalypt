@@ -217,110 +217,77 @@ lookup-across(s, d, bs): {
 lookup-path(ks, b): foldl(lookup-in, b, ks)
 
 ##
+## Deep fold — stateful DFS over nested block/list structures
+##
+
+` "`deep-fold(emit, next-state, s, b)` - depth-first fold over nested blocks and lists. `emit(state, block)` returns a list of results at each block node. `next-state(state, child-key)` updates state for recursion into a child. `s` is the initial state."
+deep-fold(emit, next-state, s, b): {
+  walk-child(s, [ck, cv]): walk(next-state(s, ck), cv)
+  walk(s, v): if(v block?,
+                emit(s, v) ++ (v elements mapcat(walk-child(s))),
+                if(v list?, v mapcat(walk(s)), []))
+}.walk(s, b)
+
+##
 ## Deep find — recursive key search
 ##
 
 ` "`deep-find(k, b)` - return list of all values for key `k` (a symbol) at any depth in block `b`, depth-first."
 deep-find(k, b): {
-  s: k
-  children(v): v elements map({el: •}.(el value)) mapcat(walk)
-  walk(v): if(v block?,
-              if(v has(s),
-                 cons(v lookup(s), children(v)),
-                 children(v)),
-              if(v list?,
-                 v mapcat(walk),
-                 []))
-}.walk(b)
+  emit(s, v): if(v has(k), [v lookup(k)], [])
+  next(s, ck): null
+}.(deep-fold(emit, next, null, b))
 
 ` "`deep-find-first(k, d, b)` - return first value for key `k` (a symbol) at any depth in block `b`, or default `d`."
 deep-find-first(k, d, b): b deep-find(k) head-or(d)
 
 ` "`deep-find-paths(k, b)` - return list of key paths to all occurrences of key `k` (a symbol) at any depth in block `b`."
 deep-find-paths(k, b): {
-  s: k
-  walk-children(path, v): v keys mapcat({ck: •}.(walk(path ++ [ck], v lookup(ck))))
-  walk(path, v): if(v block?,
-                    if(v has(s),
-                       cons(path ++ [s], walk-children(path, v)),
-                       walk-children(path, v)),
-                    if(v list?,
-                       v mapcat(walk(path)),
-                       []))
-}.walk([], b)
+  emit(path, v): if(v has(k), [path ++ [k]], [])
+  next(path, ck): path ++ [ck]
+}.(deep-fold(emit, next, [], b))
 
 ##
 ## Deep query — pattern-based data querying
 ##
 
-` "`deep-query(pattern, b)` - query block `b` using dot-separated pattern string. `*` matches one level, `**` matches any depth. Bare `foo` is sugar for `**.foo`."
-deep-query(pattern, b): {
+` "`deep-query-fold(pattern, b)` - core query engine returning `[path, value]` pairs matching the dot-separated `pattern` in block `b`."
+deep-query-fold(pattern, b): {
   segs: pattern str.split-on("[.]")
-  first-seg: segs head
-  norm: if(first-seg = "**", segs, cons("**", segs))
-  all-values(v): if(v block?, v elements map({el: •}.(el value)), [])
-  match-key(seg, v): if(v block?, if(v has(sym(seg)), [v lookup(sym(seg))], []), [])
-  descendants(v): if(v block?,
-                     cons(v, all-values(v) mapcat(descendants)),
-                     [])
-  step(vals, remaining):
-    if(remaining nil?,
-       vals,
-       {
-         seg: remaining head
-         rest: remaining tail
-       }.(if(seg = "**",
-             step(vals mapcat(descendants), rest),
-             if(seg = "*",
-                step(vals mapcat(all-values), rest),
-                step(vals mapcat(match-key(seg)), rest)))))
-  result: step([b], norm)
+  norm: if((segs head) = "**", segs, cons("**", segs))
+
+  child-pair(path, el): [path ++ [el key], el value]
+
+  desc-child(path, el): desc-pairs([path ++ [el key], el value])
+  desc-pairs(p):
+    (p second) block? then(
+       cons(p, (p second) elements mapcat(desc-child(p first))),
+       [])
+
+  expand-star(p):
+    (p second) block? then((p second) elements map(child-pair(p first)), [])
+
+  match-sym(s, p):
+    (p second) block? then(
+       (p second) has(s) then([[(p first) ++ [s], (p second) lookup(s)]], []),
+       [])
+
+  apply-segment(pairs, seg):
+    if(seg = "**", pairs mapcat(desc-pairs),
+       if(seg = "*", pairs mapcat(expand-star),
+          pairs mapcat(match-sym(sym(seg)))))
+
+  result: foldl(apply-segment, [[[], b]], norm)
 }.result
+
+` "`deep-query(pattern, b)` - query block `b` using dot-separated pattern string. `*` matches one level, `**` matches any depth. Bare `foo` is sugar for `**.foo`."
+deep-query(pattern, b): b deep-query-fold(pattern) map(second)
 
 ` "`deep-query-first(pattern, d, b)` - return first match for `pattern` in block `b`, or default `d`."
 deep-query-first(pattern, d, b): b deep-query(pattern) head-or(d)
 
 ` "`deep-query-paths(pattern, b)` - return list of key paths matching `pattern` in block `b`."
-deep-query-paths(pattern, b): {
-
-  segs: pattern str.split-on("[.]")
-  norm: if((segs head) = "**", segs, cons("**", segs))
-
-  pair(v, k): [k, v lookup(k)]
-  all-keyed(v): if(v block?, v keys map(pair(v)), [])
-
-  prepend-path(path, kv): [path ++ [kv first], kv second]
-
-  match-key-pair(seg, [path, val]):
-    if(val block?,
-       if(val has(sym(seg)), [[path ++ [sym(seg)], val lookup(sym(seg))]], []),
-       [])
-
-  expand-star([path, val]):
-    if(val block?,
-       val keys map(pair(val)) map(prepend-path(path)),
-       [])
-
-  desc-pairs(p): {path: p first, val: p second}.(
-    if(val block?,
-       cons(p, all-keyed(val) mapcat({kv: •}.(desc-pairs([path ++ [kv first], kv second])))),
-       []))
-
-  step(pairs, remaining):
-    if(remaining nil?,
-       pairs map(first),
-       {
-         seg: remaining head
-         rest: remaining tail
-       }.(if(seg = "**",
-             step(pairs mapcat(desc-pairs), rest),
-             if(seg = "*",
-                step(pairs mapcat(expand-star), rest),
-                step(pairs mapcat(match-key-pair(seg)), rest)))))
-
-  result: step([[[], b]], norm)
-
-}.result
+deep-query-paths(pattern, b): b deep-query-fold(pattern) map(first)
 
 ##
 ## Boolean
