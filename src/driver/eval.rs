@@ -28,7 +28,7 @@ use codespan_reporting::{
 
 use std::{io::Write, time::Instant};
 
-use super::statistics::Statistics;
+use super::{io_run, statistics::Statistics};
 
 /// Run the prepared core expression and output to selected emitter
 pub fn run(opt: &EucalyptOptions, loader: SourceLoader) -> Result<Statistics, EucalyptError> {
@@ -194,7 +194,18 @@ impl<'a> Executor<'a> {
                     stats.set_total_sweep_time(
                         machine.clock().duration(ThreadOccupation::CollectorSweep),
                     );
-                    ret
+
+                    // If the machine yielded on an IO constructor, enter the
+                    // io-run interpret loop before rendering output.
+                    if ret.is_ok() && machine.io_yielded() {
+                        ret.and_then(|_| {
+                            io_run::io_run(&mut machine, opt)
+                                .map(|()| None)
+                                .map_err(|e| ExecutionError::Panic(e.to_string()))
+                        })
+                    } else {
+                        ret
+                    }
                 };
 
                 machine.take_emitter().stream_end();

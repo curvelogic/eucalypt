@@ -86,6 +86,13 @@ impl SymbolPool {
     pub fn is_empty(&self) -> bool {
         self.to_str.is_empty()
     }
+
+    /// Return a snapshot of all interned strings, indexed by `SymbolId::as_u32()`.
+    ///
+    /// Used by the io-run driver to resolve symbol IDs outside the machine.
+    pub fn all_strings(&self) -> Vec<String> {
+        self.to_str.clone()
+    }
 }
 
 impl Default for SymbolPool {

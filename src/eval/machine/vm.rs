@@ -1398,6 +1398,68 @@ impl<'a> Machine<'a> {
         self.state.closure = new_closure;
     }
 
+    /// Set a new closure and resume execution for the io-run driver loop.
+    ///
+    /// Unlike `resume()`, this method does not require the machine to have
+    /// yielded on an IO constructor.  It is used by the io-run driver to
+    /// force arbitrary closures (e.g. spec blocks, continuations) between
+    /// IO steps.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the machine has not terminated (either normally or via IO
+    /// yield).
+    pub fn driver_resume(&mut self, new_closure: SynClosure) {
+        assert!(
+            self.state.terminated,
+            "driver_resume() called on a machine that has not terminated"
+        );
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+        self.state.closure = new_closure;
+    }
+
+    /// Return the machine's current closure.
+    ///
+    /// Valid to call at any point, but most useful after termination to
+    /// inspect the WHNF value the machine reduced to.
+    pub fn current_closure(&self) -> SynClosure {
+        self.state.closure.clone()
+    }
+
+    /// Return all interned symbol strings as a `Vec<String>`.
+    ///
+    /// The returned `Vec` is indexed by `SymbolId::as_u32()`, so
+    /// `strings[id]` gives the string for the symbol with that ID.
+    ///
+    /// Used by the io-run driver to resolve symbol IDs extracted from
+    /// spec blocks into tag/key names without holding a borrow on the
+    /// machine.
+    pub fn symbol_pool_strings(&self) -> Vec<String> {
+        self.state.symbol_pool.all_strings()
+    }
+
+    /// Return the root environment pointer.
+    ///
+    /// The root env is the bottom-most frame shared by all closures.
+    /// Used as the parent frame when constructing new env frames in the
+    /// io-run driver.
+    pub fn root_env_ptr(&self) -> RefPtr<EnvFrame> {
+        self.state.root_env
+    }
+
+    /// Intern the standard IO result field keys into the symbol pool and
+    /// return their IDs as `(stdout, stderr, exit_code)`.
+    ///
+    /// Calling this before `mutate(ResultBlockBuilder, ...)` ensures the
+    /// sym IDs are valid for the current machine's pool.
+    pub fn intern_result_keys(&mut self) -> (u32, u32, u32) {
+        let stdout = self.state.symbol_pool.intern("stdout").as_u32();
+        let stderr = self.state.symbol_pool.intern("stderr").as_u32();
+        let exit_code = self.state.symbol_pool.intern("exit-code").as_u32();
+        (stdout, stderr, exit_code)
+    }
+
     /// Assertion helper for machine unit tests
     #[cfg(test)]
     pub fn native_return(&self) -> Option<Native> {
