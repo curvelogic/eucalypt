@@ -36,21 +36,53 @@ fn native_type(native: &Native) -> IntrinsicType {
     }
 }
 
-/// Helper for intrinsics to access a numeric arg
+/// Attempt to classify a ref as a data constructor tag, for error reporting.
+///
+/// Used when `resolve_native` fails to provide a `NoBranchForDataTag` error
+/// with the right tag so that contextual notes (e.g. "blocks cannot be used
+/// in arithmetic") are generated correctly.
+fn cons_tag_of(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    arg: &Ref,
+) -> Option<u8> {
+    let nav = machine.nav(view);
+    let closure = nav.resolve(arg).ok()?;
+    let code = view.scoped(closure.code());
+    match &*code {
+        HeapSyn::Cons { tag, .. } => Some(*tag),
+        _ => None,
+    }
+}
+
+/// Helper for intrinsics to access a numeric arg.
+///
+/// When the argument is a data constructor (e.g. a block or list) rather than
+/// a native numeric atom, produces a `NoBranchForDataTag` error so that the
+/// contextual error notes (e.g. "blocks cannot be used in arithmetic",
+/// "to concatenate two lists, use 'append'") are generated correctly.
 pub fn num_arg(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<Number, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
-    if let Native::Num(n) = native {
-        Ok(n)
-    } else {
-        Err(ExecutionError::TypeMismatch(
+    match machine.nav(view).resolve_native(arg) {
+        Ok(Native::Num(n)) => Ok(n),
+        Ok(native) => Err(ExecutionError::TypeMismatch(
             machine.annotation(),
             IntrinsicType::Number,
             native_type(&native),
-        ))
+        )),
+        Err(_) => {
+            // resolve_native failed — likely a Cons (block/list). Inspect the
+            // tag so the error message includes useful context.
+            let tag = cons_tag_of(machine, view, arg).unwrap_or(DataConstructor::Block.tag());
+            Err(ExecutionError::NoBranchForDataTag(
+                machine.annotation(),
+                tag,
+                vec![DataConstructor::BoxedNumber.tag()],
+            ))
+        }
     }
 }
 
@@ -358,6 +390,29 @@ pub fn machine_return_zdt(
         .as_ptr(),
         machine.root_env(),
     ))
+}
+
+/// Return a boxed number from an intrinsic whose wrapper does not auto-box
+/// the result.
+///
+/// The default wrapper for `num -> num -> num` intrinsics wraps the result
+/// in a `BoxedNumber` data constructor automatically via a `let_` step. When
+/// an intrinsic overrides `wrapper` with a custom form (e.g.
+/// `arithmetic_wrapper`) that does not include that boxing step, the `execute`
+/// method must call this function so that the pipeline receives a proper
+/// `BoxedNumber` constructor.
+pub fn machine_return_boxed_num(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    n: Number,
+) -> Result<(), ExecutionError> {
+    let ptr = view
+        .data(
+            DataConstructor::BoxedNumber.tag(),
+            Array::from_slice(&view, &[Ref::V(Native::Num(n))]),
+        )?
+        .as_ptr();
+    machine.set_closure(SynClosure::new(ptr, machine.root_env()))
 }
 
 /// Resolve a native value from a Ref, looking through boxed constructors
