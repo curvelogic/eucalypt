@@ -257,8 +257,7 @@ deep-query-fold(pattern, b): {
   norm: if((segs head) = "**", segs, cons("**", segs))
 
   child-pair(path, el): [path ++ [el key], el value]
-
-  desc-child(path, el): desc-pairs([path ++ [el key], el value])
+  desc-child(path, el): desc-pairs(child-pair(path, el))
   desc-pairs(p):
     (p second) block? then(
        cons(p, (p second) elements mapcat(desc-child(p first))),
