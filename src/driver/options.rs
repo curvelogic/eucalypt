@@ -181,6 +181,10 @@ pub struct RunArgs {
     #[arg(long = "heap-limit-mib", default_value = "32768")]
     pub heap_limit_mib: usize,
 
+    /// Allow IO monad operations (shell execution)
+    #[arg(short = 'I', long = "allow-io")]
+    pub allow_io: bool,
+
     /// Files to process
     #[arg(value_name = "FILES")]
     pub files: Vec<String>,
@@ -361,6 +365,9 @@ pub struct EucalyptOptions {
 
     // Seed for random number generation
     pub seed: Option<i64>,
+
+    // IO monad permission flag
+    pub allow_io: bool,
 }
 
 impl From<EucalyptCli> for EucalyptOptions {
@@ -571,6 +578,12 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => Vec::new(),
         };
 
+        // Extract allow-io flag from Run command
+        let allow_io = match &cli.command {
+            Some(Commands::Run(run_args)) => run_args.allow_io,
+            _ => false,
+        };
+
         EucalyptOptions {
             mode: if cmd_batch.unwrap_or(cli.batch) {
                 CommandLineMode::Batch
@@ -621,6 +634,7 @@ impl From<EucalyptCli> for EucalyptOptions {
             epilogue_inputs: Vec::new(),
             args,
             seed,
+            allow_io,
         }
     }
 }
@@ -851,6 +865,11 @@ impl EucalyptOptions {
     /// Get the seed for random number generation
     pub fn seed(&self) -> Option<i64> {
         self.seed
+    }
+
+    /// Whether IO monad operations (shell execution) are permitted
+    pub fn allow_io(&self) -> bool {
+        self.allow_io
     }
 
     /// Get the error output format
