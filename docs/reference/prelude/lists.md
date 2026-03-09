@@ -9,7 +9,7 @@
 | `(↑ xs)` | Return first element of list `xs`. Tight-binding prefix operator |
 | `nil?` | `true` if list `xs` is empty, `false` otherwise |
 | `non-nil?` | `true` if list `xs` is non-empty, `false` otherwise |
-| `(x ‼)` | `true` if `x` is non-nil, `false` otherwise. Postfix non-nil predicate (precedence 88) |
+| `(x ✓)` | `true` if `x` is non-nil, `false` otherwise. Postfix non-nil check (precedence 88) |
 | `head-or(d, xs)` | Return the head item of list `xs` or default `d` if empty |
 | `tail` | Return list `xs` without the head item. [] causes error |
 | `tail-or(d, xs)` | Return list `xs` without the head item or `d` for empty list |
