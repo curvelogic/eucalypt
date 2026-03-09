@@ -31,6 +31,14 @@ pub enum DataConstructor {
     BlockKvList = 10,
     /// Boxed zoned datetime
     BoxedZdt = 11,
+    /// IO monad: pure value wrapper — (world, value)
+    IoReturn = 12,
+    /// IO monad: sequenced action — (world, action, continuation)
+    IoBind = 13,
+    /// IO monad: primitive action — (world, spec_block)
+    IoAction = 14,
+    /// IO monad: failure — (world, error)
+    IoFail = 15,
 }
 
 impl fmt::Display for DataConstructor {
@@ -48,6 +56,10 @@ impl fmt::Display for DataConstructor {
             DataConstructor::BlockPair => write!(f, "key-value pair"),
             DataConstructor::BlockKvList => write!(f, "key-value list"),
             DataConstructor::BoxedZdt => write!(f, "datetime"),
+            DataConstructor::IoReturn => write!(f, "io-return"),
+            DataConstructor::IoBind => write!(f, "io-bind"),
+            DataConstructor::IoAction => write!(f, "io-action"),
+            DataConstructor::IoFail => write!(f, "io-fail"),
         }
     }
 }
@@ -71,6 +83,10 @@ impl DataConstructor {
             DataConstructor::BlockPair => 2,
             DataConstructor::BlockKvList => 2,
             DataConstructor::BoxedZdt => 1,
+            DataConstructor::IoReturn => 2,
+            DataConstructor::IoBind => 3,
+            DataConstructor::IoAction => 2,
+            DataConstructor::IoFail => 2,
         }
     }
 }
@@ -100,6 +116,10 @@ impl TryFrom<Tag> for DataConstructor {
                 Ok(DataConstructor::BlockKvList)
             }
             value if value == DataConstructor::BoxedZdt as Tag => Ok(DataConstructor::BoxedZdt),
+            value if value == DataConstructor::IoReturn as Tag => Ok(DataConstructor::IoReturn),
+            value if value == DataConstructor::IoBind as Tag => Ok(DataConstructor::IoBind),
+            value if value == DataConstructor::IoAction as Tag => Ok(DataConstructor::IoAction),
+            value if value == DataConstructor::IoFail as Tag => Ok(DataConstructor::IoFail),
             _ => Err(()),
         }
     }
