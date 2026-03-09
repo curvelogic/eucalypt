@@ -128,10 +128,6 @@ fn format_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicM
                 .join(",");
             format!("<array [{shape}]>")
         }
-        Native::Block(ptr) => {
-            let block = unsafe { ptr.as_ref() };
-            format!("<persistent-block:{}>", block.len())
-        }
     }
 }
 

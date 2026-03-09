@@ -814,37 +814,6 @@ lazy_static! {
             ty: function(vec![list(), list(), num(), unk(), list()]).unwrap(),
             strict: vec![0, 1, 2, 3],
     },
-    // Persistent block intrinsics (experimental eu-m59i branch)
-    Intrinsic { // 153
-            name: "PBLOCK_FROM_PAIRS",
-            ty: function(vec![any(), block()]).unwrap(),
-            strict: vec![0],
-    },
-    Intrinsic { // 154
-            name: "PBLOCK_FROM_BLOCK",
-            ty: function(vec![block(), block()]).unwrap(),
-            strict: vec![0],
-    },
-    Intrinsic { // 155
-            name: "PBLOCK_LOOKUP",
-            ty: function(vec![sym(), any(), block(), any()]).unwrap(),
-            strict: vec![0, 1, 2],
-    },
-    Intrinsic { // 156
-            name: "PBLOCK_TO_LIST",
-            ty: function(vec![block(), any()]).unwrap(),
-            strict: vec![0],
-    },
-    Intrinsic { // 157
-            name: "PBLOCK_MERGE",
-            ty: function(vec![block(), block(), block()]).unwrap(),
-            strict: vec![0, 1],
-    },
-    Intrinsic { // 158
-            name: "PBLOCK_MERGEWITH",
-            ty: function(vec![block(), block(), any(), block()]).unwrap(),
-            strict: vec![0, 1],
-    },
     ];
 }
 
