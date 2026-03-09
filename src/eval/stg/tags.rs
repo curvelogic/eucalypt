@@ -91,6 +91,19 @@ impl DataConstructor {
     }
 }
 
+impl DataConstructor {
+    /// Returns true if `tag` is an IO monad constructor (tags 12–15).
+    ///
+    /// The `io-run` driver loop uses this to recognise IO constructors
+    /// that should cause the machine to yield rather than terminate.
+    pub fn is_io_constructor(tag: Tag) -> bool {
+        tag == DataConstructor::IoReturn as Tag
+            || tag == DataConstructor::IoBind as Tag
+            || tag == DataConstructor::IoAction as Tag
+            || tag == DataConstructor::IoFail as Tag
+    }
+}
+
 impl TryFrom<Tag> for DataConstructor {
     type Error = ();
 
