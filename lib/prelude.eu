@@ -268,8 +268,8 @@ deep-query-fold(pattern, b): {
     (p second) block? then((p second) elements map(child-pair(p first)), [])
 
   match-sym(s, p):
-    (p second) block? then(
-       (p second) has(s) then([[(p first) ++ [s], (p second) lookup(s)]], []),
+    if((p second) block?,
+       if((p second) has(s), [[(p first) ++ [s], (p second) lookup(s)]], []),
        [])
 
   apply-segment(pairs, seg):
