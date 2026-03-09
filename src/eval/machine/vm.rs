@@ -1103,6 +1103,12 @@ impl<'a> Machine<'a> {
         &self.heap
     }
 
+    /// The root (empty) environment — used by the io-run driver loop to
+    /// root newly constructed closures that have no enclosing environment.
+    pub fn root_env(&self) -> RefPtr<EnvFrame> {
+        self.state.root_env
+    }
+
     /// Access the metrics (ticks, allocs, etc.)
     pub fn metrics(&self) -> &Metrics {
         &self.metrics
@@ -1393,6 +1399,19 @@ impl<'a> Machine<'a> {
             self.state.yielded_io,
             "resume() called on a machine that has not yielded on an IO constructor"
         );
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+        self.state.closure = new_closure;
+    }
+
+    /// Resume execution with a new closure after the io-run driver loop has
+    /// completed and the final value needs to be rendered.
+    ///
+    /// Unlike `resume()`, this method does not require the machine to be in
+    /// the IO yield state.  It is intended for use by the io-run driver after
+    /// `io_run()` returns the final `IoReturn` value closure, to re-enter the
+    /// machine for the render step.
+    pub fn resume_for_render(&mut self, new_closure: SynClosure) {
         self.state.terminated = false;
         self.state.yielded_io = false;
         self.state.closure = new_closure;
