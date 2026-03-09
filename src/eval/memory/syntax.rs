@@ -9,7 +9,6 @@ use serde_json::Number;
 use std::{collections::HashMap, fmt, ptr::NonNull, rc::Rc};
 
 use super::collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr};
-use super::heap_block::HeapBlock;
 use super::infotable::InfoTagged;
 use super::ndarray::HeapNdArray;
 use super::set::HeapSet;
@@ -49,8 +48,6 @@ pub enum Native {
     Set(RefPtr<HeapSet>),
     /// An n-dimensional array of f64 values
     NdArray(RefPtr<HeapNdArray>),
-    /// A persistent ordered block (map from symbol keys to closures)
-    Block(RefPtr<HeapBlock>),
 }
 
 impl PartialEq for Native {
@@ -64,7 +61,6 @@ impl PartialEq for Native {
             (Native::Index(_), Native::Index(_)) => true,
             (Native::Set(a), Native::Set(b)) => a == b,
             (Native::NdArray(a), Native::NdArray(b)) => a == b,
-            (Native::Block(a), Native::Block(b)) => a == b,
             _ => false,
         }
     }
@@ -83,7 +79,6 @@ impl Native {
             Native::Index(_) => "block index",
             Native::Set(_) => "set",
             Native::NdArray(_) => "array",
-            Native::Block(_) => "block",
         }
     }
 }
@@ -113,12 +108,6 @@ impl fmt::Display for Native {
             }
             Native::NdArray(_) => {
                 write!(f, "<array>")
-            }
-            Native::Block(ptr) => {
-                // SAFETY: RefPtr<HeapBlock> is valid during display (no GC
-                // occurs whilst we hold an immutable reference to it).
-                let block = unsafe { ptr.as_ref() };
-                write!(f, "<block:{}>", block.len())
             }
         }
     }
@@ -304,14 +293,9 @@ impl GcScannable for LambdaForm {
 
 /// Mark any heap pointers embedded in a Ref value.
 ///
-/// `Native::Str`, `Native::Set`, and `Native::Block` contain heap
+/// `Native::Str`, `Native::Set`, and `Native::NdArray` contain heap
 /// pointers that must be traced to ensure their lines are marked.
 /// Without this, evacuation cannot discover and update these pointers.
-///
-/// For `Native::Block`, only the block allocation itself is marked
-/// here. The code pointers inside the block are pushed to the scan
-/// queue in `scan_ref_block_pointers` which is called from the
-/// `GcScannable` scan pass where `scope` and `out` are available.
 fn mark_ref_heap_pointers(r: &Ref, marker: &mut CollectorHeapView<'_>) {
     match r {
         Ref::V(Native::Str(ptr)) => {
@@ -323,56 +307,7 @@ fn mark_ref_heap_pointers(r: &Ref, marker: &mut CollectorHeapView<'_>) {
         Ref::V(Native::NdArray(ptr)) => {
             marker.mark(*ptr);
         }
-        Ref::V(Native::Block(ptr)) => {
-            marker.mark(*ptr);
-        }
         _ => {}
-    }
-}
-
-/// Push any code and env pointers inside a `Native::Block` ref to the scan queue.
-///
-/// Called from `HeapSyn::scan` for `Atom` nodes so that the GC traces
-/// into persistent block closures. The block allocation itself must
-/// already have been marked by `mark_ref_heap_pointers` before this is
-/// called.
-///
-/// The env pointers are `*mut u8` (erased type) and are marked as
-/// `NonNull<u8>` — the GC is address-based and does not require the
-/// correct type to locate the header.
-fn scan_ref_block_pointers<'a>(
-    r: &'a Ref,
-    scope: &'a dyn CollectorScope,
-    marker: &mut CollectorHeapView<'a>,
-    out: &mut Vec<ScanPtr<'a>>,
-) {
-    if let Ref::V(Native::Block(ptr)) = r {
-        // SAFETY: `ptr` was allocated on the managed heap and is valid
-        // for the duration of the GC pause (stop-the-world). The `marker`
-        // borrow prevents mutation of the heap during scanning.
-        let block = unsafe { ptr.as_ref() };
-        for code_ptr in block.code_pointers() {
-            if marker.mark(code_ptr) {
-                out.push(ScanPtr::from_non_null(scope, code_ptr));
-            }
-        }
-        for env_raw in block.env_pointers() {
-            if let Some(env_ptr) = std::ptr::NonNull::new(env_raw) {
-                // SAFETY: env_raw is a GC-heap pointer to an EnvFrame.
-                // We cast to NonNull<u8> for address-based GC marking —
-                // the type parameter T does not affect header location or
-                // marking correctness.
-                //
-                // LIMITATION (experimental branch): The env frame is marked
-                // to prevent line sweep, but is NOT pushed to the scan queue
-                // because `EnvFrame` lives in `machine/` and cannot be
-                // imported from `memory/` (circular dep). In practice this
-                // is safe because the env frame is also reachable from the
-                // active machine environment stack during block evaluation.
-                // A production implementation must resolve the circular dep.
-                marker.mark(env_ptr);
-            }
-        }
     }
 }
 
@@ -401,28 +336,6 @@ fn update_ref_heap_pointers(r: &mut Ref, heap: &CollectorHeapView<'_>) {
                 *ptr = new_ptr;
             }
         }
-        Ref::V(Native::Block(ptr)) => {
-            // Update the block allocation pointer if it was evacuated.
-            if let Some(new_ptr) = heap.forwarded_to(*ptr) {
-                *ptr = new_ptr;
-            }
-            // Update the code and env pointers inside the block (in place).
-            // SAFETY: `ptr` (possibly already updated above) is valid for
-            // the duration of the GC pause. We obtain a mutable reference
-            // without aliasing because only the collector holds access.
-            let block = unsafe { ptr.as_mut() };
-            block.update_pointers(
-                |code_ptr| heap.forwarded_to(code_ptr),
-                |env_raw| {
-                    // SAFETY: env_raw is a GC-heap pointer to an EnvFrame.
-                    // We cast to NonNull<u8> for address-based forwarding
-                    // — the type parameter does not affect header location.
-                    std::ptr::NonNull::new(env_raw)
-                        .and_then(|p| heap.forwarded_to(p))
-                        .map(|p| p.as_ptr())
-                },
-            );
-        }
         _ => {}
     }
 }
@@ -444,10 +357,6 @@ impl GcScannable for HeapSyn {
         match self {
             HeapSyn::Atom { evaluand } => {
                 mark_ref_heap_pointers(evaluand, marker);
-                // For persistent blocks, push the code pointers inside the
-                // block to the scan queue (mark_ref_heap_pointers only marks
-                // the block allocation itself, not its sub-objects).
-                scan_ref_block_pointers(evaluand, scope, marker, out);
             }
             HeapSyn::Case {
                 scrutinee,
@@ -651,9 +560,6 @@ pub mod repr {
             }
             memory::syntax::Ref::V(memory::syntax::Native::NdArray(_)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Sym("<array>".to_string()))
-            }
-            memory::syntax::Ref::V(memory::syntax::Native::Block(_)) => {
-                stg::syntax::Ref::V(stg::syntax::Native::Sym("<block>".to_string()))
             }
         }
     }

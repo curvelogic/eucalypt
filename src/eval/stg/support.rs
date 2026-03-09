@@ -12,7 +12,6 @@ use crate::eval::{
     memory::{
         alloc::{ScopedAllocator, ScopedPtr},
         array::Array,
-        heap_block::HeapBlock,
         mutator::MutatorHeapView,
         ndarray::HeapNdArray,
         set::HeapSet,
@@ -33,7 +32,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Sym(_) => IntrinsicType::Symbol,
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
         Native::NdArray(_) => IntrinsicType::Array,
-        Native::Index(_) | Native::Set(_) | Native::Block(_) => IntrinsicType::Unknown,
+        Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
     }
 }
 
@@ -505,41 +504,6 @@ pub fn machine_return_ndarray(
         .as_ptr(),
         machine.root_env(),
     ))
-}
-
-/// Return a persistent block from intrinsic.
-///
-/// Wraps the `HeapBlock` in a `DataConstructor::Block` node with a
-/// single `Native::Block(ptr)` argument (the new persistent form).
-pub fn machine_return_block(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView,
-    block: HeapBlock,
-) -> Result<(), ExecutionError> {
-    let ptr = view.alloc(block)?.as_ptr();
-    let block_ref = Ref::V(Native::Block(ptr));
-    machine.set_closure(SynClosure::new(
-        view.data(
-            DataConstructor::Block.tag(),
-            Array::from_slice(&view, &[block_ref]),
-        )?
-        .as_ptr(),
-        machine.root_env(),
-    ))
-}
-
-/// Extract a `HeapBlock` reference from a `Ref` argument.
-pub fn block_arg<'guard>(
-    machine: &mut dyn IntrinsicMachine,
-    view: MutatorHeapView<'guard>,
-    arg: &Ref,
-) -> Result<ScopedPtr<'guard, HeapBlock>, ExecutionError> {
-    let native = machine.nav(view).resolve_native(arg)?;
-    if let Native::Block(ptr) = native {
-        Ok(view.scoped(ptr))
-    } else {
-        Err(ExecutionError::Panic("expected block argument".to_string()))
-    }
 }
 
 /// Return boolean from intrinsic

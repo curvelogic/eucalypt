@@ -128,12 +128,6 @@ impl StgIntrinsic for Str {
             Native::Index(idx) => format!("<index:{}>", idx.len()),
             Native::Set(_) => "<set>".to_string(),
             Native::NdArray(_) => "<array>".to_string(),
-            Native::Block(ptr) => {
-                // SAFETY: ptr is valid for the duration of intrinsic execution
-                // (no GC occurs during machine step).
-                let block = unsafe { ptr.as_ref() };
-                format!("<block:{}>", block.len())
-            }
         };
         machine_return_str(machine, view, text)
     }

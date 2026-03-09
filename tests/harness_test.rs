@@ -430,11 +430,6 @@ pub fn test_harness_087() {
 }
 
 #[test]
-pub fn test_harness_088() {
-    run_test(&opts("088_persistent_blocks.eu"));
-}
-
-#[test]
 pub fn test_harness_089() {
     run_test(&opts("089_sharing.eu"));
 }

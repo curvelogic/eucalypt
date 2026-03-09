@@ -1450,30 +1450,6 @@ arr: {
 ` "`is-array?(x)` - true if `x` is an n-dimensional array."
 is-array?(x): x arr.array?
 
-##
-## Persistent blocks
-##
-
-` { export: :suppress
-    doc: "Functions for working with persistent (immutable, structurally shared) blocks backed by im::OrdMap. EXPERIMENTAL." }
-pb: {
-
-  ` "`pb.from-block(b)` - convert a standard block `b` into a persistent block."
-  from-block: __PBLOCK_FROM_BLOCK
-
-  ` "`pb.lookup(k, d, p)` - look up key `k` in persistent block `p`, returning default `d` if absent."
-  lookup: __PBLOCK_LOOKUP
-
-  ` "`pb.to-list(p)` - return an ordered list of `[key, value]` pairs from persistent block `p`."
-  to-list: __PBLOCK_TO_LIST
-
-  ` "`pb.merge(l, r)` - merge persistent blocks `l` and `r`; right-hand values win on key conflicts."
-  merge: __PBLOCK_MERGE
-
-  ` "`pb.merge-with(f, l, r)` - merge persistent blocks `l` and `r`, resolving conflicts with `f(left-val, right-val)`."
-  merge-with: __PBLOCK_MERGEWITH
-}
-
 
 
 
