@@ -84,6 +84,10 @@ io: {
   exec-with(cmd, args, opts): __io_action({:io-exec cmd: cmd, args: args} << opts)
 
   check(result): ...  # IoFail if exit-code != 0, else IoReturn(result)
+
+  # map(f, IO a) -> IO b
+  # Derived: fmap in terms of bind and return
+  map(f, action): io.bind(action, {x: io.return(f(•))}.x)
 }
 ```
 
