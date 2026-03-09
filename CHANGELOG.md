@@ -1,4 +1,4 @@
-# Changelog
+# Change log
 
 All notable changes to eucalypt are documented here.
 
@@ -6,20 +6,10 @@ All notable changes to eucalypt are documented here.
 
 ### Added
 
-- **Named Monadic Blocks** (eu-ekph) — Five new syntactic forms for specifying the monad
-  in bracket block expressions:
-  - Bare symbol namespace reference: `{ :name ... }.expr`
-  - Structured metadata: `{ { monad: name } ... }.expr`
-  - `:monad namespace:` inline marker form
-  - Inline `:monad bind: return:` form with explicit bind and return
-  - Bracket def namespace delegation
-  - Bracket block definitions now **require** a `:monad` block metadata marker;
-    missing marker produces a `MonadSpecMissingMarker` error
-
 - **`deep-merge-at`** — New prelude function to merge a value into a nested path
 
-- **`✓` Postfix Non-nil Predicate Operator** — Asserts a value is non-nil; replaces
-  the previous `‼` operator (which has been retired)
+- **`✓` Postfix Non-nil Predicate Operator**
+  - Also useful for expanding scope of expression anaphora eg. filter(\_0✓ && fn(\_0))
 
 - **Destructuring Parameters** - Pattern matching in function parameters
   - Block destructuring: `f({x y}): x + y`
@@ -29,24 +19,10 @@ All notable changes to eucalypt are documented here.
   - Juxtaposed definition syntax: `f{x y}: x + y` and `f[a, b]: a + b`
   - Destructure fusion pass to elide intermediate allocations
 
-- **Monadic Blocks** - Do-notation via bracket metadata
-  - `⟦ a: ma  b: mb ⟧.expr` desugars to bind/return chains
-  - User-defined bracket pairs with `:monad` marker
-  - Paren-free bracket pair declarations
-
-- **Idiot Brackets** - User-defined Unicode bracket pairs
-  - Unicode Ps/Pe category detection for bracket support
-  - Custom evaluation semantics via bracket metadata
-
 - **N-dimensional Arrays** - `arr.*` namespace for tensor operations
   - `arr.from-flat`, `arr.reshape`, `arr.map`, `arr.fold`, `arr.neighbours`
   - Polymorphic arithmetic: `+`, `-`, `*`, `/` work element-wise on arrays
   - Heap-backed `HeapNdArray` with GC integration
-
-- **Expression Anaphora Scoping** - Refined `_` semantics
-  - Multiple `_` creates multiple parameters (`_ + _` means `_0 + _1`)
-  - Parentheses are opaque boundaries for anaphora scoping
-  - Propagation through paren-free constructs
 
 - **Relative Imports** - Resolve imports relative to source file directory
 
@@ -68,6 +44,19 @@ All notable changes to eucalypt are documented here.
     names, missing parity functions, string method patterns
   - Source locations in parse errors and BlackHole (infinite loop) errors
   - Contextual help for operator precedence issues
+
+- **(Experimental) Idiot Brackets** - User-defined handling for Unicode bracket pairs
+  - Unicode Ps/Pe category detection for bracket support
+  - Custom evaluation semantics via bracket metadata
+  - Allows "customising catenation"
+
+- **(Experimental) Monadic Blocks** - Blocks as a "do notation" for monads
+  - Several syntactic forms all desugar to `bind` / `return` expressions
+  - Inline monad definition `{ { :monad bind: ... return: ...} declarations... }.expr`
+  - Referencing a namespace with `bind` and `return`: `{ { :monad namespace: ns } declarations... }.expr`
+  - Via monad key in block metadata: `{ { monad: ns } ... }.expr`
+  - Short form using only symbol metadata for namespace reference: `{ :ns ... }.expr`
+  - User-defined bracket pairs with allowing `⟦ a: ma  b: mb ⟧.expr` 
 
 - **Documentation**
   - Eucalypt Guide (15 tutorial chapters)
@@ -93,8 +82,6 @@ All notable changes to eucalypt are documented here.
 
 - **`assert` Refactoring** — `assert` now accepts a predicate; moved adjacent to
   assertion operators in the prelude
-- **`‼` Operator Renamed to `✓`** — Assertions namespace reorganised and non-nil
-  postfix operator renamed
 - **Default heap limit** reduced from 64 GiB to 32 GiB managed heap
 - **Assertion operators** reorganised; falsy variants deprecated
 - **Stack traces** - Lazy iterators, pre-allocated buffers, auto-filtered
