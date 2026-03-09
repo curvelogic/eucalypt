@@ -239,6 +239,12 @@ pub struct MachineState {
     stack: Vec<Continuation>,
     /// Termination flag. Set when machine has terminated
     terminated: bool,
+    /// Yield flag. Set (alongside `terminated`) when the machine has
+    /// evaluated an IO constructor to WHNF with no pending Branch or
+    /// ApplyTo continuations.  The `io-run` driver loop checks this
+    /// flag to distinguish a normal termination from an IO yield and
+    /// inspects `closure` to read the IO constructor tag and fields.
+    yielded_io: bool,
     /// Annotation to paint on any environments we create
     annotation: Smid,
     /// Cache compiled regexes
@@ -262,6 +268,7 @@ impl Default for MachineState {
             globals: RefPtr::dangling(),
             stack: Default::default(),
             terminated: Default::default(),
+            yielded_io: Default::default(),
             annotation: Default::default(),
             rcache: LruCache::new(
                 NonZeroUsize::new(100).expect("regex cache size must be non-zero"),
@@ -282,6 +289,15 @@ impl MachineState {
     /// Has the machine terminated?
     pub fn terminated(&self) -> bool {
         self.terminated
+    }
+
+    /// Has the machine yielded on an IO constructor?
+    ///
+    /// When true, `terminated` is also true (so the run loop stops).
+    /// The io-run driver checks this flag to distinguish an IO yield
+    /// from a normal termination.
+    pub fn yielded_io(&self) -> bool {
+        self.yielded_io
     }
 
     /// Push a new continuation onto the stack
@@ -780,6 +796,14 @@ impl MachineState {
                     );
                 }
             }
+        } else if DataConstructor::is_io_constructor(tag) {
+            // IO constructor at the top level with nothing left to
+            // consume it — yield to the io-run driver loop rather than
+            // terminating normally.  Both flags are set so that the
+            // run() loop exits; the driver checks `yielded_io` to
+            // distinguish the two cases.
+            self.terminated = true;
+            self.yielded_io = true;
         } else {
             self.terminated = true
         }
@@ -1287,6 +1311,93 @@ impl<'a> Machine<'a> {
         self.state.terminated()
     }
 
+    /// Has the machine yielded on an IO constructor?
+    ///
+    /// When true the machine has also set `terminated` so that
+    /// `run()` exits.  The io-run driver checks this flag to
+    /// distinguish IO yield from normal termination.
+    pub fn io_yielded(&self) -> bool {
+        self.state.yielded_io()
+    }
+
+    /// Return the IO constructor tag the machine yielded on.
+    ///
+    /// Returns `None` when the machine has not yielded on an IO
+    /// constructor.  The caller is responsible for checking
+    /// `io_yielded()` first.
+    pub fn yielded_io_tag(&self) -> Option<Tag> {
+        if !self.state.yielded_io() {
+            return None;
+        }
+        let view = self.view();
+        let code = view.scoped(self.state.closure.code());
+        if let HeapSyn::Cons { tag, .. } = &*code {
+            Some(*tag)
+        } else {
+            None
+        }
+    }
+
+    /// Resolve the argument closures of the IO constructor the machine
+    /// yielded on.
+    ///
+    /// Returns `None` when the machine has not yielded on an IO
+    /// constructor.  The returned `Vec<SynClosure>` holds one closure
+    /// per constructor field, in declaration order.
+    pub fn yielded_io_args(&self) -> Option<Vec<SynClosure>> {
+        if !self.state.yielded_io() {
+            return None;
+        }
+        let view = self.view();
+        let code = view.scoped(self.state.closure.code());
+        if let HeapSyn::Cons { args, .. } = &*code {
+            let env = view.scoped(self.state.closure.env());
+            let globals = view.scoped(self.state.globals);
+            let resolved: Result<Vec<_>, _> = args
+                .iter()
+                .map(|r| match r {
+                    Ref::L(i) => (*env)
+                        .get(&view, *i)
+                        .ok_or(ExecutionError::BadEnvironmentIndex(*i)),
+                    Ref::G(i) => (*globals)
+                        .get(&view, *i)
+                        .ok_or(ExecutionError::BadGlobalIndex(*i)),
+                    Ref::V(_) => {
+                        let ptr = view
+                            .alloc(HeapSyn::Atom {
+                                evaluand: r.clone(),
+                            })
+                            .map(|p| p.as_ptr());
+                        ptr.map(|p| SynClosure::new(p, self.state.root_env))
+                    }
+                })
+                .collect();
+            resolved.ok()
+        } else {
+            None
+        }
+    }
+
+    /// Resume execution with a new closure after an IO yield.
+    ///
+    /// Clears the `terminated` and `yielded_io` flags and sets the
+    /// machine's current closure to `new_closure`.  Calling `run()`
+    /// after this will continue execution from the new closure.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the machine has not yielded on an IO constructor
+    /// (i.e. `io_yielded()` is false).
+    pub fn resume(&mut self, new_closure: SynClosure) {
+        assert!(
+            self.state.yielded_io,
+            "resume() called on a machine that has not yielded on an IO constructor"
+        );
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+        self.state.closure = new_closure;
+    }
+
     /// Assertion helper for machine unit tests
     #[cfg(test)]
     pub fn native_return(&self) -> Option<Native> {
@@ -1537,5 +1648,131 @@ pub mod tests {
         let mut m = machine(syn);
         m.run(Some(20)).unwrap();
         assert!(m.unit_return());
+    }
+
+    /// Verify that a bare IoReturn constructor yields rather than terminates.
+    #[test]
+    pub fn test_io_return_yields() {
+        use crate::eval::stg::tags::DataConstructor;
+
+        // Construct IoReturn(unit, num(42)):
+        //   letrec [world = Unit, value = 42] in IoReturn(lref(1), lref(0))
+        let syn = letrec_(
+            vec![value(unit()), value(atom(num(42i64)))],
+            data(DataConstructor::IoReturn.tag(), vec![lref(1), lref(0)]),
+        );
+
+        let mut m = machine(syn);
+        m.run(Some(20)).unwrap();
+
+        // Machine should have terminated (so the run loop exited)…
+        assert!(m.terminated(), "machine must have terminated");
+        // …but specifically due to an IO yield, not normal termination
+        assert!(
+            m.io_yielded(),
+            "machine must have yielded on IO constructor"
+        );
+
+        // The yielded tag must be IoReturn (12)
+        assert_eq!(
+            m.yielded_io_tag(),
+            Some(DataConstructor::IoReturn.tag()),
+            "yielded tag must be IoReturn"
+        );
+
+        // There must be two args: world (Unit) and value (42)
+        let args = m.yielded_io_args().expect("must have args");
+        assert_eq!(args.len(), 2, "IoReturn must have 2 args");
+    }
+
+    /// Verify that a bare IoBind constructor yields.
+    #[test]
+    pub fn test_io_bind_yields() {
+        use crate::eval::stg::tags::DataConstructor;
+
+        // IoBind(unit, unit, unit) — minimal: world, action, cont
+        let syn = letrec_(
+            vec![value(unit()), value(unit()), value(unit())],
+            data(
+                DataConstructor::IoBind.tag(),
+                vec![lref(2), lref(1), lref(0)],
+            ),
+        );
+
+        let mut m = machine(syn);
+        m.run(Some(20)).unwrap();
+
+        assert!(m.io_yielded(), "IoBind must yield");
+        assert_eq!(m.yielded_io_tag(), Some(DataConstructor::IoBind.tag()));
+
+        let args = m.yielded_io_args().expect("must have args");
+        assert_eq!(args.len(), 3, "IoBind must have 3 args");
+    }
+
+    /// Verify that normal constructors still terminate (not yield).
+    #[test]
+    pub fn test_non_io_constructor_terminates_not_yields() {
+        // A ListNil constructor should NOT trigger an IO yield
+        let syn = nil();
+
+        let mut m = machine(syn);
+        m.run(Some(10)).unwrap();
+
+        assert!(m.terminated(), "must be terminated");
+        assert!(!m.io_yielded(), "ListNil must not trigger IO yield");
+        assert_eq!(m.yielded_io_tag(), None);
+    }
+
+    /// Verify that resume() resets the machine and allows continuation.
+    #[test]
+    pub fn test_resume_after_io_yield() {
+        use crate::eval::memory::loader::load;
+        use crate::eval::memory::mutator::{Mutator, MutatorHeapView};
+        use crate::eval::memory::symbol::SymbolPool;
+        use crate::eval::stg::tags::DataConstructor;
+
+        // First run: yield on IoReturn
+        let syn = letrec_(
+            vec![value(unit()), value(atom(num(99i64)))],
+            data(DataConstructor::IoReturn.tag(), vec![lref(1), lref(0)]),
+        );
+
+        let mut m = machine(syn);
+        m.run(Some(20)).unwrap();
+        assert!(m.io_yielded(), "first run must yield on IO");
+
+        // Resume with a plain number closure
+        struct LoadNum;
+        impl Mutator for LoadNum {
+            type Input = RefPtr<EnvFrame>;
+            type Output = SynClosure;
+            fn run(
+                &self,
+                view: &MutatorHeapView,
+                input: Self::Input,
+            ) -> Result<Self::Output, crate::eval::error::ExecutionError> {
+                let mut pool = SymbolPool::new();
+                Ok(SynClosure::new(
+                    load(view, &mut pool, atom(num(7i64)))?,
+                    input,
+                ))
+            }
+        }
+
+        let blank = m.mutate(crate::eval::machine::vm::tests::Init, ()).unwrap();
+        let new_closure = m.mutate(LoadNum, blank).unwrap();
+        m.resume(new_closure);
+
+        // After resume the machine should be ready to run again
+        assert!(
+            !m.terminated(),
+            "after resume, machine must not be terminated"
+        );
+        assert!(!m.io_yielded(), "after resume, io_yielded must be cleared");
+
+        m.run(Some(20)).unwrap();
+        assert!(m.terminated());
+        assert!(!m.io_yielded(), "second run must not yield on IO");
+        assert_eq!(m.native_return(), Some(Native::Num(7.into())));
     }
 }
