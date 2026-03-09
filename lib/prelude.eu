@@ -718,6 +718,16 @@ str: {
 }
 
 ##
+## Serialisation
+##
+
+` "render(value) - serialise value to a YAML string."
+render(value): __RENDER_TO_STRING(value, :yaml)
+
+` "render-as(value, fmt) - serialise value to a string in the named format. Supported formats: :yaml, :json, :toml, :text, :edn, :html."
+render-as(value, fmt): __RENDER_TO_STRING(value, fmt)
+
+##
 ## Combinators
 ##
 
