@@ -399,6 +399,44 @@ eu --seed 42 template.eu
 This sets `io.RANDOM_SEED` and seeds the `io.random` stream. See
 [Random Numbers](prelude/random.md) for the full random API.
 
+## IO Monad Operations
+
+By default, eucalypt is a pure functional language with no side effects. To
+enable IO monad operations — specifically shell command execution — you must
+pass the `--allow-io` / `-I` flag:
+
+```sh
+eu -I script.eu
+eu --allow-io script.eu
+```
+
+Without this flag, any program that attempts to execute an IO action will fail
+with an error:
+
+```
+IO operations require the --allow-io (-I) flag
+```
+
+### Why this flag exists
+
+The flag is a deliberate security measure. Eucalypt files are often used as
+configuration or data templates, and it would be unsafe for arbitrary `.eu`
+files loaded from the filesystem or network to execute shell commands without
+explicit consent. The `--allow-io` flag is your explicit acknowledgement that
+the program you are running may perform shell execution.
+
+### Usage with IO targets
+
+IO programmes typically use the `:io` monadic block syntax and are run with a
+named target:
+
+```sh
+eu -I --target main script.eu
+eu -I -t main script.eu
+```
+
+See the IO monad design documentation for full details of the IO API.
+
 ## Suppressing prelude
 
 A standard *prelude* containing many functions and operators is
