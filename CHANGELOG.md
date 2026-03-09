@@ -2,6 +2,64 @@
 
 All notable changes to eucalypt are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Named Monadic Blocks** (eu-ekph) — Five new syntactic forms for specifying the monad
+  in bracket block expressions:
+  - Bare symbol namespace reference: `{ :name ... }.expr`
+  - Structured metadata: `{ { monad: name } ... }.expr`
+  - `:monad namespace:` inline marker form
+  - Inline `:monad bind: return:` form with explicit bind and return
+  - Bracket def namespace delegation
+  - Bracket block definitions now **require** a `:monad` block metadata marker;
+    missing marker produces a `MonadSpecMissingMarker` error
+
+- **`deep-merge-at`** — New prelude function to merge a value into a nested path
+
+- **`✓` Postfix Non-nil Predicate Operator** — Asserts a value is non-nil; replaces
+  the previous `‼` operator (which has been retired)
+
+### Changed
+
+- **`assert` Refactoring** — `assert` now accepts a predicate; moved adjacent to
+  assertion operators in the prelude
+
+- **Declaration metadata** — `bind`/`monad_return` fields removed from declaration
+  metadata; monad configuration is exclusively block metadata now
+
+- **`‼` Operator Renamed to `✓`** — Assertions namespace reorganised and non-nil
+  postfix operator renamed
+
+### Performance
+
+- **NdArray arithmetic dispatch** (eu-76sv) — Array type dispatch moved from
+  interpreted prelude `is-array?` checks to Rust intrinsics, giving approximately
+  10× performance improvement for array operations
+
+### Fixed
+
+- **Depth-aware `beta_reduce`** (eu-5pe9) — Substitution in `beta_reduce` now
+  tracks binder depth correctly for destructuring lambdas, fixing incorrect
+  variable capture in certain patterns
+
+- **`deep-find` symbol keys** (eu-9vzc) — `deep-find`, `deep-find-first`, and
+  `deep-find-paths` now accept symbol keys only (previously accepted strings,
+  which was inconsistent with the block key model)
+
+- **Deep-query prelude** — Fixed nested conditional in `match-sym`; refactored
+  deep-fold abstraction to unify deep-query functions
+
+- **Emacs mode** — Corrected indentation of backtick metadata at top-level
+  declarations
+
+### Removed
+
+- **Persistent block infrastructure** — Removed `pb.*` persistent block API and
+  supporting runtime code. An Architecture Decision Record (ADR-001) documents
+  the deferral. The `im-rc` dependency removed.
+
 ## [0.4.0] - Destructuring, Monadic Blocks, Arrays, Error Messages
 
 ### Added
