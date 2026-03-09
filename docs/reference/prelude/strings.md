@@ -46,3 +46,26 @@ encoded: "hello" str.base64-encode    # "aGVsbG8="
 decoded: "aGVsbG8=" str.base64-decode # "hello"
 hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 ```
+
+## Serialisation
+
+Serialise eucalypt values to strings using a named output format.  These
+are pure functions — no IO is required.
+
+| Function | Description |
+|----------|-------------|
+| `render(value)` | Serialise `value` to a YAML string |
+| `render-as(value, fmt)` | Serialise `value` to a string in format `fmt` |
+
+Supported formats for `fmt`: `:yaml`, `:json`, `:toml`, `:text`, `:edn`, `:html`.
+
+### Serialisation Examples
+
+```eu,notest
+yaml-str: render({a: 1, b: 2})           # "a: 1\nb: 2\n"
+json-str: render-as({a: 1, b: 2}, :json) # "{\"a\":1,\"b\":2}"
+```
+
+These functions are backed by the `RENDER_TO_STRING` intrinsic, which
+traverses the evaluated heap value and serialises it using the same
+emitter pipeline as normal output.

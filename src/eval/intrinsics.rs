@@ -829,6 +829,11 @@ lazy_static! {
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![],
     },
+    Intrinsic { // 156
+            name: "RENDER_TO_STRING",
+            ty: function(vec![any(), sym(), str_()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 
