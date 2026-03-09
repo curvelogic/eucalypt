@@ -49,6 +49,8 @@ pub enum CoreError {
     NoMonadSpec(String, Smid),
     #[error("monadic block must contain at least one declaration")]
     EmptyMonadicBlock(Smid),
+    #[error("bracket block definition body must be marked with ':monad' — use '{{ :monad bind: {0} return: {1} }}'")]
+    MonadSpecMissingMarker(String, String, Smid),
 }
 
 impl HasSmid for CoreError {
@@ -64,6 +66,7 @@ impl HasSmid for CoreError {
             RedeclaredVariable(s, _) => s,
             NoMonadSpec(_, s) => s,
             EmptyMonadicBlock(s) => s,
+            MonadSpecMissingMarker(_, _, s) => s,
             _ => Smid::default(),
         }
     }

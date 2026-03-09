@@ -72,8 +72,6 @@ pub fn strip_desugar_phase_metadata(expr: &RcExpr) -> RcExpr {
                             | "import"
                             | "embedding"
                             | "parse-embed"
-                            | "bind"
-                            | "return"
                     )
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -111,10 +109,6 @@ pub struct DesugarPhaseDeclarationMetadata {
     pub doc: Option<String>,
     /// Embedding - describes how / what is embedded (e.g. core quote-embed)
     pub embedding: Option<String>,
-    /// Monad bind function name (for bracket pair monad specs)
-    pub bind: Option<String>,
-    /// Monad return function name (for bracket pair monad specs)
-    pub monad_return: Option<String>,
 }
 
 /// Public wrapper for extract_function_name for use in other modules.
@@ -137,8 +131,6 @@ impl ReadMetadata<DesugarPhaseDeclarationMetadata> for RcExpr {
                 imports: imap.get("import").and_then(|e| e.extract()),
                 doc: imap.get("doc").and_then(|e| e.extract()),
                 embedding: imap.get("embedding").and_then(|e| e.extract()),
-                bind: imap.get("bind").and_then(extract_function_name),
-                monad_return: imap.get("return").and_then(extract_function_name),
             }),
             Expr::Let(_, _, _) => {
                 self.inner = self.clone().instantiate_lets().inner;

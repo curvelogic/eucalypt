@@ -614,8 +614,36 @@ impl Desugarable for rowan_ast::Literal {
 /// The desugared form is `Expr::Let(bindings, body)`.
 /// The function names are in the binding `Embed` values, not in the body map.
 /// Returns `Some((bind_name, return_name))` if both are present as resolvable names.
-fn extract_monad_spec_from_body(body: &RcExpr) -> Option<(String, String)> {
-    find_monad_names_in_bindings(body)
+fn extract_monad_spec_from_body(
+    body: &RcExpr,
+    smid: Smid,
+) -> Result<Option<(String, String)>, CoreError> {
+    let has_monad_marker = has_monad_block_metadata(body);
+    let names = find_monad_names_in_bindings(body);
+    match (has_monad_marker, names) {
+        (true, Some(names)) => Ok(Some(names)),
+        (true, None) => Ok(None),
+        (false, Some((bind_name, return_name))) => Err(CoreError::MonadSpecMissingMarker(
+            bind_name,
+            return_name,
+            smid,
+        )),
+        (false, None) => Ok(None),
+    }
+}
+
+/// Check whether a desugared block body has `:monad` block metadata.
+fn has_monad_block_metadata(expr: &RcExpr) -> bool {
+    match &*expr.inner {
+        Expr::Meta(_, inner, meta) => {
+            if matches!(&*meta.inner, Expr::Literal(_, Primitive::Sym(s)) if s == "monad") {
+                true
+            } else {
+                has_monad_block_metadata(inner)
+            }
+        }
+        _ => false,
+    }
 }
 
 /// Find bind and return names from the let-bindings of a desugared block.
@@ -1715,25 +1743,16 @@ fn rowan_declaration_to_binding(
         }
     }
 
-    // Register monad spec from declaration metadata (old-style: `bind` and `return` in metadata block)
-    if let (Some(bind_name), Some(return_name)) = (metadata.bind, metadata.monad_return) {
-        desugarer.register_monad_spec(
-            components.name.clone(),
-            super::desugarer::MonadSpec {
-                bind_name,
-                return_name,
-            },
-        );
-    }
-
-    // Register monad spec from BracketBlockDef body (new-style: (⟦{}⟧): { :monad bind: f return: r })
-    // The body is a block with :monad unit metadata and bind/return declarations.
+    // Register monad spec from BracketBlockDef body (new-style: ⟦{}⟧: { :monad bind: f return: r })
+    // The body is a block with :monad block metadata and bind/return declarations.
     if let Some(head) = decl.head() {
         if matches!(
             head.classify_declaration(),
             rowan_ast::DeclarationKind::BracketBlockDef(_, _)
         ) {
-            if let Some((bind_name, return_name)) = extract_monad_spec_from_body(&components.body) {
+            let spec_smid = desugarer.new_smid(components.span);
+            let spec = extract_monad_spec_from_body(&components.body, spec_smid)?;
+            if let Some((bind_name, return_name)) = spec {
                 desugarer.register_monad_spec(
                     components.name.clone(),
                     super::desugarer::MonadSpec {

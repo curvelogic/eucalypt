@@ -4,13 +4,13 @@
 id-bind(ma, f): f(ma)
 id-return(a): a
 
-(⟦{}⟧): { bind: id-bind  return: id-return }
+⟦{}⟧: { :monad bind: id-bind  return: id-return }
 
 ` "Maybe monad implemented as optional lists: Just(a) = [a], Nothing = []. bind([a], f) = f(a), bind([], f) = []. return(a) = [a]."
 maybe-bind(ma, f): if(ma = [], [], f(ma head))
 maybe-return(a): [a]
 
-(⌈{}⌉): { bind: maybe-bind  return: maybe-return }
+⌈{}⌉: { :monad bind: maybe-bind  return: maybe-return }
 
 tests: {
 
