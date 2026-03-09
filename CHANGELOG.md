@@ -93,8 +93,6 @@ All notable changes to eucalypt are documented here.
 
 - **`assert` Refactoring** — `assert` now accepts a predicate; moved adjacent to
   assertion operators in the prelude
-- **Declaration metadata** — `bind`/`monad_return` fields removed from declaration
-  metadata; monad configuration is exclusively block metadata now
 - **`‼` Operator Renamed to `✓`** — Assertions namespace reorganised and non-nil
   postfix operator renamed
 - **Default heap limit** reduced from 64 GiB to 32 GiB managed heap
@@ -139,12 +137,6 @@ All notable changes to eucalypt are documented here.
 - Rainbow-delimiters restored with string-aware syntax-propertize
 - Stray debug `println` corrupting CI version output
 - Block-level DCE handling of dynamise fallbacks
-
-### Removed
-
-- **Persistent block infrastructure** — Removed `pb.*` persistent block API and
-  supporting runtime code. An Architecture Decision Record (ADR-001) documents
-  the deferral. The `im-rc` dependency removed.
 
 ## [0.3.0] - Runtime v2, GC, Random Numbers, Streaming Imports
 
