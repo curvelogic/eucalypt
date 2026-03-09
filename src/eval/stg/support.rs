@@ -1,6 +1,6 @@
 //! Support functions for writing intrinsics
 
-use std::convert::TryInto;
+use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -857,6 +857,181 @@ pub fn machine_return_block_pair_closure_list(
         .letrec(Array::from_slice(&view, &bindings), view.atom(Ref::L(len))?)?
         .as_ptr();
     machine.set_closure(SynClosure::new(syn, pair_frame))
+}
+
+/// Return a full Block (cons-list of block pairs + optional index) from a merged
+/// block result.
+///
+/// Used by MERGEWITH after computing the merged key-value map. Constructs
+/// the cons-list of `BlockPair` nodes, eagerly builds a `BlockIndex` when
+/// `block.len() >= threshold` (avoiding O(n) lookup on the first access to the merged
+/// block), and wraps everything in a `Block` data node. The STG wrapper for MERGEWITH
+/// therefore does NOT add a second `Block` wrapping layer.
+pub fn machine_return_block_with_index(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    block: IndexMap<String, SynClosure>,
+    threshold: usize,
+) -> Result<(), ExecutionError> {
+    let len = block.len();
+
+    // Intern all keys up-front so we have their SymbolIds for the index.
+    let keys_with_ids: Vec<(crate::eval::memory::symbol::SymbolId, SynClosure)> = {
+        let pool = machine.symbol_pool_mut();
+        block
+            .into_iter()
+            .map(|(k, v)| (pool.intern(k.as_str()), v))
+            .collect()
+    };
+
+    // Build the block index eagerly for large blocks.
+    let index_ref: Ref = if len >= threshold {
+        let mut map: HashMap<crate::eval::memory::symbol::SymbolId, usize> =
+            HashMap::with_capacity(len);
+        for (pos, (id, _)) in keys_with_ids.iter().enumerate() {
+            map.insert(*id, pos);
+        }
+        Ref::V(Native::Index(Rc::new(map)))
+    } else {
+        // Sentinel: no index (Num(0) is the conventional no_index value)
+        Ref::V(Native::Num(serde_json::Number::from(0)))
+    };
+
+    // env of values
+    let values: Vec<SynClosure> = keys_with_ids.iter().map(|(_, v)| v.clone()).collect();
+    let value_frame = view.from_closures(
+        values.iter().cloned(),
+        values.len(),
+        machine.env(view),
+        Smid::default(),
+    )?;
+
+    // env of pairs — one BlockPair per key, using the already-interned SymbolIds
+    let mut pairs: Vec<SynClosure> = Vec::with_capacity(len);
+    for (i, (id, _)) in keys_with_ids.iter().enumerate() {
+        pairs.push(SynClosure::new(
+            view.data(
+                DataConstructor::BlockPair.tag(),
+                Array::from_slice(&view, &[Ref::V(Native::Sym(*id)), Ref::L(i)]),
+            )?
+            .as_ptr(),
+            value_frame,
+        ));
+    }
+    let pair_frame = view.from_closures(
+        pairs.iter().cloned(),
+        pairs.len(),
+        value_frame,
+        Smid::default(),
+    )?;
+
+    // Build cons-list links in the same letrec layout as
+    // machine_return_block_pair_closure_list:
+    //   bindings[0]      = nil
+    //   bindings[1..=n]  = cons cells (reverse order, bindings[n] = head)
+    //
+    // With pair_frame as the enclosing env, pairs are at L(0)..L(len-1).
+    // Letrec bindings extend the local env starting at L(len).
+    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for i in (0..len + 1).rev() {
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len + i + 1), Ref::L(len - i)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+
+    // The letrec body wraps the cons-list head (at L(len)) in a Block data node.
+    // The index slot holds either a prebuilt Index or the no_index sentinel.
+    let body = view.data(
+        DataConstructor::Block.tag(),
+        Array::from_slice(&view, &[Ref::L(len), index_ref]),
+    )?;
+    let syn = view
+        .letrec(Array::from_slice(&view, &bindings), body)?
+        .as_ptr();
+
+    machine.set_closure(SynClosure::new(syn, pair_frame))
+}
+
+/// Return a full Block (cons-list of KV items + optional index) from a merge
+/// operation where the values are already in KV-item form (BlockPair or
+/// BlockKvList).
+///
+/// This is the correct variant for MERGE, where `deconstruct` returns the
+/// raw KV closures from the source blocks (already `BlockPair(k, v)` or
+/// `BlockKvList` form).  The items are returned directly as list elements
+/// without an additional BlockPair wrapping layer.
+///
+/// Contrast with `machine_return_block_with_index`, which is for MERGEWITH
+/// where the values are raw values that need to be wrapped in new BlockPairs.
+pub fn machine_return_kv_block_with_index(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    block: IndexMap<String, SynClosure>,
+    threshold: usize,
+) -> Result<(), ExecutionError> {
+    let len = block.len();
+
+    // Intern all keys up-front to obtain SymbolIds for the index.
+    let keys_with_kv: Vec<(crate::eval::memory::symbol::SymbolId, SynClosure)> = {
+        let pool = machine.symbol_pool_mut();
+        block
+            .into_iter()
+            .map(|(k, v)| (pool.intern(k.as_str()), v))
+            .collect()
+    };
+
+    // Eagerly build the block index for large blocks.
+    let index_ref: Ref = if len >= threshold {
+        let mut map: HashMap<crate::eval::memory::symbol::SymbolId, usize> =
+            HashMap::with_capacity(len);
+        for (pos, (id, _)) in keys_with_kv.iter().enumerate() {
+            map.insert(*id, pos);
+        }
+        Ref::V(Native::Index(Rc::new(map)))
+    } else {
+        Ref::V(Native::Num(serde_json::Number::from(0)))
+    };
+
+    // env of kv items — each closure is already a BlockPair or BlockKvList.
+    let kv_items: Vec<SynClosure> = keys_with_kv.into_iter().map(|(_, v)| v).collect();
+    let item_frame = view.from_closures(
+        kv_items.iter().cloned(),
+        kv_items.len(),
+        machine.env(view),
+        Smid::default(),
+    )?;
+
+    // Build cons-list links.
+    //   bindings[0]      = nil
+    //   bindings[1..=n]  = cons cells (reverse order, bindings[n] = head)
+    //
+    // With item_frame as the enclosing env, items are at L(0)..L(len-1).
+    // Letrec bindings extend the local env starting at L(len).
+    let mut bindings = vec![LambdaForm::value(view.nil()?.as_ptr())];
+    for i in (0..len + 1).rev() {
+        bindings.push(LambdaForm::value(
+            view.data(
+                DataConstructor::ListCons.tag(),
+                Array::from_slice(&view, &[Ref::L(len + i + 1), Ref::L(len - i)]),
+            )?
+            .as_ptr(),
+        ));
+    }
+
+    // The letrec body wraps the cons-list head (at L(len)) in a Block data node.
+    let body = view.data(
+        DataConstructor::Block.tag(),
+        Array::from_slice(&view, &[Ref::L(len), index_ref]),
+    )?;
+    let syn = view
+        .letrec(Array::from_slice(&view, &bindings), body)?
+        .as_ptr();
+
+    machine.set_closure(SynClosure::new(syn, item_frame))
 }
 
 pub mod call {

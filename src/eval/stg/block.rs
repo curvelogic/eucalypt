@@ -29,8 +29,8 @@ use super::{
     panic::Panic,
     runtime::NativeVariant,
     support::{
-        call, data_list_arg, machine_return_block_pair_closure_list, machine_return_bool,
-        machine_return_closure_list,
+        call, data_list_arg, machine_return_block_with_index, machine_return_bool,
+        machine_return_kv_block_with_index,
     },
     syntax::{
         dsl::{self},
@@ -446,8 +446,9 @@ impl StgIntrinsic for BlockPair {
 impl CallGlobal1 for BlockPair {}
 
 /// Threshold for building a block index. Blocks with at least this
-/// many elements will have an index built on first lookup.
-const BLOCK_INDEX_THRESHOLD: usize = 16;
+/// many elements will have an index built on first lookup (or, for
+/// merged blocks, at construction time).
+pub(crate) const BLOCK_INDEX_THRESHOLD: usize = 16;
 
 /// LOOKUPOR(key, default, obj) is lookup with default
 ///
@@ -1130,13 +1131,9 @@ impl StgIntrinsic for Merge {
                                     force(
                                         app(lref(1), vec![lref(2), lref(1)]),
                                         // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex]
-                                        force(
-                                            call::bif::merge(lref(1), lref(0)),
-                                            data(
-                                                DataConstructor::Block.tag(),
-                                                vec![lref(0), no_index()],
-                                            ),
-                                        ),
+                                        // BIF returns a full Block (with index for large results),
+                                        // so return it directly without a second Block wrapping.
+                                        call::bif::merge(lref(1), lref(0)),
                                     ),
                                 ),
                             ),
@@ -1172,7 +1169,11 @@ impl StgIntrinsic for Merge {
             merge.insert(k, kv);
         }
 
-        machine_return_closure_list(machine, view, merge.into_iter().map(|(_, v)| v).collect())
+        // Values in `merge` are raw KV items (BlockPair or BlockKvList) — the
+        // result of `deconstruct` which extracts the KV element from each packed
+        // pair.  Use the KV-item variant so they are returned directly as list
+        // elements without an extra BlockPair wrapping layer.
+        machine_return_kv_block_with_index(machine, view, merge, BLOCK_INDEX_THRESHOLD)
     }
 }
 
@@ -1234,13 +1235,9 @@ impl StgIntrinsic for MergeWith {
                                     force(
                                         app(lref(1), vec![lref(2), lref(1)]),
                                         // [p-r] [p-l] [pack] [rcons rindex] [lcons lindex] [l r f]
-                                        force(
-                                            call::bif::merge_with(lref(1), lref(0), lref(9)),
-                                            data(
-                                                DataConstructor::Block.tag(),
-                                                vec![lref(0), no_index()],
-                                            ),
-                                        ),
+                                        // BIF returns a full Block (with index for large results),
+                                        // so return it directly without a second Block wrapping.
+                                        call::bif::merge_with(lref(1), lref(0), lref(9)),
                                     ),
                                 ),
                             ),
@@ -1292,7 +1289,9 @@ impl StgIntrinsic for MergeWith {
             }
         }
 
-        machine_return_block_pair_closure_list(machine, view, merge)
+        // Return a full Block (cons-list + index) so the merged result has
+        // O(1) lookup immediately for large blocks.
+        machine_return_block_with_index(machine, view, merge, BLOCK_INDEX_THRESHOLD)
     }
 }
 
