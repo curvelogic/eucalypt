@@ -268,41 +268,62 @@ idiot brackets without any registration:
 
 ### Monadic blocks
 
-A bracket pair gains a **monad spec** when declared with an empty
-block `{}` as its parameter and a body supplying `bind` and `return`
-function names (paren-free style):
+Eucalypt supports monadic sequencing — analogous to Haskell `do`-notation —
+through two mechanisms: **bracket pair definitions** and **block metadata**.
+
+#### Bracket pair definitions
+
+A bracket pair gains a **monad spec** when declared with an empty block `{}`
+as its parameter and a body marked with `:monad` metadata, supplying `bind`
+and `return` function names:
 
 ```eu,notest
+# Explicit bind/return functions
 ⟦{}⟧: { :monad bind: my-bind  return: my-return }
+
+# Namespace reference — delegates to a block with bind and return members
+⟦{}⟧: { :monad namespace: my-monad }
 ```
 
-The paren-wrapped style is also supported:
-
-```eu,notest
-⟦{}⟧: { :monad bind: my-bind  return: my-return }    # still valid
-```
-
-A bracket expression whose inner content contains top-level colons is
-parsed as a **bracket block** — a sequence of `name: monadic-action`
-declarations.  The closing bracket must be followed by a dot and a
-return expression:
+A bracket expression whose inner content contains top-level colons is parsed
+as a **bracket block** — a sequence of `name: monadic-action` declarations.
+The closing bracket must be followed by a dot and a return expression:
 
 ```eu,notest
 result: ⟦ a: ma  b: mb ⟧.return_expr
 ```
 
-This desugars to a bind chain (analogous to Haskell's `do`-notation):
+#### Block metadata forms
+
+Regular blocks can also be desugared monadically when the block carries monad
+metadata **and** is immediately followed by `.return_expr` in an expression.
+Five forms are accepted:
+
+| Form | Syntax | Monad source |
+|------|--------|-------------|
+| 1 | `{ :name decls }.expr` | Namespace `name` in scope |
+| 2 | `{ { monad: name } decls }.expr` | Namespace `name` in scope |
+| 3 | `{ { :monad namespace: name } decls }.expr` | Namespace `name` in scope |
+| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit `f`/`r` functions |
+| 5 | `⟦{}⟧: { :monad namespace: name }` (bracket def) | Namespace `name` in scope |
+
+For namespace forms (1–3 and 5), the named value must be a block in scope with
+`bind` and `return` member functions.  The desugarer emits `name.bind(…)` and
+`name.return(…)` lookup expressions.
+
+#### Desugaring
+
+All monadic block forms desugar to a right-to-left bind chain:
 
 ```
-my-bind(ma, (a): my-bind(mb, (b): my-return(return_expr)))
+bind(ma, (a): bind(mb, (b): return(return_expr)))
 ```
 
-All declarations are bind steps.  Each bound name is in scope for
-later actions and for the return expression.  The return expression
-may be any single element: a name (`.r`), a parenthesised expression
-(`.(x + y)`), a list, or a block.
+All declarations are bind steps.  Each bound name is in scope for later actions
+and for the return expression.  The return expression may be any single element:
+a name (`.r`), a parenthesised expression (`.(x + y)`), a list, or a block.
 
-**Example — identity monad:**
+**Example — identity monad (bracket pair, explicit functions):**
 
 ```eu
 id-bind(ma, f): f(ma)
@@ -313,13 +334,21 @@ id-return(a): a
 result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 ```
 
-**Example — maybe monad (optional lists):**
+**Example — maybe monad (namespace reference via block metadata):**
 
 ```eu
-maybe-bind(ma, f): if(ma = [], [], f(ma head))
-maybe-return(a): [a]
+maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
 
-⌈{}⌉: { :monad bind: maybe-bind  return: maybe-return }
+just:    { :maybe x: [1]  y: [2] }.(x + y)   # => [3]
+nothing: { :maybe x: []   y: [2] }.(x + y)   # => []
+```
+
+**Example — maybe monad (bracket pair with namespace reference):**
+
+```eu
+maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+
+⌈{}⌉: { :monad namespace: maybe }
 
 just:    ⌈ x: [1]  y: [2] ⌉.(x + y)   # => [3]
 nothing: ⌈ x: []   y: [2] ⌉.(x + y)   # => []

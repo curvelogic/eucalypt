@@ -14,17 +14,23 @@ use codespan::Span;
 use moniker::FreeVar;
 use std::collections::{HashMap, HashSet};
 
-/// A monad specification registered for a bracket pair.
+/// A monad specification registered for a bracket pair or used inline in block metadata.
 ///
-/// When a bracket pair declaration includes `bind` and `return` metadata keys,
-/// it is recorded here so that monadic block desugaring (`⟦ { a: ma, b: mb } ⟧`)
-/// can emit bind chains using the nominated functions.
+/// Describes how monadic blocks are desugared:
+/// - `Explicit` names the bind and return functions directly.
+/// - `Namespace` refers to a block in scope that must have `bind` and `return` members.
 #[derive(Debug, Clone)]
-pub struct MonadSpec {
-    /// Name of the monadic bind function (e.g. `"list-bind"`)
-    pub bind_name: String,
-    /// Name of the monadic return function (e.g. `"list-return"`)
-    pub return_name: String,
+pub enum MonadSpec {
+    /// Explicit bind/return function names (e.g. from `{ :monad bind: f return: r }`).
+    Explicit {
+        /// Name of the monadic bind function (e.g. `"list-bind"`)
+        bind_name: String,
+        /// Name of the monadic return function (e.g. `"list-return"`)
+        return_name: String,
+    },
+    /// Namespace reference: the monad is a block in scope with `bind` and `return` members.
+    /// Emits `name.bind(value, lambda)` and `name.return(expr)` calls.
+    Namespace(String),
 }
 
 /// State kept during desugaring pass
