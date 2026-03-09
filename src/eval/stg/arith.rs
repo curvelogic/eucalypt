@@ -18,7 +18,8 @@ use crate::{
 };
 
 use super::{
-    support::{machine_return_bool, machine_return_num, num_arg},
+    array::array_binop,
+    support::{machine_return_bool, machine_return_boxed_num, machine_return_num, num_arg},
     syntax::{
         dsl::{annotated_lambda, app_bif, case, force, local, lref},
         LambdaForm, StgSyn,
@@ -80,6 +81,10 @@ impl StgIntrinsic for Add {
         "ADD"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -87,6 +92,15 @@ impl StgIntrinsic for Add {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
+        // Dispatch to array arithmetic if either operand is an NdArray
+        let a_native = machine.nav(view).resolve_native(&args[0]);
+        let b_native = machine.nav(view).resolve_native(&args[1]);
+        if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
+            if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
+                return array_binop(machine, view, &args[0], &args[1], |a, b| a + b);
+            }
+        }
+
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
 
@@ -94,15 +108,15 @@ impl StgIntrinsic for Add {
             let total = l
                 .checked_add(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(total))
+            machine_return_boxed_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let total = l
                 .checked_add(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(total))
+            machine_return_boxed_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l + r) {
-                machine_return_num(machine, view, ret)
+                machine_return_boxed_num(machine, view, ret)
             } else {
                 Err(ExecutionError::NumericDomainError(x, y))
             }
@@ -122,6 +136,10 @@ impl StgIntrinsic for Sub {
         "SUB"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -129,6 +147,15 @@ impl StgIntrinsic for Sub {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
+        // Dispatch to array arithmetic if either operand is an NdArray
+        let a_native = machine.nav(view).resolve_native(&args[0]);
+        let b_native = machine.nav(view).resolve_native(&args[1]);
+        if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
+            if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
+                return array_binop(machine, view, &args[0], &args[1], |a, b| a - b);
+            }
+        }
+
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
 
@@ -136,15 +163,15 @@ impl StgIntrinsic for Sub {
             let result = l
                 .checked_sub(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(result))
+            machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l
                 .checked_sub(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(result))
+            machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l - r) {
-                machine_return_num(machine, view, ret)
+                machine_return_boxed_num(machine, view, ret)
             } else {
                 Err(ExecutionError::NumericDomainError(x, y))
             }
@@ -164,6 +191,10 @@ impl StgIntrinsic for Mul {
         "MUL"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -171,6 +202,15 @@ impl StgIntrinsic for Mul {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
+        // Dispatch to array arithmetic if either operand is an NdArray
+        let a_native = machine.nav(view).resolve_native(&args[0]);
+        let b_native = machine.nav(view).resolve_native(&args[1]);
+        if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
+            if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
+                return array_binop(machine, view, &args[0], &args[1], |a, b| a * b);
+            }
+        }
+
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
 
@@ -178,15 +218,15 @@ impl StgIntrinsic for Mul {
             let product = l
                 .checked_mul(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(product))
+            machine_return_boxed_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let product = l
                 .checked_mul(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(product))
+            machine_return_boxed_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l * r) {
-                machine_return_num(machine, view, ret)
+                machine_return_boxed_num(machine, view, ret)
             } else {
                 Err(ExecutionError::NumericDomainError(x, y))
             }
@@ -206,6 +246,10 @@ impl StgIntrinsic for Div {
         "DIV"
     }
 
+    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index(), annotation)
+    }
+
     fn execute(
         &self,
         machine: &mut dyn IntrinsicMachine,
@@ -213,6 +257,15 @@ impl StgIntrinsic for Div {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
+        // Dispatch to array arithmetic if either operand is an NdArray
+        let a_native = machine.nav(view).resolve_native(&args[0]);
+        let b_native = machine.nav(view).resolve_native(&args[1]);
+        if let (Ok(ref a), Ok(ref b)) = (&a_native, &b_native) {
+            if matches!(a, Native::NdArray(_)) || matches!(b, Native::NdArray(_)) {
+                return array_binop(machine, view, &args[0], &args[1], |a, b| a / b);
+            }
+        }
+
         let x = num_arg(machine, view, &args[0])?;
         let y = num_arg(machine, view, &args[1])?;
 
@@ -224,16 +277,16 @@ impl StgIntrinsic for Div {
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
             let result = floor_div_i64(l, r).ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(result))
+            machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
             let result = l
                 .checked_div(r)
                 .ok_or(ExecutionError::NumericRangeError(x, y))?;
-            machine_return_num(machine, view, Number::from(result))
+            machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let result = (l / r).floor();
             if let Some(n) = num_from_floored(result) {
-                machine_return_num(machine, view, n)
+                machine_return_boxed_num(machine, view, n)
             } else {
                 Err(ExecutionError::NumericDomainError(x, y))
             }
@@ -324,6 +377,37 @@ fn comparison_wrapper(index: usize, annotation: Smid) -> LambdaForm {
     //   force inner_y:                  [raw_y] [inner_y]     [raw_x] [inner_x] [x, y]
     //
     //   BIF args: raw_x = lref(2), raw_y = lref(0)
+    let bif_call = app_bif(index as u8, vec![lref(2), lref(0)]);
+    let force_y = force(local(0), bif_call);
+    let unbox_y = unbox_any(local(3), force_y);
+    let force_x = force(local(0), unbox_y);
+    let unbox_x = unbox_any(local(0), force_x);
+    annotated_lambda(2, unbox_x, annotation)
+}
+
+/// Build a wrapper for a polymorphic two-argument arithmetic intrinsic.
+///
+/// Unboxes and forces both arguments accepting any boxed native type or
+/// unboxed native atoms (e.g. NdArray), then calls the BIF with the raw
+/// native values. The execute method is responsible for boxing numeric
+/// results via `machine_return_boxed_num` and returning NdArray results
+/// via `machine_return_ndarray`.
+fn arithmetic_wrapper(index: usize, annotation: Smid) -> LambdaForm {
+    // Environment evolution is identical to comparison_wrapper:
+    //
+    //   lambda args:                                          [x, y]
+    //   unbox_any x:  case on local(0)
+    //     branch matches BoxedXxx → inner ref at local(0):    [inner_x] [x, y]
+    //   force inner_x:                              [raw_x]   [inner_x] [x, y]
+    //   unbox_any y:  case on local(3) (= y from lambda args)
+    //     branch matches BoxedXxx → inner ref:  [inner_y]     [raw_x] [inner_x] [x, y]
+    //   force inner_y:                  [raw_y] [inner_y]     [raw_x] [inner_x] [x, y]
+    //
+    //   BIF args: raw_x = lref(2), raw_y = lref(0)
+    //
+    // After this wrapper, execute receives raw native atoms in both args:
+    // - V(Num(n))      for numeric arguments
+    // - V(NdArray(p))  for array arguments
     let bif_call = app_bif(index as u8, vec![lref(2), lref(0)]);
     let force_y = force(local(0), bif_call);
     let unbox_y = unbox_any(local(3), force_y);

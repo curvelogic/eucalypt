@@ -775,7 +775,7 @@ fn f64_vec_to_list(
 }
 
 /// Dispatch a binary operation on arrays, supporting array+array and array+scalar
-fn array_binop<F: Fn(f64, f64) -> f64>(
+pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     a_ref: &Ref,

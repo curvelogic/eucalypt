@@ -365,13 +365,13 @@ or: __OR
     export: :suppress
     associates: :left
     precedence: :sum }
-(l + r): if(is-array?(l) || is-array?(r), arr.add(l, r), __ADD(l, r))
+(l + r): __ADD(l, r)
 
 ` { doc: "`l - r` - subtracts `r` from `l`. For numbers, both must be numeric. For arrays, performs element-wise subtraction; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :sum }
-(l - r): if(is-array?(l) || is-array?(r), arr.sub(l, r), __SUB(l, r))
+(l - r): __SUB(l, r)
 
 ` { doc: "`l ^ r` - raise `l` to the power `r`."
     export: :suppress
@@ -383,13 +383,13 @@ or: __OR
     export: :suppress
     associates: :left
     precedence: :prod }
-(l * r): if(is-array?(l) || is-array?(r), arr.mul(l, r), __MUL(l, r))
+(l * r): __MUL(l, r)
 
 ` { doc: "`l / r` - floor division of `l` by `r` for numbers (rounds toward negative infinity; always returns integer). For arrays, performs element-wise division; one operand may be a scalar."
     export: :suppress
     associates: :left
     precedence: :prod }
-(l / r): if(is-array?(l) || is-array?(r), arr.div(l, r), __DIV(l, r))
+(l / r): __DIV(l, r)
 
 ` { doc: "`l ÷ r` - precise division of `l` by `r`; returns exact result."
     export: :suppress
