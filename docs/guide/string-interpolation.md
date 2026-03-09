@@ -102,6 +102,15 @@ data:
 label: '99'
 ```
 
+> **Note:** Interpolation braces accept names and dotted lookups, but
+> not arbitrary eucalypt expressions. If you need a computed value,
+> bind it to a name first:
+>
+> ```eu
+> sum: x + y
+> result: "{sum}"
+> ```
+
 ## Escaping Braces
 
 To include a literal brace in a string, double it:
