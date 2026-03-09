@@ -495,6 +495,11 @@ pub fn test_harness_101() {
 }
 
 #[test]
+pub fn test_harness_102() {
+    run_test(&opts("102_destructure_list_in_block.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
