@@ -2,7 +2,7 @@
 
 All notable changes to eucalypt are documented here.
 
-## [Unreleased]
+## [0.4.0] - Destructuring, Monadic Blocks, Arrays, Error Messages
 
 ### Added
 
@@ -20,49 +20,6 @@ All notable changes to eucalypt are documented here.
 
 - **`✓` Postfix Non-nil Predicate Operator** — Asserts a value is non-nil; replaces
   the previous `‼` operator (which has been retired)
-
-### Changed
-
-- **`assert` Refactoring** — `assert` now accepts a predicate; moved adjacent to
-  assertion operators in the prelude
-
-- **Declaration metadata** — `bind`/`monad_return` fields removed from declaration
-  metadata; monad configuration is exclusively block metadata now
-
-- **`‼` Operator Renamed to `✓`** — Assertions namespace reorganised and non-nil
-  postfix operator renamed
-
-### Performance
-
-- **NdArray arithmetic dispatch** (eu-76sv) — Array type dispatch moved from
-  interpreted prelude `is-array?` checks to Rust intrinsics, giving approximately
-  10× performance improvement for array operations
-
-### Fixed
-
-- **Depth-aware `beta_reduce`** (eu-5pe9) — Substitution in `beta_reduce` now
-  tracks binder depth correctly for destructuring lambdas, fixing incorrect
-  variable capture in certain patterns
-
-- **`deep-find` symbol keys** (eu-9vzc) — `deep-find`, `deep-find-first`, and
-  `deep-find-paths` now accept symbol keys only (previously accepted strings,
-  which was inconsistent with the block key model)
-
-- **Deep-query prelude** — Fixed nested conditional in `match-sym`; refactored
-  deep-fold abstraction to unify deep-query functions
-
-- **Emacs mode** — Corrected indentation of backtick metadata at top-level
-  declarations
-
-### Removed
-
-- **Persistent block infrastructure** — Removed `pb.*` persistent block API and
-  supporting runtime code. An Architecture Decision Record (ADR-001) documents
-  the deferral. The `im-rc` dependency removed.
-
-## [0.4.0] - Destructuring, Monadic Blocks, Arrays, Error Messages
-
-### Added
 
 - **Destructuring Parameters** - Pattern matching in function parameters
   - Block destructuring: `f({x y}): x + y`
@@ -85,10 +42,6 @@ All notable changes to eucalypt are documented here.
   - `arr.from-flat`, `arr.reshape`, `arr.map`, `arr.fold`, `arr.neighbours`
   - Polymorphic arithmetic: `+`, `-`, `*`, `/` work element-wise on arrays
   - Heap-backed `HeapNdArray` with GC integration
-
-- **Persistent Blocks** - Functional map data type
-  - `pb.from-block`, `pb.lookup`, `pb.to-list`, `pb.merge`, `pb.merge-with`
-  - O(log n) lookup backed by `im-rc` persistent data structures
 
 - **Expression Anaphora Scoping** - Refined `_` semantics
   - Multiple `_` creates multiple parameters (`_ + _` means `_0 + _1`)
@@ -138,6 +91,12 @@ All notable changes to eucalypt are documented here.
 
 ### Changed
 
+- **`assert` Refactoring** — `assert` now accepts a predicate; moved adjacent to
+  assertion operators in the prelude
+- **Declaration metadata** — `bind`/`monad_return` fields removed from declaration
+  metadata; monad configuration is exclusively block metadata now
+- **`‼` Operator Renamed to `✓`** — Assertions namespace reorganised and non-nil
+  postfix operator renamed
 - **Default heap limit** reduced from 64 GiB to 32 GiB managed heap
 - **Assertion operators** reorganised; falsy variants deprecated
 - **Stack traces** - Lazy iterators, pre-allocated buffers, auto-filtered
@@ -145,6 +104,9 @@ All notable changes to eucalypt are documented here.
 
 ### Performance
 
+- **NdArray arithmetic dispatch** (eu-76sv) — Array type dispatch moved from
+  interpreted prelude `is-array?` checks to Rust intrinsics, giving approximately
+  10× performance improvement for array operations
 - **VM execution hot loop** optimisation
 - **Continuations** stored inline in Vec, off the eucalypt heap
 - **Boolean returns** use pre-allocated global closures
@@ -155,6 +117,16 @@ All notable changes to eucalypt are documented here.
 
 ### Fixed
 
+- **Depth-aware `beta_reduce`** (eu-5pe9) — Substitution in `beta_reduce` now
+  tracks binder depth correctly for destructuring lambdas, fixing incorrect
+  variable capture in certain patterns
+- **`deep-find` symbol keys** (eu-9vzc) — `deep-find`, `deep-find-first`, and
+  `deep-find-paths` now accept symbol keys only (previously accepted strings,
+  which was inconsistent with the block key model)
+- **Deep-query prelude** — Fixed nested conditional in `match-sym`; refactored
+  deep-fold abstraction to unify deep-query functions
+- **Emacs mode** — Corrected indentation of backtick metadata at top-level
+  declarations
 - Expression anaphor scoping for `_`, `_0`, `_1` in arg positions
 - Cons pattern mangling in EU formatter
 - `HeapNdArray` GC evacuation correctness
@@ -167,6 +139,12 @@ All notable changes to eucalypt are documented here.
 - Rainbow-delimiters restored with string-aware syntax-propertize
 - Stray debug `println` corrupting CI version output
 - Block-level DCE handling of dynamise fallbacks
+
+### Removed
+
+- **Persistent block infrastructure** — Removed `pb.*` persistent block API and
+  supporting runtime code. An Architecture Decision Record (ADR-001) documents
+  the deferral. The `im-rc` dependency removed.
 
 ## [0.3.0] - Runtime v2, GC, Random Numbers, Streaming Imports
 
