@@ -1,0 +1,58 @@
+"Regression test for eu-5pe9: list destructuring inside a block expression.
+
+Previously, beta-reducing a destructuring lambda (one whose body is a
+DestructureListLet) would fail to adjust scope indices in the
+replacement, causing compress to panic with 'eliminating used var' when
+the lambda was used inside a DefaultBlockLet context (e.g., a prelude
+function or any block expression)."
+
+# Test 1: list destructuring inside a block, both parameters used
+test1: {
+  f([a, b]): a + b
+  result: f([3, 4])
+}.result
+
+# Test 2: list destructuring inside a block, used via mapcat
+test2: {
+  pairs: [[1, 2], [3, 4], [5, 6]]
+  f([a, b]): [a + b]
+  result: pairs mapcat(f)
+}.result
+
+# Test 3: list destructuring inside a block with mutual recursion
+# (the key pattern from deep-query-fold that triggered the original bug)
+test3: {
+  child([path, val]): [[path, val]]
+  expand(x): x mapcat(child)
+  result: expand([[[], 1], [[], 2]])
+}.result
+
+# Test 4: list destructuring inside a block referencing outer bindings
+test4: {
+  base: 10
+  f([a, b]): a + b + base
+  result: f([1, 2])
+}.result
+
+# Test 5: the triggering pattern — list destructuring inside a block
+# with indirect recursion through another function (mirrors deep-query-fold).
+# Both `path` and `val` are used in the body of desc-pairs.
+test5: {
+  make-pair(path, el): [path ++ [el key], el value]
+  desc-child(path, el): desc-pairs(make-pair(path, el))
+  desc-pairs([path, val]):
+    if(val block?,
+       cons([path, val], val elements mapcat(desc-child(path))),
+       [])
+  result: desc-pairs([[], {a: 1}])
+}.result
+
+tests: {
+  a: test1 //= 7
+  b: (test2 head) //= 3
+  c: (test3 count) //= 2
+  d: test4 //= 13
+  e: (test5 count) //= 1
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)
