@@ -539,6 +539,29 @@ pub mod dsl {
     pub fn ann(smid: Smid, body: Rc<StgSyn>) -> Rc<StgSyn> {
         Rc::new(StgSyn::Ann { smid, body })
     }
+
+    /// IO monad: wrap a pure value — IoReturn(world, value)
+    pub fn io_return(world: Ref, value: Ref) -> Rc<StgSyn> {
+        data(DataConstructor::IoReturn.tag(), vec![world, value])
+    }
+
+    /// IO monad: sequence an action — IoBind(world, action, continuation)
+    pub fn io_bind(world: Ref, action: Ref, continuation: Ref) -> Rc<StgSyn> {
+        data(
+            DataConstructor::IoBind.tag(),
+            vec![world, action, continuation],
+        )
+    }
+
+    /// IO monad: construct a primitive action — IoAction(world, spec_block)
+    pub fn io_action(world: Ref, spec_block: Ref) -> Rc<StgSyn> {
+        data(DataConstructor::IoAction.tag(), vec![world, spec_block])
+    }
+
+    /// IO monad: represent a failure — IoFail(world, error)
+    pub fn io_fail(world: Ref, error: Ref) -> Rc<StgSyn> {
+        data(DataConstructor::IoFail.tag(), vec![world, error])
+    }
 }
 
 /// Example STG expression for use in tests

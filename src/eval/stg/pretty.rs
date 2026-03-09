@@ -24,6 +24,10 @@ fn tag_name(tag: u8) -> String {
         Ok(DataConstructor::BlockPair) => "Pair".to_string(),
         Ok(DataConstructor::BlockKvList) => "KvList".to_string(),
         Ok(DataConstructor::BoxedZdt) => "Zdt".to_string(),
+        Ok(DataConstructor::IoReturn) => "IoReturn".to_string(),
+        Ok(DataConstructor::IoBind) => "IoBind".to_string(),
+        Ok(DataConstructor::IoAction) => "IoAction".to_string(),
+        Ok(DataConstructor::IoFail) => "IoFail".to_string(),
         Err(()) => format!("#{tag}"),
     }
 }

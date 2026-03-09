@@ -69,6 +69,10 @@ fn format_ref(machine: &dyn IntrinsicMachine, view: MutatorHeapView<'_>, r: &Ref
                     .get(0)
                     .and_then(|inner| format_inner_ref(machine, view, &env, &inner))
                     .unwrap_or_else(|| "<datetime>".to_string()),
+                Ok(DataConstructor::IoReturn) => "<io-return>".to_string(),
+                Ok(DataConstructor::IoBind) => "<io-bind>".to_string(),
+                Ok(DataConstructor::IoAction) => "<io-action>".to_string(),
+                Ok(DataConstructor::IoFail) => "<io-fail>".to_string(),
                 Err(_) => "<value>".to_string(),
             }
         }
