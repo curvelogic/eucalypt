@@ -25,6 +25,7 @@ pub mod pretty;
 pub mod printf;
 pub mod prng;
 pub mod render;
+pub mod render_to_string;
 pub mod running;
 pub mod runtime;
 pub mod set;
@@ -202,6 +203,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(io::IoReturn));
     rt.add(Box::new(io::IoBind));
     rt.add(Box::new(io::IoAction));
+    rt.add(Box::new(render_to_string::RenderToString));
     rt.prepare(source_map);
     Box::new(rt)
 }
