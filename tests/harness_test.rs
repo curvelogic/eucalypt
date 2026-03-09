@@ -429,7 +429,6 @@ pub fn test_harness_087() {
     run_test(&opts("087_arrays.eu"));
 }
 
-
 #[test]
 pub fn test_harness_089() {
     run_test(&opts("089_sharing.eu"));
