@@ -258,17 +258,17 @@ deep-query-fold(pattern, b): {
 
   child-pair(path, el): [path ++ [el key], el value]
   desc-child(path, el): desc-pairs(child-pair(path, el))
-  desc-pairs(p):
-    (p second) block? then(
-       cons(p, (p second) elements mapcat(desc-child(p first))),
+  desc-pairs([path, val]):
+    val block? then(
+       cons([path, val], val elements mapcat(desc-child(path))),
        [])
 
-  expand-star(p):
-    (p second) block? then((p second) elements map(child-pair(p first)), [])
+  expand-star([path, val]):
+    val block? then(val elements map(child-pair(path)), [])
 
-  match-sym(s, p):
-    if((p second) block?,
-       if((p second) has(s), [[(p first) ++ [s], (p second) lookup(s)]], []),
+  match-sym(s, [path, val]):
+    if(val block?,
+       if(val has(s), [[path ++ [s], val lookup(s)]], []),
        [])
 
   apply-segment(pairs, seg):
