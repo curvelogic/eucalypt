@@ -519,13 +519,13 @@ result: [3, 1, 0, 5, 2] process
 
 ```eu
 people: [
-  { name: "alice" age: 30 }
-  { name: "bob" age: 25 }
-  { name: "charlie" age: 35 }
+  { name: "alice", age: 30 },
+  { name: "bob", age: 25 },
+  { name: "charlie", age: 35 }
 ]
 
 ` :suppress
-format(p): "{p.name str.to-upper}: age {p.age}"
+format(p): "{p.name}: age {p.age}"
 
 directory: people
   filter(_.age >= 30)
@@ -541,8 +541,8 @@ people:
 - name: charlie
   age: 35
 directory:
-- 'ALICE: age 30'
-- 'CHARLIE: age 35'
+- 'alice: age 30'
+- 'charlie: age 35'
 ```
 
 ## Key Concepts

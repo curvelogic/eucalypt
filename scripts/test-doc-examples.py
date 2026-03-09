@@ -206,8 +206,8 @@ def main():
                         help="Show output from each test")
     parser.add_argument("--file", type=str, default=None,
                         help="Test only examples from this file")
-    parser.add_argument("--eu", type=str, default="eu",
-                        help="Path to eu binary")
+    parser.add_argument("--eu", type=str, default=None,
+                        help="Path to eu binary (default: auto-detect dev build)")
     parser.add_argument("--list", action="store_true",
                         help="List all extracted examples without running")
     parser.add_argument("--timeout", type=int, default=10,
@@ -219,6 +219,18 @@ def main():
     script_dir = Path(__file__).parent
     project_dir = script_dir.parent
     doc_dir = str(project_dir / "docs")
+
+    # Auto-detect eu binary: prefer local dev build over system install
+    if args.eu is None:
+        for candidate in [
+            str(project_dir / "target" / "release" / "eu"),
+            str(project_dir / "target" / "debug" / "eu"),
+        ]:
+            if Path(candidate).is_file():
+                args.eu = candidate
+                break
+        if args.eu is None:
+            args.eu = "eu"  # fall back to PATH
 
     # Check eu binary
     if not args.list:

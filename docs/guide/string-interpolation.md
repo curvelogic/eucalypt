@@ -69,17 +69,20 @@ name: World
 greeting: Hello, World!
 ```
 
-Expressions inside the braces are evaluated:
+Interpolation braces accept names and dotted lookups. To use a
+computed value, bind it to a name first:
 
 ```eu
 x: 3
 y: 4
-result: "{x} + {y} = {x + y}"
+sum: x + y
+result: "{x} + {y} = {sum}"
 ```
 
 ```yaml
 x: 3
 y: 4
+sum: 7
 result: 3 + 4 = 7
 ```
 
@@ -98,15 +101,6 @@ data:
     bar: 99
 label: '99'
 ```
-
-> **Note:** Interpolation braces accept names and dotted lookups, but
-> not arbitrary eucalypt expressions. If you need a computed value,
-> give it a name first, or use generalised lookup to tightly scope
-> the computation:
->
-> ```eu
-> result: { x: 3 y: 4 }."{x + y}"
-> ```
 
 ## Escaping Braces
 
