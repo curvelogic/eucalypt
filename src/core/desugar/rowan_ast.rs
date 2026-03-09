@@ -605,29 +605,37 @@ impl Desugarable for rowan_ast::Literal {
     }
 }
 
-/// Extract bind and return names from a desugared monad spec body.
+/// Extract a MonadSpec from a desugared block body used in a bracket pair definition.
 ///
 /// Expects the body to be a desugared block like:
 /// ```eucalypt
-/// { bind: rand-bind  return: rand-return }
+/// { :monad bind: rand-bind  return: rand-return }
+/// { :monad namespace: maybe }
 /// ```
 /// The desugared form is `Expr::Let(bindings, body)`.
-/// The function names are in the binding `Embed` values, not in the body map.
-/// Returns `Some((bind_name, return_name))` if both are present as resolvable names.
+/// Returns `Some(MonadSpec)` if a valid spec is found.
 fn extract_monad_spec_from_body(
     body: &RcExpr,
     smid: Smid,
-) -> Result<Option<(String, String)>, CoreError> {
+) -> Result<Option<super::desugarer::MonadSpec>, CoreError> {
+    use super::desugarer::MonadSpec;
     let has_monad_marker = has_monad_block_metadata(body);
-    let names = find_monad_names_in_bindings(body);
-    match (has_monad_marker, names) {
-        (true, Some(names)) => Ok(Some(names)),
+    let spec = find_monad_spec_in_bindings(body);
+    match (has_monad_marker, spec) {
+        (true, Some(spec)) => Ok(Some(spec)),
         (true, None) => Ok(None),
-        (false, Some((bind_name, return_name))) => Err(CoreError::MonadSpecMissingMarker(
+        (
+            false,
+            Some(MonadSpec::Explicit {
+                bind_name,
+                return_name,
+            }),
+        ) => Err(CoreError::MonadSpecMissingMarker(
             bind_name,
             return_name,
             smid,
         )),
+        (false, Some(MonadSpec::Namespace(_))) => Ok(None),
         (false, None) => Ok(None),
     }
 }
@@ -646,56 +654,179 @@ fn has_monad_block_metadata(expr: &RcExpr) -> bool {
     }
 }
 
-/// Find bind and return names from the let-bindings of a desugared block.
-fn find_monad_names_in_bindings(expr: &RcExpr) -> Option<(String, String)> {
+/// Find a MonadSpec from the let-bindings of a desugared block.
+///
+/// Handles both explicit (bind + return keys) and namespace (namespace key) forms.
+fn find_monad_spec_in_bindings(expr: &RcExpr) -> Option<super::desugarer::MonadSpec> {
+    use super::desugarer::MonadSpec;
     use crate::core::metadata::extract_function_name_from_expr;
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            // The bindings are the Rec values in the scope
             let bindings = scope.unsafe_pattern.unsafe_pattern.clone();
             let mut bind_name = None;
             let mut return_name = None;
+            let mut namespace = None;
             for (binder, embed) in &bindings {
                 let key = binder.0.pretty_name.as_deref().unwrap_or("");
                 let val = extract_function_name_from_expr(&embed.0);
-                if key == "bind" {
-                    bind_name = val;
-                } else if key == "return" {
-                    return_name = val;
+                match key {
+                    "bind" => bind_name = val,
+                    "return" => return_name = val,
+                    "namespace" => namespace = val,
+                    _ => {}
                 }
             }
-            if let (Some(b), Some(r)) = (bind_name, return_name) {
-                Some((b, r))
+            if let Some(ns) = namespace {
+                Some(MonadSpec::Namespace(ns))
+            } else if let (Some(b), Some(r)) = (bind_name, return_name) {
+                Some(MonadSpec::Explicit {
+                    bind_name: b,
+                    return_name: r,
+                })
             } else {
                 None
             }
         }
-        Expr::Meta(_, inner, _) => find_monad_names_in_bindings(inner),
+        Expr::Meta(_, inner, _) => find_monad_spec_in_bindings(inner),
         _ => None,
     }
 }
 
-/// Desugar a monadic block using a registered monad spec.
+/// Extract a MonadSpec from the raw rowan AST metadata of a regular block element.
 ///
-/// Given `⟦ a: ma  b: mb ⟧.return_expr` and a monad spec `{ bind, return }`,
+/// Handles these block metadata forms:
+/// 1. `:name` — bare symbol, treated as namespace reference
+/// 2. `{ monad: name }` — block with `monad` key, treated as namespace reference
+/// 3. `{ :monad namespace: name }` — :monad-tagged block with `namespace` key
+/// 4. `{ :monad bind: f return: r }` — :monad-tagged block with explicit bind/return
+///
+/// Returns `None` if no monadic metadata is detected.
+fn extract_block_monad_spec_from_raw(
+    block: &rowan_ast::Block,
+) -> Option<super::desugarer::MonadSpec> {
+    use super::desugarer::MonadSpec;
+
+    let meta = block.meta()?;
+    let soup = meta.soup()?;
+    let elements: Vec<rowan_ast::Element> = soup.elements().collect();
+
+    // Form 1: bare symbol `:name` — namespace reference
+    if elements.len() == 1 {
+        if let rowan_ast::Element::Lit(lit) = &elements[0] {
+            let text = lit.syntax().text().to_string();
+            if let Some(name) = text.strip_prefix(':') {
+                // Exclude known non-monad desugar-phase metadata symbols
+                if !matches!(name, "main" | "suppress") {
+                    return Some(MonadSpec::Namespace(name.to_string()));
+                }
+            }
+        }
+    }
+
+    // Forms 2, 3, 4: metadata is a block expression
+    if let Some(rowan_ast::Element::Block(meta_block)) = elements.first() {
+        let mut monad_key: Option<String> = None;
+        let mut namespace_val: Option<String> = None;
+        let mut bind_val: Option<String> = None;
+        let mut return_val: Option<String> = None;
+        let mut has_monad_marker = false;
+
+        // Check for :monad marker in meta_block's own metadata
+        if let Some(meta_meta) = meta_block.meta() {
+            if let Some(meta_soup) = meta_meta.soup() {
+                let meta_elems: Vec<rowan_ast::Element> = meta_soup.elements().collect();
+                if meta_elems.len() == 1 {
+                    if let rowan_ast::Element::Lit(lit) = &meta_elems[0] {
+                        if lit.syntax().text() == ":monad" {
+                            has_monad_marker = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Read declarations from the meta_block
+        for decl in meta_block.declarations() {
+            if let Some(head) = decl.head() {
+                if let rowan_ast::DeclarationKind::Property(prop) = head.classify_declaration() {
+                    let key = prop.text().to_string();
+                    let val = decl.body().and_then(|body| body.soup()).and_then(|s| {
+                        let elems: Vec<rowan_ast::Element> = s.elements().collect();
+                        if elems.len() == 1 {
+                            match &elems[0] {
+                                rowan_ast::Element::Lit(lit) => {
+                                    let text = lit.syntax().text().to_string();
+                                    Some(
+                                        text.strip_prefix(':')
+                                            .map(|s| s.to_string())
+                                            .unwrap_or(text),
+                                    )
+                                }
+                                rowan_ast::Element::Name(name) => {
+                                    name.identifier().map(|id| id.text().to_string())
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    });
+                    match key.as_str() {
+                        "monad" => monad_key = val,
+                        "namespace" => namespace_val = val,
+                        "bind" => bind_val = val,
+                        "return" => return_val = val,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Form 2: `{ monad: name }` — namespace reference via `monad` key (no :monad marker)
+        if !has_monad_marker {
+            if let Some(ns) = monad_key {
+                return Some(MonadSpec::Namespace(ns));
+            }
+            return None;
+        }
+
+        // Forms 3 and 4: has :monad marker
+        if let Some(ns) = namespace_val {
+            return Some(MonadSpec::Namespace(ns));
+        }
+        if let (Some(b), Some(r)) = (bind_val, return_val) {
+            return Some(MonadSpec::Explicit {
+                bind_name: b,
+                return_name: r,
+            });
+        }
+    }
+
+    None
+}
+
+/// Desugar a monadic block using a monad spec.
+///
+/// Given a list of declarations `a: ma  b: mb`, a return element, and a monad spec,
 /// produces:
 /// ```text
 /// bind(ma, λa. bind(mb, λb. return(return_expr)))
 /// ```
+/// For namespace specs (`MonadSpec::Namespace("ns")`), emits lookup expressions:
+/// ```text
+/// ns.bind(ma, λa. ns.bind(mb, λb. ns.return(return_expr)))
+/// ```
 ///
 /// All declarations are desugared as monadic bind steps,
 /// with each declaration name becoming a lambda parameter.
-/// The return expression (from `.expr` after the bracket) is wrapped in `return`.
+/// The return expression (from `.expr` after the block) is wrapped in `return`.
 fn desugar_monadic_block(
     smid: Smid,
-    bracket: &rowan_ast::BracketBlock,
+    decls: Vec<rowan_ast::Declaration>,
     return_elem: &Element,
     spec: &super::desugarer::MonadSpec,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
-    // Collect all declarations in order
-    let decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
-
     if decls.is_empty() {
         return Err(CoreError::EmptyMonadicBlock(smid));
     }
@@ -761,10 +892,24 @@ fn desugar_monadic_block(
     }
 
     // Build the bind chain right-to-left.
-    // The return expression is the provided `.expr` lookup (desugared with bind names in scope).
-    // Each declaration: bind(value, λname. rest)
-    let return_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, spec.return_name.clone())));
-    let mut result = RcExpr::from(Expr::App(smid, return_fn, vec![return_expr]));
+    // For Explicit spec: call bind_name(value, lambda) and return_name(expr)
+    // For Namespace spec: emit lookup expressions ns.bind(value, lambda) and ns.return(expr)
+    use super::desugarer::MonadSpec;
+    let mut result = match spec {
+        MonadSpec::Explicit { return_name, .. } => {
+            let return_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, return_name.clone())));
+            RcExpr::from(Expr::App(smid, return_fn, vec![return_expr]))
+        }
+        MonadSpec::Namespace(ns) => {
+            // ns.return(return_expr)
+            let ns_var = desugarer.varify(RcExpr::from(Expr::Name(smid, ns.clone())));
+            core::app(
+                smid,
+                core::lookup(smid, ns_var, "return", None),
+                vec![return_expr],
+            )
+        }
+    };
 
     // Build bind chain from right-to-left using all pairs
     for ((_, value), bind_var) in name_value_pairs
@@ -773,8 +918,21 @@ fn desugar_monadic_block(
         .rev()
     {
         let lambda = core::lam(smid, vec![bind_var], result);
-        let bind_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, spec.bind_name.clone())));
-        result = RcExpr::from(Expr::App(smid, bind_fn, vec![value, lambda]));
+        result = match spec {
+            MonadSpec::Explicit { bind_name, .. } => {
+                let bind_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, bind_name.clone())));
+                RcExpr::from(Expr::App(smid, bind_fn, vec![value, lambda]))
+            }
+            MonadSpec::Namespace(ns) => {
+                // ns.bind(value, lambda)
+                let ns_var = desugarer.varify(RcExpr::from(Expr::Name(smid, ns.clone())));
+                core::app(
+                    smid,
+                    core::lookup(smid, ns_var, "bind", None),
+                    vec![value, lambda],
+                )
+            }
+        };
     }
 
     Ok(result)
@@ -1549,10 +1707,49 @@ fn desugar_rowan_soup(
                 .cloned()
                 .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
 
-            let monadic_expr =
-                desugar_monadic_block(smid, bracket, &elements[return_elem_idx], &spec, desugarer)?;
+            let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
+            let monadic_expr = desugar_monadic_block(
+                smid,
+                bracket_decls,
+                &elements[return_elem_idx],
+                &spec,
+                desugarer,
+            )?;
             soup.push(monadic_expr);
             continue;
+        }
+
+        // Check for Block element with monadic metadata followed by .expr
+        if let Element::Block(ref block) = elements[idx] {
+            if let Some(spec) = extract_block_monad_spec_from_raw(block) {
+                let block_span = text_range_to_span(block.syntax().text_range());
+                let smid = desugarer.new_smid(block_span);
+
+                // Check for .expr pattern following the block
+                if idx + 2 < elements.len() {
+                    let dot_elem = &elements[idx + 1];
+                    let is_dot = dot_elem
+                        .as_operator_identifier()
+                        .map(|op| op.text() == ".")
+                        .unwrap_or(false);
+                    if is_dot {
+                        let return_elem_idx = idx + 2;
+                        idx += 3; // consume block + dot + return_expr
+                        let block_decls: Vec<rowan_ast::Declaration> =
+                            block.declarations().collect();
+                        let monadic_expr = desugar_monadic_block(
+                            smid,
+                            block_decls,
+                            &elements[return_elem_idx],
+                            &spec,
+                            desugarer,
+                        )?;
+                        soup.push(monadic_expr);
+                        continue;
+                    }
+                }
+                // No .expr following — fall through to normal block desugaring
+            }
         }
 
         idx += 1;
@@ -1752,14 +1949,8 @@ fn rowan_declaration_to_binding(
         ) {
             let spec_smid = desugarer.new_smid(components.span);
             let spec = extract_monad_spec_from_body(&components.body, spec_smid)?;
-            if let Some((bind_name, return_name)) = spec {
-                desugarer.register_monad_spec(
-                    components.name.clone(),
-                    super::desugarer::MonadSpec {
-                        bind_name,
-                        return_name,
-                    },
-                );
+            if let Some(monad_spec) = spec {
+                desugarer.register_monad_spec(components.name.clone(), monad_spec);
             }
         }
     }
