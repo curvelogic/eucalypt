@@ -198,11 +198,35 @@ impl<'a> LineIndex<'a> {
 }
 
 /// Count UTF-16 code units in the source text between two byte offsets.
+///
+/// Both `byte_start` and `byte_end` are clamped to char boundaries to
+/// guard against rowan `TextSize` values that land inside a multi-byte
+/// character (which can occur with non-ASCII operator symbols such as
+/// `∘`, `•`, and `÷` in the prelude).
 fn byte_col_to_utf16(source: &str, byte_start: u32, byte_end: u32) -> u32 {
-    let start = byte_start as usize;
-    let end = byte_end as usize;
-    let slice = &source[start..end.min(source.len())];
+    let source_len = source.len();
+    let start = (byte_start as usize).min(source_len);
+    let end = (byte_end as usize).min(source_len);
+    // Walk back to the nearest char boundary if needed
+    let start = floor_char_boundary(source, start);
+    let end = floor_char_boundary(source, end);
+    if start >= end {
+        return 0;
+    }
+    let slice = &source[start..end];
     slice.chars().map(|ch| ch.len_utf16() as u32).sum()
+}
+
+/// Return the largest index `<= pos` that is a char boundary in `s`.
+fn floor_char_boundary(s: &str, pos: usize) -> usize {
+    if pos >= s.len() {
+        return s.len();
+    }
+    let mut p = pos;
+    while p > 0 && !s.is_char_boundary(p) {
+        p -= 1;
+    }
+    p
 }
 
 #[cfg(test)]

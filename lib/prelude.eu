@@ -31,7 +31,39 @@ io: {
 
   ` "Infinite lazy stream of random floats in [0,1), seeded from system entropy or --seed flag."
   random: random-stream(io.RANDOM_SEED)
+
+  ##
+  ## IO monad
+  ##
+
+  ` "Sequence two IO actions: run `action` and pass its result to `continuation`."
+  bind(action, continuation): __IO_BIND(action, continuation)
+
+  ` "Wrap a pure value in the IO monad."
+  return(a): __IO_RETURN(a)
+
+  ` "Run a shell command via `sh -c`. Returns `{stdout: Str, stderr: Str, exit-code: Num}`."
+  shell(cmd): __IO_ACTION({:io-shell cmd: cmd, timeout: 30})
+
+  ` "Run a shell command with extra options merged in (e.g. `{stdin: s, timeout: 60}`)."
+  shell-with(cmd, opts): __IO_ACTION({:io-shell cmd: cmd} << opts)
+
+  ` "Run a command directly (no shell). Returns `{stdout: Str, stderr: Str, exit-code: Num}`."
+  exec(cmd, args): __IO_ACTION({:io-exec cmd: cmd, args: args, timeout: 30})
+
+  ` "Run a command directly with extra options merged in (e.g. `{stdin: s, timeout: 60}`)."
+  exec-with(cmd, args, opts): __IO_ACTION({:io-exec cmd: cmd, args: args} << opts)
+
+  ` "Check a command result: if exit-code is non-zero, fail with the stderr message; otherwise return the result."
+  check(result): if(result.'exit-code' = 0,
+    io.return(result),
+    __IO_ACTION({:io-fail message: result.stderr}))
+
+  ` "Apply a pure function to the result of an IO action (fmap)."
+  map(f, action): io.bind(action, __io-return-of(f))
 }
+
+__io-return-of(f, x): io.return(f(x))
 
 
 ##
