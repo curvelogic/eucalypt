@@ -340,6 +340,41 @@ starts with a block literal `{...}`:
 { :io r: io.shell("echo hello") }.(r.stdout)
 ```
 
+## Block Field Names Shadow Outer Bindings — `{x: x}` Is Always Self-Reference
+
+**Problem**: Every declaration inside a block literal introduces a new binding
+that is visible to all other expressions in that block, including its own
+right-hand side.  The name on the left of `:` immediately shadows any outer
+binding with the same name, so `{x: x}` does **not** copy an outer `x` into the
+block — it creates a self-referential binding that refers to itself:
+
+```eu,notest
+# WRONG — infinite loop: cmd refers to itself, not the function parameter
+shell-spec(cmd): {:io-shell cmd: cmd, timeout: 30}
+```
+
+Running `eu -e '{cmd: cmd}'` gives `error: infinite loop detected: binding
+refers to itself`.
+
+**Why it bites functions**: When a function parameter has the same name as a
+block field you want to populate, the RHS expression sees the block's own
+binding rather than the parameter:
+
+```eu,notest
+fn(cmd): {cmd: cmd}   # cmd: cmd is self-reference — fn's parameter is invisible
+```
+
+**Fix**: Use a different name for the function parameter so it is not shadowed:
+
+```eu,notest
+# Correct: parameter c is not shadowed by the block field cmd
+shell-spec(c): {:io-shell cmd: c, timeout: 30}
+```
+
+**Rule**: Never write `{key: key}` expecting it to read an outer binding named
+`key`.  If you need a block field to hold a value from an outer scope, the outer
+name and the field name must differ.
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:
