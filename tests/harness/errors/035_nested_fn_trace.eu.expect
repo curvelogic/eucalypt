@@ -1,2 +1,2 @@
 exit: 1
-stderr: "type mismatch"
+stderr: "035_nested_fn_trace\.eu:1:"
