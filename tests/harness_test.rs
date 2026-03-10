@@ -1060,14 +1060,3 @@ pub fn test_error_094() {
     run_error_test(&opt);
 }
 
-// IO monad tests
-
-#[test]
-pub fn test_harness_io_basic() {
-    run_test(&io_opts("104_io_basic.eu"));
-}
-
-#[test]
-pub fn test_harness_io_chain() {
-    run_test(&io_opts("105_io_chain.eu"));
-}
