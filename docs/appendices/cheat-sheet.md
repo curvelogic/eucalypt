@@ -393,13 +393,21 @@ either operand is an array. Scalar broadcasting is supported.
 
 ### IO
 
-| Binding | Description |
-|---------|-------------|
+| Binding / Function | Description |
+|--------------------|-------------|
 | `io.env` | Block of environment variables |
 | `io.epoch-time` | Unix timestamp at launch |
 | `io.args` | Command-line arguments (after `--`) |
 | `io.random` | Infinite lazy stream of random floats |
 | `io.RANDOM_SEED` | Current random seed |
+| `io.return(a)` | Wrap a pure value in the IO monad |
+| `io.bind(action, cont)` | Sequence two IO actions |
+| `io.shell(cmd)` | Run `cmd` via `sh -c`; returns `{stdout, stderr, exit-code}` |
+| `io.shell-with(opts, cmd)` | Run `cmd` with extra options (e.g. `{stdin: s, timeout: 60}`). Pipeline: `"cmd" shell-with(opts)` |
+| `io.exec([cmd : args])` | Run `cmd` directly (no shell); argument is a list `[cmd, arg1, arg2, ...]` |
+| `io.exec-with(opts, [cmd : args])` | Run `cmd` directly with extra options. Pipeline: `["git", "log"] exec-with(opts)` |
+| `io.check(result)` | Fail with stderr if `exit-code` is non-zero; otherwise return result |
+| `io.map(f, action)` | Apply pure function to result of IO action (fmap) |
 
 ## Assertion Operators
 

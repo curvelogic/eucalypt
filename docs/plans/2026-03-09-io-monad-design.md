@@ -79,9 +79,9 @@ io: {
   return(a): __io_return(a)
 
   shell(cmd): __io_action({:io-shell cmd: cmd, timeout: 30})
-  shell-with(cmd, opts): __io_action({:io-shell cmd: cmd} << opts)
-  exec(cmd, args): __io_action({:io-exec cmd: cmd, args: args, timeout: 30})
-  exec-with(cmd, args, opts): __io_action({:io-exec cmd: cmd, args: args} << opts)
+  shell-with(opts, cmd): __io_action({:io-shell cmd: cmd} << opts)
+  exec([cmd : args]): __io_action({:io-exec cmd: cmd, args: args, timeout: 30})
+  exec-with(opts, [cmd : args]): __io_action({:io-exec cmd: cmd, args: args} << opts)
 
   check(result): ...  # IoFail if exit-code != 0, else IoReturn(result)
 
@@ -105,20 +105,20 @@ files: { :io result: io.shell("ls -la") }.result.stdout
 
 # Chained with failure check
 rev: { :io
-  r: io.exec("git", ["rev-parse", "HEAD"])
+  r: io.exec(["git", "rev-parse", "HEAD"])
   _: io.check(r)
 }.r.stdout
 
 # Piping stdout of one command as stdin to another
 sorted: { :io
   listing: io.shell("ls")
-  result: io.shell-with("sort", {stdin: listing.stdout})
+  result: io.shell-with({stdin: listing.stdout}, "sort")
 }.result.stdout
 
 # Render data and post
 posted: { :io
   json: io.return(render-as(my-data, :json))
-  r: io.shell-with("curl -X POST http://example.com", {stdin: json})
+  r: io.shell-with({stdin: json}, "curl -X POST http://example.com")
   _: io.check(r)
 }.r.stdout
 ```
