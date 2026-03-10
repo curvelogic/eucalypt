@@ -233,22 +233,11 @@ impl StgIntrinsic for ArrayGet {
                 view,
                 Number::from_f64(val).unwrap_or_else(|| Number::from(0)),
             ),
-            None => {
-                let coords_str = coords
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let shape_str = arr
-                    .shape()
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(ExecutionError::Panic(format!(
-                    "arr.get: coordinates [{coords_str}] are out of bounds for array with shape [{shape_str}]"
-                )))
-            }
+            None => Err(ExecutionError::ArrayIndexOutOfBounds(
+                machine.annotation(),
+                format_coords(&coords),
+                format_shape(arr.shape()),
+            )),
         }
     }
 }
@@ -307,22 +296,11 @@ impl StgIntrinsic for ArraySet {
         let arr = ndarray_arg(machine, view, &args[2])?;
         match arr.with_set(&coords, value) {
             Some(new_arr) => machine_return_ndarray(machine, view, new_arr),
-            None => {
-                let coords_str = coords
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let shape_str = arr
-                    .shape()
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(ExecutionError::Panic(format!(
-                    "arr.set: coordinates [{coords_str}] are out of bounds for array with shape [{shape_str}]"
-                )))
-            }
+            None => Err(ExecutionError::ArrayIndexOutOfBounds(
+                machine.annotation(),
+                format_coords(&coords),
+                format_shape(arr.shape()),
+            )),
         }
     }
 }
@@ -757,6 +735,18 @@ fn num_list_to_i64_vec(
 ) -> Result<Vec<i64>, ExecutionError> {
     let nums = super::support::collect_num_list(machine, view, arg.clone())?;
     Ok(nums.into_iter().map(|n| n as i64).collect())
+}
+
+/// Format a coordinate list for error messages, e.g. `[5, 0]`.
+fn format_coords(coords: &[usize]) -> String {
+    let s: Vec<String> = coords.iter().map(|c| c.to_string()).collect();
+    format!("[{}]", s.join(", "))
+}
+
+/// Format a shape list for error messages, e.g. `[2, 3]`.
+fn format_shape(shape: &[usize]) -> String {
+    let s: Vec<String> = shape.iter().map(|d| d.to_string()).collect();
+    format!("[{}]", s.join(", "))
 }
 
 /// Extract a list of numbers from a cons-list, converting to usize.

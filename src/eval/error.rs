@@ -639,6 +639,8 @@ pub enum ExecutionError {
     Panic(String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
+    #[error("array index out of bounds: index {1} is out of bounds for array with shape {2}")]
+    ArrayIndexOutOfBounds(Smid, String, String),
     #[error("machine did not terminate after {0} steps")]
     DidntTerminate(usize),
     #[error("infinite loop detected: binding refers to itself")]
@@ -705,6 +707,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,
+            ExecutionError::ArrayIndexOutOfBounds(s, _, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
         }
