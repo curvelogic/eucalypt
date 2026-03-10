@@ -180,6 +180,101 @@ sample(n, list, stream): {
   rest: shuffled.rest
 }
 
+##
+## Monadic random: namespace (state monad over a PRNG stream)
+##
+## Each random "action" is a function: stream -> {value: ..., rest: ...}
+## random.bind and random.return thread the stream automatically.
+##
+
+` :suppress
+random-ret(v, stream): { value: v, rest: stream }
+
+` :suppress
+__random-bind-run(m, f, stream): {
+  r: m(stream)
+  run: f(r.value)(r.rest)
+  value: run.value
+  rest: run.rest
+}
+
+` :suppress
+random-bind(m, f): __random-bind-run(m, f)
+
+` :suppress
+__random-float-action(stream): { value: stream head, rest: stream tail }
+
+` :suppress
+__random-int-action(n, stream): {
+  value: floor((stream head) * n)
+  rest: stream tail
+}
+
+` :suppress
+__random-choice-pick(list, idx): random-ret(list nth(idx))
+
+` :suppress
+__random-choice-action(lst, stream): {
+  r: __random-int-action(lst count, stream)
+  next: __random-choice-pick(lst, r.value)(r.rest)
+  value: next.value
+  rest: next.rest
+}
+
+` :suppress
+__random-shuffle-action(lst, stream): __random-shuffle-impl(lst, lst count, [], stream)
+
+` :suppress
+__random-shuffle-impl(remaining, n, acc, stream):
+  if(n = 0,
+    { value: acc, rest: stream },
+    __random-shuffle-step(remaining, n, acc, stream))
+
+` :suppress
+__random-shuffle-step(remaining, n, acc, stream): {
+  r: __random-int-action(n, stream)
+  picked: remaining nth(r.value)
+  without: (remaining take(r.value)) ++ (remaining drop(r.value + 1))
+  next: __random-shuffle-impl(without, n - 1, cons(picked, acc), r.rest)
+  value: next.value
+  rest: next.rest
+}
+
+` :suppress
+__random-sample-action(n, lst, stream): {
+  shuffled: __random-shuffle-action(lst, stream)
+  value: shuffled.value take(n)
+  rest: shuffled.rest
+}
+
+` "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block.
+Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
+random: monad({bind: random-bind, return: random-ret}) {
+  ` "The bind primitive for the random state monad."
+  bind: random-bind
+
+  ` "The return primitive for the random state monad."
+  return: random-ret
+
+  ` "random.stream(seed) - create the initial PRNG stream from integer seed."
+  stream(seed): random-stream(seed)
+
+  ` "random.float - action returning a random float in [0,1)."
+  float: __random-float-action
+
+  ` "random.int(n) - action returning a random integer in [0,n)."
+  int(n): __random-int-action(n)
+
+  ` "random.choice(list) - action returning a random element from list."
+  choice(lst): __random-choice-action(lst)
+
+  ` "random.shuffle(list) - action returning a shuffled copy of list."
+  shuffle(lst): __random-shuffle-action(lst)
+
+  ` "random.sample(n, list) - action returning n elements sampled without replacement."
+  sample(n, lst): __random-sample-action(n, lst)
+}
+
 
 ##
 ## Error / debug support

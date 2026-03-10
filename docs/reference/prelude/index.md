@@ -17,8 +17,8 @@ in the prelude).
 - [Combinators](combinators.md) -- function composition, application, utilities (12 entries)
 - [Calendar](calendar.md) -- date and time functions (5 entries)
 - [Sets](sets.md) -- set operations (11 entries)
-- [Random Numbers](random.md) -- random number generation (5 entries)
+- [Random Numbers](random.md) -- random number generation, monadic random: namespace (20 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (7 entries)
 - [IO](io.md) -- environment, time, argument access, and monad utility (16 entries)
 
-*225 documented entries in total.*
+*240 documented entries in total.*
