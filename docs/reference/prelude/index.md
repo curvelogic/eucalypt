@@ -19,6 +19,6 @@ in the prelude).
 - [Sets](sets.md) -- set operations (11 entries)
 - [Random Numbers](random.md) -- random number generation (5 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (7 entries)
-- [IO](io.md) -- environment, time, and argument access (9 entries)
+- [IO](io.md) -- environment, time, argument access, and monad utility (16 entries)
 
-*218 documented entries in total.*
+*225 documented entries in total.*

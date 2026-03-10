@@ -1,0 +1,88 @@
+"monad(): derive standard monad combinators from bind and return. Uses --allow-io."
+
+##
+## A simple identity monad for pure tests (no IO needed)
+##
+# For identity monad: bind(m, f) = f(m), return(a) = a
+` :suppress
+id-bind(m, f): f(m)
+
+` :suppress
+id-return(a): a
+
+` :suppress
+id-monad: monad({bind: id-bind, return: id-return})
+
+##
+## map: apply a pure function to a wrapped value
+##
+` { target: :test-map-pure }
+test-map-pure:
+  if(id-monad.map(inc, 41) = 42,
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
+
+##
+## then: sequence two actions, discard the first result
+##
+` { target: :test-then-pure }
+test-then-pure:
+  if(id-monad.then(99, 42) = 42,
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
+
+##
+## join: flatten a nested wrapped value
+##
+` { target: :test-join-pure }
+test-join-pure:
+  if(id-monad.join(42) = 42,
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
+
+##
+## sequence: sequence a list of wrapped values, collecting results
+##
+` { target: :test-sequence-pure }
+test-sequence-pure:
+  if(id-monad.sequence([1, 2, 3]) = [1, 2, 3],
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
+
+##
+## map-m: map a function over a list then sequence
+##
+` { target: :test-map-m-pure }
+test-map-m-pure:
+  if(id-monad.map-m(inc, [1, 2, 3]) = [2, 3, 4],
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
+
+##
+## filter-m: monadic filter using the identity monad
+##
+` { target: :test-filter-m-pure }
+test-filter-m-pure:
+  if(id-monad.filter-m(> 2, [1, 2, 3, 4]) = [3, 4],
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
+
+##
+## IO: derived monad map matches io.map
+##
+` { target: :test-io-map requires-io: true }
+test-io-map:
+  { :io
+    r1: monad({bind: io.bind, return: io.return}).map(.stdout, io.shell("echo hello"))
+    r2: io.map(.stdout, io.shell("echo hello"))
+  }.(if(r1 = r2, { RESULT: :PASS }, { RESULT: :FAIL }))
+
+##
+## IO: derived monad then sequences two IO actions
+##
+` { target: :test-io-then requires-io: true }
+test-io-then:
+  { :io r: monad({bind: io.bind, return: io.return}).then(io.shell("echo first"), io.shell("echo second")) }.(
+    if(r.stdout str.matches?("second.*"),
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))
