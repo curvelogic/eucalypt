@@ -291,15 +291,28 @@ impl GcScannable for LambdaForm {
     }
 }
 
-/// Mark any heap pointers embedded in a Ref value.
+/// Mark any heap pointers embedded in a Ref value and push them for scanning.
 ///
 /// `Native::Str`, `Native::Set`, and `Native::NdArray` contain heap
 /// pointers that must be traced to ensure their lines are marked.
 /// Without this, evacuation cannot discover and update these pointers.
-fn mark_ref_heap_pointers(r: &Ref, marker: &mut CollectorHeapView<'_>) {
+///
+/// `Native::Str` is pushed onto the scan queue so that `HeapString::scan`
+/// is called and the backing byte allocation is also marked and evacuated.
+/// This prevents the backing bytes from being swept while the `HeapString`
+/// struct still holds a pointer to them.
+fn mark_ref_heap_pointers<'a>(
+    r: &'a Ref,
+    scope: &'a dyn CollectorScope,
+    marker: &mut CollectorHeapView<'a>,
+    out: &mut Vec<ScanPtr<'a>>,
+) {
     match r {
         Ref::V(Native::Str(ptr)) => {
-            marker.mark(*ptr);
+            if marker.mark(*ptr) {
+                // Push for scanning so HeapString::scan marks the backing bytes
+                out.push(ScanPtr::from_non_null(scope, *ptr));
+            }
         }
         Ref::V(Native::Set(ptr)) => {
             marker.mark(*ptr);
@@ -312,9 +325,14 @@ fn mark_ref_heap_pointers(r: &Ref, marker: &mut CollectorHeapView<'_>) {
 }
 
 /// Mark heap pointers in all elements of a Ref array.
-fn mark_ref_array_heap_pointers(args: &Array<Ref>, marker: &mut CollectorHeapView<'_>) {
+fn mark_ref_array_heap_pointers<'a>(
+    args: &'a Array<Ref>,
+    scope: &'a dyn CollectorScope,
+    marker: &mut CollectorHeapView<'a>,
+    out: &mut Vec<ScanPtr<'a>>,
+) {
     for r in args.iter() {
-        mark_ref_heap_pointers(r, marker);
+        mark_ref_heap_pointers(r, scope, marker, out);
     }
 }
 
@@ -356,7 +374,7 @@ impl GcScannable for HeapSyn {
     ) {
         match self {
             HeapSyn::Atom { evaluand } => {
-                mark_ref_heap_pointers(evaluand, marker);
+                mark_ref_heap_pointers(evaluand, scope, marker, out);
             }
             HeapSyn::Case {
                 scrutinee,
@@ -382,16 +400,16 @@ impl GcScannable for HeapSyn {
             }
             HeapSyn::Cons { tag: _, args } => {
                 marker.mark_array(args);
-                mark_ref_array_heap_pointers(args, marker);
+                mark_ref_array_heap_pointers(args, scope, marker, out);
             }
             HeapSyn::App { callable, args } => {
-                mark_ref_heap_pointers(callable, marker);
+                mark_ref_heap_pointers(callable, scope, marker, out);
                 marker.mark_array(args);
-                mark_ref_array_heap_pointers(args, marker);
+                mark_ref_array_heap_pointers(args, scope, marker, out);
             }
             HeapSyn::Bif { intrinsic: _, args } => {
                 marker.mark_array(args);
-                mark_ref_array_heap_pointers(args, marker);
+                mark_ref_array_heap_pointers(args, scope, marker, out);
             }
             HeapSyn::Let { bindings, body } => {
                 if marker.mark_array(bindings) {
@@ -439,8 +457,8 @@ impl GcScannable for HeapSyn {
                 }
             }
             HeapSyn::Meta { meta, body } => {
-                mark_ref_heap_pointers(meta, marker);
-                mark_ref_heap_pointers(body, marker);
+                mark_ref_heap_pointers(meta, scope, marker, out);
+                mark_ref_heap_pointers(body, scope, marker, out);
             }
             HeapSyn::DeMeta {
                 scrutinee,
