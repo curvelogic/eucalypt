@@ -1328,10 +1328,24 @@ impl<'rt> Compiler<'rt> {
             // the default is unused; if it fails we panic anyway.
             Some(expr) => match self.compile_binding(binder, expr.clone(), annotation, false) {
                 Ok(expr) => Ok(expr),
-                Err(CompileError::FreeVar(..)) => binder.add(lookup_fail(key, obj.clone())),
+                Err(CompileError::FreeVar(..)) => {
+                    let ann = if self.generate_annotations() {
+                        annotation
+                    } else {
+                        Smid::default()
+                    };
+                    binder.add(lookup_fail(key, obj.clone(), ann))
+                }
                 Err(e) => Err(e),
             },
-            None => binder.add(lookup_fail(key, obj.clone())),
+            None => {
+                let ann = if self.generate_annotations() {
+                    annotation
+                } else {
+                    Smid::default()
+                };
+                binder.add(lookup_fail(key, obj.clone(), ann))
+            }
         }?;
         let lookup_stg = LookupOr(NativeVariant::Unboxed).global(dsl::sym(key), dft, obj);
         // Wrap with a source annotation so that lookup type errors (e.g.
