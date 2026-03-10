@@ -96,10 +96,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: build and install temporary eu
         run: cargo install --path .
@@ -173,10 +172,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Build and install temporary eu
         run: cargo install --path .
@@ -220,10 +218,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-arm-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-arm-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-arm-cargo-
+            ${{ runner.os }}-arm-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Build and install temporary eu
         run: cargo install --path .

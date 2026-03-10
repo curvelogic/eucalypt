@@ -1,0 +1,93 @@
+name: macOS SIGSEGV diagnostic
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  # Experiment A: fresh build (no target/ cache, only registry cache)
+  # If this passes but B fails, the crash is stale cache in target/
+  macos-fresh-build:
+    name: macOS fresh build (registry cache only)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-diag-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-diag-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run ALL harness tests (parallel, release)
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Run ALL harness tests (parallel, release) — repeat
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Run ALL harness tests (parallel, release) — repeat
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+
+  # Experiment B: same cache key as production master build
+  # If this fails but A passes, the crash is stale cache in target/
+  macos-production-cache:
+    name: macOS production cache key
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macOS-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macOS-cargo-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run ALL harness tests (parallel, release) — attempt 1
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Run ALL harness tests (parallel, release) — attempt 2
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Run ALL harness tests (parallel, release) — attempt 3
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+
+  # Experiment C: parallel with extra thread stress + RUST_BACKTRACE
+  macos-stress:
+    name: macOS stress with backtrace
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-diag-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-diag-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release --test harness_test
+      - name: Run with RUST_BACKTRACE=full (attempt 1)
+        env:
+          RUST_BACKTRACE: full
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Run with RUST_BACKTRACE=full (attempt 2)
+        env:
+          RUST_BACKTRACE: full
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Run with RUST_BACKTRACE=full (attempt 3)
+        env:
+          RUST_BACKTRACE: full
+        run: cargo test --release --test harness_test
+        continue-on-error: true
