@@ -1532,15 +1532,31 @@ impl<'a> Machine<'a> {
             "evaluate_to_whnf_for_io called with non-empty continuation stack"
         );
 
-        // Save the current IO yield closure.
-        let saved_closure = self.state.closure.clone();
+        // Push the current IO yield closure onto the GC stash so that the
+        // collector can trace and update its heap pointers if evacuation occurs
+        // during self.run() below.  Without this, `saved_closure` is an
+        // invisible Rust-stack root: the GC does not scan it, so any objects
+        // it references that reside in a fragmented candidate block will be
+        // evacuated and their forwarding pointers set — but `saved_closure`
+        // still holds the old (now-dead) addresses, causing a SIGSEGV when
+        // we later restore it as the machine closure.
+        self.stash_push(self.state.closure.clone());
 
         // Temporarily evaluate the given closure to WHNF.
         self.state.terminated = false;
         self.state.yielded_io = false;
         self.state.closure = closure;
 
-        self.run(None)?;
+        let run_result = self.run(None);
+
+        // Pop the (possibly-updated) saved closure from the stash.  The GC
+        // may have rewritten its internal heap pointers during run(), so we
+        // must use the stash copy rather than the Rust-stack copy.
+        let saved_closure = self.stash_pop();
+
+        // Propagate any run error only after restoring the GC-safe saved
+        // closure, to leave the machine in a consistent state.
+        run_result?;
 
         // Capture the result before restoring state.
         let sub_yielded = self.state.yielded_io;
