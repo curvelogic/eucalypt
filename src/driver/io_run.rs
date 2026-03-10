@@ -33,8 +33,9 @@ use crate::eval::{
         symbol::SymbolPool,
         syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
     },
-    stg::tags::DataConstructor,
+    stg::{render_to_string::render_closure_to_emitter, tags::DataConstructor},
 };
+use crate::export;
 
 // ─── Public error type ────────────────────────────────────────────────────────
 
@@ -293,8 +294,8 @@ fn peel_meta(
 
 /// Convenience wrapper: follow indirection atoms and return just the closure.
 ///
-/// For cases that do not need the container env (list walking, `read_as_string`,
-/// etc.), this avoids cluttering every call site with `let (c, _) = …`.
+/// For cases that do not need the container env (list walking, etc.),
+/// this avoids cluttering every call site with `let (c, _) = …`.
 #[inline]
 fn deref(view: &MutatorHeapView<'_>, closure: SynClosure) -> SynClosure {
     dereference(view, closure).0
@@ -355,75 +356,102 @@ fn block_list_inner(view: &MutatorHeapView<'_>, c: SynClosure, depth: usize) -> 
     }
 }
 
-/// Try to read a closure's WHNF value as a plain Rust `String`.
+/// If the WHNF closure is a boxed scalar (`BoxedString`, `BoxedNumber`,
+/// `BoxedSymbol`, `BoxedZdt`), extract the inner closure so it can be
+/// evaluated further.  Returns `None` if the closure is not a box.
 ///
-/// Handles: Atom(Str), Atom(Num), BoxedString, BoxedNumber, and
-/// cons-lists of strings (stored NUL-separated for exec args).
-///
-/// `globals` is optional; it is required to resolve `G(i)` refs (e.g. the
-/// global nil `ListNil` that appears as the tail of a compiled list).
-fn read_as_string(
-    view: &MutatorHeapView<'_>,
-    closure: SynClosure,
-    globals: Option<RefPtr<EnvFrame>>,
-) -> Option<String> {
-    let code = view.scoped(closure.code());
-    match &*code {
-        HeapSyn::Atom {
-            evaluand: Ref::V(Native::Str(s)),
-        } => Some(view.scoped(*s).as_str().to_string()),
-        HeapSyn::Atom {
-            evaluand: Ref::V(Native::Num(n)),
-        } => Some(n.to_string()),
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedString.tag() => {
-            let r = args.get(0)?;
-            match r {
-                Ref::V(Native::Str(s)) => Some(view.scoped(s).as_str().to_string()),
-                _ => None,
-            }
-        }
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedNumber.tag() => {
-            let r = args.get(0)?;
-            match r {
-                Ref::V(Native::Num(n)) => Some(n.to_string()),
-                _ => None,
-            }
-        }
-        HeapSyn::Cons { tag, .. }
-            if *tag == DataConstructor::ListCons.tag()
-                || *tag == DataConstructor::ListNil.tag() =>
-        {
-            // Collect list elements as NUL-separated string.
-            // G-refs (e.g. the global ListNil used as the list terminator)
-            // are resolved via the globals frame when provided.
-            let mut parts: Vec<String> = Vec::new();
-            let mut cur = closure.clone();
-            loop {
-                let c = view.scoped(cur.code());
-                match &*c {
-                    HeapSyn::Cons { tag: t, .. } if *t == DataConstructor::ListNil.tag() => break,
-                    HeapSyn::Cons { tag: t, args } if *t == DataConstructor::ListCons.tag() => {
-                        let hr = args.get(0)?;
-                        let tr = args.get(1)?;
-                        let head = resolve_ref_with_globals(view, &cur, hr, globals).ok()?;
-                        let tail = resolve_ref_with_globals(view, &cur, tr, globals).ok()?;
-                        if let Some(s) = read_as_string(view, deref(view, head), globals) {
-                            parts.push(s);
-                        }
-                        cur = deref(view, tail);
+/// This is needed when the STG intrinsic wrapper produces
+/// `let [b0 = bif_result] in BoxedString(L(0))`: after `evaluate_to_whnf_for_io`
+/// returns this `BoxedString`, the inner `L(0)` is still an unevaluated thunk.
+/// Peeling and re-evaluating yields the actual string value.
+fn peel_box_inner(machine: &Machine<'_>, closure: SynClosure) -> Option<SynClosure> {
+    struct PeelBox(SynClosure);
+    impl Mutator for PeelBox {
+        type Input = ();
+        type Output = Option<SynClosure>;
+        fn run(&self, view: &MutatorHeapView, _: ()) -> Result<Option<SynClosure>, ExecutionError> {
+            let c = deref(view, self.0.clone());
+            let code = view.scoped(c.code());
+            match &*code {
+                HeapSyn::Cons { tag, args }
+                    if *tag == DataConstructor::BoxedString.tag()
+                        || *tag == DataConstructor::BoxedNumber.tag()
+                        || *tag == DataConstructor::BoxedSymbol.tag()
+                        || *tag == DataConstructor::BoxedZdt.tag() =>
+                {
+                    let inner_ref = match args.get(0) {
+                        Some(r) => r,
+                        None => return Ok(None),
+                    };
+                    // Only peel L(i) refs — V(native) refs are already evaluated
+                    // and render_closure_to_emitter handles them directly.
+                    if matches!(inner_ref, Ref::L(_)) {
+                        Ok(resolve_ref(view, &c, inner_ref).ok())
+                    } else {
+                        Ok(None)
                     }
-                    _ => break,
                 }
+                _ => Ok(None),
             }
-            Some(parts.join("\x00"))
         }
-        HeapSyn::Meta { body, .. } => {
-            let body_closure =
-                resolve_ref_with_globals(view, &closure, body.clone(), globals).ok()?;
-            read_as_string(view, deref(view, body_closure), globals)
-        }
-        _ => None,
     }
+    machine.mutate(PeelBox(closure), ()).ok().flatten()
+}
+
+/// Render a WHNF closure to a Rust `String` using the text emitter.
+///
+/// Returns `None` if the result is empty or consists only of the YAML document
+/// separator `---` (which the text emitter emits for null/unit values).
+///
+/// This is the canonical way to extract a string value from an evaluated spec
+/// block field.  It uses `render_closure_to_emitter` so it correctly handles
+/// all value forms, including `BoxedString(L(i))` closures produced by the STG
+/// intrinsic wrapper.
+fn render_whnf_to_string(
+    machine: &Machine<'_>,
+    closure: SynClosure,
+) -> Result<Option<String>, ExecutionError> {
+    struct RenderField {
+        closure: SynClosure,
+        pool: SymbolPool,
+        root_env: RefPtr<EnvFrame>,
+    }
+    impl Mutator for RenderField {
+        type Input = ();
+        type Output = Option<String>;
+        fn run(&self, view: &MutatorHeapView, _: ()) -> Result<Option<String>, ExecutionError> {
+            let mut buffer: Vec<u8> = Vec::new();
+            {
+                let mut emitter = export::create_emitter("text", &mut buffer)
+                    .ok_or_else(|| ExecutionError::Panic("text emitter unavailable".to_string()))?;
+                render_closure_to_emitter(
+                    self.closure.clone(),
+                    &self.pool,
+                    self.root_env,
+                    *view,
+                    emitter.as_mut(),
+                )?;
+            }
+            let s = match String::from_utf8(buffer) {
+                Ok(s) => s,
+                Err(_) => return Ok(None),
+            };
+            let trimmed = s.trim().to_string();
+            if trimmed.is_empty() || trimmed == "---" {
+                Ok(None)
+            } else {
+                Ok(Some(trimmed.trim_start_matches("---").trim().to_string()))
+            }
+        }
+    }
+    machine.mutate(
+        RenderField {
+            closure,
+            pool: machine.symbol_pool().clone(),
+            root_env: machine.root_env(),
+        },
+        (),
+    )
 }
 
 // ─── Mutator: extract raw (unevaluated) field closures from a spec block ──────
@@ -499,29 +527,69 @@ fn collect_raw_pair(
     }
 }
 
-// ─── Mutator: read a single WHNF closure as a string ─────────────────────────
+// ─── Mutators: list inspection for field evaluation ───────────────────────────
 
-/// Mutator that reads a WHNF closure as a Rust `String`.
-///
-/// Used after `evaluate_to_whnf_for_io` to extract the string value from an
-/// evaluated spec block field.  The `Input` carries an optional globals env
-/// frame so that list tails using `G(i)` refs (e.g. the compiled `ListNil`)
-/// can be resolved.
-struct ReadClosureAsString {
-    closure: SynClosure,
+/// Mutator that returns `true` if the closure is a `ListCons` or `ListNil`.
+struct IsList(SynClosure);
+
+impl Mutator for IsList {
+    type Input = ();
+    type Output = bool;
+
+    fn run(&self, view: &MutatorHeapView, _: ()) -> Result<bool, ExecutionError> {
+        let c = deref(view, self.0.clone());
+        let code = view.scoped(c.code());
+        Ok(matches!(
+            &*code,
+            HeapSyn::Cons { tag, .. }
+                if *tag == DataConstructor::ListCons.tag()
+                    || *tag == DataConstructor::ListNil.tag()
+        ))
+    }
 }
 
-impl Mutator for ReadClosureAsString {
+/// Mutator that collects the raw closures of all elements in a `ListCons` chain.
+///
+/// Does not evaluate the elements — returns unevaluated closures so the caller
+/// can force each one to WHNF using the machine separately.
+///
+/// The `Input` is the globals env frame, needed to resolve `G(i)` refs that
+/// appear as the list tail sentinel (the compiled `ListNil` global).
+struct CollectListElements(SynClosure);
+
+impl Mutator for CollectListElements {
     type Input = Option<RefPtr<EnvFrame>>;
-    type Output = Option<String>;
+    type Output = Vec<SynClosure>;
 
     fn run(
         &self,
         view: &MutatorHeapView,
-        globals: Option<RefPtr<EnvFrame>>,
-    ) -> Result<Option<String>, ExecutionError> {
-        let c = deref(view, self.closure.clone());
-        Ok(read_as_string(view, c, globals))
+        globals_env: Option<RefPtr<EnvFrame>>,
+    ) -> Result<Vec<SynClosure>, ExecutionError> {
+        let mut result = Vec::new();
+        let mut current = deref(view, self.0.clone());
+        loop {
+            let code = view.scoped(current.code());
+            match &*code {
+                HeapSyn::Cons { tag, .. } if *tag == DataConstructor::ListNil.tag() => break,
+                HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
+                    let head_ref = args
+                        .get(0)
+                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
+                    let tail_ref = args
+                        .get(1)
+                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
+                    let head = resolve_ref_with_globals(view, &current, head_ref, globals_env)?;
+                    result.push(deref(view, head));
+                    current = deref(
+                        view,
+                        resolve_ref_with_globals(view, &current, tail_ref, globals_env)?,
+                    );
+                }
+                _ => break,
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -611,22 +679,63 @@ fn evaluate_spec_block(
         .mutate(ReadBlockFields(evaluated_block), pool)
         .map_err(IoRunError::from)?;
 
-    // ── Evaluate each field closure to WHNF and read its string value ─────────
+    // ── Evaluate each field closure to WHNF and render its string value ──────
+    //
+    // Each field is forced to WHNF by the machine, then rendered to a plain
+    // string via the text emitter.  Using `render_closure_to_emitter` handles
+    // all WHNF forms correctly, including `BoxedString(L(i))` closures produced
+    // by the STG intrinsic wrapper (e.g. when the cmd is a format expression).
+    //
+    // For list-valued fields (e.g. `args` in io.exec) we walk the cons list and
+    // render each element individually, then join with NUL as a separator.
     let mut eval_fields: HashMap<String, Option<String>> = HashMap::new();
     for (key, raw_closure) in raw_fields {
         let whnf = machine
             .evaluate_to_whnf_for_io(raw_closure)
             .map_err(IoRunError::from)?;
 
-        // For list-valued fields (e.g. `args` in exec), use ReadListAsStrings
-        // to collect list elements before reading as a NUL-separated string.
-        // ReadClosureAsString handles simple string/num values directly.
-        // The globals env frame is needed to resolve G(i) refs in list tails
-        // (e.g. the compiled ListNil global used as the end-of-list sentinel).
-        let globals = machine.globals_env();
-        let value_str = machine
-            .mutate(ReadClosureAsString { closure: whnf }, Some(globals))
-            .map_err(IoRunError::from)?;
+        // If the WHNF is a boxed scalar with an unevaluated inner thunk
+        // (e.g. `BoxedString(L(0))` produced by the STG intrinsic wrapper
+        // when `cmd` is a format expression), peel the box and evaluate the
+        // inner closure to get the actual native value.
+        let whnf = if let Some(inner) = peel_box_inner(machine, whnf.clone()) {
+            machine
+                .evaluate_to_whnf_for_io(inner)
+                .map_err(IoRunError::from)?
+        } else {
+            whnf
+        };
+
+        // Check whether the WHNF is a list (ListCons or ListNil).
+        // List-valued fields (e.g. `args`) need each element rendered separately.
+        let is_list = machine.mutate(IsList(whnf.clone()), ()).unwrap_or(false);
+
+        let value_str = if is_list {
+            // Collect list element closures, evaluate each to WHNF, render.
+            // Pass globals env so G(i) list tail refs (compiled ListNil) resolve.
+            let globals = machine.globals_env();
+            let elements = machine
+                .mutate(CollectListElements(whnf), Some(globals))
+                .map_err(IoRunError::from)?;
+            let mut parts: Vec<String> = Vec::new();
+            for elem in elements {
+                let elem_whnf = machine
+                    .evaluate_to_whnf_for_io(elem)
+                    .map_err(IoRunError::from)?;
+                if let Some(s) =
+                    render_whnf_to_string(machine, elem_whnf).map_err(IoRunError::from)?
+                {
+                    parts.push(s);
+                }
+            }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("\x00"))
+            }
+        } else {
+            render_whnf_to_string(machine, whnf).map_err(IoRunError::from)?
+        };
         eval_fields.insert(key, value_str);
     }
 
@@ -1021,16 +1130,7 @@ fn run_spec(spec: &ActionSpec) -> Result<CommandResult, IoRunError> {
 
 /// Try to read an error string from an IoFail error closure.
 fn extract_error_string(machine: &Machine<'_>, closure: &SynClosure) -> String {
-    struct ExtractStr(SynClosure);
-    impl Mutator for ExtractStr {
-        type Input = ();
-        type Output = Option<String>;
-        fn run(&self, view: &MutatorHeapView, _: ()) -> Result<Option<String>, ExecutionError> {
-            Ok(read_as_string(view, deref(view, self.0.clone()), None))
-        }
-    }
-    machine
-        .mutate(ExtractStr(closure.clone()), ())
+    render_whnf_to_string(machine, closure.clone())
         .ok()
         .flatten()
         .unwrap_or_else(|| "IO monad failure".to_string())

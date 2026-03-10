@@ -28,7 +28,8 @@ use crate::{
             mutator::MutatorHeapView,
             ndarray::HeapNdArray,
             set::Primitive as SetPrimitive,
-            syntax::{HeapSyn, Native, Ref},
+            symbol::SymbolPool,
+            syntax::{HeapSyn, Native, Ref, RefPtr},
         },
         primitive::Primitive,
     },
@@ -55,7 +56,7 @@ fn resolve_cons_arg(
     closure: &SynClosure,
     view: &MutatorHeapView<'_>,
     r: Ref,
-    root_env: crate::eval::memory::syntax::RefPtr<EnvFrame>,
+    root_env: RefPtr<EnvFrame>,
 ) -> Result<SynClosure, ExecutionError> {
     match r {
         Ref::L(i) => {
@@ -74,10 +75,7 @@ fn resolve_cons_arg(
 }
 
 /// Convert a set primitive to a render primitive
-fn set_primitive_to_render_primitive(
-    prim: &SetPrimitive,
-    machine: &dyn IntrinsicMachine,
-) -> Primitive {
+fn set_primitive_to_render_primitive(prim: &SetPrimitive, pool: &SymbolPool) -> Primitive {
     match prim {
         SetPrimitive::Num(n) => {
             let num = serde_json::Number::from_f64(n.into_inner())
@@ -85,14 +83,14 @@ fn set_primitive_to_render_primitive(
             Primitive::Num(num)
         }
         SetPrimitive::Str(s) => Primitive::Str(s.clone()),
-        SetPrimitive::Sym(id) => Primitive::Sym(machine.symbol_pool().resolve(*id).to_string()),
+        SetPrimitive::Sym(id) => Primitive::Sym(pool.resolve(*id).to_string()),
     }
 }
 
 /// Render a native value to the emitter
 fn render_native(
     native: &Native,
-    machine: &dyn IntrinsicMachine,
+    pool: &SymbolPool,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
 ) {
@@ -105,7 +103,7 @@ fn render_native(
             emitter.scalar(&RenderMetadata::empty(), &Primitive::Str(text));
         }
         Native::Sym(id) => {
-            let sym = machine.symbol_pool().resolve(*id).to_string();
+            let sym = pool.resolve(*id).to_string();
             emitter.scalar(&RenderMetadata::empty(), &Primitive::Sym(sym));
         }
         Native::Zdt(dt) => {
@@ -115,7 +113,7 @@ fn render_native(
             let set = view.scoped(*ptr);
             emitter.sequence_start(&RenderMetadata::empty());
             for elem in set.sorted_elements() {
-                let prim = set_primitive_to_render_primitive(elem, machine);
+                let prim = set_primitive_to_render_primitive(elem, pool);
                 emitter.scalar(&RenderMetadata::empty(), &prim);
             }
             emitter.sequence_end();
@@ -166,15 +164,19 @@ fn render_ndarray_data(emitter: &mut dyn Emitter, arr: &HeapNdArray, metadata: &
 /// logic of the STG `Render` wrapper but executes it entirely in Rust
 /// by walking the heap directly.
 ///
+/// `pool` provides symbol resolution; `root_env` is used when wrapping
+/// inline `V` or `G` refs in fresh `Atom` closures.
+///
 /// # Recursion depth
 ///
 /// This function recurses proportionally to the nesting depth of the
 /// eucalypt value.  Very deeply nested structures may overflow the Rust
 /// stack.  In practice eucalypt programs rarely produce nesting depths
 /// that would be problematic.
-fn render_closure_to_emitter(
+pub(crate) fn render_closure_to_emitter(
     closure: SynClosure,
-    machine: &dyn IntrinsicMachine,
+    pool: &SymbolPool,
+    root_env: RefPtr<EnvFrame>,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
 ) -> Result<(), ExecutionError> {
@@ -184,14 +186,14 @@ fn render_closure_to_emitter(
     match &*code {
         HeapSyn::Atom { evaluand } => match evaluand {
             Ref::V(native) => {
-                render_native(native, machine, view, emitter);
+                render_native(native, pool, view, emitter);
                 Ok(())
             }
             Ref::L(i) => {
                 let inner = (*env)
                     .get(&view, *i)
                     .ok_or(ExecutionError::BadEnvironmentIndex(*i))?;
-                render_closure_to_emitter(inner, machine, view, emitter)
+                render_closure_to_emitter(inner, pool, root_env, view, emitter)
             }
             Ref::G(_) => {
                 // Global refs are wrappers (lambda forms) — not directly
@@ -223,13 +225,13 @@ fn render_closure_to_emitter(
                     let inner_ref = args
                         .get(0)
                         .ok_or_else(|| ExecutionError::Panic("empty boxed value".to_string()))?;
-                    let inner = resolve_cons_arg(&closure, &view, inner_ref, machine.root_env())?;
-                    render_closure_to_emitter(inner, machine, view, emitter)
+                    let inner = resolve_cons_arg(&closure, &view, inner_ref, root_env)?;
+                    render_closure_to_emitter(inner, pool, root_env, view, emitter)
                 }
                 Ok(DataConstructor::ListCons) => {
                     // List: emit a sequence by traversing the cons chain
                     emitter.sequence_start(&RenderMetadata::empty());
-                    render_list_from_cons(closure.clone(), args, machine, view, emitter)?;
+                    render_list_from_cons(closure.clone(), args, pool, root_env, view, emitter)?;
                     emitter.sequence_end();
                     Ok(())
                 }
@@ -243,17 +245,16 @@ fn render_closure_to_emitter(
                     let items_ref = args
                         .get(0)
                         .ok_or_else(|| ExecutionError::Panic("block missing items".to_string()))?;
-                    let items_closure =
-                        resolve_cons_arg(&closure, &view, items_ref, machine.root_env())?;
+                    let items_closure = resolve_cons_arg(&closure, &view, items_ref, root_env)?;
                     emitter.block_start(&RenderMetadata::empty());
-                    render_block_items(items_closure, machine, view, emitter)?;
+                    render_block_items(items_closure, pool, root_env, view, emitter)?;
                     emitter.block_end();
                     Ok(())
                 }
                 Ok(DataConstructor::BlockPair) => {
                     // Standalone BlockPair: render as a single-entry block
                     emitter.block_start(&RenderMetadata::empty());
-                    render_block_pair_args(&closure, args, machine, view, emitter)?;
+                    render_block_pair_args(&closure, args, pool, root_env, view, emitter)?;
                     emitter.block_end();
                     Ok(())
                 }
@@ -262,8 +263,8 @@ fn render_closure_to_emitter(
                     let inner_ref = args.get(0).ok_or_else(|| {
                         ExecutionError::Panic("block-kv-list missing cons".to_string())
                     })?;
-                    let inner = resolve_cons_arg(&closure, &view, inner_ref, machine.root_env())?;
-                    render_list_items_raw(inner, machine, view, emitter)
+                    let inner = resolve_cons_arg(&closure, &view, inner_ref, root_env)?;
+                    render_list_items_raw(inner, pool, root_env, view, emitter)
                 }
                 _ => {
                     // Unknown / IO constructors — emit null
@@ -288,7 +289,8 @@ fn render_closure_to_emitter(
 fn render_list_from_cons(
     mut current: SynClosure,
     initial_args: &Array<Ref>,
-    machine: &dyn IntrinsicMachine,
+    pool: &SymbolPool,
+    root_env: RefPtr<EnvFrame>,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
 ) -> Result<(), ExecutionError> {
@@ -300,11 +302,11 @@ fn render_list_from_cons(
         .get(1)
         .ok_or_else(|| ExecutionError::Panic("malformed list cons (no tail)".to_string()))?;
 
-    let head = resolve_cons_arg(&current, &view, head_ref, machine.root_env())?;
-    render_closure_to_emitter(head, machine, view, emitter)?;
+    let head = resolve_cons_arg(&current, &view, head_ref, root_env)?;
+    render_closure_to_emitter(head, pool, root_env, view, emitter)?;
 
     // Walk the remaining tail without recursion
-    let mut tail = resolve_cons_arg(&current, &view, tail_ref, machine.root_env())?;
+    let mut tail = resolve_cons_arg(&current, &view, tail_ref, root_env)?;
 
     loop {
         let tail_code = view.scoped(tail.code());
@@ -318,9 +320,9 @@ fn render_list_from_cons(
                     let t_ref = args
                         .get(1)
                         .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let head = resolve_cons_arg(&tail, &view, h_ref, machine.root_env())?;
-                    render_closure_to_emitter(head, machine, view, emitter)?;
-                    let next_tail = resolve_cons_arg(&tail, &view, t_ref, machine.root_env())?;
+                    let head = resolve_cons_arg(&tail, &view, h_ref, root_env)?;
+                    render_closure_to_emitter(head, pool, root_env, view, emitter)?;
+                    let next_tail = resolve_cons_arg(&tail, &view, t_ref, root_env)?;
                     current = tail;
                     tail = next_tail;
                     let _ = current; // keep borrow checker happy
@@ -337,7 +339,8 @@ fn render_list_from_cons(
 /// Render list items without sequence delimiters (used for BlockKvList).
 fn render_list_items_raw(
     mut current: SynClosure,
-    machine: &dyn IntrinsicMachine,
+    pool: &SymbolPool,
+    root_env: RefPtr<EnvFrame>,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
 ) -> Result<(), ExecutionError> {
@@ -353,9 +356,9 @@ fn render_list_items_raw(
                     let t_ref = args
                         .get(1)
                         .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let head = resolve_cons_arg(&current, &view, h_ref, machine.root_env())?;
-                    render_closure_to_emitter(head, machine, view, emitter)?;
-                    current = resolve_cons_arg(&current, &view, t_ref, machine.root_env())?;
+                    let head = resolve_cons_arg(&current, &view, h_ref, root_env)?;
+                    render_closure_to_emitter(head, pool, root_env, view, emitter)?;
+                    current = resolve_cons_arg(&current, &view, t_ref, root_env)?;
                 }
                 _ => break,
             },
@@ -368,7 +371,8 @@ fn render_list_items_raw(
 /// Traverse a list of block items (BlockPair or BlockKvList) and render each.
 fn render_block_items(
     mut current: SynClosure,
-    machine: &dyn IntrinsicMachine,
+    pool: &SymbolPool,
+    root_env: RefPtr<EnvFrame>,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
 ) -> Result<(), ExecutionError> {
@@ -385,7 +389,7 @@ fn render_block_items(
                         ExecutionError::Panic("malformed block items list (no tail)".to_string())
                     })?;
 
-                    let head = resolve_cons_arg(&current, &view, h_ref, machine.root_env())?;
+                    let head = resolve_cons_arg(&current, &view, h_ref, root_env)?;
                     let head_code = view.scoped(head.code());
 
                     if let HeapSyn::Cons {
@@ -394,20 +398,21 @@ fn render_block_items(
                     } = &*head_code
                     {
                         if *item_tag == DataConstructor::BlockPair.tag() {
-                            render_block_pair_args(&head, item_args, machine, view, emitter)?;
+                            render_block_pair_args(
+                                &head, item_args, pool, root_env, view, emitter,
+                            )?;
                         } else if *item_tag == DataConstructor::BlockKvList.tag() {
                             // BlockKvList nested in a block: render its items inline
                             let inner_ref = item_args.get(0).ok_or_else(|| {
                                 ExecutionError::Panic("empty block-kv-list".to_string())
                             })?;
-                            let inner =
-                                resolve_cons_arg(&head, &view, inner_ref, machine.root_env())?;
-                            render_list_items_raw(inner, machine, view, emitter)?;
+                            let inner = resolve_cons_arg(&head, &view, inner_ref, root_env)?;
+                            render_list_items_raw(inner, pool, root_env, view, emitter)?;
                         }
                         // Other tags: skip
                     }
 
-                    current = resolve_cons_arg(&current, &view, t_ref, machine.root_env())?;
+                    current = resolve_cons_arg(&current, &view, t_ref, root_env)?;
                 }
                 _ => break,
             },
@@ -424,7 +429,8 @@ fn render_block_items(
 fn render_block_pair_args(
     closure: &SynClosure,
     args: &Array<Ref>,
-    machine: &dyn IntrinsicMachine,
+    pool: &SymbolPool,
+    root_env: RefPtr<EnvFrame>,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
 ) -> Result<(), ExecutionError> {
@@ -438,7 +444,7 @@ fn render_block_pair_args(
     // The key is an unboxed symbol (or string) ref
     let key_native = closure.navigate_local_native(&view, key_ref);
     let key_str = match key_native {
-        Native::Sym(id) => machine.symbol_pool().resolve(id).to_string(),
+        Native::Sym(id) => pool.resolve(id).to_string(),
         Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
         _ => "<key>".to_string(),
     };
@@ -447,8 +453,8 @@ fn render_block_pair_args(
     emitter.scalar(&RenderMetadata::empty(), &Primitive::Sym(key_str));
 
     // Emit value
-    let val = resolve_cons_arg(closure, &view, val_ref, machine.root_env())?;
-    render_closure_to_emitter(val, machine, view, emitter)
+    let val = resolve_cons_arg(closure, &view, val_ref, root_env)?;
+    render_closure_to_emitter(val, pool, root_env, view, emitter)
 }
 
 /// RENDER_TO_STRING(value, format_sym) → Str
@@ -479,6 +485,10 @@ impl StgIntrinsic for RenderToString {
         // Resolve args[0] to a closure for traversal
         let value_closure = machine.nav(view).resolve(&args[0])?;
 
+        // Extract pool and root_env before entering the render traversal
+        let pool = machine.symbol_pool().clone();
+        let root_env = machine.root_env();
+
         // Capture output into a Vec<u8> buffer
         let mut buffer: Vec<u8> = Vec::new();
         let mut string_emitter =
@@ -490,7 +500,13 @@ impl StgIntrinsic for RenderToString {
         string_emitter.stream_start();
         string_emitter.doc_start();
 
-        render_closure_to_emitter(value_closure, machine, view, string_emitter.as_mut())?;
+        render_closure_to_emitter(
+            value_closure,
+            &pool,
+            root_env,
+            view,
+            string_emitter.as_mut(),
+        )?;
 
         string_emitter.doc_end();
         string_emitter.stream_end();
