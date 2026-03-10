@@ -99,7 +99,12 @@ impl Distributor {
                     } else {
                         *def_smid
                     };
-                    Ok(RcExpr::from(Expr::Operator(smid, *fixity, *precedence, expr)))
+                    Ok(RcExpr::from(Expr::Operator(
+                        smid,
+                        *fixity,
+                        *precedence,
+                        expr,
+                    )))
                 } else {
                     Ok(expr)
                 }
