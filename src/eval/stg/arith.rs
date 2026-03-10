@@ -971,9 +971,7 @@ impl StgIntrinsic for Shl {
         let n = require_i64(&x)?;
         let k = require_i64(&y)?;
         if !(0..64).contains(&k) {
-            return Err(ExecutionError::Panic(format!(
-                "SHL: shift amount {k} out of range 0..63"
-            )));
+            return Err(ExecutionError::BitshiftRangeError(machine.annotation(), k));
         }
         let result = n << k;
         machine_return_num(machine, view, Number::from(result))
@@ -1002,9 +1000,7 @@ impl StgIntrinsic for Shr {
         let n = require_i64(&x)?;
         let k = require_i64(&y)?;
         if !(0..64).contains(&k) {
-            return Err(ExecutionError::Panic(format!(
-                "SHR: shift amount {k} out of range 0..63"
-            )));
+            return Err(ExecutionError::BitshiftRangeError(machine.annotation(), k));
         }
         let result = n >> k;
         machine_return_num(machine, view, Number::from(result))
