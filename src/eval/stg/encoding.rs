@@ -1,7 +1,38 @@
 //! Encoding and hashing intrinsics (base64, SHA-256, etc.)
 
+use base64::DecodeError;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use sha2::{Digest, Sha256};
+
+/// Format a base64 `DecodeError` into a human-readable string.
+///
+/// `DecodeError::InvalidByte` carries a raw byte code (e.g. 33 for `!`);
+/// convert it to a printable character where possible so users can identify
+/// the offending character without consulting an ASCII table.
+fn format_base64_error(e: DecodeError) -> String {
+    match e {
+        DecodeError::InvalidByte(offset, byte) => {
+            let ch = char::from(byte);
+            if ch.is_ascii_graphic() || ch == ' ' {
+                format!("invalid character '{ch}' at offset {offset}")
+            } else {
+                format!("invalid byte 0x{byte:02X} at offset {offset}")
+            }
+        }
+        DecodeError::InvalidLength(len) => {
+            format!("invalid length {len} (base64 input length must be a multiple of 4 when padding is required)")
+        }
+        DecodeError::InvalidLastSymbol(offset, byte) => {
+            let ch = char::from(byte);
+            format!(
+                "non-zero padding bits in last symbol '{ch}' at offset {offset} — input may be truncated or corrupted"
+            )
+        }
+        DecodeError::InvalidPadding => {
+            "incorrect padding — base64 strings must be padded with '=' to a multiple of 4 characters".to_string()
+        }
+    }
+}
 
 use crate::eval::{
     emit::Emitter,
@@ -51,11 +82,14 @@ impl StgIntrinsic for Base64Decode {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let input = str_arg(machine, view, &args[0])?;
-        let bytes = STANDARD
-            .decode(&input)
-            .map_err(|e| ExecutionError::Panic(format!("invalid base64 input: {e}")))?;
+        let bytes = STANDARD.decode(&input).map_err(|e| {
+            ExecutionError::Base64DecodeError(machine.annotation(), format_base64_error(e))
+        })?;
         let decoded = String::from_utf8(bytes).map_err(|e| {
-            ExecutionError::Panic(format!("decoded base64 is not valid UTF-8: {e}"))
+            ExecutionError::Base64DecodeError(
+                machine.annotation(),
+                format!("decoded bytes are not valid UTF-8: {e}"),
+            )
         })?;
         machine_return_str(machine, view, decoded)
     }
