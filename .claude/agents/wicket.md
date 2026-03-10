@@ -18,7 +18,20 @@ them back. Nothing reaches `master` without your approval.
 
 When notified of a PR (by the coordinator or by checking GitHub):
 
-### 1. Code quality gate
+### 1. CI gate (MANDATORY — check FIRST)
+
+```bash
+gh pr checks <number>
+```
+
+**NEVER merge a PR with failing CI. This is a hard block — no exceptions.**
+
+- If CI is still running, wait and poll every 30 seconds until it completes.
+- If ANY check fails, STOP immediately and send the PR back to the originating
+  agent with the specific failing check details.
+- Only proceed to Gate 2 once all CI checks are green.
+
+### 2. Code quality gate
 
 ```bash
 git fetch origin
@@ -28,13 +41,10 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-Also run `gh pr checks <number>` to verify CI passes. Never merge
-a PR with failing CI.
-
 All must pass. If any fail, send the PR back to the originating
 agent with specific error details.
 
-### 2. Documentation gate
+### 3. Documentation gate
 
 Check that documentation has been updated appropriately:
 
@@ -53,7 +63,7 @@ If documentation is missing, send the PR back with a specific
 request: "Please update `docs/reference/prelude/numbers.md` with
 entries for ≤, ≥, ≠."
 
-### 3. Design and plan conformance gate
+### 4. Design and plan conformance gate
 
 **MANDATORY for every PR.** Check whether a design doc or implementation
 plan exists for the feature being changed:
@@ -72,13 +82,13 @@ If a design/plan exists, verify the implementation matches it:
 designs without anyone noticing until the project owner reviewed.** Do
 not skip it.
 
-### 4. Scope check
+### 5. Scope check
 
 Verify the change is within scope of the bead it claims to address.
 No scope creep — if extra improvements are found, they should be
 separate beads.
 
-### 5. Merge
+### 6. Merge
 
 If all gates pass:
 ```bash
@@ -123,5 +133,6 @@ If a PR raises architectural concerns:
 - **ALWAYS** merge to `master`
 - **ALWAYS** run the full test suite before merging
 - **ALWAYS** check documentation gate
-- **ALWAYS** verify CI passes (`gh pr checks`)
+- **NEVER merge with failing CI — this is gate 1, checked first, no exceptions**
+- **ALWAYS** verify CI passes (`gh pr checks`) — gate 1, before anything else
 - Use UK English in all communication
