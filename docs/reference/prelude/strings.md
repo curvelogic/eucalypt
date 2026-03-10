@@ -69,3 +69,41 @@ json-str: render-as({a: 1, b: 2}, :json) # "{\"a\":1,\"b\":2}"
 These functions are backed by the `RENDER_TO_STRING` intrinsic, which
 traverses the evaluated heap value and serialises it using the same
 emitter pipeline as normal output.
+
+## Parsing
+
+Parse a string of structured data back into eucalypt data.  This is the
+inverse of `render-as` and is a pure function — no IO is required.
+
+| Function | Description |
+|----------|-------------|
+| `parse-as(fmt, str)` | Parse `str` as structured data in format `fmt` |
+
+Supported formats for `fmt`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`,
+`:edn`, `:jsonl`.
+
+`:json` and `:yaml` share the same parser.
+
+**Safety**: `parse-as` always uses data-only mode.  YAML `!eu` tags and
+other embedded-code constructs are returned as plain string values and
+never evaluated.  It is safe to parse untrusted input (e.g. shell command
+output) with this function.
+
+### Parsing Examples
+
+```eu,notest
+# Parse JSON
+data: "{\"x\": 1}" parse-as(:json)
+data.x  # 1
+
+# Round-trip
+original: {x: 1, y: 2}
+recovered: render-as(original, :json) parse-as(:json)
+recovered.x  # 1
+
+# Pipeline style (parse-as with first arg partially applied)
+{ :io r: io.shell("kubectl get configmap foo -o json") }.r.stdout
+  parse-as(:json)
+```
+
+`parse-as` is backed by the `PARSE_STRING` intrinsic.

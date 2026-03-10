@@ -1,0 +1,17 @@
+"parse-as: parse a CSV string into a list of blocks (one block per row, keys from header)."
+
+# Eucalypt strings support embedded literal newlines.
+csv-str: "name,age
+alice,30
+bob,25
+"
+
+parsed: csv-str parse-as(:csv)
+
+tests: {
+  name-ok: (parsed head).name //= "alice"
+  age-ok: (parsed head).age //= "30"
+  row-count: (parsed count) //= 2
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

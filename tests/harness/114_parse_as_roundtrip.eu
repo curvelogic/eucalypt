@@ -1,0 +1,20 @@
+"parse-as: round-trip test — render-as then parse-as produces equivalent data."
+
+original: {x: 1, y: 2}
+
+# Round-trip via JSON
+json-str: render-as(original, :json)
+recovered: json-str parse-as(:json)
+
+# Round-trip via YAML
+yaml-str: render-as(original, :yaml)
+recovered-yaml: yaml-str parse-as(:yaml)
+
+tests: {
+  json-x: recovered.x //= 1
+  json-y: recovered.y //= 2
+  yaml-x: recovered-yaml.x //= 1
+  yaml-y: recovered-yaml.y //= 2
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

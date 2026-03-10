@@ -727,6 +727,9 @@ render(value): __RENDER_TO_STRING(value, :yaml)
 ` "render-as(value, fmt) - serialise value to a string in the named format. Supported formats: :yaml, :json, :toml, :text, :edn, :html."
 render-as(value, fmt): __RENDER_TO_STRING(value, fmt)
 
+` "parse-as(fmt, str) - parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated."
+parse-as(fmt, str): __PARSE_STRING(fmt, str)
+
 ##
 ## Combinators
 ##
