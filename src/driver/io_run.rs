@@ -96,11 +96,24 @@ enum ActionSpec {
 /// Resolve a `Ref` relative to a closure's environment, producing a new closure.
 ///
 /// `Ref::V` values are wrapped in an atom closure.
-/// `Ref::G` is not supported outside the machine and returns an error.
+/// `Ref::G` requires the globals env frame to be passed separately.
 fn resolve_ref(
     view: &MutatorHeapView<'_>,
     parent: &SynClosure,
     r: Ref,
+) -> Result<SynClosure, ExecutionError> {
+    resolve_ref_with_globals(view, parent, r, None)
+}
+
+/// Resolve a `Ref` with optional access to the globals env frame.
+///
+/// When `globals` is `Some`, `G(i)` refs are resolved via that frame.
+/// When `globals` is `None`, `G(i)` refs return an error.
+fn resolve_ref_with_globals(
+    view: &MutatorHeapView<'_>,
+    parent: &SynClosure,
+    r: Ref,
+    globals: Option<RefPtr<EnvFrame>>,
 ) -> Result<SynClosure, ExecutionError> {
     match r {
         Ref::L(i) => {
@@ -116,9 +129,17 @@ fn resolve_ref(
                 .as_ptr();
             Ok(SynClosure::new(atom_ptr, parent.env()))
         }
-        Ref::G(i) => Err(ExecutionError::Panic(format!(
-            "unexpected global ref G({i}) in io spec block"
-        ))),
+        Ref::G(i) => {
+            if let Some(g) = globals {
+                let genv = view.scoped(g);
+                genv.get(view, i)
+                    .ok_or(ExecutionError::BadEnvironmentIndex(i))
+            } else {
+                Err(ExecutionError::Panic(format!(
+                    "unexpected global ref G({i}) in io spec block"
+                )))
+            }
+        }
     }
 }
 
@@ -334,89 +355,18 @@ fn block_list_inner(view: &MutatorHeapView<'_>, c: SynClosure, depth: usize) -> 
     }
 }
 
-/// Walk a cons-list of `BlockPair` nodes, extracting string key-value pairs.
-///
-/// Symbol keys are resolved to their text via `pool`.
-fn collect_block_fields(
-    view: &MutatorHeapView<'_>,
-    pool: &SymbolPool,
-    list_closure: SynClosure,
-) -> HashMap<String, String> {
-    let mut fields = HashMap::new();
-    let mut current = deref(view, list_closure);
-
-    loop {
-        let code = view.scoped(current.code());
-        match &*code {
-            HeapSyn::Cons { tag, .. } if *tag == DataConstructor::ListNil.tag() => break,
-            HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
-                let head_ref = match args.get(0) {
-                    Some(r) => r,
-                    None => break,
-                };
-                let tail_ref = match args.get(1) {
-                    Some(r) => r,
-                    None => break,
-                };
-                if let Ok(head) = resolve_ref(view, &current, head_ref) {
-                    collect_pair(view, pool, deref(view, head), &mut fields);
-                }
-                match resolve_ref(view, &current, tail_ref) {
-                    Ok(tail) => current = deref(view, tail),
-                    Err(_) => break,
-                }
-            }
-            _ => break,
-        }
-    }
-
-    fields
-}
-
-/// Read a single `BlockPair` node into the fields map.
-///
-/// Symbol keys are resolved to their text via `pool`.
-fn collect_pair(
-    view: &MutatorHeapView<'_>,
-    pool: &SymbolPool,
-    pair: SynClosure,
-    fields: &mut HashMap<String, String>,
-) {
-    let code = view.scoped(pair.code());
-    match &*code {
-        HeapSyn::Cons { tag, args } if *tag == DataConstructor::BlockPair.tag() => {
-            let key_ref = match args.get(0) {
-                Some(r) => r,
-                None => return,
-            };
-            let val_ref = match args.get(1) {
-                Some(r) => r,
-                None => return,
-            };
-
-            let key_name = match &key_ref {
-                Ref::V(Native::Sym(id)) => pool.resolve(*id).to_string(),
-                _ => return,
-            };
-            let val_ref_clone = val_ref.clone();
-
-            if let Ok(val_closure) = resolve_ref(view, &pair, val_ref_clone) {
-                let derefed = deref(view, val_closure);
-                if let Some(val_str) = read_as_string(view, derefed) {
-                    fields.insert(key_name, val_str);
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
 /// Try to read a closure's WHNF value as a plain Rust `String`.
 ///
 /// Handles: Atom(Str), Atom(Num), BoxedString, BoxedNumber, and
-/// cons-lists of strings (stored NUL-separated under `__args_list`
-/// semantics by the caller).
-fn read_as_string(view: &MutatorHeapView<'_>, closure: SynClosure) -> Option<String> {
+/// cons-lists of strings (stored NUL-separated for exec args).
+///
+/// `globals` is optional; it is required to resolve `G(i)` refs (e.g. the
+/// global nil `ListNil` that appears as the tail of a compiled list).
+fn read_as_string(
+    view: &MutatorHeapView<'_>,
+    closure: SynClosure,
+    globals: Option<RefPtr<EnvFrame>>,
+) -> Option<String> {
     let code = view.scoped(closure.code());
     match &*code {
         HeapSyn::Atom {
@@ -443,7 +393,9 @@ fn read_as_string(view: &MutatorHeapView<'_>, closure: SynClosure) -> Option<Str
             if *tag == DataConstructor::ListCons.tag()
                 || *tag == DataConstructor::ListNil.tag() =>
         {
-            // Collect list elements as NUL-separated string
+            // Collect list elements as NUL-separated string.
+            // G-refs (e.g. the global ListNil used as the list terminator)
+            // are resolved via the globals frame when provided.
             let mut parts: Vec<String> = Vec::new();
             let mut cur = closure.clone();
             loop {
@@ -453,9 +405,9 @@ fn read_as_string(view: &MutatorHeapView<'_>, closure: SynClosure) -> Option<Str
                     HeapSyn::Cons { tag: t, args } if *t == DataConstructor::ListCons.tag() => {
                         let hr = args.get(0)?;
                         let tr = args.get(1)?;
-                        let head = resolve_ref(view, &cur, hr).ok()?;
-                        let tail = resolve_ref(view, &cur, tr).ok()?;
-                        if let Some(s) = read_as_string(view, deref(view, head)) {
+                        let head = resolve_ref_with_globals(view, &cur, hr, globals).ok()?;
+                        let tail = resolve_ref_with_globals(view, &cur, tr, globals).ok()?;
+                        if let Some(s) = read_as_string(view, deref(view, head), globals) {
                             parts.push(s);
                         }
                         cur = deref(view, tail);
@@ -466,93 +418,289 @@ fn read_as_string(view: &MutatorHeapView<'_>, closure: SynClosure) -> Option<Str
             Some(parts.join("\x00"))
         }
         HeapSyn::Meta { body, .. } => {
-            let body_closure = resolve_ref(view, &closure, body.clone()).ok()?;
-            read_as_string(view, deref(view, body_closure))
+            let body_closure =
+                resolve_ref_with_globals(view, &closure, body.clone(), globals).ok()?;
+            read_as_string(view, deref(view, body_closure), globals)
         }
         _ => None,
     }
 }
 
-// ─── Mutator: read action spec from a yielded IoAction spec_block closure ────
+// ─── Mutator: extract raw (unevaluated) field closures from a spec block ──────
 
-/// Mutator that reads an `IoAction` spec block from the heap.
-///
-/// The spec_block closure is a `Block` potentially wrapped in `Meta(sym, body)`.
-/// We strip metadata, walk the block's cons-list to extract `cmd`, `args`,
-/// `stdin`, `timeout`, and read the metadata tag to distinguish `:io-shell`
-/// from `:io-exec`.
-struct ReadSpecBlock {
-    spec_block: SynClosure,
+/// Walk a cons-list of `BlockPair` nodes and collect the raw (unevaluated)
+/// value closure for each field.  Keys that cannot be read as symbol strings
+/// are silently skipped.
+fn collect_raw_block_fields(
+    view: &MutatorHeapView<'_>,
+    pool: &SymbolPool,
+    list_closure: SynClosure,
+) -> HashMap<String, SynClosure> {
+    let mut fields = HashMap::new();
+    let mut current = deref(view, list_closure);
+
+    loop {
+        let code = view.scoped(current.code());
+        match &*code {
+            HeapSyn::Cons { tag, .. } if *tag == DataConstructor::ListNil.tag() => break,
+            HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
+                let head_ref = match args.get(0) {
+                    Some(r) => r,
+                    None => break,
+                };
+                let tail_ref = match args.get(1) {
+                    Some(r) => r,
+                    None => break,
+                };
+                if let Ok(head) = resolve_ref(view, &current, head_ref) {
+                    collect_raw_pair(view, pool, deref(view, head), &mut fields);
+                }
+                match resolve_ref(view, &current, tail_ref) {
+                    Ok(tail) => current = deref(view, tail),
+                    Err(_) => break,
+                }
+            }
+            _ => break,
+        }
+    }
+
+    fields
 }
 
-impl Mutator for ReadSpecBlock {
-    type Input = SymbolPool;
-    type Output = ActionSpec;
-
-    fn run(&self, view: &MutatorHeapView, pool: SymbolPool) -> Result<ActionSpec, ExecutionError> {
-        let (meta_sym, body_closure) = peel_meta(view, &pool, self.spec_block.clone());
-
-        // Extract the cons-list from the block
-        let list_closure = block_list(view, body_closure.clone()).ok_or_else(|| {
-            ExecutionError::Panic("IoAction spec block is not a Block constructor".to_string())
-        })?;
-
-        // Walk the list to collect fields
-        let fields = collect_block_fields(view, &pool, list_closure);
-
-        // Identify action type from metadata symbol
-        let tag_name = meta_sym.ok_or_else(|| {
-            ExecutionError::Panic("IO action spec block has no metadata tag".to_string())
-        })?;
-
-        let timeout_secs = fields
-            .get("timeout")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(30);
-
-        let stdin = fields.get("stdin").filter(|s| !s.is_empty()).cloned();
-
-        let is_shell =
-            tag_name == "io-shell" || (fields.contains_key("cmd") && !fields.contains_key("args"));
-        let is_exec =
-            tag_name == "io-exec" || (fields.contains_key("cmd") && fields.contains_key("args"));
-
-        if is_shell && !fields.contains_key("args") {
-            let cmd = fields
-                .get("cmd")
-                .cloned()
-                .ok_or_else(|| ExecutionError::Panic("io-shell spec missing 'cmd'".to_string()))?;
-            Ok(ActionSpec::Shell {
-                cmd,
-                stdin,
-                timeout_secs,
-            })
-        } else if is_exec {
-            let cmd = fields
-                .get("cmd")
-                .cloned()
-                .ok_or_else(|| ExecutionError::Panic("io-exec spec missing 'cmd'".to_string()))?;
-            let args = fields
-                .get("args")
-                .map(|s| {
-                    if s.is_empty() {
-                        vec![]
-                    } else {
-                        s.split('\x00').map(|x| x.to_string()).collect()
-                    }
-                })
-                .unwrap_or_default();
-            Ok(ActionSpec::Exec {
-                cmd,
-                args,
-                stdin,
-                timeout_secs,
-            })
-        } else {
-            Err(ExecutionError::Panic(format!(
-                "unrecognised IO action tag: {tag_name}"
-            )))
+/// Read a single `BlockPair` node: resolve the key to a string and record the
+/// raw (unevaluated) value closure.  Symbol keys only; others are skipped.
+fn collect_raw_pair(
+    view: &MutatorHeapView<'_>,
+    pool: &SymbolPool,
+    pair: SynClosure,
+    fields: &mut HashMap<String, SynClosure>,
+) {
+    let code = view.scoped(pair.code());
+    if let HeapSyn::Cons { tag, args } = &*code {
+        if *tag != DataConstructor::BlockPair.tag() {
+            return;
         }
+        let key_ref = match args.get(0) {
+            Some(r) => r,
+            None => return,
+        };
+        let val_ref = match args.get(1) {
+            Some(r) => r,
+            None => return,
+        };
+        let key_name = match &key_ref {
+            Ref::V(Native::Sym(id)) => pool.resolve(*id).to_string(),
+            _ => return,
+        };
+        let val_ref_clone = val_ref.clone();
+        if let Ok(val_closure) = resolve_ref(view, &pair, val_ref_clone) {
+            fields.insert(key_name, deref(view, val_closure));
+        }
+    }
+}
+
+// ─── Mutator: read a single WHNF closure as a string ─────────────────────────
+
+/// Mutator that reads a WHNF closure as a Rust `String`.
+///
+/// Used after `evaluate_to_whnf_for_io` to extract the string value from an
+/// evaluated spec block field.  The `Input` carries an optional globals env
+/// frame so that list tails using `G(i)` refs (e.g. the compiled `ListNil`)
+/// can be resolved.
+struct ReadClosureAsString {
+    closure: SynClosure,
+}
+
+impl Mutator for ReadClosureAsString {
+    type Input = Option<RefPtr<EnvFrame>>;
+    type Output = Option<String>;
+
+    fn run(
+        &self,
+        view: &MutatorHeapView,
+        globals: Option<RefPtr<EnvFrame>>,
+    ) -> Result<Option<String>, ExecutionError> {
+        let c = deref(view, self.closure.clone());
+        Ok(read_as_string(view, c, globals))
+    }
+}
+
+/// Build an `ActionSpec` from an `IoAction` spec block by evaluating each field
+/// closure to WHNF using the machine.
+///
+/// Handles two cases:
+///
+/// 1. **Inline block** (`io.shell`, `io.exec`): the spec block is a LetRec thunk
+///    with a `Meta(tag, Block(...))` body that is statically visible.  The tag
+///    is extracted via `peel_meta` and the body closure is evaluated to WHNF.
+///
+/// 2. **Function-application block** (`io.shell-with`, `io.exec-with`): the spec
+///    block is an App thunk (e.g. `__io-shell-spec(opts, cmd)`).  Evaluating it
+///    strips the Meta wrapper (the machine discards metadata when nothing consumes
+///    it), so the tag must be inferred from the resulting field set: a block with
+///    `cmd` but no `args` is an `io-shell` action; a block with both is `io-exec`.
+///
+/// In both cases, field closures are extracted from the evaluated block and each
+/// is forced to WHNF before reading, so `opts lookup-or(...)` thunks are resolved.
+fn evaluate_spec_block(
+    machine: &mut Machine<'_>,
+    spec_block: SynClosure,
+) -> Result<ActionSpec, IoRunError> {
+    // ── Try to extract the metadata tag statically ────────────────────────────
+    //
+    // For inline blocks the Meta node is directly visible after dereferencing
+    // letrec atoms.  For App thunks the Meta is only produced during evaluation
+    // and `peel_meta` returns `None`.
+    let pool = machine.symbol_pool().clone();
+
+    struct PeekMeta(SynClosure);
+    impl Mutator for PeekMeta {
+        type Input = SymbolPool;
+        type Output = (Option<String>, SynClosure);
+        fn run(
+            &self,
+            view: &MutatorHeapView,
+            pool: SymbolPool,
+        ) -> Result<(Option<String>, SynClosure), ExecutionError> {
+            let (tag_opt, body) = peel_meta(view, &pool, self.0.clone());
+            Ok((tag_opt, body))
+        }
+    }
+
+    let (static_tag, body_or_spec) = machine
+        .mutate(PeekMeta(spec_block), pool)
+        .map_err(IoRunError::from)?;
+
+    // ── Evaluate the block body to WHNF ──────────────────────────────────────
+    //
+    // For inline blocks `body_or_spec` is the block body (LetRec thunk that
+    // produces the Block cons).  For App thunks it is the whole spec block
+    // (which evaluates to the Block cons, stripping the Meta).
+    //
+    // After this call the machine is back in IO yield state.
+    let evaluated_block = machine
+        .evaluate_to_whnf_for_io(body_or_spec)
+        .map_err(IoRunError::from)?;
+
+    // ── Extract raw field closures from the evaluated block ───────────────────
+    //
+    // The evaluated block is a Block constructor.  Its field values are either
+    // already WHNF atoms or fresh thunks (e.g. `opts lookup-or(:timeout, 30)`)
+    // created during the evaluation above.  Static navigation returns closures
+    // that can safely be evaluated by the machine.
+    struct ReadBlockFields(SynClosure);
+    impl Mutator for ReadBlockFields {
+        type Input = SymbolPool;
+        type Output = HashMap<String, SynClosure>;
+        fn run(
+            &self,
+            view: &MutatorHeapView,
+            pool: SymbolPool,
+        ) -> Result<HashMap<String, SynClosure>, ExecutionError> {
+            let list_closure = block_list(view, self.0.clone()).ok_or_else(|| {
+                ExecutionError::Panic(
+                    "IoAction spec block did not evaluate to a Block constructor".to_string(),
+                )
+            })?;
+            Ok(collect_raw_block_fields(view, &pool, list_closure))
+        }
+    }
+
+    let pool = machine.symbol_pool().clone();
+    let raw_fields = machine
+        .mutate(ReadBlockFields(evaluated_block), pool)
+        .map_err(IoRunError::from)?;
+
+    // ── Evaluate each field closure to WHNF and read its string value ─────────
+    let mut eval_fields: HashMap<String, Option<String>> = HashMap::new();
+    for (key, raw_closure) in raw_fields {
+        let whnf = machine
+            .evaluate_to_whnf_for_io(raw_closure)
+            .map_err(IoRunError::from)?;
+
+        // For list-valued fields (e.g. `args` in exec), use ReadListAsStrings
+        // to collect list elements before reading as a NUL-separated string.
+        // ReadClosureAsString handles simple string/num values directly.
+        // The globals env frame is needed to resolve G(i) refs in list tails
+        // (e.g. the compiled ListNil global used as the end-of-list sentinel).
+        let globals = machine.globals_env();
+        let value_str = machine
+            .mutate(ReadClosureAsString { closure: whnf }, Some(globals))
+            .map_err(IoRunError::from)?;
+        eval_fields.insert(key, value_str);
+    }
+
+    // ── Determine tag ─────────────────────────────────────────────────────────
+    //
+    // For inline blocks the tag was captured statically above.
+    // For App-thunk blocks the Meta was stripped by evaluation; infer from fields.
+    let tag_name = static_tag.unwrap_or_else(|| {
+        if eval_fields.contains_key("args") {
+            "io-exec".to_string()
+        } else {
+            "io-shell".to_string()
+        }
+    });
+
+    // Step 4: build ActionSpec from evaluated fields.
+    let timeout_secs = eval_fields
+        .get("timeout")
+        .and_then(|opt| opt.as_deref())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(30);
+
+    let stdin = eval_fields
+        .get("stdin")
+        .and_then(|opt| opt.clone())
+        .filter(|s| !s.is_empty() && s != "null");
+
+    let is_shell = tag_name == "io-shell";
+    let is_exec = tag_name == "io-exec";
+
+    if is_shell {
+        let cmd = eval_fields
+            .get("cmd")
+            .and_then(|opt| opt.clone())
+            .ok_or_else(|| {
+                IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                    "io-shell spec missing 'cmd'".to_string(),
+                )))
+            })?;
+        Ok(ActionSpec::Shell {
+            cmd,
+            stdin,
+            timeout_secs,
+        })
+    } else if is_exec {
+        let cmd = eval_fields
+            .get("cmd")
+            .and_then(|opt| opt.clone())
+            .ok_or_else(|| {
+                IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                    "io-exec spec missing 'cmd'".to_string(),
+                )))
+            })?;
+        let args = eval_fields
+            .get("args")
+            .and_then(|opt| opt.clone())
+            .map(|s| {
+                if s.is_empty() {
+                    vec![]
+                } else {
+                    s.split('\x00').map(|x| x.to_string()).collect()
+                }
+            })
+            .unwrap_or_default();
+        Ok(ActionSpec::Exec {
+            cmd,
+            args,
+            stdin,
+            timeout_secs,
+        })
+    } else {
+        Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
+            format!("unrecognised IO action tag: {tag_name}"),
+        ))))
     }
 }
 
@@ -878,7 +1026,7 @@ fn extract_error_string(machine: &Machine<'_>, closure: &SynClosure) -> String {
         type Input = ();
         type Output = Option<String>;
         fn run(&self, view: &MutatorHeapView, _: ()) -> Result<Option<String>, ExecutionError> {
-            Ok(read_as_string(view, deref(view, self.0.clone())))
+            Ok(read_as_string(view, deref(view, self.0.clone()), None))
         }
     }
     machine
@@ -932,21 +1080,27 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 let world = args[0].clone();
                 let spec_block = args[1].clone();
 
-                // Stash world so it survives GC across the mutator calls below.
+                // Stash world so it survives GC across the calls below.
                 machine.stash_push(world);
 
-                // Read the action spec by static heap navigation.  The spec_block
-                // is an unevaluated closure (Meta wrapping a LetRec block thunk).
-                // `ReadSpecBlock` navigates the heap structure without machine
-                // evaluation, using cycle-breaking in `dereference` to read
-                // lambda-captured values from letrec bindings.
-                let pool = machine.symbol_pool().clone();
-                let spec = machine
-                    .mutate(ReadSpecBlock { spec_block }, pool)
-                    .map_err(IoRunError::from)?;
+                // Evaluate the action spec block.  `evaluate_spec_block` uses
+                // machine evaluation to force each field to WHNF before reading,
+                // so it handles parameterised spec blocks (shell-with, exec-with)
+                // that contain unevaluated thunks (lookup-or calls, etc.).
+                let spec = evaluate_spec_block(machine, spec_block)?;
 
                 // Execute the shell action
                 let result = run_spec(&spec)?;
+
+                // Pre-intern the result block key symbols into the machine's
+                // pool so that the IDs embedded by BuildResultBlock are already
+                // present in the machine pool.  Without this, BuildResultBlock
+                // interns into a cloned pool and the heap objects contain IDs
+                // the machine pool doesn't know, causing index-out-of-bounds
+                // panics when the machine later resolves the result block.
+                machine.intern_symbol("stdout");
+                machine.intern_symbol("stderr");
+                machine.intern_symbol("exit-code");
 
                 // Build the result block closure.  World remains stashed as a GC root.
                 let pool = machine.symbol_pool().clone();

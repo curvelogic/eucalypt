@@ -209,6 +209,23 @@ avg2(a, b): (a + b) / 2
 zip-with(avg2, xs, ys)
 ```
 
+**Expanding scope with subsumption**: The subsumption rule can be
+exploited to make the outer expression anaphoric, causing inner paren
+groups to become transparent.  A common idiom is to place a direct
+anaphor — such as a not-nil check `_0✓` — at the outer level:
+
+```eu,notest
+# _0✓ makes the whole expression anaphoric in _0,
+# so _0 inside count(_0) is subsumed — both refer to the same parameter.
+_0✓ && count(_0) >= 4    # λ(a). a != null && count(a) >= 4
+```
+
+Without the outer `_0✓`, the `_0` inside `count(_0)` would form a
+separate lambda at the ArgTuple level, and the outer `&&` would see a
+function value rather than a boolean.  The not-nil postfix `✓` is
+often the most natural way to introduce the outer anaphor when you
+want to also guard against null.
+
 ## Metadata vs Comments
 
 ### Backtick Is Metadata, Not a Comment
@@ -301,37 +318,52 @@ list-head([h : t]): h
 bad: [1 : rest]   # parse error
 ```
 
-In expression context, use `cons`, `head`, and `tail` from the prelude
-instead:
+In expression context, use the `‖` cons operator (precedence 55) or the
+`cons` prelude function:
 
 ```eu
 xs: [1, 2, 3]
-first: xs head    # = 1
-rest: xs tail     # = [2, 3]
+first: xs head         # = 1
+rest: xs tail          # = [2, 3]
+built: 1 ‖ [2, 3]     # = [1, 2, 3]
+also: cons(1, [2, 3])  # = [1, 2, 3]
 ```
 
-## IO Monad Block Syntax
+## Block-Dot Lookup Applies to Any Block Literal
 
-Monadic block syntax uses `{ :io r: cmd }.(return_expr)` or
-`{ :io r: cmd }.return_name.field`:
+The generalised lookup syntax `{...}.field` and `{...}.(expr)` works on any
+block literal, not only IO monadic blocks.  The dot binds the lookup to the
+block immediately to its left:
 
 ```eu,notest
-# Parenthesised return expression (recommended for complex expressions)
-{ :io r: io.shell("echo hello") }.(
-  if(r.stdout str.matches?("hello.*"), :PASS, :FAIL))
+# Field lookup on a plain block
+{ x: 1, y: 2 }.x          # → 1
 
-# Dot-chained field access in return expression
+# Parenthesised expression scoped over the block's bindings
+{ x: 1, y: 2 }.(x + y)    # → 3
+
+# The same syntax is used for IO monadic block return expressions
+{ :io r: io.shell("echo hello") }.(r.stdout)
 { :io r: io.shell("echo hello") }.r.stdout
 ```
 
-**Desugaring**: both forms desugar to `io.bind(cmd, lambda(r). io.return(expr))`:
+**Precedence**: `.` binds tightly (precedence 90), so the lookup attaches to
+the block literal, not to the result of any surrounding expression.  Use
+parentheses when you need to apply a lookup to a computed value:
 
 ```eu,notest
-# { :io r: cmd }.(expr) → io.bind(cmd, lambda(r). io.return(expr))
-# { :io r: cmd }.r.field → io.bind(cmd, lambda(r). io.return(r.field))
+# Parsed as: list (head.name)  — probably not what you want
+list head.name
+
+# Correct: (list head).name
+(list head).name
 ```
 
-**Bare-expression files**: A `.eu` file containing only a monadic block
+**IO monadic block desugaring**: `{ :io r: cmd }.(expr)` desugars to
+`io.bind(cmd, lambda(r). io.return(expr))`.  The `.()` return expression is
+part of the general block-dot syntax, not IO-specific.
+
+**Bare-expression files**: A `.eu` file containing only a block-dot
 expression (no outer `key:` declaration) is supported when the expression
 starts with a block literal `{...}`:
 
@@ -340,37 +372,40 @@ starts with a block literal `{...}`:
 { :io r: io.shell("echo hello") }.(r.stdout)
 ```
 
-## Merge Operators Strip Block Metadata Tags
+## Block Field Names Shadow Outer Bindings — `{x: x}` Is Always Self-Reference
 
-**Problem**: The `<<` (deep merge) and catenation merge operators match on the
-`Block` data constructor directly. A block with a metadata annotation such as
-`{:io-shell cmd: cmd}` is represented at runtime as `Meta(:io-shell, Block(...))`
-— a `Meta` wrapper around a `Block`. Neither merge operator unwraps `Meta`
-before pattern-matching, so:
-
-```eu,notest
-# This does NOT work as intended:
-{:io-shell cmd: cmd} << opts   # returns opts unchanged — the left side is
-                                # a Meta node, not a Block, so << returns r
-```
-
-**Solution**: When you need to merge fields into a metadata-tagged block,
-build the final block explicitly using `lookup-or` to extract individual
-fields from the options block:
+**Problem**: Every declaration inside a block literal introduces a new binding
+that is visible to all other expressions in that block, including its own
+right-hand side.  The name on the left of `:` immediately shadows any outer
+binding with the same name, so `{x: x}` does **not** copy an outer `x` into the
+block — it creates a self-referential binding that refers to itself:
 
 ```eu,notest
-# Correct: build spec block directly, preserving the :io-shell tag
-my-shell-spec(opts, cmd): {
-  :io-shell
-  cmd: cmd
-  timeout: opts lookup-or(:timeout, 30)
-  stdin: opts lookup-or(:stdin, null)
-}
+# WRONG — infinite loop: cmd refers to itself, not the function parameter
+shell-spec(cmd): {:io-shell cmd: cmd, timeout: 30}
 ```
 
-**Rule**: Never use `<<` or catenation merge on a block that has a metadata
-tag (`:name` as first entry). Build the result block with explicit field
-declarations instead.
+Running `eu -e '{cmd: cmd}'` gives `error: infinite loop detected: binding
+refers to itself`.
+
+**Why it bites functions**: When a function parameter has the same name as a
+block field you want to populate, the RHS expression sees the block's own
+binding rather than the parameter:
+
+```eu,notest
+fn(cmd): {cmd: cmd}   # cmd: cmd is self-reference — fn's parameter is invisible
+```
+
+**Fix**: Use a different name for the function parameter so it is not shadowed:
+
+```eu,notest
+# Correct: parameter c is not shadowed by the block field cmd
+shell-spec(c): {:io-shell cmd: c, timeout: 30}
+```
+
+**Rule**: Never write `{key: key}` expecting it to read an outer binding named
+`key`.  If you need a block field to hold a value from an outer scope, the outer
+name and the field name must differ.
 
 ## Future Improvements
 
