@@ -154,6 +154,8 @@ pub struct TestPlan {
     targets: Vec<(Target, Vec<String>)>,
     /// Error test expectations from `.expect` sidecar (if any)
     error_expectation: Option<ErrorExpectation>,
+    /// Whether this test requires `--allow-io` to run
+    requires_io: bool,
 }
 
 impl TestPlan {
@@ -180,6 +182,14 @@ impl TestPlan {
     /// Whether this is an error test with sidecar expectations
     pub fn is_error_test(&self) -> bool {
         self.error_expectation.is_some()
+    }
+
+    /// Whether this test requires `--allow-io` to run.
+    ///
+    /// When true, `eu test` skips the test rather than failing if
+    /// `--allow-io` is not set.
+    pub fn requires_io(&self) -> bool {
+        self.requires_io
     }
 
     /// Whether this plan contains any benchmark targets
@@ -270,6 +280,7 @@ impl TestPlan {
                 .unwrap_or_else(|| "untitled".to_string()),
             targets,
             error_expectation: None,
+            requires_io: header.requires_io,
         })
     }
 
@@ -309,6 +320,7 @@ impl TestPlan {
             title,
             targets: vec![(target, vec!["yaml".to_string()])],
             error_expectation: Some(expectation),
+            requires_io: false,
         }
     }
 
@@ -325,6 +337,7 @@ impl TestPlan {
             title,
             targets: vec![(Target::default(), vec!["yaml".to_string()])],
             error_expectation: None,
+            requires_io: false,
         }
     }
 }

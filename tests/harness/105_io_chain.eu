@@ -1,6 +1,6 @@
 "IO monad chain test: io.bind sequences two IO actions. Uses --allow-io."
 
-` { target: :test }
+` { target: :test requires-io: true }
 test: io.bind(io.shell("echo hello"), check-result)
 
 check-result(r):
