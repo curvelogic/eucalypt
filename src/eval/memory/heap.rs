@@ -1624,11 +1624,11 @@ impl Heap {
     /// Analyze fragmentation across all blocks and determine optimal collection strategy
     pub fn analyze_collection_strategy(&self) -> CollectionStrategy {
         // GC stress mode: force SelectiveEvacuation on every collection so
-        // that evacuation bugs (dangling pointers after object moves) surface
-        // on any platform, not just aarch64 release builds.  Enable by setting
-        // EU_GC_STRESS=1 in the environment.
+        // that evacuation pointer-update bugs surface on any platform, not
+        // just the aarch64 CI runner.  Enable with EU_GC_STRESS=1.
         if std::env::var("EU_GC_STRESS").as_deref() == Ok("1") {
             // SAFETY: Read-only borrow to enumerate block indices.
+            // Single-threaded; no mutation during analysis.
             let heap_state = unsafe { &*self.state.get() };
             let mut candidates: Vec<usize> = Vec::new();
             if heap_state.head.is_some() {
@@ -1640,15 +1640,16 @@ impl Heap {
             for i in 0..heap_state.rest.len() {
                 candidates.push(i + 2);
             }
-            // Exclude pinned blocks.
+            // Exclude pinned blocks — evacuating a pinned block would corrupt
+            // live objects held by the mutator.
             let unpinned: Vec<usize> = candidates
                 .into_iter()
                 .filter(|&idx| {
-                    let heap_state = unsafe { &*self.state.get() };
+                    let hs = unsafe { &*self.state.get() };
                     let base = match idx {
-                        0 => heap_state.head.as_ref().map(|b| b.base_address()),
-                        1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
-                        n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
+                        0 => hs.head.as_ref().map(|b| b.base_address()),
+                        1 => hs.overflow.as_ref().map(|b| b.base_address()),
+                        n => hs.rest.get(n - 2).map(|b| b.base_address()),
                     };
                     base.is_none_or(|addr| !self.is_block_pinned(addr))
                 })
