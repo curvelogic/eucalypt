@@ -46,9 +46,9 @@ IO operations require the `--allow-io` / `-I` flag at the command line.
 | Function | Description |
 |----------|-------------|
 | `io.shell(cmd)` | Run `cmd` via `sh -c`. Returns `{stdout: Str, stderr: Str, exit-code: Num}` |
-| `io.shell-with(cmd, opts)` | Run `cmd` via `sh -c` with extra options merged in (e.g. `{stdin: s, timeout: 60}`) |
-| `io.exec(cmd, args)` | Run `cmd` directly (no shell). `args` is a list of strings |
-| `io.exec-with(cmd, args, opts)` | Run `cmd` directly with extra options merged in |
+| `io.shell-with(opts, cmd)` | Run `cmd` via `sh -c` with extra options merged in (e.g. `{stdin: s, timeout: 60}`). Pipeline: `"ls" shell-with({timeout: 60})` |
+| `io.exec([cmd : args])` | Run `cmd` directly (no shell). Argument is a single list: first element is the command, rest are args |
+| `io.exec-with(opts, [cmd : args])` | Run `cmd` directly with extra options merged in. Pipeline: `["git", "rev-parse", "HEAD"] exec-with({timeout: 60})` |
 
 Default timeout is 30 seconds. Override with `{timeout: N}` in `opts`.
 Optional `{stdin: s}` pipes string `s` to the command's standard input.
