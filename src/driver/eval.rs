@@ -234,7 +234,7 @@ impl<'a> Executor<'a> {
                     if ret.is_ok() {
                         if machine.io_yielded() {
                             let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                                .map_err(|e| ExecutionError::Panic(e.to_string()));
+                                .map_err(ExecutionError::from);
                             machine.take_emitter().stream_end();
                             return io_result;
                         }
@@ -247,7 +247,7 @@ impl<'a> Executor<'a> {
                                 // World injection triggered an IO yield;
                                 // proceed with the io-run loop.
                                 let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                                    .map_err(|e| ExecutionError::Panic(e.to_string()));
+                                    .map_err(ExecutionError::from);
                                 machine.take_emitter().stream_end();
                                 return io_result;
                             }

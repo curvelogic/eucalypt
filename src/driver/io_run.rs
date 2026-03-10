@@ -65,6 +65,16 @@ impl From<ExecutionError> for IoRunError {
     }
 }
 
+impl From<IoRunError> for ExecutionError {
+    fn from(e: IoRunError) -> Self {
+        match e {
+            IoRunError::IoNotAllowed => ExecutionError::IoNotAllowed,
+            IoRunError::MachineError(e) => *e,
+            other => ExecutionError::Panic(other.to_string()),
+        }
+    }
+}
+
 // ─── Command result ───────────────────────────────────────────────────────────
 
 /// The outcome of a shell command execution

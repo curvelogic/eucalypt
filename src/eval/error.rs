@@ -639,6 +639,8 @@ pub enum ExecutionError {
     Panic(String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
+    #[error("IO operations require the --allow-io (-I) flag\n  help: re-run with 'eu -I ...' to enable side effects")]
+    IoNotAllowed,
     #[error("machine did not terminate after {0} steps")]
     DidntTerminate(usize),
     #[error("infinite loop detected: binding refers to itself")]
