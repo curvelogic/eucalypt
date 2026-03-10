@@ -520,6 +520,8 @@ pub enum ExecutionError {
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
     VersionRequirementFailed(Smid, String, String),
+    #[error("invalid version constraint '{1}': {2}")]
+    InvalidVersionConstraint(Smid, String, String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
     #[error("machine did not terminate after {0} steps")]
@@ -587,6 +589,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
+            ExecutionError::InvalidVersionConstraint(s, _, _) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
@@ -695,6 +698,11 @@ impl ExecutionError {
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
             ExecutionError::LookupFailure(_, key, suggestions) => {
                 lookup_failure_notes(key, suggestions)
+            }
+            ExecutionError::InvalidVersionConstraint(_, _, _) => {
+                vec![
+                    "semver constraints use operators like '^', '~', '>=', e.g. '^0.5' or '>=0.4, <0.6'".to_string(),
+                ]
             }
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
