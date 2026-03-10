@@ -952,7 +952,7 @@ impl ProtoSyntax for ProtoAppGroup {
 
         // If it's an intrinsic, check whether we should inline the
         // wrapper
-        match intrinsic_index.and_then(|index| compiler.intrinsics.get(index)) {
+        let inlined_bif = match intrinsic_index.and_then(|index| compiler.intrinsics.get(index)) {
             Some(bif)
                 if !compiler.suppress_inlining
                     && bif.inlinable()
@@ -960,14 +960,30 @@ impl ProtoSyntax for ProtoAppGroup {
             {
                 let inline_body = bif.wrapper(Smid::default()).body().clone();
                 local_binder.set_body(Box::new(ProtoInline::new(arg_indexes, inline_body)))?;
+                true
             }
             _ => {
                 local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.single_use))?;
+                false
             }
-        }
+        };
 
         local_binder.freeze();
-        local_binder.into_stg(compiler)
+        let stg = local_binder.into_stg(compiler)?;
+
+        // Wrap inlined intrinsic calls with a source annotation so that
+        // runtime type errors (TypeMismatch, NoBranchForDataTag, etc.) carry
+        // the user's call site rather than the intrinsic's synthetic label.
+        // Only applied when source tracking is enabled, the call site has a
+        // valid Smid, and the call was actually inlined (not a regular
+        // function call, which does not need annotation wrapping).
+        let stg = if inlined_bif && compiler.generate_annotations() && self.smid.is_valid() {
+            dsl::ann(self.smid, stg)
+        } else {
+            stg
+        };
+
+        Ok(stg)
     }
 }
 

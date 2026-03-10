@@ -587,16 +587,42 @@ impl HasSmid for ExecutionError {
 
 impl ExecutionError {
     pub fn to_diagnostic(&self, source_map: &SourceMap) -> Diagnostic<usize> {
+        use codespan_reporting::diagnostic::Label;
+
         // Delegate CompileError to its own diagnostic
         if let ExecutionError::Compile(e) = self {
             return e.to_diagnostic(source_map);
         }
-        let diag = source_map.diagnostic(self);
+        let mut diag = source_map.diagnostic(self);
         // Unwrap Traced to get at the inner error for note generation
-        let inner = match self {
-            ExecutionError::Traced(e, _, _) => e.as_ref(),
-            other => other,
+        let (inner, env_trace, stack_trace) = match self {
+            ExecutionError::Traced(e, env, stack) => (e.as_ref(), env.as_slice(), stack.as_slice()),
+            other => (other, [].as_slice(), [].as_slice()),
         };
+
+        // If the error's own Smid has no file location (e.g. it points to a
+        // synthetic intrinsic label), try to find a source location from the
+        // environment trace.  The env trace contains annotations from the let
+        // frames that were live at the time of the error, including any Ann
+        // nodes the compiler injected at call sites.
+        let has_source_label = source_map
+            .source_info(inner)
+            .map(|info| info.file.is_some())
+            .unwrap_or(false);
+
+        if !has_source_label {
+            // Prefer the env trace (innermost call site) over the stack trace
+            let fallback_smid = source_map
+                .first_source_smid(env_trace)
+                .or_else(|| source_map.first_source_smid(stack_trace));
+            if let Some(smid) = fallback_smid {
+                if let Some(info) = source_map.source_info_for_smid(smid) {
+                    if let (Some(file), Some(span)) = (info.file, info.span) {
+                        diag = diag.with_labels(vec![Label::primary(file, span)]);
+                    }
+                }
+            }
+        }
         let notes = match inner {
             ExecutionError::TypeMismatch(_, expected, actual) => {
                 type_mismatch_notes(expected, actual)

@@ -140,7 +140,7 @@ fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 /// Apply lambdas which have been distribute to function positions
 fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
-        Expr::App(_, f, xs) => {
+        Expr::App(call_smid, f, xs) => {
             match &*f.inner {
                 // as substs doesn't succ, we can only handle
                 // inlinable lambdas here
@@ -164,7 +164,26 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 
                         let mappings = <_>::zip(binders.into_iter(), args).collect::<Vec<_>>();
 
-                        substs_depth(&body, &mappings, 0)
+                        let reduced = substs_depth(&body, &mappings, 0)?;
+
+                        // Preserve the call-site source location on the reduced
+                        // expression. After beta reduction, the top-level
+                        // expression carries the callee's (prelude) Smid rather
+                        // than the user's call site. If the outer App had a
+                        // valid Smid, re-tag the result so that subsequent
+                        // compiler passes (e.g. STG compiler) can annotate the
+                        // code with the correct source location.
+                        if call_smid.is_valid() {
+                            if let Expr::App(_, rf, rargs) = &*reduced.inner {
+                                return Ok(RcExpr::from(Expr::App(
+                                    *call_smid,
+                                    rf.clone(),
+                                    rargs.clone(),
+                                )));
+                            }
+                        }
+
+                        Ok(reduced)
                     }
                 }
                 // Use optimized try_walk_safe

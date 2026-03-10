@@ -222,6 +222,21 @@ impl SourceMap {
         }
     }
 
+    /// Find the first Smid in a trace slice that has a concrete file/span location.
+    ///
+    /// Used as a fallback when an error's own Smid is synthetic (e.g. an
+    /// intrinsic label) and the diagnostic would otherwise show no source
+    /// location.
+    pub fn first_source_smid(&self, trace: &[Smid]) -> Option<Smid> {
+        trace.iter().copied().find(|smid| {
+            if let Some(info) = self.source_info_for_smid(*smid) {
+                info.file.is_some() && info.span.is_some()
+            } else {
+                false
+            }
+        })
+    }
+
     /// Format a stack / environment trace
     ///
     /// Produces source-level references where file locations are

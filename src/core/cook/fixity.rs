@@ -88,14 +88,18 @@ impl Distributor {
 
                 Ok(ret)
             }
-            Expr::Var(_, Free(fv)) => {
-                if let Some((smid, fixity, precedence)) = self.env.get(fv) {
-                    Ok(RcExpr::from(Expr::Operator(
-                        *smid,
-                        *fixity,
-                        *precedence,
-                        expr,
-                    )))
+            Expr::Var(call_smid, Free(fv)) => {
+                if let Some((def_smid, fixity, precedence)) = self.env.get(fv) {
+                    // Prefer the call-site Smid (from the user's source) over the
+                    // definition-site Smid (from the prelude) so that infix operator
+                    // applications carry a source location pointing at the actual
+                    // usage, not the operator's definition.
+                    let smid = if call_smid.is_valid() {
+                        *call_smid
+                    } else {
+                        *def_smid
+                    };
+                    Ok(RcExpr::from(Expr::Operator(smid, *fixity, *precedence, expr)))
                 } else {
                     Ok(expr)
                 }
