@@ -1,0 +1,55 @@
+name: macOS SIGSEGV diagnostic
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  macos-release-diag:
+    name: macOS release tests (diagnostic)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-diag-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            macos-diag-cargo-${{ hashFiles('**/Cargo.lock') }}-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release --test harness_test
+      - name: Run ALL harness tests (parallel, release) — baseline
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Run harness tests EXCLUDING IO tests (104+)
+        run: |
+          cargo test --release --test harness_test \
+            -- --skip test_harness_104 \
+               --skip test_harness_105 \
+               --skip test_harness_106 \
+               --skip test_harness_107 \
+               --skip test_harness_108 \
+               --skip test_harness_109 \
+               --skip test_harness_110 \
+               --skip test_harness_111 \
+               --skip test_harness_112 \
+               --skip test_harness_113 \
+               --skip test_harness_114 \
+               --skip test_harness_115 \
+               --skip test_harness_116 \
+               --skip test_harness_117 \
+               --skip test_harness_118 \
+               --skip test_harness_119 \
+               --skip test_harness_120
+      - name: Run ONLY IO tests (104-120) in isolation
+        run: |
+          cargo test --release --test harness_test test_harness_10 || true
+          cargo test --release --test harness_test test_harness_11 || true
+          cargo test --release --test harness_test test_harness_12 || true
+      - name: Run ALL harness tests single-threaded (baseline)
+        run: cargo test --release --test harness_test -- --test-threads=1
