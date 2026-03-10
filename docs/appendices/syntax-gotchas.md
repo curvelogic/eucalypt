@@ -318,13 +318,15 @@ list-head([h : t]): h
 bad: [1 : rest]   # parse error
 ```
 
-In expression context, use the `|:` cons operator or prelude functions:
+In expression context, use the `‖` cons operator (precedence 55) or the
+`cons` prelude function:
 
 ```eu
 xs: [1, 2, 3]
-first: xs head      # = 1
-rest: xs tail       # = [2, 3]
-built: 1 |: [2, 3]  # = [1, 2, 3]
+first: xs head         # = 1
+rest: xs tail          # = [2, 3]
+built: 1 ‖ [2, 3]     # = [1, 2, 3]
+also: cons(1, [2, 3])  # = [1, 2, 3]
 ```
 
 ## Block-Dot Lookup Applies to Any Block Literal
