@@ -527,6 +527,16 @@ pub fn test_harness_105() {
 }
 
 #[test]
+pub fn test_harness_106() {
+    run_test(&io_opts("106_io_block_chain.eu"));
+}
+
+#[test]
+pub fn test_harness_107() {
+    run_test(&io_opts("107_io_dot_chain.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

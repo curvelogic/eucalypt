@@ -310,6 +310,46 @@ first: xs head    # = 1
 rest: xs tail     # = [2, 3]
 ```
 
+## IO Monad Return Expression Chaining
+
+When using monadic block syntax `{ :io r: cmd }.return_expr`, the return expression
+may include dot-chained field access:
+
+```eu
+# Dot-chained field access in return expression
+{ :io r: io.shell("echo hello") }.r.stdout
+
+# This desugars to:
+io.bind(io.shell("echo hello"), λ(r). io.return(r.stdout))
+```
+
+**Gotcha**: Previously, only the first element after the closing `}` was treated as the
+return expression. Subsequent `.field` accesses were left outside the `io.return` wrapper
+and applied to the IO action value — causing a type error.
+
+**Correct form**: All consecutive `.field` accesses are now consumed into the return
+expression and wrapped in `io.return` together.
+
+**Parenthesised form** (for complex return expressions):
+
+```eu
+{ :io r: io.shell("echo hello") }.(
+  if(r.stdout str.matches?("hello.*"), :PASS, :FAIL))
+```
+
+The parenthesised form has always worked correctly. Use it when the return expression
+is more than a simple field chain.
+
+**Bare expression as evaluand**: A `.eu` file containing only a monadic expression
+(no outer `key:` declaration) is treated as the programme body:
+
+```eu
+{ :io r: io.shell("echo hello") }.r.stdout
+```
+
+Previously this caused "unresolved variable 'io'" because the expression was parsed
+as metadata with no body. The desugarer now correctly handles this case.
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

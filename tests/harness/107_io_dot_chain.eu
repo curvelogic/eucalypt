@@ -1,0 +1,15 @@
+"IO monad: dot-chained field access in return expression. Uses --allow-io."
+
+# Test that { :io r: cmd }.r.field desugars to
+# io.bind(cmd, lambda(r). io.return(r.field))
+# Previously this produced a type error because .field was applied
+# outside the io.return wrapper.
+` { target: :test }
+test: io.bind(
+  { :io r: io.shell("echo hello") }.r.stdout,
+  check-output)
+
+check-output(s):
+  io.return(if(s str.matches?("hello.*"),
+    { RESULT: :PASS },
+    { RESULT: :FAIL }))
