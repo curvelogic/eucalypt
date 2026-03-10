@@ -20,16 +20,15 @@ When notified of a PR (by the coordinator or by checking GitHub):
 
 ### 1. CI gate (MANDATORY — check FIRST)
 
+**NEVER merge a PR with failing CI. This is a hard block — no exceptions.**
+
 ```bash
 gh pr checks <number>
 ```
 
-**NEVER merge a PR with failing CI. This is a hard block — no exceptions.**
-
-- If CI is still running, wait and poll every 30 seconds until it completes.
-- If ANY check fails, STOP immediately and send the PR back to the originating
-  agent with the specific failing check details.
-- Only proceed to Gate 2 once all CI checks are green.
+If CI is still running, wait for it to complete (poll every 30s).
+If ANY check fails, **STOP** — do not proceed to other gates. Send
+the PR back to the originating agent with the specific failure.
 
 ### 2. Code quality gate
 
@@ -133,6 +132,6 @@ If a PR raises architectural concerns:
 - **ALWAYS** merge to `master`
 - **ALWAYS** run the full test suite before merging
 - **ALWAYS** check documentation gate
-- **NEVER merge with failing CI — this is gate 1, checked first, no exceptions**
-- **ALWAYS** verify CI passes (`gh pr checks`) — gate 1, before anything else
+- **NEVER merge with failing CI** — this is gate 1, checked first, no exceptions
+- **ALWAYS** verify CI passes (`gh pr checks`) and wait for completion
 - Use UK English in all communication

@@ -1,8 +1,0 @@
-name: eucalypt publish
-
-on:
-  release:
-    types: [published]
-  workflow_dispatch:
-
-jobs: {}
