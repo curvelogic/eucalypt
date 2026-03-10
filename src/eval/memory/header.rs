@@ -7,38 +7,13 @@ use std::ptr::NonNull;
 
 use bitmaps::Bitmap;
 
-use super::mark::mark_state;
-
 #[derive(Debug)]
 pub struct HeaderBits(Bitmap<2>);
 
 const MARK_BIT: usize = 0;
 const FORWARDED_BIT: usize = 1;
 
-impl Default for HeaderBits {
-    /// Return 'unmarked' header bits according to the current value
-    /// of unmarked (which flips on each collection)
-    fn default() -> HeaderBits {
-        let mut m = HeaderBits(Bitmap::default());
-        m.unmark();
-        m
-    }
-}
-
 impl HeaderBits {
-    fn mark(&mut self) {
-        self.0.set(MARK_BIT, mark_state());
-    }
-
-    fn unmark(&mut self) {
-        self.0.set(MARK_BIT, !mark_state());
-    }
-
-    fn is_marked(&self) -> bool {
-        self.0.get(MARK_BIT) == mark_state()
-    }
-
-    // New methods that take mark state as parameter
     fn mark_with_state(&mut self, mark_state: bool) {
         self.0.set(MARK_BIT, mark_state);
     }
@@ -51,7 +26,7 @@ impl HeaderBits {
         self.0.get(MARK_BIT) == mark_state
     }
 
-    // Create unmarked header bits for given mark state
+    /// Create unmarked header bits for the given mark state
     fn new_unmarked(mark_state: bool) -> HeaderBits {
         let mut m = HeaderBits(Bitmap::default());
         m.unmark_with_state(mark_state);
@@ -79,7 +54,7 @@ impl HeaderBits {
 ///  - forwarding pointer (to support evacuation)
 ///  - pinning (supported at the block level via Heap::pin_block /
 ///    Heap::unpin_block, not per-object)
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct AllocHeader {
     /// Header bits for object state
     bits: HeaderBits,
@@ -91,14 +66,6 @@ pub struct AllocHeader {
 }
 
 impl AllocHeader {
-    pub fn new(byte_length: u32) -> Self {
-        AllocHeader {
-            bits: HeaderBits::default(),
-            alloc_length: byte_length,
-            forwarded_to: None,
-        }
-    }
-
     pub fn new_with_mark_state(byte_length: u32, mark_state: bool) -> Self {
         AllocHeader {
             bits: HeaderBits::new_unmarked(mark_state),
@@ -107,19 +74,6 @@ impl AllocHeader {
         }
     }
 
-    pub fn mark(&mut self) {
-        self.bits.mark()
-    }
-
-    pub fn unmark(&mut self) {
-        self.bits.unmark()
-    }
-
-    pub fn is_marked(&self) -> bool {
-        self.bits.is_marked()
-    }
-
-    // New methods that take mark state as parameter
     pub fn mark_with_state(&mut self, mark_state: bool) {
         self.bits.mark_with_state(mark_state)
     }
