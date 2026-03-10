@@ -787,6 +787,12 @@ impl MachineState {
                         let mut args = Array::from_slice(&view, args.as_slice());
                         args.push(&view, self.closure.clone());
                         self.push(view, Continuation::ApplyTo { args, annotation })?;
+                        // Restore the application-site annotation so that any
+                        // type-mismatch errors raised inside the MERGE wrapper
+                        // (e.g. NoBranchForDataTag when a non-block is merged)
+                        // carry the user's source location rather than a
+                        // synthetic intrinsic label.
+                        self.annotation = annotation;
                         self.closure = SynClosure::new(
                             view.atom(Ref::G(
                                 intrinsics::index("MERGE")
