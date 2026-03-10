@@ -310,6 +310,47 @@ first: xs head    # = 1
 rest: xs tail     # = [2, 3]
 ```
 
+## IO Monad Block Syntax
+
+When using monadic block syntax `{ :io r: cmd }.(return_expr)`, the return
+expression must be parenthesised or a single name:
+
+```eu
+# Parenthesised return expression (recommended for complex expressions)
+{ :io r: io.shell("echo hello") }.(
+  if(r.stdout str.matches?("hello.*"), :PASS, :FAIL))
+
+# Single-name return — accesses the bound variable directly
+{ :io r: io.shell("echo hello") }.r
+```
+
+**Desugaring**: `{ :io r: cmd }.(expr)` desugars to:
+
+```eu
+io.bind(cmd, lambda(r). io.return(expr))
+```
+
+**Gotcha**: Dot-chained field access like `{ :io r: cmd }.r.stdout` is NOT
+currently supported as sugar — the `.stdout` after `.r` is not consumed into
+the return expression. Instead, use an extra binding or the parenthesised form:
+
+```eu
+# Recommended: extra binding
+{ :io r: io.shell("echo hello"), out: io.return(r.stdout) }.out
+
+# Also works: parenthesised field access
+{ :io r: io.shell("echo hello") }.(r.stdout)
+```
+
+**Bare-expression files**: A `.eu` file containing only a monadic block
+expression (no outer `key:` declaration) is supported when the expression
+starts with a block literal `{...}`:
+
+```eu
+# This works as a standalone .eu file:
+{ :io r: io.shell("echo hello") }.(r.stdout)
+```
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

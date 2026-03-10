@@ -2163,6 +2163,27 @@ impl Desugarable for rowan_ast::Block {
     }
 }
 
+/// Return true if the raw metadata soup of a `Unit` begins with a block-like
+/// element (`Block`, `BracketBlock`, or `ParenExpr`).
+///
+/// Used to distinguish genuine bare-expression evaluands such as
+/// `{ :io r: cmd }.(r.stdout)` (first element: Block) from erroneous
+/// assignment-style declarations like `result = 42` (first element: Name).
+fn unit_meta_starts_with_block(unit: &rowan_ast::Unit) -> bool {
+    unit.meta()
+        .and_then(|m| m.soup())
+        .and_then(|s| s.elements().next())
+        .map(|e| {
+            matches!(
+                e,
+                rowan_ast::Element::Block(_)
+                    | rowan_ast::Element::BracketBlock(_)
+                    | rowan_ast::Element::ParenExpr(_)
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// Unit desugaring - proper implementation following legacy architecture
 impl Desugarable for rowan_ast::Unit {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
@@ -2250,6 +2271,9 @@ impl Desugarable for rowan_ast::Unit {
             })
             .collect();
 
+        // Remember whether there are any declarations before body_elements is moved.
+        let has_no_declarations = body_elements.is_empty();
+
         // Create body - check for parse-embed override
         let body = if let Some(embed_key) = unit_meta.parse_embed {
             let fv_opt = desugarer.env().get(&embed_key).cloned();
@@ -2271,11 +2295,34 @@ impl Desugarable for rowan_ast::Unit {
             LetType::DefaultBlockLet,
         ));
 
-        // Attach metadata if present
+        // Attach metadata if present.
+        //
+        // Special case: when a file contains only a bare block-dot expression
+        // (no declarations) and the raw metadata soup starts with a block-like
+        // element, use that expression directly as the unit body.  This allows
+        // single-expression files such as
+        //
+        //   { :io result: io.shell("echo hello") }.(result.stdout)
+        //
+        // to behave like an `-e` evaluand.  The raw-element check restricts
+        // this path to soups that start with `{`, `[`, or `(`, excluding
+        // assignment-style mistakes like `result = 42` whose first element is
+        // a name.
         if let Some(m) = metadata {
             let stripped_meta = strip_desugar_phase_metadata(&m);
             if !matches!(&*stripped_meta.inner, Expr::ErrEliminated) {
-                expr = RcExpr::from(Expr::Meta(desugarer.new_smid(span), expr, stripped_meta));
+                let is_bare_expression = has_no_declarations
+                    && !matches!(&*stripped_meta.inner, Expr::Block(_, _))
+                    && unit_meta_starts_with_block(self);
+                if is_bare_expression {
+                    expr = RcExpr::from(Expr::Let(
+                        desugarer.new_smid(span),
+                        Scope::new(Rec::new(vec![]), stripped_meta),
+                        LetType::DefaultBlockLet,
+                    ));
+                } else {
+                    expr = RcExpr::from(Expr::Meta(desugarer.new_smid(span), expr, stripped_meta));
+                }
             }
         }
 
