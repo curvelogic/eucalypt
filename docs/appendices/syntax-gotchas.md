@@ -209,6 +209,23 @@ avg2(a, b): (a + b) / 2
 zip-with(avg2, xs, ys)
 ```
 
+**Expanding scope with subsumption**: The subsumption rule can be
+exploited to make the outer expression anaphoric, causing inner paren
+groups to become transparent.  A common idiom is to place a direct
+anaphor — such as a not-nil check `_0✓` — at the outer level:
+
+```eu,notest
+# _0✓ makes the whole expression anaphoric in _0,
+# so _0 inside count(_0) is subsumed — both refer to the same parameter.
+_0✓ && count(_0) >= 4    # λ(a). a != null && count(a) >= 4
+```
+
+Without the outer `_0✓`, the `_0` inside `count(_0)` would form a
+separate lambda at the ArgTuple level, and the outer `&&` would see a
+function value rather than a boolean.  The not-nil postfix `✓` is
+often the most natural way to introduce the outer anaphor when you
+want to also guard against null.
+
 ## Metadata vs Comments
 
 ### Backtick Is Metadata, Not a Comment
