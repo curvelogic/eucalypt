@@ -805,10 +805,69 @@ fn extract_block_monad_spec_from_raw(
     None
 }
 
+/// Desugar a slice of soup elements forming a (possibly dot-chained) return
+/// expression for a monadic block.
+///
+/// Handles:
+/// - A single element: `name`, `(expr)`, a literal, etc.
+/// - A dot chain: `name . field` or `name . field . subfield`
+///
+/// For a dot chain, the primary element is desugared first, then each
+/// consecutive `. name` pair is applied as a `Lookup` on the result.
+/// This allows `{ :io r: cmd }.r.stdout` to desugar the return
+/// expression as `r.stdout` (i.e., `Lookup(Lookup(var(r), "stdout"), ...)`)
+/// rather than leaving `.stdout` outside the `io.return` wrapper.
+///
+/// The bind names introduced by the enclosing monadic block must already be
+/// in scope in `desugarer` when this function is called.
+fn desugar_return_chain(
+    elements: &[Element],
+    smid: Smid,
+    desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    if elements.is_empty() {
+        return Err(CoreError::InvalidEmbedding(
+            "empty monadic return expression".to_string(),
+            smid,
+        ));
+    }
+    // Desugar the primary expression (first element).
+    let primary = elements[0].desugar(desugarer)?;
+    let mut result = desugarer.varify(primary);
+
+    // Walk the rest: expected pairs of (`.` operator, name).
+    let mut i = 1;
+    while i + 1 < elements.len() {
+        let is_dot = elements[i]
+            .as_operator_identifier()
+            .map(|op| op.text() == ".")
+            .unwrap_or(false);
+        if !is_dot {
+            break;
+        }
+        let field_span = text_range_to_span(elements[i + 1].syntax().text_range());
+        let field_smid = desugarer.new_smid(field_span);
+        match &elements[i + 1] {
+            Element::Name(name_elem) => {
+                if let Some(id) = name_elem.identifier() {
+                    let field = id.text().to_string();
+                    result = core::lookup(field_smid, result, &field, None);
+                } else {
+                    break;
+                }
+            }
+            _ => break,
+        }
+        i += 2;
+    }
+
+    Ok(result)
+}
+
 /// Desugar a monadic block using a monad spec.
 ///
-/// Given a list of declarations `a: ma  b: mb`, a return element, and a monad spec,
-/// produces:
+/// Given a list of declarations `a: ma  b: mb`, a return element slice, and a
+/// monad spec, produces:
 /// ```text
 /// bind(ma, λa. bind(mb, λb. return(return_expr)))
 /// ```
@@ -823,7 +882,7 @@ fn extract_block_monad_spec_from_raw(
 fn desugar_monadic_block(
     smid: Smid,
     decls: Vec<rowan_ast::Declaration>,
-    return_elem: &Element,
+    return_elems: &[Element],
     spec: &super::desugarer::MonadSpec,
     desugarer: &mut Desugarer,
 ) -> Result<RcExpr, CoreError> {
@@ -880,11 +939,9 @@ fn desugar_monadic_block(
         name_value_pairs.push((decl_name, value));
     }
 
-    // Desugar the return expression now that bind names are in scope
-    let return_expr = {
-        let ret = return_elem.desugar(desugarer)?;
-        desugarer.varify(ret)
-    };
+    // Desugar the return expression (potentially a dot chain) now that
+    // bind names are in scope.
+    let return_expr = desugar_return_chain(return_elems, smid, desugarer)?;
 
     // Pop bind names from environment
     if !bind_names.is_empty() {
@@ -1671,21 +1728,40 @@ fn desugar_rowan_soup(
                 )
             })?;
 
-            // Consume return expression: expect `.name`, `.(expr)`, `.[list]`
-            // The return expr follows in the soup as dot-operator + expression.
-            // We pass the raw element to desugar_monadic_block so it can be
-            // desugared with bind names in scope.
-            let return_elem_idx = if idx + 2 < elements.len() {
-                // Next should be dot operator, then an expression
+            // Consume return expression: expect `.expr` where expr may be a
+            // chained dot-lookup like `result.stdout`.
+            // Collect all consecutive `.name` continuations so that
+            // `⟦ r: cmd ⟧.r.field` desugars to
+            // `bind(cmd, λ(r). return(r.field))`.
+            let return_elems_slice: &[Element] = if idx + 2 < elements.len() {
                 let dot_elem = &elements[idx + 1];
                 let is_dot = dot_elem
                     .as_operator_identifier()
                     .map(|op| op.text() == ".")
                     .unwrap_or(false);
                 if is_dot {
-                    let ret_idx = idx + 2;
-                    idx += 3; // consume bracket + dot + return_expr
-                    ret_idx
+                    let ret_start = idx + 2;
+                    let mut ret_end = ret_start + 1;
+                    while ret_end + 1 < elements.len() {
+                        let is_chain_dot = elements[ret_end]
+                            .as_operator_identifier()
+                            .map(|op| op.text() == ".")
+                            .unwrap_or(false);
+                        if is_chain_dot && ret_end + 1 < elements.len() {
+                            let after_dot = &elements[ret_end + 1];
+                            if after_dot.as_normal_identifier().is_some()
+                                || matches!(after_dot, Element::ParenExpr(_))
+                            {
+                                ret_end += 2;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    idx = ret_end;
+                    &elements[ret_start..ret_end]
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "monadic bracket block requires a return expression (e.g. ⟦ ... ⟧.expr)"
@@ -1708,13 +1784,8 @@ fn desugar_rowan_soup(
                 .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
 
             let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
-            let monadic_expr = desugar_monadic_block(
-                smid,
-                bracket_decls,
-                &elements[return_elem_idx],
-                &spec,
-                desugarer,
-            )?;
+            let monadic_expr =
+                desugar_monadic_block(smid, bracket_decls, return_elems_slice, &spec, desugarer)?;
             soup.push(monadic_expr);
             continue;
         }
@@ -1725,7 +1796,10 @@ fn desugar_rowan_soup(
                 let block_span = text_range_to_span(block.syntax().text_range());
                 let smid = desugarer.new_smid(block_span);
 
-                // Check for .expr pattern following the block
+                // Check for .expr pattern following the block.
+                // Consume all consecutive `.name` continuations into the
+                // return expression so that `{ :io r: cmd }.r.field`
+                // desugars to `io.bind(cmd, λ(r). io.return(r.field))`.
                 if idx + 2 < elements.len() {
                     let dot_elem = &elements[idx + 1];
                     let is_dot = dot_elem
@@ -1733,14 +1807,33 @@ fn desugar_rowan_soup(
                         .map(|op| op.text() == ".")
                         .unwrap_or(false);
                     if is_dot {
-                        let return_elem_idx = idx + 2;
-                        idx += 3; // consume block + dot + return_expr
+                        let ret_start = idx + 2;
+                        let mut ret_end = ret_start + 1;
+                        while ret_end + 1 < elements.len() {
+                            let is_chain_dot = elements[ret_end]
+                                .as_operator_identifier()
+                                .map(|op| op.text() == ".")
+                                .unwrap_or(false);
+                            if is_chain_dot && ret_end + 1 < elements.len() {
+                                let after_dot = &elements[ret_end + 1];
+                                if after_dot.as_normal_identifier().is_some()
+                                    || matches!(after_dot, Element::ParenExpr(_))
+                                {
+                                    ret_end += 2;
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        idx = ret_end;
                         let block_decls: Vec<rowan_ast::Declaration> =
                             block.declarations().collect();
                         let monadic_expr = desugar_monadic_block(
                             smid,
                             block_decls,
-                            &elements[return_elem_idx],
+                            &elements[ret_start..ret_end],
                             &spec,
                             desugarer,
                         )?;
