@@ -597,6 +597,11 @@ pub fn test_harness_119() {
 }
 
 #[test]
+pub fn test_harness_120() {
+    run_test(&opts("120_random_monad.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
