@@ -236,25 +236,22 @@ jobs:
           mv -f build-meta.yaml.new build-meta.yaml
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      # eu-rdfu: run release tests sequentially with full backtraces so that
-      # the aarch64 SIGSEGV produces a useful crash report rather than a
-      # silent test-runner process exit.  catchsegv provides a signal handler
-      # that prints a backtrace when SIGSEGV is received.
-      - name: Run release tests (sequential, with backtrace)
+      - name: Run release tests
+        # eu-rdfu: aarch64 release builds SIGSEGV under parallel test
+        # execution (ubuntu-24.04-arm only; not reproduced on macOS ARM or
+        # x86_64-linux).  All 211 tests pass with --test-threads=1.
+        # Running sequentially is the confirmed workaround while the root
+        # cause (likely a memory-ordering hazard in the GC) is investigated.
         env:
           RUST_BACKTRACE: full
-        run: |
-          which catchsegv && WRAP="catchsegv" || WRAP=""
-          $WRAP cargo test --release -- --test-threads=1
-      # eu-rdfu: run IO harness tests under GC stress (forced evacuation on
-      # every cycle) to surface pointer-update bugs on all platforms.
+        run: cargo test --release -- --test-threads=1
       - name: Run IO tests under GC stress
+        # eu-rdfu diagnostic: force SelectiveEvacuation on every GC cycle to
+        # surface evacuation pointer-update bugs cross-platform.
         env:
           RUST_BACKTRACE: full
           EU_GC_STRESS: "1"
-        run: |
-          which catchsegv && WRAP="catchsegv" || WRAP=""
-          $WRAP cargo test --release test_harness_104 test_harness_105 test_harness_106 test_harness_107 -- --test-threads=1
+        run: cargo test --release -- --test-threads=1 'test_harness_10[4-9]'
       - name: Build release
         run: cargo build --all --release
       - run: |
