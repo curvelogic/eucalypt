@@ -79,9 +79,12 @@ io: {
   return(a): __io_return(a)
 
   shell(cmd): __io_action({:io-shell cmd: cmd, timeout: 30})
-  shell-with(opts, cmd): __io_action({:io-shell cmd: cmd} << opts)
+  # shell-with and exec-with use helper functions to build the spec block.
+  # Using << on a Meta-tagged block ({:io-shell ...}) strips the metadata tag,
+  # so the spec is built explicitly via lookup-or to extract known opt fields.
+  shell-with(opts, cmd): __io_action(__io-shell-spec(opts, cmd))
   exec([cmd : args]): __io_action({:io-exec cmd: cmd, args: args, timeout: 30})
-  exec-with(opts, [cmd : args]): __io_action({:io-exec cmd: cmd, args: args} << opts)
+  exec-with(opts, [cmd : args]): __io_action(__io-exec-spec(opts, cmd, args))
 
   check(result): ...  # IoFail if exit-code != 0, else IoReturn(result)
 
