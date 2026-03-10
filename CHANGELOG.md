@@ -2,7 +2,7 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.5.0] (Unreleased) - IO Monad, parse-as
+## [0.5.0] - IO Monad, parse-as
 
 ### Added
 
@@ -34,7 +34,8 @@ All notable changes to eucalypt are documented here.
 ### Fixed
 
 - **GC evacuation alignment** — 16-byte alignment padding for `evacuate()` allocation
-- **GC aarch64 segfault** — Diagnostic instrumentation and workaround for aarch64 evacuation crash
+- **GC per-heap mark state** — Global `MARK_STATE` moved into `Heap` struct, fixing parallel test crashes on aarch64-linux
+- **Error source locations** — Operator errors, lookup failures, and intrinsic type mismatches now report user source locations instead of internal spans
 - **Emacs mode** — Backtick auto-pairing, closing brace indentation, docstring indentation, smartparens compatibility
 - **Unicode input** — Check mark and other new Unicode chars in Quail and transient menu
 
