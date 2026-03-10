@@ -70,13 +70,10 @@ test-filter-m-pure:
 ##
 ## IO: derived monad map matches io.map
 ##
-` :suppress
-io-monad: monad({bind: io.bind, return: io.return})
-
 ` { target: :test-io-map requires-io: true }
 test-io-map:
   { :io
-    r1: io-monad.map(.stdout, io.shell("echo hello"))
+    r1: monad({bind: io.bind, return: io.return}).map(.stdout, io.shell("echo hello"))
     r2: io.map(.stdout, io.shell("echo hello"))
   }.(if(r1 = r2, { RESULT: :PASS }, { RESULT: :FAIL }))
 
@@ -85,7 +82,7 @@ test-io-map:
 ##
 ` { target: :test-io-then requires-io: true }
 test-io-then:
-  { :io r: io-monad.then(io.shell("echo first"), io.shell("echo second")) }.(
+  { :io r: monad({bind: io.bind, return: io.return}).then(io.shell("echo first"), io.shell("echo second")) }.(
     if(r.stdout str.matches?("second.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))
