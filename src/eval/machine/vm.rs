@@ -1124,6 +1124,18 @@ impl<'a> Machine<'a> {
         &self.state.symbol_pool
     }
 
+    /// Intern a symbol string into the machine's symbol pool and return its ID.
+    ///
+    /// Used by the io-run driver to pre-register symbols (e.g. "stdout",
+    /// "stderr", "exit-code") before they are embedded in heap objects by a
+    /// mutator.  Pre-interning ensures the IDs assigned during mutator heap
+    /// construction are already present in the machine's pool, so that later
+    /// LOOKUP and render operations (which use the machine pool) can resolve
+    /// them.
+    pub fn intern_symbol(&mut self, s: &str) -> crate::eval::memory::symbol::SymbolId {
+        self.state.symbol_pool.intern(s)
+    }
+
     /// Access the heap for allocation
     pub fn heap(&self) -> &Heap {
         &self.heap

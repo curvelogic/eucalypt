@@ -948,6 +948,17 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 // Execute the shell action
                 let result = run_spec(&spec)?;
 
+                // Pre-intern the result block key symbols into the machine's
+                // pool so that the IDs embedded by BuildResultBlock are
+                // already present in the machine pool.  Without this,
+                // BuildResultBlock interns into a cloned pool and the heap
+                // objects contain IDs that the machine pool doesn't know
+                // about, causing index-out-of-bounds panics in pool.resolve()
+                // when the machine later accesses the result block.
+                machine.intern_symbol("stdout");
+                machine.intern_symbol("stderr");
+                machine.intern_symbol("exit-code");
+
                 // Build the result block closure.  World remains stashed as a GC root.
                 let pool = machine.symbol_pool().clone();
                 let result_c = machine

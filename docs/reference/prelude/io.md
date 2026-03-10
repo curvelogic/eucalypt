@@ -53,6 +53,11 @@ IO operations require the `--allow-io` / `-I` flag at the command line.
 Default timeout is 30 seconds. Override with `{timeout: N}` in `opts`.
 Optional `{stdin: s}` pipes string `s` to the command's standard input.
 
+**Current limitation**: The `timeout` and `stdin` fields in `opts` for
+`shell-with` and `exec-with` are accepted by the parser but not yet applied
+by the io-run driver (they default to 30 s and no stdin). This will be fixed
+in a future driver update. The `cmd` argument is always applied correctly.
+
 ### Combinators
 
 | Function | Description |
