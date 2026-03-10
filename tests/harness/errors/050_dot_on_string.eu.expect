@@ -1,2 +1,2 @@
 exit: 1
-stderr: "strings do not have fields"
+stderr: "050_dot_on_string\.eu:3:"

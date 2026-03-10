@@ -1,2 +1,2 @@
 exit: 1
-stderr: "numbers do not have fields"
+stderr: "049_dot_on_number\.eu:3:"

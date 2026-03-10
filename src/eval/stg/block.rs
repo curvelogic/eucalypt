@@ -504,7 +504,13 @@ impl StgIntrinsic for LookupOr {
             ),
         );
 
-        annotated_lambda(
+        // Use plain lambda (no annotation) so that the call-site annotation
+        // set by the Ann node wrapping LookupOr at compile time is preserved
+        // in self.annotation when the inner switch fires. This allows
+        // NoBranchForDataTag (raised when obj is not a block) to carry the
+        // user's source location rather than the synthetic LOOKUPOR# label.
+        let _ = annotation;
+        lambda(
             3, // [k d block]
             switch(
                 local(2),
@@ -572,7 +578,6 @@ impl StgIntrinsic for LookupOr {
                     ),
                 )],
             ),
-            annotation,
         )
     }
 

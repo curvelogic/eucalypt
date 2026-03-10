@@ -1333,11 +1333,15 @@ impl<'rt> Compiler<'rt> {
             },
             None => binder.add(lookup_fail(key, obj.clone())),
         }?;
-        Ok(Holder::new(LookupOr(NativeVariant::Unboxed).global(
-            dsl::sym(key),
-            dft,
-            obj,
-        )))
+        let lookup_stg = LookupOr(NativeVariant::Unboxed).global(dsl::sym(key), dft, obj);
+        // Wrap with a source annotation so that lookup type errors (e.g.
+        // dot notation on a non-block) carry the user's call-site location.
+        let stg = if self.generate_annotations() && annotation.is_valid() {
+            dsl::ann(annotation, lookup_stg)
+        } else {
+            lookup_stg
+        };
+        Ok(Holder::new(stg))
     }
 
     /// Compile a lambda to a lambda form
