@@ -59,7 +59,7 @@ pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
         }
     };
 
-    let plan = TestPlan::for_error_test(&run_id, &path, expectation);
+    let plan = TestPlan::for_error_test(&run_id, &path, expectation, opt.target());
     run_plans(opt, &[plan])
 }
 

@@ -79,8 +79,14 @@ impl StgIntrinsic for IoAction {
     }
 
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
+        // Parameters: [spec_block=lref(0), world=lref(1)]
+        //
+        // The spec_block arrives as an unevaluated thunk (LetRec closure)
+        // when called from the io.shell / io.exec prelude functions.
+        // ReadSpecBlock navigates the thunk structure directly on the heap
+        // to extract the action spec without requiring machine evaluation.
         annotated_lambda(
-            2, // [world spec_block]
+            2, // [spec_block=lref(0), world=lref(1)]
             data(DataConstructor::IoAction.tag(), vec![lref(1), lref(0)]),
             annotation,
         )

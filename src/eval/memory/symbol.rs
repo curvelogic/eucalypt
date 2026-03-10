@@ -38,6 +38,7 @@ impl fmt::Display for SymbolId {
 ///
 /// The pool is owned by the machine and has the same lifetime.
 /// It is not thread-safe — eucalypt execution is single-threaded.
+#[derive(Clone)]
 pub struct SymbolPool {
     /// String to ID lookup for interning.
     to_id: HashMap<String, SymbolId>,

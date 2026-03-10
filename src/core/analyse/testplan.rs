@@ -277,17 +277,37 @@ impl TestPlan {
     ///
     /// Error tests use a single default target and validate against an
     /// `.expect` sidecar rather than in-file RESULT assertions.
-    pub fn for_error_test(run_id: &str, filename: &Path, expectation: ErrorExpectation) -> Self {
+    ///
+    /// Pass `target_name = Some("name")` to evaluate a specific named target
+    /// rather than the whole document.  Useful when the error is triggered only
+    /// when evaluating a particular target (e.g. an IO action).
+    pub fn for_error_test(
+        run_id: &str,
+        filename: &Path,
+        expectation: ErrorExpectation,
+        target_name: Option<&str>,
+    ) -> Self {
         let title = filename
             .file_stem()
             .map(|os| os.to_string_lossy().into_owned())
             .unwrap_or_else(|| "untitled".to_string());
 
+        let target = match target_name {
+            Some(name) if !name.is_empty() => Target::new(
+                name.to_string(),
+                String::new(),
+                None,
+                vec![name.to_string()],
+                vec![],
+            ),
+            _ => Target::default(),
+        };
+
         TestPlan {
             run_id: run_id.to_string(),
             file: filename.to_path_buf(),
             title,
-            targets: vec![(Target::default(), vec!["yaml".to_string()])],
+            targets: vec![(target, vec!["yaml".to_string()])],
             error_expectation: Some(expectation),
         }
     }

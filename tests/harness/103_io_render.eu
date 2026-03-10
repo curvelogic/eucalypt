@@ -1,0 +1,37 @@
+"Tests for render and render-as prelude functions (pure, no --allow-io needed)."
+
+tests: {
+
+  ` "render produces YAML string"
+  yaml-render: {
+    result: render({x: 1})
+    pass: result str.matches?("x:.*1.*")
+  }
+
+  ` "render-as with :yaml produces YAML string"
+  render-as-yaml: {
+    result: render-as({a: 1}, :yaml)
+    pass: result str.matches?("a:.*1.*")
+  }
+
+  ` "render-as with :json produces JSON string"
+  render-as-json: {
+    result: render-as({x: 42}, :json)
+    pass: result str.matches?(".*\"x\".*42.*")
+  }
+
+  ` "render a list to YAML"
+  render-list: {
+    result: render([1, 2, 3])
+    pass: result str.matches?("- 1.*")
+  }
+
+  ` "render-as a number to text"
+  render-number: {
+    result: render-as(99, :text)
+    pass: result str.matches?("99")
+  }
+
+}
+
+RESULT: tests values map(_.pass) all-true? then(:PASS, :FAIL)

@@ -1,0 +1,4 @@
+"Test that IO operations fail with a clear error when --allow-io is not set."
+
+` { target: :result }
+result: io.shell("echo hello")
