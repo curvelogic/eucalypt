@@ -87,9 +87,6 @@ __io-exec-spec(opts, c, as): {
 ##
 
 ` :suppress
-__monad-return-of(m, f, x): m.return(f(x))
-
-` :suppress
 __monad-sequence-put(m, hd, xs): m.return(cons(hd, xs))
 
 ` :suppress
@@ -110,14 +107,15 @@ __monad-filter-gate(m, p, elt, rest-ms, flag):
 __monad-filter-m(m, p, xs):
   if(xs nil?, m.return([]), m.bind(p(xs head), __monad-filter-gate(m, p, xs head, xs tail)))
 
+# Alias for the list map function, captured before monad() shadows the name 'map'
 ` :suppress
-__monad-map-m(m, f, xs): __monad-sequence(m, map(f, xs))
+list-map: map
 
 ` "monad(m) - derive standard monad combinators from a block m with bind and return fields.
 Returns a block with map, then, join, sequence, map-m, and filter-m."
 monad(m): {
   ` "map(f, action) - apply pure function f to the result of a monadic action (fmap)."
-  map(f, action): m.bind(action, __monad-return-of(m, f))
+  map(f, action): m.bind(action, compose(m.return, f))
 
   ` "then(a, b) - sequence two monadic actions, discarding the result of the first."
   then(a, b): m.bind(a, -> b)
@@ -129,7 +127,7 @@ monad(m): {
   sequence(ms): __monad-sequence(m, ms)
 
   ` "map-m(f, xs) - apply f to each element of xs (producing actions), then sequence."
-  map-m(f, xs): __monad-map-m(m, f, xs)
+  map-m(f, xs): list-map(f, xs) sequence
 
   ` "filter-m(p, xs) - monadic filter: apply predicate p (returning a monadic bool) to each element."
   filter-m(p, xs): __monad-filter-m(m, p, xs)
