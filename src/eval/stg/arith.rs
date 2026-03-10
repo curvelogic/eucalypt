@@ -654,8 +654,12 @@ impl StgIntrinsic for Pow {
 
         // Fall back to f64
         if let (Some(b), Some(e)) = (base.as_f64(), exp.as_f64()) {
-            if let Some(ret) = Number::from_f64(b.powf(e)) {
+            let result = b.powf(e);
+            if let Some(ret) = Number::from_f64(result) {
                 machine_return_num(machine, view, ret)
+            } else if result.is_nan() && b < 0.0 && e.fract() != 0.0 {
+                // Negative base raised to a fractional exponent produces a complex number.
+                Err(ExecutionError::ComplexResult(base, exp))
             } else {
                 Err(ExecutionError::NumericDomainError(base, exp))
             }

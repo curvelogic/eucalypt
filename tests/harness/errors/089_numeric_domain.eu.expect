@@ -1,2 +1,2 @@
 exit: 1
-stderr: "cannot combine numbers"
+stderr: "is not a real number"
