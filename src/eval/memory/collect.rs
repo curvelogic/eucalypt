@@ -284,12 +284,17 @@ impl CollectorHeapView<'_> {
         }
 
         let payload_size = header.length() as usize;
-        let alloc_size = size_of::<AllocHeader>() + payload_size;
+        // Round up to 16-byte alignment to match the normal allocation path
+        // (Heap::alloc_size_of). The bump block must receive aligned sizes so
+        // that consecutive evacuated objects remain 16-byte aligned.
+        const ALIGN: usize = 16;
+        let alloc_size = (size_of::<AllocHeader>() + payload_size + ALIGN - 1) & !(ALIGN - 1);
 
         // Allocate space in evacuation target
         let new_raw = self.heap.bump_allocate_in_target(alloc_size)?;
 
-        // SAFETY: Byte-level copy of the complete allocation (header + payload).
+        // SAFETY: Byte-level copy of the header + payload (excluding alignment
+        // padding, which need not be copied).
         //
         // Invariants:
         // 1. Source (`src`) is the start of the AllocHeader, which is
@@ -297,17 +302,21 @@ impl CollectorHeapView<'_> {
         //    are allocated with an AllocHeader prefix by `Heap::alloc()`.
         // 2. Destination (`new_raw`) is freshly bump-allocated in the
         //    evacuation target block, guaranteed non-overlapping with the
-        //    source (different block).
-        // 3. `alloc_size = size_of::<AllocHeader>() + header.length()` covers
-        //    the complete allocation. `header.length()` stores the object's
-        //    payload size, set by `alloc<T>()` to `size_of::<T>()`.
+        //    source (different block). `alloc_size` is >= `copy_size`.
+        // 3. `copy_size = size_of::<AllocHeader>() + header.length()` covers
+        //    the header and all payload bytes. `header.length()` stores the
+        //    object's payload size, set by `alloc<T>()` to `size_of::<T>()`.
+        //    The remaining `alloc_size - copy_size` bytes are alignment padding
+        //    and need not be initialised.
         //
         // If violated: partial copy would leave the evacuated object with
         // uninitialised fields, causing segfaults when `scan_and_update`
         // reads internal pointers.
         unsafe {
             let src = (obj.as_ptr() as *const u8).sub(size_of::<AllocHeader>());
-            std::ptr::copy_nonoverlapping(src, new_raw.as_ptr(), alloc_size);
+            // Copy only header + payload, not the alignment padding
+            let copy_size = size_of::<AllocHeader>() + payload_size;
+            std::ptr::copy_nonoverlapping(src, new_raw.as_ptr(), copy_size);
         }
 
         // Compute new object pointer (after the copied header)
