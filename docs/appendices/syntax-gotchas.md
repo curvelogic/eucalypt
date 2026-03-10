@@ -310,28 +310,41 @@ first: xs head    # = 1
 rest: xs tail     # = [2, 3]
 ```
 
-## IO Monad Block Syntax
+## Block-Dot Lookup Applies to Any Block Literal
 
-Monadic block syntax uses `{ :io r: cmd }.(return_expr)` or
-`{ :io r: cmd }.return_name.field`:
+The generalised lookup syntax `{...}.field` and `{...}.(expr)` works on any
+block literal, not only IO monadic blocks.  The dot binds the lookup to the
+block immediately to its left:
 
 ```eu,notest
-# Parenthesised return expression (recommended for complex expressions)
-{ :io r: io.shell("echo hello") }.(
-  if(r.stdout str.matches?("hello.*"), :PASS, :FAIL))
+# Field lookup on a plain block
+{ x: 1, y: 2 }.x          # → 1
 
-# Dot-chained field access in return expression
+# Parenthesised expression scoped over the block's bindings
+{ x: 1, y: 2 }.(x + y)    # → 3
+
+# The same syntax is used for IO monadic block return expressions
+{ :io r: io.shell("echo hello") }.(r.stdout)
 { :io r: io.shell("echo hello") }.r.stdout
 ```
 
-**Desugaring**: both forms desugar to `io.bind(cmd, lambda(r). io.return(expr))`:
+**Precedence**: `.` binds tightly (precedence 90), so the lookup attaches to
+the block literal, not to the result of any surrounding expression.  Use
+parentheses when you need to apply a lookup to a computed value:
 
 ```eu,notest
-# { :io r: cmd }.(expr) → io.bind(cmd, lambda(r). io.return(expr))
-# { :io r: cmd }.r.field → io.bind(cmd, lambda(r). io.return(r.field))
+# Parsed as: list (head.name)  — probably not what you want
+list head.name
+
+# Correct: (list head).name
+(list head).name
 ```
 
-**Bare-expression files**: A `.eu` file containing only a monadic block
+**IO monadic block desugaring**: `{ :io r: cmd }.(expr)` desugars to
+`io.bind(cmd, lambda(r). io.return(expr))`.  The `.()` return expression is
+part of the general block-dot syntax, not IO-specific.
+
+**Bare-expression files**: A `.eu` file containing only a block-dot
 expression (no outer `key:` declaration) is supported when the expression
 starts with a block literal `{...}`:
 
