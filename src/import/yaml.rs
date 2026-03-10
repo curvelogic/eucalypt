@@ -19,13 +19,18 @@ use yaml_rust::scanner::{Marker, TScalarStyle, TokenType};
 /// Read the YAML into a core expression
 ///
 /// Use `source_map` to create new SMIDs and `file_id` for error reporting.
+///
+/// When `data_only` is `true`, `!eu` tags produce plain string literals rather
+/// than evaluating eucalypt expressions, and timestamps are returned as strings.
+/// This must be set when parsing untrusted input (e.g. shell command output).
 pub fn read_yaml<'smap>(
     files: &'smap mut SimpleFiles<String, String>,
     source_map: &'smap mut SourceMap,
     file_id: usize,
     text: &'smap str,
+    data_only: bool,
 ) -> Result<RcExpr, SourceError> {
-    let mut receiver = Receiver::new(files, source_map, file_id);
+    let mut receiver = Receiver::new(files, source_map, file_id, data_only);
     Parser::new(text.chars())
         .load(&mut receiver, false)
         .map_err(|scan_error| {
@@ -57,6 +62,8 @@ struct Receiver<'smap> {
     anchors: HashMap<usize, RcExpr>,
     /// Error encountered during parsing (deferred because on_event can't return Result)
     error: Option<SourceError>,
+    /// When true, suppress all code-execution paths (`!eu` tags, timestamps as ZDT)
+    data_only: bool,
 }
 
 impl<'smap> Receiver<'smap> {
@@ -65,6 +72,7 @@ impl<'smap> Receiver<'smap> {
         files: &'smap mut SimpleFiles<String, String>,
         source_map: &'smap mut SourceMap,
         file_id: usize,
+        data_only: bool,
     ) -> Self {
         Receiver {
             files,
@@ -73,6 +81,7 @@ impl<'smap> Receiver<'smap> {
             source_map,
             anchors: HashMap::new(),
             error: None,
+            data_only,
         }
     }
 
@@ -274,18 +283,27 @@ impl<'smap> Receiver<'smap> {
                 .map_err(|_e| SourceError::InvalidNumber(text, self.file_id, span))
                 .map(|n| core::num(smid, n)),
             Tag::Timestamp => {
-                // Convert timestamp to ZDT expression via ZDT.PARSE
-                // Normalize space separator to T for ZDT.PARSE compatibility
-                let normalized = normalize_timestamp(&text);
-                Ok(core::app(
-                    smid,
-                    core::bif(smid, "ZDT.PARSE"),
-                    vec![core::str(smid, normalized)],
-                ))
+                if self.data_only {
+                    // In data-only mode, return timestamps as plain strings
+                    Ok(core::str(smid, text))
+                } else {
+                    // Convert timestamp to ZDT expression via ZDT.PARSE
+                    // Normalize space separator to T for ZDT.PARSE compatibility
+                    let normalized = normalize_timestamp(&text);
+                    Ok(core::app(
+                        smid,
+                        core::bif(smid, "ZDT.PARSE"),
+                        vec![core::str(smid, normalized)],
+                    ))
+                }
             }
             Tag::General(_, content) => match content.as_ref() {
-                "eu" => self.parse_eu(text),
-                "eu::fn" => self.parse_eu_fn(text),
+                "eu" if !self.data_only => self.parse_eu(text),
+                "eu::fn" if !self.data_only => self.parse_eu_fn(text),
+                "eu" | "eu::fn" => {
+                    // In data-only mode, treat !eu and !eu::fn as plain strings
+                    Ok(core::str(smid, text))
+                }
                 "eu::suppress" => Ok(core::meta(
                     smid,
                     core::str(smid, text),
@@ -704,7 +722,7 @@ pub mod tests {
         let mut sm = SourceMap::new();
         let mut files = SimpleFiles::new();
         let file_id = files.add("test.yaml".to_string(), text.to_string());
-        read_yaml(&mut files, &mut sm, file_id, text)
+        read_yaml(&mut files, &mut sm, file_id, text, false)
     }
 
     const SAMPLE1: &str = "

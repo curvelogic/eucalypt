@@ -834,6 +834,11 @@ lazy_static! {
             ty: function(vec![any(), sym(), str_()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 157
+            name: "PARSE_STRING",
+            ty: function(vec![sym(), str_(), any()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 

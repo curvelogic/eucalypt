@@ -24,7 +24,7 @@ pub fn read_jsonl<'smap>(
         }
 
         let line_file_id = files.add(format!("jsonl:line:{}", line_num + 1), trimmed.to_string());
-        match super::yaml::read_yaml(files, source_map, line_file_id, trimmed) {
+        match super::yaml::read_yaml(files, source_map, line_file_id, trimmed, false) {
             Ok(expr) => items.push(expr),
             Err(_) => {
                 return Err(SourceError::InvalidJsonl(
