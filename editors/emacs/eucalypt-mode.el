@@ -45,6 +45,7 @@
 (declare-function rainbow-delimiters-mode "rainbow-delimiters" ())
 (declare-function yaml-mode "yaml-mode" ())
 (declare-function json-mode "json-mode" ())
+(declare-function sp-local-pair "smartparens" (modes open close &rest keys))
 
 ;;; Group
 
@@ -588,6 +589,11 @@ region is active.  Skips replacements inside strings and comments."
 
 (with-eval-after-load 'rainbow-delimiters
   (add-hook 'eucalypt-mode-hook #'rainbow-delimiters-mode))
+
+;; Backtick is a metadata marker in eucalypt, not a paired quote.
+;; Disable smartparens auto-pairing for ` in eucalypt buffers.
+(with-eval-after-load 'smartparens
+  (sp-local-pair 'eucalypt-mode "`" nil :actions nil))
 
 ;;; Mode definition
 
