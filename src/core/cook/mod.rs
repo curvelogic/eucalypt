@@ -82,7 +82,10 @@ impl Cooker {
     /// `(2+*5) => (2+_*5)`
     ///
     /// Also return the expression anaphora which have been added.
-    fn insert_anaphora(&mut self, soup: &[RcExpr]) -> (Vec<RcExpr>, fill::AnaphorSet) {
+    fn insert_anaphora(
+        &mut self,
+        soup: &[RcExpr],
+    ) -> Result<(Vec<RcExpr>, fill::AnaphorSet), CoreError> {
         fill::fill_gaps(soup)
     }
 
@@ -124,7 +127,7 @@ impl Cooker {
     /// their own lambda — their anaphors propagate to the outer scope
     /// (subsumption).
     fn cook_soup(&mut self, exprs: &[RcExpr]) -> Result<RcExpr, CoreError> {
-        let (filled, naked_anaphora) = self.insert_anaphora(exprs);
+        let (filled, naked_anaphora) = self.insert_anaphora(exprs)?;
 
         let wrap_lambda = !self.in_expr_anaphor_scope && !naked_anaphora.is_empty();
 
