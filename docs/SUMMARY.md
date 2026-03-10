@@ -24,7 +24,6 @@
 - [YAML Embedding](guide/yaml-embedding.md)
 - [Testing with Eucalypt](guide/testing.md)
 - [Date, Time, and Random Numbers](guide/date-time-random.md)
-- [Monads and the monad() Utility](guide/monads.md)
 - [Advanced Topics](guide/advanced-topics.md)
 
 # Reference
