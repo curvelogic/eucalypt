@@ -28,7 +28,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+
 use std::time::{Duration, Instant};
 use std::{cell::UnsafeCell, mem::size_of};
 use std::{ptr::write, slice::from_raw_parts_mut};
@@ -1050,8 +1050,9 @@ impl EmergencyState {
 pub struct Heap {
     state: UnsafeCell<HeapState>,
     limit: Option<usize>,
-    /// Mark state for this heap instance - flipped each collection to avoid clearing marks
-    mark_state: AtomicBool,
+    /// Mark state for this heap instance - flipped each collection to avoid clearing marks.
+    /// Plain bool suffices as each Heap is used from a single thread.
+    mark_state: bool,
     /// Emergency collection state tracking
     emergency_state: UnsafeCell<EmergencyState>,
     /// GC performance metrics and telemetry
@@ -1519,7 +1520,7 @@ impl Heap {
         Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: None,
-            mark_state: AtomicBool::new(false),
+            mark_state: false,
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
@@ -1531,7 +1532,7 @@ impl Heap {
         Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: Some(block_limit),
-            mark_state: AtomicBool::new(false),
+            mark_state: false,
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
@@ -1551,12 +1552,12 @@ impl Heap {
 
     /// Get the current mark state for this heap
     pub fn mark_state(&self) -> bool {
-        self.mark_state.load(SeqCst)
+        self.mark_state
     }
 
     /// Flip the mark state for this heap (called after each collection)
-    pub fn flip_mark_state(&self) {
-        self.mark_state.fetch_xor(true, SeqCst);
+    pub fn flip_mark_state(&mut self) {
+        self.mark_state = !self.mark_state;
     }
 
     /// Increment the pin count for the block containing `ptr`.
@@ -2604,7 +2605,7 @@ pub mod tests {
         assert_eq!(difference, size_of::<AllocHeader>());
 
         unsafe {
-            assert!(!(*header_ptr.as_ptr()).is_marked());
+            assert!(!(*header_ptr.as_ptr()).is_marked_with_state(heap.mark_state()));
         }
     }
 
