@@ -14,6 +14,9 @@ All notable changes to eucalypt are documented here.
   - `--allow-io` / `-I` CLI flag required to enable IO operations
   - Results as `{stdout, stderr, exit-code}` blocks
 
+- **`render-as(value, fmt)`** — Serialise any eucalypt value to a string at runtime
+  - Supports `:json`, `:yaml`, `:toml`, `:text`, `:edn`, `:html`
+
 - **`parse-as(fmt, str)`** — Pure inverse of `render-as`; converts strings to eucalypt data structures
   - Supports `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jsonl`
   - Data-only mode: untrusted input (e.g. shell output) never executes embedded code
