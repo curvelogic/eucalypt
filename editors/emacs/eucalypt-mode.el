@@ -107,6 +107,9 @@ Set via file-local variables, e.g.:
     (modify-syntax-entry ?\] ")[" table)
     (modify-syntax-entry ?\{ "(}" table)
     (modify-syntax-entry ?\} "){" table)
+    ;; Backtick is metadata, not a paired quote — treat as punctuation so
+    ;; electric-pair-mode does not auto-insert a closing backtick.
+    (modify-syntax-entry ?\` "." table)
     ;; Word constituents for identifiers
     (modify-syntax-entry ?_ "w" table)
     (modify-syntax-entry ?- "w" table)
@@ -256,6 +259,20 @@ Set via file-local variables, e.g.:
   `((eucalypt
      ;; Top-level declarations at column 0
      ((parent-is "source_file") column-0 0)
+     ;; Closing brackets must be checked BEFORE any parent-based rules,
+     ;; otherwise `}' inside a block matches `(parent-is "block")' first
+     ;; and gets indented by eucalypt-indent-offset instead of column 0.
+     ((node-is "}") parent-bol 0)
+     ((node-is "]") parent-bol 0)
+     ((node-is ")") parent-bol 0)
+     ;; Backtick metadata begins a declaration — align with declaration, not inside it
+     ((node-is "metadata") parent-bol 0)
+     ;; Content within a metadata annotation (e.g. block after backtick) — no indent
+     ((parent-is "metadata") parent-bol 0)
+     ;; The declaration_head that follows a metadata node must not be indented
+     ;; further: it is a sibling of `metadata' within `declaration', so the
+     ;; `(parent-is "declaration")' rule below would otherwise add an offset.
+     ((node-is "declaration_head") parent-bol 0)
      ;; Inside blocks, indent declarations
      ((parent-is "block") parent-bol eucalypt-indent-offset)
      ;; Inside block destructuring patterns
@@ -270,16 +287,8 @@ Set via file-local variables, e.g.:
      ((parent-is "parameter_list") parent-bol eucalypt-indent-offset)
      ;; Soup continuation
      ((parent-is "soup") parent-bol eucalypt-indent-offset)
-     ;; Backtick metadata begins a declaration — align with declaration, not inside it
-     ((node-is "metadata") parent-bol 0)
-     ;; Content within a metadata annotation (e.g. block after backtick)
-     ((parent-is "metadata") parent-bol 0)
      ;; Declaration body continuation
      ((parent-is "declaration") parent-bol eucalypt-indent-offset)
-     ;; Closing brackets align with opening
-     ((node-is "}") parent-bol 0)
-     ((node-is "]") parent-bol 0)
-     ((node-is ")") parent-bol 0)
      ;; Default: no change
      (no-node parent-bol 0)))
   "Indentation rules for `eucalypt-mode'.")
@@ -454,11 +463,22 @@ Translates ASCII operator sequences to Unicode equivalents.
 Key sequences:
   && → ∧  (logical and)
   || → ∨  (logical or)
+  ~~ → ¬  (logical not)
   <= → ≤  (less-or-equal)
   >= → ≥  (greater-or-equal)
   != → ≠  (not-equal)
   /- → ∸  (unary minus)
+  /% → ÷  (exact division)
   .. → ∘  (compose)
+  ** → •  (bullet / anaphor)
+  || → ‖  (cons operator — use |||| for ‖ after ∨)
+  |> → ↑  (head prefix)
+  !! → ‼  (non-nil postfix)
+  ^^ → ⊕  (bitwise XOR)
+  ~< → ≪  (left shift)
+  ~> → ≫  (right shift)
+  0N → ℕ  (natural numbers)
+  {} → ∅  (empty set)
   << → «  >> → »  (angle brackets)
   (( → ⟨  )) → ⟩  (mathematical angle brackets)
   [[ → ⟦  ]] → ⟧  (double square brackets)"
@@ -468,16 +488,30 @@ Key sequences:
  ;; Logical operators
  ("&&"  ?∧)
  ("||"  ?∨)
+ ("~~"  ?¬)
  ;; Comparison
  ("<="  ?≤)
  (">="  ?≥)
  ("!="  ?≠)
  ;; Arithmetic
  ("/-"  ?∸)
+ ("/%"  ?÷)
+ ;; Bitwise
+ ("^^"  ?⊕)
+ ("~<"  ?≪)
+ ("~>"  ?≫)
  ;; Composition
  (".."  ?∘)
  ;; Anaphora
  ("**"  ?•)
+ ;; List operators
+ ("|||" ?‖)
+ ("|>"  ?↑)
+ ("!!"  ?‼)
+ ;; Sets
+ ("{}"  ?∅)
+ ;; Natural numbers
+ ("0N"  ?ℕ)
  ;; Brackets
  ("(("  ?⟨)
  ("))"  ?⟩)
@@ -491,21 +525,29 @@ Key sequences:
 (transient-define-prefix eucalypt-unicode-menu ()
   "Insert Eucalypt Unicode operators."
   ["Logical"
-   ("a" "∧ and"     (lambda () (interactive) (insert "∧")))
-   ("o" "∨ or"      (lambda () (interactive) (insert "∨")))
-   ("n" "¬ not"     (lambda () (interactive) (insert "¬")))]
+   ("a" "∧ and"        (lambda () (interactive) (insert "∧")))
+   ("o" "∨ or"         (lambda () (interactive) (insert "∨")))
+   ("n" "¬ not"        (lambda () (interactive) (insert "¬")))]
   ["Comparison"
-   ("<" "≤ lte"     (lambda () (interactive) (insert "≤")))
-   (">" "≥ gte"     (lambda () (interactive) (insert "≥")))
-   ("!" "≠ neq"     (lambda () (interactive) (insert "≠")))]
+   ("<" "≤ lte"        (lambda () (interactive) (insert "≤")))
+   (">" "≥ gte"        (lambda () (interactive) (insert "≥")))
+   ("!" "≠ neq"        (lambda () (interactive) (insert "≠")))]
   ["Arithmetic"
-   ("-" "∸ negate"  (lambda () (interactive) (insert "∸")))
-   ("d" "÷ divide"  (lambda () (interactive) (insert "÷")))]
-  ["Anaphora"
-   ("b" "• bullet"  (lambda () (interactive) (insert "•")))]
+   ("-" "∸ negate"     (lambda () (interactive) (insert "∸")))
+   ("d" "÷ divide"     (lambda () (interactive) (insert "÷")))]
+  ["Bitwise"
+   ("x" "⊕ xor"        (lambda () (interactive) (insert "⊕")))
+   ("L" "≪ left-shift" (lambda () (interactive) (insert "≪")))
+   ("R" "≫ right-shift" (lambda () (interactive) (insert "≫")))]
+  ["List / Anaphor"
+   ("b" "• bullet"     (lambda () (interactive) (insert "•")))
+   ("C" "‖ cons"       (lambda () (interactive) (insert "‖")))
+   ("h" "↑ head"       (lambda () (interactive) (insert "↑")))
+   ("?" "‼ non-nil?"   (lambda () (interactive) (insert "‼")))]
   ["Other"
-   ("c" "∘ compose" (lambda () (interactive) (insert "∘")))
-   ("e" "∅ empty"   (lambda () (interactive) (insert "∅")))])
+   ("c" "∘ compose"    (lambda () (interactive) (insert "∘")))
+   ("e" "∅ empty-set"  (lambda () (interactive) (insert "∅")))
+   ("N" "ℕ naturals"   (lambda () (interactive) (insert "ℕ")))])
 
 ;;; Auto-unicodify
 
