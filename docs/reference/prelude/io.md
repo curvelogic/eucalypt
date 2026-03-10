@@ -60,6 +60,60 @@ Optional `{stdin: s}` pipes string `s` to the command's standard input.
 | `io.check(result)` | If `exit-code` is non-zero, fail with the stderr message; otherwise return the result |
 | `io.map(f, action)` | Apply a pure function to the result of an IO action (fmap) |
 
+## Monad Utility
+
+`monad(m)` derives standard monad combinators from a minimal block `m`
+containing `bind` and `return` fields. This allows monad authors to define
+only those two primitives and obtain the full set of derived operations for
+free.
+
+```eu,notest
+my-io: monad({bind: io.bind, return: io.return}) {
+  # merge in specialised implementations or extra operations
+  shell(c): io.shell(c)
+}
+```
+
+The left block (derived defaults) is merged with the right block via
+catenation; specialised implementations in the right block override
+the defaults.
+
+| Function | Description |
+|----------|-------------|
+| `monad(m)` | Derive standard monad combinators from `m.bind` and `m.return` |
+| `monad(m).map(f, action)` | Apply pure function `f` to the result of a monadic action (fmap) |
+| `monad(m).then(a, b)` | Sequence two monadic actions, discarding the result of the first |
+| `monad(m).join(mm)` | Flatten a nested monadic value |
+| `monad(m).sequence(ms)` | Sequence a list of monadic actions, collecting results into a list |
+| `monad(m).map-m(f, xs)` | Apply `f` to each element of `xs` (producing actions), then sequence |
+| `monad(m).filter-m(p, xs)` | Monadic filter: apply predicate `p` (returning a monadic bool) to each element |
+
+### Example: IO monad via monad()
+
+```eu,notest
+` :suppress
+my-io: monad({bind: io.bind, return: io.return})
+
+result: { :io
+  r: my-io.map(.stdout, io.shell("echo hello"))
+}.(r)
+```
+
+### Example: Pure identity monad
+
+```eu
+` :suppress
+id-bind(m, f): f(m)
+` :suppress
+id-return(a): a
+` :suppress
+id-monad: monad({bind: id-bind, return: id-return})
+
+` { target: :example }
+example: id-monad.map-m(inc, [1, 2, 3])
+# => [2, 3, 4]
+```
+
 ## Other
 
 | Function | Description |
