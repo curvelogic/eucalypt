@@ -125,6 +125,14 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
             .with_explicit_inputs(vec![input])
             .with_lib_path(lib_path.clone());
 
+        // Skip tests that require --allow-io when it has not been granted.
+        // Failing here would incorrectly penalise CI environments that do
+        // not enable shell execution by default.
+        if test.requires_io() && !opt.allow_io() {
+            println!("{}...SKIP (requires --allow-io)", test.title());
+            continue;
+        }
+
         test.prepare_directory()?;
 
         print!("{}...", test.title());

@@ -216,6 +216,11 @@ pub struct TestHeaderMetadata {
     pub formats: Vec<String>,
     /// Shell process to run prior to test expection
     pub shell: Option<String>,
+    /// Whether this test requires `--allow-io` to run.
+    ///
+    /// When `true` and `--allow-io` is not set, `eu test` skips the
+    /// test rather than failing.
+    pub requires_io: bool,
 }
 
 impl ReadMetadata<TestHeaderMetadata> for RcExpr {
@@ -232,6 +237,10 @@ impl ReadMetadata<TestHeaderMetadata> for RcExpr {
                     .and_then(|e| e.extract())
                     .unwrap_or_default(),
                 shell: imap.get("test-shell").and_then(|e| e.extract()),
+                requires_io: imap
+                    .get("requires-io")
+                    .and_then(|e| e.extract())
+                    .unwrap_or(false),
             }),
             Expr::Let(_, _, _) => {
                 self.inner = self.clone().instantiate_lets().inner;
