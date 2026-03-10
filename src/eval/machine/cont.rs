@@ -8,7 +8,7 @@ use crate::{
         memory::{
             alloc::StgObject,
             array::Array,
-            collect::{CollectorHeapView, GcScannable, ScanPtr},
+            collect::{CollectorHeapView, GcScannable, OpaqueHeapBytes, ScanPtr},
             syntax::{HeapSyn, RefPtr},
         },
         stg::tags::Tag,
@@ -136,6 +136,14 @@ impl GcScannable for Continuation {
                 ..
             } => {
                 if marker.mark_array(branch_table) {
+                    // Push the backing as a heap object so it gets evacuated
+                    // if it resides in a candidate block.
+                    if let Some(backing_ptr) = branch_table.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
                     for branch in branch_table.iter().flatten() {
                         if marker.mark(*branch) {
                             out.push(ScanPtr::from_non_null(scope, *branch));
@@ -163,6 +171,15 @@ impl GcScannable for Continuation {
             }
             Continuation::ApplyTo { args, .. } => {
                 if marker.mark_array(args) {
+                    // Push the backing as a heap object so it gets evacuated
+                    // if it resides in a candidate block (same rationale as
+                    // EnvFrame::scan).
+                    if let Some(backing_ptr) = args.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
                     for arg in args.iter() {
                         out.push(ScanPtr::new(scope, arg));
                     }
@@ -196,6 +213,14 @@ impl GcScannable for Continuation {
                 environment,
                 ..
             } => {
+                // Update the backing ptr if the branch_table array was evacuated.
+                if let Some(old_ptr) = branch_table.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        // SAFETY: new_ptr is a valid evacuated copy of the same
+                        // backing allocation.
+                        unsafe { branch_table.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
                 for ptr in branch_table.iter_mut().flatten() {
                     if let Some(new) = heap.forwarded_to(*ptr) {
                         *ptr = new;
@@ -216,6 +241,14 @@ impl GcScannable for Continuation {
                 }
             }
             Continuation::ApplyTo { args, .. } => {
+                // Update the backing ptr if the args array was evacuated.
+                if let Some(old_ptr) = args.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        // SAFETY: new_ptr is a valid evacuated copy of the same
+                        // backing allocation.
+                        unsafe { args.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
                 for closure in args.iter_mut() {
                     closure.scan_and_update(heap);
                 }
