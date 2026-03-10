@@ -10,8 +10,8 @@ use crate::{
 use super::{
     syntax::{
         dsl::{
-            annotated_lambda, app_bif, data, force, let_, local, lref, unbox_num, unbox_str,
-            unbox_sym, unbox_zdt, value,
+            app_bif, data, force, lambda, let_, local, lref, unbox_num, unbox_str, unbox_sym,
+            unbox_zdt, value,
         },
         LambdaForm,
     },
@@ -150,7 +150,14 @@ pub fn wrap(index: usize, info: &intrinsics::Intrinsic, annotation: Smid) -> Lam
         }
     }
 
-    annotated_lambda(arity.try_into().unwrap(), syntax, annotation)
+    // Use plain lambda (no annotation) so that the call-site annotation
+    // set by the Ann node emitted by the compiler at application sites
+    // is not overwritten when the intrinsic wrapper is entered.
+    // This allows TypeMismatch and similar errors raised by type-checking
+    // helpers (str_arg, num_arg, etc.) to carry the user's source location
+    // via machine.annotation() rather than the synthetic intrinsic label.
+    let _ = annotation;
+    lambda(arity.try_into().unwrap(), syntax)
 }
 
 #[cfg(test)]
@@ -169,7 +176,7 @@ pub mod tests {
             vec![0, 1],
         );
         let wrapper = wrap(99, &intrinsic, Smid::fake(0));
-        let syntax = annotated_lambda(
+        let syntax = lambda(
             2,
             unbox_num(
                 local(0),
@@ -187,7 +194,6 @@ pub mod tests {
                     ),
                 ),
             ),
-            Smid::fake(0),
         );
 
         assert_eq!(wrapper, syntax);
