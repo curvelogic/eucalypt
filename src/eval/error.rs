@@ -637,6 +637,8 @@ pub enum ExecutionError {
     CannotReturnFunToCase(Smid, Vec<u8>),
     #[error("panic: {0}")]
     Panic(String),
+    #[error("parse-as({1}): {2}")]
+    ParseError(Smid, String, String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
     #[error("machine did not terminate after {0} steps")]
@@ -704,6 +706,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
+            ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
