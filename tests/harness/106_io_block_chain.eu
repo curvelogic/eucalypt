@@ -1,0 +1,10 @@
+"IO monad: monadic block syntax with parenthesised return expression. Uses --allow-io."
+
+# Test that { :io r: cmd }.(return_expr) correctly desugars to
+# io.bind(cmd, lambda(r). io.return(return_expr))
+` { target: :test }
+test:
+  { :io r: io.shell("echo hello") }.(
+    if(r.stdout str.matches?("hello.*"),
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))
