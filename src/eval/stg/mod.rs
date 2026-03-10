@@ -21,6 +21,7 @@ pub mod meta;
 pub mod null;
 pub mod optimiser;
 pub mod panic;
+pub mod parse_string;
 pub mod pretty;
 pub mod printf;
 pub mod prng;
@@ -204,6 +205,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(io::IoBind));
     rt.add(Box::new(io::IoAction));
     rt.add(Box::new(render_to_string::RenderToString));
+    rt.add(Box::new(parse_string::ParseString));
     rt.prepare(source_map);
     Box::new(rt)
 }

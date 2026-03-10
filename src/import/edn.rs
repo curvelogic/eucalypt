@@ -15,13 +15,18 @@ use serde_json::Number;
 ///
 /// Note that EDN files may have many top-level items, until we
 /// support streaming, we need to read on and return as a list.
+///
+/// When `data_only` is `true`, `#inst` datetime values are returned as plain
+/// strings rather than `ZDT.PARSE` applications. This must be set when parsing
+/// untrusted input.
 pub fn read_edn<'smap>(
     _source_map: &'smap mut SourceMap,
     file_id: usize,
     text: &'smap str,
+    data_only: bool,
 ) -> Result<RcExpr, SourceError> {
     let edn = parse_str(text).map_err(|e| SourceError::InvalidEdn(Box::new(e), file_id))?;
-    value_to_core(&edn, file_id)
+    value_to_core(&edn, file_id, data_only)
 }
 
 fn value_to_key(edn: &Value, file_id: usize) -> Result<String, SourceError> {
@@ -38,7 +43,7 @@ fn value_to_key(edn: &Value, file_id: usize) -> Result<String, SourceError> {
     }
 }
 
-fn value_to_core(edn: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
+fn value_to_core(edn: &Value, file_id: usize, data_only: bool) -> Result<RcExpr, SourceError> {
     match edn {
         Value::Nil => Ok(acore::null()),
         Value::Boolean(b) => Ok(acore::bool_(*b)),
@@ -67,40 +72,49 @@ fn value_to_core(edn: &Value, file_id: usize) -> Result<RcExpr, SourceError> {
         )),
         Value::List(xs) => xs
             .iter()
-            .map(|v| value_to_core(v, file_id))
+            .map(|v| value_to_core(v, file_id, data_only))
             .collect::<Result<Vec<RcExpr>, SourceError>>()
             .map(acore::list),
         Value::Vector(xs) => xs
             .iter()
-            .map(|v| value_to_core(v, file_id))
+            .map(|v| value_to_core(v, file_id, data_only))
             .collect::<Result<Vec<RcExpr>, SourceError>>()
             .map(acore::list),
         Value::Map(m) => m
             .iter()
-            .map(
-                |(k, v)| match (value_to_key(k, file_id), value_to_core(v, file_id)) {
+            .map(|(k, v)| {
+                match (
+                    value_to_key(k, file_id),
+                    value_to_core(v, file_id, data_only),
+                ) {
                     (Ok(k), Ok(v)) => Ok((k, v)),
                     (Err(e), _) => Err(e),
                     (_, Err(e)) => Err(e),
-                },
-            )
+                }
+            })
             .collect::<Result<Vec<(String, RcExpr)>, SourceError>>()
             .map(acore::block),
         Value::Set(xs) => xs
             .iter()
-            .map(|v| value_to_core(v, file_id))
+            .map(|v| value_to_core(v, file_id, data_only))
             .collect::<Result<Vec<RcExpr>, SourceError>>()
             .map(acore::list),
-        Value::Inst(dt) => Ok(acore::app(
-            acore::bif("ZDT.PARSE"),
-            vec![acore::str(dt.to_string())],
-        )), // NB. no core primitive for datetime right now
+        Value::Inst(dt) => {
+            if data_only {
+                Ok(acore::str(dt.to_string()))
+            } else {
+                Ok(acore::app(
+                    acore::bif("ZDT.PARSE"),
+                    vec![acore::str(dt.to_string())],
+                ))
+            }
+        }
         Value::Uuid(uuid) => Ok(acore::meta(
             acore::str(uuid.to_string()),
             acore::block(iter::once(("tag".to_string(), acore::str("uuid")))),
         )),
         Value::TaggedElement(t, e) => Ok(acore::meta(
-            value_to_core(e, file_id)?,
+            value_to_core(e, file_id, data_only)?,
             acore::block(iter::once(("tag".to_string(), acore::str(t.name())))),
         )),
     }

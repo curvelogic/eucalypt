@@ -23,20 +23,45 @@ pub fn read_to_core<'smap>(
     source_map: &'smap mut SourceMap,
     file_id: usize,
 ) -> Result<RcExpr, SourceError> {
+    read_to_core_impl(format, files, source_map, file_id, false)
+}
+
+/// Read a supported source format into core representation in data-only mode.
+///
+/// In data-only mode all code-execution paths are suppressed: YAML `!eu` tags
+/// produce plain string literals and timestamps are returned as strings rather
+/// than `ZDT.PARSE` applications. This must be used when parsing untrusted
+/// input such as shell command output.
+pub fn read_to_core_data_only<'smap>(
+    format: &str,
+    files: &'smap mut SimpleFiles<String, String>,
+    source_map: &'smap mut SourceMap,
+    file_id: usize,
+) -> Result<RcExpr, SourceError> {
+    read_to_core_impl(format, files, source_map, file_id, true)
+}
+
+fn read_to_core_impl<'smap>(
+    format: &str,
+    files: &'smap mut SimpleFiles<String, String>,
+    source_map: &'smap mut SourceMap,
+    file_id: usize,
+    data_only: bool,
+) -> Result<RcExpr, SourceError> {
     match format {
         "yaml" | "json" => {
             let text = files.source(file_id)?.to_string();
-            yaml::read_yaml(files, source_map, file_id, &text)
+            yaml::read_yaml(files, source_map, file_id, &text, data_only)
         }
         "jsonl" => {
             let text = files.source(file_id)?.to_string();
             jsonl::read_jsonl(files, source_map, file_id, &text)
         }
-        "toml" => toml::read_toml(source_map, file_id, files.source(file_id)?),
+        "toml" => toml::read_toml(source_map, file_id, files.source(file_id)?, data_only),
         "text" => text::read_text(source_map, file_id, files.source(file_id)?),
         "csv" => csv::read_csv(source_map, file_id, files.source(file_id)?),
         "xml" => xml::read_xml(source_map, file_id, files.source(file_id)?),
-        "edn" => edn::read_edn(source_map, file_id, files.source(file_id)?),
+        "edn" => edn::read_edn(source_map, file_id, files.source(file_id)?, data_only),
         _ => Err(SourceError::UnknownSourceFormat(
             format.to_string(),
             file_id,
