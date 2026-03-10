@@ -943,6 +943,12 @@ impl EucalyptOptions {
         self
     }
 
+    /// Enable IO monad operations (shell execution) for this run.
+    pub fn with_allow_io(mut self) -> Self {
+        self.allow_io = true;
+        self
+    }
+
     /// The test flag indicates shallow desugaring only for test plan
     /// analysis. Actual execution requires the flag is reset.
     pub fn without_test_flag(mut self) -> Self {

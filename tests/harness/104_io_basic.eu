@@ -1,0 +1,4 @@
+"Basic IO monad test: io.return wraps a pure value. Uses --allow-io."
+
+` { target: :test }
+test: io.return({ RESULT: :PASS })

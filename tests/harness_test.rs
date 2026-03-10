@@ -25,6 +25,18 @@ pub fn error_opts(filename: &str) -> EucalyptOptions {
         .build()
 }
 
+/// Options for IO monad tests — enables shell execution via --allow-io
+pub fn io_opts(filename: &str) -> EucalyptOptions {
+    let lib_path = vec![PathBuf::from("tests/harness")];
+    let path = format!("tests/harness/{filename}");
+
+    EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
+        .with_lib_path(lib_path)
+        .with_allow_io()
+        .build()
+}
+
 /// Parse and desugar the test files and analyse for expectations,
 /// then run and assert success.
 fn run_test(opt: &EucalyptOptions) {
@@ -497,6 +509,21 @@ pub fn test_harness_101() {
 #[test]
 pub fn test_harness_102() {
     run_test(&opts("102_destructure_list_in_block.eu"));
+}
+
+#[test]
+pub fn test_harness_103() {
+    run_test(&opts("103_io_render.eu"));
+}
+
+#[test]
+pub fn test_harness_104() {
+    run_test(&io_opts("104_io_basic.eu"));
+}
+
+#[test]
+pub fn test_harness_105() {
+    run_test(&io_opts("105_io_chain.eu"));
 }
 
 #[test]
@@ -1013,4 +1040,34 @@ pub fn test_error_092() {
 #[test]
 pub fn test_error_093() {
     run_error_test(&error_opts("093_monad_missing_marker.eu"));
+}
+
+#[test]
+pub fn test_error_094() {
+    // Run with the :result target so the evaluand is the IO PAP, which
+    // triggers "IO operations require --allow-io" when no flag is given.
+    use eucalypt::driver::options::EucalyptOptions;
+    let lib_path = vec![
+        std::path::PathBuf::from("tests/harness/errors"),
+        std::path::PathBuf::from("tests/harness"),
+    ];
+    let path = "tests/harness/errors/094_io_no_flag.eu".to_string();
+    let opt = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
+        .with_lib_path(lib_path)
+        .with_target(Some("result".to_string()))
+        .build();
+    run_error_test(&opt);
+}
+
+// IO monad tests
+
+#[test]
+pub fn test_harness_io_basic() {
+    run_test(&io_opts("104_io_basic.eu"));
+}
+
+#[test]
+pub fn test_harness_io_chain() {
+    run_test(&io_opts("105_io_chain.eu"));
 }

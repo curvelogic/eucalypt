@@ -364,10 +364,18 @@ impl BumpBlock {
                 "mark_region: object at offset {offset} with size {bytes} bytes extends beyond block boundary (block size: {BLOCK_SIZE_BYTES} bytes)"
             );
 
-            // n.b. div_ceil is in nightly
-            let lines = bytes / LINE_SIZE_BYTES + 1;
+            // Compute the inclusive range of lines that the region occupies.
+            // The previous calculation `bytes / LINE_SIZE + 1` was wrong for
+            // regions that straddle a line boundary without filling a full
+            // line from the start (e.g. a 48-byte region starting at byte 240
+            // within a 256-byte line: it spans bytes 240-287, crossing into
+            // the next line, but `48/256 + 1 = 1` only marks line 0).
+            //
+            // The correct upper bound is derived from the last byte of the
+            // region, not from the size alone.
             let first_line = offset / LINE_SIZE_BYTES;
-            let last_line = first_line + lines;
+            let last_byte = offset + bytes.saturating_sub(1);
+            let last_line = last_byte / LINE_SIZE_BYTES + 1;
 
             debug_assert!(
                 last_line <= LINE_COUNT,

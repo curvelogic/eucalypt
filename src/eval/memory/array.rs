@@ -379,6 +379,22 @@ impl<T: Sized + Clone> Array<T> {
     pub fn allocated_data(&self) -> Option<RefPtr<u8>> {
         self.data.ptr.map(|p| p.cast())
     }
+
+    /// Update the backing storage pointer.
+    ///
+    /// Called during the update phase of an evacuating GC when the
+    /// array's backing block has been evacuated to a new location.
+    /// `new_ptr` must point to a valid, properly-sized allocation of
+    /// at least `self.data.capacity` elements.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `new_ptr` is a valid pointer to a heap
+    /// allocation containing at least `self.data.capacity` elements of
+    /// type T.
+    pub unsafe fn set_backing_ptr(&mut self, new_ptr: RefPtr<T>) {
+        self.data.ptr = Some(new_ptr);
+    }
 }
 
 #[cfg(test)]

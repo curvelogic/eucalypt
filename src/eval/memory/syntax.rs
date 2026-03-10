@@ -8,7 +8,7 @@ use chrono::{DateTime, FixedOffset};
 use serde_json::Number;
 use std::{collections::HashMap, fmt, ptr::NonNull, rc::Rc};
 
-use super::collect::{CollectorHeapView, CollectorScope, GcScannable, ScanPtr};
+use super::collect::{CollectorHeapView, CollectorScope, GcScannable, OpaqueHeapBytes, ScanPtr};
 use super::infotable::InfoTagged;
 use super::ndarray::HeapNdArray;
 use super::set::HeapSet;
@@ -395,6 +395,15 @@ impl GcScannable for HeapSyn {
             }
             HeapSyn::Let { bindings, body } => {
                 if marker.mark_array(bindings) {
+                    // Push the backing allocation as a heap object so the
+                    // evacuation loop calls try_evacuate on it.  See the
+                    // same pattern in EnvFrame::scan for the full rationale.
+                    if let Some(backing_ptr) = bindings.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
                     for bindings in bindings.iter() {
                         out.push(ScanPtr::new(scope, bindings));
                     }
@@ -406,6 +415,15 @@ impl GcScannable for HeapSyn {
             }
             HeapSyn::LetRec { bindings, body } => {
                 if marker.mark_array(bindings) {
+                    // Push the backing allocation as a heap object so the
+                    // evacuation loop calls try_evacuate on it.  See the
+                    // same pattern in EnvFrame::scan for the full rationale.
+                    if let Some(backing_ptr) = bindings.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
                     for bindings in bindings.iter() {
                         out.push(ScanPtr::new(scope, bindings));
                     }
@@ -479,6 +497,14 @@ impl GcScannable for HeapSyn {
                 update_ref_array_heap_pointers(args, heap);
             }
             HeapSyn::Let { bindings, body } | HeapSyn::LetRec { bindings, body } => {
+                // Update bindings backing ptr if the array was evacuated.
+                if let Some(old_ptr) = bindings.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        // SAFETY: new_ptr is a valid evacuated copy of the
+                        // same backing allocation.
+                        unsafe { bindings.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
                 for lf in bindings.iter_mut() {
                     lf.scan_and_update(heap);
                 }

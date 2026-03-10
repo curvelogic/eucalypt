@@ -1,0 +1,2 @@
+exit: 1
+stderr: "IO operations require the --allow-io"

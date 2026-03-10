@@ -68,6 +68,27 @@ impl std::fmt::Debug for ScanPtr<'_> {
 /// Anything that represents the collector scope (in contrast to MutatorScope)
 pub trait CollectorScope {}
 
+/// A sentinel type used to register raw heap byte allocations (e.g. `Array<T>`
+/// backing buffers) as first-class heap objects in the GC scan queue.
+///
+/// The backing buffer of an `Array<T>` is allocated with an `AllocHeader`
+/// prefix but has no vtable and is never queued for scanning on its own.
+/// As a result, when the containing object (e.g. `EnvFrame`) is evacuated
+/// from a candidate block to a new block, the backing buffer stays in the
+/// candidate block.  After the mark state is flipped the backing's mark bit
+/// is stale; at the next lazy sweep the backing's lines are recycled while
+/// the evacuated copy of the parent still holds the old (now-dead) pointer.
+///
+/// By pushing the backing pointer as a `ScanPtr::from_non_null::<OpaqueHeapBytes>`
+/// during the parent's `scan()` call, the evacuation loop calls `try_evacuate`
+/// on the backing.  The parent's `scan_and_update` then calls
+/// `forwarded_to(bindings.allocated_data())` and updates the stale pointer.
+///
+/// `scan` and `scan_and_update` are no-ops: the backing contains raw bytes
+/// whose element-level pointer updates are handled by the parent's
+/// `scan_and_update`.
+pub struct OpaqueHeapBytes;
+
 /// A heap object that scanned for references to other heap objects
 pub trait GcScannable {
     /// Scan this object for references to other heap objects.
@@ -85,6 +106,18 @@ pub trait GcScannable {
     /// Default implementation does nothing (for types with no
     /// rewritable pointers).
     fn scan_and_update(&mut self, _heap: &CollectorHeapView<'_>) {}
+}
+
+impl GcScannable for OpaqueHeapBytes {
+    fn scan<'a>(
+        &'a self,
+        _scope: &'a dyn CollectorScope,
+        _marker: &mut CollectorHeapView<'a>,
+        _out: &mut Vec<ScanPtr<'a>>,
+    ) {
+        // No sub-objects: element-level pointer updates are handled by the
+        // parent object's scan_and_update.
+    }
 }
 
 impl<T: GcScannable> GcScannable for Vec<NonNull<T>> {

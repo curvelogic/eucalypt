@@ -19,10 +19,11 @@ use crate::{
         emit::{Emitter, RenderMetadata},
         error::ExecutionError,
         machine::{
-            env::SynClosure,
+            env::{EnvFrame, SynClosure},
             intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
         },
         memory::{
+            alloc::ScopedAllocator,
             array::Array,
             mutator::MutatorHeapView,
             ndarray::HeapNdArray,
@@ -38,6 +39,39 @@ use super::{
     support::{machine_return_str, sym_arg},
     tags::DataConstructor,
 };
+
+/// Resolve a constructor arg `Ref` to a `SynClosure` relative to `closure`'s
+/// environment.
+///
+/// Constructor args in the STG heap can be:
+/// - `Ref::L(i)` — a local environment slot (the common case).
+/// - `Ref::V(n)` — an inline native value; wrap it in a heap `Atom`.
+/// - `Ref::G(i)` — a global; fall back to an `Atom` wrapping the ref.
+///
+/// The `navigate_local` method on `SynClosure` only handles `Ref::L` and
+/// panics for other cases.  This helper handles all three variants so that
+/// render traversal does not crash on blocks with small literal values.
+fn resolve_cons_arg(
+    closure: &SynClosure,
+    view: &MutatorHeapView<'_>,
+    r: Ref,
+    root_env: crate::eval::memory::syntax::RefPtr<EnvFrame>,
+) -> Result<SynClosure, ExecutionError> {
+    match r {
+        Ref::L(i) => {
+            let env = view.scoped(closure.env());
+            (*env)
+                .get(view, i)
+                .ok_or(ExecutionError::BadEnvironmentIndex(i))
+        }
+        Ref::V(_) | Ref::G(_) => {
+            // Wrap the inline/global ref in a heap Atom so the caller can
+            // render it via the normal closure traversal path.
+            let atom = view.alloc(HeapSyn::Atom { evaluand: r })?.as_ptr();
+            Ok(SynClosure::new(atom, root_env))
+        }
+    }
+}
 
 /// Convert a set primitive to a render primitive
 fn set_primitive_to_render_primitive(
@@ -189,7 +223,7 @@ fn render_closure_to_emitter(
                     let inner_ref = args
                         .get(0)
                         .ok_or_else(|| ExecutionError::Panic("empty boxed value".to_string()))?;
-                    let inner = closure.navigate_local(&view, inner_ref);
+                    let inner = resolve_cons_arg(&closure, &view, inner_ref, machine.root_env())?;
                     render_closure_to_emitter(inner, machine, view, emitter)
                 }
                 Ok(DataConstructor::ListCons) => {
@@ -209,7 +243,8 @@ fn render_closure_to_emitter(
                     let items_ref = args
                         .get(0)
                         .ok_or_else(|| ExecutionError::Panic("block missing items".to_string()))?;
-                    let items_closure = closure.navigate_local(&view, items_ref);
+                    let items_closure =
+                        resolve_cons_arg(&closure, &view, items_ref, machine.root_env())?;
                     emitter.block_start(&RenderMetadata::empty());
                     render_block_items(items_closure, machine, view, emitter)?;
                     emitter.block_end();
@@ -227,7 +262,7 @@ fn render_closure_to_emitter(
                     let inner_ref = args.get(0).ok_or_else(|| {
                         ExecutionError::Panic("block-kv-list missing cons".to_string())
                     })?;
-                    let inner = closure.navigate_local(&view, inner_ref);
+                    let inner = resolve_cons_arg(&closure, &view, inner_ref, machine.root_env())?;
                     render_list_items_raw(inner, machine, view, emitter)
                 }
                 _ => {
@@ -265,11 +300,11 @@ fn render_list_from_cons(
         .get(1)
         .ok_or_else(|| ExecutionError::Panic("malformed list cons (no tail)".to_string()))?;
 
-    let head = current.navigate_local(&view, head_ref);
+    let head = resolve_cons_arg(&current, &view, head_ref, machine.root_env())?;
     render_closure_to_emitter(head, machine, view, emitter)?;
 
     // Walk the remaining tail without recursion
-    let mut tail = current.navigate_local(&view, tail_ref);
+    let mut tail = resolve_cons_arg(&current, &view, tail_ref, machine.root_env())?;
 
     loop {
         let tail_code = view.scoped(tail.code());
@@ -283,9 +318,9 @@ fn render_list_from_cons(
                     let t_ref = args
                         .get(1)
                         .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let head = tail.navigate_local(&view, h_ref);
+                    let head = resolve_cons_arg(&tail, &view, h_ref, machine.root_env())?;
                     render_closure_to_emitter(head, machine, view, emitter)?;
-                    let next_tail = tail.navigate_local(&view, t_ref);
+                    let next_tail = resolve_cons_arg(&tail, &view, t_ref, machine.root_env())?;
                     current = tail;
                     tail = next_tail;
                     let _ = current; // keep borrow checker happy
@@ -318,9 +353,9 @@ fn render_list_items_raw(
                     let t_ref = args
                         .get(1)
                         .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let head = current.navigate_local(&view, h_ref);
+                    let head = resolve_cons_arg(&current, &view, h_ref, machine.root_env())?;
                     render_closure_to_emitter(head, machine, view, emitter)?;
-                    current = current.navigate_local(&view, t_ref);
+                    current = resolve_cons_arg(&current, &view, t_ref, machine.root_env())?;
                 }
                 _ => break,
             },
@@ -350,7 +385,7 @@ fn render_block_items(
                         ExecutionError::Panic("malformed block items list (no tail)".to_string())
                     })?;
 
-                    let head = current.navigate_local(&view, h_ref);
+                    let head = resolve_cons_arg(&current, &view, h_ref, machine.root_env())?;
                     let head_code = view.scoped(head.code());
 
                     if let HeapSyn::Cons {
@@ -365,13 +400,14 @@ fn render_block_items(
                             let inner_ref = item_args.get(0).ok_or_else(|| {
                                 ExecutionError::Panic("empty block-kv-list".to_string())
                             })?;
-                            let inner = head.navigate_local(&view, inner_ref);
+                            let inner =
+                                resolve_cons_arg(&head, &view, inner_ref, machine.root_env())?;
                             render_list_items_raw(inner, machine, view, emitter)?;
                         }
                         // Other tags: skip
                     }
 
-                    current = current.navigate_local(&view, t_ref);
+                    current = resolve_cons_arg(&current, &view, t_ref, machine.root_env())?;
                 }
                 _ => break,
             },
@@ -411,7 +447,7 @@ fn render_block_pair_args(
     emitter.scalar(&RenderMetadata::empty(), &Primitive::Sym(key_str));
 
     // Emit value
-    let val = closure.navigate_local(&view, val_ref);
+    let val = resolve_cons_arg(closure, &view, val_ref, machine.root_env())?;
     render_closure_to_emitter(val, machine, view, emitter)
 }
 

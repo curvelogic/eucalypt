@@ -21,6 +21,7 @@ use std::{
 
 use crate::common::sourcemap::Smid;
 use crate::eval::machine::env::EnvFrame;
+use crate::eval::memory::infotable::InfoTable;
 use crate::eval::{
     error::ExecutionError,
     intrinsics,
@@ -29,7 +30,8 @@ use crate::eval::{
         alloc::ScopedAllocator,
         array::Array,
         mutator::{Mutator, MutatorHeapView},
-        syntax::{HeapSyn, LambdaForm, Native, Ref, RefPtr, StgBuilder},
+        symbol::SymbolPool,
+        syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
     },
     stg::tags::DataConstructor,
 };
@@ -122,68 +124,143 @@ fn resolve_ref(
 
 /// Follow indirection atoms through the environment until we reach a
 /// non-atom node.
-fn dereference(view: &MutatorHeapView<'_>, mut closure: SynClosure) -> SynClosure {
+///
+/// Returns `(derefed_closure, container_env)` where `container_env` is the
+/// env frame from which the final closure was retrieved (i.e. the env of the
+/// last `Atom{L(i)}` that was resolved). When the L-ref is found inside a
+/// **Let** binding, the binding's own env points to the parent scope, but
+/// the container_env is the Let frame itself — callers that need to resolve
+/// further L-refs from the derefed node (e.g. `Meta{L(0), L(1)}`) should
+/// use `container_env` rather than `derefed_closure.env()`.
+///
+/// # Cycle breaking
+///
+/// The STG compiler may produce a letrec where a binding `[k] = thunk(Atom{L(k)})`
+/// is self-referential (L(k) = binding k itself in the letrec frame). This arises
+/// when a block field value is a lambda argument that was captured as a free
+/// variable: at compile time `L(k)` referenced the lambda arg, but at runtime
+/// inside a letrec frame of N bindings, `L(k)` with k < N maps to letrec
+/// binding k (not the outer arg).
+///
+/// To break the cycle, when we detect that `Atom{L(i)}` resolves to a closure
+/// whose (code, env) pair matches the current closure, we try to escape by
+/// accessing `env.get(env.logical_len() + i)` — which chains through to the
+/// parent frame and picks up the actual value at offset `i` from the parent.
+fn dereference(
+    view: &MutatorHeapView<'_>,
+    mut closure: SynClosure,
+) -> (SynClosure, Option<RefPtr<EnvFrame>>) {
+    let mut container_env: Option<RefPtr<EnvFrame>> = None;
+    let mut depth = 0usize;
     loop {
+        if depth > 64 {
+            break;
+        }
         let code = view.scoped(closure.code());
         match &*code {
             HeapSyn::Atom {
                 evaluand: Ref::L(i),
             } => {
-                let env = view.scoped(closure.env());
+                let env_ptr = closure.env();
+                let env = view.scoped(env_ptr);
                 match env.get(view, *i) {
-                    Some(inner) => closure = inner,
+                    Some(inner) => {
+                        // Cycle detection: if the resolved closure has the
+                        // same (code, env) as the current closure, we are
+                        // stuck in a self-referential letrec thunk.
+                        // Break the cycle by jumping to the parent scope.
+                        if inner.code() == closure.code() && inner.env() == closure.env() {
+                            // Try parent scope: env.get(logical_len + i)
+                            let env_len = env.logical_len();
+                            if let Some(parent_val) = env.get(view, env_len + *i) {
+                                container_env = Some(env_ptr);
+                                closure = parent_val;
+                                depth += 1;
+                                continue;
+                            }
+                            break;
+                        }
+                        container_env = Some(env_ptr);
+                        closure = inner;
+                        depth += 1;
+                    }
                     None => break,
                 }
             }
             _ => break,
         }
     }
-    closure
+    (closure, container_env)
 }
 
 /// Strip a single `Meta` wrapper from a closure, returning the metadata
 /// symbol name (if readable) and the body closure.
 ///
 /// Returns `(None, closure)` if there is no metadata wrapper.
-fn peel_meta(view: &MutatorHeapView<'_>, closure: SynClosure) -> (Option<String>, SynClosure) {
-    let derefed = dereference(view, closure);
+///
+/// # Let-binding env correction
+///
+/// When a `Meta{L(m), L(b)}` is stored as a Let binding, the binding
+/// closure's own env points to the **parent** scope (not the Let frame
+/// itself), because `from_let` sets each binding's env to `next`. The
+/// L-ref indices, however, are relative to the **Let frame** (the
+/// container that was used when the Atom pointing to this binding was
+/// resolved). `peel_meta` therefore resolves L-refs through the
+/// `container_env` returned by `dereference` rather than through
+/// `derefed.env()`.
+fn peel_meta(
+    view: &MutatorHeapView<'_>,
+    pool: &SymbolPool,
+    closure: SynClosure,
+) -> (Option<String>, SynClosure) {
+    let (derefed, container_env) = dereference(view, closure);
     let code = view.scoped(derefed.code());
     match &*code {
         HeapSyn::Meta { meta, body } => {
-            // Read meta ref as a symbol name
-            let sym_name = match meta {
-                Ref::V(Native::Sym(id)) => Some(id.to_string()),
-                Ref::L(i) => {
-                    let env = view.scoped(derefed.env());
-                    env.get(view, *i).and_then(|meta_c| {
-                        let mc = dereference(view, meta_c);
-                        let mc_code = view.scoped(mc.code());
-                        match &*mc_code {
-                            HeapSyn::Atom {
-                                evaluand: Ref::V(Native::Sym(id)),
-                            } => Some(id.to_string()),
-                            HeapSyn::Cons { tag, args }
-                                if *tag == DataConstructor::BoxedSymbol.tag() =>
-                            {
-                                let r = args.get(0)?;
-                                match r {
-                                    Ref::V(Native::Sym(id)) => Some(id.to_string()),
-                                    _ => None,
-                                }
-                            }
-                            _ => None,
-                        }
-                    })
+            // Use container_env (the Let/LetRec frame that holds this binding)
+            // to resolve L(i) refs, falling back to the derefed closure's own
+            // env when no container was recorded (i.e. the Meta was not reached
+            // via an Atom indirection).
+            let resolve_env = |i: usize| -> Option<SynClosure> {
+                if let Some(cenv_ptr) = container_env {
+                    let cenv = view.scoped(cenv_ptr);
+                    if let Some(c) = cenv.get(view, i) {
+                        return Some(c);
+                    }
                 }
+                // Fallback: try the derefed closure's own env
+                let env = view.scoped(derefed.env());
+                env.get(view, i)
+            };
+
+            // Read meta ref as a symbol name (resolved via pool for readable text)
+            let sym_name = match meta {
+                Ref::V(Native::Sym(id)) => Some(pool.resolve(*id).to_string()),
+                Ref::L(i) => resolve_env(*i).and_then(|meta_c| {
+                    let (mc, _) = dereference(view, meta_c);
+                    let mc_code = view.scoped(mc.code());
+                    match &*mc_code {
+                        HeapSyn::Atom {
+                            evaluand: Ref::V(Native::Sym(id)),
+                        } => Some(pool.resolve(*id).to_string()),
+                        HeapSyn::Cons { tag, args }
+                            if *tag == DataConstructor::BoxedSymbol.tag() =>
+                        {
+                            let r = args.get(0)?;
+                            match r {
+                                Ref::V(Native::Sym(id)) => Some(pool.resolve(id).to_string()),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                }),
                 _ => None,
             };
 
             // Resolve body Ref to a closure
             let body_closure = match body {
-                Ref::L(i) => {
-                    let env = view.scoped(derefed.env());
-                    env.get(view, *i).unwrap_or_else(|| derefed.clone())
-                }
+                Ref::L(i) => resolve_env(*i).unwrap_or_else(|| derefed.clone()),
                 Ref::V(_) | Ref::G(_) => derefed.clone(),
             };
 
@@ -193,26 +270,80 @@ fn peel_meta(view: &MutatorHeapView<'_>, closure: SynClosure) -> (Option<String>
     }
 }
 
+/// Convenience wrapper: follow indirection atoms and return just the closure.
+///
+/// For cases that do not need the container env (list walking, `read_as_string`,
+/// etc.), this avoids cluttering every call site with `let (c, _) = …`.
+#[inline]
+fn deref(view: &MutatorHeapView<'_>, closure: SynClosure) -> SynClosure {
+    dereference(view, closure).0
+}
+
 /// Extract the cons-list closure from a `Block` constructor.
+///
+/// The closure may be:
+/// - A `Block(list_ref, no_index)` Cons node directly.
+/// - A LetRec/Let thunk whose body is a `Block(...)` — this happens when the
+///   block is compiled as a non-strict `letrec [...] in Block(...)`.  In that
+///   case we instantiate the LetRec/Let env and look at the Block body without
+///   fully evaluating the thunk.
 fn block_list(view: &MutatorHeapView<'_>, closure: SynClosure) -> Option<SynClosure> {
-    let c = dereference(view, closure);
+    let c = deref(view, closure);
+    block_list_inner(view, c, 8)
+}
+
+fn block_list_inner(view: &MutatorHeapView<'_>, c: SynClosure, depth: usize) -> Option<SynClosure> {
+    if depth == 0 {
+        return None;
+    }
     let code = view.scoped(c.code());
     match &*code {
         HeapSyn::Cons { tag, args } if *tag == DataConstructor::Block.tag() => {
             let list_ref = args.get(0)?;
             resolve_ref(view, &c, list_ref).ok()
         }
+        // A thunk-wrapped LetRec or Let: peek at the body to find the Block.
+        // We build the env frame and look at the body code statically.
+        HeapSyn::LetRec { bindings, body } => {
+            use crate::eval::machine::env_builder::EnvBuilder;
+            let env = view
+                .from_letrec(
+                    bindings.as_slice(),
+                    c.env(),
+                    crate::common::sourcemap::Smid::default(),
+                )
+                .ok()?;
+            let body_closure = SynClosure::new(*body, env);
+            let body_deref = deref(view, body_closure);
+            block_list_inner(view, body_deref, depth - 1)
+        }
+        HeapSyn::Let { bindings, body } => {
+            use crate::eval::machine::env_builder::EnvBuilder;
+            let env = view
+                .from_let(
+                    bindings.as_slice(),
+                    c.env(),
+                    crate::common::sourcemap::Smid::default(),
+                )
+                .ok()?;
+            let body_closure = SynClosure::new(*body, env);
+            let body_deref = deref(view, body_closure);
+            block_list_inner(view, body_deref, depth - 1)
+        }
         _ => None,
     }
 }
 
 /// Walk a cons-list of `BlockPair` nodes, extracting string key-value pairs.
+///
+/// Symbol keys are resolved to their text via `pool`.
 fn collect_block_fields(
     view: &MutatorHeapView<'_>,
+    pool: &SymbolPool,
     list_closure: SynClosure,
 ) -> HashMap<String, String> {
     let mut fields = HashMap::new();
-    let mut current = dereference(view, list_closure);
+    let mut current = deref(view, list_closure);
 
     loop {
         let code = view.scoped(current.code());
@@ -228,10 +359,10 @@ fn collect_block_fields(
                     None => break,
                 };
                 if let Ok(head) = resolve_ref(view, &current, head_ref) {
-                    collect_pair(view, dereference(view, head), &mut fields);
+                    collect_pair(view, pool, deref(view, head), &mut fields);
                 }
                 match resolve_ref(view, &current, tail_ref) {
-                    Ok(tail) => current = dereference(view, tail),
+                    Ok(tail) => current = deref(view, tail),
                     Err(_) => break,
                 }
             }
@@ -243,8 +374,11 @@ fn collect_block_fields(
 }
 
 /// Read a single `BlockPair` node into the fields map.
+///
+/// Symbol keys are resolved to their text via `pool`.
 fn collect_pair(
     view: &MutatorHeapView<'_>,
+    pool: &SymbolPool,
     pair: SynClosure,
     fields: &mut HashMap<String, String>,
 ) {
@@ -261,12 +395,14 @@ fn collect_pair(
             };
 
             let key_name = match &key_ref {
-                Ref::V(Native::Sym(id)) => id.to_string(),
+                Ref::V(Native::Sym(id)) => pool.resolve(*id).to_string(),
                 _ => return,
             };
+            let val_ref_clone = val_ref.clone();
 
-            if let Ok(val_closure) = resolve_ref(view, &pair, val_ref) {
-                if let Some(val_str) = read_as_string(view, dereference(view, val_closure)) {
+            if let Ok(val_closure) = resolve_ref(view, &pair, val_ref_clone) {
+                let derefed = deref(view, val_closure);
+                if let Some(val_str) = read_as_string(view, derefed) {
                     fields.insert(key_name, val_str);
                 }
             }
@@ -319,10 +455,10 @@ fn read_as_string(view: &MutatorHeapView<'_>, closure: SynClosure) -> Option<Str
                         let tr = args.get(1)?;
                         let head = resolve_ref(view, &cur, hr).ok()?;
                         let tail = resolve_ref(view, &cur, tr).ok()?;
-                        if let Some(s) = read_as_string(view, dereference(view, head)) {
+                        if let Some(s) = read_as_string(view, deref(view, head)) {
                             parts.push(s);
                         }
-                        cur = dereference(view, tail);
+                        cur = deref(view, tail);
                     }
                     _ => break,
                 }
@@ -331,7 +467,7 @@ fn read_as_string(view: &MutatorHeapView<'_>, closure: SynClosure) -> Option<Str
         }
         HeapSyn::Meta { body, .. } => {
             let body_closure = resolve_ref(view, &closure, body.clone()).ok()?;
-            read_as_string(view, dereference(view, body_closure))
+            read_as_string(view, deref(view, body_closure))
         }
         _ => None,
     }
@@ -350,20 +486,19 @@ struct ReadSpecBlock {
 }
 
 impl Mutator for ReadSpecBlock {
-    type Input = ();
+    type Input = SymbolPool;
     type Output = ActionSpec;
 
-    fn run(&self, view: &MutatorHeapView, _: ()) -> Result<ActionSpec, ExecutionError> {
-        // Strip metadata to get (tag_sym_id_str, body_block_closure)
-        let (meta_sym, body_closure) = peel_meta(view, self.spec_block.clone());
+    fn run(&self, view: &MutatorHeapView, pool: SymbolPool) -> Result<ActionSpec, ExecutionError> {
+        let (meta_sym, body_closure) = peel_meta(view, &pool, self.spec_block.clone());
 
         // Extract the cons-list from the block
-        let list_closure = block_list(view, body_closure).ok_or_else(|| {
+        let list_closure = block_list(view, body_closure.clone()).ok_or_else(|| {
             ExecutionError::Panic("IoAction spec block is not a Block constructor".to_string())
         })?;
 
         // Walk the list to collect fields
-        let fields = collect_block_fields(view, list_closure);
+        let fields = collect_block_fields(view, &pool, list_closure);
 
         // Identify action type from metadata symbol
         let tag_name = meta_sym.ok_or_else(|| {
@@ -377,15 +512,8 @@ impl Mutator for ReadSpecBlock {
 
         let stdin = fields.get("stdin").filter(|s| !s.is_empty()).cloned();
 
-        // The symbol pool uses interned IDs as strings, so we cannot directly
-        // compare "io-shell". Instead we rely on the SymbolId Display being the
-        // interned text — this requires that the prelude interned the symbol
-        // into the machine's pool before the spec block was constructed.
-        //
-        // For robustness, we match on both the raw ID string (as a fallback)
-        // and the expected hyphenated names.
         let is_shell =
-            tag_name == "io-shell" || fields.contains_key("cmd") && !fields.contains_key("args");
+            tag_name == "io-shell" || (fields.contains_key("cmd") && !fields.contains_key("args"));
         let is_exec =
             tag_name == "io-exec" || (fields.contains_key("cmd") && fields.contains_key("args"));
 
@@ -440,30 +568,40 @@ struct BuildResultBlock {
 }
 
 impl Mutator for BuildResultBlock {
-    type Input = ();
+    type Input = SymbolPool;
     type Output = SynClosure;
 
-    fn run(&self, view: &MutatorHeapView, _: ()) -> Result<SynClosure, ExecutionError> {
-        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
-
-        // Allocate the three value atoms
+    fn run(
+        &self,
+        view: &MutatorHeapView,
+        mut pool: SymbolPool,
+    ) -> Result<SynClosure, ExecutionError> {
+        // Build value closures (each with root_env as parent).
+        //
+        // Strings must be wrapped as BoxedString data constructors so that
+        // eucalypt string intrinsics (which case-match on BoxedString tag 5)
+        // receive a value in the expected form.  Numeric exit code is wrapped
+        // as BoxedNumber for the same reason.
         let stdout_ref = view.str_ref(self.stdout.as_str())?;
         let stderr_ref = view.str_ref(self.stderr.as_str())?;
         let exit_code_ref = Ref::V(Native::Num(serde_json::Number::from(self.exit_code)));
 
         let stdout_atom = view
-            .alloc(HeapSyn::Atom {
-                evaluand: stdout_ref,
+            .alloc(HeapSyn::Cons {
+                tag: DataConstructor::BoxedString.tag(),
+                args: Array::from_slice(view, &[stdout_ref]),
             })?
             .as_ptr();
         let stderr_atom = view
-            .alloc(HeapSyn::Atom {
-                evaluand: stderr_ref,
+            .alloc(HeapSyn::Cons {
+                tag: DataConstructor::BoxedString.tag(),
+                args: Array::from_slice(view, &[stderr_ref]),
             })?
             .as_ptr();
         let exit_code_atom = view
-            .alloc(HeapSyn::Atom {
-                evaluand: exit_code_ref,
+            .alloc(HeapSyn::Cons {
+                tag: DataConstructor::BoxedNumber.tag(),
+                args: Array::from_slice(view, &[exit_code_ref]),
             })?
             .as_ptr();
 
@@ -471,7 +609,7 @@ impl Mutator for BuildResultBlock {
         let stderr_c = SynClosure::new(stderr_atom, self.root_env);
         let exit_code_c = SynClosure::new(exit_code_atom, self.root_env);
 
-        // Frame for values: [stdout=0, stderr=1, exit_code=2]
+        // Flat env frame holding all three values: [stdout=0, stderr=1, exit_code=2]
         let value_frame = view.from_closures(
             [stdout_c, stderr_c, exit_code_c].iter().cloned(),
             3,
@@ -479,11 +617,14 @@ impl Mutator for BuildResultBlock {
             Smid::default(),
         )?;
 
-        // Build BlockPair nodes in value_frame
+        // Symbol refs for block keys
         let stdout_sym = view.sym_ref(&mut pool, "stdout")?;
         let stderr_sym = view.sym_ref(&mut pool, "stderr")?;
         let exitcode_sym = view.sym_ref(&mut pool, "exit-code")?;
 
+        // Build three BlockPair nodes.  Each pair's env is value_frame so that
+        // Ref::L(0/1/2) resolves to the correct value atom when LOOKUP calls
+        // resolve_in_closure(pair, val_ref).
         let pair0_ptr = view
             .alloc(HeapSyn::Cons {
                 tag: DataConstructor::BlockPair.tag(),
@@ -503,96 +644,77 @@ impl Mutator for BuildResultBlock {
             })?
             .as_ptr();
 
-        // Build a frame of pairs: [pair0=0, pair1=1, pair2=2]
         let pair0_c = SynClosure::new(pair0_ptr, value_frame);
         let pair1_c = SynClosure::new(pair1_ptr, value_frame);
         let pair2_c = SynClosure::new(pair2_ptr, value_frame);
-        let pair_frame = view.from_closures(
-            [pair0_c, pair1_c, pair2_c].iter().cloned(),
-            3,
-            value_frame,
-            Smid::default(),
-        )?;
 
-        // Build list via letrec over pair_frame (4 slots: nil, c2, c1, c0).
+        // Build the cons list as fully-materialised closures (no letrec thunks).
         //
-        // pair_frame indices: pair0=0, pair1=1, pair2=2
+        // The BlockListIterator calls resolve_in_closure(list_cell, head_ref).
+        // Each ListCons cell uses Ref::L(0) for head and Ref::L(1) for tail,
+        // so the closure's env must map L(0) → pair, L(1) → next list cell.
         //
-        // letrec frame (4 bindings) over pair_frame:
-        //   letrec[0] = ListNil
-        //   letrec[1] = ListCons(L(2+3), L(0))    pair2 = L(2+3=5)? No:
-        //
-        // In a letrec of 4 bindings over pair_frame (3 slots):
-        //   L(0..3) = letrec bindings (self-referential)
-        //   L(4..6) = pair_frame slots (pair0=L(4), pair1=L(5), pair2=L(6))
-        //
-        //   letrec[0] = ListNil
-        //   letrec[1] = ListCons(L(6), L(0))   — pair2, nil
-        //   letrec[2] = ListCons(L(5), L(1))   — pair1, c2
-        //   letrec[3] = ListCons(L(4), L(2))   — pair0, c1
-        // body = L(3)  — the outermost cons = c0
+        // List built tail-first: nil → c2 → c1 → c0.
 
-        let nil_syn = view
+        let nil_ptr = view
             .alloc(HeapSyn::Cons {
                 tag: DataConstructor::ListNil.tag(),
                 args: Array::default(),
             })?
             .as_ptr();
-        let c2_syn = view
+        let nil_c = SynClosure::new(nil_ptr, self.root_env);
+
+        // Shared ListCons shape: Cons{ListCons, [L(0), L(1)]}
+        let list_cons_syn = view
             .alloc(HeapSyn::Cons {
                 tag: DataConstructor::ListCons.tag(),
-                args: Array::from_slice(view, &[Ref::L(6), Ref::L(0)]),
-            })?
-            .as_ptr();
-        let c1_syn = view
-            .alloc(HeapSyn::Cons {
-                tag: DataConstructor::ListCons.tag(),
-                args: Array::from_slice(view, &[Ref::L(5), Ref::L(1)]),
-            })?
-            .as_ptr();
-        let c0_syn = view
-            .alloc(HeapSyn::Cons {
-                tag: DataConstructor::ListCons.tag(),
-                args: Array::from_slice(view, &[Ref::L(4), Ref::L(2)]),
+                args: Array::from_slice(view, &[Ref::L(0), Ref::L(1)]),
             })?
             .as_ptr();
 
-        let letrec_bindings = Array::from_slice(
-            view,
-            &[
-                LambdaForm::value(nil_syn),
-                LambdaForm::value(c2_syn),
-                LambdaForm::value(c1_syn),
-                LambdaForm::value(c0_syn),
-            ],
-        );
-        let body_atom = view
-            .alloc(HeapSyn::Atom {
-                evaluand: Ref::L(3),
-            })?
-            .as_ptr();
-        let list_letrec = view
-            .alloc(HeapSyn::LetRec {
-                bindings: letrec_bindings,
-                body: body_atom,
-            })?
-            .as_ptr();
+        // c2: head=pair2, tail=nil
+        let c2_frame = view.from_closures(
+            [pair2_c.clone(), nil_c].iter().cloned(),
+            2,
+            self.root_env,
+            Smid::default(),
+        )?;
+        let c2_c = SynClosure::new(list_cons_syn, c2_frame);
 
-        let list_closure = SynClosure::new(list_letrec, pair_frame);
+        // c1: head=pair1, tail=c2
+        let c1_frame = view.from_closures(
+            [pair1_c.clone(), c2_c.clone()].iter().cloned(),
+            2,
+            self.root_env,
+            Smid::default(),
+        )?;
+        let c1_c = SynClosure::new(list_cons_syn, c1_frame);
 
-        // Frame holding the list: [list=0]
-        let list_frame = view.from_closure(list_closure, self.root_env, Smid::default())?;
+        // c0: head=pair0, tail=c1
+        let c0_frame = view.from_closures(
+            [pair0_c.clone(), c1_c].iter().cloned(),
+            2,
+            self.root_env,
+            Smid::default(),
+        )?;
+        let c0_c = SynClosure::new(list_cons_syn, c0_frame);
+
+        // Frame holding the list head: [list=0]
+        let list_frame = view.from_closure(c0_c, self.root_env, Smid::default())?;
 
         // Block { list=L(0), no_index }
         let no_index = Ref::V(Native::Num(serde_json::Number::from(0)));
-        let block_syn = view
+        let block_ptr = view
             .alloc(HeapSyn::Cons {
                 tag: DataConstructor::Block.tag(),
                 args: Array::from_slice(view, &[Ref::L(0), no_index]),
             })?
             .as_ptr();
 
-        Ok(SynClosure::new(block_syn, list_frame))
+        // Suppress unused-variable warnings for clones used only above
+        let _ = (pair1_c, pair2_c, c2_c, pair0_c);
+
+        Ok(SynClosure::new(block_ptr, list_frame))
     }
 }
 
@@ -623,37 +745,6 @@ impl Mutator for BuildIoReturn {
             })?
             .as_ptr();
         Ok(SynClosure::new(cons_syn, env))
-    }
-}
-
-// ─── Mutator: apply continuation to result ───────────────────────────────────
-
-struct ApplyCont {
-    cont: SynClosure,
-    result: SynClosure,
-    root_env: RefPtr<EnvFrame>,
-}
-
-impl Mutator for ApplyCont {
-    type Input = ();
-    type Output = SynClosure;
-
-    fn run(&self, view: &MutatorHeapView, _: ()) -> Result<SynClosure, ExecutionError> {
-        // Frame: [cont=0, result=1]
-        let env = view.from_closures(
-            [self.cont.clone(), self.result.clone()].iter().cloned(),
-            2,
-            self.root_env,
-            Smid::default(),
-        )?;
-        // App { callable: L(0), args: [L(1)] }
-        let app_syn = view
-            .alloc(HeapSyn::App {
-                callable: Ref::L(0),
-                args: Array::from_slice(view, &[Ref::L(1)]),
-            })?
-            .as_ptr();
-        Ok(SynClosure::new(app_syn, env))
     }
 }
 
@@ -787,7 +878,7 @@ fn extract_error_string(machine: &Machine<'_>, closure: &SynClosure) -> String {
         type Input = ();
         type Output = Option<String>;
         fn run(&self, view: &MutatorHeapView, _: ()) -> Result<Option<String>, ExecutionError> {
-            Ok(read_as_string(view, dereference(view, self.0.clone())))
+            Ok(read_as_string(view, deref(view, self.0.clone())))
         }
     }
     machine
@@ -841,15 +932,24 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 let world = args[0].clone();
                 let spec_block = args[1].clone();
 
-                // Read the spec from the heap
+                // Stash world so it survives GC across the mutator calls below.
+                machine.stash_push(world);
+
+                // Read the action spec by static heap navigation.  The spec_block
+                // is an unevaluated closure (Meta wrapping a LetRec block thunk).
+                // `ReadSpecBlock` navigates the heap structure without machine
+                // evaluation, using cycle-breaking in `dereference` to read
+                // lambda-captured values from letrec bindings.
+                let pool = machine.symbol_pool().clone();
                 let spec = machine
-                    .mutate(ReadSpecBlock { spec_block }, ())
+                    .mutate(ReadSpecBlock { spec_block }, pool)
                     .map_err(IoRunError::from)?;
 
                 // Execute the shell action
                 let result = run_spec(&spec)?;
 
-                // Build the result block closure
+                // Build the result block closure.  World remains stashed as a GC root.
+                let pool = machine.symbol_pool().clone();
                 let result_c = machine
                     .mutate(
                         BuildResultBlock {
@@ -858,11 +958,17 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                             exit_code: result.exit_code,
                             root_env: machine.root_env(),
                         },
-                        (),
+                        pool,
                     )
                     .map_err(IoRunError::from)?;
 
-                // Wrap in IoReturn(world, result_block) and resume
+                // Stash result_c to protect it during the BuildIoReturn mutator.
+                machine.stash_push(result_c);
+                let result_c = machine.stash_pop();
+                let world = machine.stash_pop();
+
+                // Wrap in IoReturn(world, result_block) and resume.
+                // Stash io_return_c across machine.run() for GC safety.
                 let io_return_c = machine
                     .mutate(
                         BuildIoReturn {
@@ -874,43 +980,109 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                     )
                     .map_err(IoRunError::from)?;
 
+                machine.stash_push(io_return_c);
+                let io_return_c = machine.stash_peek(0);
                 machine.resume(io_return_c);
                 machine.run(None).map_err(IoRunError::from)?;
+                machine.stash_pop();
                 // Loop back to inspect the new yield
             }
 
             Ok(DataConstructor::IoBind) => {
-                // IoBind(world=0, action=1, continuation=2)
-                let action = args[1].clone();
-                let cont = args[2].clone();
+                // IoBind(world=0, cont=1, action=2)
+                //
+                // When the prelude calls io.bind(action, cont), it produces
+                // __IO_BIND(action)(cont) — a PAP waiting for world.  After
+                // world injection the 3-arg lambda is saturated as
+                // IO_BIND(action, cont, world), which places the args in
+                // lref order [action=lref(0), cont=lref(1), world=lref(2)]
+                // and the body IoBind(lref(2), lref(1), lref(0)) yields
+                // IoBind(world, cont, action) → args[0]=world, args[1]=cont,
+                // args[2]=action.
+                let world = args[0].clone();
+                let cont = args[1].clone();
+                let action = args[2].clone();
 
-                // Step 1: evaluate the action
-                machine.resume(action);
-                machine.run(None).map_err(IoRunError::from)?;
+                // Stash `cont` and `world` so they survive GC during the
+                // recursive machine.run() calls below.  Without this, the
+                // collector may sweep heap objects reachable only from these
+                // Rust-stack closures.
+                machine.stash_push(cont);
+                machine.stash_push(world);
 
-                if !machine.io_yielded() {
-                    return Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
-                        "IoBind action did not yield an IO constructor".to_string(),
-                    ))));
-                }
-
-                // Step 2: recursively process the action result
-                let action_result = io_run(machine, allow_io)?;
-
-                // Step 3: apply continuation to result
-                let apply_c = machine
+                // Step 1: apply world to action (action is a PAP waiting for
+                // world: e.g. io.return(42) = λworld.IoReturn(world,42)).
+                // We read world back from the stash (index 0 = top).
+                let world_ref = machine.stash_peek(0);
+                let action_with_world = machine
                     .mutate(
-                        ApplyCont {
-                            cont,
-                            result: action_result,
+                        BuildApply1 {
+                            func: action,
+                            arg: world_ref,
                             root_env: machine.root_env(),
                         },
                         (),
                     )
                     .map_err(IoRunError::from)?;
 
-                machine.resume_for_render(apply_c);
+                // Stash action_with_world so it is a GC root across machine.run().
+                // The GC scans state.closure (set by resume()) but stashing here
+                // provides belt-and-suspenders protection and ensures the pointer
+                // is updated via scan_and_update if objects are evacuated.
+                // Stash order (top to bottom): action_with_world, world, cont
+                machine.stash_push(action_with_world);
+                let action_with_world = machine.stash_peek(0);
+                machine.resume(action_with_world);
                 machine.run(None).map_err(IoRunError::from)?;
+                // Pop action_with_world; state.closure now holds the updated reference.
+                machine.stash_pop();
+
+                if !machine.io_yielded() {
+                    machine.stash_pop();
+                    machine.stash_pop();
+                    return Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                        "IoBind action did not yield an IO constructor".to_string(),
+                    ))));
+                }
+
+                // Step 2: recursively process the action result.
+                // `cont` and `world` remain stashed throughout.
+                let action_result = io_run(machine, allow_io)?;
+
+                // Stash action_result to protect it across the BuildApply2 mutator
+                // allocations.  GC runs during `from_closures` and would not see
+                // `action_result` on the Rust stack otherwise.
+                machine.stash_push(action_result);
+
+                // Step 3: apply continuation to result AND world.
+                // cont(action_result) gives a PAP; applying world produces
+                // the next IO constructor.
+                // Stash order (top to bottom): action_result, world, cont
+                let action_result = machine.stash_pop();
+                let world = machine.stash_pop();
+                let cont = machine.stash_pop();
+
+                let cont_call = machine
+                    .mutate(
+                        BuildApply2 {
+                            func: cont,
+                            arg0: action_result,
+                            arg1: world,
+                            root_env: machine.root_env(),
+                        },
+                        (),
+                    )
+                    .map_err(IoRunError::from)?;
+
+                // Stash cont_call as a GC root across machine.run() for the
+                // same reason as action_with_world above: belt-and-suspenders
+                // protection in case of evacuation during the run.
+                machine.stash_push(cont_call);
+                let cont_call = machine.stash_peek(0);
+                machine.resume(cont_call);
+                machine.run(None).map_err(IoRunError::from)?;
+                // Pop cont_call; state.closure holds the updated reference.
+                machine.stash_pop();
                 // Loop back
             }
 
@@ -921,6 +1093,177 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
             }
         }
     }
+}
+
+/// Mutator: build `App(func, [arg])` — applies a single argument.
+struct BuildApply1 {
+    func: SynClosure,
+    arg: SynClosure,
+    root_env: RefPtr<EnvFrame>,
+}
+
+impl Mutator for BuildApply1 {
+    type Input = ();
+    type Output = SynClosure;
+
+    fn run(&self, view: &MutatorHeapView, _: ()) -> Result<SynClosure, ExecutionError> {
+        // Frame: [arg=0, func=1]
+        let env = view.from_closures(
+            [self.arg.clone(), self.func.clone()].iter().cloned(),
+            2,
+            self.root_env,
+            Smid::default(),
+        )?;
+        // App { callable: L(1), args: [L(0)] }
+        let app_syn = view
+            .alloc(HeapSyn::App {
+                callable: Ref::L(1),
+                args: Array::from_slice(view, &[Ref::L(0)]),
+            })?
+            .as_ptr();
+        Ok(SynClosure::new(app_syn, env))
+    }
+}
+
+/// Mutator: build `App(func, [arg0, arg1])` — applies two arguments.
+struct BuildApply2 {
+    func: SynClosure,
+    arg0: SynClosure,
+    arg1: SynClosure,
+    root_env: RefPtr<EnvFrame>,
+}
+
+impl Mutator for BuildApply2 {
+    type Input = ();
+    type Output = SynClosure;
+
+    fn run(&self, view: &MutatorHeapView, _: ()) -> Result<SynClosure, ExecutionError> {
+        // Frame: [arg0=0, arg1=1, func=2]
+        let env = view.from_closures(
+            [self.arg0.clone(), self.arg1.clone(), self.func.clone()]
+                .iter()
+                .cloned(),
+            3,
+            self.root_env,
+            Smid::default(),
+        )?;
+        // App { callable: L(2), args: [L(0), L(1)] }
+        let app_syn = view
+            .alloc(HeapSyn::App {
+                callable: Ref::L(2),
+                args: Array::from_slice(view, &[Ref::L(0), Ref::L(1)]),
+            })?
+            .as_ptr();
+        Ok(SynClosure::new(app_syn, env))
+    }
+}
+
+/// Mutator: build `App(io_fn, [unit])` — applies the world token (unit) to an
+/// IO function produced by the prelude.
+///
+/// The eucalypt prelude represents IO actions as functions waiting for a world
+/// token: e.g. `io.return(a)` compiles to `λworld. IoReturn(world, a)`.  The
+/// io-run driver must apply the initial world (unit) to trigger the first
+/// IO constructor yield.
+struct BuildApplyWorld {
+    io_fn: SynClosure,
+    root_env: RefPtr<EnvFrame>,
+}
+
+impl Mutator for BuildApplyWorld {
+    type Input = ();
+    type Output = SynClosure;
+
+    fn run(&self, view: &MutatorHeapView, _: ()) -> Result<SynClosure, ExecutionError> {
+        // Allocate a unit data constructor: Cons(tag=0, args=[])
+        let unit_syn = view
+            .alloc(HeapSyn::Cons {
+                tag: DataConstructor::Unit.tag(),
+                args: Array::from_slice(view, &[]),
+            })?
+            .as_ptr();
+
+        // Create unit closure (borrowing root_env as parent frame)
+        let unit_env = view.from_closures(std::iter::empty(), 0, self.root_env, Smid::default())?;
+        let unit_c = SynClosure::new(unit_syn, unit_env);
+
+        // Frame: [world=0, io_fn=1]
+        let env = view.from_closures(
+            [unit_c, self.io_fn.clone()].iter().cloned(),
+            2,
+            self.root_env,
+            Smid::default(),
+        )?;
+        // App { callable: L(1), args: [L(0)] }  (apply io_fn to world)
+        let app_syn = view
+            .alloc(HeapSyn::App {
+                callable: Ref::L(1),
+                args: Array::from_slice(view, &[Ref::L(0)]),
+            })?
+            .as_ptr();
+        Ok(SynClosure::new(app_syn, env))
+    }
+}
+
+/// Apply the initial world token (unit) to an IO function and re-run the
+/// machine so that the IO constructor is produced and the machine yields.
+///
+/// Called from `eval.rs` when the machine terminates normally after a headless
+/// compile.  If the final closure is a function (an IO action waiting for
+/// world), this injects unit and re-runs to trigger the IO yield.  Returns
+/// `false` if the closure is not a function (it is a plain document value)
+/// or if injection did not result in an IO yield.
+pub fn inject_world_and_run(machine: &mut Machine<'_>) -> Result<bool, IoRunError> {
+    let io_fn = machine.current_closure();
+
+    // Only inject world if the closure is a function (arity > 0).
+    // Plain data values (blocks, strings, numbers, etc.) are not IO
+    // functions and should be rendered directly without world injection.
+    if io_fn.arity() == 0 {
+        return Ok(false);
+    }
+
+    let apply_c = machine
+        .mutate(
+            BuildApplyWorld {
+                io_fn,
+                root_env: machine.root_env(),
+            },
+            (),
+        )
+        .map_err(IoRunError::from)?;
+
+    machine.resume_for_render(apply_c);
+    machine.run(None).map_err(IoRunError::from)?;
+
+    Ok(machine.io_yielded())
+}
+
+/// Render the result of a headless evaluation that did not yield an IO
+/// constructor.
+///
+/// When compiled with `--allow-io` the machine runs in headless mode (no
+/// RENDER_DOC wrapper), so a document that happens not to contain any IO
+/// actions terminates normally without rendering.  This function explicitly
+/// builds a `RENDER_DOC(value)` call and re-runs the machine to emit output.
+///
+/// Returns `Ok(exit_code)` on success; `Err` on machine error.
+pub fn render_headless_result(machine: &mut Machine<'_>) -> Result<Option<u8>, IoRunError> {
+    let value = machine.current_closure();
+    let render_c = machine
+        .mutate(
+            BuildRenderDoc {
+                value,
+                root_env: machine.root_env(),
+            },
+            (),
+        )
+        .map_err(IoRunError::from)?;
+
+    machine.resume_for_render(render_c);
+    let exit_code = machine.run(None).map_err(IoRunError::from)?;
+
+    Ok(exit_code)
 }
 
 /// Run the IO monad interpret loop and render the final pure value.

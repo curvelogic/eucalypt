@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::eval::memory::collect::{CollectorHeapView, GcScannable, ScanPtr};
+use crate::eval::memory::collect::{CollectorHeapView, GcScannable, OpaqueHeapBytes, ScanPtr};
 use crate::eval::memory::infotable::{InfoTable, InfoTagged};
 use crate::{common::sourcemap::Smid, eval::error::ExecutionError};
 
@@ -486,6 +486,16 @@ impl GcScannable for EnvFrame {
         let bindings = &self.bindings;
 
         if marker.mark_array(bindings) {
+            // Push the backing allocation as a heap object so the evacuation
+            // loop calls try_evacuate on it.  Without this, the backing stays
+            // in the candidate block and is recycled after mark-state flip,
+            // leaving the evacuated EnvFrame copy with a dangling data.ptr.
+            if let Some(backing_ptr) = bindings.allocated_data() {
+                out.push(ScanPtr::from_non_null(
+                    scope,
+                    backing_ptr.cast::<OpaqueHeapBytes>(),
+                ));
+            }
             for binding in bindings.iter() {
                 out.push(ScanPtr::new(scope, binding));
             }
@@ -499,6 +509,17 @@ impl GcScannable for EnvFrame {
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
+        // If the bindings backing array was evacuated to a new block,
+        // update the internal pointer before iterating.  Without this,
+        // iter_mut() would walk the old (now-dead) backing memory.
+        if let Some(old_ptr) = self.bindings.allocated_data() {
+            if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                // SAFETY: new_ptr is a valid evacuated copy of the same
+                // backing allocation, with identical capacity and element
+                // layout.
+                unsafe { self.bindings.set_backing_ptr(new_ptr.cast()) };
+            }
+        }
         for binding in self.bindings.iter_mut() {
             binding.scan_and_update(heap);
         }

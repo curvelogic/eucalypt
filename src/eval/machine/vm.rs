@@ -258,6 +258,15 @@ pub struct MachineState {
     /// atom. Prevents O(N) Update accumulation in tail-recursive
     /// conditional loops such as countdown(n) = if(n=0, 0, countdown(n-1)).
     suppress_next_update: bool,
+    /// Stash of closures kept alive across `machine.run()` calls.
+    ///
+    /// The io-run driver holds closures (e.g. `cont` and `world` from an
+    /// `IoBind` handler) across multiple `machine.run()` calls.  Those
+    /// closures are heap-allocated but are NOT part of `closure` or the
+    /// continuation stack, so the GC would not mark them.  Pushing them
+    /// into this stash ensures they are scanned as GC roots for the
+    /// duration of the io-run loop.
+    stash: Vec<SynClosure>,
 }
 
 impl Default for MachineState {
@@ -275,6 +284,7 @@ impl Default for MachineState {
             ),
             symbol_pool: SymbolPool::new(),
             suppress_next_update: false,
+            stash: Vec::new(),
         }
     }
 }
@@ -1026,6 +1036,13 @@ impl GcScannable for MachineState {
         for cont in &self.stack {
             cont.scan(scope, marker, out);
         }
+
+        // Stashed closures must also be scanned so that the GC does not
+        // collect heap objects that the io-run driver is holding between
+        // machine.run() calls.
+        for stashed in &self.stash {
+            out.push(ScanPtr::new(scope, stashed));
+        }
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
@@ -1039,6 +1056,10 @@ impl GcScannable for MachineState {
         // Update forwarded pointers within each continuation's internal fields.
         for cont in &mut self.stack {
             cont.scan_and_update(heap);
+        }
+        // Update forwarded pointers in stashed closures.
+        for stashed in &mut self.stash {
+            stashed.scan_and_update(heap);
         }
     }
 }
@@ -1096,6 +1117,11 @@ impl<'a> Machine<'a> {
     /// Replace the symbol pool (used during initialisation)
     pub fn set_symbol_pool(&mut self, pool: SymbolPool) {
         self.state.symbol_pool = pool;
+    }
+
+    /// Read-only access to the symbol pool for resolving `SymbolId` to text.
+    pub fn symbol_pool(&self) -> &SymbolPool {
+        &self.state.symbol_pool
     }
 
     /// Access the heap for allocation
@@ -1310,6 +1336,46 @@ impl<'a> Machine<'a> {
         let mut ret: Box<dyn Emitter + 'a> = Box::new(NullEmitter);
         std::mem::swap(&mut ret, &mut self.emitter);
         ret
+    }
+
+    /// Return a clone of the machine's current closure.
+    ///
+    /// Used by the headless-render fallback in `io_run.rs` to obtain the
+    /// final evaluated value when the machine terminates without yielding
+    /// an IO constructor.
+    pub fn current_closure(&self) -> SynClosure {
+        self.state.closure.clone()
+    }
+
+    /// Push a closure onto the GC stash.
+    ///
+    /// Used by the io-run driver to keep closures alive across `machine.run()`
+    /// calls.  Each `stash_push` must be paired with a `stash_pop` once the
+    /// closure is no longer needed.
+    pub fn stash_push(&mut self, closure: SynClosure) {
+        self.state.stash.push(closure);
+    }
+
+    /// Pop the most-recently stashed closure.
+    ///
+    /// Panics if the stash is empty — callers must ensure balanced push/pop.
+    pub fn stash_pop(&mut self) -> SynClosure {
+        self.state
+            .stash
+            .pop()
+            .expect("io-run stash underflow: unbalanced stash_push/stash_pop")
+    }
+
+    /// Peek at a stashed closure by depth from the top (0 = top).
+    ///
+    /// Panics if the stash has fewer than `depth + 1` entries.
+    pub fn stash_peek(&self, depth: usize) -> SynClosure {
+        let len = self.state.stash.len();
+        assert!(
+            depth < len,
+            "io-run stash peek out of bounds: depth={depth} len={len}"
+        );
+        self.state.stash[len - 1 - depth].clone()
     }
 
     /// Has the machine terminated

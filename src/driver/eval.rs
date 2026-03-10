@@ -7,7 +7,7 @@ use crate::{
     core::expr::*,
     driver::{
         error::EucalyptError,
-        io_run::io_run_and_render,
+        io_run::{inject_world_and_run, io_run_and_render},
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
     },
@@ -147,23 +147,31 @@ impl<'a> Executor<'a> {
             println!("{}", prettify::prettify(rt.as_ref()));
             Ok(None)
         } else {
-            // When IO monad execution is permitted, compile in headless mode
-            // so that IO constructors can yield to the io-run driver rather
-            // than being passed to RENDER_DOC (which would not recognise them).
-            // After io-run completes, the final value is fed back through
-            // RENDER_DOC explicitly.
-            let stg_settings = if opt.allow_io {
-                StgSettings {
-                    render_type: RenderType::Headless,
-                    ..opt.stg_settings().clone()
-                }
-            } else {
-                opt.stg_settings().clone()
+            // Compile in headless mode so that IO constructors can yield to
+            // the io-run driver rather than being passed to RENDER_DOC.
+            //
+            // After the first run we inspect the result:
+            //
+            // • IO yield directly → run the io-run loop.
+            //
+            // • Normal termination, WHNF is a function (arity > 0) → inject
+            //   the world token and re-run.  If this yields IO, run the io-run
+            //   loop; otherwise the program is erroneous (should not happen in
+            //   well-typed code).
+            //
+            // • Normal termination, WHNF is a data value (arity = 0) → the
+            //   program is a plain document.  Re-compile WITH RENDER_DOC and
+            //   run a fresh machine so that the render is GC-safe.
+            let stg_settings_headless = StgSettings {
+                render_type: RenderType::Headless,
+                ..opt.stg_settings().clone()
             };
+            // Keep normal settings for plain-document fallback
+            let stg_settings = &stg_settings_headless;
 
             let syn = {
                 let t = Instant::now();
-                let syn = stg::compile(&stg_settings, self.evaluand.clone(), rt.as_ref())?;
+                let syn = stg::compile(stg_settings, self.evaluand.clone(), rt.as_ref())?;
                 stats.timings_mut().record("stg-compile", t.elapsed());
                 syn
             };
@@ -173,7 +181,7 @@ impl<'a> Executor<'a> {
                 Ok(None)
             } else {
                 emitter.stream_start();
-                let mut machine = standard_machine(&stg_settings, syn, emitter, rt.as_ref())?;
+                let mut machine = standard_machine(stg_settings, syn, emitter, rt.as_ref())?;
 
                 let ret = {
                     let t = Instant::now();
@@ -210,15 +218,73 @@ impl<'a> Executor<'a> {
                         machine.clock().duration(ThreadOccupation::CollectorSweep),
                     );
 
-                    // If the machine yielded on an IO constructor, run the
-                    // io-run interpret loop to execute IO actions and extract
-                    // the final pure value, then render it.
-                    if let Ok(None) = ret {
+                    // The machine always runs in headless mode (no RENDER_DOC
+                    // wrapper).  After the first run, handle the three cases:
+                    //
+                    // 1. Machine yielded on an IO constructor directly → run
+                    //    the io-run loop (honours opt.allow_io).
+                    //
+                    // 2. Machine terminated normally → the top-level value is
+                    //    either an IO function (PAP waiting for world) or a
+                    //    plain document.  Inject the world token and re-run;
+                    //    then handle the result as case 1 or 3.
+                    //
+                    // 3. No IO yield after world injection → the value is a
+                    //    plain document; feed it through RENDER_DOC explicitly.
+                    if ret.is_ok() {
                         if machine.io_yielded() {
                             let io_result = io_run_and_render(&mut machine, opt.allow_io)
                                 .map_err(|e| ExecutionError::Panic(e.to_string()));
                             machine.take_emitter().stream_end();
                             return io_result;
+                        }
+                        // Machine terminated without yielding.  Try world
+                        // injection to handle IO functions (case 2).
+                        let io_yielded = inject_world_and_run(&mut machine)
+                            .map_err(|e| ExecutionError::Panic(e.to_string()));
+                        match io_yielded {
+                            Ok(true) => {
+                                // World injection triggered an IO yield;
+                                // proceed with the io-run loop.
+                                let io_result = io_run_and_render(&mut machine, opt.allow_io)
+                                    .map_err(|e| ExecutionError::Panic(e.to_string()));
+                                machine.take_emitter().stream_end();
+                                return io_result;
+                            }
+                            Ok(false) => {
+                                // Still no IO yield after world injection;
+                                // treat as a plain document.  Drop the headless
+                                // machine, reclaim the emitter, and re-compile
+                                // with RENDER_DOC for a fresh GC-safe run.
+                                // (Running render_headless_result on the
+                                // existing machine causes GC crashes because the
+                                // heap may contain stale string pointers from
+                                // the first run.)
+                                let emitter = machine.take_emitter();
+                                drop(machine);
+                                let stg_settings_render = StgSettings {
+                                    render_type: RenderType::RenderDoc,
+                                    ..opt.stg_settings().clone()
+                                };
+                                let syn_render = stg::compile(
+                                    &stg_settings_render,
+                                    self.evaluand.clone(),
+                                    rt.as_ref(),
+                                )?;
+                                let mut fresh_machine = standard_machine(
+                                    &stg_settings_render,
+                                    syn_render,
+                                    emitter,
+                                    rt.as_ref(),
+                                )?;
+                                let render_result = fresh_machine.run(None);
+                                fresh_machine.take_emitter().stream_end();
+                                return render_result;
+                            }
+                            Err(e) => {
+                                machine.take_emitter().stream_end();
+                                return Err(e);
+                            }
                         }
                     }
 
