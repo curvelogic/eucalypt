@@ -21,9 +21,20 @@ All notable changes to eucalypt are documented here.
   - Supports `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jsonl`
   - Data-only mode: untrusted input (e.g. shell output) never executes embedded code
 
+- **`monad(m)`** — Derive standard monad combinators from a block with `bind` and `return` fields
+  - Returns a block with `map`, `then`, `join`, `sequence`, `map-m`, `filter-m`
+  - Compose with `{ ... }` to build monadic namespaces: `monad(m) { extra-field: ... }`
+
+- **Monadic `random:` namespace** — State-monad interface to the PRNG
+  - `random.stream(seed)` — create initial stream; each action is a function `stream -> {value, rest}`
+  - `random.float`, `random.int(n)`, `random.choice(xs)`, `random.shuffle(xs)`, `random.sample(n, xs)`
+  - `random.map`, `random.sequence`, `random.map-m`, `random.bind`, `random.return`
+  - Legacy `random-stream`, `random-int`, `random-choice`, `random-shuffle`, `random-sample` retained
+
 ### Fixed
 
 - **GC evacuation alignment** — 16-byte alignment padding for `evacuate()` allocation
+- **GC aarch64 segfault** — Diagnostic instrumentation and workaround for aarch64 evacuation crash
 - **Emacs mode** — Backtick auto-pairing, closing brace indentation, docstring indentation, smartparens compatibility
 - **Unicode input** — Check mark and other new Unicode chars in Quail and transient menu
 
