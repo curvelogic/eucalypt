@@ -330,8 +330,15 @@ impl MachineState {
         let environment = self.closure.env();
         let remaining_arity = self.closure.arity();
 
-        // Set annotation to stamp on any allocations
-        self.annotation = self.closure.annotation();
+        // Set annotation to stamp on any allocations.
+        // Only update if the closure carries a valid annotation — value forms
+        // and other synthetic closures use Smid::default(), and propagating
+        // that would overwrite a meaningful call-site annotation set by an
+        // enclosing Ann node.
+        let closure_ann = self.closure.annotation();
+        if closure_ann.is_valid() {
+            self.annotation = closure_ann;
+        }
 
         if remaining_arity > 0 {
             return self.return_fun(view);

@@ -1102,9 +1102,22 @@ impl RcExpr {
     /// Uses optimized try_walk to avoid unnecessary allocations.
     pub fn substs_free<F: Fn(&str) -> Option<RcExpr>>(&self, substitute: &F) -> RcExpr {
         match &*self.inner {
-            Expr::Var(_, Free(f)) => {
+            Expr::Var(original_smid, Free(f)) => {
                 if let Some(ref name) = f.pretty_name {
                     if let Some(replacement) = substitute(name) {
+                        // If the replacement was built with Smid::default() but the
+                        // original Var carried a meaningful call-site Smid, re-stamp
+                        // the Smid so that source locations are not lost during merge.
+                        if original_smid.is_valid() {
+                            if let Expr::Var(rep_smid, rep_var) = &*replacement.inner {
+                                if !rep_smid.is_valid() {
+                                    return RcExpr::from(Expr::Var(
+                                        *original_smid,
+                                        rep_var.clone(),
+                                    ));
+                                }
+                            }
+                        }
                         replacement
                     } else {
                         self.clone()

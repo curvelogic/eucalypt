@@ -964,10 +964,23 @@ impl ProtoSyntax for ProtoAppGroup {
             _ => {
                 local_binder.set_body(ProtoApp::boxed(f_index, arg_indexes, self.single_use))?;
             }
-        }
+        };
 
         local_binder.freeze();
-        local_binder.into_stg(compiler)
+        let stg = local_binder.into_stg(compiler)?;
+
+        // Wrap function calls with a source annotation so that runtime errors
+        // (TypeMismatch, NoBranchForDataTag, etc.) carry the user's call site.
+        // Applied whenever source tracking is enabled and the call site has a
+        // valid Smid. The IO spec block navigator (block_list_inner) handles
+        // Ann nodes transparently, so this is safe for all call sites.
+        let stg = if compiler.generate_annotations() && self.smid.is_valid() {
+            dsl::ann(self.smid, stg)
+        } else {
+            stg
+        };
+
+        Ok(stg)
     }
 }
 
@@ -1315,16 +1328,34 @@ impl<'rt> Compiler<'rt> {
             // the default is unused; if it fails we panic anyway.
             Some(expr) => match self.compile_binding(binder, expr.clone(), annotation, false) {
                 Ok(expr) => Ok(expr),
-                Err(CompileError::FreeVar(..)) => binder.add(lookup_fail(key, obj.clone())),
+                Err(CompileError::FreeVar(..)) => {
+                    let ann = if self.generate_annotations() {
+                        annotation
+                    } else {
+                        Smid::default()
+                    };
+                    binder.add(lookup_fail(key, obj.clone(), ann))
+                }
                 Err(e) => Err(e),
             },
-            None => binder.add(lookup_fail(key, obj.clone())),
+            None => {
+                let ann = if self.generate_annotations() {
+                    annotation
+                } else {
+                    Smid::default()
+                };
+                binder.add(lookup_fail(key, obj.clone(), ann))
+            }
         }?;
-        Ok(Holder::new(LookupOr(NativeVariant::Unboxed).global(
-            dsl::sym(key),
-            dft,
-            obj,
-        )))
+        let lookup_stg = LookupOr(NativeVariant::Unboxed).global(dsl::sym(key), dft, obj);
+        // Wrap with a source annotation so that lookup type errors (e.g.
+        // dot notation on a non-block) carry the user's call-site location.
+        let stg = if self.generate_annotations() && annotation.is_valid() {
+            dsl::ann(annotation, lookup_stg)
+        } else {
+            lookup_stg
+        };
+        Ok(Holder::new(stg))
     }
 
     /// Compile a lambda to a lambda form

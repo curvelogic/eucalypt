@@ -352,6 +352,12 @@ fn block_list_inner(view: &MutatorHeapView<'_>, c: SynClosure, depth: usize) -> 
             let body_deref = deref(view, body_closure);
             block_list_inner(view, body_deref, depth - 1)
         }
+        // Source annotation node: transparent to IO spec block navigation.
+        HeapSyn::Ann { body, .. } => {
+            let body_closure = SynClosure::new(*body, c.env());
+            let body_deref = deref(view, body_closure);
+            block_list_inner(view, body_deref, depth - 1)
+        }
         _ => None,
     }
 }

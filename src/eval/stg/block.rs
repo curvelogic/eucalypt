@@ -504,7 +504,13 @@ impl StgIntrinsic for LookupOr {
             ),
         );
 
-        annotated_lambda(
+        // Use plain lambda (no annotation) so that the call-site annotation
+        // set by the Ann node wrapping LookupOr at compile time is preserved
+        // in self.annotation when the inner switch fires. This allows
+        // NoBranchForDataTag (raised when obj is not a block) to carry the
+        // user's source location rather than the synthetic LOOKUPOR# label.
+        let _ = annotation;
+        lambda(
             3, // [k d block]
             switch(
                 local(2),
@@ -572,7 +578,6 @@ impl StgIntrinsic for LookupOr {
                     ),
                 )],
             ),
-            annotation,
         )
     }
 
@@ -894,9 +899,12 @@ impl StgIntrinsic for LookupFail {
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        // Custom wrapper: takes [sym, block], forces the block, then
-        // calls the BIF with the unboxed sym and the forced block.
-        annotated_lambda(
+        // Use plain lambda (no annotation) so the call-site annotation
+        // set by the Ann node in lookup_fail() is not overwritten when
+        // the wrapper is entered. This allows LookupFailure errors to
+        // carry the user's source location.
+        let _ = annotation;
+        lambda(
             2, // [sym block]
             force(
                 local(1), // force block
@@ -909,7 +917,6 @@ impl StgIntrinsic for LookupFail {
                     vec![lref(1), lref(0)],
                 ),
             ),
-            annotation,
         )
     }
 
@@ -1377,10 +1384,18 @@ impl CallGlobal1 for IsBlock {}
 ///
 /// Uses the LookupFail intrinsic so that the runtime can collect
 /// block keys and offer "did you mean?" suggestions via edit distance.
-pub fn lookup_fail(key: &str, obj: super::syntax::Ref) -> Rc<StgSyn> {
+///
+/// When `annotation` is valid, wraps the call with an Ann node so
+/// that `LookupFailure` errors carry the user's source location.
+pub fn lookup_fail(key: &str, obj: super::syntax::Ref, annotation: Smid) -> Rc<StgSyn> {
     use dsl::*;
 
-    LookupFail.global(sym(key), obj)
+    let stg = LookupFail.global(sym(key), obj);
+    if annotation.is_valid() {
+        ann(annotation, stg)
+    } else {
+        stg
+    }
 }
 
 /// Compile a panic for a missing key (legacy fallback, kept for tests)
