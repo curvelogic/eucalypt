@@ -122,7 +122,7 @@ jobs:
       - name: run final test with release binary
         run: |
           target/release/eu_amd64 version
-          target/release/eu_amd64 test tests/harness
+          target/release/eu_amd64 test --allow-io tests/harness
       - name: Generate release notes
         run: |
           # Fetch tags created by GitHub releases
@@ -199,7 +199,7 @@ jobs:
       - name: Run final test with release binary
         run: |
           target/release/eu_darwin version
-          target/release/eu_darwin test tests/harness
+          target/release/eu_darwin test --allow-io tests/harness
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
@@ -246,7 +246,7 @@ jobs:
       - name: Run final test with release binary
         run: |
           target/release/eu_aarch64 version
-          target/release/eu_aarch64 test tests/harness
+          target/release/eu_aarch64 test --allow-io tests/harness
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:

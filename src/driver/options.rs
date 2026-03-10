@@ -208,6 +208,10 @@ pub struct TestArgs {
     #[arg(long = "open")]
     pub open_browser: bool,
 
+    /// Allow IO monad operations (shell execution) in tests
+    #[arg(short = 'I', long = "allow-io")]
+    pub allow_io: bool,
+
     /// Files to test
     #[arg(value_name = "FILES")]
     pub files: Vec<String>,
@@ -578,9 +582,10 @@ impl From<EucalyptCli> for EucalyptOptions {
             _ => Vec::new(),
         };
 
-        // Extract allow-io flag from Run command
+        // Extract allow-io flag from Run or Test command
         let allow_io = match &cli.command {
             Some(Commands::Run(run_args)) => run_args.allow_io,
+            Some(Commands::Test(test_args)) => test_args.allow_io,
             _ => false,
         };
 
