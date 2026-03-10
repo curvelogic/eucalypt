@@ -66,7 +66,13 @@ impl StgIntrinsic for ParseString {
 
         let core_expr =
             import::read_to_core_data_only(&format_name, &mut files, &mut source_map, file_id)
-                .map_err(|e| ExecutionError::Panic(format!("parse-as({format_name}): {e}")))?;
+                .map_err(|e| {
+                    ExecutionError::ParseError(
+                        machine.annotation(),
+                        format_name.clone(),
+                        e.to_string(),
+                    )
+                })?;
 
         // Compile the data-only RcExpr to STG.
         // We use an empty intrinsics list because data-only expressions
