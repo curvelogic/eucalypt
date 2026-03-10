@@ -697,6 +697,13 @@ impl HeapState {
             }
         }
 
+        if let Some(overflow) = &mut self.overflow {
+            if overflow.base_address() == base {
+                overflow.mark_line(ptr);
+                return;
+            }
+        }
+
         for block in &mut self.rest {
             if block.base_address() == base {
                 block.mark_line(ptr);
@@ -705,6 +712,13 @@ impl HeapState {
         }
 
         for block in &mut self.unswept {
+            if block.base_address() == base {
+                block.mark_line(ptr);
+                return;
+            }
+        }
+
+        for block in &mut self.recycled {
             if block.base_address() == base {
                 block.mark_line(ptr);
                 return;
@@ -724,6 +738,13 @@ impl HeapState {
             }
         }
 
+        if let Some(overflow) = &mut self.overflow {
+            if overflow.base_address() == base {
+                overflow.mark_region(ptr, bytes);
+                return;
+            }
+        }
+
         for block in &mut self.rest {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
@@ -732,6 +753,13 @@ impl HeapState {
         }
 
         for block in &mut self.unswept {
+            if block.base_address() == base {
+                block.mark_region(ptr, bytes);
+                return;
+            }
+        }
+
+        for block in &mut self.recycled {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
                 return;
@@ -2342,6 +2370,10 @@ impl Heap {
             head.reset_region_marks();
         }
 
+        if let Some(overflow) = &mut heap_state.overflow {
+            overflow.reset_region_marks();
+        }
+
         for block in &mut heap_state.rest {
             block.reset_region_marks();
         }
@@ -2349,6 +2381,14 @@ impl Heap {
         // Also reset unswept blocks (may still contain live objects
         // from a previous collection that haven't been lazily swept yet)
         for block in &mut heap_state.unswept {
+            block.reset_region_marks();
+        }
+
+        // Also reset recycled blocks — they may contain live objects in
+        // lines that were marked by a previous GC cycle.  Without resetting
+        // and re-marking them the stale marks become invisible to the new GC
+        // cycle and the live data can be overwritten once the block is reused.
+        for block in &mut heap_state.recycled {
             block.reset_region_marks();
         }
     }
