@@ -1622,6 +1622,41 @@ impl Heap {
 
     /// Analyze fragmentation across all blocks and determine optimal collection strategy
     pub fn analyze_collection_strategy(&self) -> CollectionStrategy {
+        // GC stress mode: force SelectiveEvacuation on every collection so
+        // that evacuation bugs (dangling pointers after object moves) surface
+        // on any platform, not just aarch64 release builds.  Enable by setting
+        // EU_GC_STRESS=1 in the environment.
+        if std::env::var("EU_GC_STRESS").as_deref() == Ok("1") {
+            // SAFETY: Read-only borrow to enumerate block indices.
+            let heap_state = unsafe { &*self.state.get() };
+            let mut candidates: Vec<usize> = Vec::new();
+            if heap_state.head.is_some() {
+                candidates.push(0);
+            }
+            if heap_state.overflow.is_some() {
+                candidates.push(1);
+            }
+            for i in 0..heap_state.rest.len() {
+                candidates.push(i + 2);
+            }
+            // Exclude pinned blocks.
+            let unpinned: Vec<usize> = candidates
+                .into_iter()
+                .filter(|&idx| {
+                    let heap_state = unsafe { &*self.state.get() };
+                    let base = match idx {
+                        0 => heap_state.head.as_ref().map(|b| b.base_address()),
+                        1 => heap_state.overflow.as_ref().map(|b| b.base_address()),
+                        n => heap_state.rest.get(n - 2).map(|b| b.base_address()),
+                    };
+                    base.is_none_or(|addr| !self.is_block_pinned(addr))
+                })
+                .collect();
+            if !unpinned.is_empty() {
+                return CollectionStrategy::SelectiveEvacuation(unpinned);
+            }
+        }
+
         // SAFETY: Read-only borrow of heap state for analysis.
         // Single-threaded access, no mutation occurs during analysis.
         let heap_state = unsafe { &*self.state.get() };

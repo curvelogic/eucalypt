@@ -236,8 +236,25 @@ jobs:
           mv -f build-meta.yaml.new build-meta.yaml
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Run release tests
-        run: cargo test --release
+      # eu-rdfu: run release tests sequentially with full backtraces so that
+      # the aarch64 SIGSEGV produces a useful crash report rather than a
+      # silent test-runner process exit.  catchsegv provides a signal handler
+      # that prints a backtrace when SIGSEGV is received.
+      - name: Run release tests (sequential, with backtrace)
+        env:
+          RUST_BACKTRACE: full
+        run: |
+          which catchsegv && WRAP="catchsegv" || WRAP=""
+          $WRAP cargo test --release -- --test-threads=1
+      # eu-rdfu: run IO harness tests under GC stress (forced evacuation on
+      # every cycle) to surface pointer-update bugs on all platforms.
+      - name: Run IO tests under GC stress
+        env:
+          RUST_BACKTRACE: full
+          EU_GC_STRESS: "1"
+        run: |
+          which catchsegv && WRAP="catchsegv" || WRAP=""
+          $WRAP cargo test --release test_harness_104 test_harness_105 test_harness_106 test_harness_107 -- --test-threads=1
       - name: Build release
         run: cargo build --all --release
       - run: |
