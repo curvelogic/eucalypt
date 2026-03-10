@@ -208,6 +208,11 @@ fn dereference(
                     None => break,
                 }
             }
+            // Ann nodes are source-annotation wrappers; strip them transparently.
+            HeapSyn::Ann { body, .. } => {
+                closure = SynClosure::new(*body, closure.env());
+                depth += 1;
+            }
             _ => break,
         }
     }
@@ -379,14 +384,25 @@ fn read_as_string(
             let r = args.get(0)?;
             match r {
                 Ref::V(Native::Str(s)) => Some(view.scoped(s).as_str().to_string()),
-                _ => None,
+                // The string may be stored as an L/G ref (e.g. when the BoxedString
+                // was created from a dynamic string like str.fmt output).  Resolve
+                // the ref and recurse to read the underlying atom.
+                _ => {
+                    let inner =
+                        resolve_ref_with_globals(view, &closure, r.clone(), globals).ok()?;
+                    read_as_string(view, deref(view, inner), globals)
+                }
             }
         }
         HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedNumber.tag() => {
             let r = args.get(0)?;
             match r {
                 Ref::V(Native::Num(n)) => Some(n.to_string()),
-                _ => None,
+                _ => {
+                    let inner =
+                        resolve_ref_with_globals(view, &closure, r.clone(), globals).ok()?;
+                    read_as_string(view, deref(view, inner), globals)
+                }
             }
         }
         HeapSyn::Cons { tag, .. }
@@ -612,11 +628,73 @@ fn evaluate_spec_block(
         .map_err(IoRunError::from)?;
 
     // ── Evaluate each field closure to WHNF and read its string value ─────────
+    //
+    // Two-pass evaluation per field:
+    //
+    // Pass 1: evaluate the raw closure to WHNF.  For simple fields (literal
+    // strings/numbers) this produces an Atom or a BoxedString/BoxedNumber
+    // with a V-ref payload.  For dynamic fields (e.g. str.fmt results or
+    // other computed strings) the machine may return a BoxedString whose
+    // payload arg is still an unevaluated L-ref thunk — the STG machine
+    // considers a Cons constructor in WHNF even when its arguments are lazy.
+    //
+    // Pass 2: if the WHNF is a BoxedString/BoxedNumber with a non-V arg,
+    // extract that inner lazy closure and evaluate it to WHNF.  Pass that
+    // inner WHNF (the actual string/number atom) to ReadClosureAsString
+    // instead of the outer BoxedString wrapper.
+
+    /// Mutator that checks whether a WHNF closure is a BoxedString/BoxedNumber
+    /// whose payload arg is an L/G ref (unevaluated), and if so returns the
+    /// inner closure for a second round of evaluation.  Returns `None` when
+    /// the payload is already a V-ref (no second pass needed).
+    struct PeelLazyBoxed(SynClosure);
+    impl Mutator for PeelLazyBoxed {
+        type Input = ();
+        type Output = Option<SynClosure>;
+        fn run(&self, view: &MutatorHeapView, _: ()) -> Result<Option<SynClosure>, ExecutionError> {
+            let c = deref(view, self.0.clone());
+            let code = view.scoped(c.code());
+            let is_boxed = matches!(&*code,
+                HeapSyn::Cons { tag, .. }
+                    if *tag == DataConstructor::BoxedString.tag()
+                    || *tag == DataConstructor::BoxedNumber.tag()
+            );
+            if !is_boxed {
+                return Ok(None);
+            }
+            if let HeapSyn::Cons { args, .. } = &*code {
+                if let Some(r) = args.get(0) {
+                    match r {
+                        Ref::V(_) => return Ok(None), // already a value, no second pass
+                        _ => {
+                            let inner = resolve_ref_with_globals(view, &c, r.clone(), None).ok();
+                            return Ok(inner.map(|i| deref(view, i)));
+                        }
+                    }
+                }
+            }
+            Ok(None)
+        }
+    }
+
     let mut eval_fields: HashMap<String, Option<String>> = HashMap::new();
     for (key, raw_closure) in raw_fields {
         let whnf = machine
             .evaluate_to_whnf_for_io(raw_closure)
             .map_err(IoRunError::from)?;
+
+        // Pass 2: if the WHNF is a BoxedString/BoxedNumber with a lazy payload,
+        // evaluate the inner closure and use it directly for string reading.
+        let read_closure = if let Some(inner_lazy) = machine
+            .mutate(PeelLazyBoxed(whnf.clone()), ())
+            .map_err(IoRunError::from)?
+        {
+            machine
+                .evaluate_to_whnf_for_io(inner_lazy)
+                .map_err(IoRunError::from)?
+        } else {
+            whnf
+        };
 
         // For list-valued fields (e.g. `args` in exec), use ReadListAsStrings
         // to collect list elements before reading as a NUL-separated string.
@@ -625,7 +703,12 @@ fn evaluate_spec_block(
         // (e.g. the compiled ListNil global used as the end-of-list sentinel).
         let globals = machine.globals_env();
         let value_str = machine
-            .mutate(ReadClosureAsString { closure: whnf }, Some(globals))
+            .mutate(
+                ReadClosureAsString {
+                    closure: read_closure,
+                },
+                Some(globals),
+            )
             .map_err(IoRunError::from)?;
         eval_fields.insert(key, value_str);
     }
