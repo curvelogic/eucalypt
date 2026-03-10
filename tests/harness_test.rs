@@ -577,6 +577,21 @@ pub fn test_harness_115() {
 }
 
 #[test]
+pub fn test_harness_116() {
+    run_test(&io_opts("116_io_shell_with.eu"));
+}
+
+#[test]
+pub fn test_harness_117() {
+    run_test(&io_opts("117_io_exec.eu"));
+}
+
+#[test]
+pub fn test_harness_118() {
+    run_test(&io_opts("118_io_exec_with.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

@@ -1,0 +1,8 @@
+"io.shell-with: parameterised spec block evaluates correctly. Uses --allow-io."
+
+` { target: :test requires-io: true }
+test:
+  { :io r: io.shell-with({timeout: 120}, "echo hello") }.(
+    if(r.stdout str.matches?("hello.*"),
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))

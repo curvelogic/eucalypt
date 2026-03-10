@@ -1124,6 +1124,18 @@ impl<'a> Machine<'a> {
         &self.state.symbol_pool
     }
 
+    /// Intern a symbol string into the machine's symbol pool and return its ID.
+    ///
+    /// Used by the io-run driver to pre-register symbols (e.g. `"stdout"`,
+    /// `"stderr"`, `"exit-code"`) before they are embedded in heap objects by
+    /// a mutator.  Pre-interning ensures the IDs assigned during mutator heap
+    /// construction are already present in the machine's pool, so that later
+    /// LOOKUP and render operations (which use the machine pool) can resolve
+    /// them.
+    pub fn intern_symbol(&mut self, s: &str) -> crate::eval::memory::symbol::SymbolId {
+        self.state.symbol_pool.intern(s)
+    }
+
     /// Access the heap for allocation
     pub fn heap(&self) -> &Heap {
         &self.heap
@@ -1133,6 +1145,14 @@ impl<'a> Machine<'a> {
     /// root newly constructed closures that have no enclosing environment.
     pub fn root_env(&self) -> RefPtr<EnvFrame> {
         self.state.root_env
+    }
+
+    /// Return the globals environment frame.
+    ///
+    /// The globals frame holds the closures for all global bindings
+    /// (intrinsics, prelude, etc.) indexed by their `G(i)` ref.
+    pub fn globals_env(&self) -> RefPtr<EnvFrame> {
+        self.state.globals
     }
 
     /// Access the metrics (ticks, allocs, etc.)
@@ -1481,6 +1501,63 @@ impl<'a> Machine<'a> {
         self.state.terminated = false;
         self.state.yielded_io = false;
         self.state.closure = new_closure;
+    }
+
+    /// Evaluate a closure to WHNF while the machine is in IO yield state.
+    ///
+    /// Temporarily suspends the IO yield state, evaluates `closure` to
+    /// WHNF (normal termination), and restores the yielded IO state
+    /// (including the original `state.closure`).  The continuation stack
+    /// must be empty when called (which is always the case at an IO yield).
+    ///
+    /// Used by the io-run driver to force-evaluate spec block field
+    /// closures that contain unevaluated thunks (e.g. `lookup-or` calls
+    /// produced by `__io-shell-spec` / `__io-exec-spec`).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sub-evaluation encounters a machine error or
+    /// if it unexpectedly yields on an IO constructor (spec block fields
+    /// must not produce IO).
+    pub fn evaluate_to_whnf_for_io(
+        &mut self,
+        closure: SynClosure,
+    ) -> Result<SynClosure, ExecutionError> {
+        assert!(
+            self.state.yielded_io,
+            "evaluate_to_whnf_for_io called when machine is not in IO yield state"
+        );
+        assert!(
+            self.state.stack.is_empty(),
+            "evaluate_to_whnf_for_io called with non-empty continuation stack"
+        );
+
+        // Save the current IO yield closure.
+        let saved_closure = self.state.closure.clone();
+
+        // Temporarily evaluate the given closure to WHNF.
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+        self.state.closure = closure;
+
+        self.run(None)?;
+
+        // Capture the result before restoring state.
+        let sub_yielded = self.state.yielded_io;
+        let result = self.state.closure.clone();
+
+        // Restore the IO yield state unconditionally.
+        self.state.terminated = true;
+        self.state.yielded_io = true;
+        self.state.closure = saved_closure;
+
+        if sub_yielded {
+            return Err(ExecutionError::Panic(
+                "spec block field evaluation unexpectedly yielded an IO constructor".to_string(),
+            ));
+        }
+
+        Ok(result)
     }
 
     /// Assertion helper for machine unit tests

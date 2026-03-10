@@ -1,0 +1,8 @@
+"io.exec: direct list-based exec spec block evaluates correctly. Uses --allow-io."
+
+` { target: :test requires-io: true }
+test:
+  { :io r: io.exec(["echo", "hello"]) }.(
+    if(r.stdout str.matches?("hello.*"),
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))
