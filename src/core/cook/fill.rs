@@ -1,6 +1,7 @@
 //! Logic for filling out expressions with implicit anaphora
 use crate::common::sourcemap::{HasSmid, Smid};
 use crate::core::anaphora;
+use crate::core::error::CoreError;
 use crate::core::expr::*;
 use std::collections::HashSet;
 
@@ -8,11 +9,11 @@ pub type AnaphorSet = HashSet<Anaphor<Smid, i32>>;
 
 /// Fill implied gaps with expression anaphora and keep tabs on
 /// whether there are any naked anaphora amongs the `xs`.
-pub fn fill_gaps(xs: &[RcExpr]) -> (Vec<RcExpr>, AnaphorSet) {
+pub fn fill_gaps(xs: &[RcExpr]) -> Result<(Vec<RcExpr>, AnaphorSet), CoreError> {
     let mut out = Vec::new();
     let mut naked_anaphora = HashSet::new();
 
-    if let Some(prefix) = filler(None, Some(&xs[0])) {
+    if let Some(prefix) = filler(None, Some(&xs[0]))? {
         naked_anaphora.extend(anaphora::naked_anaphora(&prefix));
         out.push(prefix);
     }
@@ -21,7 +22,7 @@ pub fn fill_gaps(xs: &[RcExpr]) -> (Vec<RcExpr>, AnaphorSet) {
         if let [ref l, ref r] = window {
             naked_anaphora.extend(anaphora::naked_anaphora(l));
             out.push(l.clone());
-            if let Some(fill) = filler(Some(l), Some(r)) {
+            if let Some(fill) = filler(Some(l), Some(r))? {
                 naked_anaphora.extend(anaphora::naked_anaphora(&fill));
                 out.push(fill.clone());
             }
@@ -31,13 +32,13 @@ pub fn fill_gaps(xs: &[RcExpr]) -> (Vec<RcExpr>, AnaphorSet) {
     if let Some(end) = xs.last() {
         naked_anaphora.extend(anaphora::naked_anaphora(end));
         out.push(end.clone());
-        if let Some(suffix) = filler(Some(end), None) {
+        if let Some(suffix) = filler(Some(end), None)? {
             naked_anaphora.extend(anaphora::naked_anaphora(&suffix));
             out.push(suffix);
         }
     }
 
-    (out, naked_anaphora)
+    Ok((out, naked_anaphora))
 }
 
 /// Whether a side of an atom is operator like or value like
@@ -65,9 +66,9 @@ fn bind_sides(expr: Option<&RcExpr>) -> (BindSide, BindSide) {
 
 /// Return an appropriate filler expression to go between `left`
 /// and `right`
-pub fn filler(left: Option<&RcExpr>, right: Option<&RcExpr>) -> Option<RcExpr> {
+pub fn filler(left: Option<&RcExpr>, right: Option<&RcExpr>) -> Result<Option<RcExpr>, CoreError> {
     match (bind_sides(left).1, bind_sides(right).0) {
-        (BindSide::ValueLike, BindSide::ValueLike) => Some(core::cat()),
+        (BindSide::ValueLike, BindSide::ValueLike) => Ok(Some(core::cat())),
         (BindSide::OpLike, BindSide::OpLike) => {
             let rsmid = match right {
                 Some(r) => r.smid(),
@@ -78,14 +79,14 @@ pub fn filler(left: Option<&RcExpr>, right: Option<&RcExpr>) -> Option<RcExpr> {
                 _ => Smid::default(),
             };
             if rsmid != Smid::default() {
-                Some(core::section_anaphor_left(rsmid))
+                Ok(Some(core::section_anaphor_left(rsmid)))
             } else if lsmid != Smid::default() {
-                Some(core::section_anaphor_right(lsmid))
+                Ok(Some(core::section_anaphor_right(lsmid)))
             } else {
-                panic!("no SMID for implicit anaphor")
+                Err(CoreError::NoSmidForImplicitAnaphor)
             }
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -99,7 +100,7 @@ pub mod tests {
     use moniker::assert_term_eq;
 
     fn fill(exprs: &[RcExpr]) -> Vec<RcExpr> {
-        fill_gaps(exprs).0
+        fill_gaps(exprs).unwrap().0
     }
 
     #[test]
