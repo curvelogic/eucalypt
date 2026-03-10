@@ -2,6 +2,67 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.5.0] (Unreleased) - IO Monad, parse-as, Streaming Imports
+
+### Added
+
+- **IO Monad** — Side-effecting operations via monadic blocks
+  - Data constructors: `IoReturn`, `IoBind`, `IoAction`, `IoFail`
+  - IO intrinsics: `IO_RETURN`, `IO_BIND`, `IO_ACTION`
+  - `io-run` driver loop for interpreting IO actions
+  - `--allow-io` / `-I` CLI flag to enable IO operations
+  - Monadic block syntax: `{ :io r: io.shell("cmd") }.(r.stdout)`
+  - Block-dot lookup generalised: `{...}.field` and `{...}.(expr)` work on any block literal
+
+- **IO Namespace** (`io.*`) in prelude
+  - `io.shell(c)` — run shell command via `sh -c`
+  - `io.shell-with(opts, c)` — shell with options (timeout, stdin)
+  - `io.exec([cmd : args])` — exec process directly
+  - `io.exec-with(opts, [cmd : args])` — exec with options
+  - `io.check(r)` — assert exit code 0 or fail
+  - `io.bind(m, f)`, `io.return(v)`, `io.map(f, m)`, `io.fail(msg)`
+  - `io.random` — IO-seeded random stream entry point
+
+- **`parse-as`** — Pure inverse of `render-as`
+  - `parse-as(fmt, str)` converts strings to eucalypt data structures
+  - Supports `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jsonl`
+  - Data-only mode: YAML `!eu` tags produce plain strings (no code execution)
+  - `PARSE_STRING` intrinsic with compile-and-evaluate pipeline
+
+- **Named Monadic Blocks** — Reference a namespace with bind/return
+  - `{ :ns ... }.expr` desugars to bind/return calls on `ns`
+  - Generalised block-dot syntax for return expressions
+
+- **Bare-Expression Files** — `.eu` files containing only a block-dot expression
+
+### Changed
+
+- **IO API argument order** — `shell-with(opts, cmd)` and `exec-with(opts, [cmd : args])` for idiomatic pipeline usage
+- **Spec block field evaluation** — Uses `render_closure_to_emitter` for reading field values, replacing fragile hand-rolled heap pattern matching
+- **`render_closure_to_emitter` refactored** — Now takes `(&SymbolPool, RefPtr<EnvFrame>)` instead of `&dyn IntrinsicMachine`, made `pub(crate)` for reuse
+
+### Fixed
+
+- **Spec block thunk evaluation** (eu-lfvi) — `io.shell` with computed arguments (e.g. format expressions) now works correctly
+- **Spec block parameterisation** (eu-vc32) — `io.shell-with`, `io.exec`, `io.exec-with` spec blocks with unevaluated thunks now evaluated properly
+- **Block field self-shadowing** — Prelude IO functions renamed parameters to avoid `{cmd: cmd}` self-reference
+- **Symbol pool OOB crash** — Pre-intern stdout/stderr/exit-code symbols for IO result blocks
+- **GC evacuation alignment** — `evacuate()` now pads allocation size to 16-byte alignment
+- **IO test skipping** — CI release builds use `--allow-io` flag for harness tests
+- **Monadic block desugaring** — Dot-chain return expressions and bare-expression files handled correctly
+
+### Editor Support
+
+- **Emacs mode** — Fixed backtick auto-pairing, closing brace indentation, docstring indentation
+- **Smartparens** — Backtick no longer auto-pairs when smartparens is installed
+- **Unicode characters** — Check mark and other recently introduced Unicode chars available via Quail input and transient menu
+
+### Documentation
+
+- IO monad design document (`docs/plans/2026-03-09-io-monad-design.md`)
+- `parse-as` design document (`docs/plans/2026-03-10-parse-as-design.md`)
+- Syntax gotchas expanded: block-dot lookup, block field self-shadowing, anaphor subsumption rule, cons operator `‖`
+
 ## [0.4.0] - Destructuring, Monadic Blocks, Arrays, Error Messages
 
 ### Added
