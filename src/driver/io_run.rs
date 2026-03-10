@@ -1058,9 +1058,12 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 // cont(action_result) gives a PAP; applying world produces
                 // the next IO constructor.
                 // Stash order (top to bottom): action_result, world, cont
-                let action_result = machine.stash_pop();
-                let world = machine.stash_pop();
-                let cont = machine.stash_pop();
+                // Peek (not pop) so the values remain GC-rooted during the
+                // BuildApply2 allocation; a GC triggered inside mutate would
+                // otherwise sweep these closures from the Rust stack.
+                let action_result = machine.stash_peek(0);
+                let world = machine.stash_peek(1);
+                let cont = machine.stash_peek(2);
 
                 let cont_call = machine
                     .mutate(
@@ -1073,6 +1076,11 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                         (),
                     )
                     .map_err(IoRunError::from)?;
+
+                // Now safe to pop — allocation is complete.
+                machine.stash_pop(); // action_result
+                machine.stash_pop(); // world
+                machine.stash_pop(); // cont
 
                 // Stash cont_call as a GC root across machine.run() for the
                 // same reason as action_with_world above: belt-and-suspenders
