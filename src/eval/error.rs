@@ -217,11 +217,28 @@ pub fn format_suggestions(suggestions: &[String]) -> Option<String> {
     Some(format!("similar keys: {}", quoted.join(", ")))
 }
 
-/// Format a lookup failure message, including suggestions if available
-fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
+/// Format a lookup failure message, including suggestions or available keys
+fn format_lookup_failure(key: &str, suggestions: &[String], available: &[String]) -> String {
     let mut msg = format!("key '{key}' not found in block");
     if let Some(hint) = format_suggestions(suggestions) {
         msg.push_str(&format!("\n  help: {hint}"));
+    } else if !available.is_empty() {
+        // No close matches — show the full set of available keys (capped at 8)
+        let shown: Vec<String> = available
+            .iter()
+            .take(8)
+            .map(|s| format!("'{s}'"))
+            .collect();
+        let suffix = if available.len() > 8 {
+            format!(" (and {} more)", available.len() - 8)
+        } else {
+            String::new()
+        };
+        msg.push_str(&format!(
+            "\n  help: available keys: {}{}",
+            shown.join(", "),
+            suffix
+        ));
     }
     msg
 }
@@ -468,8 +485,8 @@ pub enum ExecutionError {
     FreeVar(Smid, String),
     #[error("code not valid for execution")]
     InvalidCode(Smid),
-    #[error("{}", format_lookup_failure(.1, .2))]
-    LookupFailure(Smid, String, Vec<String>),
+    #[error("{}", format_lookup_failure(.1, .2, .3))]
+    LookupFailure(Smid, String, Vec<String>, Vec<String>),
     #[error("type mismatch: expected {1}, found {2}")]
     TypeMismatch(Smid, IntrinsicType, IntrinsicType),
     #[error("unknown intrinsic {1}")]
@@ -569,7 +586,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotFound(s) => *s,
             ExecutionError::FreeVar(s, _) => *s,
             ExecutionError::InvalidCode(s) => *s,
-            ExecutionError::LookupFailure(s, _, _) => *s,
+            ExecutionError::LookupFailure(s, _, _, _) => *s,
             ExecutionError::TypeMismatch(s, _, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
@@ -684,7 +701,7 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
-            ExecutionError::LookupFailure(_, key, suggestions) => {
+            ExecutionError::LookupFailure(_, key, suggestions, _) => {
                 lookup_failure_notes(key, suggestions)
             }
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
