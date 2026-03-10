@@ -645,6 +645,8 @@ pub enum ExecutionError {
     BitshiftRangeError(Smid, i64),
     #[error("unknown render format '{1}'\n  help: supported formats for render-as are: :yaml, :json, :toml, :text, :edn, :html")]
     UnknownRenderFormat(Smid, String),
+    #[error("cannot compare incompatible types with '{1}': operands must both be numbers, strings, symbols, or datetimes")]
+    ComparisonTypeMismatch(Smid, String),
     #[error("machine did not terminate after {0} steps")]
     DidntTerminate(usize),
     #[error("infinite loop detected: binding refers to itself")]
@@ -723,6 +725,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::AssertionFailed(s, _, _) => *s,
             ExecutionError::BitshiftRangeError(s, _) => *s,
             ExecutionError::UnknownRenderFormat(s, _) => *s,
+            ExecutionError::ComparisonTypeMismatch(s, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             ExecutionError::ArrayNdIndexOutOfBounds(s, _) => *s,
             ExecutionError::ArrayShapeMismatch(s, _) => *s,
