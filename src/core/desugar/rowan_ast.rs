@@ -805,6 +805,27 @@ fn extract_block_monad_spec_from_raw(
     None
 }
 
+/// Return true if the raw metadata soup of a `Unit` begins with a block-like
+/// element (`Block`, `BracketBlock`, or `ParenExpr`).
+///
+/// Used to distinguish genuine bare-expression evaluands such as
+/// `{ :io r: cmd }.r.stdout` (first element: Block) from erroneous
+/// assignment-style declarations like `result = 42` (first element: Name).
+fn unit_meta_starts_with_block(unit: &rowan_ast::Unit) -> bool {
+    unit.meta()
+        .and_then(|m| m.soup())
+        .and_then(|s| s.elements().next())
+        .map(|e| {
+            matches!(
+                e,
+                rowan_ast::Element::Block(_)
+                    | rowan_ast::Element::BracketBlock(_)
+                    | rowan_ast::Element::ParenExpr(_)
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// Desugar a monadic block using a monad spec.
 ///
 /// Given a list of declarations `a: ma  b: mb`, a return element, and a monad spec,
@@ -2379,8 +2400,15 @@ impl Desugarable for rowan_ast::Unit {
         if let Some(m) = metadata {
             let stripped_meta = strip_desugar_phase_metadata(&m);
             if !matches!(&*stripped_meta.inner, Expr::ErrEliminated) {
-                let is_bare_expression =
-                    body_elements.is_empty() && !matches!(&*stripped_meta.inner, Expr::Block(_, _));
+                // Only treat the unit as a bare evaluand when it has no
+                // declarations AND the raw metadata soup starts with a
+                // block-like element.  This distinguishes genuine
+                // block-dot evaluands (`{ :io r: cmd }.r.stdout`) from
+                // erroneous forms such as `result = 42` whose first raw
+                // element is a name, not a block.
+                let is_bare_expression = body_elements.is_empty()
+                    && !matches!(&*stripped_meta.inner, Expr::Block(_, _))
+                    && unit_meta_starts_with_block(self);
                 if is_bare_expression {
                     // Replace the empty-body let with one whose body is the
                     // bare expression, making it the evaluand.
