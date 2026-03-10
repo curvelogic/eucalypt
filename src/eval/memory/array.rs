@@ -140,6 +140,21 @@ impl<T: Sized> RawArray<T> {
             None => None,
         }
     }
+
+    /// Return the backing pointer as a `NonNull<u8>` for GC marking.
+    pub fn allocated_data(&self) -> Option<RefPtr<u8>> {
+        self.ptr.map(|p| p.cast())
+    }
+
+    /// Update the backing pointer after evacuation.
+    ///
+    /// # Safety
+    ///
+    /// `new_ptr` must point to a valid heap allocation of at least
+    /// `self.capacity` elements of type `T`.
+    pub unsafe fn set_backing_ptr(&mut self, new_ptr: RefPtr<T>) {
+        self.ptr = Some(new_ptr);
+    }
 }
 
 /// Array

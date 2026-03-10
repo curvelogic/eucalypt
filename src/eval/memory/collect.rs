@@ -166,6 +166,23 @@ impl CollectorHeapView<'_> {
         }
     }
 
+    /// Mark a raw byte allocation (e.g. a `RawArray<u8>` backing buffer)
+    /// if not already marked, covering all lines spanned by the bytes.
+    ///
+    /// Returns `true` if the object was newly marked (i.e. it should be
+    /// pushed onto the scan queue as an `OpaqueHeapBytes` object).
+    pub fn mark_raw_bytes(&mut self, ptr: NonNull<u8>) -> bool {
+        debug_assert!(ptr != NonNull::dangling());
+        debug_assert!(ptr.as_ptr() as usize != usize::MAX);
+        if !self.heap.is_marked(ptr) {
+            self.heap.mark_object(ptr);
+            self.heap.mark_lines_for_bytes(ptr);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Mark object if not already marked and return whether marked
     pub fn mark_array<T: Clone>(&mut self, arr: &Array<T>) -> bool {
         if let Some(ptr) = arr.allocated_data() {
