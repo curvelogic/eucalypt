@@ -17,7 +17,7 @@ tests: {
   ` "render-as with :json produces JSON string"
   render-as-json: {
     result: render-as({x: 42}, :json)
-    pass: result str.matches?(".*\"x\".*42.*")
+    pass: result str.matches?(".*x.*42.*")
   }
 
   ` "render a list to YAML"

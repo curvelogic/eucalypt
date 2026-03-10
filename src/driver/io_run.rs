@@ -967,7 +967,8 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 let result_c = machine.stash_pop();
                 let world = machine.stash_pop();
 
-                // Wrap in IoReturn(world, result_block) and resume
+                // Wrap in IoReturn(world, result_block) and resume.
+                // Stash io_return_c across machine.run() for GC safety.
                 let io_return_c = machine
                     .mutate(
                         BuildIoReturn {
@@ -979,8 +980,11 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                     )
                     .map_err(IoRunError::from)?;
 
+                machine.stash_push(io_return_c);
+                let io_return_c = machine.stash_peek(0);
                 machine.resume(io_return_c);
                 machine.run(None).map_err(IoRunError::from)?;
+                machine.stash_pop();
                 // Loop back to inspect the new yield
             }
 
@@ -1021,8 +1025,17 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                     )
                     .map_err(IoRunError::from)?;
 
+                // Stash action_with_world so it is a GC root across machine.run().
+                // The GC scans state.closure (set by resume()) but stashing here
+                // provides belt-and-suspenders protection and ensures the pointer
+                // is updated via scan_and_update if objects are evacuated.
+                // Stash order (top to bottom): action_with_world, world, cont
+                machine.stash_push(action_with_world);
+                let action_with_world = machine.stash_peek(0);
                 machine.resume(action_with_world);
                 machine.run(None).map_err(IoRunError::from)?;
+                // Pop action_with_world; state.closure now holds the updated reference.
+                machine.stash_pop();
 
                 if !machine.io_yielded() {
                     machine.stash_pop();
@@ -1061,8 +1074,15 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                     )
                     .map_err(IoRunError::from)?;
 
+                // Stash cont_call as a GC root across machine.run() for the
+                // same reason as action_with_world above: belt-and-suspenders
+                // protection in case of evacuation during the run.
+                machine.stash_push(cont_call);
+                let cont_call = machine.stash_peek(0);
                 machine.resume(cont_call);
                 machine.run(None).map_err(IoRunError::from)?;
+                // Pop cont_call; state.closure holds the updated reference.
+                machine.stash_pop();
                 // Loop back
             }
 

@@ -25,20 +25,6 @@ pub fn error_opts(filename: &str) -> EucalyptOptions {
         .build()
 }
 
-/// Common options for error tests that require the prelude (e.g. io tests)
-pub fn error_opts_with_prelude(filename: &str) -> EucalyptOptions {
-    let lib_path = vec![
-        PathBuf::from("tests/harness/errors"),
-        PathBuf::from("tests/harness"),
-    ];
-    let path = format!("tests/harness/errors/{filename}");
-
-    EucalyptOptions::default()
-        .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
-        .with_lib_path(lib_path)
-        .build()
-}
-
 /// Options for IO monad tests — enables shell execution via --allow-io
 pub fn io_opts(filename: &str) -> EucalyptOptions {
     let lib_path = vec![PathBuf::from("tests/harness")];
@@ -523,6 +509,21 @@ pub fn test_harness_101() {
 #[test]
 pub fn test_harness_102() {
     run_test(&opts("102_destructure_list_in_block.eu"));
+}
+
+#[test]
+pub fn test_harness_103() {
+    run_test(&opts("103_io_render.eu"));
+}
+
+#[test]
+pub fn test_harness_104() {
+    run_test(&io_opts("104_io_basic.eu"));
+}
+
+#[test]
+pub fn test_harness_105() {
+    run_test(&io_opts("105_io_chain.eu"));
 }
 
 #[test]
