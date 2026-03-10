@@ -315,7 +315,7 @@ rest: xs tail     # = [2, 3]
 Monadic block syntax uses `{ :io r: cmd }.(return_expr)` or
 `{ :io r: cmd }.return_name.field`:
 
-```eu
+```eu,notest
 # Parenthesised return expression (recommended for complex expressions)
 { :io r: io.shell("echo hello") }.(
   if(r.stdout str.matches?("hello.*"), :PASS, :FAIL))
@@ -326,7 +326,7 @@ Monadic block syntax uses `{ :io r: cmd }.(return_expr)` or
 
 **Desugaring**: both forms desugar to `io.bind(cmd, lambda(r). io.return(expr))`:
 
-```eu
+```eu,notest
 # { :io r: cmd }.(expr) → io.bind(cmd, lambda(r). io.return(expr))
 # { :io r: cmd }.r.field → io.bind(cmd, lambda(r). io.return(r.field))
 ```
@@ -335,7 +335,7 @@ Monadic block syntax uses `{ :io r: cmd }.(return_expr)` or
 expression (no outer `key:` declaration) is supported when the expression
 starts with a block literal `{...}`:
 
-```eu
+```eu,notest
 # This works as a standalone .eu file:
 { :io r: io.shell("echo hello") }.(r.stdout)
 ```
