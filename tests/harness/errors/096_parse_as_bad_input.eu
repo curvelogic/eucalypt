@@ -1,0 +1,3 @@
+# Error: parse-as with malformed TOML triggers a runtime panic.
+# TOML requires key = value syntax; this is not valid TOML.
+x: "this is not valid toml = = =" parse-as(:toml)

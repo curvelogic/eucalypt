@@ -532,6 +532,51 @@ pub fn test_harness_106() {
 }
 
 #[test]
+pub fn test_harness_107() {
+    run_test(&opts("107_parse_as_json.eu"));
+}
+
+#[test]
+pub fn test_harness_108() {
+    run_test(&opts("108_parse_as_yaml.eu"));
+}
+
+#[test]
+pub fn test_harness_109() {
+    run_test(&opts("109_parse_as_toml.eu"));
+}
+
+#[test]
+pub fn test_harness_110() {
+    run_test(&opts("110_parse_as_csv.eu"));
+}
+
+#[test]
+pub fn test_harness_111() {
+    run_test(&opts("111_parse_as_xml.eu"));
+}
+
+#[test]
+pub fn test_harness_112() {
+    run_test(&opts("112_parse_as_edn.eu"));
+}
+
+#[test]
+pub fn test_harness_113() {
+    run_test(&opts("113_parse_as_jsonl.eu"));
+}
+
+#[test]
+pub fn test_harness_114() {
+    run_test(&opts("114_parse_as_roundtrip.eu"));
+}
+
+#[test]
+pub fn test_harness_115() {
+    run_test(&opts("115_parse_as_data_only.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -1063,4 +1108,14 @@ pub fn test_error_094() {
         .with_target(Some("result".to_string()))
         .build();
     run_error_test(&opt);
+}
+
+#[test]
+pub fn test_error_095() {
+    run_error_test(&error_opts("095_parse_as_bad_format.eu"));
+}
+
+#[test]
+pub fn test_error_096() {
+    run_error_test(&error_opts("096_parse_as_bad_input.eu"));
 }

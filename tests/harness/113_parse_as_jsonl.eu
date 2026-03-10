@@ -1,0 +1,14 @@
+"parse-as: parse a JSONL string (newline-delimited JSON) into a list of values."
+
+# Use simple scalar JSON values to avoid brace/escape complexity.
+# Each line is a valid JSON number; result is a list of numbers.
+jsonl-str: c"10\n20\n30"
+
+data: jsonl-str parse-as(:jsonl)
+
+tests: {
+  row-count: (data count) //= 3
+  first-val: (data head) //= 10
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

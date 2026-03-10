@@ -1,0 +1,12 @@
+"parse-as: parse a YAML string into eucalypt data."
+
+# Use render-as to produce a valid YAML string, then parse it back
+yaml-str: render-as({x: 10, y: 20}, :yaml)
+data: yaml-str parse-as(:yaml)
+
+tests: {
+  key-x: data.x //= 10
+  key-y: data.y //= 20
+}
+
+RESULT: tests values all-true? then(:PASS, :FAIL)

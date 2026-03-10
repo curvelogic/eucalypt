@@ -325,6 +325,19 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `str.replace(from, to)` | Replace occurrences |
 | `str.trim` | Remove surrounding whitespace |
 
+### Serialisation and Parsing
+
+| Function | Description |
+|----------|-------------|
+| `render(value)` | Serialise to YAML string |
+| `render-as(value, fmt)` | Serialise to string in named format |
+| `parse-as(fmt, str)` | Parse string as structured data (inverse of `render-as`) |
+
+Formats for `render-as`: `:yaml`, `:json`, `:toml`, `:text`, `:edn`, `:html`.
+Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jsonl`.
+
+`parse-as` is safe for untrusted input — YAML `!eu` tags are never evaluated.
+
 ### Combinators
 
 | Function | Description |
