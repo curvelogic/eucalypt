@@ -72,3 +72,9 @@ crate-type = ["cdylib", "rlib"]
 [[bench]]
 harness = false
 name = "benches"
+
+# eu-rdfu: retain debug symbols in release builds so that backtraces on
+# the aarch64 CI runner include function names.  Revert once the root
+# cause of the aarch64 SIGSEGV is identified and fixed.
+[profile.release]
+debug = true
