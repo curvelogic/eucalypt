@@ -340,38 +340,6 @@ starts with a block literal `{...}`:
 { :io r: io.shell("echo hello") }.(r.stdout)
 ```
 
-## Merge Operators Strip Block Metadata Tags
-
-**Problem**: The `<<` (deep merge) and catenation merge operators match on the
-`Block` data constructor directly. A block with a metadata annotation such as
-`{:io-shell cmd: cmd}` is represented at runtime as `Meta(:io-shell, Block(...))`
-— a `Meta` wrapper around a `Block`. Neither merge operator unwraps `Meta`
-before pattern-matching, so:
-
-```eu,notest
-# This does NOT work as intended:
-{:io-shell cmd: cmd} << opts   # returns opts unchanged — the left side is
-                                # a Meta node, not a Block, so << returns r
-```
-
-**Solution**: When you need to merge fields into a metadata-tagged block,
-build the final block explicitly using `lookup-or` to extract individual
-fields from the options block:
-
-```eu,notest
-# Correct: build spec block directly, preserving the :io-shell tag
-my-shell-spec(opts, cmd): {
-  :io-shell
-  cmd: cmd
-  timeout: opts lookup-or(:timeout, 30)
-  stdin: opts lookup-or(:stdin, null)
-}
-```
-
-**Rule**: Never use `<<` or catenation merge on a block that has a metadata
-tag (`:name` as first entry). Build the result block with explicit field
-declarations instead.
-
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:
