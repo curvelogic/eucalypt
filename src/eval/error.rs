@@ -218,7 +218,7 @@ pub fn format_suggestions(suggestions: &[String]) -> Option<String> {
 }
 
 /// Format a lookup failure message, including suggestions if available
-fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
+fn format_lookup_failure(key: &str, suggestions: &[String], _available: &[String]) -> String {
     let mut msg = format!("key '{key}' not found in block");
     if let Some(hint) = format_suggestions(suggestions) {
         msg.push_str(&format!("\n  help: {hint}"));
@@ -226,11 +226,34 @@ fn format_lookup_failure(key: &str, suggestions: &[String]) -> String {
     msg
 }
 
+/// Format an "available keys" hint for inclusion in lookup failure notes.
+/// Shows up to `max_shown` keys; if there are more, notes how many are hidden.
+fn format_available_keys(available: &[String], max_shown: usize) -> String {
+    let shown: Vec<&str> = available
+        .iter()
+        .take(max_shown)
+        .map(String::as_str)
+        .collect();
+    let keys_str = shown
+        .iter()
+        .map(|k| format!("'{k}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if available.len() > max_shown {
+        format!(
+            "available keys: {keys_str} (and {} more)",
+            available.len() - max_shown
+        )
+    } else {
+        format!("available keys: {keys_str}")
+    }
+}
+
 /// Generate contextual notes for lookup failure errors.
 ///
 /// Recognises common Python/Ruby string method names used as block keys and
 /// suggests the correct eucalypt equivalents in the `str` namespace.
-fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
+fn lookup_failure_notes(key: &str, suggestions: &[String], available: &[String]) -> Vec<String> {
     // Only produce extra notes when there are no edit-distance suggestions,
     // i.e. the key is genuinely unknown and not a near-miss of an existing key.
     if !suggestions.is_empty() {
@@ -306,7 +329,17 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
              e.g. `42 str.fmt(\"%10d\")` for right-padding"
                 .to_string(),
         ],
-        _ => vec![],
+        _ => {
+            // No specific hint — show available keys if the block has a small number,
+            // so the user can see what they CAN access rather than just what's missing.
+            // For large blocks (e.g. the 'str' namespace with 26 keys), the list would
+            // be unhelpfully long, so we cap at 12 keys total.
+            if !available.is_empty() && available.len() <= 12 {
+                vec![format_available_keys(available, 8)]
+            } else {
+                vec![]
+            }
+        }
     }
 }
 
@@ -468,8 +501,8 @@ pub enum ExecutionError {
     FreeVar(Smid, String),
     #[error("code not valid for execution")]
     InvalidCode(Smid),
-    #[error("{}", format_lookup_failure(.1, .2))]
-    LookupFailure(Smid, String, Vec<String>),
+    #[error("{}", format_lookup_failure(.1, .2, .3))]
+    LookupFailure(Smid, String, Vec<String>, Vec<String>),
     #[error("type mismatch: expected {1}, found {2}")]
     TypeMismatch(Smid, IntrinsicType, IntrinsicType),
     #[error("unknown intrinsic {1}")]
@@ -570,7 +603,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotFound(s) => *s,
             ExecutionError::FreeVar(s, _) => *s,
             ExecutionError::InvalidCode(s) => *s,
-            ExecutionError::LookupFailure(s, _, _) => *s,
+            ExecutionError::LookupFailure(s, _, _, _) => *s,
             ExecutionError::TypeMismatch(s, _, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
@@ -685,8 +718,8 @@ impl ExecutionError {
                 ]
             }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
-            ExecutionError::LookupFailure(_, key, suggestions) => {
-                lookup_failure_notes(key, suggestions)
+            ExecutionError::LookupFailure(_, key, suggestions, available) => {
+                lookup_failure_notes(key, suggestions, available)
             }
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
