@@ -332,9 +332,11 @@ fn not_callable_notes(actual_type: &str) -> Vec<String> {
     match actual_type {
         "list" => vec![
             "lists are not callable; to access elements by index use 'nth(index, list)' \
-             or pipeline form 'list nth(index)'"
+             or the shorthand '!!' operator: 'xs !! 0' for the first element"
                 .to_string(),
-            "for the first element use 'list head'; for the rest use 'list tail'".to_string(),
+            "for the first element use 'xs head'; for the last use 'xs reverse head'; \
+             for a slice use 'xs drop(n) take(m)'"
+                .to_string(),
         ],
         "true" | "false" => vec![
             format!(
