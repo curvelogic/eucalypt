@@ -68,6 +68,25 @@ jobs:
           python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
 
 
+  test-aarch64-sequential:
+    name: Sequential harness (aarch64 release)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: aarch64-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            aarch64-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run sequential harness with release binary
+        run: target/release/eu test --allow-io tests/harness
+
   wasm:
     name: WASM Compilation Check
     runs-on: ubuntu-latest
