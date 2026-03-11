@@ -490,7 +490,11 @@ pub enum ExecutionError {
     BadDateTimeString(String),
     #[error("failed to apply format string")]
     FormatFailure,
-    #[error("failed to convert numeric type as required by format string")]
+    #[error(
+        "failed to convert numeric type as required by format string\n  \
+         help: integer specifiers like %d, %o, %x require an integer value; \
+         use %f or %g for floating-point numbers"
+    )]
     BadNumericTypeForFormat,
     #[error("bad number format: {0}")]
     BadNumberFormat(String),
