@@ -1144,3 +1144,18 @@ pub fn test_error_095() {
 pub fn test_error_096() {
     run_error_test(&error_opts("096_parse_as_bad_input.eu"));
 }
+
+#[test]
+pub fn test_error_100() {
+    run_error_test(&error_opts("100_fn_call_source_loc.eu"));
+}
+
+#[test]
+pub fn test_error_101() {
+    run_error_test(&error_opts("101_named_fn_source_loc.eu"));
+}
+
+#[test]
+pub fn test_error_102() {
+    run_error_test(&error_opts("102_dot_on_list_source_loc.eu"));
+}
