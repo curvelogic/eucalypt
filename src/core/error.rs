@@ -51,6 +51,12 @@ pub enum CoreError {
     EmptyMonadicBlock(Smid),
     #[error("bracket block definition body must be marked with ':monad' — use '{{ :monad bind: {0} return: {1} }}'")]
     MonadSpecMissingMarker(String, String, Smid),
+    /// An implicit anaphor was required to fill adjacent operators but no
+    /// source location was available to attach to it.  This typically
+    /// happens when operators in a metadata block key use dot notation
+    /// (e.g. `` ` { x.y: val } ``) which is not valid eucalypt syntax.
+    #[error("invalid block key: dotted names are not allowed as block keys")]
+    NoSmidForImplicitAnaphor,
 }
 
 impl HasSmid for CoreError {
@@ -86,6 +92,11 @@ impl CoreError {
                 "some input formats (csv, text, etc.) that read as lists need to be assigned names"
                     .to_string(),
                 "perhaps you need to name one or more of your inputs (<name>=<input>)".to_string(),
+            ]),
+            CoreError::NoSmidForImplicitAnaphor => source_map.diagnostic(self).with_notes(vec![
+                "block keys must be simple names (e.g. `x`), not dotted paths (e.g. `x.y`)".to_string(),
+                "example of valid metadata: `` ` { x: val } `` — use 'x', not 'x.y' as the key".to_string(),
+                "if you need nested metadata, use nested blocks: `` ` { x: { y: val } } ``".to_string(),
             ]),
             _ => source_map.diagnostic(self),
         }
