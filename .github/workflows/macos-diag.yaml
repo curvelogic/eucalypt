@@ -6,12 +6,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Experiment G: exact reproduction of Release MacOS "Run release tests" step.
-  # cargo test --release (no --test filter) = ALL tests: lib unit tests +
-  # harness integration tests. Run back-to-back 3x to catch intermittent crash.
-  # If this crashes but H passes, the crash is specific to running alongside lib tests.
-  macos-all-tests:
-    name: macOS cargo test --release (ALL, no filter)
+  # Experiment J: EXACT clone of Release MacOS "Run release tests" step,
+  # including cargo install + eu build-meta regeneration beforehand.
+  # Previous experiments skipped this setup — build-meta.yaml changes
+  # cause eucalypt crate recompilation between install and test steps,
+  # which may produce the mixed object state that crashes.
+  macos-exact-release:
+    name: macOS exact Release MacOS reproduction
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +25,15 @@ jobs:
           restore-keys: |
             macos-diag-registry-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build
-        run: cargo build --release
+      - name: Build and install temporary eu (as Release MacOS does)
+        run: cargo install --path .
+      - name: Regenerate build-meta.yaml (as Release MacOS does)
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+          eu build.eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: cargo test --release attempt 1
         run: cargo test --release
         continue-on-error: true
@@ -36,10 +44,10 @@ jobs:
         run: cargo test --release
         continue-on-error: true
 
-  # Experiment H: harness only, 3x, as control.
-  # Previous runs of this passed; confirms harness alone is stable.
-  macos-harness-only:
-    name: macOS harness only (--test harness_test)
+  # Experiment K: same setup but harness only — control.
+  # Does the crash only happen when build-meta triggers recompile + all tests?
+  macos-exact-harness-only:
+    name: macOS exact setup, harness only
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,8 +60,15 @@ jobs:
           restore-keys: |
             macos-diag-registry-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build
-        run: cargo build --release --test harness_test
+      - name: Build and install temporary eu (as Release MacOS does)
+        run: cargo install --path .
+      - name: Regenerate build-meta.yaml (as Release MacOS does)
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+          eu build.eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Harness only attempt 1
         run: cargo test --release --test harness_test
         continue-on-error: true
@@ -62,33 +77,4 @@ jobs:
         continue-on-error: true
       - name: Harness only attempt 3
         run: cargo test --release --test harness_test
-        continue-on-error: true
-
-  # Experiment I: all tests single-threaded.
-  # If G crashes but this passes, the crash is a concurrency race in the
-  # combined (lib + harness) test run.
-  macos-all-single-thread:
-    name: macOS cargo test --release single-threaded
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: macos-diag-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            macos-diag-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build
-        run: cargo build --release
-      - name: cargo test --release --test-threads=1 attempt 1
-        run: cargo test --release -- --test-threads=1
-        continue-on-error: true
-      - name: cargo test --release --test-threads=1 attempt 2
-        run: cargo test --release -- --test-threads=1
-        continue-on-error: true
-      - name: cargo test --release --test-threads=1 attempt 3
-        run: cargo test --release -- --test-threads=1
         continue-on-error: true
