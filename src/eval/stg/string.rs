@@ -43,16 +43,18 @@ fn cached_regex<T: AsRef<str>>(
     machine: &mut dyn IntrinsicMachine,
     text: T,
 ) -> Result<&Regex, ExecutionError> {
+    let smid = machine.annotation();
+    let text_owned = text.as_ref().to_string();
     let rcache = machine.rcache();
-    let text_ref = text.as_ref();
 
-    if !rcache.contains(text_ref) {
-        let re = Regex::new(text_ref)
-            .map_err(|e| ExecutionError::BadRegex(text_ref.to_string(), e.to_string()))?;
-        rcache.put(text_ref.to_string(), re);
+    if !rcache.contains(&text_owned) {
+        let re = Regex::new(&text_owned).map_err(|e| {
+            ExecutionError::BadRegex(smid, text_owned.clone(), e.to_string())
+        })?;
+        rcache.put(text_owned.clone(), re);
     }
 
-    Ok(rcache.get(text_ref).unwrap())
+    Ok(rcache.get(&text_owned).unwrap())
 }
 
 /// SYM(str) to convert strings to symbols

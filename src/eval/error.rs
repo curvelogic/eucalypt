@@ -593,8 +593,8 @@ pub enum ExecutionError {
     NotCallable(Smid, String),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
-    #[error("bad regex: {1}\n  help: the pattern '{0}' is not a valid regular expression")]
-    BadRegex(String, String),
+    #[error("bad regex: {2}\n  help: the pattern '{1}' is not a valid regular expression")]
+    BadRegex(Smid, String, String),
     #[error("{}", format_bad_datetime_components(.0, .1, .2, .3, .4, .5, .6))]
     BadDateTimeComponents(Number, Number, Number, Number, Number, Number, String),
     #[error("{}", format_bad_timezone(.0))]
@@ -743,6 +743,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::IoCommandError(s, _) => *s,
             ExecutionError::ListIndexOutOfBounds(s, _) => *s,
             ExecutionError::BadDateTimeString(s, _) => *s,
+            ExecutionError::BadRegex(s, _, _) => *s,
             _ => Smid::default(),
         }
     }
