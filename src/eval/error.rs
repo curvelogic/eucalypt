@@ -58,9 +58,12 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
             "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
         ],
         (Symbol, String) => vec![
-            "eucalypt uses symbol literals (`:name`) not strings for key names".to_string(),
-            "for example, use `has(:x)` instead of `has(\"x\")`; \
-             symbols are written with a leading colon"
+            "a symbol was expected but a string was passed; \
+             add a colon prefix to make it a symbol: ':yaml' not \"yaml\", \
+             ':key' not \"key\""
+                .to_string(),
+            "symbols (`:name`) and strings (`\"name\"`) are distinct in eucalypt; \
+             functions like 'render-as', 'has', 'lookup-or' take symbol arguments"
                 .to_string(),
         ],
         _ => vec![],
@@ -155,9 +158,11 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         vec!["to convert a number to a string, use 'str' or string interpolation".to_string()]
     } else if is_string && expects_symbol {
         vec![
-            "eucalypt uses symbol literals (`:name`) not strings for key names".to_string(),
-            "for example, use `has(:x)` instead of `has(\"x\")`; \
-             symbols are written with a leading colon"
+            "a symbol was expected but a string was passed; \
+             add a colon prefix: ':yaml' not \"yaml\", ':key' not \"key\""
+                .to_string(),
+            "symbols (`:name`) and strings (`\"name\"`) are distinct in eucalypt; \
+             functions like 'render-as', 'has', 'lookup-or' take symbol arguments"
                 .to_string(),
         ]
     } else if is_symbol && expects_string {
