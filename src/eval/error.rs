@@ -32,6 +32,9 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
             "the '.' operator performs key lookup on blocks; \
              strings do not have fields"
                 .to_string(),
+            "if you passed a string as a key to a block (e.g. 'block(\"key\")', use \
+             dot notation instead: 'block.key', or a symbol: 'block(:key)'"
+                .to_string(),
             "to apply string functions, use pipeline catenation, \
              e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
                 .to_string(),
@@ -108,6 +111,9 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         vec![
             "the '.' operator performs key lookup on blocks; \
              strings do not have fields"
+                .to_string(),
+            "if you passed a string as a key to a block (e.g. 'block(\"key\")'), use \
+             dot notation instead: 'block.key'"
                 .to_string(),
             "to apply string functions, use pipeline catenation, \
              e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"

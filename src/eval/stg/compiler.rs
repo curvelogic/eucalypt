@@ -390,6 +390,37 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // Pattern matching keywords from Haskell, Rust, OCaml, Elixir.
+                    // Eucalypt has no match expression; dispatch is done via 'if' or 'cond'.
+                    "match" | "case" | "switch" => {
+                        notes.push(
+                            "eucalypt has no 'match'/'case'/'switch' expression; \
+                             use 'if(condition, then-value, else-value)' for two-way branching"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "for multi-way dispatch use 'cond', e.g. \
+                             'cond([x = 1, \"one\"], [x = 2, \"two\"], [true, \"other\"])'"
+                                .to_string(),
+                        );
+                    }
+                    // Type-conversion keywords from various languages.
+                    "cast" | "coerce" | "convert" => {
+                        notes.push(
+                            "eucalypt has no explicit type-cast; use 'num' to convert strings \
+                             to numbers, 'str' for numbers to strings, or 'str.of(x)' for a \
+                             general string representation"
+                                .to_string(),
+                        );
+                    }
+                    // Type-test / isinstance from Python, Java, Kotlin.
+                    "isinstance" | "isA" | "is_a" | "instanceof" | "is-a" => {
+                        notes.push(
+                            "eucalypt has no runtime type-test operator; use 'num?', 'str?', \
+                             'nil?', 'bool?' or 'list?' predicates to test the type of a value"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
