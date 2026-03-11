@@ -156,9 +156,11 @@ impl StgIntrinsic for AssertFail {
     ) -> Result<(), ExecutionError> {
         let actual_str = format_ref(machine, view, &args[0]);
         let expected_str = format_ref(machine, view, &args[1]);
-        Err(ExecutionError::Panic(format!(
-            "assertion failed: expected {expected_str}, got {actual_str}"
-        )))
+        Err(ExecutionError::AssertionFailed(
+            machine.annotation(),
+            actual_str,
+            expected_str,
+        ))
     }
 }
 
