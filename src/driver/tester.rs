@@ -135,11 +135,18 @@ pub fn run_plans(opt: &EucalyptOptions, tests: &[TestPlan]) -> Result<i32, Eucal
 
         test.prepare_directory()?;
 
-        print!("{}...", test.title());
+        eprintln!("[diag] prepare_directory ok: {}", test.title());
 
+        print!("{}...", test.title());
+        use std::io::Write as _;
+        let _ = std::io::stdout().flush();
+
+        eprintln!("[diag] calling tester.run: {}", test.title());
         let execution_opts = test_opts.clone().without_test_flag();
         tester.run(test, &execution_opts)?;
+        eprintln!("[diag] tester.run ok: {}", test.title());
         tester.validate(test)?;
+        eprintln!("[diag] tester.validate ok: {}", test.title());
         let summary = tester.summary(test)?.to_string();
         print!("{summary}");
 
