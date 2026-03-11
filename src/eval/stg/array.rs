@@ -525,7 +525,10 @@ impl StgIntrinsic for ArraySlice {
             Some(sliced) => machine_return_ndarray(machine, view, sliced),
             None => Err(ExecutionError::ArrayShapeMismatch(
                 smid,
-                format!("axis {axis} or index {index} is out of bounds for array of shape {:?}", arr.shape()),
+                format!(
+                    "axis {axis} or index {index} is out of bounds for array of shape {:?}",
+                    arr.shape()
+                ),
             )),
         }
     }
@@ -829,7 +832,8 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
         }
         _ => Err(ExecutionError::ArrayShapeMismatch(
             smid,
-            "array arithmetic requires at least one array operand; both arguments are scalars".to_string(),
+            "array arithmetic requires at least one array operand; both arguments are scalars"
+                .to_string(),
         )),
     }
 }
