@@ -1,6 +1,7 @@
 extern crate eucalypt;
 
 use std::process;
+use std::thread;
 
 use eucalypt::driver::format;
 use eucalypt::driver::lsp;
@@ -10,16 +11,37 @@ use eucalypt::driver::source::SourceLoader;
 use eucalypt::driver::tester;
 use eucalypt::driver::{eval, statistics::Statistics};
 
+/// Stack size for the main execution thread (64 MiB).
+///
+/// The OS default (8 MiB on macOS, 2–8 MiB on Linux) is too small for
+/// the in-process test runner, which accumulates significant stack depth
+/// across 100+ tests in a single process. Spawning on a larger stack
+/// prevents the SIGSEGV that otherwise occurs on macOS after test 115.
+///
+/// This is the standard Rust pattern for programs with deep call stacks
+/// (rustc itself uses it).
+const STACK_SIZE: usize = 64 * 1024 * 1024;
+
 pub fn main() {
+    let exit_code = thread::Builder::new()
+        .stack_size(STACK_SIZE)
+        .spawn(run)
+        .expect("failed to spawn main thread")
+        .join()
+        .expect("main thread panicked");
+    process::exit(exit_code);
+}
+
+fn run() -> i32 {
     let opt = EucalyptOptions::from_args();
 
     // LSP mode runs the language server and exits
     if opt.lsp() {
         match lsp::run() {
-            Ok(()) => process::exit(0),
+            Ok(()) => return 0,
             Err(e) => {
                 eprintln!("LSP server error: {e}");
-                process::exit(2)
+                return 2;
             }
         }
     }
@@ -27,17 +49,17 @@ pub fn main() {
     // For a dry run, just explain the options
     if opt.explain() {
         println!("{}", opt.explanation());
-        process::exit(0);
+        return 0;
     }
 
     // Test mode is substantially different, delegate everything to
     // the tester
     if opt.test() {
         match tester::test(&opt) {
-            Ok(exit) => process::exit(exit),
+            Ok(exit) => return exit,
             Err(e) => {
                 eprintln!("{e}");
-                process::exit(2)
+                return 2;
             }
         }
     }
@@ -45,10 +67,10 @@ pub fn main() {
     // Format mode handles its own input loading
     if opt.format() {
         match format::format(&opt) {
-            Ok(exit) => process::exit(exit),
+            Ok(exit) => return exit,
             Err(e) => {
                 eprintln!("{e}");
-                process::exit(2)
+                return 2;
             }
         }
     }
@@ -65,9 +87,9 @@ pub fn main() {
         Err(e) => {
             let diag = e.to_diagnostic(loader.source_map());
             loader.diagnose_to_stderr(&diag);
-            exit(&opt, 1, &statistics);
+            return exit_code(&opt, 1, &statistics);
         }
-        Ok(Command::Exit) => exit(&opt, 0, &statistics),
+        Ok(Command::Exit) => return exit_code(&opt, 0, &statistics),
         Ok(Command::Continue) => {}
     }
 
@@ -76,17 +98,17 @@ pub fn main() {
         match eval::run(&opt, loader) {
             Ok(run_stats) => {
                 statistics.merge(run_stats);
-                exit(&opt, 0, &statistics)
+                return exit_code(&opt, 0, &statistics);
             }
-            _ => exit(&opt, 1, &statistics),
+            _ => return exit_code(&opt, 1, &statistics),
         }
     }
 
-    exit(&opt, 0, &statistics);
+    exit_code(&opt, 0, &statistics)
 }
 
-/// Optionally dump stats to stderr and/or write JSON file, then exit
-pub fn exit(opts: &EucalyptOptions, code: i32, stats: &Statistics) {
+/// Optionally dump stats to stderr and/or write JSON file, then return exit code.
+pub fn exit_code(opts: &EucalyptOptions, code: i32, stats: &Statistics) -> i32 {
     if opts.statistics() {
         eprintln!();
         eprintln!("~~~~~~~~~~");
@@ -103,5 +125,10 @@ pub fn exit(opts: &EucalyptOptions, code: i32, stats: &Statistics) {
         }
     }
 
-    process::exit(code)
+    code
+}
+
+/// Optionally dump stats to stderr and/or write JSON file, then exit.
+pub fn exit(opts: &EucalyptOptions, code: i32, stats: &Statistics) {
+    process::exit(exit_code(opts, code, stats))
 }
