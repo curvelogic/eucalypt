@@ -75,6 +75,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_datetime = actual == DataConstructor::BoxedZdt.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
@@ -114,6 +115,26 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
                 .to_string(),
             "note: 'str' is a namespace of string functions, not a type conversion function; \
              use 'str.of(x)' or string interpolation to convert values to strings"
+                .to_string(),
+        ]
+    } else if is_block && expects_number && expects_string {
+        // String interpolation context — block where scalar is needed.
+        vec![
+            "blocks (structured values) cannot be used directly in string interpolation"
+                .to_string(),
+            "to serialise a block as a string, use 'render-as', \
+             e.g. 'my_block render-as(:yaml)' or 'my_block render-as(:json)'"
+                .to_string(),
+            "to interpolate a specific field, use 'block.field', \
+             e.g. '{config.host}' instead of '{config}'"
+                .to_string(),
+        ]
+    } else if is_datetime && expects_number && expects_string {
+        // String interpolation context — datetime where scalar is needed.
+        vec![
+            "datetime values cannot be used directly in string interpolation".to_string(),
+            "to format a datetime as an ISO 8601 string, use 'cal.format', \
+             e.g. 'd cal.format' or 'str' e.g. 'd str'"
                 .to_string(),
         ]
     } else if is_block && expects_number {
