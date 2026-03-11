@@ -475,11 +475,27 @@ impl StgIntrinsic for ArrayReshape {
     ) -> Result<(), ExecutionError> {
         let new_shape = num_list_to_usize_vec(machine, view, &args[0])?;
         let arr = ndarray_arg(machine, view, &args[1])?;
+        let old_len = arr.len();
+        let new_len: usize = new_shape.iter().product();
         match arr.reshape(&new_shape) {
             Some(reshaped) => machine_return_ndarray(machine, view, reshaped),
-            None => Err(ExecutionError::Panic(
-                "reshape: new shape does not match total element count".to_string(),
-            )),
+            None => {
+                let old_shape_str = arr
+                    .shape()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let new_shape_str = new_shape
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(ExecutionError::Panic(format!(
+                    "arr.reshape: cannot reshape array of {old_len} element(s) (shape [{old_shape_str}]) \
+                     into shape [{new_shape_str}] which requires {new_len} element(s)"
+                )))
+            }
         }
     }
 }
@@ -506,9 +522,20 @@ impl StgIntrinsic for ArraySlice {
         let index = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
         match arr.slice_along(axis, index) {
             Some(sliced) => machine_return_ndarray(machine, view, sliced),
-            None => Err(ExecutionError::Panic(
-                "slice: axis or index out of bounds".to_string(),
-            )),
+            None => {
+                let shape_str = arr
+                    .shape()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let rank = arr.rank();
+                Err(ExecutionError::Panic(format!(
+                    "arr.slice: axis {axis} or index {index} is out of bounds \
+                     for array with shape [{shape_str}] (rank {rank}); \
+                     axis must be 0..{rank} and index within the dimension size"
+                )))
+            }
         }
     }
 }
@@ -789,11 +816,25 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
         (Native::NdArray(a_ptr), Native::NdArray(b_ptr)) => {
             let a = view.scoped(a_ptr);
             let b = view.scoped(b_ptr);
+            let a_shape_str = a
+                .shape()
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let b_shape_str = b
+                .shape()
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             match a.zip_with(&b, f) {
                 Some(result) => machine_return_ndarray(machine, view, result),
-                None => Err(ExecutionError::Panic(
-                    "array shape mismatch in element-wise operation".to_string(),
-                )),
+                None => Err(ExecutionError::Panic(format!(
+                    "array shape mismatch: cannot apply element-wise operation \
+                     to arrays with shapes [{a_shape_str}] and [{b_shape_str}]; \
+                     shapes must be identical for element-wise operations"
+                ))),
             }
         }
         (Native::NdArray(a_ptr), Native::Num(n)) => {

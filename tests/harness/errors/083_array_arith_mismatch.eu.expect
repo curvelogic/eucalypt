@@ -1,2 +1,2 @@
 exit: 1
-stderr: "array shape mismatch in element-wise operation"
+stderr: "array shape mismatch: cannot apply element-wise operation"
