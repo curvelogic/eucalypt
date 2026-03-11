@@ -4,96 +4,19 @@ on:
   push:
     branches:
       - 'fix/furnace-macos-segv-v2'
+      - 'fix/furnace-macos-stack-fix'
   workflow_dispatch:
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Check
-        run: cargo check
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-  audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-      - name: Run cargo audit
-        run: cargo audit
-
-  test:
-    name: Test Suite
-    strategy:
-      matrix:
-        os: ["ubuntu-latest", "macos-latest"]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Run tests
-        run: cargo test
-      - name: Test doc examples
-        if: runner.os == 'Linux'
-        run: |
-          cargo build --release
-          python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
-
-  wasm:
-    name: WASM Compilation Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy
-      - name: Build library for WASM
-        run: cargo build --target wasm32-unknown-unknown --lib
-      - name: Clippy for WASM
-        run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings
-
-  release-candidate-macos:
-    needs: [lint, test, audit, wasm]
-    name: Release MacOS (${{ matrix.label }})
+  # Exact clone of Release MacOS from build-rust.yaml.
+  # Runs the full harness as a single process to reproduce the crash.
+  release-macos-exact:
+    name: Release MacOS exact clone (${{ matrix.attempt }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Baseline: full suite (3x to catch intermittent crash)
-          - label: "full suite 1"
-            test_target: "tests/harness"
-          - label: "full suite 2"
-            test_target: "tests/harness"
-          - label: "full suite 3"
-            test_target: "tests/harness"
-          # Does test 116 alone crash?
-          - label: "test 116 only"
-            test_target: "tests/harness/116_io_shell_with.eu"
-          # Does the crash happen if we only run 116-120?
-          - label: "tests 116-120 only"
-            test_target: "tests/harness/116_io_shell_with.eu tests/harness/117_io_exec.eu tests/harness/118_io_exec_with.eu tests/harness/119_monad_utility.eu tests/harness/120_random_monad.eu"
+        attempt: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -111,19 +34,15 @@ jobs:
         run: |
           export OSTYPE=$(uname)
           export HOSTTYPE=$(uname -m)
-
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
-
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Build release
         run: cargo build --all --release
       - run: |
           strip target/release/eu
           mv target/release/eu target/release/eu_darwin
-      - name: Run final test with release binary
+      - name: Run final test with release binary (full suite, single process)
         run: |
           target/release/eu_darwin version
-          for t in ${{ matrix.test_target }}; do
-            target/release/eu_darwin test --allow-io "$t"
-          done
+          target/release/eu_darwin test --allow-io tests/harness
