@@ -113,12 +113,22 @@ jobs:
 
   release-candidate-macos:
     needs: [lint, test, audit, wasm]
-    name: Release MacOS (attempt ${{ matrix.attempt }})
+    name: Release MacOS (${{ matrix.label }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        attempt: [1, 2, 3, 4, 5]
+        include:
+          - label: "baseline 1"
+            env_prefix: ""
+          - label: "baseline 2"
+            env_prefix: ""
+          - label: "baseline 3"
+            env_prefix: ""
+          - label: "GC_STRESS 1"
+            env_prefix: "EU_GC_STRESS=1"
+          - label: "GC_STRESS 2"
+            env_prefix: "EU_GC_STRESS=1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -149,7 +159,7 @@ jobs:
       - name: Run final test with release binary
         run: |
           target/release/eu_darwin version
-          target/release/eu_darwin test --allow-io tests/harness
+          ${{ matrix.env_prefix }} target/release/eu_darwin test --allow-io tests/harness
 
   release-candidate-linux-arm:
     needs: [lint, test, audit, wasm]
