@@ -670,7 +670,12 @@ impl ExecutionError {
                 vec![
                     "a binding that references itself directly or indirectly creates an infinite loop"
                         .to_string(),
-                    "use a function parameter instead of self-reference, or break the cycle"
+                    "common cause: inside a block, a field name shadows any outer binding with \
+                     the same name — 'f(x): {x: x}' makes 'x' refer to itself, not the parameter; \
+                     rename the parameter: 'f(p): {x: p}'"
+                        .to_string(),
+                    "to break a self-referential cycle, use a function parameter or introduce \
+                     an intermediate binding"
                         .to_string(),
                 ]
             }
