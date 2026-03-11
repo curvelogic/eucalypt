@@ -7,23 +7,32 @@ on:
   workflow_dispatch:
 
 jobs:
-  macos-release-exact-clone:
-    name: macOS exact clone attempt ${{ matrix.attempt }}
+  # Does macOS fail with just cargo build --release (no install), like the aarch64 Linux job?
+  macos-simple-build:
+    name: macOS simple build x${{ matrix.attempt }}
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        attempt: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        attempt: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run sequential harness
+        run: target/release/eu test --allow-io tests/harness
+
+  # Exact Release MacOS clone x5 as before
+  macos-release-exact-clone:
+    name: macOS exact clone x${{ matrix.attempt }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build and install temporary eu
         run: cargo install --path .
