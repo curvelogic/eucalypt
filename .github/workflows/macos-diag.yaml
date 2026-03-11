@@ -3,40 +3,13 @@ name: macOS SIGSEGV diagnostic
 on:
   push:
     branches:
-      - 'fix/furnace-*'
-      - 'test/verify-*'
+      - 'fix/furnace-macos-segv-v2'
   workflow_dispatch:
 
 jobs:
-  # Sequential binary harness on aarch64 Linux — this is the exact
-  # invocation that was crashing before the evacuation line-mark fix.
-  # Run 3x to catch any low-probability recurrence.
-  aarch64-sequential-3x:
-    name: aarch64 sequential harness x3
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: aarch64-diag-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            aarch64-diag-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build release binary
-        run: cargo build --release
-      - name: Run 1
-        run: target/release/eu test --allow-io tests/harness
-      - name: Run 2
-        run: target/release/eu test --allow-io tests/harness
-      - name: Run 3
-        run: target/release/eu test --allow-io tests/harness
-
-  # macOS ARM sequential binary harness — also crashed before the fix.
-  macos-sequential:
-    name: macOS sequential harness
+  # Exact clone of Release MacOS job — reproduce the crash first.
+  macos-release-exact-clone:
+    name: macOS exact Release MacOS clone
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,9 +18,43 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: macos-diag-registry-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            macos-diag-registry-
+            ${{ runner.os }}-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and install temporary eu
+        run: cargo install --path .
+      - name: Prepare build files for new version
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+          eu build.eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
+      - name: Build release
+        run: cargo build --all --release
+      - run: |
+          strip target/release/eu
+          mv target/release/eu target/release/eu_darwin
+      - name: Run final test with release binary
+        run: |
+          target/release/eu_darwin version
+          target/release/eu_darwin test --allow-io tests/harness
+
+  # Control: no cargo install, just cargo build --release (diagnostic passes this)
+  macos-control-no-install:
+    name: macOS control (no cargo install)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-ctrl-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-ctrl-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release binary
         run: cargo build --release
