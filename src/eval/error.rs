@@ -63,6 +63,27 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              symbols are written with a leading colon"
                 .to_string(),
         ],
+        (Number, Symbol) => vec![
+            "symbol values (e.g. ':foo') cannot be used in arithmetic".to_string(),
+            "to get the string form of a symbol, use 'str', e.g. ':foo str' returns \"foo\""
+                .to_string(),
+            "to convert a symbol's string form to a number, use ':foo str num'".to_string(),
+        ],
+        (Number, Unit) => vec![
+            "null cannot be used in arithmetic — it represents the absence of a value".to_string(),
+            "if the value may be null, use 'if(x = null, default, x)' to provide a fallback \
+             before using it in arithmetic"
+                .to_string(),
+        ],
+        (String, Symbol) => vec![
+            "symbol values (e.g. ':foo') are not strings; to convert a symbol to a string, \
+             use 'str', e.g. ':foo str' returns \"foo\""
+                .to_string(),
+        ],
+        (String, Unit) => vec![
+            "null cannot be converted to a string directly".to_string(),
+            "use 'if(x = null, \"default\", x str)' to handle null with a fallback".to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -75,6 +96,7 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_unit = actual == DataConstructor::Unit.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
@@ -145,6 +167,25 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "to convert a symbol to a string, use 'str.of', e.g. `str.of(:name)` \
              gives the string `\"name\"`"
                 .to_string(),
+        ]
+    } else if is_unit && expects_number {
+        vec![
+            "null cannot be used in arithmetic — it represents the absence of a value".to_string(),
+            "if the value may be null, use 'if(x = null, default, x)' to provide a fallback \
+             before using it in arithmetic"
+                .to_string(),
+        ]
+    } else if is_unit && expects_block {
+        vec![
+            "null cannot be used with the '.' field-access operator — it has no fields".to_string(),
+            "if the value may be null, use 'if(x = null, default_block, x).field' to guard \
+             against null before field access"
+                .to_string(),
+        ]
+    } else if is_unit && expects_string {
+        vec![
+            "null cannot be converted to a string directly".to_string(),
+            "use 'if(x = null, \"default\", x str)' to handle null with a fallback".to_string(),
         ]
     } else {
         vec![]
