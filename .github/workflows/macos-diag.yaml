@@ -7,10 +7,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Exact clone of Release MacOS job — reproduce the crash first.
-  macos-release-exact-clone:
-    name: macOS exact Release MacOS clone
+  # Run the exact Release MacOS clone 5 times to catch intermittent crash
+  macos-release-exact-clone-x5:
+    name: macOS exact clone attempt ${{ matrix.attempt }}
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -40,23 +44,3 @@ jobs:
         run: |
           target/release/eu_darwin version
           target/release/eu_darwin test --allow-io tests/harness
-
-  # Control: no cargo install, just cargo build --release (diagnostic passes this)
-  macos-control-no-install:
-    name: macOS control (no cargo install)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: macos-ctrl-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            macos-ctrl-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build release binary
-        run: cargo build --release
-      - name: Run sequential harness
-        run: target/release/eu test --allow-io tests/harness
