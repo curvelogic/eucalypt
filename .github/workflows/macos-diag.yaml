@@ -6,62 +6,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Experiment A: fresh build (no target/ cache, only registry cache)
-  # If this passes but B fails, the crash is stale cache in target/
-  macos-fresh-build:
-    name: macOS fresh build (registry cache only)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: macos-diag-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            macos-diag-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Run ALL harness tests (parallel, release)
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Run ALL harness tests (parallel, release) — repeat
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Run ALL harness tests (parallel, release) — repeat
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-
-  # Experiment B: same cache key as production master build
-  # If this fails but A passes, the crash is stale cache in target/
-  macos-production-cache:
-    name: macOS production cache key
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: macOS-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            macOS-cargo-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Run ALL harness tests (parallel, release) — attempt 1
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Run ALL harness tests (parallel, release) — attempt 2
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Run ALL harness tests (parallel, release) — attempt 3
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-
-  # Experiment C: parallel with extra thread stress + RUST_BACKTRACE
-  macos-stress:
-    name: macOS stress with backtrace
+  # Experiment L: many repeats of full harness to catch low-probability crash.
+  # Previous 3-attempt runs all passed. Crash probability may be low per run.
+  # Run 10x in a single job to increase detection probability.
+  macos-repeat-10:
+    name: macOS harness x10 repeats
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,18 +25,89 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build
         run: cargo build --release --test harness_test
-      - name: Run with RUST_BACKTRACE=full (attempt 1)
-        env:
-          RUST_BACKTRACE: full
+      - name: Attempt 1
         run: cargo test --release --test harness_test
         continue-on-error: true
-      - name: Run with RUST_BACKTRACE=full (attempt 2)
-        env:
-          RUST_BACKTRACE: full
+      - name: Attempt 2
         run: cargo test --release --test harness_test
         continue-on-error: true
-      - name: Run with RUST_BACKTRACE=full (attempt 3)
-        env:
-          RUST_BACKTRACE: full
+      - name: Attempt 3
         run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 4
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 5
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 6
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 7
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 8
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 9
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 10
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+
+  # Experiment M: exact Release MacOS clone x10.
+  # The crash appears in the Release MacOS job; replicate that context.
+  macos-release-clone-repeat:
+    name: macOS Release MacOS clone x10
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-diag-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-diag-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and install temporary eu (as Release MacOS does)
+        run: cargo install --path .
+      - name: Regenerate build-meta.yaml (as Release MacOS does)
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+          eu build.eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
+      - name: Attempt 1
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 2
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 3
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 4
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 5
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 6
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 7
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 8
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 9
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 10
+        run: cargo test --release
         continue-on-error: true
