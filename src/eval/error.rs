@@ -63,6 +63,16 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              symbols are written with a leading colon"
                 .to_string(),
         ],
+        (Number, Bool) => vec![
+            "boolean values (true/false) cannot be used in arithmetic".to_string(),
+            "to convert a boolean to a number, use 'if(b, 1, 0)' to map true→1, false→0"
+                .to_string(),
+        ],
+        (String, Bool) => vec![
+            "boolean values (true/false) cannot be used directly in string contexts".to_string(),
+            "to convert a boolean to a string, use 'str', e.g. 'true str' gives \"true\""
+                .to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -75,12 +85,24 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_bool = actual == DataConstructor::BoolTrue.tag()
+        || actual == DataConstructor::BoolFalse.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
 
-    if is_list && expects_block {
+    if is_bool && expects_number {
+        vec![
+            "boolean values (true/false) cannot be used in arithmetic".to_string(),
+            "to convert a boolean to a number, use 'if(b, 1, 0)' to map true→1, false→0".to_string(),
+        ]
+    } else if is_bool && expects_string {
+        vec![
+            "boolean values (true/false) cannot be used directly in string interpolation".to_string(),
+            "to convert a boolean to a string, use 'str', e.g. 'true str' gives \"true\"".to_string(),
+        ]
+    } else if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
