@@ -123,7 +123,13 @@ impl fmt::Display for ParseError {
                 write!(f, "malformed declaration head")
             }
             ParseError::InvalidFormalParameter { .. } => {
-                write!(f, "invalid formal parameter in function definition")
+                write!(
+                    f,
+                    "invalid formal parameter in function definition\n  \
+                     help: function parameters must be bare identifiers, \
+                     e.g. 'f(x, y): x + y'\n  \
+                     help: numbers and string literals are not valid parameter names"
+                )
             }
             ParseError::InvalidOperatorName { .. } => write!(f, "invalid operator name"),
             ParseError::InvalidPropertyName { .. } => write!(f, "invalid property name"),
