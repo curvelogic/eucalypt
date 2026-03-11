@@ -1118,11 +1118,7 @@ impl StgIntrinsic for Merge {
             ),
         );
 
-        // Use plain lambda so the call-site annotation set by the Ann node
-        // emitted by the compiler at application sites is not overwritten
-        // when the intrinsic wrapper is entered.
-        let _ = annotation;
-        lambda(
+        annotated_lambda(
             2, // [l r]
             switch(
                 local(0),
@@ -1155,6 +1151,7 @@ impl StgIntrinsic for Merge {
                     ),
                 )],
             ),
+            annotation,
         )
     }
 
@@ -1225,11 +1222,7 @@ impl StgIntrinsic for MergeWith {
             ),
         );
 
-        // Use plain lambda so the call-site annotation set by the Ann node
-        // emitted by the compiler at application sites is not overwritten
-        // when the intrinsic wrapper is entered.
-        let _ = annotation;
-        lambda(
+        annotated_lambda(
             3, // [l r f]
             switch(
                 local(0),
@@ -1262,6 +1255,7 @@ impl StgIntrinsic for MergeWith {
                     ),
                 )],
             ),
+            annotation,
         )
     }
 
@@ -1328,11 +1322,7 @@ impl StgIntrinsic for DeepMerge {
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        // Use plain lambda so the call-site annotation set by the Ann node
-        // emitted by the compiler at application sites is not overwritten
-        // when the intrinsic wrapper is entered.
-        let _ = annotation;
-        lambda(
+        annotated_lambda(
             2,
             case(
                 local(0),
@@ -1353,6 +1343,7 @@ impl StgIntrinsic for DeepMerge {
                 // [l] [l r]
                 local(2),
             ),
+            annotation,
         )
     }
 }
