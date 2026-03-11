@@ -103,6 +103,30 @@ impl CompileError {
                             .to_string(),
                     );
                 }
+                // If the free variable name is a bare operator symbol (*, /, +, -,
+                // %, ^, <, >, !, |, &), it probably means a colon was omitted
+                // from the preceding declaration.  For example:
+                //   double(n) n * 2   ← missing ':' after double(n)
+                // The parser then sees 'n' as the declaration value and '* 2'
+                // as a subsequent expression, making '*' a free variable.
+                if name.chars().all(|c| {
+                    matches!(
+                        c,
+                        '*' | '/' | '+' | '-' | '%' | '^' | '<' | '>' | '!' | '|' | '&'
+                    )
+                }) && !name.starts_with("//")
+                {
+                    notes.push(
+                        "note: an operator appearing as a free variable often means a \
+                         ':' is missing from the preceding declaration"
+                            .to_string(),
+                    );
+                    notes.push(
+                        "hint: function declarations require a colon before the body: \
+                         'f(x): x * 2' not 'f(x) x * 2'"
+                            .to_string(),
+                    );
+                }
                 // Suggest eucalypt equivalents for common operators from other
                 // languages.
                 if name == "==" {
