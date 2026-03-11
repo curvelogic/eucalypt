@@ -205,8 +205,14 @@ impl CompileError {
                     }
                     "index" | "get" | "at" => {
                         notes.push(
-                            "to index into a list, use 'nth', e.g. 'xs nth(0)' for \
+                            "to index into a list by position, use 'nth', e.g. 'xs nth(0)' for \
                              the first element, or the '!!' operator: 'xs !! 0'"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "to look up a key in a block (record), use dot notation: \
+                             'block.key', or 'lookup-or(:key, default, block)' for a \
+                             safe lookup with a fallback"
                                 .to_string(),
                         );
                     }
@@ -387,6 +393,37 @@ impl CompileError {
                             "eucalypt uses kebab-case: 'sort-by' (for general ordering) or \
                              'sort-by-num' (for numeric keys), e.g. \
                              'xs sort-by-num(.score)'"
+                                .to_string(),
+                        );
+                    }
+                    // Python dict.items() — list of [key, value] pairs from a block.
+                    // Eucalypt's equivalent is 'pairs'.
+                    "items" | "entries" => {
+                        notes.push(
+                            "to get a list of key-value pairs from a block, use 'pairs', \
+                             e.g. 'block pairs' returns [[k1, v1], [k2, v2], ...]"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "to get just the keys use 'keys'; to get just the values use 'values'"
+                                .to_string(),
+                        );
+                    }
+                    // Clojure assoc / dissoc for updating blocks.
+                    // Eucalypt uses merge to add/update keys, and has no built-in dissoc.
+                    "assoc" | "assoc-in" => {
+                        notes.push(
+                            "eucalypt has no 'assoc'; to add or update a key in a block, \
+                             merge with a new block: 'original merge({key: new_value})'"
+                                .to_string(),
+                        );
+                    }
+                    "dissoc" | "delete" | "remove-key" | "without" => {
+                        notes.push(
+                            "eucalypt has no built-in 'dissoc'/'delete' for removing block keys; \
+                             rebuild the block selecting only the keys you want, \
+                             or use 'pairs' to filter: \
+                             'block pairs filter(.head != :key-to-remove) block-of-pairs'"
                                 .to_string(),
                         );
                     }
