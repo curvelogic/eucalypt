@@ -601,8 +601,8 @@ pub enum ExecutionError {
     BadTimeZone(String),
     #[error("bad timestamp ({0})")]
     BadTimestamp(Number),
-    #[error("{}", format_bad_datetime_string(.0))]
-    BadDateTimeString(String),
+    #[error("bad datetime format '{1}': not a recognised ISO 8601 datetime string\n  help: expected a format like '2024-01-15T09:30:00+00:00' or '2024-01-15'")]
+    BadDateTimeString(Smid, String),
     #[error("failed to apply format string")]
     FormatFailure,
     #[error(
@@ -677,6 +677,8 @@ pub enum ExecutionError {
     ArrayShapeMismatch(Smid, String),
     #[error("negative array index or dimension: {1} — array indices and dimensions must be non-negative")]
     ArrayNegativeIndex(Smid, f64),
+    #[error("list index out of bounds: index {1} is beyond the end of the list")]
+    ListIndexOutOfBounds(Smid, usize),
 }
 
 impl From<bump::AllocError> for ExecutionError {
@@ -739,6 +741,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::IoFail(s, _) => *s,
             ExecutionError::IoTimeout(s, _) => *s,
             ExecutionError::IoCommandError(s, _) => *s,
+            ExecutionError::ListIndexOutOfBounds(s, _) => *s,
+            ExecutionError::BadDateTimeString(s, _) => *s,
             _ => Smid::default(),
         }
     }
@@ -862,6 +866,28 @@ impl ExecutionError {
                 } else {
                     vec![]
                 }
+            }
+            ExecutionError::ListIndexOutOfBounds(_, _) => {
+                vec![
+                    "use 'nth(n, list)' only when you know the list has at least n+1 elements"
+                        .to_string(),
+                    "check the list length with 'count' before indexing, or use pattern matching \
+                     to handle empty or short lists safely"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _) => {
+                vec![
+                    "valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 \
+                     depending on month), hour (0–23), minute (0–59), second (0–59)"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::BadTimeZone(_) => {
+                vec![
+                    "timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'"
+                        .to_string(),
+                ]
             }
             _ => vec![],
         };
