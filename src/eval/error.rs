@@ -769,6 +769,11 @@ impl ExecutionError {
                     //    represents the empty-list sentinel internally as a string native,
                     //    so the error message mentions "string" even though the user wrote [].
                     notes.push(
+                        "if you used 'l !! n' or 'nth' with an index beyond the end of the \
+                         list, that is the likely cause — the index is out of bounds"
+                            .to_string(),
+                    );
+                    notes.push(
                         "if you called 'head' or 'tail' on an empty list '[]', that is the \
                          likely cause — 'head' and 'tail' are only defined on non-empty lists"
                             .to_string(),
