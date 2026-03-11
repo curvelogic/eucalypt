@@ -57,6 +57,15 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
             "arithmetic operators like '+' work on numbers, not lists".to_string(),
             "to concatenate two lists, use 'append(xs, ys)' or the '++' operator".to_string(),
         ],
+        (Record(_), Bool) => vec![
+            "a boolean (true/false) was found where a block was expected; \
+             booleans do not have fields"
+                .to_string(),
+            "if you applied the '.' operator to a comparison result (e.g. '(x > 0).key'), \
+             the comparison returns a boolean — wrap in 'if' to select a block: \
+             'if(x > 0, block_a, block_b).key'"
+                .to_string(),
+        ],
         (Symbol, String) => vec![
             "eucalypt uses symbol literals (`:name`) not strings for key names".to_string(),
             "for example, use `has(:x)` instead of `has(\"x\")`; \
@@ -75,6 +84,8 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_bool =
+        actual == DataConstructor::BoolTrue.tag() || actual == DataConstructor::BoolFalse.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
@@ -144,6 +155,19 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "a symbol (`:name`) was found where a string was expected".to_string(),
             "to convert a symbol to a string, use 'str.of', e.g. `str.of(:name)` \
              gives the string `\"name\"`"
+                .to_string(),
+        ]
+    } else if is_bool && expects_block {
+        vec![
+            "a boolean (true/false) was found where a block was expected; \
+             booleans do not have fields"
+                .to_string(),
+            "if you applied the '.' operator to a boolean result, check that your \
+             expression produces a block — e.g. wrap the condition in 'if' to choose \
+             a block value: 'if(cond, block_a, block_b).key'"
+                .to_string(),
+            "note: comparison operators like '>' and '=' return booleans, not blocks; \
+             the dot operator only works on blocks"
                 .to_string(),
         ]
     } else {
