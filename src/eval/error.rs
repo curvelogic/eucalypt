@@ -83,8 +83,8 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
-            "for lists, use the index operator for indexing (e.g. xs index 0) or \
-             pipeline functions like 'head', 'nth'"
+            "for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), \
+             'xs tail' (rest), 'xs !! 0' (nth element, 0-indexed)"
                 .to_string(),
         ]
     } else if is_list && expects_number {
