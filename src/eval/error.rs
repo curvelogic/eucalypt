@@ -116,6 +116,14 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
              use 'str.of(x)' or string interpolation to convert values to strings"
                 .to_string(),
         ]
+    } else if is_block && expects_number && expects_string {
+        // Block found where a scalar value was expected — this typically happens when
+        // a block is passed to string interpolation or a scalar conversion function.
+        vec![
+            "blocks (structured values) cannot be used as scalar values in string interpolation or conversion functions".to_string(),
+            "to include a block in a string, render it to a format: e.g. 'block render-as(:json)'".to_string(),
+            "to extract a specific field from the block, use 'block.field' before passing it to a string operation".to_string(),
+        ]
     } else if is_block && expects_number {
         vec![
             "blocks (structured values) cannot be used in arithmetic".to_string(),
