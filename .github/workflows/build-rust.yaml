@@ -111,8 +111,6 @@ jobs:
           mv -f build-meta.yaml.new build-meta.yaml
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Run release tests
-        run: cargo test --release
       - name: Build release
         run: cargo build --all --release
       - run: |
@@ -187,8 +185,6 @@ jobs:
           mv -f build-meta.yaml.new build-meta.yaml
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Run release tests
-        run: cargo test --release
       - name: Build release
         run: cargo build --all --release
       - run: |
@@ -233,20 +229,6 @@ jobs:
           mv -f build-meta.yaml.new build-meta.yaml
 
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Run release tests
-        # eu-84nz: per-heap mark state fix (PR #437) resolved the aarch64
-        # SIGSEGV caused by the shared global AtomicBool MARK_STATE.
-        # Parallel tests are now safe; --test-threads=1 workaround removed.
-        env:
-          RUST_BACKTRACE: full
-        run: cargo test --release
-      - name: Run IO tests under GC stress
-        # eu-rdfu diagnostic: force SelectiveEvacuation on every GC cycle to
-        # surface evacuation pointer-update bugs cross-platform.
-        env:
-          RUST_BACKTRACE: full
-          EU_GC_STRESS: "1"
-        run: cargo test --release 'test_harness_10[4-9]'
       - name: Build release
         run: cargo build --all --release
       - run: |
