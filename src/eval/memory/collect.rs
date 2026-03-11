@@ -333,9 +333,17 @@ impl CollectorHeapView<'_> {
         let old_header = unsafe { &mut *self.heap.header_ptr_mut(obj) };
         old_header.set_forwarded(new_obj.cast());
 
-        // Mark the new copy as live
+        // Mark the new copy as live.
+        //
+        // Use `mark_lines_for_bytes` rather than `mark_line<T>` so that the
+        // actual payload length (stored in the AllocHeader) is used to mark all
+        // lines spanned by the evacuation copy.  `mark_line<T>` uses
+        // `size_of::<T>()` which is 0 for ZST types like `OpaqueHeapBytes`:
+        // that would leave lines 1..N of a large backing store unmarked, making
+        // them visible to `lazy_sweep_next()` as reclaimable holes — corrupting
+        // live data on the next allocation.
         self.heap.mark_object(new_obj);
-        self.heap.mark_line(new_obj);
+        self.heap.mark_lines_for_bytes(new_obj.cast::<u8>());
 
         Some(new_obj)
     }
