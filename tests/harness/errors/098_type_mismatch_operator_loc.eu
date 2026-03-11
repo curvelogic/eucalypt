@@ -1,0 +1,2 @@
+# Error: type mismatch via + operator — error location should point to user's + operator
+result: 5 + "hello"
