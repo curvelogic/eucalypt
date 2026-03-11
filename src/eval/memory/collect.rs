@@ -1197,4 +1197,95 @@ pub mod tests {
             other => panic!("pinned object has wrong data: {:?}", other),
         }
     }
+
+    /// Test that evacuated objects' lines in the target block are correctly
+    /// marked, preventing the target block from being recycled by lazy sweep.
+    ///
+    /// Without the fix (evacuation_target not searched in mark_region_in_block),
+    /// the target block has zero line marks after finalise_evacuation(). When
+    /// flush_unswept() processes it, recycle() sees a large hole and moves the
+    /// block to `recycled`. Subsequent allocations overwrite the evacuated data.
+    ///
+    /// With the fix, all lines containing evacuated objects are marked, so
+    /// recycle() cannot find a hole spanning the occupied lines, and the data
+    /// is preserved.
+    #[test]
+    pub fn test_evacuation_target_lines_marked_after_collection() {
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
+        clock.switch(ThreadOccupation::Mutator);
+
+        // Allocate enough objects to fill several blocks, producing at least
+        // one `rest` block which can be used as an evacuation candidate.
+        let root_ptr = {
+            let view = MutatorHeapView::new(&heap);
+            let ids: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(512)
+            .collect();
+            let idarray = view.array(ids.as_slice());
+            view.let_(
+                idarray,
+                view.app(
+                    Ref::L(0),
+                    view.singleton(view.sym_ref(&mut pool, "root-data").unwrap()),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+            .as_ptr()
+        };
+
+        // First mark-in-place collection to establish rest blocks.
+        // Use a named Vec so scan_and_update updates our pointer if needed.
+        let mut roots = vec![root_ptr];
+        collect(&mut roots, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+
+        let rest_count = heap.rest_block_count();
+        if rest_count == 0 {
+            eprintln!(
+                "test_evacuation_target_lines_marked: no rest blocks after first GC, skipping"
+            );
+            return;
+        }
+
+        // Force evacuation of all rest blocks.  After this call, roots[0] is
+        // updated to the post-evacuation pointer by scan_and_update.
+        let candidates: Vec<usize> = (2..2 + rest_count).collect();
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+        // roots[0] is now the pointer into the evacuation target block.
+        let evacuated_ptr = roots[0];
+
+        // Flush unswept forces lazy sweep of all blocks including the evacuation
+        // target (target → rest → unswept via finalise_evacuation + defer_sweep).
+        // Without the fix: target has zero line marks → recycle() finds a huge hole
+        // → block goes to `recycled` → subsequent allocations overwrite it.
+        heap.flush_unswept();
+
+        // Allocate aggressively to fill any recycled space.  If the evacuation
+        // target was recycled, these allocations will overwrite the evacuated objects.
+        clock.switch(ThreadOccupation::Mutator);
+        {
+            let view = MutatorHeapView::new(&heap);
+            let fillers: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(99)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(1024)
+            .collect();
+            let _ = view.array(fillers.as_slice());
+        }
+
+        // Verify the evacuated object is still a valid LetRec node.
+        // If the evacuation target block was recycled and overwritten, reading
+        // evacuated_ptr gives garbage — a wrong HeapSyn variant or garbage fields.
+        let evacuated_obj: &HeapSyn = unsafe { &*evacuated_ptr.as_ptr() };
+        assert!(
+            matches!(evacuated_obj, HeapSyn::Let { .. }),
+            "evacuation target corruption: expected Let node, got {:?}",
+            evacuated_obj
+        );
+    }
 }
