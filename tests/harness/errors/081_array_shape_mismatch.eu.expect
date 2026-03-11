@@ -1,2 +1,2 @@
 exit: 1
-stderr: "array shape does not match data length"
+stderr: "arr.from-flat: shape .* requires .* element"
