@@ -75,6 +75,8 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_bool =
+        actual == DataConstructor::BoolTrue.tag() || actual == DataConstructor::BoolFalse.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
@@ -145,6 +147,14 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "to convert a symbol to a string, use 'str.of', e.g. `str.of(:name)` \
              gives the string `\"name\"`"
                 .to_string(),
+        ]
+    } else if is_bool && expects_number {
+        vec![
+            "boolean values (true/false) cannot be used directly in arithmetic".to_string(),
+            "to branch on a boolean, use 'if(cond, then_val, else_val)' or \
+             'cond then(then_val, else_val)'"
+                .to_string(),
+            "to convert a boolean to a number, use 'cond then(1, 0)'".to_string(),
         ]
     } else {
         vec![]
