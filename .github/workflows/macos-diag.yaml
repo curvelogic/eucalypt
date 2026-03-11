@@ -7,12 +7,80 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Exact clone of Release Linux x86_64
-  release-linux-x86:
-    name: Release Linux x86_64 clone
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check
+        run: cargo check
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run cargo audit
+        run: cargo audit
+
+  test:
+    name: Test Suite
+    strategy:
+      matrix:
+        os: ["ubuntu-latest", "macos-latest"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test
+      - name: Test doc examples
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --release
+          python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
+
+  wasm:
+    name: WASM Compilation Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - name: Build library for WASM
+        run: cargo build --target wasm32-unknown-unknown --lib
+      - name: Clippy for WASM
+        run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings
+
+  release-candidate-linux:
+    needs: [lint, test, audit, wasm]
+    name: Release Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/cache@v4
         with:
           path: |
@@ -22,62 +90,30 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build and install temporary eu
+      - name: build and install temporary eu
         run: cargo install --path .
-      - name: Prepare build files for new version
+      - name: prepare build files for new version
         run: |
           export OSTYPE=$(uname)
           export HOSTTYPE=$(uname -m)
+
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
+
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Build release
         run: cargo build --all --release
       - run: |
           strip target/release/eu
           mv target/release/eu target/release/eu_amd64
-      - name: Run final test with release binary
+      - name: run final test with release binary
         run: |
           target/release/eu_amd64 version
           target/release/eu_amd64 test --allow-io tests/harness
 
-  # Exact clone of Release Linux aarch64
-  release-linux-aarch64:
-    name: Release Linux aarch64 clone
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-arm-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-arm-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build and install temporary eu
-        run: cargo install --path .
-      - name: Prepare build files for new version
-        run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
-          eu build.eu -t build-meta > build-meta.yaml.new
-          mv -f build-meta.yaml.new build-meta.yaml
-          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Build release
-        run: cargo build --all --release
-      - run: |
-          strip target/release/eu
-          mv target/release/eu target/release/eu_aarch64
-      - name: Run final test with release binary
-        run: |
-          target/release/eu_aarch64 version
-          target/release/eu_aarch64 test --allow-io tests/harness
-
-  # Exact clone of Release MacOS — with backtrace (no strip)
-  release-macos:
-    name: Release MacOS clone
+  release-candidate-macos:
+    needs: [lint, test, audit, wasm]
+    name: Release MacOS
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,16 +132,55 @@ jobs:
         run: |
           export OSTYPE=$(uname)
           export HOSTTYPE=$(uname -m)
+
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
+
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
       - name: Build release
         run: cargo build --all --release
-      - name: Strip and rename
-        run: |
+      - run: |
           strip target/release/eu
           mv target/release/eu target/release/eu_darwin
-      - name: Run final test with stripped binary (RUST_MIN_STACK=67108864 = 64MiB)
+      - name: Run final test with release binary
         run: |
           target/release/eu_darwin version
-          RUST_MIN_STACK=67108864 target/release/eu_darwin test --allow-io tests/harness
+          target/release/eu_darwin test --allow-io tests/harness
+
+  release-candidate-linux-arm:
+    needs: [lint, test, audit, wasm]
+    name: Release Linux aarch64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-arm-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-arm-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and install temporary eu
+        run: cargo install --path .
+      - name: Prepare build files for new version
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+
+          eu build.eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
+      - name: Build release
+        run: cargo build --all --release
+      - run: |
+          strip target/release/eu
+          mv target/release/eu target/release/eu_aarch64
+      - name: Run final test with release binary
+        run: |
+          target/release/eu_aarch64 version
+          target/release/eu_aarch64 test --allow-io tests/harness
