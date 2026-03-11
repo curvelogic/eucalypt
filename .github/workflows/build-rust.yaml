@@ -84,8 +84,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release binary
         run: cargo build --release
-      - name: Run sequential harness with release binary
+      - name: Run sequential harness with release binary (GC stress)
         run: target/release/eu test --allow-io tests/harness
+        env:
+          EU_GC_STRESS: "1"
 
   wasm:
     name: WASM Compilation Check
