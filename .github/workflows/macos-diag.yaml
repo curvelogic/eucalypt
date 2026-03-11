@@ -6,11 +6,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Experiment D: single-threaded — does sequential execution fix it?
-  # Workaround used for aarch64-linux before per-heap mark state fix.
-  # If this passes but E/F fail, the crash is a concurrency/GC race.
-  macos-single-thread:
-    name: macOS single-threaded (--test-threads=1)
+  # Experiment G: exact reproduction of Release MacOS "Run release tests" step.
+  # cargo test --release (no --test filter) = ALL tests: lib unit tests +
+  # harness integration tests. Run back-to-back 3x to catch intermittent crash.
+  # If this crashes but H passes, the crash is specific to running alongside lib tests.
+  macos-all-tests:
+    name: macOS cargo test --release (ALL, no filter)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,22 +25,21 @@ jobs:
             macos-diag-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Build
-        run: cargo build --release --test harness_test
-      - name: Run single-threaded (attempt 1)
-        run: cargo test --release --test harness_test -- --test-threads=1
+        run: cargo build --release
+      - name: cargo test --release attempt 1
+        run: cargo test --release
         continue-on-error: true
-      - name: Run single-threaded (attempt 2)
-        run: cargo test --release --test harness_test -- --test-threads=1
+      - name: cargo test --release attempt 2
+        run: cargo test --release
         continue-on-error: true
-      - name: Run single-threaded (attempt 3)
-        run: cargo test --release --test harness_test -- --test-threads=1
+      - name: cargo test --release attempt 3
+        run: cargo test --release
         continue-on-error: true
 
-  # Experiment E: GC stress — force evacuation every cycle.
-  # If this fails, the evacuation path has a bug (pointer not updated, etc.).
-  # If this passes but F fails, crash is in non-evacuation collection path.
-  macos-gc-stress:
-    name: macOS EU_GC_STRESS=1 (force evacuation)
+  # Experiment H: harness only, 3x, as control.
+  # Previous runs of this passed; confirms harness alone is stable.
+  macos-harness-only:
+    name: macOS harness only (--test harness_test)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,30 +54,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build
         run: cargo build --release --test harness_test
-      - name: Run with EU_GC_STRESS=1 (attempt 1)
-        env:
-          EU_GC_STRESS: "1"
-          RUST_BACKTRACE: full
+      - name: Harness only attempt 1
         run: cargo test --release --test harness_test
         continue-on-error: true
-      - name: Run with EU_GC_STRESS=1 (attempt 2)
-        env:
-          EU_GC_STRESS: "1"
-          RUST_BACKTRACE: full
+      - name: Harness only attempt 2
         run: cargo test --release --test harness_test
         continue-on-error: true
-      - name: Run with EU_GC_STRESS=1 (attempt 3)
-        env:
-          EU_GC_STRESS: "1"
-          RUST_BACKTRACE: full
+      - name: Harness only attempt 3
         run: cargo test --release --test harness_test
         continue-on-error: true
 
-  # Experiment F: exclude IO tests (104+) — does the crash go away?
-  # IO tests exercise the io-run driver loop with GC across eu calls.
-  # If excluding them fixes it, the bug is in GC interaction with the IO path.
-  macos-no-io-tests:
-    name: macOS parallel excluding IO tests (104+)
+  # Experiment I: all tests single-threaded.
+  # If G crashes but this passes, the crash is a concurrency race in the
+  # combined (lib + harness) test run.
+  macos-all-single-thread:
+    name: macOS cargo test --release single-threaded
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -91,67 +82,13 @@ jobs:
             macos-diag-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Build
-        run: cargo build --release --test harness_test
-      - name: Run excluding IO tests (attempt 1)
-        run: |
-          cargo test --release --test harness_test -- \
-            --skip test_harness_104 \
-            --skip test_harness_105 \
-            --skip test_harness_106 \
-            --skip test_harness_107 \
-            --skip test_harness_108 \
-            --skip test_harness_109 \
-            --skip test_harness_110 \
-            --skip test_harness_111 \
-            --skip test_harness_112 \
-            --skip test_harness_113 \
-            --skip test_harness_114 \
-            --skip test_harness_115 \
-            --skip test_harness_116 \
-            --skip test_harness_117 \
-            --skip test_harness_118 \
-            --skip test_harness_119 \
-            --skip test_harness_120
+        run: cargo build --release
+      - name: cargo test --release --test-threads=1 attempt 1
+        run: cargo test --release -- --test-threads=1
         continue-on-error: true
-      - name: Run excluding IO tests (attempt 2)
-        run: |
-          cargo test --release --test harness_test -- \
-            --skip test_harness_104 \
-            --skip test_harness_105 \
-            --skip test_harness_106 \
-            --skip test_harness_107 \
-            --skip test_harness_108 \
-            --skip test_harness_109 \
-            --skip test_harness_110 \
-            --skip test_harness_111 \
-            --skip test_harness_112 \
-            --skip test_harness_113 \
-            --skip test_harness_114 \
-            --skip test_harness_115 \
-            --skip test_harness_116 \
-            --skip test_harness_117 \
-            --skip test_harness_118 \
-            --skip test_harness_119 \
-            --skip test_harness_120
+      - name: cargo test --release --test-threads=1 attempt 2
+        run: cargo test --release -- --test-threads=1
         continue-on-error: true
-      - name: Run excluding IO tests (attempt 3)
-        run: |
-          cargo test --release --test harness_test -- \
-            --skip test_harness_104 \
-            --skip test_harness_105 \
-            --skip test_harness_106 \
-            --skip test_harness_107 \
-            --skip test_harness_108 \
-            --skip test_harness_109 \
-            --skip test_harness_110 \
-            --skip test_harness_111 \
-            --skip test_harness_112 \
-            --skip test_harness_113 \
-            --skip test_harness_114 \
-            --skip test_harness_115 \
-            --skip test_harness_116 \
-            --skip test_harness_117 \
-            --skip test_harness_118 \
-            --skip test_harness_119 \
-            --skip test_harness_120
+      - name: cargo test --release --test-threads=1 attempt 3
+        run: cargo test --release -- --test-threads=1
         continue-on-error: true
