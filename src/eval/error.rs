@@ -443,6 +443,41 @@ fn format_bad_timezone(tz: &str) -> String {
     )
 }
 
+/// Format a bad datetime components error with a hint about valid ranges
+fn format_bad_datetime_components(
+    y: &Number,
+    m: &Number,
+    d: &Number,
+    h: &Number,
+    min: &Number,
+    s: &Number,
+    tz: &str,
+) -> String {
+    // Try to identify which component is out of range
+    let hint = if m.as_u64().is_some_and(|v| v == 0 || v > 12) {
+        format!("month {m} is out of range; months are numbered 1–12")
+    } else if d.as_u64().is_some_and(|v| v == 0 || v > 31) {
+        format!("day {d} is out of range; days are numbered 1–31 (depending on month)")
+    } else if h.as_u64().is_some_and(|v| v > 23) {
+        format!("hour {h} is out of range; valid hours are 0–23")
+    } else if min.as_u64().is_some_and(|v| v > 59) {
+        format!("minute {min} is out of range; valid minutes are 0–59")
+    } else if s.as_u64().is_some_and(|v| v > 59) {
+        format!("second {s} is out of range; valid seconds are 0–59")
+    } else {
+        format!(
+            "the combination ({y}, {m}, {d}) does not form a valid calendar date \
+             (e.g. February has at most 29 days)"
+        )
+    };
+    format!(
+        "invalid date/time components: {hint}\n  \
+         help: cal.zdt takes (year, month, day, hour, minute, second, timezone), \
+         e.g. cal.zdt(2023, 1, 15, 10, 30, 0, \"UTC\")\n  \
+         note: given components were ({y}, {m}, {d}, {h}, {min}, {s}, {tz})"
+    )
+}
+
 /// Convert a data tag number to a human-readable type name for error messages
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
@@ -499,7 +534,7 @@ pub enum ExecutionError {
     NotValue(Smid, String),
     #[error("bad regex: {1}\n  help: the pattern '{0}' is not a valid regular expression")]
     BadRegex(String, String),
-    #[error("bad date / time components ({0}, {1}, {2}, {3}, {4}, {5}, {6})")]
+    #[error("{}", format_bad_datetime_components(.0, .1, .2, .3, .4, .5, .6))]
     BadDateTimeComponents(Number, Number, Number, Number, Number, Number, String),
     #[error("{}", format_bad_timezone(.0))]
     BadTimeZone(String),
