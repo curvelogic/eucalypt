@@ -443,10 +443,10 @@ fn ordered_cmp(
             Ok(pred(ls.cmp(rs)))
         }
         (Native::Zdt(ref dx), Native::Zdt(ref dy)) => Ok(pred(dx.cmp(dy))),
-        _ => Err(ExecutionError::Panic(format!(
-            "cannot compare values with {name}: operands must be the same type \
-             (both numbers, strings, symbols, or datetimes)"
-        ))),
+        _ => Err(ExecutionError::ComparisonTypeMismatch(
+            machine.annotation(),
+            name.to_string(),
+        )),
     }
 }
 
@@ -469,7 +469,7 @@ impl StgIntrinsic for Gt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_gt, "GT")?;
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_gt, ">")?;
         machine_return_bool(machine, view, result)
     }
 }
@@ -495,7 +495,7 @@ impl StgIntrinsic for Gte {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_ge, "GTE")?;
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_ge, ">=")?;
         machine_return_bool(machine, view, result)
     }
 }
@@ -521,7 +521,7 @@ impl StgIntrinsic for Lt {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_lt, "LT")?;
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_lt, "<")?;
         machine_return_bool(machine, view, result)
     }
 }
@@ -547,7 +547,7 @@ impl StgIntrinsic for Lte {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
-        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_le, "LTE")?;
+        let result = ordered_cmp(machine, view, args, std::cmp::Ordering::is_le, "<=")?;
         machine_return_bool(machine, view, result)
     }
 }

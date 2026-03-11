@@ -496,6 +496,8 @@ pub enum ExecutionError {
     BadNumberFormat(String),
     #[error("could not format {1} with {0}")]
     FormatError(String, Number),
+    #[error("cannot compare mixed types with '{1}': both operands must be the same type (numbers, strings, symbols, or datetimes)")]
+    ComparisonTypeMismatch(Smid, String),
     #[error("expected scalar value")]
     NotScalar(Smid),
     #[error("{}", format_unknown_format(.0))]
@@ -581,6 +583,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NotCallable(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
             ExecutionError::NotScalar(s) => *s,
+            ExecutionError::ComparisonTypeMismatch(s, _) => *s,
             ExecutionError::NoBranchForDataTag(s, _, _) => *s,
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
@@ -712,6 +715,16 @@ impl ExecutionError {
                 } else {
                     vec![]
                 }
+            }
+            ExecutionError::ComparisonTypeMismatch(_, _) => {
+                vec![
+                    "ordered comparisons (<, >, <=, >=) require both operands to be the same \
+                     type — you cannot compare a number to a string, for example"
+                        .to_string(),
+                    "use 'str' to convert a number to a string before comparing, or 'num' \
+                     to convert a string to a number"
+                        .to_string(),
+                ]
             }
             _ => vec![],
         };
