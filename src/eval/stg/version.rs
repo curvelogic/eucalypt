@@ -44,11 +44,9 @@ impl StgIntrinsic for Requires {
         if req.matches(&version) {
             machine_return_unit(machine, view)
         } else {
-            Err(ExecutionError::VersionRequirementFailed(
-                machine.annotation(),
-                version.to_string(),
-                constraint_str,
-            ))
+            Err(ExecutionError::Panic(format!(
+                "eucalypt version {version} does not satisfy requirement {constraint_str}"
+            )))
         }
     }
 }
