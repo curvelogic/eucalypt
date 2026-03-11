@@ -103,7 +103,7 @@ jobs:
         run: cargo build --all --release
       - run: |
           mv target/release/eu target/release/eu_darwin
-      - name: Run final test with release binary (no RUST_BACKTRACE)
+      - name: Run final test with release binary (RUST_BACKTRACE=1)
         run: |
           target/release/eu_darwin version
-          target/release/eu_darwin test --allow-io tests/harness
+          RUST_BACKTRACE=1 target/release/eu_darwin test --allow-io tests/harness
