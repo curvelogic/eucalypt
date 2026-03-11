@@ -48,9 +48,8 @@ fn cached_regex<T: AsRef<str>>(
     let rcache = machine.rcache();
 
     if !rcache.contains(&text_owned) {
-        let re = Regex::new(&text_owned).map_err(|e| {
-            ExecutionError::BadRegex(smid, text_owned.clone(), e.to_string())
-        })?;
+        let re = Regex::new(&text_owned)
+            .map_err(|e| ExecutionError::BadRegex(smid, text_owned.clone(), e.to_string()))?;
         rcache.put(text_owned.clone(), re);
     }
 
