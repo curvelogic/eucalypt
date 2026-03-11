@@ -424,6 +424,25 @@ fn format_bad_format_string(detail: &str) -> String {
     )
 }
 
+/// Format a bad datetime string error message with ISO 8601 examples
+fn format_bad_datetime_string(s: &str) -> String {
+    format!(
+        "cannot parse '{s}' as a date or datetime\n  \
+         help: cal.parse expects ISO 8601 format, \
+         e.g. '2023-01-15' (date), '2023-01-15T10:30:00Z' (UTC datetime), \
+         or '2023-01-15T10:30:00+01:00' (datetime with offset)"
+    )
+}
+
+/// Format a bad timezone string error message
+fn format_bad_timezone(tz: &str) -> String {
+    format!(
+        "unrecognised time zone '{tz}'\n  \
+         help: use an IANA timezone name (e.g. 'Europe/London', 'America/New_York') \
+         or a UTC offset string (e.g. '+0100', '-0530', 'UTC')"
+    )
+}
+
 /// Convert a data tag number to a human-readable type name for error messages
 fn display_data_tag(tag: u8) -> String {
     match DataConstructor::try_from(tag) {
@@ -482,11 +501,11 @@ pub enum ExecutionError {
     BadRegex(String, String),
     #[error("bad date / time components ({0}, {1}, {2}, {3}, {4}, {5}, {6})")]
     BadDateTimeComponents(Number, Number, Number, Number, Number, Number, String),
-    #[error("bad time zone ({0})")]
+    #[error("{}", format_bad_timezone(.0))]
     BadTimeZone(String),
     #[error("bad timestamp ({0})")]
     BadTimestamp(Number),
-    #[error("bad datetime format ({0})")]
+    #[error("{}", format_bad_datetime_string(.0))]
     BadDateTimeString(String),
     #[error("failed to apply format string")]
     FormatFailure,
