@@ -63,6 +63,22 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              symbols are written with a leading colon"
                 .to_string(),
         ],
+        (Number, Bool) => vec![
+            "a number was used where a boolean (true/false) was expected".to_string(),
+            "eucalypt does not treat numbers as truthy/falsy — use an explicit comparison, \
+             e.g. 'x > 0' or 'x = 1'"
+                .to_string(),
+        ],
+        (Bool, Number) => vec![
+            "a boolean (true/false) was used where a number was expected".to_string(),
+            "use 'if(cond, 1, 0)' to convert a boolean to a number".to_string(),
+        ],
+        (String, Bool) => vec![
+            "a string was used where a boolean (true/false) was expected".to_string(),
+            "eucalypt does not treat strings as truthy/falsy — use an explicit test, \
+             e.g. 'x str.matches?(\"pattern\")' or 'x = \"\"'"
+                .to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -75,10 +91,14 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_bool =
+        actual == DataConstructor::BoolTrue.tag() || actual == DataConstructor::BoolFalse.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
+    let expects_bool = expected.contains(&DataConstructor::BoolTrue.tag())
+        || expected.contains(&DataConstructor::BoolFalse.tag());
 
     if is_list && expects_block {
         vec![
@@ -144,6 +164,43 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "a symbol (`:name`) was found where a string was expected".to_string(),
             "to convert a symbol to a string, use 'str.of', e.g. `str.of(:name)` \
              gives the string `\"name\"`"
+                .to_string(),
+        ]
+    } else if is_number && expects_bool {
+        vec![
+            "a number was used where a boolean (true/false) was expected".to_string(),
+            "eucalypt does not treat numbers as truthy/falsy — use an explicit comparison, \
+             e.g. 'x > 0', 'x = 1', or 'x num?' to test if a value is a number"
+                .to_string(),
+        ]
+    } else if is_string && expects_bool {
+        vec![
+            "a string was used where a boolean (true/false) was expected".to_string(),
+            "eucalypt does not treat strings as truthy/falsy — use an explicit test, \
+             e.g. 'x str.matches?(\"pattern\")' or 'x = \"\"' to test for an empty string"
+                .to_string(),
+        ]
+    } else if is_list && expects_bool {
+        vec![
+            "a list was used where a boolean (true/false) was expected".to_string(),
+            "to test if a list is empty, use 'nil?', e.g. 'xs nil?' or 'not(xs nil?)'".to_string(),
+        ]
+    } else if is_block && expects_bool {
+        vec![
+            "a block was used where a boolean (true/false) was expected".to_string(),
+            "to test if a block has a key, use 'has(:key)', e.g. 'block has(:x)'".to_string(),
+        ]
+    } else if is_bool && expects_number {
+        vec![
+            "a boolean (true/false) was used where a number was expected".to_string(),
+            "eucalypt does not convert booleans to numbers automatically; \
+             use 'if(cond, 1, 0)' to convert a boolean to 1 or 0"
+                .to_string(),
+        ]
+    } else if is_bool && expects_string {
+        vec![
+            "a boolean (true/false) was used where a string was expected".to_string(),
+            "to convert a boolean to a string, use 'str.of', e.g. 'str.of(true)' = \"true\""
                 .to_string(),
         ]
     } else {
@@ -338,11 +395,14 @@ fn not_callable_notes(actual_type: &str) -> Vec<String> {
         ],
         "true" | "false" => vec![
             format!(
-                "a {actual_type} value is not a function; if this result of a boolean \
+                "a {actual_type} value is not a function; if this is the result of a boolean \
                  expression, check operator precedence"
             ),
             "note: 'and' and 'or' are identifiers in eucalypt, not logical operators; \
              use '&&' and '||' for logical conjunction and disjunction"
+                .to_string(),
+            "note: 'not x' is parsed as 'x(not)' due to catenation — use 'x not' \
+             (pipeline style) or 'not(x)' (function call style) to negate a boolean"
                 .to_string(),
         ],
         "number" | "string" | "symbol" | "datetime" | "empty list" => vec![
