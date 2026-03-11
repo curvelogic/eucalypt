@@ -224,11 +224,7 @@ fn format_lookup_failure(key: &str, suggestions: &[String], available: &[String]
         msg.push_str(&format!("\n  help: {hint}"));
     } else if !available.is_empty() {
         // No close matches — show the full set of available keys (capped at 8)
-        let shown: Vec<String> = available
-            .iter()
-            .take(8)
-            .map(|s| format!("'{s}'"))
-            .collect();
+        let shown: Vec<String> = available.iter().take(8).map(|s| format!("'{s}'")).collect();
         let suffix = if available.len() > 8 {
             format!(" (and {} more)", available.len() - 8)
         } else {
