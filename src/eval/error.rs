@@ -16,8 +16,11 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
     match (expected, actual) {
         (Record(_), List(_)) => vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
-            "for lists, use the index operator for indexing (e.g. xs index 0) or \
-             pipeline functions like 'head', 'nth'"
+            "for lists, use pipeline catenation: 'xs map(f)', 'xs filter(p)', \
+             'xs head', 'xs nth(n)', etc."
+                .to_string(),
+            "if you intended method-style chaining (e.g. 'xs.map(f)'), \
+             write it as 'xs map(f)' instead — eucalypt uses juxtaposition for function application"
                 .to_string(),
         ],
         (Record(_), Number) => vec![
@@ -128,8 +131,11 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     } else if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
-            "for lists, use the index operator for indexing (e.g. xs index 0) or \
-             pipeline functions like 'head', 'nth'"
+            "for lists, use pipeline catenation: 'xs map(f)', 'xs filter(p)', \
+             'xs head', 'xs nth(n)', etc."
+                .to_string(),
+            "if you intended method-style chaining (e.g. 'xs.map(f)'), \
+             write it as 'xs map(f)' instead — eucalypt uses juxtaposition for function application"
                 .to_string(),
         ]
     } else if is_list && expects_number {
