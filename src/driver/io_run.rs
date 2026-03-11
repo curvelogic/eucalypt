@@ -694,8 +694,26 @@ fn evaluate_spec_block(
     //
     // For list-valued fields (e.g. `args` in io.exec) we walk the cons list and
     // render each element individually, then join with NUL as a separator.
+    //
+    // SAFETY: each call to evaluate_to_whnf_for_io runs machine.run() which
+    // ends with collect::collect.  If evacuation occurs, any SynClosure values
+    // held on the Rust stack (i.e. the remaining entries in raw_fields) become
+    // dangling — the GC does not know about them.  We convert raw_fields into
+    // an ordered Vec and stash ALL closures upfront so the GC can trace and
+    // update their heap pointers during each sub-evaluation.  Each closure is
+    // popped from the stash immediately before it is used.
+    let raw_fields_vec: Vec<(String, SynClosure)> = raw_fields.into_iter().collect();
+    // Push all closures onto the stash (bottom = index n-1, top = index 0).
+    // We iterate in reverse so that after all pushes the order matches the Vec
+    // (raw_fields_vec[0] is deepest, raw_fields_vec[last] is shallowest).
+    // We will pop them in forward order, so push in reverse.
+    for (_, c) in raw_fields_vec.iter().rev() {
+        machine.stash_push(c.clone());
+    }
     let mut eval_fields: HashMap<String, Option<String>> = HashMap::new();
-    for (key, raw_closure) in raw_fields {
+    for (key, _) in raw_fields_vec {
+        // Pop the GC-protected closure for this field (in original order).
+        let raw_closure = machine.stash_pop();
         let whnf = machine
             .evaluate_to_whnf_for_io(raw_closure)
             .map_err(IoRunError::from)?;
@@ -723,8 +741,17 @@ fn evaluate_spec_block(
             let elements = machine
                 .mutate(CollectListElements(whnf), Some(globals))
                 .map_err(IoRunError::from)?;
+            // Stash all element closures before the evaluation loop for the same
+            // reason as raw_fields above: evaluate_to_whnf_for_io triggers GC
+            // which can evacuate remaining elements, leaving their stack copies
+            // dangling.  Push in reverse so we pop in forward order.
+            for e in elements.iter().rev() {
+                machine.stash_push(e.clone());
+            }
+            let count = elements.len();
             let mut parts: Vec<String> = Vec::new();
-            for elem in elements {
+            for _ in 0..count {
+                let elem = machine.stash_pop();
                 let elem_whnf = machine
                     .evaluate_to_whnf_for_io(elem)
                     .map_err(IoRunError::from)?;

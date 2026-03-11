@@ -386,6 +386,12 @@ impl GcScannable for HeapSyn {
                     out.push(ScanPtr::from_non_null(scope, *scrutinee));
                 }
                 if marker.mark_array(branch_table) {
+                    if let Some(backing_ptr) = branch_table.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
                     for b in branch_table.iter().flatten() {
                         if marker.mark(*b) {
                             out.push(ScanPtr::from_non_null(scope, *b));
@@ -399,16 +405,37 @@ impl GcScannable for HeapSyn {
                 }
             }
             HeapSyn::Cons { tag: _, args } => {
-                marker.mark_array(args);
+                if marker.mark_array(args) {
+                    if let Some(backing_ptr) = args.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
+                }
                 mark_ref_array_heap_pointers(args, scope, marker, out);
             }
             HeapSyn::App { callable, args } => {
                 mark_ref_heap_pointers(callable, scope, marker, out);
-                marker.mark_array(args);
+                if marker.mark_array(args) {
+                    if let Some(backing_ptr) = args.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
+                }
                 mark_ref_array_heap_pointers(args, scope, marker, out);
             }
             HeapSyn::Bif { intrinsic: _, args } => {
-                marker.mark_array(args);
+                if marker.mark_array(args) {
+                    if let Some(backing_ptr) = args.allocated_data() {
+                        out.push(ScanPtr::from_non_null(
+                            scope,
+                            backing_ptr.cast::<OpaqueHeapBytes>(),
+                        ));
+                    }
+                }
                 mark_ref_array_heap_pointers(args, scope, marker, out);
             }
             HeapSyn::Let { bindings, body } => {
@@ -493,6 +520,13 @@ impl GcScannable for HeapSyn {
                 if let Some(new) = heap.forwarded_to(*scrutinee) {
                     *scrutinee = new;
                 }
+                if let Some(old_ptr) = branch_table.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        // SAFETY: new_ptr is a valid evacuated copy of the same
+                        // backing allocation.
+                        unsafe { branch_table.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
                 for ptr in branch_table.iter_mut().flatten() {
                     if let Some(new) = heap.forwarded_to(*ptr) {
                         *ptr = new;
@@ -505,13 +539,34 @@ impl GcScannable for HeapSyn {
                 }
             }
             HeapSyn::Cons { args, .. } => {
+                if let Some(old_ptr) = args.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        // SAFETY: new_ptr is a valid evacuated copy of the same
+                        // backing allocation.
+                        unsafe { args.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
                 update_ref_array_heap_pointers(args, heap);
             }
             HeapSyn::App { callable, args } => {
                 update_ref_heap_pointers(callable, heap);
+                if let Some(old_ptr) = args.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        // SAFETY: new_ptr is a valid evacuated copy of the same
+                        // backing allocation.
+                        unsafe { args.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
                 update_ref_array_heap_pointers(args, heap);
             }
             HeapSyn::Bif { args, .. } => {
+                if let Some(old_ptr) = args.allocated_data() {
+                    if let Some(new_ptr) = heap.forwarded_to(old_ptr) {
+                        // SAFETY: new_ptr is a valid evacuated copy of the same
+                        // backing allocation.
+                        unsafe { args.set_backing_ptr(new_ptr.cast()) };
+                    }
+                }
                 update_ref_array_heap_pointers(args, heap);
             }
             HeapSyn::Let { bindings, body } | HeapSyn::LetRec { bindings, body } => {
