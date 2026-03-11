@@ -1144,3 +1144,18 @@ pub fn test_error_095() {
 pub fn test_error_096() {
     run_error_test(&error_opts("096_parse_as_bad_input.eu"));
 }
+
+#[test]
+pub fn test_error_097() {
+    run_error_test(&error_opts("097_div_by_zero_source_loc.eu"));
+}
+
+#[test]
+pub fn test_error_098() {
+    run_error_test(&error_opts("098_type_mismatch_operator_loc.eu"));
+}
+
+#[test]
+pub fn test_error_099() {
+    run_error_test(&error_opts("099_string_minus_loc.eu"));
+}

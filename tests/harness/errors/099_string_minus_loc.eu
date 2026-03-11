@@ -1,0 +1,2 @@
+# Error: type mismatch via - operator on string — error location should point to user's - operator
+result: "a" - 1
