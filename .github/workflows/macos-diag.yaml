@@ -9,8 +9,9 @@ on:
 
 jobs:
   # Exact clone of Release MacOS — no env vars — baseline / repro.
-  release-macos-baseline:
-    name: Release MacOS no-env (attempt ${{ matrix.attempt }})
+  # Source has: main thread 64MiB + io_run thread 64MiB.
+  release-macos-source-fix:
+    name: Release MacOS source-fix no-env (attempt ${{ matrix.attempt }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -46,9 +47,9 @@ jobs:
           target/release/eu_darwin version
           target/release/eu_darwin test --allow-io tests/harness
 
-  # Same as above but with RUST_MIN_STACK=64MiB — test if this is a reliable fix.
-  release-macos-rust-min-stack:
-    name: Release MacOS RUST_MIN_STACK=64MiB (attempt ${{ matrix.attempt }})
+  # Same source but with RUST_MIN_STACK=64MiB — does env var add anything on top?
+  release-macos-source-fix-min-stack:
+    name: Release MacOS source-fix + RUST_MIN_STACK (attempt ${{ matrix.attempt }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
