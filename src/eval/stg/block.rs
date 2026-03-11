@@ -952,6 +952,7 @@ impl StgIntrinsic for LookupFail {
             machine.annotation(),
             key_name,
             suggestions,
+            available_keys,
         ))
     }
 }
