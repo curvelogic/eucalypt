@@ -63,6 +63,15 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              symbols are written with a leading colon"
                 .to_string(),
         ],
+        (Record(_), Unit) => vec![
+            "cannot access a field on null — the value is null, not a block".to_string(),
+            "if this value may be null, check with 'null?' before accessing fields, \
+             e.g. 'if(x null?, default, x.field)'"
+                .to_string(),
+            "if this comes from a lookup that might fail, consider 'lookup-or' for a default, \
+             e.g. 'block lookup-or(:key, default)'"
+                .to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -75,12 +84,36 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_unit = actual == DataConstructor::Unit.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
 
-    if is_list && expects_block {
+    if is_unit && expects_block {
+        vec![
+            "cannot access a field on null — the value is null, not a block".to_string(),
+            "if this value may be null, check with 'null?' before accessing fields, \
+             e.g. 'if(x null?, default, x.field)'"
+                .to_string(),
+            "if this comes from a lookup that might fail, consider 'lookup-or' for a default, \
+             e.g. 'block lookup-or(:key, default)'"
+                .to_string(),
+        ]
+    } else if is_unit && expects_number {
+        vec![
+            "null cannot be used in arithmetic — it represents the absence of a value".to_string(),
+            "if the value may be null, use 'if(x null?, 0, x)' to provide a fallback \
+             before using it in arithmetic"
+                .to_string(),
+        ]
+    } else if is_unit && expects_string {
+        vec![
+            "null cannot be used in string operations or interpolation".to_string(),
+            "to handle a potentially null value, use 'if(x null?, \"\", x str)' as a fallback"
+                .to_string(),
+        ]
+    } else if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
