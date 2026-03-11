@@ -91,6 +91,8 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
+    let expects_bool = expected.contains(&DataConstructor::BoolTrue.tag())
+        || expected.contains(&DataConstructor::BoolFalse.tag());
 
     if is_bool && expects_number {
         vec![
@@ -101,6 +103,27 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         vec![
             "boolean values (true/false) cannot be used directly in string interpolation".to_string(),
             "to convert a boolean to a string, use 'str', e.g. 'true str' gives \"true\"".to_string(),
+        ]
+    } else if is_number && expects_bool {
+        vec![
+            "a number was passed where a boolean (true/false) was expected".to_string(),
+            "eucalypt does not treat numbers as truthy/falsy — use an explicit comparison, \
+             e.g. 'x > 0' or 'x = 0'"
+                .to_string(),
+        ]
+    } else if is_string && expects_bool {
+        vec![
+            "a string was passed where a boolean (true/false) was expected".to_string(),
+            "eucalypt does not treat empty strings as falsy — use an explicit test, \
+             e.g. 'x = \"\"' to check for an empty string"
+                .to_string(),
+        ]
+    } else if is_block && expects_bool {
+        vec![
+            "a block was passed where a boolean (true/false) was expected".to_string(),
+            "to test a condition on a block, access the relevant field and compare it, \
+             e.g. 'block.field > 0'"
+                .to_string(),
         ]
     } else if is_list && expects_block {
         vec![
