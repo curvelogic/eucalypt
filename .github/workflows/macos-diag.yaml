@@ -6,13 +6,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Experiment J: EXACT clone of Release MacOS "Run release tests" step,
-  # including cargo install + eu build-meta regeneration beforehand.
-  # Previous experiments skipped this setup — build-meta.yaml changes
-  # cause eucalypt crate recompilation between install and test steps,
-  # which may produce the mixed object state that crashes.
-  macos-exact-release:
-    name: macOS exact Release MacOS reproduction
+  # Experiment L: many repeats of full harness to catch low-probability crash.
+  # Previous 3-attempt runs all passed. Crash probability may be low per run.
+  # Run 10x in a single job to increase detection probability.
+  macos-repeat-10:
+    name: macOS harness x10 repeats
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,29 +23,43 @@ jobs:
           restore-keys: |
             macos-diag-registry-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build and install temporary eu (as Release MacOS does)
-        run: cargo install --path .
-      - name: Regenerate build-meta.yaml (as Release MacOS does)
-        run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
-          eu build.eu -t build-meta > build-meta.yaml.new
-          mv -f build-meta.yaml.new build-meta.yaml
-          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: cargo test --release attempt 1
-        run: cargo test --release
+      - name: Build
+        run: cargo build --release --test harness_test
+      - name: Attempt 1
+        run: cargo test --release --test harness_test
         continue-on-error: true
-      - name: cargo test --release attempt 2
-        run: cargo test --release
+      - name: Attempt 2
+        run: cargo test --release --test harness_test
         continue-on-error: true
-      - name: cargo test --release attempt 3
-        run: cargo test --release
+      - name: Attempt 3
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 4
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 5
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 6
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 7
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 8
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 9
+        run: cargo test --release --test harness_test
+        continue-on-error: true
+      - name: Attempt 10
+        run: cargo test --release --test harness_test
         continue-on-error: true
 
-  # Experiment K: same setup but harness only — control.
-  # Does the crash only happen when build-meta triggers recompile + all tests?
-  macos-exact-harness-only:
-    name: macOS exact setup, harness only
+  # Experiment M: exact Release MacOS clone x10.
+  # The crash appears in the Release MacOS job; replicate that context.
+  macos-release-clone-repeat:
+    name: macOS Release MacOS clone x10
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,12 +81,33 @@ jobs:
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Harness only attempt 1
-        run: cargo test --release --test harness_test
+      - name: Attempt 1
+        run: cargo test --release
         continue-on-error: true
-      - name: Harness only attempt 2
-        run: cargo test --release --test harness_test
+      - name: Attempt 2
+        run: cargo test --release
         continue-on-error: true
-      - name: Harness only attempt 3
-        run: cargo test --release --test harness_test
+      - name: Attempt 3
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 4
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 5
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 6
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 7
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 8
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 9
+        run: cargo test --release
+        continue-on-error: true
+      - name: Attempt 10
+        run: cargo test --release
         continue-on-error: true
