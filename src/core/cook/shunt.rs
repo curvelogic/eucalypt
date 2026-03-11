@@ -230,19 +230,15 @@ impl Shunter {
 
     /// Insert an initial fill if the first atom is not legal
     fn insert_initial_fill(&mut self) {
-        match super::fill::filler(None, self.peek_next()) {
-            Ok(Some(fill)) => self.push_back(fill),
-            Ok(None) => {}
-            Err(e) => self.error = Some(e),
+        if let Some(fill) = super::fill::filler(None, self.peek_next()) {
+            self.push_back(fill);
         }
     }
 
     /// Check the upcoming expr in case we need to insert an anaphor
     fn insert_fill(&mut self, lhs: &RcExpr) {
-        match super::fill::filler(Some(lhs), self.peek_next()) {
-            Ok(Some(fill)) => self.push_back(fill),
-            Ok(None) => {}
-            Err(e) => self.error = Some(e),
+        if let Some(fill) = super::fill::filler(Some(lhs), self.peek_next()) {
+            self.push_back(fill);
         }
     }
 
