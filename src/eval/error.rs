@@ -345,7 +345,19 @@ fn not_callable_notes(actual_type: &str) -> Vec<String> {
              use '&&' and '||' for logical conjunction and disjunction"
                 .to_string(),
         ],
-        "number" | "string" | "symbol" | "datetime" | "empty list" => vec![
+        "string" => vec![
+            "a string value is not a function; check for a missing operator or \
+             extra argument"
+                .to_string(),
+            "note: catenation (juxtaposition) has low precedence — 'f(a) + 1' binds as \
+             'f(a + 1)'; add parentheses to disambiguate"
+                .to_string(),
+            "if this is inside a list literal '[...]', you may be missing commas between \
+             items — eucalypt lists require commas: '[\"a\", \"b\", \"c\"]' not \
+             '[\"a\" \"b\" \"c\"]'"
+                .to_string(),
+        ],
+        "number" | "symbol" | "datetime" | "empty list" => vec![
             format!(
                 "a {actual_type} value is not a function; check for a missing operator or \
                  extra argument"
