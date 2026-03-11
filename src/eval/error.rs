@@ -515,6 +515,8 @@ pub enum ExecutionError {
     UnknownFormat(String),
     #[error("cannot combine numbers ({0}, {1}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
     NumericDomainError(Number, Number),
+    #[error("result of ({0})^({1}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
+    ComplexResult(Number, Number),
     #[error("numeric overflow: result of operating on {0} and {1} is out of range\n  help: the result exceeds the representable range for this numeric type")]
     NumericRangeError(Number, Number),
     #[error("{}", format_division_by_zero(.0))]
