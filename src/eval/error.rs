@@ -687,6 +687,23 @@ impl ExecutionError {
             ExecutionError::LookupFailure(_, key, suggestions) => {
                 lookup_failure_notes(key, suggestions)
             }
+            ExecutionError::NotValue(_, context) => {
+                if context == "a data constructor (e.g. block or list)" {
+                    vec![
+                        "comparison operators (<, >, <=, >=) and arithmetic work on scalar \
+                         values (numbers, strings, symbols), not on lists or blocks"
+                            .to_string(),
+                        "to compare lists element-wise, compare specific elements: \
+                         'xs head < ys head'"
+                            .to_string(),
+                        "to check if all elements of a list satisfy a condition, use 'all', \
+                         e.g. 'xs all(_ > 0)'"
+                            .to_string(),
+                    ]
+                } else {
+                    vec![]
+                }
+            }
             ExecutionError::CannotReturnFunToCase(_, expected_tags) => {
                 let expects_bool = expected_tags.contains(&DataConstructor::BoolTrue.tag())
                     || expected_tags.contains(&DataConstructor::BoolFalse.tag());
