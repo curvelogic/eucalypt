@@ -390,6 +390,38 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // 'over' — common in Clojure/Haskell for applying a function
+                    // to values in a structure.  Eucalypt has no 'over': use
+                    // 'map' for lists and 'map-values' for blocks.
+                    "over" => {
+                        notes.push(
+                            "eucalypt has no 'over' function; \
+                             to transform each element of a list use 'map', \
+                             e.g. 'xs map(_ + 1)'; \
+                             to transform each value in a block use 'map-values', \
+                             e.g. 'block map-values(_ * 2)'"
+                                .to_string(),
+                        );
+                    }
+                    // 'each' / 'forEach' — common in Ruby/JavaScript for iteration.
+                    // Eucalypt uses 'map' with a side-effect-free function.
+                    "each" | "forEach" | "for-each" => {
+                        notes.push(
+                            "eucalypt has no 'each'/'forEach'; \
+                             use 'map' to transform elements: 'xs map(f)'"
+                                .to_string(),
+                        );
+                    }
+                    // 'zip' used as a function call rather than pipeline
+                    "zip-with" => {
+                        notes.push(
+                            "to zip two lists element-wise, use 'zip', e.g. \
+                             'zip(xs, ys)' or 'xs zip(ys)'; \
+                             to combine with an operation, use 'zip-with', e.g. \
+                             'zip-with(+, xs, ys)'"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
