@@ -390,6 +390,68 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // Rust/Haskell Option type constructors.
+                    // Eucalypt has no Option/Maybe type; use null for absence.
+                    "Some" | "Just" => {
+                        notes.push(
+                            "eucalypt has no Option/Maybe type; use 'null' for absent values \
+                             and 'nil?' to test for null"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "to provide a fallback for a nullable value, use \
+                             'if(x nil?, default, x)' or define a helper"
+                                .to_string(),
+                        );
+                    }
+                    "Nothing" => {
+                        notes.push(
+                            "eucalypt uses 'null' for the absent/nothing value, not 'Nothing'"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "to test for null, use 'nil?', e.g. 'x nil?' returns true if x is null"
+                                .to_string(),
+                        );
+                    }
+                    // Rust Result unwrapping idioms.
+                    // Eucalypt has no Result type; errors are reported as execution errors.
+                    "unwrap" | "unwrap_or" | "expect" | "ok_or" => {
+                        notes.push(
+                            "eucalypt has no Result/Option type or 'unwrap'; values are \
+                             directly available or null"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "to safely access a potentially null value with a fallback, \
+                             use 'if(x nil?, fallback, x)' or 'lookup-or(:key, default, block)'"
+                                .to_string(),
+                        );
+                    }
+                    // Python enumerate() — pair each element with its index.
+                    // Eucalypt equivalent: zip with iota.
+                    "enumerate" => {
+                        notes.push(
+                            "eucalypt has no 'enumerate'; to pair each element with its index, \
+                             use 'zip(range(0, xs count), xs)', which gives \
+                             [[0, x0], [1, x1], ...]"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "to process each pair, define a named function: \
+                             'process[i, x]: ...' and then 'zipped map(process)'"
+                                .to_string(),
+                        );
+                    }
+                    // Python/JS type constructors — not needed in eucalypt.
+                    "tuple" | "dict" | "HashMap" | "ArrayList" => {
+                        notes.push(
+                            "eucalypt has no type constructors like 'tuple()' or 'dict()'; \
+                             write literals directly: '[1, 2, 3]' for a list, \
+                             '{key: value}' for a block (dict/record)"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
