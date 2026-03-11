@@ -724,6 +724,23 @@ impl HeapState {
                 return;
             }
         }
+
+        // Evacuation target blocks: objects evacuated into the current target
+        // block must have their lines marked so that lazy sweep does not treat
+        // the live content as free holes.
+        if let Some(target) = &mut self.evacuation_target {
+            if target.base_address() == base {
+                target.mark_line(ptr);
+                return;
+            }
+        }
+
+        for block in &mut self.filled_evacuation_blocks {
+            if block.base_address() == base {
+                block.mark_line(ptr);
+                return;
+            }
+        }
     }
 
     /// Find the block containing `ptr` by its base address and mark
@@ -760,6 +777,23 @@ impl HeapState {
         }
 
         for block in &mut self.recycled {
+            if block.base_address() == base {
+                block.mark_region(ptr, bytes);
+                return;
+            }
+        }
+
+        // Evacuation target blocks: objects evacuated into the current target
+        // block must have their lines marked so that lazy sweep does not treat
+        // the live content as free holes.
+        if let Some(target) = &mut self.evacuation_target {
+            if target.base_address() == base {
+                target.mark_region(ptr, bytes);
+                return;
+            }
+        }
+
+        for block in &mut self.filled_evacuation_blocks {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
                 return;
