@@ -1120,11 +1120,16 @@ fn run_command(
     }
 
     // Use a worker thread to implement timeout, since `wait_timeout` is not a
-    // project dependency.
+    // project dependency. Use an explicit stack size to avoid SIGSEGV on macOS
+    // where the default thread stack (8 MiB) can be exhausted during long test
+    // runs with many IO operations.
     let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
-    });
+    thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || {
+            let _ = tx.send(child.wait_with_output());
+        })
+        .expect("failed to spawn io timeout thread");
 
     match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
         Ok(Ok(output)) => {
