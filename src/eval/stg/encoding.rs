@@ -50,13 +50,13 @@ impl StgIntrinsic for Base64Decode {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
         let input = str_arg(machine, view, &args[0])?;
         let bytes = STANDARD
             .decode(&input)
-            .map_err(|e| ExecutionError::Panic(format!("invalid base64 input: {e}")))?;
-        let decoded = String::from_utf8(bytes).map_err(|e| {
-            ExecutionError::Panic(format!("decoded base64 is not valid UTF-8: {e}"))
-        })?;
+            .map_err(|e| ExecutionError::InvalidBase64(smid, input.clone(), e.to_string()))?;
+        let decoded = String::from_utf8(bytes)
+            .map_err(|e| ExecutionError::InvalidBase64Utf8(smid, e.to_string()))?;
         machine_return_str(machine, view, decoded)
     }
 }

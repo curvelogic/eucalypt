@@ -395,6 +395,21 @@ fn format_cannot_return_fun(expected_tags: &[u8]) -> String {
     msg
 }
 
+/// Format an invalid base64 error message, truncating long input strings
+fn format_invalid_base64(input: &str, detail: &str) -> String {
+    const PREVIEW_LEN: usize = 40;
+    let preview = if input.len() > PREVIEW_LEN {
+        format!("{}…", &input[..PREVIEW_LEN])
+    } else {
+        input.to_string()
+    };
+    format!(
+        "invalid base64 input: {detail}\n  \
+         help: '{preview}' is not valid standard base64 (RFC 4648); \
+         ensure the input uses the standard alphabet (A\u{2013}Z, a\u{2013}z, 0\u{2013}9, +, /) with '=' padding"
+    )
+}
+
 /// Format a division by zero error message with the operation context
 fn format_division_by_zero(operation: &str) -> String {
     if operation.is_empty() {
@@ -516,6 +531,10 @@ pub enum ExecutionError {
     CannotReturnFunToCase(Smid, Vec<u8>),
     #[error("panic: {0}")]
     Panic(String),
+    #[error("{}", format_invalid_base64(.1, .2))]
+    InvalidBase64(Smid, String, String),
+    #[error("base64 decoded bytes are not valid UTF-8: {1}\n  help: the base64 string decoded successfully but the resulting bytes do not form valid UTF-8 text")]
+    InvalidBase64Utf8(Smid, String),
     #[error("parse-as({1}): {2}")]
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
@@ -585,6 +604,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
+            ExecutionError::InvalidBase64(s, _, _) => *s,
+            ExecutionError::InvalidBase64Utf8(s, _) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,
