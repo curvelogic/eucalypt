@@ -29,11 +29,21 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
                 .to_string(),
         ],
         (Record(_), String) => vec![
-            "the '.' operator performs key lookup on blocks; \
-             strings do not have fields"
+            "a block was expected but a string was found; blocks cannot be looked up \
+             using string keys like `config(\"host\")`"
                 .to_string(),
-            "to apply string functions, use pipeline catenation, \
-             e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
+            "to access a block field, use dot notation: `config.host`".to_string(),
+            "for dynamic key lookup, use `lookup-or(:key, default)` or \
+             `config pairs filter(_.key = :host) head .value`"
+                .to_string(),
+        ],
+        (Record(_), Symbol) => vec![
+            "a block was expected but a symbol was found; blocks cannot be called with \
+             a symbol key like `config(:host)` to perform lookup"
+                .to_string(),
+            "to access a block field by name, use dot notation: `config.host`".to_string(),
+            "for dynamic key lookup, use `lookup-or(:key, default)` where the block is \
+             the receiver: `config lookup-or(:host, \"default\")`"
                 .to_string(),
         ],
         (Number, Record(_)) => vec![
@@ -106,14 +116,25 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
         ]
     } else if is_string && expects_block {
         vec![
-            "the '.' operator performs key lookup on blocks; \
-             strings do not have fields"
+            "a block was expected but a string was found; if you are trying to \
+             look up a key in a block, use dot notation: `config.host`"
                 .to_string(),
-            "to apply string functions, use pipeline catenation, \
-             e.g. 'x str.to-upper' or 'str.to-lower(x)' instead of 'x.upper'"
+            "for dynamic key lookup, use `lookup-or(:key, default)`, e.g. \
+             `config lookup-or(:host, \"localhost\")`"
                 .to_string(),
-            "note: 'str' is a namespace of string functions, not a type conversion function; \
-             use 'str.of(x)' or string interpolation to convert values to strings"
+            "if you wrote `config(\"host\")` intending to index a block, that is \
+             not valid — use `config.host` or pass a symbol: `config pairs \
+             filter(_.key = :host)`"
+                .to_string(),
+        ]
+    } else if is_symbol && expects_block {
+        vec![
+            "a block was expected but a symbol was found; if you wrote `config(:host)` \
+             trying to index a block, that is not valid syntax for key access"
+                .to_string(),
+            "to access a block field, use dot notation: `config.host`".to_string(),
+            "for dynamic key lookup, use `lookup-or(:key, default)`: \
+             `config lookup-or(:host, \"localhost\")`"
                 .to_string(),
         ]
     } else if is_block && expects_number {
