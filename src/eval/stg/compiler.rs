@@ -390,6 +390,53 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // Various names for scanl (running/prefix accumulation).
+                    // Python itertools.accumulate, Haskell scanl, Rust scan.
+                    "scan" | "accumulate" | "prefix-sum" | "prefix_sum" | "running-total"
+                    | "running_total" => {
+                        notes.push(
+                            "eucalypt uses 'scanl' for running accumulation, e.g. \
+                             'xs scanl(+, 0)' for a running sum"
+                                .to_string(),
+                        );
+                    }
+                    // Alternative names for foldl/foldr not already matched above.
+                    "foldl1" | "fold_left" | "fold_right" | "reduceLeft" | "reduceRight"
+                    | "inject" => {
+                        notes.push(
+                            "eucalypt has 'foldl(op, init, list)' (left fold) and \
+                             'foldr(op, init, list)' (right fold)"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "'reduce(op, list)' is also available and uses 'head' as the \
+                             initial value — equivalent to 'foldl1' in Haskell"
+                                .to_string(),
+                        );
+                    }
+                    // Pipe operator from Elixir, F#, Haskell (|>).
+                    // Eucalypt uses juxtaposition (catenation) for the same purpose.
+                    "|>" | "|>>" | ">>>" | "<<" => {
+                        notes.push(
+                            "eucalypt has no pipe operator '|>'; use juxtaposition instead: \
+                             'x double inc' is equivalent to 'x |> double |> inc' in Elixir"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "catenation (juxtaposition) has low precedence (20) — \
+                             if combining with operators, use parentheses: '(x double) + 1'"
+                                .to_string(),
+                        );
+                    }
+                    // Null-coalescing operator from C#/JS (?? / ?:).
+                    // Eucalypt uses if(x nil?, default, x).
+                    "??" | "?:" => {
+                        notes.push(
+                            "eucalypt has no null-coalescing operator '??'; use \
+                             'if(x nil?, default, x)' or 'lookup-or(:key, default, block)'"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
