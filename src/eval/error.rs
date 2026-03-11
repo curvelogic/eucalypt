@@ -659,6 +659,12 @@ pub enum ExecutionError {
     ArrayBoundsError { index: usize, length: usize },
     #[error("bitwise operations require integer arguments ({0})")]
     BitwiseIntegerRequired(String),
+    #[error("array index out of bounds: coordinates {1:?} are outside the array bounds")]
+    ArrayNdIndexOutOfBounds(Smid, Vec<usize>),
+    #[error("array shape mismatch: {1}")]
+    ArrayShapeMismatch(Smid, String),
+    #[error("negative array index or dimension: {1} — array indices and dimensions must be non-negative")]
+    ArrayNegativeIndex(Smid, f64),
 }
 
 impl From<bump::AllocError> for ExecutionError {
@@ -712,6 +718,9 @@ impl HasSmid for ExecutionError {
             ExecutionError::AssertionFailed(s, _, _) => *s,
             ExecutionError::BitshiftRangeError(s, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
+            ExecutionError::ArrayNdIndexOutOfBounds(s, _) => *s,
+            ExecutionError::ArrayShapeMismatch(s, _) => *s,
+            ExecutionError::ArrayNegativeIndex(s, _) => *s,
             _ => Smid::default(),
         }
     }
