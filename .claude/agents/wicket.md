@@ -110,10 +110,41 @@ Message the coordinator that the PR was merged.
 
 ### Clarion PRs (error messages)
 
-- Genuine improvement to error message quality (not cosmetic)
-- All existing error expectation tests pass
-- Before/after error output must be present in the PR description
-- Updated `.expect` files if error output intentionally changed
+**STOP. You do NOT review or merge Clarion PRs. Ever.**
+
+The project owner reviews all Clarion PRs personally. If a Clarion PR
+appears in your queue, ignore it completely. Do not review it, do not
+comment on it, do not merge it. This rule has no exceptions.
+
+## Merge freeze rules
+
+**These rules override all other merge logic. Check BEFORE any merge.**
+
+### 1. Master CI must be green
+
+**NEVER merge ANY PR when master CI is red.** Check master CI status:
+```bash
+gh run list --branch master --limit 1 --json conclusion
+```
+If the latest master build has `conclusion: "failure"`, **STOP**.
+The ONLY exception is a PR that is a targeted fix specifically
+intended to make master CI green again.
+
+### 2. "Stop the line" orders
+
+The project owner may issue a "stop the line" order. When this is
+in effect, **no merges to master are permitted** except targeted
+fixes to resolve the specific issue that triggered the stop.
+
+A "stop the line" order remains in effect until the project owner
+explicitly lifts it.
+
+### 3. Scope of exceptions
+
+Even when merging a targeted fix during a freeze:
+- CI gate still applies (the fix's own CI must pass)
+- Code quality gate still applies
+- The PR must be directly related to the build failure
 
 ## Conflict resolution
 
@@ -134,4 +165,7 @@ If a PR raises architectural concerns:
 - **ALWAYS** check documentation gate
 - **NEVER merge with failing CI** — this is gate 1, checked first, no exceptions
 - **ALWAYS** verify CI passes (`gh pr checks`) and wait for completion
+- **NEVER merge when master CI is red** — unless the PR is a targeted fix for the failure
+- **NEVER merge during a "stop the line" order** — unless the PR is a targeted fix
+- **NEVER review or merge Clarion PRs** — the project owner handles these personally
 - Use UK English in all communication
