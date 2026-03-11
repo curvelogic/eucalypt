@@ -63,6 +63,28 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              symbols are written with a leading colon"
                 .to_string(),
         ],
+        (Bool, Number) => vec![
+            "functions like 'filter', 'all', 'any', and 'if' expect a predicate that \
+             returns true or false — the function you passed returns a number"
+                .to_string(),
+            "to make a predicate, compare the value: e.g. use '(_ > 0)' instead of \
+             '(_ * 2)' in a filter"
+                .to_string(),
+        ],
+        (Bool, String) => vec![
+            "functions like 'filter', 'all', 'any', and 'if' expect a predicate that \
+             returns true or false — the function you passed returns a string"
+                .to_string(),
+            "to make a predicate, compare or test the value: \
+             e.g. use '(str.len > 3)' or 'str.matches?(\"pattern\")' in a filter"
+                .to_string(),
+        ],
+        (Bool, List(_)) => vec![
+            "functions like 'filter', 'all', 'any', and 'if' expect a predicate that \
+             returns true or false — the function you passed returns a list"
+                .to_string(),
+            "to test list membership, use 'any', e.g. 'xs any(42 = _)'".to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -79,6 +101,8 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
+    let expects_bool = expected.contains(&DataConstructor::BoolTrue.tag())
+        || expected.contains(&DataConstructor::BoolFalse.tag());
 
     if is_list && expects_block {
         vec![
@@ -144,6 +168,42 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "a symbol (`:name`) was found where a string was expected".to_string(),
             "to convert a symbol to a string, use 'str.of', e.g. `str.of(:name)` \
              gives the string `\"name\"`"
+                .to_string(),
+        ]
+    } else if is_number && expects_bool {
+        vec![
+            "functions like 'filter', 'all', 'any', and 'if' expect a predicate that \
+             returns true or false — the function you passed returns a number"
+                .to_string(),
+            "to make a predicate from a number, compare it: e.g. use '(_ > 0)' instead \
+             of '(_ * 2)' in a filter call"
+                .to_string(),
+        ]
+    } else if is_string && expects_bool {
+        vec![
+            "functions like 'filter', 'all', 'any', and 'if' expect a predicate that \
+             returns true or false — the function you passed returns a string"
+                .to_string(),
+            "to make a predicate from a string, test it: e.g. use 'str.matches?(\"pat\")' \
+             or '(str.len > 0)' in a filter call"
+                .to_string(),
+        ]
+    } else if is_list && expects_bool {
+        vec![
+            "functions like 'filter', 'all', 'any', and 'if' expect a predicate that \
+             returns true or false — the function you passed returns a list"
+                .to_string(),
+            "to check if a list is non-empty use 'non-nil?'; \
+             to check if a value is in a list use 'any', e.g. 'xs any(42 = _)'"
+                .to_string(),
+        ]
+    } else if is_block && expects_bool {
+        vec![
+            "functions like 'filter', 'all', 'any', and 'if' expect a predicate that \
+             returns true or false — the function you passed returns a block"
+                .to_string(),
+            "to test a block field, extract it first: e.g. 'filter(.active)' \
+             selects elements where the 'active' field is true"
                 .to_string(),
         ]
     } else {
