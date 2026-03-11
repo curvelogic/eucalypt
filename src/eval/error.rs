@@ -313,33 +313,17 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
 /// Format a "not a value" error message when a non-value expression is found
 /// where a primitive value was expected.
 fn format_not_value(context: &str) -> String {
-    match context {
-        "a function application" => {
-            "expected a primitive value but found an unevaluated function application\n  \
-             help: this often means a function received fewer arguments than it needs, \
-             producing a partial application instead of a result\n  \
-             help: check that all functions in the pipeline receive the correct number of \
-             arguments — e.g. 'add(x, y)' needs two args but 'xs map(add)' applies 'add' \
-             to each element with only one arg"
-                .to_string()
-        }
-        "a data constructor (e.g. block or list)" => {
-            "expected a primitive value but found a structured value (block or list)\n  \
-             help: to extract a field from a block, use '.field' notation; \
-             to extract an element from a list, use 'head' or 'nth(n, list)'"
-                .to_string()
-        }
-        c if !c.is_empty() => {
-            format!(
-                "expected a primitive value but found {c}\n  \
-                 help: this can occur when a function or structured value appears \
-                 where a primitive (number, string, etc.) was expected"
-            )
-        }
-        _ => "expected a value but found an unevaluated expression\n  \
-              help: this can occur when a function or structured value appears \
-              where a primitive (number, string, etc.) was expected"
-            .to_string(),
+    if context.is_empty() {
+        "expected a value but found an unevaluated expression\n  \
+         help: this can occur when a function or structured value appears \
+         where a primitive (number, string, etc.) was expected"
+            .to_string()
+    } else {
+        format!(
+            "expected a value but found {context}\n  \
+             help: this can occur when a function or structured value appears \
+             where a primitive (number, string, etc.) was expected"
+        )
     }
 }
 
