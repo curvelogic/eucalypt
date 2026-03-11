@@ -18,8 +18,8 @@ pub struct LetIndexTransformation {
 }
 
 impl LetIndexTransformation {
-    /// If the bindings are all local refs, return and equivalent
-    /// index transformation
+    /// If the bindings are all local refs, return an equivalent
+    /// index transformation (for non-recursive let bindings)
     pub fn from_let_bindings(bindings: &[LambdaForm]) -> Option<Self> {
         let mut mappings = vec![];
 
@@ -31,6 +31,44 @@ impl LetIndexTransformation {
                     } = **body
                     {
                         mappings.push(n);
+                    } else {
+                        return None;
+                    }
+                }
+                _ => {
+                    return None;
+                }
+            }
+        }
+
+        Some(LetIndexTransformation { mapping: mappings })
+    }
+
+    /// If all letrec bindings are simple refs into the outer scope,
+    /// return an index transformation that substitutes letrec refs with
+    /// outer-scope refs (adjusting for the letrec's own bindings).
+    ///
+    /// For a letrec with N bindings, binding bodies see the letrec env
+    /// where L(0..N-1) are letrec-local. A binding `atom(L(k))` with
+    /// `k >= N` refers to outer env position `k - N`. We require all
+    /// bindings to reference the outer scope only (no mutual self-refs
+    /// within the simple-ref group), so we reject `k < N`.
+    pub fn from_letrec_bindings(bindings: &[LambdaForm]) -> Option<Self> {
+        let n = bindings.len();
+        let mut mappings = vec![];
+
+        for b in bindings {
+            match b {
+                LambdaForm::Thunk { body } | LambdaForm::Value { body } => {
+                    if let StgSyn::Atom {
+                        evaluand: Ref::L(k),
+                    } = **body
+                    {
+                        if k < n {
+                            // Self- or mutual-ref within the letrec: cannot strip
+                            return None;
+                        }
+                        mappings.push(k - n);
                     } else {
                         return None;
                     }
@@ -183,14 +221,13 @@ impl AllocationPruner {
                 }
             }
             StgSyn::LetRec { bindings, body } => {
-                match LetIndexTransformation::from_let_bindings(bindings) {
+                match LetIndexTransformation::from_letrec_bindings(bindings) {
                     Some(t) => {
-                        // we can strip	the let
+                        // All bindings are simple outer-scope refs: strip the letrec.
+                        // The adjusted mapping already accounts for the letrec env
+                        // offset, so no ShiftIndexTransformation is needed here.
                         self.transform_stack.push(Box::new(t));
-                        self.transform_stack
-                            .push(Box::new(ShiftIndexTransformation::new(bindings.len())));
                         let body = self.apply(body.clone());
-                        self.transform_stack.pop();
                         self.transform_stack.pop();
                         body
                     }
@@ -579,5 +616,66 @@ pub mod tests {
         let expected = dsl::force(dsl::local(0), dsl::app(dsl::lref(2), vec![dsl::lref(3)]));
 
         assert_eq!(pruned, expected);
+    }
+
+    #[test]
+    pub fn test_letrec_strip_adjusts_outer_refs() {
+        // letrec [0] = atom(L(1))   ← L(1) is outer env L(0) in letrec context
+        // in app(L(0), [])
+        //
+        // L(0) in the body is the letrec binding (maps to outer L(0) via adjusted
+        // mapping 1-1=0). After strip: app(L(0), []).
+        let original = dsl::letrec_(
+            vec![dsl::value(dsl::local(1))],
+            dsl::app(dsl::lref(0), vec![]),
+        );
+
+        let pruned = AllocationPruner::default().apply(original);
+
+        // letrec[0] = atom(L(1)) where L(1) = outer L(0).
+        // After strip: L(0) in body → outer L(0) = L(0).
+        let expected = dsl::app(dsl::lref(0), vec![]);
+
+        assert_eq!(pruned, expected);
+    }
+
+    #[test]
+    pub fn test_letrec_strip_with_nested_let() {
+        // Reproduces the eu-tekn bug:
+        // letrec [0] = atom(L(6))   ← L(6) = outer env L(5) in letrec context
+        // in let [0] Num(5)
+        //    in L(1)(L(0))          ← L(1) was the letrec binding (h_thunk)
+        //
+        // After strip: letrec removed, L(1) in let body → outer L(5), bumped by
+        // inner let size 1 → L(6).
+        let original = dsl::letrec_(
+            vec![dsl::value(dsl::local(6))],
+            dsl::let_(
+                vec![dsl::value(dsl::box_num(5))],
+                dsl::app(dsl::lref(1), vec![dsl::lref(0)]),
+            ),
+        );
+
+        let pruned = AllocationPruner::default().apply(original);
+
+        // Expected: let [0] Num(5) in L(6)(L(0))
+        let expected = dsl::let_(
+            vec![dsl::value(dsl::box_num(5))],
+            dsl::app(dsl::lref(6), vec![dsl::lref(0)]),
+        );
+
+        assert_eq!(pruned, expected);
+    }
+
+    #[test]
+    pub fn test_letrec_self_ref_not_stripped() {
+        // letrec [0] = atom(L(0))   ← self-referential: must NOT be stripped
+        // in local(0)
+        let original = dsl::letrec_(vec![dsl::value(dsl::local(0))], dsl::local(0));
+
+        let pruned = AllocationPruner::default().apply(original.clone());
+
+        // Should be unchanged
+        assert_eq!(pruned, original);
     }
 }
