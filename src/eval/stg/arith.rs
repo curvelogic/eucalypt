@@ -654,8 +654,18 @@ impl StgIntrinsic for Pow {
 
         // Fall back to f64
         if let (Some(b), Some(e)) = (base.as_f64(), exp.as_f64()) {
-            if let Some(ret) = Number::from_f64(b.powf(e)) {
+            let result = b.powf(e);
+            if let Some(ret) = Number::from_f64(result) {
                 machine_return_num(machine, view, ret)
+            } else if b < 0.0 && e.fract() != 0.0 {
+                // Negative base with fractional exponent produces a complex number,
+                // which eucalypt does not support
+                Err(ExecutionError::Panic(format!(
+                    "cannot raise a negative number ({base}) to a fractional power ({exp}): \
+                     the result would be a complex number\n  \
+                     help: use abs({base}) ^ {exp} if you want the magnitude, \
+                     or ensure the exponent is an integer"
+                )))
             } else {
                 Err(ExecutionError::NumericDomainError(base, exp))
             }

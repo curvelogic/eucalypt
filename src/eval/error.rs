@@ -500,7 +500,8 @@ pub enum ExecutionError {
     NotScalar(Smid),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
-    #[error("cannot combine numbers ({0}, {1}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
+    #[error("arithmetic on ({0}, {1}) produced an undefined result (NaN or overflow)\n  help: check for overflow, division-like operations on incompatible types, \
+or operations whose result is not a real number")]
     NumericDomainError(Number, Number),
     #[error("numeric overflow: result of operating on {0} and {1} is out of range\n  help: the result exceeds the representable range for this numeric type")]
     NumericRangeError(Number, Number),
