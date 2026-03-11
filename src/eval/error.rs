@@ -79,8 +79,33 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
+    // Detect the "expected a scalar value" context: when expected includes multiple
+    // scalar types (number, string, symbol, bool) — this indicates a conversion function
+    // like str.of or str that requires a scalar, not a structured value.
+    let expects_scalar = expects_number
+        && expects_string
+        && expects_symbol
+        && (expected.contains(&DataConstructor::BoolTrue.tag())
+            || expected.contains(&DataConstructor::BoolFalse.tag()));
 
-    if is_list && expects_block {
+    if is_list && expects_scalar {
+        vec![
+            "lists cannot be converted to a string directly".to_string(),
+            "to render a list as a string, use string interpolation: \"{xs}\" \
+             or 'render-as(\"json\", xs)' to get a JSON/YAML representation"
+                .to_string(),
+            "to join list elements into a string, use 'join-on', \
+             e.g. 'xs join-on(\", \")'"
+                .to_string(),
+        ]
+    } else if is_block && expects_scalar {
+        vec![
+            "blocks (structured values) cannot be converted to a string with 'str.of'".to_string(),
+            "to render a block as a string, use 'render-as(\"json\", block)' \
+             or 'render-as(\"yaml\", block)'"
+                .to_string(),
+        ]
+    } else if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
@@ -306,6 +331,22 @@ fn lookup_failure_notes(key: &str, suggestions: &[String]) -> Vec<String> {
              e.g. `42 str.fmt(\"%10d\")` for right-padding"
                 .to_string(),
         ],
+        // Attempt to use str.num (doesn't exist) — the correct function is just 'num'
+        "num" | "to-num" | "to-number" | "parse" | "parse-int" | "parse-float" | "to-int"
+        | "to-float" => {
+            vec![
+                "to convert a string to a number, use 'num' directly (not 'str.num'), \
+                 e.g. 's num' or 'num(s)'"
+                    .to_string(),
+            ]
+        }
+        // Attempt to use str.len or str.length (str.count is the correct function name)
+        "len" | "length" | "size" => {
+            vec![
+                "to count the characters in a string, use 'str.count', e.g. 's str.count'"
+                    .to_string(),
+            ]
+        }
         _ => vec![],
     }
 }
