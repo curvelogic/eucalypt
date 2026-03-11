@@ -75,12 +75,25 @@ jobs:
 
   release-candidate-macos:
     needs: [lint, test, audit, wasm]
-    name: Release MacOS (attempt ${{ matrix.attempt }})
+    name: Release MacOS (${{ matrix.label }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        attempt: [1, 2, 3, 4, 5]
+        include:
+          # Baseline: full suite (3x to catch intermittent crash)
+          - label: "full suite 1"
+            test_target: "tests/harness"
+          - label: "full suite 2"
+            test_target: "tests/harness"
+          - label: "full suite 3"
+            test_target: "tests/harness"
+          # Does test 116 alone crash?
+          - label: "test 116 only"
+            test_target: "tests/harness/116_io_shell_with.eu"
+          # Does the crash happen if we only run 116-120?
+          - label: "tests 116-120 only"
+            test_target: "tests/harness/116_io_shell_with.eu tests/harness/117_io_exec.eu tests/harness/118_io_exec_with.eu tests/harness/119_monad_utility.eu tests/harness/120_random_monad.eu"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -111,4 +124,6 @@ jobs:
       - name: Run final test with release binary
         run: |
           target/release/eu_darwin version
-          target/release/eu_darwin test --allow-io tests/harness
+          for t in ${{ matrix.test_target }}; do
+            target/release/eu_darwin test --allow-io "$t"
+          done
