@@ -657,6 +657,13 @@ impl ExecutionError {
                          or 'join-on' on a list of strings; '++' is for list append"
                             .to_string(),
                     );
+                    notes.push(
+                        "note: to work with individual characters of a string, use \
+                         'str.letters' to get a list of characters, then apply list \
+                         operations; e.g. 'text str.letters take(5) str.join-on(\"\")' \
+                         for the first 5 characters"
+                            .to_string(),
+                    );
                 } else {
                     notes.push(
                         "check that the value is a list before applying list operations; \
