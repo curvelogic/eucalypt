@@ -113,8 +113,12 @@ jobs:
 
   release-candidate-macos:
     needs: [lint, test, audit, wasm]
-    name: Release MacOS
+    name: Release MacOS (attempt ${{ matrix.attempt }})
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
