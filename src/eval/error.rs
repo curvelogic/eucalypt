@@ -809,6 +809,17 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
+            ExecutionError::NotValue(_, context) if context == "a function application" => {
+                vec![
+                    "if using '_' anaphora in a 'map' or similar higher-order function, note \
+                     that each '_' creates a separate parameter — 'map(_ + _)' passes a \
+                     two-argument function, not a one-argument function"
+                        .to_string(),
+                    "to reuse the same argument, use '_0': 'map(_0 + _0)' applies '+' to \
+                     the same element twice; 'map(_0 * _0)' squares each element"
+                        .to_string(),
+                ]
+            }
             ExecutionError::NotCallable(_, type_name) => not_callable_notes(type_name),
             ExecutionError::LookupFailure(_, key, suggestions, _) => {
                 lookup_failure_notes(key, suggestions)
