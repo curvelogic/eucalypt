@@ -516,6 +516,8 @@ pub enum ExecutionError {
     CannotReturnFunToCase(Smid, Vec<u8>),
     #[error("panic: {0}")]
     Panic(String),
+    #[error("invalid version constraint '{1}': {2}\n  help: version constraints use semver syntax, e.g. '>=0.2.0', '~0.5', '^1.2'")]
+    InvalidVersionConstraint(Smid, String, String),
     #[error("parse-as({1}): {2}")]
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
@@ -585,6 +587,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
+            ExecutionError::InvalidVersionConstraint(s, _, _) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,

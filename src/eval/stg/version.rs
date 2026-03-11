@@ -25,12 +25,11 @@ impl StgIntrinsic for Requires {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
         let constraint_str = str_arg(machine, view, &args[0])?;
 
         let req = semver::VersionReq::parse(&constraint_str).map_err(|e| {
-            ExecutionError::Panic(format!(
-                "invalid version constraint \"{constraint_str}\": {e}"
-            ))
+            ExecutionError::InvalidVersionConstraint(smid, constraint_str.clone(), e.to_string())
         })?;
 
         // Strip any ".dev" suffix from the Cargo package version
