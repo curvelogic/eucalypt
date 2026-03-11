@@ -87,6 +87,19 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
              pipeline functions like 'head', 'nth'"
                 .to_string(),
         ]
+    } else if is_list && expects_number && expects_string {
+        // The STR intrinsic (used for string interpolation) expects a scalar type.
+        // A list was passed where a scalar was required — likely in string interpolation.
+        vec![
+            "lists cannot be used directly in string interpolation or string conversion"
+                .to_string(),
+            "to render a list as a string, use 'render-as', \
+             e.g. 'my_list render-as(:json)' or 'my_list render-as(:yaml)'"
+                .to_string(),
+            "to join a list of strings with a separator, use 'join-on', \
+             e.g. 'items join-on(\", \")'"
+                .to_string(),
+        ]
     } else if is_list && expects_number {
         vec![
             "arithmetic operators like '+' work on numbers, not lists".to_string(),
