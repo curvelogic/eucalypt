@@ -545,6 +545,8 @@ pub enum ExecutionError {
     ExpectedClosure,
     #[error("array bounds error: index {index} out of bounds for array of length {length}")]
     ArrayBoundsError { index: usize, length: usize },
+    #[error("bitwise operations require integer arguments ({0})")]
+    BitwiseIntegerRequired(String),
 }
 
 impl From<bump::AllocError> for ExecutionError {
