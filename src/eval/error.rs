@@ -19,6 +19,9 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
              pipeline functions like 'head', 'nth'"
                 .to_string(),
+            "to extract a field from every item in a list of blocks, \
+             use 'map', e.g. 'records map(.name)' or 'map(.name, records)'"
+                .to_string(),
         ],
         (Record(_), Number) => vec![
             "the '.' operator performs key lookup on blocks; \
@@ -85,6 +88,9 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use the index operator for indexing (e.g. xs index 0) or \
              pipeline functions like 'head', 'nth'"
+                .to_string(),
+            "to extract a field from every item in a list of blocks, \
+             use 'map', e.g. 'records map(.name)' or 'map(.name, records)'"
                 .to_string(),
         ]
     } else if is_list && expects_number {
