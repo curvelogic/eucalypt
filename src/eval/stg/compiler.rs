@@ -183,6 +183,11 @@ impl CompileError {
                             "to count the elements of a list, use 'count', e.g. 'xs count'"
                                 .to_string(),
                         );
+                        notes.push(
+                            "to get the number of characters in a string, use 'str.len', \
+                             e.g. 's str.len'"
+                                .to_string(),
+                        );
                     }
                     "contains" | "includes" => {
                         notes.push(
@@ -387,6 +392,44 @@ impl CompileError {
                             "eucalypt uses kebab-case: 'sort-by' (for general ordering) or \
                              'sort-by-num' (for numeric keys), e.g. \
                              'xs sort-by-num(.score)'"
+                                .to_string(),
+                        );
+                    }
+                    // String replace — no direct built-in; use regex split+join
+                    "replace" | "str.replace" | "gsub" | "sub" => {
+                        notes.push(
+                            "eucalypt has no str.replace; to replace text, split on the \
+                             pattern and rejoin: \
+                             's str.split-on(\"old\") join-on(\"new\")'"
+                                .to_string(),
+                        );
+                        notes.push(
+                            "note: str.split-on uses a regex pattern, so special characters \
+                             must be escaped, e.g. '\"[.]\"' to match a literal dot"
+                                .to_string(),
+                        );
+                    }
+                    // String trim — no direct built-in
+                    "trim" | "strip" | "lstrip" | "rstrip" | "chomp" => {
+                        notes.push(
+                            "eucalypt has no trim function; to remove leading/trailing \
+                             whitespace, use a regex: \
+                             's str.match(\"^\\\\s*(.*?)\\\\s*$\") !! 1'"
+                                .to_string(),
+                        );
+                    }
+                    // Common name for string starts-with / ends-with checks
+                    "startsWith" | "starts_with" | "starts-with" => {
+                        notes.push(
+                            "to test if a string starts with a prefix, use 'str.matches?', \
+                             e.g. 's str.matches?(\"^prefix\")'"
+                                .to_string(),
+                        );
+                    }
+                    "endsWith" | "ends_with" | "ends-with" => {
+                        notes.push(
+                            "to test if a string ends with a suffix, use 'str.matches?', \
+                             e.g. 's str.matches?(\"suffix$\")'"
                                 .to_string(),
                         );
                     }
