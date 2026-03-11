@@ -1197,4 +1197,213 @@ pub mod tests {
             other => panic!("pinned object has wrong data: {:?}", other),
         }
     }
+
+    /// Test that evacuated objects' lines in the target block are correctly
+    /// marked, preventing the target block from being recycled by lazy sweep.
+    ///
+    /// Without the fix (evacuation_target not searched in mark_region_in_block),
+    /// the target block has zero line marks after finalise_evacuation(). When
+    /// flush_unswept() processes it, recycle() sees a large hole and moves the
+    /// block to `recycled`. Subsequent allocations overwrite the evacuated data.
+    ///
+    /// With the fix, all lines containing evacuated objects are marked, so
+    /// recycle() cannot find a hole spanning the occupied lines, and the data
+    /// is preserved.
+    #[test]
+    pub fn test_evacuation_target_lines_marked_after_collection() {
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
+        clock.switch(ThreadOccupation::Mutator);
+
+        // Allocate enough objects to fill several blocks, producing at least
+        // one `rest` block which can be used as an evacuation candidate.
+        let root_ptr = {
+            let view = MutatorHeapView::new(&heap);
+            let ids: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(512)
+            .collect();
+            let idarray = view.array(ids.as_slice());
+            view.let_(
+                idarray,
+                view.app(
+                    Ref::L(0),
+                    view.singleton(view.sym_ref(&mut pool, "root-data").unwrap()),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+            .as_ptr()
+        };
+
+        // First mark-in-place collection to establish rest blocks.
+        // Use a named Vec so scan_and_update updates our pointer if needed.
+        let mut roots = vec![root_ptr];
+        collect(&mut roots, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+
+        let rest_count = heap.rest_block_count();
+        if rest_count == 0 {
+            eprintln!(
+                "test_evacuation_target_lines_marked: no rest blocks after first GC, skipping"
+            );
+            return;
+        }
+
+        // Force evacuation of all rest blocks.  After this call, roots[0] is
+        // updated to the post-evacuation pointer by scan_and_update.
+        let candidates: Vec<usize> = (2..2 + rest_count).collect();
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+        // roots[0] is now the pointer into the evacuation target block.
+        let evacuated_ptr = roots[0];
+
+        // Flush unswept forces lazy sweep of all blocks including the evacuation
+        // target (target → rest → unswept via finalise_evacuation + defer_sweep).
+        // Without the fix: target has zero line marks → recycle() finds a huge hole
+        // → block goes to `recycled` → subsequent allocations overwrite it.
+        heap.flush_unswept();
+
+        // Allocate aggressively to fill any recycled space.  If the evacuation
+        // target was recycled, these allocations will overwrite the evacuated objects.
+        clock.switch(ThreadOccupation::Mutator);
+        {
+            let view = MutatorHeapView::new(&heap);
+            let fillers: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(99)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(1024)
+            .collect();
+            let _ = view.array(fillers.as_slice());
+        }
+
+        // Verify the evacuated object is still a valid LetRec node.
+        // If the evacuation target block was recycled and overwritten, reading
+        // evacuated_ptr gives garbage — a wrong HeapSyn variant or garbage fields.
+        let evacuated_obj: &HeapSyn = unsafe { &*evacuated_ptr.as_ptr() };
+        assert!(
+            matches!(evacuated_obj, HeapSyn::Let { .. }),
+            "evacuation target corruption: expected Let node, got {:?}",
+            evacuated_obj
+        );
+    }
+
+    /// Deterministic invariant test: after `collect_with_evacuation`, the block
+    /// that was used as the evacuation target must have at least one marked line.
+    ///
+    /// This test is designed to FAIL on the unfixed code and PASS on the fix.
+    ///
+    /// ## The invariant
+    ///
+    /// `mark_region_in_block` must search `evacuation_target` and
+    /// `filled_evacuation_blocks` so that lines containing evacuated objects
+    /// are marked.  Without this, the target block enters the block lifecycle
+    /// with zero marks and `lazy_sweep_next()` can recycle the entire block,
+    /// overwriting live evacuated data.
+    ///
+    /// ## Lifecycle of the evacuation target
+    ///
+    /// After `collect_with_evacuation` returns:
+    ///   1. `finalise_evacuation()` moves the target → `rest`
+    ///   2. `defer_sweep()` moves ALL of `rest` → `unswept`
+    ///
+    /// Therefore `rest` is always empty on return.  The former evacuation
+    /// target is in `unswept`.  The test captures `unswept` base addresses
+    /// before and after the evacuation GC pass to find the new block.
+    ///
+    /// ## Pass/fail criterion
+    ///
+    /// - **With the fix**: `mark_region_in_block` searched `evacuation_target`
+    ///   during marking, so the block's line map has >0 marked lines.
+    /// - **Without the fix**: `mark_region_in_block` silently skipped the
+    ///   evacuation target, so the block has 0 marked lines → the assertion
+    ///   fails.
+    #[test]
+    pub fn test_evacuation_target_block_has_marked_lines_after_collection() {
+        use std::collections::HashSet;
+
+        let mut heap = Heap::new();
+        let mut clock = Clock::default();
+        let mut pool = crate::eval::memory::symbol::SymbolPool::new();
+        clock.switch(ThreadOccupation::Mutator);
+
+        // Allocate enough objects to fill multiple blocks so we have rest
+        // candidates to evacuate.
+        let root_ptr = {
+            let view = MutatorHeapView::new(&heap);
+            let ids: Vec<LambdaForm> = repeat_with(|| -> LambdaForm {
+                LambdaForm::new(1, view.atom(Ref::L(0)).unwrap().as_ptr(), Smid::default())
+            })
+            .take(512)
+            .collect();
+            let idarray = view.array(ids.as_slice());
+            view.let_(
+                idarray,
+                view.app(
+                    Ref::L(0),
+                    view.singleton(view.sym_ref(&mut pool, "root").unwrap()),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+            .as_ptr()
+        };
+
+        // Mark-in-place collection to settle live objects into rest blocks.
+        let mut roots = vec![root_ptr];
+        collect(&mut roots, &mut heap, &mut clock, false);
+        heap.flush_unswept();
+
+        let rest_count = heap.rest_block_count();
+        if rest_count == 0 {
+            // Nothing to evacuate — test is inconclusive, skip rather than fail.
+            return;
+        }
+
+        // Capture unswept addresses BEFORE the evacuation pass so we can
+        // identify the newly-added evacuation target block afterwards.
+        let unswept_before: HashSet<usize> = heap.unswept_block_base_addresses();
+
+        // Force evacuation of all rest blocks (indices 2..2+rest_count is a
+        // conventional way to include every block in the evacuation candidate
+        // set — the exact indices do not matter as long as all rest blocks
+        // are selected).
+        let candidates: Vec<usize> = (2..2 + rest_count).collect();
+        collect_with_evacuation(&mut roots, &mut heap, &mut clock, &candidates, false);
+
+        // After collect_with_evacuation:
+        //   finalise_evacuation() → target to rest
+        //   defer_sweep()         → rest (including target) to unswept
+        // So rest is empty and the former target is in unswept.
+        let unswept_after: HashSet<usize> = heap.unswept_block_base_addresses();
+        let new_blocks: Vec<usize> = unswept_after.difference(&unswept_before).copied().collect();
+
+        // If no new block appeared in unswept, the evacuation target was never
+        // allocated (nothing was actually evacuated).  Skip rather than fail.
+        if new_blocks.is_empty() {
+            return;
+        }
+
+        // Each new block that appeared in unswept after the evacuation pass is
+        // either the active evacuation target or one of the
+        // `filled_evacuation_blocks`.  ALL of them must have at least one
+        // marked line; a zero-marked block would be fully recycled by
+        // `lazy_sweep_next()`, overwriting live evacuated data.
+        for &target_base in &new_blocks {
+            let marked = heap
+                .unswept_block_marked_lines(target_base)
+                .expect("former evacuation target block must be in unswept");
+
+            assert!(
+                marked > 0,
+                "evacuation target block {:#x} has 0 marked lines after collection: \
+                 mark_region_in_block did not search evacuation_target / \
+                 filled_evacuation_blocks.  Without the fix in heap.rs, \
+                 lazy_sweep_next() will recycle this block and overwrite the \
+                 live evacuated data (test119 / monad_utility crash on aarch64).",
+                target_base
+            );
+        }
+    }
 }

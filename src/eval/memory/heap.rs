@@ -724,6 +724,22 @@ impl HeapState {
                 return;
             }
         }
+
+        // Evacuation target blocks: objects evacuated into the current target
+        // block must have their lines marked so that lazy sweep does not treat
+        // the live content as free holes.
+        if let Some(target) = &mut self.evacuation_target {
+            if target.base_address() == base {
+                target.mark_line(ptr);
+                return;
+            }
+        }
+        for block in &mut self.filled_evacuation_blocks {
+            if block.base_address() == base {
+                block.mark_line(ptr);
+                return;
+            }
+        }
     }
 
     /// Find the block containing `ptr` by its base address and mark
@@ -760,6 +776,22 @@ impl HeapState {
         }
 
         for block in &mut self.recycled {
+            if block.base_address() == base {
+                block.mark_region(ptr, bytes);
+                return;
+            }
+        }
+
+        // Evacuation target blocks: objects evacuated into the current target
+        // block must have their lines marked so that lazy sweep does not treat
+        // the live content as free holes.
+        if let Some(target) = &mut self.evacuation_target {
+            if target.base_address() == base {
+                target.mark_region(ptr, bytes);
+                return;
+            }
+        }
+        for block in &mut self.filled_evacuation_blocks {
             if block.base_address() == base {
                 block.mark_region(ptr, bytes);
                 return;
@@ -2576,6 +2608,107 @@ impl Heap {
         while !heap_state.unswept.is_empty() {
             heap_state.lazy_sweep_next();
         }
+    }
+
+    /// Return the number of marked lines in the current evacuation target block.
+    ///
+    /// Returns `None` if there is no active evacuation target (no evacuating
+    /// collection has started, or finalise_evacuation has already been called).
+    ///
+    /// Used by tests to verify that `mark_region_in_block` correctly marks
+    /// lines in the evacuation target, preventing lazy sweep from recycling it.
+    #[cfg(test)]
+    pub fn evacuation_target_marked_lines(&self) -> Option<usize> {
+        // SAFETY: Read-only access during test, single-threaded.
+        let heap_state = unsafe { &*self.state.get() };
+        heap_state.evacuation_target.as_ref().map(|block| {
+            let (_holes, _free, marked) = block.stats();
+            marked
+        })
+    }
+
+    /// Return the base address of the current evacuation target block, if any.
+    ///
+    /// Used by tests to identify which block is the evacuation target so we
+    /// can find it in `rest` after `finalise_evacuation()` and inspect its
+    /// line marks there.
+    #[cfg(test)]
+    pub fn evacuation_target_base_address(&self) -> Option<usize> {
+        // SAFETY: Read-only access during test, single-threaded.
+        let heap_state = unsafe { &*self.state.get() };
+        heap_state
+            .evacuation_target
+            .as_ref()
+            .map(|b| b.base_address())
+    }
+
+    /// Return the marked line count for the block with the given base address
+    /// in the `rest` list.
+    ///
+    /// Returns `None` if no block with that base address is found in `rest`.
+    ///
+    /// Used by tests to verify that the evacuation target block, after being
+    /// moved to `rest` by `finalise_evacuation()`, has its lines marked.
+    #[cfg(test)]
+    pub fn rest_block_marked_lines(&self, base_address: usize) -> Option<usize> {
+        // SAFETY: Read-only access during test, single-threaded.
+        let heap_state = unsafe { &*self.state.get() };
+        for block in &heap_state.rest {
+            if block.base_address() == base_address {
+                let (_holes, _free, marked) = block.stats();
+                return Some(marked);
+            }
+        }
+        None
+    }
+
+    /// Return the set of base addresses of all blocks currently in `rest`.
+    ///
+    /// Used by tests to find the evacuation target block after
+    /// `finalise_evacuation()` moves it into `rest`.
+    #[cfg(test)]
+    pub fn rest_block_base_addresses(&self) -> std::collections::HashSet<usize> {
+        // SAFETY: Read-only access during test, single-threaded.
+        let heap_state = unsafe { &*self.state.get() };
+        heap_state.rest.iter().map(|b| b.base_address()).collect()
+    }
+
+    /// Return the set of base addresses of all blocks currently in `unswept`.
+    ///
+    /// After `collect_with_evacuation`, `defer_sweep()` moves all `rest` blocks
+    /// (including the former evacuation target) into `unswept`.  This helper
+    /// lets tests inspect the former target block before `lazy_sweep_next()`
+    /// processes it.
+    #[cfg(test)]
+    pub fn unswept_block_base_addresses(&self) -> std::collections::HashSet<usize> {
+        // SAFETY: Read-only access during test, single-threaded.
+        let heap_state = unsafe { &*self.state.get() };
+        heap_state
+            .unswept
+            .iter()
+            .map(|b| b.base_address())
+            .collect()
+    }
+
+    /// Return the marked line count for the block with the given base address
+    /// in the `unswept` list.
+    ///
+    /// Returns `None` if no block with that base address is found in `unswept`.
+    ///
+    /// Used by tests to verify that the evacuation target block, after being
+    /// moved to `unswept` by `defer_sweep()`, has its lines marked so that
+    /// `lazy_sweep_next()` does not recycle the entire block.
+    #[cfg(test)]
+    pub fn unswept_block_marked_lines(&self, base_address: usize) -> Option<usize> {
+        // SAFETY: Read-only access during test, single-threaded.
+        let heap_state = unsafe { &*self.state.get() };
+        for block in &heap_state.unswept {
+            if block.base_address() == base_address {
+                let (_holes, _free, marked) = block.stats();
+                return Some(marked);
+            }
+        }
+        None
     }
 }
 
