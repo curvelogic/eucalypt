@@ -8,10 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Exact clone of Release MacOS from build-rust.yaml.
-  # Runs the full harness as a single process to reproduce the crash.
-  release-macos-exact:
-    name: Release MacOS exact clone (${{ matrix.attempt }})
+  # Exact clone of Release MacOS — no env vars — baseline / repro.
+  release-macos-baseline:
+    name: Release MacOS no-env (attempt ${{ matrix.attempt }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -43,6 +42,46 @@ jobs:
           strip target/release/eu
           mv target/release/eu target/release/eu_darwin
       - name: Run final test with release binary (full suite, single process)
+        run: |
+          target/release/eu_darwin version
+          target/release/eu_darwin test --allow-io tests/harness
+
+  # Same as above but with RUST_MIN_STACK=64MiB — test if this is a reliable fix.
+  release-macos-rust-min-stack:
+    name: Release MacOS RUST_MIN_STACK=64MiB (attempt ${{ matrix.attempt }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and install temporary eu
+        run: cargo install --path .
+      - name: Prepare build files for new version
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+          eu build.eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
+      - name: Build release
+        run: cargo build --all --release
+      - run: |
+          strip target/release/eu
+          mv target/release/eu target/release/eu_darwin
+      - name: Run final test with release binary (RUST_MIN_STACK=64MiB)
+        env:
+          RUST_MIN_STACK: "67108864"
         run: |
           target/release/eu_darwin version
           target/release/eu_darwin test --allow-io tests/harness
