@@ -390,6 +390,124 @@ impl CompileError {
                                 .to_string(),
                         );
                     }
+                    // String method names from other languages
+                    "upper" | "toUpperCase" | "to_uppercase" | "upcase" => {
+                        notes.push(
+                            "eucalypt uses 'str.to-upper', e.g. 'x str.to-upper'".to_string(),
+                        );
+                    }
+                    "lower" | "toLowerCase" | "to_lowercase" | "downcase" => {
+                        notes.push(
+                            "eucalypt uses 'str.to-lower', e.g. 'x str.to-lower'".to_string(),
+                        );
+                    }
+                    "trim" | "strip" | "lstrip" | "rstrip" | "trimStart" | "trimEnd" => {
+                        notes.push(
+                            "eucalypt has no trim/strip function; to remove surrounding \
+                             whitespace use a regex: \
+                             'text str.extract(\"^\\\\s*(.*?)\\\\s*$\")'"
+                                .to_string(),
+                        );
+                    }
+                    "replace" | "replaceAll" | "replace_all" | "gsub" | "sub" => {
+                        notes.push(
+                            "eucalypt uses 'str.replace' for regex replacement, e.g. \
+                             'x str.replace(\"old\", \"new\")'; \
+                             for literal replacement, escape dots: 'str.replace(\"[.]\")'"
+                                .to_string(),
+                        );
+                    }
+                    "startsWith" | "starts_with" => {
+                        notes.push(
+                            "eucalypt uses 'str.starts-with?', e.g. \
+                             'text str.starts-with?(\"prefix\")'"
+                                .to_string(),
+                        );
+                    }
+                    "endsWith" | "ends_with" => {
+                        notes.push(
+                            "eucalypt uses 'str.ends-with?', e.g. \
+                             'text str.ends-with?(\"suffix\")'"
+                                .to_string(),
+                        );
+                    }
+                    // Type conversion functions
+                    "toString" | "to_string" | "toStr" | "to_str" => {
+                        notes.push(
+                            "eucalypt uses 'str.of' to convert values to strings, e.g. \
+                             'str.of(42)' or string interpolation '\"The answer is {x}\"'"
+                                .to_string(),
+                        );
+                    }
+                    "toInt" | "to_int" | "int" => {
+                        notes.push(
+                            "eucalypt uses 'num' to convert strings to numbers, e.g. \
+                             '\"42\" num'; for floor division see '/' (floor-divide)"
+                                .to_string(),
+                        );
+                    }
+                    "toFloat" | "to_float" | "float" => {
+                        notes.push(
+                            "eucalypt uses 'num' to convert strings to numbers, e.g. \
+                             '\"3.14\" num'; number literals like '3.14' are already \
+                             floating-point"
+                                .to_string(),
+                        );
+                    }
+                    "bool" | "toBool" | "to_bool" => {
+                        notes.push(
+                            "eucalypt uses 'true' and 'false' directly; to convert a value \
+                             to bool, compare it: 'x != 0', 'x nil?', etc."
+                                .to_string(),
+                        );
+                    }
+                    "string" | "String" => {
+                        notes.push(
+                            "eucalypt uses 'str.of' to convert a value to a string, e.g. \
+                             'str.of(42)'; 'str' is a namespace of string functions, not a \
+                             type constructor"
+                                .to_string(),
+                        );
+                    }
+                    // Math functions
+                    "ceil" => {
+                        notes.push(
+                            "eucalypt uses 'ceiling' (not 'ceil'), e.g. '3.7 ceiling' \
+                             gives 4"
+                                .to_string(),
+                        );
+                    }
+                    "round" => {
+                        notes.push(
+                            "eucalypt has no 'round' function; use 'floor(x + 0.5)' to \
+                             round to nearest integer, or 'floor' and 'ceiling' separately"
+                                .to_string(),
+                        );
+                    }
+                    "sqrt" | "Math.sqrt" => {
+                        notes.push(
+                            "eucalypt has no 'sqrt' function; use 'x ^ 0.5' (the power \
+                             operator) to compute a square root, e.g. '4.0 ^ 0.5' gives 2.0"
+                                .to_string(),
+                        );
+                    }
+                    // Type-testing / typeof
+                    "typeof" | "type" | "typeOf" | "type_of" | "getType" | "get_type" => {
+                        notes.push(
+                            "eucalypt has no 'typeof' function; use type predicates like \
+                             'num?', 'str?', 'sym?', 'nil?', 'block?' to test the type of \
+                             a value"
+                                .to_string(),
+                        );
+                    }
+                    "isinstance" | "is_instance" | "isInstance" | "instanceof" => {
+                        notes.push(
+                            "eucalypt has no 'isinstance'; use type predicates like \
+                             'num?', 'str?', 'sym?', 'nil?', 'block?' to test the type of \
+                             a value"
+                                .to_string(),
+                        );
+                    }
                     _ => {}
                 }
                 diag.with_notes(notes)
