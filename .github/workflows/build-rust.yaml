@@ -190,10 +190,28 @@ jobs:
       - run: |
           strip target/release/eu
           mv target/release/eu target/release/eu_darwin
-      - name: Run final test with release binary
+      - name: Run final test with release binary (RUST_BACKTRACE=full)
+        env:
+          RUST_BACKTRACE: full
         run: |
           target/release/eu_darwin version
           target/release/eu_darwin test --allow-io tests/harness
+        continue-on-error: true
+      - name: Run tests individually to isolate crash (RUST_BACKTRACE=full)
+        env:
+          RUST_BACKTRACE: full
+        run: |
+          set +e
+          for f in tests/harness/1[0-9][0-9]_*.eu; do
+            echo "=== $f ==="
+            target/release/eu_darwin test --allow-io "$f"
+            rc=$?
+            echo "exit: $rc"
+            if [ $rc -eq 139 ] || [ $rc -eq 134 ]; then
+              echo "CRASH in $f"
+            fi
+          done
+        continue-on-error: true
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:

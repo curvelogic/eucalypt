@@ -6,11 +6,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Experiment L: many repeats of full harness to catch low-probability crash.
-  # Previous 3-attempt runs all passed. Crash probability may be low per run.
-  # Run 10x in a single job to increase detection probability.
-  macos-repeat-10:
-    name: macOS harness x10 repeats
+  # Reproduce exact final-test crash: eu binary running tests sequentially.
+  # Crash happens after test 115 (parse_as_data_only), around tests 116-120.
+  macos-eu-binary-test:
+    name: macOS eu binary sequential test (RUST_BACKTRACE=full)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,43 +22,28 @@ jobs:
           restore-keys: |
             macos-diag-registry-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build
-        run: cargo build --release --test harness_test
-      - name: Attempt 1
-        run: cargo test --release --test harness_test
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run sequential eu test (attempt 1)
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness
         continue-on-error: true
-      - name: Attempt 2
-        run: cargo test --release --test harness_test
+      - name: Run sequential eu test (attempt 2)
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness
         continue-on-error: true
-      - name: Attempt 3
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Attempt 4
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Attempt 5
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Attempt 6
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Attempt 7
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Attempt 8
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Attempt 9
-        run: cargo test --release --test harness_test
-        continue-on-error: true
-      - name: Attempt 10
-        run: cargo test --release --test harness_test
+      - name: Run sequential eu test (attempt 3)
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness
         continue-on-error: true
 
-  # Experiment M: exact Release MacOS clone x10.
-  # The crash appears in the Release MacOS job; replicate that context.
-  macos-release-clone-repeat:
-    name: macOS Release MacOS clone x10
+  # Isolate: run IO-range tests individually to find the crashing test.
+  # Tests 104-120 run one at a time with RUST_BACKTRACE=full.
+  macos-eu-isolate-io-tests:
+    name: macOS eu binary — isolate IO test crash
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,42 +56,126 @@ jobs:
           restore-keys: |
             macos-diag-registry-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build and install temporary eu (as Release MacOS does)
-        run: cargo install --path .
-      - name: Regenerate build-meta.yaml (as Release MacOS does)
-        run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
-          eu build.eu -t build-meta > build-meta.yaml.new
-          mv -f build-meta.yaml.new build-meta.yaml
-          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Attempt 1
-        run: cargo test --release
+      - name: Build release binary
+        run: cargo build --release
+      - name: Test 104 io_basic
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/104_io_basic.eu
         continue-on-error: true
-      - name: Attempt 2
-        run: cargo test --release
+      - name: Test 105 io_chain
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/105_io_chain.eu
         continue-on-error: true
-      - name: Attempt 3
-        run: cargo test --release
+      - name: Test 106 io_block_chain
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/106_io_block_chain.eu
         continue-on-error: true
-      - name: Attempt 4
-        run: cargo test --release
+      - name: Test 107 parse_as_json
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/107_parse_as_json.eu
         continue-on-error: true
-      - name: Attempt 5
-        run: cargo test --release
+      - name: Test 108 parse_as_yaml
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/108_parse_as_yaml.eu
         continue-on-error: true
-      - name: Attempt 6
-        run: cargo test --release
+      - name: Test 109 parse_as_toml
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/109_parse_as_toml.eu
         continue-on-error: true
-      - name: Attempt 7
-        run: cargo test --release
+      - name: Test 110 parse_as_csv
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/110_parse_as_csv.eu
         continue-on-error: true
-      - name: Attempt 8
-        run: cargo test --release
+      - name: Test 111 parse_as_xml
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/111_parse_as_xml.eu
         continue-on-error: true
-      - name: Attempt 9
-        run: cargo test --release
+      - name: Test 112 parse_as_edn
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/112_parse_as_edn.eu
         continue-on-error: true
-      - name: Attempt 10
-        run: cargo test --release
+      - name: Test 113 parse_as_jsonl
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/113_parse_as_jsonl.eu
+        continue-on-error: true
+      - name: Test 114 parse_as_roundtrip
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/114_parse_as_roundtrip.eu
+        continue-on-error: true
+      - name: Test 115 parse_as_data_only
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/115_parse_as_data_only.eu
+        continue-on-error: true
+      - name: Test 116 io_shell_with
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/116_io_shell_with.eu
+        continue-on-error: true
+      - name: Test 117 io_exec
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/117_io_exec.eu
+        continue-on-error: true
+      - name: Test 118 io_exec_with
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/118_io_exec_with.eu
+        continue-on-error: true
+      - name: Test 119 monad_utility
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/119_monad_utility.eu
+        continue-on-error: true
+      - name: Test 120 random_monad
+        env:
+          RUST_BACKTRACE: full
+        run: target/release/eu test --allow-io tests/harness/120_random_monad.eu
+        continue-on-error: true
+
+  # EU_GC_STRESS=1 on the eu binary — does forcing evacuation change behaviour?
+  macos-eu-gc-stress:
+    name: macOS eu binary EU_GC_STRESS=1
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-diag-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-diag-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Run with EU_GC_STRESS=1 (attempt 1)
+        env:
+          RUST_BACKTRACE: full
+          EU_GC_STRESS: "1"
+        run: target/release/eu test --allow-io tests/harness
+        continue-on-error: true
+      - name: Run with EU_GC_STRESS=1 (attempt 2)
+        env:
+          RUST_BACKTRACE: full
+          EU_GC_STRESS: "1"
+        run: target/release/eu test --allow-io tests/harness
+        continue-on-error: true
+      - name: Run with EU_GC_STRESS=1 (attempt 3)
+        env:
+          RUST_BACKTRACE: full
+          EU_GC_STRESS: "1"
+        run: target/release/eu test --allow-io tests/harness
         continue-on-error: true
