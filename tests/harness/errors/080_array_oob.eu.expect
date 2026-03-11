@@ -1,2 +1,2 @@
 exit: 1
-stderr: "array index out of bounds"
+stderr: "arr.get: coordinates .* are out of bounds for array with shape"

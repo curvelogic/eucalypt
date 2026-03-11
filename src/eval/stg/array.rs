@@ -158,11 +158,21 @@ impl StgIntrinsic for ArrayFromFlat {
     ) -> Result<(), ExecutionError> {
         let shape = num_list_to_usize_vec(machine, view, &args[0])?;
         let values = num_list_to_f64_vec(machine, view, &args[1])?;
+        let expected_len: usize = shape.iter().product();
+        let actual_len = values.len();
         match HeapNdArray::from_flat(&shape, values) {
             Some(arr) => machine_return_ndarray(machine, view, arr),
-            None => Err(ExecutionError::Panic(
-                "array shape does not match data length".to_string(),
-            )),
+            None => {
+                let shape_str = shape
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(ExecutionError::Panic(format!(
+                    "arr.from-flat: shape [{shape_str}] requires {expected_len} element(s) \
+                     but {actual_len} value(s) were provided"
+                )))
+            }
         }
     }
 }
@@ -223,9 +233,22 @@ impl StgIntrinsic for ArrayGet {
                 view,
                 Number::from_f64(val).unwrap_or_else(|| Number::from(0)),
             ),
-            None => Err(ExecutionError::Panic(
-                "array index out of bounds".to_string(),
-            )),
+            None => {
+                let coords_str = coords
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let shape_str = arr
+                    .shape()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(ExecutionError::Panic(format!(
+                    "arr.get: coordinates [{coords_str}] are out of bounds for array with shape [{shape_str}]"
+                )))
+            }
         }
     }
 }
@@ -284,9 +307,22 @@ impl StgIntrinsic for ArraySet {
         let arr = ndarray_arg(machine, view, &args[2])?;
         match arr.with_set(&coords, value) {
             Some(new_arr) => machine_return_ndarray(machine, view, new_arr),
-            None => Err(ExecutionError::Panic(
-                "array index out of bounds".to_string(),
-            )),
+            None => {
+                let coords_str = coords
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let shape_str = arr
+                    .shape()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(ExecutionError::Panic(format!(
+                    "arr.set: coordinates [{coords_str}] are out of bounds for array with shape [{shape_str}]"
+                )))
+            }
         }
     }
 }
