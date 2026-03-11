@@ -2,7 +2,9 @@ name: macOS SIGSEGV diagnostic
 
 on:
   push:
-    branches: ['**']
+    branches:
+      - 'fix/furnace-*'
+      - 'test/verify-*'
   workflow_dispatch:
 
 jobs:
