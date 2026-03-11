@@ -32,6 +32,19 @@ fn is_zero(n: &Number) -> bool {
     n.as_i64() == Some(0) || n.as_u64() == Some(0) || n.as_f64() == Some(0.0)
 }
 
+/// Return a human-readable type label for a native value, for use in error messages.
+fn native_type_label(n: &Native) -> &'static str {
+    match n {
+        Native::Num(_) => "number",
+        Native::Str(_) => "string",
+        Native::Sym(_) => "symbol",
+        Native::Zdt(_) => "datetime",
+        Native::Index(_) => "index",
+        Native::Set(_) => "set",
+        Native::NdArray(_) => "array",
+    }
+}
+
 /// Floor division for signed integers (rounds toward negative infinity).
 ///
 /// Differs from Rust's truncating `/` for negative dividends:
@@ -443,9 +456,12 @@ fn ordered_cmp(
             Ok(pred(ls.cmp(rs)))
         }
         (Native::Zdt(ref dx), Native::Zdt(ref dy)) => Ok(pred(dx.cmp(dy))),
-        _ => Err(ExecutionError::Panic(format!(
-            "cannot compare values with {name}: operands must be the same type \
-             (both numbers, strings, symbols, or datetimes)"
+        (ref lhs, ref rhs) => Err(ExecutionError::Panic(format!(
+            "cannot compare {} with {} using {name}: \
+             comparison requires both operands to have the same type \
+             (number, string, symbol, or datetime)",
+            native_type_label(lhs),
+            native_type_label(rhs),
         ))),
     }
 }
