@@ -99,12 +99,13 @@ jobs:
           eu build.eu -t build-meta > build-meta.yaml.new
           mv -f build-meta.yaml.new build-meta.yaml
           echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Build release (no strip, for backtrace)
+      - name: Build release
         run: cargo build --all --release
-      - run: |
-          cp target/release/eu target/release/eu_darwin
-      - name: Run final test with release binary (RUST_BACKTRACE=full)
+      - name: Strip with -x (safe on macOS) and rename
+        run: |
+          strip -x target/release/eu
+          mv target/release/eu target/release/eu_darwin
+      - name: Run final test with release binary
         run: |
           target/release/eu_darwin version
-          RUST_BACKTRACE=full target/release/eu_darwin test --allow-io tests/harness
-        continue-on-error: true
+          target/release/eu_darwin test --allow-io tests/harness
