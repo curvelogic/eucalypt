@@ -73,62 +73,14 @@ jobs:
       - name: Clippy for WASM
         run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings
 
-  release-candidate-linux:
-    needs: [lint, test, audit, wasm]
-    name: Release Linux x86_64
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: build and install temporary eu
-        run: cargo install --path .
-      - name: prepare build files for new version
-        run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
-
-          eu build.eu -t build-meta > build-meta.yaml.new
-          mv -f build-meta.yaml.new build-meta.yaml
-
-          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Build release
-        run: cargo build --all --release
-      - run: |
-          strip target/release/eu
-          mv target/release/eu target/release/eu_amd64
-      - name: run final test with release binary
-        run: |
-          target/release/eu_amd64 version
-          target/release/eu_amd64 test --allow-io tests/harness
-
   release-candidate-macos:
     needs: [lint, test, audit, wasm]
-    name: Release MacOS (${{ matrix.label }})
+    name: Release MacOS (attempt ${{ matrix.attempt }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - label: "baseline 1"
-            env_prefix: ""
-          - label: "baseline 2"
-            env_prefix: ""
-          - label: "baseline 3"
-            env_prefix: ""
-          - label: "GC_STRESS 1"
-            env_prefix: "EU_GC_STRESS=1"
-          - label: "GC_STRESS 2"
-            env_prefix: "EU_GC_STRESS=1"
+        attempt: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -159,42 +111,4 @@ jobs:
       - name: Run final test with release binary
         run: |
           target/release/eu_darwin version
-          ${{ matrix.env_prefix }} target/release/eu_darwin test --allow-io tests/harness
-
-  release-candidate-linux-arm:
-    needs: [lint, test, audit, wasm]
-    name: Release Linux aarch64
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-arm-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-arm-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build and install temporary eu
-        run: cargo install --path .
-      - name: Prepare build files for new version
-        run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
-
-          eu build.eu -t build-meta > build-meta.yaml.new
-          mv -f build-meta.yaml.new build-meta.yaml
-
-          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Build release
-        run: cargo build --all --release
-      - run: |
-          strip target/release/eu
-          mv target/release/eu target/release/eu_aarch64
-      - name: Run final test with release binary
-        run: |
-          target/release/eu_aarch64 version
-          target/release/eu_aarch64 test --allow-io tests/harness
+          target/release/eu_darwin test --allow-io tests/harness
