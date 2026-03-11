@@ -491,10 +491,8 @@ impl StgIntrinsic for RenderToString {
 
         // Capture output into a Vec<u8> buffer
         let mut buffer: Vec<u8> = Vec::new();
-        let mut string_emitter =
-            export::create_emitter(&format_name, &mut buffer).ok_or_else(|| {
-                ExecutionError::Panic(format!("unknown render format: {format_name}"))
-            })?;
+        let mut string_emitter = export::create_emitter(&format_name, &mut buffer)
+            .ok_or_else(|| ExecutionError::UnknownFormat(format_name.clone()))?;
 
         // Emit stream/document wrapper
         string_emitter.stream_start();
