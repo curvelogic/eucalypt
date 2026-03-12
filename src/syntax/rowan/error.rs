@@ -120,13 +120,7 @@ impl fmt::Display for ParseError {
                 write!(f, "missing ':' after declaration head")
             }
             ParseError::MalformedDeclarationHead { .. } => {
-                write!(
-                    f,
-                    "malformed declaration head\n  \
-                     help: block keys must be bare identifiers, e.g. '{{ name: value }}'\n  \
-                     help: string keys (\"key\": value) and symbol keys (:key: value) are not \
-                     valid — use 'name: value' without quotes"
-                )
+                write!(f, "malformed declaration head")
             }
             ParseError::InvalidFormalParameter { .. } => {
                 write!(f, "invalid formal parameter in function definition")
