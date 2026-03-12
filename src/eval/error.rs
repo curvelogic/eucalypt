@@ -639,6 +639,10 @@ pub enum ExecutionError {
     IoTimeout(Smid, u64),
     #[error("io.shell-with: command execution error: {1}")]
     IoCommandError(Smid, String),
+    #[error("str.base64-decode: {1}")]
+    InvalidBase64(Smid, String),
+    #[error("str.base64-decode: decoded bytes are not valid UTF-8: {1}")]
+    InvalidBase64Utf8(Smid, String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
@@ -722,6 +726,8 @@ impl HasSmid for ExecutionError {
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
+            ExecutionError::InvalidBase64(s, _) => *s,
+            ExecutionError::InvalidBase64Utf8(s, _) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,
             ExecutionError::BitshiftRangeError(s, _) => *s,
             ExecutionError::UnknownRenderFormat(s, _) => *s,
