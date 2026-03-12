@@ -37,18 +37,51 @@ pub fn io_opts(filename: &str) -> EucalyptOptions {
         .build()
 }
 
+/// Stack size for test threads: 64 MiB.
+///
+/// Eucalypt's STG machine uses deep Rust call stacks when evaluating
+/// complex expressions (monadic computations, large recursive programs).
+/// When the harness runs many tests in parallel, each test thread must
+/// have enough stack to avoid SIGSEGV on stack overflow — particularly
+/// on CI runners with restricted default thread stacks.  Spawning each
+/// test on a dedicated thread with a known-large stack is more targeted
+/// than setting `RUST_MIN_STACK` globally (which inflates every thread
+/// in the process, including test-framework worker threads).
+const TEST_STACK_SIZE: usize = 64 * 1024 * 1024;
+
 /// Parse and desugar the test files and analyse for expectations,
 /// then run and assert success.
+///
+/// Spawns a dedicated thread with a 64 MiB stack so that deeply
+/// recursive STG evaluations do not overflow the default stack.
 fn run_test(opt: &EucalyptOptions) {
-    let exit_code = tester::test(opt).unwrap();
-    assert_eq!(exit_code, 0);
+    let opt = opt.clone();
+    std::thread::Builder::new()
+        .stack_size(TEST_STACK_SIZE)
+        .spawn(move || {
+            let exit_code = tester::test(&opt).unwrap();
+            assert_eq!(exit_code, 0);
+        })
+        .expect("failed to spawn test thread")
+        .join()
+        .expect("test thread panicked");
 }
 
 /// Run an error test — validates against `.expect` sidecar if present,
 /// otherwise passes as unvalidated.
+///
+/// Spawns a dedicated thread with a 64 MiB stack (see `run_test`).
 fn run_error_test(opt: &EucalyptOptions) {
-    let exit_code = tester::error_test(opt).unwrap();
-    assert_eq!(exit_code, 0);
+    let opt = opt.clone();
+    std::thread::Builder::new()
+        .stack_size(TEST_STACK_SIZE)
+        .spawn(move || {
+            let exit_code = tester::error_test(&opt).unwrap();
+            assert_eq!(exit_code, 0);
+        })
+        .expect("failed to spawn test thread")
+        .join()
+        .expect("test thread panicked");
 }
 
 #[test]
