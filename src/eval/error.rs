@@ -641,6 +641,16 @@ pub enum ExecutionError {
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
     VersionRequirementFailed(Smid, String, String),
+    #[error(
+        "IO operations are not permitted; use the --allow-io (-I) flag or io.shell-with to enable"
+    )]
+    IoNotAllowed,
+    #[error("io.fail: {0}")]
+    IoFail(String),
+    #[error("io.shell-with: command timed out after {0} seconds")]
+    IoTimeout(u64),
+    #[error("io.shell-with: command execution error: {0}")]
+    IoCommandError(String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
