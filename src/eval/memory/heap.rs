@@ -2539,24 +2539,47 @@ impl Heap {
         // SAFETY: Mutable access to heap state during GC mark phase.
         let heap_state = unsafe { &mut *self.state.get() };
 
-        let bytes = header.length() as usize;
-        heap_state.mark_region_in_block(ptr, bytes);
+        let header_size = size_of::<AllocHeader>();
+        let payload_bytes = header.length() as usize;
+        let total_size = header_size + payload_bytes;
+
+        // Mark from the header start, covering header + payload, so that
+        // all lines spanned by the full allocation are protected from
+        // lazy sweep.
+        // SAFETY: header is at ptr - size_of::<AllocHeader>(), always
+        // within the same block as ptr.
+        let header_ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr().sub(header_size)) };
+        heap_state.mark_region_in_block(header_ptr, total_size);
     }
 
-    /// Mark the line in the appropriate block map.
+    /// Mark all lines covering the full allocation (header + object).
     ///
-    /// Looks up the block by base address for O(1) dispatch.
+    /// An allocation consists of an AllocHeader prefix followed by the object.
+    /// Both parts must be protected from lazy sweep. If the allocation
+    /// straddles a 128-byte line boundary, we must mark all lines it
+    /// touches — otherwise lazy sweep can reclaim the unmarked portion,
+    /// corrupting live object fields (use-after-free).
+    ///
+    /// Previous implementation only marked the single line containing the
+    /// object pointer, relying on Immix "conservative marking" to protect
+    /// straddling objects. But conservative marking only protects the upper
+    /// boundary of holes (objects extending down from a marked line above);
+    /// it does NOT protect the lower boundary (objects extending up from a
+    /// marked line below into the first line of a hole).
     pub fn mark_line<T>(&mut self, ptr: NonNull<T>) {
         // SAFETY: Mutable access to heap state during GC mark phase.
         // Single-threaded, stop-the-world collection ensures exclusive access.
         let heap_state = unsafe { &mut *self.state.get() };
 
-        let size = size_of::<T>();
-        if SizeClass::for_size(size) == SizeClass::Medium {
-            heap_state.mark_region_in_block(ptr.cast(), size);
-        } else {
-            heap_state.mark_line_in_block(ptr);
-        }
+        let header_size = size_of::<AllocHeader>();
+        let total_size = header_size + size_of::<T>();
+
+        // SAFETY: header_ptr is always within the same block as ptr
+        // because allocations never span blocks. The header is written
+        // at ptr - size_of::<AllocHeader>() during allocation.
+        let header_ptr =
+            unsafe { NonNull::new_unchecked((ptr.as_ptr() as *mut u8).sub(header_size)) };
+        heap_state.mark_region_in_block(header_ptr, total_size);
     }
 
     /// Unmark the line in the appropriate block map
