@@ -123,7 +123,7 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: build and install temporary eu
-        run: cargo install --path .
+        run: cargo install --path . --target-dir /tmp/eu-install
       - name: prepare build files for new version
         run: |
           export OSTYPE=$(uname)
@@ -197,7 +197,7 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Build and install temporary eu
-        run: cargo install --path .
+        run: cargo install --path . --target-dir /tmp/eu-install
       - name: Prepare build files for new version
         run: |
           export OSTYPE=$(uname)
@@ -243,7 +243,7 @@ jobs:
             ${{ runner.os }}-arm-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Build and install temporary eu
-        run: cargo install --path .
+        run: cargo install --path . --target-dir /tmp/eu-install
       - name: Prepare build files for new version
         run: |
           export OSTYPE=$(uname)
