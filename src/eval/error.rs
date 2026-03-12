@@ -69,6 +69,15 @@ fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<
              functions like 'render-as', 'has', 'lookup-or' take symbol arguments"
                 .to_string(),
         ],
+        (Number, Bool) => vec![
+            "a boolean (true/false) was found where a number was expected".to_string(),
+            "for logical AND use '&&' or '∧'; for logical OR use '||' or '∨': \
+             e.g. '(x > 0) && (y > 0)'"
+                .to_string(),
+            "'&' and '|' are bitwise integer operators; \
+             '^' is the power operator (2 ^ 10 = 1024), not XOR"
+                .to_string(),
+        ],
         _ => vec![],
     }
 }
@@ -81,12 +90,24 @@ fn data_tag_mismatch_notes(actual: u8, expected: &[u8]) -> Vec<String> {
     let is_number = actual == DataConstructor::BoxedNumber.tag();
     let is_block = actual == DataConstructor::Block.tag();
     let is_symbol = actual == DataConstructor::BoxedSymbol.tag();
+    let is_bool =
+        actual == DataConstructor::BoolTrue.tag() || actual == DataConstructor::BoolFalse.tag();
     let expects_block = expected.contains(&DataConstructor::Block.tag());
     let expects_number = expected.contains(&DataConstructor::BoxedNumber.tag());
     let expects_string = expected.contains(&DataConstructor::BoxedString.tag());
     let expects_symbol = expected.contains(&DataConstructor::BoxedSymbol.tag());
 
-    if is_list && expects_block {
+    if is_bool && expects_number {
+        vec![
+            "a boolean (true/false) was found where a number was expected".to_string(),
+            "for logical AND use '&&' or '∧'; for logical OR use '||' or '∨': \
+             e.g. '(x > 0) && (y > 0)'"
+                .to_string(),
+            "'&' and '|' are bitwise integer operators; \
+             '^' is the power operator (2 ^ 10 = 1024), not XOR"
+                .to_string(),
+        ]
+    } else if is_list && expects_block {
         vec![
             "the '.' operator performs key lookup on blocks, not lists".to_string(),
             "for lists, use pipeline functions: 'xs count' (length), 'xs head' (first element), \
