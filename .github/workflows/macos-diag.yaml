@@ -106,6 +106,43 @@ jobs:
           name: sequential-output
           path: sequential-output.txt
 
+  gdb-test119:
+    name: GDB backtrace for test 119
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install GDB
+        run: sudo apt-get install -y gdb
+      - name: Build test binary (debug)
+        run: cargo test --test harness_test --no-run 2>&1
+      - name: Find test binary
+        run: |
+          TEST_BIN=$(find target/debug/deps -name 'harness_test-*' -executable -not -name '*.d' | head -1)
+          echo "TEST_BIN=$TEST_BIN" >> $GITHUB_ENV
+          echo "Found: $TEST_BIN"
+      - name: Run test 119 under GDB
+        run: |
+          # Enable core dumps
+          ulimit -c unlimited
+          # Run under GDB with batch mode — captures backtrace on crash
+          gdb -batch \
+            -ex 'set pagination off' \
+            -ex 'set confirm off' \
+            -ex 'handle SIGSEGV stop print' \
+            -ex 'run test_harness_119 --test-threads=1 --nocapture' \
+            -ex 'bt full' \
+            -ex 'info registers' \
+            -ex 'quit' \
+            --args "$TEST_BIN" test_harness_119 --test-threads=1 --nocapture \
+            2>&1 | tee gdb-output.txt
+      - name: Upload GDB output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdb-output
+          path: gdb-output.txt
+
   threads-4-stable:
     name: 4-thread harness (stable, no ASan)
     runs-on: ubuntu-latest
