@@ -9,14 +9,13 @@ on:
 
 jobs:
   # Experiment A: exact Release MacOS clone (with cargo install) — baseline repro.
-  # Source has main+io_run 64MiB threads. No env vars.
   experiment-a-with-install:
     name: "A: with cargo install, no env (attempt ${{ matrix.attempt }})"
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        attempt: [1, 2, 3]
+        attempt: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -47,14 +46,15 @@ jobs:
           target/release/eu_darwin version
           target/release/eu_darwin test --allow-io tests/harness
 
-  # Experiment B: skip cargo install entirely — does the crash go away?
-  experiment-b-no-install:
-    name: "B: NO cargo install, no env (attempt ${{ matrix.attempt }})"
+  # Experiment D: cargo install into separate target dir — does isolated install fix it?
+  # Hypothesis: cargo install contaminates target/release/ causing mixed ABI binary.
+  experiment-d-isolated-install:
+    name: "D: isolated cargo install, no env (attempt ${{ matrix.attempt }})"
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        attempt: [1, 2, 3]
+        attempt: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -66,7 +66,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build release (no cargo install)
+      - name: Build and install temporary eu (isolated target dir)
+        run: cargo install --path . --target-dir /tmp/eu-install-tmp
+      - name: Prepare build files for new version
+        run: |
+          export OSTYPE=$(uname)
+          export HOSTTYPE=$(uname -m)
+          eu build.eu -t build-meta > build-meta.yaml.new
+          mv -f build-meta.yaml.new build-meta.yaml
+          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
+      - name: Build release (clean target dir)
         run: cargo build --all --release
       - run: |
           strip target/release/eu
@@ -75,51 +84,3 @@ jobs:
         run: |
           target/release/eu_darwin version
           target/release/eu_darwin test --allow-io tests/harness
-
-  # Experiment C: with cargo install, RUST_BACKTRACE=1 — get backtrace on crash.
-  # Unstripped to preserve symbols. continue-on-error so we see the crash output.
-  experiment-c-backtrace:
-    name: "C: with cargo install, RUST_BACKTRACE=1 (attempt ${{ matrix.attempt }})"
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        attempt: [1, 2, 3]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build and install temporary eu
-        run: cargo install --path .
-      - name: Prepare build files for new version
-        run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
-          eu build.eu -t build-meta > build-meta.yaml.new
-          mv -f build-meta.yaml.new build-meta.yaml
-          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Build release (unstripped for symbols)
-        run: cargo build --all --release
-      - run: mv target/release/eu target/release/eu_darwin
-      - name: Run final test (RUST_BACKTRACE=1, continue on crash)
-        continue-on-error: true
-        env:
-          RUST_BACKTRACE: "1"
-        run: |
-          target/release/eu_darwin version
-          target/release/eu_darwin test --allow-io tests/harness
-      - name: Show macOS crash reports
-        if: always()
-        run: |
-          echo "=== Crash reports ==="
-          ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null || echo "No crash reports dir"
-          for f in ~/Library/Logs/DiagnosticReports/eu_darwin*.ips ~/Library/Logs/DiagnosticReports/eu_darwin*.crash; do
-            [ -f "$f" ] && echo "--- $f ---" && cat "$f" || true
-          done
