@@ -37,14 +37,16 @@ jobs:
           path: asan-output.txt
 
   miri-119:
-    name: Miri (test 119 in isolation)
+    name: Miri (test 119 with isolation disabled)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri, rust-src
-      - name: Run test 119 under Miri
+      - name: Run test 119 under Miri (isolation disabled for IO)
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"
         run: |
           cargo +nightly miri test \
             --test harness_test \
@@ -86,3 +88,37 @@ jobs:
         with:
           name: asan-sequential-output
           path: asan-sequential-output.txt
+
+  sequential-stable:
+    name: Sequential harness (stable, no ASan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run harness tests sequentially (stable debug)
+        run: |
+          cargo test --test harness_test -- --test-threads=1 \
+            2>&1 | tee sequential-output.txt
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sequential-output
+          path: sequential-output.txt
+
+  threads-4-stable:
+    name: 4-thread harness (stable, no ASan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run harness tests with 4 threads (stable debug)
+        run: |
+          cargo test --test harness_test -- --test-threads=4 \
+            2>&1 | tee threads4-output.txt
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: threads4-output
+          path: threads4-output.txt
