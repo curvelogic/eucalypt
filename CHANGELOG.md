@@ -1,6 +1,7 @@
 # Change log
 
 All notable changes to eucalypt are documented here.
+<!-- CI null test -->
 
 ## [0.5.0] - IO Monad, parse-as
 
