@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
         with:
           components: rustfmt, clippy
       - name: Check
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
       - name: Install cargo-audit
         run: cargo install cargo-audit
       - name: Run cargo audit
@@ -57,7 +57,7 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
       - name: Run tests
         env:
           RUST_MIN_STACK: "67108864"
@@ -82,7 +82,7 @@ jobs:
           key: aarch64-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             aarch64-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
       - name: Build release binary
         run: cargo build --release
       - name: Run sequential harness with release binary (GC stress)
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
         with:
           targets: wasm32-unknown-unknown
           components: clippy
@@ -121,7 +121,7 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
       - name: build and install temporary eu
         run: cargo install --path .
       - name: prepare build files for new version
@@ -195,7 +195,7 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
       - name: Build and install temporary eu
         run: cargo install --path .
       - name: Prepare build files for new version
@@ -241,7 +241,7 @@ jobs:
           key: ${{ runner.os }}-arm-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-arm-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.93.0
       - name: Build and install temporary eu
         run: cargo install --path .
       - name: Prepare build files for new version
