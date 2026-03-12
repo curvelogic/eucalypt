@@ -59,8 +59,6 @@ jobs:
             ${{ runner.os }}-cargo-registry-
       - uses: dtolnay/rust-toolchain@stable
       - name: Run tests
-        env:
-          RUST_MIN_STACK: "67108864"
         run: cargo test
       - name: Test doc examples
         if: runner.os == 'Linux'
@@ -213,8 +211,6 @@ jobs:
           strip target/release/eu
           mv target/release/eu target/release/eu_darwin
       - name: Run final test with release binary
-        env:
-          RUST_MIN_STACK: "67108864"
         run: |
           target/release/eu_darwin version
           target/release/eu_darwin test --allow-io tests/harness
