@@ -1,129 +1,88 @@
-name: macOS SIGSEGV diagnostic
+name: GC corruption diagnostic
 
 on:
   push:
     branches:
-      - 'fix/furnace-macos-segv-v2'
+      - 'fix/furnace-large-stack-test-threads'
   workflow_dispatch:
 
 jobs:
-  lint:
-    name: Lint
+  asan:
+    name: AddressSanitizer (parallel harness)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: rustfmt, clippy
-      - name: Check
-        run: cargo check
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+          components: rust-src
+      - name: Run harness tests with AddressSanitizer
+        env:
+          RUSTFLAGS: "-Zsanitizer=address"
+          RUSTDOCFLAGS: "-Zsanitizer=address"
+        run: |
+          cargo +nightly test -Zbuild-std \
+            --target x86_64-unknown-linux-gnu \
+            --test harness_test \
+            2>&1 | tee asan-output.txt
+          # Exit with failure if ASan errors were found even if test "passed"
+          if grep -q "ERROR: AddressSanitizer" asan-output.txt; then
+            echo "ASan errors found"
+            exit 1
+          fi
+      - name: Upload ASan output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asan-output
+          path: asan-output.txt
 
-  audit:
-    name: Security Audit
+  miri-119:
+    name: Miri (test 119 in isolation)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-      - name: Run cargo audit
-        run: cargo audit
-
-  test:
-    name: Test Suite
-    strategy:
-      matrix:
-        os: ["ubuntu-latest", "macos-latest"]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Run tests
-        run: cargo test
-      - name: Test doc examples
-        if: runner.os == 'Linux'
+          components: miri, rust-src
+      - name: Run test 119 under Miri
         run: |
-          cargo build --release
-          python3 scripts/test-doc-examples.py --eu ./target/release/eu --timeout 30
+          cargo +nightly miri test \
+            --test harness_test \
+            test_harness_119 \
+            2>&1 | tee miri-output.txt
+      - name: Upload Miri output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miri-output
+          path: miri-output.txt
 
-  wasm:
-    name: WASM Compilation Check
+  asan-sequential:
+    name: AddressSanitizer (sequential, EU_GC_STRESS)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          targets: wasm32-unknown-unknown
-          components: clippy
-      - name: Build library for WASM
-        run: cargo build --target wasm32-unknown-unknown --lib
-      - name: Clippy for WASM
-        run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings
-
-  release-candidate-macos:
-    needs: [lint, test, audit, wasm]
-    name: Release MacOS (${{ matrix.label }})
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Baseline: full suite (3x to catch intermittent crash)
-          - label: "full suite 1"
-            test_target: "tests/harness"
-          - label: "full suite 2"
-            test_target: "tests/harness"
-          - label: "full suite 3"
-            test_target: "tests/harness"
-          # Does test 116 alone crash?
-          - label: "test 116 only"
-            test_target: "tests/harness/116_io_shell_with.eu"
-          # Does the crash happen if we only run 116-120?
-          - label: "tests 116-120 only"
-            test_target: "tests/harness/116_io_shell_with.eu tests/harness/117_io_exec.eu tests/harness/118_io_exec_with.eu tests/harness/119_monad_utility.eu tests/harness/120_random_monad.eu"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+          components: rust-src
+      - name: Run harness tests sequentially with ASan + GC stress
+        env:
+          RUSTFLAGS: "-Zsanitizer=address"
+          RUSTDOCFLAGS: "-Zsanitizer=address"
+          EU_GC_STRESS: "1"
+        run: |
+          cargo +nightly test -Zbuild-std \
+            --target x86_64-unknown-linux-gnu \
+            --test harness_test \
+            -- --test-threads=1 \
+            2>&1 | tee asan-sequential-output.txt
+          if grep -q "ERROR: AddressSanitizer" asan-sequential-output.txt; then
+            echo "ASan errors found"
+            exit 1
+          fi
+      - name: Upload ASan sequential output
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build and install temporary eu
-        run: cargo install --path .
-      - name: Prepare build files for new version
-        run: |
-          export OSTYPE=$(uname)
-          export HOSTTYPE=$(uname -m)
-
-          eu build.eu -t build-meta > build-meta.yaml.new
-          mv -f build-meta.yaml.new build-meta.yaml
-
-          echo "TAG_NAME=$(eu build.eu -t version)" >> $GITHUB_ENV
-      - name: Build release
-        run: cargo build --all --release
-      - run: |
-          strip target/release/eu
-          mv target/release/eu target/release/eu_darwin
-      - name: Run final test with release binary
-        run: |
-          target/release/eu_darwin version
-          for t in ${{ matrix.test_target }}; do
-            target/release/eu_darwin test --allow-io "$t"
-          done
+          name: asan-sequential-output
+          path: asan-sequential-output.txt
