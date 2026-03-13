@@ -98,49 +98,55 @@ Each run produces different values unless you supply a seed:
 eu --seed 42 example.eu
 ```
 
-### Generating Random Values
+### The `random` namespace
 
-Random functions consume part of the stream and return both a result
-and the remaining stream:
+The `random` namespace is a state monad over the PRNG stream. Each
+operation is an *action* — a function from stream to
+`{value, rest}`. Call it with a stream to run it:
 
 ```eu,notest
-result: random-int(100, io.random)
-value: result.value   # a number from 0 to 99
-rest: result.rest     # remaining stream
+roll: random.int(6)(io.random).value + 1
 ```
+
+Use `random.sequence` or `random.map-m` to compose multiple actions
+without manually threading the stream.
 
 ### Practical Examples
 
 **Rolling dice:**
 
 ```eu,notest
-roll: random-int(6, io.random)
-die: roll.value + 1
+roll: random.int(6)(io.random).value + 1
 ```
 
 **Picking a random element:**
 
 ```eu,notest
 colours: ["red", "green", "blue"]
-pick: random-choice(colours, io.random)
-colour: pick.value
+colour: random.choice(colours)(io.random).value
 ```
 
 **Shuffling a list:**
 
 ```eu,notest
 items: ["a", "b", "c", "d"]
-shuffled: shuffle(items, io.random)
-result: shuffled.value
+result: random.shuffle(items)(io.random).value
 ```
 
 **Sampling without replacement:**
 
 ```eu,notest
 pool: range(1, 50)
-drawn: sample(6, pool, io.random)
-lottery: drawn.value
+lottery: random.sample(6, pool)(io.random).value
+```
+
+**Composing multiple random operations:**
+
+```eu,notest
+two-dice: random.sequence([random.int(6), random.int(6)])(io.random).value
+five-rolls: random.map-m(random.int, [6, 6, 6, 6, 6])(io.random).value
 ```
 
 See the [Random Numbers reference](../reference/prelude/random.md) for
-the full API.
+the full API and the [Monads guide](monads.md) for details on the
+state monad pattern.

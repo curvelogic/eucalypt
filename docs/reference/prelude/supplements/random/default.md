@@ -1,38 +1,30 @@
 ## Usage Pattern
 
-The random functions use a functional random stream pattern. Each
-function consumes some random values and returns both a result and the
-remaining stream in a block with `value` and `rest` keys:
+The `random` namespace is a state monad. Each operation is an *action*
+— a function from a PRNG stream to a `{value, rest}` block:
 
 ```eu,notest
-result: random-int(6, io.random)
+result: random.int(6)(io.random)
 die-roll: result.value    # a number from 0 to 5
-remaining: result.rest    # unconsumed stream for further use
 ```
 
-To chain multiple random operations, thread the `rest` through:
+Use `random.sequence` or `random.map-m` to compose multiple actions
+without manually threading the stream:
 
 ```eu,notest
-rolls: {
-  first: random-int(6, io.random)
-  second: random-int(6, first.rest)
-  value: [first.value + 1, second.value + 1]
-}
-two-dice: rolls.value
+two-dice: random.sequence([random.int(6), random.int(6)])(io.random).value
 ```
 
 ## Shuffling and Sampling
 
 ```eu,notest
 deck: range(1, 53)
-shuffled: shuffle(deck, io.random)
-hand: shuffled.value take(5)
+hand: random.shuffle(deck)(io.random).value take(5)
 ```
 
 ```eu,notest
 colours: ["red", "green", "blue", "yellow", "purple"]
-picked: sample(2, colours, io.random)
-two-colours: picked.value
+two-colours: random.sample(2, colours)(io.random).value
 ```
 
 ## Deterministic Seeds
@@ -40,8 +32,8 @@ two-colours: picked.value
 For reproducible output (useful in tests), pass a fixed seed:
 
 ```eu,notest
-stream: random-stream(12345)
-x: random-int(100, stream)
+stream: random.stream(12345)
+x: random.int(100)(stream)
 # x.value is always the same for seed 12345
 ```
 

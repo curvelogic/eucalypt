@@ -24,16 +24,15 @@ Everything else — `map`, `then`, `join`, `sequence`, `map-m`,
 block of derived combinators:
 
 ```eu,notest
-my-monad: monad({
-  bind: my-bind
-  return: my-return
-})
+my-monad: monad{bind: my-bind, return: my-return}
 ```
 
 The returned block provides:
 
 | Combinator | Description |
 |-----------|-------------|
+| `bind(action, f)` | Passed through from `m.bind` |
+| `return(v)` | Passed through from `m.return` |
 | `map(f, action)` | Apply pure function `f` to the result of an action (fmap) |
 | `then(a, b)` | Sequence two actions, discarding the result of the first |
 | `join(mm)` | Flatten a nested monadic value |
@@ -46,35 +45,28 @@ The returned block provides:
 ## Building a monadic namespace
 
 The typical pattern is to use `monad()` to produce the derived
-operations and then **catenate** (merge) specialised implementations or
-domain-specific operations on top:
+operations and then **catenate** (merge) domain-specific operations on
+top:
 
 ```eu,notest
-my-ns: monad({bind: my-bind, return: my-return}) {
-  bind: my-bind
-  return: my-return
+my-ns: monad{bind: my-bind, return: my-return} {
   some-extra-op(x): ...
 }
 ```
+
+Since `monad()` includes `bind` and `return` in its result, there is
+no need to repeat them in the right-hand block.
 
 **Why catenation (not `<<`)?**  Catenation is shallow merge — the
 right-hand block's fields override the left-hand block's fields at the
 top level. `<<` is deep merge and is not appropriate here because the
 derived combinators are not nested blocks.
 
-The fields `bind` and `return` are included explicitly in the
-right-hand block so that callers can access `my-ns.bind` and
-`my-ns.return` directly. The `monad()` call itself only uses
-`m.bind`/`m.return` internally; the returned block does not
-automatically re-export them.
-
 **Overriding a derived combinator** — put the specialised
 implementation in the right-hand block; it shadows the derived one:
 
 ```eu,notest
-my-ns: monad({bind: my-bind, return: my-return}) {
-  bind: my-bind
-  return: my-return
+my-ns: monad{bind: my-bind, return: my-return} {
   # override map with a more efficient implementation
   map(f, action): my-efficient-map(f, action)
 }
@@ -140,7 +132,7 @@ You can derive the full set of combinators for the IO monad:
 
 ```eu,notest
 ` :suppress
-io-m: monad({bind: io.bind, return: io.return})
+io-m: monad{bind: io.bind, return: io.return}
 
 # sequence two IO actions and collect results
 both: io-m.sequence([io.shell("echo a"), io.shell("echo b")])
@@ -149,9 +141,7 @@ both: io-m.sequence([io.shell("echo a"), io.shell("echo b")])
 Or extend the IO monad with domain-specific operations via catenation:
 
 ```eu,notest
-app-io: monad({bind: io.bind, return: io.return}) {
-  bind: io.bind
-  return: io.return
+app-io: monad{bind: io.bind, return: io.return} {
   read-file(path): io.shell("cat {path}")
   git-hash: io.shell("git rev-parse HEAD")
 }
@@ -181,8 +171,8 @@ block — the state threads through automatically via `bind`.
 
 ```eu,notest
 # Thread the stream manually through each step
-r1: random-int(6, io.random)
-r2: random-int(6, r1.rest)
+r1: random.int(6)(io.random)
+r2: random.int(6)(r1.rest)
 total: r1.value + r2.value + 2
 ```
 
@@ -270,7 +260,7 @@ id-bind(m, f): f(m)
 ` :suppress
 id-return(a): a
 ` :suppress
-id-monad: monad({bind: id-bind, return: id-return})
+id-monad: monad{bind: id-bind, return: id-return}
 
 ` { target: :example }
 example: id-monad.map-m(inc, [1, 2, 3])
@@ -288,10 +278,7 @@ maybe-return(v): v
 maybe-bind(m, f): if(m = null, null, f(m))
 
 ` :suppress
-maybe: monad({bind: maybe-bind, return: maybe-return}) {
-  bind: maybe-bind
-  return: maybe-return
-}
+maybe: monad{bind: maybe-bind, return: maybe-return}
 
 safe-head(xs): if(xs nil?, null, xs head)
 
@@ -304,12 +291,10 @@ ok:     maybe.bind(safe-head([42]), inc) # => 43
 
 ## Key concepts
 
-- `monad(m)` takes `{bind, return}` and returns a block with six
-  derived combinators
+- `monad(m)` takes `{bind, return}` and returns a block with `bind`,
+  `return`, and six derived combinators
 - Use **catenation** (juxtaposition) to merge derived and specialised
   operations — NOT `<<`
-- Include `bind` and `return` explicitly in the right-hand block so
-  they are accessible as fields on the result
 - The `{ :io ... }` syntax is syntactic sugar for nested `io.bind`
   calls; it is currently IO-specific
 - The `random:` namespace is a state monad — actions are functions of a

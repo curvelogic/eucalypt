@@ -16,14 +16,8 @@ eu: {
   requires: __REQUIRES
 }
 
-` :suppress
-__io-bind(action, continuation): __IO_BIND(action, continuation)
-
-` :suppress
-__io-ret(a): __IO_RETURN(a)
-
-` "IO related declarations. The io namespace is a monad: io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
-io: monad({bind: __io-bind, return: __io-ret}) {
+` "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
+io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ` "Read access to environent variables at time of launch"
   env: __io.ENV
 
@@ -42,23 +36,17 @@ io: monad({bind: __io-bind, return: __io-ret}) {
   ## IO monad
   ##
 
-  ` "Sequence two IO actions: run action and pass its result to continuation."
-  bind: __io-bind
-
-  ` "Wrap a pure value in the IO monad."
-  return: __io-ret
-
   ` "Run a shell command via sh -c. Returns a block with stdout, stderr, and exit-code fields."
   shell(c): __IO_ACTION({:io-shell cmd: c, timeout: 30})
 
   ` "Run a shell command via sh -c with extra options merged in. Options may include stdin and timeout."
-  shell-with(opts, c): __IO_ACTION(__io-shell-spec(opts, c))
+  shell-with(opts, c): __IO_ACTION({:io-shell cmd: c, timeout: opts lookup-or(:timeout, 30), stdin: opts lookup-or(:stdin, null)})
 
   ` "Run a command directly without a shell. Returns a block with stdout, stderr, and exit-code fields."
   exec([c : as]): __IO_ACTION({:io-exec cmd: c, args: as, timeout: 30})
 
   ` "Run a command directly without a shell, with extra options merged in. Options may include stdin and timeout."
-  exec-with(opts, [c : as]): __IO_ACTION(__io-exec-spec(opts, c, as))
+  exec-with(opts, [c : as]): __IO_ACTION({:io-exec cmd: c, args: as, timeout: opts lookup-or(:timeout, 30), stdin: opts lookup-or(:stdin, null)})
 
   ` "Check a command result: if exit-code is non-zero, fail with the stderr message; otherwise return the result."
   check(result): if(result.'exit-code' = 0,
@@ -66,55 +54,24 @@ io: monad({bind: __io-bind, return: __io-ret}) {
     __IO_ACTION({:io-fail message: result.stderr}))
 }
 
-` :suppress
-__io-shell-spec(opts, c): {
-  :io-shell
-  cmd: c
-  timeout: opts lookup-or(:timeout, 30)
-  stdin: opts lookup-or(:stdin, null)
-}
-
-` :suppress
-__io-exec-spec(opts, c, as): {
-  :io-exec
-  cmd: c
-  args: as
-  timeout: opts lookup-or(:timeout, 30)
-  stdin: opts lookup-or(:stdin, null)
-}
 
 ##
 ## Monad utility
 ##
-
-` :suppress
-__monad-sequence-put(m, hd, xs): m.return(cons(hd, xs))
-
-` :suppress
-__monad-sequence-step(m, rest-ms, hd): m.bind(__monad-sequence(m, rest-ms), __monad-sequence-put(m, hd))
-
-` :suppress
-__monad-sequence(m, ms):
-  if(ms nil?, m.return([]), m.bind(ms head, __monad-sequence-step(m, ms tail)))
-
-` :suppress
-__monad-filter-put(m, elt, flag, rest): m.return(if(flag, cons(elt, rest), rest))
-
-` :suppress
-__monad-filter-gate(m, p, elt, rest-ms, flag):
-  m.bind(__monad-filter-m(m, p, rest-ms), __monad-filter-put(m, elt, flag))
-
-` :suppress
-__monad-filter-m(m, p, xs):
-  if(xs nil?, m.return([]), m.bind(p(xs head), __monad-filter-gate(m, p, xs head, xs tail)))
 
 # Alias for the list map function, captured before monad() shadows the name 'map'
 ` :suppress
 list-map: map
 
 ` "monad(m) - derive standard monad combinators from a block m with bind and return fields.
-Returns a block with map, then, join, sequence, map-m, and filter-m."
+Returns a block with bind, return, map, then, join, sequence, map-m, and filter-m."
 monad(m): {
+  ` "Sequence two monadic actions: run action and pass its result to continuation."
+  bind: m.bind
+
+  ` "Wrap a pure value in the monad."
+  return: m.return
+
   ` "map(f, action) - apply pure function f to the result of a monadic action (fmap)."
   map(f, action): m.bind(action, compose(m.return, f))
 
@@ -125,153 +82,81 @@ monad(m): {
   join(mm): m.bind(mm, identity)
 
   ` "sequence(ms) - sequence a list of monadic actions, collecting results into a list."
-  sequence(ms): __monad-sequence(m, ms)
+  sequence(ms): {
+    seq-put(hd, xs): m.return(cons(hd, xs))
+    seq-step(rest-ms, hd): m.bind(sequence(rest-ms), seq-put(hd))
+  }.(if(ms nil?, m.return([]), m.bind(ms head, seq-step(ms tail))))
 
   ` "map-m(f, xs) - apply f to each element of xs (producing actions), then sequence."
   map-m(f, xs): list-map(f, xs) sequence
 
   ` "filter-m(p, xs) - monadic filter: apply predicate p (returning a monadic bool) to each element."
-  filter-m(p, xs): __monad-filter-m(m, p, xs)
+  filter-m(p, xs): {
+    filter-put(elt, flag, rest): m.return(if(flag, cons(elt, rest), rest))
+    filter-gate(p, elt, rest-ms, flag): m.bind(filter-m(p, rest-ms), filter-put(elt, flag))
+  }.(if(xs nil?, m.return([]), m.bind(p(xs head), filter-gate(p, xs head, xs tail))))
 }
 
 ##
 ## Random number generation
 ##
 
-` "Infinite lazy stream of random floats in [0,1), seeded by the given integer."
 random-stream(seed): cons(__PRNG_FLOAT(seed), random-stream(__PRNG_NEXT(seed)))
 
-` "Generate a random integer in [0, n) from the stream. Returns block with value and rest."
-random-int(n, stream): {
-  value: floor((stream head) * n)
-  rest: stream tail
-}
-
-` "Choose a random element from a list. Returns block with value and rest."
-random-choice(list, stream): {
-  r: random-int(list count, stream)
-  value: list nth(r.value)
-  rest: r.rest
-}
-
-` "Shuffle a list using repeated selection. Returns block with value and rest."
-shuffle(list, stream): __shuffle-impl(list, list count, [], stream)
-
-__shuffle-impl(remaining, n, acc, stream):
-  if(n = 0,
-    { value: acc
-      rest: stream },
-    __shuffle-step(remaining, n, acc, stream))
-
-__shuffle-step(remaining, n, acc, stream): {
-  r: random-int(n, stream)
-  picked: remaining nth(r.value)
-  without: (remaining take(r.value)) ++ (remaining drop(r.value + 1))
-  next: __shuffle-impl(without, n - 1, cons(picked, acc), r.rest)
-  value: next.value
-  rest: next.rest
-}
-
-` "Sample n elements from a list without replacement. Returns block with value and rest."
-sample(n, list, stream): {
-  shuffled: shuffle(list, stream)
-  value: shuffled.value take(n)
-  rest: shuffled.rest
-}
-
-##
-## Monadic random: namespace (state monad over a PRNG stream)
-##
-## Each random "action" is a function: stream -> {value: ..., rest: ...}
-## random.bind and random.return thread the stream automatically.
-##
-
-` :suppress
 random-ret(v, stream): { value: v, rest: stream }
 
-` :suppress
-__random-bind-run(m, f, stream): {
+random-bind(m, f, stream): {
   r: m(stream)
   run: f(r.value)(r.rest)
   value: run.value
   rest: run.rest
 }
 
-` :suppress
-random-bind(m, f): __random-bind-run(m, f)
-
-` :suppress
-__random-float-action(stream): { value: stream head, rest: stream tail }
-
-` :suppress
-__random-int-action(n, stream): {
-  value: floor((stream head) * n)
-  rest: stream tail
-}
-
-` :suppress
-__random-choice-pick(list, idx): random-ret(list nth(idx))
-
-` :suppress
-__random-choice-action(lst, stream): {
-  r: __random-int-action(lst count, stream)
-  next: __random-choice-pick(lst, r.value)(r.rest)
-  value: next.value
-  rest: next.rest
-}
-
-` :suppress
-__random-shuffle-action(lst, stream): __random-shuffle-impl(lst, lst count, [], stream)
-
-` :suppress
-__random-shuffle-impl(remaining, n, acc, stream):
-  if(n = 0,
-    { value: acc, rest: stream },
-    __random-shuffle-step(remaining, n, acc, stream))
-
-` :suppress
-__random-shuffle-step(remaining, n, acc, stream): {
-  r: __random-int-action(n, stream)
-  picked: remaining nth(r.value)
-  without: (remaining take(r.value)) ++ (remaining drop(r.value + 1))
-  next: __random-shuffle-impl(without, n - 1, cons(picked, acc), r.rest)
-  value: next.value
-  rest: next.rest
-}
-
-` :suppress
-__random-sample-action(n, lst, stream): {
-  shuffled: __random-shuffle-action(lst, stream)
-  value: shuffled.value take(n)
-  rest: shuffled.rest
-}
-
 ` "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block.
 Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
-random: monad({bind: random-bind, return: random-ret}) {
-  ` "The bind primitive for the random state monad."
-  bind: random-bind
-
-  ` "The return primitive for the random state monad."
-  return: random-ret
-
+random: monad{bind: random-bind, return: random-ret} {
   ` "random.stream(seed) - create the initial PRNG stream from integer seed."
   stream(seed): random-stream(seed)
 
   ` "random.float - action returning a random float in [0,1)."
-  float: __random-float-action
+  float(stream): { value: stream head, rest: stream tail }
 
   ` "random.int(n) - action returning a random integer in [0,n)."
-  int(n): __random-int-action(n)
+  int(n, stream): {
+    value: floor((stream head) * n)
+    rest: stream tail
+  }
 
   ` "random.choice(list) - action returning a random element from list."
-  choice(lst): __random-choice-action(lst)
+  choice(lst, stream): {
+    r: int(lst count, stream)
+    next: random-ret(lst nth(r.value), r.rest)
+    value: next.value
+    rest: next.rest
+  }
 
   ` "random.shuffle(list) - action returning a shuffled copy of list."
-  shuffle(lst): __random-shuffle-action(lst)
+  shuffle(lst): {
+    shuffle-impl(remaining, n, acc, stream):
+      if(n = 0,
+        { value: acc, rest: stream },
+        shuffle-step(remaining, n, acc, stream))
+    shuffle-step(remaining, n, acc, stream): {
+      r: int(n, stream)
+      picked: remaining nth(r.value)
+      without: (remaining take(r.value)) ++ (remaining drop(r.value + 1))
+      next: shuffle-impl(without, n - 1, cons(picked, acc), r.rest)
+      value: next.value
+      rest: next.rest
+    }
+  }.(shuffle-impl(lst, lst count, []))
 
   ` "random.sample(n, list) - action returning n elements sampled without replacement."
-  sample(n, lst): __random-sample-action(n, lst)
+  sample(n, lst, stream): {
+    shuffled: shuffle(lst, stream)
+    value: shuffled.value take(n)
+    rest: shuffled.rest
+  }
 }
 
 

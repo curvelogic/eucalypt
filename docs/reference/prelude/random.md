@@ -59,7 +59,7 @@ two-dice: random.sequence([random.int(6), random.int(6)])(random.stream(42)).val
 Use `monad()` catenation to override or extend the namespace:
 
 ```eu,notest
-dice: monad({bind: random.bind, return: random.return}) {
+dice: monad{bind: random.bind, return: random.return} {
   d6: random.int(6)
   d20: random.int(20)
 }
@@ -84,40 +84,6 @@ roll: dice.sequence([dice.d6, dice.d20])(random.stream(42)).value
 | `random.sequence(ms)` | Sequence a list of actions, collect results (derived) |
 | `random.map-m(f, xs)` | Map f over list producing actions, then sequence (derived) |
 | `random.filter-m(p, xs)` | Monadic filter over a list of actions (derived) |
-
----
-
-## Legacy API — stream threading
-
-The legacy API manually threads a PRNG stream through `{value: ..., rest: ...}`
-blocks. These functions remain available for backward compatibility.
-
-| Function | Description |
-|----------|-------------|
-| `random-stream(seed)` | Infinite lazy stream of random floats in [0,1), seeded by the given integer |
-| `random-int(n, stream)` | Generate a random integer in [0, n) from the stream. Returns block with value and rest |
-| `random-choice(list, stream)` | Choose a random element from a list. Returns block with value and rest |
-| `shuffle(list, stream)` | Shuffle a list using repeated selection. Returns block with value and rest |
-| `sample(n, list, stream)` | Sample n elements from a list without replacement. Returns block with value and rest |
-
-### Usage pattern
-
-```eu,notest
-result: random-int(6, io.random)
-die-roll: result.value    # a number from 0 to 5
-remaining: result.rest    # unconsumed stream for further use
-```
-
-To chain multiple random operations, thread the `rest` through:
-
-```eu,notest
-rolls: {
-  first: random-int(6, io.random)
-  second: random-int(6, first.rest)
-  value: [first.value + 1, second.value + 1]
-}
-two-dice: rolls.value
-```
 
 ---
 

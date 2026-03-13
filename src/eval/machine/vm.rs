@@ -1530,7 +1530,7 @@ impl<'a> Machine<'a> {
     ///
     /// Used by the io-run driver to force-evaluate spec block field
     /// closures that contain unevaluated thunks (e.g. `lookup-or` calls
-    /// produced by `__io-shell-spec` / `__io-exec-spec`).
+    /// in `io.shell-with` / `io.exec-with` spec blocks).
     ///
     /// # Errors
     ///
