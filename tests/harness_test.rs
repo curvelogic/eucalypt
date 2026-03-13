@@ -1184,3 +1184,8 @@ pub fn test_error_103() {
 pub fn test_error_104() {
     run_error_test(&error_opts("104_comparison_type_mismatch_lte.eu"));
 }
+
+#[test]
+pub fn test_error_105() {
+    run_error_test(&error_opts("105_base64_decode_invalid.eu"));
+}
