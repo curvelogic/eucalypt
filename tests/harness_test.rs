@@ -602,6 +602,11 @@ pub fn test_harness_120() {
 }
 
 #[test]
+pub fn test_harness_121() {
+    run_test(&io_opts("121_io_exec_not_found.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -1188,4 +1193,20 @@ pub fn test_error_104() {
 #[test]
 pub fn test_error_105() {
     run_error_test(&error_opts("105_base64_decode_invalid.eu"));
+}
+
+#[test]
+pub fn test_error_106() {
+    use eucalypt::driver::options::EucalyptOptions;
+    let lib_path = vec![
+        std::path::PathBuf::from("tests/harness/errors"),
+        std::path::PathBuf::from("tests/harness"),
+    ];
+    let path = "tests/harness/errors/106_io_check_fail.eu".to_string();
+    let opt = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
+        .with_lib_path(lib_path)
+        .with_allow_io()
+        .build();
+    run_error_test(&opt);
 }

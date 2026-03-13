@@ -1,0 +1,8 @@
+"io.exec: nonexistent binary returns result block with exit-code 127 and error in stderr. Uses --allow-io."
+
+` { target: :test requires-io: true }
+test:
+  { :io r: io.exec(["nonexistent-binary-xyz"]) }.(
+    if(r.'exit-code' = 127,
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))
