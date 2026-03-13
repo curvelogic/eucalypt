@@ -1183,6 +1183,11 @@ impl<'a> Machine<'a> {
         &self.clock
     }
 
+    /// Current source annotation for error reporting
+    pub fn annotation(&self) -> Smid {
+        self.state.annotation
+    }
+
     /// Create a mutator heap view for heap access
     fn view(&'a self) -> MutatorHeapView<'a> {
         MutatorHeapView::new(&self.heap)

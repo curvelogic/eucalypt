@@ -7,7 +7,7 @@ use crate::{
     core::expr::*,
     driver::{
         error::EucalyptError,
-        io_run::{inject_world_and_run, io_run_and_render},
+        io_run::{inject_world_and_run, io_run_and_render, IoRunError},
         options::{ErrorFormat, EucalyptOptions},
         source::SourceLoader,
     },
@@ -30,6 +30,19 @@ use codespan_reporting::{
 use std::{io::Write, time::Instant};
 
 use super::statistics::Statistics;
+
+/// Convert an `IoRunError` to an `ExecutionError`, using structured variants
+/// for user-facing errors and `Panic` for internal machine errors.
+fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
+    match e {
+        IoRunError::IoNotAllowed(smid) => ExecutionError::IoNotAllowed(smid),
+        IoRunError::Fail(msg) => ExecutionError::IoFail(Smid::default(), msg),
+        IoRunError::Timeout(smid, secs) => ExecutionError::IoTimeout(smid, secs),
+        IoRunError::CommandError(smid, msg) => ExecutionError::IoCommandError(smid, msg),
+        IoRunError::MachineError(boxed) => *boxed,
+        other => ExecutionError::Panic(other.to_string()),
+    }
+}
 
 /// Run the prepared core expression and output to selected emitter
 pub fn run(opt: &EucalyptOptions, loader: SourceLoader) -> Result<Statistics, EucalyptError> {
@@ -234,20 +247,20 @@ impl<'a> Executor<'a> {
                     if ret.is_ok() {
                         if machine.io_yielded() {
                             let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                                .map_err(|e| ExecutionError::Panic(e.to_string()));
+                                .map_err(io_run_error_to_execution);
                             machine.take_emitter().stream_end();
                             return io_result;
                         }
                         // Machine terminated without yielding.  Try world
                         // injection to handle IO functions (case 2).
-                        let io_yielded = inject_world_and_run(&mut machine)
-                            .map_err(|e| ExecutionError::Panic(e.to_string()));
+                        let io_yielded =
+                            inject_world_and_run(&mut machine).map_err(io_run_error_to_execution);
                         match io_yielded {
                             Ok(true) => {
                                 // World injection triggered an IO yield;
                                 // proceed with the io-run loop.
                                 let io_result = io_run_and_render(&mut machine, opt.allow_io)
-                                    .map_err(|e| ExecutionError::Panic(e.to_string()));
+                                    .map_err(io_run_error_to_execution);
                                 machine.take_emitter().stream_end();
                                 return io_result;
                             }

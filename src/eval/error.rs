@@ -641,6 +641,14 @@ pub enum ExecutionError {
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
     VersionRequirementFailed(Smid, String, String),
+    #[error("IO operations are not permitted; use the --allow-io (-I) flag to enable")]
+    IoNotAllowed(Smid),
+    #[error("io.fail: {1}")]
+    IoFail(Smid, String),
+    #[error("io.shell-with: command timed out after {1} seconds")]
+    IoTimeout(Smid, u64),
+    #[error("io.shell-with: command execution error: {1}")]
+    IoCommandError(Smid, String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
@@ -727,6 +735,10 @@ impl HasSmid for ExecutionError {
             ExecutionError::ArrayNdIndexOutOfBounds(s, _) => *s,
             ExecutionError::ArrayShapeMismatch(s, _) => *s,
             ExecutionError::ArrayNegativeIndex(s, _) => *s,
+            ExecutionError::IoNotAllowed(s) => *s,
+            ExecutionError::IoFail(s, _) => *s,
+            ExecutionError::IoTimeout(s, _) => *s,
+            ExecutionError::IoCommandError(s, _) => *s,
             _ => Smid::default(),
         }
     }
