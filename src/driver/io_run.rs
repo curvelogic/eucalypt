@@ -839,6 +839,12 @@ fn evaluate_spec_block(
             stdin,
             timeout_secs,
         })
+    } else if tag_name == "io-fail" {
+        let message = eval_fields
+            .get("message")
+            .and_then(|opt| opt.clone())
+            .unwrap_or_else(|| "io.fail".to_string());
+        Err(IoRunError::Fail(message))
     } else {
         Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
             format!("unrecognised IO action tag: {tag_name}"),
@@ -1107,9 +1113,23 @@ fn run_command(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = command
-        .spawn()
-        .map_err(|e| IoRunError::CommandError(Smid::default(), e.to_string()))?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            // Spawn failure (e.g. binary not found) returns a result block
+            // rather than a hard error, matching shell conventions.
+            let exit_code = match e.kind() {
+                std::io::ErrorKind::NotFound => 127,
+                std::io::ErrorKind::PermissionDenied => 126,
+                _ => -1,
+            };
+            return Ok(CommandResult {
+                stdout: String::new(),
+                stderr: e.to_string(),
+                exit_code,
+            });
+        }
+    };
 
     if let Some(input) = stdin_data {
         if let Some(mut pipe) = child.stdin.take() {
