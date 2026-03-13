@@ -639,6 +639,8 @@ pub enum ExecutionError {
     Panic(String),
     #[error("parse-as({1}): {2}")]
     ParseError(Smid, String, String),
+    #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
+    VersionRequirementFailed(Smid, String, String),
     #[error("assertion failed: expected {2}, got {1}")]
     AssertionFailed(Smid, String, String),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
@@ -709,6 +711,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
+            ExecutionError::VersionRequirementFailed(s, _, _) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,
             ExecutionError::BitshiftRangeError(s, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
