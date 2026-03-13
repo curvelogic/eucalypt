@@ -1,2 +1,2 @@
 exit: 1
-stderr: "arr.from-flat: shape .* requires .* element"
+stderr: "requires 4 elements but 3 were provided"

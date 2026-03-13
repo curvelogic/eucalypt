@@ -158,20 +158,18 @@ impl StgIntrinsic for ArrayFromFlat {
     ) -> Result<(), ExecutionError> {
         let shape = num_list_to_usize_vec(machine, view, &args[0])?;
         let values = num_list_to_f64_vec(machine, view, &args[1])?;
-        let expected_len: usize = shape.iter().product();
-        let actual_len = values.len();
+        let smid = machine.annotation();
+        let data_len = values.len();
         match HeapNdArray::from_flat(&shape, values) {
             Some(arr) => machine_return_ndarray(machine, view, arr),
             None => {
-                let shape_str = shape
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(ExecutionError::Panic(format!(
-                    "arr.from-flat: shape [{shape_str}] requires {expected_len} element(s) \
-                     but {actual_len} value(s) were provided"
-                )))
+                let expected: usize = shape.iter().product();
+                Err(ExecutionError::ArrayShapeMismatch(
+                    smid,
+                    format!(
+                        "shape {shape:?} requires {expected} elements but {data_len} were provided"
+                    ),
+                ))
             }
         }
     }
@@ -226,6 +224,7 @@ impl StgIntrinsic for ArrayGet {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[1])?;
         match arr.get(&coords) {
             Some(val) => machine_return_num(
@@ -233,22 +232,7 @@ impl StgIntrinsic for ArrayGet {
                 view,
                 Number::from_f64(val).unwrap_or_else(|| Number::from(0)),
             ),
-            None => {
-                let coords_str = coords
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let shape_str = arr
-                    .shape()
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(ExecutionError::Panic(format!(
-                    "arr.get: coordinates [{coords_str}] are out of bounds for array with shape [{shape_str}]"
-                )))
-            }
+            None => Err(ExecutionError::ArrayNdIndexOutOfBounds(smid, coords)),
         }
     }
 }
@@ -303,26 +287,12 @@ impl StgIntrinsic for ArraySet {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let coords = num_list_to_usize_vec(machine, view, &args[0])?;
+        let smid = machine.annotation();
         let value = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0);
         let arr = ndarray_arg(machine, view, &args[2])?;
         match arr.with_set(&coords, value) {
             Some(new_arr) => machine_return_ndarray(machine, view, new_arr),
-            None => {
-                let coords_str = coords
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let shape_str = arr
-                    .shape()
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(ExecutionError::Panic(format!(
-                    "arr.set: coordinates [{coords_str}] are out of bounds for array with shape [{shape_str}]"
-                )))
-            }
+            None => Err(ExecutionError::ArrayNdIndexOutOfBounds(smid, coords)),
         }
     }
 }
@@ -510,12 +480,22 @@ impl StgIntrinsic for ArrayReshape {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         let new_shape = num_list_to_usize_vec(machine, view, &args[0])?;
+        let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[1])?;
+        let old_total: usize = arr.shape().iter().product();
         match arr.reshape(&new_shape) {
             Some(reshaped) => machine_return_ndarray(machine, view, reshaped),
-            None => Err(ExecutionError::Panic(
-                "reshape: new shape does not match total element count".to_string(),
-            )),
+            None => {
+                let new_total: usize = new_shape.iter().product();
+                Err(ExecutionError::ArrayShapeMismatch(
+                    smid,
+                    format!(
+                        "cannot reshape {total} elements into shape {new_shape:?} \
+                         ({new_total} elements required)",
+                        total = old_total,
+                    ),
+                ))
+            }
         }
     }
 }
@@ -537,13 +517,18 @@ impl StgIntrinsic for ArraySlice {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
         let arr = ndarray_arg(machine, view, &args[0])?;
         let axis = num_arg(machine, view, &args[1])?.as_f64().unwrap_or(0.0) as usize;
         let index = num_arg(machine, view, &args[2])?.as_f64().unwrap_or(0.0) as usize;
         match arr.slice_along(axis, index) {
             Some(sliced) => machine_return_ndarray(machine, view, sliced),
-            None => Err(ExecutionError::Panic(
-                "slice: axis or index out of bounds".to_string(),
+            None => Err(ExecutionError::ArrayShapeMismatch(
+                smid,
+                format!(
+                    "axis {axis} or index {index} is out of bounds for array of shape {:?}",
+                    arr.shape()
+                ),
             )),
         }
     }
@@ -768,13 +753,12 @@ fn num_list_to_usize_vec(
     view: MutatorHeapView<'_>,
     arg: &Ref,
 ) -> Result<Vec<usize>, ExecutionError> {
+    let smid = machine.annotation();
     let nums = super::support::collect_num_list(machine, view, arg.clone())?;
     nums.into_iter()
         .map(|n| {
             if n < 0.0 {
-                Err(ExecutionError::Panic(format!(
-                    "negative array index or dimension: {n}"
-                )))
+                Err(ExecutionError::ArrayNegativeIndex(smid, n))
             } else {
                 Ok(n as usize)
             }
@@ -821,14 +805,18 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
     let a_native = machine.nav(view).resolve_native(a_ref)?;
     let b_native = machine.nav(view).resolve_native(b_ref)?;
 
+    let smid = machine.annotation();
     match (a_native, b_native) {
         (Native::NdArray(a_ptr), Native::NdArray(b_ptr)) => {
             let a = view.scoped(a_ptr);
             let b = view.scoped(b_ptr);
+            let a_shape = a.shape().to_vec();
+            let b_shape = b.shape().to_vec();
             match a.zip_with(&b, f) {
                 Some(result) => machine_return_ndarray(machine, view, result),
-                None => Err(ExecutionError::Panic(
-                    "array shape mismatch in element-wise operation".to_string(),
+                None => Err(ExecutionError::ArrayShapeMismatch(
+                    smid,
+                    format!("arrays have incompatible shapes {a_shape:?} and {b_shape:?} for element-wise operation"),
                 )),
             }
         }
@@ -842,8 +830,10 @@ pub(crate) fn array_binop<F: Fn(f64, f64) -> f64>(
             let scalar = n.as_f64().unwrap_or(0.0);
             machine_return_ndarray(machine, view, b.scalar_op(scalar, |x, s| f(s, x)))
         }
-        _ => Err(ExecutionError::Panic(
-            "array arithmetic requires at least one array operand".to_string(),
+        _ => Err(ExecutionError::ArrayShapeMismatch(
+            smid,
+            "array arithmetic requires at least one array operand; both arguments are scalars"
+                .to_string(),
         )),
     }
 }
