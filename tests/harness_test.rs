@@ -1174,3 +1174,13 @@ pub fn test_error_101() {
 pub fn test_error_102() {
     run_error_test(&error_opts("102_dot_on_list_source_loc.eu"));
 }
+
+#[test]
+pub fn test_error_103() {
+    run_error_test(&error_opts("103_comparison_type_mismatch.eu"));
+}
+
+#[test]
+pub fn test_error_104() {
+    run_error_test(&error_opts("104_comparison_type_mismatch_lte.eu"));
+}
