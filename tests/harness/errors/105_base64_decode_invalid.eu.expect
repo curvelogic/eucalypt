@@ -1,0 +1,2 @@
+exit: 1
+stderr: "105_base64_decode_invalid"

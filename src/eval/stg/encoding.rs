@@ -50,13 +50,44 @@ impl StgIntrinsic for Base64Decode {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
         let input = str_arg(machine, view, &args[0])?;
-        let bytes = STANDARD
-            .decode(&input)
-            .map_err(|e| ExecutionError::Panic(format!("invalid base64 input: {e}")))?;
-        let decoded = String::from_utf8(bytes).map_err(|e| {
-            ExecutionError::Panic(format!("decoded base64 is not valid UTF-8: {e}"))
+        let bytes = STANDARD.decode(&input).map_err(|e| {
+            use base64::DecodeError;
+            let detail = match e {
+                DecodeError::InvalidByte(offset, byte) => {
+                    let ch = char::from(byte);
+                    if ch.is_ascii_graphic() {
+                        format!(
+                            "invalid character '{ch}' at position {offset}; \
+                             base64 uses only A-Z, a-z, 0-9, +, / and = for padding"
+                        )
+                    } else {
+                        format!(
+                            "invalid byte 0x{byte:02X} at position {offset}; \
+                             base64 uses only A-Z, a-z, 0-9, +, / and = for padding"
+                        )
+                    }
+                }
+                DecodeError::InvalidLength(len) => format!(
+                    "invalid length {len}; \
+                     base64-encoded strings must have a length that is a multiple of 4"
+                ),
+                DecodeError::InvalidLastSymbol(offset, byte) => {
+                    let ch = char::from(byte);
+                    format!(
+                        "invalid final character '{ch}' at position {offset}; \
+                         the last group must end with '='"
+                    )
+                }
+                DecodeError::InvalidPadding => {
+                    "invalid padding; standard base64 requires '=' padding".to_string()
+                }
+            };
+            ExecutionError::InvalidBase64(smid, detail)
         })?;
+        let decoded = String::from_utf8(bytes)
+            .map_err(|e| ExecutionError::InvalidBase64Utf8(smid, e.to_string()))?;
         machine_return_str(machine, view, decoded)
     }
 }
