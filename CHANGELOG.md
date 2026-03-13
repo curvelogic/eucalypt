@@ -2,7 +2,7 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.5.0] - IO Monad, parse-as
+## [0.5.0] - 2026-03-13
 
 ### Added
 
@@ -13,6 +13,7 @@ All notable changes to eucalypt are documented here.
   - `io.check(r)`, `io.bind`, `io.return`, `io.map`, `io.fail`
   - `--allow-io` / `-I` CLI flag required to enable IO operations
   - Results as `{stdout, stderr, exit-code}` blocks
+  - Spawn failures return result blocks (exit-code 127) rather than hard errors
 
 - **`render-as(value, fmt)`** — Serialise any eucalypt value to a string at runtime
   - Supports `:json`, `:yaml`, `:toml`, `:text`, `:edn`, `:html`
@@ -26,18 +27,32 @@ All notable changes to eucalypt are documented here.
   - Compose with `{ ... }` to build monadic namespaces: `monad(m) { extra-field: ... }`
 
 - **Monadic `random:` namespace** — State-monad interface to the PRNG
-  - `random.stream(seed)` — create initial stream; each action is a function `stream -> {value, rest}`
+  - `random.stream(seed)` — create initial stream; each action is a function `stream → {value, rest}`
   - `random.float`, `random.int(n)`, `random.choice(xs)`, `random.shuffle(xs)`, `random.sample(n, xs)`
   - `random.map`, `random.sequence`, `random.map-m`, `random.bind`, `random.return`
   - Legacy `random-stream`, `random-int`, `random-choice`, `random-shuffle`, `random-sample` retained
 
 ### Fixed
 
-- **GC evacuation alignment** — 16-byte alignment padding for `evacuate()` allocation
-- **GC per-heap mark state** — Global `MARK_STATE` moved into `Heap` struct, fixing parallel test crashes on aarch64-linux
-- **Error source locations** — Operator errors, lookup failures, and intrinsic type mismatches now report user source locations instead of internal spans
-- **Emacs mode** — Backtick auto-pairing, closing brace indentation, docstring indentation, smartparens compatibility
-- **Unicode input** — Check mark and other new Unicode chars in Quail and transient menu
+- **GC correctness** — Multiple garbage collector fixes addressing crashes on aarch64-linux and macOS ARM:
+  - 16-byte alignment for evacuation allocations
+  - Per-heap mark state (global `MARK_STATE` moved into `Heap` struct), fixing parallel test crashes
+  - Backing arrays of `Cons`/`App`/`Bif`/`Case` nodes now evacuated correctly
+  - Line marking extended to evacuation target blocks, preventing lazy sweep from recycling live data
+  - Full allocation span (header + object) now marked when straddling Immix line boundaries
+  - Heap string corruption in release builds prevented
+  - Cross-line array backing mark coverage corrected
+
+- **Error diagnostics** — Comprehensive error message improvements:
+  - Source locations for operator errors, function calls, lookup failures, dot-on-non-block, intrinsic type mismatches, comparison errors, datetime/timezone errors, regex errors, and base64 decode errors
+  - Available keys shown on lookup failure when no close match exists
+  - Contextual hints: `map(.field)` for dot on list of blocks, `count` for list-used-as-block, block/list in string interpolation
+  - Panics replaced with structured errors: `ComparisonTypeMismatch`, `BitshiftRangeError`, `BitwiseIntegerRequired`, `AssertionFailed`, `VersionRequirementFailed`, dotted metadata keys
+  - Improved messages for partial application, datetime components, numeric format types, symbol-vs-string mismatches
+
+- **Block-dot metadata** — `AllocationPruner` letrec strip index adjustment corrected, fixing incorrect evaluation when accessing fields of metadata-tagged blocks
+
+- **Emacs mode** — Backtick auto-pairing, closing brace indentation, docstring indentation, smartparens compatibility, new Unicode chars in Quail input method and transient menu
 
 ## [0.4.0] - Destructuring, Monadic Blocks, Arrays, Error Messages
 
