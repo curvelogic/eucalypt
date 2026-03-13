@@ -375,11 +375,12 @@ impl StgIntrinsic for ZdtParse8601 {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
         let repr = str_arg(machine, view, &args[0])?;
         if let Some(zdt) = zdt_from_str(&repr) {
             machine_return_zdt(machine, view, zdt)
         } else {
-            Err(ExecutionError::BadDateTimeString(repr))
+            Err(ExecutionError::BadDateTimeString(smid, repr))
         }
     }
 }

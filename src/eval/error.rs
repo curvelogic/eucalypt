@@ -485,16 +485,6 @@ fn format_bad_format_string(detail: &str) -> String {
     )
 }
 
-/// Format a bad datetime string error message with ISO 8601 examples
-fn format_bad_datetime_string(s: &str) -> String {
-    format!(
-        "cannot parse '{s}' as a date or datetime\n  \
-         help: cal.parse expects ISO 8601 format, \
-         e.g. '2023-01-15' (date), '2023-01-15T10:30:00Z' (UTC datetime), \
-         or '2023-01-15T10:30:00+01:00' (datetime with offset)"
-    )
-}
-
 /// Format a bad timezone string error message
 fn format_bad_timezone(tz: &str) -> String {
     format!(
@@ -593,16 +583,16 @@ pub enum ExecutionError {
     NotCallable(Smid, String),
     #[error("{}", format_not_value(.1))]
     NotValue(Smid, String),
-    #[error("bad regex: {1}\n  help: the pattern '{0}' is not a valid regular expression")]
-    BadRegex(String, String),
+    #[error("bad regex: {2}\n  help: the pattern '{1}' is not a valid regular expression")]
+    BadRegex(Smid, String, String),
     #[error("{}", format_bad_datetime_components(.0, .1, .2, .3, .4, .5, .6))]
     BadDateTimeComponents(Number, Number, Number, Number, Number, Number, String),
     #[error("{}", format_bad_timezone(.0))]
     BadTimeZone(String),
     #[error("bad timestamp ({0})")]
     BadTimestamp(Number),
-    #[error("{}", format_bad_datetime_string(.0))]
-    BadDateTimeString(String),
+    #[error("bad datetime format '{1}': not a recognised ISO 8601 datetime string\n  help: expected a format like '2024-01-15T09:30:00+00:00' or '2024-01-15'")]
+    BadDateTimeString(Smid, String),
     #[error("failed to apply format string")]
     FormatFailure,
     #[error(
@@ -677,6 +667,8 @@ pub enum ExecutionError {
     ArrayShapeMismatch(Smid, String),
     #[error("negative array index or dimension: {1} — array indices and dimensions must be non-negative")]
     ArrayNegativeIndex(Smid, f64),
+    #[error("list index out of bounds: index {1} is beyond the end of the list")]
+    ListIndexOutOfBounds(Smid, usize),
 }
 
 impl From<bump::AllocError> for ExecutionError {
@@ -739,6 +731,9 @@ impl HasSmid for ExecutionError {
             ExecutionError::IoFail(s, _) => *s,
             ExecutionError::IoTimeout(s, _) => *s,
             ExecutionError::IoCommandError(s, _) => *s,
+            ExecutionError::ListIndexOutOfBounds(s, _) => *s,
+            ExecutionError::BadDateTimeString(s, _) => *s,
+            ExecutionError::BadRegex(s, _, _) => *s,
             _ => Smid::default(),
         }
     }
@@ -862,6 +857,28 @@ impl ExecutionError {
                 } else {
                     vec![]
                 }
+            }
+            ExecutionError::ListIndexOutOfBounds(_, _) => {
+                vec![
+                    "use 'nth(n, list)' only when you know the list has at least n+1 elements"
+                        .to_string(),
+                    "check the list length with 'count' before indexing, or use pattern matching \
+                     to handle empty or short lists safely"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _) => {
+                vec![
+                    "valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 \
+                     depending on month), hour (0–23), minute (0–59), second (0–59)"
+                        .to_string(),
+                ]
+            }
+            ExecutionError::BadTimeZone(_) => {
+                vec![
+                    "timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'"
+                        .to_string(),
+                ]
             }
             _ => vec![],
         };
