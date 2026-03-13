@@ -645,6 +645,8 @@ pub enum ExecutionError {
     AssertionFailed(Smid, String, String),
     #[error("shift amount {1} is out of range: must be between 0 and 63 for 64-bit integers")]
     BitshiftRangeError(Smid, i64),
+    #[error("unknown render format '{1}'\n  help: supported formats for render-as are: :yaml, :json, :toml, :text, :edn, :html")]
+    UnknownRenderFormat(Smid, String),
     #[error("machine did not terminate after {0} steps")]
     DidntTerminate(usize),
     #[error("infinite loop detected: binding refers to itself")]
@@ -714,6 +716,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
             ExecutionError::AssertionFailed(s, _, _) => *s,
             ExecutionError::BitshiftRangeError(s, _) => *s,
+            ExecutionError::UnknownRenderFormat(s, _) => *s,
             ExecutionError::Compile(compile_error) => compile_error.smid(),
             _ => Smid::default(),
         }
