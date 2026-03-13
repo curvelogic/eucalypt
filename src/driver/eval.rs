@@ -35,10 +35,10 @@ use super::statistics::Statistics;
 /// for user-facing errors and `Panic` for internal machine errors.
 fn io_run_error_to_execution(e: IoRunError) -> ExecutionError {
     match e {
-        IoRunError::IoNotAllowed => ExecutionError::IoNotAllowed,
-        IoRunError::Fail(msg) => ExecutionError::IoFail(msg),
-        IoRunError::Timeout(secs) => ExecutionError::IoTimeout(secs),
-        IoRunError::CommandError(msg) => ExecutionError::IoCommandError(msg),
+        IoRunError::IoNotAllowed(smid) => ExecutionError::IoNotAllowed(smid),
+        IoRunError::Fail(msg) => ExecutionError::IoFail(Smid::default(), msg),
+        IoRunError::Timeout(smid, secs) => ExecutionError::IoTimeout(smid, secs),
+        IoRunError::CommandError(smid, msg) => ExecutionError::IoCommandError(smid, msg),
         IoRunError::MachineError(boxed) => *boxed,
         other => ExecutionError::Panic(other.to_string()),
     }

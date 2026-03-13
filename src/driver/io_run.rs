@@ -42,18 +42,18 @@ use crate::export;
 /// Error from running the IO monad interpret loop
 #[derive(Debug, thiserror::Error)]
 pub enum IoRunError {
-    #[error("io monad failure: {0}")]
+    #[error("io.fail: {0}")]
     Fail(String),
-    #[error("IO operations require the --allow-io (-I) flag")]
-    IoNotAllowed,
+    #[error("IO operations are not permitted; use the --allow-io (-I) flag to enable")]
+    IoNotAllowed(Smid),
     #[error("unknown IO action tag: {0}")]
     UnknownActionTag(String),
     #[error("malformed IO action spec block")]
     MalformedSpec,
-    #[error("command timed out after {0} seconds")]
-    Timeout(u64),
-    #[error("command execution error: {0}")]
-    CommandError(String),
+    #[error("io.shell-with: command timed out after {0} seconds")]
+    Timeout(Smid, u64),
+    #[error("io.shell-with: command execution error: {0}")]
+    CommandError(Smid, String),
     /// Boxed to keep the error variant size small (ExecutionError is large).
     #[error("STG machine error: {0}")]
     MachineError(Box<ExecutionError>),
@@ -1109,12 +1109,12 @@ fn run_command(
 
     let mut child = command
         .spawn()
-        .map_err(|e| IoRunError::CommandError(e.to_string()))?;
+        .map_err(|e| IoRunError::CommandError(Smid::default(), e.to_string()))?;
 
     if let Some(input) = stdin_data {
         if let Some(mut pipe) = child.stdin.take() {
             pipe.write_all(input.as_bytes())
-                .map_err(|e| IoRunError::CommandError(e.to_string()))?;
+                .map_err(|e| IoRunError::CommandError(Smid::default(), e.to_string()))?;
             // Drop `pipe` to close stdin and signal EOF to the child
         }
     }
@@ -1137,8 +1137,8 @@ fn run_command(
                 exit_code,
             })
         }
-        Ok(Err(e)) => Err(IoRunError::CommandError(e.to_string())),
-        Err(_timeout) => Err(IoRunError::Timeout(timeout_secs)),
+        Ok(Err(e)) => Err(IoRunError::CommandError(Smid::default(), e.to_string())),
+        Err(_timeout) => Err(IoRunError::Timeout(Smid::default(), timeout_secs)),
     }
 }
 
@@ -1208,7 +1208,7 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
 
             Ok(DataConstructor::IoAction) => {
                 if !allow_io {
-                    return Err(IoRunError::IoNotAllowed);
+                    return Err(IoRunError::IoNotAllowed(machine.annotation()));
                 }
                 let world = args[0].clone();
                 let spec_block = args[1].clone();
@@ -1222,8 +1222,16 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 // that contain unevaluated thunks (lookup-or calls, etc.).
                 let spec = evaluate_spec_block(machine, spec_block)?;
 
+                // Capture source annotation before the shell call so
+                // timeout / command errors carry a source location.
+                let ann = machine.annotation();
+
                 // Execute the shell action
-                let result = run_spec(&spec)?;
+                let result = run_spec(&spec).map_err(|e| match e {
+                    IoRunError::Timeout(_, secs) => IoRunError::Timeout(ann, secs),
+                    IoRunError::CommandError(_, msg) => IoRunError::CommandError(ann, msg),
+                    other => other,
+                })?;
 
                 // Pre-intern the result block key symbols into the machine's
                 // pool so that the IDs embedded by BuildResultBlock are already
