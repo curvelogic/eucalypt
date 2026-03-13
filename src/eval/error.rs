@@ -485,16 +485,6 @@ fn format_bad_format_string(detail: &str) -> String {
     )
 }
 
-/// Format a bad datetime string error message with ISO 8601 examples
-fn format_bad_datetime_string(s: &str) -> String {
-    format!(
-        "cannot parse '{s}' as a date or datetime\n  \
-         help: cal.parse expects ISO 8601 format, \
-         e.g. '2023-01-15' (date), '2023-01-15T10:30:00Z' (UTC datetime), \
-         or '2023-01-15T10:30:00+01:00' (datetime with offset)"
-    )
-}
-
 /// Format a bad timezone string error message
 fn format_bad_timezone(tz: &str) -> String {
     format!(
