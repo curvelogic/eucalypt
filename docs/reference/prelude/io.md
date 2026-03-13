@@ -59,14 +59,16 @@ Optional `{stdin: s}` pipes string `s` to the command's standard input.
 |----------|-------------|
 | `io.check(result)` | If `exit-code` is non-zero, fail with the stderr message; otherwise return the result |
 | `io.map(f, action)` | Apply a pure function to the result of an IO action (fmap) |
+| `io.then(a, b)` | Sequence two actions, discarding the result of the first |
+| `io.join(mm)` | Flatten a nested IO action |
+| `io.sequence(ms)` | Run a list of IO actions in order, collecting results into a list |
+| `io.map-m(f, xs)` | Apply `f` to each element of `xs` (producing IO actions), then sequence |
+| `io.filter-m(p, xs)` | Monadic filter: keep elements where `p` returns a truthy IO action |
 
-## Monad Utility
-
-The `monad(m)` function derives standard monad combinators (`map`,
-`then`, `join`, `sequence`, `map-m`, `filter-m`) from a block containing
-`bind` and `return`. See the
-[Monads guide](../../guide/monads.md) for full documentation, the
-catenation merge pattern, and examples using the IO and random monads.
+The combinators `map`, `then`, `join`, `sequence`, `map-m`, and
+`filter-m` are derived automatically via `monad()`. See the
+[Monads guide](../../guide/monads.md) for details on the derivation
+pattern and the [IO guide](../../guide/io.md) for practical usage.
 
 | Function | Description |
 |----------|-------------|

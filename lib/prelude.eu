@@ -16,8 +16,14 @@ eu: {
   requires: __REQUIRES
 }
 
-` "IO related declarations"
-io: {
+` :suppress
+__io-bind(action, continuation): __IO_BIND(action, continuation)
+
+` :suppress
+__io-ret(a): __IO_RETURN(a)
+
+` "IO related declarations. The io namespace is a monad: io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
+io: monad({bind: __io-bind, return: __io-ret}) {
   ` "Read access to environent variables at time of launch"
   env: __io.ENV
 
@@ -37,10 +43,10 @@ io: {
   ##
 
   ` "Sequence two IO actions: run action and pass its result to continuation."
-  bind(action, continuation): __IO_BIND(action, continuation)
+  bind: __io-bind
 
   ` "Wrap a pure value in the IO monad."
-  return(a): __IO_RETURN(a)
+  return: __io-ret
 
   ` "Run a shell command via sh -c. Returns a block with stdout, stderr, and exit-code fields."
   shell(c): __IO_ACTION({:io-shell cmd: c, timeout: 30})
@@ -58,12 +64,7 @@ io: {
   check(result): if(result.'exit-code' = 0,
     io.return(result),
     __IO_ACTION({:io-fail message: result.stderr}))
-
-  ` "Apply a pure function to the result of an IO action (fmap)."
-  map(f, action): io.bind(action, __io-return-of(f))
 }
-
-__io-return-of(f, x): io.return(f(x))
 
 ` :suppress
 __io-shell-spec(opts, c): {
