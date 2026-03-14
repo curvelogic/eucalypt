@@ -436,6 +436,7 @@ fn render_whnf_to_string(
                     self.root_env,
                     *view,
                     emitter.as_mut(),
+                    None,
                 )?;
             }
             let s = match String::from_utf8(buffer) {
