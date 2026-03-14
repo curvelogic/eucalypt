@@ -1,7 +1,7 @@
 "parse-as: parse a JSON string into eucalypt data."
 
 # Use a variable to avoid eucalypt treating braces in string literals as interpolation
-json-str: render-as({x: 1, y: 2}, :json)
+json-str: render-as(:json, {x: 1, y: 2})
 data: json-str parse-as(:json)
 
 tests: {

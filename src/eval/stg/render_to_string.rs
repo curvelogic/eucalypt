@@ -15,11 +15,13 @@
 use std::convert::TryInto;
 
 use crate::{
+    common::sourcemap::Smid,
     eval::{
         emit::{Emitter, RenderMetadata},
         error::ExecutionError,
         machine::{
             env::{EnvFrame, SynClosure},
+            env_builder::EnvBuilder,
             intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
         },
         memory::{
@@ -273,9 +275,28 @@ pub(crate) fn render_closure_to_emitter(
                 }
             }
         }
+        HeapSyn::Let { bindings, body } => {
+            // Interpret Let by allocating the env frame and continuing
+            // with the body — this handles nested block literals that
+            // haven't been forced to WHNF.
+            let new_env = view.from_let(bindings.as_slice(), closure.env(), Smid::default())?;
+            let new_closure = SynClosure::new(*body, new_env);
+            render_closure_to_emitter(new_closure, pool, root_env, view, emitter)
+        }
+        HeapSyn::LetRec { bindings, body } => {
+            // Same as Let but with recursive bindings.
+            let new_env = view.from_letrec(bindings.as_slice(), closure.env(), Smid::default())?;
+            let new_closure = SynClosure::new(*body, new_env);
+            render_closure_to_emitter(new_closure, pool, root_env, view, emitter)
+        }
+        HeapSyn::Ann { body, .. } => {
+            // Skip through source annotations.
+            let new_closure = SynClosure::new(*body, closure.env());
+            render_closure_to_emitter(new_closure, pool, root_env, view, emitter)
+        }
         _ => {
-            // Other HeapSyn nodes (Let, App, etc.) — value was not fully
-            // evaluated.  Emit null and continue.
+            // Other HeapSyn nodes (App, Case, etc.) — value was not fully
+            // evaluated and cannot be interpreted here.  Emit null.
             emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
             Ok(())
         }

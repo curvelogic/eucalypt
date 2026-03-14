@@ -1,7 +1,7 @@
 "parse-as: parse a YAML string into eucalypt data."
 
 # Use render-as to produce a valid YAML string, then parse it back
-yaml-str: render-as({x: 10, y: 20}, :yaml)
+yaml-str: render-as(:yaml, {x: 10, y: 20})
 data: yaml-str parse-as(:yaml)
 
 tests: {

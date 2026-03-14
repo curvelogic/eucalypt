@@ -10,13 +10,13 @@ tests: {
 
   ` "render-as with :yaml produces YAML string"
   render-as-yaml: {
-    result: render-as({a: 1}, :yaml)
+    result: render-as(:yaml, {a: 1})
     pass: result str.matches?("a:.*1.*")
   }
 
   ` "render-as with :json produces JSON string"
   render-as-json: {
-    result: render-as({x: 42}, :json)
+    result: render-as(:json, {x: 42})
     pass: result str.matches?(".*x.*42.*")
   }
 
@@ -28,8 +28,26 @@ tests: {
 
   ` "render-as a number to text"
   render-number: {
-    result: render-as(99, :text)
+    result: render-as(:text, 99)
     pass: result str.matches?("99")
+  }
+
+  ` "render nested block produces correct output (not null)"
+  render-nested: {
+    result: render({a: {b: 2}})
+    pass: result str.matches?("b:.*2.*")
+  }
+
+  ` "render-as nested block to JSON"
+  render-as-nested-json: {
+    result: render-as(:json, {a: {b: 2}})
+    pass: result str.matches?(".*b.*2.*")
+  }
+
+  ` "render-as in pipeline style"
+  render-as-pipeline: {
+    result: {x: 1} render-as(:json)
+    pass: result str.matches?(".*x.*1.*")
   }
 
 }
