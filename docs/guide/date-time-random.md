@@ -80,71 +80,69 @@ now: io.epoch-time
 
 ## Random Numbers
 
-Eucalypt provides pseudo-random number generation using a functional
-stream pattern.
+Eucalypt provides pseudo-random number generation via the `random`
+namespace, which is a state monad over a PRNG stream.
 
-### The Random Stream
+### The random stream
 
-The `io.random` binding is an infinite lazy list of random floats in
-`[0, 1)`:
-
-```eu
-first-value: io.random head
-```
-
-Each run produces different values unless you supply a seed:
+A random stream is provided at startup as `io.random`. Each run
+produces different values unless you supply a seed:
 
 ```sh
 eu --seed 42 example.eu
 ```
 
-### The `random` namespace
+### Single random values
 
-The `random` namespace is a state monad over the PRNG stream. Each
-operation is an *action* — a function from stream to
-`{value, rest}`. Call it with a stream to run it:
+For a single random value, pass `io.random` as the stream:
 
 ```eu,notest
 roll: random.int(6, io.random).value + 1
+colour: random.choice(["red", "green", "blue"], io.random).value
 ```
 
-Use `random.sequence` or `random.map-m` to compose multiple actions
-without manually threading the stream.
+Each operation returns a `{value, rest}` block — extract `.value`
+to get the result.
 
-### Practical Examples
+### Multiple random values
 
-**Rolling dice:**
+When you need several random values, you must propagate the stream
+from each call to the next. Reusing `io.random` would give the same
+value each time:
 
 ```eu,notest
-roll: random.int(6, io.random).value + 1
+# WRONG — both use the same stream, so d1 = d2
+d1: random.int(6, io.random).value
+d2: random.int(6, io.random).value
+
+# RIGHT — thread the stream manually
+r1: random.int(6, io.random)
+r2: random.int(6, r1.rest)
+total: r1.value + r2.value + 2
 ```
 
-**Picking a random element:**
+This manual threading is error-prone. The `random` monad solves it —
+use a `{ :random ... }` monadic block or combinators like `sequence`
+and `map-m`:
 
 ```eu,notest
-colours: ["red", "green", "blue"]
-colour: random.choice(colours, io.random).value
-```
+# Monadic block — stream threads automatically
+dice: { :random
+  d6: random.int(6)
+  d20: random.int(20)
+}.[d6, d20]
 
-**Shuffling a list:**
+result: dice(io.random).value  # e.g. [3, 14]
 
-```eu,notest
-items: ["a", "b", "c", "d"]
-result: random.shuffle(items, io.random).value
-```
-
-**Sampling without replacement:**
-
-```eu,notest
-pool: range(1, 50)
-lottery: random.sample(6, pool, io.random).value
-```
-
-**Composing multiple random operations:**
-
-```eu,notest
+# Or use sequence for a list of actions
 two-dice: random.sequence([random.int(6), random.int(6)], io.random).value
-five-rolls: random.map-m(random.int, [6, 6, 6, 6, 6], io.random).value
+```
+
+### Other operations
+
+```eu,notest
+shuffled: random.shuffle(["a", "b", "c", "d"], io.random).value
+picked: random.sample(3, range(1, 50), io.random).value
 ```
 
 See the [Random Numbers reference](../reference/prelude/random.md) for

@@ -215,20 +215,31 @@ See [IO and Shell Commands](io.md) for practical usage and the
 ## The random state monad
 
 The `random` namespace implements a *state monad* over a PRNG stream.
-Each operation is a *function* from stream to a result-plus-new-stream
-block — the state threads through automatically via `bind`.
+A random stream is provided at startup as `io.random` (seeded from
+the system or from `--seed`). Each random operation consumes part of
+the stream and returns a `{value, rest}` block — `value` is the
+result and `rest` is the remaining stream for subsequent operations.
 
-### Without the monad: manual threading
+### The pitfall: forgetting to propagate the stream
+
+For a single random value, passing `io.random` directly is simple:
 
 ```eu,notest
-# Thread the stream manually through each step
+roll: random.int(6, io.random).value + 1
+```
+
+But when you need multiple random values, you must thread the `.rest`
+stream from each call into the next:
+
+```eu,notest
 r1: random.int(6, io.random)
-r2: random.int(6, r1.rest)
+r2: random.int(6, r1.rest)       # must use r1.rest, not io.random!
 total: r1.value + r2.value + 2
 ```
 
-Every call must pass the `.rest` from the previous call. This is
-error-prone and verbose.
+If you accidentally pass `io.random` to both calls, you get the
+*same* random value twice. This manual threading is error-prone and
+verbose — which is exactly what the random monad solves.
 
 ### With the monad: automatic threading
 
@@ -241,40 +252,45 @@ triple: { :random
   d100: random.int(100)
 }.[d6, d20, d100]
 
-result: triple(random.stream(42)).value  # e.g. [3, 14, 57]
+result: triple(io.random).value  # e.g. [3, 14, 57]
 ```
 
 Each step receives the stream left over from the previous step —
 no manual `.rest` threading needed. The return expression
-(`.[d6, d20, d100]`) collects the results.
+(`.[d6, d20, d100]`) collects the results into a list.
+
+The monadic block produces an *action* — a function that takes a
+stream — so you run it by passing `io.random` and extracting
+`.value`.
 
 For common patterns, `sequence` and `map-m` are even more concise:
 
 ```eu,notest
 # Sequence a list of actions
 two-dice: random.sequence[random.int(6), random.int(6)]
-result: two-dice(random.stream(42)).value  # list of two rolls
+result: two-dice(io.random).value  # list of two rolls
 
-# Map an action over a list
+# Map an action over a list of die sizes
 dice: random.map-m(random.int, [4, 6, 8, 10, 20])
-rolls: dice(random.stream(42)).value   # e.g. [2, 4, 1, 7, 15]
+rolls: dice(io.random).value   # e.g. [2, 4, 1, 7, 15]
 ```
 
-### Running an action
+**Important:** always extract `.value` before rendering — the `.rest`
+field is an infinite stream and will hang if you try to print it.
 
-An action is a function from stream to `{value, rest}`. Call it with
-`random.stream(seed)` to run it:
+### Deterministic seeds
+
+For reproducible output (useful in tests), pass `--seed` on the
+command line or create a stream from a fixed seed:
 
 ```eu,notest
-roll: random.int(6, random.stream(42)).value   # integer in [0,6)
+rolls: random.map-m(random.int, [6, 6])(random.stream(42)).value
+# always produces the same result for seed 42
 ```
 
-Only extract `.value` — rendering the full result block would try to
-print the infinite `.rest` stream.
+### How the state monad works
 
-### Implementing the state monad pattern
-
-The state monad return and bind are:
+Under the hood, `random.return` and `random.bind` are:
 
 ```eu,notest
 # return: wrap a pure value as a do-nothing action
@@ -297,7 +313,6 @@ partial application pattern used throughout eucalypt.
 
 | Function | Description |
 |----------|-------------|
-| `random.stream(seed)` | Create a PRNG stream from an integer seed |
 | `random.bind(m, f)` | State monad bind |
 | `random.return(v)` | State monad return |
 | `random.float` | Action: random float in [0,1) |
