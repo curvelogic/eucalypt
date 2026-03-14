@@ -30,7 +30,7 @@ use crate::{
             mutator::MutatorHeapView,
             ndarray::HeapNdArray,
             set::Primitive as SetPrimitive,
-            symbol::SymbolPool,
+            symbol::{SymbolId, SymbolPool},
             syntax::{HeapSyn, Native, Ref, RefPtr},
         },
         primitive::Primitive,
@@ -77,7 +77,11 @@ fn resolve_cons_arg(
 }
 
 /// Convert a set primitive to a render primitive
-fn set_primitive_to_render_primitive(prim: &SetPrimitive, pool: &SymbolPool) -> Primitive {
+fn set_primitive_to_render_primitive(
+    prim: &SetPrimitive,
+    pool: &SymbolPool,
+    machine: Option<*mut dyn IntrinsicMachine>,
+) -> Primitive {
     match prim {
         SetPrimitive::Num(n) => {
             let num = serde_json::Number::from_f64(n.into_inner())
@@ -85,8 +89,29 @@ fn set_primitive_to_render_primitive(prim: &SetPrimitive, pool: &SymbolPool) -> 
             Primitive::Num(num)
         }
         SetPrimitive::Str(s) => Primitive::Str(s.clone()),
-        SetPrimitive::Sym(id) => Primitive::Sym(pool.resolve(*id).to_string()),
+        SetPrimitive::Sym(id) => Primitive::Sym(resolve_symbol(*id, pool, machine)),
     }
+}
+
+/// Resolve a symbol ID to its string representation.
+///
+/// Uses the machine's live symbol pool (via raw pointer) when
+/// available, falling back to the provided pool snapshot.  The live
+/// pool is necessary because `force_to_whnf` can intern new symbols
+/// that don't exist in the snapshot.
+fn resolve_symbol(
+    id: SymbolId,
+    pool: &SymbolPool,
+    machine: Option<*mut dyn IntrinsicMachine>,
+) -> String {
+    if let Some(m) = machine {
+        // SAFETY: machine pointer is valid for entire render traversal.
+        // Use the live pool which includes symbols interned during
+        // force_to_whnf (e.g. by parse-as).
+        let live_pool = unsafe { (*m).symbol_pool() };
+        return live_pool.resolve(id).to_string();
+    }
+    pool.resolve(id).to_string()
 }
 
 /// Render a native value to the emitter
@@ -95,6 +120,7 @@ fn render_native(
     pool: &SymbolPool,
     view: MutatorHeapView<'_>,
     emitter: &mut dyn Emitter,
+    machine: Option<*mut dyn IntrinsicMachine>,
 ) {
     match native {
         Native::Num(n) => {
@@ -105,7 +131,7 @@ fn render_native(
             emitter.scalar(&RenderMetadata::empty(), &Primitive::Str(text));
         }
         Native::Sym(id) => {
-            let sym = pool.resolve(*id).to_string();
+            let sym = resolve_symbol(*id, pool, machine);
             emitter.scalar(&RenderMetadata::empty(), &Primitive::Sym(sym));
         }
         Native::Zdt(dt) => {
@@ -115,7 +141,7 @@ fn render_native(
             let set = view.scoped(*ptr);
             emitter.sequence_start(&RenderMetadata::empty());
             for elem in set.sorted_elements() {
-                let prim = set_primitive_to_render_primitive(elem, pool);
+                let prim = set_primitive_to_render_primitive(elem, pool, machine);
                 emitter.scalar(&RenderMetadata::empty(), &prim);
             }
             emitter.sequence_end();
@@ -193,7 +219,7 @@ pub(crate) fn render_closure_to_emitter(
     match &*code {
         HeapSyn::Atom { evaluand } => match evaluand {
             Ref::V(native) => {
-                render_native(native, pool, view, emitter);
+                render_native(native, pool, view, emitter, machine);
                 Ok(())
             }
             Ref::L(i) => {
@@ -490,7 +516,7 @@ fn render_block_pair_args(
     // The key is an unboxed symbol (or string) ref
     let key_native = closure.navigate_local_native(&view, key_ref);
     let key_str = match key_native {
-        Native::Sym(id) => pool.resolve(id).to_string(),
+        Native::Sym(id) => resolve_symbol(id, pool, machine),
         Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
         _ => "<key>".to_string(),
     };
@@ -531,7 +557,9 @@ impl StgIntrinsic for RenderToString {
         // Resolve args[0] to a closure for traversal
         let value_closure = machine.nav(view).resolve(&args[0])?;
 
-        // Extract pool and root_env before entering the render traversal
+        // Snapshot the symbol pool for use as fallback.  The live pool
+        // is accessed via the machine pointer when available (symbols
+        // may be interned during force_to_whnf).
         let pool = machine.symbol_pool().clone();
         let root_env = machine.root_env();
 
