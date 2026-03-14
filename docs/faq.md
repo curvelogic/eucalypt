@@ -53,7 +53,7 @@ stdout:
 
 ```sh
 # Filter JSON from an API
-curl -s https://api.example.com/data | eu -e 'items filter(_.active)'
+curl -s https://api.example.com/data | eu -e 'items filter(.active)'
 
 # Transform and re-export
 cat data.yaml | eu transform.eu -j > output.json
@@ -265,7 +265,7 @@ For sorting by a key, use `sort-by-str` or `sort-by-num`:
 
 ```eu
 people: [{ name: "Zoe" age: 25 }, { name: "Amy" age: 30 }]
-by-name: people sort-by-str(_.name)
+by-name: people sort-by-str(.name)
 youngest: (by-name head).name //=> "Amy"
 ```
 

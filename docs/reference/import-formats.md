@@ -316,7 +316,7 @@ Streaming formats are specified using the `format@path` syntax:
 eu -e 'data take(10)' data=jsonl-stream@events.jsonl
 
 # Stream a large CSV
-eu -e 'data filter(_.age > 30) count' data=csv-stream@people.csv
+eu -e 'data filter(.age > 30) count' data=csv-stream@people.csv
 
 # Stream lines of text
 eu -e 'data filter(str.matches?("ERROR"))' log=text-stream@app.log

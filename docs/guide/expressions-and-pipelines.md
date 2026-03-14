@@ -240,7 +240,7 @@ people: [
   { name: "Charlie" age: 35 }
 ]
 
-over-thirty: people filter(_.age > 30) map(_.name)
+over-thirty: people filter(.age > 30) map(.name)
 ```
 
 ```yaml

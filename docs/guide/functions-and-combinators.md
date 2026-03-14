@@ -570,7 +570,7 @@ people: [
 format(p): "{p.name}: age {p.age}"
 
 directory: people
-  filter(_.age >= 30)
+  filter(.age >= 30)
   map(format)
 ```
 

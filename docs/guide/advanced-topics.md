@@ -432,7 +432,7 @@ items: [
   { type: "fruit" name: "banana" }
 ]
 
-grouped: items group-by(_.type)
+grouped: items group-by(.type)
 ```
 
 ```yaml

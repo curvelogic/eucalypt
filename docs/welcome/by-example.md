@@ -28,7 +28,7 @@ needed.
 **Problem:** Given a list of users in JSON, extract just their names.
 
 ```sh
-eu -e 'map(_.name)' <<'JSON'
+eu -e 'map(.name)' <<'JSON'
 [
   {"name": "Alice", "role": "admin"},
   {"name": "Bob", "role": "user"},
@@ -63,8 +63,8 @@ products: [
 ]
 
 expensive: products
-  filter(_.price > 20)
-  map(_.name str.to-upper)
+  filter(.price > 20)
+  map(.name str.to-upper)
 ```
 
 ```sh
@@ -225,7 +225,7 @@ sales: [
 ]
 
 ` :suppress
-amounts: sales map(_.amount)
+amounts: sales map(.amount)
 n: sales count
 
 summary: {
@@ -299,7 +299,7 @@ parsed: lines map(parse) map({parts: •}.({
   message: parts nth(2)
 }))
 
-errors: parsed filter(_.level = "ERROR")
+errors: parsed filter(.level = "ERROR")
 ```
 
 ```sh
@@ -362,8 +362,8 @@ events: [
 cutoff: t"2024-06-01"
 
 upcoming: events
-  filter(_.date >= cutoff)
-  map(_.name)
+  filter(.date >= cutoff)
+  map(.name)
 ```
 
 ```sh
@@ -442,7 +442,7 @@ items: [
 ]
 
 ` :suppress
-tag-sets: items map(_.tags set.from-list)
+tag-sets: items map(.tags set.from-list)
 
 all-tags: tag-sets foldl(set.union, ∅) set.to-list
 common-tags: tag-sets foldl(set.intersect, tag-sets head) set.to-list

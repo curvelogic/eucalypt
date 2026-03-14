@@ -412,8 +412,8 @@ data: [
 ]
 
 top-scorers: data
-  filter(_.score >= 90)
-  map(_.name)
+  filter(.score >= 90)
+  map(.name)
 ```
 
 ```yaml
