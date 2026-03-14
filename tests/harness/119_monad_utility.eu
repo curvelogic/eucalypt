@@ -86,3 +86,32 @@ test-io-then:
     if(r.stdout str.matches?("second.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))
+
+##
+## and-then: bind with flipped args for pipeline use (pure)
+##
+` { target: :test-and-then-pure }
+test-and-then-pure:
+  if(id-monad.and-then(inc, 41) = 42,
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
+
+##
+## IO: and-then in pipeline style
+##
+` { target: :test-io-and-then requires-io: true }
+test-io-and-then:
+  { :io r: "echo hello" io.shell io.and-then((.stdout) ; io.return) }.(
+    if(r = c"hello\n",
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))
+
+##
+## IO: io.checked pipeline (success case)
+##
+` { target: :test-io-checked-success requires-io: true }
+test-io-checked-success:
+  { :io r: "echo hello" io.shell io.checked io.map(.stdout) }.(
+    if(r = c"hello\n",
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))
