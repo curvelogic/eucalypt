@@ -474,7 +474,7 @@ Key sequences:
   ** → •  (bullet / anaphor)
   || → ‖  (cons operator — use |||| for ‖ after ∨)
   |> → ↑  (head prefix)
-  !! → ‼  (non-nil postfix)
+  !! → ✓  (non-nil check)
   ^^ → ⊕  (bitwise XOR)
   ~< → ≪  (left shift)
   ~> → ≫  (right shift)
@@ -508,7 +508,7 @@ Key sequences:
  ;; List operators
  ("|||" ?‖)
  ("|>"  ?↑)
- ("!!"  ?‼)
+ ("!!"  ?✓)
  ;; Sets
  ("{}"  ?∅)
  ;; Natural numbers
@@ -544,7 +544,7 @@ Key sequences:
    ("b" "• bullet"     (lambda () (interactive) (insert "•")))
    ("C" "‖ cons"       (lambda () (interactive) (insert "‖")))
    ("h" "↑ head"       (lambda () (interactive) (insert "↑")))
-   ("?" "‼ non-nil?"   (lambda () (interactive) (insert "‼")))]
+   ("?" "✓ non-nil?"   (lambda () (interactive) (insert "✓")))]
   ["Other"
    ("c" "∘ compose"    (lambda () (interactive) (insert "∘")))
    ("e" "∅ empty-set"  (lambda () (interactive) (insert "∅")))

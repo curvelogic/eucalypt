@@ -202,6 +202,9 @@ when(p?, f, x): if(x p?, x f, x)
 ` "`cons(h, t)` - construct new list by prepending item `h` to list `t`."
 cons: __CONS
 
+` "`snoc(x, l)` - append element `x` to the end of list `l`."
+snoc(x, l): l ++ [x]
+
 ` { doc: "`x ‖ xs` - prepend element `x` to list `xs`. Right-associative cons operator."
     associates: :right
     precedence: 55 }
@@ -220,9 +223,9 @@ nil?: = []
 ` "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
 non-nil?: nil? complement
 
-` { doc: "`x‼` - `true` if `x` is non-nil, `false` otherwise. Postfix non-nil predicate operator."
+` { doc: "`x✓` - `true` if `x` is non-nil, `false` otherwise. Postfix non-nil check operator."
     precedence: :bool-unary }
-(x ‼): x non-nil?
+(x ✓): x non-nil?
 
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
 head-or(d, xs): xs nil? then(d, xs head)
@@ -881,10 +884,10 @@ merge-meta(m, e): e // (meta(e) m)
 ` "`assert(p?, s, v)` - if `v p?` is true then return `v` otherwise error with message `s`."
 assert(p?, s, v): if(v p?, v, panic(s))
 
-assertions: {
+expect: {
   # In debug mode maybe the machine checks every return value against
   # metadata, but for performance reasons we only check for explicit
-  # assertions.
+  # expectations.
 
   ` "`validator(v)` - find the validator for a value `v` in its metadata"
   validator(v): lookup-or(:assert, const(true), meta(v))
@@ -904,13 +907,13 @@ assertions: {
     export: :suppress
     associates: :left
     precedence: :meta }
-(e //= v): e with-meta({ assert: (= v)}) assertions.check
+(e //= v): e with-meta({ assert: (= v)}) expect.check
 
 ` { doc: "`e //=? f` - test that expression `e` satisfies predicate `f`, return boolean"
     export: :suppress
     associates: :left
     precedence: :meta }
-(e //=? f): e with-meta({ assert: f}) assertions.checked
+(e //=? f): e with-meta({ assert: f}) expect.checked
 
 #
 # Assertions (panic on failure, return the value on success)
@@ -942,7 +945,7 @@ assertions: {
     deprecated: true
     associates: :left
     precedence: :meta }
-(e //!? f): e with-meta({ assert: complement(f)}) assertions.checked
+(e //!? f): e with-meta({ assert: complement(f)}) expect.checked
 
 ` { doc: "DEPRECATED: use `if(e, __ASSERT_FAIL(e, false), e)` instead."
     export: :suppress
