@@ -51,6 +51,17 @@ pub trait IntrinsicMachine {
 
     /// Current source annotation for error reporting
     fn annotation(&self) -> Smid;
+
+    /// Force a closure to WHNF by running the machine.
+    ///
+    /// This is used by intrinsics that need to evaluate lazy values
+    /// (e.g. RENDER_TO_STRING traversing nested block values).
+    /// Only valid during BIF execution — panics otherwise.
+    fn force_to_whnf(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        closure: SynClosure,
+    ) -> Result<SynClosure, ExecutionError>;
 }
 
 /// All intrinsics have an STG syntax wrapper
