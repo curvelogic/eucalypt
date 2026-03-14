@@ -245,6 +245,45 @@ eu -e '[{x: 1}, {x: 2}, {x: 3}] map(.x)'
 - 3
 ```
 
+## Idiot Brackets
+
+Eucalypt lets you define custom Unicode bracket pairs that wrap and
+transform an expression. These are called *idiot brackets* (inspired
+by *idiom brackets* from applicative functor notation, but they are a
+general bracket overloading mechanism).
+
+```eu
+⌈ x ⌉: x * 2
+
+doubled: ⌈ 3 + 4 ⌉
+```
+
+```yaml
+doubled: 14
+```
+
+The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` that
+takes one argument. Using `⌈ expr ⌉` in an expression calls that
+function with `expr`.
+
+Any of the built-in Unicode bracket pairs can be used:
+
+| Open | Close | Name |
+|------|-------|------|
+| `⟦`  | `⟧`   | Mathematical white square brackets |
+| `⟨`  | `⟩`   | Mathematical angle brackets |
+| `⟪`  | `⟫`   | Mathematical double angle brackets |
+| `⌈`  | `⌉`   | Ceiling brackets |
+| `⌊`  | `⌋`   | Floor brackets |
+| `«`  | `»`   | French guillemets |
+
+(and several others — see the
+[syntax reference](../reference/syntax.md) for the full list.)
+
+Idiot brackets can also be given a monadic interpretation for
+sequencing — see [Monads and the monad() Utility](monads.md) for
+details on bracket pair definitions with `:monad` metadata.
+
 ## Key Concepts
 
 - Operators are declared with symbolic names in parentheses:

@@ -217,15 +217,17 @@ Eucalypt should handle unicode gracefully and any unicode characters
 in the symbol or punctuation classes are fine for operators.
 
 In addition to named operators, you can define **idiot brackets** —
-Unicode bracket pairs that define applicative functor lifting.  A
-bracket pair declaration uses a Unicode bracket pair wrapping a single
-parameter directly (paren-free style):
+custom Unicode bracket pairs that wrap an expression and apply a
+function to it. The name is inspired by *idiom brackets* from
+applicative functor notation, but they are a general bracket
+overloading mechanism. A bracket pair declaration uses a Unicode
+bracket pair wrapping a single parameter directly (paren-free style):
 
 ```eu
-# Ceiling brackets lift into a "double" functor
+# Ceiling brackets double
 ⌈ x ⌉: x * 2
 
-# Floor brackets lift into an "increment" functor
+# Floor brackets increment
 ⌊ x ⌋: x + 1
 ```
 
