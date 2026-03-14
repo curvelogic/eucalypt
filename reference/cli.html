@@ -1,0 +1,571 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>CLI Reference - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/reference/cli.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="cli-reference"><a class="header" href="#cli-reference">CLI Reference</a></h1>
+<p>Eucalypt is available as a command line tool, <code>eu</code>, which reads inputs
+and writes outputs.</p>
+<p>Everything it does in between is purely functional and there is no
+mutable state.</p>
+<p>It is intended to be simple to use in unix pipelines.</p>
+<pre><code class="language-sh">eu --version # shows the current eu version
+eu --help # lists command line options
+</code></pre>
+<h2 id="command-structure"><a class="header" href="#command-structure">Command Structure</a></h2>
+<p>The <code>eu</code> command uses a subcommand structure for clarity and extensibility:</p>
+<pre><code class="language-sh">eu [GLOBAL_OPTIONS] [SUBCOMMAND] [SUBCOMMAND_OPTIONS] [FILES...]
+</code></pre>
+<h3 id="subcommands"><a class="header" href="#subcommands">Subcommands</a></h3>
+<ul>
+<li><code>run</code> (default) - Evaluate eucalypt code</li>
+<li><code>test</code> - Run tests</li>
+<li><code>dump</code> - Dump intermediate representations</li>
+<li><code>version</code> - Show version information</li>
+<li><code>explain</code> - Explain what would be executed</li>
+<li><code>list-targets</code> - List targets defined in the source</li>
+<li><code>fmt</code> - Format eucalypt source files</li>
+<li><code>lsp</code> - Start the Language Server Protocol server</li>
+</ul>
+<p>When no subcommand is specified, <code>run</code> is used by default, so these are equivalent:</p>
+<pre><code class="language-sh">eu file.eu
+eu run file.eu
+</code></pre>
+<h2 id="inputs"><a class="header" href="#inputs">Inputs</a></h2>
+<h3 id="files--stdin"><a class="header" href="#files--stdin">Files / <em>stdin</em></a></h3>
+<p><code>eu</code> can read several inputs, specified by command line arguments.</p>
+<p>Inputs specify text data from:</p>
+<ul>
+<li>files</li>
+<li>stdin</li>
+<li>internal resources (ignored for now)</li>
+<li>(in future) HTTPS URLs or Git refs</li>
+</ul>
+<p>...of which the first two are the common case. In the simplest case,
+file inputs are specified by file name, stdin is specified by <code>-</code>.</p>
+<p>So</p>
+<pre><code class="language-sh">eu a.yaml - b.eu
+</code></pre>
+<p>...will read input from <code>a.yaml</code>, stdin and <code>b.eu</code>.
+Each will be read into <strong>eucalypt</strong>'s core representation and merged
+before output is rendered.</p>
+<h3 id="input-format"><a class="header" href="#input-format">Input format</a></h3>
+<p>Inputs must be one of the formats that <strong>eucalypt</strong> supports, which
+at present, are:</p>
+<ul>
+<li>yaml</li>
+<li>json</li>
+<li>jsonl (JSON Lines)</li>
+<li>toml</li>
+<li>edn</li>
+<li>xml</li>
+<li>csv</li>
+<li>text</li>
+</ul>
+<p>Of these yaml, json, toml, edn and xml return blocks; jsonl, csv and
+text return lists. Inputs that return lists frequently need to be named (see
+below) to allow them to be used.</p>
+<p>Usually the format is inferred from file extension but it can be
+overridden on an input by input basis using a <code>format@</code> prefix.</p>
+<p>For instance:</p>
+<pre><code class="language-sh">eu yaml@a.txt json@- yaml@b.txt
+</code></pre>
+<p>...will read YAML from <code>a.txt</code>, JSON from stdin and YAML from <code>b.txt</code>.</p>
+<h3 id="named-inputs"><a class="header" href="#named-inputs">Named inputs</a></h3>
+<p>Finally inputs can be <em>named</em> using a <code>name=</code> prefix. This alters the
+way that data is merged by making the contents of an input available
+in a block or list with the specified name, instead of at the top
+level.</p>
+<p>Suppose we have two inputs:</p>
+<pre><code class="language-yaml">foo: bar
+</code></pre>
+<pre><code class="language-eu">x: 42
+</code></pre>
+<p>then</p>
+<pre><code class="language-sh">eu a.yaml b.eu
+</code></pre>
+<p>would generate:</p>
+<pre><code class="language-yaml">foo: bar
+x: 42
+</code></pre>
+<p>but</p>
+<pre><code class="language-sh">eu data=a.yaml b.eu
+</code></pre>
+<p>would generate:</p>
+<pre><code class="language-yaml">data:
+  foo: bar
+
+x: 42
+</code></pre>
+<p>This can be useful for various reasons, particularly when:</p>
+<ul>
+<li>the form of the input's content is not known in advance</li>
+<li>the input's content is a list rather than a block</li>
+</ul>
+<h3 id="full-input-syntax"><a class="header" href="#full-input-syntax">Full input syntax</a></h3>
+<p>The full input syntax is therefore:</p>
+<pre><code>[name=][format@][URL/file]
+</code></pre>
+<p>This applies at the command line and also when specifying
+<a href="import-formats.html">imports</a> in <code>.eu</code> files.</p>
+<h3 id="stdin-defaulting"><a class="header" href="#stdin-defaulting"><em>stdin</em> defaulting</a></h3>
+<p>When no inputs are specified and <code>eu</code> is being used in a pipeline, it
+will accept input from <em>stdin</em> by default, making it easy to pipe JSON
+or YAML from other tools into eu.</p>
+<p>For example, this takes JSON from the <code>aws</code> CLI and formats it as YAML
+to stdout.</p>
+<pre><code class="language-sh">aws s3-api list-buckets | eu
+</code></pre>
+<h3 id="how-inputs-are-merged"><a class="header" href="#how-inputs-are-merged">How inputs are merged</a></h3>
+<p>When several inputs are listed, names from earlier inputs become
+available to later inputs, but the content that will be rendered is
+that of the final input.</p>
+<p>So for instance:</p>
+<p>a.eu</p>
+<pre><code class="language-eu">x: 4
+y: 8
+</code></pre>
+<p>b.eu</p>
+<pre><code class="language-eu notest">z: x + y
+</code></pre>
+<pre><code class="language-sh">eu a.eu b.eu
+</code></pre>
+<p>will output</p>
+<pre><code class="language-yaml">z: 12
+</code></pre>
+<p>The common use cases are:</p>
+<ul>
+<li>a final input containing logic to inspect or process data
+provided by previous inputs</li>
+<li>a final input which uses functions defined in earlier inputs to
+process data provided in previous inputs</li>
+</ul>
+<p>If you want to render contents of earlier inputs, you need a named
+input to provide a name for that content which you can then use.</p>
+<p>For instance:</p>
+<pre><code class="language-sh">eu r=a.eu b.eu -e r
+</code></pre>
+<p>will render:</p>
+<pre><code class="language-yaml">x: 4
+y: 8
+</code></pre>
+<h4 id="--collect-as-and---name-inputs"><a class="header" href="#--collect-as-and---name-inputs"><code>--collect-as</code> and <code>--name-inputs</code></a></h4>
+<p>Occasionally it is useful to aggregate data from an arbitrary number
+of sources files, typically specified by shell wildcards. To refer to
+this data we need to introduce a name for the collection of data.</p>
+<p>This is what the command line switch <code>--collect-as</code> / <code>-c</code> is for.</p>
+<pre><code class="language-sh">eu --collect-as inputs *.eu
+</code></pre>
+<p>...will render:</p>
+<pre><code class="language-yaml">inputs:
+  - x: 4
+    y: 8
+  - z: 12
+</code></pre>
+<p>It is common to use <code>-e</code> to select an item to render:</p>
+<pre><code class="language-sh">eu -c inputs *.eu -e 'inputs head'
+</code></pre>
+<p>...renders:</p>
+<pre><code class="language-yaml">x: 4
+y: 8
+</code></pre>
+<p>If you are likely to need to refer to inputs by name, you can add
+<code>--name-inputs</code> / <code>-N</code> to pass inputs as a block instead of a list:</p>
+<pre><code class="language-sh">eu --collect-as inputs --name-inputs *.eu
+</code></pre>
+<p>...renders:</p>
+<pre><code class="language-yaml">inputs:
+  a.eu:
+    x: 4
+    y: 8
+  b.eu:
+    z: 12
+</code></pre>
+<p>This makes it easier to invoke specific functions from named inputs
+although you will need single-quote name syntax to use the generated
+names which contain <code>.</code>s.</p>
+<h2 id="outputs"><a class="header" href="#outputs">Outputs</a></h2>
+<p>In the current version, <code>eu</code> can only generate one output.</p>
+<h3 id="output-format"><a class="header" href="#output-format">Output format</a></h3>
+<p>Output is rendered as YAML by default. Other formats can be specified
+using the <code>-x</code> command line option:</p>
+<pre><code class="language-sh">eu -x json # for JSON
+eu -x text # for plain text
+</code></pre>
+<p>JSON is such a common case that there is a shortcut: <code>-j</code>.</p>
+<h3 id="output-targets"><a class="header" href="#output-targets">Output targets</a></h3>
+<p>By default, <strong>eucalypt</strong> renders all the content of the final input to
+output.</p>
+<p>There are various ways to override this. First, <code>:target</code> metadata can
+be specified in the final input to identify different parts for
+potential export.</p>
+<p>To list the <strong>targets</strong> found in the specified inputs, use the
+<code>list-targets</code> subcommand.</p>
+<pre><code class="language-sh">eu list-targets file.eu
+</code></pre>
+<p>...and a particular target can be selected for render using <code>-t</code>.</p>
+<pre><code class="language-sh">eu -t my-target
+</code></pre>
+<p>If there is a <strong>target</strong> called "main" it will be used by default
+unless another target is specified.</p>
+<h2 id="evaluands"><a class="header" href="#evaluands">Evaluands</a></h2>
+<p>In addition to inputs, an <em>evaluand</em> can be specified at the command
+line. This is a <strong>eucalypt</strong> expression which has access to all names
+defined in the inputs and replaces the input body or targets as the
+data to export.</p>
+<p>It can be used to select content or derive values from data in the
+inputs:</p>
+<pre><code class="language-console">$ aws s3api list-buckets | eu -e 'Buckets map(lookup(:CreationDate)) head'
+2016-12-25T14:22:30.000Z
+</code></pre>
+<p>...or just to test out short expressions or command line features:</p>
+<pre><code class="language-console">$ eu -e '{a: 1 b: 2 * 2}' -j
+{"a": 1, "b": 4}
+</code></pre>
+<h2 id="passing-arguments-to-programs"><a class="header" href="#passing-arguments-to-programs">Passing Arguments to Programs</a></h2>
+<p>You can pass command-line arguments to your eucalypt program using the
+<code>--</code> separator. Arguments after <code>--</code> are available via <code>io.args</code>:</p>
+<pre><code class="language-console">$ eu -e 'io.args' -- foo bar baz
+---
+- foo
+- bar
+- baz
+</code></pre>
+<p>This is useful for writing eucalypt scripts that accept parameters:</p>
+<pre><code class="language-eu"># greet.eu
+name: io.args head-or("World")
+greeting: "Hello, {name}!"
+</code></pre>
+<pre><code class="language-console">$ eu greet.eu -e greeting -- Alice
+---
+Hello, Alice!
+</code></pre>
+<p>Arguments are passed as strings. Use <code>num</code> to convert numeric arguments:</p>
+<pre><code class="language-eu"># sum.eu
+total: io.args map(num) foldl((+), 0)
+</code></pre>
+<pre><code class="language-console">$ eu sum.eu -e total -- 1 2 3 4 5
+---
+15
+</code></pre>
+<p>When no arguments are passed, <code>io.args</code> is an empty list:</p>
+<pre><code class="language-console">$ eu -e 'io.args nil?'
+---
+true
+</code></pre>
+<h2 id="random-seed"><a class="header" href="#random-seed">Random Seed</a></h2>
+<p>By default, random numbers are seeded from system entropy and produce
+different results on each run. Use <code>--seed</code> for reproducible output:</p>
+<pre><code class="language-sh">eu --seed 42 template.eu
+</code></pre>
+<p>This sets <code>io.RANDOM_SEED</code> and seeds the <code>io.random</code> stream. See
+<a href="prelude/random.html">Random Numbers</a> for the full random API.</p>
+<h2 id="io-monad-operations"><a class="header" href="#io-monad-operations">IO Monad Operations</a></h2>
+<p>By default, eucalypt is a pure functional language with no side effects. To
+enable IO monad operations — specifically shell command execution — you must
+pass the <code>--allow-io</code> / <code>-I</code> flag:</p>
+<pre><code class="language-sh">eu -I script.eu
+eu --allow-io script.eu
+</code></pre>
+<p>Without this flag, any program that attempts to execute an IO action will fail
+with an error:</p>
+<pre><code>IO operations require the --allow-io (-I) flag
+</code></pre>
+<h3 id="why-this-flag-exists"><a class="header" href="#why-this-flag-exists">Why this flag exists</a></h3>
+<p>The flag is a deliberate security measure. Eucalypt files are often used as
+configuration or data templates, and it would be unsafe for arbitrary <code>.eu</code>
+files loaded from the filesystem or network to execute shell commands without
+explicit consent. The <code>--allow-io</code> flag is your explicit acknowledgement that
+the program you are running may perform shell execution.</p>
+<h3 id="usage-with-io-targets"><a class="header" href="#usage-with-io-targets">Usage with IO targets</a></h3>
+<p>IO programmes typically use the <code>:io</code> monadic block syntax and are run with a
+named target:</p>
+<pre><code class="language-sh">eu -I --target main script.eu
+eu -I -t main script.eu
+</code></pre>
+<p>See the IO monad design documentation for full details of the IO API.</p>
+<h2 id="suppressing-prelude"><a class="header" href="#suppressing-prelude">Suppressing prelude</a></h2>
+<p>A standard <em>prelude</em> containing many functions and operators is
+automatically prepended to the input list.</p>
+<p>This can be suppressed using <code>-Q</code> if it is not required or if you
+would like to provide an alternative.</p>
+<blockquote>
+<p><strong>Warning:</strong> Many very basic facilities -- like the definition of
+<code>true</code> and <code>false</code> and <code>if</code> -- are provided by the prelude so
+suppressing it leaves a very bare environment.</p>
+</blockquote>
+<h2 id="debugging"><a class="header" href="#debugging">Debugging</a></h2>
+<p><code>eu</code> has a variety of command line switches for dumping out internal
+representations or tracing execution. The <code>dump</code> subcommand provides
+access to intermediate representations:</p>
+<pre><code class="language-sh">eu dump ast file.eu          # Parse and dump syntax tree
+eu dump desugared file.eu    # Dump core expression
+eu dump stg file.eu          # Dump compiled STG syntax
+eu list-targets file.eu      # List available targets
+</code></pre>
+<p>Use <code>eu --help</code> and <code>eu &lt;subcommand&gt; --help</code> for complete option lists.</p>
+<h2 id="formatting-source-files"><a class="header" href="#formatting-source-files">Formatting Source Files</a></h2>
+<p>The <code>fmt</code> subcommand formats eucalypt source files for consistent style:</p>
+<pre><code class="language-sh">eu fmt file.eu              # Print formatted output to stdout
+eu fmt --write file.eu      # Format in place
+eu fmt --check file.eu      # Check formatting (exit 1 if not formatted)
+eu fmt *.eu --write         # Format multiple files in place
+</code></pre>
+<h3 id="options"><a class="header" href="#options">Options</a></h3>
+<ul>
+<li><code>-w, --width &lt;WIDTH&gt;</code> - Line width for formatting (default: 80)</li>
+<li><code>--write</code> - Modify files in place</li>
+<li><code>--check</code> - Check if files are formatted (exit 1 if not)</li>
+<li><code>--reformat</code> - Full reformatting mode (instead of conservative)</li>
+<li><code>--indent &lt;INDENT&gt;</code> - Indent size in spaces (default: 2)</li>
+</ul>
+<p>The formatter has two modes:</p>
+<ul>
+<li><strong>Conservative mode</strong> (default) - Preserves original formatting choices
+where possible, only reformatting where necessary</li>
+<li><strong>Reformat mode</strong> (<code>--reformat</code>) - Full reformatting that applies
+consistent style throughout</li>
+</ul>
+<h2 id="language-server-protocol"><a class="header" href="#language-server-protocol">Language Server Protocol</a></h2>
+<p>The <code>lsp</code> subcommand starts an LSP server for use with editors that
+support the Language Server Protocol (e.g., VS Code, Neovim):</p>
+<pre><code class="language-sh">eu lsp
+</code></pre>
+<p>The LSP server provides:</p>
+<ul>
+<li>Syntax error diagnostics</li>
+<li>Formatting support (via <code>textDocument/formatting</code>)</li>
+</ul>
+<p>Configure your editor to use <code>eu lsp</code> as the language server command
+for <code>.eu</code> files. A VS Code extension is available in the <code>editors/vscode/</code>
+directory of the repository.</p>
+<h2 id="version-assertions"><a class="header" href="#version-assertions">Version Assertions</a></h2>
+<p>The <code>eu.requires</code> function allows eucalypt source files to assert a
+minimum version of the eucalypt executable:</p>
+<pre><code class="language-eu">{ import: [] }  # unit-level metadata not required for eu.requires
+
+# Assert that eu version satisfies semver constraint
+_ : eu.requires("&gt;=0.3.0")
+</code></pre>
+<p>If the running version of <code>eu</code> does not satisfy the constraint, an
+error is raised immediately. This is useful for library code that
+depends on features introduced in a particular version.</p>
+<p>The <code>eu</code> namespace also provides build metadata:</p>
+<pre><code class="language-eu">version: eu.build.version    # e.g., "0.3.0"
+</code></pre>
+<h2 id="backward-compatibility"><a class="header" href="#backward-compatibility">Backward Compatibility</a></h2>
+<p>All existing command patterns continue to work unchanged:</p>
+<pre><code class="language-sh">eu file.eu                   # Still works (uses run subcommand)
+eu -e "expression"           # Still works (uses run subcommand)
+eu -j file.eu                # Still works (JSON output)
+eu -S -Q file.eu             # Still works (statistics, no prelude)
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../reference/prelude/arrays.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../reference/import-formats.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../reference/prelude/arrays.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../reference/import-formats.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

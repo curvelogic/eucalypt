@@ -1,0 +1,442 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Frequently Asked Questions - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/faq.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="frequently-asked-questions"><a class="header" href="#frequently-asked-questions">Frequently Asked Questions</a></h1>
+<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
+<h3 id="how-do-i-install-eucalypt"><a class="header" href="#how-do-i-install-eucalypt">How do I install eucalypt?</a></h3>
+<p>On macOS, use Homebrew:</p>
+<pre><code class="language-sh">brew install curvelogic/homebrew-tap/eucalypt
+</code></pre>
+<p>On other platforms, download a binary from the
+<a href="https://github.com/curvelogic/eucalypt/releases">GitHub releases</a>
+page, or build from source with <code>cargo install --path .</code>.</p>
+<p>Verify installation with:</p>
+<pre><code class="language-sh">eu version
+</code></pre>
+<h3 id="how-do-i-convert-between-data-formats"><a class="header" href="#how-do-i-convert-between-data-formats">How do I convert between data formats?</a></h3>
+<p>Pass a file in one format and specify the output format with <code>-x</code> or
+<code>-j</code>:</p>
+<pre><code class="language-sh"># YAML to JSON
+eu data.yaml -j
+
+# JSON to YAML (default output)
+eu data.json
+
+# YAML to TOML
+eu data.yaml -x toml
+</code></pre>
+<h3 id="what-data-formats-does-eucalypt-support"><a class="header" href="#what-data-formats-does-eucalypt-support">What data formats does eucalypt support?</a></h3>
+<p><strong>Input formats</strong>: YAML, JSON, JSON Lines (jsonl), TOML, EDN, XML,
+CSV, plain text, and eucalypt's own <code>.eu</code> syntax.</p>
+<p><strong>Output formats</strong>: YAML (default), JSON, TOML, EDN, and plain text.</p>
+<p><strong>Streaming input formats</strong> (for large files): <code>jsonl-stream</code>,
+<code>csv-stream</code>, <code>text-stream</code>.</p>
+<h3 id="how-do-i-use-eucalypt-in-a-pipeline"><a class="header" href="#how-do-i-use-eucalypt-in-a-pipeline">How do I use eucalypt in a pipeline?</a></h3>
+<p><code>eu</code> reads from stdin by default when used in a pipe and writes to
+stdout:</p>
+<pre><code class="language-sh"># Filter JSON from an API
+curl -s https://api.example.com/data | eu -e 'items filter(.active)'
+
+# Transform and re-export
+cat data.yaml | eu transform.eu -j &gt; output.json
+</code></pre>
+<p>Use <code>-e</code> to specify an expression to evaluate against the input data.</p>
+<h3 id="how-do-i-pass-arguments-to-a-eucalypt-program"><a class="header" href="#how-do-i-pass-arguments-to-a-eucalypt-program">How do I pass arguments to a eucalypt program?</a></h3>
+<p>Use <code>--</code> to separate <code>eu</code> flags from program arguments:</p>
+<pre><code class="language-sh">eu program.eu -- arg1 arg2 arg3
+</code></pre>
+<p>Inside your program, access them via <code>io.args</code>:</p>
+<pre><code class="language-eu">name: io.args head-or("World")
+greeting: "Hello, {name}!"
+</code></pre>
+<h2 id="language"><a class="header" href="#language">Language</a></h2>
+<h3 id="how-do-functions-work-in-eucalypt"><a class="header" href="#how-do-functions-work-in-eucalypt">How do functions work in eucalypt?</a></h3>
+<p>Define functions with a parameter list after the name:</p>
+<pre><code class="language-eu">double(x): x * 2
+result: double(21) //=&gt; 42
+</code></pre>
+<p>Functions are curried -- applying fewer arguments than expected returns
+a partially applied function:</p>
+<pre><code class="language-eu">add(x, y): x + y
+increment: add(1)
+result: increment(9) //=&gt; 10
+</code></pre>
+<h3 id="what-is-catenation"><a class="header" href="#what-is-catenation">What is catenation?</a></h3>
+<p>Catenation is eucalypt's pipeline syntax. Writing <code>x f</code> applies <code>f</code> to
+<code>x</code> as a single argument:</p>
+<pre><code class="language-eu">add-one(x): x + 1
+result: 5 add-one //=&gt; 6
+</code></pre>
+<p>Chain multiple transforms by writing them in sequence:</p>
+<pre><code class="language-eu">double(x): x * 2
+add-one(x): x + 1
+result: 5 double add-one //=&gt; 11
+</code></pre>
+<p>This reads left to right: start with 5, double it (10), add one (11).</p>
+<h3 id="what-are-anaphora-and-when-should-i-use-them"><a class="header" href="#what-are-anaphora-and-when-should-i-use-them">What are anaphora and when should I use them?</a></h3>
+<p>Anaphora are implicit parameters that let you define simple functions
+without naming them. There are three kinds:</p>
+<p><strong>Expression anaphora</strong> (<code>_</code>, <code>_0</code>, <code>_1</code>): turn an expression into a
+function.</p>
+<pre><code class="language-eu">squares: [1, 2, 3] map(_0 * _0) //=&gt; [1, 4, 9]
+</code></pre>
+<p><strong>String anaphora</strong> (<code>{}</code>, <code>{0}</code>, <code>{1}</code>): turn a string template into
+a function.</p>
+<pre><code class="language-eu">labels: [1, 2, 3] map("item-{}") //=&gt; ["item-1", "item-2", "item-3"]
+</code></pre>
+<p><strong>Block anaphora</strong> (<code>•</code>, <code>•0</code>, <code>•1</code>): turn a block into a function.</p>
+<p>Use anaphora for simple, readable cases. For anything more complex,
+prefer a named function. See <a href="guide/anaphora.html">Anaphora</a> for details.</p>
+<h3 id="why-is-there-no-lambda-syntax"><a class="header" href="#why-is-there-no-lambda-syntax">Why is there no lambda syntax?</a></h3>
+<p>Eucalypt deliberately omits lambda expressions. Instead, use:</p>
+<ol>
+<li><strong>Named functions</strong> for anything non-trivial</li>
+<li><strong>Anaphora</strong> (<code>_</code>, <code>{}</code>) for simple one-liners</li>
+<li><strong>Sections</strong> (<code>(+ 1)</code>, <code>(* 2)</code>) for operator-based functions</li>
+<li><strong>Partial application</strong> (<code>add(1)</code>) for curried functions</li>
+</ol>
+<pre><code class="language-eu"># All equivalent ways to add one:
+add-one(x): x + 1
+result1: [1, 2, 3] map(add-one) //=&gt; [2, 3, 4]
+result2: [1, 2, 3] map(_ + 1) //=&gt; [2, 3, 4]
+result3: [1, 2, 3] map(+ 1) //=&gt; [2, 3, 4]
+</code></pre>
+<h3 id="how-does-block-merging-work"><a class="header" href="#how-does-block-merging-work">How does block merging work?</a></h3>
+<p>When you write one block after another (catenation), they merge:</p>
+<pre><code class="language-eu">base: { a: 1 b: 2 }
+overlay: { b: 3 c: 4 }
+merged: base overlay //=&gt; { a: 1 b: 3 c: 4 }
+</code></pre>
+<p>The second block's values override the first. This is a <strong>shallow</strong>
+merge. For recursive deep merge, use the <code>&lt;&lt;</code> operator:</p>
+<pre><code class="language-eu">base: { x: { a: 1 b: 2 } }
+extra: { x: { c: 3 } }
+result: base &lt;&lt; extra
+</code></pre>
+<h3 id="how-do-i-handle-the-lookup-precedence-gotcha"><a class="header" href="#how-do-i-handle-the-lookup-precedence-gotcha">How do I handle the lookup precedence gotcha?</a></h3>
+<p>The <code>.</code> (lookup) operator has higher precedence than catenation, so
+<code>xs head.id</code> parses as <code>xs (head.id)</code>, not <code>(xs head).id</code>.</p>
+<p>Use explicit parentheses:</p>
+<pre><code class="language-eu">data: [{ id: 1 }, { id: 2 }]
+first-id: (data head).id //=&gt; 1
+</code></pre>
+<p>See <a href="appendices/syntax-gotchas.html">Syntax Gotchas</a> for more.</p>
+<h2 id="data-processing"><a class="header" href="#data-processing">Data Processing</a></h2>
+<h3 id="how-do-i-filter-and-transform-lists"><a class="header" href="#how-do-i-filter-and-transform-lists">How do I filter and transform lists?</a></h3>
+<p>Use <code>map</code> to transform and <code>filter</code> to select:</p>
+<pre><code class="language-eu">numbers: [1, 2, 3, 4, 5, 6]
+small: numbers filter(&lt; 4) //=&gt; [1, 2, 3]
+doubled: numbers map(* 2) //=&gt; [2, 4, 6, 8, 10, 12]
+</code></pre>
+<p>Combine them in a pipeline:</p>
+<pre><code class="language-eu">result: [1, 2, 3, 4, 5, 6] filter(&gt; 3) map(* 10) //=&gt; [40, 50, 60]
+</code></pre>
+<h3 id="how-do-i-look-up-values-in-nested-blocks"><a class="header" href="#how-do-i-look-up-values-in-nested-blocks">How do I look up values in nested blocks?</a></h3>
+<p>Use chained <code>.</code> lookups for known paths:</p>
+<pre><code class="language-eu">config: { db: { host: "localhost" port: 5432 } }
+host: config.db.host //=&gt; "localhost"
+</code></pre>
+<p>For dynamic key lookup, use <code>lookup</code> with a symbol:</p>
+<pre><code class="language-eu">data: { name: "Alice" age: 30 }
+field: data lookup(:name) //=&gt; "Alice"
+</code></pre>
+<p>Use <code>lookup-or</code> to provide a default:</p>
+<pre><code class="language-eu">data: { name: "Alice" }
+age: data lookup-or(:age, 0) //=&gt; 0
+</code></pre>
+<h3 id="how-do-i-search-deeply-nested-data"><a class="header" href="#how-do-i-search-deeply-nested-data">How do I search deeply nested data?</a></h3>
+<p>Use <code>deep-find</code> for recursive key search:</p>
+<pre><code class="language-eu notest"># Finds all values for key "id" at any depth
+ids: data deep-find("id")
+</code></pre>
+<p>Use <code>lookup-path</code> for a known sequence of keys:</p>
+<pre><code class="language-eu">data: { a: { b: { c: 42 } } }
+result: data lookup-path([:a, :b, :c]) //=&gt; 42
+</code></pre>
+<h3 id="how-do-i-sort-data"><a class="header" href="#how-do-i-sort-data">How do I sort data?</a></h3>
+<p>Sort lists with <code>sort-nums</code> or <code>sort-strs</code>:</p>
+<pre><code class="language-eu">names: ["Charlie", "Alice", "Bob"]
+sorted: names sort-strs //=&gt; ["Alice", "Bob", "Charlie"]
+</code></pre>
+<pre><code class="language-eu">nums: [5, 1, 3, 2, 4]
+sorted: nums sort-nums //=&gt; [1, 2, 3, 4, 5]
+</code></pre>
+<p>For sorting by a key, use <code>sort-by-str</code> or <code>sort-by-num</code>:</p>
+<pre><code class="language-eu">people: [{ name: "Zoe" age: 25 }, { name: "Amy" age: 30 }]
+by-name: people sort-by-str(.name)
+youngest: (by-name head).name //=&gt; "Amy"
+</code></pre>
+<h3 id="how-do-i-work-with-dates"><a class="header" href="#how-do-i-work-with-dates">How do I work with dates?</a></h3>
+<p>Use <code>t"..."</code> literals for date-time values:</p>
+<pre><code class="language-eu">meeting: t"2024-03-15T14:30:00Z"
+date-only: t"2024-03-15"
+before: t"2024-01-01" &lt; t"2024-12-31" //=&gt; true
+</code></pre>
+<p>See <a href="guide/date-time-random.html">Date, Time, and Random Numbers</a> for
+parsing, formatting, and arithmetic.</p>
+<h2 id="advanced"><a class="header" href="#advanced">Advanced</a></h2>
+<h3 id="how-do-i-attach-metadata-to-declarations"><a class="header" href="#how-do-i-attach-metadata-to-declarations">How do I attach metadata to declarations?</a></h3>
+<p>Use the backtick (<code>`</code>) prefix:</p>
+<pre><code class="language-eu">` "Compute the square of a number"
+square(x): x * x
+
+result: square(5) //=&gt; 25
+</code></pre>
+<p>Metadata can be a string (documentation) or a block with structured
+data:</p>
+<pre><code class="language-eu notest">` { doc: "Custom operator" associates: :left precedence: 75 }
+(l &lt;+&gt; r): l + r
+</code></pre>
+<h3 id="how-do-imports-work"><a class="header" href="#how-do-imports-work">How do imports work?</a></h3>
+<p>Imports are specified in declaration metadata using the <code>import</code> key:</p>
+<pre><code class="language-eu notest">{ import: "helpers.eu" }
+
+result: helper-function(42)
+</code></pre>
+<p>For named imports (scoped access):</p>
+<pre><code class="language-eu notest">{ import: "cfg=config.eu" }
+
+host: cfg.host
+</code></pre>
+<p>See <a href="reference/import-formats.html">Import Formats</a> for the full syntax
+including git imports.</p>
+<h3 id="how-do-i-write-tests"><a class="header" href="#how-do-i-write-tests">How do I write tests?</a></h3>
+<p>Use the <code>//=&gt;</code> assertion operator to check values inline:</p>
+<pre><code class="language-eu">double(x): x * 2
+result: double(21) //=&gt; 42
+</code></pre>
+<p>If the assertion fails, eucalypt panics with a non-zero exit code.
+Other assertion operators:</p>
+<pre><code class="language-eu">x: 5
+check1: (x &gt; 3) //!
+check2: (x = 0) //!!
+check3: x //=? pos?
+</code></pre>
+<h3 id="how-do-i-generate-random-values"><a class="header" href="#how-do-i-generate-random-values">How do I generate random values?</a></h3>
+<p>Use <code>io.random</code> for a stream of random floats, or pass <code>--seed</code> for
+reproducible output:</p>
+<pre><code class="language-eu notest">die: random.int(6, io.random).value + 1
+</code></pre>
+<pre><code class="language-sh">eu --seed 42 game.eu
+</code></pre>
+<p>See <a href="reference/prelude/random.html">Random Numbers</a> for the full API.</p>
+<h3 id="what-are-sets-and-how-do-i-use-them"><a class="header" href="#what-are-sets-and-how-do-i-use-them">What are sets and how do I use them?</a></h3>
+<p>The <code>set</code> namespace provides set operations. Convert lists to sets
+with <code>set.from-list</code>:</p>
+<pre><code class="language-eu">sa: set.from-list([1, 2, 3, 4])
+sb: set.from-list([3, 4, 5, 6])
+common: sa set.intersect(sb) set.to-list //=&gt; [3, 4]
+combined: sa set.union(sb) set.to-list sort-nums //=&gt; [1, 2, 3, 4, 5, 6]
+diff: sa set.diff(sb) set.to-list sort-nums //=&gt; [1, 2]
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="eucalypt-style.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="appendices/cheat-sheet.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="eucalypt-style.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="appendices/cheat-sheet.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

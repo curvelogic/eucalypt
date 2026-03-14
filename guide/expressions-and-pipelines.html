@@ -1,0 +1,409 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Expressions and Pipelines - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/guide/expressions-and-pipelines.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="expressions-and-pipelines"><a class="header" href="#expressions-and-pipelines">Expressions and Pipelines</a></h1>
+<p>In this chapter you will learn:</p>
+<ul>
+<li>The primitive value types in eucalypt</li>
+<li>How function application works via catenation (pipelining)</li>
+<li>How partial application and currying work</li>
+<li>How to compose pipelines of transformations</li>
+</ul>
+<h2 id="primitive-values"><a class="header" href="#primitive-values">Primitive Values</a></h2>
+<p>Eucalypt has the following primitive types:</p>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Examples</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Numbers</td><td><code>42</code>, <code>-7</code>, <code>3.14</code></td><td>Integers and floats</td></tr>
+<tr><td>Strings</td><td><code>"hello"</code>, <code>"it's"</code></td><td>Double-quoted only</td></tr>
+<tr><td>Symbols</td><td><code>:name</code>, <code>:active</code></td><td>Colon-prefixed identifiers</td></tr>
+<tr><td>Booleans</td><td><code>true</code>, <code>false</code></td><td></td></tr>
+<tr><td>Null</td><td><code>null</code></td><td>Renders as YAML <code>~</code> or JSON <code>null</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="lists"><a class="header" href="#lists">Lists</a></h2>
+<p>Lists are comma-separated values in square brackets (unlike in blocks,
+commas are required):</p>
+<pre><code class="language-eu">numbers: [1, 2, 3, 4, 5]
+mixed: [1, "two", :three, true]
+nested: [[1, 2], [3, 4]]
+empty: []
+</code></pre>
+<h2 id="calling-functions"><a class="header" href="#calling-functions">Calling Functions</a></h2>
+<p>Functions can be called by placing arguments in parentheses directly
+after the function name (with no intervening space):</p>
+<pre><code class="language-eu">add(x, y): x + y
+result: add(3, 4)
+</code></pre>
+<pre><code class="language-yaml">result: 7
+</code></pre>
+<h2 id="catenation-the-pipeline-style"><a class="header" href="#catenation-the-pipeline-style">Catenation: The Pipeline Style</a></h2>
+<p>One distinctive feature of eucalypt is <strong>catenation</strong>: applying a
+function by writing the argument before the function name, separated
+by whitespace.</p>
+<pre><code class="language-eu">result: 5 inc
+</code></pre>
+<p>This is equivalent to <code>inc(5)</code> and produces <code>6</code>.</p>
+<p>Catenation lets you chain operations into readable pipelines:</p>
+<pre><code class="language-sh">eu -e '[1, 2, 3, 4, 5] reverse head'
+</code></pre>
+<pre><code class="language-yaml">5
+</code></pre>
+<p>Each step in the pipeline passes its result to the next function. You
+can read it left to right: "take the list, reverse it, take the head."</p>
+<h2 id="combining-catenation-with-arguments"><a class="header" href="#combining-catenation-with-arguments">Combining Catenation with Arguments</a></h2>
+<p>When a function takes multiple arguments, you can supply some in
+parentheses and the rest via catenation. The catenated value becomes
+the <em>last</em> argument:</p>
+<pre><code class="language-eu">result: [1, 2, 3] map(inc)
+</code></pre>
+<p>Here <code>map</code> takes two arguments: a function and a list. <code>inc</code> is
+provided in parentheses and <code>[1, 2, 3]</code> is provided by catenation.
+The result is <code>[2, 3, 4]</code>.</p>
+<p>This is the standard eucalypt pattern for data processing pipelines:</p>
+<pre><code class="language-sh">eu -e '[1, 2, 3, 4, 5] filter(&gt; 3) map(* 10)'
+</code></pre>
+<pre><code class="language-yaml">- 40
+- 50
+</code></pre>
+<h2 id="currying-and-partial-application"><a class="header" href="#currying-and-partial-application">Currying and Partial Application</a></h2>
+<p>All functions in eucalypt are curried: if you provide fewer arguments
+than a function expects, you get back a partially applied function.</p>
+<pre><code class="language-eu">add(x, y): x + y
+add-five: add(5)
+result: add-five(3)
+</code></pre>
+<pre><code class="language-yaml">result: 8
+</code></pre>
+<p>Curried application also works with multi-argument calls:</p>
+<pre><code class="language-eu">f(x, y, z): x + y + z
+
+a: f(1, 2, 3)   # all at once
+b: f(1)(2)(3)    # one at a time
+c: f(1, 2)(3)    # mixed
+</code></pre>
+<p>All three produce <code>6</code>.</p>
+<h2 id="lookup-the-dot-operator"><a class="header" href="#lookup-the-dot-operator">Lookup: The Dot Operator</a></h2>
+<p>The dot operator (<code>.</code>) accesses a named property within a block:</p>
+<pre><code class="language-eu">person: { name: "Alice" age: 30 }
+name: person.name
+</code></pre>
+<pre><code class="language-yaml">person:
+  name: Alice
+  age: 30
+name: Alice
+</code></pre>
+<p>Lookups can be chained:</p>
+<pre><code class="language-eu">config: { db: { host: "localhost" port: 5432 } }
+host: config.db.host
+</code></pre>
+<pre><code class="language-yaml">config:
+  db:
+    host: localhost
+    port: 5432
+host: localhost
+</code></pre>
+<blockquote>
+<p><strong>Warning:</strong> The dot operator binds very tightly (precedence 90).
+Writing <code>list head.name</code> is parsed as <code>list (head.name)</code>, not
+<code>(list head).name</code>. Use explicit parentheses when combining lookup
+with catenation: <code>(list head).name</code>.</p>
+<p>The <code>↑</code> (up arrow) prefix operator, which is shorthand for <code>head</code>,
+binds even tighter (precedence 95). So <code>↑xs.name</code> means
+<code>(↑xs).name</code>.</p>
+</blockquote>
+<h2 id="juxtaposed-call-syntax"><a class="header" href="#juxtaposed-call-syntax">"Juxtaposed" call syntax</a></h2>
+<p>When a function is passed only a single list argument or a single
+block argument, it is possible to omit the outer parentheses for
+brevity:</p>
+<pre><code class="language-eu notest">result: f[1, 2, 3] ∧ g{a: 1 b: 2}
+</code></pre>
+<p>The "juxtaposition" refers to the resulting feature that directly
+placing a function together with any form of brackets (with no
+intervening whitespace) is now call syntax - whereas using an
+intervening space is a pipeline syntax.</p>
+<p>Juxtaposed call syntax: <code>f(x), f[x], f{x}</code>.</p>
+<p>Pipeline syntax: <code>x f</code>, <code>[x] f</code>, <code>{x} f</code>.</p>
+<h2 id="generalised-lookup-or-block-dot-notation"><a class="header" href="#generalised-lookup-or-block-dot-notation">Generalised Lookup (or "block-dot" notation)</a></h2>
+<p>Lookup can be generalised: any expression after the dot is evaluated
+in the context of the block to the left.</p>
+<pre><code class="language-eu">point: { x: 3 y: 4 }
+sum: point.(x + y)
+pair: point.[x, y]
+label: point."{x},{y}"
+</code></pre>
+<pre><code class="language-yaml">point:
+  x: 3
+  y: 4
+sum: 7
+pair:
+- 3
+- 4
+label: 3,4
+</code></pre>
+<p>This is particularly useful for creating temporary scopes:</p>
+<pre><code class="language-eu">result: { a: 10 b: 20 }.(a * b)
+</code></pre>
+<pre><code class="language-yaml">result: 200
+</code></pre>
+<p><em>"Block-dot"</em> syntax is particularly significant in monadic blocks
+(see <a href="monads.html">Monads and the monad() Utility</a>).</p>
+<h2 id="building-pipelines"><a class="header" href="#building-pipelines">Building Pipelines</a></h2>
+<p>Combining catenation, partial application, and the standard prelude
+creates powerful data processing pipelines:</p>
+<pre><code class="language-sh">eu -e '["alice", "bob", "charlie"] map(str.to-upper) filter(str.matches?("^[AB]"))'
+</code></pre>
+<pre><code class="language-yaml">- ALICE
+- BOB
+</code></pre>
+<p>A more complete example:</p>
+<pre><code class="language-eu">people: [
+  { name: "Alice" age: 30 }
+  { name: "Bob" age: 25 }
+  { name: "Charlie" age: 35 }
+]
+
+over-thirty: people filter(.age &gt; 30) map(.name)
+</code></pre>
+<pre><code class="language-yaml">people:
+- name: Alice
+  age: 30
+- name: Bob
+  age: 25
+- name: Charlie
+  age: 35
+over-thirty:
+- Charlie
+</code></pre>
+<h2 id="the-then-function"><a class="header" href="#the-then-function">The <code>then</code> Function</a></h2>
+<p>The <code>then</code> function provides a pipeline-friendly conditional:</p>
+<pre><code class="language-sh">eu -e '5 &gt; 3 then("yes", "no")'
+</code></pre>
+<pre><code class="language-yaml">yes
+</code></pre>
+<p>It is equivalent to <code>if</code> with the condition as the last argument,
+making it natural in pipelines:</p>
+<pre><code class="language-eu">result: [1, 2, 3] count (&gt; 2) then("many", "few")
+</code></pre>
+<pre><code class="language-yaml">result: many
+</code></pre>
+<h2 id="key-concepts"><a class="header" href="#key-concepts">Key Concepts</a></h2>
+<ul>
+<li><strong>Catenation</strong> applies a function by writing the argument before the
+function name: <code>5 inc</code> means <code>inc(5)</code></li>
+<li>Pipelines are built by chaining catenation: <code>data f g h</code></li>
+<li>Functions are <strong>curried</strong>: partial application is automatic</li>
+<li>The <strong>dot operator</strong> looks up properties: <code>block.key</code></li>
+<li><strong>Generalised lookup</strong> evaluates expressions in a block's scope:
+<code>block.(expr)</code></li>
+<li>Combine these techniques for concise data processing pipelines</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../guide/blocks-and-declarations.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../guide/lists-and-transformations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../guide/blocks-and-declarations.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../guide/lists-and-transformations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>
