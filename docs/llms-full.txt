@@ -7206,11 +7206,12 @@ in the prelude).
 | Function | Description |
 |----------|-------------|
 | `cons` | Construct new list by prepending item `h` to list `t` |
+| `snoc(x, l)` | Append element `x` to the end of list `l` |
 | `head` | Return the head item of list `xs`, panic if empty |
 | `(↑ xs)` | Return first element of list `xs`. Tight-binding prefix operator |
 | `nil?` | `true` if list `xs` is empty, `false` otherwise |
 | `non-nil?` | `true` if list `xs` is non-empty, `false` otherwise |
-| `(x ✓)` | `true` if `x` is non-nil, `false` otherwise. Postfix non-nil check (precedence 88) |
+| `(x ✓)` | `true` if `x` is not null, `false` otherwise. Postfix not-null check (precedence 88) |
 | `head-or(d, xs)` | Return the head item of list `xs` or default `d` if empty |
 | `tail` | Return list `xs` without the head item. [] causes error |
 | `tail-or(d, xs)` | Return list `xs` without the head item or `d` for empty list |
@@ -9240,7 +9241,7 @@ From highest (tightest) to lowest binding:
 | 90 | lookup | left | `.` (built-in) | Property lookup |
 | 90 | call | left | (built-in) | Function call |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
-| 88 | bool-unary | postfix | `✓` | Non-nil check (true if non-nil) |
+| 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |
 | 88 | -- | -- | `∘`, `;` | Composition (actual prec 88 from prelude) |
 | 85 | exp | right | `^` | Power |
 | 85 | exp | -- | `!!` (nth) | Indexing |
@@ -11453,7 +11454,7 @@ From highest to lowest binding:
 | 95 | -- | prefix | `↑` | Tight prefix (head) |
 | 90 | lookup | left | `.` | Field access / lookup |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
-| 88 | bool-unary | postfix | `✓` | Non-nil check (true if non-nil) |
+| 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |
 | 85 | exp | right | `^`, `∘`, `;` | Power, composition |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
