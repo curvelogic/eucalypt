@@ -267,6 +267,16 @@ pub struct MachineState {
     /// into this stash ensures they are scanned as GC roots for the
     /// duration of the io-run loop.
     stash: Vec<SynClosure>,
+    /// Temporary storage for BIF execution context.
+    ///
+    /// During BIF execution, `handle_instruction` stores raw pointers
+    /// to the intrinsics slice, emitter, and metrics so that
+    /// `force_to_whnf` can re-enter the step loop.  These pointers are
+    /// valid only for the duration of the BIF call (they point into the
+    /// enclosing `Machine::step()` call frame).  Cleared immediately
+    /// after each BIF returns.
+    bif_intrinsics: Option<*const &'static dyn StgIntrinsic>,
+    bif_intrinsics_len: usize,
 }
 
 impl Default for MachineState {
@@ -285,6 +295,8 @@ impl Default for MachineState {
             symbol_pool: SymbolPool::new(),
             suppress_next_update: false,
             stash: Vec::new(),
+            bif_intrinsics: None,
+            bif_intrinsics_len: 0,
         }
     }
 }
@@ -431,12 +443,18 @@ impl MachineState {
             }
             HeapSyn::Bif { intrinsic, args } => {
                 let bif = intrinsics[intrinsic as usize];
-                // Defer the BIF annotation lookup to the error path.
-                // Looking up the global closure annotation involves
-                // constructing a HeapNavigator and walking the global
-                // environment chain -- wasted work when the BIF
-                // succeeds (the common case).
-                bif.execute(self, view, emitter, args.as_slice())
+                // Store intrinsics pointer so force_to_whnf can
+                // re-enter the step loop.  SAFETY: intrinsics is a
+                // shared (&) slice that lives in the enclosing call
+                // frame and outlives the bif.execute() call.
+                self.bif_intrinsics = Some(unsafe {
+                    std::mem::transmute::<*const &dyn StgIntrinsic, *const &'static dyn StgIntrinsic>(
+                        intrinsics.as_ptr(),
+                    )
+                });
+                self.bif_intrinsics_len = intrinsics.len();
+                let result = bif
+                    .execute(self, view, emitter, args.as_slice())
                     .inspect_err(|_| {
                         // Set annotation to the BIF's own annotation so
                         // errors report the correct intrinsic context
@@ -446,7 +464,9 @@ impl MachineState {
                                 self.annotation = bif_ann;
                             }
                         }
-                    })?;
+                    });
+                self.bif_intrinsics = None;
+                result?;
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
@@ -1026,6 +1046,70 @@ impl IntrinsicMachine for MachineState {
     /// Current source annotation for error reporting
     fn annotation(&self) -> Smid {
         self.annotation
+    }
+
+    /// Force a closure to WHNF by saving/restoring the machine state
+    /// and running the step loop.
+    ///
+    /// Only valid during BIF execution — panics if the BIF context
+    /// pointers are not set.
+    fn force_to_whnf(
+        &mut self,
+        view: MutatorHeapView<'_>,
+        closure: SynClosure,
+    ) -> Result<SynClosure, ExecutionError> {
+        // SAFETY: bif_intrinsics was set by handle_instruction just
+        // before calling bif.execute() and points into the still-live
+        // Machine::step() call frame.  Intrinsics are shared (&)
+        // references so no aliasing concern.
+        let intrinsics_ptr = self
+            .bif_intrinsics
+            .expect("force_to_whnf called outside BIF execution");
+        let intrinsics_len = self.bif_intrinsics_len;
+        let intrinsics: &[&dyn StgIntrinsic] =
+            unsafe { std::slice::from_raw_parts(intrinsics_ptr, intrinsics_len) };
+
+        // Use a private NullEmitter and Metrics to avoid aliasing the
+        // caller's mutable references (which would be UB).  We are
+        // only forcing a thunk to WHNF — emitter output is discarded
+        // and metrics are unimportant.
+        let mut null_emitter = crate::eval::emit::NullEmitter;
+        let mut force_metrics = Metrics::default();
+
+        // Save the current machine state.
+        let saved_stack = std::mem::take(&mut self.stack);
+        let saved_closure = std::mem::replace(&mut self.closure, closure);
+        let saved_terminated = self.terminated;
+        let saved_annotation = self.annotation;
+        self.terminated = false;
+
+        // Run the step loop until the thunk reaches WHNF.
+        let step_limit = 100_000;
+        let mut steps = 0;
+        while !self.terminated && !self.yielded_io {
+            steps += 1;
+            if steps > step_limit {
+                // Restore state before returning error.
+                self.stack = saved_stack;
+                self.closure = saved_closure;
+                self.terminated = saved_terminated;
+                self.annotation = saved_annotation;
+                return Err(ExecutionError::Panic(
+                    "force_to_whnf exceeded step limit".to_string(),
+                ));
+            }
+            self.handle_instruction(view, &mut null_emitter, intrinsics, &mut force_metrics)?;
+        }
+
+        let result = self.closure.clone();
+
+        // Restore the saved state.
+        self.stack = saved_stack;
+        self.closure = saved_closure;
+        self.terminated = saved_terminated;
+        self.annotation = saved_annotation;
+
+        Ok(result)
     }
 }
 
