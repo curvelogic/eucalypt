@@ -32,6 +32,24 @@ tests: {
     pass: result str.matches?("99")
   }
 
+  ` "render nested block produces correct output (not null)"
+  render-nested: {
+    result: render({a: {b: 2}})
+    pass: result str.matches?("b:.*2.*")
+  }
+
+  ` "render-as nested block to JSON"
+  render-as-nested-json: {
+    result: render-as(:json, {a: {b: 2}})
+    pass: result str.matches?(".*b.*2.*")
+  }
+
+  ` "render-as in pipeline style"
+  render-as-pipeline: {
+    result: {x: 1} render-as(:json)
+    pass: result str.matches?(".*x.*1.*")
+  }
+
 }
 
 RESULT: tests values map(_.pass) all-true? then(:PASS, :FAIL)
