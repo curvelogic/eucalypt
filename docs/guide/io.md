@@ -93,7 +93,9 @@ an `:io` monad block...
 
 ## The { :io ... } monadic block
 
-Monadic blocks are described in [Monads and the monad() Utility](monads.md). A block tagged `:io` desugars into nested `io.bind` calls:
+A block tagged `:io` desugars into nested `io.bind` calls. Each field
+is a bind step; the name becomes available in all subsequent steps.
+The `.()` expression after the closing brace is the return value.
 
 ```eu,notest
 { :io
@@ -102,19 +104,11 @@ Monadic blocks are described in [Monads and the monad() Utility](monads.md). A b
 }.(r.stdout)
 ```
 
-desugars to:
-
-```eu,notest
-io.bind(io.shell("echo hello"),
-  λr. io.bind(io.check(r),
-    λ_. io.return(r.stdout)))
-```
-
-Each field is a bind step. The name becomes available in all
-subsequent steps. Use `_` for steps where you don't need the result.
-
-The `.()` return expression after the closing brace is wrapped in
-`io.return`.
+**Important:** unlike normal blocks, monadic blocks bind names
+sequentially — each step can only refer to names from earlier steps,
+not later ones. See [Monads and the monad() Utility](monads.md) for
+full details on monadic block syntax, forms, and the sequential
+binding constraint.
 
 ---
 

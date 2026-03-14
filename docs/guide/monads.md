@@ -18,6 +18,87 @@ Everything else — `map`, `then`, `join`, `sequence`, `map-m`,
 
 ---
 
+## Monadic blocks
+
+Eucalypt provides syntactic sugar for chaining monadic actions. A
+block tagged with a monad namespace name desugars into nested `bind`
+calls automatically.
+
+The most common form tags the block with `:io`:
+
+```eu,notest
+{ :io
+  r: io.shell("echo hello")
+  _: io.check(r)
+}.(r.stdout)
+```
+
+This desugars to:
+
+```eu,notest
+io.bind(io.shell("echo hello"),
+  λr. io.bind(io.check(r),
+    λ_. io.return(r.stdout)))
+```
+
+Each field becomes a `bind` step. The bound name is available in all
+subsequent steps. The `.()` expression after the closing brace is the
+return expression, wrapped in the monad's `return`.
+
+### Key constraint: sequential binding
+
+**Unlike normal blocks, names in a monadic block can only refer to
+names bound in earlier steps.** Normal eucalypt blocks are
+declarative — bindings can refer to each other in any order. Monadic
+blocks are sequential — each step can only see what came before it,
+because the desugaring nests each continuation inside the previous
+one.
+
+```eu,notest
+# WRONG — b is not yet bound when a is evaluated
+{ :io
+  a: io.map(inc, b)
+  b: io.shell("echo 1")
+}.(a)
+
+# RIGHT — b is bound before a uses it
+{ :io
+  b: io.shell("echo 1")
+  a: io.map(inc, b)
+}.(a)
+```
+
+### Block metadata forms
+
+Several syntax forms are available for monadic blocks:
+
+| Form | Syntax | Monad source |
+|------|--------|-------------|
+| 1 | `{ :name decls }.expr` | Namespace `name` in scope |
+| 2 | `{ { monad: name } decls }.expr` | Namespace `name` in scope |
+| 3 | `{ { :monad namespace: name } decls }.expr` | Namespace `name` in scope |
+| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit `f`/`r` functions |
+
+Form 1 is the most common — `{ :io ... }` tags a block with the `io`
+namespace. The desugarer looks up `io.bind` and `io.return`
+automatically.
+
+### Custom bracket pairs
+
+You can define bracket pairs for monadic notation using the `:monad`
+metadata:
+
+```eu,notest
+⟦{}⟧: { :monad bind: my-bind  return: my-return }
+
+result: ⟦ x: some-action  y: other-action(x) ⟧.(x + y)
+```
+
+See the [syntax reference](../reference/syntax.md) for full details on
+bracket pair definitions.
+
+---
+
 ## The monad() utility
 
 `monad(m)` takes a block with `bind` and `return` fields and returns a
@@ -40,9 +121,7 @@ The returned block provides:
 | `map-m(f, xs)` | Apply `f` to each element of `xs`, then sequence |
 | `filter-m(p, xs)` | Monadic filter: keep elements where `p` returns a truthy action |
 
----
-
-## Building a monadic namespace
+### Building a monadic namespace
 
 The typical pattern is to use `monad()` to produce the derived
 operations and then **catenate** (merge) domain-specific operations on
@@ -77,9 +156,10 @@ my-ns: monad{bind: my-bind, return: my-return} {
 ## The IO monad
 
 The `io` namespace is a monad built around effect execution. IO
-operations are not called for their return value alone — they cause
-side effects (shell commands, reads, writes). The eucalypt runtime
-sequences them strictly.
+operations cause side effects (shell commands, reads, writes). The
+eucalypt runtime sequences them strictly.
+
+**IO operations require `--allow-io` / `-I` at the command line.**
 
 ### Primitives
 
@@ -88,36 +168,7 @@ io.return(v)             # wrap a pure value; no side effects
 io.bind(action, f)       # run action, pass result to f
 ```
 
-### The { :io ... } monadic block syntax
-
-Eucalypt provides syntactic sugar for chaining IO actions. A block
-tagged `:io` is desugared into nested `io.bind` calls automatically:
-
-```eu,notest
-{ :io
-  r: io.shell("ls -la")
-  _: io.check(r)
-}.r.stdout
-```
-
-desugars to:
-
-```eu,notest
-io.bind(io.shell("ls -la"),
-  λr. io.bind(io.check(r),
-    λ_. io.return(r.stdout)))
-```
-
-The `.expr` after the closing brace is the return expression, wrapped
-in `io.return`. Each field in the block becomes a `bind` step; the
-bound name is the lambda parameter for all subsequent steps.
-
-**IO operations require `--allow-io` / `-I` at the command line.**
-Test targets that use IO should include `requires-io: true` in their
-target metadata so the test runner skips them gracefully in
-environments without IO permission.
-
-### Practical IO example
+### Practical example
 
 ```eu,notest
 result: { :io
@@ -126,19 +177,10 @@ result: { :io
 }.(r.stdout)
 ```
 
-### Using monad() with the IO monad
+### Extending the IO monad
 
-You can derive the full set of combinators for the IO monad:
-
-```eu,notest
-` :suppress
-io-m: monad{bind: io.bind, return: io.return}
-
-# sequence two IO actions and collect results
-both: io-m.sequence([io.shell("echo a"), io.shell("echo b")])
-```
-
-Or extend the IO monad with domain-specific operations via catenation:
+You can derive additional combinators or extend with domain-specific
+operations via catenation:
 
 ```eu,notest
 app-io: monad{bind: io.bind, return: io.return} {
@@ -156,8 +198,8 @@ app-io: monad{bind: io.bind, return: io.return} {
 | `io.map(f, action)` | Apply pure function `f` to the result of an IO action |
 | `io.check(result)` | Fail if `exit-code` is non-zero; otherwise return result |
 
-See [IO reference](../reference/prelude/io.md) for the full API
-including `io.shell`, `io.exec`, and related operations.
+See [IO and Shell Commands](io.md) for practical usage and the
+[IO reference](../reference/prelude/io.md) for the full API.
 
 ---
 
@@ -295,8 +337,8 @@ ok:     maybe.bind(safe-head([42]), inc) # => 43
   `return`, and six derived combinators
 - Use **catenation** (juxtaposition) to merge derived and specialised
   operations — NOT `<<`
-- The `{ :io ... }` syntax is syntactic sugar for nested `io.bind`
-  calls; it is currently IO-specific
+- Monadic blocks (`{ :io ... }`, `{ :name ... }`) desugar into nested
+  `bind` calls — names are bound **sequentially**, not declaratively
 - The `random:` namespace is a state monad — actions are functions of a
   stream, `bind` threads the stream automatically
 - When running random actions, always extract `.value` before
