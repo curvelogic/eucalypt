@@ -277,8 +277,6 @@ pub struct MachineState {
     /// after each BIF returns.
     bif_intrinsics: Option<*const &'static dyn StgIntrinsic>,
     bif_intrinsics_len: usize,
-    bif_emitter: Option<*mut dyn Emitter>,
-    bif_metrics: Option<*mut Metrics>,
 }
 
 impl Default for MachineState {
@@ -299,8 +297,6 @@ impl Default for MachineState {
             stash: Vec::new(),
             bif_intrinsics: None,
             bif_intrinsics_len: 0,
-            bif_emitter: None,
-            bif_metrics: None,
         }
     }
 }
@@ -447,26 +443,17 @@ impl MachineState {
             }
             HeapSyn::Bif { intrinsic, args } => {
                 let bif = intrinsics[intrinsic as usize];
-                // Store BIF context so force_to_whnf can re-enter the
-                // step loop.  SAFETY: these pointers remain valid for
-                // the duration of the bif.execute() call — they point
-                // into the enclosing Machine::step() call frame.
-                // SAFETY: we erase lifetimes to 'static because these
-                // raw pointers are only dereferenced within the
-                // bif.execute() call below — the referenced data lives
-                // in the enclosing call frame and outlives the call.
+                // Store intrinsics pointer so force_to_whnf can
+                // re-enter the step loop.  SAFETY: intrinsics is a
+                // shared (&) slice that lives in the enclosing call
+                // frame and outlives the bif.execute() call.
                 self.bif_intrinsics = Some(unsafe {
-                    std::mem::transmute::<*const &dyn StgIntrinsic, *const &'static dyn StgIntrinsic>(
-                        intrinsics.as_ptr(),
-                    )
+                    std::mem::transmute::<
+                        *const &dyn StgIntrinsic,
+                        *const &'static dyn StgIntrinsic,
+                    >(intrinsics.as_ptr())
                 });
                 self.bif_intrinsics_len = intrinsics.len();
-                self.bif_emitter = Some(unsafe {
-                    std::mem::transmute::<*mut dyn Emitter, *mut dyn Emitter>(
-                        emitter as *mut dyn Emitter,
-                    )
-                });
-                self.bif_metrics = Some(metrics as *mut Metrics);
                 let result = bif
                     .execute(self, view, emitter, args.as_slice())
                     .inspect_err(|_| {
@@ -480,8 +467,6 @@ impl MachineState {
                         }
                     });
                 self.bif_intrinsics = None;
-                self.bif_emitter = None;
-                self.bif_metrics = None;
                 result?;
             }
             HeapSyn::Let { bindings, body } => {
@@ -1074,24 +1059,23 @@ impl IntrinsicMachine for MachineState {
         view: MutatorHeapView<'_>,
         closure: SynClosure,
     ) -> Result<SynClosure, ExecutionError> {
-        // SAFETY: bif_intrinsics/bif_emitter/bif_metrics were set by
-        // handle_instruction just before calling bif.execute() and
-        // point into the still-live Machine::step() call frame.
+        // SAFETY: bif_intrinsics was set by handle_instruction just
+        // before calling bif.execute() and points into the still-live
+        // Machine::step() call frame.  Intrinsics are shared (&)
+        // references so no aliasing concern.
         let intrinsics_ptr = self
             .bif_intrinsics
             .expect("force_to_whnf called outside BIF execution");
         let intrinsics_len = self.bif_intrinsics_len;
-        let emitter_ptr = self
-            .bif_emitter
-            .expect("force_to_whnf called outside BIF execution");
-        let metrics_ptr = self
-            .bif_metrics
-            .expect("force_to_whnf called outside BIF execution");
-
         let intrinsics: &[&dyn StgIntrinsic] =
             unsafe { std::slice::from_raw_parts(intrinsics_ptr, intrinsics_len) };
-        let emitter: &mut dyn Emitter = unsafe { &mut *emitter_ptr };
-        let metrics: &mut Metrics = unsafe { &mut *metrics_ptr };
+
+        // Use a private NullEmitter and Metrics to avoid aliasing the
+        // caller's mutable references (which would be UB).  We are
+        // only forcing a thunk to WHNF — emitter output is discarded
+        // and metrics are unimportant.
+        let mut null_emitter = crate::eval::emit::NullEmitter;
+        let mut force_metrics = Metrics::default();
 
         // Save the current machine state.
         let saved_stack = std::mem::take(&mut self.stack);
@@ -1115,7 +1099,7 @@ impl IntrinsicMachine for MachineState {
                     "force_to_whnf exceeded step limit".to_string(),
                 ));
             }
-            self.handle_instruction(view, emitter, intrinsics, metrics)?;
+            self.handle_instruction(view, &mut null_emitter, intrinsics, &mut force_metrics)?;
         }
 
         let result = self.closure.clone();
