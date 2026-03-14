@@ -223,9 +223,9 @@ nil?: = []
 ` "`non-nil?(xs)` - `true` if list `xs` is non-empty, `false` otherwise."
 non-nil?: nil? complement
 
-` { doc: "`x✓` - `true` if `x` is non-nil, `false` otherwise. Postfix non-nil check operator."
+` { doc: "`x✓` - `true` if `x` is not null, `false` otherwise. Postfix not-null check operator."
     precedence: :bool-unary }
-(x ✓): x non-nil?
+(x ✓): not(x = null)
 
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
 head-or(d, xs): xs nil? then(d, xs head)

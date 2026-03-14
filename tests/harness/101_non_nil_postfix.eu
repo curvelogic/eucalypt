@@ -1,14 +1,16 @@
 #!/usr/bin/env eu
 
-# Tests for the ✓ postfix non-nil predicate operator (U+203C DOUBLE EXCLAMATION MARK)
+# Tests for the ✓ postfix not-null check operator (U+2713 CHECK MARK)
 
-t1: []✓ = false
-t2: [1]✓ = true
-t3: [1, 2, 3]✓ = true
-t4: 42✓ = true
-t5: "hello"✓ = true
-t6: :sym✓ = true
-t7: {}✓ = true
-t8: not([]✓)
+t1: null✓ = false
+t2: 42✓ = true
+t3: "hello"✓ = true
+t4: :sym✓ = true
+t5: {}✓ = true
+t6: []✓ = true
+t7: [1, 2, 3]✓ = true
+t8: not(null✓)
+t9: 0✓ = true
+t10: false✓ = true
 
-RESULT: [t1, t2, t3, t4, t5, t6, t7, t8] all-true? then(:PASS, :FAIL)
+RESULT: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10] all-true? then(:PASS, :FAIL)
