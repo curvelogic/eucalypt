@@ -2,8 +2,6 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.5.1] - Unreleased
-
 ## [0.5.0] - 2026-03-13
 
 ### Added
@@ -17,7 +15,7 @@ All notable changes to eucalypt are documented here.
   - Results as `{stdout, stderr, exit-code}` blocks
   - Spawn failures return result blocks (exit-code 127) rather than hard errors
 
-- **`render-as(value, fmt)`** — Serialise any eucalypt value to a string at runtime
+- **`render-as(fmt, value)`** — Serialise any eucalypt value to a string at runtime
   - Supports `:json`, `:yaml`, `:toml`, `:text`, `:edn`, `:html`
 
 - **`parse-as(fmt, str)`** — Pure inverse of `render-as`; converts strings to eucalypt data structures
@@ -37,6 +35,12 @@ All notable changes to eucalypt are documented here.
 
 ### Fixed
 
+- **`render-as` argument order** — Changed from `render-as(value, fmt)` to
+  `render-as(fmt, value)` for pipeline-friendly partial application
+  (e.g. `data render-as(:json)`)
+- **`render` / `render-as` nested block null** — Nested block values inside
+  `render` or `render-as` were serialised as null; now correctly traverses
+  unevaluated Let/LetRec thunks in the heap walk
 - **GC correctness** — Multiple garbage collector fixes addressing crashes on aarch64-linux and macOS ARM:
   - 16-byte alignment for evacuation allocations
   - Per-heap mark state (global `MARK_STATE` moved into `Heap` struct), fixing parallel test crashes

@@ -3,11 +3,11 @@
 original: {x: 1, y: 2}
 
 # Round-trip via JSON
-json-str: render-as(original, :json)
+json-str: render-as(:json, original)
 recovered: json-str parse-as(:json)
 
 # Round-trip via YAML
-yaml-str: render-as(original, :yaml)
+yaml-str: render-as(:yaml, original)
 recovered-yaml: yaml-str parse-as(:yaml)
 
 tests: {

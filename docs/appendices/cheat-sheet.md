@@ -331,7 +331,7 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | Function | Description |
 |----------|-------------|
 | `render(value)` | Serialise to YAML string |
-| `render-as(value, fmt)` | Serialise to string in named format |
+| `render-as(fmt, value)` | Serialise to string in named format |
 | `parse-as(fmt, str)` | Parse string as structured data (inverse of `render-as`) |
 
 Formats for `render-as`: `:yaml`, `:json`, `:toml`, `:text`, `:edn`, `:html`.

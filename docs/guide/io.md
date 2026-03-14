@@ -240,7 +240,7 @@ data: "curl -s https://api.example.com/data"
 ```eu,notest
 ` :main
 text: { :io
-  r: "jq '.name'" io.shell-with({stdin: render-as(data, :json)})
+  r: "jq '.name'" io.shell-with({stdin: render-as(:json, data)})
 }.(r.stdout)
 ```
 

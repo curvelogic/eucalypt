@@ -55,7 +55,7 @@ are pure functions — no IO is required.
 | Function | Description |
 |----------|-------------|
 | `render(value)` | Serialise `value` to a YAML string |
-| `render-as(value, fmt)` | Serialise `value` to a string in format `fmt` |
+| `render-as(fmt, value)` | Serialise `value` to a string in format `fmt` |
 
 Supported formats for `fmt`: `:yaml`, `:json`, `:toml`, `:text`, `:edn`, `:html`.
 
@@ -63,7 +63,7 @@ Supported formats for `fmt`: `:yaml`, `:json`, `:toml`, `:text`, `:edn`, `:html`
 
 ```eu,notest
 yaml-str: render({a: 1, b: 2})           # "a: 1\nb: 2\n"
-json-str: render-as({a: 1, b: 2}, :json) # "{\"a\":1,\"b\":2}"
+json-str: render-as(:json, {a: 1, b: 2}) # "{\"a\":1,\"b\":2}"
 ```
 
 These functions are backed by the `RENDER_TO_STRING` intrinsic, which
@@ -98,7 +98,7 @@ data.x  # 1
 
 # Round-trip
 original: {x: 1, y: 2}
-recovered: render-as(original, :json) parse-as(:json)
+recovered: render-as(:json, original) parse-as(:json)
 recovered.x  # 1
 
 # Pipeline style (parse-as with first arg partially applied)
