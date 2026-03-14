@@ -448,10 +448,9 @@ impl MachineState {
                 // shared (&) slice that lives in the enclosing call
                 // frame and outlives the bif.execute() call.
                 self.bif_intrinsics = Some(unsafe {
-                    std::mem::transmute::<
-                        *const &dyn StgIntrinsic,
-                        *const &'static dyn StgIntrinsic,
-                    >(intrinsics.as_ptr())
+                    std::mem::transmute::<*const &dyn StgIntrinsic, *const &'static dyn StgIntrinsic>(
+                        intrinsics.as_ptr(),
+                    )
                 });
                 self.bif_intrinsics_len = intrinsics.len();
                 let result = bif
