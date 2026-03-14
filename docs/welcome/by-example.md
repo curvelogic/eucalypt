@@ -64,7 +64,7 @@ products: [
 
 expensive: products
   filter(_.price > 20)
-  map({name: •}.(name str.to-upper))
+  map(_.name str.to-upper)
 ```
 
 ```sh
@@ -256,12 +256,12 @@ min: 600
 **Problem:** Find all port numbers in a complex configuration.
 
 ```sh
-eu -e 'deep-query("port", {
+eu -e '{
   web: { host: "0.0.0.0" port: 80 }
   api: { host: "0.0.0.0" port: 8080 }
   db: { host: "localhost" port: 5432 }
   cache: { host: "localhost" port: 6379 }
-})'
+} deep-query("port")'
 ```
 
 **Output:**
@@ -323,23 +323,29 @@ eu logs.eu -e errors
 
 ```eu
 # cfn.eu
-resource(name, type, props): {
+resource(type, props): {
   'Type': type
   'Properties': props
 }
 
 resources: {
-  MyBucket: resource("bucket", "AWS::S3::Bucket", {
+  MyBucket: resource("AWS::S3::Bucket") {
     'BucketName': :my-bucket // { tag: "!Ref AccountId" }
-  })
-  MyQueue: resource("queue", "AWS::SQS::Queue", {
+  }
+  MyQueue: resource("AWS::SQS::Queue") {
     'QueueName': "my-queue"
-  })
+  }
 }
 ```
 
-This demonstrates using single-quote identifiers for keys with
-special characters and the metadata `tag` key for YAML tags.
+Here `resource("AWS::S3::Bucket")` is partially applied (it expects
+two arguments but receives one), returning a function. The block
+`{...}` is then applied to it via catenation — the block becomes the
+final argument.
+
+This example also demonstrates using single-quote identifiers for
+keys with special characters and the metadata `tag` key for YAML
+tags.
 
 ## 12. Working with Dates
 
@@ -379,7 +385,7 @@ comparison operators.
 **Problem:** Build a key-value mapping from two parallel lists.
 
 ```sh
-eu -e 'zip-kv([:name, :age, :city], ["Alice", 30, "London"])'
+eu -e '["Alice", 30, "London"] zip-kv[:name, :age, :city]'
 ```
 
 **Output:**
@@ -391,6 +397,9 @@ city: London
 ```
 
 `zip-kv` pairs up symbols as keys with values to produce a block.
+Note that `zip-kv[:name, :age, :city]` is shorthand for
+`zip-kv([:name, :age, :city])` — when a function takes a single list
+or block argument, the outer parentheses can be omitted.
 
 ## 14. Parameterised Scripts
 

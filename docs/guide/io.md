@@ -260,8 +260,8 @@ main: { :io
 or, equivalently:
 
 ``` eu,notest
-io.seq[io.shell("date +%s") io.map(.stdout),
-       io.shell("hostname") io.map(.stdout)] with-keys[:timestamp, :host]
+io.sequence[io.shell("date +%s") io.map(.stdout),
+            io.shell("hostname") io.map(.stdout)] with-keys[:timestamp, :host]
 
 ```
 
