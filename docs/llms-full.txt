@@ -7905,7 +7905,9 @@ Optional `{stdin: s}` pipes string `s` to the command's standard input.
 | Function | Description |
 |----------|-------------|
 | `io.check(result)` | If `exit-code` is non-zero, fail with the stderr message; otherwise return the result |
+| `io.checked` | Pipeline-friendly check: bind the preceding IO action through `io.check` |
 | `io.map(f, action)` | Apply a pure function to the result of an IO action (fmap) |
+| `io.and-then(f, action)` | Pass the result of `action` to `f` (bind with flipped args, for pipeline use) |
 | `io.then(a, b)` | Sequence two actions, discarding the result of the first |
 | `io.join(mm)` | Flatten a nested IO action |
 | `io.sequence(ms)` | Run a list of IO actions in order, collecting results into a list |
@@ -7923,6 +7925,7 @@ pattern and the [IO guide](../../guide/io.md) for practical usage.
 | `monad(m).bind` | Passed through from `m.bind` |
 | `monad(m).return` | Passed through from `m.return` |
 | `monad(m).map(f, action)` | Apply pure function `f` to the result of a monadic action (fmap) |
+| `monad(m).and-then(f, action)` | Pass the result of `action` to `f` (bind with flipped args, for pipeline use) |
 | `monad(m).then(a, b)` | Sequence two monadic actions, discarding the result of the first |
 | `monad(m).join(mm)` | Flatten a nested monadic value |
 | `monad(m).sequence(ms)` | Sequence a list of monadic actions, collecting results into a list |

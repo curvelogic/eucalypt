@@ -52,6 +52,9 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   check(result): if(result.'exit-code' = 0,
     io.return(result),
     __IO_ACTION({:io-fail message: result.stderr}))
+
+  ` "Pipeline-friendly check: bind the preceding IO action through check."
+  checked: io.and-then(io.check)
 }
 
 
@@ -77,6 +80,9 @@ monad(m): {
 
   ` "then(a, b) - sequence two monadic actions, discarding the result of the first."
   then(a, b): m.bind(a, -> b)
+
+  ` "and-then(f, action) - pass the result of action to f (bind with flipped args, for pipeline use)."
+  and-then(f, action): m.bind(action, f)
 
   ` "join(mm) - flatten a nested monadic value."
   join(mm): m.bind(mm, identity)
