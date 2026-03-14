@@ -324,28 +324,22 @@ eu logs.eu -e errors
 ```eu
 # cfn.eu
 resource(type, props): {
-  'Type': type
-  'Properties': props
+  Type: type
+  Properties: props
 }
 
 resources: {
-  MyBucket: resource("AWS::S3::Bucket") {
-    'BucketName': :my-bucket // { tag: "!Ref AccountId" }
-  }
-  MyQueue: resource("AWS::SQS::Queue") {
-    'QueueName': "my-queue"
-  }
+  MyBucket: resource("AWS::S3::Bucket", {
+    BucketName: "my-bucket"
+  })
+  MyQueue: resource("AWS::SQS::Queue", {
+    QueueName: "my-queue"
+  })
 }
 ```
 
-Here `resource("AWS::S3::Bucket")` is partially applied (it expects
-two arguments but receives one), returning a function. The block
-`{...}` is then applied to it via catenation — the block becomes the
-final argument.
-
-This example also demonstrates using single-quote identifiers for
-keys with special characters and the metadata `tag` key for YAML
-tags.
+This example shows how a simple function can template
+repetitive structure.
 
 ## 12. Working with Dates
 
