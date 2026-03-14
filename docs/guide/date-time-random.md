@@ -121,9 +121,9 @@ r2: random.int(6, r1.rest)
 total: r1.value + r2.value + 2
 ```
 
-This manual threading is error-prone. The `random` monad solves it —
-use a `{ :random ... }` monadic block or combinators like `sequence`
-and `map-m`:
+This manual threading is error-prone. The `random` monad can ease the
+overhead somewhat — use a `{ :random ... }` monadic block or
+combinators like `sequence` and `map-m`:
 
 ```eu,notest
 # Monadic block — stream threads automatically

@@ -16,7 +16,8 @@ Eucalypt has two kinds of string literal: **raw strings** and
 ### Raw Strings
 
 A plain double-quoted string is a raw string — backslashes are
-literal characters with no escape processing:
+literal characters with no escape processing. This is convenient for
+regular expression usage.
 
 ```eu
 greeting: "Hello, World!"
@@ -37,7 +38,7 @@ for literal braces.
 
 ### C-Strings (`c"..."`)
 
-C-strings process C-style escape sequences:
+If you require C-style escapes, you can use C-strings:
 
 | Escape | Meaning |
 |--------|---------|
