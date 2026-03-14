@@ -772,6 +772,27 @@ str: {
 
   ` "`sha256(s)` - return the SHA-256 hash of string `s` as lowercase hex."
   sha256: __SHA256
+
+  ` "`replace(pattern, replacement, s)` - replace all occurrences of regex `pattern` with `replacement` in string `s`. Pipeline: s str.replace(pat, rep)."
+  replace(pattern, replacement, s): __STR_REPLACE(pattern, replacement, s)
+
+  ` "`contains?(pattern, s)` - true if string `s` contains a match for regex `pattern`. Pipeline: s str.contains?(pat)."
+  contains?(pattern, s): __STR_CONTAINS(pattern, s)
+
+  ` "`trim(s)` - trim leading and trailing whitespace from string `s`."
+  trim: __STR_TRIM
+
+  ` "`starts-with?(re, s)` - true if string `s` starts with a match for regex `re`."
+  starts-with?(re, s): __STR_CONTAINS(["^", re] join-on(""), s)
+
+  ` "`ends-with?(re, s)` - true if string `s` ends with a match for regex `re`."
+  ends-with?(re, s): __STR_CONTAINS([re, "$"] join-on(""), s)
+
+  ` "`shell-escape(s)` - wrap string in single quotes for safe shell use. Embedded single quotes are escaped."
+  shell-escape(s): [c"'", replace("'", c"'\\''", s), c"'"] join-on("")
+
+  ` "dq-escape(s) - escape string for use inside double quotes in shell commands. Escapes backslash, dollar, backtick, and double quote."
+  dq-escape(s): s replace(c"\\\\", c"\\\\\\\\") replace("[$]", c"\\$") replace("[`]", c"\\`") replace(ch.dq, [c"\\", ch.dq] join-on(""))
 }
 
 ##

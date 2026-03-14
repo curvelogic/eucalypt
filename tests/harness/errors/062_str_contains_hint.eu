@@ -1,3 +1,0 @@
-# Mistake: using str.contains? (Python/JavaScript style) — does not exist in eucalypt
-text: "hello world"
-check: text str.contains?("world")

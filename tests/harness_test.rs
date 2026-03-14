@@ -607,6 +607,11 @@ pub fn test_harness_121() {
 }
 
 #[test]
+pub fn test_harness_122() {
+    run_test(&opts("122_str_replace.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -941,16 +946,6 @@ pub fn test_error_060() {
 #[test]
 pub fn test_error_061() {
     run_error_test(&error_opts("061_lambda_keyword.eu"));
-}
-
-#[test]
-pub fn test_error_062() {
-    run_error_test(&error_opts("062_str_contains_hint.eu"));
-}
-
-#[test]
-pub fn test_error_063() {
-    run_error_test(&error_opts("063_str_trim_hint.eu"));
 }
 
 #[test]

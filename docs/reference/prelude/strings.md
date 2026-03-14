@@ -27,6 +27,13 @@
 | `str.gt(a, b)` | True if string `a` is lexicographically greater than `b` |
 | `str.lte(a, b)` | True if string `a` is lexicographically less than or equal to `b` |
 | `str.gte(a, b)` | True if string `a` is lexicographically greater than or equal to `b` |
+| `str.replace(pattern, replacement, s)` | Replace all matches of regex `pattern` with `replacement` in `s` |
+| `str.contains?(pattern, s)` | True if `s` contains a match for regex `pattern` |
+| `str.trim` | Trim leading and trailing whitespace |
+| `str.starts-with?(re, s)` | True if `s` starts with a match for regex `re` |
+| `str.ends-with?(re, s)` | True if `s` ends with a match for regex `re` |
+| `str.shell-escape(s)` | Wrap in single quotes for safe shell use, escaping embedded `'` |
+| `str.dq-escape(s)` | Escape `$`, `` ` ``, `"`, `\` for use inside double quotes |
 | `str.base64-encode` | Encode string `s` as base64 |
 | `str.base64-decode` | Decode base64 string `s` back to its original string |
 | `str.sha256` | Return the SHA-256 hash of string `s` as lowercase hex |

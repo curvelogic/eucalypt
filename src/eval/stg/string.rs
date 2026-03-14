@@ -6,7 +6,7 @@ use crate::{
         emit::Emitter,
         error::ExecutionError,
         machine::intrinsic::{
-            CallGlobal0, CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic,
+            CallGlobal0, CallGlobal1, CallGlobal2, CallGlobal3, IntrinsicMachine, StgIntrinsic,
         },
         memory::{
             mutator::MutatorHeapView,
@@ -20,8 +20,8 @@ use super::{
     force::SeqStrList,
     printf::{self, PrintfError},
     support::{
-        machine_return_num, machine_return_str, machine_return_str_iter, machine_return_str_list,
-        machine_return_sym, str_arg, str_arg_ref, str_list_arg,
+        machine_return_bool, machine_return_num, machine_return_str, machine_return_str_iter,
+        machine_return_str_list, machine_return_sym, str_arg, str_arg_ref, str_list_arg,
     },
     syntax::{
         dsl::{
@@ -494,3 +494,78 @@ impl StgIntrinsic for Lower {
         machine_return_str(machine, view, string.to_lowercase())
     }
 }
+
+/// STR_REPLACE(pattern, replacement, string) — regex-based replace all
+pub struct Replace;
+
+impl StgIntrinsic for Replace {
+    fn name(&self) -> &str {
+        "STR_REPLACE"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let pattern = str_arg_ref(machine, view, &args[0])?;
+        let replacement = str_arg(machine, view, &args[1])?;
+        let string = str_arg_ref(machine, view, &args[2])?;
+
+        let re = cached_regex(machine, &pattern)?;
+        let result = re.replace_all(&string, replacement.as_str()).to_string();
+        machine_return_str(machine, view, result)
+    }
+}
+
+impl CallGlobal3 for Replace {}
+
+/// STR_CONTAINS(pattern, string) — regex-based containment check
+pub struct Contains;
+
+impl StgIntrinsic for Contains {
+    fn name(&self) -> &str {
+        "STR_CONTAINS"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let pattern = str_arg_ref(machine, view, &args[0])?;
+        let string = str_arg_ref(machine, view, &args[1])?;
+
+        let re = cached_regex(machine, &pattern)?;
+        let matched = re.is_match(&string);
+        machine_return_bool(machine, view, matched)
+    }
+}
+
+impl CallGlobal2 for Contains {}
+
+/// STR_TRIM(string) — trim leading and trailing whitespace
+pub struct Trim;
+
+impl StgIntrinsic for Trim {
+    fn name(&self) -> &str {
+        "STR_TRIM"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let string = str_arg(machine, view, &args[0])?;
+        machine_return_str(machine, view, string.trim().to_string())
+    }
+}
+
+impl CallGlobal1 for Trim {}
