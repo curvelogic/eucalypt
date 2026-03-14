@@ -1207,7 +1207,9 @@ sort-strs(xs): xs qsort(<)
 sort-zdts(xs): xs qsort(<)
 
 ` "`sort-by(key-fn, cmp, xs)` - sort list `xs` by key extracted with `key-fn` using comparator `cmp`."
-sort-by(key-fn, cmp, xs): xs qsort({ a: • b: • }.(cmp(key-fn(a), key-fn(b))))
+sort-by(key-fn, cmp, xs): {
+  lt(a, b): cmp(key-fn(a), key-fn(b))
+}.(xs qsort(lt))
 
 ` "`sort-by-num(key-fn, xs)` - sort list `xs` ascending by numeric key extracted with `key-fn`."
 sort-by-num(key-fn): sort-by(key-fn, <)

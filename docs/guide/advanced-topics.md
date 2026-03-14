@@ -368,13 +368,17 @@ eu -e '["banana", "apple", "cherry"] qsort(<)'
 - cherry
 ```
 
-Sort by a derived key:
+Sort by a derived key. Here `str.letters ; count` is a forward
+composition (see
+[Functions and Combinators](functions-and-combinators.md)) that
+extracts the letter count:
 
 ```eu
+` :suppress
+shorter(a, b): (a str.letters count) < (b str.letters count)
+
 words: ["one", "two", "three", "four", "five", "six"]
-by-length: words qsort({
-  lhs: • rhs: •
-}.( (lhs str.letters count) < (rhs str.letters count) ))
+by-length: words qsort(shorter)
 ```
 
 ```yaml
@@ -392,6 +396,13 @@ by-length:
 - four
 - five
 - three
+```
+
+The prelude also provides `sort-by(key-fn, cmp)` as a convenience for
+this pattern:
+
+```eu,notest
+by-length: words sort-by(str.letters ; count, <)
 ```
 
 ### `sort-nums`

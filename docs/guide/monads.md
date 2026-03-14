@@ -6,7 +6,8 @@ lets you build additional ones from just `bind` and `return`.
 
 ## What is a monad in eucalypt?
 
-A *monad* is a namespace (block) that provides two primitives:
+A *monad* is just two primitives, which are conventionally grouped in
+a namespace.
 
 | Primitive | Role |
 |-----------|------|

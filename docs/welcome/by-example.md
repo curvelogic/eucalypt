@@ -136,7 +136,7 @@ Charlie,35,Edinburgh
 ```
 
 ```sh
-eu rows=people.csv -j -e 'rows map({name: •}.(name))'
+eu rows=people.csv -j -e 'rows map(.name)'
 ```
 
 **Output:**
@@ -148,7 +148,7 @@ eu rows=people.csv -j -e 'rows map({name: •}.(name))'
 Or to transform the data:
 
 ```sh
-eu rows=people.csv -j -e 'rows map({ n: • }.({name: n.name age: n.age num}))'
+eu rows=people.csv -j -e 'rows map{ name: •0.name age: •0.age num }'
 ```
 
 This converts age from string to number (CSV values are always

@@ -75,9 +75,9 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 ## Sections and anaphora
 
-- Prefer sections over superfluous brackets: `iterate(+ 2, 0)` not `iterate((+ 2), 0)`, `map(* 2)` not `map((* 2))`.
+- Prefer sections without superfluous brackets: `iterate(+ 2, 0)` not `iterate((+ 2), 0)`, `map(* 2)` not `map((* 2))`.
 - Prefer sections over anaphora when a section suffices: `map(* 2)` not `map(_ * 2)`.
-- Use anaphora when the expression genuinely needs more than a simple section: `filter(_ > threshold)`, `map(_ * _ + 1)`.
+- Use anaphora when the expression genuinely needs more than a simple section:  `map(_ * _ + 1)`.
 
 ## Blocks
 
