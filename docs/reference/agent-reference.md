@@ -242,7 +242,7 @@ From highest (tightest) to lowest binding:
 | 90 | lookup | left | `.` (built-in) | Property lookup |
 | 90 | call | left | (built-in) | Function call |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
-| 88 | bool-unary | postfix | `✓` | Non-nil check (true if non-nil) |
+| 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |
 | 88 | -- | -- | `∘`, `;` | Composition (actual prec 88 from prelude) |
 | 85 | exp | right | `^` | Power |
 | 85 | exp | -- | `!!` (nth) | Indexing |
