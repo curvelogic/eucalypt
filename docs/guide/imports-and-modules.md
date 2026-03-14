@@ -100,7 +100,7 @@ These **must** be given a name:
 ```eu,notest
 { import: "rows=transactions.csv" }
 
-total: rows map(_.amount num) foldl(+, 0)
+total: rows map(.amount num) foldl(+, 0)
 ```
 
 ## Nested Imports

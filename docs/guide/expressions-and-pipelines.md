@@ -162,7 +162,26 @@ host: localhost
 > binds even tighter (precedence 95). So `↑xs.name` means
 > `(↑xs).name`.
 
-## Generalised Lookup
+## "Juxtaposed" call syntax
+
+When a function is passed only a single list argument or a single
+block argument, it is possible to omit the outer parentheses for
+brevity:
+
+``` eu,notest
+result: f[1, 2, 3] ∧ g{a: 1 b: 2}
+```
+
+The "juxtaposition" refers to the resulting feature that directly
+placing a function together with any form of brackets (with no
+intervening whitespace) is now call syntax - whereas using an
+intervening space is a pipeline syntax.
+
+Juxtaposed call syntax: `f(x), f[x], f{x}`.
+
+Pipeline syntax: `x f`, `[x] f`, `{x} f`.
+
+## Generalised Lookup (or "block-dot" notation)
 
 Lookup can be generalised: any expression after the dot is evaluated
 in the context of the block to the left.
@@ -195,6 +214,9 @@ result: { a: 10 b: 20 }.(a * b)
 result: 200
 ```
 
+_"Block-dot"_ syntax is particularly significant in monadic blocks
+(see [Monads and the monad() Utility](monads.md)).
+
 ## Building Pipelines
 
 Combining catenation, partial application, and the standard prelude
@@ -218,7 +240,7 @@ people: [
   { name: "Charlie" age: 35 }
 ]
 
-over-thirty: people filter(_.age > 30) map(_.name)
+over-thirty: people filter(.age > 30) map(.name)
 ```
 
 ```yaml

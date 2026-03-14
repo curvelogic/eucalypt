@@ -638,7 +638,7 @@ needed.
 **Problem:** Given a list of users in JSON, extract just their names.
 
 ```sh
-eu -e 'map(_.name)' <<'JSON'
+eu -e 'map(.name)' <<'JSON'
 [
   {"name": "Alice", "role": "admin"},
   {"name": "Bob", "role": "user"},
@@ -673,8 +673,8 @@ products: [
 ]
 
 expensive: products
-  filter(_.price > 20)
-  map({name: •}.(name str.to-upper))
+  filter(.price > 20)
+  map(.name str.to-upper)
 ```
 
 ```sh
@@ -746,7 +746,7 @@ Charlie,35,Edinburgh
 ```
 
 ```sh
-eu rows=people.csv -j -e 'rows map({name: •}.(name))'
+eu rows=people.csv -j -e 'rows map(.name)'
 ```
 
 **Output:**
@@ -758,7 +758,7 @@ eu rows=people.csv -j -e 'rows map({name: •}.(name))'
 Or to transform the data:
 
 ```sh
-eu rows=people.csv -j -e 'rows map({ n: • }.({name: n.name age: n.age num}))'
+eu rows=people.csv -j -e 'rows map{ name: •0.name age: •0.age num }'
 ```
 
 This converts age from string to number (CSV values are always
@@ -827,20 +827,21 @@ eu d=defaults.yaml o=overrides.yaml -e 'd << o'
 ```eu
 # sales.eu
 sales: [
-  { region: "North" amount: 1200 }
-  { region: "South" amount: 800 }
-  { region: "North" amount: 600 }
-  { region: "South" amount: 1500 }
+  { region: "North" amount: 1200 },
+  { region: "South" amount: 800 },
+  { region: "North" amount: 600 },
+  { region: "South" amount: 1500 },
   { region: "East" amount: 900 }
 ]
 
 ` :suppress
-amounts: sales map(_.amount)
+amounts: sales map(.amount)
+n: sales count
 
 summary: {
-  total: amounts foldl(+, 0)
-  count: sales count
-  average: summary.total / summary.count
+  total: amounts sum
+  count: n
+  average: (amounts sum) / n
   max: amounts max-of
   min: amounts min-of
 }
@@ -865,12 +866,12 @@ min: 600
 **Problem:** Find all port numbers in a complex configuration.
 
 ```sh
-eu -e 'deep-query("port", {
+eu -e '{
   web: { host: "0.0.0.0" port: 80 }
   api: { host: "0.0.0.0" port: 8080 }
   db: { host: "localhost" port: 5432 }
   cache: { host: "localhost" port: 6379 }
-})'
+} deep-query("port")'
 ```
 
 **Output:**
@@ -890,7 +891,7 @@ while `deep-query("**.port", data)` matches at any depth.
 
 **Problem:** Extract timestamps and levels from log lines.
 
-```eu
+```eu,notest
 # logs.eu
 lines: [
   "2024-03-15 10:30:00 ERROR Connection timeout"
@@ -908,7 +909,7 @@ parsed: lines map(parse) map({parts: •}.({
   message: parts nth(2)
 }))
 
-errors: parsed filter(_.level = "ERROR")
+errors: parsed filter(.level = "ERROR")
 ```
 
 ```sh
@@ -932,23 +933,23 @@ eu logs.eu -e errors
 
 ```eu
 # cfn.eu
-resource(name, type, props): {
-  'Type': type
-  'Properties': props
+resource(type, props): {
+  Type: type
+  Properties: props
 }
 
 resources: {
-  MyBucket: resource("bucket", "AWS::S3::Bucket", {
-    'BucketName': :my-bucket // { tag: "!Ref AccountId" }
+  MyBucket: resource("AWS::S3::Bucket", {
+    BucketName: "my-bucket"
   })
-  MyQueue: resource("queue", "AWS::SQS::Queue", {
-    'QueueName': "my-queue"
+  MyQueue: resource("AWS::SQS::Queue", {
+    QueueName: "my-queue"
   })
 }
 ```
 
-This demonstrates using single-quote identifiers for keys with
-special characters and the metadata `tag` key for YAML tags.
+This example shows how a simple function can template
+repetitive structure.
 
 ## 12. Working with Dates
 
@@ -965,8 +966,8 @@ events: [
 cutoff: t"2024-06-01"
 
 upcoming: events
-  filter(_.date >= cutoff)
-  map(_.name)
+  filter(.date >= cutoff)
+  map(.name)
 ```
 
 ```sh
@@ -988,7 +989,7 @@ comparison operators.
 **Problem:** Build a key-value mapping from two parallel lists.
 
 ```sh
-eu -e 'zip-kv([:name, :age, :city], ["Alice", 30, "London"])'
+eu -e '["Alice", 30, "London"] zip-kv[:name, :age, :city]'
 ```
 
 **Output:**
@@ -1000,13 +1001,16 @@ city: London
 ```
 
 `zip-kv` pairs up symbols as keys with values to produce a block.
+Note that `zip-kv[:name, :age, :city]` is shorthand for
+`zip-kv([:name, :age, :city])` — when a function takes a single list
+or block argument, the outer parentheses can be omitted.
 
 ## 14. Parameterised Scripts
 
 **Problem:** Write a reusable script that accepts command-line
 arguments.
 
-```eu
+```eu,notest
 # greet.eu
 name: io.args head-or("World")
 times: io.args tail head-or("1") num
@@ -1042,7 +1046,7 @@ items: [
 ]
 
 ` :suppress
-tag-sets: items map(_.tags set.from-list)
+tag-sets: items map(.tags set.from-list)
 
 all-tags: tag-sets foldl(set.union, ∅) set.to-list
 common-tags: tag-sets foldl(set.intersect, tag-sets head) set.to-list
@@ -1537,7 +1541,26 @@ host: localhost
 > binds even tighter (precedence 95). So `↑xs.name` means
 > `(↑xs).name`.
 
-## Generalised Lookup
+## "Juxtaposed" call syntax
+
+When a function is passed only a single list argument or a single
+block argument, it is possible to omit the outer parentheses for
+brevity:
+
+``` eu,notest
+result: f[1, 2, 3] ∧ g{a: 1 b: 2}
+```
+
+The "juxtaposition" refers to the resulting feature that directly
+placing a function together with any form of brackets (with no
+intervening whitespace) is now call syntax - whereas using an
+intervening space is a pipeline syntax.
+
+Juxtaposed call syntax: `f(x), f[x], f{x}`.
+
+Pipeline syntax: `x f`, `[x] f`, `{x} f`.
+
+## Generalised Lookup (or "block-dot" notation)
 
 Lookup can be generalised: any expression after the dot is evaluated
 in the context of the block to the left.
@@ -1570,6 +1593,9 @@ result: { a: 10 b: 20 }.(a * b)
 result: 200
 ```
 
+_"Block-dot"_ syntax is particularly significant in monadic blocks
+(see [Monads and the monad() Utility](monads.md)).
+
 ## Building Pipelines
 
 Combining catenation, partial application, and the standard prelude
@@ -1593,7 +1619,7 @@ people: [
   { name: "Charlie" age: 35 }
 ]
 
-over-thirty: people filter(_.age > 30) map(_.name)
+over-thirty: people filter(.age > 30) map(.name)
 ```
 
 ```yaml
@@ -1800,20 +1826,6 @@ eu -e '[1, 2, 3, 4, 5] remove(> 3)'
 - 1
 - 2
 - 3
-```
-
-### The Functor Operator `<$>`
-
-The `<$>` operator is an alias for `map`:
-
-```sh
-eu -e 'inc <$> [1, 2, 3]'
-```
-
-```yaml
-- 2
-- 3
-- 4
 ```
 
 ## Folding
@@ -2072,8 +2084,8 @@ data: [
 ]
 
 top-scorers: data
-  filter(_.score >= 90)
-  map(_.name)
+  filter(.score >= 90)
+  map(.name)
 ```
 
 ```yaml
@@ -2108,7 +2120,7 @@ top-scorers:
 
 In this chapter you will learn:
 
-- The different string literal types (standard, raw, c-strings)
+- The two string literal types (raw and c-strings)
 - How to embed expressions in strings using `{...}` syntax
 - How strings with anaphora become functions
 - Format specifiers for controlling output
@@ -2116,32 +2128,35 @@ In this chapter you will learn:
 
 ## String Literal Types
 
-Eucalypt has three kinds of string literal:
+Eucalypt has two kinds of string literal: **raw strings** and
+**c-strings**.
 
-### Standard Strings
+### Raw Strings
 
-Standard double-quoted strings support interpolation with `{...}`:
+A plain double-quoted string is a raw string — backslashes are
+literal characters with no escape processing. This is convenient for
+regular expression usage.
 
 ```eu
 greeting: "Hello, World!"
+path: "C:\Users\alice\docs"
+regex: "^\d+\.\d+"
 ```
 
-### Raw Strings (`r"..."`)
-
-Raw strings perform no escape processing — backslashes are literal.
-Useful for regular expressions and file paths:
+The `r"..."` prefix is equivalent and can be used for clarity when
+the string contains backslashes:
 
 ```eu
 path: r"C:\Users\alice\docs"
 regex: r"^\d+\.\d+"
 ```
 
-Raw strings still support interpolation with `{...}`. Use `{{` and
-`}}` for literal braces.
+Raw strings support interpolation with `{...}`. Use `{{` and `}}`
+for literal braces.
 
 ### C-Strings (`c"..."`)
 
-C-strings process C-style escape sequences:
+If you require C-style escapes, you can use C-strings:
 
 | Escape | Meaning |
 |--------|---------|
@@ -2175,17 +2190,20 @@ name: World
 greeting: Hello, World!
 ```
 
-Expressions inside the braces are evaluated:
+Interpolation braces accept names and dotted lookups. To use a
+computed value, bind it to a name first:
 
 ```eu
 x: 3
 y: 4
-result: "{x} + {y} = {x + y}"
+sum: x + y
+result: "{x} + {y} = {sum}"
 ```
 
 ```yaml
 x: 3
 y: 4
+sum: 7
 result: 3 + 4 = 7
 ```
 
@@ -2207,11 +2225,11 @@ label: '99'
 
 > **Note:** Interpolation braces accept names and dotted lookups, but
 > not arbitrary eucalypt expressions. If you need a computed value,
-> give it a name first, or use generalised lookup to tightly scope
-> the computation:
+> bind it to a name first:
 >
 > ```eu
-> result: { x: 3 y: 4 }."{x + y}"
+> sum: x + y
+> result: "{sum}"
 > ```
 
 ## Escaping Braces
@@ -2492,8 +2510,10 @@ table: rows map(format-row)
 In this chapter you will learn:
 
 - How to define and call functions
+- How destructuring parameters work
 - How currying and partial application work
-- The standard combinators: `identity`, `const`, `compose`, `flip`
+- The standard combinators: `identity`, `const`, `compose`, `flip`,
+  and forward composition with `;`
 - How to build functions from other functions without lambdas
 
 ## Defining Functions
@@ -2508,7 +2528,7 @@ greet(name, greeting): "{greeting}, {name}!"
 
 Functions can be called with arguments in parentheses:
 
-```eu
+```eu,notest
 a: square(5)
 b: add(3, 4)
 c: greet("Alice", "Hello")
@@ -2523,9 +2543,217 @@ c: Hello, Alice!
 Or via catenation (see [Expressions and
 Pipelines](expressions-and-pipelines.md)):
 
-```eu
+```eu,notest
 a: 5 square
 b: 4 add(3)
+```
+
+## Destructuring Parameters
+
+Function parameters can be **destructuring patterns** that extract
+structure from an argument inline, binding its components as named
+variables in the function body.
+
+### Block destructuring
+
+A block pattern binds named fields from a block argument. Shorthand
+form binds the field name directly:
+
+```eu,notest
+sum-of-point({x y}): x + y
+
+p: { x: 3 y: 4 }
+result: sum-of-point(p)
+```
+
+```yaml
+result: 7
+```
+
+A rename form binds a field under a different local name, using a
+colon between the field name and the binding name:
+
+```eu
+scaled({x: a  y: b}, scale): a * scale + b * scale
+
+result: scaled({x: 2  y: 3}, 10)
+```
+
+```yaml
+result: 50
+```
+
+Shorthand and rename can be mixed freely:
+
+```eu
+describe({x  y: height}): "x={x} h={height}"
+
+result: describe({x: 1  y: 5})
+```
+
+```yaml
+result: x=1 h=5
+```
+
+### Fixed-length list destructuring
+
+A list pattern binds positional elements from a list argument:
+
+```eu
+add-pair([a, b]): a + b
+
+result: add-pair([10, 20])
+```
+
+```yaml
+result: 30
+```
+
+Multiple elements at any position are supported:
+
+```eu
+third([a, b, c]): c
+
+result: third([1, 2, 3])
+```
+
+```yaml
+result: 3
+```
+
+### Head/tail list destructuring
+
+A head/tail pattern separates a list into its first element and the
+remaining list. A colon inside square brackets separates the fixed
+elements (heads) from the tail binding:
+
+```eu
+first-of([x : xs]): x
+rest-of([x : xs]): xs
+
+a: first-of([1, 2, 3])
+b: rest-of([1, 2, 3])
+```
+
+```yaml
+a: 1
+b: [2, 3]
+```
+
+Multiple heads are separated by commas before the colon:
+
+```eu
+sum-first-two([a, b : rest]): a + b
+
+result: sum-first-two([10, 20, 30])
+```
+
+```yaml
+result: 30
+```
+
+### Juxtaposed call syntax
+
+When a function takes a block or list argument, you may call it by
+placing the block or list immediately after the function name with no
+space:
+
+```eu
+sum-xy({x y}): x + y
+
+a: sum-xy{x: 3 y: 4}    # same as sum-xy({x: 3 y: 4})
+```
+
+```yaml
+a: 7
+```
+
+Similarly for list arguments:
+
+```eu
+add-pair([a, b]): a + b
+
+b: add-pair[10, 20]      # same as add-pair([10, 20])
+```
+
+```yaml
+b: 30
+```
+
+Combined with block destructuring, juxtaposed calls give named
+arguments as an emergent pattern — no extra language concept needed:
+
+```eu
+greet({name greeting}): "{greeting}, {name}!"
+
+result: greet{name: "Alice" greeting: "Hello"}
+```
+
+```yaml
+result: Hello, Alice!
+```
+
+### Juxtaposed definition syntax
+
+The juxtaposed bracket syntax also works on the definition side. Writing
+the bracket or brace directly against the function name (no space) is
+sugar for the parenthesised destructuring form:
+
+```eu
+# These pairs are equivalent:
+add-pair[a, b]: a + b         # sugar for add-pair([a, b]): a + b
+add-block{x y}: x + y        # sugar for add-block({x y}): x + y
+my-head[h : t]: h             # sugar for my-head([h : t]): h
+```
+
+### The cons operator `‖`
+
+The `‖` operator (U+2016, DOUBLE VERTICAL LINE) prepends a single
+element to a list. It is right-associative, so chains build lists
+left-to-right without parentheses:
+
+```eu
+a: 1 ‖ [2, 3]          # [1, 2, 3]
+b: 1 ‖ 2 ‖ [3]         # [1, 2, 3]
+c: 1 ‖ []              # [1]
+```
+
+```yaml
+a: [1, 2, 3]
+b: [1, 2, 3]
+c: [1]
+```
+
+The precedence of `‖` (55) is between comparison (50) and arithmetic
+(75), so it binds more tightly than comparisons but less tightly than
+addition or multiplication.
+
+
+### Mixing patterns
+
+Normal parameters and destructuring patterns can be combined in any
+order:
+
+```eu
+weighted-sum(w, [a, b, c]): w * a + w * b + w * c
+
+result: weighted-sum(2, [1, 3, 5])
+```
+
+```yaml
+result: 18
+```
+
+Multiple destructuring parameters are also allowed:
+
+```eu
+combine({x}, [a, b]): x + a + b
+
+result: combine({x: 10}, [3, 7])
+```
+
+```yaml
+result: 20
 ```
 
 ## Functions are Values
@@ -2705,6 +2933,47 @@ eu -e '(str.prefix("<") ∘ str.suffix(">"))("x")'
 <x>
 ```
 
+### Forward composition `;`
+
+The `;` operator composes in the other direction: `f ; g` applies `f`
+first, then `g`. This reads naturally in pipelines — left to right:
+
+```sh
+eu -e '"hello" (str.letters ; count)'
+```
+
+```yaml
+5
+```
+
+Forward composition is often simpler than `∘` because it follows the
+data flow:
+
+```eu
+` :suppress
+shout: str.to-upper ; str.suffix("!")
+
+result: "hello" shout
+```
+
+```yaml
+result: HELLO!
+```
+
+Use `;` when building a pipeline from smaller steps:
+
+```sh
+eu -e '[3, 1, 4, 1, 5] map(inc ; (* 2))'
+```
+
+```yaml
+- 8
+- 4
+- 10
+- 4
+- 12
+```
+
 ### `flip`
 
 Swap the first two arguments of a function:
@@ -2719,7 +2988,7 @@ eu -e 'flip(-, 1, 3)'
 
 `flip` is useful for adapting functions to a pipeline:
 
-```eu
+```eu,notest
 ` :suppress
 with-tags: merge flip ({ tags: [:a, :b] })
 
@@ -2783,7 +3052,7 @@ from:
 1. **Named functions** -- the clearest approach
 2. **Partial application** -- `add(5)`, `* 2`
 3. **Sections** -- `(+ 1)`, `(> 0)`
-4. **Composition** -- `f ∘ g`
+4. **Composition** -- `f ∘ g` or `g ; f`
 5. **Anaphora** -- `_ + 1`, `_0 * _0` (see next chapters)
 
 These compose naturally:
@@ -2799,16 +3068,16 @@ result: [3, 1, 0, 5, 2] process
 
 ```eu
 people: [
-  { name: "alice" age: 30 }
-  { name: "bob" age: 25 }
-  { name: "charlie" age: 35 }
+  { name: "alice", age: 30 },
+  { name: "bob", age: 25 },
+  { name: "charlie", age: 35 }
 ]
 
 ` :suppress
-format(p): "{p.name str.to-upper}: age {p.age}"
+format(p): "{p.name}: age {p.age}"
 
 directory: people
-  filter(_.age >= 30)
+  filter(.age >= 30)
   map(format)
 ```
 
@@ -2821,8 +3090,8 @@ people:
 - name: charlie
   age: 35
 directory:
-- 'ALICE: age 30'
-- 'CHARLIE: age 35'
+- 'alice: age 30'
+- 'charlie: age 35'
 ```
 
 ## Key Concepts
@@ -2831,8 +3100,9 @@ directory:
 - All functions are **curried**: partial application is automatic
 - **Sections** give partial application for operators: `(+ 1)`,
   `(> 3)`
-- **Combinators** like `identity`, `const`, `compose`, `flip` build
-  new functions from existing ones
+- **Combinators** like `identity`, `const`, `compose` (`∘`),
+  forward-compose (`;`), and `flip` build new functions from existing
+  ones
 - Prefer named functions for anything complex; use partial application
   and sections for simple cases
 
@@ -2842,7 +3112,7 @@ directory:
 
 In this chapter you will learn:
 
-- How to define custom binary, prefix, and postfix operators
+- How to define custom nullary, binary, prefix, and postfix operators
 - How precedence and associativity work
 - How to control operator behaviour with metadata
 - The built-in operators provided by the prelude
@@ -2865,6 +3135,28 @@ result: 8
 Operator names use symbolic characters: `+`, `-`, `*`, `/`, `<`, `>`,
 `|`, `&`, `!`, `@`, `#`, `~`, `^`, and any Unicode symbol or
 punctuation characters.
+
+## Nullary Operators
+
+A nullary operator takes no operands — it is a constant written as a
+symbol:
+
+```eu
+(∅): '__SET.EMPTY'
+result: ∅ set.to-list
+```
+
+```yaml
+result: []
+```
+
+The empty set `∅` is the only nullary operator in the standard prelude,
+but you can define your own:
+
+```eu,notest
+(★): 42
+answer: ★
+```
 
 ## Prefix and Postfix Operators
 
@@ -2902,14 +3194,13 @@ The prelude defines the standard precedence levels:
 | 95 | prefix | `↑` (head) |
 | 90 | lookup | `.` |
 | 88 | bool-unary | `!`, `¬` |
-| 85 | exp | `!!` (nth) |
-| 80 | prod | `*`, `/`, `%` |
+| 85 | exp | `^`, `!!` (nth) |
+| 80 | prod | `*`, `/`, `÷`, `%` |
 | 75 | sum | `+`, `-` |
 | 60 | shift | (shift operators) |
 | 55 | bitwise | (bitwise operators) |
 | 50 | cmp | `<`, `>`, `<=`, `>=` |
 | 45 | append | `++`, `<<` |
-| 42 | map | `<$>` |
 | 40 | eq | `=`, `!=` |
 | 35 | bool-prod | `&&`, `∧` |
 | 30 | bool-sum | `\|\|`, `∨` |
@@ -2997,7 +3288,7 @@ tagged: 42 // { note: "the answer" }
 
 The metadata can be retrieved with `meta`:
 
-```eu
+```eu,notest
 note: meta(tagged).note
 ```
 
@@ -3050,20 +3341,6 @@ eu -e '[1, 2] ++ [3, 4]'
 - 4
 ```
 
-## The Functor Operator `<$>`
-
-Map a function over a list:
-
-```sh
-eu -e '(* 2) <$> [1, 2, 3]'
-```
-
-```yaml
-- 2
-- 4
-- 6
-```
-
 ## Dot Sections
 
 The dot operator can be used as a section to create lookup functions:
@@ -3077,6 +3354,45 @@ eu -e '[{x: 1}, {x: 2}, {x: 3}] map(.x)'
 - 2
 - 3
 ```
+
+## Idiot Brackets
+
+Eucalypt lets you define custom Unicode bracket pairs that wrap and
+transform an expression. These are called *idiot brackets* (inspired
+by *idiom brackets* from applicative functor notation, but they are a
+general bracket overloading mechanism).
+
+```eu
+⌈ x ⌉: x * 2
+
+doubled: ⌈ 3 + 4 ⌉
+```
+
+```yaml
+doubled: 14
+```
+
+The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` that
+takes one argument. Using `⌈ expr ⌉` in an expression calls that
+function with `expr`.
+
+Any of the built-in Unicode bracket pairs can be used:
+
+| Open | Close | Name |
+|------|-------|------|
+| `⟦`  | `⟧`   | Mathematical white square brackets |
+| `⟨`  | `⟩`   | Mathematical angle brackets |
+| `⟪`  | `⟫`   | Mathematical double angle brackets |
+| `⌈`  | `⌉`   | Ceiling brackets |
+| `⌊`  | `⌋`   | Floor brackets |
+| `«`  | `»`   | French guillemets |
+
+(and several others — see the
+[syntax reference](../reference/syntax.md) for the full list.)
+
+Idiot brackets can also be given a monadic interpretation for
+sequencing — see [Monads and the monad() Utility](monads.md) for
+details on bracket pair definitions with `:monad` metadata.
 
 ## Key Concepts
 
@@ -3299,7 +3615,8 @@ f: { x: • y: • }.(x + y)
 Indeed this does allow declaration of anonymous functions with named
 parameters and can occasionally be useful but it still falls short of
 a fully general lambda construction because it cannot (at least for
-now) be nested.
+now) be nested. It is to be regarded as a stylistic anti-pattern, use
+alternatives where available.
 
 ## String Anaphora
 
@@ -3745,7 +4062,7 @@ In this chapter you will learn:
 Import another eucalypt file using the `import` key in declaration
 metadata:
 
-```eu
+```eu,notest
 { import: "helpers.eu" }
 
 # Names from helpers.eu are now available
@@ -3760,7 +4077,7 @@ imported names are available throughout the entire file.
 Imports can be scoped to a specific declaration, limiting where the
 imported names are visible:
 
-```eu
+```eu,notest
 ` { import: "math.eu" }
 calculations: {
   # Names from math.eu are available only within this block
@@ -3774,7 +4091,7 @@ calculations: {
 
 Give an import a name to access its contents under a namespace:
 
-```eu
+```eu,notest
 { import: "cfg=config.eu" }
 
 host: cfg.host
@@ -3784,7 +4101,7 @@ port: cfg.port
 This is especially useful when importing data files that might contain
 names which clash with your own:
 
-```eu
+```eu,notest
 { import: "prod=production.yaml" }
 
 url: "https://{prod.host}:{prod.port}"
@@ -3794,7 +4111,7 @@ url: "https://{prod.host}:{prod.port}"
 
 Supply a list to import several files at once:
 
-```eu
+```eu,notest
 { import: ["helpers.eu", "config.eu"] }
 
 result: helper(config-value)
@@ -3802,7 +4119,7 @@ result: helper(config-value)
 
 Named and unnamed imports can be mixed:
 
-```eu
+```eu,notest
 { import: ["helpers.eu", "cfg=config.eu"] }
 
 result: helper(cfg.port)
@@ -3813,7 +4130,7 @@ result: helper(cfg.port)
 Eucalypt can import files in any supported format. The format is
 inferred from the file extension:
 
-```eu
+```eu,notest
 { import: "data=records.yaml" }
 
 first-record: data head
@@ -3821,7 +4138,7 @@ first-record: data head
 
 You can override the format when the extension is misleading:
 
-```eu
+```eu,notest
 { import: "data=yaml@records.txt" }
 ```
 
@@ -3830,17 +4147,17 @@ You can override the format when the extension is misleading:
 Some formats (CSV, JSON Lines, text) produce lists rather than blocks.
 These **must** be given a name:
 
-```eu
+```eu,notest
 { import: "rows=transactions.csv" }
 
-total: rows map(_.amount num) foldl(+, 0)
+total: rows map(.amount num) foldl(+, 0)
 ```
 
 ## Nested Imports
 
 Imports can be placed at any level of nesting:
 
-```eu
+```eu,notest
 deep: {
   nested: {
     ` { import: "local-config.eu" }
@@ -3851,12 +4168,73 @@ deep: {
 }
 ```
 
+## Import Resolution Order
+
+When an import path is a relative string (e.g. `"helpers.eu"` rather than an
+absolute path or a git import), eucalypt resolves it by searching in this order:
+
+1. **Source-relative directory** — the directory containing the file that
+   contains the `import` declaration.
+2. **Global lib path** — the directories supplied via `-L` flags and the current
+   working directory, searched in the order they were specified.
+
+If the file is found in the source-relative directory it is used immediately and
+the global lib path is not consulted.
+
+### Transitive resolution
+
+Resolution is always relative to the *importing* file, not to the entry-point
+file passed on the command line. This means:
+
+- `main.eu` imports `"lib/utils.eu"` → resolved as `<dir-of-main>/lib/utils.eu`
+- `lib/utils.eu` imports `"helpers/misc.eu"` → resolved as
+  `<dir-of-main>/lib/helpers/misc.eu` (relative to `utils.eu`, not to `main.eu`)
+- `lib/helpers/misc.eu` imports `"sub/detail.eu"` → resolved as
+  `<dir-of-main>/lib/helpers/sub/detail.eu`
+
+Each file sees its own directory as the base for relative imports, no matter how
+deep the chain goes.
+
+### Practical example
+
+Suppose your project is laid out as follows:
+
+```
+project/
+  main.eu
+  lib/
+    utils.eu
+    helpers/
+      misc.eu
+```
+
+`main.eu` can import `lib/utils.eu` using a path relative to itself:
+
+```eu,notest
+{ import: "lib/utils.eu" }
+
+result: util-function(42)
+```
+
+`lib/utils.eu` can import from `lib/helpers/misc.eu` using a path relative to
+*its own* location:
+
+```eu,notest
+{ import: "helpers/misc.eu" }
+
+util-function(x): misc-helper(x)
+```
+
+No `-L` flags or absolute paths are needed. If a file is not found
+source-relatively, eucalypt falls back to the global lib path, so existing
+projects that rely on `-L` continue to work without modification.
+
 ## Git Imports
 
 Import eucalypt code directly from a git repository. This is useful
 for sharing libraries without manually managing local copies:
 
-```eu
+```eu,notest
 { import: { git: "https://github.com/user/eu-lib"
             commit: "abc123def456"
             import: "lib/helpers.eu" } }
@@ -3869,7 +4247,7 @@ the import is repeatable and cacheable.
 
 Multiple git imports can be listed alongside simple imports:
 
-```eu
+```eu,notest
 { import: [
   "local.eu",
   { git: "https://github.com/user/lib"
@@ -3882,7 +4260,7 @@ Multiple git imports can be listed alongside simple imports:
 
 For large files, streaming imports read data lazily:
 
-```eu
+```eu,notest
 { import: "events=jsonl-stream@events.jsonl" }
 
 recent: events take(100)
@@ -3914,7 +4292,7 @@ system.
 
 ## Practical Example: Configuration Layering
 
-```eu
+```eu,notest
 # base.eu
 defaults: {
   host: "0.0.0.0"
@@ -3923,7 +4301,7 @@ defaults: {
 }
 ```
 
-```eu
+```eu,notest
 # deploy.eu
 { import: "base.eu" }
 
@@ -3946,6 +4324,8 @@ defaults.
 - **Named imports** (`"name=file"`) provide namespace isolation
 - Imports can be **scoped** to individual declarations
 - **Data files** (YAML, JSON, CSV, etc.) can be imported like code
+- **Relative paths** resolve against the importing file's directory first,
+  then the global lib path — no `-L` flags needed for co-located helpers
 - **Git imports** pull code directly from repositories at a specific
   commit
 - **Streaming imports** (`jsonl-stream@`, `csv-stream@`,
@@ -3983,13 +4363,13 @@ eu data.json -x toml
 Pipe JSON from other tools into eucalypt:
 
 ```sh
-curl -s https://api.example.com/users | eu -e 'map(_.name)'
+curl -s https://api.example.com/users | eu -e 'map(.name)'
 ```
 
 Or process a JSON file:
 
 ```sh
-eu -e 'users filter(_.active) map(_.email)' data.json
+eu -e 'users filter(.active) map(.email)' data.json
 ```
 
 ## Processing YAML
@@ -4062,7 +4442,7 @@ eu -e 'root' root=xml@data.xml
 
 Use list functions to navigate the structure:
 
-```eu
+```eu,notest
 { import: "root=xml@data.xml" }
 
 # Get the tag name (first element)
@@ -4080,7 +4460,7 @@ children: root drop(2)
 Use named inputs to make data available under a specific name:
 
 ```sh
-eu users=users.json roles=roles.json -e 'users map(_.name)'
+eu users=users.json roles=roles.json -e 'users map(.name)'
 ```
 
 Named inputs are essential for list-based formats (CSV, JSON Lines,
@@ -4100,7 +4480,7 @@ eu users.yaml roles.yaml merge.eu
 
 Where `merge.eu` contains logic that uses names from both inputs:
 
-```eu
+```eu,notest
 # merge.eu
 summary: {
   user-count: users count
@@ -4118,10 +4498,10 @@ inputs:
 eu config.yaml -e 'database.host'
 
 # Transform and filter
-eu data.json -e 'items filter(_.price > 100) map(_.name)'
+eu data.json -e 'items filter(.price > 100) map(.name)'
 
 # Aggregate
-eu data.json -e 'items map(_.price) foldl(+, 0)'
+eu data.json -e 'items map(.price) foldl(+, 0)'
 ```
 
 ## Collecting Inputs
@@ -4129,7 +4509,7 @@ eu data.json -e 'items map(_.price) foldl(+, 0)'
 The `--collect-as` (`-c`) flag gathers multiple files into a list:
 
 ```sh
-eu -c configs *.yaml -e 'configs map(_.name)'
+eu -c configs *.yaml -e 'configs map(.name)'
 ```
 
 Add `--name-inputs` (`-N`) to get a block keyed by filename:
@@ -4172,20 +4552,20 @@ summary:
 
 ```sh
 eu sales=sales.csv -j -e '{
-  total: sales map(_.amount num) foldl(+, 0)
+  total: sales map(.amount num) foldl(+, 0)
   count: sales count
-  regions: sales map(_.region) unique
+  regions: sales map(.region) unique
 }'
 ```
 
 Or as a reusable eucalypt file:
 
-```eu
+```eu,notest
 # report.eu
 { import: "sales=sales.csv" }
 
 ` :suppress
-amounts: sales map(_.amount num)
+amounts: sales map(.amount num)
 
 report: {
   total: amounts foldl(+, 0)
@@ -4287,7 +4667,7 @@ eu config=settings.yaml app.eu
 
 In `app.eu`, the YAML content is available as `config`:
 
-```eu
+```eu,notest
 port: config.port
 ```
 
@@ -4296,7 +4676,7 @@ port: config.port
 Gather multiple files into a named collection:
 
 ```sh
-eu -c data *.json -e 'data map(_.name)'
+eu -c data *.json -e 'data map(.name)'
 ```
 
 Add `-N` to key by filename:
@@ -4343,7 +4723,7 @@ When combined with file inputs, the evaluand has access to all loaded
 names:
 
 ```sh
-eu data.yaml -e 'users filter(_.active) count'
+eu data.yaml -e 'users filter(.active) count'
 ```
 
 Multiple `-e` flags are allowed; the last one determines the output.
@@ -4360,7 +4740,7 @@ eu config.yaml -e 'database'
 eu data.json -e 'items count'
 
 # Extract and transform
-eu data.json -e 'items map(_.name) reverse'
+eu data.json -e 'items map(.name) reverse'
 ```
 
 ## Targets
@@ -4368,7 +4748,7 @@ eu data.json -e 'items map(_.name) reverse'
 Declarations annotated with `:target` metadata can be selected for
 rendering:
 
-```eu
+```eu,notest
 # multi-output.eu
 ` { target: :summary }
 summary: { count: items count }
@@ -4813,70 +5193,756 @@ now: io.epoch-time
 
 ## Random Numbers
 
-Eucalypt provides pseudo-random number generation using a functional
-stream pattern.
+Eucalypt provides pseudo-random number generation via the `random`
+namespace, which is a state monad over a PRNG stream.
 
-### The Random Stream
+### The random stream
 
-The `io.random` binding is an infinite lazy list of random floats in
-`[0, 1)`:
-
-```eu
-first-value: io.random head
-```
-
-Each run produces different values unless you supply a seed:
+A random stream is provided at startup as `io.random`. Each run
+produces different values unless you supply a seed:
 
 ```sh
 eu --seed 42 example.eu
 ```
 
-### Generating Random Values
+### Single random values
 
-Random functions consume part of the stream and return both a result
-and the remaining stream:
+For a single random value, pass `io.random` as the stream:
 
 ```eu,notest
-result: random-int(100, io.random)
-value: result.value   # a number from 0 to 99
-rest: result.rest     # remaining stream
+roll: random.int(6, io.random).value + 1
+colour: random.choice(["red", "green", "blue"], io.random).value
 ```
 
-### Practical Examples
+Each operation returns a `{value, rest}` block — extract `.value`
+to get the result.
 
-**Rolling dice:**
+### Multiple random values
+
+When you need several random values, you must propagate the stream
+from each call to the next. Reusing `io.random` would give the same
+value each time:
 
 ```eu,notest
-roll: random-int(6, io.random)
-die: roll.value + 1
+# WRONG — both use the same stream, so d1 = d2
+d1: random.int(6, io.random).value
+d2: random.int(6, io.random).value
+
+# RIGHT — thread the stream manually
+r1: random.int(6, io.random)
+r2: random.int(6, r1.rest)
+total: r1.value + r2.value + 2
 ```
 
-**Picking a random element:**
+This manual threading is error-prone. The `random` monad can ease the
+overhead somewhat — use a `{ :random ... }` monadic block or
+combinators like `sequence` and `map-m`:
 
 ```eu,notest
-colours: ["red", "green", "blue"]
-pick: random-choice(colours, io.random)
-colour: pick.value
+# Monadic block — stream threads automatically
+dice: { :random
+  d6: random.int(6)
+  d20: random.int(20)
+}.[d6, d20]
+
+result: dice(io.random).value  # e.g. [3, 14]
+
+# Or use sequence for a list of actions
+two-dice: random.sequence([random.int(6), random.int(6)], io.random).value
 ```
 
-**Shuffling a list:**
+### Other operations
 
 ```eu,notest
-items: ["a", "b", "c", "d"]
-shuffled: shuffle(items, io.random)
-result: shuffled.value
-```
-
-**Sampling without replacement:**
-
-```eu,notest
-pool: range(1, 50)
-drawn: sample(6, pool, io.random)
-lottery: drawn.value
+shuffled: random.shuffle(["a", "b", "c", "d"], io.random).value
+picked: random.sample(3, range(1, 50), io.random).value
 ```
 
 See the [Random Numbers reference](../reference/prelude/random.md) for
-the full API.
+the full API and the [Monads guide](monads.md) for details on the
+state monad pattern.
+
+---
+
+# IO and Shell Commands
+
+As of version 0.5.0 Eucalypt can execute IO by invoking shell
+commands, via the *IO monad*. 
+
+Eucalypt is not a scripting language, it is a small, lazy, dynamically
+typed, pure functional language for transformation and templating of
+semi-structured data formats and that remains its sweet spot. Do not
+get too ambitious.
+
+However, prior to the IO monad, arranging the sources of data in and
+out of the program was limited to what could be named or streamed in
+from the shell, and piped to pre-planned destinations. Allowing more
+direct control over IO within the process (while staying within the
+functional paradigm) allows much more flexibility.
+
+IO operations are sequenced strictly by the runtime and the monad
+idiom. 
+
+**All IO operations require the `--allow-io` / `-I` flag.**
+
+---
+
+## The IO monad
+
+This is not a monad tutorial. Suffice it to say than an IO action
+(which may have side effects) is represented by an object in Eucalypt.
+The monad and the runtime together, ensure that the action is run at the
+appropriate time and its output is safely incorporated into the
+computation without imperiling the referential transparency of non-IO
+code. 
+
+In initial versions of this functionality, the *only* IO capability
+available is running shell programs or binaries from eucalypt, and
+passing data in and out of them. Data passed into and out of the
+shelled program is not streamed incrementally, but buffered whole.
+This is not suitable for large data pipelines.
+
+The monad provides several ways to create IO actions, and
+string them together. When you run a eucalypt program, if the value of
+the named target (or `:main` target) is an IO action, that is run.
+
+Just embedding an IO action in a data structure is not sufficient to
+have it execute. It must either be the value of the top-level target
+of a program, or invoked in some way by that action.
+
+The key monad functions `bind` and `return` are defined in the `io`
+namespace, along with several traditional monad combinators. This
+supports the use of `{ :io ... }` monadic blocks to combine several
+monad actions into one. [Monads and the monad() Utility](monads.md) explains Eucalypt's monad
+machinery in a little more detail.
+
+A simple IO action that doesn't perform any IO at all but represents a
+constant value, can be created with `io.return`.  e.g.
+
+``` eu,notest
+greeting: io.return("hello")
+```
+
+To create more interesting IO actions, read on.
+
+## Running a shell command
+
+The simplest way to run a command is `io.shell`:
+
+```eu,notest
+result: "echo hello" io.shell
+```
+
+This creates an IO action which runs the specified command via `sh -c`
+and returns a block:
+
+```yaml
+stdout: "hello\n"
+stderr: ""
+exit-code: 0
+```
+
+To extract a specific field, either use generalised lookup syntax on
+an `:io` monad block...
+
+```eu,notest
+{ :io r: io.shell("echo hello") }.(r.stdout)
+```
+
+... or use `io.map` to apply a section within the IO monad chain.
+
+``` eu,notest
+"echo hello" io.shell io.map(.stdout)
+```
+
+---
+
+## The { :io ... } monadic block
+
+A block tagged `:io` desugars into nested `io.bind` calls. Each field
+is a bind step; the name becomes available in all subsequent steps.
+The `.()` expression after the closing brace is the return value.
+
+```eu,notest
+{ :io
+  r: io.shell("echo hello")
+  _: io.check(r)
+}.(r.stdout)
+```
+
+**Important:** unlike normal blocks, monadic blocks bind names
+sequentially — each step can only refer to names from earlier steps,
+not later ones. See [Monads and the monad() Utility](monads.md) for
+full details on monadic block syntax, forms, and the sequential
+binding constraint.
+
+---
+
+## Checking for errors
+
+`io.check` inspects a command result. If the exit code is non-zero,
+it fails the IO monad with the stderr message. Otherwise it returns
+the result unchanged:
+
+```eu,notest
+{ :io
+  r: io.shell("grep pattern file.txt")
+  _: io.check(r)
+}.(r.stdout)
+```
+
+If `grep` finds no matches (exit code 1), this produces an
+`io.fail` error with whatever was on stderr.
+
+---
+
+## Exec: running a binary directly
+
+`io.exec` runs a binary without going via the shell. The argument is a
+list where the first element is the command and the rest are
+arguments:
+
+```eu,notest
+{ :io
+  r: io.exec(["git", "rev-parse", "HEAD"])
+}.(r.stdout)
+```
+
+If the binary does not exist, `io.exec` returns a result block with
+exit-code 127 and the OS error in stderr, rather than failing outright.
+
+---
+
+## Options: stdin, timeout
+
+Both `io.shell-with` and `io.exec-with` accept an options block as
+the first argument. This is merged into the spec block, overriding
+defaults:
+
+```eu,notest
+"cat" io.shell-with{stdin: "hello world", timeout: 60} io.map(.stdout)
+```
+
+Available options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `stdin` | (none) | String to pipe to the command's standard input |
+| `timeout` | 30 | Maximum seconds before the command is killed |
+
+The pipeline style reads naturally: the command string flows into
+`shell-with` which receives the options.
+
+---
+
+## Combining IO actions
+
+### Sequencing with bind
+
+`io.bind` chains two actions. The continuation receives the result of
+the first action:
+
+```eu,notest
+io.bind(io.shell("echo hello"),
+  _(r): io.shell("echo got: {r.stdout}"))
+```
+
+The `{ :io ... }` block is almost always preferable to explicit
+`io.bind` calls.
+
+### Mapping over a result
+
+`io.map` applies a pure function to the result of an action without
+needing a new IO step. The function can, of course, be a composition
+of several functions:
+
+```eu,notest
+` :main
+result: "curl https://example.com/test.json" io.shell io.map((.stdout) ; parse-as(:json))
+```
+
+### Failing explicitly
+
+`io.fail` aborts the IO monad with an error message:
+
+```eu,notest
+{ :io
+  r: io.shell("some-command")
+  _: (r.exit-code = 0) then(io.return(r), io.fail("command failed: {r.stderr}"))
+}.(r.stdout)
+```
+
+This is what `io.check` does internally — it is a convenience wrapper
+around this pattern:
+
+``` eu,notest
+` :main
+greeting: "echo hello world" io.shell io.check io.map(.stdout)
+```
+
+---
+
+## Practical examples
+
+### Git commit hash
+
+```eu,notest
+` :main
+hash: "git rev-parse --short HEAD" io.shell io.check io.map(.stdout)
+```
+
+### Run a command and parse the output as JSON
+
+```eu,notest
+` :main
+data: "curl -s https://api.example.com/data" 
+  io.shell 
+  io.check 
+  io.map((.stdout) ; parse-as(:json))
+```
+
+### Pipe data through a command
+
+```eu,notest
+` :main
+text: { :io
+  r: "jq '.name'" io.shell-with({stdin: render-as(data, :json)})
+}.(r.stdout)
+```
+
+### Multiple commands in sequence
+
+```eu,notest
+` :main
+main: { :io
+  a: io.shell("date +%s")
+  b: io.shell("hostname")
+}.(
+  { timestamp: a.stdout 
+    host: b.stdout }
+)
+```
+
+or, equivalently:
+
+``` eu,notest
+io.sequence[io.shell("date +%s") io.map(.stdout),
+            io.shell("hostname") io.map(.stdout)] with-keys[:timestamp, :host]
+
+```
+
+---
+
+## Testing IO code
+
+Test targets that use IO should include `requires-io: true` in their
+target metadata. The test runner (`eu test`) skips these tests
+gracefully when `--allow-io` is not set:
+
+```eu,notest
+` { target: :test requires-io: true }
+test:
+  { :io r: io.exec(["echo", "hello"]) }.(
+    if(r.stdout str.matches?("hello.*"),
+      { RESULT: :PASS },
+      { RESULT: :FAIL }))
+```
+
+---
+
+## Reference
+
+For the full API table, see the
+[IO prelude reference](../reference/prelude/io.md).
+
+For the monadic programming model, `monad()` utility, and how to
+build your own monads, see
+[Monads and the monad() Utility](monads.md).
+
+---
+
+# Monads and the monad() Utility
+
+Eucalypt has first-class support for monadic programming. Two built-in
+namespaces — `io` and `random` — are monads, and the `monad()` utility
+lets you build additional ones from just `bind` and `return`.
+
+## What is a monad in eucalypt?
+
+A *monad* is just two primitives, which are conventionally grouped in
+a namespace.
+
+| Primitive | Role |
+|-----------|------|
+| `return(v)` | Wrap a pure value as a monadic action |
+| `bind(action, f)` | Run an action, pass its result to `f`, return a new action |
+
+With these two primitives available an alternative interpretation of the block
+structure, _monadic blocks_ can be used.
+
+Other monadic functions — `map`, `then`, `join`, `sequence`, `map-m`,
+`filter-m` — are typically provided in the same namespace and can be
+derived automatically with the aid of the `monad` function.
+
+Monads are required for performing [IO from eucalypt code](io.md) and
+may be used to simplify random number access. Users may define monads
+themselves and assign unicode brackets to them if they so wish.
+
+---
+
+## Monadic blocks
+
+Eucalypt provides syntactic sugar for chaining monadic actions. A
+block tagged with a monad namespace name desugars into nested `bind`
+calls automatically.
+
+The most common form tags the block with `:io`:
+
+```eu,notest
+{ :io
+  r: io.shell("echo hello")
+  _: io.check(r)
+}.(r.stdout)
+```
+
+This desugars to:
+
+```eu,notest
+io.bind(io.shell("echo hello"),
+  λr. io.bind(io.check(r),
+    λ_. io.return(r.stdout)))
+```
+
+Each field becomes a `bind` step. The bound name is available in all
+subsequent steps. The `.()` expression after the closing brace is the
+return expression, wrapped in the monad's `return`.
+
+### Key constraint: sequential binding
+
+**Unlike normal blocks, names in a monadic block can only refer to
+names bound in earlier steps.** Normal eucalypt blocks are
+declarative — bindings can refer to each other in any order. Monadic
+blocks are sequential — each step can only see what came before it,
+because the desugaring nests each continuation inside the previous
+one.
+
+```eu,notest
+# WRONG — b is not yet bound when a is evaluated
+{ :io
+  a: io.map(inc, b)
+  b: io.shell("echo 1")
+}.(a)
+
+# RIGHT — b is bound before a uses it
+{ :io
+  b: io.shell("echo 1")
+  a: io.map(inc, b)
+}.(a)
+```
+
+### Block metadata forms
+
+Several syntax forms are available for monadic blocks:
+
+| Form | Syntax | Monad source |
+|------|--------|-------------|
+| 1 | `{ :name decls }.expr` | Namespace `name` in scope |
+| 2 | `{ { monad: name } decls }.expr` | Namespace `name` in scope |
+| 3 | `{ { :monad namespace: name } decls }.expr` | Namespace `name` in scope |
+| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit `f`/`r` functions |
+
+Form 1 is the most common — `{ :io ... }` tags a block with the `io`
+namespace. The desugarer looks up `io.bind` and `io.return`
+automatically.
+
+### Custom bracket pairs
+
+You can define bracket pairs for monadic notation using the `:monad`
+metadata:
+
+```eu,notest
+⟦{}⟧: { :monad bind: my-bind  return: my-return }
+
+result: ⟦ x: some-action  y: other-action(x) ⟧.(x + y)
+```
+
+See the [syntax reference](../reference/syntax.md) for full details on
+bracket pair definitions.
+
+---
+
+## The monad() utility
+
+`monad(m)` takes a block with `bind` and `return` fields and returns a
+block of derived combinators:
+
+```eu,notest
+my-monad: monad{bind: my-bind, return: my-return}
+```
+
+The returned block provides:
+
+| Combinator | Description |
+|-----------|-------------|
+| `bind(action, f)` | Passed through from `m.bind` |
+| `return(v)` | Passed through from `m.return` |
+| `map(f, action)` | Apply pure function `f` to the result of an action (fmap) |
+| `then(a, b)` | Sequence two actions, discarding the result of the first |
+| `join(mm)` | Flatten a nested monadic value |
+| `sequence(ms)` | Run a list of actions in order, collecting results |
+| `map-m(f, xs)` | Apply `f` to each element of `xs`, then sequence |
+| `filter-m(p, xs)` | Monadic filter: keep elements where `p` returns a truthy action |
+
+### Building a monadic namespace
+
+The typical pattern is to use `monad()` to produce the derived
+operations and then **catenate** (merge) domain-specific operations on
+top:
+
+```eu,notest
+my-ns: monad{bind: my-bind, return: my-return} {
+  some-extra-op(x): ...
+}
+```
+
+Since `monad()` includes `bind` and `return` in its result, there is
+no need to repeat them in the right-hand block.
+
+**Why catenation (not `<<`)?**  Catenation is shallow merge — the
+right-hand block's fields override the left-hand block's fields at the
+top level. `<<` is deep merge and is not appropriate here because the
+derived combinators are not nested blocks.
+
+**Overriding a derived combinator** — put the specialised
+implementation in the right-hand block; it shadows the derived one:
+
+```eu,notest
+my-ns: monad{bind: my-bind, return: my-return} {
+  # override map with a more efficient implementation
+  map(f, action): my-efficient-map(f, action)
+}
+```
+
+---
+
+## The IO monad
+
+The `io` namespace is a monad built around effect execution. IO
+operations cause side effects (shell commands, reads, writes). The
+eucalypt runtime sequences them strictly.
+
+**IO operations require `--allow-io` / `-I` at the command line.**
+
+### Primitives
+
+```eu,notest
+io.return(v)             # wrap a pure value; no side effects
+io.bind(action, f)       # run action, pass result to f
+```
+
+### Practical example
+
+```eu,notest
+result: { :io
+  r: io.shell("git rev-parse HEAD")
+  _: io.check(r)
+}.(r.stdout)
+```
+
+### Extending the IO monad
+
+You can derive additional combinators or extend with domain-specific
+operations via catenation:
+
+```eu,notest
+app-io: monad{bind: io.bind, return: io.return} {
+  read-file(path): io.shell("cat {path}")
+  git-hash: io.shell("git rev-parse HEAD")
+}
+```
+
+### IO combinators reference
+
+| Function | Description |
+|----------|-------------|
+| `io.return(a)` | Wrap a pure value in the IO monad |
+| `io.bind(action, f)` | Sequence two IO actions |
+| `io.map(f, action)` | Apply pure function `f` to the result of an IO action |
+| `io.check(result)` | Fail if `exit-code` is non-zero; otherwise return result |
+
+See [IO and Shell Commands](io.md) for practical usage and the
+[IO reference](../reference/prelude/io.md) for the full API.
+
+---
+
+## The random state monad
+
+The `random` namespace implements a *state monad* over a PRNG stream.
+A random stream is provided at startup as `io.random` (seeded from
+the system or from `--seed`). Each random operation consumes part of
+the stream and returns a `{value, rest}` block — `value` is the
+result and `rest` is the remaining stream for subsequent operations.
+
+### The pitfall: forgetting to propagate the stream
+
+For a single random value, passing `io.random` directly is simple:
+
+```eu,notest
+roll: random.int(6, io.random).value + 1
+```
+
+But when you need multiple random values, you must thread the `.rest`
+stream from each call into the next:
+
+```eu,notest
+r1: random.int(6, io.random)
+r2: random.int(6, r1.rest)       # must use r1.rest, not io.random!
+total: r1.value + r2.value + 2
+```
+
+If you accidentally pass `io.random` to both calls, you get the
+*same* random value twice. This manual threading is error-prone and
+verbose — which is exactly what the random monad solves.
+
+### With the monad: automatic threading
+
+A `{ :random ... }` monadic block threads the stream automatically:
+
+```eu,notest
+triple: { :random
+  d6: random.int(6)
+  d20: random.int(20)
+  d100: random.int(100)
+}.[d6, d20, d100]
+
+result: triple(io.random).value  # e.g. [3, 14, 57]
+```
+
+Each step receives the stream left over from the previous step —
+no manual `.rest` threading needed. The return expression
+(`.[d6, d20, d100]`) collects the results into a list.
+
+The monadic block produces an *action* — a function that takes a
+stream — so you run it by passing `io.random` and extracting
+`.value`.
+
+For common patterns, `sequence` and `map-m` are even more concise:
+
+```eu,notest
+# Sequence a list of actions
+two-dice: random.sequence[random.int(6), random.int(6)]
+result: two-dice(io.random).value  # list of two rolls
+
+# Map an action over a list of die sizes
+dice: random.map-m(random.int, [4, 6, 8, 10, 20])
+rolls: dice(io.random).value   # e.g. [2, 4, 1, 7, 15]
+```
+
+**Important:** always extract `.value` before rendering — the `.rest`
+field is an infinite stream and will hang if you try to print it.
+
+### Deterministic seeds
+
+For reproducible output (useful in tests), pass `--seed` on the
+command line or create a stream from a fixed seed:
+
+```eu,notest
+rolls: random.map-m(random.int, [6, 6])(random.stream(42)).value
+# always produces the same result for seed 42
+```
+
+### How the state monad works
+
+Under the hood, `random.return` and `random.bind` are:
+
+```eu,notest
+# return: wrap a pure value as a do-nothing action
+random-ret(v, stream): { value: v, rest: stream }
+
+# bind: run m, pass result to f, run f's action with remaining stream
+random-bind(m, f, stream): {
+  r: m(stream)
+  run: f(r.value)(r.rest)
+  value: run.value
+  rest: run.rest
+}
+```
+
+`random-bind(m, f)` is a 3-arg function; calling it with only two
+arguments returns an action (function of `stream`). This is the curried
+partial application pattern used throughout eucalypt.
+
+### Random combinators reference
+
+| Function | Description |
+|----------|-------------|
+| `random.bind(m, f)` | State monad bind |
+| `random.return(v)` | State monad return |
+| `random.float` | Action: random float in [0,1) |
+| `random.int(n)` | Action: random integer in [0,n) |
+| `random.choice(list)` | Action: random element from list |
+| `random.shuffle(list)` | Action: shuffled copy of list |
+| `random.sample(n, list)` | Action: n elements sampled without replacement |
+
+Derived combinators (`map`, `then`, `join`, `sequence`, `map-m`,
+`filter-m`) are also available — see
+[Random Numbers reference](../reference/prelude/random.md).
+
+---
+
+## Writing your own monad
+
+Any pair of functions satisfying the monad laws can be wrapped with
+`monad()`. Here is a minimal example — the identity monad, where
+"wrapping" a value is a no-op:
+
+```eu
+` :suppress
+id-bind(m, f): f(m)
+` :suppress
+id-return(a): a
+` :suppress
+id-monad: monad{bind: id-bind, return: id-return}
+
+` { target: :example }
+example: id-monad.map-m(inc, [1, 2, 3])
+# => [2, 3, 4]
+```
+
+A more useful example — a "maybe" monad where `null` short-circuits
+the computation:
+
+```eu,notest
+` :suppress
+maybe-return(v): v
+
+` :suppress
+maybe-bind(m, f): if(m = null, null, f(m))
+
+` :suppress
+maybe: monad{bind: maybe-bind, return: maybe-return}
+
+safe-head(xs): if(xs nil?, null, xs head)
+
+# Chain operations that may return null — short-circuits on first null
+result: maybe.bind(safe-head([]), inc)   # => null (list was empty)
+ok:     maybe.bind(safe-head([42]), inc) # => 43
+```
+
+---
+
+## Key concepts
+
+- `monad(m)` takes `{bind, return}` and returns a block with `bind`,
+  `return`, and six derived combinators
+- Use **catenation** (juxtaposition) to merge derived and specialised
+  operations — NOT `<<`
+- Monadic blocks (`{ :io ... }`, `{ :name ... }`) desugar into nested
+  `bind` calls — names are bound **sequentially**, not declaratively
+- The `random:` namespace is a state monad — actions are functions of a
+  stream, `bind` threads the stream automatically
+- When running random actions, always extract `.value` before
+  rendering; the `.rest` field is an infinite stream
 
 ---
 
@@ -5250,13 +6316,17 @@ eu -e '["banana", "apple", "cherry"] qsort(<)'
 - cherry
 ```
 
-Sort by a derived key:
+Sort by a derived key. Here `str.letters ; count` is a forward
+composition (see
+[Functions and Combinators](functions-and-combinators.md)) that
+extracts the letter count:
 
 ```eu
+` :suppress
+shorter(a, b): (a str.letters count) < (b str.letters count)
+
 words: ["one", "two", "three", "four", "five", "six"]
-by-length: words qsort({
-  lhs: • rhs: •
-}.( (lhs str.letters count) < (rhs str.letters count) ))
+by-length: words qsort(shorter)
 ```
 
 ```yaml
@@ -5274,6 +6344,13 @@ by-length:
 - four
 - five
 - three
+```
+
+The prelude also provides `sort-by(key-fn, cmp)` as a convenience for
+this pattern:
+
+```eu,notest
+by-length: words sort-by(str.letters ; count, <)
 ```
 
 ### `sort-nums`
@@ -5303,7 +6380,7 @@ items: [
   { type: "fruit" name: "banana" }
 ]
 
-grouped: items group-by(_.type)
+grouped: items group-by(.type)
 ```
 
 ```yaml
@@ -5332,9 +6409,12 @@ printf-style codes after a colon inside the interpolation braces.
 
 ```eu
 results: {
-  padded: "{42:%06d}"
-  float: "{3.14159:%.2f}"
-  hex: "{255:%x}"
+  n: 42
+  padded: "{n:%06d}"
+  pi: 3.14159
+  float: "{pi:%.2f}"
+  h: 255
+  hex: "{h:%x}"
 }
 ```
 
@@ -5488,8 +6568,23 @@ b: 2
 c: 3
 ```
 
-So far all these declarations have been **property declarations** which
-contain a name and an expression, separated by a colon.
+Blocks may also have a single expression, preceding its declarations
+which constitutes **block metadata**. This is optional.
+
+So the block pattern is braces (except for the unit level) containing,
+optionally metadata, then any number of declarations.
+
+```
+{ «metadata expression»?  [«declaration»]* }
+```
+
+Both the metadata expression and the declarations may contain blocks.
+This recursive application of the block pattern defines the major
+structure of any eucalypt code.
+
+So far all the declarations we have seen have been **property
+declarations** which contain a name and an expression, separated by a
+colon.
 
 Commas are entirely optional for delimiting declarations. Line endings
 are not significant. The following is a top-level block of three
@@ -5508,6 +6603,82 @@ f(x, y): x + y
 
 two: f(1, 1)
 ```
+
+Function parameters can be **destructuring patterns** as well as
+simple names. A block pattern extracts named fields from a block
+argument; a list pattern extracts positional elements from a list
+argument:
+
+```eu
+# Block destructuring — shorthand binds field name as variable name
+sum-xy({x y}): x + y
+
+# Block destructuring — rename binds field under a new variable name
+product-ab({x: a  y: b}): a * b
+
+# Mixed shorthand and rename
+mixed({x  y: b}): x + b
+
+# Fixed-length list destructuring
+f-sum([a, b, c]): a + b + c
+f-first([a, b]): a
+
+# Head/tail list destructuring — colon separates fixed heads from tail
+get-head([x : xs]): x
+get-tail([x : xs]): xs
+drop-two([a, b : rest]): rest
+```
+
+Juxtaposed call syntax passes a block or list literal as a single
+argument without parentheses. No space between the function name and
+the opening bracket:
+
+```eu,notest
+# f{...} is sugar for f({...})
+sum-xy{x: 10 y: 20}
+
+# f[...] is sugar for f([...])
+add-pair[1, 2]
+```
+
+Combined with block destructuring, this gives named arguments:
+
+```eu
+greet({name greeting}): "{greeting}, {name}!"
+greet{name: "Alice" greeting: "Hello"}    # => "Hello, Alice!"
+```
+
+Juxtaposed syntax also works in definitions — the bracket or brace
+is written directly against the function name with no space. This is
+sugar for the parenthesised destructuring form:
+
+```eu
+# f[x, y]: ...  is sugar for  f([x, y]): ...
+add-pair[a, b]: a + b
+
+# f{x y}: ...   is sugar for  f({x y}): ...
+add-block{x y}: x + y
+
+# f[h : t]: ... is sugar for  f([h : t]): ...
+my-head[h : t]: h
+```
+
+Destructuring patterns can be mixed with normal parameters:
+
+```eu
+f(n, [a, b]): n * (a + b)
+```
+
+The `‖` operator (U+2016, DOUBLE VERTICAL LINE) prepends an element to
+a list. It is right-associative:
+
+```eu
+1 ‖ [2, 3]        # => [1, 2, 3]
+1 ‖ 2 ‖ [3]       # => [1, 2, 3]
+```
+
+See [Functions and Combinators](../guide/functions-and-combinators.md)
+for more detail on destructuring.
 
 ...and using some brackets and suitable names, you can define
 operators too, either binary:
@@ -5529,6 +6700,146 @@ operators too, either binary:
 
 Eucalypt should handle unicode gracefully and any unicode characters
 in the symbol or punctuation classes are fine for operators.
+
+In addition to named operators, you can define **idiot brackets** —
+custom Unicode bracket pairs that wrap an expression and apply a
+function to it. The name is inspired by *idiom brackets* from
+applicative functor notation, but they are a general bracket
+overloading mechanism. A bracket pair declaration uses a Unicode
+bracket pair wrapping a single parameter directly (paren-free style):
+
+```eu
+# Ceiling brackets double
+⌈ x ⌉: x * 2
+
+# Floor brackets increment
+⌊ x ⌋: x + 1
+```
+
+The older paren-wrapped style is still supported for backwards compatibility:
+
+```eu
+(⌈ x ⌉): x * 2    # paren style — still valid
+```
+
+Once declared, the bracket pair can be used as an expression:
+
+```eu,notest
+doubled: ⌈ 3 + 4 ⌉    # => 14
+bumped:  ⌊ 5 ⌋         # => 6
+```
+
+The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` (open
+then close bracket) that takes one argument `x` and returns `body`.
+Using `⌈ expr ⌉` in an expression calls that function with `expr`.
+
+The following Unicode bracket pairs are built-in and can be used for
+idiot brackets without any registration:
+
+| Open | Close | Name |
+|------|-------|------|
+| `⟦`  | `⟧`   | Mathematical white square brackets |
+| `⟨`  | `⟩`   | Mathematical angle brackets |
+| `⟪`  | `⟫`   | Mathematical double angle brackets |
+| `⌈`  | `⌉`   | Ceiling brackets |
+| `⌊`  | `⌋`   | Floor brackets |
+| `⦃`  | `⦄`   | Mathematical white curly brackets |
+| `⦇`  | `⦈`   | Mathematical white tortoise shell brackets |
+| `⦉`  | `⦊`   | Mathematical flattened parentheses |
+| `«`  | `»`   | French guillemets |
+| `【` | `】`  | CJK lenticular brackets |
+| `〔` | `〕`  | CJK tortoise shell brackets |
+| `〖` | `〗`  | CJK white lenticular brackets |
+| `〘` | `〙`  | CJK white tortoise shell brackets |
+| `〚` | `〛`  | CJK white square brackets |
+
+### Monadic blocks
+
+Eucalypt supports monadic sequencing — analogous to Haskell `do`-notation —
+through two mechanisms: **bracket pair definitions** and **block metadata**.
+
+#### Bracket pair definitions
+
+A bracket pair gains a **monad spec** when declared with an empty block `{}`
+as its parameter and a body marked with `:monad` metadata, supplying `bind`
+and `return` function names:
+
+```eu,notest
+# Explicit bind/return functions
+⟦{}⟧: { :monad bind: my-bind  return: my-return }
+
+# Namespace reference — delegates to a block with bind and return members
+⟦{}⟧: { :monad namespace: my-monad }
+```
+
+A bracket expression whose inner content contains top-level colons is parsed
+as a **bracket block** — a sequence of `name: monadic-action` declarations.
+The closing bracket must be followed by a dot and a return expression:
+
+```eu,notest
+result: ⟦ a: ma  b: mb ⟧.return_expr
+```
+
+#### Block metadata forms
+
+Regular blocks can also be desugared monadically when the block carries monad
+metadata **and** is immediately followed by `.return_expr` in an expression.
+Five forms are accepted:
+
+| Form | Syntax | Monad source |
+|------|--------|-------------|
+| 1 | `{ :name decls }.expr` | Namespace `name` in scope |
+| 2 | `{ { monad: name } decls }.expr` | Namespace `name` in scope |
+| 3 | `{ { :monad namespace: name } decls }.expr` | Namespace `name` in scope |
+| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit `f`/`r` functions |
+| 5 | `⟦{}⟧: { :monad namespace: name }` (bracket def) | Namespace `name` in scope |
+
+For namespace forms (1–3 and 5), the named value must be a block in scope with
+`bind` and `return` member functions.  The desugarer emits `name.bind(…)` and
+`name.return(…)` lookup expressions.
+
+#### Desugaring
+
+All monadic block forms desugar to a right-to-left bind chain:
+
+```
+bind(ma, (a): bind(mb, (b): return(return_expr)))
+```
+
+All declarations are bind steps.  Each bound name is in scope for later actions
+and for the return expression.  The return expression may be any single element:
+a name (`.r`), a parenthesised expression (`.(x + y)`), a list, or a block.
+
+**Example — identity monad (bracket pair, explicit functions):**
+
+```eu
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+⟦{}⟧: { :monad bind: id-bind  return: id-return }
+
+result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
+```
+
+**Example — maybe monad (namespace reference via block metadata):**
+
+```eu
+maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+
+just:    { :maybe x: [1]  y: [2] }.(x + y)   # => [3]
+nothing: { :maybe x: []   y: [2] }.(x + y)   # => []
+```
+
+**Example — maybe monad (bracket pair with namespace reference):**
+
+```eu
+maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+
+⌈{}⌉: { :monad namespace: maybe }
+
+just:    ⌈ x: [1]  y: [2] ⌉.(x + y)   # => [3]
+nothing: ⌈ x: []   y: [2] ⌉.(x + y)   # => []
+```
 
 To control the precedence and associativity of user defined operators,
 you need metadata annotations.
@@ -5880,11 +7191,11 @@ in the prelude).
 - [Combinators](combinators.md) -- function composition, application, utilities (12 entries)
 - [Calendar](calendar.md) -- date and time functions (5 entries)
 - [Sets](sets.md) -- set operations (11 entries)
-- [Random Numbers](random.md) -- random number generation (5 entries)
+- [Random Numbers](random.md) -- random number generation, monadic random: namespace (20 entries)
 - [Metadata](metadata.md) -- metadata and assertion functions (7 entries)
-- [IO](io.md) -- environment, time, and argument access (9 entries)
+- [IO](io.md) -- environment, time, argument access, and monad utility (16 entries)
 
-*218 documented entries in total.*
+*240 documented entries in total.*
 
 ---
 
@@ -5898,6 +7209,8 @@ in the prelude).
 | `head` | Return the head item of list `xs`, panic if empty |
 | `(↑ xs)` | Return first element of list `xs`. Tight-binding prefix operator |
 | `nil?` | `true` if list `xs` is empty, `false` otherwise |
+| `non-nil?` | `true` if list `xs` is non-empty, `false` otherwise |
+| `(x ✓)` | `true` if `x` is non-nil, `false` otherwise. Postfix non-nil check (precedence 88) |
 | `head-or(d, xs)` | Return the head item of list `xs` or default `d` if empty |
 | `tail` | Return list `xs` without the head item. [] causes error |
 | `tail-or(d, xs)` | Return list `xs` without the head item or `d` for empty list |
@@ -5995,8 +7308,8 @@ nums: [3, 1, 4, 1, 5] sort-nums          # [1, 1, 3, 4, 5]
 words: ["banana", "apple", "cherry"] sort-strs  # ["apple", "banana", "cherry"]
 
 people: [{name: "Zara" age: 30}, {name: "Alice" age: 25}]
-by-name: people sort-by-str(_.name)       # sorted by name
-by-age: people sort-by-num(_.age)         # sorted by age
+by-name: people sort-by-str(.name)       # sorted by name
+by-age: people sort-by-num(.age)         # sorted by age
 ```
 
 ## Other
@@ -6004,7 +7317,7 @@ by-age: people sort-by-num(_.age)         # sorted by age
 | Function | Description |
 |----------|-------------|
 | `nth(n, l)` | Return `n`th item of list if it exists, otherwise panic |
-| `(l !! n)` | Return `n`th item of list if it exists, otherwise error |
+| `(l !! n)` | Return `n`th item of list if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and delegates to `arr.get`. |
 | `count(l)` | Return count of items in list `l` |
 | `last` | Return last element of list `l` |
 | `over-sliding-pairs(f, l)` | Apply binary fn `f` to each overlapping pair in `l` to form new list |
@@ -6074,6 +7387,7 @@ by-age: people sort-by-num(_.age)         # sorted by age
 | `set-value(k, v)` | Set `b.k` to `v`, adding if absent |
 | `tongue(ks, v)` | Construct block with a single nested path-of-keys `ks` down to value `v` |
 | `merge-at(ks, v, b)` | Shallow merge block `v` into block value at path-of-keys `ks` |
+| `deep-merge-at(ks, v, b)` | Deep merge block `v` into block value at path-of-keys `ks` (preserves nested blocks) |
 
 ## Deep Find and Query
 
@@ -6096,8 +7410,8 @@ config: {
   db: { host: "db.local" port: 5432 }
 }
 
-hosts: config deep-find("host")  # ["localhost", "db.local"]
-first-host: config deep-find-first("host", "unknown")  # "localhost"
+hosts: config deep-find(:host)  # ["localhost", "db.local"]
+first-host: config deep-find-first(:host, "unknown")  # "localhost"
 ```
 
 ### Deep Query
@@ -6119,6 +7433,31 @@ hosts: data deep-query("config.host")  # ["us.example.com", "eu.example.com"]
 
 # Wildcard: any key at one level, then host
 hosts: data deep-query("*.config.host")
+```
+
+## Persistent Blocks (Experimental)
+
+The `pb:` namespace provides persistent (immutable, structurally-shared) blocks backed by
+`im::OrdMap`. These offer O(log n) lookup and merge operations with structural sharing.
+This feature is **experimental** and is not included in generated documentation exports.
+
+| Function | Description |
+|----------|-------------|
+| `pb.from-block(b)` | Convert a standard block `b` into a persistent block |
+| `pb.lookup(k, d, p)` | Look up key (symbol) `k` in persistent block `p`, returning default `d` if absent |
+| `pb.to-list(p)` | Return an ordered list of `[key, value]` pairs from persistent block `p` |
+| `pb.merge(l, r)` | Merge persistent blocks `l` and `r`; left-hand values win on key conflicts |
+| `pb.merge-with(f, l, r)` | Merge persistent blocks `l` and `r`, resolving conflicts with `f(left-val, right-val)` |
+
+```eu,notest
+# Round-trip a standard block through a persistent block
+p: {a: 1, b: 2} pb.from-block
+v: p pb.lookup(:a, 0)           # 1
+l: p pb.to-list block           # {a: 1, b: 2}
+
+# Merge two persistent blocks (left wins on conflict)
+merged: ({a: 1} pb.from-block) pb.merge({a: 99, b: 2} pb.from-block)
+# pb.lookup(:a, 0) merged => 1
 ```
 
 ---
@@ -6172,6 +7511,67 @@ decoded: "aGVsbG8=" str.base64-decode # "hello"
 hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 ```
 
+## Serialisation
+
+Serialise eucalypt values to strings using a named output format.  These
+are pure functions — no IO is required.
+
+| Function | Description |
+|----------|-------------|
+| `render(value)` | Serialise `value` to a YAML string |
+| `render-as(value, fmt)` | Serialise `value` to a string in format `fmt` |
+
+Supported formats for `fmt`: `:yaml`, `:json`, `:toml`, `:text`, `:edn`, `:html`.
+
+### Serialisation Examples
+
+```eu,notest
+yaml-str: render({a: 1, b: 2})           # "a: 1\nb: 2\n"
+json-str: render-as({a: 1, b: 2}, :json) # "{\"a\":1,\"b\":2}"
+```
+
+These functions are backed by the `RENDER_TO_STRING` intrinsic, which
+traverses the evaluated heap value and serialises it using the same
+emitter pipeline as normal output.
+
+## Parsing
+
+Parse a string of structured data back into eucalypt data.  This is the
+inverse of `render-as` and is a pure function — no IO is required.
+
+| Function | Description |
+|----------|-------------|
+| `parse-as(fmt, str)` | Parse `str` as structured data in format `fmt` |
+
+Supported formats for `fmt`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`,
+`:edn`, `:jsonl`.
+
+`:json` and `:yaml` share the same parser.
+
+**Safety**: `parse-as` always uses data-only mode.  YAML `!eu` tags and
+other embedded-code constructs are returned as plain string values and
+never evaluated.  It is safe to parse untrusted input (e.g. shell command
+output) with this function.
+
+### Parsing Examples
+
+```eu,notest
+# Parse JSON
+data: "{\"x\": 1}" parse-as(:json)
+data.x  # 1
+
+# Round-trip
+original: {x: 1, y: 2}
+recovered: render-as(original, :json) parse-as(:json)
+recovered.x  # 1
+
+# Pipeline style (parse-as with first arg partially applied)
+{ :io r: io.shell("kubectl get configmap foo -o json") }.r.stdout
+  parse-as(:json)
+```
+
+`parse-as` is backed by the `PARSE_STRING` intrinsic.
+
 ---
 
 # Numbers and Arithmetic
@@ -6181,6 +7581,8 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 | Function | Description |
 |----------|-------------|
 | `(∸ n)` | Unary minus; negate |
+
+The binary arithmetic operators `+`, `-`, `*`, and `/` are polymorphic: when either operand is an n-dimensional array, the operation is performed element-wise. One operand may be a scalar number. For purely numeric operands, the operators behave as before (`/` performs floor division for numbers, but element-wise float division for arrays).
 
 ## Numeric Functions
 
@@ -6226,7 +7628,7 @@ hash: "hello" str.sha256              # "2cf24dba5fb0a30e..."
 | Function | Description |
 |----------|-------------|
 | `panic` | Raise runtime error with message string `s` |
-| `assert(c, s, v)` | If `c` is true then value `v` otherwise error with message `s` |
+| `assert(p?, s, v)` | If `v p?` is true then return `v` otherwise error with message `s`. Composable in pipelines: `x assert(non-nil?, "expected non-nil")` |
 
 ## Boolean Logic
 
@@ -6317,88 +7719,69 @@ d: set.diff(a, b) set.to-list        # [1]
 
 # Random Numbers
 
-Eucalypt provides pseudo-random number generation through the `io.random`
-stream and a set of prelude functions.
+The `random` namespace provides pseudo-random number generation as a
+state monad over a PRNG stream.
 
-## The Random Stream
+## The random stream
 
-The `io.random` binding is an infinite lazy list of random floats in
-`[0, 1)`, seeded from system entropy or the `--seed` command-line flag.
-
-```eu
-first-random: io.random head
-```
-
-Because `io.random` is seeded from the system clock by default, it
-produces different values on each run. Use `--seed` for reproducible
-results:
+A random stream is provided at startup as `io.random`, seeded from
+system entropy. Each run produces different values unless you supply
+a fixed seed with `--seed`:
 
 ```sh
 eu --seed 42 example.eu
 ```
 
-## Random Number Generation
+You can also create a deterministic stream directly:
+
+```eu,notest
+stream: random.stream(12345)
+```
+
+## Using random operations
+
+Each random operation takes a stream and returns a `{value, rest}`
+block. For a single value, pass `io.random`:
+
+```eu,notest
+roll: random.int(6, io.random).value + 1
+```
+
+For multiple values, you must propagate `.rest` into the next call —
+reusing `io.random` gives the same value each time. Use a
+`{ :random ... }` monadic block or combinators like `sequence` to
+handle this automatically:
+
+```eu,notest
+dice: { :random
+  a: random.int(6)
+  b: random.int(6)
+}.[a + b + 2]
+
+result: dice(io.random).value
+```
+
+Always extract `.value` before rendering — the `.rest` field is an
+infinite stream.
+
+## Reference
 
 | Function | Description |
 |----------|-------------|
-| `random-stream(seed)` | Infinite lazy stream of random floats in [0,1), seeded by the given integer |
-| `random-int(n, stream)` | Generate a random integer in [0, n) from the stream. Returns block with value and rest |
-| `random-choice(list, stream)` | Choose a random element from a list. Returns block with value and rest |
-| `shuffle(list, stream)` | Shuffle a list using repeated selection. Returns block with value and rest |
-| `sample(n, list, stream)` | Sample n elements from a list without replacement. Returns block with value and rest |
-
-## Usage Pattern
-
-The random functions use a functional random stream pattern. Each
-function consumes some random values and returns both a result and the
-remaining stream in a block with `value` and `rest` keys:
-
-```eu,notest
-result: random-int(6, io.random)
-die-roll: result.value    # a number from 0 to 5
-remaining: result.rest    # unconsumed stream for further use
-```
-
-To chain multiple random operations, thread the `rest` through:
-
-```eu,notest
-rolls: {
-  first: random-int(6, io.random)
-  second: random-int(6, first.rest)
-  value: [first.value + 1, second.value + 1]
-}
-two-dice: rolls.value
-```
-
-## Shuffling and Sampling
-
-```eu,notest
-deck: range(1, 53)
-shuffled: shuffle(deck, io.random)
-hand: shuffled.value take(5)
-```
-
-```eu,notest
-colours: ["red", "green", "blue", "yellow", "purple"]
-picked: sample(2, colours, io.random)
-two-colours: picked.value
-```
-
-## Deterministic Seeds
-
-For reproducible output (useful in tests), pass a fixed seed:
-
-```eu,notest
-stream: random-stream(12345)
-x: random-int(100, stream)
-# x.value is always the same for seed 12345
-```
-
-Or use `--seed` on the command line, which sets `io.RANDOM_SEED`:
-
-```sh
-eu --seed 42 my-template.eu
-```
+| `random.stream(seed)` | Create a PRNG stream from an integer seed |
+| `random.bind(m, f)` | State monad bind: run action m, pass result to f, thread stream |
+| `random.return(v)` | State monad return: wrap a pure value as an action |
+| `random.float` | Action returning a random float in [0,1) |
+| `random.int(n)` | Action returning a random integer in [0,n) |
+| `random.choice(list)` | Action returning a random element from list |
+| `random.shuffle(list)` | Action returning a shuffled copy of list |
+| `random.sample(n, list)` | Action returning n elements sampled without replacement |
+| `random.map(f, action)` | Apply pure function f to the result of an action (derived) |
+| `random.then(a, b)` | Sequence two actions, discard first result (derived) |
+| `random.join(mm)` | Flatten a nested action (derived) |
+| `random.sequence(ms)` | Sequence a list of actions, collect results (derived) |
+| `random.map-m(f, xs)` | Map f over list producing actions, then sequence (derived) |
+| `random.filter-m(p, xs)` | Monadic filter over a list of actions (derived) |
 
 ---
 
@@ -6472,14 +7855,79 @@ For richer metadata, use a block:
 | `eu.build` | Metadata about this version of the eucalypt executable |
 | `eu.requires` | Assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0') |
 
-## IO Functions
+## Runtime IO Values
+
+| Name | Description |
+|------|-------------|
+| `io.env` | Read access to environment variables at time of launch |
+| `io.epoch-time` | Unix epoch time at time of launch |
+| `io.args` | Command-line arguments passed after `--` separator |
+| `io.RANDOM_SEED` | Seed for random number generation (from `--seed` or system time) |
+| `io.random` | Infinite lazy stream of random floats in [0,1) |
+
+## IO Monad
+
+The `io` namespace is a monad. Blocks tagged with `:io` are desugared
+into monadic bind chains automatically:
+
+```eu,notest
+result: { :io
+  r: io.shell("ls -la")
+  _: io.check(r)
+}.r.stdout
+```
+
+...desugars to `io.bind(io.shell("ls -la"), λr. io.bind(io.check(r), λ_. io.return(r.stdout)))`.
+
+IO operations require the `--allow-io` / `-I` flag at the command line.
+
+### Monad primitives
 
 | Function | Description |
 |----------|-------------|
-| `io.env` | Read access to environent variables at time of launch |
-| `io.args` | Line arguments passed after -- separator |
-| `io.RANDOM_SEED` | Seed for random number generation (from --seed or system time) |
-| `io.random` | Infinite lazy stream of random floats in [0,1), seeded from system entropy or --seed flag |
+| `io.return(a)` | Wrap a pure value in the IO monad |
+| `io.bind(action, continuation)` | Sequence two IO actions |
+
+### Shell execution
+
+| Function | Description |
+|----------|-------------|
+| `io.shell(cmd)` | Run `cmd` via `sh -c`. Returns `{stdout: Str, stderr: Str, exit-code: Num}` |
+| `io.shell-with(opts, cmd)` | Run `cmd` via `sh -c` with extra options merged in (e.g. `{stdin: s, timeout: 60}`). Pipeline: `"ls" shell-with({timeout: 60})` |
+| `io.exec([cmd : args])` | Run `cmd` directly (no shell). Argument is a single list: first element is the command, rest are args |
+| `io.exec-with(opts, [cmd : args])` | Run `cmd` directly with extra options merged in. Pipeline: `["git", "rev-parse", "HEAD"] exec-with({timeout: 60})` |
+
+Default timeout is 30 seconds. Override with `{timeout: N}` in `opts`.
+Optional `{stdin: s}` pipes string `s` to the command's standard input.
+
+### Combinators
+
+| Function | Description |
+|----------|-------------|
+| `io.check(result)` | If `exit-code` is non-zero, fail with the stderr message; otherwise return the result |
+| `io.map(f, action)` | Apply a pure function to the result of an IO action (fmap) |
+| `io.then(a, b)` | Sequence two actions, discarding the result of the first |
+| `io.join(mm)` | Flatten a nested IO action |
+| `io.sequence(ms)` | Run a list of IO actions in order, collecting results into a list |
+| `io.map-m(f, xs)` | Apply `f` to each element of `xs` (producing IO actions), then sequence |
+| `io.filter-m(p, xs)` | Monadic filter: keep elements where `p` returns a truthy IO action |
+
+The combinators `map`, `then`, `join`, `sequence`, `map-m`, and
+`filter-m` are derived automatically via `monad()`. See the
+[Monads guide](../../guide/monads.md) for details on the derivation
+pattern and the [IO guide](../../guide/io.md) for practical usage.
+
+| Function | Description |
+|----------|-------------|
+| `monad(m)` | Derive standard monad combinators from `m.bind` and `m.return` |
+| `monad(m).bind` | Passed through from `m.bind` |
+| `monad(m).return` | Passed through from `m.return` |
+| `monad(m).map(f, action)` | Apply pure function `f` to the result of a monadic action (fmap) |
+| `monad(m).then(a, b)` | Sequence two monadic actions, discarding the result of the first |
+| `monad(m).join(mm)` | Flatten a nested monadic value |
+| `monad(m).sequence(ms)` | Sequence a list of monadic actions, collecting results into a list |
+| `monad(m).map-m(f, xs)` | Apply `f` to each element of `xs` (producing actions), then sequence |
+| `monad(m).filter-m(p, xs)` | Monadic filter: apply predicate `p` (returning a monadic bool) to each element |
 
 ## Other
 
@@ -6487,6 +7935,144 @@ For richer metadata, use a block:
 |----------|-------------|
 | `alter?(k?, v!, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
 | `update?(k?, f, k, v)` | If `k` satisfies `k?` then `v!` else `v` |
+
+---
+
+# N-Dimensional Arrays
+
+Eucalypt provides a native n-dimensional array type (also called tensors)
+backed by a flat contiguous store with shape metadata. Arrays enable
+efficient grid and matrix operations, in particular for Advent of Code-style
+grid simulations where list-based approaches are too slow.
+
+Arrays are an immutable, purely functional data structure. All mutation
+operations return new arrays.
+
+## Construction
+
+| Function | Description |
+|----------|-------------|
+| `arr.zeros(shape)` | Create an array of zeros with the given shape list |
+| `arr.fill(shape, val)` | Create an array filled with `val` with the given shape list |
+| `arr.from-flat(shape, vals)` | Create an array from a flat list of numbers with the given shape |
+
+The `shape` argument is always a list of integers, e.g. `[3]` for a 1D
+array of 3 elements or `[2, 3]` for a 2×3 matrix.
+
+## Access and Query
+
+| Function | Description |
+|----------|-------------|
+| `arr.get(a, coords)` | Get element at coordinate list `coords` in array `a` |
+| `arr.set(a, coords, val)` | Return new array with element at `coords` set to `val` |
+| `arr.shape(a)` | Return shape of array `a` as a list of integers |
+| `arr.rank(a)` | Return number of dimensions of array `a` |
+| `arr.length(a)` | Return total number of elements in array `a` |
+| `arr.to-list(a)` | Return flat list of elements in row-major order |
+| `arr.array?(x)` | `true` if `x` is an n-dimensional array |
+| `is-array?(x)` | `true` if `x` is an n-dimensional array (alias) |
+
+The `coords` argument to `arr.get` and `arr.set` is a list of integers,
+one per dimension, e.g. `[row, col]` for a 2D array.
+
+### The `!!` Operator
+
+The indexing operator `!!` is overloaded for arrays. When the left operand
+is an array, `!!` delegates to `arr.get`:
+
+```eu
+my-2d-array !! [row, col]   # same as arr.get(my-2d-array, [row, col])
+my-1d-array !! [idx]        # same as arr.get(my-1d-array, [idx])
+```
+
+For plain lists, `!!` retains its original list-index behaviour:
+
+```eu
+[10, 20, 30] !! 1   # => 20
+```
+
+## Transformations
+
+| Function | Description |
+|----------|-------------|
+| `arr.transpose(a)` | Reverse all axes of array `a` |
+| `arr.reshape(a, shape)` | Reshape array `a` to new shape (total elements must match) |
+| `arr.slice(a, axis, idx)` | Take a slice along `axis` at `idx`, reducing rank by 1 |
+
+## Arithmetic
+
+Array-specific arithmetic (explicit namespace):
+
+| Function | Description |
+|----------|-------------|
+| `arr.add(a, b)` | Element-wise addition; `b` may be a scalar |
+| `arr.sub(a, b)` | Element-wise subtraction; `b` may be a scalar |
+| `arr.mul(a, b)` | Element-wise multiplication; `b` may be a scalar |
+| `arr.div(a, b)` | Element-wise division; `b` may be a scalar |
+
+The standard arithmetic operators `+`, `-`, `*`, `/` are polymorphic:
+when either operand is an array, the operation is applied element-wise.
+
+```eu,notest
+a: arr.from-flat([3], [1, 2, 3])
+b: arr.from-flat([3], [10, 20, 30])
+c: a + b          # element-wise: [11, 22, 33]
+d: a * 2          # scalar broadcast: [2, 4, 6]
+```
+
+Note: `/` on arrays performs element-wise float division (not floor
+division as it does for plain integers).
+
+## Higher-order Operations
+
+| Function | Description |
+|----------|-------------|
+| `arr.indices(a)` | Return list of coordinate lists for every element, in row-major order |
+| `arr.map(f, a)` | Apply `f` to each element; return new array of same shape |
+| `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element; return new array of same shape |
+| `arr.fold(f, init, a)` | Left-fold `f` over all elements in row-major order, starting from `init` |
+| `arr.neighbours(a, coords, offsets)` | Return list of values at valid in-bounds neighbours of `coords`, given a list of offset vectors |
+
+`arr.indices` returns coordinates as lists; for a 2D array of shape `[rows, cols]`, each entry is `[row, col]`.
+
+`arr.neighbours` silently skips any out-of-bounds coordinates, so it is safe to call on border elements without special-casing.
+
+```eu
+# Double every element of a 1D array
+a: arr.from-flat([3], [1, 2, 3])
+b: arr.map((_ * 2), a)   # => [2, 4, 6] (same shape)
+
+# Sum all elements
+total: arr.fold((+), 0, a)   # => 6
+
+# List all coordinates of a 2×2 array
+coords: arr.from-flat([2, 2], [0, 0, 0, 0]) arr.indices
+# => [[0, 0], [0, 1], [1, 0], [1, 1]]
+
+# Neighbours of centre cell in a 3×3 grid (4-connected)
+grid: arr.from-flat([3, 3], [1, 2, 3, 4, 5, 6, 7, 8, 9])
+ns: arr.neighbours(grid, [1, 1], [[-1, 0], [1, 0], [0, -1], [0, 1]])
+# => [2, 8, 4, 6]
+```
+
+## Example
+
+```eu
+# 3×3 grid initialised to zero
+grid: arr.zeros([3, 3])
+
+# Set a value at row 1, col 2
+grid2: grid arr.set([1, 2], 42)
+
+# Read back the value
+val: grid2 arr.get([1, 2])    # => 42
+val2: grid2 !! [1, 2]         # same thing via !! operator
+
+# Compute element-wise sum of two grids
+a: arr.from-flat([2, 2], [1, 2, 3, 4])
+b: arr.from-flat([2, 2], [5, 6, 7, 8])
+c: a + b   # => [[6, 8], [10, 12]] (as flat list: [6, 8, 10, 12])
+```
 
 ---
 
@@ -6890,6 +8476,44 @@ eu --seed 42 template.eu
 
 This sets `io.RANDOM_SEED` and seeds the `io.random` stream. See
 [Random Numbers](prelude/random.md) for the full random API.
+
+## IO Monad Operations
+
+By default, eucalypt is a pure functional language with no side effects. To
+enable IO monad operations — specifically shell command execution — you must
+pass the `--allow-io` / `-I` flag:
+
+```sh
+eu -I script.eu
+eu --allow-io script.eu
+```
+
+Without this flag, any program that attempts to execute an IO action will fail
+with an error:
+
+```
+IO operations require the --allow-io (-I) flag
+```
+
+### Why this flag exists
+
+The flag is a deliberate security measure. Eucalypt files are often used as
+configuration or data templates, and it would be unsafe for arbitrary `.eu`
+files loaded from the filesystem or network to execute shell commands without
+explicit consent. The `--allow-io` flag is your explicit acknowledgement that
+the program you are running may perform shell execution.
+
+### Usage with IO targets
+
+IO programmes typically use the `:io` monadic block syntax and are run with a
+named target:
+
+```sh
+eu -I --target main script.eu
+eu -I -t main script.eu
+```
+
+See the IO monad design documentation for full details of the IO API.
 
 ## Suppressing prelude
 
@@ -7315,7 +8939,7 @@ Streaming formats are specified using the `format@path` syntax:
 eu -e 'data take(10)' data=jsonl-stream@events.jsonl
 
 # Stream a large CSV
-eu -e 'data filter(_.age > 30) count' data=csv-stream@people.csv
+eu -e 'data filter(.age > 30) count' data=csv-stream@people.csv
 
 # Stream lines of text
 eu -e 'data filter(str.matches?("ERROR"))' log=text-stream@app.log
@@ -7366,6 +8990,897 @@ eu input.eu -o output.toml  # infers TOML format
 
 *This reference is under construction. It will provide a guide to
 understanding eucalypt error messages with examples and solutions.*
+
+---
+
+# Agent Reference
+
+Dense, example-heavy reference for AI coding agents working with
+Eucalypt. All content verified against source. See the
+[guide chapters](../guide/blocks-and-declarations.md) for narrative
+explanations.
+
+---
+
+## 1. Syntax Reference
+
+### 1.1 Primitives
+
+| Type | Syntax | Examples |
+|------|--------|----------|
+| Integer | digits | `42`, `-7`, `0` |
+| Float | digits with `.` | `3.14`, `-0.5` |
+| String | `"..."` | `"hello"` |
+| Raw string | `r"..."` | `r"C:\path"`, `r"^\d+"` |
+| C-string | `c"..."` | `c"line\nbreak"`, `c"tab\there"` |
+| T-string (ZDT) | `t"..."` | `t"2024-03-15"`, `t"2024-03-15T14:30:00Z"` |
+| Symbol | `:name` | `:key`, `:active` |
+| Boolean | literals | `true`, `false` |
+| Null | literal | `null` |
+
+**String escape sequences (c-strings only):** `\n` newline, `\t` tab,
+`\r` carriage return, `\\` backslash, `\"` quote, `\{` `\}` literal
+braces, `\xHH` hex byte, `\uHHHH` unicode, `\UHHHHHHHH` extended
+unicode.
+
+**String interpolation** (all string types except t-strings): embed
+expressions with `{expr}`. Literal braces via `{{` and `}}`. Format
+specifiers: `{value:%.2f}`, `{n:%06d}`.
+
+Raw strings treat backslashes literally but still support `{}`
+interpolation.
+
+### 1.2 Collections
+
+```eu,notest
+# List (commas required)
+[1, 2, 3]
+[]
+[1, "two", :three, true]
+
+# Block (commas optional)
+{ a: 1 b: 2 c: 3 }
+{ a: 1, b: 2, c: 3 }
+```
+
+### 1.3 Declarations
+
+| Form | Syntax | Notes |
+|------|--------|-------|
+| Property | `name: expr` | Defines a named value, rendered in output |
+| Function | `f(x, y): expr` | Not rendered in output |
+| List destructure | `f([a, b]): expr` | Single param, list destructured |
+| Block destructure | `f({x y}): expr` | Single param, block destructured |
+| Cons destructure | `f([h : t]): expr` | Single param, head/tail split |
+| Juxtaposed list | `f[a, b]: expr` | Sugar for `f([a, b]): expr` |
+| Juxtaposed block | `f{x y}: expr` | Sugar for `f({x y}): expr` |
+| Binary operator | `(l op r): expr` | Symbolic name required |
+| Prefix operator | `(op x): expr` | Unary prefix |
+| Postfix operator | `(x op): expr` | Unary postfix |
+
+**Top-level unit**: the file itself is an implicit block without braces.
+
+### 1.4 Comments
+
+```eu,notest
+# Line comment (to end of line)
+x: 42  # inline comment
+```
+
+### 1.5 Metadata Annotations
+
+Placed between a leading backtick and the declaration:
+
+```eu,notest
+# Documentation shorthand (string = doc metadata)
+` "Adds two numbers"
+add(x, y): x + y
+
+# Structured metadata
+` { doc: "Deep merge operator"
+    associates: :left
+    precedence: :append }
+(l << r): deep-merge(l, r)
+
+# Suppress from output
+` :suppress
+helper(x): x + 1
+
+# Export target
+` { target: :my-output }
+output: { result: 42 }
+
+# Mark as main (default) target
+` :main
+main: { result: 42 }
+```
+
+**Unit-level metadata**: if the first item in a file is an expression
+(not a declaration), it becomes metadata for the entire unit:
+
+```eu,notest
+{ import: "helpers.eu" }
+result: helper(42)
+```
+
+### 1.6 Function Application
+
+```eu,notest
+# Standard call (NO whitespace before paren)
+f(x, y)
+
+# Catenation / pipeline (single argument, becomes LAST param)
+x f                    # = f(x)
+x f g h                # = h(g(f(x)))
+[1,2,3] map(inc)       # map(inc, [1,2,3])
+
+# Partial application (all functions are curried)
+add(1)                 # returns a function that adds 1
+[1,2,3] map(+ 10)     # section: adds 10 to each
+
+# Sections (operator with gaps filled by implicit params)
+(+ 1)                  # function: _ + 1
+(* 2)                  # function: _ * 2
+(> 3)                  # function: _ > 3
+(/)                    # function: _ / _ (two params)
+```
+
+### 1.7 Lookup and Generalised Lookup
+
+```eu,notest
+# Simple property lookup (dot, precedence 90)
+block.key
+config.db.host
+
+# Generalised lookup (evaluate RHS in block scope)
+{ a: 3 b: 4 }.(a + b)        # 7
+{ a: 3 b: 4 }.[a, b]         # [3, 4]
+{ a: 3 b: 4 }."{a} and {b}"  # "3 and 4"
+```
+
+**Warning:** `.` binds very tightly (precedence 90). `list head.name`
+parses as `list (head.name)`, not `(list head).name`. Use parentheses:
+`(list head).name`.
+
+### 1.8 Anaphora (Implicit Parameters)
+
+| Type | Numbered | Unnumbered | Scope |
+|------|----------|------------|-------|
+| Expression | `_0`, `_1`, `_2` | `_` (each `_` = new param) | Expression |
+| Block | `•0`, `•1`, `•2` | `•` (each `•` = new param) | Block |
+| String | `{0}`, `{1}`, `{2}` | `{}` (each `{}` = new param) | String literal |
+
+```eu,notest
+# Expression anaphora
+[1,2,3] map(_0 * _0)          # square: [1,4,9]
+[1,2,3] filter(_ > 1)         # [2,3]
+
+# Block anaphora (• = bullet, Option-8 on Mac)
+{ x: • y: • }                 # two-param function returning block
+[[1,2],[3,4]] map({ x: • y: • } uncurry)
+
+# Pseudo-lambda via block anaphora + generalised lookup
+{ x: • y: • }.(x + y)         # anonymous two-param function
+
+# String anaphora
+[1,2,3] map("item: {}")       # ["item: 1", "item: 2", "item: 3"]
+"{1},{0}"                      # two-param function, reversed order
+```
+
+**Important:** anaphora cannot be nested. For complex cases, use named
+functions.
+
+### 1.9 Imports
+
+```eu,notest
+# Unit-level import (available everywhere in file)
+{ import: "lib.eu" }
+
+# Named import (access as namespace)
+{ import: "cfg=config.yaml" }
+host: cfg.host
+
+# Multiple imports
+{ import: ["helpers.eu", "cfg=config.eu"] }
+
+# Format override
+{ import: "data=yaml@records.txt" }
+
+# Scoped import (on specific declaration)
+` { import: "math.eu" }
+calculations: { result: advanced-calc(10) }
+
+# Git import
+{ import: { git: "https://github.com/user/lib"
+            commit: "abc123def456"
+            import: "helpers.eu" } }
+
+# Streaming imports (lazy, for large files)
+{ import: "events=jsonl-stream@events.jsonl" }
+{ import: "rows=csv-stream@big.csv" }
+{ import: "lines=text-stream@log.txt" }
+```
+
+**Import resolution order**: relative paths are resolved by searching:
+1. The directory containing the importing `.eu` file (source-relative)
+2. The directories on the lib path (`-L` flags and CWD)
+
+This means a file at `lib/utils.eu` that imports `"helpers/misc.eu"` will find
+`lib/helpers/misc.eu` without needing `-L lib` on the command line. This works
+transitively, so `lib/helpers/misc.eu` can in turn import `"sub/detail.eu"` and
+it will resolve as `lib/helpers/sub/detail.eu`.
+
+### 1.10 Quoted Identifiers
+
+Single quotes turn any character sequence into a normal identifier:
+
+```eu,notest
+home: {
+  '.bashrc': false
+  'notes.txt': true
+}
+z: home.'notes.txt'
+```
+
+---
+
+## 2. Operator Precedence Table
+
+All values verified against `src/core/metadata.rs` (`named_precedence`)
+and `lib/prelude.eu` operator metadata.
+
+From highest (tightest) to lowest binding:
+
+| Prec | Name | Assoc | Operators | Description |
+|------|------|-------|-----------|-------------|
+| 95 | -- | prefix | `↑` | Head (tight prefix) |
+| 90 | lookup | left | `.` (built-in) | Property lookup |
+| 90 | call | left | (built-in) | Function call |
+| 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
+| 88 | bool-unary | postfix | `✓` | Non-nil check (true if non-nil) |
+| 88 | -- | -- | `∘`, `;` | Composition (actual prec 88 from prelude) |
+| 85 | exp | right | `^` | Power |
+| 85 | exp | -- | `!!` (nth) | Indexing |
+| 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
+| 75 | sum | left | `+`, `-` | Addition, subtraction |
+| 60 | shift | -- | (shift ops) | Reserved |
+| 55 | bitwise | -- | (bitwise ops) | Reserved |
+| 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
+| 45 | append | left | `++` | List concatenation |
+| 45 | append | left | `<<` | Deep merge |
+| 42 | map | left | `<$>` | Functor map |
+| 40 | eq | left | `=`, `!=` | Equality |
+| 35 | bool-prod | left | `&&`, `∧` | Logical AND |
+| 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
+| 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
+| 10 | apply | right | `@` | Function application |
+| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!?`, `//!`, `//!!` | Metadata and assertions |
+
+**Named precedence levels** for use in operator metadata: `:lookup`,
+`:call`, `:bool-unary`, `:exp`, `:prod`, `:sum`, `:shift`, `:bitwise`,
+`:cmp`, `:append`, `:map`, `:eq`, `:bool-prod`, `:bool-sum`, `:cat`,
+`:apply`, `:meta`.
+
+**User-defined operators** default to left-associative, precedence 50
+(`:cmp` level). Set custom values via metadata:
+
+```eu,notest
+` { associates: :right precedence: :sum }
+(x +++ y): x + y
+```
+
+**Composition operators** `∘` and `;` are defined at precedence 88 in
+the prelude (between bool-unary and exp):
+- `f ∘ g` — compose right-to-left (`g` then `f`), right-associative
+- `f ; g` — compose left-to-right (`f` then `g`), left-associative
+
+---
+
+## 3. Top 30 Prelude Functions
+
+All signatures verified against `lib/prelude.eu`. Pipeline style shown
+where idiomatic (catenated argument is always the **last** parameter).
+
+### 3.1 List Functions
+
+#### `map(f, l)` — transform each element
+
+```
+[1, 2, 3] map(inc)           # [2, 3, 4]
+[1, 2, 3] map(* 10)          # [10, 20, 30]
+["a","b"] map(str.to-upper)  # ["A", "B"]
+```
+
+#### `filter(p?, l)` — keep elements satisfying predicate
+
+```
+[1,2,3,4,5] filter(> 3)      # [4, 5]
+[1,2,3,4,5] filter(pos?)     # [1, 2, 3, 4, 5]
+```
+
+#### `foldl(op, i, l)` — left fold
+
+```
+foldl(+, 0, [1,2,3,4,5])     # 15
+[1,2,3] foldl(+, 0)          # ERROR: use foldl(+, 0, [1,2,3])
+```
+
+Note: `foldl` takes 3 args. In pipeline: the list is the last arg, so
+`[1,2,3,4,5] foldl(+, 0)` does NOT work — you must call
+`foldl(+, 0, [1,2,3,4,5])` directly, or partially apply:
+
+```
+sum: foldl(+, 0)
+[1,2,3,4,5] sum              # 15
+```
+
+#### `foldr(op, i, l)` — right fold
+
+```
+foldr(cons, [], [1,2,3])      # [1, 2, 3] (identity)
+foldr(++, [], [[1,2],[3,4]])  # [1, 2, 3, 4]
+```
+
+#### `head(xs)` — first element (panics if empty)
+
+```
+[10, 20, 30] head            # 10
+```
+
+#### `tail(xs)` — all but first (panics if empty)
+
+```
+[10, 20, 30] tail            # [20, 30]
+```
+
+#### `cons(h, t)` — prepend element to list
+
+```
+cons(0, [1, 2, 3])           # [0, 1, 2, 3]
+```
+
+#### `reverse(l)` — reverse a list
+
+```
+[1, 2, 3] reverse            # [3, 2, 1]
+```
+
+#### `count(l)` — number of elements
+
+```
+[10, 20, 30] count           # 3
+```
+
+#### `zip(l1, l2)` — pair elements from two lists
+
+```
+zip([:a,:b,:c], [1,2,3])     # [[:a,1], [:b,2], [:c,3]]
+```
+
+#### `concat(ls)` — flatten one level of nesting
+
+```
+concat([[1,2], [3], [4,5]])   # [1, 2, 3, 4, 5]
+```
+
+#### `mapcat(f, l)` — map then concatenate (flatMap)
+
+```
+["ab","cd"] mapcat(str.letters)  # ["a","b","c","d"]
+```
+
+#### `take(n, l)` — first n elements
+
+```
+[1,2,3,4,5] take(3)          # [1, 2, 3]
+```
+
+#### `drop(n, l)` — remove first n elements
+
+```
+[1,2,3,4,5] drop(3)          # [4, 5]
+```
+
+#### `any(p?, l)` — true if any element satisfies p?
+
+```
+[1, 2, 3] any(> 2)           # true
+[1, 2, 3] any(> 5)           # false
+```
+
+#### `all(p?, l)` — true if all elements satisfy p?
+
+```
+[2, 4, 6] all(> 0)           # true
+[2, 4, 6] all(> 3)           # false
+```
+
+### 3.2 Block Functions
+
+#### `keys(b)` — list of keys (as symbols)
+
+```
+{ a: 1 b: 2 c: 3 } keys     # [:a, :b, :c]
+```
+
+#### `values(b)` — list of values
+
+```
+{ a: 1 b: 2 c: 3 } values   # [1, 2, 3]
+```
+
+#### `elements(b)` — list of [key, value] pairs
+
+```
+{ a: 1 b: 2 } elements       # [[:a, 1], [:b, 2]]
+```
+
+#### `merge(b1, b2)` — shallow merge (b2 overrides b1)
+
+```
+merge({ a: 1 }, { b: 2 })    # { a: 1 b: 2 }
+{ a: 1 } { a: 2 }            # { a: 2 } (catenation = merge)
+```
+
+#### `has(s, b)` — does block have key s? (s is a symbol)
+
+```
+{ a: 1 b: 2 } has(:a)        # true
+{ a: 1 b: 2 } has(:z)        # false
+```
+
+#### `lookup(s, b)` — look up key s (panics if missing)
+
+```
+{ a: 1 b: 2 } lookup(:b)     # 2
+```
+
+#### `lookup-or(s, d, b)` — look up key s with default d
+
+```
+{ a: 1 } lookup-or(:z, 99)   # 99
+{ a: 1 } lookup-or(:a, 99)   # 1
+```
+
+#### `deep-find(k, b)` — find all values for key k at any depth
+
+```
+{ a: { x: 1 } b: { x: 2 } } deep-find(:x)    # [1, 2]
+```
+
+#### `deep-query(pattern, b)` — query with dot-separated glob pattern
+
+Patterns: bare `foo` = `**.foo`; `*` = one level; `**` = any depth.
+
+```
+{ a: { b: { c: 1 } } } deep-query("a.b.c")    # [1]
+{ a: { x: 1 } b: { x: 2 } } deep-query("*.x") # [1, 2]
+```
+
+### 3.3 String Functions (str namespace)
+
+#### `str.split-on(re, s)` — split string on regex
+
+```
+"one-two-three" str.split-on("-")      # ["one", "two", "three"]
+"a.b.c" str.split-on("[.]")           # ["a", "b", "c"]
+```
+
+#### `str.join-on(sep, l)` — join list with separator
+
+```
+["a", "b", "c"] str.join-on(", ")     # "a, b, c"
+```
+
+#### `str.to-upper(s)` — convert to upper case
+
+```
+"hello" str.to-upper                   # "HELLO"
+```
+
+#### `str.to-lower(s)` — convert to lower case
+
+```
+"GOODBYE" str.to-lower                 # "goodbye"
+```
+
+#### `str.matches?(re, s)` — does regex match full string?
+
+```
+"hello" str.matches?("^h.*o$")        # true
+"hello" str.matches?("^H")            # false
+```
+
+### 3.4 Combinators
+
+See also: `identity(v)`, `const(k, _)`, `compose(f, g, x)`,
+`flip(f, x, y)`, `complement(p?)`, `curry(f, x, y)`,
+`uncurry(f, l)`, `cond(l, d)`.
+
+---
+
+## 4. Pipeline Patterns and Idioms
+
+### 4.1 Basic Pipeline
+
+Read left to right: data flows through transformations.
+
+```eu,notest
+[1, 2, 3, 4, 5]
+  filter(> 2)
+  map(* 10)
+  reverse
+# Result: [50, 40, 30]
+```
+
+### 4.2 Pipeline with Named Stages
+
+Use `:suppress` to hide intermediate values from output:
+
+```eu,notest
+` :suppress
+raw-data: [
+  { name: "alice" score: 85 }
+  { name: "bob" score: 92 }
+  { name: "charlie" score: 78 }
+]
+
+result: raw-data
+  filter(_.score >= 90)
+  map(_.name)
+  map(str.to-upper)
+```
+
+### 4.3 Conditional Pipeline
+
+Use `then(true-val, false-val)` at the end of a pipeline:
+
+```eu,notest
+[1, 2, 3] count (> 2) then("many", "few")   # "many"
+```
+
+Or use `when(p?, f, x)` to conditionally transform:
+
+```eu,notest
+5 when(> 3, * 10)   # 50 (condition met, apply * 10)
+2 when(> 3, * 10)   # 2  (condition not met, pass through)
+```
+
+### 4.4 Configuration Layering with Deep Merge
+
+```eu,notest
+base: {
+  server: { host: "0.0.0.0" port: 8080 workers: 4 }
+  logging: { level: "info" format: "json" }
+}
+
+production: base << {
+  server: { workers: 16 }
+  logging: { level: "warn" }
+}
+
+development: base << {
+  server: { host: "localhost" }
+  logging: { level: "debug" format: "text" }
+}
+```
+
+### 4.5 Building Blocks from Lists
+
+```eu,notest
+# Zip keys and values into a block
+zip-kv([:x, :y, :z], [1, 2, 3])
+# Result: { x: 1 y: 2 z: 3 }
+
+# Reconstruct from element pairs
+[[:a, 1], [:b, 2]] block
+# Result: { a: 1 b: 2 }
+
+# Merge a list of blocks
+[{a: 1}, {b: 2}, {c: 3}] merge-all
+# Result: { a: 1 b: 2 c: 3 }
+```
+
+### 4.6 Transforming Block Values
+
+```eu,notest
+# Apply function to all values
+{ a: 1 b: 2 c: 3 } map-values(* 10)
+# Result: { a: 10 b: 20 c: 30 }
+
+# Transform keys
+{ a: 1 b: 2 } map-keys(sym ∘ str.prefix("x-") ∘ str.of)
+# Result: { x-a: 1 x-b: 2 }
+```
+
+### 4.7 Nested Block Modification
+
+```eu,notest
+config: { server: { db: { port: 5432 } } }
+
+# Set a nested value
+config alter([:server, :db, :port], 3306)
+
+# Apply a function to a nested value
+config update([:server, :db, :port], inc)
+
+# Shallow merge into a nested block (replaces nested blocks)
+config merge-at([:server, :db], { host: "10.0.0.1" })
+
+# Deep merge into a nested block (preserves nested blocks)
+config deep-merge-at([:server, :db], { host: "10.0.0.1" })
+```
+
+### 4.8 Grouping and Sorting
+
+```eu,notest
+# Sort numbers
+[5, 3, 1, 4, 2] qsort(<)           # [1, 2, 3, 4, 5]
+[30, 10, 20] sort-nums              # [10, 20, 30]
+
+# Sort by extracted key
+people sort-by-num(_.age)
+
+# Group by key function
+items group-by(_.category)
+```
+
+### 4.9 Composition
+
+```eu,notest
+# Right-to-left composition (g then f)
+shout: str.to-upper ∘ str.suffix("!")
+"hello" shout   # "HELLO!"
+
+# Left-to-right composition (f then g)
+process: filter(> 0) ; map(* 2)
+[-1, 2, -3, 4] process   # [4, 8]
+```
+
+### 4.10 Handling Data from External Sources
+
+```eu,notest
+# CSV (values are always strings, use num to convert)
+{ import: "rows=transactions.csv" }
+total: rows map(_.amount num) foldl(+, 0)
+
+# Command-line arguments
+name: io.args head-or("World")
+greeting: "Hello, {name}!"
+
+# Environment variables
+home: io.env lookup-or(:HOME, "/tmp")
+```
+
+### 4.11 Infinite Lists
+
+```eu,notest
+# Infinite repetition
+repeat(:x) take(4)                   # [:x, :x, :x, :x]
+
+# Infinite sequence of integers
+ints-from(1) take(5)                 # [1, 2, 3, 4, 5]
+
+# Range (finite)
+range(1, 6)                          # [1, 2, 3, 4, 5]
+
+# Infinite iteration
+iterate(* 2, 1) take(6)             # [1, 2, 4, 8, 16, 32]
+```
+
+---
+
+## 5. Common Pitfalls
+
+### 5.1 Catenation Applies the LAST Argument
+
+When using pipeline style, the catenated value becomes the **last**
+parameter. `[1,2,3] map(inc)` means `map(inc, [1,2,3])` because the
+list is the last argument.
+
+For `foldl(op, init, list)`, you cannot write
+`[1,2,3] foldl(+, 0)` — you need either `foldl(+, 0, [1,2,3])` or
+define a partial: `sum: foldl(+, 0)` then `[1,2,3] sum`.
+
+### 5.2 Dot Binds Tighter Than Catenation
+
+`.` has precedence 90 vs catenation at 20. So:
+
+```eu,notest
+list head.name    # WRONG: parses as list (head.name)
+(list head).name  # RIGHT: get head, then lookup .name
+```
+
+The `↑` prefix operator (precedence 95) binds even tighter: `↑xs.name`
+= `(↑xs).name`.
+
+### 5.3 No Whitespace Before Parentheses in Calls
+
+```eu,notest
+f(x)    # function call
+f (x)   # catenation: applies f to (x) as pipeline
+```
+
+### 5.4 map vs mapcat
+
+- `map(f, l)` — applies `f` to each element, preserving list structure
+- `mapcat(f, l)` — applies `f` (which must return a list) and
+  concatenates all results
+
+```eu,notest
+["ab","cd"] map(str.letters)     # [["a","b"], ["c","d"]]
+["ab","cd"] mapcat(str.letters)  # ["a", "b", "c", "d"]
+```
+
+### 5.5 lookup vs Dot Lookup
+
+- `block.key` — compile-time property access (key must be a literal
+  name known at compile time)
+- `lookup(:key, block)` / `block lookup(:key)` — runtime dynamic
+  lookup using a symbol value
+
+Use `lookup` / `lookup-or` when the key is computed or stored in a
+variable.
+
+### 5.6 merge vs deep-merge (<<)
+
+- `merge(a, b)` — shallow merge; nested blocks in `b` completely
+  replace those in `a`
+- `deep-merge(a, b)` / `a << b` — recursively merges nested blocks,
+  but lists are still replaced entirely
+
+### 5.7 has Takes a Symbol, Not a String
+
+```eu,notest
+{ a: 1 } has(:a)       # true
+{ a: 1 } has("a")      # WRONG: "a" is a string, not symbol :a
+```
+
+Use `sym("a")` to convert a string to a symbol if needed.
+
+### 5.8 deep-find Takes a Symbol, Not a String
+
+```eu,notest
+{ a: { x: 1 } } deep-find(:x)     # [1] — correct
+{ a: { x: 1 } } deep-find("x")    # WRONG — takes a symbol
+```
+
+`deep-find`, `deep-find-first`, and `deep-find-paths` take a symbol key,
+matching the rest of the prelude (`has(:key)`, `lookup-or(:key, ...)`).
+
+### 5.9 Self-Reference Creates Infinite Recursion
+
+```eu,notest
+name: "foo"
+x: { name: name }    # INFINITE RECURSION: inner name refers to itself
+```
+
+The inner `name` shadows the outer one. Use a different name or
+generalised lookup.
+
+### 5.10 Anaphora Scope Limits
+
+- Expression anaphora (`_`, `_0`) do not cross commas, catenation
+  boundaries, or function argument lists
+- Block anaphora (`•`, `•0`) are scoped to the enclosing block
+- String anaphora (`{}`, `{0}`) are scoped to the enclosing string
+- None of the anaphora types can be nested
+
+### 5.11 Functions That Do NOT Exist
+
+The following are commonly assumed but are **not** in the prelude:
+
+- `str.replace` — does not exist
+- `str.trim` — does not exist
+- `str.starts-with?` — does not exist
+- `str.ends-with?` — does not exist
+- `str.contains?` — does not exist
+- `flatten` — use `concat` (flattens one level)
+- `unique` — does not exist in prelude
+- `abs` — does not exist (use `if(x < 0, negate(x), x)`)
+- `even?` / `odd?` — do not exist (use `x % 2 = 0`)
+- `round` / `ceil` — use `floor` and `ceiling`
+- `select` / `dissoc` — do not exist (use `filter-items` with
+  `by-key`)
+
+### 5.12 str.split-on Uses Regex, Not Literal Strings
+
+```eu,notest
+"a.b.c" str.split-on(".")     # WRONG: "." matches any char
+"a.b.c" str.split-on("[.]")   # RIGHT: escaped dot in regex
+```
+
+All `str.match`, `str.split`, `str.matches?` functions use regex
+patterns.
+
+---
+
+## 6. Quick CLI Reference
+
+```sh
+eu file.eu                  # Evaluate, output YAML
+eu -j file.eu               # Output JSON
+eu -x toml file.eu          # Output TOML
+eu -x text file.eu          # Output plain text
+eu -e 'expression'          # Evaluate inline expression
+eu data.yaml transform.eu   # Merge inputs (left to right)
+eu name=data.json app.eu    # Named input
+eu -t target file.eu        # Render specific target
+eu list-targets file.eu     # List available targets
+eu test file.eu             # Run embedded tests
+eu fmt file.eu              # Format source
+eu fmt --write file.eu      # Format in place
+eu -o output.json file.eu   # Write to file (format inferred)
+eu -Q file.eu               # Suppress prelude
+eu -B file.eu               # Batch mode (no ergonomic features)
+eu --seed 42 file.eu        # Deterministic random
+eu -e 'io.args' -- arg1 arg2  # Pass arguments
+```
+
+---
+
+## 7. Complete str Namespace Reference
+
+All functions verified against `lib/prelude.eu`:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `str.of` | `of(e)` | Convert any value to string |
+| `str.split` | `split(s, re)` | Split string `s` on regex `re` |
+| `str.split-on` | `split-on(re, s)` | Split `s` on regex `re` (pipeline-friendly) |
+| `str.join` | `join(l, sep)` | Join list `l` with separator `sep` |
+| `str.join-on` | `join-on(sep, l)` | Join `l` with `sep` (pipeline-friendly) |
+| `str.match` | `match(s, re)` | Match `s` against regex, return [full, groups...] |
+| `str.match-with` | `match-with(re, s)` | Match `s` against `re` (pipeline-friendly) |
+| `str.extract` | `extract(re, s)` | Extract first capture group or error |
+| `str.extract-or` | `extract-or(re, d, s)` | Extract first capture group or default `d` |
+| `str.matches` | `matches(s, re)` | All matches of `re` in `s` |
+| `str.matches-of` | `matches-of(re, s)` | All matches (pipeline-friendly) |
+| `str.matches?` | `matches?(re, s)` | True if `re` matches full string `s` |
+| `str.letters` | `letters(s)` | List of individual characters |
+| `str.len` | `len(s)` | String length in characters |
+| `str.fmt` | `fmt(x, spec)` | Printf-style format |
+| `str.to-upper` | `to-upper(s)` | Convert to upper case |
+| `str.to-lower` | `to-lower(s)` | Convert to lower case |
+| `str.prefix` | `prefix(b, a)` | Prepend `b` onto `a` |
+| `str.suffix` | `suffix(b, a)` | Append `b` onto `a` |
+| `str.base64-encode` | `base64-encode(s)` | Base64 encode |
+| `str.base64-decode` | `base64-decode(s)` | Base64 decode |
+| `str.sha256` | `sha256(s)` | SHA-256 hash (lowercase hex) |
+
+---
+
+## 8. Assertion and Test Operators
+
+All at precedence 5 (`:meta`).
+
+**Test expectations** (return booleans, for use in test harnesses):
+
+| Operator | Description |
+|----------|-------------|
+| `e //= v` | Test `e` equals `v`, return boolean |
+| `e //=? f` | Test `f(e)` is `true`, return boolean |
+
+**Assertions** (panic on failure, return `e` on success):
+
+| Operator | Description |
+|----------|-------------|
+| `e //=> v` | Assert `e` equals `v`, panic with expected/actual on failure |
+| `e //!` | Assert `e` is `true`, panic on failure |
+
+**Deprecated** (use complement with positive forms instead):
+
+| Operator | Replacement |
+|----------|-------------|
+| `e //!? f` | `e //=? complement(f)` |
+| `e //!!` | Removed — negate the condition instead |
+
+**Metadata operators:**
+
+| Operator | Description |
+|----------|-------------|
+| `e // m` | Attach metadata block `m` to value `e` |
+| `e //<< m` | Merge `m` into existing metadata of `e` |
 
 ---
 
@@ -7451,15 +9966,21 @@ These stances lead directly to several slightly esoteric aspects of
   application, but blocks can be applied as functions to make common
   transformations, like block merge, very succinct.
 
-- For even more power, **eucalypt** might soon let you alter the
-  meaning of concatenation via overloaded *idiot brackets* [^1]. (`«x y»: ...`). This is inspired by the *idiom brackets* that can be used
-  to express applicative styles in functional programming [^2]. These
-  may also provide an acceptable proxy for ternary and other operators
-  too.
+- For even more power, **eucalypt** has some recent experimental
+  features... You can alter the meaning of concatenation via *idiot
+  brackets* [^1]. (`«x y»: ...`), the ability to define handling of
+  arbitrary unicode bracket pairs. This is inspired by the *idiom
+  brackets* that can be used to express applicative styles in
+  functional programming [^2], but they can be used much more
+  generally, you could use them to define ternary operators for
+  instance.
 
-- An equivalent generalisation of **eucalypt** block syntax to provide
-  a capability similar to Haskell's `do` notation could conceivably
-  follow.
+- You can also customise block handling by reinterpreting it as a
+  monadic pattern similar to Haskell's `do` notation. Such block
+  handling can be assigned to unicode bracket pairs. This is very
+  experimental but can be used to tidy up random number patterns for
+  instance which are currently awkward in the purely functional
+  context of **eucalypt**.
 
 ## Cohabitation of code and data
 
@@ -7538,6 +10059,807 @@ when their values are needed. This has important consequences:
 
 ---
 
+# Eucalypt Architecture
+
+This document provides a comprehensive overview of Eucalypt's design and implementation architecture.
+
+## Overview
+
+Eucalypt is a functional programming language and tool for generating, templating, rendering, and processing structured data formats like YAML, JSON, and TOML. Written in Rust (~44,000 lines), it features a classic multi-phase compiler design with an STG (Spineless Tagless G-machine) runtime for lazy evaluation.
+
+## System Architecture
+
+### High-Level Pipeline
+
+```
+Source Code (*.eu files)
+        │
+        ▼
+┌───────────────────────┐
+│    Parsing Phase      │  src/syntax/
+│  Lexer → Parser → AST │
+└───────────────────────┘
+        │
+        ▼
+┌───────────────────────┐
+│     Core Phase        │  src/core/
+│  Desugar → Cook →     │
+│  Transform → Verify   │
+└───────────────────────┘
+        │
+        ▼
+┌───────────────────────┐
+│   Evaluation Phase    │  src/eval/
+│  STG Compile → VM →   │
+│  Memory Management    │
+└───────────────────────┘
+        │
+        ▼
+┌───────────────────────┐
+│    Export Phase       │  src/export/
+│  JSON/YAML/TOML/etc   │
+└───────────────────────┘
+```
+
+### Module Structure
+
+```
+eucalypt/
+├── src/
+│   ├── bin/eu.rs           # CLI entry point
+│   ├── lib.rs              # Library root
+│   ├── common/             # Shared utilities
+│   ├── syntax/             # Parsing and AST
+│   │   └── rowan/          # Rowan-based incremental parser
+│   ├── core/               # Core expression representation
+│   │   ├── desugar/        # AST to core transformation
+│   │   ├── cook/           # Operator fixity resolution
+│   │   ├── transform/      # Expression transformations
+│   │   ├── simplify/       # Optimisation passes
+│   │   ├── inline/         # Inlining passes
+│   │   ├── verify/         # Validation
+│   │   └── analyse/        # Program analysis
+│   ├── eval/               # Evaluation engine
+│   │   ├── stg/            # STG syntax and compiler
+│   │   ├── machine/        # Virtual machine
+│   │   └── memory/         # Heap and garbage collection
+│   ├── driver/             # CLI orchestration
+│   ├── export/             # Output format generation
+│   └── import/             # Input format parsing
+├── lib/                    # Standard library (eucalypt source)
+│   ├── prelude.eu          # Core prelude
+│   ├── test.eu             # Test framework
+│   └── markup.eu           # Markup utilities
+└── docs/                   # Documentation
+```
+
+## Parsing Pipeline
+
+The parsing pipeline transforms source text into a structured AST using Rowan, an incremental parsing library that preserves full source fidelity including whitespace and comments.
+
+### Lexer
+
+*Implementation*: `src/syntax/rowan/lex.rs`, `src/syntax/rowan/string_lex.rs`
+
+The lexer (`Lexer<C>`) tokenises source text into a stream of `SyntaxKind` tokens:
+
+```rust
+pub struct Lexer<C: Iterator<Item = char>> {
+    chars: Peekable<C>,           // Character stream with lookahead
+    location: ByteIndex,           // Source position tracking
+    last_token: Option<SyntaxKind>, // Context for disambiguation
+    whitespace_since_last_token: bool,
+    token_buffer: VecDeque<(SyntaxKind, Span)>,
+}
+```
+
+**Key features:**
+- Unicode-aware identifier and operator recognition
+- Context-sensitive tokenisation (distinguishes `OPEN_PAREN` from `OPEN_PAREN_APPLY`)
+- String pattern lexing with interpolation support (`"Hello {name}"`)
+- Preserves trivia (whitespace, comments) for full-fidelity AST
+
+**Token categories:**
+- Delimiters: `{ } ( ) [ ] : , \``
+- Identifiers: `foo`, `'quoted name'`, `+`, `&&`
+- Literals: Numbers, strings, symbols (`:keyword`)
+- Annotations: Whitespace, comments (`#`)
+
+### Parser
+
+*Implementation*: `src/syntax/rowan/parse.rs`
+
+The parser uses an event-driven recursive descent approach:
+
+```rust
+pub struct Parser<'text> {
+    tokens: Vec<(SyntaxKind, &'text str)>,
+    next_token: usize,
+    sink_stack: Vec<Box<dyn EventSink>>,
+    errors: Vec<ParseError>,
+}
+```
+
+**Parse events:**
+```rust
+enum ParseEvent {
+    StartNode(SyntaxKind),  // Begin syntax node
+    Finish,                  // Complete node
+    Token(SyntaxKind),      // Include token
+}
+```
+
+**Key parsing methods:**
+- `parse_unit()` - Top-level file (no braces required)
+- `parse_expression()` / `parse_soup()` - Expression sequences
+- `parse_block_expression()` - `{ ... }` blocks with declarations
+- `parse_string_pattern()` - Interpolated strings
+
+The parser maintains error recovery for LSP support, collecting errors while continuing to parse.
+
+### AST
+
+*Implementation*: `src/syntax/rowan/ast.rs`
+
+The AST uses a two-layer design:
+1. **SyntaxNode** (Rowan) - Rich, source-preserving tree
+2. **AST Nodes** - Typed wrappers via macros
+
+```rust
+macro_rules! ast_node {
+    ($ast:ident, $kind:ident) => {
+        pub struct $ast(SyntaxNode);
+        impl AstNode for $ast { ... }
+    }
+}
+```
+
+**Key AST types:**
+
+| Type | Purpose |
+|------|---------|
+| `Unit` | Top-level file structure |
+| `Block` | Enclosed `{ ... }` block |
+| `Declaration` | Property/function declaration |
+| `DeclHead` | Declaration name (before `:`) |
+| `DeclBody` | Declaration value (after `:`) |
+| `Soup` | Unordered expression sequence |
+| `List` | List expression `[a, b, c]` |
+| `Name` | Identifier reference |
+| `Literal` | Literal value |
+| `StringPattern` | Interpolated string |
+
+## Core Expression Representation
+
+The core representation is an intermediate language that facilitates powerful transformations while maintaining source information for error reporting.
+
+### Expression Type
+
+*Implementation*: `src/core/expr.rs`
+
+The `Expr<T>` enum (where `T: BoundTerm<String>`) represents all expression forms:
+
+```rust
+pub enum Expr<T> {
+    // Variables
+    Var(Smid, Var<String>),           // Free or bound variable
+
+    // Primitives
+    Literal(Smid, Primitive),          // Number, string, symbol, bool, null
+
+    // Binding forms
+    Let(Smid, LetScope<T>, LetType),   // Recursive let binding
+    Lam(Smid, bool, LamScope<T>),      // Lambda abstraction
+
+    // Application
+    App(Smid, T, Vec<T>),              // Function application
+
+    // Data structures
+    List(Smid, Vec<T>),                // List literal
+    Block(Smid, BlockMap<T>),          // Object/record literal
+
+    // Operators (pre-cooking)
+    Operator(Smid, Fixity, Precedence, T),
+    Soup(Smid, Vec<T>),                // Unresolved operator soup
+
+    // Anaphora (implicit parameters)
+    BlockAnaphor(Smid, ...),
+    ExprAnaphor(Smid, ...),
+
+    // Access
+    Lookup(Smid, T, String, Option<T>), // Property access
+
+    // Metadata
+    Meta(Smid, T, T),                   // Expression with metadata
+
+    // Intrinsics
+    Intrinsic(Smid, String),           // Built-in function reference
+
+    // Error nodes
+    ErrUnresolved, ErrRedeclaration, ...
+}
+```
+
+**Primitive types:**
+```rust
+pub enum Primitive {
+    Str(String),
+    Sym(String),
+    Num(Number),
+    Bool(bool),
+    Null,
+}
+```
+
+**Standard wrapper**: `RcExpr` provides reference-counted immutable expressions with substitution and transformation methods.
+
+### Transformation Pipeline
+
+The core pipeline transforms expressions through several phases:
+
+```
+AST → Desugar → Cook → Simplify → Inline → Verify → STG
+```
+
+#### Desugaring
+
+*Implementation*: `src/core/desugar/`
+
+Transforms parsed AST into core expressions:
+- Converts block declarations into recursive let bindings
+- Extracts targets and documentation metadata
+- Handles imports and cross-file references
+- Processes both native AST and embedded data (JSON/YAML)
+
+#### Cooking
+
+*Implementation*: `src/core/cook/`
+
+Resolves operator precedence and anaphora:
+1. **Fixity distribution** - Propagate operator precedence info
+2. **Anaphor filling** - Infer missing implicit parameters (`(+ 10)` → `(_ + 10)`)
+3. **Shunting yard** - Apply precedence climbing to linearise operator soup
+4. **Anaphor processing** - Wrap lambda abstractions around anaphoric expressions
+
+Example transformation:
+```
+(+ 10)        →  (λ _ . (_ + 10))
+a + b * c     →  (+ a (* b c))      // with standard precedence
+```
+
+#### Simplification and Inlining
+
+*Implementation*: `src/core/simplify/`, `src/core/inline/`
+
+- **Compression** - Remove eliminated bindings
+- **Pruning** - Dead code elimination
+- **Inlining** - Inline marked expressions
+
+#### Verification
+
+*Implementation*: `src/core/verify/`
+
+Validates transformed expressions before STG compilation:
+- Binding verification
+- Content validation
+
+## STG Compilation and Evaluation Model
+
+Eucalypt uses a Spineless Tagless G-machine (STG) as its evaluation model, providing lazy evaluation with memoisation.
+
+### STG Syntax
+
+*Implementation*: `src/eval/stg/syntax.rs`
+
+The STG syntax represents executable code:
+
+```rust
+pub enum StgSyn {
+    Atom { evaluand: Ref },              // Value or reference
+    Case { scrutinee, branches, fallback }, // Pattern matching (evaluation point)
+    Cons { tag: Tag, args: Vec<Ref> },   // Data constructor
+    App { callable: Ref, args: Vec<Ref> }, // Function application
+    Bif { intrinsic: u8, args: Vec<Ref> }, // Built-in intrinsic
+    Let { bindings: Vec<LambdaForm>, body }, // Non-recursive let
+    LetRec { bindings: Vec<LambdaForm>, body }, // Recursive let
+    Ann { smid: Smid, body },            // Source annotation
+    Meta { meta: Ref, body: Ref },       // Metadata wrapper
+    DeMeta { scrutinee, handler, or_else }, // Metadata destructure
+    BlackHole,                            // Uninitialized marker
+}
+```
+
+**Reference types:**
+```rust
+pub enum Reference<T> {
+    L(usize),  // Local environment index
+    G(usize),  // Global environment index
+    V(T),      // Direct value (Native)
+}
+```
+
+**Lambda forms** control laziness:
+- `Lambda` - Function with explicit arity
+- `Thunk` - Lazy expression (evaluated and updated in-place)
+- `Value` - Already in WHNF (no update needed)
+
+### STG Compiler
+
+*Implementation*: `src/eval/stg/compiler.rs`
+
+The compiler transforms core expressions to STG syntax:
+
+```rust
+impl Compiler {
+    fn compile_body(&mut self, expr: &RcExpr) -> ProtoSyntax;
+    fn compile_binding(&mut self, expr: &RcExpr) -> ProtoBinding;
+    fn compile_lambda(&mut self, expr: &RcExpr) -> ProtoSyntax;
+    fn compile_application(&mut self, f: &RcExpr, args: &[RcExpr]) -> ProtoSyntax;
+}
+```
+
+**Key decisions:**
+- **Thunk creation**: Expressions not in WHNF and used more than once become thunks
+- **WHNF detection**: Constructors, native values, and metadata wrappers are WHNF
+- **Deferred compilation**: `ProtoSyntax` allows deferring binding construction until environment size is known
+
+### Virtual Machine
+
+*Implementation*: `src/eval/machine/vm.rs`
+
+The STG machine is a state machine executing closures:
+
+```rust
+pub struct MachineState {
+    root_env: SynEnvPtr,           // Empty root environment
+    closure: SynClosure,           // Current (code, environment) pair
+    globals: SynEnvPtr,            // Global bindings
+    stack: Vec<Continuation>,      // Continuation stack
+    terminated: bool,
+    annotation: Smid,              // Current source location
+}
+```
+
+**Execution loop:**
+```rust
+fn run(&mut self) {
+    while !self.terminated {
+        if self.gc_check_needed() {
+            self.collect_garbage();
+        }
+        self.step();
+    }
+}
+```
+
+**Instruction dispatch** (`handle_instruction`):
+
+| Code Form | Action |
+|-----------|--------|
+| `Atom` | Resolve reference; push Update continuation if thunk |
+| `Case` | Push Branch continuation, evaluate scrutinee |
+| `Cons` | Return data constructor |
+| `App` | Push ApplyTo continuation, evaluate callable |
+| `Bif` | Execute intrinsic directly |
+| `Let` | Allocate environment frame, continue in body |
+| `LetRec` | Allocate frame with backfilled recursive references |
+
+### Continuations
+
+*Implementation*: `src/eval/machine/cont.rs`
+
+Four continuation types manage control flow:
+
+1. **Branch** - Pattern matching branches for CASE
+2. **Update** - Deferred thunk update (memoisation)
+3. **ApplyTo** - Pending arguments for function application
+4. **DeMeta** - Metadata destructuring handler
+
+### Lazy Evaluation
+
+Laziness is achieved through thunks and updates:
+
+1. **Thunk creation** (compile time): Non-WHNF expressions become `LambdaForm::Thunk`
+2. **Thunk evaluation** (runtime): When a thunk is entered, push Update continuation
+3. **Memoisation**: After evaluation, update the environment slot with the result
+
+```rust
+// When entering a local reference
+if closure.update() {
+    stack.push(Continuation::Update { environment, index });
+}
+
+// After evaluation completes
+Continuation::Update { environment, index } => {
+    self.update(environment, index);  // Replace thunk with result
+}
+```
+
+## Memory Management and Garbage Collection
+
+Eucalypt uses an Immix-inspired memory layout with mark-and-sweep collection.
+
+### Memory Layout
+
+*Implementation*: `src/eval/memory/heap.rs`, `src/eval/memory/bump.rs`
+
+```
+Block (32KB)
+├── Line 0 (128B) ┐
+├── Line 1 (128B) │ 256 lines per block
+├── ...           │
+└── Line 255      ┘
+```
+
+**Size classes:**
+- **Small** (< 128 bytes) - Single line
+- **Medium** (128B - 32KB) - Multiple lines within block
+- **Large** (> 32KB) - Dedicated Large Object Block
+
+**Heap state:**
+```rust
+pub struct HeapState {
+    head: Option<BumpBlock>,           // Active small allocation
+    overflow: Option<BumpBlock>,       // Active medium allocation
+    recycled: VecDeque<BumpBlock>,     // Blocks with reusable holes
+    rest: VecDeque<BumpBlock>,         // Used blocks pending collection
+    lobs: Vec<LargeObjectBlock>,       // Large objects
+}
+```
+
+### Object Headers
+
+*Implementation*: `src/eval/memory/header.rs`
+
+Every object has a 16-byte header:
+```rust
+pub struct AllocHeader {
+    bits: HeaderBits,                  // Mark bit + forwarded flag
+    alloc_length: u32,                 // Object size
+    forwarded_to: Option<NonNull<()>>, // For potential evacuation
+}
+```
+
+### Garbage Collection
+
+*Implementation*: `src/eval/memory/collect.rs`
+
+**Mark phase:**
+1. Reset line maps across all blocks
+2. Breadth-first root scanning from machine state
+3. Transitive closure following object references
+4. Mark lines containing live objects
+
+**Sweep phase:**
+1. Scan line maps in each block
+2. Identify holes (2+ consecutive free lines)
+3. Move recyclable blocks to recycled list
+
+**Collection triggering:**
+- When `--heap-limit-mib` is set and limit exceeded
+- Check performed every 500 VM execution steps
+- Emergency collection on allocation failure
+
+See `gc-implementation.md` for detailed analysis.
+
+## The Prelude and Standard Library
+
+### Intrinsic Functions
+
+*Implementation*: `src/eval/intrinsics.rs`, `src/eval/stg/`
+
+Built-in functions are implemented in Rust and indexed by position:
+
+**Categories:**
+- **Control flow**: `__IF`, `__PANIC`, `__TRUE`, `__FALSE`, `__NULL`
+- **Lists**: `__CONS`, `__HEAD`, `__TAIL`, `__NIL`, `__REVERSE`
+- **Blocks**: `__MERGE`, `__DEEPMERGE`, `__ELEMENTS`, `__BLOCK`, `__LOOKUP`
+- **Arithmetic**: `__ADD`, `__SUB`, `__MUL`, `__DIV`, `__MOD`, comparisons
+- **Strings**: `__STR`, `__SPLIT`, `__JOIN`, `__MATCH`, `__FMT`
+- **Metadata**: `__META`, `__WITHMETA`
+- **Time**: `__ZDT`, `__ZDT.PARSE`, `__ZDT.FORMAT`
+- **I/O**: `__io.ENV`, `__io.EPOCHTIME`
+- **Emission**: `__RENDER`, `__EMIT*` family
+
+Each intrinsic implements the `StgIntrinsic` trait with direct access to machine state.
+
+### Prelude
+
+*Implementation*: `lib/prelude.eu`
+
+The prelude (~29KB) is written entirely in eucalypt, wrapping intrinsics with ergonomic functions:
+
+**List functions:**
+- `take`, `drop`, `nth` (`!!`), `fold`/`foldr`, `map`, `filter`
+- `append` (`++`), `concat`, `reverse`, `zip`, `group-by`, `qsort`
+
+**Block functions:**
+- `merge-all`, `keys`, `values`, `map-kv`, `map-keys`, `map-values`
+- `lookup-path`, `alter-value`, `update-value`
+
+**Combinators:**
+- `identity`, `const`, `compose` (`∘`, `;`), `flip`, `curry`, `uncurry`
+
+**String functions:**
+- `str.split`, `str.join`, `str.match`, `str.fmt`, `str.letters`
+
+**Loading:**
+- Prelude is embedded in the binary at compile time
+- Loaded by default unless `--no-prelude` / `-Q` flag is used
+
+## Driver and CLI Architecture
+
+### Entry Point
+
+*Implementation*: `src/bin/eu.rs`, `src/driver/options.rs`
+
+The CLI uses `clap v4` with derive macros:
+
+```rust
+#[derive(Parser)]
+struct EucalyptCli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+    files: Vec<String>,
+    // Global options...
+}
+
+enum Commands {
+    Run(RunArgs),
+    Test(TestArgs),
+    Dump(DumpArgs),
+    Fmt(FmtArgs),
+    Explain(ExplainArgs),
+    ListTargets(ListTargetsArgs),
+    Version,
+}
+```
+
+### Modes of Operation
+
+**Run (default):**
+```bash
+eu file.eu                    # Implicit run
+eu -e "expression" file.eu    # With evaluand
+eu -x json file.eu            # JSON output
+eu -t target file.eu          # Select target
+```
+
+**Test:**
+```bash
+eu test tests/              # Run all tests in directory
+eu test -t specific file.eu  # Run specific test target
+```
+
+**Format:**
+```bash
+eu fmt file.eu              # Print formatted to stdout
+eu fmt --write file.eu      # Modify in place
+eu fmt --check file.eu      # Check formatting (exit 1 if needs format)
+```
+
+**Dump:**
+```bash
+eu dump ast file.eu          # Dump AST
+eu dump desugared file.eu    # Dump after desugaring
+eu dump stg file.eu          # Dump STG syntax
+eu dump runtime              # Dump intrinsic definitions
+```
+
+### Output Formats
+
+*Implementation*: `src/export/`
+
+Emitters for each format implement the `Emitter` trait:
+- **YAML** (`yaml.rs`) - Uses `yaml_rust`, supports tags from metadata
+- **JSON** (`json.rs`) - Uses `serde_json`
+- **TOML** (`toml.rs`) - Structured output
+- **Text** (`text.rs`) - Plain text
+- **EDN** (`edn.rs`) - Clojure-like format
+- **HTML** (`html.rs`) - Markup with serialisation
+
+### Input Handling
+
+Inputs are merged in order:
+1. **Prologue**: Prelude, config files, build metadata, IO block
+2. **Explicit**: Files and options (`-c`/`--collect-as`)
+3. **Epilogue**: CLI evaluand (`-e`)
+
+Names from earlier inputs are available to later inputs.
+
+## Key Design Decisions and Trade-offs
+
+### Why STG?
+
+The STG machine provides a well-defined reference point for lazy functional language implementation:
+- Clear semantics for lazy evaluation with memoisation
+- Established compilation strategies
+- Potential for future optimisations
+
+*Trade-off*: More complex than direct interpretation but provides a solid foundation.
+
+### Why Rowan for Parsing?
+
+Rowan provides:
+- Incremental parsing for IDE support
+- Full source fidelity (preserves whitespace and comments)
+- Error recovery for partial parsing
+
+*Trade-off*: More complex API than traditional parser generators.
+
+### Core as Intermediate Language
+
+The core representation enables powerful transformations:
+- User-definable operator precedence resolved by syntax transformation
+- Block semantics (binding vs structuring) separated cleanly
+- Source information preserved through `Smid` for error reporting
+
+*Trade-off*: Additional compilation phase, but enables experimentation.
+
+### Block Duality
+
+Eucalypt blocks serve two roles:
+1. **Name binding** - Like `let` expressions
+2. **Data structuring** - Like objects/records
+
+The core phase separates these into distinct `Let` and `Block` expressions.
+
+*Trade-off*: Elegant surface syntax at cost of semantic complexity.
+
+### Immix-Inspired GC
+
+The memory layout provides:
+- Efficient bump allocation
+- Cache-friendly organisation
+- Effective hole reuse
+
+*Current limitation*: No evacuation/compaction (mark-sweep only).
+
+See `gc-implementation.md` for detailed analysis.
+
+### Embedded Prelude
+
+The prelude is:
+- Written in eucalypt itself
+- Compiled into the binary
+- Loaded unless explicitly disabled
+
+*Benefit*: Dogfooding, consistent semantics
+*Trade-off*: Slower startup if prelude is large
+
+## Performance Characteristics
+
+### Compilation
+- Parsing: O(n) with incremental support
+- Desugaring: O(n) pass over AST
+- Cooking: O(n log n) for operator precedence resolution
+- STG compilation: O(n) with binding analysis
+
+### Execution
+- Bump allocation: O(1) for most objects
+- Thunk updates: O(1) memoisation
+- GC: O(live objects) for marking, O(total blocks) for sweeping
+
+### Memory
+- 16-byte header overhead per object
+- Block-level allocation granularity
+- Large objects get dedicated blocks
+
+## Code Organisation Summary
+
+| Directory | Purpose | Key Files |
+|-----------|---------|-----------|
+| `src/syntax/rowan/` | Incremental parsing | `lex.rs`, `parse.rs`, `ast.rs` |
+| `src/core/` | Expression representation | `expr.rs` |
+| `src/core/desugar/` | AST to core | `desugarer.rs` |
+| `src/core/cook/` | Operator resolution | `shunt.rs`, `fixity.rs` |
+| `src/eval/stg/` | STG syntax and compiler | `syntax.rs`, `compiler.rs` |
+| `src/eval/machine/` | Virtual machine | `vm.rs`, `cont.rs`, `env.rs` |
+| `src/eval/memory/` | Heap and GC | `heap.rs`, `collect.rs` |
+| `src/driver/` | CLI orchestration | `options.rs`, `eval.rs` |
+| `src/export/` | Output formats | `yaml.rs`, `json.rs` |
+| `lib/` | Standard library | `prelude.eu` |
+
+## Further Reading
+
+- `implementation.md` - Brief implementation overview
+- `gc-implementation.md` - Detailed GC documentation
+- `command-line.md` - CLI usage guide
+- `syntax.md` - Language syntax reference
+- `operators-and-identifiers.md` - Operator definitions
+- `anaphora-and-lambdas.md` - Implicit parameter handling
+
+---
+
+# Eucalypt Style Guide
+
+Eucalypt is very flexible and allows you to write extremely ugly code.
+
+Here is some general style guidance for writing eucalypt idiomatically.
+
+## List access
+
+- **`head`/`tail`** for list decomposition (variable-length, processing elements sequentially)
+- **`first`/`second`/`!! n`** for positional access into fixed-size tuples or records
+
+Don't mix idioms on the same context. If you use `second(xs)`, use `first(xs)` not `head(xs)`. If you use `!! 2`, use `!! 0` and `!! 1` not `first` and `second`.
+
+## Conditionals
+
+- Prefer simple (unnested) conditionals.
+- Use `<bool> then(a, b)` over `if(cond, a, b)` for simple
+  conditionals.
+- If nesting is unavoidable, use `if`, nested `then`s are confusing.
+- Never mix `if()` and `then()` in the same expression — it looks like they go together and is confusing. 
+- Prefer restructuring to eliminate conditionals altogether: use `nil?` guards, `max`, `min`, default values (`min-of-or`, `max-of-or`), etc.
+- **`then(false, x)` and `then(true, x)` are antipatterns.** Refactor to
+  disjunctions and conjunctions: `cond ∧ x`, `cond ∨ x`, etc.
+  Use block bindings or parentheses to keep `∧`/`∨` separated from
+  catenation pipelines:
+  ```
+  { ok: xs non-nil?
+    result: xs map(f) sum
+  }.(ok ∧ result > 0)
+  ```
+
+## Catenation precedence
+
+Catenation (juxtaposition / pipeline application) has the **lowest** operator precedence (20). ALL infix operators bind tighter, including `∧` (35), `∨` (30), `=` (40), `+` (75), etc. This means infix operators steal adjacent atoms from catenation pipelines:
+
+- `xs f(a) + 1` parses as `xs(f(a) + 1)` — `+` grabs `f(a)` and `1`
+- `(k > 0) ∧ xs non-nil?` parses as `((k > 0) ∧ xs) non-nil?` — `∧` grabs `xs`
+- `xs tail ++ [0]` parses as `xs(tail ++ [0])` — `++` grabs `tail` and `[0]`
+
+Fix with parens around the catenation: `(k > 0) ∧ (xs non-nil?)`, `(xs tail) ++ [0]`.
+
+## Pipelines
+
+- The clearest function definition is a straight pipeline. Structure programs to maximise them.
+- Prefer pipeline (catenation) style: `xs head` not `head(xs)`, `xs map(f) filter(g)` not `filter(g, map(f, xs))`.
+- Use `;` (compose) for point-free function definitions and embedding
+  in pipelines: `abs ; (+ 1)`. 
+- `∘` is also acceptable, particularly in mathematical of strongly FP contexts
+- Partial application for pipeline steps: `map(area(p))`, `filter(v-spans(y))`.
+
+## Parameter order
+
+Choose parameter order to support partial application and pipeline style:
+
+- Put the "data" or "collection" parameter **last** so that partially applied functions slot into pipelines: `g remove-node("dac") count-paths("svr")` reads as a pipeline of transformations.
+- Put "configuration" or "small" parameters **first** so they can be fixed early: `map(lookup-count(table))`, `foldl(dp-step(g), {}, order)`.
+- If a function will be used as a `foldl` accumulator, match the `(acc, elem)` signature: `dfs-topo(g, state, node)` allows `foldl(dfs-topo(g), init, nodes)`.
+
+When in doubt, ask: "how will this function most commonly be called?" and put the varying argument last.
+
+## Naming
+
+- Predicates end with `?`: `vertical?`, `nil?`, `at-y`.
+- Use descriptive names: `make-edges` not `mk-edges`.
+
+## Recursion
+
+- Prefer folds, scans, or specific prelude algorithms over explicit recursion where possible.
+
+## Documentation
+
+- Use backtick string metadata (`` ` "..." ``) for documenting declarations. Backtick metadata attaches to the next declaration, so only use it when the comment is specific to that declaration.
+- Use `#` comments for inline explanatory notes within blocks (e.g. section separators, notes that apply to a group of bindings rather than one declaration) and for disabling code.
+- Doc metadata should be markdown: use backquotes for `param` and `function` names.
+
+## Sections and anaphora
+
+- Prefer sections without superfluous brackets: `iterate(+ 2, 0)` not `iterate((+ 2), 0)`, `map(* 2)` not `map((* 2))`.
+- Prefer sections over anaphora when a section suffices: `map(* 2)` not `map(_ * 2)`.
+- Use anaphora when the expression genuinely needs more than a simple section:  `map(_ * _ + 1)`.
+
+## Blocks
+
+- Use blocks for local bindings: `{ x: ... y: ... }.(x + y)`, but limit to one block, do not stack this construct
+- Keep block "results"" in `.(...)` concise, preferably simple pipelines or expressions, or even just `{...}.result`
+- **Dynamic generalised lookup**: a function can return a block whose names are then used as a namespace for subsequent pipelines, e.g. `prepare(data).( edges take(k) ... )`. Use very sparingly — it can defeat static analysis. Never nest or stack dynamic lookups.
+
+---
+
 # Frequently Asked Questions
 
 ## Getting Started
@@ -7593,7 +10915,7 @@ stdout:
 
 ```sh
 # Filter JSON from an API
-curl -s https://api.example.com/data | eu -e 'items filter(_.active)'
+curl -s https://api.example.com/data | eu -e 'items filter(.active)'
 
 # Transform and re-export
 cat data.yaml | eu transform.eu -j > output.json
@@ -7805,7 +11127,7 @@ For sorting by a key, use `sort-by-str` or `sort-by-num`:
 
 ```eu
 people: [{ name: "Zoe" age: 25 }, { name: "Amy" age: 30 }]
-by-name: people sort-by-str(_.name)
+by-name: people sort-by-str(.name)
 youngest: (by-name head).name //=> "Amy"
 ```
 
@@ -7889,8 +11211,7 @@ Use `io.random` for a stream of random floats, or pass `--seed` for
 reproducible output:
 
 ```eu,notest
-roll: random-int(6, io.random)
-die: roll.value + 1
+die: random.int(6, io.random).value + 1
 ```
 
 ```sh
@@ -7996,9 +11317,58 @@ x: 42 # inline comment
 |------|--------|-------|
 | Property | `name: expr` | Defines a named value |
 | Function | `f(x, y): expr` | Named function with parameters |
+| Block pattern | `f({x y}): expr` | Destructures block argument fields |
+| Block rename | `f({x: a  y: b}): expr` | Destructures with renamed bindings |
+| List pattern | `f([a, b, c]): expr` | Destructures fixed-length list |
+| Cons pattern | `f([h : t]): expr` | Destructures head and tail of list |
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
+| Idiot bracket | `⟦ x ⟧: expr` | Custom Unicode bracket pair |
+
+## Idiot Brackets
+
+Idiot brackets allow custom Unicode bracket pairs to wrap and
+transform expressions — a general bracket overloading mechanism.
+
+```eu,notest
+# Declare a bracket pair function
+⟦ x ⟧: my-functor(x)
+
+# Use the bracket pair in expressions
+result: ⟦ some-expression ⟧  # calls my-functor(some-expression)
+```
+
+Built-in bracket pairs: `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
+`【】`, `〔〕`, `〖〗`, `〘〙`, `〚〛`.
+
+## Monadic Blocks
+
+Monadic sequencing (like `do`-notation) is supported via bracket pairs or block
+metadata.  A bracket block or annotated block followed by `.expr` desugars to a
+bind chain.
+
+```eu,notest
+# Bracket pair definition — explicit functions
+⟦{}⟧: { :monad bind: my-bind  return: my-return }
+
+# Bracket pair definition — namespace reference
+⟦{}⟧: { :monad namespace: my-monad }
+
+# Block metadata forms (all followed by .return_expr):
+{ :name decls }.expr                          # Form 1: bare symbol namespace
+{ { monad: name } decls }.expr               # Form 2: monad key
+{ { :monad namespace: name } decls }.expr    # Form 3: tagged namespace
+{ { :monad bind: f return: r } decls }.expr  # Form 4: explicit inline
+
+# ⟦ a: ma  b: mb ⟧.return_expr
+# desugars to: bind(ma, (a): bind(mb, (b): return(return_expr)))
+result: ⟦ a: ma  b: mb ⟧.(a + b)
+```
+
+All declarations are bind steps whose names are in scope for later declarations
+and the return expression.  The return expression follows the closing bracket (or
+block) as `.name`, `.(expr)`, or `.[list]`.
 
 ## Metadata Annotations
 
@@ -8035,7 +11405,8 @@ add(1)           # returns a function adding 1
 # Sections (operator with gaps)
 (+ 1)            # function: add 1
 (* 2)            # function: multiply by 2
-(/)              # function: divide (two params)
+(/)              # function: floor divide (two params)
+(÷)              # function: precise divide (two params)
 ```
 
 ## Lookup and Generalised Lookup
@@ -8079,9 +11450,11 @@ From highest to lowest binding:
 | 95 | -- | prefix | `↑` | Tight prefix (head) |
 | 90 | lookup | left | `.` | Field access / lookup |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
+| 88 | bool-unary | postfix | `✓` | Non-nil check (true if non-nil) |
 | 85 | exp | right | `^`, `∘`, `;` | Power, composition |
 | 80 | prod | left | `*`, `/`, `÷`, `%` | Multiplication, floor division, precise division, floor modulo |
 | 75 | sum | left | `+`, `-` | Addition, subtraction |
+| 55 | -- | right | `‖` | List cons (prepend element) |
 | 50 | cmp | left | `<`, `>`, `<=`, `>=` | Comparison |
 | 45 | append | right | `++`, `<<` | List append, deep merge |
 | 42 | map | left | `<$>` | Functor map |
@@ -8190,6 +11563,19 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `str.replace(from, to)` | Replace occurrences |
 | `str.trim` | Remove surrounding whitespace |
 
+### Serialisation and Parsing
+
+| Function | Description |
+|----------|-------------|
+| `render(value)` | Serialise to YAML string |
+| `render-as(value, fmt)` | Serialise to string in named format |
+| `parse-as(fmt, str)` | Parse string as structured data (inverse of `render-as`) |
+
+Formats for `render-as`: `:yaml`, `:json`, `:toml`, `:text`, `:edn`, `:html`.
+Formats for `parse-as`: `:json`, `:yaml`, `:toml`, `:csv`, `:xml`, `:edn`, `:jsonl`.
+
+`parse-as` is safe for untrusted input — YAML `!eu` tags are never evaluated.
+
 ### Combinators
 
 | Function | Description |
@@ -8215,15 +11601,51 @@ Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
 | `zero?` / `pos?` / `neg?` | Sign predicates |
 | `floor` / `ceil` / `round` | Rounding |
 
+### Arrays (`arr` namespace)
+
+| Function | Description |
+|----------|-------------|
+| `arr.zeros(shape)` | Create array of zeros; `shape` is a list of integers |
+| `arr.fill(shape, val)` | Create array filled with `val` |
+| `arr.from-flat(shape, vals)` | Create array from flat list of numbers |
+| `arr.get(a, coords)` | Element at coordinate list `coords` |
+| `arr.set(a, coords, val)` | New array with element at `coords` set to `val` |
+| `arr.shape(a)` | Shape as list of integers |
+| `arr.rank(a)` | Number of dimensions |
+| `arr.length(a)` | Total number of elements |
+| `arr.to-list(a)` | Flat list of elements in row-major order |
+| `arr.array?(x)` / `is-array?(x)` | Is `x` an array? |
+| `arr.transpose(a)` | Reverse all axes |
+| `arr.reshape(a, shape)` | Reshape (total elements must match) |
+| `arr.slice(a, axis, idx)` | Slice along `axis` at `idx` (reduces rank by 1) |
+| `arr.add(a, b)` / `arr.sub` / `arr.mul` / `arr.div` | Element-wise arithmetic; `b` may be scalar |
+| `a !! coords` | Index operator; for arrays, `coords` is a list e.g. `[row, col]` |
+| `arr.indices(a)` | List of coordinate lists for every element (row-major) |
+| `arr.map(f, a)` | Apply `f` to each element; same shape |
+| `arr.map-indexed(f, a)` | Apply `f(coords, val)` to each element; same shape |
+| `arr.fold(f, init, a)` | Left-fold over all elements in row-major order |
+| `arr.neighbours(a, coords, offsets)` | Values at valid in-bounds neighbours given offset vectors |
+
+The standard `+`, `-`, `*`, `/` operators are polymorphic and apply element-wise when
+either operand is an array. Scalar broadcasting is supported.
+
 ### IO
 
-| Binding | Description |
-|---------|-------------|
+| Binding / Function | Description |
+|--------------------|-------------|
 | `io.env` | Block of environment variables |
 | `io.epoch-time` | Unix timestamp at launch |
 | `io.args` | Command-line arguments (after `--`) |
 | `io.random` | Infinite lazy stream of random floats |
 | `io.RANDOM_SEED` | Current random seed |
+| `io.return(a)` | Wrap a pure value in the IO monad |
+| `io.bind(action, cont)` | Sequence two IO actions |
+| `io.shell(cmd)` | Run `cmd` via `sh -c`; returns `{stdout, stderr, exit-code}` |
+| `io.shell-with(opts, cmd)` | Run `cmd` with extra options (e.g. `{stdin: s, timeout: 60}`). Pipeline: `"cmd" shell-with(opts)` |
+| `io.exec([cmd : args])` | Run `cmd` directly (no shell); argument is a list `[cmd, arg1, arg2, ...]` |
+| `io.exec-with(opts, [cmd : args])` | Run `cmd` directly with extra options. Pipeline: `["git", "log"] exec-with(opts)` |
+| `io.check(result)` | Fail with stderr if `exit-code` is non-zero; otherwise return result |
+| `io.map(f, action)` | Apply pure function to result of IO action (fmap) |
 
 ## Assertion Operators
 
@@ -8262,6 +11684,30 @@ design decisions that can lead to subtle bugs or confusion.
 
 ## Operator Precedence Issues
 
+Eucalypt's catenation (juxtaposition) operator has **very low
+precedence (20)** — lower than all arithmetic and comparison
+operators. This means infix operators bind more tightly than
+catenation, which can produce surprising parses.
+
+The precedence hierarchy (highest to lowest):
+
+| Precedence | Name         | Operators                    |
+|------------|--------------|------------------------------|
+| 95         |              | `↑` (head prefix)            |
+| 90         | lookup/call  | `.` (lookup), `f(x, y)`      |
+| 88         | bool-unary   | `!` (not)                    |
+| 85         | exp          | `^` (power)                  |
+| 80         | prod         | `*`, `/`, `÷`, `%`           |
+| 75         | sum          | `+`, `-`                     |
+| 50         | cmp          | `<`, `>`, `<=`, `>=`         |
+| 45         | append       | `++`                         |
+| 40         | eq           | `=`, `!=`                    |
+| 35         | bool-prod    | `∧` (and)                    |
+| 30         | bool-sum     | `∨` (or)                     |
+| 20         | cat          | catenation (juxtaposition)   |
+| 10         | apply        |                              |
+| 5          | meta         | `` ` `` (metadata)           |
+
 ### Field Access vs Catenation
 
 **Problem**: The lookup operator (`.`) has higher precedence (90) than
@@ -8289,41 +11735,202 @@ access fields from:
 - Use `(expression).field` instead of `expression target.field`
 - Be explicit about precedence when combining catenation with field access
 
+### Arithmetic After a Pipeline
+
+**Problem**: Infix operators like `+`, `-`, `*` have higher precedence
+than catenation. When an infix operator follows a pipeline (catenation
+chain), it binds to the last function in the chain, not to the result
+of the whole pipeline.
+
+**Gotcha**: Writing `xs foldl(f, 0) + 1` is **not** parsed as
+`(xs foldl(f, 0)) + 1`. Instead, the shunting-yard algorithm sees:
+
+```
+[xs, cat@20, foldl, call@90, (f,0), +@75, 1]
+```
+
+Because `+` (75) has higher precedence than `cat` (20), the `+`
+binds first: `foldl(f, 0) + 1` is evaluated (adding 1 to a partial
+application — a type error), and then the result is applied to `xs`.
+
+**Example**:
+```eu,notest
+# WRONG — fails at runtime:
+n: xs foldl(+, 0) + 1        # Parsed as: (foldl(+, 0) + 1)(xs)
+
+# CORRECT — use parentheses:
+n: (xs foldl(+, 0)) + 1      # Explicit grouping
+
+# CORRECT — split into two bindings:
+m: xs foldl(+, 0)
+n: m + 1
+```
+
+**Error Messages**:
+- `cannot return function into case table without default` — the `+`
+  intrinsic receives a function (the partial application) instead of a
+  number.
+
+**Rule of thumb**: If a pipeline result feeds into an infix operator,
+always use parentheses around the pipeline or bind it to a name first.
+
 ## Anaphora and Function Syntax
 
 ### Lambda Syntax Does Not Exist
 
-**Problem**: Eucalypt does not have lambda expressions like other
-functional languages.
+**Problem**: Eucalypt does **not** have lambda expressions or arrow
+functions. There is no syntax for anonymous multi-parameter functions.
 
-**Gotcha**: Attempting to write lambda-style syntax will cause syntax
-errors.
+**Gotcha**: The `->` token is the **`const` operator** (returns its
+left operand, ignoring the right). Writing `x -> x + 1` does not
+create a function — it evaluates `x`, discards `x + 1`, and returns
+`x`.
 
 **Invalid Examples**:
-```eu
-# These syntaxes DO NOT exist in Eucalypt:
-map(\x -> x + 1)     # Invalid
-map(|x| x + 1)       # Invalid
-map(fn(x) => x + 1)  # Invalid
-map(λx.x + 1)        # Invalid
+```eu,notest
+# NONE of these create functions in Eucalypt:
+map(\x -> x + 1)     # Invalid syntax
+map(|x| x + 1)       # Invalid syntax
+map(fn(x) => x + 1)  # Invalid syntax
+filter(x -> x > 0)   # -> is const, not lambda!
 ```
 
-**Correct Approach**: Use anaphora (`_`, `_0`, `_1`, etc.) or define
-named functions:
+**Correct Approach**: Use sections, anaphora (`_`, `_0`, `_1`), named
+functions, or partial application:
 ```eu,notest
-# Using anaphora:
-map(_ + 1)
+# Operator sections (preferred for simple cases):
+map(+ 1)             # Section: adds 1
+map(^ 2)             # Section: squares
+filter(> 0)          # Section: positive?
 
-# Using named function:
+# Identity anaphor — passes an identity function:
+map(_)               # Same as map(identity)
+
+# Anaphora in expressions:
+map(_ + 1)           # Anonymous single-parameter function
+filter(_ > 0)        # Anonymous predicate
+
+# Multiple `_` — each is a separate parameter:
+f: (_ * _)           # f is a 2-arg multiply function
+f(3, 4)              # => 12
+
+# Numbered anaphora for same-param reuse:
+sq: (_0 * _0)        # sq(5) => 25
+
+# Using named function + partial application:
 add-one(x): x + 1
 map(add-one)
 
-# Using block with anaphora for complex expressions:
-map({ result: _ + 1, doubled: _ * 2 })
+# For multi-parameter needs, define a named helper:
+has-y(y, h): first(h) = y
+filter(has-y(target-y))   # Partial application
 ```
+
+**Important**: Each `_` introduces a **separate** parameter. `_ * _`
+is a 2-arg function (like `(_0 * _1)`), not `(_0 * _0)`. Use numbered
+anaphora `_0 * _0` when you need to reference the same parameter twice.
 
 **Reference**: See [Anaphora](../guide/anaphora.md) for detailed
 explanation of anaphora usage.
+
+### Anaphor Scoping: Parens Are Opaque
+
+**Problem**: Parentheses create an anaphor scope boundary. Anaphors
+inside parens form a lambda at the paren level, not at the enclosing
+expression.
+
+**Scoping rules**:
+
+1. **Parens are opaque by default** — anaphors inside parens create a
+   lambda scoped to that paren group. This applies to both `_` and
+   `_0`/`_1`.
+
+2. **Subsumption** — if the enclosing expression already has direct
+   anaphors, inner paren groups become transparent (their anaphors
+   join the outer scope).
+
+3. **ArgTuples follow the same rules** — function call arguments are
+   opaque unless subsumed by an outer anaphoric scope.
+
+**Examples**:
+```eu,notest
+# Parens opaque — paren group forms its own lambda:
+(_ + 1)               # λ(a). a + 1
+(_ * _)               # λ(a, b). a * b
+(_ = :quux) ∘ tag     # (λ(a). a = :quux) ∘ tag  ✓ composition works
+
+# Without parens — whole expression is the lambda body:
+_ + 1                 # λ(a). a + 1   (same result here)
+_ * _                 # λ(a, b). a * b
+
+# Parens opaque breaks cross-operator average:
+(_0 + _1) / 2         # (λ(a,b). a+b) / 2  — type error!
+# Correct idiom (no parens):
+_0 + _1 / 2           # λ(a, b). a + b/2  — note: b is halved, not sum
+
+# Subsumption: outer _ makes inner (_ * _) transparent:
+_ + (_ * _)           # λ(a, b, c). a + (b * c)  ✓
+
+# ArgTuple opaque by default:
+map(_ + 1)            # map(λ(a). a + 1)   ✓
+filter(_ > 0)         # filter(λ(a). a > 0)  ✓
+
+# ArgTuple subsumed when outer has anaphors:
+_0 * (_1 + 2)         # λ(a, b). a * (b + 2)  ✓
+```
+
+**Common mistake**: Expecting `(_0 + _1) / 2` to be a 2-argument
+averaging function. Under the opaque parens model, `(_0 + _1)` forms
+its own lambda and `/ 2` tries to divide that lambda by 2 — a type
+error. Use a named helper instead:
+```eu,notest
+avg2(a, b): (a + b) / 2
+zip-with(avg2, xs, ys)
+```
+
+**Expanding scope with subsumption**: The subsumption rule can be
+exploited to make the outer expression anaphoric, causing inner paren
+groups to become transparent.  A common idiom is to place a direct
+anaphor — such as a not-nil check `_0✓` — at the outer level:
+
+```eu,notest
+# _0✓ makes the whole expression anaphoric in _0,
+# so _0 inside count(_0) is subsumed — both refer to the same parameter.
+_0✓ && count(_0) >= 4    # λ(a). a != null && count(a) >= 4
+```
+
+Without the outer `_0✓`, the `_0` inside `count(_0)` would form a
+separate lambda at the ArgTuple level, and the outer `&&` would see a
+function value rather than a boolean.  The not-nil postfix `✓` is
+often the most natural way to introduce the outer anaphor when you
+want to also guard against null.
+
+## Metadata vs Comments
+
+### Backtick Is Metadata, Not a Comment
+
+**Problem**: The backtick (`` ` ``) attaches metadata to the **next**
+declaration. It is not a comment syntax.
+
+**Gotcha**: Writing `` ` "some text" `` with no declaration following
+it causes a parse error, often reported at an unexpected location
+(e.g., line 1).
+
+**Example**:
+```eu,notest
+# WRONG — dangling metadata with nothing to attach to:
+` "This is not a comment"
+
+# CORRECT — use # for comments:
+# This is a comment
+
+# CORRECT — metadata attached to a declaration:
+` "Documentation for my-fn"
+my-fn(x): x + 1
+```
+
+**Rule**: Use `#` for comments. Only use `` ` `` when you intend to
+attach metadata to the immediately following declaration.
 
 ## Single Quote Identifiers
 
@@ -8358,6 +11965,126 @@ z: home.'notes.txt'          # Looks up identifier: notes.txt
 'hello' = 'hello'            # Compares two variable references (not strings)
 "hello" = "hello"            # Compares two string literals (correct)
 ```
+
+## Division Operators
+
+### `/` Is Floor Division
+
+**Problem**: The `/` operator performs **floor division** (integer
+division), not precise division.
+
+**Gotcha**: `7 / 2` evaluates to `3`, not `3.5`.
+
+**Example**:
+```eu,notest
+7 / 2    # => 3 (floor division)
+7 ÷ 2    # => 3.5 (exact division)
+```
+
+**Rule**: Use `÷` for exact/precise division. Use `/` only when you
+want integer (floor) division.
+
+## Cons Patterns vs Normal Lists
+
+The `[h : t]` cons pattern is only valid in a **function parameter position**.
+A colon inside a list literal in an expression context is not valid:
+
+```eu,notest
+# Valid — cons pattern in a function parameter
+list-head([h : t]): h
+
+# Invalid — colon is not a list separator in expression context
+bad: [1 : rest]   # parse error
+```
+
+In expression context, use the `‖` cons operator (precedence 55) or the
+`cons` prelude function:
+
+```eu
+xs: [1, 2, 3]
+first: xs head         # = 1
+rest: xs tail          # = [2, 3]
+built: 1 ‖ [2, 3]     # = [1, 2, 3]
+also: cons(1, [2, 3])  # = [1, 2, 3]
+```
+
+## Block-Dot Lookup Applies to Any Block Literal
+
+The generalised lookup syntax `{...}.field` and `{...}.(expr)` works on any
+block literal, not only IO monadic blocks.  The dot binds the lookup to the
+block immediately to its left:
+
+```eu,notest
+# Field lookup on a plain block
+{ x: 1, y: 2 }.x          # → 1
+
+# Parenthesised expression scoped over the block's bindings
+{ x: 1, y: 2 }.(x + y)    # → 3
+
+# The same syntax is used for IO monadic block return expressions
+{ :io r: io.shell("echo hello") }.(r.stdout)
+{ :io r: io.shell("echo hello") }.r.stdout
+```
+
+**Precedence**: `.` binds tightly (precedence 90), so the lookup attaches to
+the block literal, not to the result of any surrounding expression.  Use
+parentheses when you need to apply a lookup to a computed value:
+
+```eu,notest
+# Parsed as: list (head.name)  — probably not what you want
+list head.name
+
+# Correct: (list head).name
+(list head).name
+```
+
+**IO monadic block desugaring**: `{ :io r: cmd }.(expr)` desugars to
+`io.bind(cmd, lambda(r). io.return(expr))`.  The `.()` return expression is
+part of the general block-dot syntax, not IO-specific.
+
+**Bare-expression files**: A `.eu` file containing only a block-dot
+expression (no outer `key:` declaration) is supported when the expression
+starts with a block literal `{...}`:
+
+```eu,notest
+# This works as a standalone .eu file:
+{ :io r: io.shell("echo hello") }.(r.stdout)
+```
+
+## Block Field Names Shadow Outer Bindings — `{x: x}` Is Always Self-Reference
+
+**Problem**: Every declaration inside a block literal introduces a new binding
+that is visible to all other expressions in that block, including its own
+right-hand side.  The name on the left of `:` immediately shadows any outer
+binding with the same name, so `{x: x}` does **not** copy an outer `x` into the
+block — it creates a self-referential binding that refers to itself:
+
+```eu,notest
+# WRONG — infinite loop: cmd refers to itself, not the function parameter
+shell-spec(cmd): {:io-shell cmd: cmd, timeout: 30}
+```
+
+Running `eu -e '{cmd: cmd}'` gives `error: infinite loop detected: binding
+refers to itself`.
+
+**Why it bites functions**: When a function parameter has the same name as a
+block field you want to populate, the RHS expression sees the block's own
+binding rather than the parameter:
+
+```eu,notest
+fn(cmd): {cmd: cmd}   # cmd: cmd is self-reference — fn's parameter is invisible
+```
+
+**Fix**: Use a different name for the function parameter so it is not shadowed:
+
+```eu,notest
+# Correct: parameter c is not shadowed by the block field cmd
+shell-spec(c): {:io-shell cmd: c, timeout: 30}
+```
+
+**Rule**: Never write `{key: key}` expecting it to read an outer binding named
+`key`.  If you need a block field to hold a value from an outer scope, the outer
+name and the field name must differ.
 
 ## Future Improvements
 

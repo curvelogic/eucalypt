@@ -28,7 +28,7 @@ needed.
 **Problem:** Given a list of users in JSON, extract just their names.
 
 ```sh
-eu -e 'map(_.name)' <<'JSON'
+eu -e 'map(.name)' <<'JSON'
 [
   {"name": "Alice", "role": "admin"},
   {"name": "Bob", "role": "user"},
@@ -63,8 +63,8 @@ products: [
 ]
 
 expensive: products
-  filter(_.price > 20)
-  map({name: •}.(name str.to-upper))
+  filter(.price > 20)
+  map(.name str.to-upper)
 ```
 
 ```sh
@@ -136,7 +136,7 @@ Charlie,35,Edinburgh
 ```
 
 ```sh
-eu rows=people.csv -j -e 'rows map({name: •}.(name))'
+eu rows=people.csv -j -e 'rows map(.name)'
 ```
 
 **Output:**
@@ -148,7 +148,7 @@ eu rows=people.csv -j -e 'rows map({name: •}.(name))'
 Or to transform the data:
 
 ```sh
-eu rows=people.csv -j -e 'rows map({ n: • }.({name: n.name age: n.age num}))'
+eu rows=people.csv -j -e 'rows map{ name: •0.name age: •0.age num }'
 ```
 
 This converts age from string to number (CSV values are always
@@ -225,7 +225,7 @@ sales: [
 ]
 
 ` :suppress
-amounts: sales map(_.amount)
+amounts: sales map(.amount)
 n: sales count
 
 summary: {
@@ -256,12 +256,12 @@ min: 600
 **Problem:** Find all port numbers in a complex configuration.
 
 ```sh
-eu -e 'deep-query("port", {
+eu -e '{
   web: { host: "0.0.0.0" port: 80 }
   api: { host: "0.0.0.0" port: 8080 }
   db: { host: "localhost" port: 5432 }
   cache: { host: "localhost" port: 6379 }
-})'
+} deep-query("port")'
 ```
 
 **Output:**
@@ -299,7 +299,7 @@ parsed: lines map(parse) map({parts: •}.({
   message: parts nth(2)
 }))
 
-errors: parsed filter(_.level = "ERROR")
+errors: parsed filter(.level = "ERROR")
 ```
 
 ```sh
@@ -323,23 +323,23 @@ eu logs.eu -e errors
 
 ```eu
 # cfn.eu
-resource(name, type, props): {
-  'Type': type
-  'Properties': props
+resource(type, props): {
+  Type: type
+  Properties: props
 }
 
 resources: {
-  MyBucket: resource("bucket", "AWS::S3::Bucket", {
-    'BucketName': :my-bucket // { tag: "!Ref AccountId" }
+  MyBucket: resource("AWS::S3::Bucket", {
+    BucketName: "my-bucket"
   })
-  MyQueue: resource("queue", "AWS::SQS::Queue", {
-    'QueueName': "my-queue"
+  MyQueue: resource("AWS::SQS::Queue", {
+    QueueName: "my-queue"
   })
 }
 ```
 
-This demonstrates using single-quote identifiers for keys with
-special characters and the metadata `tag` key for YAML tags.
+This example shows how a simple function can template
+repetitive structure.
 
 ## 12. Working with Dates
 
@@ -356,8 +356,8 @@ events: [
 cutoff: t"2024-06-01"
 
 upcoming: events
-  filter(_.date >= cutoff)
-  map(_.name)
+  filter(.date >= cutoff)
+  map(.name)
 ```
 
 ```sh
@@ -379,7 +379,7 @@ comparison operators.
 **Problem:** Build a key-value mapping from two parallel lists.
 
 ```sh
-eu -e 'zip-kv([:name, :age, :city], ["Alice", 30, "London"])'
+eu -e '["Alice", 30, "London"] zip-kv[:name, :age, :city]'
 ```
 
 **Output:**
@@ -391,6 +391,9 @@ city: London
 ```
 
 `zip-kv` pairs up symbols as keys with values to produce a block.
+Note that `zip-kv[:name, :age, :city]` is shorthand for
+`zip-kv([:name, :age, :city])` — when a function takes a single list
+or block argument, the outer parentheses can be omitted.
 
 ## 14. Parameterised Scripts
 
@@ -433,7 +436,7 @@ items: [
 ]
 
 ` :suppress
-tag-sets: items map(_.tags set.from-list)
+tag-sets: items map(.tags set.from-list)
 
 all-tags: tag-sets foldl(set.union, ∅) set.to-list
 common-tags: tag-sets foldl(set.intersect, tag-sets head) set.to-list

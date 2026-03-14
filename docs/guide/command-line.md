@@ -81,7 +81,7 @@ port: config.port
 Gather multiple files into a named collection:
 
 ```sh
-eu -c data *.json -e 'data map(_.name)'
+eu -c data *.json -e 'data map(.name)'
 ```
 
 Add `-N` to key by filename:
@@ -128,7 +128,7 @@ When combined with file inputs, the evaluand has access to all loaded
 names:
 
 ```sh
-eu data.yaml -e 'users filter(_.active) count'
+eu data.yaml -e 'users filter(.active) count'
 ```
 
 Multiple `-e` flags are allowed; the last one determines the output.
@@ -145,7 +145,7 @@ eu config.yaml -e 'database'
 eu data.json -e 'items count'
 
 # Extract and transform
-eu data.json -e 'items map(_.name) reverse'
+eu data.json -e 'items map(.name) reverse'
 ```
 
 ## Targets

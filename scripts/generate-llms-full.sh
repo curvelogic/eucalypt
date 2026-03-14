@@ -2,19 +2,19 @@
 # Generate llms-full.txt by concatenating all user-facing documentation
 # into a single markdown file for AI agents and coding assistants.
 #
-# Reads doc/SUMMARY.md to discover all documentation pages and
+# Reads docs/SUMMARY.md to discover all documentation pages and
 # concatenates them in order with --- separators.
 #
 # Usage: ./scripts/generate-llms-full.sh [output-path]
-# Default output: doc/llms-full.txt
+# Default output: docs/llms-full.txt
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DOC_DIR="$(cd "$SCRIPT_DIR/../doc" && pwd)"
+DOC_DIR="$(cd "$SCRIPT_DIR/../docs" && pwd)"
 OUTPUT="${1:-$DOC_DIR/llms-full.txt}"
 
-# Extract all .md file paths from SUMMARY.md (relative to doc/)
+# Extract all .md file paths from SUMMARY.md (relative to docs/)
 # Matches patterns like [Title](path/to/file.md)
 files=$(sed -n 's/.*](\([^)]*\.md\)).*/\1/p' "$DOC_DIR/SUMMARY.md")
 

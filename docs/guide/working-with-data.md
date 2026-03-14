@@ -28,13 +28,13 @@ eu data.json -x toml
 Pipe JSON from other tools into eucalypt:
 
 ```sh
-curl -s https://api.example.com/users | eu -e 'map(_.name)'
+curl -s https://api.example.com/users | eu -e 'map(.name)'
 ```
 
 Or process a JSON file:
 
 ```sh
-eu -e 'users filter(_.active) map(_.email)' data.json
+eu -e 'users filter(.active) map(.email)' data.json
 ```
 
 ## Processing YAML
@@ -125,7 +125,7 @@ children: root drop(2)
 Use named inputs to make data available under a specific name:
 
 ```sh
-eu users=users.json roles=roles.json -e 'users map(_.name)'
+eu users=users.json roles=roles.json -e 'users map(.name)'
 ```
 
 Named inputs are essential for list-based formats (CSV, JSON Lines,
@@ -163,10 +163,10 @@ inputs:
 eu config.yaml -e 'database.host'
 
 # Transform and filter
-eu data.json -e 'items filter(_.price > 100) map(_.name)'
+eu data.json -e 'items filter(.price > 100) map(.name)'
 
 # Aggregate
-eu data.json -e 'items map(_.price) foldl(+, 0)'
+eu data.json -e 'items map(.price) foldl(+, 0)'
 ```
 
 ## Collecting Inputs
@@ -174,7 +174,7 @@ eu data.json -e 'items map(_.price) foldl(+, 0)'
 The `--collect-as` (`-c`) flag gathers multiple files into a list:
 
 ```sh
-eu -c configs *.yaml -e 'configs map(_.name)'
+eu -c configs *.yaml -e 'configs map(.name)'
 ```
 
 Add `--name-inputs` (`-N`) to get a block keyed by filename:
@@ -217,9 +217,9 @@ summary:
 
 ```sh
 eu sales=sales.csv -j -e '{
-  total: sales map(_.amount num) foldl(+, 0)
+  total: sales map(.amount num) foldl(+, 0)
   count: sales count
-  regions: sales map(_.region) unique
+  regions: sales map(.region) unique
 }'
 ```
 
@@ -230,7 +230,7 @@ Or as a reusable eucalypt file:
 { import: "sales=sales.csv" }
 
 ` :suppress
-amounts: sales map(_.amount num)
+amounts: sales map(.amount num)
 
 report: {
   total: amounts foldl(+, 0)

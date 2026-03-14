@@ -2,7 +2,7 @@
 
 In this chapter you will learn:
 
-- The different string literal types (standard, raw, c-strings)
+- The two string literal types (raw and c-strings)
 - How to embed expressions in strings using `{...}` syntax
 - How strings with anaphora become functions
 - Format specifiers for controlling output
@@ -10,32 +10,35 @@ In this chapter you will learn:
 
 ## String Literal Types
 
-Eucalypt has three kinds of string literal:
+Eucalypt has two kinds of string literal: **raw strings** and
+**c-strings**.
 
-### Standard Strings
+### Raw Strings
 
-Standard double-quoted strings support interpolation with `{...}`:
+A plain double-quoted string is a raw string — backslashes are
+literal characters with no escape processing. This is convenient for
+regular expression usage.
 
 ```eu
 greeting: "Hello, World!"
+path: "C:\Users\alice\docs"
+regex: "^\d+\.\d+"
 ```
 
-### Raw Strings (`r"..."`)
-
-Raw strings perform no escape processing — backslashes are literal.
-Useful for regular expressions and file paths:
+The `r"..."` prefix is equivalent and can be used for clarity when
+the string contains backslashes:
 
 ```eu
 path: r"C:\Users\alice\docs"
 regex: r"^\d+\.\d+"
 ```
 
-Raw strings still support interpolation with `{...}`. Use `{{` and
-`}}` for literal braces.
+Raw strings support interpolation with `{...}`. Use `{{` and `}}`
+for literal braces.
 
 ### C-Strings (`c"..."`)
 
-C-strings process C-style escape sequences:
+If you require C-style escapes, you can use C-strings:
 
 | Escape | Meaning |
 |--------|---------|

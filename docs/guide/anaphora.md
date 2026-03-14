@@ -204,7 +204,8 @@ f: { x: • y: • }.(x + y)
 Indeed this does allow declaration of anonymous functions with named
 parameters and can occasionally be useful but it still falls short of
 a fully general lambda construction because it cannot (at least for
-now) be nested.
+now) be nested. It is to be regarded as a stylistic anti-pattern, use
+alternatives where available.
 
 ## String Anaphora
 

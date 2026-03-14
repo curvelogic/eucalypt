@@ -2,7 +2,7 @@
 
 In this chapter you will learn:
 
-- How to define custom binary, prefix, and postfix operators
+- How to define custom nullary, binary, prefix, and postfix operators
 - How precedence and associativity work
 - How to control operator behaviour with metadata
 - The built-in operators provided by the prelude
@@ -25,6 +25,28 @@ result: 8
 Operator names use symbolic characters: `+`, `-`, `*`, `/`, `<`, `>`,
 `|`, `&`, `!`, `@`, `#`, `~`, `^`, and any Unicode symbol or
 punctuation characters.
+
+## Nullary Operators
+
+A nullary operator takes no operands — it is a constant written as a
+symbol:
+
+```eu
+(∅): '__SET.EMPTY'
+result: ∅ set.to-list
+```
+
+```yaml
+result: []
+```
+
+The empty set `∅` is the only nullary operator in the standard prelude,
+but you can define your own:
+
+```eu,notest
+(★): 42
+answer: ★
+```
 
 ## Prefix and Postfix Operators
 
@@ -69,7 +91,6 @@ The prelude defines the standard precedence levels:
 | 55 | bitwise | (bitwise operators) |
 | 50 | cmp | `<`, `>`, `<=`, `>=` |
 | 45 | append | `++`, `<<` |
-| 42 | map | `<$>` |
 | 40 | eq | `=`, `!=` |
 | 35 | bool-prod | `&&`, `∧` |
 | 30 | bool-sum | `\|\|`, `∨` |
@@ -210,20 +231,6 @@ eu -e '[1, 2] ++ [3, 4]'
 - 4
 ```
 
-## The Functor Operator `<$>`
-
-Map a function over a list:
-
-```sh
-eu -e '(* 2) <$> [1, 2, 3]'
-```
-
-```yaml
-- 2
-- 4
-- 6
-```
-
 ## Dot Sections
 
 The dot operator can be used as a section to create lookup functions:
@@ -237,6 +244,45 @@ eu -e '[{x: 1}, {x: 2}, {x: 3}] map(.x)'
 - 2
 - 3
 ```
+
+## Idiot Brackets
+
+Eucalypt lets you define custom Unicode bracket pairs that wrap and
+transform an expression. These are called *idiot brackets* (inspired
+by *idiom brackets* from applicative functor notation, but they are a
+general bracket overloading mechanism).
+
+```eu
+⌈ x ⌉: x * 2
+
+doubled: ⌈ 3 + 4 ⌉
+```
+
+```yaml
+doubled: 14
+```
+
+The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` that
+takes one argument. Using `⌈ expr ⌉` in an expression calls that
+function with `expr`.
+
+Any of the built-in Unicode bracket pairs can be used:
+
+| Open | Close | Name |
+|------|-------|------|
+| `⟦`  | `⟧`   | Mathematical white square brackets |
+| `⟨`  | `⟩`   | Mathematical angle brackets |
+| `⟪`  | `⟫`   | Mathematical double angle brackets |
+| `⌈`  | `⌉`   | Ceiling brackets |
+| `⌊`  | `⌋`   | Floor brackets |
+| `«`  | `»`   | French guillemets |
+
+(and several others — see the
+[syntax reference](../reference/syntax.md) for the full list.)
+
+Idiot brackets can also be given a monadic interpretation for
+sequencing — see [Monads and the monad() Utility](monads.md) for
+details on bracket pair definitions with `:monad` metadata.
 
 ## Key Concepts
 

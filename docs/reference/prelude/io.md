@@ -73,6 +73,8 @@ pattern and the [IO guide](../../guide/io.md) for practical usage.
 | Function | Description |
 |----------|-------------|
 | `monad(m)` | Derive standard monad combinators from `m.bind` and `m.return` |
+| `monad(m).bind` | Passed through from `m.bind` |
+| `monad(m).return` | Passed through from `m.return` |
 | `monad(m).map(f, action)` | Apply pure function `f` to the result of a monadic action (fmap) |
 | `monad(m).then(a, b)` | Sequence two monadic actions, discarding the result of the first |
 | `monad(m).join(mm)` | Flatten a nested monadic value |

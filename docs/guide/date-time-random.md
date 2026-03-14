@@ -80,67 +80,71 @@ now: io.epoch-time
 
 ## Random Numbers
 
-Eucalypt provides pseudo-random number generation using a functional
-stream pattern.
+Eucalypt provides pseudo-random number generation via the `random`
+namespace, which is a state monad over a PRNG stream.
 
-### The Random Stream
+### The random stream
 
-The `io.random` binding is an infinite lazy list of random floats in
-`[0, 1)`:
-
-```eu
-first-value: io.random head
-```
-
-Each run produces different values unless you supply a seed:
+A random stream is provided at startup as `io.random`. Each run
+produces different values unless you supply a seed:
 
 ```sh
 eu --seed 42 example.eu
 ```
 
-### Generating Random Values
+### Single random values
 
-Random functions consume part of the stream and return both a result
-and the remaining stream:
+For a single random value, pass `io.random` as the stream:
 
 ```eu,notest
-result: random-int(100, io.random)
-value: result.value   # a number from 0 to 99
-rest: result.rest     # remaining stream
+roll: random.int(6, io.random).value + 1
+colour: random.choice(["red", "green", "blue"], io.random).value
 ```
 
-### Practical Examples
+Each operation returns a `{value, rest}` block — extract `.value`
+to get the result.
 
-**Rolling dice:**
+### Multiple random values
+
+When you need several random values, you must propagate the stream
+from each call to the next. Reusing `io.random` would give the same
+value each time:
 
 ```eu,notest
-roll: random-int(6, io.random)
-die: roll.value + 1
+# WRONG — both use the same stream, so d1 = d2
+d1: random.int(6, io.random).value
+d2: random.int(6, io.random).value
+
+# RIGHT — thread the stream manually
+r1: random.int(6, io.random)
+r2: random.int(6, r1.rest)
+total: r1.value + r2.value + 2
 ```
 
-**Picking a random element:**
+This manual threading is error-prone. The `random` monad can ease the
+overhead somewhat — use a `{ :random ... }` monadic block or
+combinators like `sequence` and `map-m`:
 
 ```eu,notest
-colours: ["red", "green", "blue"]
-pick: random-choice(colours, io.random)
-colour: pick.value
+# Monadic block — stream threads automatically
+dice: { :random
+  d6: random.int(6)
+  d20: random.int(20)
+}.[d6, d20]
+
+result: dice(io.random).value  # e.g. [3, 14]
+
+# Or use sequence for a list of actions
+two-dice: random.sequence([random.int(6), random.int(6)], io.random).value
 ```
 
-**Shuffling a list:**
+### Other operations
 
 ```eu,notest
-items: ["a", "b", "c", "d"]
-shuffled: shuffle(items, io.random)
-result: shuffled.value
-```
-
-**Sampling without replacement:**
-
-```eu,notest
-pool: range(1, 50)
-drawn: sample(6, pool, io.random)
-lottery: drawn.value
+shuffled: random.shuffle(["a", "b", "c", "d"], io.random).value
+picked: random.sample(3, range(1, 50), io.random).value
 ```
 
 See the [Random Numbers reference](../reference/prelude/random.md) for
-the full API.
+the full API and the [Monads guide](monads.md) for details on the
+state monad pattern.

@@ -787,7 +787,7 @@ def main():
         root = Path(__file__).resolve().parent.parent
 
     prelude_path = root / "lib" / "prelude.eu"
-    output_dir = root / "doc" / "reference" / "prelude"
+    output_dir = root / "docs" / "reference" / "prelude"
     supplements_dir = output_dir / "supplements"
 
     if not prelude_path.exists():

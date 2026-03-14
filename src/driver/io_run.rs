@@ -609,7 +609,7 @@ impl Mutator for CollectListElements {
 ///    is extracted via `peel_meta` and the body closure is evaluated to WHNF.
 ///
 /// 2. **Function-application block** (`io.shell-with`, `io.exec-with`): the spec
-///    block is an App thunk (e.g. `__io-shell-spec(opts, cmd)`).  Evaluating it
+///    block is an App thunk (e.g. `io.shell-with(opts, cmd)`).  Evaluating it
 ///    strips the Meta wrapper (the machine discards metadata when nothing consumes
 ///    it), so the tag must be inferred from the resulting field set: a block with
 ///    `cmd` but no `args` is an `io-shell` action; a block with both is `io-exec`.

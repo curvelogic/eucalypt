@@ -50,7 +50,7 @@ evaluation and purely functional semantics.
 - [Combinators](https://curvelogic.github.io/eucalypt/reference/prelude/combinators.html): 12 combinators including identity, const, compose, flip, apply, curry, uncurry, and cond
 - [Calendar](https://curvelogic.github.io/eucalypt/reference/prelude/calendar.html): 5 date-time functions for creating, parsing, formatting, and decomposing ZDT values
 - [Sets](https://curvelogic.github.io/eucalypt/reference/prelude/sets.html): 11 set operations including from-list, to-list, add, remove, contains, union, intersect, and diff
-- [Random Numbers](https://curvelogic.github.io/eucalypt/reference/prelude/random.html): 5 random functions including random-stream, random-int, random-choice, shuffle, and sample
+- [Random Numbers](https://curvelogic.github.io/eucalypt/reference/prelude/random.html): monadic random namespace with stream, int, float, choice, shuffle, sample, and derived combinators
 - [Metadata](https://curvelogic.github.io/eucalypt/reference/prelude/metadata.html): 7 metadata functions including with-meta, meta, merge-meta, validator, check, and checked
 - [IO](https://curvelogic.github.io/eucalypt/reference/prelude/io.html): 9 IO bindings including io.env, io.args, io.random, eu.build, and eu.requires
 - [CLI Reference](https://curvelogic.github.io/eucalypt/reference/cli.html): Complete command line reference including subcommands, inputs, outputs, evaluands, targets, formatting, LSP, and debugging

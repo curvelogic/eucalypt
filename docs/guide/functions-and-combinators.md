@@ -5,7 +5,8 @@ In this chapter you will learn:
 - How to define and call functions
 - How destructuring parameters work
 - How currying and partial application work
-- The standard combinators: `identity`, `const`, `compose`, `flip`
+- The standard combinators: `identity`, `const`, `compose`, `flip`,
+  and forward composition with `;`
 - How to build functions from other functions without lambdas
 
 ## Defining Functions
@@ -425,6 +426,47 @@ eu -e '(str.prefix("<") ∘ str.suffix(">"))("x")'
 <x>
 ```
 
+### Forward composition `;`
+
+The `;` operator composes in the other direction: `f ; g` applies `f`
+first, then `g`. This reads naturally in pipelines — left to right:
+
+```sh
+eu -e '"hello" (str.letters ; count)'
+```
+
+```yaml
+5
+```
+
+Forward composition is often simpler than `∘` because it follows the
+data flow:
+
+```eu
+` :suppress
+shout: str.to-upper ; str.suffix("!")
+
+result: "hello" shout
+```
+
+```yaml
+result: HELLO!
+```
+
+Use `;` when building a pipeline from smaller steps:
+
+```sh
+eu -e '[3, 1, 4, 1, 5] map(inc ; (* 2))'
+```
+
+```yaml
+- 8
+- 4
+- 10
+- 4
+- 12
+```
+
 ### `flip`
 
 Swap the first two arguments of a function:
@@ -503,7 +545,7 @@ from:
 1. **Named functions** -- the clearest approach
 2. **Partial application** -- `add(5)`, `* 2`
 3. **Sections** -- `(+ 1)`, `(> 0)`
-4. **Composition** -- `f ∘ g`
+4. **Composition** -- `f ∘ g` or `g ; f`
 5. **Anaphora** -- `_ + 1`, `_0 * _0` (see next chapters)
 
 These compose naturally:
@@ -528,7 +570,7 @@ people: [
 format(p): "{p.name}: age {p.age}"
 
 directory: people
-  filter(_.age >= 30)
+  filter(.age >= 30)
   map(format)
 ```
 
@@ -551,7 +593,8 @@ directory:
 - All functions are **curried**: partial application is automatic
 - **Sections** give partial application for operators: `(+ 1)`,
   `(> 3)`
-- **Combinators** like `identity`, `const`, `compose`, `flip` build
-  new functions from existing ones
+- **Combinators** like `identity`, `const`, `compose` (`∘`),
+  forward-compose (`;`), and `flip` build new functions from existing
+  ones
 - Prefer named functions for anything complex; use partial application
   and sections for simple cases
