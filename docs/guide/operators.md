@@ -2,7 +2,7 @@
 
 In this chapter you will learn:
 
-- How to define custom binary, prefix, and postfix operators
+- How to define custom nullary, binary, prefix, and postfix operators
 - How precedence and associativity work
 - How to control operator behaviour with metadata
 - The built-in operators provided by the prelude
@@ -25,6 +25,28 @@ result: 8
 Operator names use symbolic characters: `+`, `-`, `*`, `/`, `<`, `>`,
 `|`, `&`, `!`, `@`, `#`, `~`, `^`, and any Unicode symbol or
 punctuation characters.
+
+## Nullary Operators
+
+A nullary operator takes no operands — it is a constant written as a
+symbol:
+
+```eu
+(∅): '__SET.EMPTY'
+result: ∅ set.to-list
+```
+
+```yaml
+result: []
+```
+
+The empty set `∅` is the only nullary operator in the standard prelude,
+but you can define your own:
+
+```eu,notest
+(★): 42
+answer: ★
+```
 
 ## Prefix and Postfix Operators
 
@@ -69,7 +91,6 @@ The prelude defines the standard precedence levels:
 | 55 | bitwise | (bitwise operators) |
 | 50 | cmp | `<`, `>`, `<=`, `>=` |
 | 45 | append | `++`, `<<` |
-| 42 | map | `<$>` |
 | 40 | eq | `=`, `!=` |
 | 35 | bool-prod | `&&`, `∧` |
 | 30 | bool-sum | `\|\|`, `∨` |
@@ -208,20 +229,6 @@ eu -e '[1, 2] ++ [3, 4]'
 - 2
 - 3
 - 4
-```
-
-## The Functor Operator `<$>`
-
-Map a function over a list:
-
-```sh
-eu -e '(* 2) <$> [1, 2, 3]'
-```
-
-```yaml
-- 2
-- 4
-- 6
 ```
 
 ## Dot Sections

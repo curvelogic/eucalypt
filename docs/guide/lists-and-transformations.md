@@ -156,20 +156,6 @@ eu -e '[1, 2, 3, 4, 5] remove(> 3)'
 - 3
 ```
 
-### The Functor Operator `<$>`
-
-The `<$>` operator is an alias for `map`:
-
-```sh
-eu -e 'inc <$> [1, 2, 3]'
-```
-
-```yaml
-- 2
-- 3
-- 4
-```
-
 ## Folding
 
 Folds reduce a list to a single value by applying a binary function
