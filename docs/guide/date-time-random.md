@@ -105,7 +105,7 @@ operation is an *action* — a function from stream to
 `{value, rest}`. Call it with a stream to run it:
 
 ```eu,notest
-roll: random.int(6)(io.random).value + 1
+roll: random.int(6, io.random).value + 1
 ```
 
 Use `random.sequence` or `random.map-m` to compose multiple actions
@@ -116,35 +116,35 @@ without manually threading the stream.
 **Rolling dice:**
 
 ```eu,notest
-roll: random.int(6)(io.random).value + 1
+roll: random.int(6, io.random).value + 1
 ```
 
 **Picking a random element:**
 
 ```eu,notest
 colours: ["red", "green", "blue"]
-colour: random.choice(colours)(io.random).value
+colour: random.choice(colours, io.random).value
 ```
 
 **Shuffling a list:**
 
 ```eu,notest
 items: ["a", "b", "c", "d"]
-result: random.shuffle(items)(io.random).value
+result: random.shuffle(items, io.random).value
 ```
 
 **Sampling without replacement:**
 
 ```eu,notest
 pool: range(1, 50)
-lottery: random.sample(6, pool)(io.random).value
+lottery: random.sample(6, pool, io.random).value
 ```
 
 **Composing multiple random operations:**
 
 ```eu,notest
-two-dice: random.sequence([random.int(6), random.int(6)])(io.random).value
-five-rolls: random.map-m(random.int, [6, 6, 6, 6, 6])(io.random).value
+two-dice: random.sequence([random.int(6), random.int(6)], io.random).value
+five-rolls: random.map-m(random.int, [6, 6, 6, 6, 6], io.random).value
 ```
 
 See the [Random Numbers reference](../reference/prelude/random.md) for

@@ -14,8 +14,16 @@ a namespace.
 | `return(v)` | Wrap a pure value as a monadic action |
 | `bind(action, f)` | Run an action, pass its result to `f`, return a new action |
 
-Everything else — `map`, `then`, `join`, `sequence`, `map-m`,
-`filter-m` — can be derived automatically from those two.
+With these two primitives available an alternative interpretation of the block
+structure, _monadic blocks_ can be used.
+
+Other monadic functions — `map`, `then`, `join`, `sequence`, `map-m`,
+`filter-m` — are typically provided in the same namespace and can be
+derived automatically with the aid of the `monad` function.
+
+Monads are required for performing [IO from eucalypt code](io.md) and
+may be used to simplify random number access. Users may define monads
+themselves and assign unicode brackets to them if they so wish.
 
 ---
 
@@ -214,8 +222,8 @@ block — the state threads through automatically via `bind`.
 
 ```eu,notest
 # Thread the stream manually through each step
-r1: random.int(6)(io.random)
-r2: random.int(6)(r1.rest)
+r1: random.int(6, io.random)
+r2: random.int(6, r1.rest)
 total: r1.value + r2.value + 2
 ```
 
@@ -224,10 +232,32 @@ error-prone and verbose.
 
 ### With the monad: automatic threading
 
+A `{ :random ... }` monadic block threads the stream automatically:
+
 ```eu,notest
-# random.sequence handles the threading
-two-dice: random.sequence([random.int(6), random.int(6)])
+triple: { :random
+  d6: random.int(6)
+  d20: random.int(20)
+  d100: random.int(100)
+}.[d6, d20, d100]
+
+result: triple(random.stream(42)).value  # e.g. [3, 14, 57]
+```
+
+Each step receives the stream left over from the previous step —
+no manual `.rest` threading needed. The return expression
+(`.[d6, d20, d100]`) collects the results.
+
+For common patterns, `sequence` and `map-m` are even more concise:
+
+```eu,notest
+# Sequence a list of actions
+two-dice: random.sequence[random.int(6), random.int(6)]
 result: two-dice(random.stream(42)).value  # list of two rolls
+
+# Map an action over a list
+dice: random.map-m(random.int, [4, 6, 8, 10, 20])
+rolls: dice(random.stream(42)).value   # e.g. [2, 4, 1, 7, 15]
 ```
 
 ### Running an action
@@ -236,20 +266,11 @@ An action is a function from stream to `{value, rest}`. Call it with
 `random.stream(seed)` to run it:
 
 ```eu,notest
-roll: random.int(6)(random.stream(42)).value   # integer in [0,6)
+roll: random.int(6, random.stream(42)).value   # integer in [0,6)
 ```
 
 Only extract `.value` — rendering the full result block would try to
 print the infinite `.rest` stream.
-
-### Chaining with map-m
-
-Roll five dice of different sizes:
-
-```eu,notest
-dice: random.map-m(random.int, [4, 6, 8, 10, 20])
-rolls: dice(random.stream(42)).value   # e.g. [2, 4, 1, 7, 15]
-```
 
 ### Implementing the state monad pattern
 

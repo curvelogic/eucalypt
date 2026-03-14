@@ -349,7 +349,7 @@ Use `io.random` for a stream of random floats, or pass `--seed` for
 reproducible output:
 
 ```eu,notest
-die: random.int(6)(io.random).value + 1
+die: random.int(6, io.random).value + 1
 ```
 
 ```sh

@@ -42,7 +42,7 @@ An action is called with a stream; it returns a block with `value` and
 `rest`:
 
 ```eu,notest
-r: random.int(6)(random.stream(42))
+r: random.int(6, random.stream(42))
 die-roll: r.value    # integer in [0,6)
 next-stream: r.rest  # stream for further operations
 ```
@@ -50,7 +50,7 @@ next-stream: r.rest  # stream for further operations
 ### Composing actions with sequence
 
 ```eu,notest
-two-dice: random.sequence([random.int(6), random.int(6)])(random.stream(42)).value
+two-dice: random.sequence([random.int(6), random.int(6)], random.stream(42)).value
 # => e.g. [4, 0]
 ```
 
@@ -63,7 +63,7 @@ dice: monad{bind: random.bind, return: random.return} {
   d6: random.int(6)
   d20: random.int(20)
 }
-roll: dice.sequence([dice.d6, dice.d20])(random.stream(42)).value
+roll: dice.sequence([dice.d6, dice.d20], random.stream(42)).value
 ```
 
 ### Reference
@@ -98,6 +98,6 @@ eu --seed 42 my-template.eu
 
 ```eu,notest
 stream: random.stream(12345)
-x: random.int(100)(stream).value
+x: random.int(100, stream).value
 # x is always the same for seed 12345
 ```
