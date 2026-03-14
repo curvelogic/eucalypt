@@ -10,7 +10,7 @@ All notable changes to eucalypt are documented here.
   - `{ :io r: io.shell("cmd") }.(r.stdout)` — monadic block syntax with bind/return desugaring
   - `io.shell(c)`, `io.shell-with(opts, c)` — run shell commands via `sh -c`
   - `io.exec([cmd : args])`, `io.exec-with(opts, [cmd : args])` — exec processes directly
-  - `io.check(r)`, `io.bind`, `io.return`, `io.map`, `io.fail`
+  - `io.check(r)`, `io.checked`, `io.bind`, `io.return`, `io.map`, `io.and-then`, `io.fail`
   - `--allow-io` / `-I` CLI flag required to enable IO operations
   - Results as `{stdout, stderr, exit-code}` blocks
   - Spawn failures return result blocks (exit-code 127) rather than hard errors
@@ -23,7 +23,8 @@ All notable changes to eucalypt are documented here.
   - Data-only mode: untrusted input (e.g. shell output) never executes embedded code
 
 - **`monad(m)`** — Derive standard monad combinators from a block with `bind` and `return` fields
-  - Returns a block with `map`, `then`, `join`, `sequence`, `map-m`, `filter-m`
+  - Returns a block with `map`, `and-then`, `then`, `join`, `sequence`, `map-m`, `filter-m`
+  - `and-then(f, action)` — bind with flipped args for pipeline use
   - Compose with `{ ... }` to build monadic namespaces: `monad(m) { extra-field: ... }`
 
 - **Monadic `random:` namespace** — State-monad interface to the PRNG
