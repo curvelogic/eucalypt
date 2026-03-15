@@ -2172,11 +2172,21 @@ impl Allocator for Heap {
     fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader> {
         // SAFETY: Pointer arithmetic is valid because:
         // - All objects are allocated with an AllocHeader prefix
-        // - offset(-1) moves back exactly size_of::<AllocHeader>() bytes
+        // - The header is at `object_ptr - size_of::<AllocHeader>()` bytes
         // - The pointer came from alloc() which guarantees this layout
         // - NonNull input guarantees non-null result
-        let header_ptr =
-            unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) };
+        //
+        // Uses byte_sub instead of offset(-1) to avoid UB when Rust's
+        // pointer provenance checks flag cross-object offset arithmetic.
+        let header_ptr = unsafe {
+            NonNull::new_unchecked(
+                object
+                    .as_ptr()
+                    .cast::<u8>()
+                    .sub(size_of::<AllocHeader>())
+                    .cast::<AllocHeader>(),
+            )
+        };
         debug_assert!(header_ptr.as_ptr() as usize > 0);
         header_ptr
     }
@@ -2185,9 +2195,17 @@ impl Allocator for Heap {
     fn get_object(&self, header: NonNull<AllocHeader>) -> NonNull<()> {
         // SAFETY: Pointer arithmetic is valid because:
         // - Headers are always followed by their object data
-        // - offset(1) moves forward exactly size_of::<AllocHeader>() bytes
+        // - The object is at `header_ptr + size_of::<AllocHeader>()` bytes
         // - The header came from an allocation with this layout
-        unsafe { NonNull::new_unchecked(header.as_ptr().offset(1)).cast::<()>() }
+        unsafe {
+            NonNull::new_unchecked(
+                header
+                    .as_ptr()
+                    .cast::<u8>()
+                    .add(size_of::<AllocHeader>())
+                    .cast::<()>(),
+            )
+        }
     }
 }
 
