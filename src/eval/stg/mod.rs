@@ -130,6 +130,9 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(string::Dq));
     rt.add(Box::new(string::Upper));
     rt.add(Box::new(string::Lower));
+    rt.add(Box::new(string::Replace));
+    rt.add(Box::new(string::Contains));
+    rt.add(Box::new(string::Trim));
     rt.add(Box::new(force::SeqStrList));
     rt.add(Box::new(meta::Meta));
     rt.add(Box::new(meta::RawMeta));

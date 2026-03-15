@@ -839,6 +839,21 @@ lazy_static! {
             ty: function(vec![sym(), str_(), any()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 158
+            name: "STR_REPLACE",
+            ty: function(vec![str_(), str_(), str_(), str_()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 159
+            name: "STR_CONTAINS",
+            ty: function(vec![str_(), str_(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 160
+            name: "STR_TRIM",
+            ty: function(vec![str_(), str_()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 
