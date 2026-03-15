@@ -658,8 +658,18 @@ max-of(l): cond( [[l nil?,      panic("max of empty list")]
                , [count(l) = 1, l head]]
 	       , max(l head, max-of(l tail)))
 
-` "`max-of-by(f, l)` - return maximum value of `f(x)` across elements of `l`."
-max-of-by(f, l): l map(f) max-of
+` "`max-of-by(f, l)` - return the element of `l` that maximises `f`. Error if empty."
+max-of-by(f, l): {
+  step(acc, x): {
+    v: x f
+    better: v > (acc second)
+  }.(if(better, [x, v], acc))
+  init: [l head, l head f]
+}.( foldl(step, init, l tail) head )
+
+
+` "`max-map(f, l)` - return maximum value of `f(x)` across elements of `l`."
+max-map(f, l): l map(f) max-of
 
 ` "`max-of-or(d, l)` - return max element in list `l`, or default `d` if empty."
 max-of-or(d, l): l nil? then(d, max-of(l))
@@ -672,8 +682,18 @@ min-of(l): cond( [[l nil?,      panic("min of empty list")]
                , [count(l) = 1, l head]]
 	       , min(l head, min-of(l tail)))
 
-` "`min-of-by(f, l)` - return minimum value of `f(x)` across elements of `l`."
-min-of-by(f, l): l map(f) min-of
+` "`min-of-by(f, l)` - return the element of `l` that minimises `f`. Error if empty."
+min-of-by(f, l): {
+  step(acc, x): {
+    v: x f
+    better: v < (acc second)
+  }.(if(better, [x, v], acc))
+  init: [l head, l head f]
+}.( foldl(step, init, l tail) head )
+
+
+` "`min-map(f, l)` - return minimum value of `f(x)` across elements of `l`."
+min-map(f, l): l map(f) min-of
 
 ` "`min-of-or(d, l)` - return min element in list `l`, or default `d` if empty."
 min-of-or(d, l): l nil? then(d, min-of(l))

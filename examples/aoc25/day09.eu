@@ -38,7 +38,7 @@ best-from(ps): ps tail map(area(ps head)) max-of
 best-area(pts):
   tails(pts)
     filter(count ; (> 1))
-    max-of-by(best-from)
+    max-map(best-from)
 
 parse(data): data filter(!= "") map(parse-coord)
 
