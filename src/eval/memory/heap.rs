@@ -2175,6 +2175,8 @@ impl Allocator for Heap {
 
         // Diagnostic: catch bad pointers before they cause UB in offset(-1)
         if obj_addr < header_size {
+            // Force a backtrace by setting the env var before panicking
+            std::env::set_var("RUST_BACKTRACE", "1");
             panic!(
                 "get_header: object pointer {:#x} is too low to have a header \
                  (need at least {header_size} bytes before it). \
