@@ -2170,15 +2170,28 @@ impl Allocator for Heap {
 
     /// Get header from object pointer
     fn get_header<T>(&self, object: NonNull<T>) -> NonNull<AllocHeader> {
+        let obj_addr = object.as_ptr() as usize;
+        let header_size = size_of::<AllocHeader>();
+
+        // Diagnostic: catch bad pointers before they cause UB in offset(-1)
+        if obj_addr < header_size {
+            panic!(
+                "get_header: object pointer {:#x} is too low to have a header \
+                 (need at least {header_size} bytes before it). \
+                 type={}, size={}. This indicates a dangling or corrupt heap pointer.",
+                obj_addr,
+                std::any::type_name::<T>(),
+                size_of::<T>(),
+            );
+        }
+
         // SAFETY: Pointer arithmetic is valid because:
         // - All objects are allocated with an AllocHeader prefix
         // - offset(-1) moves back exactly size_of::<AllocHeader>() bytes
         // - The pointer came from alloc() which guarantees this layout
         // - NonNull input guarantees non-null result
-        let header_ptr =
-            unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) };
-        debug_assert!(header_ptr.as_ptr() as usize > 0);
-        header_ptr
+        // - We've verified obj_addr >= header_size so offset won't underflow
+        unsafe { NonNull::new_unchecked(object.cast::<AllocHeader>().as_ptr().offset(-1)) }
     }
 
     /// Get object from header pointer
