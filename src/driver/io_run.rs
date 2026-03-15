@@ -33,9 +33,8 @@ use crate::eval::{
         symbol::SymbolPool,
         syntax::{HeapSyn, Native, Ref, RefPtr, StgBuilder},
     },
-    stg::{render_to_string::render_closure_to_emitter, tags::DataConstructor},
+    stg::{render_to_string::extract_scalar_string, tags::DataConstructor},
 };
-use crate::export;
 
 // ─── Public error type ────────────────────────────────────────────────────────
 
@@ -404,58 +403,33 @@ fn peel_box_inner(machine: &Machine<'_>, closure: SynClosure) -> Option<SynClosu
     machine.mutate(PeelBox(closure), ()).ok().flatten()
 }
 
-/// Render a WHNF closure to a Rust `String` using the text emitter.
+/// Extract a string value from a WHNF closure.
 ///
-/// Returns `None` if the result is empty or consists only of the YAML document
-/// separator `---` (which the text emitter emits for null/unit values).
+/// Returns `None` if the closure contains a complex value (block, list)
+/// or an empty/null value.
 ///
-/// This is the canonical way to extract a string value from an evaluated spec
-/// block field.  It uses `render_closure_to_emitter` so it correctly handles
-/// all value forms, including `BoxedString(L(i))` closures produced by the STG
-/// intrinsic wrapper.
+/// This is the canonical way to read a simple scalar from an evaluated
+/// spec-block field.  It handles raw atoms and boxed scalars directly
+/// without needing the full render emitter machinery.
 fn render_whnf_to_string(
     machine: &Machine<'_>,
     closure: SynClosure,
 ) -> Result<Option<String>, ExecutionError> {
-    struct RenderField {
+    struct ExtractField {
         closure: SynClosure,
         pool: SymbolPool,
-        root_env: RefPtr<EnvFrame>,
     }
-    impl Mutator for RenderField {
+    impl Mutator for ExtractField {
         type Input = ();
         type Output = Option<String>;
         fn run(&self, view: &MutatorHeapView, _: ()) -> Result<Option<String>, ExecutionError> {
-            let mut buffer: Vec<u8> = Vec::new();
-            {
-                let mut emitter = export::create_emitter("text", &mut buffer)
-                    .ok_or_else(|| ExecutionError::Panic("text emitter unavailable".to_string()))?;
-                render_closure_to_emitter(
-                    self.closure.clone(),
-                    &self.pool,
-                    self.root_env,
-                    *view,
-                    emitter.as_mut(),
-                    None,
-                )?;
-            }
-            let s = match String::from_utf8(buffer) {
-                Ok(s) => s,
-                Err(_) => return Ok(None),
-            };
-            let trimmed = s.trim().to_string();
-            if trimmed.is_empty() || trimmed == "---" {
-                Ok(None)
-            } else {
-                Ok(Some(trimmed.trim_start_matches("---").trim().to_string()))
-            }
+            Ok(extract_scalar_string(view, &self.pool, &self.closure))
         }
     }
     machine.mutate(
-        RenderField {
+        ExtractField {
             closure,
             pool: machine.symbol_pool().clone(),
-            root_env: machine.root_env(),
         },
         (),
     )

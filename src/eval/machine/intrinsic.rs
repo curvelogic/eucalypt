@@ -52,16 +52,19 @@ pub trait IntrinsicMachine {
     /// Current source annotation for error reporting
     fn annotation(&self) -> Smid;
 
-    /// Force a closure to WHNF by running the machine.
+    /// Request an emitter capture for the given format.
     ///
-    /// This is used by intrinsics that need to evaluate lazy values
-    /// (e.g. RENDER_TO_STRING traversing nested block values).
-    /// Only valid during BIF execution — panics otherwise.
-    fn force_to_whnf(
-        &mut self,
-        view: MutatorHeapView<'_>,
-        closure: SynClosure,
-    ) -> Result<SynClosure, ExecutionError>;
+    /// Sets a pending flag that `Machine::step()` reads to push a
+    /// format-specific capture emitter.  All subsequent emit BIF
+    /// output goes to the capture buffer until `CaptureEnd` fires.
+    fn start_capture(&mut self, format: &str) -> Result<(), ExecutionError>;
+
+    /// Push a `CaptureEnd` continuation onto the STG stack.
+    fn push_capture_end(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError>;
+
+    /// Take the latest capture result string (set by `Machine::step()`
+    /// after a `CaptureEnd` continuation fires).
+    fn take_capture_result(&mut self) -> Result<String, ExecutionError>;
 }
 
 /// All intrinsics have an STG syntax wrapper

@@ -267,16 +267,14 @@ pub struct MachineState {
     /// into this stash ensures they are scanned as GC roots for the
     /// duration of the io-run loop.
     stash: Vec<SynClosure>,
-    /// Temporary storage for BIF execution context.
-    ///
-    /// During BIF execution, `handle_instruction` stores raw pointers
-    /// to the intrinsics slice, emitter, and metrics so that
-    /// `force_to_whnf` can re-enter the step loop.  These pointers are
-    /// valid only for the duration of the BIF call (they point into the
-    /// enclosing `Machine::step()` call frame).  Cleared immediately
-    /// after each BIF returns.
-    bif_intrinsics: Option<*const &'static dyn StgIntrinsic>,
-    bif_intrinsics_len: usize,
+    /// Set by `CaptureEnd` continuation to signal `Machine::step()` to
+    /// pop the capture emitter and produce the result string.
+    capture_end_pending: bool,
+    /// Captured string results from completed emitter captures.
+    capture_results: Vec<String>,
+    /// Format name for a pending capture start, set by `start_capture()`.
+    /// `Machine::step()` reads this to push the actual emitter.
+    pending_capture_start: Option<String>,
 }
 
 impl Default for MachineState {
@@ -295,8 +293,9 @@ impl Default for MachineState {
             symbol_pool: SymbolPool::new(),
             suppress_next_update: false,
             stash: Vec::new(),
-            bif_intrinsics: None,
-            bif_intrinsics_len: 0,
+            capture_end_pending: false,
+            capture_results: Vec::new(),
+            pending_capture_start: None,
         }
     }
 }
@@ -443,18 +442,7 @@ impl MachineState {
             }
             HeapSyn::Bif { intrinsic, args } => {
                 let bif = intrinsics[intrinsic as usize];
-                // Store intrinsics pointer so force_to_whnf can
-                // re-enter the step loop.  SAFETY: intrinsics is a
-                // shared (&) slice that lives in the enclosing call
-                // frame and outlives the bif.execute() call.
-                self.bif_intrinsics = Some(unsafe {
-                    std::mem::transmute::<*const &dyn StgIntrinsic, *const &'static dyn StgIntrinsic>(
-                        intrinsics.as_ptr(),
-                    )
-                });
-                self.bif_intrinsics_len = intrinsics.len();
-                let result = bif
-                    .execute(self, view, emitter, args.as_slice())
+                bif.execute(self, view, emitter, args.as_slice())
                     .inspect_err(|_| {
                         // Set annotation to the BIF's own annotation so
                         // errors report the correct intrinsic context
@@ -464,9 +452,7 @@ impl MachineState {
                                 self.annotation = bif_ann;
                             }
                         }
-                    });
-                self.bif_intrinsics = None;
-                result?;
+                    })?;
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
@@ -613,6 +599,9 @@ impl MachineState {
                         or_else,
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
+                }
+                Continuation::CaptureEnd => {
+                    self.capture_end_pending = true;
                 }
             }
         } else {
@@ -838,6 +827,9 @@ impl MachineState {
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
+                Continuation::CaptureEnd => {
+                    self.capture_end_pending = true;
+                }
             }
         } else if DataConstructor::is_io_constructor(tag) {
             // IO constructor at the top level with nothing left to
@@ -927,6 +919,9 @@ impl MachineState {
                         view.from_closure(self.closure.clone(), environment, self.annotation)?,
                     );
                 }
+                Continuation::CaptureEnd => {
+                    self.capture_end_pending = true;
+                }
             }
         } else {
             self.terminated = true
@@ -949,6 +944,7 @@ impl MachineState {
                     let cont_env = view.scoped(*environment);
                     cont_env.annotation()
                 }
+                Continuation::CaptureEnd => continue,
             };
             if smid.is_valid() {
                 return smid;
@@ -976,6 +972,7 @@ impl MachineState {
                     let cont_env = view.scoped(*environment);
                     cont_env.annotation()
                 }
+                Continuation::CaptureEnd => Smid::default(),
             };
 
             if smid != Smid::default() && smid != prev {
@@ -1048,68 +1045,19 @@ impl IntrinsicMachine for MachineState {
         self.annotation
     }
 
-    /// Force a closure to WHNF by saving/restoring the machine state
-    /// and running the step loop.
-    ///
-    /// Only valid during BIF execution — panics if the BIF context
-    /// pointers are not set.
-    fn force_to_whnf(
-        &mut self,
-        view: MutatorHeapView<'_>,
-        closure: SynClosure,
-    ) -> Result<SynClosure, ExecutionError> {
-        // SAFETY: bif_intrinsics was set by handle_instruction just
-        // before calling bif.execute() and points into the still-live
-        // Machine::step() call frame.  Intrinsics are shared (&)
-        // references so no aliasing concern.
-        let intrinsics_ptr = self
-            .bif_intrinsics
-            .expect("force_to_whnf called outside BIF execution");
-        let intrinsics_len = self.bif_intrinsics_len;
-        let intrinsics: &[&dyn StgIntrinsic] =
-            unsafe { std::slice::from_raw_parts(intrinsics_ptr, intrinsics_len) };
+    fn start_capture(&mut self, format: &str) -> Result<(), ExecutionError> {
+        self.pending_capture_start = Some(format.to_string());
+        Ok(())
+    }
 
-        // Use a private NullEmitter and Metrics to avoid aliasing the
-        // caller's mutable references (which would be UB).  We are
-        // only forcing a thunk to WHNF — emitter output is discarded
-        // and metrics are unimportant.
-        let mut null_emitter = crate::eval::emit::NullEmitter;
-        let mut force_metrics = Metrics::default();
+    fn push_capture_end(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
+        self.push(view, Continuation::CaptureEnd)
+    }
 
-        // Save the current machine state.
-        let saved_stack = std::mem::take(&mut self.stack);
-        let saved_closure = std::mem::replace(&mut self.closure, closure);
-        let saved_terminated = self.terminated;
-        let saved_annotation = self.annotation;
-        self.terminated = false;
-
-        // Run the step loop until the thunk reaches WHNF.
-        let step_limit = 100_000;
-        let mut steps = 0;
-        while !self.terminated && !self.yielded_io {
-            steps += 1;
-            if steps > step_limit {
-                // Restore state before returning error.
-                self.stack = saved_stack;
-                self.closure = saved_closure;
-                self.terminated = saved_terminated;
-                self.annotation = saved_annotation;
-                return Err(ExecutionError::Panic(
-                    "force_to_whnf exceeded step limit".to_string(),
-                ));
-            }
-            self.handle_instruction(view, &mut null_emitter, intrinsics, &mut force_metrics)?;
-        }
-
-        let result = self.closure.clone();
-
-        // Restore the saved state.
-        self.stack = saved_stack;
-        self.closure = saved_closure;
-        self.terminated = saved_terminated;
-        self.annotation = saved_annotation;
-
-        Ok(result)
+    fn take_capture_result(&mut self) -> Result<String, ExecutionError> {
+        self.capture_results
+            .pop()
+            .ok_or_else(|| ExecutionError::Panic("no capture result available".to_string()))
     }
 }
 
@@ -1187,6 +1135,13 @@ pub struct Machine<'a> {
     metrics: Metrics,
     /// Clock
     clock: Clock,
+    /// Stack of capture emitters for render-to-string.
+    ///
+    /// When `RENDER_TO_STRING` fires, a format-specific capture emitter
+    /// is pushed here.  All subsequent emit BIF output goes to the top
+    /// capture emitter until `CaptureEnd` fires, at which point the
+    /// emitter is popped and its buffer extracted as a string.
+    capture_emitters: Vec<crate::eval::stg::render_to_string::OwnedCaptureEmitter>,
 }
 
 impl<'a> Machine<'a> {
@@ -1208,6 +1163,7 @@ impl<'a> Machine<'a> {
             },
             metrics: Metrics::default(),
             clock: Clock::default(),
+            capture_emitters: Vec::new(),
         }
     }
 
@@ -1289,10 +1245,17 @@ impl<'a> Machine<'a> {
         &MachineSettings,
         &[&dyn StgIntrinsic],
     ) {
+        // When a capture emitter is active, route all emit output to it
+        // instead of the main emitter.
+        let emitter: &mut dyn Emitter = if let Some(top) = self.capture_emitters.last_mut() {
+            top as &mut dyn Emitter
+        } else {
+            self.emitter.as_mut()
+        };
         (
             &mut self.state,
             MutatorHeapView::new(&self.heap),
-            self.emitter.as_mut(),
+            emitter,
             &mut self.metrics,
             &self.settings,
             &self.intrinsics,
@@ -1355,6 +1318,7 @@ impl<'a> Machine<'a> {
                         (branch, update, apply + 1, demeta)
                     }
                     super::cont::Continuation::DeMeta { .. } => (branch, update, apply, demeta + 1),
+                    super::cont::Continuation::CaptureEnd => (branch, update, apply, demeta),
                 },
             );
             eprintln!(
@@ -1371,7 +1335,35 @@ impl<'a> Machine<'a> {
                     state.nav(view).env_trace(),
                     state.stack_trace(&view),
                 )
-            })
+            })?;
+
+        // Handle capture lifecycle from the step just executed.
+
+        // If a capture start was requested, push the capture emitter.
+        if let Some(format) = self.state.pending_capture_start.take() {
+            let mut capture =
+                crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(&format)?;
+            capture.stream_start();
+            self.capture_emitters.push(capture);
+        }
+
+        // If CaptureEnd fired, pop the emitter and set the result string
+        // as the machine's closure.
+        if self.state.capture_end_pending {
+            self.state.capture_end_pending = false;
+            let mut capture = self
+                .capture_emitters
+                .pop()
+                .ok_or_else(|| ExecutionError::Panic("no active capture emitter".to_string()))?;
+            capture.stream_end();
+            let result_str = capture.into_string()?;
+            let view = MutatorHeapView::new(&self.heap);
+            let str_ref = view.str_ref(result_str)?;
+            let atom = view.alloc(HeapSyn::Atom { evaluand: str_ref })?.as_ptr();
+            self.state.closure = SynClosure::new(atom, self.state.root_env);
+        }
+
+        Ok(())
     }
 
     /// Run the machine until termination or step limit
