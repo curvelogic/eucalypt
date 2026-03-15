@@ -1,535 +1,109 @@
 //! RENDER_TO_STRING intrinsic — serialises a eucalypt value to a string
 //!
-//! Takes two strict arguments: (value, format_sym), where format_sym is a
-//! symbol such as `:yaml`, `:json`, `:toml`, `:text`, `:edn`, or `:html`.
+//! Uses the emitter-capture approach: pushes a format-specific capture
+//! emitter onto the machine's emitter stack, sets the closure to
+//! `RENDER_DOC(value)`, and pushes a `CaptureEnd` continuation.  When
+//! `RENDER_DOC` completes and the `CaptureEnd` fires, `Machine::step()`
+//! pops the capture emitter and extracts the buffered output as a string.
 //!
-//! The value must already be at WHNF (it is declared strict so the wrapper
-//! ensures this).  The intrinsic traverses the heap tree directly in Rust,
-//! emitting events to a `Vec<u8>` buffer via the existing `Emitter` trait,
-//! and returns the resulting UTF-8 string as a `Native::Str`.
-//!
-//! This avoids any recursive machine re-entry: because the value is forced
-//! before the BIF executes we can walk the heap without needing to run the
-//! STG machine again.
-
-use std::convert::TryInto;
+//! This avoids any heap-walk code or recursive machine re-entry.
 
 use crate::{
-    common::sourcemap::Smid,
     eval::{
-        emit::{Emitter, RenderMetadata},
+        emit::{Emitter, Event},
         error::ExecutionError,
-        machine::{
-            env::{EnvFrame, SynClosure},
-            env_builder::EnvBuilder,
-            intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
-        },
+        intrinsics,
+        machine::intrinsic::{CallGlobal2, IntrinsicMachine, StgIntrinsic},
         memory::{
             alloc::ScopedAllocator,
             array::Array,
             mutator::MutatorHeapView,
-            ndarray::HeapNdArray,
-            set::Primitive as SetPrimitive,
-            symbol::{SymbolId, SymbolPool},
-            syntax::{HeapSyn, Native, Ref, RefPtr},
+            syntax::{HeapSyn, Ref},
         },
-        primitive::Primitive,
     },
     export,
 };
 
-use super::{
-    support::{machine_return_str, sym_arg},
-    tags::DataConstructor,
-};
+use super::{support::sym_arg, tags::DataConstructor};
 
-/// Resolve a constructor arg `Ref` to a `SynClosure` relative to `closure`'s
-/// environment.
+// ─── OwnedCaptureEmitter ─────────────────────────────────────────────────────
+
+/// An emitter that owns both its output buffer and the format-specific
+/// emitter that writes to it.
 ///
-/// Constructor args in the STG heap can be:
-/// - `Ref::L(i)` — a local environment slot (the common case).
-/// - `Ref::V(n)` — an inline native value; wrap it in a heap `Atom`.
-/// - `Ref::G(i)` — a global; fall back to an `Atom` wrapping the ref.
+/// # Safety invariant
 ///
-/// The `navigate_local` method on `SynClosure` only handles `Ref::L` and
-/// panics for other cases.  This helper handles all three variants so that
-/// render traversal does not crash on blocks with small literal values.
-fn resolve_cons_arg(
-    closure: &SynClosure,
-    view: &MutatorHeapView<'_>,
-    r: Ref,
-    root_env: RefPtr<EnvFrame>,
-) -> Result<SynClosure, ExecutionError> {
-    match r {
-        Ref::L(i) => {
-            let env = view.scoped(closure.env());
-            (*env)
-                .get(view, i)
-                .ok_or(ExecutionError::BadEnvironmentIndex(i))
-        }
-        Ref::V(_) | Ref::G(_) => {
-            // Wrap the inline/global ref in a heap Atom so the caller can
-            // render it via the normal closure traversal path.
-            let atom = view.alloc(HeapSyn::Atom { evaluand: r })?.as_ptr();
-            Ok(SynClosure::new(atom, root_env))
-        }
+/// The `emitter` field borrows from `buffer` via a lifetime-erased raw
+/// pointer.  Field declaration order guarantees that `emitter` is dropped
+/// before `buffer` (Rust drops fields in declaration order).
+/// A heap-allocated byte buffer with a stable address.
+///
+/// Wraps a `Vec<u8>` inside a `Box` so that the emitter can hold a raw
+/// pointer into the buffer that remains valid even if the outer struct
+/// is moved (e.g. when the `Vec<OwnedCaptureEmitter>` on the machine
+/// grows and reallocates).
+struct StableBuffer(Vec<u8>);
+
+impl std::io::Write for StableBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
     }
 }
 
-/// Convert a set primitive to a render primitive
-fn set_primitive_to_render_primitive(
-    prim: &SetPrimitive,
-    pool: &SymbolPool,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) -> Primitive {
-    match prim {
-        SetPrimitive::Num(n) => {
-            let num = serde_json::Number::from_f64(n.into_inner())
-                .unwrap_or_else(|| serde_json::Number::from(0));
-            Primitive::Num(num)
-        }
-        SetPrimitive::Str(s) => Primitive::Str(s.clone()),
-        SetPrimitive::Sym(id) => Primitive::Sym(resolve_symbol(*id, pool, machine)),
+pub struct OwnedCaptureEmitter {
+    // INVARIANT: emitter is dropped before buffer (field declaration order).
+    // The emitter borrows from the buffer via a lifetime-erased pointer;
+    // dropping emitter first ensures the borrow is released before the
+    // buffer is freed.
+    emitter: Option<Box<dyn Emitter + 'static>>,
+    buffer: Box<StableBuffer>,
+}
+
+impl OwnedCaptureEmitter {
+    /// Create a new capture emitter for the given format (e.g. "json",
+    /// "yaml", "text").
+    pub fn new(format: &str) -> Result<Self, ExecutionError> {
+        let mut buffer = Box::new(StableBuffer(Vec::new()));
+        // SAFETY: We take a raw pointer to the boxed buffer.  The Box
+        // provides a stable heap address that does not move when the
+        // OwnedCaptureEmitter is moved.  The emitter is always dropped
+        // before the buffer (field declaration order), so the borrow is
+        // valid for the emitter's entire lifetime.
+        let buf_ptr: *mut StableBuffer = &mut *buffer;
+        let emitter = export::create_emitter(format, unsafe { &mut *buf_ptr })
+            .ok_or_else(|| ExecutionError::Panic(format!("unknown render format: {format}")))?;
+        // SAFETY: Erase the lifetime to 'static.  The buffer outlives
+        // the emitter because the emitter is dropped first (field order).
+        let emitter: Box<dyn Emitter + 'static> = unsafe { std::mem::transmute(emitter) };
+        Ok(Self {
+            emitter: Some(emitter),
+            buffer,
+        })
+    }
+
+    /// Consume the capture emitter and extract the buffered output as a
+    /// UTF-8 string.
+    pub fn into_string(mut self) -> Result<String, ExecutionError> {
+        // Drop the emitter first to end its borrow on the buffer.
+        drop(self.emitter.take());
+        String::from_utf8(self.buffer.0)
+            .map_err(|e| ExecutionError::Panic(format!("capture not valid UTF-8: {e}")))
     }
 }
 
-/// Resolve a symbol ID to its string representation.
-///
-/// Uses the machine's live symbol pool (via raw pointer) when
-/// available, falling back to the provided pool snapshot.  The live
-/// pool is necessary because `force_to_whnf` can intern new symbols
-/// that don't exist in the snapshot.
-fn resolve_symbol(
-    id: SymbolId,
-    pool: &SymbolPool,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) -> String {
-    if let Some(m) = machine {
-        // SAFETY: machine pointer is valid for entire render traversal.
-        // Use the live pool which includes symbols interned during
-        // force_to_whnf (e.g. by parse-as).
-        let live_pool = unsafe { (*m).symbol_pool() };
-        return live_pool.resolve(id).to_string();
-    }
-    pool.resolve(id).to_string()
-}
-
-/// Render a native value to the emitter
-fn render_native(
-    native: &Native,
-    pool: &SymbolPool,
-    view: MutatorHeapView<'_>,
-    emitter: &mut dyn Emitter,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) {
-    match native {
-        Native::Num(n) => {
-            emitter.scalar(&RenderMetadata::empty(), &Primitive::Num(n.clone()));
-        }
-        Native::Str(s) => {
-            let text = (*view.scoped(*s)).as_str().to_string();
-            emitter.scalar(&RenderMetadata::empty(), &Primitive::Str(text));
-        }
-        Native::Sym(id) => {
-            let sym = resolve_symbol(*id, pool, machine);
-            emitter.scalar(&RenderMetadata::empty(), &Primitive::Sym(sym));
-        }
-        Native::Zdt(dt) => {
-            emitter.scalar(&RenderMetadata::empty(), &Primitive::ZonedDateTime(*dt));
-        }
-        Native::Set(ptr) => {
-            let set = view.scoped(*ptr);
-            emitter.sequence_start(&RenderMetadata::empty());
-            for elem in set.sorted_elements() {
-                let prim = set_primitive_to_render_primitive(elem, pool, machine);
-                emitter.scalar(&RenderMetadata::empty(), &prim);
-            }
-            emitter.sequence_end();
-        }
-        Native::NdArray(ptr) => {
-            let arr = view.scoped(*ptr);
-            render_ndarray_data(emitter, &arr, &RenderMetadata::empty());
-        }
-        Native::Index(_) => {
-            // Block index — not directly renderable; emit null
-            emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
-        }
+impl Emitter for OwnedCaptureEmitter {
+    fn emit(&mut self, event: Event) {
+        self.emitter.as_mut().unwrap().emit(event);
     }
 }
 
-/// Render an n-dimensional array as nested sequences (mirrors emit.rs logic)
-fn render_ndarray_data(emitter: &mut dyn Emitter, arr: &HeapNdArray, metadata: &RenderMetadata) {
-    let rank = arr.rank();
-    if rank == 0 {
-        let val = arr.get(&[]).unwrap_or(0.0);
-        let num = serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0));
-        emitter.scalar(metadata, &Primitive::Num(num));
-    } else if rank == 1 {
-        emitter.sequence_start(metadata);
-        let len = arr.shape()[0];
-        for i in 0..len {
-            let val = arr.get(&[i]).unwrap_or(0.0);
-            let num =
-                serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0));
-            emitter.scalar(&RenderMetadata::empty(), &Primitive::Num(num));
-        }
-        emitter.sequence_end();
-    } else {
-        emitter.sequence_start(metadata);
-        let rows = arr.shape()[0];
-        for i in 0..rows {
-            if let Some(sub) = arr.slice_along(0, i) {
-                render_ndarray_data(emitter, &sub, &RenderMetadata::empty());
-            }
-        }
-        emitter.sequence_end();
-    }
-}
+// ─── RenderToString intrinsic ─────────────────────────────────────────────────
 
-/// Recursively render a closure's value to the emitter.
-///
-/// The closure should already be at WHNF.  This function mirrors the
-/// logic of the STG `Render` wrapper but executes it entirely in Rust
-/// by walking the heap directly.
-///
-/// `pool` provides symbol resolution; `root_env` is used when wrapping
-/// inline `V` or `G` refs in fresh `Atom` closures.
-///
-/// When `machine` is provided, unevaluated thunks (App, Case, etc.)
-/// are forced to WHNF via the machine before rendering.  Without a
-/// machine, thunks emit null.
-///
-/// # Recursion depth
-///
-/// This function recurses proportionally to the nesting depth of the
-/// eucalypt value.  Very deeply nested structures may overflow the Rust
-/// stack.  In practice eucalypt programs rarely produce nesting depths
-/// that would be problematic.
-pub(crate) fn render_closure_to_emitter(
-    closure: SynClosure,
-    pool: &SymbolPool,
-    root_env: RefPtr<EnvFrame>,
-    view: MutatorHeapView<'_>,
-    emitter: &mut dyn Emitter,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) -> Result<(), ExecutionError> {
-    let code = view.scoped(closure.code());
-    let env = view.scoped(closure.env());
-
-    match &*code {
-        HeapSyn::Atom { evaluand } => match evaluand {
-            Ref::V(native) => {
-                render_native(native, pool, view, emitter, machine);
-                Ok(())
-            }
-            Ref::L(i) => {
-                let inner = (*env)
-                    .get(&view, *i)
-                    .ok_or(ExecutionError::BadEnvironmentIndex(*i))?;
-                render_closure_to_emitter(inner, pool, root_env, view, emitter, machine)
-            }
-            Ref::G(_) => {
-                // Global refs are wrappers (lambda forms) — not directly
-                // renderable as data values.
-                emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
-                Ok(())
-            }
-        },
-        HeapSyn::Cons { tag, args } => {
-            let dc: Result<DataConstructor, _> = (*tag).try_into();
-            match dc {
-                Ok(DataConstructor::Unit) => {
-                    emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
-                    Ok(())
-                }
-                Ok(DataConstructor::BoolTrue) => {
-                    emitter.scalar(&RenderMetadata::empty(), &Primitive::Bool(true));
-                    Ok(())
-                }
-                Ok(DataConstructor::BoolFalse) => {
-                    emitter.scalar(&RenderMetadata::empty(), &Primitive::Bool(false));
-                    Ok(())
-                }
-                Ok(DataConstructor::BoxedNumber)
-                | Ok(DataConstructor::BoxedString)
-                | Ok(DataConstructor::BoxedSymbol)
-                | Ok(DataConstructor::BoxedZdt) => {
-                    // Boxed scalar: the inner value is in args[0]
-                    let inner_ref = args
-                        .get(0)
-                        .ok_or_else(|| ExecutionError::Panic("empty boxed value".to_string()))?;
-                    let inner = resolve_cons_arg(&closure, &view, inner_ref, root_env)?;
-                    render_closure_to_emitter(inner, pool, root_env, view, emitter, machine)
-                }
-                Ok(DataConstructor::ListCons) => {
-                    // List: emit a sequence by traversing the cons chain
-                    emitter.sequence_start(&RenderMetadata::empty());
-                    render_list_from_cons(
-                        closure.clone(),
-                        args,
-                        pool,
-                        root_env,
-                        view,
-                        emitter,
-                        machine,
-                    )?;
-                    emitter.sequence_end();
-                    Ok(())
-                }
-                Ok(DataConstructor::ListNil) => {
-                    emitter.sequence_start(&RenderMetadata::empty());
-                    emitter.sequence_end();
-                    Ok(())
-                }
-                Ok(DataConstructor::Block) => {
-                    // Block: args[0] is the items list
-                    let items_ref = args
-                        .get(0)
-                        .ok_or_else(|| ExecutionError::Panic("block missing items".to_string()))?;
-                    let items_closure = resolve_cons_arg(&closure, &view, items_ref, root_env)?;
-                    emitter.block_start(&RenderMetadata::empty());
-                    render_block_items(items_closure, pool, root_env, view, emitter, machine)?;
-                    emitter.block_end();
-                    Ok(())
-                }
-                Ok(DataConstructor::BlockPair) => {
-                    // Standalone BlockPair: render as a single-entry block
-                    emitter.block_start(&RenderMetadata::empty());
-                    render_block_pair_args(&closure, args, pool, root_env, view, emitter, machine)?;
-                    emitter.block_end();
-                    Ok(())
-                }
-                Ok(DataConstructor::BlockKvList) => {
-                    // BlockKvList: treat the enclosed cons ref as a list
-                    let inner_ref = args.get(0).ok_or_else(|| {
-                        ExecutionError::Panic("block-kv-list missing cons".to_string())
-                    })?;
-                    let inner = resolve_cons_arg(&closure, &view, inner_ref, root_env)?;
-                    render_list_items_raw(inner, pool, root_env, view, emitter, machine)
-                }
-                _ => {
-                    // Unknown / IO constructors — emit null
-                    emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
-                    Ok(())
-                }
-            }
-        }
-        HeapSyn::Let { bindings, body } => {
-            // Interpret Let by allocating the env frame and continuing
-            // with the body — this handles nested block literals that
-            // haven't been forced to WHNF.
-            let new_env = view.from_let(bindings.as_slice(), closure.env(), Smid::default())?;
-            let new_closure = SynClosure::new(*body, new_env);
-            render_closure_to_emitter(new_closure, pool, root_env, view, emitter, machine)
-        }
-        HeapSyn::LetRec { bindings, body } => {
-            // Same as Let but with recursive bindings.
-            let new_env = view.from_letrec(bindings.as_slice(), closure.env(), Smid::default())?;
-            let new_closure = SynClosure::new(*body, new_env);
-            render_closure_to_emitter(new_closure, pool, root_env, view, emitter, machine)
-        }
-        HeapSyn::Ann { body, .. } => {
-            // Skip through source annotations.
-            let new_closure = SynClosure::new(*body, closure.env());
-            render_closure_to_emitter(new_closure, pool, root_env, view, emitter, machine)
-        }
-        _ => {
-            // Unevaluated thunk (App, Case, Bif, etc.).  If we have a
-            // machine reference, force the closure to WHNF and retry.
-            if let Some(m) = machine {
-                // SAFETY: `m` points into the RENDER_TO_STRING execute()
-                // call frame and is valid for the entire render traversal.
-                // All access is sequential (no aliasing).
-                let forced = unsafe { (*m).force_to_whnf(view, closure) }?;
-                render_closure_to_emitter(forced, pool, root_env, view, emitter, machine)
-            } else {
-                emitter.scalar(&RenderMetadata::empty(), &Primitive::Null);
-                Ok(())
-            }
-        }
-    }
-}
-
-/// Traverse a `ListCons` chain and render each item (without emitting
-/// the surrounding sequence delimiters).
-///
-/// `current` is the `ListCons` closure, `initial_args` are its args.
-fn render_list_from_cons(
-    mut current: SynClosure,
-    initial_args: &Array<Ref>,
-    pool: &SymbolPool,
-    root_env: RefPtr<EnvFrame>,
-    view: MutatorHeapView<'_>,
-    emitter: &mut dyn Emitter,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) -> Result<(), ExecutionError> {
-    // Process the first cons cell whose args we already have
-    let head_ref = initial_args
-        .get(0)
-        .ok_or_else(|| ExecutionError::Panic("malformed list cons (no head)".to_string()))?;
-    let tail_ref = initial_args
-        .get(1)
-        .ok_or_else(|| ExecutionError::Panic("malformed list cons (no tail)".to_string()))?;
-
-    let head = resolve_cons_arg(&current, &view, head_ref, root_env)?;
-    render_closure_to_emitter(head, pool, root_env, view, emitter, machine)?;
-
-    // Walk the remaining tail without recursion
-    let mut tail = resolve_cons_arg(&current, &view, tail_ref, root_env)?;
-
-    loop {
-        let tail_code = view.scoped(tail.code());
-        match &*tail_code {
-            HeapSyn::Cons { tag, args } => match (*tag).try_into() {
-                Ok(DataConstructor::ListNil) => break,
-                Ok(DataConstructor::ListCons) => {
-                    let h_ref = args
-                        .get(0)
-                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let t_ref = args
-                        .get(1)
-                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let head = resolve_cons_arg(&tail, &view, h_ref, root_env)?;
-                    render_closure_to_emitter(head, pool, root_env, view, emitter, machine)?;
-                    let next_tail = resolve_cons_arg(&tail, &view, t_ref, root_env)?;
-                    current = tail;
-                    tail = next_tail;
-                    let _ = current; // keep borrow checker happy
-                }
-                _ => break,
-            },
-            _ => break,
-        }
-    }
-
-    Ok(())
-}
-
-/// Render list items without sequence delimiters (used for BlockKvList).
-fn render_list_items_raw(
-    mut current: SynClosure,
-    pool: &SymbolPool,
-    root_env: RefPtr<EnvFrame>,
-    view: MutatorHeapView<'_>,
-    emitter: &mut dyn Emitter,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) -> Result<(), ExecutionError> {
-    loop {
-        let code = view.scoped(current.code());
-        match &*code {
-            HeapSyn::Cons { tag, args } => match (*tag).try_into() {
-                Ok(DataConstructor::ListNil) => break,
-                Ok(DataConstructor::ListCons) => {
-                    let h_ref = args
-                        .get(0)
-                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let t_ref = args
-                        .get(1)
-                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let head = resolve_cons_arg(&current, &view, h_ref, root_env)?;
-                    render_closure_to_emitter(head, pool, root_env, view, emitter, machine)?;
-                    current = resolve_cons_arg(&current, &view, t_ref, root_env)?;
-                }
-                _ => break,
-            },
-            _ => break,
-        }
-    }
-    Ok(())
-}
-
-/// Traverse a list of block items (BlockPair or BlockKvList) and render each.
-fn render_block_items(
-    mut current: SynClosure,
-    pool: &SymbolPool,
-    root_env: RefPtr<EnvFrame>,
-    view: MutatorHeapView<'_>,
-    emitter: &mut dyn Emitter,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) -> Result<(), ExecutionError> {
-    loop {
-        let code = view.scoped(current.code());
-        match &*code {
-            HeapSyn::Cons { tag, args } => match (*tag).try_into() {
-                Ok(DataConstructor::ListNil) => break,
-                Ok(DataConstructor::ListCons) => {
-                    let h_ref = args.get(0).ok_or_else(|| {
-                        ExecutionError::Panic("malformed block items list (no head)".to_string())
-                    })?;
-                    let t_ref = args.get(1).ok_or_else(|| {
-                        ExecutionError::Panic("malformed block items list (no tail)".to_string())
-                    })?;
-
-                    let head = resolve_cons_arg(&current, &view, h_ref, root_env)?;
-                    let head_code = view.scoped(head.code());
-
-                    if let HeapSyn::Cons {
-                        tag: item_tag,
-                        args: item_args,
-                    } = &*head_code
-                    {
-                        if *item_tag == DataConstructor::BlockPair.tag() {
-                            render_block_pair_args(
-                                &head, item_args, pool, root_env, view, emitter, machine,
-                            )?;
-                        } else if *item_tag == DataConstructor::BlockKvList.tag() {
-                            // BlockKvList nested in a block: render its items inline
-                            let inner_ref = item_args.get(0).ok_or_else(|| {
-                                ExecutionError::Panic("empty block-kv-list".to_string())
-                            })?;
-                            let inner = resolve_cons_arg(&head, &view, inner_ref, root_env)?;
-                            render_list_items_raw(inner, pool, root_env, view, emitter, machine)?;
-                        }
-                        // Other tags: skip
-                    }
-
-                    current = resolve_cons_arg(&current, &view, t_ref, root_env)?;
-                }
-                _ => break,
-            },
-            _ => break,
-        }
-    }
-    Ok(())
-}
-
-/// Render a single BlockPair's key and value to the emitter.
-///
-/// `closure` is the `BlockPair` constructor closure.
-/// `args` are its constructor args: [key_ref, val_ref].
-fn render_block_pair_args(
-    closure: &SynClosure,
-    args: &Array<Ref>,
-    pool: &SymbolPool,
-    root_env: RefPtr<EnvFrame>,
-    view: MutatorHeapView<'_>,
-    emitter: &mut dyn Emitter,
-    machine: Option<*mut dyn IntrinsicMachine>,
-) -> Result<(), ExecutionError> {
-    let key_ref = args
-        .get(0)
-        .ok_or_else(|| ExecutionError::Panic("block pair missing key".to_string()))?;
-    let val_ref = args
-        .get(1)
-        .ok_or_else(|| ExecutionError::Panic("block pair missing value".to_string()))?;
-
-    // The key is an unboxed symbol (or string) ref
-    let key_native = closure.navigate_local_native(&view, key_ref);
-    let key_str = match key_native {
-        Native::Sym(id) => resolve_symbol(id, pool, machine),
-        Native::Str(s) => (*view.scoped(s)).as_str().to_string(),
-        _ => "<key>".to_string(),
-    };
-
-    // Emit key as a symbol scalar (the emitters interpret this as a mapping key)
-    emitter.scalar(&RenderMetadata::empty(), &Primitive::Sym(key_str));
-
-    // Emit value
-    let val = resolve_cons_arg(closure, &view, val_ref, root_env)?;
-    render_closure_to_emitter(val, pool, root_env, view, emitter, machine)
-}
-
-/// RENDER_TO_STRING(value, format_sym) → Str
+/// RENDER_TO_STRING(value, format_sym)
 ///
 /// Serialises `value` to a string using the specified format.
 /// Recognised formats: `yaml`, `json`, `toml`, `text`, `edn`, `html`.
@@ -554,143 +128,99 @@ impl StgIntrinsic for RenderToString {
         // args[1] = format_sym (strict — already resolved to a native sym)
         let format_name = sym_arg(machine, view, &args[1])?;
 
-        // Resolve args[0] to a closure for traversal
-        let value_closure = machine.nav(view).resolve(&args[0])?;
+        // Signal the machine to push a capture emitter for this format.
+        machine.start_capture(&format_name)?;
 
-        // Snapshot the symbol pool for use as fallback.  The live pool
-        // is accessed via the machine pointer when available (symbols
-        // may be interned during force_to_whnf).
-        let pool = machine.symbol_pool().clone();
-        let root_env = machine.root_env();
+        // Push CaptureEnd so that when RENDER_DOC returns, the machine
+        // pops the capture emitter and produces the result string.
+        machine.push_capture_end(view)?;
 
-        // Capture output into a Vec<u8> buffer
-        let mut buffer: Vec<u8> = Vec::new();
-        let mut string_emitter =
-            export::create_emitter(&format_name, &mut buffer).ok_or_else(|| {
-                ExecutionError::UnknownRenderFormat(machine.annotation(), format_name.clone())
-            })?;
-
-        // Emit stream/document wrapper
-        string_emitter.stream_start();
-        string_emitter.doc_start();
-
-        // Pass the machine as a raw pointer so that the render
-        // traversal can force unevaluated thunks (App, Case, etc.)
-        // via force_to_whnf.
-        //
-        // SAFETY: the raw pointer is valid for the entire duration of
-        // this execute() call.  All access is sequential.  We erase
-        // the lifetime to 'static because the pointer is only used
-        // within this function body.
-        let machine_ptr: *mut dyn IntrinsicMachine =
-            unsafe { std::mem::transmute(machine as *mut dyn IntrinsicMachine) };
-        render_closure_to_emitter(
-            value_closure,
-            &pool,
-            root_env,
-            view,
-            string_emitter.as_mut(),
-            Some(machine_ptr),
-        )?;
-
-        string_emitter.doc_end();
-        string_emitter.stream_end();
-
-        // Drop the emitter so the mutable borrow on `buffer` ends
-        drop(string_emitter);
-
-        let result = String::from_utf8(buffer)
-            .map_err(|e| ExecutionError::Panic(format!("render output is not valid UTF-8: {e}")))?;
-
-        machine_return_str(machine, view, result)
+        // Set closure to RENDER_DOC(value).
+        let render_doc_idx = intrinsics::index("RENDER_DOC")
+            .ok_or_else(|| ExecutionError::Panic("RENDER_DOC not found".to_string()))?;
+        let app = view
+            .alloc(HeapSyn::App {
+                callable: Ref::G(render_doc_idx),
+                args: Array::from_slice(&view, &[args[0].clone()]),
+            })?
+            .as_ptr();
+        machine.set_closure(crate::eval::machine::env::SynClosure::new(
+            app,
+            machine.env(view),
+        ))
     }
 }
 
 impl CallGlobal2 for RenderToString {}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::eval::stg::{
-        block, boolean, emit as stg_emit, eq,
-        panic::Panic,
-        render::{Render, RenderBlockItems, RenderItems, RenderKv, Saturated, Suppresses, Tag},
-        runtime::{self, Runtime},
-        syntax::dsl::*,
-        testing,
-    };
+// ─── Helper for io_run.rs ─────────────────────────────────────────────────────
 
-    fn render_runtime() -> Box<dyn Runtime> {
-        testing::runtime(vec![
-            Box::new(stg_emit::Emit0),
-            Box::new(stg_emit::EmitT),
-            Box::new(stg_emit::EmitF),
-            Box::new(stg_emit::EmitNative),
-            Box::new(stg_emit::EmitTagNative),
-            Box::new(stg_emit::EmitSeqStart),
-            Box::new(stg_emit::EmitTagSeqStart),
-            Box::new(stg_emit::EmitSeqEnd),
-            Box::new(stg_emit::EmitBlockStart),
-            Box::new(stg_emit::EmitTagBlockStart),
-            Box::new(stg_emit::EmitBlockEnd),
-            Box::new(stg_emit::EmitDocStart),
-            Box::new(stg_emit::EmitDocEnd),
-            Box::new(Render),
-            Box::new(RenderItems),
-            Box::new(RenderBlockItems),
-            Box::new(RenderKv),
-            Box::new(RenderToString),
-            Box::new(Saturated),
-            Box::new(Suppresses),
-            Box::new(Tag),
-            Box::new(block::Block),
-            Box::new(block::Kv),
-            Box::new(block::LookupOr(runtime::NativeVariant::Unboxed)),
-            Box::new(block::MatchesKey),
-            Box::new(block::ExtractValue),
-            Box::new(eq::Eq),
-            Box::new(Panic),
-            Box::new(boolean::And),
-            Box::new(boolean::Not),
-            Box::new(boolean::True),
-            Box::new(boolean::False),
-        ])
+/// Extract a string representation from a WHNF closure containing a
+/// simple scalar value (string, number, symbol, boolean, null).
+///
+/// This is used by the io-run driver to read spec-block field values
+/// without needing the full render machinery.  It handles the common
+/// cases directly and returns `None` for complex values (blocks, lists).
+pub fn extract_scalar_string(
+    view: &MutatorHeapView<'_>,
+    pool: &crate::eval::memory::symbol::SymbolPool,
+    closure: &crate::eval::machine::env::SynClosure,
+) -> Option<String> {
+    use std::convert::TryInto;
+
+    let code = view.scoped(closure.code());
+    match &*code {
+        HeapSyn::Atom { evaluand } => match evaluand {
+            Ref::V(native) => scalar_from_native(view, pool, native),
+            Ref::L(i) => {
+                let env = view.scoped(closure.env());
+                let inner = (*env).get(view, *i)?;
+                extract_scalar_string(view, pool, &inner)
+            }
+            Ref::G(_) => None,
+        },
+        HeapSyn::Cons { tag, args } => {
+            let dc: Result<DataConstructor, _> = (*tag).try_into();
+            match dc {
+                Ok(DataConstructor::Unit) => Some(String::new()),
+                Ok(DataConstructor::BoolTrue) => Some("true".to_string()),
+                Ok(DataConstructor::BoolFalse) => Some("false".to_string()),
+                Ok(DataConstructor::BoxedNumber)
+                | Ok(DataConstructor::BoxedString)
+                | Ok(DataConstructor::BoxedSymbol)
+                | Ok(DataConstructor::BoxedZdt) => {
+                    let inner_ref = args.get(0)?;
+                    let inner = match inner_ref {
+                        Ref::V(native) => {
+                            return scalar_from_native(view, pool, &native);
+                        }
+                        Ref::L(i) => {
+                            let env = view.scoped(closure.env());
+                            (*env).get(view, i)?
+                        }
+                        Ref::G(_) => return None,
+                    };
+                    extract_scalar_string(view, pool, &inner)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
     }
+}
 
-    #[test]
-    fn test_render_to_string_yaml_number() {
-        // render-as(42, :yaml) should produce a YAML string containing "42".
-        // The wrapper boxes the result as BoxedString, so we verify the machine
-        // terminates successfully and the result is a BoxedString constructor.
-        let syntax = letrec_(
-            vec![value(box_num(42)), value(box_sym("yaml"))],
-            RenderToString.global(lref(0), lref(1)),
-        );
-
-        let rt = render_runtime();
-        let mut m = testing::machine(rt.as_ref(), syntax);
-        m.run(Some(200)).unwrap();
-        // The wrapper boxes the returned string in BoxedString — verify via bool_return
-        // absence (not a bool) and that the machine terminated without error.
-        assert!(m.terminated(), "machine did not terminate");
-        assert!(m.bool_return().is_none(), "unexpected bool return");
-        assert!(!m.unit_return(), "unexpected unit return");
-    }
-
-    #[test]
-    fn test_render_to_string_json_string() {
-        // render-as("hello", :json) should produce a JSON string.
-        // The wrapper boxes the result as BoxedString; we verify no panic occurs.
-        let syntax = letrec_(
-            vec![value(box_str("hello")), value(box_sym("json"))],
-            RenderToString.global(lref(0), lref(1)),
-        );
-
-        let rt = render_runtime();
-        let mut m = testing::machine(rt.as_ref(), syntax);
-        m.run(Some(200)).unwrap();
-        assert!(m.terminated(), "machine did not terminate");
-        assert!(m.bool_return().is_none(), "unexpected bool return");
-        assert!(!m.unit_return(), "unexpected unit return");
+/// Convert a native value to its string representation.
+fn scalar_from_native(
+    view: &MutatorHeapView<'_>,
+    pool: &crate::eval::memory::symbol::SymbolPool,
+    native: &crate::eval::memory::syntax::Native,
+) -> Option<String> {
+    use crate::eval::memory::syntax::Native;
+    match native {
+        Native::Num(n) => Some(n.to_string()),
+        Native::Str(s) => Some((*view.scoped(*s)).as_str().to_string()),
+        Native::Sym(id) => Some(pool.resolve(*id).to_string()),
+        Native::Zdt(dt) => Some(dt.to_string()),
+        _ => None,
     }
 }

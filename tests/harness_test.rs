@@ -612,6 +612,11 @@ pub fn test_harness_122() {
 }
 
 #[test]
+pub fn test_harness_123() {
+    run_test(&opts("123_render_to_string.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

@@ -68,6 +68,10 @@ pub enum Continuation {
         /// Environment of handlers
         environment: RefPtr<EnvFrame>,
     },
+    /// Marks the end of an emitter capture.  When the machine returns a
+    /// value into this continuation, it signals `Machine::step()` to pop
+    /// the capture emitter and extract the buffer as a string result.
+    CaptureEnd,
 }
 
 impl StgObject for Continuation {}
@@ -116,6 +120,9 @@ impl fmt::Display for Continuation {
             }
             Continuation::DeMeta { .. } => {
                 write!(f, "ƒ(`,•)")
+            }
+            Continuation::CaptureEnd => {
+                write!(f, "⊡capture")
             }
         }
     }
@@ -202,6 +209,9 @@ impl GcScannable for Continuation {
                     out.push(ScanPtr::from_non_null(scope, *environment));
                 }
             }
+            Continuation::CaptureEnd => {
+                // No heap pointers to scan.
+            }
         }
     }
 
@@ -268,6 +278,7 @@ impl GcScannable for Continuation {
                     *environment = new;
                 }
             }
+            Continuation::CaptureEnd => {}
         }
     }
 }

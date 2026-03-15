@@ -1,0 +1,69 @@
+"render-as intrinsic: serialise values to strings via emitter capture."
+
+tests: {
+
+  ` "render-as(:json, ...) on a number"
+  json-number: {
+    result: 42 render-as(:json) str.trim
+    pass: result = "42"
+  }
+
+  ` "render-as(:json, ...) on a list contains all elements"
+  json-list: {
+    result: [1, 2, 3] render-as(:json)
+    pass: (result str.contains?("1")) ∧ (result str.contains?("3"))
+  }
+
+  ` "render-as(:json, ...) on true"
+  json-true: {
+    result: true render-as(:json) str.trim
+    pass: result = "true"
+  }
+
+  ` "render-as(:json, ...) on false"
+  json-false: {
+    result: false render-as(:json) str.trim
+    pass: result = "false"
+  }
+
+  ` "render-as(:json, ...) on null"
+  json-null: {
+    result: null render-as(:json) str.trim
+    pass: result = "null"
+  }
+
+  ` "render-as(:json, ...) on a block contains key"
+  json-block: {
+    result: {x: 1} render-as(:json)
+    pass: result str.contains?("x")
+  }
+
+  ` "render-as(:yaml, ...) on a block contains key"
+  yaml-block: {
+    result: {a: 1} render-as(:yaml)
+    pass: result str.contains?("a: 1")
+  }
+
+  ` "render-as(:json, ...) on nested structure"
+  json-nested: {
+    result: {items: [1, 2]} render-as(:json)
+    pass: result str.contains?("items")
+  }
+
+  ` "render-as(:json, ...) on a string includes quotes"
+  json-string: {
+    result: "hello" render-as(:json) str.trim
+    # JSON-encoded "hello" is 7 chars: the 5-char string plus two quotes
+    n: result str.len
+    pass: n = 7
+  }
+
+  ` "render-as(:text, ...) on a number"
+  text-number: {
+    result: 42 render-as(:text) str.trim
+    pass: result = "42"
+  }
+
+}
+
+RESULT: tests values map(_.pass) all-true? then(:PASS, :FAIL)
