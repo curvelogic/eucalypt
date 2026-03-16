@@ -1069,26 +1069,8 @@ impl GcScannable for MachineState {
         marker: &mut CollectorHeapView<'a>,
         out: &mut Vec<ScanPtr<'a>>,
     ) {
-        if crate::eval::memory::gc_debug::verify_enabled() {
-            let was_marked = marker.is_marked(self.globals);
-            eprintln!(
-                "GC VERIFY DETAIL: globals at {:p}, is_marked={was_marked} before mark() call",
-                self.globals.as_ptr(),
-            );
-        }
         if marker.mark(self.globals) {
-            if crate::eval::memory::gc_debug::verify_enabled() {
-                eprintln!(
-                    "GC VERIFY DETAIL: globals at {:p} was newly marked (from MachineState::scan)",
-                    self.globals.as_ptr(),
-                );
-            }
             out.push(ScanPtr::from_non_null(scope, self.globals));
-        } else if crate::eval::memory::gc_debug::verify_enabled() {
-            eprintln!(
-                "GC VERIFY DETAIL: globals at {:p} was already marked, not pushed",
-                self.globals.as_ptr(),
-            );
         }
 
         out.push(ScanPtr::new(scope, &self.closure));
@@ -1096,15 +1078,8 @@ impl GcScannable for MachineState {
         // Continuations are stored inline in the Vec (off the eucalypt heap).
         // Scan their internal heap pointers directly instead of marking the
         // continuations themselves as heap objects.
-        for (i, cont) in self.stack.iter().enumerate() {
-            let before = out.len();
+        for cont in &self.stack {
             cont.scan(scope, marker, out);
-            if crate::eval::memory::gc_debug::verify_enabled() && out.len() > before {
-                eprintln!(
-                    "GC VERIFY DETAIL: continuation[{i}] ({cont}) produced {} new scan targets",
-                    out.len() - before,
-                );
-            }
         }
 
         // Stashed closures must also be scanned so that the GC does not

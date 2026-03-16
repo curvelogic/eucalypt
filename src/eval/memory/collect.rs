@@ -407,16 +407,7 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
     let scope = Scope();
 
     // find and queue the roots
-    let pre_scan = if super::gc_debug::verify_enabled() {
-        Some(scan_buffer.len())
-    } else {
-        None
-    };
     roots.scan(&scope, &mut heap_view, &mut scan_buffer);
-    if let Some(pre) = pre_scan {
-        let root_items = scan_buffer.len() - pre;
-        eprintln!("GC VERIFY: mark phase root scan produced {root_items} items");
-    }
     queue.extend(scan_buffer.drain(..));
 
     while let Some(scanptr) = queue.pop_front() {
@@ -628,31 +619,11 @@ fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap) {
     let newly_marked = heap_view.heap.mark_count() - mark_count_before;
 
     if newly_marked > 0 {
-        // Re-run once more to identify the specific failing object(s)
-        // by logging what scan() pushes for each parent.
-        let scope2 = Scope();
-        let mut heap_view2 = CollectorHeapView { heap };
-        let mut diag_buffer = Vec::new();
-
-        roots.scan(&scope2, &mut heap_view2, &mut diag_buffer);
-        for sp in &diag_buffer {
-            let ptr = sp.get() as *const dyn GcScannable;
-            let data_ptr = ptr as *const u8;
-            eprintln!(
-                "GC VERIFY: root child at {:p} (newly discovered by re-scan)",
-                data_ptr,
-            );
-        }
-
-        eprintln!(
-            "GC VERIFY: FAILED - {newly_marked} objects were reachable but NOT marked!\n\
-             These would have been swept, causing use-after-free.\n\
-             Total objects in re-traversal: {total}"
+        panic!(
+            "GC mark integrity violation: {newly_marked} reachable objects were not marked \
+             ({total} objects in re-traversal)"
         );
-        panic!("GC mark integrity violation: {newly_marked} reachable objects were not marked");
     }
-
-    eprintln!("GC VERIFY: OK ({total} objects verified)");
 }
 
 /// Extract data pointer and vtable pointer from a trait object reference.
