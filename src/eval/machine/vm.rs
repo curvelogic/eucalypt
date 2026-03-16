@@ -1142,6 +1142,8 @@ pub struct Machine<'a> {
     /// capture emitter until `CaptureEnd` fires, at which point the
     /// emitter is popped and its buffer extracted as a string.
     capture_emitters: Vec<crate::eval::stg::render_to_string::OwnedCaptureEmitter>,
+    /// Crash diagnostics snapshot — updated periodically, read by signal handler.
+    crash_diagnostics: super::crash::CrashDiagnostics,
 }
 
 impl<'a> Machine<'a> {
@@ -1152,7 +1154,7 @@ impl<'a> Machine<'a> {
         heap_limit_mib: Option<usize>,
         dump_heap: bool,
     ) -> Self {
-        Machine {
+        let machine = Machine {
             heap: heap_limit_mib.map(Heap::with_limit).unwrap_or_default(),
             state: Default::default(),
             intrinsics: vec![],
@@ -1164,7 +1166,10 @@ impl<'a> Machine<'a> {
             metrics: Metrics::default(),
             clock: Clock::default(),
             capture_emitters: Vec::new(),
-        }
+            crash_diagnostics: super::crash::CrashDiagnostics::new(),
+        };
+        super::crash::register_crash_diagnostics(&machine.crash_diagnostics);
+        machine
     }
 
     /// Replace the symbol pool (used during initialisation)
@@ -1387,12 +1392,41 @@ impl<'a> Machine<'a> {
             gc_countdown -= 1;
             if gc_countdown == 0 {
                 gc_countdown = gc_check_freq;
+
+                // Update crash diagnostics snapshot
+                let stats = self.heap.stats();
+                self.crash_diagnostics.update_vm(
+                    self.metrics.ticks(),
+                    self.metrics.allocs(),
+                    self.metrics.max_stack(),
+                    self.state.stack.len(),
+                );
+                self.crash_diagnostics.update_gc(
+                    stats.collections_count,
+                    stats.blocks_allocated,
+                    stats.peak_heap_blocks,
+                    stats.lobs_allocated,
+                    self.heap.mark_state(),
+                );
+
                 if self.heap().policy_requires_collection() {
+                    let ticks = self.metrics.ticks();
+                    self.crash_diagnostics.record_gc_event(
+                        super::crash::GcEventKind::CollectionStart,
+                        0,
+                        ticks,
+                    );
                     collect::collect(
                         &mut self.state,
                         &mut self.heap,
                         &mut self.clock,
                         self.settings.dump_heap,
+                    );
+                    let stats = self.heap.stats();
+                    self.crash_diagnostics.record_gc_event(
+                        super::crash::GcEventKind::CollectionEnd,
+                        stats.blocks_allocated as u32,
+                        ticks,
                     );
                     self.clock.switch(ThreadOccupation::Mutator);
                 }
@@ -1754,6 +1788,12 @@ impl<'a> Machine<'a> {
     #[cfg(test)]
     pub fn captures(&self) -> &[crate::eval::emit::Event] {
         self.emitter.captures()
+    }
+}
+
+impl Drop for Machine<'_> {
+    fn drop(&mut self) {
+        super::crash::unregister_crash_diagnostics();
     }
 }
 
