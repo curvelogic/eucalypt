@@ -157,9 +157,38 @@ impl CollectorHeapView<'_> {
     pub fn mark<T>(&mut self, obj: NonNull<T>) -> bool {
         debug_assert!(obj != NonNull::dangling());
         debug_assert!(obj.as_ptr() as usize != usize::MAX);
+
+        // Poison check: if enabled, verify the object doesn't sit in
+        // swept (poisoned) memory.  This catches use-after-free where a
+        // live pointer references memory that was already reclaimed.
+        if super::gc_debug::poison_enabled() {
+            unsafe {
+                if super::gc_debug::looks_poisoned(obj.cast()) {
+                    panic!(
+                        "GC POISON: use-after-free detected!\n\
+                         Object at {:p} (type {}) sits in poisoned (swept) memory.\n\
+                         A live GC root references memory that was reclaimed by lazy sweep.",
+                        obj.as_ptr(),
+                        std::any::type_name::<T>(),
+                    );
+                }
+            }
+        }
+
         if obj != NonNull::dangling() && !self.heap.is_marked(obj) {
             self.heap.mark_object(obj);
             self.heap.mark_line(obj);
+
+            // Verify mark was actually applied
+            if super::gc_debug::verify_enabled() {
+                debug_assert!(
+                    self.heap.is_marked(obj),
+                    "GC BUG: mark_object({:p}) did not persist! mark_state={}",
+                    obj.as_ptr(),
+                    self.heap.mark_state(),
+                );
+            }
+
             true
         } else {
             false
@@ -378,7 +407,16 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
     let scope = Scope();
 
     // find and queue the roots
+    let pre_scan = if super::gc_debug::verify_enabled() {
+        Some(scan_buffer.len())
+    } else {
+        None
+    };
     roots.scan(&scope, &mut heap_view, &mut scan_buffer);
+    if let Some(pre) = pre_scan {
+        let root_items = scan_buffer.len() - pre;
+        eprintln!("GC VERIFY: mark phase root scan produced {root_items} items");
+    }
     queue.extend(scan_buffer.drain(..));
 
     while let Some(scanptr) = queue.pop_front() {
@@ -388,6 +426,12 @@ pub fn collect(roots: &mut dyn GcScannable, heap: &mut Heap, clock: &mut Clock, 
 
     if dump_heap {
         eprintln!("Heap after mark:\n\n{:?}", &heap_view.heap)
+    }
+
+    // Post-mark verification: re-scan all reachable objects and verify
+    // that every pointer they contain points to a marked object.
+    if super::gc_debug::verify_enabled() {
+        verify_mark_integrity(roots, heap_view.heap);
     }
 
     clock.switch(ThreadOccupation::CollectorSweep);
@@ -529,6 +573,11 @@ pub fn collect_with_evacuation(
         heap_view.heap.finalise_evacuation();
     }
 
+    // Post-mark verification for the evacuation path
+    if super::gc_debug::verify_enabled() {
+        verify_mark_integrity(roots, heap);
+    }
+
     clock.switch(ThreadOccupation::CollectorSweep);
 
     // Defer sweep to allocation time (lazy sweeping)
@@ -539,6 +588,71 @@ pub fn collect_with_evacuation(
 
     heap.record_collection();
     heap.flip_mark_state();
+}
+
+/// Verify mark integrity after the mark phase.
+///
+/// Re-runs the full mark traversal from roots.  Since all live objects
+/// should already be marked, `mark()` should return false (already marked)
+/// for every object.  If it returns true (freshly marked), that object was
+/// missed by the original mark phase and would have been swept — a bug.
+///
+/// This works by counting how many new objects `mark()` finds.  The
+/// `mark()` function marks-and-returns-true for new objects, false for
+/// already-marked ones.  After a correct mark phase, the re-traversal
+/// should find zero new objects.
+///
+/// Enabled by `EU_GC_VERIFY=1`.
+fn verify_mark_integrity(roots: &dyn GcScannable, heap: &mut Heap) {
+    let scope = Scope();
+    let mut heap_view = CollectorHeapView { heap };
+    let mut queue = VecDeque::default();
+    let mut scan_buffer = Vec::new();
+    let mut total = 0usize;
+
+    // Track how many times mark() returns true (object was newly marked).
+    // After a complete mark phase, this should be zero — every reachable
+    // object should already be marked.
+    let mark_count_before = heap_view.heap.mark_count();
+
+    // Re-scan from roots using the same scan/mark mechanism.
+    roots.scan(&scope, &mut heap_view, &mut scan_buffer);
+    queue.extend(scan_buffer.drain(..));
+
+    while let Some(scanptr) = queue.pop_front() {
+        total += 1;
+        scanptr.get().scan(&scope, &mut heap_view, &mut scan_buffer);
+        queue.extend(scan_buffer.drain(..));
+    }
+
+    let newly_marked = heap_view.heap.mark_count() - mark_count_before;
+
+    if newly_marked > 0 {
+        // Re-run once more to identify the specific failing object(s)
+        // by logging what scan() pushes for each parent.
+        let scope2 = Scope();
+        let mut heap_view2 = CollectorHeapView { heap };
+        let mut diag_buffer = Vec::new();
+
+        roots.scan(&scope2, &mut heap_view2, &mut diag_buffer);
+        for sp in &diag_buffer {
+            let ptr = sp.get() as *const dyn GcScannable;
+            let data_ptr = ptr as *const u8;
+            eprintln!(
+                "GC VERIFY: root child at {:p} (newly discovered by re-scan)",
+                data_ptr,
+            );
+        }
+
+        eprintln!(
+            "GC VERIFY: FAILED - {newly_marked} objects were reachable but NOT marked!\n\
+             These would have been swept, causing use-after-free.\n\
+             Total objects in re-traversal: {total}"
+        );
+        panic!("GC mark integrity violation: {newly_marked} reachable objects were not marked");
+    }
+
+    eprintln!("GC VERIFY: OK ({total} objects verified)");
 }
 
 /// Extract data pointer and vtable pointer from a trait object reference.

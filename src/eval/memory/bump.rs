@@ -324,6 +324,15 @@ impl BumpBlock {
     /// Recycle partially used block; reset cursor etc.
     pub fn recycle(&mut self) -> bool {
         if let Some((lower, cursor)) = self.line_map.find_hole(BLOCK_SIZE_BYTES) {
+            // When poisoning is enabled, fill the reclaimed hole with poison
+            // bytes so that any use-after-free dereferences hit a distinctive
+            // pattern instead of stale data.
+            if super::gc_debug::poison_enabled() {
+                unsafe {
+                    let start = self.block.as_ptr() as *mut u8;
+                    super::gc_debug::poison_region(start.add(lower), cursor - lower);
+                }
+            }
             self.cursor = cursor;
             self.lower = lower;
             true

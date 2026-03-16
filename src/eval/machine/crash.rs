@@ -5,8 +5,8 @@
 //! All data structures avoid heap allocation so they can be safely
 //! read from an async-signal context.
 
-use std::cell::{Cell, UnsafeCell};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
 // GC Event Ring Buffer
@@ -246,24 +246,33 @@ impl CrashDiagnostics {
 }
 
 // ---------------------------------------------------------------------------
-// Thread-local crash state pointer
+// Global crash state pointer (signal-safe)
 // ---------------------------------------------------------------------------
 
-thread_local! {
-    static CRASH_DIAG_PTR: Cell<*const CrashDiagnostics> = const { Cell::new(std::ptr::null()) };
-}
-
-/// Register the crash diagnostics for the current thread.
+/// Global atomic pointer to the active crash diagnostics.
 ///
-/// Called when the `Machine` is created. The pointer must remain
+/// Using a plain `static AtomicPtr` rather than `thread_local!` because
+/// atomic loads are guaranteed async-signal-safe on all supported platforms.
+/// Thread-local access via `Cell` may not be signal-safe in all cases.
+///
+/// Since eucalypt runs one Machine at a time (single-threaded evaluation),
+/// a global pointer is sufficient.
+static CRASH_DIAG_PTR: AtomicPtr<CrashDiagnostics> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Register the crash diagnostics for the active Machine.
+///
+/// Called at the start of `Machine::run()`. The pointer must remain
 /// valid for the lifetime of the `Machine`.
-pub fn register_crash_diagnostics(diag: *const CrashDiagnostics) {
-    CRASH_DIAG_PTR.set(diag);
+pub fn register_crash_diagnostics(diag: &CrashDiagnostics) {
+    CRASH_DIAG_PTR.store(
+        diag as *const CrashDiagnostics as *mut CrashDiagnostics,
+        Ordering::Release,
+    );
 }
 
-/// Unregister crash diagnostics for the current thread.
+/// Unregister crash diagnostics.
 pub fn unregister_crash_diagnostics() {
-    CRASH_DIAG_PTR.set(std::ptr::null());
+    CRASH_DIAG_PTR.store(std::ptr::null_mut(), Ordering::Release);
 }
 
 // ---------------------------------------------------------------------------
@@ -408,8 +417,8 @@ unsafe extern "C" fn crash_signal_handler(
         write_stderr(b"\n");
     }
 
-    // Read diagnostics from thread-local
-    let diag_ptr = CRASH_DIAG_PTR.get();
+    // Read diagnostics from global atomic pointer
+    let diag_ptr = CRASH_DIAG_PTR.load(Ordering::Acquire);
 
     if diag_ptr.is_null() {
         write_stderr(b"(no VM diagnostics available - crash outside VM execution)\n");

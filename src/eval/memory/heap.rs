@@ -1091,6 +1091,9 @@ pub struct Heap {
     gc_metrics: UnsafeCell<GCMetrics>,
     /// Pin counts by block base address.
     pin_counts: UnsafeCell<HashMap<usize, usize>>,
+    /// Counter of mark_object calls — used by GC verify to detect
+    /// objects that were missed during the mark phase.
+    mark_count: std::cell::Cell<u64>,
 }
 
 #[cfg(test)]
@@ -1556,6 +1559,7 @@ impl Heap {
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
+            mark_count: std::cell::Cell::new(0),
         }
     }
 
@@ -1568,6 +1572,7 @@ impl Heap {
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
+            mark_count: std::cell::Cell::new(0),
         }
     }
 
@@ -2515,6 +2520,12 @@ impl Heap {
         unsafe {
             (*header.as_ptr()).mark_with_state(current_mark_state);
         }
+        self.mark_count.set(self.mark_count.get() + 1);
+    }
+
+    /// Return the cumulative mark_object call count (for GC verify).
+    pub fn mark_count(&self) -> u64 {
+        self.mark_count.get()
     }
 
     /// Unmark object

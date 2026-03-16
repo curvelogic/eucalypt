@@ -4,6 +4,7 @@ pub mod array;
 pub mod block;
 pub mod bump;
 pub mod collect;
+pub mod gc_debug;
 pub mod header;
 pub mod heap;
 pub mod infotable;
