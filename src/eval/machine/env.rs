@@ -452,6 +452,25 @@ impl GcScannable for SynClosure {
         out: &mut Vec<ScanPtr<'a>>,
     ) {
         let code = self.code();
+
+        // Validate code pointer before marking — catch corruption early
+        // with actionable diagnostics.
+        if crate::eval::memory::gc_debug::poison_enabled()
+            || crate::eval::memory::gc_debug::verify_enabled()
+        {
+            let code_addr = code.as_ptr() as usize;
+            if code_addr == usize::MAX || code_addr < 0x1000 {
+                panic!(
+                    "GC BUG: SynClosure at {:p} has corrupted code pointer {:p}\n\
+                     env pointer: {:p}\n\
+                     This closure's memory has been overwritten.",
+                    self as *const Self,
+                    code.as_ptr(),
+                    self.env().as_ptr(),
+                );
+            }
+        }
+
         if marker.mark(code) {
             out.push(ScanPtr::from_non_null(scope, code));
         }
