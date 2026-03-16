@@ -7914,6 +7914,7 @@ Optional `{stdin: s}` pipes string `s` to the command's standard input.
 |----------|-------------|
 | `io.check(result)` | If `exit-code` is non-zero, fail with the stderr message; otherwise return the result |
 | `io.checked` | Pipeline-friendly check: bind the preceding IO action through `io.check` |
+| `io.fail(msg)` | Fail the IO action with the given error message |
 | `io.map(f, action)` | Apply a pure function to the result of an IO action (fmap) |
 | `io.and-then(f, action)` | Pass the result of `action` to `f` (bind with flipped args, for pipeline use) |
 | `io.then(a, b)` | Sequence two actions, discarding the result of the first |

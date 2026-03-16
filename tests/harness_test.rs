@@ -25,6 +25,18 @@ pub fn error_opts(filename: &str) -> EucalyptOptions {
         .build()
 }
 
+/// Options for IO error tests — enables shell execution via --allow-io
+pub fn io_error_opts(filename: &str) -> EucalyptOptions {
+    let lib_path = vec![PathBuf::from("tests/harness/errors")];
+    let path = format!("tests/harness/errors/{filename}");
+
+    EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str(&path).unwrap()])
+        .with_lib_path(lib_path)
+        .with_allow_io()
+        .build()
+}
+
 /// Options for IO monad tests — enables shell execution via --allow-io
 pub fn io_opts(filename: &str) -> EucalyptOptions {
     let lib_path = vec![PathBuf::from("tests/harness")];
@@ -991,6 +1003,11 @@ pub fn test_error_070() {
 #[test]
 pub fn test_error_071() {
     run_error_test(&error_opts("071_def_keyword.eu"));
+}
+
+#[test]
+pub fn test_error_072() {
+    run_error_test(&io_error_opts("072_io_fail.eu"));
 }
 
 #[test]
