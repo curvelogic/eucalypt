@@ -23,6 +23,8 @@ use eucalypt::driver::{eval, statistics::Statistics};
 const STACK_SIZE: usize = 64 * 1024 * 1024;
 
 pub fn main() {
+    eucalypt::eval::machine::crash::install_crash_handler();
+
     let exit_code = thread::Builder::new()
         .stack_size(STACK_SIZE)
         .spawn(run)

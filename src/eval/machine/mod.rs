@@ -25,6 +25,7 @@ use super::{
 };
 
 pub mod cont;
+pub mod crash;
 pub mod env;
 pub mod env_builder;
 pub mod intrinsic;
