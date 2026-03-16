@@ -41,6 +41,7 @@ pub enum GcEventKind {
 }
 
 impl GcEventKind {
+    #[cfg(not(target_arch = "wasm32"))]
     fn label(self) -> &'static [u8] {
         match self {
             Self::Empty => b"empty",
@@ -55,6 +56,7 @@ impl GcEventKind {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn from_u8(v: u8) -> Self {
         match v {
             1 => Self::CollectionStart,
@@ -143,6 +145,7 @@ impl GcEventRing {
     ///
     /// Safe to call from a signal handler because it only reads
     /// fixed-size arrays and an atomic counter — no allocations.
+    #[cfg(any(not(target_arch = "wasm32"), test))]
     fn iter_raw(&self) -> impl Iterator<Item = GcEvent> + '_ {
         let total = self.pos.load(Ordering::Relaxed);
         let count = total.min(GC_EVENT_RING_SIZE);
@@ -291,6 +294,7 @@ pub fn install_crash_handler() {}
 /// Signal-safe integer formatting into a fixed buffer.
 ///
 /// Returns the number of bytes written.
+#[cfg(any(not(target_arch = "wasm32"), test))]
 fn format_u64(mut val: u64, buf: &mut [u8]) -> usize {
     if val == 0 {
         if !buf.is_empty() {
@@ -316,6 +320,7 @@ fn format_u64(mut val: u64, buf: &mut [u8]) -> usize {
 /// Signal-safe hex formatting into a fixed buffer.
 ///
 /// Returns the number of bytes written.
+#[cfg(any(not(target_arch = "wasm32"), test))]
 fn format_hex(mut val: u64, buf: &mut [u8]) -> usize {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     if val == 0 {
