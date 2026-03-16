@@ -264,13 +264,14 @@ pub fn unregister_crash_diagnostics() {
 }
 
 // ---------------------------------------------------------------------------
-// Signal handler
+// Signal handler (native platforms only)
 // ---------------------------------------------------------------------------
 
 /// Install the SIGSEGV and SIGBUS signal handlers.
 ///
 /// This should be called once, early in `main()`, before any
-/// evaluation begins.
+/// evaluation begins. On WASM this is a no-op.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn install_crash_handler() {
     unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
@@ -282,6 +283,10 @@ pub fn install_crash_handler() {
         libc::sigaction(libc::SIGBUS, &action, std::ptr::null_mut());
     }
 }
+
+/// No-op on WASM — signals are not available.
+#[cfg(target_arch = "wasm32")]
+pub fn install_crash_handler() {}
 
 /// Signal-safe integer formatting into a fixed buffer.
 ///
@@ -345,11 +350,13 @@ fn format_hex(mut val: u64, buf: &mut [u8]) -> usize {
 /// # Safety
 ///
 /// Uses `libc::write` which is async-signal-safe.
+#[cfg(not(target_arch = "wasm32"))]
 unsafe fn write_stderr(data: &[u8]) {
     libc::write(libc::STDERR_FILENO, data.as_ptr().cast(), data.len());
 }
 
 /// Write a labelled u64 value to stderr (signal-safe).
+#[cfg(not(target_arch = "wasm32"))]
 unsafe fn write_field(label: &[u8], value: u64) {
     let mut buf = [0u8; 20];
     let len = format_u64(value, &mut buf);
@@ -367,6 +374,7 @@ unsafe fn write_field(label: &[u8], value: u64) {
 /// This is called from the OS signal delivery mechanism. It must
 /// only use async-signal-safe operations (no heap allocation, no
 /// locks, no stdio). We use `libc::write` for all output.
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn crash_signal_handler(
     sig: libc::c_int,
     info: *mut libc::siginfo_t,
