@@ -81,6 +81,16 @@ The project includes a sophisticated garbage collector:
 - Mark-and-sweep for older generations
 - Custom memory layout for eucalypt values
 
+### Debug Environment Variables
+
+| Variable | Effect |
+|----------|--------|
+| `EU_GC_POISON=1` | Fill swept memory with `0xDE` poison pattern. Detects use-after-free by checking for poison in `mark()`. Also enables hole verification in the bump allocator. |
+| `EU_GC_VERIFY=1` | After each GC mark phase, re-traverse from roots and verify no reachable objects were missed. Panics if any unmarked-but-reachable objects are found. |
+| `EU_STACK_DIAG=1` | Log continuation stack composition to stderr whenever a new max stack depth is reached. |
+
+The crash signal handler (SIGSEGV/SIGBUS diagnostics) is always active and has no environment variable — it installs unconditionally in `main()`.
+
 ### Language Features
 
 - Functional programming with lazy evaluation
