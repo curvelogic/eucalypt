@@ -90,7 +90,7 @@ impl Block {
     }
 
     pub fn byte_offset_of<T>(&self, ptr: NonNull<T>) -> Option<usize> {
-        if ptr.cast() > self.ptr {
+        if ptr.cast() >= self.ptr {
             let offset = (ptr.as_ptr() as usize).abs_diff(self.ptr.as_ptr() as usize);
             if offset < BLOCK_SIZE_BYTES {
                 return Some(offset);

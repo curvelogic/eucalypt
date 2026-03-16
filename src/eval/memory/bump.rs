@@ -299,6 +299,14 @@ impl BumpBlock {
             if next < self.lower {
                 // find next hole
                 if let Some((lower, cursor)) = self.line_map.find_hole(self.cursor) {
+                    // When GC poison is enabled, check that the hole doesn't
+                    // contain any data that looks like valid heap pointers.
+                    // This catches line-marking bugs where live object memory
+                    // is incorrectly classified as a free hole.
+                    if super::gc_debug::poison_enabled() {
+                        self.verify_hole_is_dead(lower, cursor);
+                    }
+
                     if cfg!(debug_assertions) {
                         self.block.fill(lower, cursor - lower);
                     }
@@ -318,6 +326,44 @@ impl BumpBlock {
                 // - Result points to unallocated space in the current hole
                 unsafe { Some(self.block.as_ptr().add(next)) }
             }
+        }
+    }
+
+    /// Verify that a hole region doesn't contain marked objects.
+    ///
+    /// Walks through the hole looking for AllocHeader patterns that
+    /// indicate a live (marked) object.  If found, the line map failed
+    /// to mark the lines covering this object — a GC bug.
+    fn verify_hole_is_dead(&self, lower: usize, upper: usize) {
+        let base = self.block.as_ptr();
+        // We check both mark states since we can't easily access
+        // Heap's current mark_state from here.
+        let header_size = std::mem::size_of::<super::header::AllocHeader>();
+
+        // Walk through the hole in header_size steps looking for valid headers
+        let mut offset = lower;
+        while offset + header_size <= upper {
+            unsafe {
+                let ptr = base.add(offset) as *const super::header::AllocHeader;
+                // Check if this looks like a marked header (either mark state)
+                if (*ptr).is_marked_with_state(true) || (*ptr).is_marked_with_state(false) {
+                    let length = (*ptr).length();
+                    // A length of 0 or very large values are likely garbage
+                    if length > 0 && (length as usize) < BLOCK_SIZE_BYTES {
+                        eprintln!(
+                            "GC HOLE WARNING: block {:p} hole [{lower}..{upper}] \
+                             contains marked object at offset {offset} \
+                             (length={length}, marked_true={}, marked_false={})",
+                            base,
+                            (*ptr).is_marked_with_state(true),
+                            (*ptr).is_marked_with_state(false),
+                        );
+                        // Don't panic — this is diagnostic. The real corruption
+                        // will be caught when the 0xFF fill overwrites the data.
+                    }
+                }
+            }
+            offset += header_size;
         }
     }
 

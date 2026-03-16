@@ -740,6 +740,14 @@ impl HeapState {
                 return;
             }
         }
+
+        // No block found for this pointer
+        if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
+            eprintln!(
+                "GC BUG: mark_line_in_block({:p}) could not find block with base {base:#x}",
+                ptr.as_ptr(),
+            );
+        }
     }
 
     /// Find the block containing `ptr` by its base address and mark
@@ -796,6 +804,23 @@ impl HeapState {
                 block.mark_region(ptr, bytes);
                 return;
             }
+        }
+
+        // No block found — this means a live object's lines won't be marked,
+        // causing lazy sweep to reclaim live data.
+        if super::gc_debug::poison_enabled() || super::gc_debug::verify_enabled() {
+            eprintln!(
+                "GC BUG: mark_region_in_block({:p}, {bytes}) could not find block with base {base:#x}\n\
+                 head: {:?}, overflow: {:?}, rest: {}, unswept: {}, recycled: {}, evac_target: {:?}, filled_evac: {}",
+                ptr.as_ptr(),
+                self.head.as_ref().map(|b| b.base_address()),
+                self.overflow.as_ref().map(|b| b.base_address()),
+                self.rest.len(),
+                self.unswept.len(),
+                self.recycled.len(),
+                self.evacuation_target.as_ref().map(|b| b.base_address()),
+                self.filled_evacuation_blocks.len(),
+            );
         }
     }
 
