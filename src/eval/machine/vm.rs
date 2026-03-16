@@ -1369,6 +1369,46 @@ impl<'a> Machine<'a> {
         Ok(())
     }
 
+    /// Run a GC collection and update crash diagnostics around it.
+    fn collect_with_diagnostics(&mut self) {
+        let ticks = self.metrics.ticks();
+
+        // Snapshot VM state before collection
+        self.crash_diagnostics.update_vm(
+            ticks,
+            self.metrics.allocs(),
+            self.metrics.max_stack(),
+            self.state.stack.len(),
+        );
+
+        self.crash_diagnostics.record_gc_event(
+            super::crash::GcEventKind::CollectionStart,
+            0,
+            ticks,
+        );
+
+        collect::collect(
+            &mut self.state,
+            &mut self.heap,
+            &mut self.clock,
+            self.settings.dump_heap,
+        );
+
+        let stats = self.heap.stats();
+        self.crash_diagnostics.record_gc_event(
+            super::crash::GcEventKind::CollectionEnd,
+            stats.blocks_allocated as u32,
+            ticks,
+        );
+        self.crash_diagnostics.update_gc(
+            stats.collections_count,
+            stats.blocks_allocated,
+            stats.peak_heap_blocks,
+            stats.lobs_allocated,
+            self.heap.mark_state(),
+        );
+    }
+
     /// Run the machine until termination or step limit
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
         // Register crash diagnostics now that self is at its final address.
@@ -1395,41 +1435,8 @@ impl<'a> Machine<'a> {
             if gc_countdown == 0 {
                 gc_countdown = gc_check_freq;
 
-                // Update crash diagnostics snapshot
-                let stats = self.heap.stats();
-                self.crash_diagnostics.update_vm(
-                    self.metrics.ticks(),
-                    self.metrics.allocs(),
-                    self.metrics.max_stack(),
-                    self.state.stack.len(),
-                );
-                self.crash_diagnostics.update_gc(
-                    stats.collections_count,
-                    stats.blocks_allocated,
-                    stats.peak_heap_blocks,
-                    stats.lobs_allocated,
-                    self.heap.mark_state(),
-                );
-
                 if self.heap().policy_requires_collection() {
-                    let ticks = self.metrics.ticks();
-                    self.crash_diagnostics.record_gc_event(
-                        super::crash::GcEventKind::CollectionStart,
-                        0,
-                        ticks,
-                    );
-                    collect::collect(
-                        &mut self.state,
-                        &mut self.heap,
-                        &mut self.clock,
-                        self.settings.dump_heap,
-                    );
-                    let stats = self.heap.stats();
-                    self.crash_diagnostics.record_gc_event(
-                        super::crash::GcEventKind::CollectionEnd,
-                        stats.blocks_allocated as u32,
-                        ticks,
-                    );
+                    self.collect_with_diagnostics();
                     self.clock.switch(ThreadOccupation::Mutator);
                 }
             }
@@ -1437,12 +1444,7 @@ impl<'a> Machine<'a> {
             self.step()?;
         }
 
-        collect::collect(
-            &mut self.state,
-            &mut self.heap,
-            &mut self.clock,
-            self.settings.dump_heap,
-        );
+        self.collect_with_diagnostics();
 
         self.clock.stop();
 
