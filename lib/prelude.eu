@@ -55,6 +55,9 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
 
   ` "Pipeline-friendly check: bind the preceding IO action through check."
   checked: io.and-then(io.check)
+
+  ` "Fail the IO action with the given error message."
+  fail(msg): __IO_ACTION({:io-fail message: msg})
 }
 
 
