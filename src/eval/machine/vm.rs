@@ -1154,7 +1154,7 @@ impl<'a> Machine<'a> {
         heap_limit_mib: Option<usize>,
         dump_heap: bool,
     ) -> Self {
-        let machine = Machine {
+        Machine {
             heap: heap_limit_mib.map(Heap::with_limit).unwrap_or_default(),
             state: Default::default(),
             intrinsics: vec![],
@@ -1167,9 +1167,7 @@ impl<'a> Machine<'a> {
             clock: Clock::default(),
             capture_emitters: Vec::new(),
             crash_diagnostics: super::crash::CrashDiagnostics::new(),
-        };
-        super::crash::register_crash_diagnostics(&machine.crash_diagnostics);
-        machine
+        }
     }
 
     /// Replace the symbol pool (used during initialisation)
@@ -1373,6 +1371,10 @@ impl<'a> Machine<'a> {
 
     /// Run the machine until termination or step limit
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
+        // Register crash diagnostics now that self is at its final address.
+        // (Cannot do this in new() because Machine may be moved after construction.)
+        super::crash::register_crash_diagnostics(&self.crash_diagnostics);
+
         self.clock.switch(ThreadOccupation::Mutator);
 
         // Use a countdown counter instead of modulo check on every
