@@ -6,9 +6,113 @@
 
 **Goal:** Add `parse-args(defaults, args)` to the prelude that parses command-line arguments against a defaults block with metadata, supporting long/short flags, flag toggles, type coercion, positional args, and auto-generated help.
 
-**Architecture:** Pure prelude implementation using block introspection (`elements`, `meta`, `lookup-or`, `has`), string matching (`str.starts-with?`, `str.split-on`), and list folding. No new BIFs needed. The defaults block doubles as the option schema — types inferred from default values, metadata defines short flags and documentation.
+**Architecture:** Mostly pure prelude using block introspection (`elements`, `meta`, `lookup-or`, `has`, `kv-block`, `sym`), string matching (`str.starts-with?`, `str.split-on`), and list folding. Requires new type predicate BIFs (`number?`, `string?`, `bool?`, `symbol?`) for type coercion. The defaults block doubles as the option schema — types inferred from default values, metadata defines short flags and documentation.
 
-**Tech Stack:** Eucalypt prelude only
+**Tech Stack:** Rust (new BIFs for type predicates), eucalypt prelude
+
+---
+
+## Task 0: Type predicate intrinsics (prerequisite)
+
+Add `number?`, `string?`, `bool?`, `symbol?` predicates following the existing `block?`/`list?` pattern. These are generally useful beyond parse-args.
+
+**Files:**
+- Modify: `src/eval/stg/arith.rs` or create `src/eval/stg/type_check.rs` (BIF implementations)
+- Modify: `src/eval/intrinsics.rs` (register intrinsics)
+- Modify: `src/eval/stg/mod.rs` (register in runtime)
+- Modify: `lib/prelude.eu` (add prelude wrappers)
+- Test: `tests/harness/126_parse_args.eu` (or a separate type predicate test)
+- Test: `tests/harness_test.rs`
+
+- [ ] **Step 1: Implement type predicate BIFs**
+
+Follow the `IsList` pattern in `src/eval/stg/list.rs:113-141`. Each predicate resolves the arg to native and checks the variant:
+
+```rust
+pub struct IsNumber;
+
+impl StgIntrinsic for IsNumber {
+    fn name(&self) -> &str { "ISNUMBER" }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let nav = machine.nav(view);
+        let is_num = matches!(nav.resolve_native(&args[0]), Ok(Native::Num(_)));
+        machine_return_bool(machine, view, is_num)
+    }
+}
+
+impl CallGlobal1 for IsNumber {}
+```
+
+Similarly for `IsString` (checks `Native::Str`), `IsSymbol` (checks `Native::Sym`), `IsBool` (checks `BoolTrue`/`BoolFalse` data constructors — use the same tag-matching pattern as `IsList`).
+
+- [ ] **Step 2: Register intrinsics**
+
+Add to `src/eval/intrinsics.rs` at next available indices:
+
+```rust
+Intrinsic { name: "ISNUMBER", ty: function(vec![unk()]).unwrap(), strict: vec![0] },
+Intrinsic { name: "ISSTRING", ty: function(vec![unk()]).unwrap(), strict: vec![0] },
+Intrinsic { name: "ISSYMBOL", ty: function(vec![unk()]).unwrap(), strict: vec![0] },
+Intrinsic { name: "ISBOOL", ty: function(vec![unk()]).unwrap(), strict: vec![0] },
+```
+
+Register in `src/eval/stg/mod.rs` `register_intrinsics()`.
+
+- [ ] **Step 3: Add prelude wrappers**
+
+In `lib/prelude.eu`, near `block?` and `list?`:
+
+```eu
+` "`number?(v)` - true if and only if `v` is a number."
+number?: __ISNUMBER
+
+` "`string?(v)` - true if and only if `v` is a string."
+string?: __ISSTRING
+
+` "`symbol?(v)` - true if and only if `v` is a symbol."
+symbol?: __ISSYMBOL
+
+` "`bool?(v)` - true if and only if `v` is a boolean."
+bool?: __ISBOOL
+```
+
+- [ ] **Step 4: Write test**
+
+Add type predicate tests to the harness (can be part of 126 or a separate file):
+
+```eu
+` { target: :test-type-predicates }
+test-type-predicates: {
+  n: 42 number? //= true
+  s: "hello" string? //= true
+  y: :foo symbol? //= true
+  b: true bool? //= true
+  nn: "hello" number? //= false
+  ns: 42 string? //= false
+  bl: [] block? //= false
+  lb: {} list? //= false
+  RESULT: [n, s, y, b, nn, ns, bl, lb] all-true? then(:PASS, :FAIL)
+}
+```
+
+- [ ] **Step 5: Build and test**
+
+```bash
+cargo test test_harness_126
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git commit -m "feat: add number?, string?, symbol?, bool? type predicates"
+```
 
 ---
 
