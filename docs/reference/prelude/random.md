@@ -58,7 +58,7 @@ infinite stream.
 | `random.shuffle(list)` | Action returning a shuffled copy of list |
 | `random.sample(n, list)` | Action returning n elements sampled without replacement |
 | `random.map(f, action)` | Apply pure function f to the result of an action (derived) |
-| `random.then(a, b)` | Sequence two actions, discard first result (derived) |
+| `random.then(b, a)` | Sequence two actions, discard first result (derived). Pipeline: `a random.then(b)` |
 | `random.join(mm)` | Flatten a nested action (derived) |
 | `random.sequence(ms)` | Sequence a list of actions, collect results (derived) |
 | `random.map-m(f, xs)` | Map f over list producing actions, then sequence (derived) |

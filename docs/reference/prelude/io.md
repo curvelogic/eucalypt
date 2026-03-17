@@ -62,7 +62,7 @@ Optional `{stdin: s}` pipes string `s` to the command's standard input.
 | `io.fail(msg)` | Fail the IO action with the given error message |
 | `io.map(f, action)` | Apply a pure function to the result of an IO action (fmap) |
 | `io.and-then(f, action)` | Pass the result of `action` to `f` (bind with flipped args, for pipeline use) |
-| `io.then(a, b)` | Sequence two actions, discarding the result of the first |
+| `io.then(b, a)` | Sequence two actions, discarding the result of the first. Pipeline: `a io.then(b)` |
 | `io.join(mm)` | Flatten a nested IO action |
 | `io.sequence(ms)` | Run a list of IO actions in order, collecting results into a list |
 | `io.map-m(f, xs)` | Apply `f` to each element of `xs` (producing IO actions), then sequence |
@@ -80,7 +80,7 @@ pattern and the [IO guide](../../guide/io.md) for practical usage.
 | `monad(m).return` | Passed through from `m.return` |
 | `monad(m).map(f, action)` | Apply pure function `f` to the result of a monadic action (fmap) |
 | `monad(m).and-then(f, action)` | Pass the result of `action` to `f` (bind with flipped args, for pipeline use) |
-| `monad(m).then(a, b)` | Sequence two monadic actions, discarding the result of the first |
+| `monad(m).then(b, a)` | Sequence two monadic actions, discarding the result of the first. Pipeline: `a m.then(b)` |
 | `monad(m).join(mm)` | Flatten a nested monadic value |
 | `monad(m).sequence(ms)` | Sequence a list of monadic actions, collecting results into a list |
 | `monad(m).map-m(f, xs)` | Apply `f` to each element of `xs` (producing actions), then sequence |

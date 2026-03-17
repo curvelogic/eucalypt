@@ -124,7 +124,7 @@ The returned block provides:
 | `bind(action, f)` | Passed through from `m.bind` |
 | `return(v)` | Passed through from `m.return` |
 | `map(f, action)` | Apply pure function `f` to the result of an action (fmap) |
-| `then(a, b)` | Sequence two actions, discarding the result of the first |
+| `then(b, a)` | Sequence two actions, discarding the result of the first. Pipeline: `a m.then(b)` |
 | `join(mm)` | Flatten a nested monadic value |
 | `sequence(ms)` | Run a list of actions in order, collecting results |
 | `map-m(f, xs)` | Apply `f` to each element of `xs`, then sequence |
