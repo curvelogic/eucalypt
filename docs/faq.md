@@ -10,7 +10,13 @@ On macOS, use Homebrew:
 brew install curvelogic/homebrew-tap/eucalypt
 ```
 
-On other platforms, download a binary from the
+On Linux or macOS without Homebrew, use the install script:
+
+```sh
+curl -sSf https://raw.githubusercontent.com/curvelogic/eucalypt/master/install.sh | sh
+```
+
+You can also download a binary from the
 [GitHub releases](https://github.com/curvelogic/eucalypt/releases)
 page, or build from source with `cargo install --path .`.
 

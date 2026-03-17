@@ -10,6 +10,17 @@ If you use Homebrew, you can install using:
 brew install curvelogic/homebrew-tap/eucalypt
 ```
 
+### Linux / macOS (install script)
+
+Alternatively, install the latest release binary directly:
+
+```sh
+curl -sSf https://raw.githubusercontent.com/curvelogic/eucalypt/master/install.sh | sh
+```
+
+This installs to `~/.local/bin`. Set `EUCALYPT_INSTALL_DIR` to
+override the install location.
+
 Otherwise binaries for macOS are available on the [releases
 page](https://github.com/curvelogic/eucalypt/releases).
 
