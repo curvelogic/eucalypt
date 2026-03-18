@@ -1,0 +1,325 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Lists - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../../highlight.css">
+        <link rel="stylesheet" href="../../tomorrow-night.css">
+        <link rel="stylesheet" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/reference/prelude/lists.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="lists"><a class="header" href="#lists">Lists</a></h1>
+<h2 id="basic-operations"><a class="header" href="#basic-operations">Basic Operations</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>cons</code></td><td>Construct new list by prepending item <code>h</code> to list <code>t</code></td></tr>
+<tr><td><code>snoc(x, l)</code></td><td>Append element <code>x</code> to the end of list <code>l</code></td></tr>
+<tr><td><code>head</code></td><td>Return the head item of list <code>xs</code>, panic if empty</td></tr>
+<tr><td><code>(↑ xs)</code></td><td>Return first element of list <code>xs</code>. Tight-binding prefix operator</td></tr>
+<tr><td><code>nil?</code></td><td><code>true</code> if list <code>xs</code> is empty, <code>false</code> otherwise</td></tr>
+<tr><td><code>non-nil?</code></td><td><code>true</code> if list <code>xs</code> is non-empty, <code>false</code> otherwise</td></tr>
+<tr><td><code>(x ✓)</code></td><td><code>true</code> if <code>x</code> is not null, <code>false</code> otherwise. Postfix not-null check (precedence 88)</td></tr>
+<tr><td><code>head-or(d, xs)</code></td><td>Return the head item of list <code>xs</code> or default <code>d</code> if empty</td></tr>
+<tr><td><code>tail</code></td><td>Return list <code>xs</code> without the head item. [] causes error</td></tr>
+<tr><td><code>tail-or(d, xs)</code></td><td>Return list <code>xs</code> without the head item or <code>d</code> for empty list</td></tr>
+<tr><td><code>nil</code></td><td>Identical to <code>[]</code>, the empty list</td></tr>
+<tr><td><code>first</code></td><td>Return first item of list <code>xs</code> - error if the list is empty</td></tr>
+<tr><td><code>second(xs)</code></td><td>Return second item of list - error if there is none</td></tr>
+<tr><td><code>second-or(d, xs)</code></td><td>Return second item of list - default <code>d</code> if there is none</td></tr>
+</tbody></table>
+</div>
+<h2 id="list-construction"><a class="header" href="#list-construction">List Construction</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>repeat(i)</code></td><td>Return infinite list of instances of item <code>i</code></td></tr>
+<tr><td><code>iterate(f, i)</code></td><td>Return list of <code>i</code> with subsequent repeated applications of <code>f</code> to <code>i</code></td></tr>
+<tr><td><code>ints-from(n)</code></td><td>Return infinite list of integers from <code>n</code> upwards</td></tr>
+<tr><td><code>range(b, e)</code></td><td>Return list of ints from <code>b</code> to <code>e</code> (not including <code>e</code>)</td></tr>
+<tr><td><code>cycle(l)</code></td><td>Create infinite list by cycling elements of list <code>l</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="transformations"><a class="header" href="#transformations">Transformations</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>take(n, l)</code></td><td>Return initial segment of integer <code>n</code> elements from list <code>l</code></td></tr>
+<tr><td><code>drop(n, l)</code></td><td>Return result of dropping integer <code>n</code> elements from list <code>l</code></td></tr>
+<tr><td><code>take-while(p?, l)</code></td><td>Initial elements of list <code>l</code> while <code>p?</code> is true</td></tr>
+<tr><td><code>take-until(p?)</code></td><td>Initial elements of list <code>l</code> while <code>p?</code> is false</td></tr>
+<tr><td><code>drop-while(p?, l)</code></td><td>Skip initial elements of list <code>l</code> while <code>p?</code> is true</td></tr>
+<tr><td><code>drop-until(p?)</code></td><td>Skip initial elements of list <code>l</code> while <code>p?</code> is false</td></tr>
+<tr><td><code>map(f, l)</code></td><td>Map function <code>f</code> over list <code>l</code></td></tr>
+<tr><td><code>map2(f, l1, l2)</code></td><td>Map function <code>f</code> over lists <code>l1</code> and <code>l2</code>, until the shorter is exhausted</td></tr>
+<tr><td><code>cross(f, xs, ys)</code></td><td>Apply <code>f</code> to every combination of elements from <code>xs</code> and <code>ys</code> (cartesian product)</td></tr>
+<tr><td><code>filter(p?, l)</code></td><td>Return list of elements of list <code>l</code> that satisfy predicate <code>p?</code></td></tr>
+<tr><td><code>remove(p?, l)</code></td><td>Return list of elements of list <code>l</code> that do not satisfy predicate <code>p?</code></td></tr>
+<tr><td><code>reverse(l)</code></td><td>Reverse list <code>l</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="combining-lists"><a class="header" href="#combining-lists">Combining Lists</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>zip-with</code></td><td>Map function <code>f</code> over lists <code>l1</code> and <code>l2</code>, until the shorter is exhausted</td></tr>
+<tr><td><code>zip</code></td><td>List of pairs of elements  <code>l1</code> and <code>l2</code>, until the shorter is exhausted</td></tr>
+<tr><td><code>append(l1, l2)</code></td><td>Concatenate two lists <code>l1</code> and <code>l2</code></td></tr>
+<tr><td><code>prepend</code></td><td>Concatenate two lists with <code>l1</code> after <code>l2</code></td></tr>
+<tr><td><code>concat(ls)</code></td><td>Concatenate all lists in <code>ls</code> together</td></tr>
+<tr><td><code>mapcat(f)</code></td><td>Map items in l with <code>f</code> and concatenate the resulting lists</td></tr>
+<tr><td><code>zip-apply(fs, vs)</code></td><td>Apply fns in list <code>fs</code> to corresponding values in list <code>vs</code>, until shorter is exhausted</td></tr>
+</tbody></table>
+</div>
+<h2 id="splitting-lists"><a class="header" href="#splitting-lists">Splitting Lists</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>split-at(n, l)</code></td><td>Split list in to at <code>n</code>th item and return pair</td></tr>
+<tr><td><code>split-after(p?, l)</code></td><td>Split list where <code>p?</code> becomes false and return pair</td></tr>
+<tr><td><code>split-when(p?, l)</code></td><td>Split list where <code>p?</code> becomes true and return pair</td></tr>
+<tr><td><code>window(n, step, l)</code></td><td>List of lists of sliding windows over list <code>l</code> of size <code>n</code> and offest <code>step</code></td></tr>
+<tr><td><code>partition(n)</code></td><td>List of lists of non-overlapping segments of list <code>l</code> of size <code>n</code></td></tr>
+<tr><td><code>discriminate(pred, xs)</code></td><td>Return pair of <code>xs</code> for which <code>pred(_)</code> is true and <code>xs</code> for which <code>pred(_)</code> is false</td></tr>
+</tbody></table>
+</div>
+<h2 id="folds-and-scans"><a class="header" href="#folds-and-scans">Folds and Scans</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>foldl(op, i, l)</code></td><td>Left fold operator <code>op</code> over list <code>l</code> starting from value <code>i</code></td></tr>
+<tr><td><code>foldr(op, i, l)</code></td><td>Right fold operator <code>op</code> over list <code>l</code> ending with value <code>i</code></td></tr>
+<tr><td><code>scanl(op, i, l)</code></td><td>Left scan operator <code>op</code> over list <code>l</code> starting from value <code>i</code></td></tr>
+<tr><td><code>scanr(op, i, l)</code></td><td>Right scan operator <code>op</code> over list <code>l</code> ending with value <code>i</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="predicates"><a class="header" href="#predicates">Predicates</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>all-true?(l)</code></td><td>True if and only if all items in list <code>l</code> are true</td></tr>
+<tr><td><code>all(p?, l)</code></td><td>True if and only if all items in list <code>l</code> satisfy predicate <code>p?</code></td></tr>
+<tr><td><code>any-true?(l)</code></td><td>True if and only if any items in list <code>l</code> are true</td></tr>
+<tr><td><code>any(p?, l)</code></td><td>True if and only if any items in list <code>l</code> satisfy predicate <code>p?</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="sorting"><a class="header" href="#sorting">Sorting</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>group-by(k, xs)</code></td><td>Group xs by key function returning block of key to subgroups, maintains order</td></tr>
+<tr><td><code>qsort(lt, xs)</code></td><td>Sort <code>xs</code> using 'less-than' function <code>lt</code></td></tr>
+<tr><td><code>sort-nums(xs)</code></td><td>Sort list of numbers ascending</td></tr>
+<tr><td><code>sort-strs(xs)</code></td><td>Sort list of strings or symbols ascending</td></tr>
+<tr><td><code>sort-zdts(xs)</code></td><td>Sort list of zoned date-times ascending</td></tr>
+<tr><td><code>sort-by(key-fn, cmp, xs)</code></td><td>Sort list <code>xs</code> by key extracted with <code>key-fn</code> using comparator <code>cmp</code></td></tr>
+<tr><td><code>sort-by-num(key-fn)</code></td><td>Sort list <code>xs</code> ascending by numeric key extracted with <code>key-fn</code></td></tr>
+<tr><td><code>sort-by-str(key-fn)</code></td><td>Sort list <code>xs</code> ascending by string key extracted with <code>key-fn</code></td></tr>
+<tr><td><code>sort-by-zdt(key-fn)</code></td><td>Sort list <code>xs</code> ascending by zoned date-time key extracted with <code>key-fn</code></td></tr>
+</tbody></table>
+</div>
+<h3 id="sorting-examples"><a class="header" href="#sorting-examples">Sorting Examples</a></h3>
+<pre><code class="language-eu">nums: [3, 1, 4, 1, 5] sort-nums          # [1, 1, 3, 4, 5]
+words: ["banana", "apple", "cherry"] sort-strs  # ["apple", "banana", "cherry"]
+
+people: [{name: "Zara" age: 30}, {name: "Alice" age: 25}]
+by-name: people sort-by-str(.name)       # sorted by name
+by-age: people sort-by-num(.age)         # sorted by age
+</code></pre>
+<h2 id="other"><a class="header" href="#other">Other</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>nth(n, l)</code></td><td>Return <code>n</code>th item of list if it exists, otherwise panic</td></tr>
+<tr><td><code>(l !! n)</code></td><td>Return <code>n</code>th item of list if it exists, otherwise error. For arrays, <code>n</code> must be a coordinate list (e.g. <code>[row, col]</code>) and delegates to <code>arr.get</code>.</td></tr>
+<tr><td><code>count(l)</code></td><td>Return count of items in list <code>l</code></td></tr>
+<tr><td><code>last</code></td><td>Return last element of list <code>l</code></td></tr>
+<tr><td><code>over-sliding-pairs(f, l)</code></td><td>Apply binary fn <code>f</code> to each overlapping pair in <code>l</code> to form new list</td></tr>
+<tr><td><code>differences</code></td><td>Calculate difference between each overlapping pair in list of numbers <code>l</code></td></tr>
+</tbody></table>
+</div>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../reference/prelude/index.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../reference/prelude/blocks.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../reference/prelude/index.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../reference/prelude/blocks.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

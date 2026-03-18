@@ -1,0 +1,548 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Eucalypt by Example - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/welcome/by-example.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="eucalypt-by-example"><a class="header" href="#eucalypt-by-example">Eucalypt by Example</a></h1>
+<p>This page presents a collection of worked examples showing how
+eucalypt solves real-world problems. Each example includes the
+problem, the eucalypt code, and the expected output.</p>
+<h2 id="1-format-conversion-json-to-yaml"><a class="header" href="#1-format-conversion-json-to-yaml">1. Format Conversion: JSON to YAML</a></h2>
+<p><strong>Problem:</strong> Convert a JSON configuration file to YAML.</p>
+<pre><code class="language-sh">echo '{"database": {"host": "db.example.com", "port": 5432}}' | eu
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">database:
+  host: db.example.com
+  port: 5432
+</code></pre>
+<p>Eucalypt reads JSON natively and defaults to YAML output. No code
+needed.</p>
+<h2 id="2-extracting-fields-from-api-data"><a class="header" href="#2-extracting-fields-from-api-data">2. Extracting Fields from API Data</a></h2>
+<p><strong>Problem:</strong> Given a list of users in JSON, extract just their names.</p>
+<pre><code class="language-sh">eu -e 'map(.name)' &lt;&lt;'JSON'
+[
+  {"name": "Alice", "role": "admin"},
+  {"name": "Bob", "role": "user"},
+  {"name": "Charlie", "role": "user"}
+]
+JSON
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">- Alice
+- Bob
+- Charlie
+</code></pre>
+<p>The <code>_</code> is an expression anaphor -- <code>_.name</code> means "look up <code>name</code>
+in whatever the argument is".</p>
+<h2 id="3-filtering-and-transforming-data"><a class="header" href="#3-filtering-and-transforming-data">3. Filtering and Transforming Data</a></h2>
+<p><strong>Problem:</strong> From a list of products, find those over a price
+threshold and format them.</p>
+<pre><code class="language-eu"># products.eu
+products: [
+  { name: "Widget" price: 9.99 }
+  { name: "Gadget" price: 24.99 }
+  { name: "Gizmo" price: 49.99 }
+  { name: "Doohickey" price: 4.99 }
+]
+
+expensive: products
+  filter(.price &gt; 20)
+  map(.name str.to-upper)
+</code></pre>
+<pre><code class="language-sh">eu products.eu -e expensive
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">- GADGET
+- GIZMO
+</code></pre>
+<h2 id="4-generating-configuration-with-shared-defaults"><a class="header" href="#4-generating-configuration-with-shared-defaults">4. Generating Configuration with Shared Defaults</a></h2>
+<p><strong>Problem:</strong> Generate environment-specific configs that share common
+defaults.</p>
+<pre><code class="language-eu"># config.eu
+base: {
+  app: "my-service"
+  port: 8080
+  log-level: "info"
+  db: { host: "localhost" port: 5432 }
+}
+
+production: base &lt;&lt; {
+  log-level: "warn"
+  db: { host: "prod-db.internal" }
+}
+
+staging: base &lt;&lt; {
+  db: { host: "staging-db.internal" }
+}
+</code></pre>
+<pre><code class="language-sh">eu config.eu -e production -j
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-json">{
+  "app": "my-service",
+  "port": 8080,
+  "log-level": "warn",
+  "db": {
+    "host": "prod-db.internal",
+    "port": 5432
+  }
+}
+</code></pre>
+<p>The <code>&lt;&lt;</code> operator deep-merges blocks, so nested keys like <code>db.port</code>
+are preserved while <code>db.host</code> is overridden.</p>
+<h2 id="5-csv-to-json-conversion"><a class="header" href="#5-csv-to-json-conversion">5. CSV to JSON Conversion</a></h2>
+<p><strong>Problem:</strong> Read a CSV file and output as a JSON array.</p>
+<p>Given <code>people.csv</code>:</p>
+<pre><code class="language-csv">name,age,city
+Alice,30,London
+Bob,25,Manchester
+Charlie,35,Edinburgh
+</code></pre>
+<pre><code class="language-sh">eu rows=people.csv -j -e 'rows map(.name)'
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-json">["Alice", "Bob", "Charlie"]
+</code></pre>
+<p>Or to transform the data:</p>
+<pre><code class="language-sh">eu rows=people.csv -j -e 'rows map{ name: •0.name age: •0.age num }'
+</code></pre>
+<p>This converts age from string to number (CSV values are always
+strings).</p>
+<h2 id="6-generating-availability-zone-names"><a class="header" href="#6-generating-availability-zone-names">6. Generating Availability Zone Names</a></h2>
+<p><strong>Problem:</strong> Generate AWS availability zone names from a list of zone
+letters.</p>
+<pre><code class="language-sh">eu -e '["a", "b", "c"] map("eu-west-2{}")'
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">- eu-west-2a
+- eu-west-2b
+- eu-west-2c
+</code></pre>
+<p>The string <code>"eu-west-2{}"</code> is a function: <code>{}</code> is a string anaphor
+that takes one argument.</p>
+<h2 id="7-merging-multiple-yaml-files"><a class="header" href="#7-merging-multiple-yaml-files">7. Merging Multiple YAML Files</a></h2>
+<p><strong>Problem:</strong> Combine values from several YAML files into a single
+output.</p>
+<p>Given <code>defaults.yaml</code>:</p>
+<pre><code class="language-yaml">timeout: 30
+retries: 3
+</code></pre>
+<p>Given <code>overrides.yaml</code>:</p>
+<pre><code class="language-yaml">timeout: 60
+debug: true
+</code></pre>
+<pre><code class="language-sh">eu defaults.yaml overrides.yaml
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">timeout: 60
+retries: 3
+debug: true
+</code></pre>
+<p>Later inputs override earlier ones. For a merged view with both
+available, use named inputs:</p>
+<pre><code class="language-sh">eu d=defaults.yaml o=overrides.yaml -e 'd &lt;&lt; o'
+</code></pre>
+<h2 id="8-data-aggregation-pipeline"><a class="header" href="#8-data-aggregation-pipeline">8. Data Aggregation Pipeline</a></h2>
+<p><strong>Problem:</strong> Compute summary statistics from structured data.</p>
+<pre><code class="language-eu"># sales.eu
+sales: [
+  { region: "North" amount: 1200 },
+  { region: "South" amount: 800 },
+  { region: "North" amount: 600 },
+  { region: "South" amount: 1500 },
+  { region: "East" amount: 900 }
+]
+
+` :suppress
+amounts: sales map(.amount)
+n: sales count
+
+summary: {
+  total: amounts sum
+  count: n
+  average: (amounts sum) / n
+  max: amounts max-of
+  min: amounts min-of
+}
+</code></pre>
+<pre><code class="language-sh">eu sales.eu -e summary
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">total: 5000
+count: 5
+average: 1000
+max: 1500
+min: 600
+</code></pre>
+<h2 id="9-querying-deeply-nested-configuration"><a class="header" href="#9-querying-deeply-nested-configuration">9. Querying Deeply Nested Configuration</a></h2>
+<p><strong>Problem:</strong> Find all port numbers in a complex configuration.</p>
+<pre><code class="language-sh">eu -e '{
+  web: { host: "0.0.0.0" port: 80 }
+  api: { host: "0.0.0.0" port: 8080 }
+  db: { host: "localhost" port: 5432 }
+  cache: { host: "localhost" port: 6379 }
+} deep-query("port")'
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">- 80
+- 8080
+- 5432
+- 6379
+</code></pre>
+<p><code>deep-query</code> recursively searches nested blocks. You can also use
+wildcards: <code>deep-query("*.port", data)</code> matches ports one level deep,
+while <code>deep-query("**.port", data)</code> matches at any depth.</p>
+<h2 id="10-string-processing-parsing-log-lines"><a class="header" href="#10-string-processing-parsing-log-lines">10. String Processing: Parsing Log Lines</a></h2>
+<p><strong>Problem:</strong> Extract timestamps and levels from log lines.</p>
+<pre><code class="language-eu notest"># logs.eu
+lines: [
+  "2024-03-15 10:30:00 ERROR Connection timeout"
+  "2024-03-15 10:30:05 INFO Retry attempt 1"
+  "2024-03-15 10:30:10 ERROR Connection timeout"
+  "2024-03-15 10:30:15 INFO Connected"
+]
+
+` :suppress
+parse(line): line str.match-with("(\S+ \S+) (\w+) (.*)") tail
+
+parsed: lines map(parse) map({parts: •}.({
+  timestamp: parts first
+  level: parts second
+  message: parts nth(2)
+}))
+
+errors: parsed filter(.level = "ERROR")
+</code></pre>
+<pre><code class="language-sh">eu logs.eu -e errors
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">- timestamp: '2024-03-15 10:30:00'
+  level: ERROR
+  message: Connection timeout
+- timestamp: '2024-03-15 10:30:10'
+  level: ERROR
+  message: Connection timeout
+</code></pre>
+<h2 id="11-templating-cloudformation-resources"><a class="header" href="#11-templating-cloudformation-resources">11. Templating CloudFormation Resources</a></h2>
+<p><strong>Problem:</strong> Generate YAML with custom tags for CloudFormation.</p>
+<pre><code class="language-eu"># cfn.eu
+resource(type, props): {
+  Type: type
+  Properties: props
+}
+
+resources: {
+  MyBucket: resource("AWS::S3::Bucket", {
+    BucketName: "my-bucket"
+  })
+  MyQueue: resource("AWS::SQS::Queue", {
+    QueueName: "my-queue"
+  })
+}
+</code></pre>
+<p>This example shows how a simple function can template
+repetitive structure.</p>
+<h2 id="12-working-with-dates"><a class="header" href="#12-working-with-dates">12. Working with Dates</a></h2>
+<p><strong>Problem:</strong> Filter events by date and format the output.</p>
+<pre><code class="language-eu"># events.eu
+events: [
+  { name: "Launch" date: t"2024-01-15" }
+  { name: "Review" date: t"2024-06-01" }
+  { name: "Release" date: t"2024-09-30" }
+]
+
+cutoff: t"2024-06-01"
+
+upcoming: events
+  filter(.date &gt;= cutoff)
+  map(.name)
+</code></pre>
+<pre><code class="language-sh">eu events.eu -e upcoming
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">- Review
+- Release
+</code></pre>
+<p>The <code>t"..."</code> syntax creates date-time literals that support
+comparison operators.</p>
+<h2 id="13-generating-a-lookup-table"><a class="header" href="#13-generating-a-lookup-table">13. Generating a Lookup Table</a></h2>
+<p><strong>Problem:</strong> Build a key-value mapping from two parallel lists.</p>
+<pre><code class="language-sh">eu -e '["Alice", 30, "London"] zip-kv[:name, :age, :city]'
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">name: Alice
+age: 30
+city: London
+</code></pre>
+<p><code>zip-kv</code> pairs up symbols as keys with values to produce a block.
+Note that <code>zip-kv[:name, :age, :city]</code> is shorthand for
+<code>zip-kv([:name, :age, :city])</code> — when a function takes a single list
+or block argument, the outer parentheses can be omitted.</p>
+<h2 id="14-parameterised-scripts"><a class="header" href="#14-parameterised-scripts">14. Parameterised Scripts</a></h2>
+<p><strong>Problem:</strong> Write a reusable script that accepts command-line
+arguments.</p>
+<pre><code class="language-eu notest"># greet.eu
+name: io.args head-or("World")
+times: io.args tail head-or("1") num
+
+greetings: repeat("Hello, {name}!") take(times)
+</code></pre>
+<pre><code class="language-sh">eu greet.eu -e greetings -- Alice 3
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">- Hello, Alice!
+- Hello, Alice!
+- Hello, Alice!
+</code></pre>
+<p>Arguments after <code>--</code> are available via <code>io.args</code> as a list of
+strings. Use <code>num</code> to convert to numbers.</p>
+<h2 id="15-set-operations-finding-unique-values"><a class="header" href="#15-set-operations-finding-unique-values">15. Set Operations: Finding Unique Values</a></h2>
+<p><strong>Problem:</strong> Find the unique tags across multiple items and compute
+overlaps.</p>
+<pre><code class="language-eu">items: [
+  { name: "A" tags: ["fast", "reliable", "cheap"] }
+  { name: "B" tags: ["fast", "expensive"] }
+  { name: "C" tags: ["reliable", "cheap", "slow"] }
+]
+
+` :suppress
+tag-sets: items map(.tags set.from-list)
+
+all-tags: tag-sets foldl(set.union, ∅) set.to-list
+common-tags: tag-sets foldl(set.intersect, tag-sets head) set.to-list
+
+result: {
+  all: all-tags
+  common: common-tags
+}
+</code></pre>
+<pre><code class="language-sh">eu tags.eu -e result
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-yaml">all:
+- cheap
+- expensive
+- fast
+- reliable
+- slow
+common: []
+</code></pre>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li>Work through <a href="../guide/blocks-and-declarations.html">The Eucalypt Guide</a>
+for a progressive tutorial</li>
+<li>Browse the <a href="../reference/prelude/index.html">Prelude Reference</a> for
+the full standard library</li>
+<li>See the <a href="../reference/cli.html">CLI Reference</a> for all command-line
+options</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../welcome/quick-start.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../guide/blocks-and-declarations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../welcome/quick-start.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../guide/blocks-and-declarations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>
