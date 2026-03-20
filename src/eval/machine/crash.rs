@@ -41,7 +41,7 @@ pub enum GcEventKind {
 }
 
 impl GcEventKind {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(unix)]
     fn label(self) -> &'static [u8] {
         match self {
             Self::Empty => b"empty",
@@ -56,7 +56,7 @@ impl GcEventKind {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(unix)]
     fn from_u8(v: u8) -> Self {
         match v {
             1 => Self::CollectionStart,
@@ -145,7 +145,7 @@ impl GcEventRing {
     ///
     /// Safe to call from a signal handler because it only reads
     /// fixed-size arrays and an atomic counter — no allocations.
-    #[cfg(any(not(target_arch = "wasm32"), test))]
+    #[cfg(any(unix, test))]
     fn iter_raw(&self) -> impl Iterator<Item = GcEvent> + '_ {
         let total = self.pos.load(Ordering::Relaxed);
         let count = total.min(GC_EVENT_RING_SIZE);
@@ -282,8 +282,8 @@ pub fn unregister_crash_diagnostics() {
 /// Install the SIGSEGV and SIGBUS signal handlers.
 ///
 /// This should be called once, early in `main()`, before any
-/// evaluation begins. On WASM this is a no-op.
-#[cfg(not(target_arch = "wasm32"))]
+/// evaluation begins. On WASM and Windows this is a no-op.
+#[cfg(unix)]
 pub fn install_crash_handler() {
     unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
@@ -300,10 +300,14 @@ pub fn install_crash_handler() {
 #[cfg(target_arch = "wasm32")]
 pub fn install_crash_handler() {}
 
+/// No-op on Windows — SIGSEGV/SIGBUS signal handlers are Unix-specific.
+#[cfg(not(any(unix, target_arch = "wasm32")))]
+pub fn install_crash_handler() {}
+
 /// Signal-safe integer formatting into a fixed buffer.
 ///
 /// Returns the number of bytes written.
-#[cfg(any(not(target_arch = "wasm32"), test))]
+#[cfg(any(unix, test))]
 fn format_u64(mut val: u64, buf: &mut [u8]) -> usize {
     if val == 0 {
         if !buf.is_empty() {
@@ -329,7 +333,7 @@ fn format_u64(mut val: u64, buf: &mut [u8]) -> usize {
 /// Signal-safe hex formatting into a fixed buffer.
 ///
 /// Returns the number of bytes written.
-#[cfg(any(not(target_arch = "wasm32"), test))]
+#[cfg(any(unix, test))]
 fn format_hex(mut val: u64, buf: &mut [u8]) -> usize {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     if val == 0 {
@@ -364,13 +368,13 @@ fn format_hex(mut val: u64, buf: &mut [u8]) -> usize {
 /// # Safety
 ///
 /// Uses `libc::write` which is async-signal-safe.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(unix)]
 unsafe fn write_stderr(data: &[u8]) {
     libc::write(libc::STDERR_FILENO, data.as_ptr().cast(), data.len());
 }
 
 /// Write a labelled u64 value to stderr (signal-safe).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(unix)]
 unsafe fn write_field(label: &[u8], value: u64) {
     let mut buf = [0u8; 20];
     let len = format_u64(value, &mut buf);
@@ -388,7 +392,7 @@ unsafe fn write_field(label: &[u8], value: u64) {
 /// This is called from the OS signal delivery mechanism. It must
 /// only use async-signal-safe operations (no heap allocation, no
 /// locks, no stdio). We use `libc::write` for all output.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(unix)]
 unsafe extern "C" fn crash_signal_handler(
     sig: libc::c_int,
     info: *mut libc::siginfo_t,
