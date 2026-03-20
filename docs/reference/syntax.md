@@ -289,29 +289,49 @@ and `return` function names:
 
 A bracket expression whose inner content contains top-level colons is parsed
 as a **bracket block** — a sequence of `name: monadic-action` declarations.
-The closing bracket must be followed by a dot and a return expression:
+The closing bracket may be followed by `.return_expr` for an explicit return:
 
 ```eu,notest
 result: ⟦ a: ma  b: mb ⟧.return_expr
 ```
 
+If no `.return_expr` follows, the block uses **implicit return**: the desugarer
+synthesises `return({ a: a, b: b })` automatically, collecting all bound names
+(except those starting with `_`) into a block.
+
 #### Block metadata forms
 
 Regular blocks can also be desugared monadically when the block carries monad
-metadata **and** is immediately followed by `.return_expr` in an expression.
-Five forms are accepted:
+metadata.  If followed by `.return_expr`, the expression is used as the return;
+otherwise, implicit return is used when the namespace is declared with
+`monad: true`.  Six forms are accepted:
 
-| Form | Syntax | Monad source |
-|------|--------|-------------|
-| 1 | `{ :name decls }.expr` | Namespace `name` in scope |
-| 2 | `{ { monad: name } decls }.expr` | Namespace `name` in scope |
-| 3 | `{ { :monad namespace: name } decls }.expr` | Namespace `name` in scope |
-| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit `f`/`r` functions |
-| 5 | `⟦{}⟧: { :monad namespace: name }` (bracket def) | Namespace `name` in scope |
+| Form | Syntax | Return |
+|------|--------|--------|
+| 1 | `{ :name decls }.expr` | Explicit |
+| 2 | `{ { monad: name } decls }.expr` | Explicit |
+| 3 | `{ { :monad namespace: name } decls }.expr` | Explicit |
+| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit |
+| 1i | `{ :name decls }` (namespace has `monad: true`) | Implicit |
+| Bi | `⟦ decls ⟧` (bracket pair registered) | Implicit |
 
-For namespace forms (1–3 and 5), the named value must be a block in scope with
-`bind` and `return` member functions.  The desugarer emits `name.bind(…)` and
+For namespace forms, the named value must be a block in scope with `bind` and
+`return` member functions.  The desugarer emits `name.bind(…)` and
 `name.return(…)` lookup expressions.
+
+**Implicit return with `monad: true`:**  To allow `{ :name decls }` without
+`.expr`, declare `name` with `monad: true` metadata:
+
+```eu,notest
+` { monad: true }
+io: { ... }
+
+result: { :io r: io.shell("echo hello") }
+# result == { r: "hello\n" }  (all bound names collected into return block)
+```
+
+Bound names starting with `_` are excluded from the implicit return block,
+allowing intermediate computations to be suppressed.
 
 #### Desugaring
 
@@ -322,10 +342,12 @@ bind(ma, (a): bind(mb, (b): return(return_expr)))
 ```
 
 All declarations are bind steps.  Each bound name is in scope for later actions
-and for the return expression.  The return expression may be any single element:
-a name (`.r`), a parenthesised expression (`.(x + y)`), a list, or a block.
+and for the return expression.  With an explicit `.expr`, the return expression
+may be any single element: a name (`.r`), a parenthesised expression
+(`.(x + y)`), a list, or a block.  With implicit return, bound names
+(excluding `_`-prefixed ones) are collected into a return block automatically.
 
-**Example — identity monad (bracket pair, explicit functions):**
+**Example — identity monad (bracket pair, explicit return):**
 
 ```eu
 id-bind(ma, f): f(ma)
@@ -336,13 +358,30 @@ id-return(a): a
 result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 ```
 
-**Example — maybe monad (namespace reference via block metadata):**
+**Example — identity monad (bracket pair, implicit return):**
+
+```eu
+⟦{}⟧: { :monad bind: id-bind  return: id-return }
+
+result: ⟦ a: 10  b: 20 ⟧    # => { a: 10, b: 20 }
+```
+
+**Example — maybe monad (namespace reference, explicit return):**
 
 ```eu
 maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
 
 just:    { :maybe x: [1]  y: [2] }.(x + y)   # => [3]
 nothing: { :maybe x: []   y: [2] }.(x + y)   # => []
+```
+
+**Example — namespace implicit return (`monad: true`):**
+
+```eu
+` { monad: true }
+maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+
+result: { :maybe x: [1]  y: [2] }   # => { x: 1, y: 2 }
 ```
 
 **Example — maybe monad (bracket pair with namespace reference):**
