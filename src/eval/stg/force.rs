@@ -7,7 +7,7 @@ use crate::{
 
 use super::{
     syntax::{
-        dsl::{annotated_lambda, data, force, local, lref, switch, unbox_num, unbox_str},
+        dsl::{data, force, lambda, local, lref, switch, unbox_num, unbox_str},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -21,8 +21,8 @@ impl StgIntrinsic for SeqStrList {
         "seqStrList"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             switch(
                 local(0),
@@ -46,7 +46,6 @@ impl StgIntrinsic for SeqStrList {
                     ),
                 ],
             ),
-            annotation,
         )
     }
 }
@@ -61,8 +60,8 @@ impl StgIntrinsic for SeqNumList {
         "seqNumList"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             switch(
                 local(0),
@@ -86,7 +85,6 @@ impl StgIntrinsic for SeqNumList {
                     ),
                 ],
             ),
-            annotation,
         )
     }
 }

@@ -4,18 +4,21 @@
 //! STG machine's Update mechanism to memoise the result of each
 //! tail thunk.
 
-use crate::eval::{
-    emit::Emitter,
-    error::ExecutionError,
-    machine::{
-        env::SynClosure,
-        intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-    },
-    memory::{
-        array::Array,
-        loader::load,
-        mutator::MutatorHeapView,
-        syntax::{LambdaForm, Ref, StgBuilder},
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::{
+            env::SynClosure,
+            intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+        },
+        memory::{
+            array::Array,
+            loader::load,
+            mutator::MutatorHeapView,
+            syntax::{LambdaForm, Ref, StgBuilder},
+        },
     },
 };
 
@@ -55,7 +58,10 @@ impl StgIntrinsic for StreamNext {
     ) -> Result<(), ExecutionError> {
         let handle_num = num_arg(machine, view, &args[0])?;
         let handle = handle_num.as_u64().ok_or_else(|| {
-            ExecutionError::Panic("stream handle must be a positive integer".to_string())
+            ExecutionError::Panic(
+                Smid::default(),
+                "stream handle must be a positive integer".to_string(),
+            )
         })? as u32;
 
         // Advance the stream by one element

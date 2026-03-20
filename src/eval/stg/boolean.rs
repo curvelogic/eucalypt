@@ -48,8 +48,8 @@ impl StgIntrinsic for Not {
         "NOT"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             switch(
                 local(0),
@@ -58,7 +58,6 @@ impl StgIntrinsic for Not {
                     (DataConstructor::BoolTrue.tag(), f()),
                 ],
             ),
-            annotation,
         )
     }
 }
@@ -73,8 +72,8 @@ impl StgIntrinsic for And {
         "AND"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2,
             switch(
                 local(0),
@@ -92,7 +91,6 @@ impl StgIntrinsic for And {
                     (DataConstructor::BoolFalse.tag(), f()),
                 ],
             ),
-            annotation,
         )
     }
 }
@@ -107,8 +105,8 @@ impl StgIntrinsic for Or {
         "OR"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2,
             switch(
                 local(0),
@@ -126,7 +124,6 @@ impl StgIntrinsic for Or {
                     (DataConstructor::BoolTrue.tag(), t()),
                 ],
             ),
-            annotation,
         )
     }
 }
@@ -147,8 +144,8 @@ impl StgIntrinsic for If {
         &[1, 2]
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             3,
             dsl::switch_suppress(
                 local(0),
@@ -157,7 +154,6 @@ impl StgIntrinsic for If {
                     (DataConstructor::BoolFalse.tag(), local(2)),
                 ],
             ),
-            annotation,
         )
     }
 }

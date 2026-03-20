@@ -1242,3 +1242,8 @@ pub fn test_error_106() {
         .build();
     run_error_test(&opt);
 }
+
+#[test]
+pub fn test_error_107() {
+    run_error_test(&error_opts("107_source_location_in_error.eu"));
+}

@@ -211,15 +211,26 @@ impl Iterator for DataIterator<'_> {
             HeapSyn::Cons { tag, args } => match (*tag).try_into() {
                 Ok(DataConstructor::ListCons) => (args.get(0), args.get(1)),
                 Ok(DataConstructor::ListNil) => return None,
-                _ => return Some(Err(ExecutionError::Panic("expected list data".to_string()))),
+                _ => {
+                    return Some(Err(ExecutionError::Panic(
+                        Smid::default(),
+                        "expected list data".to_string(),
+                    )))
+                }
             },
-            _ => return Some(Err(ExecutionError::Panic("expected list data".to_string()))),
+            _ => {
+                return Some(Err(ExecutionError::Panic(
+                    Smid::default(),
+                    "expected list data".to_string(),
+                )))
+            }
         };
 
         let head = match h_ref {
             Some(h) => self.closure.navigate_local(&self.view, h),
             None => {
                 return Some(Err(ExecutionError::Panic(
+                    Smid::default(),
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -231,6 +242,7 @@ impl Iterator for DataIterator<'_> {
             }
             None => {
                 return Some(Err(ExecutionError::Panic(
+                    Smid::default(),
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -271,12 +283,14 @@ impl Iterator for StrListIterator<'_> {
                 Ok(DataConstructor::ListNil) => return None,
                 _ => {
                     return Some(Err(ExecutionError::Panic(
+                        Smid::default(),
                         "expected string list data".to_string(),
                     )))
                 }
             },
             _ => {
                 return Some(Err(ExecutionError::Panic(
+                    Smid::default(),
                     "expected string list data".to_string(),
                 )))
             }
@@ -286,6 +300,7 @@ impl Iterator for StrListIterator<'_> {
             Some(h) => self.closure.navigate_local_native(&self.view, h),
             None => {
                 return Some(Err(ExecutionError::Panic(
+                    Smid::default(),
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -297,6 +312,7 @@ impl Iterator for StrListIterator<'_> {
             }
             None => {
                 return Some(Err(ExecutionError::Panic(
+                    Smid::default(),
                     "malformed cons cell".to_string(),
                 )))
             }
@@ -441,9 +457,9 @@ pub fn resolve_native_unboxing(
                 | Ok(DataConstructor::BoxedString)
                 | Ok(DataConstructor::BoxedSymbol)
                 | Ok(DataConstructor::BoxedZdt) => {
-                    let inner_ref = args
-                        .get(0)
-                        .ok_or_else(|| ExecutionError::Panic("empty boxed value".to_string()))?;
+                    let inner_ref = args.get(0).ok_or_else(|| {
+                        ExecutionError::Panic(Smid::default(), "empty boxed value".to_string())
+                    })?;
                     let native = closure.navigate_local_native(&view, inner_ref);
                     Ok(native)
                 }
@@ -471,6 +487,7 @@ pub fn native_to_set_primitive(
         Native::Str(s) => Ok(SetPrim::Str(view.scoped(*s).as_str().to_string())),
         Native::Sym(id) => Ok(SetPrim::Sym(*id)),
         _ => Err(ExecutionError::Panic(
+            Smid::default(),
             "only numbers, strings, and symbols can be set elements".to_string(),
         )),
     }
@@ -507,7 +524,10 @@ pub fn set_arg<'guard>(
     if let Native::Set(ptr) = native {
         Ok(view.scoped(ptr))
     } else {
-        Err(ExecutionError::Panic("expected set argument".to_string()))
+        Err(ExecutionError::Panic(
+            Smid::default(),
+            "expected set argument".to_string(),
+        ))
     }
 }
 
@@ -604,6 +624,7 @@ pub fn collect_num_list(
                     Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
                     _ => {
                         return Err(ExecutionError::Panic(
+                            Smid::default(),
                             "non-numeric value in number list".to_string(),
                         ))
                     }
@@ -614,13 +635,17 @@ pub fn collect_num_list(
                 args: cargs,
             } => {
                 let inner_ref = cargs.get(0).ok_or_else(|| {
-                    ExecutionError::Panic("empty boxed value in number list".to_string())
+                    ExecutionError::Panic(
+                        Smid::default(),
+                        "empty boxed value in number list".to_string(),
+                    )
                 })?;
                 let native = item_closure.navigate_local_native(&view, inner_ref.clone());
                 match native {
                     Native::Num(n) => numbers.push(n.as_f64().unwrap_or(0.0)),
                     _ => {
                         return Err(ExecutionError::Panic(
+                            Smid::default(),
                             "non-numeric value in number list".to_string(),
                         ))
                     }
@@ -628,6 +653,7 @@ pub fn collect_num_list(
             }
             _ => {
                 return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "unexpected value in number list".to_string(),
                 ))
             }

@@ -1055,9 +1055,9 @@ impl IntrinsicMachine for MachineState {
     }
 
     fn take_capture_result(&mut self) -> Result<String, ExecutionError> {
-        self.capture_results
-            .pop()
-            .ok_or_else(|| ExecutionError::Panic("no capture result available".to_string()))
+        self.capture_results.pop().ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "no capture result available".to_string())
+        })
     }
 }
 
@@ -1355,10 +1355,9 @@ impl<'a> Machine<'a> {
         // as the machine's closure.
         if self.state.capture_end_pending {
             self.state.capture_end_pending = false;
-            let mut capture = self
-                .capture_emitters
-                .pop()
-                .ok_or_else(|| ExecutionError::Panic("no active capture emitter".to_string()))?;
+            let mut capture = self.capture_emitters.pop().ok_or_else(|| {
+                ExecutionError::Panic(Smid::default(), "no active capture emitter".to_string())
+            })?;
             capture.stream_end();
             let result_str = capture.into_string()?;
             let view = MutatorHeapView::new(&self.heap);
@@ -1702,6 +1701,7 @@ impl<'a> Machine<'a> {
 
         if sub_yielded {
             return Err(ExecutionError::Panic(
+                Smid::default(),
                 "spec block field evaluation unexpectedly yielded an IO constructor".to_string(),
             ));
         }

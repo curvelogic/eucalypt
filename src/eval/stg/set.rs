@@ -28,7 +28,7 @@ use super::{
         native_to_set_primitive, resolve_native_unboxing, set_arg, set_primitive_to_native,
     },
     syntax::{
-        dsl::{annotated_lambda, app_bif, case, force, local, lref},
+        dsl::{app_bif, case, force, lambda, local, lref},
         LambdaForm,
     },
 };
@@ -40,7 +40,7 @@ use super::{
 /// number leaves `BoxedNumber(thunk)` — the inner thunk is not
 /// evaluated. This wrapper adds case branches for all box types to
 /// force the inner value before calling the intrinsic.
-fn element_set_wrapper(index: usize, annotation: Smid) -> LambdaForm {
+fn element_set_wrapper(index: usize) -> LambdaForm {
     let bif_index: u8 = index.try_into().unwrap();
 
     // After force(set) + case(element) + force(inner):
@@ -54,7 +54,7 @@ fn element_set_wrapper(index: usize, annotation: Smid) -> LambdaForm {
     //   element at lref(0), set at lref(1)
     let bif_fallback = app_bif(bif_index, vec![lref(0), lref(1)]);
 
-    annotated_lambda(
+    lambda(
         2, // [element, set]
         force(
             local(1), // force set
@@ -69,7 +69,6 @@ fn element_set_wrapper(index: usize, annotation: Smid) -> LambdaForm {
                 bif_fallback,
             ),
         ),
-        annotation,
     )
 }
 
@@ -125,13 +124,17 @@ impl StgIntrinsic for SetFromList {
                 } => {
                     // Handle boxed values (BoxedNumber, BoxedString, BoxedSymbol)
                     let inner_ref = cargs.get(0).ok_or_else(|| {
-                        ExecutionError::Panic("empty boxed value in set".to_string())
+                        ExecutionError::Panic(
+                            Smid::default(),
+                            "empty boxed value in set".to_string(),
+                        )
                     })?;
                     let native = item_closure.navigate_local_native(&view, inner_ref.clone());
                     primitives.push(native_to_set_primitive(view, &native)?);
                 }
                 _ => {
                     return Err(ExecutionError::Panic(
+                        Smid::default(),
                         "non-primitive value in set construction".to_string(),
                     ))
                 }
@@ -187,6 +190,7 @@ impl StgIntrinsic for SetToList {
                 Native::Sym(_) => DataConstructor::BoxedSymbol.tag(),
                 _ => {
                     return Err(ExecutionError::Panic(
+                        Smid::default(),
                         "unexpected native type in set".to_string(),
                     ))
                 }
@@ -234,8 +238,8 @@ impl StgIntrinsic for SetAdd {
         "SET.ADD"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        element_set_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        element_set_wrapper(self.index())
     }
 
     fn execute(
@@ -262,8 +266,8 @@ impl StgIntrinsic for SetRemove {
         "SET.REMOVE"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        element_set_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        element_set_wrapper(self.index())
     }
 
     fn execute(
@@ -290,8 +294,8 @@ impl StgIntrinsic for SetContains {
         "SET.CONTAINS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        element_set_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        element_set_wrapper(self.index())
     }
 
     fn execute(

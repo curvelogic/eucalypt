@@ -2,11 +2,14 @@
 
 use serde_json::Number;
 
-use crate::eval::{
-    emit::Emitter,
-    error::ExecutionError,
-    machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-    memory::{mutator::MutatorHeapView, syntax::Ref},
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
+    },
 };
 
 use super::support::{machine_return_num, num_arg};
@@ -87,8 +90,9 @@ impl StgIntrinsic for PrngFloat {
         let seed = seed_to_u64(&seed_num);
         let (_, z) = splitmix64(seed);
         let float_val = (z >> 11) as f64 / ((1u64 << 53) as f64);
-        let result = Number::from_f64(float_val)
-            .ok_or_else(|| ExecutionError::Panic("PRNG produced invalid float".to_string()))?;
+        let result = Number::from_f64(float_val).ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "PRNG produced invalid float".to_string())
+        })?;
         machine_return_num(machine, view, result)
     }
 }

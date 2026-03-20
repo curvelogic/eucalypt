@@ -30,7 +30,7 @@ use super::{
         machine_return_num_list_of_lists, ndarray_arg, num_arg,
     },
     syntax::{
-        dsl::{annotated_lambda, app_bif, data, force, let_, local, lref, unbox_num, value},
+        dsl::{app_bif, data, force, lambda, let_, local, lref, unbox_num, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -48,17 +48,16 @@ impl StgIntrinsic for ArrayZeros {
         "ARRAY.ZEROS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // Force SeqNumList on the shape arg before calling execute
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             1, // [shape]
             force(
                 SeqNumList.global(lref(0)),
                 // [concrete_shape] [shape]
                 app_bif(bif_index, vec![lref(0)]),
             ),
-            annotation,
         )
     }
 
@@ -84,7 +83,7 @@ impl StgIntrinsic for ArrayFill {
         "ARRAY.FILL"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // Force SeqNumList on shape arg, then unbox+force value arg.
         //
         // Env trace (force uses from_closure, unbox uses env_from_data_args):
@@ -95,7 +94,7 @@ impl StgIntrinsic for ArrayFill {
         //
         // execute args: (shape=lref(2), val=lref(0))
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             2, // [shape, val]
             force(
                 SeqNumList.global(lref(0)),
@@ -104,7 +103,6 @@ impl StgIntrinsic for ArrayFill {
                     force(local(0), app_bif(bif_index, vec![lref(2), lref(0)])),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -131,12 +129,12 @@ impl StgIntrinsic for ArrayFromFlat {
         "ARRAY.FROM_FLAT"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // Force SeqNumList on both shape and values args.
         // After first force: lref(0)=concrete_shape, lref(1)=shape, lref(2)=vals
         // After second force: lref(0)=concrete_vals, lref(1)=concrete_shape, lref(2)=shape, lref(3)=vals
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             2, // [shape, vals]
             force(
                 SeqNumList.global(lref(0)),
@@ -145,7 +143,6 @@ impl StgIntrinsic for ArrayFromFlat {
                     app_bif(bif_index, vec![lref(1), lref(0)]),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -192,7 +189,7 @@ impl StgIntrinsic for ArrayGet {
         "ARRAY.GET"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // SeqNumList on coords (lref(0)), force array (lref(1)).
         // After SeqNumList force: lref(0)=concrete_coords, lref(1)=coords, lref(2)=array
         // After force(array):     lref(0)=forced_array, lref(1)=concrete_coords, lref(2)=coords, lref(3)=array
@@ -200,7 +197,7 @@ impl StgIntrinsic for ArrayGet {
         // execute args: (coords=lref(1), array=lref(0))
         // Result is boxed as BoxedNumber to match the default wrapper convention.
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             2, // [coords, array]
             force(
                 SeqNumList.global(lref(0)),
@@ -212,7 +209,6 @@ impl StgIntrinsic for ArrayGet {
                     ),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -247,7 +243,7 @@ impl StgIntrinsic for ArraySet {
         "ARRAY.SET"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // Arg order: (coords, val, array) for pipeline use.
         // SeqNumList on coords (lref(0)), unbox+force val (lref(1)), force array (lref(2)).
         //
@@ -260,7 +256,7 @@ impl StgIntrinsic for ArraySet {
         //
         // execute args: (coords=lref(3), val=lref(1), array=lref(0))
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             3, // [coords, val, array]
             force(
                 SeqNumList.global(lref(0)),
@@ -275,7 +271,6 @@ impl StgIntrinsic for ArraySet {
                     ),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -451,7 +446,7 @@ impl StgIntrinsic for ArrayReshape {
         "ARRAY.RESHAPE"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // Arg order: (new_shape, array) for pipeline use.
         // SeqNumList on new_shape (lref(0)), force array (lref(1)).
         //
@@ -462,13 +457,12 @@ impl StgIntrinsic for ArrayReshape {
         //
         // execute args: (new_shape=lref(1), array=lref(0))
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             2, // [new_shape, array]
             force(
                 SeqNumList.global(lref(0)),
                 force(local(2), app_bif(bif_index, vec![lref(1), lref(0)])),
             ),
-            annotation,
         )
     }
 
@@ -671,7 +665,7 @@ impl StgIntrinsic for ArrayNeighbours {
         "ARRAY_NEIGHBOURS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // Args: (coords, offsets_flat, rank, array)
         //
         // Env trace:
@@ -684,7 +678,7 @@ impl StgIntrinsic for ArrayNeighbours {
         //
         // execute args: (coords=lref(4), offsets=lref(3), rank=lref(1), array=lref(0))
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             4, // [coords, offsets_flat, rank, array]
             force(
                 SeqNumList.global(lref(0)),
@@ -702,7 +696,6 @@ impl StgIntrinsic for ArrayNeighbours {
                     ),
                 ),
             ),
-            annotation,
         )
     }
 

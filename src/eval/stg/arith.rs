@@ -21,7 +21,7 @@ use super::{
     array::array_binop,
     support::{machine_return_bool, machine_return_boxed_num, machine_return_num, num_arg},
     syntax::{
-        dsl::{annotated_lambda, app_bif, case, force, local, lref},
+        dsl::{app_bif, case, force, lambda, local, lref},
         LambdaForm, StgSyn,
     },
     tags::DataConstructor,
@@ -81,8 +81,8 @@ impl StgIntrinsic for Add {
         "ADD"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        arithmetic_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index())
     }
 
     fn execute(
@@ -105,23 +105,35 @@ impl StgIntrinsic for Add {
         let y = num_arg(machine, view, &args[1])?;
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let total = l
-                .checked_add(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let total = l.checked_add(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let total = l
-                .checked_add(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let total = l.checked_add(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(total))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l + r) {
                 machine_return_boxed_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }
@@ -136,8 +148,8 @@ impl StgIntrinsic for Sub {
         "SUB"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        arithmetic_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index())
     }
 
     fn execute(
@@ -160,23 +172,35 @@ impl StgIntrinsic for Sub {
         let y = num_arg(machine, view, &args[1])?;
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let result = l
-                .checked_sub(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_sub(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l
-                .checked_sub(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_sub(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l - r) {
                 machine_return_boxed_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }
@@ -191,8 +215,8 @@ impl StgIntrinsic for Mul {
         "MUL"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        arithmetic_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index())
     }
 
     fn execute(
@@ -215,23 +239,35 @@ impl StgIntrinsic for Mul {
         let y = num_arg(machine, view, &args[1])?;
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let product = l
-                .checked_mul(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let product = l.checked_mul(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let product = l
-                .checked_mul(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let product = l.checked_mul(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(product))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l * r) {
                 machine_return_boxed_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }
@@ -246,8 +282,8 @@ impl StgIntrinsic for Div {
         "DIV"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        arithmetic_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        arithmetic_wrapper(self.index())
     }
 
     fn execute(
@@ -271,27 +307,42 @@ impl StgIntrinsic for Div {
 
         if is_zero(&y) {
             return Err(ExecutionError::DivisionByZero(
+                machine.annotation(),
                 "floor division (/)".to_string(),
             ));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let result = floor_div_i64(l, r).ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = floor_div_i64(l, r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l
-                .checked_div(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_div(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_boxed_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let result = (l / r).floor();
             if let Some(n) = num_from_floored(result) {
                 machine_return_boxed_num(machine, view, n)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }
@@ -317,16 +368,25 @@ impl StgIntrinsic for Mod {
         let y = num_arg(machine, view, &args[1])?;
 
         if is_zero(&y) {
-            return Err(ExecutionError::DivisionByZero("modulo (%)".to_string()));
+            return Err(ExecutionError::DivisionByZero(
+                machine.annotation(),
+                "modulo (%)".to_string(),
+            ));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let result = floor_mod_i64(l, r).ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = floor_mod_i64(l, r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l
-                .checked_rem(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_rem(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let q = (l / r).floor();
@@ -334,10 +394,18 @@ impl StgIntrinsic for Mod {
             if let Some(ret) = Number::from_f64(result) {
                 machine_return_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }
@@ -365,7 +433,7 @@ fn unbox_any(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
 ///
 /// Unboxes and forces both arguments for any boxed native type, then
 /// calls the BIF with the raw native values.
-fn comparison_wrapper(index: usize, annotation: Smid) -> LambdaForm {
+fn comparison_wrapper(index: usize) -> LambdaForm {
     // Environment evolution (matching the default wrapper pattern):
     //
     //   lambda args:                                          [x, y]
@@ -382,7 +450,7 @@ fn comparison_wrapper(index: usize, annotation: Smid) -> LambdaForm {
     let unbox_y = unbox_any(local(3), force_y);
     let force_x = force(local(0), unbox_y);
     let unbox_x = unbox_any(local(0), force_x);
-    annotated_lambda(2, unbox_x, annotation)
+    lambda(2, unbox_x)
 }
 
 /// Build a wrapper for a polymorphic two-argument arithmetic intrinsic.
@@ -392,14 +460,14 @@ fn comparison_wrapper(index: usize, annotation: Smid) -> LambdaForm {
 /// `execute` methods are responsible for returning the correct result type:
 /// `machine_return_boxed_num` for scalar results, `machine_return_ndarray`
 /// for array results.
-fn arithmetic_wrapper(index: usize, annotation: Smid) -> LambdaForm {
+fn arithmetic_wrapper(index: usize) -> LambdaForm {
     // Environment layout matches comparison_wrapper — see its comment.
     let bif_call = app_bif(index as u8, vec![lref(2), lref(0)]);
     let force_y = force(local(0), bif_call);
     let unbox_y = unbox_any(local(3), force_y);
     let force_x = force(local(0), unbox_y);
     let unbox_x = unbox_any(local(0), force_x);
-    annotated_lambda(2, unbox_x, annotation)
+    lambda(2, unbox_x)
 }
 
 /// Ordering comparison between two numbers, trying i64, u64, then f64
@@ -411,10 +479,15 @@ fn num_ord(x: &Number, y: &Number) -> Result<std::cmp::Ordering, ExecutionError>
     } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
         Ok(l.cmp(&r))
     } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
-        l.partial_cmp(&r)
-            .ok_or_else(|| ExecutionError::NumericDomainError(x.clone(), y.clone()))
+        l.partial_cmp(&r).ok_or_else(|| {
+            ExecutionError::NumericDomainError(Smid::default(), x.clone(), y.clone())
+        })
     } else {
-        Err(ExecutionError::NumericDomainError(x.clone(), y.clone()))
+        Err(ExecutionError::NumericDomainError(
+            Smid::default(),
+            x.clone(),
+            y.clone(),
+        ))
     }
 }
 
@@ -458,8 +531,8 @@ impl StgIntrinsic for Gt {
         "GT"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        comparison_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index())
     }
 
     fn execute(
@@ -484,8 +557,8 @@ impl StgIntrinsic for Gte {
         "GTE"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        comparison_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index())
     }
 
     fn execute(
@@ -510,8 +583,8 @@ impl StgIntrinsic for Lt {
         "LT"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        comparison_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index())
     }
 
     fn execute(
@@ -536,8 +609,8 @@ impl StgIntrinsic for Lte {
         "LTE"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        comparison_wrapper(self.index(), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        comparison_wrapper(self.index())
     }
 
     fn execute(
@@ -577,7 +650,11 @@ impl StgIntrinsic for Ceil {
             if let Some(ret) = Number::from_f64(val.ceil()) {
                 machine_return_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, Number::from(0)))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    Number::from(0),
+                ))
             }
         } else {
             unreachable!();
@@ -610,7 +687,11 @@ impl StgIntrinsic for Floor {
             if let Some(ret) = Number::from_f64(val.floor()) {
                 machine_return_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, Number::from(0)))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    Number::from(0),
+                ))
             }
         } else {
             unreachable!();
@@ -659,12 +740,24 @@ impl StgIntrinsic for Pow {
                 machine_return_num(machine, view, ret)
             } else if result.is_nan() && b < 0.0 && e.fract() != 0.0 {
                 // Negative base raised to a fractional exponent produces a complex number.
-                Err(ExecutionError::ComplexResult(base, exp))
+                Err(ExecutionError::ComplexResult(
+                    machine.annotation(),
+                    base,
+                    exp,
+                ))
             } else {
-                Err(ExecutionError::NumericDomainError(base, exp))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    base,
+                    exp,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(base, exp))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                base,
+                exp,
+            ))
         }
     }
 }
@@ -699,6 +792,7 @@ impl StgIntrinsic for PreciseDiv {
 
         if is_zero(&y) {
             return Err(ExecutionError::DivisionByZero(
+                machine.annotation(),
                 "precise division (\u{00f7})".to_string(),
             ));
         }
@@ -707,10 +801,18 @@ impl StgIntrinsic for PreciseDiv {
             if let Some(ret) = Number::from_f64(l / r) {
                 machine_return_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }
@@ -737,29 +839,42 @@ impl StgIntrinsic for Quot {
 
         if is_zero(&y) {
             return Err(ExecutionError::DivisionByZero(
+                machine.annotation(),
                 "truncation division (quot)".to_string(),
             ));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let result = l
-                .checked_div(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_div(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l
-                .checked_div(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_div(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             let result = (l / r).trunc();
             if let Some(n) = num_from_floored(result) {
                 machine_return_num(machine, view, n)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }
@@ -786,28 +901,41 @@ impl StgIntrinsic for Rem {
 
         if is_zero(&y) {
             return Err(ExecutionError::DivisionByZero(
+                machine.annotation(),
                 "remainder (rem)".to_string(),
             ));
         }
 
         if let (Some(l), Some(r)) = (x.as_i64(), y.as_i64()) {
-            let result = l
-                .checked_rem(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_rem(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_u64(), y.as_u64()) {
-            let result = l
-                .checked_rem(r)
-                .ok_or(ExecutionError::NumericRangeError(x, y))?;
+            let result = l.checked_rem(r).ok_or(ExecutionError::NumericRangeError(
+                machine.annotation(),
+                x,
+                y,
+            ))?;
             machine_return_num(machine, view, Number::from(result))
         } else if let (Some(l), Some(r)) = (x.as_f64(), y.as_f64()) {
             if let Some(ret) = Number::from_f64(l % r) {
                 machine_return_num(machine, view, ret)
             } else {
-                Err(ExecutionError::NumericDomainError(x, y))
+                Err(ExecutionError::NumericDomainError(
+                    machine.annotation(),
+                    x,
+                    y,
+                ))
             }
         } else {
-            Err(ExecutionError::NumericDomainError(x, y))
+            Err(ExecutionError::NumericDomainError(
+                machine.annotation(),
+                x,
+                y,
+            ))
         }
     }
 }

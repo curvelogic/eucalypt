@@ -25,20 +25,23 @@ impl StgIntrinsic for Requires {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
+        let smid = machine.annotation();
         let constraint_str = str_arg(machine, view, &args[0])?;
 
         let req = semver::VersionReq::parse(&constraint_str).map_err(|e| {
-            ExecutionError::Panic(format!(
-                "invalid version constraint \"{constraint_str}\": {e}"
-            ))
+            ExecutionError::Panic(
+                smid,
+                format!("invalid version constraint \"{constraint_str}\": {e}"),
+            )
         })?;
 
         // Strip any ".dev" suffix from the Cargo package version
         let version_str = env!("CARGO_PKG_VERSION").replace(".dev", "");
         let version = semver::Version::parse(&version_str).map_err(|e| {
-            ExecutionError::Panic(format!(
-                "failed to parse eucalypt version \"{version_str}\": {e}"
-            ))
+            ExecutionError::Panic(
+                smid,
+                format!("failed to parse eucalypt version \"{version_str}\": {e}"),
+            )
         })?;
 
         if req.matches(&version) {
