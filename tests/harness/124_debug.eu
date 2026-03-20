@@ -1,0 +1,27 @@
+"124 debug representation"
+
+` { target: :test }
+test: {
+  ` "DBG_REPR renders a number"
+  num-repr: __DBG_REPR(42) //= "42"
+
+  ` "DBG_REPR renders a string with surrounding quotes"
+  str-repr: __DBG_REPR("hello") //= "{ch.dq}hello{ch.dq}"
+
+  ` "DBG_REPR renders a symbol with colon prefix"
+  sym-repr: __DBG_REPR(:foo) //= ":foo"
+
+  ` "DBG_REPR renders true"
+  bool-true-repr: __DBG_REPR(true) //= "true"
+
+  ` "DBG_REPR renders false"
+  bool-false-repr: __DBG_REPR(false) //= "false"
+
+  ` "DBG_REPR renders null"
+  null-repr: __DBG_REPR(null) //= "null"
+
+  ` "DBG_REPR renders empty list"
+  empty-list-repr: __DBG_REPR([]) //= "[]"
+
+  RESULT: [num-repr, str-repr, sym-repr, bool-true-repr, bool-false-repr, null-repr, empty-list-repr] all-true? then(:PASS, :FAIL)
+}

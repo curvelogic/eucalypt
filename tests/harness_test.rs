@@ -629,6 +629,16 @@ pub fn test_harness_123() {
 }
 
 #[test]
+pub fn test_harness_124() {
+    run_test(&opts("124_debug.eu"));
+}
+
+#[test]
+pub fn test_harness_125() {
+    run_test(&opts("125_expectations.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

@@ -859,19 +859,19 @@ All functions verified against `lib/prelude.eu`:
 
 All at precedence 5 (`:meta`).
 
-**Test expectations** (return booleans, for use in test harnesses):
+**Test expectations** (return booleans, emit stderr diagnostic on failure):
 
 | Operator | Description |
 |----------|-------------|
-| `e //= v` | Test `e` equals `v`, return boolean |
+| `e //= v` | Test `e` equals `v`; returns `true`/`false`, prints diagnostic on failure |
 | `e //=? f` | Test `f(e)` is `true`, return boolean |
+| `e //!` | Test `e` is `true`; returns `true`/`false`, prints diagnostic on failure |
 
 **Assertions** (panic on failure, return `e` on success):
 
 | Operator | Description |
 |----------|-------------|
 | `e //=> v` | Assert `e` equals `v`, panic with expected/actual on failure |
-| `e //!` | Assert `e` is `true`, panic on failure |
 
 **Deprecated** (use complement with positive forms instead):
 
@@ -886,3 +886,14 @@ All at precedence 5 (`:meta`).
 |----------|-------------|
 | `e // m` | Attach metadata block `m` to value `e` |
 | `e //<< m` | Merge `m` into existing metadata of `e` |
+
+**Debug intrinsics** (low-level BIFs for diagnostics and test infrastructure):
+
+| BIF | Signature | Description |
+|-----|-----------|-------------|
+| `__DBG_REPR(v)` | `unk → str` | Render any eucalypt value as a compact human-readable string (e.g. `42`, `"hello"`, `:foo`, `true`, `null`, `[]`) |
+| `__EXPECT(actual, expected_repr, pass)` | `unk × str × bool → bool` | Test infrastructure primitive: returns `pass` as a boolean; on failure prints `EXPECT FAILED: expected <expected_repr>, got <actual_repr>` to stderr |
+
+`__DBG_REPR` is used internally by `//=` and `//!` to format diagnostic
+messages. It can also be used directly in test harnesses when you need
+a string representation of a value for comparison or display.
