@@ -19,3 +19,6 @@ pub mod eval;
 pub mod export;
 pub mod import;
 pub mod syntax;
+
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
