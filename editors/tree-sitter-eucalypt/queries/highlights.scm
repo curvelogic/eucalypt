@@ -213,3 +213,32 @@
       (soup
         (literal (r_string) @comment.documentation))))
   (#eq? @_key "doc"))
+
+; Doc values inside block-valued unit metadata
+; Matches: { doc: "text", ... } at file level (bare block at top of file)
+(unit_metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (string) @comment.documentation))))
+  (#eq? @_key "doc"))
+
+(unit_metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (c_string) @comment.documentation))))
+  (#eq? @_key "doc"))
+
+(unit_metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (r_string) @comment.documentation))))
+  (#eq? @_key "doc"))

@@ -634,7 +634,69 @@ region is active.  Skips replacements inside strings and comments."
         (when (eq (car cap) 'ds)
           (eucalypt--apply-markdown-faces
            (treesit-node-start (cdr cap))
-           (treesit-node-end (cdr cap))))))))
+           (treesit-node-end (cdr cap)))))
+      ;; Doc values inside block-valued metadata (declaration, unit, block)
+      ;; Matches: ` {doc: "..."}, { {doc: "..."} x: 1 }, and { doc: "..." } at file level
+      (dolist (query
+               '(((metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (c_string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (r_string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((unit_metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((unit_metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (c_string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((unit_metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (r_string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((block_metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((block_metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (c_string) @ds)))))
+                  (:equal @_key "doc"))
+                 ((block_metadata
+                   (block
+                    (declaration
+                     (declaration_head (identifier) @_key)
+                     (soup (literal (r_string) @ds)))))
+                  (:equal @_key "doc"))))
+        (dolist (cap (treesit-query-capture root query beg end))
+          (when (eq (car cap) 'ds)
+            (eucalypt--apply-markdown-faces
+             (treesit-node-start (cdr cap))
+             (treesit-node-end (cdr cap)))))))))
 
 ;;; Mode definition
 
