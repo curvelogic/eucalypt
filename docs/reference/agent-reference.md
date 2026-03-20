@@ -886,3 +886,26 @@ All at precedence 5 (`:meta`).
 |----------|-------------|
 | `e // m` | Attach metadata block `m` to value `e` |
 | `e //<< m` | Merge `m` into existing metadata of `e` |
+
+---
+
+## 9. Debug Tracing
+
+**Operators and functions for inspecting values at runtime.**
+
+| Form | Description |
+|------|-------------|
+| `▶ v` | Print `v` to stderr and return it transparently. Prefix operator, precedence 85. |
+| `v dbg{}` | Print `v` to stderr and return it transparently. |
+| `v dbg{label: "x"}` | Print `x: <repr>` to stderr and return `v` transparently. |
+
+Output format: `▶ <repr>` or `▶ label: <repr>`.
+
+**Debug BIFs:**
+
+| BIF | Signature | Description |
+|-----|-----------|-------------|
+| `__DBG_REPR(v)` | `unk → str` | Render any value as a compact string (`42`, `"hello"`, `:foo`, `true`, `null`, `[]`, `{block}`) |
+| `__DBG(label, v)` | `str × unk → unk` | Print debug output to stderr; return `v` transparently |
+
+`▶` is intentionally large and visible — it does not get left in production code by accident.

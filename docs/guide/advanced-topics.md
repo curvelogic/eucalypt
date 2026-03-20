@@ -109,6 +109,28 @@ checked: 2 + 2 //=> 4
 m: meta(checked)  # contains the assertion
 ```
 
+## Debug Tracing
+
+Use `▶` (U+25B6) to print any value to stderr and return it transparently:
+
+```eu,notest
+x + ▶y                    # debug y inline, return y unchanged
+data map(f) ▶head         # debug head in a pipeline
+```
+
+For labelled output or pipeline use, prefer `dbg`:
+
+```eu,notest
+value dbg{}                   # prints: ▶ <repr>
+value dbg{label: "here"}      # prints: ▶ here: <repr>
+```
+
+Both `▶` and `dbg` return the value unchanged, so they can be inserted
+anywhere without affecting the result.
+
+`▶` is intentionally prominent — the Unicode triangle is hard to overlook
+in a code review.
+
 ## Sets
 
 Sets are unordered collections of unique values, provided by the
