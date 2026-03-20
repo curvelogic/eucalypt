@@ -94,7 +94,7 @@ f(x): x
 (source_file
   (declaration
     (metadata
-      (string
+      (docstring
         (string_content)))
     (declaration_head
       (identifier)
@@ -681,3 +681,68 @@ f[h : t]: h
     (soup
       (name
         (identifier)))))
+
+================================================================================
+Unit metadata string becomes docstring
+================================================================================
+
+"File documentation"
+
+x: 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (unit_metadata
+    (docstring
+      (string_content)))
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number)))))
+
+================================================================================
+Block metadata string becomes docstring
+================================================================================
+
+y: { "This is a docstring" x: 1 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (declaration_head
+      (identifier))
+    (soup
+      (block
+        (block_metadata
+          (docstring
+            (string_content)))
+        (declaration
+          (declaration_head
+            (identifier))
+          (soup
+            (literal
+              (number))))))))
+
+================================================================================
+Declaration with block-valued metadata docstring
+================================================================================
+
+` "A c-string docstring"
+x: 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (declaration
+    (metadata
+      (docstring
+        (string_content)))
+    (declaration_head
+      (identifier))
+    (soup
+      (literal
+        (number)))))

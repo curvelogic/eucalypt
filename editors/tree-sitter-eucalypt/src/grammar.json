@@ -34,16 +34,31 @@
           "name": "block"
         },
         {
-          "type": "SYMBOL",
-          "name": "string"
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "string"
+          },
+          "named": true,
+          "value": "docstring"
         },
         {
-          "type": "SYMBOL",
-          "name": "c_string"
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "c_string"
+          },
+          "named": true,
+          "value": "docstring"
         },
         {
-          "type": "SYMBOL",
-          "name": "r_string"
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "r_string"
+          },
+          "named": true,
+          "value": "docstring"
         }
       ]
     },
@@ -121,16 +136,31 @@
       "type": "CHOICE",
       "members": [
         {
-          "type": "SYMBOL",
-          "name": "string"
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "string"
+          },
+          "named": true,
+          "value": "docstring"
         },
         {
-          "type": "SYMBOL",
-          "name": "c_string"
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "c_string"
+          },
+          "named": true,
+          "value": "docstring"
         },
         {
-          "type": "SYMBOL",
-          "name": "r_string"
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "r_string"
+          },
+          "named": true,
+          "value": "docstring"
         },
         {
           "type": "SYMBOL",
@@ -1423,6 +1453,18 @@
           "value": "{"
         },
         {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "block_metadata"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
           "type": "REPEAT",
           "content": {
             "type": "SEQ",
@@ -1449,6 +1491,54 @@
         {
           "type": "STRING",
           "value": "}"
+        }
+      ]
+    },
+    "block_metadata": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "string"
+          },
+          "named": true,
+          "value": "docstring"
+        },
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "c_string"
+          },
+          "named": true,
+          "value": "docstring"
+        },
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "r_string"
+          },
+          "named": true,
+          "value": "docstring"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "symbol"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "block"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "list"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "number"
         }
       ]
     },
