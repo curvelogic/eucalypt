@@ -97,10 +97,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: clippy
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build library for WASM
         run: cargo build --target wasm32-unknown-unknown --lib
       - name: Clippy for WASM
         run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings
+      - name: wasm-pack build
+        run: wasm-pack build --target web
 
   release-candidate-linux:
     needs: [lint, test, audit, wasm]

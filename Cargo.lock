@@ -571,6 +571,7 @@ dependencies = [
  "regex",
  "rowan",
  "semver",
+ "serde",
  "serde_json",
  "sha2",
  "thiserror",
@@ -579,6 +580,7 @@ dependencies = [
  "unicode-general-category",
  "url",
  "uuid 1.20.0",
+ "wasm-bindgen",
  "webbrowser",
  "yaml-rust",
 ]
