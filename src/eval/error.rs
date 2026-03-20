@@ -786,6 +786,52 @@ impl ExecutionError {
                 }
             }
         }
+        // Diagnostic trace dump: when EU_ERROR_TRACE_DUMP is set, emit all
+        // available source locations as notes so we can study what information
+        // is available at error time.
+        if std::env::var("EU_ERROR_TRACE_DUMP").is_ok() {
+            let mut dump = vec![format!("--- ERROR TRACE DUMP ---")];
+
+            // Error's own Smid
+            let error_smid = inner.smid();
+            dump.push(format!(
+                "error smid: {}",
+                Self::format_smid_detail(error_smid, source_map)
+            ));
+
+            // vm.annotation (same as error smid for most errors)
+            dump.push(format!("has_source_label: {has_source_label}"));
+
+            // Environment trace
+            if env_trace.is_empty() {
+                dump.push("env_trace: (empty)".to_string());
+            } else {
+                dump.push(format!("env_trace ({} entries):", env_trace.len()));
+                for (i, smid) in env_trace.iter().enumerate() {
+                    dump.push(format!(
+                        "  [{i}] {}",
+                        Self::format_smid_detail(*smid, source_map)
+                    ));
+                }
+            }
+
+            // Stack trace
+            if stack_trace.is_empty() {
+                dump.push("stack_trace: (empty)".to_string());
+            } else {
+                dump.push(format!("stack_trace ({} entries):", stack_trace.len()));
+                for (i, smid) in stack_trace.iter().enumerate() {
+                    dump.push(format!(
+                        "  [{i}] {}",
+                        Self::format_smid_detail(*smid, source_map)
+                    ));
+                }
+            }
+
+            dump.push("--- END TRACE DUMP ---".to_string());
+            diag = diag.with_notes(dump);
+        }
+
         let notes = match inner {
             ExecutionError::TypeMismatch(_, expected, actual) => {
                 type_mismatch_notes(expected, actual)
@@ -895,6 +941,31 @@ impl ExecutionError {
             diag
         } else {
             diag.with_notes(notes)
+        }
+    }
+
+    /// Format a Smid with all available detail for trace dump diagnostics
+    fn format_smid_detail(smid: Smid, source_map: &SourceMap) -> String {
+        if !smid.is_valid() {
+            return "invalid (no location)".to_string();
+        }
+        match source_map.source_info_for_smid(smid) {
+            Some(info) => {
+                let file_part = match info.file {
+                    Some(f) => format!("file={f}"),
+                    None => "file=none".to_string(),
+                };
+                let span_part = match info.span {
+                    Some(span) => format!("span={}..{}", span.start(), span.end()),
+                    None => "span=none".to_string(),
+                };
+                let ann_part = match &info.annotation {
+                    Some(ann) => format!("ann=\"{ann}\""),
+                    None => "ann=none".to_string(),
+                };
+                format!("smid={} {file_part} {span_part} {ann_part}", smid.get())
+            }
+            None => format!("smid={} (no source info)", smid.get()),
         }
     }
 
