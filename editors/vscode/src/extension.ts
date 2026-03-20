@@ -3,6 +3,7 @@ import * as cp from "child_process";
 import {
   commands,
   ExtensionContext,
+  OutputChannel,
   QuickPickItem,
   window,
   workspace,
@@ -61,7 +62,7 @@ async function insertUnicodeOperator(): Promise<void> {
   }
 }
 
-async function renderBuffer(): Promise<void> {
+async function renderBuffer(outputChannel: OutputChannel): Promise<void> {
   const editor = window.activeTextEditor;
   if (!editor) {
     return;
@@ -76,7 +77,6 @@ async function renderBuffer(): Promise<void> {
   const fmt = ext === "yaml" ? "yaml" : ext === "csv" ? "csv" : "eu";
   const args = [euCommand, ...globalOpts.split(" ").filter(Boolean), `${fmt}@-`];
 
-  const outputChannel = window.createOutputChannel("Eucalypt");
   outputChannel.clear();
   outputChannel.show(true);
 
@@ -105,6 +105,12 @@ async function renderBuffer(): Promise<void> {
 }
 
 export function activate(context: ExtensionContext) {
+  const config = workspace.getConfiguration("eucalypt");
+
+  // Create output channel once so it is reused across renderBuffer invocations
+  const outputChannel = window.createOutputChannel("Eucalypt");
+  context.subscriptions.push(outputChannel);
+
   // Register commands
   context.subscriptions.push(
     commands.registerCommand(
@@ -114,30 +120,34 @@ export function activate(context: ExtensionContext) {
   );
 
   context.subscriptions.push(
-    commands.registerCommand("eucalypt.renderBuffer", renderBuffer)
+    commands.registerCommand("eucalypt.renderBuffer", () =>
+      renderBuffer(outputChannel)
+    )
   );
 
-  // Start the LSP client
-  const config = workspace.getConfiguration("eucalypt");
-  const command = config.get<string>("euCommand", "eu");
+  // Start the LSP client only when enabled (default: true)
+  const lspEnabled = config.get<boolean>("lspEnabled", true);
+  if (lspEnabled) {
+    const command = config.get<string>("euCommand", "eu");
 
-  const serverOptions: ServerOptions = {
-    command,
-    args: ["lsp"],
-  };
+    const serverOptions: ServerOptions = {
+      command,
+      args: ["lsp"],
+    };
 
-  const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "eucalypt" }],
-  };
+    const clientOptions: LanguageClientOptions = {
+      documentSelector: [{ scheme: "file", language: "eucalypt" }],
+    };
 
-  client = new LanguageClient(
-    "eucalypt",
-    "Eucalypt Language Server",
-    serverOptions,
-    clientOptions
-  );
+    client = new LanguageClient(
+      "eucalypt",
+      "Eucalypt Language Server",
+      serverOptions,
+      clientOptions
+    );
 
-  client.start();
+    client.start();
+  }
 }
 
 export function deactivate(): Thenable<void> | undefined {
