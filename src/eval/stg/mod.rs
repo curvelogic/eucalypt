@@ -213,6 +213,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(parse_string::ParseString));
     rt.add(Box::new(debug::DbgRepr));
     rt.add(Box::new(expect::Expect));
+    rt.add(Box::new(debug::Dbg));
     rt.prepare(source_map);
     Box::new(rt)
 }

@@ -891,9 +891,27 @@ All at precedence 5 (`:meta`).
 
 | BIF | Signature | Description |
 |-----|-----------|-------------|
-| `__DBG_REPR(v)` | `unk → str` | Render any eucalypt value as a compact human-readable string (e.g. `42`, `"hello"`, `:foo`, `true`, `null`, `[]`) |
+| `__DBG_REPR(v)` | `unk → str` | Render any eucalypt value as a compact human-readable string (e.g. `42`, `"hello"`, `:foo`, `true`, `null`, `[]`, `{block}`) |
 | `__EXPECT(actual, expected_repr, pass)` | `unk × str × bool → bool` | Test infrastructure primitive: returns `pass` as a boolean; on failure prints `EXPECT FAILED: expected <expected_repr>, got <actual_repr>` to stderr |
+| `__DBG(label, v)` | `str × unk → unk` | Print debug output to stderr; return `v` transparently |
 
 `__DBG_REPR` is used internally by `//=` and `//!` to format diagnostic
 messages. It can also be used directly in test harnesses when you need
 a string representation of a value for comparison or display.
+
+---
+
+## 9. Debug Tracing
+
+**Operators and functions for inspecting values at runtime.**
+
+| Form | Description |
+|------|-------------|
+| `▶ v` | Print `v` to stderr and return it transparently. Prefix operator, precedence 85. |
+| `v dbg{}` | Print `v` to stderr and return it transparently. |
+| `v dbg{label: "x"}` | Print `x: <repr>` to stderr and return `v` transparently. |
+
+Output format: `▶ <repr>` or `▶ label: <repr>`.
+
+`▶` is intentionally prominent — the Unicode triangle is hard to overlook
+in a code review.

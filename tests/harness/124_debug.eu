@@ -1,4 +1,4 @@
-"124 debug representation"
+"124 debug representation and tracing"
 
 ` { target: :test }
 test: {
@@ -23,5 +23,14 @@ test: {
   ` "DBG_REPR renders empty list"
   empty-list-repr: __DBG_REPR([]) //= "[]"
 
-  RESULT: [num-repr, str-repr, sym-repr, bool-true-repr, bool-false-repr, null-repr, empty-list-repr] all-true? then(:PASS, :FAIL)
+  ` "dbg returns value transparently"
+  dbg-transparent: 42 dbg{} //= 42
+
+  ` "dbg with label returns value transparently"
+  dbg-labelled: "hello" dbg{label: "greeting"} //= "hello"
+
+  ` "▶ returns value transparently"
+  tri-transparent: (▶ 42) //= 42
+
+  RESULT: [num-repr, str-repr, sym-repr, bool-true-repr, bool-false-repr, null-repr, empty-list-repr, dbg-transparent, dbg-labelled, tri-transparent] all-true? then(:PASS, :FAIL)
 }

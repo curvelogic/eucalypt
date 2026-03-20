@@ -1,20 +1,20 @@
-//! Debug representation intrinsic for eucalypt values.
+//! Debug representation and tracing intrinsics.
 //!
-//! Provides `__DBG_REPR(value)` which renders any eucalypt value to a
-//! compact, human-readable string for use in diagnostic output, test
-//! failure messages, and debug tracing.
+//! Provides:
+//! - `__DBG_REPR(value)` — render any eucalypt value to a compact, human-readable string
+//! - `__DBG(label, value)` — print value to stderr and return it transparently
 
 use std::convert::TryInto;
 
 use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
-    machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+    machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
     memory::{
         mutator::MutatorHeapView,
         syntax::{HeapSyn, Native, Ref},
     },
-    stg::support::machine_return_str,
+    stg::support::{machine_return_str, str_arg},
 };
 
 use super::tags::DataConstructor;
@@ -23,7 +23,7 @@ use super::tags::DataConstructor;
 ///
 /// Scalars are rendered in their literal form:
 /// - Numbers: `42`, `3.14`
-/// - Strings: `"hello"` (with surrounding quotes and escapes)
+/// - Strings: `"hello"` (with surrounding quotes)
 /// - Symbols: `:foo`
 /// - Booleans: `true`, `false`
 /// - Null: `null`
@@ -198,3 +198,47 @@ impl StgIntrinsic for DbgRepr {
 }
 
 impl CallGlobal1 for DbgRepr {}
+
+/// `__DBG(label, value)` — print debug output to stderr and return `value` transparently.
+///
+/// - `label`: a string label prepended to the output (may be empty).
+/// - `value`: the value to inspect; returned unchanged.
+///
+/// Output format:
+/// - With empty label: `▶ <repr>`
+/// - With label: `▶ label: <repr>`
+///
+/// This is the underlying BIF for both the `dbg` prelude function and the
+/// `▶` prefix operator.
+pub struct Dbg;
+
+impl StgIntrinsic for Dbg {
+    fn name(&self) -> &str {
+        "DBG"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // args[0] = label (strict string)
+        // args[1] = value to debug (strict — we want the evaluated result)
+        let label = str_arg(machine, view, &args[0])?;
+        let repr = render_debug_repr(machine, view, &args[1]);
+
+        if label.is_empty() {
+            eprintln!("▶ {repr}");
+        } else {
+            eprintln!("▶ {label}: {repr}");
+        }
+
+        // Return args[1] transparently
+        let closure = machine.nav(view).resolve(&args[1])?;
+        machine.set_closure(closure)
+    }
+}
+
+impl CallGlobal2 for Dbg {}
