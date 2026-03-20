@@ -244,12 +244,14 @@ impl SourceMap {
     /// line 5 column 3, or `example.eu:2:10 (str.letters(99))` for a
     /// source expression.
     pub fn format_trace(&self, trace: &[Smid], files: &SimpleFiles<String, String>) -> String {
-        let elements: Vec<_> = trace
+        // Collect entries in trace order (innermost-first from the VM),
+        // then reverse so the output reads outermost-first (conventional order).
+        let mut elements: Vec<_> = trace
             .iter()
             .filter_map(|smid| {
                 let info = self.source.get(smid.get())?;
 
-                // Determine the display name: intrinsic name or source snippet
+                // Determine the display name: prefer intrinsic display name, then source snippet
                 let display_name = info.annotation.as_deref().and_then(intrinsic_display_name);
 
                 let source_snippet = || {
@@ -259,29 +261,39 @@ impl SourceMap {
                     source.get(Range::from(span))
                 };
 
-                // Build file:line:col prefix if we have a file location
-                let location_prefix = info.file.and_then(|id| {
+                // Build file:line:col location string if we have a source location
+                let location = info.file.and_then(|id| {
                     let name = files.name(id).ok()?;
                     let span = info.span?;
                     let loc = files.location(id, span.start().to_usize()).ok()?;
+                    // Strip directory prefix for readability
+                    let short_name = std::path::Path::new(&name)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&name);
                     Some(format!(
-                        "{name}:{line}:{col}",
+                        "{short_name}:{line}:{col}",
                         line = loc.line_number,
                         col = loc.column_number
                     ))
                 });
 
-                let label = display_name.or_else(source_snippet)?;
+                // Only include entries that have a user-visible name or source location.
+                // Entries with neither are internal machinery and are silently dropped.
+                let name = display_name.or_else(source_snippet)?;
 
-                let entry = match (location_prefix, display_name) {
-                    (Some(prefix), Some(name)) => format!("- {prefix} (in '{name}')"),
-                    (Some(prefix), None) => format!("- {prefix} ({label})"),
-                    (None, _) => format!("- {label}"),
+                // Format: "name at file:line:col" or just "name" if no location
+                let entry = match location {
+                    Some(loc) => format!("- {name} at {loc}"),
+                    None => format!("- {name}"),
                 };
 
                 Some(entry)
             })
             .collect();
+
+        // Reverse to read outermost-first (matches conventional stack trace order)
+        elements.reverse();
 
         elements.as_slice().join("\n")
     }
