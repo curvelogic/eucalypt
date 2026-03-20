@@ -1,0 +1,69 @@
+"Monadic blocks with implicit return (no .expr). A bracket block or :ns block without .expr returns a block of all non-underscore bind names."
+
+# Identity monad for testing (no IO required)
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+` { doc: "Identity monad namespace for implicit return tests." monad: true }
+id: monad({bind(ma, f): f(ma), return(a): a})
+
+tests: {
+
+  ` "Bracket block with implicit return — single binding"
+  bracket-single: {
+    ⟦{}⟧: { :monad bind: id-bind  return: id-return }
+    result: ⟦ r: 42 ⟧
+    RESULT: if(result.r = 42, :PASS, :FAIL)
+  }
+
+  ` "Bracket block with implicit return — multiple bindings"
+  bracket-multi: {
+    ⌈{}⌉: { :monad bind: id-bind  return: id-return }
+    result: ⌈ a: 10  b: 20 ⌉
+    RESULT: if(result.a = 10 && result.b = 20, :PASS, :FAIL)
+  }
+
+  ` "Bracket block with implicit return — underscore bindings excluded"
+  bracket-underscore: {
+    ⟪{}⟫: { :monad bind: id-bind  return: id-return }
+    result: ⟪ _: 99  r: 7 ⟫
+    RESULT: if(result.r = 7 && !(result has(:_)), :PASS, :FAIL)
+  }
+
+  ` "Block with monad: true namespace — implicit return"
+  ns-single: {
+    result: { :id r: 42 }
+    RESULT: if(result.r = 42, :PASS, :FAIL)
+  }
+
+  ` "Block with monad: true namespace — multiple bindings"
+  ns-multi: {
+    result: { :id a: 1  b: 2 }
+    RESULT: if(result.a = 1 && result.b = 2, :PASS, :FAIL)
+  }
+
+  ` "Block with monad: true namespace — underscore excluded"
+  ns-underscore: {
+    result: { :id _: 99  r: 7 }
+    RESULT: if(result.r = 7 && !(result has(:_)), :PASS, :FAIL)
+  }
+
+  ` "Explicit .expr still works (backwards compatibility)"
+  explicit-return: {
+    result: { :id x: 10  r: x + 5 }.r
+    RESULT: if(result = 15, :PASS, :FAIL)
+  }
+
+  ` "Block without monad: true falls through to normal block desugaring"
+  no-monad-true: {
+    # 'maybe' is not registered with monad: true, so :maybe block without .expr
+    # is treated as a plain block (normal desugaring, no implicit return)
+    maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+    # This should be a plain block with r: cmd, not a monadic block
+    result: { r: 42 }
+    RESULT: if(result.r = 42, :PASS, :FAIL)
+  }
+
+}
+
+RESULT: tests values map(_.RESULT) map(_ = :PASS) all-true? then(:PASS, :FAIL)
