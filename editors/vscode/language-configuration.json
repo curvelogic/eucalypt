@@ -5,25 +5,45 @@
   "brackets": [
     ["{", "}"],
     ["[", "]"],
-    ["(", ")"]
+    ["(", ")"],
+    ["⟦", "⟧"],
+    ["⟨", "⟩"],
+    ["⟪", "⟫"],
+    ["⌈", "⌉"],
+    ["⌊", "⌋"],
+    ["«", "»"],
+    ["【", "】"],
+    ["〔", "〕"]
   ],
   "autoClosingPairs": [
     { "open": "{", "close": "}" },
     { "open": "[", "close": "]" },
     { "open": "(", "close": ")" },
     { "open": "\"", "close": "\"", "notIn": ["string"] },
-    { "open": "'", "close": "'", "notIn": ["string"] }
+    { "open": "'", "close": "'", "notIn": ["string"] },
+    { "open": "⟦", "close": "⟧" },
+    { "open": "⟨", "close": "⟩" },
+    { "open": "⟪", "close": "⟫" },
+    { "open": "⌈", "close": "⌉" },
+    { "open": "⌊", "close": "⌋" },
+    { "open": "«", "close": "»" },
+    { "open": "【", "close": "】" },
+    { "open": "〔", "close": "〕" }
   ],
   "surroundingPairs": [
     { "open": "{", "close": "}" },
     { "open": "[", "close": "]" },
     { "open": "(", "close": ")" },
     { "open": "\"", "close": "\"" },
-    { "open": "'", "close": "'" }
+    { "open": "'", "close": "'" },
+    { "open": "⟦", "close": "⟧" },
+    { "open": "⟨", "close": "⟩" },
+    { "open": "⟪", "close": "⟫" },
+    { "open": "«", "close": "»" }
   ],
   "indentationRules": {
     "increaseIndentPattern": ".*[{\\[]\\s*$",
     "decreaseIndentPattern": "^\\s*[}\\]]"
   },
-  "wordPattern": "[a-zA-Z_][a-zA-Z0-9_\\-?!]*"
+  "wordPattern": "[•$?_a-zA-Z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02AF][•$?_!*\\-a-zA-Z0-9\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02AF]*"
 }

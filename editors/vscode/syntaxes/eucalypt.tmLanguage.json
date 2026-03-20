@@ -4,13 +4,21 @@
   "scopeName": "source.eucalypt",
   "patterns": [
     { "include": "#comment" },
-    { "include": "#string" },
+    { "include": "#docstring" },
     { "include": "#c-string" },
     { "include": "#raw-string" },
+    { "include": "#string" },
     { "include": "#symbol" },
     { "include": "#number" },
-    { "include": "#metadata" },
+    { "include": "#metadata-backtick" },
+    { "include": "#builtin-intrinsic" },
     { "include": "#keyword" },
+    { "include": "#prelude" },
+    { "include": "#anaphor" },
+    { "include": "#function-declaration" },
+    { "include": "#property-declaration" },
+    { "include": "#function-call" },
+    { "include": "#unicode-operator" },
     { "include": "#operator" },
     { "include": "#punctuation" },
     { "include": "#identifier" }
@@ -20,36 +28,77 @@
       "name": "comment.line.number-sign.eucalypt",
       "match": "#.*$"
     },
-    "string": {
-      "name": "string.quoted.double.eucalypt",
-      "begin": "(?<!c|r)\"",
+
+    "docstring": {
+      "comment": "Documentation string immediately following a backtick metadata marker",
+      "begin": "(`)(\\s*)(\")",
       "end": "\"",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.metadata.eucalypt keyword.other.metadata.eucalypt" },
+        "3": { "name": "punctuation.definition.string.begin.eucalypt" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.eucalypt" }
+      },
+      "contentName": "comment.documentation.eucalypt",
       "patterns": [
         { "include": "#interpolation" },
-        { "include": "#brace-escape" }
+        { "include": "#brace-escape" },
+        { "include": "#markdown-inline" }
       ]
     },
+
     "c-string": {
       "name": "string.quoted.double.c.eucalypt",
       "begin": "c\"",
       "end": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.eucalypt" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.eucalypt" }
+      },
       "patterns": [
         { "include": "#interpolation" },
         {
           "name": "constant.character.escape.eucalypt",
-          "match": "\\\\[nrtv0\\\\\"afbe]|\\\\x[0-9a-fA-F]{2}|\\\\u\\{[0-9a-fA-F]+\\}"
+          "match": "\\\\[nrt0\\\\\"{}]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\U[0-9a-fA-F]{8}"
         }
       ]
     },
+
     "raw-string": {
       "name": "string.quoted.double.raw.eucalypt",
       "begin": "r\"",
       "end": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.eucalypt" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.eucalypt" }
+      },
       "patterns": [
         { "include": "#interpolation" },
         { "include": "#brace-escape" }
       ]
     },
+
+    "string": {
+      "name": "string.quoted.double.eucalypt",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.eucalypt" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.eucalypt" }
+      },
+      "patterns": [
+        { "include": "#interpolation" },
+        { "include": "#brace-escape" }
+      ]
+    },
+
     "interpolation": {
       "name": "meta.interpolation.eucalypt",
       "begin": "(?<!\\{)\\{(?!\\{)",
@@ -71,10 +120,29 @@
         }
       ]
     },
+
     "brace-escape": {
       "name": "constant.character.escape.eucalypt",
       "match": "\\{\\{|\\}\\}"
     },
+
+    "markdown-inline": {
+      "patterns": [
+        {
+          "name": "markup.inline.raw.eucalypt",
+          "match": "`[^`]+`"
+        },
+        {
+          "name": "markup.bold.eucalypt",
+          "match": "\\*\\*[^*]+\\*\\*"
+        },
+        {
+          "name": "markup.italic.eucalypt",
+          "match": "(?<![*])\\*[^*]+\\*(?![*])"
+        }
+      ]
+    },
+
     "symbol": {
       "patterns": [
         {
@@ -87,22 +155,75 @@
         }
       ]
     },
+
     "number": {
       "name": "constant.numeric.eucalypt",
-      "match": "-?(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+      "match": "-?[0-9]+(?:\\.[0-9]+)?"
     },
-    "metadata": {
-      "name": "keyword.other.metadata.eucalypt",
+
+    "metadata-backtick": {
+      "name": "keyword.other.metadata.eucalypt punctuation.definition.metadata.eucalypt",
       "match": "`"
     },
+
+    "builtin-intrinsic": {
+      "comment": "Built-in intrinsic functions — double underscore prefix",
+      "name": "support.function.builtin.eucalypt",
+      "match": "\\b__[A-Z][A-Z0-9_]*\\b"
+    },
+
     "keyword": {
-      "name": "keyword.other.eucalypt",
+      "name": "keyword.control.eucalypt",
       "match": "\\b(?:if|then|when|cond|true|false|null|nil)\\b"
     },
+
+    "prelude": {
+      "comment": "Standard prelude functions",
+      "name": "support.function.prelude.eucalypt",
+      "match": "(?<![\\p{L}\\p{N}_$?!\\-*])(?:cons|head|tail|first|second|head-or|tail-or|second-or|map|filter|foldl|foldr|scanl|scanr|and|or|not|merge|concat|append|prepend|identity|const|compose|apply|flip|take|drop|take-while|drop-while|all|any|all-true\\?|any-true\\?|keys|values|lookup|has|range|repeat|iterate|cycle|zip|zip-with|reverse|remove|mapcat|group-by|qsort|partition|negate|inc|dec|floor|ceiling|max|min|abs|num|panic|assert|deep-merge|merge-all|elements|block|lookup-in|lookup-or|lookup-or-in|lookup-alts|lookup-across|lookup-path|complement|curry|uncurry|juxt|fnil|with-meta|meta|merge-meta|assertions|split-at|take-until|drop-until|split-after|split-when|nth|count|last|map2|zip-apply|window|over-sliding-pairs|differences|discriminate|key|value|bimap|map-first|map-second|map-kv|map-as-block|pair|zip-kv|with-keys|map-values|map-keys|filter-items|by-key|by-key-name|by-key-match|by-value|match-filter-values|filter-values|alter-value|update-value|alter|update|update-value-or|set-value|tongue|merge-at|nil\\?|zero\\?|pos\\?|neg\\?|max-of|min-of|sym|ch|str|eu|io|cal|iosm)(?![\\p{L}\\p{N}_$?!\\-*])"
+    },
+
+    "anaphor": {
+      "comment": "Anaphoric variables: _, _0, _1, •, •0, •1",
+      "name": "variable.language.anaphor.eucalypt",
+      "match": "(?<![\\p{L}\\p{N}_$?!\\-*])(?:_[0-9]*|•[0-9]*)(?![\\p{L}\\p{N}_$?!\\-*])"
+    },
+
+    "function-declaration": {
+      "comment": "Function declaration head: name(params): or f{...}: or f[...]: ",
+      "match": "^\\s*([\\p{L}_$?][\\p{L}\\p{N}_$?!\\-*]*)\\s*(?=\\(|\\{|\\[)",
+      "captures": {
+        "1": { "name": "entity.name.function.eucalypt" }
+      }
+    },
+
+    "property-declaration": {
+      "comment": "Property declaration head: name:",
+      "match": "^\\s*([\\p{L}_$?][\\p{L}\\p{N}_$?!\\-*]*)\\s*(?=:)",
+      "captures": {
+        "1": { "name": "variable.declaration.eucalypt" }
+      }
+    },
+
+    "function-call": {
+      "comment": "Function call: identifier immediately followed by (",
+      "match": "([\\p{L}_$?][\\p{L}\\p{N}_$?!\\-*]*)(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.call.eucalypt" }
+      }
+    },
+
+    "unicode-operator": {
+      "comment": "Unicode operators used in eucalypt",
+      "name": "keyword.operator.unicode.eucalypt",
+      "match": "[∧∨¬≤≥≠∸÷∘‖↑✓⊕≪≫∅→←⊂⊃∈∉∀∃⊥⊤≈≡∩∪∼±×√∞∂∫∑∏∇△▽⊢⊣⊨⊩⊕⊗⊙⊡⊞⊟⋅⋆⋈⋉⋊⟵⟶⟷⟸⟹⟺]+"
+    },
+
     "operator": {
       "name": "keyword.operator.eucalypt",
-      "match": "(?<![\\p{L}\\p{N}_])[+\\-*/<>=!&|^~%@$?]+(?![\\p{L}\\p{N}_])|\\.\\.+"
+      "match": "[+\\-*/<>=!&|^~%@$?.\\\\]+"
     },
+
     "punctuation": {
       "patterns": [
         { "name": "punctuation.definition.block.begin.eucalypt", "match": "\\{" },
@@ -111,10 +232,13 @@
         { "name": "punctuation.definition.list.end.eucalypt", "match": "\\]" },
         { "name": "punctuation.definition.paren.begin.eucalypt", "match": "\\(" },
         { "name": "punctuation.definition.paren.end.eucalypt", "match": "\\)" },
+        { "name": "punctuation.definition.bracket.begin.eucalypt", "match": "[⟦⟨⟪⌈⌊⦃⦇⦉«【〔〖〘〚]" },
+        { "name": "punctuation.definition.bracket.end.eucalypt", "match": "[⟧⟩⟫⌉⌋⦄⦈⦊»】〕〗〙〛]" },
         { "name": "punctuation.separator.colon.eucalypt", "match": ":" },
         { "name": "punctuation.separator.comma.eucalypt", "match": "," }
       ]
     },
+
     "identifier": {
       "patterns": [
         {

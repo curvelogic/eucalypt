@@ -28,7 +28,11 @@
           "eucalypt"
         ],
         "extensions": [
-          ".eu"
+          ".eu",
+          ".eucalypt"
+        ],
+        "filenames": [
+          "Eufile"
         ],
         "configuration": "./language-configuration.json"
       }
@@ -40,9 +44,63 @@
         "path": "./syntaxes/eucalypt.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "eucalypt",
+        "path": "./snippets/eucalypt.code-snippets"
+      }
+    ],
+    "commands": [
+      {
+        "command": "eucalypt.insertUnicodeOperator",
+        "title": "Insert Unicode Operator",
+        "category": "Eucalypt"
+      },
+      {
+        "command": "eucalypt.renderBuffer",
+        "title": "Render Buffer",
+        "category": "Eucalypt"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "eucalypt.insertUnicodeOperator",
+        "key": "ctrl+c ctrl+u",
+        "mac": "cmd+c cmd+u",
+        "when": "editorTextFocus && editorLangId == eucalypt"
+      },
+      {
+        "command": "eucalypt.renderBuffer",
+        "key": "ctrl+c ctrl+k",
+        "mac": "cmd+c cmd+k",
+        "when": "editorTextFocus && editorLangId == eucalypt"
+      }
+    ],
+    "configuration": {
+      "title": "Eucalypt",
+      "properties": {
+        "eucalypt.euCommand": {
+          "type": "string",
+          "default": "eu",
+          "description": "Path to the eucalypt `eu` binary. Defaults to `eu` on the PATH."
+        },
+        "eucalypt.globalOptions": {
+          "type": "string",
+          "default": "",
+          "description": "Default options to pass to `eu` for all invocations."
+        },
+        "eucalypt.lspEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Eucalypt Language Server Protocol integration."
+        }
+      }
+    },
     "configurationDefaults": {
       "[eucalypt]": {
-        "editor.unicodeHighlight.ambiguousCharacters": false
+        "editor.unicodeHighlight.ambiguousCharacters": false,
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true
       }
     }
   },
