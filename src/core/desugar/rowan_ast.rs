@@ -14,6 +14,7 @@ use crate::{
     common::sourcemap::{HasSmid, Smid},
     core::{
         anaphora::{BLOCK_ANAPHORA, EXPR_ANAPHORA},
+        binding::Var,
         error::CoreError,
         expr::*,
         rt,
@@ -25,7 +26,6 @@ use crate::{
     },
 };
 use codespan::{ByteIndex, Span};
-use moniker::{Binder, Embed, Rec, Scope};
 use rowan::{ast::AstNode, TextRange};
 
 /// Convert a TextRange to a Span
@@ -37,14 +37,14 @@ fn text_range_to_span(range: TextRange) -> Span {
 
 /// Return type of `desugar_declaration_body_with_patterns`:
 /// `(body_expr, lambda_param_names, lambda_param_vars)`
-type PatternBodyResult = (RcExpr, Vec<String>, Vec<moniker::FreeVar<String>>);
+type PatternBodyResult = (RcExpr, Vec<String>, Vec<String>);
 
 /// Entry for a single field binding in a destructuring let.
 struct FieldBinding {
     /// Name of the field in the source block (for Lookup)
     field_name: String,
-    /// FreeVar for the binding name in the body
-    binding_var: moniker::FreeVar<String>,
+    /// Name of the binding in the body
+    binding_var: String,
 }
 
 /// Entry for a destructuring block let: synthetic param + field bindings.
@@ -59,16 +59,16 @@ struct DestructureEntry {
 struct ListElementBinding {
     /// Zero-based index of the element
     index: usize,
-    /// FreeVar for the binding name in the body
-    binding_var: moniker::FreeVar<String>,
+    /// Name of the binding in the body
+    binding_var: String,
 }
 
 /// Entry for the tail binding in a head/tail list pattern.
 struct ListTailBinding {
     /// Number of head elements to skip (i.e., the drop count)
     drop_count: usize,
-    /// FreeVar for the tail binding name in the body
-    binding_var: moniker::FreeVar<String>,
+    /// Name of the tail binding in the body
+    binding_var: String,
 }
 
 /// Entry for a destructuring list let: synthetic param + element bindings.
@@ -349,8 +349,8 @@ fn desugar_declaration_body_with_patterns(
         desugarer.env_mut().push_keys(all_env_names.iter().cloned());
     }
 
-    // Collect FreeVars for lambda binders (before desugaring body)
-    let lambda_param_vars: Vec<moniker::FreeVar<String>> = lambda_param_names
+    // Collect var names for lambda binders (before desugaring body)
+    let lambda_param_vars: Vec<String> = lambda_param_names
         .iter()
         .map(|name| desugarer.env().get(name).unwrap().clone())
         .collect();
@@ -423,22 +423,22 @@ fn desugar_declaration_body_with_patterns(
     // Wrap body in destructuring lets for each pattern, innermost first
     // (last pattern wraps outermost), preserving argument order.
     for slot in let_order.iter().rev() {
-        // Look up the synthetic param FreeVar from the lambda_param_vars
+        // Look up the synthetic param name from the lambda_param_vars
         // (the env frame has already been popped)
-        let synthetic_fv = lambda_param_vars
+        let synthetic_name_val = lambda_param_vars
             .iter()
             .zip(lambda_param_names.iter())
             .find(|(_, n)| **n == slot.synthetic_name())
-            .map(|(fv, _)| fv.clone())
+            .map(|(var_name, _)| var_name.clone())
             .unwrap();
 
         let smid = desugarer.new_smid(span);
-        let synthetic_var = RcExpr::from(Expr::Var(smid, moniker::Var::Free(synthetic_fv)));
+        let synthetic_var = RcExpr::from(Expr::Var(smid, Var::Free(synthetic_name_val)));
 
         match slot {
             DestructureLet::Block(entry) => {
                 // Each binding is: binding_var = Lookup(Var(synthetic), "field_name", None)
-                let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+                let bindings: Vec<(String, RcExpr)> = entry
                     .fields
                     .iter()
                     .map(|fb| {
@@ -448,13 +448,13 @@ fn desugar_declaration_body_with_patterns(
                             fb.field_name.clone(),
                             None,
                         ));
-                        (Binder(fb.binding_var.clone()), Embed(lookup))
+                        (fb.binding_var.clone(), lookup)
                     })
                     .collect();
 
                 body = RcExpr::from(Expr::Let(
                     smid,
-                    Scope::new(Rec::new(bindings), body),
+                    close_let_scope(bindings, body),
                     LetType::DestructureBlockLet,
                 ));
             }
@@ -470,7 +470,7 @@ fn desugar_declaration_body_with_patterns(
                 //
                 // This correctly handles lists built by the STG compiler
                 // where the nil tail is a global ref, not a local ref.
-                let mut bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+                let mut bindings: Vec<(String, RcExpr)> = entry
                     .elements
                     .iter()
                     .map(|eb| {
@@ -481,7 +481,7 @@ fn desugar_declaration_body_with_patterns(
                         }
                         // Apply HEAD to get the element at this position
                         let head_call = core::app(smid, core::bif(smid, "HEAD"), vec![list_expr]);
-                        (Binder(eb.binding_var.clone()), Embed(head_call))
+                        (eb.binding_var.clone(), head_call)
                     })
                     .collect();
 
@@ -491,12 +491,12 @@ fn desugar_declaration_body_with_patterns(
                     for _ in 0..tb.drop_count {
                         tail_expr = core::app(smid, core::bif(smid, "TAIL"), vec![tail_expr]);
                     }
-                    bindings.push((Binder(tb.binding_var.clone()), Embed(tail_expr)));
+                    bindings.push((tb.binding_var.clone(), tail_expr));
                 }
 
                 body = RcExpr::from(Expr::Let(
                     smid,
-                    Scope::new(Rec::new(bindings), body),
+                    close_let_scope(bindings, body),
                     LetType::DestructureListLet,
                 ));
             }
@@ -662,14 +662,13 @@ fn find_monad_spec_in_bindings(expr: &RcExpr) -> Option<super::desugarer::MonadS
     use crate::core::metadata::extract_function_name_from_expr;
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            let bindings = scope.unsafe_pattern.unsafe_pattern.clone();
+            let bindings = scope.pattern.clone();
             let mut bind_name = None;
             let mut return_name = None;
             let mut namespace = None;
-            for (binder, embed) in &bindings {
-                let key = binder.0.pretty_name.as_deref().unwrap_or("");
-                let val = extract_function_name_from_expr(&embed.0);
-                match key {
+            for (key, val_expr) in &bindings {
+                let val = extract_function_name_from_expr(val_expr);
+                match key.as_str() {
                     "bind" => bind_name = val,
                     "return" => return_name = val,
                     "namespace" => namespace = val,
@@ -903,8 +902,8 @@ fn desugar_monadic_block(
         desugarer.env_mut().push_keys(bind_names.iter().cloned());
     }
 
-    // Collect bind FreeVars while names are in scope
-    let bind_vars: Vec<moniker::FreeVar<String>> = bind_names
+    // Collect bind var names while names are in scope
+    let bind_vars: Vec<String> = bind_names
         .iter()
         .map(|name| desugarer.env().get(name).unwrap().clone())
         .collect();
@@ -1152,19 +1151,19 @@ struct RowanDeclarationComponents {
     pub name: String,
     pub args: Vec<String>,
     pub body: RcExpr,
-    pub arg_vars: Vec<moniker::FreeVar<String>>,
+    pub arg_vars: Vec<String>,
     pub is_operator: bool,
     pub fixity: Option<crate::core::expr::Fixity>,
 }
 
 /// Helper to desugar declaration body with arguments in scope
-/// Returns the desugared body and the FreeVars for the arguments
+/// Returns the desugared body and the var names for the arguments
 fn desugar_declaration_body(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
     args: &[String],
     span: Span,
-) -> Result<(RcExpr, Vec<moniker::FreeVar<String>>), CoreError> {
+) -> Result<(RcExpr, Vec<String>), CoreError> {
     // Push args to environment if any and collect the FreeVars
     let arg_vars = if !args.is_empty() {
         desugarer.env_mut().push_keys(args.iter().cloned());
@@ -1982,7 +1981,7 @@ fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, Cor
 fn rowan_declaration_to_binding(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
-) -> Result<(Binder<String>, Embed<RcExpr>), CoreError> {
+) -> Result<(String, RcExpr), CoreError> {
     // Extract declaration name first and push to stack before body desugaring
     let name = extract_declaration_name(decl)?;
     desugarer.push(&name);
@@ -2124,7 +2123,7 @@ fn rowan_declaration_to_binding(
     // Embed in imports if required
     expr = imports.iter().rfold(expr, |acc, import| import.rebody(acc));
 
-    let ret = (Binder(declared_var), Embed(expr));
+    let ret = (declared_var, expr);
 
     // Note: Don't pop the environment here - it's shared across all declarations
     // The caller (Unit or Block) will pop it after processing all declarations
@@ -2211,12 +2210,7 @@ impl Desugarable for rowan_ast::Block {
         // Create block body mapping names to variables
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
-            .map(|(binder, embed)| {
-                (
-                    binder.0.clone().pretty_name.unwrap(),
-                    core::var(embed.0.smid(), binder.0.clone()),
-                )
-            })
+            .map(|(name, expr)| (name.clone(), core::var(expr.smid(), name.clone())))
             .collect();
 
         // Create body - check for parse-embed override
@@ -2236,7 +2230,7 @@ impl Desugarable for rowan_ast::Block {
         // Create let expression with bindings
         let mut expr = RcExpr::from(Expr::Let(
             desugarer.new_smid(span),
-            Scope::new(Rec::new(bindings), body),
+            close_let_scope(bindings, body),
             LetType::DefaultBlockLet,
         ));
 
@@ -2356,12 +2350,7 @@ impl Desugarable for rowan_ast::Unit {
         // Create unit body mapping names to variables
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
-            .map(|(binder, embed)| {
-                (
-                    binder.0.clone().pretty_name.unwrap(),
-                    core::var(embed.0.smid(), binder.0.clone()),
-                )
-            })
+            .map(|(name, expr)| (name.clone(), core::var(expr.smid(), name.clone())))
             .collect();
 
         // Remember whether there are any declarations before body_elements is moved.
@@ -2384,7 +2373,7 @@ impl Desugarable for rowan_ast::Unit {
         // Create let expression with bindings
         let mut expr = RcExpr::from(Expr::Let(
             desugarer.new_smid(span),
-            Scope::new(Rec::new(bindings), body),
+            close_let_scope(bindings, body),
             LetType::DefaultBlockLet,
         ));
 
@@ -2410,7 +2399,7 @@ impl Desugarable for rowan_ast::Unit {
                 if is_bare_expression {
                     expr = RcExpr::from(Expr::Let(
                         desugarer.new_smid(span),
-                        Scope::new(Rec::new(vec![]), stripped_meta),
+                        close_let_scope(vec![], stripped_meta),
                         LetType::DefaultBlockLet,
                     ));
                 } else {

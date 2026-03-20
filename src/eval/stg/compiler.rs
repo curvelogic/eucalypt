@@ -2,6 +2,7 @@
 //! to STG syntax for evaluation in the machine.
 use std::{convert::TryInto, rc::Rc};
 
+use crate::core::binding::{BoundVar, Var};
 use crate::{
     common::sourcemap::{HasSmid, Smid, SourceMap},
     core::expr::{BlockMap, Expr, LamScope, LetScope, Primitive, RcExpr},
@@ -11,7 +12,6 @@ use crate::{
     },
 };
 use codespan_reporting::diagnostic::Diagnostic;
-use moniker::{BoundVar, Embed, Var};
 
 use thiserror::Error;
 
@@ -443,24 +443,26 @@ impl Context<'_> {
         }
     }
 
-    pub fn local(&self, bound_var: &BoundVar<String>) -> Result<Rc<StgSyn>, CompileError> {
+    pub fn local(&self, bound_var: &BoundVar) -> Result<Rc<StgSyn>, CompileError> {
         Ok(dsl::atom(self.lookup(bound_var)?))
     }
 
     /// Generate a STG syntax local ref corresponding to the specified
     /// Core bound variable
-    pub fn lookup(&self, bound_var: &BoundVar<String>) -> Result<Ref, CompileError> {
+    pub fn lookup(&self, bound_var: &BoundVar) -> Result<Ref, CompileError> {
         let BoundVar { scope, binder, .. } = bound_var;
 
         if self.is_synthetic() {
             self.next()?.lookup(bound_var).map(|r| r.bump(self.size))
-        } else if scope.0 == 0 {
-            Ok(self.var_refs[binder.to_usize()].clone())
+        } else if *scope == 0 {
+            Ok(self.var_refs[*binder as usize].clone())
         } else {
             let adjusted_var = BoundVar {
-                scope: scope.pred().ok_or(CompileError::BoundVarOverflowsContext)?,
+                scope: scope
+                    .checked_sub(1)
+                    .ok_or(CompileError::BoundVarOverflowsContext)?,
                 binder: bound_var.binder,
-                pretty_name: None,
+                name: None,
             };
             self.next()?
                 .lookup(&adjusted_var)
@@ -756,13 +758,13 @@ impl ProtoSyntax for ProtoLet {
     ) -> Result<Rc<StgSyn>, CompileError> {
         let scope = self.scope();
         let mut binder = LetBinder::for_scope(self.expr.clone(), context);
-        for (_, Embed(ref value)) in scope.unsafe_pattern.unsafe_pattern.iter() {
+        for (_, value) in scope.pattern.iter() {
             let annotation = value.smid();
             let index = compiler.compile_binding(&mut binder, value.clone(), annotation, false)?;
             binder.add_var_index(index);
         }
 
-        let body = compiler.compile_body(&mut binder, scope.unsafe_body.clone())?;
+        let body = compiler.compile_body(&mut binder, scope.body.clone())?;
         binder.set_body(body)?;
         binder.freeze();
 
@@ -773,11 +775,11 @@ impl ProtoSyntax for ProtoLet {
 /// ProtoVars become references into the environment once a context is
 /// available
 struct ProtoVar {
-    bound_var: BoundVar<String>,
+    bound_var: BoundVar,
 }
 
 impl ProtoVar {
-    pub fn new(bound_var: BoundVar<String>) -> Self {
+    pub fn new(bound_var: BoundVar) -> Self {
         ProtoVar { bound_var }
     }
 }
@@ -1026,19 +1028,10 @@ impl ProtoSyntax for ProtoApp {
 }
 
 /// Extract reference to bound var
-pub fn extract_bound_var<'a>(
-    smid: &'a Smid,
-    var: &'a Var<String>,
-) -> Result<&'a BoundVar<String>, CompileError> {
+pub fn extract_bound_var<'a>(smid: &'a Smid, var: &'a Var) -> Result<&'a BoundVar, CompileError> {
     match var {
         Var::Bound(bound_var) => Ok(bound_var),
-        Var::Free(free_var) => Err(CompileError::FreeVar(
-            *smid,
-            free_var
-                .pretty_name
-                .clone()
-                .unwrap_or_else(|| "<unknown>".to_string()),
-        )),
+        Var::Free(name) => Err(CompileError::FreeVar(*smid, name.clone())),
     }
 }
 
@@ -1084,7 +1077,7 @@ impl ProtoSyntax for ProtoLambda {
         context: &Context,
     ) -> Result<LambdaForm, CompileError> {
         let scope = self.scope();
-        let args = scope.unsafe_pattern.len();
+        let args = scope.pattern.len();
 
         let lambda_context = Context {
             scope: Some(self.expr.clone()),
@@ -1095,7 +1088,7 @@ impl ProtoSyntax for ProtoLambda {
 
         let mut binder = LetBinder::synthetic_let(&lambda_context);
 
-        let body = compiler.compile_body(&mut binder, scope.unsafe_body.clone())?;
+        let body = compiler.compile_body(&mut binder, scope.body.clone())?;
         binder.set_body(body)?;
         binder.freeze();
         let mut body = binder.into_stg(compiler)?;
@@ -1259,8 +1252,8 @@ impl<'rt> Compiler<'rt> {
         match &*expr.inner {
             Expr::Var(s, v) => {
                 let bound_var = extract_bound_var(s, v)?.clone();
-                if bound_var.scope.0 == 0 {
-                    if let Some(r) = binder.running_ref(bound_var.binder.to_usize()) {
+                if bound_var.scope == 0 {
+                    if let Some(r) = binder.running_ref(bound_var.binder as usize) {
                         Ok(r)
                     } else {
                         binder.add_deferred(Box::new(ProtoVar::new(bound_var)))

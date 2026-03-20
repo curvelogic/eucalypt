@@ -96,18 +96,22 @@ pub mod tests {
     use super::*;
     use crate::core::expr::acore::*;
     use crate::core::expr::core;
+    use crate::core::expr::tests::alpha_norm;
     use crate::core::expr::RcExpr;
-    use moniker::assert_term_eq;
 
     fn fill(exprs: &[RcExpr]) -> Vec<RcExpr> {
         fill_gaps(exprs).unwrap().0
+    }
+
+    fn anorm(expr: RcExpr) -> RcExpr {
+        alpha_norm(expr)
     }
 
     #[test]
     pub fn test_cat() {
         let x = free("x");
         let f = free("f");
-        assert_term_eq!(
+        assert_eq!(
             soup(fill(&[var(x.clone()), var(f.clone())])),
             soup(vec![var(x), cat(), var(f)])
         );
@@ -122,33 +126,33 @@ pub mod tests {
 
         // nb. term_eq does not verify the anaphora
 
-        assert_term_eq!(
-            soup(fill(&[l50.clone(), var(x.clone())])),
-            soup(vec![
+        assert_eq!(
+            anorm(soup(fill(&[l50.clone(), var(x.clone())]))),
+            anorm(soup(vec![
                 core::section_anaphor_left(Smid::fake(1)),
                 l50.clone(),
                 var(x.clone())
-            ])
+            ]))
         );
 
-        assert_term_eq!(
-            soup(fill(&[var(x.clone()), l50.clone()])),
-            soup(vec![
+        assert_eq!(
+            anorm(soup(fill(&[var(x.clone()), l50.clone()]))),
+            anorm(soup(vec![
                 var(x),
                 l50.clone(),
                 core::section_anaphor_right(Smid::fake(3))
-            ])
+            ]))
         );
 
-        assert_term_eq!(
-            soup(fill(&[pre10.clone(), l50.clone(), post10.clone()])),
-            soup(vec![
+        assert_eq!(
+            anorm(soup(fill(&[pre10.clone(), l50.clone(), post10.clone()]))),
+            anorm(soup(vec![
                 pre10,
                 core::section_anaphor_right(Smid::fake(3)),
                 l50,
                 core::section_anaphor_right(Smid::fake(2)),
                 post10
-            ])
+            ]))
         );
     }
 
@@ -159,7 +163,7 @@ pub mod tests {
 
         let ana = core::expr_anaphor(Smid::fake(10), None);
 
-        assert_term_eq!(
+        assert_eq!(
             soup(fill(&[ana.clone(), plus.clone(), var(x.clone())])),
             soup(vec![ana, plus, var(x)])
         );

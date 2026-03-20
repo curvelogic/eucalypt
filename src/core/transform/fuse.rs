@@ -92,7 +92,6 @@ pub fn fuse(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 mod tests {
     use super::*;
     use crate::core::expr::acore::*;
-    use moniker::assert_term_eq;
 
     #[test]
     fn test_fold_block_lookup_present() {
@@ -100,7 +99,7 @@ mod tests {
         let b = block([("x".to_string(), num(3)), ("y".to_string(), num(4))]);
         let expr = lookup(b, "x", None);
         let result = fuse(&expr).unwrap();
-        assert_term_eq!(result, num(3));
+        assert_eq!(result, num(3));
     }
 
     #[test]
@@ -110,7 +109,7 @@ mod tests {
         let expr = lookup(b.clone(), "z", None);
         let result = fuse(&expr).unwrap();
         // Should be unchanged: key missing and no fallback
-        assert_term_eq!(result, lookup(b, "z", None));
+        assert_eq!(result, lookup(b, "z", None));
     }
 
     #[test]
@@ -119,7 +118,7 @@ mod tests {
         let b = block([("x".to_string(), num(3))]);
         let expr = lookup(b, "z", Some(num(99)));
         let result = fuse(&expr).unwrap();
-        assert_term_eq!(result, num(99));
+        assert_eq!(result, num(99));
     }
 
     #[test]
@@ -128,7 +127,7 @@ mod tests {
         let l = list(vec![num(10), num(20), num(30)]);
         let expr = app(bif("HEAD"), vec![l]);
         let result = fuse(&expr).unwrap();
-        assert_term_eq!(result, num(10));
+        assert_eq!(result, num(10));
     }
 
     #[test]
@@ -137,7 +136,7 @@ mod tests {
         let l = list(vec![num(10), num(20), num(30)]);
         let expr = app(bif("TAIL"), vec![l]);
         let result = fuse(&expr).unwrap();
-        assert_term_eq!(result, list(vec![num(20), num(30)]));
+        assert_eq!(result, list(vec![num(20), num(30)]));
     }
 
     #[test]
@@ -147,7 +146,7 @@ mod tests {
         let tail_call = app(bif("TAIL"), vec![l]);
         let head_of_tail = app(bif("HEAD"), vec![tail_call]);
         let result = fuse(&head_of_tail).unwrap();
-        assert_term_eq!(result, num(20));
+        assert_eq!(result, num(20));
     }
 
     #[test]
@@ -159,6 +158,6 @@ mod tests {
         let expr = let_(vec![(x.clone(), head_call)], var(x.clone()));
         let result = fuse(&expr).unwrap();
         let expected = let_(vec![(x.clone(), num(1))], var(x));
-        assert_term_eq!(result, expected);
+        assert_eq!(result, expected);
     }
 }

@@ -383,7 +383,7 @@ fn c_let_rowan(
 
         desugarer.env_mut().push_keys(keys.clone());
 
-        let items: Result<Vec<(moniker::FreeVar<String>, RcExpr)>, CoreError> = block
+        let items: Result<Vec<(String, RcExpr)>, CoreError> = block
             .declarations()
             .map(|decl| {
                 let name = if let Some(head) = decl.head() {

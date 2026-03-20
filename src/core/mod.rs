@@ -2,6 +2,7 @@
 #![allow(clippy::result_large_err)]
 pub mod analyse;
 pub mod anaphora;
+pub mod binding;
 pub mod cook;
 pub mod desugar;
 pub mod doc;

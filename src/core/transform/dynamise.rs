@@ -1,10 +1,10 @@
 //! Turn an expression into a genearalised lookup expression
 use crate::common::sourcemap::{HasSmid, Smid};
+use crate::core::binding::Var;
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 use crate::core::transform::succ;
 use crate::syntax::rowan::lex as lexer;
-use moniker::*;
 
 /// Transform an expression into a dynamic generalised lookup
 ///
@@ -16,15 +16,15 @@ pub fn dynamise(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 }
 
 pub struct Dynamiser {
-    depth: ScopeOffset,
-    param: FreeVar<String>,
+    depth: u32,
+    param: String,
     wrap_lambda: bool,
 }
 
 impl Dynamiser {
     fn new(smid: Smid) -> Self {
         Dynamiser {
-            depth: ScopeOffset(0),
+            depth: 0,
             param: free(format!("__g{smid}").as_ref()),
             wrap_lambda: false,
         }
@@ -40,42 +40,42 @@ fn is_normal(n: &str) -> bool {
 impl Dynamiser {
     /// Enter a let or lambda scope increment depth
     fn enter(&mut self) {
-        self.depth = self.depth.succ();
+        self.depth += 1;
     }
 
     /// Decrement depth
     fn exit(&mut self) {
-        self.depth = self.depth.pred().unwrap();
+        self.depth -= 1;
     }
 
     /// Provide a possibly lookup-wrapped variation of the variable
     /// suitable for use in a lambda.
-    fn wrap(&mut self, s: &Smid, var: &Var<String>) -> RcExpr {
+    fn wrap(&mut self, s: &Smid, var: &Var) -> RcExpr {
         match var {
-            Var::Free(fv) => {
+            Var::Free(name) => {
                 // ignore operator names
-                if is_normal(fv.pretty_name.as_ref().unwrap()) {
+                if is_normal(name) {
                     self.wrap_lambda = true;
                     RcExpr::from(Expr::Lookup(
                         *s,
                         core::var(*s, self.param.clone()),
-                        fv.pretty_name.clone().unwrap(),
-                        Some(core::var(*s, fv.clone())),
+                        name.clone(),
+                        Some(core::var(*s, name.clone())),
                     ))
                 } else {
-                    core::var(*s, fv.clone())
+                    core::var(*s, name.clone())
                 }
             }
             Var::Bound(bv) => {
                 // if the binder is outside the scope of the dynamic
                 // expression then we insert a lookup (but not for
                 // operator names, which should not become lookups)
-                if bv.scope >= self.depth && bv.pretty_name.as_ref().is_some_and(|n| is_normal(n)) {
+                if bv.scope >= self.depth && bv.name.as_ref().is_some_and(|n| is_normal(n)) {
                     self.wrap_lambda = true;
                     RcExpr::from(Expr::Lookup(
                         *s,
                         core::var(*s, self.param.clone()),
-                        bv.pretty_name.clone().unwrap(),
+                        bv.name.clone().unwrap(),
                         Some(RcExpr::from(Expr::Var(*s, Var::Bound(bv.clone())))),
                     ))
                 } else {
@@ -89,11 +89,11 @@ impl Dynamiser {
         let expr = self.process(expr)?;
 
         if self.wrap_lambda {
-            Ok(RcExpr::from(Expr::Lam(
+            Ok(core::lam(
                 smid,
-                false, // might be arbitrarily complex - not inlinable
-                Scope::new(vec![Binder(self.param.clone())], succ::succ(&expr)?),
-            )))
+                vec![self.param.clone()],
+                succ::succ(&expr)?,
+            ))
         } else {
             Ok(expr)
         }
@@ -123,6 +123,8 @@ impl Dynamiser {
 pub mod tests {
     use super::*;
     use crate::core::expr::acore::*;
+    use crate::core::expr::bound;
+    use crate::core::expr::tests::alpha_norm;
 
     #[test]
     pub fn test_simple_dynamise() {
@@ -135,7 +137,10 @@ pub mod tests {
             lookup(var(implicit), "x", Some(var(x))),
         );
 
-        assert_term_eq!(dynamise(&original).unwrap(), expected);
+        assert_eq!(
+            alpha_norm(bound(dynamise(&original).unwrap())),
+            alpha_norm(bound(expected))
+        );
     }
 
     #[test]
@@ -150,29 +155,28 @@ pub mod tests {
             let_(vec![(z.clone(), num(24))], var(x)),
         );
 
-        assert_term_eq!(dynamise(&original).unwrap(), original);
+        assert_eq!(dynamise(&original).unwrap(), original);
 
         if let Expr::Let(_, scope, _) = &*original.inner {
-            let sublet = scope.unsafe_body.clone();
+            let sublet = scope.body.clone();
+            // The body of sublet is the x reference (a bound var into the outer let).
+            // Extract it to use as the expected fallback value in the lookup.
+            let x_fallback = if let Expr::Let(_, inner_scope, _) = &*sublet.inner {
+                inner_scope.body.clone()
+            } else {
+                panic!("expected inner let");
+            };
             let expected = lam(
                 vec![implicit.clone()],
                 let_(
                     vec![(z, num(24))],
-                    lookup(
-                        var(implicit),
-                        "x",
-                        Some(RcExpr::from(Expr::Var(
-                            Smid::default(),
-                            Var::Bound(BoundVar {
-                                scope: ScopeOffset(2),
-                                binder: BinderIndex(0),
-                                pretty_name: Some("x".to_string()),
-                            }),
-                        ))),
-                    ),
+                    lookup(var(implicit), "x", Some(x_fallback)),
                 ),
             );
-            assert_term_eq!(dynamise(&sublet).unwrap(), expected);
+            assert_eq!(
+                alpha_norm(bound(dynamise(&sublet).unwrap())),
+                alpha_norm(bound(expected))
+            );
         }
     }
 }
