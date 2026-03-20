@@ -63,9 +63,9 @@ module.exports = grammar({
     // Some files start with a bare block for metadata (test files)
     unit_metadata: $ => choice(
       $.block,
-      $.string,    // Documentation string
-      $.c_string,  // Documentation c-string
-      $.r_string,  // Documentation r-string
+      alias($.string, $.docstring),    // Documentation string
+      alias($.c_string, $.docstring),  // Documentation c-string
+      alias($.r_string, $.docstring),  // Documentation r-string
     ),
 
     // Comments start with # and go to end of line
@@ -88,9 +88,9 @@ module.exports = grammar({
     ),
 
     _meta_value: $ => choice(
-      $.string,
-      $.c_string,
-      $.r_string,
+      alias($.string, $.docstring),
+      alias($.c_string, $.docstring),
+      alias($.r_string, $.docstring),
       $.symbol,
       $.block,
     ),
@@ -454,14 +454,30 @@ module.exports = grammar({
 
     // === Compound structures ===
 
-    // Block: { declarations }
+    // Block: { optional-metadata declarations }
     block: $ => seq(
       '{',
+      optional($.block_metadata),
       repeat(seq(
         $.declaration,
         optional(','),
       )),
       '}',
+    ),
+
+    // Block metadata: a value at the start of a block before any declarations.
+    // Strings are aliased to docstring for highlighting.
+    // $.literal is not used directly (it includes strings, causing conflicts);
+    // instead number is listed explicitly.
+    // Identifiers are excluded (ambiguous with declaration heads).
+    block_metadata: $ => choice(
+      alias($.string, $.docstring),
+      alias($.c_string, $.docstring),
+      alias($.r_string, $.docstring),
+      $.symbol,
+      $.block,
+      $.list,
+      $.number,
     ),
 
     // List: [elements]

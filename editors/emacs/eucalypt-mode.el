@@ -251,7 +251,13 @@ Set via file-local variables, e.g.:
    :language 'eucalypt
    :feature 'metadata
    '((metadata) @font-lock-preprocessor-face
-     (unit_metadata) @font-lock-doc-face))
+     ;; Block-valued unit metadata (non-docstring)
+     (unit_metadata (block) @font-lock-doc-face))
+
+   :language 'eucalypt
+   :feature 'docstring
+   '(;; String-valued metadata aliased to docstring by the grammar
+     (docstring) @font-lock-doc-face))
   "Font-lock settings for `eucalypt-mode'.")
 
 ;;; Indentation
@@ -595,6 +601,41 @@ region is active.  Skips replacements inside strings and comments."
 (with-eval-after-load 'smartparens
   (sp-local-pair 'eucalypt-mode "`" nil :actions nil))
 
+;;; Markdown highlighting within docstrings
+
+(defun eucalypt--apply-markdown-faces (start end)
+  "Apply markdown faces within the region from START to END."
+  ;; Inline code: `code`
+  (save-excursion
+    (goto-char start)
+    (while (re-search-forward "`\\([^`]+\\)`" end t)
+      (put-text-property (match-beginning 0) (match-end 0)
+                         'face 'font-lock-constant-face)))
+  ;; Bold: **text**
+  (save-excursion
+    (goto-char start)
+    (while (re-search-forward "\\*\\*\\([^*]+\\)\\*\\*" end t)
+      (put-text-property (match-beginning 1) (match-end 1)
+                         'face 'bold)))
+  ;; Italic: *text* (not preceded or followed by *)
+  (save-excursion
+    (goto-char start)
+    (while (re-search-forward "\\(?:^\\|[^*]\\)\\(\\*\\([^*]+\\)\\*\\)\\(?:[^*]\\|$\\)" end t)
+      (put-text-property (match-beginning 2) (match-end 2)
+                         'face 'italic))))
+
+(defun eucalypt--fontify-markdown-in-docstrings (beg end)
+  "Apply markdown highlighting within docstring regions between BEG and END."
+  (when (and (treesit-ready-p 'eucalypt t)
+             (treesit-buffer-root-node 'eucalypt))
+    (let ((root (treesit-buffer-root-node 'eucalypt)))
+      ;; Direct docstring nodes (string-valued metadata, aliased by grammar)
+      (dolist (cap (treesit-query-capture root '((docstring) @ds) beg end))
+        (when (eq (car cap) 'ds)
+          (eucalypt--apply-markdown-faces
+           (treesit-node-start (cdr cap))
+           (treesit-node-end (cdr cap))))))))
+
 ;;; Mode definition
 
 ;;;###autoload
@@ -628,7 +669,7 @@ Key bindings:
               '((comment string)
                 (number symbol keyword builtin)
                 (declaration operator-declaration parameter function-call)
-                (bracket operator interpolation anaphor metadata prelude)))
+                (bracket operator interpolation anaphor metadata prelude docstring)))
 
   ;; Navigation
   (setq-local treesit-defun-type-regexp "declaration")
@@ -644,7 +685,10 @@ Key bindings:
               #'eucalypt-mode--syntax-propertize)
 
   ;; Enable tree-sitter features
-  (treesit-major-mode-setup))
+  (treesit-major-mode-setup)
+
+  ;; Markdown highlighting within docstrings (layered on top of font-lock)
+  (jit-lock-register #'eucalypt--fontify-markdown-in-docstrings))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.eu\\'" . eucalypt-mode))

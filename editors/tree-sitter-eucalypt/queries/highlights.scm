@@ -150,5 +150,66 @@
 (metadata
   "`" @attribute)
 
-; Unit metadata
-(unit_metadata) @comment.documentation
+; Docstrings — string-valued metadata (aliased to docstring by grammar)
+(docstring) @comment.documentation
+
+; Block-valued unit metadata (non-docstring)
+(unit_metadata (block) @comment.documentation)
+
+; Doc values inside block-valued declaration metadata
+; Matches: ` {doc: "text", ...}
+(metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (string) @comment.documentation))))
+  (#eq? @_key "doc"))
+
+(metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (c_string) @comment.documentation))))
+  (#eq? @_key "doc"))
+
+(metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (r_string) @comment.documentation))))
+  (#eq? @_key "doc"))
+
+; Doc values inside block-valued block metadata
+; Matches: { {doc: "text", ...} x: 1 }
+(block_metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (string) @comment.documentation))))
+  (#eq? @_key "doc"))
+
+(block_metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (c_string) @comment.documentation))))
+  (#eq? @_key "doc"))
+
+(block_metadata
+  (block
+    (declaration
+      (declaration_head
+        (identifier) @_key)
+      (soup
+        (literal (r_string) @comment.documentation))))
+  (#eq? @_key "doc"))
