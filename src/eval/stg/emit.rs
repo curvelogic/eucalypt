@@ -15,6 +15,7 @@ use crate::{
             ndarray::HeapNdArray,
             set::{HeapSet, Primitive as SetPrimitive},
             syntax::{Ref, RefPtr},
+            vec::HeapVec,
         },
         primitive::Primitive,
     },
@@ -99,6 +100,23 @@ fn emit_ndarray(
 ) {
     let arr: crate::eval::memory::alloc::ScopedPtr<'_, HeapNdArray> = view.scoped(arr_ref);
     emit_ndarray_data(emitter, &arr, metadata);
+}
+
+/// Emit a vec as a sequence of scalars in element order.
+fn emit_vec(
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+    emitter: &mut dyn Emitter,
+    vec_ref: RefPtr<HeapVec>,
+    metadata: &RenderMetadata,
+) {
+    let vec: crate::eval::memory::alloc::ScopedPtr<'_, HeapVec> = view.scoped(vec_ref);
+    emitter.sequence_start(metadata);
+    for elem in vec.elements() {
+        let prim = set_primitive_to_render_primitive(elem, machine);
+        emitter.scalar(&RenderMetadata::empty(), &prim);
+    }
+    emitter.sequence_end();
 }
 
 /// Interpret arg as tag if it exists otherwise None
@@ -214,6 +232,9 @@ impl StgIntrinsic for EmitNative {
             memory::syntax::Native::NdArray(ptr) => {
                 emit_ndarray(view, emitter, ptr, &RenderMetadata::empty());
             }
+            memory::syntax::Native::Vec(ptr) => {
+                emit_vec(machine, view, emitter, ptr, &RenderMetadata::empty());
+            }
             memory::syntax::Native::Sym(id) => {
                 let primitive = Primitive::Sym(machine.symbol_pool().resolve(id).to_string());
                 emitter.scalar(&RenderMetadata::empty(), &primitive);
@@ -263,6 +284,9 @@ impl StgIntrinsic for EmitTagNative {
             }
             memory::syntax::Native::NdArray(ptr) => {
                 emit_ndarray(view, emitter, ptr, &RenderMetadata::new(tag));
+            }
+            memory::syntax::Native::Vec(ptr) => {
+                emit_vec(machine, view, emitter, ptr, &RenderMetadata::new(tag));
             }
             memory::syntax::Native::Sym(id) => {
                 let primitive = Primitive::Sym(machine.symbol_pool().resolve(id).to_string());

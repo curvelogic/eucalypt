@@ -20,7 +20,7 @@ const GOLDEN: u64 = 0x9e3779b97f4a7c15;
 /// Advance the SplitMix64 state and produce an output value.
 ///
 /// Returns `(next_state, output)` where `output` is the mixed result.
-fn splitmix64(seed: u64) -> (u64, u64) {
+pub(super) fn splitmix64(seed: u64) -> (u64, u64) {
     let state = seed.wrapping_add(GOLDEN);
     let mut z = state;
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
@@ -31,7 +31,7 @@ fn splitmix64(seed: u64) -> (u64, u64) {
 
 /// Convert a seed Number to u64, treating signed values via
 /// reinterpretation of the bit pattern.
-fn seed_to_u64(n: &Number) -> u64 {
+pub(super) fn seed_to_u64(n: &Number) -> u64 {
     if let Some(v) = n.as_u64() {
         v
     } else if let Some(v) = n.as_i64() {

@@ -40,6 +40,7 @@ pub mod syntax;
 pub mod tags;
 mod testing;
 pub mod time;
+pub mod vec;
 pub mod version;
 pub mod wrap;
 
@@ -218,6 +219,13 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(list::IsString));
     rt.add(Box::new(list::IsSymbol));
     rt.add(Box::new(list::IsBool));
+    rt.add(Box::new(vec::VecOf));
+    rt.add(Box::new(vec::VecLen));
+    rt.add(Box::new(vec::VecNth));
+    rt.add(Box::new(vec::VecSlice));
+    rt.add(Box::new(vec::VecSample));
+    rt.add(Box::new(vec::VecShuffle));
+    rt.add(Box::new(vec::VecToList));
     rt.prepare(source_map);
     Box::new(rt)
 }

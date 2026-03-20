@@ -1,0 +1,41 @@
+#!/usr/bin/env eu
+# Vec type tests
+
+vec-basics: {
+  data: [1, 2, 3, 4, 5] vec.of
+
+  len: data vec.len //= 5
+  first: data vec.nth(0) //= 1
+  last: data vec.nth(4) //= 5
+
+  middle: data vec.slice(1, 4) vec.len //= 3
+  mid-first: data vec.slice(1, 4) vec.nth(0) //= 2
+
+  round-trip: [10, 20, 30] vec.of vec.to-list head //= 10
+
+  pass: [len, first, last, middle, mid-first, round-trip] all-true?
+}
+
+vec-sampling: {
+  data: [1, 2, 3, 4, 5] vec.of
+
+  sampled: data vec.sample(2, 42)
+  sample-len: sampled vec.len //= 2
+
+  shuffled: data vec.shuffle(42)
+  shuffle-len: shuffled vec.len //= 5
+
+  pass: [sample-len, shuffle-len] all-true?
+}
+
+vec-strings: {
+  names: ["alice", "bob", "charlie"] vec.of
+  name-count: names vec.len //= 3
+  name-first: names vec.nth(0) //= "alice"
+
+  rendered: [1, 2, 3] vec.of vec.to-list //= [1, 2, 3]
+
+  pass: [name-count, name-first, rendered] all-true?
+}
+
+RESULT: if(vec-basics.pass ∧ vec-sampling.pass ∧ vec-strings.pass, :PASS, :FAIL)
