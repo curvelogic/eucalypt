@@ -854,6 +854,16 @@ lazy_static! {
             ty: function(vec![str_(), str_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 161
+            name: "DBG_REPR",
+            ty: function(vec![unk(), str_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 162
+            name: "EXPECT",
+            ty: function(vec![unk(), str_(), bool_(), bool_()]).unwrap(),
+            strict: vec![1, 2],
+    },
     ];
 }
 

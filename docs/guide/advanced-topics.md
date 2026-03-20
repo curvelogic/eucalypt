@@ -94,19 +94,28 @@ ref: !Ref my-resource
 This is useful for generating CloudFormation, Kubernetes, and other
 tagged YAML formats.
 
-### Assertions with `//=` and `//=>`
+### Test expectations and assertions
 
-The `//=` operator asserts equality at runtime:
+The `//=` operator tests equality and returns a boolean, emitting a
+diagnostic to stderr on failure:
 
 ```eu
-result: 2 + 2 //= 4  # panics if not equal
+result: 2 + 2 //= 4  # returns true; on failure, returns false and prints to stderr
 ```
 
-The `//=>` operator additionally stores the assertion as metadata:
+The `//=>` operator asserts equality and panics on failure, also storing the
+assertion as metadata:
 
 ```eu
 checked: 2 + 2 //=> 4
 m: meta(checked)  # contains the assertion
+```
+
+The `//!` operator tests that a value is `true`, returning a boolean and
+emitting a diagnostic to stderr on failure:
+
+```eu
+result: (2 > 1) //!  # returns true; on failure, returns false and prints to stderr
 ```
 
 ## Sets

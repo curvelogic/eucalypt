@@ -8,10 +8,12 @@ pub mod block;
 pub mod boolean;
 pub mod compiler;
 pub mod constant;
+pub mod debug;
 pub mod embed;
 pub mod emit;
 pub mod encoding;
 pub mod eq;
+pub mod expect;
 pub mod force;
 pub mod graph;
 pub mod io;
@@ -209,6 +211,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(io::IoAction));
     rt.add(Box::new(render_to_string::RenderToString));
     rt.add(Box::new(parse_string::ParseString));
+    rt.add(Box::new(debug::DbgRepr));
+    rt.add(Box::new(expect::Expect));
     rt.prepare(source_map);
     Box::new(rt)
 }
