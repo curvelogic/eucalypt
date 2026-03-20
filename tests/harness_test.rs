@@ -1242,3 +1242,8 @@ pub fn test_error_106() {
         .build();
     run_error_test(&opt);
 }
+
+#[test]
+pub fn test_error_108() {
+    run_error_test(&error_opts("108_secondary_labels.eu"));
+}

@@ -859,7 +859,7 @@ impl ExecutionError {
         // available source locations as notes so we can study what information
         // is available at error time.
         if std::env::var("EU_ERROR_TRACE_DUMP").is_ok() {
-            let mut dump = vec![format!("--- ERROR TRACE DUMP ---")];
+            let mut dump = vec!["--- ERROR TRACE DUMP ---".to_string()];
 
             // Error's own Smid
             let error_smid = inner.smid();
