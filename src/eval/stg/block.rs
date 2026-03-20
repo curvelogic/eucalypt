@@ -1093,7 +1093,12 @@ impl StgIntrinsic for Merge {
         "MERGE"
     }
 
-    /// Expose the two lists to the intrinsic
+    /// Expose the two lists to the intrinsic, preserving metadata.
+    ///
+    /// Uses `demeta` to capture metadata from both operands before
+    /// pattern-matching blocks, then re-attaches the correct metadata
+    /// to the merged result. For shallow merge, RHS metadata wins when
+    /// both operands carry metadata.
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
 
@@ -1119,20 +1124,20 @@ impl StgIntrinsic for Merge {
             ),
         );
 
-        // Use plain lambda so the call-site annotation set by the Ann node
-        // emitted by the compiler at application sites is not overwritten
-        // when the intrinsic wrapper is entered.
-        let _ = annotation;
-        lambda(
-            2, // [l r]
+        // merge_core: lambda(2, [l_blk, r_blk]) — merges two bare blocks
+        // (no metadata), returning a bare Block. Indices within are identical
+        // to the original Merge wrapper since it has the same arity and
+        // structure.
+        let merge_core = lambda(
+            2, // [l_blk, r_blk]
             switch(
                 local(0),
                 vec![(
-                    DataConstructor::Block.tag(), // [lcons lindex] [l r]
+                    DataConstructor::Block.tag(), // [lcons lindex] [l_blk r_blk]
                     switch(
                         local(3),
                         vec![(
-                            DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l r]
+                            DataConstructor::Block.tag(), // [rcons rindex] [lcons lindex] [l_blk r_blk]
                             let_(
                                 vec![pack_items],
                                 // [pack] [rcons rindex] [lcons lindex]
@@ -1155,6 +1160,50 @@ impl StgIntrinsic for Merge {
                         )],
                     ),
                 )],
+            ),
+        );
+
+        // Use plain lambda so the call-site annotation set by the Ann node
+        // emitted by the compiler at application sites is not overwritten
+        // when the intrinsic wrapper is entered.
+        let _ = annotation;
+        lambda(
+            2, // [l, r]
+            let_(
+                vec![merge_core],
+                // [merge_core, l, r]
+                demeta(
+                    local(1), // examine l
+                    // l has meta → [l_meta, l_body, merge_core, l, r]
+                    demeta(
+                        local(4), // examine r
+                        // both have meta → [r_meta, r_body, l_meta, l_body, merge_core, l, r]
+                        // shallow merge: RHS metadata wins
+                        force(
+                            app(lref(4), vec![lref(3), lref(1)]), // merge_core(l_body, r_body)
+                            // [merged, r_meta, r_body, l_meta, l_body, merge_core, l, r]
+                            with_meta(lref(1), lref(0)), // r_meta wins
+                        ),
+                        // only l has meta → [r_whnf, l_meta, l_body, merge_core, l, r]
+                        force(
+                            app(lref(3), vec![lref(2), lref(0)]), // merge_core(l_body, r_whnf)
+                            // [merged, r_whnf, l_meta, l_body, merge_core, l, r]
+                            with_meta(lref(2), lref(0)), // l_meta
+                        ),
+                    ),
+                    // l has no meta → [l_whnf, merge_core, l, r]
+                    demeta(
+                        local(3), // examine r
+                        // only r has meta → [r_meta, r_body, l_whnf, merge_core, l, r]
+                        force(
+                            app(lref(3), vec![lref(2), lref(1)]), // merge_core(l_whnf, r_body)
+                            // [merged, r_meta, r_body, l_whnf, merge_core, l, r]
+                            with_meta(lref(1), lref(0)), // r_meta
+                        ),
+                        // neither has meta → [r_whnf, l_whnf, merge_core, l, r]
+                        app(lref(2), vec![lref(1), lref(0)]), // merge_core(l_whnf, r_whnf)
+                    ),
+                ),
             ),
         )
     }
@@ -1325,34 +1374,78 @@ impl StgIntrinsic for DeepMerge {
         "DEEPMERGE"
     }
 
-    /// Deep merge operation
+    /// Deep merge operation, preserving metadata from both operands.
+    ///
+    /// Uses `demeta` to capture metadata from both operands before
+    /// pattern-matching blocks. RHS metadata wins when both carry metadata.
+    /// Sub-block values are still recursively deep-merged (via MergeWith).
     fn wrapper(&self, annotation: Smid) -> LambdaForm {
         use dsl::*;
+
+        // merge_deep_core: lambda(2, [l_blk, r_blk]) — deep-merges two bare
+        // blocks (no metadata). Replicates the original case/MergeWith logic.
+        let merge_deep_core = lambda(
+            2, // [l_blk, r_blk]
+            case(
+                local(0), // l_blk
+                vec![(
+                    DataConstructor::Block.tag(), // [lcons lindex] [l_blk r_blk]
+                    case(
+                        local(3), // r_blk in [lcons lindex l_blk r_blk]
+                        vec![(
+                            DataConstructor::Block.tag(), // [rcons rindex lcons lindex l_blk r_blk]
+                            MergeWith.global(lref(4), lref(5), gref(self.index())),
+                        )],
+                        // r not block: return r_whnf
+                        local(0),
+                    ),
+                )],
+                // l not block: return r_blk
+                local(2),
+            ),
+        );
 
         // Use plain lambda so the call-site annotation set by the Ann node
         // emitted by the compiler at application sites is not overwritten
         // when the intrinsic wrapper is entered.
         let _ = annotation;
         lambda(
-            2,
-            case(
-                local(0),
-                vec![(
-                    DataConstructor::Block.tag(),
-                    // [lcons lindex] [l r]
-                    case(
-                        local(3),
-                        vec![(
-                            DataConstructor::Block.tag(),
-                            // [rcons rindex] [lcons lindex] [l r]
-                            MergeWith.global(lref(4), lref(5), gref(self.index())),
-                        )],
-                        // [r] [lcons lindex] [l r]
-                        local(0),
+            2, // [l, r]
+            let_(
+                vec![merge_deep_core],
+                // [merge_deep_core, l, r]
+                demeta(
+                    local(1), // examine l
+                    // l has meta → [l_meta, l_body, merge_deep_core, l, r]
+                    demeta(
+                        local(4), // examine r
+                        // both have meta → [r_meta, r_body, l_meta, l_body, merge_deep_core, l, r]
+                        // RHS metadata wins
+                        force(
+                            app(lref(4), vec![lref(3), lref(1)]), // merge_deep_core(l_body, r_body)
+                            // [merged, r_meta, r_body, l_meta, l_body, merge_deep_core, l, r]
+                            with_meta(lref(1), lref(0)), // r_meta wins
+                        ),
+                        // only l has meta → [r_whnf, l_meta, l_body, merge_deep_core, l, r]
+                        force(
+                            app(lref(3), vec![lref(2), lref(0)]), // merge_deep_core(l_body, r_whnf)
+                            // [merged, r_whnf, l_meta, l_body, merge_deep_core, l, r]
+                            with_meta(lref(2), lref(0)), // l_meta
+                        ),
                     ),
-                )],
-                // [l] [l r]
-                local(2),
+                    // l has no meta → [l_whnf, merge_deep_core, l, r]
+                    demeta(
+                        local(3), // examine r
+                        // only r has meta → [r_meta, r_body, l_whnf, merge_deep_core, l, r]
+                        force(
+                            app(lref(3), vec![lref(2), lref(1)]), // merge_deep_core(l_whnf, r_body)
+                            // [merged, r_meta, r_body, l_whnf, merge_deep_core, l, r]
+                            with_meta(lref(1), lref(0)), // r_meta
+                        ),
+                        // neither has meta → [r_whnf, l_whnf, merge_deep_core, l, r]
+                        app(lref(2), vec![lref(1), lref(0)]), // merge_deep_core(l_whnf, r_whnf)
+                    ),
+                ),
             ),
         )
     }
