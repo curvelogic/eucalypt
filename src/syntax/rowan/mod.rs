@@ -214,6 +214,49 @@ mod tests {
     }
 
     #[test]
+    pub fn test_bracket_registry_block_mode() {
+        use crate::syntax::rowan::kind::{EucalyptLanguage, SyntaxKind};
+        use crate::syntax::rowan::parse_unit;
+
+        // Without a ⟦{}⟧: declaration, a bracket expression-style declaration
+        // parses cleanly (expression-mode).
+        let expr_no_decl = parse_unit("⟦ x ⟧: x");
+        assert!(
+            expr_no_decl.ok().is_ok(),
+            "expression-mode bracket pair declaration should parse"
+        );
+
+        // With a ⟦{}⟧: declaration, subsequent ⟦ … ⟧ uses are block-mode.
+        let src_with_decl = "⟦{}⟧: id\n⟦ r: 42 ⟧";
+        let parse = parse_unit(src_with_decl);
+        assert!(parse.errors().is_empty(), "should parse without errors");
+        let tree = parse.syntax_node();
+        let has_block = tree
+            .descendants()
+            .any(|n: rowan::SyntaxNode<EucalyptLanguage>| n.kind() == SyntaxKind::BRACKET_BLOCK);
+        assert!(
+            has_block,
+            "expected BRACKET_BLOCK node when pair declared as block-mode"
+        );
+
+        // The declaration template ⟦{}⟧ itself is always expression-mode.
+        let src_decl_only = "⟦{}⟧: id";
+        let parse_decl = parse_unit(src_decl_only);
+        assert!(
+            parse_decl.errors().is_empty(),
+            "declaration template should parse cleanly"
+        );
+        let tree_decl = parse_decl.syntax_node();
+        let has_expr = tree_decl
+            .descendants()
+            .any(|n: rowan::SyntaxNode<EucalyptLanguage>| n.kind() == SyntaxKind::BRACKET_EXPR);
+        assert!(
+            has_expr,
+            "declaration template should produce BRACKET_EXPR, not BRACKET_BLOCK"
+        );
+    }
+
+    #[test]
     pub fn test_string_patterns() {
         use super::ast::{Element, StringChunk};
 

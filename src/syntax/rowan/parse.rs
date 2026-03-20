@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 use std::mem::swap;
 
-use super::brackets;
+use super::brackets::{self, BracketContentType, BracketRegistry};
 use super::kind::SyntaxKind::{self, *};
 
 use super::lex::Lexer;
@@ -27,24 +27,84 @@ pub struct Parser<'text> {
     tokens: Vec<(SyntaxKind, &'text str)>,
     /// index into tokens
     next_token: usize,
-    /// stack of event sinks to capture events into  
+    /// stack of event sinks to capture events into
     sink_stack: Vec<Box<dyn EventSink>>,
     /// accumulated errors
     errors: Vec<ParseError>,
+    /// Registry of bracket pairs and their content types, populated by a
+    /// pre-scan of the token stream before the main parse begins.
+    bracket_registry: BracketRegistry,
+}
+
+/// Pre-scan the token stream for bracket pair declarations of the form
+/// `⟦{}⟧: …` (bare) or `(⟦{}⟧): …` (paren).
+///
+/// For each such declaration found, the opening bracket character is
+/// registered as `BracketContentType::Block` in the returned registry.
+/// All other bracket pairs default to expression mode.
+fn prescan_bracket_declarations(tokens: &[(SyntaxKind, &str)]) -> BracketRegistry {
+    let mut registry = BracketRegistry::default();
+
+    // Work over significant (non-trivia) tokens only.
+    let sig: Vec<_> = tokens
+        .iter()
+        .filter(|(k, _)| !matches!(k, WHITESPACE | COMMENT))
+        .collect();
+
+    let n = sig.len();
+    for i in 0..n {
+        // Pattern 1 (bare): BRACKET_OPEN OPEN_BRACE CLOSE_BRACE BRACKET_CLOSE COLON
+        //   e.g.  ⟦ { } ⟧ :
+        if i + 4 < n
+            && sig[i].0 == BRACKET_OPEN
+            && sig[i + 1].0 == OPEN_BRACE
+            && sig[i + 2].0 == CLOSE_BRACE
+            && sig[i + 3].0 == BRACKET_CLOSE
+            && sig[i + 4].0 == COLON
+        {
+            if let Some(open_char) = sig[i].1.chars().next() {
+                registry.register(open_char, BracketContentType::Block);
+            }
+        }
+
+        // Pattern 2 (paren): (OPEN_PAREN|OPEN_PAREN_APPLY) BRACKET_OPEN OPEN_BRACE CLOSE_BRACE BRACKET_CLOSE CLOSE_PAREN COLON
+        //   e.g.  ( ⟦ { } ⟧ ) :
+        if i + 6 < n
+            && matches!(sig[i].0, OPEN_PAREN | OPEN_PAREN_APPLY)
+            && sig[i + 1].0 == BRACKET_OPEN
+            && sig[i + 2].0 == OPEN_BRACE
+            && sig[i + 3].0 == CLOSE_BRACE
+            && sig[i + 4].0 == BRACKET_CLOSE
+            && sig[i + 5].0 == CLOSE_PAREN
+            && sig[i + 6].0 == COLON
+        {
+            if let Some(open_char) = sig[i + 1].1.chars().next() {
+                registry.register(open_char, BracketContentType::Block);
+            }
+        }
+    }
+
+    registry
 }
 
 impl<'text> Parser<'text> {
-    /// Construct directly from text
+    /// Construct directly from text.
+    ///
+    /// A pre-scan of the token stream is performed to populate the bracket
+    /// registry before the main parse begins.
     pub fn new(text: &'text str) -> Self {
         let tokens: Vec<_> = Lexer::from_text(text)
             .map(|(tok, span)| (tok, &text[(span.start().into())..span.end().into()]))
             .collect();
+
+        let bracket_registry = prescan_bracket_declarations(&tokens);
 
         Parser {
             tokens,
             next_token: 0,
             sink_stack: vec![Box::new(SimpleEventSink::default())],
             errors: vec![],
+            bracket_registry,
         }
     }
 
@@ -387,17 +447,76 @@ impl<'text> Parser<'text> {
         self.sink().finish_node();
     }
 
+    /// Return `true` if the tokens immediately following the current position
+    /// form a bracket-pair declaration template: `BRACKET_OPEN OPEN_BRACE
+    /// CLOSE_BRACE BRACKET_CLOSE` (i.e. `⟦{}⟧`), optionally with whitespace
+    /// between the tokens.
+    ///
+    /// This pattern is always a declaration head and must be parsed in
+    /// expression mode, even when the bracket pair is otherwise registered as
+    /// block-mode.
+    fn is_bracket_declaration_template(&self) -> bool {
+        let mut idx = self.next_token;
+
+        // Must start with BRACKET_OPEN
+        if idx >= self.tokens.len() || self.tokens[idx].0 != BRACKET_OPEN {
+            return false;
+        }
+        idx += 1;
+
+        // Skip trivia
+        while idx < self.tokens.len() && self.tokens[idx].0.is_trivial() {
+            idx += 1;
+        }
+        // Expect OPEN_BRACE
+        if idx >= self.tokens.len() || self.tokens[idx].0 != OPEN_BRACE {
+            return false;
+        }
+        idx += 1;
+
+        // Skip trivia
+        while idx < self.tokens.len() && self.tokens[idx].0.is_trivial() {
+            idx += 1;
+        }
+        // Expect CLOSE_BRACE
+        if idx >= self.tokens.len() || self.tokens[idx].0 != CLOSE_BRACE {
+            return false;
+        }
+        idx += 1;
+
+        // Skip trivia
+        while idx < self.tokens.len() && self.tokens[idx].0.is_trivial() {
+            idx += 1;
+        }
+        // Expect BRACKET_CLOSE
+        idx < self.tokens.len() && self.tokens[idx].0 == BRACKET_CLOSE
+    }
+
     /// Parse a bracket expression using a Unicode idiot bracket pair.
     ///
     /// For example: `⟦ x ⟧` or `⌈ x ⌉`.
     ///
-    /// If the bracket content contains top-level colons (at depth 0), the
+    /// If the opening bracket character has been registered as block-mode in
+    /// the `bracket_registry` (via a pre-scanned `⟦{}⟧: …` declaration), the
     /// contents are parsed as block declarations and the node is emitted as
     /// `BRACKET_BLOCK`.  Otherwise the contents are parsed as a soup
     /// expression and the node is `BRACKET_EXPR`.
+    ///
+    /// Exception: the bracket-pair declaration template `⟦{}⟧` is always
+    /// parsed as expression mode, even for registered block-mode pairs.
     fn parse_bracket_expression(&mut self) {
-        // Peek ahead to detect block mode (top-level colons inside the brackets)
-        let is_block_mode = self.peek_for_top_level_colon_in_bracket();
+        let open_char = if let Some((BRACKET_OPEN, open_text)) = self.peek() {
+            open_text.chars().next()
+        } else {
+            None
+        };
+
+        // The declaration template `⟦{}⟧` must always be expression-mode,
+        // even when this bracket pair is registered as block-mode.
+        let is_block_mode = !self.is_bracket_declaration_template()
+            && open_char
+                .map(|c| self.bracket_registry.is_block_mode(c))
+                .unwrap_or(false);
 
         if is_block_mode {
             self.sink().start_node(BRACKET_BLOCK);
@@ -413,13 +532,8 @@ impl<'text> Parser<'text> {
             self.sink().finish_node();
         } else {
             self.sink().start_node(BRACKET_EXPR);
-            // Determine expected close char for validation
-            let expected_close = if let Some((BRACKET_OPEN, open_text)) = self.peek() {
-                let open_char = open_text.chars().next().unwrap_or('⟦');
-                brackets::close_for_open(open_char)
-            } else {
-                None
-            };
+            // Determine expected close char for validation (deferred to validate.rs)
+            let expected_close = open_char.and_then(brackets::close_for_open);
             self.expect(BRACKET_OPEN);
             self.add_trivia();
             self.parse_soup();
@@ -432,42 +546,6 @@ impl<'text> Parser<'text> {
             }
             self.sink().finish_node();
         }
-    }
-
-    /// Peek forward through the token stream to detect whether the bracket
-    /// content (at depth 0 relative to the opening bracket) contains a COLON.
-    ///
-    /// Returns `true` if a COLON is found at depth 0 before the matching
-    /// BRACKET_CLOSE, `false` otherwise.
-    fn peek_for_top_level_colon_in_bracket(&self) -> bool {
-        let mut depth: i32 = 0;
-        let mut idx = self.next_token;
-        // The current token should be BRACKET_OPEN; skip it
-        if idx < self.tokens.len() && self.tokens[idx].0 == BRACKET_OPEN {
-            idx += 1;
-        } else {
-            return false;
-        }
-        while idx < self.tokens.len() {
-            match self.tokens[idx].0 {
-                BRACKET_OPEN | OPEN_BRACE | OPEN_PAREN | OPEN_SQUARE | OPEN_BRACE_APPLY
-                | OPEN_PAREN_APPLY | OPEN_SQUARE_APPLY => {
-                    depth += 1;
-                }
-                BRACKET_CLOSE if depth == 0 => {
-                    return false;
-                }
-                BRACKET_CLOSE | CLOSE_BRACE | CLOSE_PAREN | CLOSE_SQUARE => {
-                    depth -= 1;
-                }
-                COLON if depth == 0 => {
-                    return true;
-                }
-                _ => {}
-            }
-            idx += 1;
-        }
-        false
     }
 
     /// Parse block content terminated by BRACKET_CLOSE instead of CLOSE_BRACE.
