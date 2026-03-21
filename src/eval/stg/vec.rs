@@ -74,9 +74,9 @@ fn extract_primitive(
         }
         HeapSyn::Cons { args: cargs, .. } => {
             // Handle boxed values (BoxedNumber, BoxedString, BoxedSymbol, BoxedZdt)
-            let inner_ref = cargs
-                .get(0)
-                .ok_or_else(|| ExecutionError::Panic(Smid::default(), "empty boxed value in vec".to_string()))?;
+            let inner_ref = cargs.get(0).ok_or_else(|| {
+                ExecutionError::Panic(Smid::default(), "empty boxed value in vec".to_string())
+            })?;
             let native = item_closure.navigate_local_native(&view, inner_ref.clone());
             native_to_set_primitive(view, &native)
         }
@@ -117,13 +117,19 @@ impl StgIntrinsic for VecOf {
                         let h_ref = cons_args
                             .get(0)
                             .ok_or_else(|| {
-                                ExecutionError::Panic(Smid::default(), "malformed cons cell".to_string())
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "malformed cons cell".to_string(),
+                                )
                             })?
                             .clone();
                         let t_ref = cons_args
                             .get(1)
                             .ok_or_else(|| {
-                                ExecutionError::Panic(Smid::default(), "malformed cons cell".to_string())
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "malformed cons cell".to_string(),
+                                )
                             })?
                             .clone();
                         let head = resolve_list_ref(&current, machine, view, &h_ref)?;
@@ -131,7 +137,12 @@ impl StgIntrinsic for VecOf {
                         current = resolve_list_ref(&current, machine, view, &t_ref)?;
                     }
                     Ok(DataConstructor::ListNil) => break,
-                    _ => return Err(ExecutionError::Panic(Smid::default(), "expected list in vec.of".to_string())),
+                    _ => {
+                        return Err(ExecutionError::Panic(
+                            Smid::default(),
+                            "expected list in vec.of".to_string(),
+                        ))
+                    }
                 },
                 _ => {
                     return Err(ExecutionError::Panic(
