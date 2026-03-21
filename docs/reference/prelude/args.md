@@ -46,7 +46,6 @@ The type of the default value determines coercion:
 ## Example
 
 ```eu,notest
-` :suppress
 defaults: {
   ` { short: :v  doc: "Enable verbose output"  flag: true }
   verbose: false
