@@ -924,6 +924,16 @@ lazy_static! {
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 175
+            name: "OS",
+            ty: str_(),
+            strict: vec![],
+    },
+    Intrinsic { // 176
+            name: "ARCH",
+            ty: str_(),
+            strict: vec![],
+    },
     ];
 }
 

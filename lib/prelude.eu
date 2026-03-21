@@ -14,6 +14,12 @@ eu: {
 
   ` "requires(constraint) - assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0')."
   requires: __REQUIRES
+
+  ` "Operating system: linux, macos, windows, etc."
+  os: __OS
+
+  ` "CPU architecture: x86_64, aarch64, etc."
+  arch: __ARCH
 }
 
 ` { doc: "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
