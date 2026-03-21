@@ -57,6 +57,12 @@ pub struct Desugarer<'smap> {
     /// Populated when a bracket pair declaration with `bind` and `return` metadata
     /// is desugared.  Consulted when desugaring `⟦ { ... } ⟧` block expressions.
     monad_registry: HashMap<String, MonadSpec>,
+    /// Registry mapping namespace names (e.g. `"io"`) to their monad spec.
+    ///
+    /// Populated when a top-level declaration carries `monad: true` metadata.
+    /// Consulted when desugaring `{ :ns ... }` blocks without an explicit
+    /// `.expr` return — only registered namespaces trigger implicit return.
+    monad_namespace_registry: HashMap<String, MonadSpec>,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -76,6 +82,7 @@ impl<'smap> Desugarer<'smap> {
             env: DefaultingEnvironment::new(|k: &String| k.clone()),
             file: vec![],
             monad_registry: HashMap::new(),
+            monad_namespace_registry: HashMap::new(),
         }
     }
 
@@ -90,6 +97,26 @@ impl<'smap> Desugarer<'smap> {
     /// Look up the monad spec for a bracket pair, if one has been registered.
     pub fn monad_spec(&self, pair_name: &str) -> Option<&MonadSpec> {
         self.monad_registry.get(pair_name)
+    }
+
+    /// Return `true` if the desugarer is currently at the top level of a unit
+    /// (i.e., the name stack is empty — no outer declaration has been pushed).
+    pub fn is_top_level(&self) -> bool {
+        self.stack.is_empty()
+    }
+
+    /// Register a monad spec for a namespace name.
+    ///
+    /// Called when a top-level declaration carrying `monad: true` metadata is
+    /// processed so that `{ :ns ... }` blocks without `.expr` can use implicit
+    /// return semantics.
+    pub fn register_monad_namespace(&mut self, name: String, spec: MonadSpec) {
+        self.monad_namespace_registry.insert(name, spec);
+    }
+
+    /// Look up the monad spec for a namespace name, if one has been registered.
+    pub fn monad_namespace_spec(&self, name: &str) -> Option<&MonadSpec> {
+        self.monad_namespace_registry.get(name)
     }
 
     /// Desugar content at locator (and imports) to create a new
