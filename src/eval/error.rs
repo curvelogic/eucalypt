@@ -799,11 +799,80 @@ impl ExecutionError {
                 }
             }
         }
+
+        // Add secondary labels from the env trace for call-chain context.
+        //
+        // We collect env trace entries that have real source locations and differ
+        // from the primary label (to avoid redundant markers).  Limited to 3
+        // secondary labels to keep output readable.
+        {
+            // Determine the primary span (from error's own Smid or fallback)
+            let primary_file_span = source_map
+                .source_info(inner)
+                .and_then(|info| info.file.zip(info.span))
+                .or_else(|| {
+                    let smid = source_map
+                        .first_source_smid(env_trace)
+                        .or_else(|| source_map.first_source_smid(stack_trace))?;
+                    let info = source_map.source_info_for_smid(smid)?;
+                    info.file.zip(info.span)
+                });
+
+            let mut secondary_labels: Vec<Label<usize>> = vec![];
+            let mut seen_spans: Vec<(usize, codespan::Span)> = vec![];
+
+            // Skip the first env_trace entry if it matches the fallback primary (already shown)
+            for &smid in env_trace.iter() {
+                if secondary_labels.len() >= 3 {
+                    break;
+                }
+                let info = match source_map.source_info_for_smid(smid) {
+                    Some(i) => i,
+                    None => continue,
+                };
+                let (file, span) = match (info.file, info.span) {
+                    (Some(f), Some(s)) => (f, s),
+                    _ => continue,
+                };
+
+                // Skip if same as primary label
+                if let Some((pf, ps)) = primary_file_span {
+                    if file == pf && span == ps {
+                        continue;
+                    }
+                }
+
+                // Skip duplicates
+                if seen_spans.iter().any(|&(f, s)| f == file && s == span) {
+                    continue;
+                }
+                seen_spans.push((file, span));
+
+                // Build the secondary label message
+                let msg = if let Some(ann) = &info.annotation {
+                    use crate::common::sourcemap::intrinsic_display_name;
+                    if let Some(display) = intrinsic_display_name(ann) {
+                        format!("in '{display}'")
+                    } else {
+                        "called from here".to_string()
+                    }
+                } else {
+                    "called from here".to_string()
+                };
+
+                secondary_labels.push(Label::secondary(file, span).with_message(msg));
+            }
+
+            if !secondary_labels.is_empty() {
+                diag = diag.with_labels(secondary_labels);
+            }
+        }
+
         // Diagnostic trace dump: when EU_ERROR_TRACE_DUMP is set, emit all
         // available source locations as notes so we can study what information
         // is available at error time.
         if std::env::var("EU_ERROR_TRACE_DUMP").is_ok() {
-            let mut dump = vec![format!("--- ERROR TRACE DUMP ---")];
+            let mut dump = vec!["--- ERROR TRACE DUMP ---".to_string()];
 
             // Error's own Smid
             let error_smid = inner.smid();

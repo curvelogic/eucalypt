@@ -1247,3 +1247,8 @@ pub fn test_error_106() {
 pub fn test_error_107() {
     run_error_test(&error_opts("107_source_location_in_error.eu"));
 }
+
+#[test]
+pub fn test_error_108() {
+    run_error_test(&error_opts("108_secondary_labels.eu"));
+}

@@ -1,0 +1,5 @@
+# Test that secondary labels appear in diagnostics for call chain errors.
+# The map call generates env trace entries with user source locations,
+# causing "called from here" / "in 'name'" secondary labels to appear.
+transform(items): items map(_ + 1)
+result: transform(["a", "b"])
