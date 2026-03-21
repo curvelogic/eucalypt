@@ -287,13 +287,20 @@ and `return` function names:
 ⟦{}⟧: { :monad namespace: my-monad }
 ```
 
-A bracket expression whose inner content contains top-level colons is parsed
-as a **bracket block** — a sequence of `name: monadic-action` declarations.
-The closing bracket must be followed by a dot and a return expression:
+A bracket pair declared with an empty block `{}` as its parameter (e.g.
+`⟦{}⟧: …`) is registered as **block-mode**.  When such a bracket pair is used,
+its content is parsed as a sequence of `name: monadic-action` declarations
+(a **bracket block**).  The closing bracket must be followed by a dot and a
+return expression:
 
 ```eu,notest
 result: ⟦ a: ma  b: mb ⟧.return_expr
 ```
+
+The parser determines the parse mode from a registry built by pre-scanning the
+source file for `⟦{}⟧:` declarations.  Only bracket pairs explicitly declared
+in this way are parsed as block-mode; other bracket pairs are always
+expression-mode regardless of their content.
 
 #### Block metadata forms
 

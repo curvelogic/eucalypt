@@ -11,8 +11,47 @@
 //! The ASCII bracket characters `(`, `)`, `[`, `]`, `{`, `}` are excluded as
 //! they are reserved by the eucalypt language.
 
+use std::collections::HashMap;
+
 use unicode_bidi_mirroring::get_mirrored;
 use unicode_general_category::{get_general_category, GeneralCategory};
+
+/// How the content of a bracket pair is parsed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BracketContentType {
+    /// Block-mode: content is parsed as declarations (like `{}`).
+    Block,
+    /// Expression-mode: content is parsed as a soup expression.
+    Expression,
+}
+
+/// Parser-level registry of bracket pairs and their expected content types.
+///
+/// Populated by pre-scanning the token stream for bracket pair declarations
+/// of the form `⟦{}⟧: …` (bare) or `(⟦{}⟧): …` (paren).  Consulted by the
+/// parser to decide whether a bracket expression should be parsed as a
+/// `BRACKET_BLOCK` or a `BRACKET_EXPR`.
+#[derive(Default, Clone, Debug)]
+pub struct BracketRegistry {
+    pairs: HashMap<char, BracketContentType>,
+}
+
+impl BracketRegistry {
+    /// Register `open` as having the given content type.
+    pub fn register(&mut self, open: char, content_type: BracketContentType) {
+        self.pairs.insert(open, content_type);
+    }
+
+    /// Return the content type for `open`, or `None` if not registered.
+    pub fn content_type(&self, open: char) -> Option<&BracketContentType> {
+        self.pairs.get(&open)
+    }
+
+    /// Return `true` if `open` is registered as block-mode.
+    pub fn is_block_mode(&self, open: char) -> bool {
+        matches!(self.content_type(open), Some(BracketContentType::Block))
+    }
+}
 
 /// Return true if `c` is a Unicode bracket open character eligible for use as
 /// an idiot bracket.
