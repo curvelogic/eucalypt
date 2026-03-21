@@ -2,6 +2,36 @@
 
 All notable changes to eucalypt are documented here.
 
+## [0.5.1] - Unreleased
+
+### Added
+
+- **Vec type** — `vec.of`, `vec.len`, `vec.nth`, `vec.slice`, `vec.sample`, `vec.shuffle`, `vec.to-list` for O(1) indexed access on large primitive collections
+- **Unified test expectations** — `//=` and `//!` now emit stderr diagnostics on failure via `__EXPECT` BIF; `__DBG_REPR` renders values for diagnostic output
+- **Debug tracing** — `dbg(opts, v)` function and `▶` prefix operator for stderr debug output
+- **Structured argument parsing** — `parse-args(defaults, args)` with short flags, type coercion, combined options, and `--help` generation
+- **Monadic blocks** — `monad: true` metadata registers namespaces; implicit return from non-underscore bindings; identity monad (`:let` blocks)
+- **Bracket registry** — proper content-type registry replaces parser heuristic for bracket pairs
+- **Multi-label diagnostics** — secondary source labels from env trace; stack trace reversed to read top-down with name-first formatting
+- **Error source locations** — all `ExecutionError` variants now carry `Smid` for source location
+- **WASM API** — `evaluate(source, format)` via wasm-bindgen for browser/Node.js use
+- **Browser playground** — CodeMirror-based eucalypt playground (separate repo)
+- **Markdown docstrings** — tree-sitter grammar identifies docstrings; Emacs mode highlights inline markdown
+- **VS Code extension** — feature parity with Emacs mode: improved highlighting, Unicode input, snippets, render command
+- **Windows support** — crash handler gated with `cfg(unix)`, PowerShell shell dispatch, Windows CI and release binary
+- **Deep merge metadata** — merge and deep merge now preserve block metadata (RHS wins)
+- **`coalesce(xs)`** — return first non-null element from a list
+
+### Changed
+
+- **Moniker dependency removed** — replaced with custom binding module; simplified type signatures throughout core pipeline (22 files)
+- **`:suppress` documentation** — clarified as data-only; not needed on functions
+- **Type predicates** — `number?`, `string?`, `symbol?`, `bool?` intrinsics added
+
+### Fixed
+
+- **String interpolation** — pipelines inside interpolation braces were silently producing wrong results; fixed in prelude
+
 ## [0.5.0] - 2026-03-13
 
 ### Added
