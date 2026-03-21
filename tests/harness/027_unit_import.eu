@@ -1,11 +1,11 @@
 {
-  import: ["aux/aux_import_a.eu", "aux/aux_import_b.eu"]
+  import: ["testdata/aux_import_a.eu", "testdata/aux_import_b.eu"]
   doc: "Unit level metadata test"
 }
 
 result: "{foo}&{bar}&{x}"
 
-` { import: "a=aux/aux_import_a.eu"
+` { import: "a=testdata/aux_import_a.eu"
     export: :suppress }
 nested: { f: a.foo b: a.bar result: "{f}&{b}"}
 
