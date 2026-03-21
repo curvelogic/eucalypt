@@ -1058,14 +1058,25 @@ impl Mutator for BuildRenderDoc {
 
 // ─── Shell execution ──────────────────────────────────────────────────────────
 
-/// Execute a shell command via `sh -c`.
+/// Execute a shell command via the platform shell.
+///
+/// On Unix, uses `sh -c`. On Windows, uses `pwsh -NoProfile -Command`
+/// (PowerShell Core). Shell command strings are inherently
+/// platform-specific.
 fn execute_shell(
     cmd: &str,
     stdin_data: Option<&str>,
     timeout_secs: u64,
 ) -> Result<CommandResult, IoRunError> {
-    let mut command = Command::new("sh");
-    command.args(["-c", cmd]);
+    let command = if cfg!(windows) {
+        let mut c = Command::new("pwsh");
+        c.args(["-NoProfile", "-Command", cmd]);
+        c
+    } else {
+        let mut c = Command::new("sh");
+        c.args(["-c", cmd]);
+        c
+    };
     run_command(command, stdin_data, timeout_secs)
 }
 
