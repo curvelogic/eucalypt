@@ -45,7 +45,7 @@ jobs:
     name: Test Suite
     strategy:
       matrix:
-        os: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
