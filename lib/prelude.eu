@@ -276,6 +276,18 @@ block?: __ISBLOCK
 ` "`list?(v)` - true if and only if `v` is a list."
 list?: __ISLIST
 
+` "`number?(v)` - true if and only if `v` is a number."
+number?: __ISNUMBER
+
+` "`string?(v)` - true if and only if `v` is a string."
+string?: __ISSTRING
+
+` "`symbol?(v)` - true if and only if `v` is a symbol."
+symbol?: __ISSYMBOL
+
+` "`bool?(v)` - true if and only if `v` is a boolean."
+bool?: __ISBOOL
+
 ` "`elements(b)` - expose list of elements of block `b`."
 elements: __ELEMENTS
 
