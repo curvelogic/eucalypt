@@ -629,8 +629,8 @@ pub fn test_harness_123() {
 }
 
 #[test]
-pub fn test_harness_127() {
-    run_test(&opts("127_monadic_implicit_return.eu"));
+pub fn test_harness_129() {
+    run_test(&opts("129_monadic_implicit_return.eu"));
 }
 
 #[test]
