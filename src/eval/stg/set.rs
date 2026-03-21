@@ -408,3 +408,78 @@ impl StgIntrinsic for SetDiff {
 }
 
 impl CallGlobal2 for SetDiff {}
+
+/// SET.SAMPLE — pick k random elements from a set using random floats
+/// from an external source (the random stream).
+///
+/// Args: [floats_list, set] where floats_list is a list of k floats
+/// in [0,1). Converts set to a sorted vec internally, performs partial
+/// Fisher-Yates, and returns a new set of the sampled elements.
+pub struct SetSample;
+
+impl StgIntrinsic for SetSample {
+    fn name(&self) -> &str {
+        "SET.SAMPLE"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        use super::force::SeqNumList;
+        use super::syntax::dsl::{app_bif, force, lambda, local, lref};
+
+        let bif_index: u8 = self.index().try_into().unwrap();
+        // lambda args: [floats_list, set]
+        // We need to force floats_list via SeqNumList.
+        // After force: env is [forced_floats] [floats_list, set]
+        // forced_floats is local(0), set is local(2)
+        //
+        // But the default wrapper already handles strict args.
+        // The problem is that strict forcing uses unbox_num on num args,
+        // and just force on unk args. For a list of floats, we need
+        // SeqNumList to deep-force the list structure.
+        //
+        // Override: force arg 0 (floats) via SeqNumList, then force arg 1
+        // (set) normally, then call bif.
+        lambda(
+            2, // [floats, set]
+            force(
+                local(1), // force set first (it's unk, just WHNF)
+                // [forced_set] [floats, set]
+                force(
+                    SeqNumList.global(lref(1)),
+                    // [forced_floats] [forced_set] [floats, set]
+                    app_bif(bif_index, vec![lref(0), lref(1)]),
+                ),
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use super::support::collect_num_list;
+
+        let floats = collect_num_list(machine, view, args[0].clone())?;
+        let s = set_arg(machine, view, &args[1])?;
+        let elements = s.sorted_elements();
+        let len = elements.len();
+        let count = floats.len().min(len);
+
+        // Partial Fisher-Yates on index array
+        let mut indices: Vec<usize> = (0..len).collect();
+        for (i, &f) in floats.iter().take(count).enumerate() {
+            let remaining = len - i;
+            let j = i + (f * remaining as f64) as usize % remaining;
+            indices.swap(i, j);
+        }
+
+        let sampled =
+            HeapSet::from_primitives(indices[..count].iter().map(|&idx| elements[idx].clone()));
+        machine_return_set(machine, view, sampled)
+    }
+}
+
+impl CallGlobal2 for SetSample {}
