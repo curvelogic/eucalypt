@@ -2,9 +2,13 @@
 
 # Test that { :io r: cmd }.(return_expr) correctly desugars to
 # io.bind(cmd, lambda(r). io.return(return_expr))
+
+` :suppress
+echo-cmd: if(eu.os = "windows", "Write-Output hello", "echo hello")
+
 ` { target: :test requires-io: true }
 test:
-  { :io r: io.shell("echo hello") }.(
+  { :io r: io.shell(echo-cmd) }.(
     if(r.stdout str.matches?("hello.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))

@@ -529,19 +529,16 @@ pub fn test_harness_103() {
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_104() {
     run_test(&io_opts("104_io_basic.eu"));
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_105() {
     run_test(&io_opts("105_io_chain.eu"));
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_106() {
     run_test(&io_opts("106_io_block_chain.eu"));
 }
@@ -592,25 +589,21 @@ pub fn test_harness_115() {
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_116() {
     run_test(&io_opts("116_io_shell_with.eu"));
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_117() {
     run_test(&io_opts("117_io_exec.eu"));
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_118() {
     run_test(&io_opts("118_io_exec_with.eu"));
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_119() {
     run_test(&io_opts("119_monad_utility.eu"));
 }
@@ -621,7 +614,6 @@ pub fn test_harness_120() {
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore)]
 pub fn test_harness_121() {
     run_test(&io_opts("121_io_exec_not_found.eu"));
 }

@@ -1,7 +1,10 @@
 "IO monad chain test: io.bind sequences two IO actions. Uses --allow-io."
 
+` :suppress
+echo-cmd: if(eu.os = "windows", "Write-Output hello", "echo hello")
+
 ` { target: :test requires-io: true }
-test: io.bind(io.shell("echo hello"), check-result)
+test: io.bind(io.shell(echo-cmd), check-result)
 
 check-result(r):
   io.return(if(r.stdout str.matches?("hello.*"),
