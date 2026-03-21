@@ -229,6 +229,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(vec::VecToList));
     rt.add(Box::new(platform::Os));
     rt.add(Box::new(platform::Arch));
+    rt.add(Box::new(set::SetSample));
     rt.prepare(source_map);
     Box::new(rt)
 }
