@@ -2,10 +2,9 @@
 //! precedence to turn operator soup into hierarchical expressions.
 use crate::common::sourcemap::{HasSmid, Smid};
 use crate::core::anaphora;
-use crate::core::binding::Var;
+use crate::core::binding::{Scope, Var};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
-use crate::core::transform::succ;
 use std::collections::{HashMap, HashSet};
 
 pub mod fill;
@@ -176,7 +175,10 @@ impl Cooker {
     fn process_expr_anaphora(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         let binders = anaphora::to_binding_pattern(&self.pending_expr_anaphora)?;
         self.pending_expr_anaphora.clear();
-        Ok(core::lam(expr.smid(), binders, succ::succ(&expr)?))
+        // Do NOT call succ: close_lam_scope (inside core::lam) uses close_expr_vars
+        // which already increments outer BV scope indices to account for the new lambda
+        // scope. Calling succ first would double-increment them.
+        Ok(core::lam(expr.smid(), binders, expr))
     }
 
     /// Wrap a lambda around a block-anaphoric expression, collapsing
@@ -212,13 +214,31 @@ impl Cooker {
 
             if all_alias && bindings.len() == 1 && binders.len() == 1 {
                 // Single binding: the lambda directly replaces the let
-                // scope, so the body's bound variable indices are already
-                // correct (scope 0 index 0 targets the one lambda param).
-                return Ok(core::lam(expr.smid(), binders, body.clone()));
+                // scope, so the body's BV(0,0) already points at the right
+                // slot. We do NOT go via core::lam / close_lam_scope because
+                // close_expr_vars would increment BV(0,0) → BV(1,0).
+                //
+                // Use the let binding's name (e.g. "it") rather than the
+                // anaphor var name (e.g. "_b_a[…]") so that the BoundVar
+                // name field in the body agrees with the lambda pattern,
+                // keeping the binding verifier happy.
+                let let_name = bindings[0].0.clone();
+                return Ok(RcExpr::from(Expr::Lam(
+                    expr.smid(),
+                    false,
+                    Scope {
+                        pattern: vec![let_name],
+                        body: body.clone(),
+                    },
+                )));
             }
         }
 
-        Ok(core::lam(expr.smid(), binders, succ::succ(&expr)?))
+        // Do NOT call succ::succ before core::lam: close_lam_scope (inside
+        // core::lam) uses close_expr_vars which already increments outer BV
+        // scope indices to account for the new lambda scope. Calling succ
+        // first would double-increment them.
+        Ok(core::lam(expr.smid(), binders, expr))
     }
 }
 

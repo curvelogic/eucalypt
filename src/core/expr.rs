@@ -1055,9 +1055,8 @@ impl RcExpr {
     /// Instantiate top-level let bindings in body
     pub fn instantiate_lets(self) -> RcExpr {
         if let Some((_, scope, _)) = self.top_let() {
-            let body = open_let_scope(scope);
-            let mappings: Vec<(String, RcExpr)> = scope.pattern.clone();
-            body.substs(&mappings)
+            let (open_bindings, open_body) = open_let_scope_full(scope);
+            open_body.substs(&open_bindings)
         } else {
             self.clone()
         }

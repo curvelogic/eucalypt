@@ -23,13 +23,28 @@ impl ScopeTracker {
     }
 
     fn encounter(&mut self, bound_var: &BoundVar) {
+        if bound_var.scope as usize >= self.scopes.len() {
+            panic!(
+                "VERIFIER: scope OOB: scope={} binder={} name={:?} scopes.len()={}",
+                bound_var.scope,
+                bound_var.binder,
+                bound_var.name,
+                self.scopes.len()
+            );
+        }
         let expr = self.scopes[bound_var.scope as usize].clone();
         match &*expr.inner {
             Expr::Let(_, scope, _) => {
                 if let Some((name, _)) = scope.pattern.get(bound_var.binder as usize) {
-                    assert_eq!(Some(name.as_str()), bound_var.name.as_deref());
+                    assert_eq!(
+                        Some(name.as_str()),
+                        bound_var.name.as_deref(),
+                        "name mismatch for BV scope={} binder={}",
+                        bound_var.scope,
+                        bound_var.binder
+                    );
                 } else {
-                    panic!("missing binding");
+                    panic!("VERIFIER: missing Let binding: scope={} binder={} name={:?} pattern.len()={}", bound_var.scope, bound_var.binder, bound_var.name, scope.pattern.len());
                 }
             }
             Expr::Lam(_, _, scope) => {
