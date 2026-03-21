@@ -74,13 +74,14 @@ fn extract_primitive(
         }
         HeapSyn::Cons { args: cargs, .. } => {
             // Handle boxed values (BoxedNumber, BoxedString, BoxedSymbol, BoxedZdt)
-            let inner_ref = cargs
-                .get(0)
-                .ok_or_else(|| ExecutionError::Panic(Smid::default(), "empty boxed value in vec".to_string()))?;
+            let inner_ref = cargs.get(0).ok_or_else(|| {
+                ExecutionError::Panic(Smid::default(), "empty boxed value in vec".to_string())
+            })?;
             let native = item_closure.navigate_local_native(&view, inner_ref.clone());
             native_to_set_primitive(view, &native)
         }
-        _ => Err(ExecutionError::Panic(Smid::default(), 
+        _ => Err(ExecutionError::Panic(
+            Smid::default(),
             "non-primitive value in vec construction".to_string(),
         )),
     }
@@ -116,13 +117,19 @@ impl StgIntrinsic for VecOf {
                         let h_ref = cons_args
                             .get(0)
                             .ok_or_else(|| {
-                                ExecutionError::Panic(Smid::default(), "malformed cons cell".to_string())
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "malformed cons cell".to_string(),
+                                )
                             })?
                             .clone();
                         let t_ref = cons_args
                             .get(1)
                             .ok_or_else(|| {
-                                ExecutionError::Panic(Smid::default(), "malformed cons cell".to_string())
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "malformed cons cell".to_string(),
+                                )
                             })?
                             .clone();
                         let head = resolve_list_ref(&current, machine, view, &h_ref)?;
@@ -130,10 +137,16 @@ impl StgIntrinsic for VecOf {
                         current = resolve_list_ref(&current, machine, view, &t_ref)?;
                     }
                     Ok(DataConstructor::ListNil) => break,
-                    _ => return Err(ExecutionError::Panic(Smid::default(), "expected list in vec.of".to_string())),
+                    _ => {
+                        return Err(ExecutionError::Panic(
+                            Smid::default(),
+                            "expected list in vec.of".to_string(),
+                        ))
+                    }
                 },
                 _ => {
-                    return Err(ExecutionError::Panic(Smid::default(), 
+                    return Err(ExecutionError::Panic(
+                        Smid::default(),
                         "expected list data in vec.of".to_string(),
                     ))
                 }
@@ -194,18 +207,18 @@ impl StgIntrinsic for VecNth {
         let n = match &native_n {
             Native::Num(num) => num.as_u64().unwrap_or(0) as usize,
             _ => {
-                return Err(ExecutionError::Panic(Smid::default(), 
+                return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "vec.nth: index must be a number".to_string(),
                 ))
             }
         };
         let v = vec_arg(machine, view, &args[1])?;
         let prim = v.get(n).ok_or_else(|| {
-            ExecutionError::Panic(Smid::default(), format!(
-                "vec.nth: index {} out of bounds (len {})",
-                n,
-                v.len()
-            ))
+            ExecutionError::Panic(
+                Smid::default(),
+                format!("vec.nth: index {} out of bounds (len {})", n, v.len()),
+            )
         })?;
         let native = set_primitive_to_native(machine, view, prim)?;
         // Return a boxed value (BoxedNumber/BoxedString/BoxedSymbol) so that the
@@ -216,7 +229,8 @@ impl StgIntrinsic for VecNth {
             Native::Str(_) => DataConstructor::BoxedString.tag(),
             Native::Sym(_) => DataConstructor::BoxedSymbol.tag(),
             _ => {
-                return Err(ExecutionError::Panic(Smid::default(), 
+                return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "vec.nth: unexpected native type in vec element".to_string(),
                 ))
             }
@@ -256,7 +270,8 @@ impl StgIntrinsic for VecSlice {
         let from = match &native_from {
             Native::Num(n) => n.as_u64().unwrap_or(0) as usize,
             _ => {
-                return Err(ExecutionError::Panic(Smid::default(), 
+                return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "vec.slice: from must be a number".to_string(),
                 ))
             }
@@ -264,7 +279,8 @@ impl StgIntrinsic for VecSlice {
         let to = match &native_to {
             Native::Num(n) => n.as_u64().unwrap_or(0) as usize,
             _ => {
-                return Err(ExecutionError::Panic(Smid::default(), 
+                return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "vec.slice: to must be a number".to_string(),
                 ))
             }
@@ -300,7 +316,8 @@ impl StgIntrinsic for VecSample {
         let n = match &native_n {
             Native::Num(num) => num.as_u64().unwrap_or(0) as usize,
             _ => {
-                return Err(ExecutionError::Panic(Smid::default(), 
+                return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "vec.sample: count must be a number".to_string(),
                 ))
             }
@@ -308,7 +325,8 @@ impl StgIntrinsic for VecSample {
         let seed_num = match &native_seed {
             Native::Num(num) => num.clone(),
             _ => {
-                return Err(ExecutionError::Panic(Smid::default(), 
+                return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "vec.sample: seed must be a number".to_string(),
                 ))
             }
@@ -358,7 +376,8 @@ impl StgIntrinsic for VecShuffle {
         let seed_num = match &native_seed {
             Native::Num(num) => num.clone(),
             _ => {
-                return Err(ExecutionError::Panic(Smid::default(), 
+                return Err(ExecutionError::Panic(
+                    Smid::default(),
                     "vec.shuffle: seed must be a number".to_string(),
                 ))
             }
@@ -420,7 +439,8 @@ impl StgIntrinsic for VecToList {
                 Native::Str(_) => DataConstructor::BoxedString.tag(),
                 Native::Sym(_) => DataConstructor::BoxedSymbol.tag(),
                 _ => {
-                    return Err(ExecutionError::Panic(Smid::default(), 
+                    return Err(ExecutionError::Panic(
+                        Smid::default(),
                         "unexpected native type in vec".to_string(),
                     ))
                 }
