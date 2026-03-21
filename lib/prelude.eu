@@ -16,7 +16,8 @@ eu: {
   requires: __REQUIRES
 }
 
-` "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
+` { doc: "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
+    monad: true }
 io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ` "Read access to environent variables at time of launch"
   env: __io.ENV
@@ -121,8 +122,8 @@ random-bind(m, f, stream): {
   rest: run.rest
 }
 
-` "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block.
-Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
+` { doc: "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block. Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
+    monad: true }
 random: monad{bind: random-bind, return: random-ret} {
   ` "random.stream(seed) - create the initial PRNG stream from integer seed."
   stream(seed): random-stream(seed)
@@ -1609,3 +1610,7 @@ graph: {
   two distinct components."
   kruskal-edges(n, edges): __GRAPH_KRUSKAL_EDGES(edges concat, [n])
 }
+
+` { doc: "Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha."
+    monad: true }
+let: monad({bind(m, f): f(m), return: identity})
