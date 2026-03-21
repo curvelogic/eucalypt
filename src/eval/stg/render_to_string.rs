@@ -9,6 +9,7 @@
 //! This avoids any heap-walk code or recursive machine re-entry.
 
 use crate::{
+    common::sourcemap::Smid,
     eval::{
         emit::{Emitter, Event},
         error::ExecutionError,
@@ -74,8 +75,10 @@ impl OwnedCaptureEmitter {
         // before the buffer (field declaration order), so the borrow is
         // valid for the emitter's entire lifetime.
         let buf_ptr: *mut StableBuffer = &mut *buffer;
-        let emitter = export::create_emitter(format, unsafe { &mut *buf_ptr })
-            .ok_or_else(|| ExecutionError::Panic(format!("unknown render format: {format}")))?;
+        let emitter =
+            export::create_emitter(format, unsafe { &mut *buf_ptr }).ok_or_else(|| {
+                ExecutionError::Panic(Smid::default(), format!("unknown render format: {format}"))
+            })?;
         // SAFETY: Erase the lifetime to 'static.  The buffer outlives
         // the emitter because the emitter is dropped first (field order).
         let emitter: Box<dyn Emitter + 'static> = unsafe { std::mem::transmute(emitter) };
@@ -90,8 +93,9 @@ impl OwnedCaptureEmitter {
     pub fn into_string(mut self) -> Result<String, ExecutionError> {
         // Drop the emitter first to end its borrow on the buffer.
         drop(self.emitter.take());
-        String::from_utf8(self.buffer.0)
-            .map_err(|e| ExecutionError::Panic(format!("capture not valid UTF-8: {e}")))
+        String::from_utf8(self.buffer.0).map_err(|e| {
+            ExecutionError::Panic(Smid::default(), format!("capture not valid UTF-8: {e}"))
+        })
     }
 }
 
@@ -136,8 +140,9 @@ impl StgIntrinsic for RenderToString {
         machine.push_capture_end(view)?;
 
         // Set closure to RENDER_DOC(value).
-        let render_doc_idx = intrinsics::index("RENDER_DOC")
-            .ok_or_else(|| ExecutionError::Panic("RENDER_DOC not found".to_string()))?;
+        let render_doc_idx = intrinsics::index("RENDER_DOC").ok_or_else(|| {
+            ExecutionError::Panic(machine.annotation(), "RENDER_DOC not found".to_string())
+        })?;
         let app = view
             .alloc(HeapSyn::App {
                 callable: Ref::G(render_doc_idx),

@@ -567,8 +567,8 @@ pub enum ExecutionError {
     BadEnvironmentIndex(usize),
     #[error("bad index {0} into globals")]
     BadGlobalIndex(usize),
-    #[error("{}", format_bad_format_string(.0))]
-    BadFormatString(String),
+    #[error("{}", format_bad_format_string(.1))]
+    BadFormatString(Smid, String),
     #[error("found free var {1}")]
     FreeVar(Smid, String),
     #[error("code not valid for execution")]
@@ -585,38 +585,38 @@ pub enum ExecutionError {
     NotValue(Smid, String),
     #[error("bad regex: {2}\n  help: the pattern '{1}' is not a valid regular expression")]
     BadRegex(Smid, String, String),
-    #[error("{}", format_bad_datetime_components(.0, .1, .2, .3, .4, .5, .6))]
-    BadDateTimeComponents(Number, Number, Number, Number, Number, Number, String),
-    #[error("{}", format_bad_timezone(.0))]
-    BadTimeZone(String),
-    #[error("bad timestamp ({0})")]
-    BadTimestamp(Number),
+    #[error("{}", format_bad_datetime_components(.1, .2, .3, .4, .5, .6, .7))]
+    BadDateTimeComponents(Smid, Number, Number, Number, Number, Number, Number, String),
+    #[error("{}", format_bad_timezone(.1))]
+    BadTimeZone(Smid, String),
+    #[error("bad timestamp ({1})")]
+    BadTimestamp(Smid, Number),
     #[error("bad datetime format '{1}': not a recognised ISO 8601 datetime string\n  help: expected a format like '2024-01-15T09:30:00+00:00' or '2024-01-15'")]
     BadDateTimeString(Smid, String),
     #[error("failed to apply format string")]
-    FormatFailure,
+    FormatFailure(Smid),
     #[error(
         "failed to convert numeric type as required by format string\n  \
          help: integer specifiers like %d, %o, %x require an integer value; \
          use %f or %g for floating-point numbers"
     )]
-    BadNumericTypeForFormat,
-    #[error("bad number format: {0}")]
-    BadNumberFormat(String),
-    #[error("could not format {1} with {0}")]
-    FormatError(String, Number),
+    BadNumericTypeForFormat(Smid),
+    #[error("bad number format: {1}")]
+    BadNumberFormat(Smid, String),
+    #[error("could not format {2} with {1}")]
+    FormatError(Smid, String, Number),
     #[error("expected scalar value")]
     NotScalar(Smid),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
-    #[error("cannot combine numbers ({0}, {1}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
-    NumericDomainError(Number, Number),
-    #[error("result of ({0})^({1}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
-    ComplexResult(Number, Number),
-    #[error("numeric overflow: result of operating on {0} and {1} is out of range\n  help: the result exceeds the representable range for this numeric type")]
-    NumericRangeError(Number, Number),
-    #[error("{}", format_division_by_zero(.0))]
-    DivisionByZero(String),
+    #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
+    NumericDomainError(Smid, Number, Number),
+    #[error("result of ({1})^({2}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
+    ComplexResult(Smid, Number, Number),
+    #[error("numeric overflow: result of operating on {1} and {2} is out of range\n  help: the result exceeds the representable range for this numeric type")]
+    NumericRangeError(Smid, Number, Number),
+    #[error("{}", format_division_by_zero(.1))]
+    DivisionByZero(Smid, String),
     #[error("expected branch continuation")]
     ExpectedBranchContinuation,
     #[error("type mismatch: expected {}, found {}", display_expected_tags(.2), display_data_tag(*.1))]
@@ -625,8 +625,8 @@ pub enum ExecutionError {
     NoBranchForNative(Smid, String),
     #[error("{}", format_cannot_return_fun(.1))]
     CannotReturnFunToCase(Smid, Vec<u8>),
-    #[error("panic: {0}")]
-    Panic(String),
+    #[error("panic: {1}")]
+    Panic(Smid, String),
     #[error("parse-as({1}): {2}")]
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
@@ -724,6 +724,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
+            ExecutionError::Panic(s, _) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
             ExecutionError::InvalidBase64(s, _) => *s,
@@ -743,6 +744,18 @@ impl HasSmid for ExecutionError {
             ExecutionError::ListIndexOutOfBounds(s, _) => *s,
             ExecutionError::BadDateTimeString(s, _) => *s,
             ExecutionError::BadRegex(s, _, _) => *s,
+            ExecutionError::BadFormatString(s, _) => *s,
+            ExecutionError::BadTimeZone(s, _) => *s,
+            ExecutionError::BadTimestamp(s, _) => *s,
+            ExecutionError::FormatFailure(s) => *s,
+            ExecutionError::BadNumericTypeForFormat(s) => *s,
+            ExecutionError::BadNumberFormat(s, _) => *s,
+            ExecutionError::FormatError(s, _, _) => *s,
+            ExecutionError::NumericDomainError(s, _, _) => *s,
+            ExecutionError::ComplexResult(s, _, _) => *s,
+            ExecutionError::NumericRangeError(s, _, _) => *s,
+            ExecutionError::DivisionByZero(s, _) => *s,
+            ExecutionError::BadDateTimeComponents(s, _, _, _, _, _, _, _) => *s,
             _ => Smid::default(),
         }
     }
@@ -883,7 +896,7 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
-            ExecutionError::BadNumberFormat(_) => {
+            ExecutionError::BadNumberFormat(_, _) => {
                 vec![
                     "valid number formats are: integers (e.g. 42), decimals (e.g. 3.14), and \
                      scientific notation (e.g. 1.5e10)"
@@ -922,14 +935,14 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
-            ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _) => {
+            ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _, _) => {
                 vec![
                     "valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 \
                      depending on month), hour (0–23), minute (0–59), second (0–59)"
                         .to_string(),
                 ]
             }
-            ExecutionError::BadTimeZone(_) => {
+            ExecutionError::BadTimeZone(_, _) => {
                 vec![
                     "timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'"
                         .to_string(),

@@ -22,7 +22,7 @@ use super::{
         collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
     },
     syntax::{
-        dsl::{annotated_lambda, app_bif, case, data, force, local, lref, str, value},
+        dsl::{app_bif, case, data, force, lambda, local, lref, str, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -38,11 +38,10 @@ impl StgIntrinsic for Cons {
         "CONS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2, // [h t]
             data(DataConstructor::ListCons.tag(), vec![lref(0), lref(1)]),
-            annotation,
         )
     }
 }
@@ -72,15 +71,14 @@ impl StgIntrinsic for Tail {
         "TAIL"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             case(
                 local(0),
                 vec![(DataConstructor::ListCons.tag(), local(1))],
                 Panic.global(str("TAIL on empty list")),
             ),
-            annotation,
         )
     }
 }
@@ -95,15 +93,14 @@ impl StgIntrinsic for Head {
         "HEAD"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             case(
                 local(0),
                 vec![(DataConstructor::ListCons.tag(), local(0))],
                 Panic.global(str("HEAD on empty list")),
             ),
-            annotation,
         )
     }
 }
@@ -154,16 +151,15 @@ impl StgIntrinsic for SortNumList {
         "SORT_NUM_LIST"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             1, // [xs]
             force(
                 SeqNumList.global(lref(0)),
                 // [concrete_list] [xs]
                 app_bif(bif_index, vec![lref(0)]),
             ),
-            annotation,
         )
     }
 
@@ -212,10 +208,10 @@ impl StgIntrinsic for ListNth {
         }
         match current {
             Some(closure) => machine.set_closure(closure),
-            None => Err(ExecutionError::Panic(format!(
-                "LIST.NTH: index {} out of bounds",
-                n
-            ))),
+            None => Err(ExecutionError::Panic(
+                Smid::default(),
+                format!("LIST.NTH: index {} out of bounds", n),
+            )),
         }
     }
 }
@@ -260,7 +256,10 @@ impl StgIntrinsic for ListDrop {
                     match (*tag).try_into() {
                         Ok(DataConstructor::ListCons) => {
                             let tail_ref = cons_args.get(1).ok_or_else(|| {
-                                ExecutionError::Panic("malformed cons cell".to_string())
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "malformed cons cell".to_string(),
+                                )
                             })?;
                             closure = closure.navigate_local(&view, tail_ref);
                         }
@@ -270,6 +269,7 @@ impl StgIntrinsic for ListDrop {
                         }
                         _ => {
                             return Err(ExecutionError::Panic(
+                                Smid::default(),
                                 "LIST.DROP: expected list".to_string(),
                             ));
                         }
@@ -277,6 +277,7 @@ impl StgIntrinsic for ListDrop {
                 }
                 _ => {
                     return Err(ExecutionError::Panic(
+                        Smid::default(),
                         "LIST.DROP: expected list".to_string(),
                     ));
                 }

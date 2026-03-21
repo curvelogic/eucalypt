@@ -24,7 +24,7 @@ impl StgIntrinsic for Panic {
         args: &[Ref],
     ) -> Result<(), crate::eval::error::ExecutionError> {
         let message = str_arg(machine, view, &args[0])?;
-        Err(ExecutionError::Panic(message))
+        Err(ExecutionError::Panic(machine.annotation(), message))
     }
 }
 

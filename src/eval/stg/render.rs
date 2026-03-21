@@ -34,7 +34,7 @@ impl StgIntrinsic for Render {
     }
 
     /// Evaluate inspect and recur
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let suppressed = lambda(
             1,
             demeta(
@@ -163,7 +163,7 @@ impl StgIntrinsic for Render {
             ),
         );
 
-        annotated_lambda(
+        lambda(
             1,
             let_(
                 vec![suppressed, render], // [s r] [arg]
@@ -178,7 +178,6 @@ impl StgIntrinsic for Render {
                     ],
                 ),
             ),
-            annotation,
         )
     }
 }
@@ -193,14 +192,13 @@ impl StgIntrinsic for RenderDoc {
         "RENDER_DOC"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1, // [renderee]
             force(
                 call::bif::emit_doc_start(), // [()] [renderee]
                 force(Render.global(lref(1)), call::bif::emit_doc_end()),
             ),
-            annotation,
         )
     }
 }
@@ -215,8 +213,8 @@ impl StgIntrinsic for RenderItems {
         "RENDER_ITEMS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1, // [cons]
             case(
                 local(0),
@@ -238,7 +236,6 @@ impl StgIntrinsic for RenderItems {
                      check that '++' is used to concatenate two lists, not a list and a string",
                 )),
             ),
-            annotation,
         )
     }
 }
@@ -253,8 +250,8 @@ impl StgIntrinsic for RenderBlockItems {
         "RENDER_BLOCK_ITEMS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1, // [cons]
             case(
                 local(0),
@@ -276,7 +273,6 @@ impl StgIntrinsic for RenderBlockItems {
                      check that '++' is used to concatenate two lists, not a list and a string",
                 )),
             ),
-            annotation,
         )
     }
 }
@@ -320,8 +316,8 @@ impl StgIntrinsic for Suppresses {
         "SUPPRESSES"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             let_(
                 vec![value(box_sym("normal"))],
@@ -343,7 +339,6 @@ impl StgIntrinsic for Suppresses {
                     f(),
                 ),
             ),
-            annotation,
         )
     }
 }
@@ -358,8 +353,8 @@ impl StgIntrinsic for Tag {
         "TAG"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             let_(
                 vec![value(box_sym(""))],
@@ -374,7 +369,6 @@ impl StgIntrinsic for Tag {
                     local(1),
                 ),
             ),
-            annotation,
         )
     }
 }
@@ -391,7 +385,7 @@ impl StgIntrinsic for RenderKv {
         "RENDER_KV"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let value_renderable = lambda(
             1,
             letrec_(
@@ -405,7 +399,7 @@ impl StgIntrinsic for RenderKv {
             ),
         );
 
-        annotated_lambda(
+        lambda(
             1, // [kv]
             case(
                 local(0),
@@ -437,7 +431,6 @@ impl StgIntrinsic for RenderKv {
                 ],
                 unit(),
             ),
-            annotation,
         )
     }
 }

@@ -9,7 +9,7 @@ use super::{
     block::Merge,
     constant::KEmptyBlock,
     syntax::{
-        dsl::{annotated_lambda, demeta, let_, local, lref, value, with_meta},
+        dsl::{demeta, lambda, let_, local, lref, value, with_meta},
         LambdaForm,
     },
 };
@@ -22,8 +22,8 @@ impl StgIntrinsic for Meta {
         "META"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             demeta(
                 local(0),
@@ -36,7 +36,6 @@ impl StgIntrinsic for Meta {
                 ),
                 KEmptyBlock.global(),
             ),
-            annotation,
         )
     }
 }
@@ -55,8 +54,8 @@ impl StgIntrinsic for RawMeta {
         "RAWMETA"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             demeta(
                 local(0),
@@ -65,7 +64,6 @@ impl StgIntrinsic for RawMeta {
                 local(0),
                 KEmptyBlock.global(),
             ),
-            annotation,
         )
     }
 }
@@ -80,8 +78,8 @@ impl StgIntrinsic for WithMeta {
         "WITHMETA"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(2, with_meta(lref(0), lref(1)), annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(2, with_meta(lref(0), lref(1)))
     }
 }
 

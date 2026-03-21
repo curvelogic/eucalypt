@@ -51,7 +51,7 @@ impl StgIntrinsic for Block {
         "BLOCK"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let kv_items = lambda(
@@ -76,7 +76,7 @@ impl StgIntrinsic for Block {
             ),
         );
 
-        annotated_lambda(
+        lambda(
             1,
             letrec_(
                 vec![
@@ -86,7 +86,6 @@ impl StgIntrinsic for Block {
                 ],
                 data(DataConstructor::Block.tag(), vec![lref(1), no_index()]),
             ),
-            annotation,
         )
     }
 }
@@ -104,10 +103,10 @@ impl StgIntrinsic for Kv {
         "KV"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        annotated_lambda(
+        lambda(
             1,
             case(
                 local(0),
@@ -127,7 +126,6 @@ impl StgIntrinsic for Kv {
                 ],
                 call::bif::panic(str("invalid key-value element in block")),
             ),
-            annotation,
         )
     }
 }
@@ -144,10 +142,10 @@ impl StgIntrinsic for Dekv {
         "DEKV"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        annotated_lambda(
+        lambda(
             1, // [pair]
             case(
                 local(0),
@@ -174,7 +172,6 @@ impl StgIntrinsic for Dekv {
                 ],
                 call::bif::panic(str("invalid key-value element in block")),
             ),
-            annotation,
         )
     }
 }
@@ -191,7 +188,7 @@ impl StgIntrinsic for Elements {
         "ELEMENTS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let map_list = lambda(
@@ -216,7 +213,7 @@ impl StgIntrinsic for Elements {
             ),
         );
 
-        annotated_lambda(
+        lambda(
             1, // [block]
             letrec_(
                 vec![map_list], // [map_list] [block]
@@ -229,7 +226,6 @@ impl StgIntrinsic for Elements {
                     call::bif::panic(str("elements called on non-block")),
                 ),
             ),
-            annotation,
         )
     }
 }
@@ -246,9 +242,9 @@ impl StgIntrinsic for MatchesKey {
         "MATCHES_KEY"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
-        annotated_lambda(
+        lambda(
             2, // [pair unboxsym]
             case(
                 local(0),
@@ -274,7 +270,6 @@ impl StgIntrinsic for MatchesKey {
                 ],
                 call::bif::panic(str("bad key-value pair in MATCHES_KEY")),
             ),
-            annotation,
         )
     }
 }
@@ -291,9 +286,9 @@ impl StgIntrinsic for ExtractValue {
         "EXTRACT_VALUE"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
-        annotated_lambda(
+        lambda(
             1, // [pair]
             case(
                 local(0),
@@ -321,7 +316,6 @@ impl StgIntrinsic for ExtractValue {
                 ],
                 call::bif::panic(str("bad key-value pair in EXTRACT_VALUE")),
             ),
-            annotation,
         )
     }
 }
@@ -338,9 +332,9 @@ impl StgIntrinsic for ExtractKey {
         "EXTRACT_KEY"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
-        annotated_lambda(
+        lambda(
             1, // [pair]
             case(
                 local(0),
@@ -362,7 +356,6 @@ impl StgIntrinsic for ExtractKey {
                 ],
                 call::bif::panic(str("bad key-value pair in EXTRACT_KEY")),
             ),
-            annotation,
         )
     }
 }
@@ -380,15 +373,14 @@ impl StgIntrinsic for PackPair {
         "PACK_PAIR"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
-        annotated_lambda(
+        lambda(
             1, // [kv]
             force(
                 ExtractKey.global(lref(0)), // [sym] [kv]
                 data(DataConstructor::BlockPair.tag(), vec![lref(0), lref(1)]),
             ),
-            annotation,
         )
     }
 }
@@ -405,9 +397,9 @@ impl StgIntrinsic for BlockPair {
         "BLOCK_PAIR"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
-        annotated_lambda(
+        lambda(
             1, // [kv]
             switch(
                 local(0),
@@ -438,7 +430,6 @@ impl StgIntrinsic for BlockPair {
                     ),
                 ],
             ),
-            annotation,
         )
     }
 }
@@ -465,7 +456,7 @@ impl StgIntrinsic for LookupOr {
         }
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let bif_index: u8 = intrinsics::index(self.name())
@@ -509,7 +500,7 @@ impl StgIntrinsic for LookupOr {
         // in self.annotation when the inner switch fires. This allows
         // NoBranchForDataTag (raised when obj is not a block) to carry the
         // user's source location rather than the synthetic LOOKUPOR# label.
-        let _ = annotation;
+
         lambda(
             3, // [k d block]
             switch(
@@ -864,10 +855,10 @@ impl StgIntrinsic for Lookup {
         "LOOKUP"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
-        annotated_lambda(
+        lambda(
             2, // [k block]
             unbox_sym(
                 local(0),
@@ -878,7 +869,6 @@ impl StgIntrinsic for Lookup {
                     LookupOr(NativeVariant::Unboxed).global(lref(1), lref(0), lref(3)),
                 ),
             ),
-            annotation,
         )
     }
 }
@@ -896,14 +886,14 @@ impl StgIntrinsic for LookupFail {
         "LOOKUP_FAIL"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         // Use plain lambda (no annotation) so the call-site annotation
         // set by the Ann node in lookup_fail() is not overwritten when
         // the wrapper is entered. This allows LookupFailure errors to
         // carry the user's source location.
-        let _ = annotation;
+
         lambda(
             2, // [sym block]
             force(
@@ -1044,18 +1034,23 @@ fn resolve_pair_key_symbol(
         // Boxed symbol (from dynamically-constructed blocks)
         syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedSymbol.tag() => {
             let inner = args.get(0).ok_or_else(|| {
-                ExecutionError::Panic("empty boxed symbol in block pair key".to_string())
+                ExecutionError::Panic(
+                    Smid::default(),
+                    "empty boxed symbol in block pair key".to_string(),
+                )
             })?;
             let native = key_closure.navigate_local_native(&view, inner);
             if let syntax::Native::Sym(id) = native {
                 Ok(pool.resolve(id).to_string())
             } else {
                 Err(ExecutionError::Panic(
+                    Smid::default(),
                     "boxed symbol contained non-symbol native".to_string(),
                 ))
             }
         }
         _ => Err(ExecutionError::Panic(
+            Smid::default(),
             "bad block_pair passed to merge intrinsic: non-symbolic key".to_string(),
         )),
     }
@@ -1083,6 +1078,7 @@ fn deconstruct(
             Ok((sym, kv_closure))
         }
         _ => Err(ExecutionError::Panic(
+            Smid::default(),
             "bad block_pair passed to merge intrinsic: non-data type".to_string(),
         )),
     }
@@ -1099,7 +1095,7 @@ impl StgIntrinsic for Merge {
     /// pattern-matching blocks, then re-attaches the correct metadata
     /// to the merged result. For shallow merge, RHS metadata wins when
     /// both operands carry metadata.
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let pack_items = lambda(
@@ -1166,7 +1162,6 @@ impl StgIntrinsic for Merge {
         // Use plain lambda so the call-site annotation set by the Ann node
         // emitted by the compiler at application sites is not overwritten
         // when the intrinsic wrapper is entered.
-        let _ = annotation;
         lambda(
             2, // [l, r]
             let_(
@@ -1250,7 +1245,7 @@ impl StgIntrinsic for MergeWith {
     }
 
     /// Expose the two lists to the intrinsic
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         let pair_items = lambda(
@@ -1278,7 +1273,7 @@ impl StgIntrinsic for MergeWith {
         // Use plain lambda so the call-site annotation set by the Ann node
         // emitted by the compiler at application sites is not overwritten
         // when the intrinsic wrapper is entered.
-        let _ = annotation;
+
         lambda(
             3, // [l r f]
             switch(
@@ -1379,7 +1374,7 @@ impl StgIntrinsic for DeepMerge {
     /// Uses `demeta` to capture metadata from both operands before
     /// pattern-matching blocks. RHS metadata wins when both carry metadata.
     /// Sub-block values are still recursively deep-merged (via MergeWith).
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         use dsl::*;
 
         // merge_deep_core: lambda(2, [l_blk, r_blk]) — deep-merges two bare
@@ -1408,7 +1403,7 @@ impl StgIntrinsic for DeepMerge {
         // Use plain lambda so the call-site annotation set by the Ann node
         // emitted by the compiler at application sites is not overwritten
         // when the intrinsic wrapper is entered.
-        let _ = annotation;
+
         lambda(
             2, // [l, r]
             let_(

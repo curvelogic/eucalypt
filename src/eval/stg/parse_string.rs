@@ -56,6 +56,7 @@ impl StgIntrinsic for ParseString {
     ) -> Result<(), ExecutionError> {
         // args[0] = format symbol (strict)
         // args[1] = string to parse (strict)
+        let smid = machine.annotation();
         let format_name = sym_arg(machine, view, &args[0])?;
         let input = str_arg(machine, view, &args[1])?;
 
@@ -89,12 +90,12 @@ impl StgIntrinsic for ParseString {
         );
         let syntax: Rc<_> = compiler
             .compile(core_expr)
-            .map_err(|e| ExecutionError::Panic(format!("parse-as compile error: {e}")))?;
+            .map_err(|e| ExecutionError::Panic(smid, format!("parse-as compile error: {e}")))?;
 
         // Load the compiled STG onto the machine heap and set as closure.
         let pool = RefCell::new(machine.symbol_pool_mut().clone());
         let heap_ptr = load(&view, &mut pool.borrow_mut(), syntax)
-            .map_err(|e| ExecutionError::Panic(format!("parse-as load error: {e}")))?;
+            .map_err(|e| ExecutionError::Panic(smid, format!("parse-as load error: {e}")))?;
 
         // Update the machine's symbol pool with any new symbols interned during load
         *machine.symbol_pool_mut() = pool.into_inner();
