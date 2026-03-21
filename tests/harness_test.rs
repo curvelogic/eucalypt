@@ -649,6 +649,11 @@ pub fn test_harness_127() {
 }
 
 #[test]
+pub fn test_harness_128() {
+    run_test(&opts("128_parse_args.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -1256,4 +1261,9 @@ pub fn test_error_107() {
 #[test]
 pub fn test_error_108() {
     run_error_test(&error_opts("108_secondary_labels.eu"));
+}
+
+#[test]
+pub fn test_error_109() {
+    run_error_test(&error_opts("109_unknown_arg.eu"));
 }

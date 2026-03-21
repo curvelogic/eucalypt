@@ -1621,3 +1621,150 @@ graph: {
   two distinct components."
   kruskal-edges(n, edges): __GRAPH_KRUSKAL_EDGES(edges concat, [n])
 }
+
+##
+## Structured argument parsing
+##
+
+# Build lookup table mapping short-flag character string to option key symbol.
+# e.g. for `verbose: false` with metadata `{short: :v}`, maps "v" -> :verbose
+` :suppress
+args-build-short-lookup(defaults): {
+  has-short(e): meta(e tail head) has(:short)
+  to-pair(e): [meta(e tail head) lookup(:short), e head]
+  pairs: defaults elements filter(has-short) map(to-pair)
+}.( pairs block )
+
+# Return true if option `key` in `defaults` has `flag: true` metadata.
+` :suppress
+args-is-flag(defaults, key): {
+  entry: defaults elements filter(args-entry-has-key(key))
+  m: if(entry nil?, {}, meta(entry head tail head))
+}.( m lookup-or(:flag, false) )
+
+# Predicate: does element `e` have key `k`?
+` :suppress
+args-entry-has-key(k, e): (e head) = k
+
+# Coerce string `str-val` to match type of default for `key`.
+` :suppress
+args-coerce-value(defaults, key, str-val): {
+  default-val: defaults lookup-or(key, str-val)
+  result: if(default-val number?, str-val parse-as(:json), str-val)
+}.result
+
+# Process a long option `arg` (starting with --) against `defaults`.
+# Returns updated state `{opts, rest, pending}`.
+` :suppress
+args-process-long(defaults, state, arg): {
+  name: arg str.replace("^--", "")
+  has-eq: name str.contains?("=")
+  key-str: if(has-eq, name str.split-on("=") head, name)
+  key: key-str sym
+  known: defaults has(key)
+  result: if(not(known), panic("unknown option: --{name}"),
+  if(has-eq, {
+    val: name str.split-on("=") tail head
+    opts: [[key, args-coerce-value(defaults, key, val)]] block merge(state.opts)
+    rest: state.rest
+    pending: null
+  }, if(args-is-flag(defaults, key), {
+    opts: [[key, true]] block merge(state.opts)
+    rest: state.rest
+    pending: null
+  }, {
+    opts: state.opts
+    rest: state.rest
+    pending: key
+  })))
+}.result
+
+# Process short options string `chars-list` (list of single-char strings).
+# Handles combined flags like -vo where v is a flag and o takes a value.
+` :suppress
+args-process-short-chars(defaults, short-lookup, state, chars-list): {
+  result: if(chars-list nil?, state, {
+    ch: chars-list head
+    key: short-lookup lookup-or(ch sym, null)
+    next-state: if(key = null,
+      panic("unknown option: -{ch}"),
+      if(args-is-flag(defaults, key), {
+        opts: [[key, true]] block merge(state.opts)
+        rest: state.rest
+        pending: null
+      }, {
+        opts: state.opts
+        rest: state.rest
+        pending: key
+      }))
+    next-chars: chars-list tail
+    # If this option takes a value and there are remaining chars,
+    # use remaining chars as the value string
+    remainder: if((next-state.pending ✓) && (next-chars non-nil?), {
+      val: next-chars str.join-on("")
+      opts: [[next-state.pending, args-coerce-value(defaults, next-state.pending, val)]] block merge(next-state.opts)
+      rest: next-state.rest
+      pending: null
+    }, args-process-short-chars(defaults, short-lookup, next-state, next-chars))
+  }.remainder)
+}.result
+
+# Process a single argument `arg` in state `{opts, rest, pending}`.
+` :suppress
+args-process-one(defaults, short-lookup, state, arg): {
+  result: if(state.pending ✓, {
+    # Previous option was waiting for its value
+    key: state.pending
+    opts: [[key, args-coerce-value(defaults, key, arg)]] block merge(state.opts)
+    rest: state.rest
+    pending: null
+  },
+  if(arg str.starts-with?("--"), {
+    r: if(arg = "--help",
+      panic(args-generate-help(defaults)),
+      args-process-long(defaults, state, arg))
+  }.r,
+  if(arg str.starts-with?("-"), {
+    chars-str: arg str.replace("^-", "")
+    r: args-process-short-chars(defaults, short-lookup, state, chars-str str.letters)
+  }.r,
+  {
+    # Positional argument
+    opts: state.opts
+    rest: state.rest ++ [arg]
+    pending: null
+  })))
+}.result
+
+# Generate help text for --help.
+` :suppress
+args-generate-help(defaults): {
+  help-line(e): {
+    k: e head
+    v: e tail head
+    m: meta(v)
+    short: m lookup-or(:short, null)
+    doc: m lookup-or(:doc, "")
+    flag-str: if(m lookup-or(:flag, false), " (flag)", "")
+    short-str: if(short ✓, "-{short str.of}, ", "    ")
+    line: "{short-str}--{k str.of}{flag-str}  {doc}"
+  }.line
+  lines: defaults elements map(help-line)
+  text: ["Options:"] ++ lines
+}.( text str.join-on(c"\n") )
+
+` "`parse-args(defaults, args)` - parse command-line argument list `args` against a
+defaults block. Each key in defaults defines an option with its default value.
+Field metadata specifies: short (symbol for short flag), doc (description),
+flag (true for boolean toggle with no value argument). Returns the defaults
+block updated with parsed values, plus an args key containing positional
+arguments as a list. Unknown options cause a runtime error. Use --help for
+auto-generated help text."
+parse-args(defaults, args): {
+  short-lookup: args-build-short-lookup(defaults)
+  init: { opts: defaults, rest: [], pending: null }
+  final-state: foldl(args-process-one(defaults, short-lookup), init, args)
+  result: if(final-state.pending ✓,
+    panic("option --{final-state.pending str.of} requires a value"),
+    [[:args, final-state.rest]] block merge(final-state.opts))
+}.result

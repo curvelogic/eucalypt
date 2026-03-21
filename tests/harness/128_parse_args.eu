@@ -1,0 +1,88 @@
+{ title: "128 parse-args" }
+
+# Test defaults block
+` :suppress
+test-defaults: {
+  ` { short: :v doc: "Enable verbose output" flag: true }
+  verbose: false
+
+  ` { short: :o doc: "Output file path" }
+  output: "default.txt"
+
+  ` { doc: "Repeat count" }
+  count: 1
+}
+
+# Basic long option
+` { target: :test-long-option }
+test-long-option: {
+  result: ["--output", "foo.txt"] parse-args(test-defaults)
+  RESULT: if((result.output = "foo.txt"), :PASS, :FAIL)
+}
+
+# Short option
+` { target: :test-short-option }
+test-short-option: {
+  result: ["-o", "bar.txt"] parse-args(test-defaults)
+  RESULT: if((result.output = "bar.txt"), :PASS, :FAIL)
+}
+
+# Flag toggle
+` { target: :test-flag }
+test-flag: {
+  result: ["--verbose"] parse-args(test-defaults)
+  RESULT: if(result.verbose, :PASS, :FAIL)
+}
+
+# Short flag
+` { target: :test-short-flag }
+test-short-flag: {
+  result: ["-v"] parse-args(test-defaults)
+  RESULT: if(result.verbose, :PASS, :FAIL)
+}
+
+# Equals syntax
+` { target: :test-equals-syntax }
+test-equals-syntax: {
+  result: ["--output=baz.txt"] parse-args(test-defaults)
+  RESULT: if((result.output = "baz.txt"), :PASS, :FAIL)
+}
+
+# Numeric coercion
+` { target: :test-numeric }
+test-numeric: {
+  result: ["--count", "5"] parse-args(test-defaults)
+  RESULT: if((result.count = 5), :PASS, :FAIL)
+}
+
+# Positional args
+` { target: :test-positional }
+test-positional: {
+  result: ["--verbose", "file1.txt", "file2.txt"] parse-args(test-defaults)
+  pass: (result.args = ["file1.txt", "file2.txt"]) && result.verbose
+  RESULT: pass then(:PASS, :FAIL)
+}
+
+# Mixed flags and positional
+` { target: :test-mixed }
+test-mixed: {
+  result: ["-v", "-o", "out.json", "--count", "3", "input.eu"] parse-args(test-defaults)
+  pass: result.verbose && (result.output = "out.json") && (result.count = 3) && (result.args = ["input.eu"])
+  RESULT: pass then(:PASS, :FAIL)
+}
+
+# Defaults preserved
+` { target: :test-defaults-preserved }
+test-defaults-preserved: {
+  result: [] parse-args(test-defaults)
+  pass: (result.verbose = false) && (result.output = "default.txt") && (result.count = 1) && (result.args = [])
+  RESULT: pass then(:PASS, :FAIL)
+}
+
+# Combined short flags: -vo out.txt (v is flag, o takes arg)
+` { target: :test-combined-short }
+test-combined-short: {
+  result: ["-vo", "out.txt"] parse-args(test-defaults)
+  pass: result.verbose && (result.output = "out.txt")
+  RESULT: pass then(:PASS, :FAIL)
+}
