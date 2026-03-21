@@ -97,6 +97,10 @@ fn render_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicM
         Native::Zdt(dt) => dt.to_rfc3339(),
         Native::Index(_) => "<block-index>".to_string(),
         Native::Set(_) => "<set>".to_string(),
+        Native::Vec(ptr) => {
+            let v = view.scoped(*ptr);
+            format!("<vec [{}]>", v.len())
+        }
         Native::NdArray(ptr) => {
             let arr = view.scoped(*ptr);
             let shape = arr
