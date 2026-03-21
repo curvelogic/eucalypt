@@ -1277,3 +1277,13 @@ pub fn test_error_108() {
 pub fn test_error_109() {
     run_error_test(&error_opts("109_unknown_arg.eu"));
 }
+
+#[test]
+pub fn test_error_110() {
+    run_error_test(&error_opts("110_unknown_short_arg.eu"));
+}
+
+#[test]
+pub fn test_error_111() {
+    run_error_test(&error_opts("111_missing_option_value.eu"));
+}

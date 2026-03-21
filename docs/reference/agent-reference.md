@@ -562,7 +562,7 @@ Read left to right: data flows through transformations.
 
 ### 4.2 Pipeline with Named Stages
 
-Use `:suppress` to hide intermediate values from output:
+Use `:suppress` to hide intermediate data values from output. Note: `:suppress` is only needed on data declarations that would otherwise appear in rendered output. Functions do not need `:suppress` — they are not rendered.
 
 ```eu,notest
 ` :suppress
