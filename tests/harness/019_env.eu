@@ -1,6 +1,6 @@
 "Requires prelude."
 
-'~': io.env.HOME
-lang: io.env.LANG
+'~': io.env lookup-or(:HOME, io.env lookup-or(:USERPROFILE, "~"))
+lang: io.env lookup-or(:LANG, "")
 
-RESULT: if((io.env lookup-or(:HOME, "~")) != "~", :PASS, :FAIL)
+RESULT: if('~' != "~", :PASS, :FAIL)
