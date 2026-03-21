@@ -1,8 +1,8 @@
 //! Distribute and beta reduce inline functions
+use crate::core::binding::{Scope, Var};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
 use crate::core::transform::succ;
-use moniker::*;
 
 /// Depth-aware substitution for beta reduction.
 ///
@@ -19,13 +19,13 @@ use moniker::*;
 /// The Embed values in that Let are inside one additional scope
 /// boundary relative to the call site, so any BV substituted in there
 /// must have its scope incremented.
-fn substs_depth<N: PartialEq<Var<String>>>(
+fn substs_depth(
     expr: &RcExpr,
-    mappings: &[(N, RcExpr)],
+    mappings: &[(String, RcExpr)],
     depth: u32,
 ) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
-        Expr::Var(_, v) => match mappings.iter().find(|&(n, _)| n == v) {
+        Expr::Var(_, Var::Free(name)) => match mappings.iter().find(|(n, _)| n == name) {
             Some((_, replacement)) => {
                 // Replacement is from the call site (depth == 0).
                 // If we are now inside `depth` additional scope
@@ -39,38 +39,34 @@ fn substs_depth<N: PartialEq<Var<String>>>(
             }
             None => Ok(expr.clone()),
         },
-        // Descend into Let: the Embed values are inside the new scope
+        Expr::Var(_, Var::Bound(_)) => Ok(expr.clone()),
+        // Descend into Let: the binding values are inside the new scope
         // boundary, so depth increases by 1.
         Expr::Let(s, scope, t) => {
             let new_bindings: Result<Vec<_>, CoreError> = scope
-                .unsafe_pattern
-                .unsafe_pattern
+                .pattern
                 .iter()
-                .map(|(n, Embed(value))| {
-                    substs_depth(value, mappings, depth + 1).map(|v| (n.clone(), Embed(v)))
-                })
+                .map(|(n, value)| substs_depth(value, mappings, depth + 1).map(|v| (n.clone(), v)))
                 .collect();
-            let new_body = substs_depth(&scope.unsafe_body, mappings, depth + 1)?;
+            let new_body = substs_depth(&scope.body, mappings, depth + 1)?;
             Ok(RcExpr::from(Expr::Let(
                 *s,
                 Scope {
-                    unsafe_pattern: Rec {
-                        unsafe_pattern: new_bindings?,
-                    },
-                    unsafe_body: new_body,
+                    pattern: new_bindings?,
+                    body: new_body,
                 },
                 *t,
             )))
         }
         // Descend into Lam body: also a new scope boundary.
         Expr::Lam(s, inl, scope) => {
-            let new_body = substs_depth(&scope.unsafe_body, mappings, depth + 1)?;
+            let new_body = substs_depth(&scope.body, mappings, depth + 1)?;
             Ok(RcExpr::from(Expr::Lam(
                 *s,
                 *inl,
                 Scope {
-                    unsafe_pattern: scope.unsafe_pattern.clone(),
-                    unsafe_body: new_body,
+                    pattern: scope.pattern.clone(),
+                    body: new_body,
                 },
             )))
         }
@@ -97,37 +93,33 @@ fn inlinable(expr: &RcExpr) -> bool {
 fn distribute(expr: &RcExpr) -> Result<RcExpr, CoreError> {
     match &*expr.inner {
         Expr::Let(s, scope, _) => {
-            let (binders, body) = scope.clone().unbind();
+            let (open_bindings, body) = open_let_scope_full(scope);
 
-            let open_binders = binders.unrec();
-
-            let inlines: Vec<_> = open_binders
+            let inlines: Vec<(String, RcExpr)> = open_bindings
                 .iter()
-                .filter(|&(_, Embed(v))| inlinable(v))
+                .filter(|(_, v)| inlinable(v))
                 .cloned()
-                .map(|(Binder(k), Embed(v))| (k, v))
                 .collect();
 
             if inlines.is_empty() {
                 Ok(expr.clone())
-                // expr.walk_safe(&mut |e| distribute(&e))
             } else {
-                let bindings = open_binders
+                let bindings = open_bindings
                     .iter()
-                    .map(|(b, Embed(v))| {
+                    .map(|(name, v)| {
                         let substituted = v.substs(&inlines);
                         match distribute(&substituted) {
-                            Ok(e) => Ok((b.clone(), Embed(e))),
+                            Ok(e) => Ok((name.clone(), e)),
                             Err(e) => Err(e),
                         }
                     })
-                    .collect::<Result<Vec<(_, _)>, CoreError>>()?;
+                    .collect::<Result<Vec<(String, RcExpr)>, CoreError>>()?;
 
-                let body = distribute(&body.substs(&inlines))?;
+                let new_body = distribute(&body.substs(&inlines))?;
 
                 Ok(RcExpr::from(Expr::Let(
                     *s,
-                    Scope::new(Rec::new(bindings), body),
+                    close_let_scope(bindings, new_body),
                     LetType::OtherLet,
                 )))
             }
@@ -145,11 +137,8 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                 // as substs doesn't succ, we can only handle
                 // inlinable lambdas here
                 Expr::Lam(_, true, scope) => {
-                    let (binders, body) = scope.clone().unbind();
-
-                    // body may not be fully open so handle any bound
-                    // variables
-                    let body = succ::pred(&body)?;
+                    let binders = scope.pattern.clone();
+                    let body = open_lam_scope(scope);
 
                     if binders.len() != xs.len() {
                         // cannot inline partial application or extra
@@ -162,7 +151,8 @@ fn beta_reduce(expr: &RcExpr) -> Result<RcExpr, CoreError> {
                             .map(beta_reduce)
                             .collect::<Result<Vec<RcExpr>, CoreError>>()?;
 
-                        let mappings = <_>::zip(binders.into_iter(), args).collect::<Vec<_>>();
+                        let mappings: Vec<(String, RcExpr)> =
+                            binders.into_iter().zip(args).collect();
 
                         let reduced = substs_depth(&body, &mappings, 0)?;
 
@@ -201,6 +191,7 @@ pub mod tests {
     use super::*;
     use crate::common::sourcemap::Smid;
     use crate::core::expr::acore::*;
+    use crate::core::expr::tests::alpha_norm;
     use crate::core::verify::binding;
     use std::iter;
 
@@ -220,7 +211,7 @@ pub mod tests {
 
         let expected = let_(vec![(f, inline(vec![x, y.clone()], var(y)))], num(23));
 
-        assert_term_eq!(inline_pass(&original).unwrap(), expected);
+        assert_eq!(inline_pass(&original).unwrap(), expected);
     }
 
     #[test]
@@ -292,7 +283,10 @@ pub mod tests {
             var(z),
         );
 
-        assert_term_eq!(inline_pass(&original).unwrap(), expected);
+        assert_eq!(
+            alpha_norm(inline_pass(&original).unwrap()),
+            alpha_norm(expected)
+        );
     }
 
     #[test]
@@ -412,35 +406,15 @@ pub mod tests {
 
         let inlined = inline_pass(&original).unwrap();
         binding::verify(&inlined).unwrap();
-        assert_term_eq!(inlined, expected);
+        assert_eq!(alpha_norm(inlined), alpha_norm(expected));
     }
 
     /// Regression test for eu-5pe9: beta-reducing a destructuring
     /// lambda (one whose body is a `DestructureListLet`) must
     /// correctly adjust scope indices in the replacement when it is
     /// placed inside the nested scope boundary of the Let.
-    ///
-    /// Previously `substs` was scope-unaware and would leave
-    /// `BV(scope=k, binder=j)` unchanged inside the Let's Embed
-    /// values, causing `compress::compress` to panic with "eliminating
-    /// used var" because prune had marked the originally-referenced
-    /// binder as eliminated.
     #[test]
     pub fn test_beta_reduce_destructuring_lambda_with_bound_arg() {
-        // Build:
-        //   let outer =
-        //     let
-        //       f = inline([__p0]) ->
-        //             DestructureListLet (a = HEAD(__p0), b = HEAD(TAIL(__p0))) in
-        //             a + b
-        //       x = 99
-        //     in f([x, 42])
-        //   in outer
-        //
-        // After inline_pass, f is beta-reduced at the call site and
-        // `x` (a BV in the argument) must be correctly placed inside
-        // the DestructureListLet with an incremented scope index.
-
         let f = free("f");
         let p0 = free("__p0");
         let a = free("a");
@@ -453,20 +427,14 @@ pub mod tests {
         // DestructureListLet: a = HEAD(__p0), b = HEAD(TAIL(__p0))
         let destr_let = RcExpr::from(Expr::Let(
             Smid::default(),
-            Scope::new(
-                Rec::new(vec![
+            close_let_scope(
+                vec![
+                    (a.clone(), app(bif("HEAD"), vec![var(p0.clone())])),
                     (
-                        Binder(a.clone()),
-                        Embed(app(bif("HEAD"), vec![var(p0.clone())])),
+                        b.clone(),
+                        app(bif("HEAD"), vec![app(bif("TAIL"), vec![var(p0.clone())])]),
                     ),
-                    (
-                        Binder(b.clone()),
-                        Embed(app(
-                            bif("HEAD"),
-                            vec![app(bif("TAIL"), vec![var(p0.clone())])],
-                        )),
-                    ),
-                ]),
+                ],
                 add_a_b,
             ),
             LetType::DestructureListLet,
@@ -489,5 +457,6 @@ pub mod tests {
         // binding-valid result
         let result = inline_pass(&inner).expect("inline_pass should not panic");
         binding::verify(&result).expect("result should have valid bindings");
+        let _ = (p0, a, b, f, x);
     }
 }

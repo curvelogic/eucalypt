@@ -1,7 +1,7 @@
 //! Compress a pruned tree to remove all eliminated bindings
+use crate::core::binding::{BoundVar, Var};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
-use moniker::{BoundVar, ScopeOffset, Var};
 
 /// Occasionally we need to push an expression with bound vars
 /// inside an extra scope, this increments de bruijn indices to
@@ -15,50 +15,43 @@ pub fn pred(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 }
 
 /// Update a bound var according to increase the scope offset
-fn encounter_succ(bound_var: &BoundVar<String>) -> BoundVar<String> {
+fn encounter_succ(bound_var: &BoundVar) -> BoundVar {
     BoundVar {
-        scope: bound_var.scope.succ(),
+        scope: bound_var.scope + 1,
         binder: bound_var.binder,
-        pretty_name: bound_var.pretty_name.clone(),
+        name: bound_var.name.clone(),
     }
 }
 
 /// Update a bound var according to decrease the scope offset
-fn encounter_pred(bound_var: &BoundVar<String>) -> BoundVar<String> {
+fn encounter_pred(bound_var: &BoundVar) -> BoundVar {
     BoundVar {
-        scope: bound_var.scope.pred().unwrap(),
+        scope: bound_var.scope - 1,
         binder: bound_var.binder,
-        pretty_name: bound_var.pretty_name.clone(),
+        name: bound_var.name.clone(),
     }
 }
 
+#[derive(Default)]
 pub struct BoundVarNudger {
-    depth: ScopeOffset,
-}
-
-impl Default for BoundVarNudger {
-    fn default() -> Self {
-        BoundVarNudger {
-            depth: ScopeOffset(0),
-        }
-    }
+    depth: u32,
 }
 
 impl BoundVarNudger {
     /// Enter a let or lambda scope increment depth
     fn enter(&mut self) {
-        self.depth = self.depth.succ();
+        self.depth += 1;
     }
 
     /// Decrement depth
     fn exit(&mut self) {
-        self.depth = self.depth.pred().unwrap();
+        self.depth -= 1;
     }
 
     pub fn process(
         &mut self,
         expr: &RcExpr,
-        handle: fn(&BoundVar<String>) -> BoundVar<String>,
+        handle: fn(&BoundVar) -> BoundVar,
     ) -> Result<RcExpr, CoreError> {
         match &*expr.inner {
             Expr::Let(_, _, _) => {

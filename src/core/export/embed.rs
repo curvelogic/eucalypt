@@ -1,11 +1,11 @@
 //! Export core as structure of eucalypt lists and blocks for
 //! processing within eucalypt.
+use crate::core::binding::Var;
 use crate::core::expr::*;
 use crate::syntax::export::embed::Embed;
 use crate::syntax::export::pretty;
 use crate::syntax::rowan::ast as rowan_ast;
 use crate::syntax::rowan::kind::{SyntaxKind, SyntaxNode};
-use moniker;
 use rowan::ast::AstNode;
 use rowan::GreenNodeBuilder;
 
@@ -155,14 +155,14 @@ impl Embed for CoreExpr {
     fn embed(&self) -> Option<rowan_ast::Soup> {
         match self {
             CoreExpr::Var(_, var) => match var {
-                moniker::Var::Free(freevar) => freevar.pretty_name.as_ref().and_then(|name| {
+                Var::Free(name) => {
                     let mut b = EmbedBuilder::new("c-var");
                     b.string(name);
                     b.finish()
-                }),
-                moniker::Var::Bound(bound) => {
+                }
+                Var::Bound(bound) => {
                     let mut b = EmbedBuilder::new("c-var");
-                    b.token(&format!("${}.{}", bound.scope.0, bound.binder.to_usize()));
+                    b.token(&format!("${}.{}", bound.scope, bound.binder));
                     b.finish()
                 }
             },
@@ -256,32 +256,18 @@ impl Embed for CoreExpr {
             CoreExpr::ErrPseudoCall => EmbedBuilder::new("e-pseudocall").finish(),
             CoreExpr::ErrPseudoCat => EmbedBuilder::new("e-pseudocat").finish(),
             CoreExpr::Let(_, scope, _) => {
-                let bindings: Vec<(String, RcExpr)> = scope
-                    .unsafe_pattern
-                    .unsafe_pattern
-                    .iter()
-                    .filter_map(|(binder, embed)| {
-                        let name = binder.0.pretty_name.as_ref()?.clone();
-                        Some((name, embed.0.clone()))
-                    })
-                    .collect();
-
-                let entries: Vec<(String, RcExpr)> = bindings;
+                let entries: Vec<(String, RcExpr)> = scope.pattern.clone();
                 let mut b = EmbedBuilder::new("c-let");
                 b.block(&entries)?;
-                b.embed(&scope.unsafe_body)?;
+                b.embed(&scope.body)?;
                 b.finish()
             }
             CoreExpr::Lam(_, _, scope) => {
-                let param_names: Vec<String> = scope
-                    .unsafe_pattern
-                    .iter()
-                    .filter_map(|binder| binder.0.pretty_name.as_ref().cloned())
-                    .collect();
+                let param_names: Vec<String> = scope.pattern.clone();
 
                 let mut b = EmbedBuilder::new("c-lam");
                 b.string_list(&param_names);
-                b.embed(&scope.unsafe_body)?;
+                b.embed(&scope.body)?;
                 b.finish()
             }
             CoreExpr::Block(_, bm) => {

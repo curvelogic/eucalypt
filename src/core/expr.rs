@@ -3,11 +3,10 @@
 use crate::common::environment::SimpleEnvironment;
 use crate::common::sourcemap::HasSmid;
 use crate::common::sourcemap::*;
+use crate::core::binding::{BoundVar, Scope, Var};
 use crate::core::error::CoreError;
 use crate::syntax::input::*;
 use indexmap::IndexMap;
-use moniker::Var::Free;
-use moniker::*;
 use serde_json::Number;
 use std::collections::HashMap;
 use std::fmt;
@@ -17,23 +16,7 @@ use std::iter::FromIterator;
 use std::rc::Rc;
 use std::str::FromStr;
 
-macro_rules! impl_bound_term_ignore {
-    ($T:ty) => {
-        impl<N: Clone + PartialEq> BoundTerm<N> for $T {
-            fn term_eq(&self, _: &$T) -> bool {
-                true
-            }
-
-            fn close_term(&mut self, _: ScopeState, _: &impl OnFreeFn<N>) {}
-
-            fn open_term(&mut self, _: ScopeState, _: &impl OnBoundFn<N>) {}
-
-            fn visit_vars(&self, _: &mut impl FnMut(&Var<N>)) {}
-
-            fn visit_mut_vars(&mut self, _: &mut impl FnMut(&mut Var<N>)) {}
-        }
-    };
-}
+pub use crate::core::binding::Var::Free;
 
 /// Primitive types in core
 ///
@@ -48,11 +31,8 @@ pub enum Primitive {
     Null,
 }
 
-impl_bound_term_ignore!(Primitive);
-
 /// Fixity of operator
-#[allow(non_local_definitions)]
-#[derive(Debug, Clone, BoundTerm, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fixity {
     Nullary,
     UnaryPrefix,
@@ -88,40 +68,9 @@ pub type Precedence = i32;
 
 /// Blocks are implemented as insert-ordered hash map
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlockMap<T: BoundTerm<String>>(IndexMap<String, T>);
+pub struct BlockMap<T>(IndexMap<String, T>);
 
-impl<T: BoundTerm<String>> BoundTerm<String> for BlockMap<T> {
-    fn term_eq(&self, other: &BlockMap<T>) -> bool {
-        self.0.len() == other.0.len()
-            && <_>::zip(self.0.values(), other.0.values()).all(|(l, r)| <T>::term_eq(l, r))
-    }
-
-    fn close_term(&mut self, state: ScopeState, on_free: &impl OnFreeFn<String>) {
-        for v in self.0.values_mut() {
-            v.close_term(state, on_free);
-        }
-    }
-
-    fn open_term(&mut self, state: ScopeState, on_bound: &impl OnBoundFn<String>) {
-        for v in self.0.values_mut() {
-            v.open_term(state, on_bound);
-        }
-    }
-
-    fn visit_vars(&self, on_var: &mut impl FnMut(&Var<String>)) {
-        for v in self.0.values() {
-            v.visit_vars(on_var);
-        }
-    }
-
-    fn visit_mut_vars(&mut self, on_var: &mut impl FnMut(&mut Var<String>)) {
-        for v in self.0.values_mut() {
-            v.visit_mut_vars(on_var);
-        }
-    }
-}
-
-impl<T: BoundTerm<String>> FromIterator<(String, T)> for BlockMap<T> {
+impl<T> FromIterator<(String, T)> for BlockMap<T> {
     fn from_iter<U>(iter: U) -> Self
     where
         U: IntoIterator<Item = (String, T)>,
@@ -130,7 +79,7 @@ impl<T: BoundTerm<String>> FromIterator<(String, T)> for BlockMap<T> {
     }
 }
 
-impl<T: BoundTerm<String> + Clone> BlockMap<T> {
+impl<T: Clone> BlockMap<T> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -176,7 +125,7 @@ impl<T: BoundTerm<String> + Clone> BlockMap<T> {
     }
 }
 
-impl<T: BoundTerm<String> + Clone> IntoIterator for BlockMap<T> {
+impl<T: Clone> IntoIterator for BlockMap<T> {
     type Item = (String, T);
     type IntoIter = indexmap::map::IntoIter<String, T>;
     fn into_iter(self) -> indexmap::map::IntoIter<String, T> {
@@ -198,8 +147,6 @@ pub enum LetType {
     /// Let generated from a list destructuring parameter `[a, b, c]`
     DestructureListLet,
 }
-
-impl_bound_term_ignore!(LetType);
 
 /// Which side of a source item are we inserting an implicit anaphor
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -311,8 +258,6 @@ where
     }
 }
 
-impl_bound_term_ignore!(Anaphor<Smid, i32>);
-
 impl<N> HasSmid for Anaphor<Smid, N>
 where
     N: Display + Hash + Eq + Clone,
@@ -326,8 +271,8 @@ where
     }
 }
 
-pub type LetScope<T> = Scope<Rec<Vec<(Binder<String>, Embed<T>)>>, T>;
-pub type LamScope<T> = Scope<Vec<Binder<String>>, T>;
+pub type LetScope<T> = Scope<Vec<(String, T)>, T>;
+pub type LamScope<T> = Scope<Vec<String>, T>;
 
 /// The main core expression type
 ///
@@ -355,14 +300,13 @@ pub type LamScope<T> = Scope<Vec<Binder<String>>, T>;
 /// - `ErrPseudoDot`: `[:e-pseudodot]` - Pseudo dot operator error
 /// - `ErrPseudoCall`: `[:e-pseudocall]` - Pseudo call operator error  
 /// - `ErrPseudoCat`: `[:e-pseudocat]` - Pseudo concatenation error
-#[allow(non_local_definitions)]
-#[derive(Debug, Clone, BoundTerm, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr<T>
 where
-    T: BoundTerm<String>,
+    T: Clone,
 {
     /// Variable (free or bound) - Embedding: `[:c-var "name"]`
-    Var(Smid, Var<String>),
+    Var(Smid, Var),
     /// Recursive let - Embedding: `[:c-let {bindings} body]`
     Let(Smid, LetScope<T>, LetType),
     /// Reference to built-in - Embedding: `[:c-bif :NAME]`
@@ -411,7 +355,7 @@ where
 
 pub type CoreExpr = Expr<RcExpr>;
 
-impl<T: BoundTerm<String>> HasSmid for Expr<T> {
+impl<T: Clone> HasSmid for Expr<T> {
     fn smid(&self) -> Smid {
         use self::Expr::*;
         match *self {
@@ -436,7 +380,7 @@ impl<T: BoundTerm<String>> HasSmid for Expr<T> {
     }
 }
 
-impl<T: BoundTerm<String>> Expr<T> {
+impl<T: Clone> Expr<T> {
     pub fn is_name(&self) -> bool {
         matches!(self, Expr::Name(_, _))
     }
@@ -474,8 +418,8 @@ impl<T: BoundTerm<String>> Expr<T> {
 /// purposes.
 pub fn fmap<'src, U, V>(expr: &'src Expr<U>) -> Expr<V>
 where
-    U: 'src + BoundTerm<String> + Clone,
-    V: BoundTerm<String> + Clone + From<&'src U>,
+    U: 'src + Clone,
+    V: Clone + From<&'src U>,
 {
     match expr {
         Expr::Lookup(s, e, n, fb) => {
@@ -497,15 +441,12 @@ where
         Expr::Let(s, scope, t) => Expr::Let(
             *s,
             Scope {
-                unsafe_pattern: Rec {
-                    unsafe_pattern: scope
-                        .unsafe_pattern
-                        .unsafe_pattern
-                        .iter()
-                        .map(|&(ref n, Embed(ref value))| (n.clone(), Embed(V::from(value))))
-                        .collect(),
-                },
-                unsafe_body: V::from(&scope.unsafe_body),
+                pattern: scope
+                    .pattern
+                    .iter()
+                    .map(|(n, value)| (n.clone(), V::from(value)))
+                    .collect(),
+                body: V::from(&scope.body),
             },
             *t,
         ),
@@ -513,8 +454,8 @@ where
             *s,
             *inl,
             Scope {
-                unsafe_pattern: scope.unsafe_pattern.clone(),
-                unsafe_body: V::from(&scope.unsafe_body),
+                pattern: scope.pattern.clone(),
+                body: V::from(&scope.body),
             },
         ),
         Expr::Var(s, v) => Expr::Var(*s, v.clone()),
@@ -533,8 +474,7 @@ where
 }
 
 /// The main form in which core expressions are passed around
-#[allow(non_local_definitions)]
-#[derive(Debug, Clone, BoundTerm, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RcExpr {
     pub inner: Rc<CoreExpr>,
 }
@@ -584,7 +524,7 @@ impl RcExpr {
 
     /// Apply a name to an expression using a top level let.
     pub fn apply_name<S: AsRef<str>>(&self, smid: Smid, name: S) -> RcExpr {
-        core::default_let(smid, vec![(free(name.as_ref()), self.clone())])
+        core::default_let(smid, vec![(name.as_ref().to_string(), self.clone())])
     }
 
     /// Replace the body of a let (or nested lets) with the specified body
@@ -592,41 +532,40 @@ impl RcExpr {
         self.rebody_int(&mut SimpleEnvironment::new(), new_body)
     }
 
-    /// Retrieve the actual freevars corresponding to bound names in a
-    /// let binding so we can prepare to capture using them
-    fn prepare_capture_vars(
-        scope: &Scope<Rec<Vec<(Binder<String>, Embed<RcExpr>)>>, RcExpr>,
-    ) -> HashMap<String, FreeVar<String>> {
+    /// Retrieve the bound names in a let binding so we can prepare to capture using them
+    fn prepare_capture_vars(scope: &LetScope<RcExpr>) -> HashMap<String, String> {
         scope
-            .unsafe_pattern
-            .unsafe_pattern
+            .pattern
             .iter()
-            .map(|(k, _)| {
-                let fv = k.0.clone();
-                let name = fv.clone().pretty_name.unwrap();
-                (name, fv)
-            })
+            .map(|(k, _)| (k.clone(), k.clone()))
             .collect()
     }
 
     /// Replace the body of a let (or nested lets with the specified
     /// body) after altering freevars to clones of the version bound
     /// in the lets so that they can be bound.
-    fn rebody_int(
-        &self,
-        env: &mut SimpleEnvironment<String, FreeVar<String>>,
-        new_body: RcExpr,
-    ) -> RcExpr {
+    fn rebody_int(&self, env: &mut SimpleEnvironment<String, String>, new_body: RcExpr) -> RcExpr {
         match &*self.inner {
             Expr::Let(s, scope, let_type) => {
-                let p = scope.clone().unsafe_pattern;
-
                 let bind_vars = Self::prepare_capture_vars(scope);
                 env.push(bind_vars);
 
-                let t = scope.clone().unsafe_body;
+                let t = scope.body.clone();
                 let rebodied = t.rebody_int(env, new_body);
-                let ret = RcExpr::from(Expr::Let(*s, Scope::new(p, rebodied), *let_type));
+                // Bind any free vars in rebodied that match the binding names.
+                // Use bind_free_vars (not close_expr_vars) to avoid shifting
+                // existing de Bruijn indices that are already correct from a
+                // previous merge step.
+                let names: Vec<&str> = scope.pattern.iter().map(|(n, _)| n.as_str()).collect();
+                let closed_body = bind_free_vars(&names, 0, &rebodied);
+                let ret = RcExpr::from(Expr::Let(
+                    *s,
+                    Scope {
+                        pattern: scope.pattern.clone(),
+                        body: closed_body,
+                    },
+                    *let_type,
+                ));
                 env.pop();
                 ret
             }
@@ -637,7 +576,7 @@ impl RcExpr {
                 // ensure any free vars in new_body can be captured by surroundings
                 new_body.substs_free(&|n: &str| {
                     env.get(&n.to_string())
-                        .map(|v| core::var(Smid::default(), v.clone()))
+                        .map(|v| RcExpr::from(Expr::Var(Smid::default(), Var::Free(v.clone()))))
                 })
             }
         }
@@ -682,15 +621,12 @@ impl RcExpr {
             Expr::Let(s, scope, t) => RcExpr::from(Expr::Let(
                 *s,
                 Scope {
-                    unsafe_pattern: Rec {
-                        unsafe_pattern: scope
-                            .unsafe_pattern
-                            .unsafe_pattern
-                            .iter()
-                            .map(|&(ref n, Embed(ref value))| (n.clone(), Embed(f(value.clone()))))
-                            .collect(),
-                    },
-                    unsafe_body: f(scope.unsafe_body.clone()),
+                    pattern: scope
+                        .pattern
+                        .iter()
+                        .map(|(n, value)| (n.clone(), f(value.clone())))
+                        .collect(),
+                    body: f(scope.body.clone()),
                 },
                 *t,
             )),
@@ -698,8 +634,8 @@ impl RcExpr {
                 *s,
                 *inl,
                 Scope {
-                    unsafe_pattern: scope.unsafe_pattern.clone(),
-                    unsafe_body: f(scope.unsafe_body.clone()),
+                    pattern: scope.pattern.clone(),
+                    body: f(scope.body.clone()),
                 },
             )),
             _ => self.clone(),
@@ -711,8 +647,7 @@ impl RcExpr {
     /// regardless of whether changes are required.
     ///
     /// Any transformation in f should be structural, leaving var
-    /// binding status intact as no moniker .unbinds are called. This
-    /// makes free use of unsafe_pattern and unsafe_body
+    /// binding status intact.
     pub fn walk_safe<E, F: FnMut(RcExpr) -> Result<RcExpr, E>>(
         &self,
         f: &mut F,
@@ -755,24 +690,15 @@ impl RcExpr {
             Expr::Operator(s, fx, p, e) => RcExpr::from(Expr::Operator(*s, *fx, *p, f(e.clone())?)),
             Expr::Let(s, scope, t) => {
                 let bindings = scope
-                    .unsafe_pattern
-                    .unsafe_pattern
+                    .pattern
                     .iter()
-                    .map(|&(ref n, Embed(ref value))| {
-                        let val = f(value.clone());
-                        match val {
-                            Ok(v) => Ok((n.clone(), Embed(v))),
-                            Err(e) => Err(e),
-                        }
-                    })
-                    .collect::<Result<Vec<(Binder<String>, Embed<RcExpr>)>, E>>()?;
+                    .map(|(n, value)| f(value.clone()).map(|v| (n.clone(), v)))
+                    .collect::<Result<Vec<(String, RcExpr)>, E>>()?;
                 RcExpr::from(Expr::Let(
                     *s,
                     Scope {
-                        unsafe_pattern: Rec {
-                            unsafe_pattern: bindings,
-                        },
-                        unsafe_body: f(scope.unsafe_body.clone())?,
+                        pattern: bindings,
+                        body: f(scope.body.clone())?,
                     },
                     *t,
                 ))
@@ -781,8 +707,8 @@ impl RcExpr {
                 *s,
                 *inl,
                 Scope {
-                    unsafe_pattern: scope.unsafe_pattern.clone(),
-                    unsafe_body: f(scope.unsafe_body.clone())?,
+                    pattern: scope.pattern.clone(),
+                    body: f(scope.body.clone())?,
                 },
             )),
             _ => self.clone(),
@@ -884,20 +810,18 @@ impl RcExpr {
             }
             Expr::Let(s, scope, t) => {
                 let new_bindings: Vec<_> = scope
-                    .unsafe_pattern
-                    .unsafe_pattern
+                    .pattern
                     .iter()
-                    .map(|(n, Embed(value))| (n, f(value)))
+                    .map(|(n, value)| (n, f(value)))
                     .collect();
-                let new_body = f(&scope.unsafe_body);
+                let new_body = f(&scope.body);
 
                 let bindings_same = scope
-                    .unsafe_pattern
-                    .unsafe_pattern
+                    .pattern
                     .iter()
                     .zip(new_bindings.iter())
-                    .all(|((_, Embed(v)), (_, new_v))| v.ptr_eq(new_v));
-                let body_same = scope.unsafe_body.ptr_eq(&new_body);
+                    .all(|((_, v), (_, new_v))| v.ptr_eq(new_v));
+                let body_same = scope.body.ptr_eq(&new_body);
 
                 if bindings_same && body_same {
                     self.clone()
@@ -905,29 +829,27 @@ impl RcExpr {
                     RcExpr::from(Expr::Let(
                         *s,
                         Scope {
-                            unsafe_pattern: Rec {
-                                unsafe_pattern: new_bindings
-                                    .into_iter()
-                                    .map(|(n, v)| (n.clone(), Embed(v)))
-                                    .collect(),
-                            },
-                            unsafe_body: new_body,
+                            pattern: new_bindings
+                                .into_iter()
+                                .map(|(n, v)| (n.clone(), v))
+                                .collect(),
+                            body: new_body,
                         },
                         *t,
                     ))
                 }
             }
             Expr::Lam(s, inl, scope) => {
-                let new_body = f(&scope.unsafe_body);
-                if scope.unsafe_body.ptr_eq(&new_body) {
+                let new_body = f(&scope.body);
+                if scope.body.ptr_eq(&new_body) {
                     self.clone()
                 } else {
                     RcExpr::from(Expr::Lam(
                         *s,
                         *inl,
                         Scope {
-                            unsafe_pattern: scope.unsafe_pattern.clone(),
-                            unsafe_body: new_body,
+                            pattern: scope.pattern.clone(),
+                            body: new_body,
                         },
                     ))
                 }
@@ -1037,15 +959,14 @@ impl RcExpr {
             }
             Expr::Let(s, scope, t) => {
                 let new_bindings: Vec<_> = scope
-                    .unsafe_pattern
-                    .unsafe_pattern
+                    .pattern
                     .iter()
-                    .map(|(n, Embed(value))| f(value).map(|new_v| (n, value, new_v)))
+                    .map(|(n, value)| f(value).map(|new_v| (n, value, new_v)))
                     .collect::<Result<_, E>>()?;
-                let new_body = f(&scope.unsafe_body)?;
+                let new_body = f(&scope.body)?;
 
                 let bindings_same = new_bindings.iter().all(|(_, v, new_v)| v.ptr_eq(new_v));
-                let body_same = scope.unsafe_body.ptr_eq(&new_body);
+                let body_same = scope.body.ptr_eq(&new_body);
 
                 if bindings_same && body_same {
                     self.clone()
@@ -1053,29 +974,27 @@ impl RcExpr {
                     RcExpr::from(Expr::Let(
                         *s,
                         Scope {
-                            unsafe_pattern: Rec {
-                                unsafe_pattern: new_bindings
-                                    .into_iter()
-                                    .map(|(n, _, v)| (n.clone(), Embed(v)))
-                                    .collect(),
-                            },
-                            unsafe_body: new_body,
+                            pattern: new_bindings
+                                .into_iter()
+                                .map(|(n, _, v)| (n.clone(), v))
+                                .collect(),
+                            body: new_body,
                         },
                         *t,
                     ))
                 }
             }
             Expr::Lam(s, inl, scope) => {
-                let new_body = f(&scope.unsafe_body)?;
-                if scope.unsafe_body.ptr_eq(&new_body) {
+                let new_body = f(&scope.body)?;
+                if scope.body.ptr_eq(&new_body) {
                     self.clone()
                 } else {
                     RcExpr::from(Expr::Lam(
                         *s,
                         *inl,
                         Scope {
-                            unsafe_pattern: scope.unsafe_pattern.clone(),
-                            unsafe_body: new_body,
+                            pattern: scope.pattern.clone(),
+                            body: new_body,
                         },
                     ))
                 }
@@ -1086,9 +1005,9 @@ impl RcExpr {
 
     /// Substitute expression for free variables as specified by mappings.
     /// Uses optimized try_walk to avoid unnecessary allocations.
-    pub fn substs<N: PartialEq<Var<String>>>(&self, mappings: &[(N, RcExpr)]) -> RcExpr {
+    pub fn substs(&self, mappings: &[(String, RcExpr)]) -> RcExpr {
         match &*self.inner {
-            Expr::Var(_, v) => match mappings.iter().find(|&(n, _)| n == v) {
+            Expr::Var(_, Var::Free(name)) => match mappings.iter().find(|(n, _)| n == name) {
                 Some((_, replacement)) => replacement.clone(),
                 None => self.clone(),
             },
@@ -1096,32 +1015,25 @@ impl RcExpr {
         }
     }
 
-    /// Substitute expressions for free variabbles based on name only
+    /// Substitute expressions for free variables based on name only
     /// (allowing free vars minted in other core translations to be
-    /// bound) by binders in different core translations.
+    /// bound by binders in different core translations).
     /// Uses optimized try_walk to avoid unnecessary allocations.
     pub fn substs_free<F: Fn(&str) -> Option<RcExpr>>(&self, substitute: &F) -> RcExpr {
         match &*self.inner {
-            Expr::Var(original_smid, Free(f)) => {
-                if let Some(ref name) = f.pretty_name {
-                    if let Some(replacement) = substitute(name) {
-                        // If the replacement was built with Smid::default() but the
-                        // original Var carried a meaningful call-site Smid, re-stamp
-                        // the Smid so that source locations are not lost during merge.
-                        if original_smid.is_valid() {
-                            if let Expr::Var(rep_smid, rep_var) = &*replacement.inner {
-                                if !rep_smid.is_valid() {
-                                    return RcExpr::from(Expr::Var(
-                                        *original_smid,
-                                        rep_var.clone(),
-                                    ));
-                                }
+            Expr::Var(original_smid, Var::Free(name)) => {
+                if let Some(replacement) = substitute(name) {
+                    // If the replacement was built with Smid::default() but the
+                    // original Var carried a meaningful call-site Smid, re-stamp
+                    // the Smid so that source locations are not lost during merge.
+                    if original_smid.is_valid() {
+                        if let Expr::Var(rep_smid, rep_var) = &*replacement.inner {
+                            if !rep_smid.is_valid() {
+                                return RcExpr::from(Expr::Var(*original_smid, rep_var.clone()));
                             }
                         }
-                        replacement
-                    } else {
-                        self.clone()
                     }
+                    replacement
                 } else {
                     self.clone()
                 }
@@ -1132,13 +1044,7 @@ impl RcExpr {
 
     /// Discards metadata to retrieve top-level let expression in
     /// self.
-    fn top_let(
-        &self,
-    ) -> Option<(
-        &Smid,
-        &Scope<Rec<Vec<(Binder<String>, Embed<RcExpr>)>>, RcExpr>,
-        &LetType,
-    )> {
+    fn top_let(&self) -> Option<(&Smid, &LetScope<RcExpr>, &LetType)> {
         match &*self.inner {
             Expr::Let(s, scope, lt) => Some((s, scope, lt)),
             Expr::Meta(_, expr, _) => expr.top_let(),
@@ -1149,13 +1055,8 @@ impl RcExpr {
     /// Instantiate top-level let bindings in body
     pub fn instantiate_lets(self) -> RcExpr {
         if let Some((_, scope, _)) = self.top_let() {
-            let (binders, body) = scope.clone().unbind();
-            let mappings = binders
-                .unrec()
-                .into_iter()
-                .map(|(binder, Embed(binding))| (binder, binding))
-                .collect::<Vec<_>>();
-            body.substs(&mappings)
+            let (open_bindings, open_body) = open_let_scope_full(scope);
+            open_body.substs(&open_bindings)
         } else {
             self.clone()
         }
@@ -1214,11 +1115,10 @@ impl RcExpr {
 ///     }
 /// }
 /// ```
-#[allow(non_local_definitions)]
-#[derive(Debug, Clone, BoundTerm)]
+#[derive(Debug, Clone)]
 pub struct RcFatExpr<T>
 where
-    T: BoundTerm<String> + Clone + Default,
+    T: Clone + Default,
 {
     pub inner: Rc<Expr<Self>>,
     pub data: T,
@@ -1226,7 +1126,7 @@ where
 
 impl<T> From<Expr<RcFatExpr<T>>> for RcFatExpr<T>
 where
-    T: BoundTerm<String> + Clone + Default,
+    T: Clone + Default,
 {
     fn from(expr: Expr<RcFatExpr<T>>) -> Self {
         RcFatExpr {
@@ -1322,8 +1222,301 @@ where
     }
 }
 
-pub fn free(n: &str) -> FreeVar<String> {
-    FreeVar::fresh_named(n)
+pub fn free(n: &str) -> String {
+    n.to_string()
+}
+
+/// Close a let scope: convert free variables matching binding names to bound variables.
+/// Existing bound variable scope indices are incremented to account for the new scope.
+pub fn close_let_scope(bindings: Vec<(String, RcExpr)>, body: RcExpr) -> LetScope<RcExpr> {
+    let names: Vec<String> = bindings.iter().map(|(n, _)| n.clone()).collect();
+    let name_refs: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
+    let closed_bindings: Vec<(String, RcExpr)> = bindings
+        .into_iter()
+        .map(|(n, v)| (n, close_expr_vars(&name_refs, 0, &v)))
+        .collect();
+    let closed_body = close_expr_vars(&name_refs, 0, &body);
+    Scope {
+        pattern: closed_bindings,
+        body: closed_body,
+    }
+}
+
+/// Close a lam scope: convert free variables matching parameter names to bound variables.
+pub fn close_lam_scope(params: Vec<String>, body: RcExpr) -> LamScope<RcExpr> {
+    let names: Vec<&str> = params.iter().map(|n| n.as_str()).collect();
+    let closed_body = close_expr_vars(&names, 0, &body);
+    Scope {
+        pattern: params,
+        body: closed_body,
+    }
+}
+
+/// Open a let scope: convert bound variables (scope==0) back to free variables.
+/// Existing bound variable scope indices > 0 are decremented.
+pub fn open_let_scope(scope: &LetScope<RcExpr>) -> RcExpr {
+    let names: Vec<Option<&str>> = scope
+        .pattern
+        .iter()
+        .map(|(n, _)| Some(n.as_str()))
+        .collect();
+    open_expr_vars(&names, 0, &scope.body)
+}
+
+/// Open a let scope fully — returns both the opened binding values AND the opened body.
+///
+/// Equivalent to `scope.unbind()` in the old moniker API.
+/// Converts `Var::Bound(scope=0, ...)` in ALL positions (bindings + body) back to
+/// `Var::Free(name)`, and decrements scope indices of outer references by 1.
+///
+/// Used when you need to substitute free variables INTO the binding values,
+/// e.g. in `distribute` (inline pass) which inlines lambdas into other bindings.
+pub fn open_let_scope_full(scope: &LetScope<RcExpr>) -> (Vec<(String, RcExpr)>, RcExpr) {
+    let names: Vec<Option<&str>> = scope
+        .pattern
+        .iter()
+        .map(|(n, _)| Some(n.as_str()))
+        .collect();
+    let open_bindings = scope
+        .pattern
+        .iter()
+        .map(|(n, v)| (n.clone(), open_expr_vars(&names, 0, v)))
+        .collect();
+    let open_body = open_expr_vars(&names, 0, &scope.body);
+    (open_bindings, open_body)
+}
+
+/// Open a lam scope: same but for lambda.
+pub fn open_lam_scope(scope: &LamScope<RcExpr>) -> RcExpr {
+    let names: Vec<Option<&str>> = scope.pattern.iter().map(|n| Some(n.as_str())).collect();
+    open_expr_vars(&names, 0, &scope.body)
+}
+
+/// Walk an expression, converting `Var::Free(name)` where `name` matches any of `names`
+/// into `Var::Bound(BoundVar { scope: depth, binder: i, name: Some(name) })`,
+/// WITHOUT shifting existing `Var::Bound` scope indices.
+///
+/// Used in `rebody_int` when the expression already has correct de Bruijn indices
+/// from a previous scope-building step, and we only need to bind additional free
+/// variables without disturbing the existing structure.
+pub fn bind_free_vars(names: &[&str], depth: u32, expr: &RcExpr) -> RcExpr {
+    match &*expr.inner {
+        Expr::Var(s, Var::Free(name)) => {
+            if let Some(i) = names.iter().position(|&n| n == name.as_str()) {
+                RcExpr::from(Expr::Var(
+                    *s,
+                    Var::Bound(BoundVar {
+                        scope: depth,
+                        binder: i as u32,
+                        name: Some(name.clone()),
+                    }),
+                ))
+            } else {
+                expr.clone()
+            }
+        }
+        Expr::Let(s, scope, t) => {
+            let new_bindings = scope
+                .pattern
+                .iter()
+                .map(|(n, v)| (n.clone(), bind_free_vars(names, depth + 1, v)))
+                .collect();
+            let new_body = bind_free_vars(names, depth + 1, &scope.body);
+            RcExpr::from(Expr::Let(
+                *s,
+                Scope {
+                    pattern: new_bindings,
+                    body: new_body,
+                },
+                *t,
+            ))
+        }
+        Expr::Lam(s, inl, scope) => {
+            let new_body = bind_free_vars(names, depth + 1, &scope.body);
+            RcExpr::from(Expr::Lam(
+                *s,
+                *inl,
+                Scope {
+                    pattern: scope.pattern.clone(),
+                    body: new_body,
+                },
+            ))
+        }
+        _ => expr.walk(&|e| bind_free_vars(names, depth, &e)),
+    }
+}
+
+/// Walk an expression, converting `Var::Free(name)` where `name` matches any of `names`
+/// into `Var::Bound(BoundVar { scope: depth, binder: i, name: Some(name) })`.
+/// Also increments `scope` of any existing `Var::Bound` with `scope >= depth`.
+pub fn close_expr_vars(names: &[&str], depth: u32, expr: &RcExpr) -> RcExpr {
+    match &*expr.inner {
+        Expr::Var(s, Var::Free(name)) => {
+            if let Some(i) = names.iter().position(|&n| n == name.as_str()) {
+                RcExpr::from(Expr::Var(
+                    *s,
+                    Var::Bound(BoundVar {
+                        scope: depth,
+                        binder: i as u32,
+                        name: Some(name.clone()),
+                    }),
+                ))
+            } else {
+                expr.clone()
+            }
+        }
+        Expr::Var(s, Var::Bound(bv)) if bv.scope >= depth => RcExpr::from(Expr::Var(
+            *s,
+            Var::Bound(BoundVar {
+                scope: bv.scope + 1,
+                binder: bv.binder,
+                name: bv.name.clone(),
+            }),
+        )),
+        Expr::Let(s, scope, t) => {
+            let new_bindings = scope
+                .pattern
+                .iter()
+                .map(|(n, v)| (n.clone(), close_expr_vars(names, depth + 1, v)))
+                .collect();
+            let new_body = close_expr_vars(names, depth + 1, &scope.body);
+            RcExpr::from(Expr::Let(
+                *s,
+                Scope {
+                    pattern: new_bindings,
+                    body: new_body,
+                },
+                *t,
+            ))
+        }
+        Expr::Lam(s, inl, scope) => {
+            let new_body = close_expr_vars(names, depth + 1, &scope.body);
+            RcExpr::from(Expr::Lam(
+                *s,
+                *inl,
+                Scope {
+                    pattern: scope.pattern.clone(),
+                    body: new_body,
+                },
+            ))
+        }
+        _ => expr.walk(&|e| close_expr_vars(names, depth, &e)),
+    }
+}
+
+/// Walk an expression, converting `Var::Bound` with `scope == depth` back to `Var::Free`.
+/// Decrements `scope` of any `Var::Bound` with `scope > depth`.
+pub fn open_expr_vars(names: &[Option<&str>], depth: u32, expr: &RcExpr) -> RcExpr {
+    match &*expr.inner {
+        Expr::Var(s, Var::Bound(bv)) => {
+            if bv.scope == depth {
+                let name = names
+                    .get(bv.binder as usize)
+                    .and_then(|n| *n)
+                    .or(bv.name.as_deref())
+                    .unwrap_or("_")
+                    .to_string();
+                RcExpr::from(Expr::Var(*s, Var::Free(name)))
+            } else if bv.scope > depth {
+                RcExpr::from(Expr::Var(
+                    *s,
+                    Var::Bound(BoundVar {
+                        scope: bv.scope - 1,
+                        binder: bv.binder,
+                        name: bv.name.clone(),
+                    }),
+                ))
+            } else {
+                expr.clone()
+            }
+        }
+        Expr::Let(s, scope, t) => {
+            let new_bindings = scope
+                .pattern
+                .iter()
+                .map(|(n, v)| (n.clone(), open_expr_vars(names, depth + 1, v)))
+                .collect();
+            let new_body = open_expr_vars(names, depth + 1, &scope.body);
+            RcExpr::from(Expr::Let(
+                *s,
+                Scope {
+                    pattern: new_bindings,
+                    body: new_body,
+                },
+                *t,
+            ))
+        }
+        Expr::Lam(s, inl, scope) => {
+            let new_body = open_expr_vars(names, depth + 1, &scope.body);
+            RcExpr::from(Expr::Lam(
+                *s,
+                *inl,
+                Scope {
+                    pattern: scope.pattern.clone(),
+                    body: new_body,
+                },
+            ))
+        }
+        _ => expr.walk(&|e| open_expr_vars(names, depth, &e)),
+    }
+}
+
+/// Collect all free variable names in an expression.
+pub fn free_vars(expr: &RcExpr) -> std::collections::HashSet<String> {
+    let mut result = std::collections::HashSet::new();
+    collect_free_vars(expr, &mut result);
+    result
+}
+
+fn collect_free_vars(expr: &RcExpr, result: &mut std::collections::HashSet<String>) {
+    match &*expr.inner {
+        Expr::Var(_, Var::Free(name)) => {
+            result.insert(name.clone());
+        }
+        Expr::Var(_, Var::Bound(_)) => {}
+        Expr::Let(_, scope, _) => {
+            for (_, v) in &scope.pattern {
+                collect_free_vars(v, result);
+            }
+            collect_free_vars(&scope.body, result);
+        }
+        Expr::Lam(_, _, scope) => {
+            collect_free_vars(&scope.body, result);
+        }
+        Expr::Lookup(_, e, _, fb) => {
+            collect_free_vars(e, result);
+            if let Some(f) = fb {
+                collect_free_vars(f, result);
+            }
+        }
+        Expr::List(_, xs) | Expr::ArgTuple(_, xs) => {
+            for x in xs {
+                collect_free_vars(x, result);
+            }
+        }
+        Expr::Block(_, bm) => {
+            for (_, v) in bm.iter() {
+                collect_free_vars(v, result);
+            }
+        }
+        Expr::Meta(_, e, m) => {
+            collect_free_vars(e, result);
+            collect_free_vars(m, result);
+        }
+        Expr::App(_, f, xs) => {
+            collect_free_vars(f, result);
+            for x in xs {
+                collect_free_vars(x, result);
+            }
+        }
+        Expr::Soup(_, xs) => {
+            for x in xs {
+                collect_free_vars(x, result);
+            }
+        }
+        Expr::Operator(_, _, _, e) => collect_free_vars(e, result),
+        _ => {}
+    }
 }
 
 pub mod ops {
@@ -1370,7 +1563,7 @@ pub mod core {
     use super::*;
 
     /// Create a variable expression
-    pub fn var(smid: Smid, n: FreeVar<String>) -> RcExpr {
+    pub fn var(smid: Smid, n: String) -> RcExpr {
         RcExpr::from(Expr::Var(smid, Var::Free(n)))
     }
 
@@ -1408,21 +1601,13 @@ pub mod core {
     }
 
     /// Create a lambda expression
-    pub fn lam(smid: Smid, binders: Vec<FreeVar<String>>, body: RcExpr) -> RcExpr {
-        RcExpr::from(Expr::Lam(
-            smid,
-            false,
-            Scope::new(binders.into_iter().map(Binder).collect(), body),
-        ))
+    pub fn lam(smid: Smid, binders: Vec<String>, body: RcExpr) -> RcExpr {
+        RcExpr::from(Expr::Lam(smid, false, close_lam_scope(binders, body)))
     }
 
     /// Create an inlineable lambda expression
-    pub fn inline(smid: Smid, binders: Vec<FreeVar<String>>, body: RcExpr) -> RcExpr {
-        RcExpr::from(Expr::Lam(
-            smid,
-            true,
-            Scope::new(binders.into_iter().map(Binder).collect(), body),
-        ))
+    pub fn inline(smid: Smid, binders: Vec<String>, body: RcExpr) -> RcExpr {
+        RcExpr::from(Expr::Lam(smid, true, close_lam_scope(binders, body)))
     }
 
     /// Create operator soup
@@ -1466,41 +1651,26 @@ pub mod core {
     }
 
     /// Create a default let
-    pub fn default_let(smid: Smid, bindings: Vec<(FreeVar<String>, RcExpr)>) -> RcExpr {
-        let free_vars: Vec<FreeVar<String>> = bindings.iter().map(|(k, _)| k.clone()).collect();
-
-        let block_map = free_vars.iter().map(|fv| {
+    pub fn default_let(smid: Smid, bindings: Vec<(String, RcExpr)>) -> RcExpr {
+        let block_map = bindings.iter().map(|(name, _)| {
             (
-                fv.pretty_name.as_ref().unwrap().clone(),
-                RcExpr::from(Expr::Var(Smid::default(), Var::Free(fv.clone()))),
+                name.clone(),
+                RcExpr::from(Expr::Var(Smid::default(), Var::Free(name.clone()))),
             )
         });
-
         let body_block = block(smid, block_map);
-
-        let binders = bindings
-            .iter()
-            .zip(free_vars)
-            .map(|((_, v), ref fv)| (Binder(fv.clone()), Embed(v.clone())))
-            .collect();
-
         RcExpr::from(Expr::Let(
             smid,
-            Scope::new(Rec::new(binders), body_block),
+            close_let_scope(bindings, body_block),
             LetType::DefaultBlockLet,
         ))
     }
 
     /// Create a let
-    pub fn let_(smid: Smid, bindings: Vec<(FreeVar<String>, RcExpr)>, body: RcExpr) -> RcExpr {
-        let binders = bindings
-            .iter()
-            .map(|(k, v)| (Binder(k.clone()), Embed(v.clone())))
-            .collect();
-
+    pub fn let_(smid: Smid, bindings: Vec<(String, RcExpr)>, body: RcExpr) -> RcExpr {
         RcExpr::from(Expr::Let(
             smid,
-            Scope::new(Rec::new(binders), body),
+            close_let_scope(bindings, body),
             LetType::OtherLet,
         ))
     }
@@ -1579,7 +1749,7 @@ pub mod core {
     pub fn path(smid: Smid, path: &[String]) -> Option<RcExpr> {
         let mut it = path.iter();
         if let Some(base) = it.next() {
-            let body = var(smid, free(base));
+            let body = var(smid, base.clone());
             Some(it.fold(body, |e, n| lookup(smid, e, n, None)))
         } else {
             None
@@ -1592,7 +1762,7 @@ pub mod acore {
     use super::*;
 
     /// Create a variable expression
-    pub fn var(n: FreeVar<String>) -> RcExpr {
+    pub fn var(n: String) -> RcExpr {
         core::var(Smid::default(), n)
     }
 
@@ -1629,13 +1799,13 @@ pub mod acore {
         core::bif(Smid::default(), name)
     }
 
-    /// Create a lambbda
-    pub fn lam(binders: Vec<FreeVar<String>>, body: RcExpr) -> RcExpr {
+    /// Create a lambda
+    pub fn lam(binders: Vec<String>, body: RcExpr) -> RcExpr {
         core::lam(Smid::default(), binders, body)
     }
 
-    /// Create an inlineable lambbda
-    pub fn inline(binders: Vec<FreeVar<String>>, body: RcExpr) -> RcExpr {
+    /// Create an inlineable lambda
+    pub fn inline(binders: Vec<String>, body: RcExpr) -> RcExpr {
         core::inline(Smid::default(), binders, body)
     }
 
@@ -1680,12 +1850,12 @@ pub mod acore {
     }
 
     /// Create a default let
-    pub fn default_let(bindings: Vec<(FreeVar<String>, RcExpr)>) -> RcExpr {
+    pub fn default_let(bindings: Vec<(String, RcExpr)>) -> RcExpr {
         core::default_let(Smid::default(), bindings)
     }
 
     /// Create a let
-    pub fn let_(bindings: Vec<(FreeVar<String>, RcExpr)>, body: RcExpr) -> RcExpr {
+    pub fn let_(bindings: Vec<(String, RcExpr)>, body: RcExpr) -> RcExpr {
         core::let_(Smid::default(), bindings, body)
     }
 
@@ -1742,13 +1912,17 @@ pub mod acore {
 
 /// Bind all free vars of an expression to test alpha equivalence
 pub fn bound(expr: RcExpr) -> RcExpr {
-    let fvs = expr.free_vars();
+    let fvs = free_vars(&expr);
     if fvs.is_empty() {
         expr
     } else {
-        let mut binders: Vec<Binder<String>> = fvs.iter().map(|v| Binder(v.clone())).collect();
-        binders.sort_by_key(|b| b.0.pretty_name.as_ref().unwrap().to_string());
-        RcExpr::from(Expr::Lam(Smid::default(), false, Scope::new(binders, expr)))
+        let mut binders: Vec<String> = fvs.into_iter().collect();
+        binders.sort();
+        RcExpr::from(Expr::Lam(
+            Smid::default(),
+            false,
+            close_lam_scope(binders, expr),
+        ))
     }
 }
 
@@ -1756,12 +1930,270 @@ pub fn bound(expr: RcExpr) -> RcExpr {
 pub mod tests {
     use super::*;
 
+    /// Normalise an expression for structural comparison in tests.
+    ///
+    /// Replaces all `LetType` variants with `OtherLet`, all `Smid` fields with
+    /// `Smid::default()`, and renames lambda parameters to canonical `_p0`, `_p1`,
+    /// … names (updating corresponding bound variables).  This restores the
+    /// alpha-equivalence semantics of the old `moniker::assert_term_eq!`.
+    pub fn alpha_norm(expr: RcExpr) -> RcExpr {
+        alpha_norm_inner(&expr, &mut 0)
+    }
+
+    fn alpha_norm_inner(expr: &RcExpr, counter: &mut u32) -> RcExpr {
+        match &*expr.inner {
+            Expr::Var(_, v) => RcExpr::from(Expr::Var(Smid::default(), v.clone())),
+            Expr::Name(_, n) => RcExpr::from(Expr::Name(Smid::default(), n.clone())),
+            Expr::Literal(_, p) => RcExpr::from(Expr::Literal(Smid::default(), p.clone())),
+            Expr::Intrinsic(_, n) => RcExpr::from(Expr::Intrinsic(Smid::default(), n.clone())),
+            Expr::Let(_, scope, _) => {
+                let new_pattern = scope
+                    .pattern
+                    .iter()
+                    .map(|(k, v)| (k.clone(), alpha_norm_inner(v, counter)))
+                    .collect();
+                let new_body = alpha_norm_inner(&scope.body, counter);
+                RcExpr::from(Expr::Let(
+                    Smid::default(),
+                    Scope {
+                        pattern: new_pattern,
+                        body: new_body,
+                    },
+                    LetType::OtherLet,
+                ))
+            }
+            Expr::Lam(_, ann, scope) => {
+                // Rename parameters to canonical _p0, _p1, ...
+                let new_params: Vec<String> = scope
+                    .pattern
+                    .iter()
+                    .map(|_| {
+                        let n = format!("_p{}", *counter);
+                        *counter += 1;
+                        n
+                    })
+                    .collect();
+                // Rename bound vars referencing scope=0 in the body
+                let renamed_body = rename_lam_params(&scope.body, &scope.pattern, &new_params, 0);
+                let new_body = alpha_norm_inner(&renamed_body, counter);
+                RcExpr::from(Expr::Lam(
+                    Smid::default(),
+                    *ann,
+                    Scope {
+                        pattern: new_params,
+                        body: new_body,
+                    },
+                ))
+            }
+            Expr::App(_, f, args) => RcExpr::from(Expr::App(
+                Smid::default(),
+                alpha_norm_inner(f, counter),
+                args.iter().map(|a| alpha_norm_inner(a, counter)).collect(),
+            )),
+            Expr::Meta(_, e, m) => RcExpr::from(Expr::Meta(
+                Smid::default(),
+                alpha_norm_inner(e, counter),
+                alpha_norm_inner(m, counter),
+            )),
+            Expr::Lookup(_, obj, key, fb) => RcExpr::from(Expr::Lookup(
+                Smid::default(),
+                alpha_norm_inner(obj, counter),
+                key.clone(),
+                fb.as_ref().map(|f| alpha_norm_inner(f, counter)),
+            )),
+            Expr::List(_, items) => RcExpr::from(Expr::List(
+                Smid::default(),
+                items.iter().map(|i| alpha_norm_inner(i, counter)).collect(),
+            )),
+            Expr::Block(_, bm) => RcExpr::from(Expr::Block(
+                Smid::default(),
+                bm.iter()
+                    .map(|(k, v)| (k.clone(), alpha_norm_inner(v, counter)))
+                    .collect(),
+            )),
+            Expr::Soup(_, items) => RcExpr::from(Expr::Soup(
+                Smid::default(),
+                items.iter().map(|i| alpha_norm_inner(i, counter)).collect(),
+            )),
+            Expr::ArgTuple(_, args) => RcExpr::from(Expr::ArgTuple(
+                Smid::default(),
+                args.iter().map(|a| alpha_norm_inner(a, counter)).collect(),
+            )),
+            Expr::Operator(_, fix, prec, e) => RcExpr::from(Expr::Operator(
+                Smid::default(),
+                *fix,
+                *prec,
+                alpha_norm_inner(e, counter),
+            )),
+            Expr::ExprAnaphor(_, ana) => {
+                let norm_ana = normalise_anaphor(ana);
+                RcExpr::from(Expr::ExprAnaphor(Smid::default(), norm_ana))
+            }
+            Expr::BlockAnaphor(_, ana) => {
+                let norm_ana = normalise_anaphor(ana);
+                RcExpr::from(Expr::BlockAnaphor(Smid::default(), norm_ana))
+            }
+            Expr::ErrUnresolved(_, n) => {
+                RcExpr::from(Expr::ErrUnresolved(Smid::default(), n.clone()))
+            }
+            Expr::ErrRedeclaration(_, n) => {
+                RcExpr::from(Expr::ErrRedeclaration(Smid::default(), n.clone()))
+            }
+            _ => expr.clone(),
+        }
+    }
+
+    fn normalise_anaphor(ana: &Anaphor<Smid, i32>) -> Anaphor<Smid, i32> {
+        match ana {
+            // Normalise: strip smid and unify Left/Right (tests use term_eq which ignores
+            // implicit anaphor side)
+            Anaphor::Implicit(_, _) => {
+                Anaphor::Implicit(Smid::default(), ImplicitAnaphorSide::Left)
+            }
+            Anaphor::ExplicitAnonymous(_) => Anaphor::ExplicitAnonymous(Smid::default()),
+            Anaphor::ExplicitNumbered(n) => Anaphor::ExplicitNumbered(*n),
+        }
+    }
+
+    /// Rename lambda parameter names in an expression body from `old_names` to `new_names`,
+    /// updating `Var::Bound` with `scope == depth` and also `Var::Bound.name` hints.
+    fn rename_lam_params(
+        expr: &RcExpr,
+        old_names: &[String],
+        new_names: &[String],
+        depth: u32,
+    ) -> RcExpr {
+        match &*expr.inner {
+            Expr::Var(s, Var::Bound(bv)) => {
+                let mut new_bv = bv.clone();
+                if bv.scope == depth {
+                    if let Some(ref old_name) = bv.name {
+                        if let Some(pos) = old_names.iter().position(|n| n == old_name) {
+                            new_bv.name = Some(new_names[pos].clone());
+                        }
+                    }
+                }
+                RcExpr::from(Expr::Var(*s, Var::Bound(new_bv)))
+            }
+            Expr::Let(s, scope, t) => {
+                let new_bindings = scope
+                    .pattern
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            rename_lam_params(v, old_names, new_names, depth + 1),
+                        )
+                    })
+                    .collect();
+                let new_body = rename_lam_params(&scope.body, old_names, new_names, depth + 1);
+                RcExpr::from(Expr::Let(
+                    *s,
+                    Scope {
+                        pattern: new_bindings,
+                        body: new_body,
+                    },
+                    *t,
+                ))
+            }
+            Expr::Lam(s, ann, scope) => {
+                let new_body = rename_lam_params(&scope.body, old_names, new_names, depth + 1);
+                RcExpr::from(Expr::Lam(
+                    *s,
+                    *ann,
+                    Scope {
+                        pattern: scope.pattern.clone(),
+                        body: new_body,
+                    },
+                ))
+            }
+            _ => expr.walk(&|e| rename_lam_params(&e, old_names, new_names, depth)),
+        }
+    }
+
+    // Keep the simpler norm() for tests that only need LetType normalisation
+    fn norm(expr: RcExpr) -> RcExpr {
+        alpha_norm(expr)
+    }
+
+    /// Strip Smids without changing LetType or lambda param names.
+    /// Used in import tests where LetType must be preserved.
+    pub fn smid_strip(expr: RcExpr) -> RcExpr {
+        smid_strip_inner(&expr)
+    }
+
+    fn smid_strip_inner(expr: &RcExpr) -> RcExpr {
+        match &*expr.inner {
+            Expr::Var(_, v) => RcExpr::from(Expr::Var(Smid::default(), v.clone())),
+            Expr::Name(_, n) => RcExpr::from(Expr::Name(Smid::default(), n.clone())),
+            Expr::Literal(_, p) => RcExpr::from(Expr::Literal(Smid::default(), p.clone())),
+            Expr::Intrinsic(_, n) => RcExpr::from(Expr::Intrinsic(Smid::default(), n.clone())),
+            Expr::Let(_, scope, lt) => {
+                let new_pattern = scope
+                    .pattern
+                    .iter()
+                    .map(|(k, v)| (k.clone(), smid_strip_inner(v)))
+                    .collect();
+                let new_body = smid_strip_inner(&scope.body);
+                RcExpr::from(Expr::Let(
+                    Smid::default(),
+                    Scope {
+                        pattern: new_pattern,
+                        body: new_body,
+                    },
+                    *lt,
+                ))
+            }
+            Expr::Lam(_, ann, scope) => {
+                let new_body = smid_strip_inner(&scope.body);
+                RcExpr::from(Expr::Lam(
+                    Smid::default(),
+                    *ann,
+                    Scope {
+                        pattern: scope.pattern.clone(),
+                        body: new_body,
+                    },
+                ))
+            }
+            Expr::App(_, f, args) => RcExpr::from(Expr::App(
+                Smid::default(),
+                smid_strip_inner(f),
+                args.iter().map(smid_strip_inner).collect(),
+            )),
+            Expr::Meta(_, e, m) => RcExpr::from(Expr::Meta(
+                Smid::default(),
+                smid_strip_inner(e),
+                smid_strip_inner(m),
+            )),
+            Expr::Lookup(_, obj, key, fb) => RcExpr::from(Expr::Lookup(
+                Smid::default(),
+                smid_strip_inner(obj),
+                key.clone(),
+                fb.as_ref().map(smid_strip_inner),
+            )),
+            Expr::List(_, items) => RcExpr::from(Expr::List(
+                Smid::default(),
+                items.iter().map(smid_strip_inner).collect(),
+            )),
+            Expr::Block(_, bm) => RcExpr::from(Expr::Block(
+                Smid::default(),
+                bm.iter()
+                    .map(|(k, v)| (k.clone(), smid_strip_inner(v)))
+                    .collect(),
+            )),
+            _ => expr.walk(&|e| smid_strip_inner(&e)),
+        }
+    }
+
     #[test]
     pub fn test_substs() {
         use super::acore::*;
         let x = free("x");
         let y = free("y");
-        assert_term_eq!(var(x.clone()).substs(&[(x, var(y.clone()))]), var(y));
+        assert_eq!(
+            bound(var(x.clone()).substs(&[(x, var(y.clone()))])),
+            bound(var(y))
+        );
 
         let a = free("a");
         let b = free("b");
@@ -1769,10 +2201,12 @@ pub mod tests {
         let d = free("d");
         let e = free("e");
 
-        assert_term_eq!(
-            lam(vec![a.clone(), b.clone(), c.clone()], var(d.clone()))
-                .substs(&[(d, var(e.clone()))]),
-            lam(vec![a, b, c], var(e)),
+        assert_eq!(
+            bound(
+                lam(vec![a.clone(), b.clone(), c.clone()], var(d.clone()))
+                    .substs(&[(d, var(e.clone()))])
+            ),
+            bound(lam(vec![a, b, c], var(e))),
         );
     }
 
@@ -1788,9 +2222,9 @@ pub mod tests {
 
         let sub = |n: &str| if n == "d" { Some(var(e.clone())) } else { None };
 
-        assert_term_eq!(
-            lam(vec![a.clone(), b.clone(), c.clone()], var(d)).substs_free(&sub),
-            lam(vec![a, b, c], var(e)),
+        assert_eq!(
+            bound(lam(vec![a.clone(), b.clone(), c.clone()], var(d)).substs_free(&sub)),
+            bound(lam(vec![a, b, c], var(e))),
         );
     }
 
@@ -1804,7 +2238,7 @@ pub mod tests {
         let original = default_let(vec![(x.clone(), num(22)), (y.clone(), num(23))]);
         let expected = let_(vec![(x, num(22)), (y.clone(), num(23))], var(y.clone()));
 
-        assert_term_eq!(original.rebody(var(y)), expected);
+        assert_eq!(norm(original.rebody(var(y))), norm(expected));
     }
 
     #[test]
@@ -1824,7 +2258,7 @@ pub mod tests {
             let_(vec![(z, num(24))], var(x.clone())),
         );
 
-        assert_term_eq!(original.rebody(var(x)), expected);
+        assert_eq!(norm(original.rebody(var(x))), norm(expected));
     }
 
     #[test]
@@ -1850,7 +2284,7 @@ pub mod tests {
             str("outer meta"),
         );
 
-        assert_term_eq!(original.rebody(var(y)), expected);
+        assert_eq!(original.rebody(var(y)), expected);
     }
 
     #[test]
@@ -1869,7 +2303,7 @@ pub mod tests {
 
         let y_other = free("y");
 
-        assert_term_eq!(original.rebody(var(y_other)), expected);
+        assert_eq!(original.rebody(var(y_other)), expected);
     }
 
     #[test]
@@ -1910,7 +2344,7 @@ pub mod tests {
             ),
         );
 
-        assert_term_eq!(unit_c.unwrap(), expected);
+        assert_eq!(unit_c.unwrap(), expected);
     }
 
     #[test]
@@ -1952,7 +2386,7 @@ pub mod tests {
             ),
         );
 
-        assert_term_eq!(unit_c.unwrap(), expected);
+        assert_eq!(unit_c.unwrap(), expected);
     }
 
     #[test]
@@ -1994,7 +2428,7 @@ pub mod tests {
             ),
         );
 
-        assert_term_eq!(
+        assert_eq!(
             RcExpr::merge(vec![unit_a, unit_b, unit_c]).unwrap(),
             expected
         );

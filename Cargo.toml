@@ -28,7 +28,6 @@ itertools = "0.10.5"
 thiserror = "1.0.37"
 url = "2.3.1"
 pretty = "0.11.3"
-moniker = { git = "https://github.com/curvelogic/moniker", rev = "c620b2a69d6cad4724cba07775ed65a7ae556c9c" }
 indexmap = "1.9.1"
 petgraph = "0.6.2"
 csv = "1.1.6"

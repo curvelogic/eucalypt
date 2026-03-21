@@ -2,10 +2,9 @@
 //! precedence to turn operator soup into hierarchical expressions.
 use crate::common::sourcemap::{HasSmid, Smid};
 use crate::core::anaphora;
+use crate::core::binding::{Scope, Var};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
-use crate::core::transform::succ;
-use moniker::*;
 use std::collections::{HashMap, HashSet};
 
 pub mod fill;
@@ -49,10 +48,10 @@ pub struct Cooker {
     in_expr_anaphor_scope: bool,
     /// While in the scope of anaphoric lambda, collect all the
     /// anaphora for processing at the boundary of the scope
-    pending_expr_anaphora: HashMap<Anaphor<Smid, i32>, FreeVar<String>>,
+    pending_expr_anaphora: HashMap<Anaphor<Smid, i32>, String>,
     /// While in the scope of anaphoric lambda, collect all the
     /// anaphora for processing at the boundary of the scope
-    pending_block_anaphora: HashMap<Anaphor<Smid, i32>, FreeVar<String>>,
+    pending_block_anaphora: HashMap<Anaphor<Smid, i32>, String>,
 }
 
 impl Cooker {
@@ -176,7 +175,10 @@ impl Cooker {
     fn process_expr_anaphora(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         let binders = anaphora::to_binding_pattern(&self.pending_expr_anaphora)?;
         self.pending_expr_anaphora.clear();
-        Ok(core::lam(expr.smid(), binders, succ::succ(&expr)?))
+        // Do NOT call succ: close_lam_scope (inside core::lam) uses close_expr_vars
+        // which already increments outer BV scope indices to account for the new lambda
+        // scope. Calling succ first would double-increment them.
+        Ok(core::lam(expr.smid(), binders, expr))
     }
 
     /// Wrap a lambda around a block-anaphoric expression, collapsing
@@ -191,25 +193,20 @@ impl Cooker {
     /// let binding is a simple alias of the anaphor var.
     fn process_block_anaphora(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         let binders = anaphora::to_binding_pattern(&self.pending_block_anaphora)?;
-        let anaphora_vars: HashSet<String> = self
-            .pending_block_anaphora
-            .values()
-            .filter_map(|v| v.pretty_name.clone())
-            .collect();
+        let anaphora_vars: HashSet<String> =
+            self.pending_block_anaphora.values().cloned().collect();
         self.pending_block_anaphora.clear();
 
         // Try to collapse: if the expression is a Let with a single
         // binding whose value is our anaphor var, eliminate the let
         // and bind directly as a lambda parameter.
         if let Expr::Let(_, scope, _) = &*expr.inner {
-            let bindings = &scope.unsafe_pattern.unsafe_pattern;
-            let body = &scope.unsafe_body;
+            let bindings = &scope.pattern;
+            let body = &scope.body;
 
-            let all_alias = bindings.iter().all(|(_, Embed(val))| {
-                if let Expr::Var(_, Var::Free(fv)) = &*val.inner {
-                    fv.pretty_name
-                        .as_ref()
-                        .is_some_and(|n| anaphora_vars.contains(n))
+            let all_alias = bindings.iter().all(|(_, val)| {
+                if let Expr::Var(_, Var::Free(name)) = &*val.inner {
+                    anaphora_vars.contains(name)
                 } else {
                     false
                 }
@@ -217,13 +214,31 @@ impl Cooker {
 
             if all_alias && bindings.len() == 1 && binders.len() == 1 {
                 // Single binding: the lambda directly replaces the let
-                // scope, so the body's bound variable indices are already
-                // correct (scope 0 index 0 targets the one lambda param).
-                return Ok(core::lam(expr.smid(), binders, body.clone()));
+                // scope, so the body's BV(0,0) already points at the right
+                // slot. We do NOT go via core::lam / close_lam_scope because
+                // close_expr_vars would increment BV(0,0) → BV(1,0).
+                //
+                // Use the let binding's name (e.g. "it") rather than the
+                // anaphor var name (e.g. "_b_a[…]") so that the BoundVar
+                // name field in the body agrees with the lambda pattern,
+                // keeping the binding verifier happy.
+                let let_name = bindings[0].0.clone();
+                return Ok(RcExpr::from(Expr::Lam(
+                    expr.smid(),
+                    false,
+                    Scope {
+                        pattern: vec![let_name],
+                        body: body.clone(),
+                    },
+                )));
             }
         }
 
-        Ok(core::lam(expr.smid(), binders, succ::succ(&expr)?))
+        // Do NOT call succ::succ before core::lam: close_lam_scope (inside
+        // core::lam) uses close_expr_vars which already increments outer BV
+        // scope indices to account for the new lambda scope. Calling succ
+        // first would double-increment them.
+        Ok(core::lam(expr.smid(), binders, expr))
     }
 }
 
@@ -233,11 +248,15 @@ pub mod tests {
     use super::*;
     use crate::core::expr::acore::*;
     use crate::core::expr::core;
+    use crate::core::expr::tests::alpha_norm;
     use crate::core::expr::RcExpr;
-    use moniker::assert_term_eq;
 
     fn cook_soup(exprs: &[RcExpr]) -> RcExpr {
-        cook(soup(exprs.to_vec())).unwrap()
+        alpha_norm(cook(soup(exprs.to_vec())).unwrap())
+    }
+
+    fn expected(expr: RcExpr) -> RcExpr {
+        alpha_norm(expr)
     }
 
     #[test]
@@ -255,7 +274,7 @@ pub mod tests {
         let ana0 = free("_0");
         let ana1 = free("_1");
 
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(5), l50.clone(), num(7)]),
             app(bif("L50"), vec![num(5), num(7)])
         );
@@ -263,13 +282,13 @@ pub mod tests {
         let x = free("x");
         let f = free("f");
 
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[var(x.clone()), var(f.clone())]),
             app(var(f), vec![var(x)])
         );
 
         // associates left
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(1), l50.clone(), num(2), l50.clone(), num(3)]),
             app(
                 bif("L50"),
@@ -278,7 +297,7 @@ pub mod tests {
         );
 
         // associates right
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(1), r50.clone(), num(2), r50.clone(), num(3)]),
             app(
                 bif("R50"),
@@ -287,7 +306,7 @@ pub mod tests {
         );
 
         // respects precedence in left
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(1), l40, num(2), l50.clone(), num(3), l60, num(4)]),
             app(
                 bif("L40"),
@@ -302,7 +321,7 @@ pub mod tests {
         );
 
         // respects precedence in right
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(1), r60, num(2), r50, num(3), r40, num(4)]),
             app(
                 bif("R40"),
@@ -317,19 +336,19 @@ pub mod tests {
         );
 
         // handles unary prefix
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[pre100.clone(), num(10)]),
             app(bif("PRE100"), vec![num(10)])
         );
 
         // handles unary postfix
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(10), post100.clone()]),
             app(bif("POST100"), vec![num(10)])
         );
 
         // handles mixed high precedence unary & binary
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[
                 pre100.clone(),
                 num(20),
@@ -347,7 +366,7 @@ pub mod tests {
         );
 
         // handles mixed high precedence unary & binary
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[
                 num(30),
                 post100.clone(),
@@ -365,7 +384,7 @@ pub mod tests {
         );
 
         // handles mixed low precedence unary & binary
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[pre10.clone(), num(20), l50.clone(), num(30), post10.clone()]),
             app(
                 bif("PRE10"),
@@ -377,27 +396,27 @@ pub mod tests {
         );
 
         // fills section (`l50` 20) with anaphoric var and abstracts
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[l50.clone(), num(20)]),
-            lam(
+            expected(lam(
                 vec![ana0.clone()],
                 app(bif("L50"), vec![var(ana0.clone()), num(20)])
-            )
+            ))
         );
 
         // fills section (20 `l50`) with anaphoric var and abstracts
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(20), l50.clone()]),
-            lam(
+            expected(lam(
                 vec![ana0.clone()],
                 app(bif("L50"), vec![num(20), var(ana0.clone())])
-            )
+            ))
         );
 
         // fills ... (unary pre) (binary)... and abstracts
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[pre10.clone(), l50.clone(), num(30), post10.clone()]),
-            lam(
+            expected(lam(
                 vec![ana0.clone()],
                 app(
                     bif("PRE10"),
@@ -406,14 +425,14 @@ pub mod tests {
                         vec![app(bif("L50"), vec![var(ana0.clone()), num(30)])]
                     )]
                 )
-            )
+            ))
         );
 
         // fills ... (binary) (unary post) ... with anaphor and
         // abstracts
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[num(30), l50.clone(), post100, pre100, num(20)]),
-            lam(
+            expected(lam(
                 vec![ana0.clone()],
                 app(
                     app(bif("PRE100"), vec![num(20)]),
@@ -422,13 +441,13 @@ pub mod tests {
                         vec![num(30), app(bif("POST100"), vec![var(ana0.clone())])]
                     )]
                 )
-            )
+            ))
         );
 
         // corrects pre10 pre10 pre10 pre10 with anaphor and abstracts
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[pre10.clone(), pre10.clone(), pre10.clone(), pre10.clone()]),
-            lam(
+            expected(lam(
                 vec![ana0.clone()],
                 app(
                     bif("PRE10"),
@@ -440,13 +459,13 @@ pub mod tests {
                         )]
                     )]
                 )
-            )
+            ))
         );
 
         // fills pre10 l50 post10
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[pre10, l50, post10]),
-            lam(
+            expected(lam(
                 vec![ana0.clone(), ana1.clone()],
                 app(
                     bif("PRE10"),
@@ -461,13 +480,13 @@ pub mod tests {
                         )]
                     )]
                 )
-            )
+            ))
         );
     }
 
     #[test]
     pub fn test_nested_sample() {
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[
                 bif("HEAD"),
                 call(),
@@ -498,16 +517,16 @@ pub mod tests {
         let l50 = core::infixl(Smid::fake(1), 50, bif("MUL"));
         let ana0 = free("_e_n0");
 
-        assert_term_eq!(
+        assert_eq!(
             cook_soup(&[
                 core::expr_anaphor(Smid::fake(2), Some(0)),
                 l50,
                 core::expr_anaphor(Smid::fake(2), Some(0))
             ]),
-            lam(
+            expected(lam(
                 vec![ana0.clone()],
                 app(bif("MUL"), vec![var(ana0.clone()), var(ana0)])
-            )
+            ))
         );
     }
 
@@ -585,16 +604,16 @@ pub mod tests {
 
         // Should produce: DIV(lam([_0], ADD(_0, 1)), 2)
         // The section lambda stays inside — NOT lam([_0], DIV(ADD(_0, 1), 2))
-        let result = cook(outer).unwrap();
-        assert_term_eq!(
+        let result = alpha_norm(cook(outer).unwrap());
+        assert_eq!(
             result,
-            app(
+            expected(app(
                 bif("DIV"),
                 vec![
                     lam(vec![ana0.clone()], app(bif("ADD"), vec![var(ana0), num(1)])),
                     num(2)
                 ]
-            )
+            ))
         );
     }
 }

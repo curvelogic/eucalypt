@@ -1,40 +1,25 @@
 //! Export pretty printed version of core.
 use crate::common::{prettify::ToPretty, truncate::Truncated};
+use crate::core::binding::Var;
 use crate::core::expr::*;
-use moniker::Binder;
-use moniker::Embed;
-use moniker::FreeVar;
-use moniker::Var;
 use pretty::{DocAllocator, DocBuilder};
 
-impl ToPretty for Var<String> {
+impl ToPretty for Var {
     fn pretty<'b, D, A>(&'b self, allocator: &'b D) -> DocBuilder<'b, D, A>
     where
         D: DocAllocator<'b, A>,
         D::Doc: Clone,
         A: Clone,
     {
-        allocator.text(
-            self.pretty_name()
-                .cloned()
-                .unwrap_or_else(|| "?".to_string()),
-        )
-    }
-}
-
-impl ToPretty for FreeVar<String> {
-    fn pretty<'b, D, A>(&'b self, allocator: &'b D) -> DocBuilder<'b, D, A>
-    where
-        D: DocAllocator<'b, A>,
-        D::Doc: Clone,
-        A: Clone,
-    {
-        allocator.text(
-            self.pretty_name
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| "?".to_string()),
-        )
+        match self {
+            Var::Free(name) => allocator.text(name.clone()),
+            Var::Bound(bv) => allocator.text(
+                bv.name
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| format!("${}.{}", bv.scope, bv.binder)),
+            ),
+        }
     }
 }
 
@@ -81,17 +66,13 @@ impl ToPretty for RcExpr {
             Expr::Var(_, v) => v.pretty(allocator),
             Expr::Name(_, n) => allocator.text(n),
             Expr::Let(_, scope, _) => {
-                let binding_docs =
-                    scope
-                        .unsafe_pattern
-                        .unsafe_pattern
-                        .iter()
-                        .map(|(Binder(fv), Embed(def))| {
-                            fv.pretty(allocator)
-                                .append(allocator.text(" = "))
-                                .append(def.pretty(allocator))
-                                .group()
-                        });
+                let binding_docs = scope.pattern.iter().map(|(name, def)| {
+                    allocator
+                        .text(name.clone())
+                        .append(allocator.text(" = "))
+                        .append(def.pretty(allocator))
+                        .group()
+                });
 
                 allocator
                     .text("let ")
@@ -102,7 +83,7 @@ impl ToPretty for RcExpr {
                     )
                     .append(allocator.line())
                     .append(allocator.text("in "))
-                    .append(scope.unsafe_body.pretty(allocator))
+                    .append(scope.body.pretty(allocator))
                     .group()
             }
             Expr::Intrinsic(_, name) => allocator.text(name),
@@ -195,16 +176,16 @@ impl ToPretty for RcExpr {
             }
             Expr::Lam(_, _, scope) => {
                 let parameter_docs = scope
-                    .unsafe_pattern
+                    .pattern
                     .iter()
-                    .map(|Binder(fv)| fv.pretty(allocator));
+                    .map(|name| allocator.text(name.clone()));
 
                 allocator
                     .text("\u{03bb}(")
                     .append(allocator.intersperse(parameter_docs, allocator.text(", ")))
                     .append(allocator.text(")."))
                     .append(allocator.line())
-                    .append(scope.unsafe_body.pretty(allocator).nest(2))
+                    .append(scope.body.pretty(allocator).nest(2))
                     .group()
             }
             Expr::App(_, f, xs) => {
@@ -267,7 +248,7 @@ pub mod tests {
 
     #[test]
     pub fn test_var() {
-        assert_eq!(prettify(&free("x")), "x\n");
+        assert_eq!(prettify(&var(free("x"))), "x\n");
     }
 
     #[test]

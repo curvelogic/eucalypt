@@ -2,7 +2,6 @@
 use crate::common::sourcemap::{HasSmid, Smid};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
-use moniker::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -17,8 +16,8 @@ pub fn naked_anaphora(expr: &RcExpr) -> Option<Anaphor<Smid, i32>> {
 
 /// Sort and arrange anaphora into a binding pattern
 pub fn to_binding_pattern(
-    anaphora: &HashMap<Anaphor<Smid, i32>, FreeVar<String>>,
-) -> Result<Vec<FreeVar<String>>, CoreError> {
+    anaphora: &HashMap<Anaphor<Smid, i32>, String>,
+) -> Result<Vec<String>, CoreError> {
     let (numberless, numbered, section) = sort_anaphora(anaphora.keys().cloned());
 
     let mut types = 0;
@@ -48,16 +47,13 @@ pub fn to_binding_pattern(
     } else if !numbered.is_empty() {
         let numbers: Vec<_> = numbered.iter().filter_map(|ana| ana.number()).collect();
         let max = numbers.iter().max().unwrap();
-        let mut v: Vec<Option<FreeVar<String>>> = vec![None; *max as usize + 1];
+        let mut v: Vec<Option<String>> = vec![None; *max as usize + 1];
         for n in numbers {
             v[n as usize] = Some(anaphora.get(&Anaphor::ExplicitNumbered(n)).unwrap().clone());
         }
         Ok(v.into_iter()
             .enumerate()
-            .map(|(i, x)| {
-                x.or_else(|| Some(FreeVar::fresh_named(format!("_d{i}"))))
-                    .unwrap()
-            })
+            .map(|(i, x)| x.unwrap_or_else(|| format!("_d{i}")))
             .collect())
     } else {
         panic!("empty anaphora when forming binding pattern")
@@ -126,46 +122,43 @@ impl PrefixAnaphorIncantation {
     }
 
     /// Determine the number of the anaphor (e.g. _8 -> 8, •0 -> 0)
-    pub fn number(&self, free_var: &FreeVar<String>) -> Option<i32> {
-        match free_var.pretty_name {
-            Some(ref n) => self.number_str(n),
-            None => None,
-        }
+    pub fn number(&self, name: &str) -> Option<i32> {
+        self.number_str(name)
     }
 
-    /// Create a fresh FreeVar for this number
-    pub fn with_number(&self, n: i32) -> FreeVar<String> {
-        FreeVar::fresh_named(format!("{}{}", self.prefix, n))
+    /// Create a name for this anaphor number
+    pub fn with_number(&self, n: i32) -> String {
+        format!("{}{}", self.prefix, n)
     }
 
-    /// Create a fresh FreeVar for the unnumbered anaphor
-    pub fn numberless(&self) -> FreeVar<String> {
-        FreeVar::fresh_named(format!("{}", self.prefix))
+    /// Create a name for the unnumbered anaphor
+    pub fn numberless(&self) -> String {
+        format!("{}", self.prefix)
     }
 
-    /// Take a set of free var anaphora occuring in an expression and
+    /// Take a set of anaphor name occurrences in an expression and
     /// return a list of binders for a lambda (including "skipped" anaphora)
-    pub fn to_binding_pattern(&self, free_vars: HashSet<FreeVar<String>>) -> Vec<Binder<String>> {
-        let mut vars: Vec<FreeVar<String>> = free_vars.into_iter().collect();
-        vars.sort_unstable_by_key(|v| v.pretty_name.clone());
+    pub fn to_binding_pattern(&self, names: HashSet<String>) -> Vec<String> {
+        let mut vars: Vec<String> = names.into_iter().collect();
+        vars.sort_unstable();
         let max = vars.last().and_then(|v| self.number(v)).unwrap();
 
         if max as usize > vars.len() - 1 {
-            let mut padded: Vec<Binder<String>> = Vec::with_capacity((max + 1) as usize);
+            let mut padded: Vec<String> = Vec::with_capacity((max + 1) as usize);
             let mut i = 0;
             let mut v = 0;
             while v <= max {
                 if self.number(&vars[i]).unwrap() == v {
-                    padded.push(Binder(vars[i].clone()));
+                    padded.push(vars[i].clone());
                     i += 1;
                 } else {
-                    padded.push(Binder(self.with_number(v)));
+                    padded.push(self.with_number(v));
                 }
                 v += 1;
             }
             padded
         } else {
-            vars.into_iter().map(Binder).collect()
+            vars
         }
     }
 }
@@ -176,13 +169,10 @@ pub mod tests {
 
     #[test]
     pub fn test_number() {
-        assert_eq!(BLOCK_ANAPHORA.number(&FreeVar::fresh_named("•8")), Some(8));
-        assert_eq!(BLOCK_ANAPHORA.number(&FreeVar::fresh_named("•")), None);
-        assert_eq!(
-            EXPR_ANAPHORA.number(&FreeVar::fresh_named("_999")),
-            Some(999)
-        );
-        assert_eq!(EXPR_ANAPHORA.number(&FreeVar::fresh_named("_")), None);
+        assert_eq!(BLOCK_ANAPHORA.number("•8"), Some(8));
+        assert_eq!(BLOCK_ANAPHORA.number("•"), None);
+        assert_eq!(EXPR_ANAPHORA.number("_999"), Some(999));
+        assert_eq!(EXPR_ANAPHORA.number("_"), None);
     }
 
     #[test]
@@ -199,25 +189,25 @@ pub mod tests {
 
     #[test]
     pub fn to_binding_pattern_with_complete_anaphora_usage() {
-        let fvs: HashSet<_> = (0..3).map(|i| BLOCK_ANAPHORA.with_number(i)).collect();
-        let pattern = BLOCK_ANAPHORA.to_binding_pattern(fvs);
+        let names: HashSet<_> = (0..3).map(|i| BLOCK_ANAPHORA.with_number(i)).collect();
+        let pattern = BLOCK_ANAPHORA.to_binding_pattern(names);
         let pattern_numbers: Vec<Option<i32>> = pattern
             .iter()
-            .map(|binder: &Binder<String>| BLOCK_ANAPHORA.number(&binder.0))
+            .map(|name: &String| BLOCK_ANAPHORA.number(name))
             .collect();
         assert_eq!(pattern_numbers, vec![Some(0), Some(1), Some(2)]);
     }
 
     #[test]
     pub fn to_binding_pattern_with_incomplete_anaphora_usage() {
-        let mut fvs: HashSet<FreeVar<String>> = HashSet::new();
-        fvs.insert(BLOCK_ANAPHORA.with_number(4));
-        fvs.insert(BLOCK_ANAPHORA.with_number(2));
+        let mut names: HashSet<String> = HashSet::new();
+        names.insert(BLOCK_ANAPHORA.with_number(4));
+        names.insert(BLOCK_ANAPHORA.with_number(2));
 
-        let pattern = BLOCK_ANAPHORA.to_binding_pattern(fvs);
+        let pattern = BLOCK_ANAPHORA.to_binding_pattern(names);
         let pattern_numbers: Vec<Option<i32>> = pattern
             .iter()
-            .map(|binder: &Binder<String>| BLOCK_ANAPHORA.number(&binder.0))
+            .map(|name: &String| BLOCK_ANAPHORA.number(name))
             .collect();
         assert_eq!(
             pattern_numbers,
@@ -230,7 +220,7 @@ pub mod tests {
         let ana0 = free("_0");
         let ana1 = free("_1");
 
-        let mut hm: HashMap<Anaphor<Smid, i32>, FreeVar<String>> = HashMap::new();
+        let mut hm: HashMap<Anaphor<Smid, i32>, String> = HashMap::new();
         hm.insert(Anaphor::ExplicitNumbered(0), ana0.clone());
         hm.insert(Anaphor::ExplicitNumbered(1), ana1.clone());
         assert_eq!(to_binding_pattern(&hm).unwrap(), vec![ana0, ana1]);

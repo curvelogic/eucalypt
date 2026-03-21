@@ -6,12 +6,12 @@ use crate::{
         sourcemap::{Smid, SourceMap},
     },
     core::{
-        doc::DeclarationDocumentation, error::CoreError, expr::*, target::*, unit::TranslationUnit,
+        binding::Var, doc::DeclarationDocumentation, error::CoreError, expr::*, target::*,
+        unit::TranslationUnit,
     },
     syntax::input::*,
 };
 use codespan::Span;
-use moniker::FreeVar;
 use std::collections::{HashMap, HashSet};
 
 /// A monad specification registered for a bracket pair or used inline in block metadata.
@@ -37,7 +37,7 @@ pub enum MonadSpec {
 pub struct Desugarer<'smap> {
     /// While in the scope of anaphoric string pattern, collect all the
     /// anaphora for processing at the boundary the pattern
-    pending_string_anaphora: HashMap<Anaphor<Smid, i32>, FreeVar<String>>,
+    pending_string_anaphora: HashMap<Anaphor<Smid, i32>, String>,
     /// Targets discovered
     targets: HashSet<Target>,
     /// Doc strings discovered (path, doc)
@@ -48,8 +48,8 @@ pub struct Desugarer<'smap> {
     contents: &'smap HashMap<Input, Content<'smap>>,
     /// SourceMap
     source_map: &'smap mut SourceMap,
-    /// Track variable names so we mint appropriate free vars
-    env: DefaultingEnvironment<String, FreeVar<String>>,
+    /// Track variable names so we mint appropriate names
+    env: DefaultingEnvironment<String, String>,
     /// Current usize
     file: Vec<usize>,
     /// Registry mapping bracket pair names (e.g. `"⟦⟧"`) to their monad spec.
@@ -73,7 +73,7 @@ impl<'smap> Desugarer<'smap> {
             stack: vec![],
             contents,
             source_map,
-            env: DefaultingEnvironment::new(|k| FreeVar::fresh_named(k)),
+            env: DefaultingEnvironment::new(|k: &String| k.clone()),
             file: vec![],
             monad_registry: HashMap::new(),
         }
@@ -149,13 +149,13 @@ impl<'smap> Desugarer<'smap> {
         ast.desugar(self)
     }
 
-    /// Reference to the name to free_var representation environment
-    pub fn env(&self) -> &DefaultingEnvironment<String, FreeVar<String>> {
+    /// Reference to the name to variable name environment
+    pub fn env(&self) -> &DefaultingEnvironment<String, String> {
         &self.env
     }
 
-    /// Mutable reference to the name to free_var representation environment
-    pub fn env_mut(&mut self) -> &mut DefaultingEnvironment<String, FreeVar<String>> {
+    /// Mutable reference to the name to variable name environment
+    pub fn env_mut(&mut self) -> &mut DefaultingEnvironment<String, String> {
         &mut self.env
     }
 
@@ -186,19 +186,19 @@ impl<'smap> Desugarer<'smap> {
     }
 
     /// Reference to the pending string anaphora for calculating binders
-    pub fn pending_string_anaphora(&self) -> &HashMap<Anaphor<Smid, i32>, FreeVar<String>> {
+    pub fn pending_string_anaphora(&self) -> &HashMap<Anaphor<Smid, i32>, String> {
         &self.pending_string_anaphora
     }
 
     /// Add a pending string anaphor
-    pub fn add_pending_string_anaphor(&mut self, anaphor: Anaphor<Smid, i32>) -> FreeVar<String> {
-        let var = free(&format!("{anaphor}"));
-        self.pending_string_anaphora.insert(anaphor, var.clone());
-        var
+    pub fn add_pending_string_anaphor(&mut self, anaphor: Anaphor<Smid, i32>) -> String {
+        let name = free(&format!("{anaphor}"));
+        self.pending_string_anaphora.insert(anaphor, name.clone());
+        name
     }
 
-    /// Return the appropriate var to use for `name` in this scope
-    pub fn var(&mut self, name: &str) -> moniker::FreeVar<String> {
+    /// Return the appropriate var name to use for `name` in this scope
+    pub fn var(&mut self, name: &str) -> String {
         self.env.encounter(name.to_string());
         self.env.get(&name.to_string()).unwrap().clone()
     }
@@ -213,8 +213,8 @@ impl<'smap> Desugarer<'smap> {
     pub fn varify(&mut self, expr: RcExpr) -> RcExpr {
         match &*expr.inner {
             Expr::Name(smid, name) => {
-                let var = self.var(name);
-                RcExpr::from(Expr::Var(*smid, moniker::Var::Free(var)))
+                let var_name = self.var(name);
+                RcExpr::from(Expr::Var(*smid, Var::Free(var_name)))
             }
             _ => expr,
         }

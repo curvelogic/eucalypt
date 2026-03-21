@@ -9,7 +9,6 @@ use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use codespan::{ByteIndex, ByteOffset, Span};
 use codespan_reporting::files::SimpleFiles;
 use lazy_static::lazy_static;
-use moniker::{Embed, FreeVar};
 use regex::{Regex, RegexSet};
 use std::{collections::HashMap, iter};
 use std::{convert::TryInto, str::FromStr};
@@ -121,17 +120,17 @@ impl<'smap> Receiver<'smap> {
         {
             let smid = self.new_smid(Span::new(start, end));
 
-            let fvs: HashMap<String, FreeVar<String>> =
-                entries.iter().map(|(k, _)| (k.clone(), free(k))).collect();
             let kvs = entries
                 .iter()
                 .map(|(k, v)| {
                     (
-                        fvs.get(k)
-                            .expect("free variable should exist for key")
-                            .clone(),
+                        k.clone(),
                         v.substs_free(&|n| {
-                            fvs.get(n).map(|fv| core::var(Smid::default(), fv.clone()))
+                            if entries.iter().any(|(entry_k, _)| entry_k == n) {
+                                Some(core::var(Smid::default(), n.to_string()))
+                            } else {
+                                None
+                            }
                         }),
                     )
                 })
@@ -204,21 +203,7 @@ impl<'smap> Receiver<'smap> {
     ) -> Result<Vec<(String, RcExpr)>, SourceError> {
         match &*expr.inner {
             Expr::Let(_, scope, LetType::DefaultBlockLet) => {
-                let (binders, _body) = scope.clone().unbind();
-                let entries: Vec<(String, RcExpr)> = binders
-                    .unrec()
-                    .into_iter()
-                    .map(|(binder, Embed(value))| {
-                        let name = binder.0.pretty_name.clone().ok_or_else(|| {
-                            SourceError::InvalidYaml(
-                                "merge key source has entry without a name".to_string(),
-                                self.file_id,
-                                error_span,
-                            )
-                        })?;
-                        Ok::<_, SourceError>((name, value))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+                let entries: Vec<(String, RcExpr)> = scope.pattern.clone();
                 Ok(entries)
             }
             Expr::List(_, items) => {
@@ -357,7 +342,7 @@ impl<'smap> Receiver<'smap> {
             .map_err(|c| SourceError::EmbeddedCoreError(c, file_id, span))?;
 
         // Extract parameter names from the Rowan ApplyTuple
-        let mut fvs: HashMap<String, FreeVar<String>> = HashMap::new();
+        let mut param_names: Vec<String> = Vec::new();
         for item in head.items() {
             // Each item in the ApplyTuple should be a single identifier
             let elements: Vec<_> = item.elements().collect();
@@ -365,17 +350,22 @@ impl<'smap> Receiver<'smap> {
                 if let crate::syntax::rowan::ast::Element::Name(name) = &elements[0] {
                     if let Some(identifier) = name.identifier() {
                         if let Some(param_name) = identifier.name() {
-                            fvs.insert(param_name.to_string(), free(param_name));
+                            param_names.push(param_name.to_string());
                         }
                     }
                 }
             }
         }
 
-        let lam_body =
-            lam_body.substs_free(&|n| fvs.get(n).map(|fv| core::var(Smid::default(), fv.clone())));
+        let lam_body = lam_body.substs_free(&|n| {
+            if param_names.contains(&n.to_string()) {
+                Some(core::var(Smid::default(), n.to_string()))
+            } else {
+                None
+            }
+        });
 
-        let core = acore::lam(fvs.values().cloned().collect(), lam_body);
+        let core = acore::lam(param_names, lam_body);
         Ok(core)
     }
 }
@@ -710,12 +700,12 @@ fn parse_bool(text: &str) -> bool {
 pub mod tests {
     use super::*;
     use crate::core::expr::acore;
+    use crate::core::expr::tests::smid_strip;
     use codespan_reporting::files::SimpleFiles;
-    use moniker::assert_term_eq;
     use std::iter;
 
     fn parse(text: &str) -> RcExpr {
-        try_parse(text).expect("YAML parse failed")
+        smid_strip(try_parse(text).expect("YAML parse failed"))
     }
 
     fn try_parse(text: &str) -> Result<RcExpr, SourceError> {
@@ -743,20 +733,20 @@ z: !!int 1234232353
                 ),
             ),
             (free("x"), acore::str("y")),
-            (free("z"), acore::num(12342323535_u64)),
+            (free("z"), acore::num(1234232353_u64)),
         ]);
 
-        assert_term_eq!(parsed, expected);
+        assert_eq!(bound(parsed), bound(expected));
     }
 
     #[test]
     pub fn test_accepts_empty_input() {
-        assert_term_eq!(parse(""), acore::block(iter::empty()));
+        assert_eq!(bound(parse("")), bound(acore::block(iter::empty())));
     }
 
     #[test]
     pub fn test_parses_key_value() {
-        assert_term_eq!(
+        assert_eq!(
             parse("a: !!int 1234"),
             acore::default_let(vec![(free("a"), acore::num(1234))])
         );
@@ -764,7 +754,7 @@ z: !!int 1234232353
 
     #[test]
     pub fn test_parses_json_data() {
-        assert_term_eq!(
+        assert_eq!(
             parse(" { a: [1, 2, 3], b: {x: \"y\"} } "),
             acore::default_let(vec![
                 (
@@ -782,7 +772,7 @@ z: !!int 1234232353
     #[test]
     pub fn test_parses_bools() {
         let sample = "a: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE ";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (free("a"), acore::bool_(true)),
@@ -908,7 +898,7 @@ z: !!int 1234232353
         // Quoted strings should remain strings, not be converted to timestamps
         let parsed = parse(r#"ts: "2023-01-15T10:30:00Z""#);
         let expected = acore::default_let(vec![(free("ts"), acore::str("2023-01-15T10:30:00Z"))]);
-        assert_term_eq!(parsed, expected);
+        assert_eq!(bound(parsed), bound(expected));
     }
 
     #[test]
@@ -950,7 +940,7 @@ z: !!int 1234232353
     #[test]
     pub fn test_anchor_alias_with_number() {
         let sample = "value: &val 42\nref: *val";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (free("value"), acore::num(42)),
@@ -962,7 +952,7 @@ z: !!int 1234232353
     #[test]
     pub fn test_anchor_alias_with_list() {
         let sample = "items: &items [1, 2, 3]\ncopy: *items";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (
@@ -980,7 +970,7 @@ z: !!int 1234232353
     #[test]
     pub fn test_anchor_alias_with_mapping() {
         let sample = "base: &base\n  x: 1\n  y: 2\nref: *base";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (
@@ -1004,7 +994,7 @@ z: !!int 1234232353
     #[test]
     pub fn test_multiple_aliases_same_anchor() {
         let sample = "source: &src hello\na: *src\nb: *src";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (free("source"), acore::str("hello")),
@@ -1036,7 +1026,7 @@ z: !!int 1234232353
     pub fn test_nested_anchors() {
         // Anchor within an anchored structure
         let sample = "outer: &outer\n  inner: &inner 42\nref_outer: *outer\nref_inner: *inner";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (
@@ -1055,7 +1045,7 @@ z: !!int 1234232353
     #[test]
     pub fn test_alias_in_list() {
         let sample = "name: &n Alice\npeople: [*n, Bob, *n]";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (free("name"), acore::str("Alice")),
@@ -1077,7 +1067,7 @@ z: !!int 1234232353
     pub fn test_merge_key_single() {
         // Single merge: <<: *alias
         let sample = "base: &base\n  x: 1\n  y: 2\nderived:\n  <<: *base\n  z: 3";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (
@@ -1103,7 +1093,7 @@ z: !!int 1234232353
     pub fn test_merge_key_override() {
         // Later keys override merged values
         let sample = "base: &base\n  x: 1\n  y: 2\nderived:\n  <<: *base\n  y: 99";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (
@@ -1128,7 +1118,7 @@ z: !!int 1234232353
     pub fn test_merge_key_explicit_before() {
         // Explicit keys before merge also override
         let sample = "base: &base\n  x: 1\nderived:\n  x: 99\n  <<: *base";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (
@@ -1147,7 +1137,7 @@ z: !!int 1234232353
     pub fn test_merge_key_multiple() {
         // Multiple merge: <<: [*a, *b] - merge in order, later overrides earlier
         let sample = "a: &a\n  x: 1\nb: &b\n  x: 2\n  y: 3\nderived:\n  <<: [*a, *b]\n  z: 4";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![
                 (
@@ -1177,7 +1167,7 @@ z: !!int 1234232353
     pub fn test_merge_key_inline() {
         // Inline merge: <<: {key: value}
         let sample = "derived:\n  <<: {x: 1, y: 2}\n  z: 3";
-        assert_term_eq!(
+        assert_eq!(
             parse(sample),
             acore::default_let(vec![(
                 free("derived"),

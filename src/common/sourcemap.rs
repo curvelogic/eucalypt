@@ -3,7 +3,6 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     files::{Files, SimpleFiles},
 };
-use moniker::*;
 use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::{fmt, ops::Range};
@@ -73,21 +72,6 @@ impl Smid {
     pub fn fake(index: usize) -> Smid {
         Smid::new(index)
     }
-}
-
-/// SMIDs are ignorable for name binding
-impl BoundTerm<String> for Smid {
-    fn term_eq(&self, _: &Smid) -> bool {
-        true
-    }
-
-    fn close_term(&mut self, _: ScopeState, _: &impl OnFreeFn<String>) {}
-
-    fn open_term(&mut self, _: ScopeState, _: &impl OnBoundFn<String>) {}
-
-    fn visit_vars(&self, _: &mut impl FnMut(&Var<String>)) {}
-
-    fn visit_mut_vars(&mut self, _: &mut impl FnMut(&mut Var<String>)) {}
 }
 
 /// Anything that has a SMID identifying a source location.

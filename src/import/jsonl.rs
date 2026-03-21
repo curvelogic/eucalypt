@@ -43,14 +43,14 @@ pub fn read_jsonl<'smap>(
 mod tests {
     use super::*;
     use crate::core::expr::acore;
+    use crate::core::expr::tests::smid_strip;
     use codespan_reporting::files::SimpleFiles;
-    use moniker::assert_term_eq;
 
     fn parse(text: &str) -> RcExpr {
         let mut sm = SourceMap::new();
         let mut files = SimpleFiles::new();
         let file_id = files.add("test.jsonl".to_string(), text.to_string());
-        read_jsonl(&mut files, &mut sm, file_id, text).unwrap()
+        smid_strip(read_jsonl(&mut files, &mut sm, file_id, text).unwrap())
     }
 
     #[test]
@@ -59,16 +59,10 @@ mod tests {
 {"name": "Bob"}"#;
         let result = parse(input);
         let expected = acore::list(vec![
-            acore::default_let(vec![(
-                moniker::FreeVar::fresh_named("name"),
-                acore::str("Alice"),
-            )]),
-            acore::default_let(vec![(
-                moniker::FreeVar::fresh_named("name"),
-                acore::str("Bob"),
-            )]),
+            acore::default_let(vec![("name".to_string(), acore::str("Alice"))]),
+            acore::default_let(vec![("name".to_string(), acore::str("Bob"))]),
         ]);
-        assert_term_eq!(result, expected);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -78,10 +72,10 @@ mod tests {
 {"b": 2}"#;
         let result = parse(input);
         let expected = acore::list(vec![
-            acore::default_let(vec![(moniker::FreeVar::fresh_named("a"), acore::num(1))]),
-            acore::default_let(vec![(moniker::FreeVar::fresh_named("b"), acore::num(2))]),
+            acore::default_let(vec![("a".to_string(), acore::num(1))]),
+            acore::default_let(vec![("b".to_string(), acore::num(2))]),
         ]);
-        assert_term_eq!(result, expected);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -89,7 +83,7 @@ mod tests {
         let input = "1\n   \n2";
         let result = parse(input);
         let expected = acore::list(vec![acore::num(1), acore::num(2)]);
-        assert_term_eq!(result, expected);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -101,16 +95,13 @@ mod tests {
 null"#;
         let result = parse(input);
         let expected = acore::list(vec![
-            acore::default_let(vec![(
-                moniker::FreeVar::fresh_named("obj"),
-                acore::bool_(true),
-            )]),
+            acore::default_let(vec![("obj".to_string(), acore::bool_(true))]),
             acore::list(vec![acore::num(1), acore::num(2), acore::num(3)]),
             acore::str("string"),
             acore::num(42),
             acore::null(),
         ]);
-        assert_term_eq!(result, expected);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -118,10 +109,10 @@ null"#;
         let input = r#"{"single": "value"}"#;
         let result = parse(input);
         let expected = acore::list(vec![acore::default_let(vec![(
-            moniker::FreeVar::fresh_named("single"),
+            "single".to_string(),
             acore::str("value"),
         )])]);
-        assert_term_eq!(result, expected);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -129,6 +120,6 @@ null"#;
         let input = "1\n2\n";
         let result = parse(input);
         let expected = acore::list(vec![acore::num(1), acore::num(2)]);
-        assert_term_eq!(result, expected);
+        assert_eq!(result, expected);
     }
 }

@@ -1,23 +1,19 @@
 //! Distribute fixity metadata from definition site to call site.
 use crate::common::environment::SimpleEnvironment;
 use crate::common::sourcemap::Smid;
+use crate::core::binding::Var;
 use crate::core::error::CoreError;
 use crate::core::expr::*;
-use moniker::FreeVar;
-use moniker::Rec;
-use moniker::Scope;
-use moniker::Var::Free;
-use moniker::{Binder, Embed};
 use std::collections::HashMap;
 
 pub fn distribute(expr: RcExpr) -> Result<RcExpr, CoreError> {
     Distributor::default().dist(expr)
 }
 
-type Binding = (Binder<String>, Embed<RcExpr>);
+type Binding = (String, RcExpr);
 type OpMeta = (Smid, Fixity, Precedence);
-type Frame = HashMap<FreeVar<String>, OpMeta>;
-type Env = SimpleEnvironment<FreeVar<String>, OpMeta>;
+type Frame = HashMap<String, OpMeta>;
+type Env = SimpleEnvironment<String, OpMeta>;
 
 /// Distribute maintains state as we traverse through the tree
 /// accumulating correspondence between names and operator metadata
@@ -39,7 +35,7 @@ impl Distributor {
                     (expr, None)
                 }
             }
-            Expr::Operator(s, f, p, e) => (e.clone(), Some((*s, *f, *p))),
+            Expr::Operator(s, f, p, _e) => (_e.clone(), Some((*s, *f, *p))),
             _ => (expr, None),
         }
     }
@@ -52,11 +48,11 @@ impl Distributor {
         let mut frame = Frame::new();
         let mut rebound = Vec::new();
 
-        for (Binder(fv), Embed(value)) in bindings {
+        for (name, value) in bindings {
             let (expr, op_meta) = Self::expose_definition(value.clone());
-            rebound.push((Binder(fv.clone()), Embed(expr.clone())));
+            rebound.push((name.clone(), expr));
             if let Some(op_data) = op_meta {
-                frame.insert(fv.clone(), op_data);
+                frame.insert(name.clone(), op_data);
             }
         }
 
@@ -67,20 +63,25 @@ impl Distributor {
     pub fn dist(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         match &*expr.inner {
             Expr::Let(s, scope, t) => {
-                // - Clone...
-                let (rec_bindings, body) = scope.clone().unbind();
+                // Open the scope fully (both binding values and body), mirroring
+                // the original `scope.clone().unbind()` from the moniker API.
+                // This is necessary so that `dist` can find operator free
+                // variables inside binding values as well as in the body.
+                let (open_bindings, body) = open_let_scope_full(scope);
 
-                let (mut new_bindings, ops) = Self::process_bindings(&rec_bindings.unrec());
+                let (mut new_bindings, ops) = Self::process_bindings(&open_bindings);
 
                 self.env.push(ops);
 
-                for (_, Embed(value)) in &mut new_bindings {
+                for (_, value) in &mut new_bindings {
                     *value = self.dist(value.clone())?;
                 }
 
+                // Re-close both the binding values and the body with
+                // `close_let_scope` (equivalent to moniker's `Scope::new`).
                 let ret = RcExpr::from(Expr::Let(
                     *s,
-                    Scope::new(Rec::new(new_bindings), self.dist(body)?),
+                    close_let_scope(new_bindings, self.dist(body)?),
                     *t,
                 ));
 
@@ -88,8 +89,8 @@ impl Distributor {
 
                 Ok(ret)
             }
-            Expr::Var(call_smid, Free(fv)) => {
-                if let Some((def_smid, fixity, precedence)) = self.env.get(fv) {
+            Expr::Var(call_smid, Var::Free(name)) => {
+                if let Some((def_smid, fixity, precedence)) = self.env.get(name) {
                     // Prefer the call-site Smid (from the user's source) over the
                     // definition-site Smid (from the prelude) so that infix operator
                     // applications carry a source location pointing at the actual
@@ -118,13 +119,11 @@ impl Distributor {
 pub mod tests {
     use super::acore::*;
     use super::*;
-    use moniker::assert_term_eq;
-    use moniker::FreeVar;
 
     #[test]
     pub fn test_sample_1() {
-        let plus = FreeVar::fresh_named("+");
-        let minus = FreeVar::fresh_named("-");
+        let plus = free("+");
+        let minus = free("-");
 
         let expr = let_(
             vec![
@@ -139,13 +138,13 @@ pub mod tests {
             soup(vec![num(1), infixl(50, var(plus)), num(2)]),
         );
 
-        assert_term_eq!(distribute(expr).unwrap(), expected);
+        assert_eq!(distribute(expr).unwrap(), expected);
     }
 
     #[test]
     pub fn test_sample_2() {
-        let plus = FreeVar::fresh_named("+");
-        let minus = FreeVar::fresh_named("-");
+        let plus = free("+");
+        let minus = free("-");
 
         let expr = let_(
             vec![(plus.clone(), infixl(50, bif("FOO")))],
@@ -163,13 +162,13 @@ pub mod tests {
             ),
         );
 
-        assert_term_eq!(distribute(expr).unwrap(), expected);
+        assert_eq!(distribute(expr).unwrap(), expected);
     }
 
     #[test]
     pub fn test_sample_3() {
-        let plus = FreeVar::fresh_named("+");
-        let minus = FreeVar::fresh_named("-");
+        let plus = free("+");
+        let minus = free("-");
 
         let expr = let_(
             vec![
@@ -184,6 +183,6 @@ pub mod tests {
             soup(vec![num(1), infixr(90, var(minus)), num(2)]),
         );
 
-        assert_term_eq!(distribute(expr).unwrap(), expected);
+        assert_eq!(distribute(expr).unwrap(), expected);
     }
 }
