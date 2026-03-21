@@ -454,6 +454,11 @@ pub fn fmt(
                     "cannot format array".to_string(),
                 ))
             }
+            Native::Vec(_) => {
+                return Err(PrintfError::InvalidFormatString(
+                    "cannot format vec".to_string(),
+                ))
+            }
         }
         Ok(output)
     } else if !fmt_string.starts_with('%') {

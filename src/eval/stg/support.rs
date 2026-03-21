@@ -16,6 +16,7 @@ use crate::eval::{
         ndarray::HeapNdArray,
         set::HeapSet,
         syntax::StgBuilder,
+        vec::HeapVec,
     },
     stg::tags::DataConstructor,
 };
@@ -32,6 +33,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Sym(_) => IntrinsicType::Symbol,
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
         Native::NdArray(_) => IntrinsicType::Array,
+        Native::Vec(_) => IntrinsicType::Vec,
         Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
     }
 }
@@ -575,6 +577,40 @@ pub fn machine_return_ndarray(
     machine.set_closure(SynClosure::new(
         view.alloc(HeapSyn::Atom {
             evaluand: Ref::V(Native::NdArray(ptr)),
+        })?
+        .as_ptr(),
+        machine.root_env(),
+    ))
+}
+
+/// Helper for intrinsics to access a vec arg.
+pub fn vec_arg<'guard>(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView<'guard>,
+    arg: &Ref,
+) -> Result<ScopedPtr<'guard, HeapVec>, ExecutionError> {
+    let native = machine.nav(view).resolve_native(arg)?;
+    if let Native::Vec(ptr) = native {
+        Ok(view.scoped(ptr))
+    } else {
+        Err(ExecutionError::TypeMismatch(
+            machine.annotation(),
+            IntrinsicType::Vec,
+            native_type(&native),
+        ))
+    }
+}
+
+/// Return a vec from an intrinsic.
+pub fn machine_return_vec(
+    machine: &mut dyn IntrinsicMachine,
+    view: MutatorHeapView,
+    vec: HeapVec,
+) -> Result<(), ExecutionError> {
+    let ptr = view.alloc(vec)?.as_ptr();
+    machine.set_closure(SynClosure::new(
+        view.alloc(HeapSyn::Atom {
+            evaluand: Ref::V(Native::Vec(ptr)),
         })?
         .as_ptr(),
         machine.root_env(),

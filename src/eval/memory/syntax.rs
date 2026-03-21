@@ -14,6 +14,7 @@ use super::ndarray::HeapNdArray;
 use super::set::HeapSet;
 use super::string::HeapString;
 use super::symbol::SymbolId;
+use super::vec::HeapVec;
 use super::{
     alloc::{ScopedPtr, StgObject},
     array::Array,
@@ -48,6 +49,8 @@ pub enum Native {
     Set(RefPtr<HeapSet>),
     /// An n-dimensional array of f64 values
     NdArray(RefPtr<HeapNdArray>),
+    /// A vector of primitive values (O(1) indexed access)
+    Vec(RefPtr<HeapVec>),
 }
 
 impl PartialEq for Native {
@@ -61,6 +64,7 @@ impl PartialEq for Native {
             (Native::Index(_), Native::Index(_)) => true,
             (Native::Set(a), Native::Set(b)) => a == b,
             (Native::NdArray(a), Native::NdArray(b)) => a == b,
+            (Native::Vec(a), Native::Vec(b)) => a == b,
             _ => false,
         }
     }
@@ -79,6 +83,7 @@ impl Native {
             Native::Index(_) => "block index",
             Native::Set(_) => "set",
             Native::NdArray(_) => "array",
+            Native::Vec(_) => "vec",
         }
     }
 }
@@ -108,6 +113,9 @@ impl fmt::Display for Native {
             }
             Native::NdArray(_) => {
                 write!(f, "<array>")
+            }
+            Native::Vec(_) => {
+                write!(f, "<vec>")
             }
         }
     }
@@ -320,6 +328,9 @@ fn mark_ref_heap_pointers<'a>(
         Ref::V(Native::NdArray(ptr)) => {
             marker.mark(*ptr);
         }
+        Ref::V(Native::Vec(ptr)) => {
+            marker.mark(*ptr);
+        }
         _ => {}
     }
 }
@@ -350,6 +361,11 @@ fn update_ref_heap_pointers(r: &mut Ref, heap: &CollectorHeapView<'_>) {
             }
         }
         Ref::V(Native::NdArray(ptr)) => {
+            if let Some(new_ptr) = heap.forwarded_to(*ptr) {
+                *ptr = new_ptr;
+            }
+        }
+        Ref::V(Native::Vec(ptr)) => {
             if let Some(new_ptr) = heap.forwarded_to(*ptr) {
                 *ptr = new_ptr;
             }
@@ -659,6 +675,9 @@ pub mod repr {
             }
             memory::syntax::Ref::V(memory::syntax::Native::NdArray(_)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Sym("<array>".to_string()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::Vec(_)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym("<vec>".to_string()))
             }
         }
     }

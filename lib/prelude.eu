@@ -1518,6 +1518,38 @@ set: {
 
 
 ##
+## Vecs (O(1) indexed access)
+##
+
+` { export: :suppress
+    doc: "Functions for working with vecs — flat primitive sequences with O(1) indexed access." }
+vec: {
+
+  ` "`vec.of(xs)` - convert list `xs` of primitive values to a vec for O(1) indexed access."
+  of: '__VEC.OF'
+
+  ` "`vec.len(v)` - return the number of elements in vec `v`."
+  len: '__VEC.LEN'
+
+  ` "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`."
+  nth: '__VEC.NTH'
+
+  ` "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
+  slice: '__VEC.SLICE'
+
+  ` "`vec.sample(n, seed, v)` - pick `n` random elements from vec `v` without replacement using integer `seed`."
+  sample: '__VEC.SAMPLE'
+
+  ` "`vec.shuffle(seed, v)` - return a new vec with elements of `v` in random order using integer `seed`."
+  shuffle: '__VEC.SHUFFLE'
+
+  ` "`vec.to-list(v)` - convert vec `v` back to a cons-list."
+  to-list: '__VEC.TO_LIST'
+}
+
+
+
+##
 ## N-dimensional arrays (tensors)
 ##
 

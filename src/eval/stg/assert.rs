@@ -132,6 +132,10 @@ fn format_native(n: &Native, view: MutatorHeapView<'_>, machine: &dyn IntrinsicM
                 .join(",");
             format!("<array [{shape}]>")
         }
+        Native::Vec(ptr) => {
+            let v = view.scoped(*ptr);
+            format!("<vec [{}]>", v.len())
+        }
     }
 }
 

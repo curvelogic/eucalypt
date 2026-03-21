@@ -889,6 +889,41 @@ lazy_static! {
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 168
+            name: "VEC.OF",
+            ty: function(vec![list(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 169
+            name: "VEC.LEN",
+            ty: function(vec![unk(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 170
+            name: "VEC.NTH",
+            ty: function(vec![num(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 171
+            name: "VEC.SLICE",
+            ty: function(vec![num(), num(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 172
+            name: "VEC.SAMPLE",
+            ty: function(vec![num(), num(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1, 2],
+    },
+    Intrinsic { // 173
+            name: "VEC.SHUFFLE",
+            ty: function(vec![num(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 174
+            name: "VEC.TO_LIST",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 
