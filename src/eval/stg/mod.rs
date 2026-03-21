@@ -24,6 +24,7 @@ pub mod null;
 pub mod optimiser;
 pub mod panic;
 pub mod parse_string;
+pub mod platform;
 pub mod pretty;
 pub mod printf;
 pub mod prng;
@@ -226,6 +227,8 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(vec::VecSample));
     rt.add(Box::new(vec::VecShuffle));
     rt.add(Box::new(vec::VecToList));
+    rt.add(Box::new(platform::Os));
+    rt.add(Box::new(platform::Arch));
     rt.prepare(source_map);
     Box::new(rt)
 }

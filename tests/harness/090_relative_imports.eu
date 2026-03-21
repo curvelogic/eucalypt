@@ -1,4 +1,4 @@
-` { import: "aux/aux_relative_import.eu" }
+` { import: "testdata/aux_relative_import.eu" }
 rel: relative-value
 
 ` :suppress

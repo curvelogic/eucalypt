@@ -1,8 +1,11 @@
 "io.exec-with: parameterised exec spec block evaluates correctly. Uses --allow-io."
 
+` :suppress
+exec-args: if(eu.os = "windows", ["cmd.exe", "/C", "echo", "hello"], ["echo", "hello"])
+
 ` { target: :test requires-io: true }
 test:
-  { :io r: io.exec-with({timeout: 120}, ["echo", "hello"]) }.(
+  { :io r: io.exec-with({timeout: 120}, exec-args) }.(
     if(r.stdout str.matches?("hello.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))
