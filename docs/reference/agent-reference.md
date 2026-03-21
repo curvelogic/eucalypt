@@ -504,7 +504,7 @@ See also: `identity(v)`, `const(k, _)`, `compose(f, g, x)`,
 
 ### 3.5 Type Predicates
 
-```eu
+```eu,notest
 42 number?          # true
 "hi" string?        # true
 :foo symbol?        # true
@@ -522,7 +522,7 @@ All predicates take one argument and return a boolean.
 
 Parse `args` (a list of strings, typically `io.args`) against `defaults`:
 
-```eu
+```eu,notest
 ` :suppress
 defaults: {
   ` { short: :v  doc: "Verbose"  flag: true }

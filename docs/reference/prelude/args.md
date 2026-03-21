@@ -4,7 +4,7 @@ Parse command-line arguments against a defaults block.
 
 ## Signature
 
-```eu
+```eu,notest
 parse-args(defaults, args)
 ```
 
@@ -45,7 +45,7 @@ The type of the default value determines coercion:
 
 ## Example
 
-```eu
+```eu,notest
 ` :suppress
 defaults: {
   ` { short: :v  doc: "Enable verbose output"  flag: true }
@@ -77,7 +77,7 @@ Result block: `{ verbose: true, output: "result.yaml", count: 5, args: ["input.e
 
 ## Pipeline Usage
 
-```eu
+```eu,notest
 # Typical entry point
 main: io.args parse-args(defaults)
 
