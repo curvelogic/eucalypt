@@ -639,8 +639,18 @@ pub fn test_harness_125() {
 }
 
 #[test]
+pub fn test_harness_126() {
+    run_test(&opts("126_type_predicates.eu"));
+}
+
+#[test]
 pub fn test_harness_127() {
     run_test(&opts("127_merge_metadata.eu"));
+}
+
+#[test]
+pub fn test_harness_128() {
+    run_test(&opts("128_parse_args.eu"));
 }
 
 #[test]
@@ -1251,4 +1261,9 @@ pub fn test_error_107() {
 #[test]
 pub fn test_error_108() {
     run_error_test(&error_opts("108_secondary_labels.eu"));
+}
+
+#[test]
+pub fn test_error_109() {
+    run_error_test(&error_opts("109_unknown_arg.eu"));
 }

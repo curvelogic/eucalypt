@@ -869,6 +869,26 @@ lazy_static! {
             ty: function(vec![str_(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 164
+            name: "ISNUMBER",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 165
+            name: "ISSTRING",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 166
+            name: "ISSYMBOL",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 167
+            name: "ISBOOL",
+            ty: function(vec![any(), bool_()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

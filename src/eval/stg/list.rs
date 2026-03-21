@@ -139,6 +139,128 @@ impl StgIntrinsic for IsList {
 
 impl CallGlobal1 for IsList {}
 
+/// ISNUMBER(value)
+///
+/// Return true if the value is a number, false otherwise
+pub struct IsNumber;
+
+impl StgIntrinsic for IsNumber {
+    fn name(&self) -> &str {
+        "ISNUMBER"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedNumber.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsNumber {}
+
+/// ISSTRING(value)
+///
+/// Return true if the value is a string, false otherwise
+pub struct IsString;
+
+impl StgIntrinsic for IsString {
+    fn name(&self) -> &str {
+        "ISSTRING"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedString.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsString {}
+
+/// ISSYMBOL(value)
+///
+/// Return true if the value is a symbol, false otherwise
+pub struct IsSymbol;
+
+impl StgIntrinsic for IsSymbol {
+    fn name(&self) -> &str {
+        "ISSYMBOL"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedSymbol.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsSymbol {}
+
+/// ISBOOL(value)
+///
+/// Return true if the value is a boolean, false otherwise
+pub struct IsBool;
+
+impl StgIntrinsic for IsBool {
+    fn name(&self) -> &str {
+        "ISBOOL"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let is_bool = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. }
+                if *tag == DataConstructor::BoolTrue.tag()
+                    || *tag == DataConstructor::BoolFalse.tag()
+        );
+        machine_return_bool(machine, view, is_bool)
+    }
+}
+
+impl CallGlobal1 for IsBool {}
+
 /// SORT_NUM_LIST — sort a list of numbers in Rust
 ///
 /// The wrapper first applies SeqNumList to force and unbox all elements,

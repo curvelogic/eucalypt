@@ -502,6 +502,48 @@ See also: `identity(v)`, `const(k, _)`, `compose(f, g, x)`,
 `flip(f, x, y)`, `complement(p?)`, `curry(f, x, y)`,
 `uncurry(f, l)`, `cond(l, d)`.
 
+### 3.5 Type Predicates
+
+```eu,notest
+42 number?          # true
+"hi" string?        # true
+:foo symbol?        # true
+true bool?          # true
+{} block?           # true
+[] list?            # true
+42 string?          # false
+```
+
+All predicates take one argument and return a boolean.
+
+### 3.6 Command-line Argument Parsing
+
+#### `parse-args(defaults, args)` — structured CLI argument parsing
+
+Parse `args` (a list of strings, typically `io.args`) against `defaults`:
+
+```eu,notest
+` :suppress
+defaults: {
+  ` { short: :v  doc: "Verbose"  flag: true }
+  verbose: false
+  ` { short: :o  doc: "Output file" }
+  output: "out.yaml"
+  ` { doc: "Repeat count" }
+  count: 1
+}
+
+main: io.args parse-args(defaults)
+```
+
+Returns defaults block with parsed values overridden, plus `args` key for positional arguments.
+
+**Metadata keys:** `short` (symbol, short flag), `doc` (string, help text), `flag` (bool, toggle).
+
+**Supported forms:** `--key value`, `--key=value`, `--flag`, `-x`, `-xy` (combined shorts), positionals, `--help`.
+
+See `docs/reference/prelude/args.md` for full documentation.
+
 ---
 
 ## 4. Pipeline Patterns and Idioms
