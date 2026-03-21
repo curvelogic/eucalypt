@@ -1074,8 +1074,8 @@ fn desugar_monadic_block_implicit(
         desugarer.env_mut().push_keys(bind_names.iter().cloned());
     }
 
-    // Collect the FreeVars while names are in scope.
-    let bind_vars: Vec<moniker::FreeVar<String>> = bind_names
+    // Collect the bound variable names while names are in scope.
+    let bind_vars: Vec<String> = bind_names
         .iter()
         .map(|name| desugarer.env().get(name).unwrap().clone())
         .collect();
