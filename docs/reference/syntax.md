@@ -368,6 +368,9 @@ result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 **Example — identity monad (bracket pair, implicit return):**
 
 ```eu
+id-bind(ma, f): f(ma)
+id-return(a): a
+
 ⟦{}⟧: { :monad bind: id-bind  return: id-return }
 
 result: ⟦ a: 10  b: 20 ⟧    # => { a: 10, b: 20 }
