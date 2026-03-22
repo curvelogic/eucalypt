@@ -89,6 +89,22 @@ jobs:
         env:
           EU_GC_STRESS: "1"
 
+  asan:
+    name: AddressSanitizer
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - name: Build with ASAN
+        run: RUSTFLAGS="-Zsanitizer=address" cargo +nightly build --release --target x86_64-unknown-linux-gnu -Zbuild-std
+      - name: Run harness with ASAN
+        run: ASAN_OPTIONS=detect_leaks=0 ./target/x86_64-unknown-linux-gnu/release/eu test --allow-io tests/harness
+        env:
+          EU_GC_STRESS: "1"
+
   wasm:
     name: WASM Compilation Check
     runs-on: ubuntu-latest

@@ -939,6 +939,11 @@ lazy_static! {
             ty: function(vec![list(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 178
+            name: "seqList",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 
