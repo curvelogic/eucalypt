@@ -96,7 +96,7 @@ The prelude defines the standard precedence levels:
 | 30 | bool-sum | `\|\|`, `∨` |
 | 20 | cat | (catenation) |
 | 10 | apply | `@` |
-| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!`, `//!!` |
+| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!` |
 
 Higher numbers bind more tightly:
 

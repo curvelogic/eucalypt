@@ -339,8 +339,7 @@ Other assertion operators:
 ```eu
 x: 5
 check1: (x > 3) //!
-check2: (x = 0) //!!
-check3: x //=? pos?
+check2: x //=? (> 0)
 ```
 
 ### How do I generate random values?
