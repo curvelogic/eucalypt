@@ -92,21 +92,17 @@ impl StgIntrinsic for SeqNumList {
 impl CallGlobal1 for SeqNumList {}
 
 /// SeqList — deep-force a list of primitives, evaluating each element
-/// and its boxed inner value to WHNF.
+/// to WHNF (and boxed inner values too).
 ///
 /// Unlike `SeqNumList` / `SeqStrList`, this accepts all primitive
 /// types (numbers, strings, symbols).  Used by `VecOf` and
 /// `SetFromList` which need fully-evaluated elements before their
 /// `execute()` methods navigate heap closures.
 ///
-/// For each element, forces to WHNF.  If the result is a boxed
-/// constructor (`BoxedNumber`, `BoxedString`, `BoxedSymbol`), forces
-/// the inner value too — this ensures that computed values (e.g. from
-/// string interpolation) are fully resolved before `extract_primitive`
-/// / `navigate_local_native` attempts to read them.
-///
-/// The returned list reuses the forced/unboxed values, matching the
-/// pattern used by `SeqNumList` / `SeqStrList`.
+/// Uses the same pattern as `SeqNumList`: force head, force inner
+/// (via unbox), recurse on tail, rebuild list.  The only difference
+/// is that it handles all three box types via separate branches
+/// rather than just one.
 pub struct SeqList;
 
 impl StgIntrinsic for SeqList {
@@ -115,15 +111,22 @@ impl StgIntrinsic for SeqList {
     }
 
     fn wrapper(&self, _annotation: Smid) -> LambdaForm {
-        // For boxed values (BoxedNumber/String/Symbol): match
-        // destructures into [inner], force inner, then recurse on tail.
+        // Exactly mirrors SeqNumList/SeqStrList but handles all box types.
         //
-        // Stack after BoxedX match:   [inner] [h t]
-        //   force inner →             [forced_inner] [inner] [h t]
-        //   recurse SeqList(tail) →    [seq_t] [forced_inner] [inner] [h t]
-        //   rebuild: ListCons(lref(1), lref(0))
-        //     = ListCons(forced_inner, seq_t)
-        let unbox_force_then_tail = force(
+        // For each cons cell [h, t]:
+        //   1. Force h to WHNF (switch on list, force on head)
+        //   2. If boxed (BoxedNumber/String/Symbol): unbox to get [inner],
+        //      force inner, recurse on tail, rebuild ListCons(forced_inner, seq_t)
+        //   3. If raw atom: just recurse on tail, rebuild ListCons(forced_h, seq_t)
+
+        // case already destructured BoxedX([inner]) → local(0) = inner
+        // Force inner, recurse on tail, rebuild
+        //
+        // Entry: [inner] [h t]  (inner = local(0), h = lref(1), t = lref(2))
+        // force(local(0)) → [forced] [inner] [h t]
+        // SeqList(lref(3)) = SeqList(t) → [seq_t] [forced] [inner] [h t]
+        // rebuild: ListCons(lref(1), lref(0)) = ListCons(forced, seq_t)
+        let force_inner_then_tail = force(
             local(0),
             force(
                 SeqList.global(lref(3)),
@@ -139,24 +142,25 @@ impl StgIntrinsic for SeqList {
                     (DataConstructor::ListNil.tag(), local(0)),
                     (
                         DataConstructor::ListCons.tag(), // [h t]
-                        // Force head to WHNF, then branch on constructor
+                        // Force head to WHNF then try each box type
+                        // If none match, fall through to raw atom path
                         case(
                             local(0),
                             vec![
                                 (
                                     DataConstructor::BoxedNumber.tag(),
-                                    unbox_force_then_tail.clone(),
+                                    force_inner_then_tail.clone(),
                                 ),
                                 (
                                     DataConstructor::BoxedString.tag(),
-                                    unbox_force_then_tail.clone(),
+                                    force_inner_then_tail.clone(),
                                 ),
                                 (
                                     DataConstructor::BoxedSymbol.tag(),
-                                    unbox_force_then_tail.clone(),
+                                    force_inner_then_tail.clone(),
                                 ),
                             ],
-                            // Fallback: raw atom, already fully evaluated.
+                            // Fallback: raw atom, already at WHNF
                             // [forced_h] [h t]
                             force(
                                 SeqList.global(lref(2)),
