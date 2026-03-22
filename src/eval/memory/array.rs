@@ -358,8 +358,11 @@ impl<T: Sized + Clone> Array<T> {
         if existing_capacity == 0 {
             8
         } else {
+            // Must grow by at least 1 — integer division of small capacities
+            // (e.g. 1/2 = 0) would otherwise leave capacity unchanged, causing
+            // an infinite resize loop and out-of-bounds write in push().
             existing_capacity
-                .checked_add(existing_capacity / 2)
+                .checked_add((existing_capacity / 2).max(1))
                 .expect("cannot grow array")
         }
     }
