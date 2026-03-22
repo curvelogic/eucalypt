@@ -20,15 +20,21 @@ use crate::eval::{
 use crate::eval::machine::env::SynClosure;
 
 use super::{
-    prng::{seed_to_u64, splitmix64},
+    force::SeqNumList,
     support::{
-        machine_return_num, machine_return_vec, native_to_set_primitive, resolve_native_unboxing,
-        set_primitive_to_native, vec_arg,
+        collect_num_list, machine_return_num, machine_return_vec, native_to_set_primitive,
+        resolve_native_unboxing, set_primitive_to_native, vec_arg,
+    },
+    syntax::{
+        dsl::{app_bif, force, lambda, lref},
+        LambdaForm,
     },
 };
 
 use crate::eval::memory::{
-    alloc::ScopedAllocator, array::Array, syntax::LambdaForm, syntax::StgBuilder,
+    alloc::ScopedAllocator,
+    array::Array,
+    syntax::{LambdaForm as HeapLambdaForm, StgBuilder},
 };
 
 /// Resolve a ref from within a cons closure context.
@@ -205,7 +211,11 @@ impl StgIntrinsic for VecNth {
     ) -> Result<(), ExecutionError> {
         let native_n = resolve_native_unboxing(machine, view, &args[0])?;
         let n = match &native_n {
-            Native::Num(num) => num.as_u64().unwrap_or(0) as usize,
+            Native::Num(num) => num
+                .as_u64()
+                .map(|v| v as usize)
+                .or_else(|| num.as_f64().map(|v| v as usize))
+                .unwrap_or(0),
             _ => {
                 return Err(ExecutionError::Panic(
                     Smid::default(),
@@ -268,7 +278,11 @@ impl StgIntrinsic for VecSlice {
         let native_from = resolve_native_unboxing(machine, view, &args[0])?;
         let native_to = resolve_native_unboxing(machine, view, &args[1])?;
         let from = match &native_from {
-            Native::Num(n) => n.as_u64().unwrap_or(0) as usize,
+            Native::Num(n) => n
+                .as_u64()
+                .map(|v| v as usize)
+                .or_else(|| n.as_f64().map(|v| v as usize))
+                .unwrap_or(0),
             _ => {
                 return Err(ExecutionError::Panic(
                     Smid::default(),
@@ -277,7 +291,11 @@ impl StgIntrinsic for VecSlice {
             }
         };
         let to = match &native_to {
-            Native::Num(n) => n.as_u64().unwrap_or(0) as usize,
+            Native::Num(n) => n
+                .as_u64()
+                .map(|v| v as usize)
+                .or_else(|| n.as_f64().map(|v| v as usize))
+                .unwrap_or(0),
             _ => {
                 return Err(ExecutionError::Panic(
                     Smid::default(),
@@ -292,15 +310,36 @@ impl StgIntrinsic for VecSlice {
 
 impl CallGlobal3 for VecSlice {}
 
-/// VEC.SAMPLE — pick `n` random elements without replacement.
+/// VEC.SAMPLE — pick k random elements without replacement using
+/// random floats from an external source (the random stream).
 ///
-/// Uses a partial Fisher-Yates shuffle on an index array seeded by
-/// SplitMix64. Returns a new vec of the sampled elements.
+/// Args: [floats_list, vec] where floats_list is a list of k floats
+/// in [0,1). Uses partial Fisher-Yates on an index array, converting
+/// each float to an index in the remaining range.
 pub struct VecSample;
 
 impl StgIntrinsic for VecSample {
     fn name(&self) -> &str {
         "VEC.SAMPLE"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        use super::syntax::dsl::local;
+        let bif_index: u8 = self.index().try_into().unwrap();
+        // lambda args: [floats, vec]
+        // Force vec first (WHNF), then deep-force floats via SeqNumList
+        lambda(
+            2,
+            force(
+                local(1), // force vec
+                // [forced_vec] [floats, vec]
+                force(
+                    SeqNumList.global(lref(1)),
+                    // [forced_floats] [forced_vec] [floats, vec]
+                    app_bif(bif_index, vec![lref(0), lref(1)]),
+                ),
+            ),
+        )
     }
 
     fn execute(
@@ -310,37 +349,15 @@ impl StgIntrinsic for VecSample {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // args: [n, seed, vec]
-        let native_n = resolve_native_unboxing(machine, view, &args[0])?;
-        let native_seed = resolve_native_unboxing(machine, view, &args[1])?;
-        let n = match &native_n {
-            Native::Num(num) => num.as_u64().unwrap_or(0) as usize,
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "vec.sample: count must be a number".to_string(),
-                ))
-            }
-        };
-        let seed_num = match &native_seed {
-            Native::Num(num) => num.clone(),
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "vec.sample: seed must be a number".to_string(),
-                ))
-            }
-        };
-        let v = vec_arg(machine, view, &args[2])?;
+        // args: [forced_floats, forced_vec]
+        let floats = collect_num_list(machine, view, args[0].clone())?;
+        let v = vec_arg(machine, view, &args[1])?;
         let len = v.len();
-        let count = n.min(len);
-        // Partial Fisher-Yates on an index vector
+        let count = floats.len().min(len);
         let mut indices: Vec<usize> = (0..len).collect();
-        let mut state = seed_to_u64(&seed_num);
-        for i in 0..count {
-            let (next_state, z) = splitmix64(state);
-            state = next_state;
-            let j = i + (z as usize % (len - i));
+        for (i, &f) in floats.iter().take(count).enumerate() {
+            let remaining = len - i;
+            let j = i + (f * remaining as f64) as usize % remaining;
             indices.swap(i, j);
         }
         let sampled: Vec<Primitive> = indices[..count]
@@ -352,16 +369,30 @@ impl StgIntrinsic for VecSample {
     }
 }
 
-impl CallGlobal3 for VecSample {}
+impl CallGlobal2 for VecSample {}
 
-/// VEC.SHUFFLE — return a new vec with elements in random order.
-///
-/// Uses a full Fisher-Yates shuffle seeded by SplitMix64.
+/// VEC.SHUFFLE — return a new vec with elements in random order using
+/// random floats from an external source (the random stream).
 pub struct VecShuffle;
 
 impl StgIntrinsic for VecShuffle {
     fn name(&self) -> &str {
         "VEC.SHUFFLE"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        use super::syntax::dsl::local;
+        let bif_index: u8 = self.index().try_into().unwrap();
+        lambda(
+            2,
+            force(
+                local(1),
+                force(
+                    SeqNumList.global(lref(1)),
+                    app_bif(bif_index, vec![lref(0), lref(1)]),
+                ),
+            ),
+        )
     }
 
     fn execute(
@@ -371,26 +402,17 @@ impl StgIntrinsic for VecShuffle {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        // args: [seed, vec]
-        let native_seed = resolve_native_unboxing(machine, view, &args[0])?;
-        let seed_num = match &native_seed {
-            Native::Num(num) => num.clone(),
-            _ => {
-                return Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "vec.shuffle: seed must be a number".to_string(),
-                ))
-            }
-        };
+        let floats = collect_num_list(machine, view, args[0].clone())?;
         let v = vec_arg(machine, view, &args[1])?;
         let mut elements: Vec<Primitive> = v.elements().to_vec();
         let len = elements.len();
-        let mut state = seed_to_u64(&seed_num);
         // Full Fisher-Yates shuffle
-        for i in (1..len).rev() {
-            let (next_state, z) = splitmix64(state);
-            state = next_state;
-            let j = z as usize % (i + 1);
+        for (step, &f) in floats.iter().enumerate() {
+            let i = len - 1 - step;
+            if i == 0 {
+                break;
+            }
+            let j = (f * (i + 1) as f64) as usize % (i + 1);
             elements.swap(i, j);
         }
         machine_return_vec(
@@ -424,7 +446,7 @@ impl StgIntrinsic for VecToList {
         let elements: Vec<Primitive> = vec_arg(machine, view, &args[0])?.elements().to_vec();
 
         // Build a list of boxed values in reverse (same pattern as SetToList)
-        let mut bindings = vec![LambdaForm::value(
+        let mut bindings = vec![HeapLambdaForm::value(
             view.alloc(HeapSyn::Cons {
                 tag: DataConstructor::ListNil.tag(),
                 args: Array::default(),
@@ -445,7 +467,7 @@ impl StgIntrinsic for VecToList {
                     ))
                 }
             };
-            bindings.push(LambdaForm::value(
+            bindings.push(HeapLambdaForm::value(
                 view.alloc(HeapSyn::Cons {
                     tag: box_tag,
                     args: Array::from_slice(&view, &[Ref::V(native)]),
@@ -453,7 +475,7 @@ impl StgIntrinsic for VecToList {
                 .as_ptr(),
             ));
             let len = bindings.len();
-            bindings.push(LambdaForm::value(
+            bindings.push(HeapLambdaForm::value(
                 view.alloc(HeapSyn::Cons {
                     tag: DataConstructor::ListCons.tag(),
                     args: Array::from_slice(&view, &[Ref::L(len - 1), Ref::L(len - 2)]),

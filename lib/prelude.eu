@@ -1519,6 +1519,17 @@ set: {
 
   ` "`set.diff(a, b)` - return elements in set `a` that are not in set `b`."
   diff: '__SET.DIFF'
+
+  ` :suppress
+  sample-raw: '__SET.SAMPLE'
+
+  ` "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`.
+  Returns value/rest block. Use within a :random block."
+  sample(k, s, stream): {
+    floats: stream take(k)
+    value: s sample-raw(floats)
+    rest: stream drop(k)
+  }
 }
 
 ` "`∅` - the empty set."
@@ -1546,11 +1557,28 @@ vec: {
   ` "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
   slice: '__VEC.SLICE'
 
-  ` "`vec.sample(n, seed, v)` - pick `n` random elements from vec `v` without replacement using integer `seed`."
-  sample: '__VEC.SAMPLE'
+  ` :suppress
+  sample-raw: '__VEC.SAMPLE'
 
-  ` "`vec.shuffle(seed, v)` - return a new vec with elements of `v` in random order using integer `seed`."
-  shuffle: '__VEC.SHUFFLE'
+  ` "`vec.sample(n, v)` - random monad action: pick `n` random elements
+  from vec `v` without replacement. Use within a :random block."
+  sample(n, v, stream): {
+    floats: stream take(n)
+    value: v sample-raw(floats)
+    rest: stream drop(n)
+  }
+
+  ` :suppress
+  shuffle-raw: '__VEC.SHUFFLE'
+
+  ` "`vec.shuffle(v)` - random monad action: return vec `v` in random order.
+  Use within a :random block."
+  shuffle(v, stream): {
+    needed: (v vec.len) - 1
+    floats: stream take(needed)
+    value: v shuffle-raw(floats)
+    rest: stream drop(needed)
+  }
 
   ` "`vec.to-list(v)` - convert vec `v` back to a cons-list."
   to-list: '__VEC.TO_LIST'

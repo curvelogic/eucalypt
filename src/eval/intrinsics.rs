@@ -911,12 +911,12 @@ lazy_static! {
     },
     Intrinsic { // 172
             name: "VEC.SAMPLE",
-            ty: function(vec![num(), num(), unk(), unk()]).unwrap(),
-            strict: vec![0, 1, 2],
+            ty: function(vec![list(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
     },
     Intrinsic { // 173
             name: "VEC.SHUFFLE",
-            ty: function(vec![num(), unk(), unk()]).unwrap(),
+            ty: function(vec![list(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
     Intrinsic { // 174
@@ -933,6 +933,11 @@ lazy_static! {
             name: "ARCH",
             ty: str_(),
             strict: vec![],
+    },
+    Intrinsic { // 177
+            name: "SET.SAMPLE",
+            ty: function(vec![list(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1],
     },
     ];
 }
