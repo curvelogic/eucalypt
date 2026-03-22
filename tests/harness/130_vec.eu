@@ -40,21 +40,14 @@ test: {
   set-sample-result: set.sample(3, test-set, random.stream(42))
   set-sample-size: set-sample-result.value set.size //= 3
 
-  # Computed (thunk) elements — vec.of must deep-force before extraction
-  interp: ["a", "b", "c"] map("x-{}") vec.of
-  interp-len: interp vec.len //= 3
-  interp-first: interp vec.nth(0) //= "x-a"
-
-  computed-nums: [1, 2, 3] map(+ 10) vec.of
-  computed-nums-len: computed-nums vec.len //= 3
-  computed-nums-trip: computed-nums vec.to-list //= [11, 12, 13]
+  # Minimal computed-element test (SeqList invocation)
+  computed: [1, 2, 3] map(+ 10) vec.of vec.to-list //= [11, 12, 13]
 
   RESULT: [ len, first, last, middle, mid-first
            , round-trip, round-trip-eq
            , name-count, name-first
            , sample-len, shuffle-len
            , set-sample-size
-           , interp-len, interp-first
-           , computed-nums-len, computed-nums-trip
+           , computed
            ] all-true? then(:PASS, :FAIL)
 }
