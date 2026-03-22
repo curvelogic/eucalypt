@@ -288,6 +288,8 @@ pub struct StgSettings {
     pub heap_limit_mib: Option<usize>,
     /// Dump heap to stderr at GC time for debugging
     pub heap_dump_at_gc: bool,
+    /// Test mode: `__EXPECT` failures return false instead of panicking
+    pub test_mode: bool,
 }
 
 /// Compile core syntax to STG ready for execution

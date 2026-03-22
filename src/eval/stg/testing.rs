@@ -28,6 +28,7 @@ lazy_static! {
         suppress_optimiser: false,
         heap_limit_mib: Some(2),
         heap_dump_at_gc: false,
+        test_mode: false,
     };
 }
 

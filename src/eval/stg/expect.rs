@@ -80,7 +80,18 @@ impl StgIntrinsic for Expect {
             let expected_repr = str_arg(machine, view, &args[1])?;
             let actual_repr = render_debug_repr(machine, view, &args[0]);
             eprintln!("EXPECT FAILED: expected {expected_repr}, got {actual_repr}");
-            machine_return_bool(machine, view, false)
+
+            if machine.test_mode() {
+                // Test mode: return false, continue execution
+                machine_return_bool(machine, view, false)
+            } else {
+                // Normal mode: panic with assertion failure
+                Err(ExecutionError::AssertionFailed(
+                    machine.annotation(),
+                    actual_repr,
+                    expected_repr,
+                ))
+            }
         }
     }
 }

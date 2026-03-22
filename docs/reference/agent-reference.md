@@ -259,7 +259,7 @@ From highest (tightest) to lowest binding:
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
 | 10 | apply | right | `@` | Function application |
-| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!?`, `//!`, `//!!` | Metadata and assertions |
+| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!` | Metadata and assertions |
 
 **Named precedence levels** for use in operator metadata: `:lookup`,
 `:call`, `:bool-unary`, `:exp`, `:prod`, `:sum`, `:shift`, `:bitwise`,
@@ -901,26 +901,19 @@ All functions verified against `lib/prelude.eu`:
 
 All at precedence 5 (`:meta`).
 
-**Test expectations** (return booleans, emit stderr diagnostic on failure):
+**Test expectations** (panic in normal mode, return `false` in test mode):
 
 | Operator | Description |
 |----------|-------------|
-| `e //= v` | Test `e` equals `v`; returns `true`/`false`, prints diagnostic on failure |
-| `e //=? f` | Test `f(e)` is `true`, return boolean |
-| `e //!` | Test `e` is `true`; returns `true`/`false`, prints diagnostic on failure |
+| `e //= v` | Test `e` equals `v`; returns `true`/`false`, emits diagnostic on failure |
+| `e //=? f` | Test `f(e)` is `true`; returns `true`/`false`, emits diagnostic on failure |
+| `e //!` | Test `e` is `true`; returns `true`/`false`, emits diagnostic on failure |
 
-**Assertions** (panic on failure, return `e` on success):
+**Assertions** (always panic on failure, return `e` on success):
 
 | Operator | Description |
 |----------|-------------|
 | `e //=> v` | Assert `e` equals `v`, panic with expected/actual on failure |
-
-**Deprecated** (use complement with positive forms instead):
-
-| Operator | Replacement |
-|----------|-------------|
-| `e //!? f` | `e //=? complement(f)` |
-| `e //!!` | Removed — negate the condition instead |
 
 **Metadata operators:**
 

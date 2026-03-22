@@ -961,6 +961,13 @@ impl EucalyptOptions {
         self
     }
 
+    /// Enable test mode for the STG machine so that `__EXPECT`
+    /// failures return `false` instead of panicking.
+    pub fn with_test_mode(mut self) -> Self {
+        self.stg_settings.test_mode = true;
+        self
+    }
+
     #[allow(clippy::wrong_self_convention)]
     pub fn to_evaluate<S: Into<String>>(mut self, evaluand: S) -> Self {
         self.evaluate = Some(evaluand.into());

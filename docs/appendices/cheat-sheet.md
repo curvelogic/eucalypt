@@ -226,7 +226,7 @@ From highest to lowest binding:
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
 | 10 | apply | right | `@` | Function application |
-| 5 | meta | right | `//`, `//<< `, `//=`, `//=>` | Metadata / assertions |
+| 5 | meta | right | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!` | Metadata / assertions |
 
 **User-defined operators** default to left-associative, precedence 50.
 Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
@@ -410,16 +410,21 @@ either operand is an array. Scalar broadcasting is supported.
 | `io.check(result)` | Fail with stderr if `exit-code` is non-zero; otherwise return result |
 | `io.map(f, action)` | Apply pure function to result of IO action (fmap) |
 
-## Assertion Operators
+## Test / Assertion Operators
+
+**Test expectations** (panic in normal mode, return `false` in test mode):
 
 | Operator | Description |
 |----------|-------------|
-| `e //=> v` | Assert `e` equals `v` (panic if not) |
-| `e //= v` | Assert equals (silent, returns `e`) |
-| `e //!` | Assert `e` is `true` |
-| `e //!!` | Assert `e` is `false` |
-| `e //=? f` | Assert `f(e)` is `true` |
-| `e //!? f` | Assert `f(e)` is `false` |
+| `e //= v` | Test `e` equals `v`, return `true`/`false` |
+| `e //=? f` | Test `f(e)` is `true`, return `true`/`false` |
+| `e //!` | Test `e` is `true`, return `true`/`false` |
+
+**Assertions** (always panic on failure):
+
+| Operator | Description |
+|----------|-------------|
+| `e //=> v` | Assert `e` equals `v` (panic with expected/actual on failure) |
 
 ## Command Line Quick Reference
 
