@@ -625,6 +625,11 @@ lazy_static! {
             strict: vec![0],
     },
     Intrinsic { // 115
+            name: "seqList",
+            ty: function(vec![list(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 116
             name: "SORT_NUM_LIST",
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![0],

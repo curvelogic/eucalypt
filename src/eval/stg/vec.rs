@@ -20,7 +20,7 @@ use crate::eval::{
 use crate::eval::machine::env::SynClosure;
 
 use super::{
-    force::SeqNumList,
+    force::{SeqList, SeqNumList},
     support::{
         collect_num_list, machine_return_num, machine_return_vec, native_to_set_primitive,
         resolve_native_unboxing, set_primitive_to_native, vec_arg,
@@ -99,6 +99,19 @@ pub struct VecOf;
 impl StgIntrinsic for VecOf {
     fn name(&self) -> &str {
         "VEC.OF"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        // Deep-force the list so all elements are at WHNF before execute()
+        lambda(
+            1, // [list]
+            force(
+                SeqList.global(lref(0)),
+                // [forced_list] [list]
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+        )
     }
 
     fn execute(

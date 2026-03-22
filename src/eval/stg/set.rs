@@ -23,6 +23,7 @@ use crate::{
 };
 
 use super::{
+    force::SeqList,
     support::{
         data_list_arg, machine_return_bool, machine_return_num, machine_return_set,
         native_to_set_primitive, resolve_native_unboxing, set_arg, set_primitive_to_native,
@@ -99,6 +100,19 @@ pub struct SetFromList;
 impl StgIntrinsic for SetFromList {
     fn name(&self) -> &str {
         "SET.FROM_LIST"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        let bif_index: u8 = self.index().try_into().unwrap();
+        // Deep-force the list so all elements are at WHNF before execute()
+        lambda(
+            1, // [list]
+            force(
+                SeqList.global(lref(0)),
+                // [forced_list] [list]
+                app_bif(bif_index, vec![lref(0)]),
+            ),
+        )
     }
 
     fn execute(

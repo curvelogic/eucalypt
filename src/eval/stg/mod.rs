@@ -171,6 +171,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(stream_intrinsic::StreamNext));
     rt.add(Box::new(block::LookupFail));
     rt.add(Box::new(force::SeqNumList));
+    rt.add(Box::new(force::SeqList));
     rt.add(Box::new(list::SortNumList));
     rt.add(Box::new(graph::GraphUnionFind));
     rt.add(Box::new(graph::GraphTopoSort));
