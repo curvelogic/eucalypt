@@ -33,17 +33,19 @@ s: v vec.slice(1, 4)      # vec of [20, 30, 40]
 
 ## Sampling and Shuffling
 
-These functions accept a numeric seed for deterministic results.
+These are random monad actions — they accept a random stream and return
+a `value`/`rest` block. Use within a `:random` block or call directly
+with a stream.
 
 | Function | Description |
 |----------|-------------|
-| `vec.sample(n, seed)` | Pick `n` elements without replacement via partial Fisher-Yates |
-| `vec.shuffle(seed)` | Return a new vec with all elements in random order |
+| `vec.sample(n, v, stream)` | Pick `n` elements without replacement |
+| `vec.shuffle(v, stream)` | Return a new vec with all elements in random order |
 
-```eu
+```eu,notest
 v: [1, 2, 3, 4, 5] vec.of
-sampled: v vec.sample(2, 42)    # 2 random elements
-shuffled: v vec.shuffle(99)     # all 5 in random order
+sampled: vec.sample(2, v, random.stream(42)).value
+shuffled: vec.shuffle(v, random.stream(99)).value
 ```
 
 ## Notes
