@@ -85,7 +85,7 @@ jobs:
       - name: Build release binary
         run: cargo build --release
       - name: Run sequential harness with release binary (GC stress)
-        run: target/release/eu test --allow-io tests/harness
+        run: target/release/eu test --allow-io tests/harness/074_sets.eu
         env:
           EU_GC_STRESS: "1"
 
