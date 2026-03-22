@@ -19,8 +19,15 @@ A validation function accepts an evidence context with the following keys:
 as described below and must return :PASS or :FAIL.
 "
 validation: {
-  ` "By default we expect a RESULT key which should be either :PASS or :FAIL"
-  default-expectation(context): context.result.RESULT
+  ` "By default we expect a RESULT key (PASS/FAIL) or infer from all values being true"
+  default-expectation(context): {
+    r: context.result
+    has-result: r has(:RESULT)
+    explicit: if(has-result, {
+      v: r.RESULT
+    }.( if(v = true, :PASS, if(v = false, :FAIL, v)) ), null)
+    auto: r values all(= true) then(:PASS, :FAIL)
+  }.( if(has-result, explicit, auto) )
 
   ` "Benchmark targets without explicit validations are report-only and always pass"
   bench-expectation(context): :PASS

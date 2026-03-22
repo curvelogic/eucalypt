@@ -83,6 +83,7 @@ pub fn standard_machine<'a>(
         settings.trace_steps,
         settings.heap_limit_mib,
         settings.heap_dump_at_gc,
+        settings.test_mode,
     );
     let pool = RefCell::new(SymbolPool::new());
     let (root_env, globals, closure) = machine.mutate(
