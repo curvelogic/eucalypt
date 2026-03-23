@@ -88,8 +88,8 @@ monad(m): {
   ` "map(f, action) - apply pure function f to the result of a monadic action (fmap)."
   map(f, action): m.bind(action, compose(m.return, f))
 
-  ` "then(a, b) - sequence two monadic actions, discarding the result of the first."
-  then(a, b): m.bind(a, -> b)
+  ` "then(b, a) - sequence two monadic actions, discarding the result of the first. Pipeline: `a io.then(b)`."
+  then(b, a): m.bind(a, -> b)
 
   ` "and-then(f, action) - pass the result of action to f (bind with flipped args, for pipeline use)."
   and-then(f, action): m.bind(action, f)

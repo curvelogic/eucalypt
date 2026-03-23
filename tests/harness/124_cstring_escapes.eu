@@ -1,0 +1,67 @@
+"Comprehensive c-string escape tests"
+
+` { target: :test }
+test: {
+  # Basic escapes - verify by length
+  newline: c"a\nb" str.len //= 3
+  tab: c"a\tb" str.len //= 3
+  cr: c"a\rb" str.len //= 3
+  backslash: c"a\\b" str.len //= 3
+  null-char: c"a\0b" str.len //= 3
+
+  # Escaped quotes - the c-string contains a literal quote character
+  dquote-len: c"\"" str.len //= 1
+  dquote-start: c"\"hello" str.len //= 6
+  dquote-end: c"hello\"" str.len //= 6
+  dquote-both: c"\"hello\"" str.len //= 7
+  dquote-adjacent: c"\"\"" str.len //= 2
+  dquote-multi: c"say \"hello\" and \"bye\"" str.len //= 21
+
+  # Escaped braces produce literal brace characters
+  lbrace-len: c"\{" str.len //= 1
+  rbrace-len: c"\}" str.len //= 1
+  braces-len: c"\{\}" str.len //= 2
+  braces-content-len: c"\{hello\}" str.len //= 7
+
+  # Escaped quotes with braces
+  quoted-braces-len: c"\"\{\}\"" str.len //= 4
+
+  # Hex escapes
+  hex-a: c"\x41" //= "A"
+
+  # Unicode escapes
+  unicode-alpha: c"\u03B1" //= "α"
+
+  # Mixed escapes
+  mixed-len: c"say \"hi\"\nok" str.len //= 11
+
+  # c-string equals equivalent regular string
+  plain-match: c"hello" //= "hello"
+  newline-match: c"a\nb" //= "a
+b"
+
+  # Backslash before closing quote
+  backslash-end: c"path\\" str.len //= 5
+
+  # Multiple escapes in sequence
+  multi-escape: c"\\\"\\n" str.len //= 4
+
+  RESULT: [newline, tab, cr, backslash, null-char,
+           dquote-len, dquote-start, dquote-end, dquote-both,
+           dquote-adjacent, dquote-multi,
+           lbrace-len, rbrace-len, braces-len, braces-content-len,
+           quoted-braces-len,
+           hex-a, unicode-alpha, mixed-len,
+           plain-match, newline-match, backslash-end,
+           multi-escape] all-true? then(:PASS, :FAIL)
+}
+
+# c-string interpolation with escaped quotes around interpolated content
+` { target: :test-interpolation }
+test-interpolation: {
+  x: 42
+  interp: c"\"{x}\""
+  # Should be "42" (literal quotes around the interpolated value)
+  interp-len: interp str.len //= 4
+  RESULT: interp-len then(:PASS, :FAIL)
+}

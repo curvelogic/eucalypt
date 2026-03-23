@@ -38,6 +38,14 @@ target-zones:
 brew install curvelogic/homebrew-tap/eucalypt
 ```
 
+### Linux / macOS (install script)
+
+```sh
+curl -sSf https://raw.githubusercontent.com/curvelogic/eucalypt/master/install.sh | sh
+```
+
+Installs the latest release binary to `~/.local/bin`. Set `EUCALYPT_INSTALL_DIR` to override.
+
 ### From Source
 
 ```sh

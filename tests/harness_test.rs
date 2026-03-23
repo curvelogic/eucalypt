@@ -630,7 +630,7 @@ pub fn test_harness_123() {
 
 #[test]
 pub fn test_harness_124() {
-    run_test(&opts("124_debug.eu"));
+    run_test(&opts("124_cstring_escapes.eu"));
 }
 
 #[test]
@@ -661,6 +661,11 @@ pub fn test_harness_129() {
 #[test]
 pub fn test_harness_130() {
     run_test(&opts("130_vec.eu"));
+}
+
+#[test]
+pub fn test_harness_131() {
+    run_test(&opts("131_debug.eu"));
 }
 
 #[test]

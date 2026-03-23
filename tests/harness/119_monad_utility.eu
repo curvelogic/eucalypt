@@ -36,10 +36,12 @@ test-map-pure:
 
 ##
 ## then: sequence two actions, discard the first result
+## then(b, a) — runs a, discards result, returns b
+## Pipeline: a id-monad.then(b)
 ##
 ` { target: :test-then-pure }
 test-then-pure:
-  if(id-monad.then(99, 42) = 42,
+  if(id-monad.then(42, 99) = 42,
     { RESULT: :PASS },
     { RESULT: :FAIL })
 
@@ -91,13 +93,25 @@ test-io-map:
 
 ##
 ## IO: derived monad then sequences two IO actions
+## then(b, a) — runs a first, discards, then returns b
+## So then(io.shell("echo second"), io.shell("echo first"))
+## runs "echo first", discards, runs "echo second", returns its result
 ##
 ` { target: :test-io-then requires-io: true }
 test-io-then:
-  { :io r: monad({bind: io.bind, return: io.return}).then(io.shell(echo-first), io.shell(echo-second)) }.(
+  { :io r: monad({bind: io.bind, return: io.return}).then(io.shell(echo-second), io.shell(echo-first)) }.(
     if(r.stdout str.matches?("second.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))
+
+##
+## then: pipeline style — a id-monad.then(b) runs a, discards, returns b
+##
+` { target: :test-then-pipeline }
+test-then-pipeline:
+  if((99 id-monad.then(42)) = 42,
+    { RESULT: :PASS },
+    { RESULT: :FAIL })
 
 ##
 ## and-then: bind with flipped args for pipeline use (pure)

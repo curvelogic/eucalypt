@@ -82,6 +82,7 @@ struct ListDestructureEntry {
 }
 
 /// A parsed parameter pattern in a function declaration
+#[derive(Clone)]
 enum ParamPattern {
     /// Simple identifier: `x`
     Simple(String),
@@ -94,9 +95,10 @@ enum ParamPattern {
     /// Fixed-length list destructuring: `[a, b, c]`, or head/tail pattern
     /// `[x : xs]` or `[a, b : rest]`.
     ///
-    /// Contains the binding names for each head element, plus an optional
-    /// tail binding name. The tail is `None` for fixed-length patterns.
-    List(Vec<String>, Option<String>),
+    /// Elements are `ParamPattern` to support nesting: `[a, [b: c]]` has
+    /// a `Simple("a")` and a `List(["b"], Some("c"))` element.
+    /// The tail (after `:`) is always a simple name if present.
+    List(Vec<ParamPattern>, Option<String>),
 }
 
 /// Parse a block parameter pattern `{x y}` or `{x: a  y: b}` from a
@@ -171,32 +173,21 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
 ///
 /// Returns `(head_elements, tail)` where `tail` is `None` for
 /// fixed-length patterns and `Some(tail_name)` for head/tail patterns.
-fn parse_list_pattern(list: &rowan_ast::List) -> Option<(Vec<String>, Option<String>)> {
+fn parse_list_pattern(list: &rowan_ast::List) -> Option<(Vec<ParamPattern>, Option<String>)> {
     let has_colon = list.has_colon();
     let all_items: Vec<_> = list.items().collect();
 
     if has_colon {
         // Head/tail pattern: items before the colon are heads,
         // the last item after the colon is the tail.
-        // The List node's items() returns all Soup children in order:
-        // for [a, b : rest], items are: a, b, rest (colon is a token, not a child node).
-        // We collect all items; the last is the tail, the rest are heads.
         if all_items.len() < 2 {
             return None; // Need at least one head and one tail
         }
         let mut heads = Vec::new();
         for item in &all_items[..all_items.len() - 1] {
-            if let Some(rowan_ast::Element::Name(name)) = item.singleton() {
-                if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
-                    heads.push(normal.text().to_string());
-                } else {
-                    return None;
-                }
-            } else {
-                return None;
-            }
+            heads.push(parse_soup_as_pattern(item)?);
         }
-        // Last item is the tail binding
+        // Last item (tail) is always a simple name
         let tail_item = all_items.last().unwrap();
         if let Some(rowan_ast::Element::Name(name)) = tail_item.singleton() {
             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
@@ -209,31 +200,21 @@ fn parse_list_pattern(list: &rowan_ast::List) -> Option<(Vec<String>, Option<Str
             None
         }
     } else {
-        // Fixed-length pattern: all items are positional bindings
+        // Fixed-length pattern: elements may be names or nested patterns
         let mut elements = Vec::new();
         for item in &all_items {
-            if let Some(rowan_ast::Element::Name(name)) = item.singleton() {
-                if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
-                    elements.push(normal.text().to_string());
-                } else {
-                    return None; // Not a normal identifier — invalid pattern
-                }
-            } else {
-                return None; // Not a single name — invalid pattern
-            }
+            elements.push(parse_soup_as_pattern(item)?);
         }
         if elements.is_empty() {
-            None // Empty list pattern not valid
+            None
         } else {
             Some((elements, None))
         }
     }
 }
 
-/// Parse a function parameter soup into a `ParamPattern`.
-///
-/// Returns `None` if the soup is not a valid single-element parameter.
-fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
+/// Parse a single soup element as a pattern (name, nested list, or nested block).
+fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
     match soup.singleton() {
         Some(rowan_ast::Element::Name(name)) => {
             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
@@ -242,14 +223,21 @@ fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
                 None
             }
         }
-        Some(rowan_ast::Element::Block(block)) => {
-            parse_block_pattern(&block).ok().map(ParamPattern::Block)
-        }
         Some(rowan_ast::Element::List(list)) => {
             parse_list_pattern(&list).map(|(heads, tail)| ParamPattern::List(heads, tail))
         }
+        Some(rowan_ast::Element::Block(block)) => {
+            parse_block_pattern(&block).ok().map(ParamPattern::Block)
+        }
         _ => None,
     }
+}
+
+/// Parse a function parameter soup into a `ParamPattern`.
+///
+/// Returns `None` if the soup is not a valid single-element parameter.
+fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
+    parse_soup_as_pattern(soup)
 }
 
 /// Ordered record of a destructuring let to emit after the body is desugared.
@@ -318,28 +306,78 @@ fn desugar_declaration_body_with_patterns(
                     fields: Vec::new(),
                 }));
             }
-            ParamPattern::List(element_names, tail_name) => {
+            ParamPattern::List(element_patterns, tail_name) => {
                 let synthetic_name = format!("__p{}", synthetic_counter);
                 synthetic_counter += 1;
                 all_env_names.push(synthetic_name.clone());
                 lambda_param_names.push(synthetic_name.clone());
-                for binding_name in element_names {
-                    all_env_names.push(binding_name.clone());
+
+                // Flatten element patterns: Simple → use name directly,
+                // nested List/Block → generate synthetic name and queue
+                // an additional destructure.
+                let mut element_names = Vec::new();
+                let mut nested_patterns: Vec<(String, ParamPattern)> = Vec::new();
+                for elem in element_patterns {
+                    match elem {
+                        ParamPattern::Simple(name) => {
+                            all_env_names.push(name.clone());
+                            element_names.push(name.clone());
+                        }
+                        nested => {
+                            let nested_name = format!("__p{}", synthetic_counter);
+                            synthetic_counter += 1;
+                            all_env_names.push(nested_name.clone());
+                            element_names.push(nested_name.clone());
+                            nested_patterns.push((nested_name, nested.clone()));
+                        }
+                    }
                 }
                 if let Some(tail) = tail_name {
                     all_env_names.push(tail.clone());
                 }
-                list_raw.push((
-                    synthetic_name.clone(),
-                    element_names.clone(),
-                    tail_name.clone(),
-                ));
-                // Placeholder — resolved after env push
+                list_raw.push((synthetic_name.clone(), element_names, tail_name.clone()));
                 let_order.push(DestructureLet::List(ListDestructureEntry {
                     synthetic_name,
                     elements: Vec::new(),
                     tail: None,
                 }));
+
+                // Queue additional destructures for nested patterns.
+                for (nested_name, nested_pat) in nested_patterns {
+                    match nested_pat {
+                        ParamPattern::List(sub_elems, sub_tail) => {
+                            let mut sub_names = Vec::new();
+                            for sub in &sub_elems {
+                                if let ParamPattern::Simple(n) = sub {
+                                    all_env_names.push(n.clone());
+                                    sub_names.push(n.clone());
+                                }
+                                // Deeper nesting would need recursion; for now
+                                // support one level of nesting.
+                            }
+                            if let Some(t) = &sub_tail {
+                                all_env_names.push(t.clone());
+                            }
+                            list_raw.push((nested_name.clone(), sub_names, sub_tail));
+                            let_order.push(DestructureLet::List(ListDestructureEntry {
+                                synthetic_name: nested_name,
+                                elements: Vec::new(),
+                                tail: None,
+                            }));
+                        }
+                        ParamPattern::Block(fields) => {
+                            for (_, binding_name) in &fields {
+                                all_env_names.push(binding_name.clone());
+                            }
+                            block_raw.push((nested_name.clone(), fields));
+                            let_order.push(DestructureLet::Block(DestructureEntry {
+                                synthetic_name: nested_name,
+                                fields: Vec::new(),
+                            }));
+                        }
+                        ParamPattern::Simple(_) => unreachable!(),
+                    }
+                }
             }
         }
     }
@@ -353,6 +391,12 @@ fn desugar_declaration_body_with_patterns(
     let lambda_param_vars: Vec<String> = lambda_param_names
         .iter()
         .map(|name| desugarer.env().get(name).unwrap().clone())
+        .collect();
+
+    // Collect FreeVars for ALL env names (needed for nested destructure synthetics)
+    let all_env_vars: std::collections::HashMap<String, String> = all_env_names
+        .iter()
+        .map(|name| (name.clone(), desugarer.env().get(name).unwrap().clone()))
         .collect();
 
     // Resolve block destructure entries now that names are in the environment.
@@ -423,17 +467,15 @@ fn desugar_declaration_body_with_patterns(
     // Wrap body in destructuring lets for each pattern, innermost first
     // (last pattern wraps outermost), preserving argument order.
     for slot in let_order.iter().rev() {
-        // Look up the synthetic param name from the lambda_param_vars
-        // (the env frame has already been popped)
-        let synthetic_name_val = lambda_param_vars
-            .iter()
-            .zip(lambda_param_names.iter())
-            .find(|(_, n)| **n == slot.synthetic_name())
-            .map(|(var_name, _)| var_name.clone())
-            .unwrap();
+        // Look up the synthetic param/binding FreeVar (the env frame has
+        // already been popped, so we use the pre-collected map).
+        let synthetic_fv = all_env_vars
+            .get(slot.synthetic_name())
+            .expect("synthetic name must be in env")
+            .clone();
 
         let smid = desugarer.new_smid(span);
-        let synthetic_var = RcExpr::from(Expr::Var(smid, Var::Free(synthetic_name_val)));
+        let synthetic_var = RcExpr::from(Expr::Var(smid, Var::Free(synthetic_fv)));
 
         match slot {
             DestructureLet::Block(entry) => {

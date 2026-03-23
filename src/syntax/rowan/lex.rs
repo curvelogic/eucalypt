@@ -330,12 +330,23 @@ where
         // Collect the string content to check for interpolation
         let mut content = String::new();
 
-        // Consume characters until closing quote or EOF
+        // Consume characters until closing quote or EOF.
+        // For c-strings, backslash-quote (\") is an escape — not a terminator.
+        let is_cstring = string_prefix == StringPrefix::CString;
         loop {
             match self.peek() {
                 Some(&'"') => {
                     self.bump(); // consume closing quote
                     break;
+                }
+                Some(&'\\') if is_cstring => {
+                    content.push('\\');
+                    self.bump();
+                    // Consume the escaped character (including \")
+                    if let Some(&c) = self.peek() {
+                        content.push(c);
+                        self.bump();
+                    }
                 }
                 Some(&c) => {
                     content.push(c);
@@ -956,6 +967,18 @@ d: {
     fn test_cstring_simple() {
         // c"hello" should be lexed as a C_STRING
         test_lex(r#"c"hello""#, vec![(C_STRING, Span::new(0, 8))]);
+    }
+
+    #[test]
+    fn test_cstring_escaped_quote() {
+        // c"say \"hi\"" should be lexed as a single C_STRING token
+        test_lex(r#"c"say \"hi\"""#, vec![(C_STRING, Span::new(0, 13))]);
+    }
+
+    #[test]
+    fn test_cstring_escaped_quote_only() {
+        // c"\"" should be a single C_STRING token (one escaped quote)
+        test_lex(r#"c"\"""#, vec![(C_STRING, Span::new(0, 5))]);
     }
 
     #[test]
