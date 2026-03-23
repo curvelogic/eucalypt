@@ -54,6 +54,44 @@ tests: {
     RESULT: if(result = 15, :PASS, :FAIL)
   }
 
+  ` "Implicit return where bind values are closures (not plain values)"
+  closure-values: {
+    # A monad where bind wraps values in a block — tests that the
+    # implicit return block does not self-reference the lambda params
+    wrap-bind(ma, f): f(ma.value)
+    wrap-return(a): { value: a }
+    ⟨{}⟩: { :monad bind: wrap-bind  return: wrap-return }
+    result: ⟨ a: { value: 10 }  b: { value: a + 20 } ⟩
+    RESULT: if(result.value.a = 10 && result.value.b = 30, :PASS, :FAIL)
+  }
+
+  ` "Random monad implicit return — the motivating case for eu-hybj/eu-en4j"
+  random-implicit: {
+    result: { :random a: random.int(20) b: random.int(a) c: random.int(b) }(random.stream(42)).value
+    ok: (result.a = 14) && (result has(:b)) && (result has(:c))
+    RESULT: if(ok, :PASS, :FAIL)
+  }
+
+  ` ":let monad — sequential redefinition with .expr"
+  let-explicit: {
+    x: 2
+    result: { :let x: x + 2  x: x * 10 }.x
+    RESULT: if(result = 40, :PASS, :FAIL)
+  }
+
+  ` ":let block equals normal block for non-shadowing bindings"
+  let-equiv: {
+    a: { a: 1 b: 2 }
+    b: { :let a: 1 b: 2 }
+    RESULT: if(a.a = b.a && a.b = b.b, :PASS, :FAIL)
+  }
+
+  ` ":let with shadowing and implicit return"
+  let-shadow-implicit: {
+    result: { :let a: 1  a: a * 2 }
+    RESULT: if(result.a = 2, :PASS, :FAIL)
+  }
+
   ` "Block without monad: true falls through to normal block desugaring"
   no-monad-true: {
     # 'maybe' is not registered with monad: true, so :maybe block without .expr

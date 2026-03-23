@@ -14,7 +14,7 @@ use crate::{
     common::sourcemap::{HasSmid, Smid},
     core::{
         anaphora::{BLOCK_ANAPHORA, EXPR_ANAPHORA},
-        binding::Var,
+        binding::{BoundVar, Scope, Var},
         error::CoreError,
         expr::*,
         rt,
@@ -1111,14 +1111,65 @@ fn desugar_monadic_block_implicit(
     }
 
     // Synthesise the implicit return block from all non-underscore bind names.
-    let return_pairs: Vec<(String, RcExpr)> = bind_names
+    //
+    // We need: return({a: a_λ, b: b_λ}) where a_λ, b_λ are the lambda-bound
+    // variables from the bind chain.
+    //
+    // A bare Expr::Block({a: a_λ, b: b_λ}) compiles to a letrec whose bindings
+    // shadow the lambda params — {a: a} self-references.  core::let_ and
+    // core::default_let also self-reference because close_let_scope closes
+    // binding values over the let's own names.
+    //
+    // Fix: build Let + Block manually.  The Let binding values are the
+    // lambda-bound FreeVars (NOT closed over the Let's names).  The Block body
+    // references the Let bindings via BoundVar(scope=0).  This way the Let
+    // captures the lambda vars, and the Block reads from the Let.
+    let non_underscore: Vec<(String, String)> = bind_names
         .iter()
         .zip(bind_vars.iter())
         .filter(|(name, _)| name.as_str() != "_")
-        .map(|(name, fv)| (name.clone(), core::var(smid, fv.clone())))
+        .map(|(name, fv)| (name.clone(), fv.clone()))
         .collect();
 
-    let return_expr = core::block(smid, return_pairs);
+    let return_expr = if non_underscore.is_empty() {
+        core::block(smid, std::iter::empty::<(String, RcExpr)>())
+    } else {
+        // Let bindings: each value is the lambda-bound FreeVar.
+        // These must NOT be closed over the Let's own names.
+        let let_bindings: Vec<(String, RcExpr)> = non_underscore
+            .iter()
+            .map(|(name, fv)| (name.clone(), core::var(smid, fv.clone())))
+            .collect();
+
+        // Body: Block where each key reads from the Let (BoundVar scope=0).
+        let body_block = core::block(
+            smid,
+            non_underscore.iter().enumerate().map(|(i, (name, _))| {
+                (
+                    name.clone(),
+                    RcExpr::from(Expr::Var(
+                        smid,
+                        Var::Bound(BoundVar {
+                            scope: 0,
+                            binder: i as u32,
+                            name: Some(name.clone()),
+                        }),
+                    )),
+                )
+            }),
+        );
+
+        // Construct the Let Scope directly — skip close_let_scope which
+        // would close the binding FreeVars over the Let's own names.
+        RcExpr::from(Expr::Let(
+            smid,
+            Scope {
+                pattern: let_bindings,
+                body: body_block,
+            },
+            LetType::OtherLet,
+        ))
+    };
 
     // Pop bind names from scope.
     if !bind_names.is_empty() {

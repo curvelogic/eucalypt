@@ -78,6 +78,14 @@ pub struct SourceLoader {
     args: Vec<String>,
     /// Seed for random number generation
     seed: Option<i64>,
+    /// Persisted monad namespace registry across translation units.
+    ///
+    /// The desugarer's monad_namespace_registry records which namespaces
+    /// have `monad: true` metadata.  Since each translation unit gets a
+    /// fresh Desugarer, registrations from the prelude would be lost when
+    /// desugaring `-e` expressions.  This field carries them forward.
+    monad_namespace_registry:
+        std::collections::HashMap<String, crate::core::desugar::desugarer::MonadSpec>,
 }
 
 impl Default for SourceLoader {
@@ -95,6 +103,7 @@ impl Default for SourceLoader {
             lib_path: Vec::new(),
             args: Vec::new(),
             seed: None,
+            monad_namespace_registry: std::collections::HashMap::new(),
         }
     }
 }
@@ -115,6 +124,7 @@ impl SourceLoader {
             lib_path,
             args: Vec::new(),
             seed: None,
+            monad_namespace_registry: std::collections::HashMap::new(),
         }
     }
 
@@ -389,9 +399,15 @@ impl SourceLoader {
             }
         }
 
-        // Desugar all the content starting from the input specified
+        // Desugar all the content starting from the input specified.
+        // Seed the desugarer with the persisted monad namespace registry
+        // so that `-e` expressions see `monad: true` from the prelude.
         let mut desugarer = Desugarer::new(&desugarables, &mut self.source_map);
+        desugarer.seed_monad_namespace_registry(&self.monad_namespace_registry);
         let unit = desugarer.translate_unit(input)?;
+        // Persist any newly registered monad namespaces for later units.
+        self.monad_namespace_registry
+            .extend(desugarer.drain_monad_namespace_registry());
         self.translation_units.insert(input.clone(), unit);
         Ok(&self.translation_units[input])
     }

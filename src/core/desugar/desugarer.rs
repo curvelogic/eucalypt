@@ -119,6 +119,17 @@ impl<'smap> Desugarer<'smap> {
         self.monad_namespace_registry.get(name)
     }
 
+    /// Seed the monad namespace registry with entries from a previous
+    /// translation unit (e.g. the prelude).
+    pub fn seed_monad_namespace_registry(&mut self, registry: &HashMap<String, MonadSpec>) {
+        self.monad_namespace_registry.extend(registry.clone());
+    }
+
+    /// Drain the monad namespace registry for persistence across units.
+    pub fn drain_monad_namespace_registry(&mut self) -> HashMap<String, MonadSpec> {
+        std::mem::take(&mut self.monad_namespace_registry)
+    }
+
     /// Desugar content at locator (and imports) to create a new
     /// translation unit.
     pub fn translate_unit(&mut self, input: &Input) -> Result<TranslationUnit, CoreError> {
