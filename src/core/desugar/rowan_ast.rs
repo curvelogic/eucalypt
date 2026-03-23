@@ -1658,15 +1658,25 @@ fn extract_rowan_declaration_components(
                     fixity: Some(crate::core::expr::Fixity::Nullary),
                 })
             }
-            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param) => {
+            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param_soup) => {
                 let pair_name = bracket_expr.bracket_pair_name().ok_or_else(|| {
                     CoreError::InvalidEmbedding(
                         "bracket pair declaration has no bracket pair name".to_string(),
                         desugarer.new_smid(span),
                     )
                 })?;
-                let args = vec![param.text().to_string()];
-                let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
+
+                // Parse the bracket parameter as a pattern (simple name,
+                // list destructuring, or block destructuring)
+                let pattern = parse_param_pattern(&param_soup).ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "invalid bracket parameter pattern".to_string(),
+                        desugarer.new_smid(span),
+                    )
+                })?;
+
+                let (body, args, arg_vars) =
+                    desugar_declaration_body_with_patterns(decl, desugarer, &[pattern], span)?;
 
                 Ok(RowanDeclarationComponents {
                     span,

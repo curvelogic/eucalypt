@@ -87,22 +87,22 @@ x: 42 # inline comment
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
-| Idiot bracket | `⟦ x ⟧: expr` | Custom Unicode bracket pair |
+| Idiot bracket | `⟦ xs ⟧: expr` | Custom Unicode bracket pair |
 
 ## Idiot Brackets
 
-Idiot brackets allow custom Unicode bracket pairs to wrap and
-transform expressions — a general bracket overloading mechanism.
+Idiot brackets allow custom Unicode bracket pairs that collect their
+content items into a list and pass it to a function.
 
 ```eu,notest
-# Declare a bracket pair function
-⟦ x ⟧: my-functor(x)
+# Declare a bracket pair function (xs receives a list)
+⟦ xs ⟧: xs map(_ * 2)
 
-# Use the bracket pair in expressions
-result: ⟦ some-expression ⟧  # calls my-functor(some-expression)
+# Items are collected as a list: ⟦ a b c ⟧ = ⟦⟧([a, b, c])
+result: ⟦ 3 4 5 ⟧  # [6, 8, 10]
 ```
 
-Built-in bracket pairs: `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
+Any matching Unicode bracket pair works, e.g. `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
 `【】`, `〔〕`, `〖〗`, `〘〙`, `〚〛`.
 
 ## Monadic Blocks

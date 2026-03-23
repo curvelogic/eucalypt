@@ -13,7 +13,7 @@
 }.f
 
 ` "Coalescing brackets: return the first non-null item"
-⌊ xs ⌋: if(xs nil?, null, if((xs head) != null, xs head, ⌊ xs tail ⌋))
+⌊ xs ⌋: coalesce(xs)
 
 zapp(fs, as): ((fs nil?) ∨ (as nil?)) then([], cons((fs head)(as head), zapp(fs tail, as tail)))
 
