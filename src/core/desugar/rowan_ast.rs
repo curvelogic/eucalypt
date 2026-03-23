@@ -1367,14 +1367,24 @@ impl Desugarable for Element {
                     )
                 })?;
 
-                // Simple expression mode: ⟦ x ⟧ → ⟦⟧(x)
+                // Idiot brackets: collect soup items as a list.
                 //
-                // Desugar the inner soup and apply the bracket pair function.
-                // Both the function name and the argument must be varified so
-                // that Name nodes are resolved to Var references before the
-                // STG compiler sees them.
+                // Desugar the inner soup (groups call syntax like f(x)
+                // into applications).  Convert the Soup items to a List
+                // — each top-level soup element becomes one list item.
+                // Catenation within sub-expressions ([...], (...)) is
+                // preserved because those are single soup items.
                 let inner = if let Some(soup) = bracket.soup() {
-                    soup.desugar(desugarer)?
+                    let desugared = soup.desugar(desugarer)?;
+                    let items = match &*desugared.inner {
+                        Expr::Soup(_, ref elems) => elems.clone(),
+                        _ => vec![desugared.clone()],
+                    };
+                    let varified_items: Vec<RcExpr> = items
+                        .into_iter()
+                        .map(|item| desugarer.varify(item))
+                        .collect();
+                    core::list(smid, varified_items)
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "empty bracket expression".to_string(),
@@ -1384,8 +1394,7 @@ impl Desugarable for Element {
 
                 let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name));
                 let bracket_fn = desugarer.varify(bracket_fn_name);
-                let arg = desugarer.varify(inner);
-                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![arg])))
+                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![inner])))
             }
             Element::BracketBlock(bracket) => {
                 // BracketBlock element appearing in isolation (single-element soup, no .expr).
@@ -1649,15 +1658,25 @@ fn extract_rowan_declaration_components(
                     fixity: Some(crate::core::expr::Fixity::Nullary),
                 })
             }
-            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param) => {
+            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param_soup) => {
                 let pair_name = bracket_expr.bracket_pair_name().ok_or_else(|| {
                     CoreError::InvalidEmbedding(
                         "bracket pair declaration has no bracket pair name".to_string(),
                         desugarer.new_smid(span),
                     )
                 })?;
-                let args = vec![param.text().to_string()];
-                let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
+
+                // Parse the bracket parameter as a pattern (simple name,
+                // list destructuring, or block destructuring)
+                let pattern = parse_param_pattern(&param_soup).ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "invalid bracket parameter pattern".to_string(),
+                        desugarer.new_smid(span),
+                    )
+                })?;
+
+                let (body, args, arg_vars) =
+                    desugar_declaration_body_with_patterns(decl, desugarer, &[pattern], span)?;
 
                 Ok(RowanDeclarationComponents {
                     span,

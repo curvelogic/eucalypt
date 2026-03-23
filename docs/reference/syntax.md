@@ -217,35 +217,34 @@ Eucalypt should handle unicode gracefully and any unicode characters
 in the symbol or punctuation classes are fine for operators.
 
 In addition to named operators, you can define **idiot brackets** —
-custom Unicode bracket pairs that wrap an expression and apply a
-function to it. The name is inspired by *idiom brackets* from
-applicative functor notation, but they are a general bracket
-overloading mechanism. A bracket pair declaration uses a Unicode
-bracket pair wrapping a single parameter directly (paren-free style):
+custom Unicode bracket pairs that collect their content items into a
+list and pass it to a function. The name is inspired by *idiom
+brackets* from applicative functor notation, but they are a general
+bracket overloading mechanism.
 
 ```eu
-# Ceiling brackets double
-⌈ x ⌉: x * 2
+# Ceiling brackets double each item
+⌈ xs ⌉: xs map(_ * 2)
 
-# Floor brackets increment
-⌊ x ⌋: x + 1
+# Floor brackets sum the items
+⌊ xs ⌋: xs sum
 ```
 
-The older paren-wrapped style is still supported for backwards compatibility:
-
-```eu
-(⌈ x ⌉): x * 2    # paren style — still valid
-```
-
-Once declared, the bracket pair can be used as an expression:
+Once declared, items inside the brackets are collected as a list:
 
 ```eu,notest
-doubled: ⌈ 3 + 4 ⌉    # => 14
-bumped:  ⌊ 5 ⌋         # => 6
+doubled: ⌈ 3 4 5 ⌉       # => [6, 8, 10]
+total:   ⌊ 10 20 30 ⌋    # => 60
+single:  ⌈ 7 ⌉            # => [14]
 ```
 
-The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` (open
-then close bracket) that takes one argument `x` and returns `body`.
+The declaration `⌈ xs ⌉: body` defines a function named `⌈⌉` (open
+then close bracket) that takes one argument — the list of items.
+Parenthesise sub-expressions to group them as a single item:
+`⌈ (1 + 2) (3 * 4) ⌉` passes `[3, 12]`.
+
+The parameter supports destructuring: `⌈ [f: args] ⌉: body` binds
+`f` to the first item and `args` to the rest.
 Using `⌈ expr ⌉` in an expression calls that function with `expr`.
 
 The following Unicode bracket pairs are built-in and can be used for
