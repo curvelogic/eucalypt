@@ -54,6 +54,17 @@ tests: {
     RESULT: if(result = 15, :PASS, :FAIL)
   }
 
+  ` "Implicit return where bind values are closures (not plain values)"
+  closure-values: {
+    # A monad where bind wraps values in a block — tests that the
+    # implicit return block does not self-reference the lambda params
+    wrap-bind(ma, f): f(ma.value)
+    wrap-return(a): { value: a }
+    ⟨{}⟩: { :monad bind: wrap-bind  return: wrap-return }
+    result: ⟨ a: { value: 10 }  b: { value: a + 20 } ⟩
+    RESULT: if(result.value.a = 10 && result.value.b = 30, :PASS, :FAIL)
+  }
+
   ` "Block without monad: true falls through to normal block desugaring"
   no-monad-true: {
     # 'maybe' is not registered with monad: true, so :maybe block without .expr
