@@ -1049,9 +1049,10 @@ drop-until(p?): drop-while(p? complement)
 
 ` "`split-after(p?, l) - split list where `p?` becomes false and return pair."
 split-after(p?, l): {
-  aux(xs, prefix): if((xs nil?) ∨ (xs head p?),
+  aux(xs, prefix): if(xs nil?, [prefix reverse, []],
+                     if(xs head p?,
                         aux(xs tail, cons(xs head, prefix)),
-                        [prefix reverse, xs])
+                        [prefix reverse, xs]))
 }.aux(l, [])
 
 ` "`split-when(p?, l) - split list where `p?` becomes true and return pair."
@@ -1063,6 +1064,12 @@ nth(n, l): l drop(n) head
 ` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
 Panics if `n` is out of range."
 update-nth(n, f, l): { rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix) }.(l split-at(n) rejoin)
+
+` "`update-first(p?, f, l)` - apply `f` to the first element matching `p?` in list `l`.
+Returns `l` unchanged if no element matches."
+update-first(p?, f, l): {
+  go[pre, suf]: (suf nil?) then(l, pre ++ ((f(suf head)) ‖ (suf tail)))
+}.(l split-when(p?) go)
 
 ` { doc: "`l !! n` - return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get`."
     precedence: :exp }
