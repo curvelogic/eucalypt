@@ -47,12 +47,26 @@ test5: {
   result: desc-pairs([[], {a: 1}])
 }.result
 
+# Test 6: nested fixed-length list destructuring
+test6: {
+  f([a, [b, c]]): [a, b, c]
+  result: f([1, [2, 3]])
+}.result
+
+# Test 7: nested head:tail list destructuring
+test7: {
+  f([a, [b: c]]): [a, b, c]
+  result: f([1, [2, 3, 4]])
+}.result
+
 tests: {
   a: test1 //= 7
   b: (test2 head) //= 3
   c: (test3 count) //= 2
   d: test4 //= 13
   e: (test5 count) //= 1
+  f: test6 //= [1, 2, 3]
+  g: test7 //= [1, 2, [3, 4]]
 }
 
 RESULT: tests values all-true? then(:PASS, :FAIL)
