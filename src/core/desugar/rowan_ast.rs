@@ -1367,14 +1367,24 @@ impl Desugarable for Element {
                     )
                 })?;
 
-                // Simple expression mode: ⟦ x ⟧ → ⟦⟧(x)
+                // Idiot brackets: collect soup items as a list.
                 //
-                // Desugar the inner soup and apply the bracket pair function.
-                // Both the function name and the argument must be varified so
-                // that Name nodes are resolved to Var references before the
-                // STG compiler sees them.
+                // Desugar the inner soup (groups call syntax like f(x)
+                // into applications).  Convert the Soup items to a List
+                // — each top-level soup element becomes one list item.
+                // Catenation within sub-expressions ([...], (...)) is
+                // preserved because those are single soup items.
                 let inner = if let Some(soup) = bracket.soup() {
-                    soup.desugar(desugarer)?
+                    let desugared = soup.desugar(desugarer)?;
+                    let items = match &*desugared.inner {
+                        Expr::Soup(_, ref elems) => elems.clone(),
+                        _ => vec![desugared.clone()],
+                    };
+                    let varified_items: Vec<RcExpr> = items
+                        .into_iter()
+                        .map(|item| desugarer.varify(item))
+                        .collect();
+                    core::list(smid, varified_items)
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "empty bracket expression".to_string(),
@@ -1384,8 +1394,7 @@ impl Desugarable for Element {
 
                 let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name));
                 let bracket_fn = desugarer.varify(bracket_fn_name);
-                let arg = desugarer.varify(inner);
-                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![arg])))
+                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![inner])))
             }
             Element::BracketBlock(bracket) => {
                 // BracketBlock element appearing in isolation (single-element soup, no .expr).
