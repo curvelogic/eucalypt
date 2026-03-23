@@ -235,6 +235,15 @@ tests: {
     pass: [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19] all-true?
   }
 
+  ` "update-nth"
+  update-nth-tests: {
+    t1: ([10, 20, 30] update-nth(0, negate) head) = -10
+    t2: ([10, 20, 30] update-nth(2, inc) nth(2)) = 31
+    t3: ([10, 20, 30, 40] update-nth(1, _ * 100) nth(1)) = 2000
+    t4: ([10, 20, 30] update-nth(0, negate) count) = 3
+    pass: [t1, t2, t3, t4] all-true?
+  }
+
 }
 
 RESULT: tests filter-values(has(:pass)) all(_.pass) then(:PASS, :FAIL)

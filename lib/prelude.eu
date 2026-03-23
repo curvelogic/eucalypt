@@ -1060,6 +1060,10 @@ split-when(p?, l): split-after(p? complement, l)
 ` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
 nth(n, l): l drop(n) head
 
+` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
+Panics if `n` is out of range."
+update-nth(n, f, l): { rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix) }.(l split-at(n) rejoin)
+
 ` { doc: "`l !! n` - return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get`."
     precedence: :exp }
 (l !! n): if(l is-array?, l arr.get(n), l nth(n))
@@ -1231,13 +1235,6 @@ split-on(pred, xs): {
       current: last(acc)
     }.(groups ++ [current ++ [x]]))
 }.(foldl(step, [[]], xs))
-
-` "`list-update(ls, i, f)` - replace element at index `i` in list `ls`
-with `f` applied to it. Returns unmodified list if `i` is out of range."
-list-update(ls, i, f):
-  ls nil? then([],
-    i = 0 then([f(head(ls))] ++ tail(ls),
-               [head(ls)] ++ list-update(tail(ls), i - 1, f)))
 
 ` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`"
 qsort(lt, xs): if(xs nil?,
