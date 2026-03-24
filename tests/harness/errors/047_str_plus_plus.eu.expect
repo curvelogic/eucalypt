@@ -1,2 +1,2 @@
 exit: 1
-stderr: "to concatenate strings, use string interpolation"
+stderr: "requires a list argument"

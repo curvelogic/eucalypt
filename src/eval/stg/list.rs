@@ -22,7 +22,7 @@ use super::{
         collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
     },
     syntax::{
-        dsl::{app_bif, case, data, force, lambda, local, lref, str, value},
+        dsl::{app_bif, box_str, case, data, force, lambda, let_, local, lref, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -76,8 +76,20 @@ impl StgIntrinsic for Tail {
             1,
             case(
                 local(0),
-                vec![(DataConstructor::ListCons.tag(), local(1))],
-                Panic.global(str("TAIL on empty list")),
+                vec![
+                    (DataConstructor::ListCons.tag(), local(1)),
+                    (
+                        DataConstructor::ListNil.tag(),
+                        let_(
+                            vec![value(box_str("tail of empty list"))],
+                            Panic.global(lref(0)),
+                        ),
+                    ),
+                ],
+                let_(
+                    vec![value(box_str("tail requires a list argument"))],
+                    Panic.global(lref(0)),
+                ),
             ),
         )
     }
@@ -98,8 +110,20 @@ impl StgIntrinsic for Head {
             1,
             case(
                 local(0),
-                vec![(DataConstructor::ListCons.tag(), local(0))],
-                Panic.global(str("HEAD on empty list")),
+                vec![
+                    (DataConstructor::ListCons.tag(), local(0)),
+                    (
+                        DataConstructor::ListNil.tag(),
+                        let_(
+                            vec![value(box_str("head of empty list"))],
+                            Panic.global(lref(0)),
+                        ),
+                    ),
+                ],
+                let_(
+                    vec![value(box_str("head requires a list argument"))],
+                    Panic.global(lref(0)),
+                ),
             ),
         )
     }

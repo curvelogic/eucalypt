@@ -1292,3 +1292,13 @@ pub fn test_error_110() {
 pub fn test_error_111() {
     run_error_test(&error_opts("111_missing_option_value.eu"));
 }
+
+#[test]
+pub fn test_error_112() {
+    run_error_test(&error_opts("112_head_empty_list.eu"));
+}
+
+#[test]
+pub fn test_error_113() {
+    run_error_test(&error_opts("113_tail_empty_list.eu"));
+}
