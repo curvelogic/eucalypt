@@ -1302,3 +1302,8 @@ pub fn test_error_112() {
 pub fn test_error_113() {
     run_error_test(&error_opts("113_tail_empty_list.eu"));
 }
+
+#[test]
+pub fn test_error_114() {
+    run_error_test(&error_opts("114_deep_nested_destructure.eu"));
+}

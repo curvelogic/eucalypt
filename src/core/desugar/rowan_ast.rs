@@ -351,9 +351,11 @@ fn desugar_declaration_body_with_patterns(
                                 if let ParamPattern::Simple(n) = sub {
                                     all_env_names.push(n.clone());
                                     sub_names.push(n.clone());
+                                } else {
+                                    return Err(CoreError::DeepNestedListDestructure(
+                                        desugarer.new_smid(span),
+                                    ));
                                 }
-                                // Deeper nesting would need recursion; for now
-                                // support one level of nesting.
                             }
                             if let Some(t) = &sub_tail {
                                 all_env_names.push(t.clone());
