@@ -235,14 +235,25 @@ impl SourceMap {
             .filter_map(|smid| {
                 let info = self.source.get(smid.get())?;
 
-                // Determine the display name: prefer intrinsic display name, then source snippet
-                let display_name = info.annotation.as_deref().and_then(intrinsic_display_name);
+                // Determine the display name: prefer intrinsic display name,
+                // then annotation (function name), then source snippet
+                let display_name = info
+                    .annotation
+                    .as_deref()
+                    .and_then(|a| intrinsic_display_name(a).or(Some(a)));
 
-                let source_snippet = || {
+                let source_snippet = || -> Option<String> {
                     let id = info.file?;
                     let source: &str = files.source(id).ok()?;
                     let span = info.span?;
-                    source.get(Range::from(span))
+                    let raw = source.get(Range::from(span))?;
+                    // Truncate to first line as a safety net
+                    let first_line = raw.lines().next().unwrap_or(raw);
+                    if first_line.len() < raw.len() {
+                        Some(format!("{first_line}…"))
+                    } else {
+                        Some(first_line.to_string())
+                    }
                 };
 
                 // Build file:line:col location string if we have a source location
@@ -264,7 +275,9 @@ impl SourceMap {
 
                 // Only include entries that have a user-visible name or source location.
                 // Entries with neither are internal machinery and are silently dropped.
-                let name = display_name.or_else(source_snippet)?;
+                let name = display_name
+                    .map(|s| s.to_string())
+                    .or_else(source_snippet)?;
 
                 // Format: "name at file:line:col" or just "name" if no location
                 let entry = match location {
@@ -408,7 +421,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         // Internal constants and data constructors
         "KNIL" | "K[]" | "K{}" | "DQ" | "IFIELDS" | "SUPPRESSES" | "REQUIRES" => None,
 
-        // Unknown — show as-is (should not normally appear)
-        other => Some(other),
+        // Unknown — not an intrinsic
+        _ => None,
     }
 }
