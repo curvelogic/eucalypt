@@ -197,9 +197,18 @@ impl<'smap> Desugarer<'smap> {
         &mut self.env
     }
 
-    /// Record source position and mint a SMID for it
+    /// Record source position and mint a SMID for it.
+    ///
+    /// If we are inside a declaration (stack is non-empty), the SMID
+    /// is automatically annotated with the current declaration name so
+    /// that stack traces show function names instead of source snippets.
     pub fn new_smid(&mut self, span: Span) -> Smid {
-        self.source_map.add(*self.file.last().unwrap(), span)
+        let file = *self.file.last().unwrap();
+        if let Some(name) = self.stack.last() {
+            self.source_map.add_annotated(file, span, name.clone())
+        } else {
+            self.source_map.add(file, span)
+        }
     }
 
     /// Record an annotated source position and mint a SMID for it
