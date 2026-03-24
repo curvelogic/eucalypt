@@ -2,16 +2,18 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.5.1] - Unreleased
+## [0.5.1] - 2026-03-24
 
 ### Added
 
 - **Vec type** — `vec.of`, `vec.len`, `vec.nth`, `vec.slice`, `vec.sample`, `vec.shuffle`, `vec.to-list` for O(1) indexed access on large primitive collections
+- **Set sampling** — `set.sample(k, s, stream)` for random monad sampling from sets
 - **Unified test expectations** — `//=` and `//!` now emit stderr diagnostics on failure via `__EXPECT` BIF; `__DBG_REPR` renders values for diagnostic output
 - **Debug tracing** — `dbg(opts, v)` function and `▶` prefix operator for stderr debug output
 - **Structured argument parsing** — `parse-args(defaults, args)` with short flags, type coercion, combined options, and `--help` generation
 - **Monadic blocks** — `monad: true` metadata registers namespaces; implicit return from non-underscore bindings; identity monad (`:let` blocks)
 - **Bracket registry** — proper content-type registry replaces parser heuristic for bracket pairs
+- **Idiot brackets collect as list** — `⟦ a b c ⟧` now collects items as `[a, b, c]`; bracket parameter definitions support destructuring patterns
 - **Multi-label diagnostics** — secondary source labels from env trace; stack trace reversed to read top-down with name-first formatting
 - **Error source locations** — all `ExecutionError` variants now carry `Smid` for source location
 - **WASM API** — `evaluate(source, format)` via wasm-bindgen for browser/Node.js use
@@ -21,16 +23,30 @@ All notable changes to eucalypt are documented here.
 - **Windows support** — crash handler gated with `cfg(unix)`, PowerShell shell dispatch, Windows CI and release binary
 - **Deep merge metadata** — merge and deep merge now preserve block metadata (RHS wins)
 - **`coalesce(xs)`** — return first non-null element from a list
+- **`update-nth(n, f, l)`** — apply function to element at index n in a list
+- **`update-first(p?, f, l)`** — apply function to first matching element in a list
+- **`eu.os` / `eu.arch`** — platform constants for cross-platform test portability
+- **Nested list destructuring** — `f([a, [b: c]])` now works in function parameters
+- **AddressSanitizer CI** — ASAN job (continue-on-error) for catching memory safety issues
 
 ### Changed
 
 - **Moniker dependency removed** — replaced with custom binding module; simplified type signatures throughout core pipeline (22 files)
 - **`:suppress` documentation** — clarified as data-only; not needed on functions
 - **Type predicates** — `number?`, `string?`, `symbol?`, `bool?` intrinsics added
+- **`list-update` removed** — replaced by `update-nth` with pipeline-friendly arg order
 
 ### Fixed
 
+- **Array growth bug** — `default_array_growth(1)` returned 1 (no growth) due to integer division truncation; caused heap-buffer-overflow on Linux (detected by ASAN)
+- **Monadic implicit return self-reference** — synthesised `{a: a}` used `Expr::Block` (letrec) causing self-reference; fixed with manual `Let + Block` scope
+- **`-e` monad registry** — `monad: true` registrations from prelude now persist across translation units so `-e` expressions see them
+- **`split-after` no-match crash** — crashed when predicate never matched; separated nil check from predicate check
+- **`head`/`tail` on empty list** — now panics with "head of empty list" / "tail of empty list" instead of cryptic type mismatch (fixed `Panic.global` to use `BoxedString`)
+- **Stack traces show function names** — `new_smid` inherits declaration name from desugarer stack; `intrinsic_display_name` catch-all no longer masks user function names
+- **Graceful cwd error** — warns instead of panicking when current directory is inaccessible
 - **String interpolation** — pipelines inside interpolation braces were silently producing wrong results; fixed in prelude
+- **Windows c-string test** — newline comparison uses c-string instead of literal to avoid `\r\n` conversion
 
 ## [0.5.0] - 2026-03-13
 
