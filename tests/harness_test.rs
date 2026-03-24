@@ -1307,3 +1307,8 @@ pub fn test_error_113() {
 pub fn test_error_114() {
     run_error_test(&error_opts("114_deep_nested_destructure.eu"));
 }
+
+#[test]
+pub fn test_error_115() {
+    run_error_test(&error_opts("115_render_as_invalid_format.eu"));
+}
