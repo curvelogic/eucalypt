@@ -136,9 +136,13 @@ pub fn evaluate_pipeline(source: &str, format: &str) -> Result<String, PipelineE
             },
         )?;
 
-    // 3. Parse user source
+    // 3. Parse user source as an expression (like CLI `-e`).
+    //
+    // Using `parse_expr` (expression/soup mode) rather than `parse_unit`
+    // (file/declaration mode) so playground-style inputs like `{x: 1}`,
+    // `42`, and `"hello"` work as expected.
     let source_file_id = files.add("<input>".to_string(), source.to_string());
-    let source_parse = rowan::parse_unit(source);
+    let source_parse = rowan::parse_expr(source);
     if !source_parse.errors().is_empty() {
         let first_error = &source_parse.errors()[0];
         let location = extract_parse_error_location(first_error, source_file_id, &files);
@@ -388,21 +392,28 @@ mod tests {
 
     #[test]
     fn test_json_output_block() {
-        let result = evaluate_pipeline("result: {x: 1}", "json").unwrap();
+        let result = evaluate_pipeline("{x: 1}", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
-        assert_eq!(v["result"]["x"], 1);
+        assert_eq!(v["x"], 1);
     }
 
     #[test]
     fn test_yaml_output() {
-        let result = evaluate_pipeline("x: 1", "yaml").unwrap();
-        assert!(result.contains("x:"));
+        let result = evaluate_pipeline("{ hello: \"world\" }", "yaml").unwrap();
+        assert!(result.contains("hello:"));
     }
 
     #[test]
     fn test_text_output() {
-        let result = evaluate_pipeline("result: \"hello\"", "text").unwrap();
-        assert!(result.trim().contains("hello"));
+        let result = evaluate_pipeline("\"hello\"", "text").unwrap();
+        assert_eq!(result.trim(), "hello");
+    }
+
+    #[test]
+    fn test_bare_number() {
+        let result = evaluate_pipeline("42", "json").unwrap();
+        let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
+        assert_eq!(v, 42);
     }
 
     #[test]
@@ -413,33 +424,33 @@ mod tests {
 
     #[test]
     fn test_unknown_format() {
-        let result = evaluate_pipeline("x: 1", "nosuchformat");
+        let result = evaluate_pipeline("{x: 1}", "nosuchformat");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_step_limit() {
-        let result = evaluate_pipeline("f(x): f(x)\nmain: f(0)", "json");
+        let result = evaluate_pipeline("{ f(x): f(x)  main: f(0) }.main", "json");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_nested_block() {
-        let result = evaluate_pipeline("a: {b: 2}", "json").unwrap();
+        let result = evaluate_pipeline("{a: {b: 2}}", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
         assert_eq!(v["a"]["b"], 2);
     }
 
     #[test]
     fn test_list_output() {
-        let result = evaluate_pipeline("result: [1, 2, 3]", "json").unwrap();
+        let result = evaluate_pipeline("[1, 2, 3]", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
-        assert_eq!(v["result"], serde_json::json!([1, 2, 3]));
+        assert_eq!(v, serde_json::json!([1, 2, 3]));
     }
 
     #[test]
     fn test_boolean_values() {
-        let result = evaluate_pipeline("t: true\nf: false", "json").unwrap();
+        let result = evaluate_pipeline("{t: true, f: false}", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
         assert_eq!(v["t"], true);
         assert_eq!(v["f"], false);
@@ -447,7 +458,7 @@ mod tests {
 
     #[test]
     fn test_expression_evaluation() {
-        let result = evaluate_pipeline("x: 2 + 3", "json").unwrap();
+        let result = evaluate_pipeline("{x: 2 + 3}", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
         assert_eq!(v["x"], 5);
     }
