@@ -64,6 +64,20 @@ tests: {
     pass: result = "42"
   }
 
+  ` "nested render-as: block containing a pre-rendered JSON string rendered as YAML"
+  nested-render: {
+    inner: {x: 1, y: 2} render-as(:json)
+    outer: {nested: inner} render-as(:yaml)
+    pass: outer str.contains?("nested:")
+  }
+
+  ` "render-as(:json, ...) on a deeply nested structure"
+  deep-nested: {
+    nest(n, v): if(n = 0, v, {inner: nest(n - 1, v)})
+    result: nest(10, "leaf") render-as(:json)
+    pass: (result str.contains?("inner")) ∧ (result str.contains?("leaf"))
+  }
+
 }
 
 RESULT: tests values map(_.pass) all-true? then(:PASS, :FAIL)
