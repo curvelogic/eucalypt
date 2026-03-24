@@ -196,7 +196,7 @@ impl Embed for CoreExpr {
                 b.embed(&args_soup)?;
                 b.finish()
             }
-            CoreExpr::Soup(_, items) => {
+            CoreExpr::Soup(_, items, _) => {
                 let mut b = EmbedBuilder::new("c-soup");
                 for item in items {
                     b.embed(item)?;

@@ -35,7 +35,7 @@ impl Verifier {
                     .push(CoreError::RedeclaredVariable(*s, n.clone()));
                 Ok(expr)
             }
-            Expr::Soup(s, _) => {
+            Expr::Soup(s, _, _) => {
                 self.errors.push(CoreError::UneliminatedSoup(*s));
                 Ok(expr)
             }

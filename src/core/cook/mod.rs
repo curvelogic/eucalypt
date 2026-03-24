@@ -54,6 +54,39 @@ pub struct Cooker {
     pending_block_anaphora: HashMap<Anaphor<Smid, i32>, String>,
 }
 
+/// Split a list of cooked atoms at catenation operator boundaries.
+///
+/// Catenation operators inserted by `fill_gaps` are
+/// `Expr::Operator(_, _, _, body)` where `body` is `ErrPseudoCat`.
+/// This splits the atom list at those operators, discarding the
+/// catenation markers themselves.
+fn split_at_cat_operators(atoms: &[RcExpr]) -> Vec<Vec<RcExpr>> {
+    let mut groups: Vec<Vec<RcExpr>> = Vec::new();
+    let mut current: Vec<RcExpr> = Vec::new();
+    for atom in atoms {
+        if is_cat_operator(atom) {
+            if !current.is_empty() {
+                groups.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(atom.clone());
+        }
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    groups
+}
+
+/// Check whether an expression is a catenation operator wrapper.
+fn is_cat_operator(expr: &RcExpr) -> bool {
+    if let Expr::Operator(_, _, _, ref body) = &*expr.inner {
+        body.is_pseudocat()
+    } else {
+        false
+    }
+}
+
 impl Cooker {
     /// Cook the expression `expr` resolving all operators and
     /// eliminating Expr::Soup in favour of hierarchical expressions.
@@ -93,7 +126,7 @@ impl Cooker {
     fn cook_(&mut self, expr: RcExpr) -> Result<RcExpr, CoreError> {
         match &*expr.inner {
             Expr::Let(_, _, _) => self.cook_let(&expr),
-            Expr::Soup(_, ref xs) => self.cook_soup(xs),
+            Expr::Soup(_, ref xs, bracket) => self.cook_soup(xs, *bracket),
             Expr::BlockAnaphor(s, anaphor) => Ok(self.cook_block_anaphor(*s, anaphor)),
             Expr::ExprAnaphor(s, anaphor) => Ok(self.cook_expr_anaphor(*s, anaphor)),
             _ => expr.try_walk_safe(&mut |e| self.cook_(e.clone())),
@@ -125,7 +158,7 @@ impl Cooker {
     /// that find `in_expr_anaphor_scope` already true do NOT create
     /// their own lambda — their anaphors propagate to the outer scope
     /// (subsumption).
-    fn cook_soup(&mut self, exprs: &[RcExpr]) -> Result<RcExpr, CoreError> {
+    fn cook_soup(&mut self, exprs: &[RcExpr], bracket: bool) -> Result<RcExpr, CoreError> {
         let (filled, naked_anaphora) = self.insert_anaphora(exprs)?;
 
         let wrap_lambda = !self.in_expr_anaphor_scope && !naked_anaphora.is_empty();
@@ -144,7 +177,18 @@ impl Cooker {
             subcooked?
         };
 
-        let cooked = shunt::shunt(atoms)?;
+        let cooked = if bracket {
+            // Split at catenation operators, shunt each group, collect as List
+            let groups = split_at_cat_operators(&atoms);
+            let mut items = Vec::new();
+            for group in groups {
+                items.push(shunt::shunt(group)?);
+            }
+            let smid = exprs.first().map(|e| e.smid()).unwrap_or_default();
+            RcExpr::from(Expr::List(smid, items))
+        } else {
+            shunt::shunt(atoms)?
+        };
 
         if wrap_lambda {
             self.in_expr_anaphor_scope = false;

@@ -659,12 +659,12 @@ pub enum DeclarationKind {
         OperatorIdentifier,
         NormalIdentifier,
     ),
-    /// Idiot bracket pair definition — e.g. `⟦ x ⟧: body` or `(⟦ x ⟧): body`
+    /// Idiot bracket pair definition — e.g. `⟦ x ⟧: body` or `(⟦ [f: rest] ⟧): body`
     ///
     /// The optional `ParenExpr` is `Some` when parens were written and `None` when the
     /// bracket appears directly in the head (paren-free style).
-    /// The `BracketExpr` contains the bracket pair characters and the single formal parameter.
-    BracketPair(Option<ParenExpr>, BracketExpr, NormalIdentifier),
+    /// The `Soup` is the bracket's inner content — the parameter pattern.
+    BracketPair(Option<ParenExpr>, BracketExpr, Soup),
     /// Monadic bracket block definition — e.g. `⟦{}⟧: body` or `(⟦{}⟧): body`
     ///
     /// The optional `ParenExpr` is `Some` when parens were written and `None` for paren-free style.
@@ -689,15 +689,15 @@ fn classify_bracket_direct(bracket: BracketExpr, head_range: TextRange) -> Decla
         .map(|s| s.elements().collect())
         .unwrap_or_default();
     if inner_elements.len() == 1 {
-        if let Some(param) = inner_elements[0].as_normal_identifier() {
-            DeclarationKind::BracketPair(None, bracket, param)
-        } else if let Element::Block(_) = &inner_elements[0] {
+        if let Element::Block(_) = &inner_elements[0] {
             // Block-mode bracket pair definition: ⟦{}⟧: ...
             DeclarationKind::BracketBlockDef(None, bracket)
+        } else if let Some(soup) = bracket.soup() {
+            // Idiot bracket with parameter pattern (simple name, list, or block destructuring)
+            DeclarationKind::BracketPair(None, bracket, soup)
         } else {
-            DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
-                head_range,
-                range: inner_elements[0].syntax().text_range(),
+            DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+                range: head_range,
             }])
         }
     } else if inner_elements.is_empty() {
@@ -734,16 +734,15 @@ fn classify_operator(pe: ParenExpr) -> DeclarationKind {
                     .map(|s| s.elements().collect())
                     .unwrap_or_default();
                 if inner_elements.len() == 1 {
-                    if let Some(param) = inner_elements[0].as_normal_identifier() {
-                        DeclarationKind::BracketPair(Some(pe), bracket.clone(), param)
-                    } else if let Element::Block(_) = &inner_elements[0] {
+                    if let Element::Block(_) = &inner_elements[0] {
                         // Block-mode bracket pair definition: (⟦{}⟧): ...
-                        // The `{}` parameter signals block content (declarations) mode.
                         DeclarationKind::BracketBlockDef(Some(pe), bracket.clone())
+                    } else if let Some(soup) = bracket.soup() {
+                        // Idiot bracket with parameter pattern
+                        DeclarationKind::BracketPair(Some(pe), bracket.clone(), soup)
                     } else {
-                        DeclarationKind::MalformedHead(vec![ParseError::InvalidFormalParameter {
-                            head_range: pe.syntax().text_range(),
-                            range: inner_elements[0].syntax().text_range(),
+                        DeclarationKind::MalformedHead(vec![ParseError::MalformedDeclarationHead {
+                            range: pe.syntax().text_range(),
                         }])
                     }
                 } else if inner_elements.is_empty() {

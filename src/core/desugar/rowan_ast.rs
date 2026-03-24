@@ -1367,14 +1367,15 @@ impl Desugarable for Element {
                     )
                 })?;
 
-                // Simple expression mode: ⟦ x ⟧ → ⟦⟧(x)
+                // Idiot brackets: desugar inner soup with bracket flag.
                 //
-                // Desugar the inner soup and apply the bracket pair function.
-                // Both the function name and the argument must be varified so
-                // that Name nodes are resolved to Var references before the
-                // STG compiler sees them.
+                // Uses desugar_rowan_soup_bracket which processes elements
+                // normally (grouping calls, resolving lookups) but produces
+                // Soup with bracket=true.  The cook phase will then split
+                // at catenation boundaries and collect items into a List.
                 let inner = if let Some(soup) = bracket.soup() {
-                    soup.desugar(desugarer)?
+                    let elements: Vec<Element> = soup.elements().collect();
+                    desugar_rowan_soup_bracket(span, elements, desugarer)?
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "empty bracket expression".to_string(),
@@ -1649,15 +1650,24 @@ fn extract_rowan_declaration_components(
                     fixity: Some(crate::core::expr::Fixity::Nullary),
                 })
             }
-            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param) => {
+            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param_soup) => {
                 let pair_name = bracket_expr.bracket_pair_name().ok_or_else(|| {
                     CoreError::InvalidEmbedding(
                         "bracket pair declaration has no bracket pair name".to_string(),
                         desugarer.new_smid(span),
                     )
                 })?;
-                let args = vec![param.text().to_string()];
-                let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
+                // Parse the bracket parameter as a pattern (simple name,
+                // list destructuring, or block destructuring)
+                let pattern = parse_param_pattern(&param_soup).ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "invalid bracket parameter pattern".to_string(),
+                        desugarer.new_smid(span),
+                    )
+                })?;
+
+                let (body, args, arg_vars) =
+                    desugar_declaration_body_with_patterns(decl, desugarer, &[pattern], span)?;
 
                 Ok(RowanDeclarationComponents {
                     span,
@@ -1986,7 +1996,7 @@ impl Desugarable for rowan_ast::Soup {
 fn ensure_anaphor_in_soup(expr: RcExpr) -> RcExpr {
     if matches!(&*expr.inner, crate::core::expr::Expr::ExprAnaphor(_, _)) {
         let smid = expr.smid();
-        RcExpr::from(crate::core::expr::Expr::Soup(smid, vec![expr]))
+        RcExpr::from(crate::core::expr::Expr::Soup(smid, vec![expr], false))
     } else {
         expr
     }
@@ -1997,6 +2007,23 @@ fn desugar_rowan_soup(
     span: Span,
     elements: Vec<Element>,
     desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    desugar_rowan_soup_inner(span, elements, desugarer, false)
+}
+
+fn desugar_rowan_soup_bracket(
+    span: Span,
+    elements: Vec<Element>,
+    desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    desugar_rowan_soup_inner(span, elements, desugarer, true)
+}
+
+fn desugar_rowan_soup_inner(
+    span: Span,
+    elements: Vec<Element>,
+    desugarer: &mut Desugarer,
+    bracket: bool,
 ) -> Result<RcExpr, CoreError> {
     // Define PendingLookup enum locally since we removed the legacy AST module
     #[derive(Debug, Clone, PartialEq)]
@@ -2239,14 +2266,23 @@ fn desugar_rowan_soup(
     }
 
     // Optimise away the soup wrapping in cases where it is definitely
-    // not needed but leave vars for cooking phase (in case of sections)
-    if soup.len() == 1 {
+    // not needed but leave vars for cooking phase (in case of sections).
+    // For bracket content, always wrap so the cook phase produces a List.
+    if soup.len() == 1 && !bracket {
         match &*soup.first().unwrap().inner {
-            Expr::Var(_, _) => Ok(RcExpr::from(Expr::Soup(desugarer.new_smid(span), soup))),
+            Expr::Var(_, _) => Ok(RcExpr::from(Expr::Soup(
+                desugarer.new_smid(span),
+                soup,
+                bracket,
+            ))),
             _ => Ok(soup.first().unwrap().clone()),
         }
     } else {
-        Ok(RcExpr::from(Expr::Soup(desugarer.new_smid(span), soup)))
+        Ok(RcExpr::from(Expr::Soup(
+            desugarer.new_smid(span),
+            soup,
+            bracket,
+        )))
     }
 }
 
