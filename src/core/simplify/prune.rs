@@ -372,7 +372,7 @@ impl<'expr> ScopeTracker<'expr> {
                     self.traverse(x);
                 }
             }
-            Expr::Soup(_, xs) => {
+            Expr::Soup(_, xs, _) => {
                 for x in xs {
                     self.traverse(x);
                 }
@@ -445,7 +445,9 @@ impl<'expr> ScopeTracker<'expr> {
                 self.blank_unseen(f),
                 xs.iter().map(|x| self.blank_unseen(x)).collect(),
             ),
-            Expr::Soup(s, xs) => Expr::Soup(*s, xs.iter().map(|x| self.blank_unseen(x)).collect()),
+            Expr::Soup(s, xs, bk) => {
+                Expr::Soup(*s, xs.iter().map(|x| self.blank_unseen(x)).collect(), *bk)
+            }
             Expr::Operator(s, fx, p, e) => Expr::Operator(*s, *fx, *p, self.blank_unseen(e)),
             _ => fmap(&*expr.inner),
         })

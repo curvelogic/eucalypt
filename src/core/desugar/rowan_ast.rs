@@ -1367,24 +1367,15 @@ impl Desugarable for Element {
                     )
                 })?;
 
-                // Idiot brackets: collect soup items as a list.
+                // Idiot brackets: desugar inner soup with bracket flag.
                 //
-                // Desugar the inner soup (groups call syntax like f(x)
-                // into applications).  Convert the Soup items to a List
-                // — each top-level soup element becomes one list item.
-                // Catenation within sub-expressions ([...], (...)) is
-                // preserved because those are single soup items.
+                // Uses desugar_rowan_soup_bracket which processes elements
+                // normally (grouping calls, resolving lookups) but produces
+                // Soup with bracket=true.  The cook phase will then split
+                // at catenation boundaries and collect items into a List.
                 let inner = if let Some(soup) = bracket.soup() {
-                    let desugared = soup.desugar(desugarer)?;
-                    let items = match &*desugared.inner {
-                        Expr::Soup(_, ref elems) => elems.clone(),
-                        _ => vec![desugared.clone()],
-                    };
-                    let varified_items: Vec<RcExpr> = items
-                        .into_iter()
-                        .map(|item| desugarer.varify(item))
-                        .collect();
-                    core::list(smid, varified_items)
+                    let elements: Vec<Element> = soup.elements().collect();
+                    desugar_rowan_soup_bracket(span, elements, desugarer)?
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "empty bracket expression".to_string(),
@@ -1665,7 +1656,6 @@ fn extract_rowan_declaration_components(
                         desugarer.new_smid(span),
                     )
                 })?;
-
                 // Parse the bracket parameter as a pattern (simple name,
                 // list destructuring, or block destructuring)
                 let pattern = parse_param_pattern(&param_soup).ok_or_else(|| {
@@ -2005,7 +1995,7 @@ impl Desugarable for rowan_ast::Soup {
 fn ensure_anaphor_in_soup(expr: RcExpr) -> RcExpr {
     if matches!(&*expr.inner, crate::core::expr::Expr::ExprAnaphor(_, _)) {
         let smid = expr.smid();
-        RcExpr::from(crate::core::expr::Expr::Soup(smid, vec![expr]))
+        RcExpr::from(crate::core::expr::Expr::Soup(smid, vec![expr], false))
     } else {
         expr
     }
@@ -2016,6 +2006,23 @@ fn desugar_rowan_soup(
     span: Span,
     elements: Vec<Element>,
     desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    desugar_rowan_soup_inner(span, elements, desugarer, false)
+}
+
+fn desugar_rowan_soup_bracket(
+    span: Span,
+    elements: Vec<Element>,
+    desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    desugar_rowan_soup_inner(span, elements, desugarer, true)
+}
+
+fn desugar_rowan_soup_inner(
+    span: Span,
+    elements: Vec<Element>,
+    desugarer: &mut Desugarer,
+    bracket: bool,
 ) -> Result<RcExpr, CoreError> {
     // Define PendingLookup enum locally since we removed the legacy AST module
     #[derive(Debug, Clone, PartialEq)]
@@ -2258,14 +2265,23 @@ fn desugar_rowan_soup(
     }
 
     // Optimise away the soup wrapping in cases where it is definitely
-    // not needed but leave vars for cooking phase (in case of sections)
-    if soup.len() == 1 {
+    // not needed but leave vars for cooking phase (in case of sections).
+    // For bracket content, always wrap so the cook phase produces a List.
+    if soup.len() == 1 && !bracket {
         match &*soup.first().unwrap().inner {
-            Expr::Var(_, _) => Ok(RcExpr::from(Expr::Soup(desugarer.new_smid(span), soup))),
+            Expr::Var(_, _) => Ok(RcExpr::from(Expr::Soup(
+                desugarer.new_smid(span),
+                soup,
+                bracket,
+            ))),
             _ => Ok(soup.first().unwrap().clone()),
         }
     } else {
-        Ok(RcExpr::from(Expr::Soup(desugarer.new_smid(span), soup)))
+        Ok(RcExpr::from(Expr::Soup(
+            desugarer.new_smid(span),
+            soup,
+            bracket,
+        )))
     }
 }
 

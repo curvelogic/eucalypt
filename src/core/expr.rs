@@ -335,7 +335,8 @@ where
     /// Application of lambda or builtin (or block) - Embedding: `[:c-app func [arg1 arg2]]`
     App(Smid, T, Vec<T>),
     /// Operator soup awaiting precedence / fixity processing - Embedding: `[:c-soup item1 item2 ...]`
-    Soup(Smid, Vec<T>),
+    /// The bool flag indicates bracket content that should be collected as a list.
+    Soup(Smid, Vec<T>, bool),
     /// Operator precedence / fixity metadata (may surround definition
     /// or call) - Embedding: `[:c-op :fixity precedence expr]`
     Operator(Smid, Fixity, Precedence, T),
@@ -371,7 +372,7 @@ impl<T: Clone> HasSmid for Expr<T> {
             ArgTuple(s, _) => s,
             Lam(s, _, _) => s,
             App(s, _, _) => s,
-            Soup(s, _) => s,
+            Soup(s, _, _) => s,
             Operator(s, _, _, _) => s,
             ErrUnresolved(s, _) => s,
             ErrRedeclaration(s, _) => s,
@@ -436,7 +437,7 @@ where
         Expr::Meta(s, e, m) => Expr::Meta(*s, V::from(e), V::from(m)),
         Expr::ArgTuple(s, xs) => Expr::ArgTuple(*s, xs.iter().map(V::from).collect()),
         Expr::App(s, f, xs) => Expr::App(*s, V::from(f), xs.iter().map(V::from).collect()),
-        Expr::Soup(s, xs) => Expr::Soup(*s, xs.iter().map(V::from).collect()),
+        Expr::Soup(s, xs, bk) => Expr::Soup(*s, xs.iter().map(V::from).collect(), *bk),
         Expr::Operator(s, fx, p, e) => Expr::Operator(*s, *fx, *p, V::from(e)),
         Expr::Let(s, scope, t) => Expr::Let(
             *s,
@@ -614,9 +615,11 @@ impl RcExpr {
                 f(g.clone()),
                 xs.iter().map(|x| f(x.clone())).collect(),
             )),
-            Expr::Soup(s, xs) => {
-                RcExpr::from(Expr::Soup(*s, xs.iter().map(|x| f(x.clone())).collect()))
-            }
+            Expr::Soup(s, xs, bk) => RcExpr::from(Expr::Soup(
+                *s,
+                xs.iter().map(|x| f(x.clone())).collect(),
+                *bk,
+            )),
             Expr::Operator(s, fx, p, e) => RcExpr::from(Expr::Operator(*s, *fx, *p, f(e.clone()))),
             Expr::Let(s, scope, t) => RcExpr::from(Expr::Let(
                 *s,
@@ -681,11 +684,12 @@ impl RcExpr {
                     .map(|x| f(x.clone()))
                     .collect::<Result<Vec<RcExpr>, E>>()?,
             )),
-            Expr::Soup(s, xs) => RcExpr::from(Expr::Soup(
+            Expr::Soup(s, xs, bk) => RcExpr::from(Expr::Soup(
                 *s,
                 xs.iter()
                     .map(|x| f(x.clone()))
                     .collect::<Result<Vec<RcExpr>, E>>()?,
+                *bk,
             )),
             Expr::Operator(s, fx, p, e) => RcExpr::from(Expr::Operator(*s, *fx, *p, f(e.clone())?)),
             Expr::Let(s, scope, t) => {
@@ -791,13 +795,13 @@ impl RcExpr {
                     RcExpr::from(Expr::App(*s, new_g, new_xs))
                 }
             }
-            Expr::Soup(s, xs) => {
+            Expr::Soup(s, xs, bk) => {
                 let new_xs: Vec<_> = xs.iter().map(f).collect();
                 let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
                 if all_same {
                     self.clone()
                 } else {
-                    RcExpr::from(Expr::Soup(*s, new_xs))
+                    RcExpr::from(Expr::Soup(*s, new_xs, *bk))
                 }
             }
             Expr::Operator(s, fx, p, e) => {
@@ -940,13 +944,13 @@ impl RcExpr {
                     RcExpr::from(Expr::App(*s, new_g, new_xs))
                 }
             }
-            Expr::Soup(s, xs) => {
+            Expr::Soup(s, xs, bk) => {
                 let new_xs: Vec<RcExpr> = xs.iter().map(f).collect::<Result<_, E>>()?;
                 let all_same = xs.iter().zip(new_xs.iter()).all(|(a, b)| a.ptr_eq(b));
                 if all_same {
                     self.clone()
                 } else {
-                    RcExpr::from(Expr::Soup(*s, new_xs))
+                    RcExpr::from(Expr::Soup(*s, new_xs, *bk))
                 }
             }
             Expr::Operator(s, fx, p, e) => {
@@ -1509,7 +1513,7 @@ fn collect_free_vars(expr: &RcExpr, result: &mut std::collections::HashSet<Strin
                 collect_free_vars(x, result);
             }
         }
-        Expr::Soup(_, xs) => {
+        Expr::Soup(_, xs, _) => {
             for x in xs {
                 collect_free_vars(x, result);
             }
@@ -1612,7 +1616,7 @@ pub mod core {
 
     /// Create operator soup
     pub fn soup(smid: Smid, exprs: Vec<RcExpr>) -> RcExpr {
-        RcExpr::from(Expr::Soup(smid, exprs))
+        RcExpr::from(Expr::Soup(smid, exprs, false))
     }
 
     /// Call pseudo-operator
@@ -2011,9 +2015,10 @@ pub mod tests {
                     .map(|(k, v)| (k.clone(), alpha_norm_inner(v, counter)))
                     .collect(),
             )),
-            Expr::Soup(_, items) => RcExpr::from(Expr::Soup(
+            Expr::Soup(_, items, bk) => RcExpr::from(Expr::Soup(
                 Smid::default(),
                 items.iter().map(|i| alpha_norm_inner(i, counter)).collect(),
+                *bk,
             )),
             Expr::ArgTuple(_, args) => RcExpr::from(Expr::ArgTuple(
                 Smid::default(),
