@@ -1020,7 +1020,21 @@ impl EucalyptOptions {
         }
 
         // add current working directory as a lib path
-        self.lib_path.insert(0, std::env::current_dir()?);
+        match std::env::current_dir() {
+            Ok(cwd) => self.lib_path.insert(0, cwd),
+            Err(e) => {
+                eprintln!(
+                    "warning: cannot access current directory ({}); file imports may fail",
+                    e
+                );
+                eprintln!(
+                    "  help: this often happens after a git operation deletes and recreates a directory"
+                );
+                eprintln!(
+                    "  help: try `cd .` or `cd $PWD` to refresh your shell's directory handle"
+                );
+            }
+        }
 
         // For pipes, default json stdin (but not if -e evaluand provided)
         if self.explicit_inputs.is_empty()
