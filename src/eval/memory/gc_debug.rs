@@ -25,12 +25,13 @@ static FLAGS_INITIALISED: AtomicBool = AtomicBool::new(false);
 
 /// Initialise GC debug flags from environment variables.
 ///
-/// Called lazily on first use.  Thread-safe (idempotent, relaxed atomics).
+/// Called lazily on first use.  Thread-safe (idempotent, acquire/release
+/// ordering ensures the flag stores are visible before `FLAGS_INITIALISED`).
 fn ensure_initialised() {
-    if !FLAGS_INITIALISED.load(Ordering::Relaxed) {
+    if !FLAGS_INITIALISED.load(Ordering::Acquire) {
         GC_POISON_ENABLED.store(std::env::var("EU_GC_POISON").is_ok(), Ordering::Relaxed);
         GC_VERIFY_ENABLED.store(std::env::var("EU_GC_VERIFY").is_ok(), Ordering::Relaxed);
-        FLAGS_INITIALISED.store(true, Ordering::Relaxed);
+        FLAGS_INITIALISED.store(true, Ordering::Release);
     }
 }
 

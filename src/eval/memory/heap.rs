@@ -1116,8 +1116,11 @@ pub struct Heap {
     gc_metrics: UnsafeCell<GCMetrics>,
     /// Pin counts by block base address.
     pin_counts: UnsafeCell<HashMap<usize, usize>>,
-    /// Counter of mark_object calls — used by GC verify to detect
-    /// objects that were missed during the mark phase.
+    /// Number of objects marked (cumulative across all GC cycles).
+    ///
+    /// Incremented by `mark_object()` each time an object is marked.
+    /// Never reset to zero — `verify_mark_integrity` uses a before/after
+    /// snapshot to detect objects missed during a single mark phase.
     mark_count: std::cell::Cell<u64>,
 }
 
