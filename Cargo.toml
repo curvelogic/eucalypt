@@ -13,6 +13,9 @@ gc-telemetry = []
 [build-dependencies]
 
 [dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 criterion = "0.8"
 
 [dependencies]
@@ -64,6 +67,7 @@ uuid = { version = "1.1.2", features = ["v4"] }
 getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
+web-time = "1.1"
 
 [lib]
 # cdylib is required for WASM targets (produces the .wasm file usable from JS).

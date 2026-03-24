@@ -4,6 +4,11 @@ use std::cmp::max;
 use std::collections::BTreeMap;
 use std::time;
 
+#[cfg(not(target_arch = "wasm32"))]
+type Instant = time::Instant;
+#[cfg(target_arch = "wasm32")]
+type Instant = web_time::Instant;
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum ThreadOccupation {
     Initialisation,
@@ -15,7 +20,7 @@ pub enum ThreadOccupation {
 #[derive(Default)]
 pub struct Clock {
     durations: BTreeMap<ThreadOccupation, time::Duration>,
-    current: Option<(ThreadOccupation, time::Instant)>,
+    current: Option<(ThreadOccupation, Instant)>,
 }
 
 impl Clock {
@@ -33,7 +38,7 @@ impl Clock {
 
     pub fn switch(&mut self, occupation: ThreadOccupation) {
         self.commit();
-        self.current = Some((occupation, time::Instant::now()))
+        self.current = Some((occupation, Instant::now()))
     }
 
     pub fn duration(&self, occupation: ThreadOccupation) -> time::Duration {

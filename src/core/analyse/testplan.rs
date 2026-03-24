@@ -342,7 +342,7 @@ impl TestPlan {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 pub mod tests {
 
     use super::*;

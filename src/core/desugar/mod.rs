@@ -17,11 +17,11 @@ pub mod literal;
 pub mod rowan_ast;
 pub mod rowan_disembed;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "rowan_integration_test.rs"]
 mod rowan_integration_test;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "rowan_comprehensive_test.rs"]
 mod rowan_comprehensive_test;
 
