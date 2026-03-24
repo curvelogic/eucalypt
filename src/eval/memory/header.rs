@@ -49,12 +49,21 @@ impl HeaderBits {
 /// Object Header
 ///
 /// Immix requires:
-///  - a mark bit (for mark phase)
-///  - a forwarded bit (to support evacuation)
-///  - forwarding pointer (to support evacuation)
-///  - pinning (supported at the block level via Heap::pin_block /
-///    Heap::unpin_block, not per-object)
+/// - a mark bit (for mark phase)
+/// - a forwarded bit (to support evacuation)
+/// - forwarding pointer (to support evacuation)
+/// - pinning (supported at the block level via `Heap::pin_block` /
+///   `Heap::unpin_block`, not per-object)
+///
+/// On 64-bit targets the natural layout is already 16 bytes. On wasm32 the
+/// fields only occupy 12 bytes, and without explicit alignment objects would
+/// start at `base + 12` — not 8-byte aligned — causing misaligned pointer
+/// panics for types containing `f64`/`u64`. `align(16)` pads the struct to
+/// 16 bytes on all targets so that `ptr.offset(-1)` in `get_header` and
+/// `ptr.add(size_of::<AllocHeader>())` in `alloc` are always consistent and
+/// properly aligned.
 #[derive(Debug)]
+#[repr(C, align(16))]
 pub struct AllocHeader {
     /// Header bits for object state
     bits: HeaderBits,

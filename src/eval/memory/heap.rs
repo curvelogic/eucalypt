@@ -3278,8 +3278,8 @@ pub mod tests {
         assert_eq!(size_of::<AllocHeader>(), 16, "AllocHeader size changed");
         assert_eq!(
             align_of::<AllocHeader>(),
-            8,
-            "AllocHeader natural alignment"
+            16,
+            "AllocHeader alignment (forced to 16 for wasm32 compatibility)"
         );
 
         let heap = Heap::new();
