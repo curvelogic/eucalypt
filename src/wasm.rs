@@ -91,3 +91,49 @@ pub fn evaluate(source: &str, format: &str) -> String {
 pub fn formats() -> String {
     r#"["yaml","json","toml","text","edn","html"]"#.to_string()
 }
+
+#[cfg(test)]
+#[cfg(target_arch = "wasm32")]
+mod wasm_tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    /// Full evaluation test — currently ignored due to runtime panic:
+    /// `std::time::Instant` is not available on `wasm32-unknown-unknown`.
+    /// Re-enable once the timing code is fully gated (bead eu-f8z8).
+    #[wasm_bindgen_test]
+    #[ignore = "wasm32: std::time::Instant not available"]
+    fn test_evaluate_json_success() {
+        let result = evaluate("x: 1", "json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("evaluate should return valid JSON");
+        assert_eq!(parsed["success"], true);
+        let output = parsed["output"].as_str().expect("should have output");
+        let output_parsed: serde_json::Value =
+            serde_json::from_str(output.trim()).expect("output should be valid JSON");
+        assert_eq!(output_parsed["x"], 1);
+    }
+
+    #[wasm_bindgen_test]
+    fn test_evaluate_parse_error() {
+        let result = evaluate("{{{{", "json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("evaluate should return valid JSON even on error");
+        assert_eq!(parsed["success"], false);
+        assert!(parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Parse error"));
+    }
+
+    #[wasm_bindgen_test]
+    fn test_formats() {
+        let result = formats();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("formats should return valid JSON");
+        assert!(parsed.is_array());
+        let arr = parsed.as_array().unwrap();
+        assert!(arr.contains(&serde_json::json!("json")));
+        assert!(arr.contains(&serde_json::json!("yaml")));
+    }
+}

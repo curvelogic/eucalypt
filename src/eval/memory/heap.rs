@@ -29,9 +29,13 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::ptr::NonNull;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 use std::{cell::UnsafeCell, mem::size_of};
 use std::{ptr::write, slice::from_raw_parts_mut};
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use super::bump::{BlockDensity, BLOCK_SIZE_BYTES, MAX_ALLOC_SIZE};
 use super::{
@@ -1124,7 +1128,7 @@ pub struct Heap {
     mark_count: std::cell::Cell<u64>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod oom_tests {
     use super::*;
     use crate::eval::memory::{mutator::MutatorHeapView, syntax::StgBuilder};

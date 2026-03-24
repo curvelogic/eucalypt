@@ -2,6 +2,7 @@
 
 pub mod ast;
 pub mod brackets;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod dotted_lookup_tests;
 pub mod error;
 pub mod kind;
