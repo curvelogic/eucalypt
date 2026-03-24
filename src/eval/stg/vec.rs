@@ -370,7 +370,7 @@ impl StgIntrinsic for VecSample {
         let mut indices: Vec<usize> = (0..len).collect();
         for (i, &f) in floats.iter().take(count).enumerate() {
             let remaining = len - i;
-            let j = i + (f * remaining as f64) as usize % remaining;
+            let j = i + (((f * remaining as f64) as usize) % remaining);
             indices.swap(i, j);
         }
         let sampled: Vec<Primitive> = indices[..count]
@@ -425,7 +425,7 @@ impl StgIntrinsic for VecShuffle {
             if i == 0 {
                 break;
             }
-            let j = (f * (i + 1) as f64) as usize % (i + 1);
+            let j = ((f * (i + 1) as f64) as usize) % (i + 1);
             elements.swap(i, j);
         }
         machine_return_vec(
