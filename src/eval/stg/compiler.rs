@@ -1294,7 +1294,7 @@ impl<'rt> Compiler<'rt> {
                 binder.add(dsl::with_meta(m, b))
             }
             Expr::ArgTuple(s, _) => Err(CompileError::BadArgTupleExpression(*s)),
-            Expr::Soup(s, _) => Err(CompileError::BadSoupExpression(*s)),
+            Expr::Soup(s, _, _) => Err(CompileError::BadSoupExpression(*s)),
             Expr::Operator(s, _, _, body) => self.compile_binding(binder, body.clone(), *s, false),
             _ => {
                 panic!("bad core syntax during compile")

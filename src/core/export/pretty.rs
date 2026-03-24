@@ -212,7 +212,7 @@ impl ToPretty for RcExpr {
                     .append(allocator.text(")"))
                     .group()
             }
-            Expr::Soup(_, xs) => {
+            Expr::Soup(_, xs, _) => {
                 let elements_docs = xs.iter().map(|x| x.pretty(allocator));
                 allocator
                     .text("(")
