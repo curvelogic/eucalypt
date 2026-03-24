@@ -268,10 +268,13 @@ impl StgIntrinsic for RenderBlockItems {
                         unit(),
                     ),
                 ],
-                Panic.global(str(
-                    "improper list: a list must end with [] (nil), not a non-list value; \
-                     check that '++' is used to concatenate two lists, not a list and a string",
-                )),
+                let_(
+                    vec![value(box_str(
+                        "improper list: a list must end with [] (nil), not a non-list value; \
+                         check that '++' is used to concatenate two lists, not a list and a string",
+                    ))],
+                    Panic.global(lref(0)),
+                ),
             ),
         )
     }
