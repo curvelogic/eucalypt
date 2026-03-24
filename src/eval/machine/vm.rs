@@ -1143,12 +1143,12 @@ pub struct Machine<'a> {
     metrics: Metrics,
     /// Clock
     clock: Clock,
-    /// Stack of capture emitters for render-to-string.
+    /// Active capture emitters for nested `render-as` calls.
     ///
-    /// When `RENDER_TO_STRING` fires, a format-specific capture emitter
-    /// is pushed here.  All subsequent emit BIF output goes to the top
-    /// capture emitter until `CaptureEnd` fires, at which point the
-    /// emitter is popped and its buffer extracted as a string.
+    /// **GC constraint**: This field is NOT scanned by the garbage collector.
+    /// Emitters must hold only off-heap data (Rust-owned buffers, trait objects).
+    /// If future changes require storing heap pointers here, move this field
+    /// to `MachineState` so it participates in GC marking.
     capture_emitters: Vec<crate::eval::stg::render_to_string::OwnedCaptureEmitter>,
     /// Crash diagnostics snapshot — updated periodically, read by signal handler.
     /// Boxed to guarantee a stable address regardless of Machine moves.

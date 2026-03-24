@@ -34,53 +34,47 @@ use super::{support::sym_arg, tags::DataConstructor};
 ///
 /// # Safety invariant
 ///
-/// The `emitter` field borrows from `buffer` via a lifetime-erased raw
-/// pointer.  Field declaration order guarantees that `emitter` is dropped
-/// before `buffer` (Rust drops fields in declaration order).
-/// A heap-allocated byte buffer with a stable address.
+/// The `emitter` field holds a lifetime-erased reference to `buffer`
+/// via a raw pointer. Rust drops fields in declaration order, so
+/// `emitter` is dropped before `buffer` — the borrow is released
+/// before the buffer is freed.
 ///
-/// Wraps a `Vec<u8>` inside a `Box` so that the emitter can hold a raw
-/// pointer into the buffer that remains valid even if the outer struct
-/// is moved (e.g. when the `Vec<OwnedCaptureEmitter>` on the machine
-/// grows and reallocates).
-struct StableBuffer(Vec<u8>);
-
-impl std::io::Write for StableBuffer {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.0.flush()
-    }
-}
-
+/// The buffer is heap-allocated (`Box`) to provide a stable address
+/// that remains valid even if the outer `OwnedCaptureEmitter` is moved
+/// (e.g. when the `capture_emitters` `Vec` on the machine reallocates).
 pub struct OwnedCaptureEmitter {
     // INVARIANT: emitter is dropped before buffer (field declaration order).
     // The emitter borrows from the buffer via a lifetime-erased pointer;
     // dropping emitter first ensures the borrow is released before the
     // buffer is freed.
     emitter: Option<Box<dyn Emitter + 'static>>,
-    buffer: Box<StableBuffer>,
+    // The Box indirection is intentional: it provides a stable heap address
+    // that the emitter's raw pointer can safely reference even if the outer
+    // OwnedCaptureEmitter is moved (e.g. Vec reallocation).
+    #[allow(clippy::box_collection)]
+    buffer: Box<Vec<u8>>,
 }
 
 impl OwnedCaptureEmitter {
     /// Create a new capture emitter for the given format (e.g. "json",
     /// "yaml", "text").
     pub fn new(format: &str) -> Result<Self, ExecutionError> {
-        let mut buffer = Box::new(StableBuffer(Vec::new()));
+        #[allow(clippy::box_default)]
+        let mut buffer: Box<Vec<u8>> = Box::new(Vec::new());
         // SAFETY: We take a raw pointer to the boxed buffer.  The Box
         // provides a stable heap address that does not move when the
         // OwnedCaptureEmitter is moved.  The emitter is always dropped
         // before the buffer (field declaration order), so the borrow is
         // valid for the emitter's entire lifetime.
-        let buf_ptr: *mut StableBuffer = &mut *buffer;
+        let buf_ptr: *mut Vec<u8> = &mut *buffer;
         let emitter =
             export::create_emitter(format, unsafe { &mut *buf_ptr }).ok_or_else(|| {
                 ExecutionError::Panic(Smid::default(), format!("unknown render format: {format}"))
             })?;
-        // SAFETY: Erase the lifetime to 'static.  The buffer outlives
-        // the emitter because the emitter is dropped first (field order).
+        // SAFETY: The lifetime erasure is sound because format-specific emitters
+        // created by `create_emitter` only write through the `&mut dyn Write`
+        // trait object and never capture the lifetime parameter. The `buffer`
+        // field outlives `emitter` due to field declaration order.
         let emitter: Box<dyn Emitter + 'static> = unsafe { std::mem::transmute(emitter) };
         Ok(Self {
             emitter: Some(emitter),
@@ -93,7 +87,7 @@ impl OwnedCaptureEmitter {
     pub fn into_string(mut self) -> Result<String, ExecutionError> {
         // Drop the emitter first to end its borrow on the buffer.
         drop(self.emitter.take());
-        String::from_utf8(self.buffer.0).map_err(|e| {
+        String::from_utf8(*self.buffer).map_err(|e| {
             ExecutionError::Panic(Smid::default(), format!("capture not valid UTF-8: {e}"))
         })
     }
