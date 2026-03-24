@@ -3,7 +3,6 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     files::{Files, SimpleFiles},
 };
-use moniker::*;
 use std::fmt::Display;
 use std::num::NonZeroU32;
 use std::{fmt, ops::Range};
@@ -73,21 +72,6 @@ impl Smid {
     pub fn fake(index: usize) -> Smid {
         Smid::new(index)
     }
-}
-
-/// SMIDs are ignorable for name binding
-impl BoundTerm<String> for Smid {
-    fn term_eq(&self, _: &Smid) -> bool {
-        true
-    }
-
-    fn close_term(&mut self, _: ScopeState, _: &impl OnFreeFn<String>) {}
-
-    fn open_term(&mut self, _: ScopeState, _: &impl OnBoundFn<String>) {}
-
-    fn visit_vars(&self, _: &mut impl FnMut(&Var<String>)) {}
-
-    fn visit_mut_vars(&mut self, _: &mut impl FnMut(&mut Var<String>)) {}
 }
 
 /// Anything that has a SMID identifying a source location.
@@ -244,44 +228,69 @@ impl SourceMap {
     /// line 5 column 3, or `example.eu:2:10 (str.letters(99))` for a
     /// source expression.
     pub fn format_trace(&self, trace: &[Smid], files: &SimpleFiles<String, String>) -> String {
-        let elements: Vec<_> = trace
+        // Collect entries in trace order (innermost-first from the VM),
+        // then reverse so the output reads outermost-first (conventional order).
+        let mut elements: Vec<_> = trace
             .iter()
             .filter_map(|smid| {
                 let info = self.source.get(smid.get())?;
 
-                // Determine the display name: intrinsic name or source snippet
-                let display_name = info.annotation.as_deref().and_then(intrinsic_display_name);
+                // Determine the display name: prefer intrinsic display name,
+                // then annotation (function name), then source snippet
+                let display_name = info
+                    .annotation
+                    .as_deref()
+                    .and_then(|a| intrinsic_display_name(a).or(Some(a)));
 
-                let source_snippet = || {
+                let source_snippet = || -> Option<String> {
                     let id = info.file?;
                     let source: &str = files.source(id).ok()?;
                     let span = info.span?;
-                    source.get(Range::from(span))
+                    let raw = source.get(Range::from(span))?;
+                    // Truncate to first line as a safety net
+                    let first_line = raw.lines().next().unwrap_or(raw);
+                    if first_line.len() < raw.len() {
+                        Some(format!("{first_line}…"))
+                    } else {
+                        Some(first_line.to_string())
+                    }
                 };
 
-                // Build file:line:col prefix if we have a file location
-                let location_prefix = info.file.and_then(|id| {
+                // Build file:line:col location string if we have a source location
+                let location = info.file.and_then(|id| {
                     let name = files.name(id).ok()?;
                     let span = info.span?;
                     let loc = files.location(id, span.start().to_usize()).ok()?;
+                    // Strip directory prefix for readability
+                    let short_name = std::path::Path::new(&name)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&name);
                     Some(format!(
-                        "{name}:{line}:{col}",
+                        "{short_name}:{line}:{col}",
                         line = loc.line_number,
                         col = loc.column_number
                     ))
                 });
 
-                let label = display_name.or_else(source_snippet)?;
+                // Only include entries that have a user-visible name or source location.
+                // Entries with neither are internal machinery and are silently dropped.
+                let name = display_name
+                    .map(|s| s.to_string())
+                    .or_else(source_snippet)?;
 
-                let entry = match (location_prefix, display_name) {
-                    (Some(prefix), Some(name)) => format!("- {prefix} (in '{name}')"),
-                    (Some(prefix), None) => format!("- {prefix} ({label})"),
-                    (None, _) => format!("- {label}"),
+                // Format: "name at file:line:col" or just "name" if no location
+                let entry = match location {
+                    Some(loc) => format!("- {name} at {loc}"),
+                    None => format!("- {name}"),
                 };
 
                 Some(entry)
             })
             .collect();
+
+        // Reverse to read outermost-first (matches conventional stack trace order)
+        elements.reverse();
 
         elements.as_slice().join("\n")
     }
@@ -412,7 +421,7 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         // Internal constants and data constructors
         "KNIL" | "K[]" | "K{}" | "DQ" | "IFIELDS" | "SUPPRESSES" | "REQUIRES" => None,
 
-        // Unknown — show as-is (should not normally appear)
-        other => Some(other),
+        // Unknown — not an intrinsic
+        _ => None,
     }
 }

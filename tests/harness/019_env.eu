@@ -1,6 +1,6 @@
-"Requires prelude."
+"Requires prelude. Tests that io.env provides access to environment variables."
 
-'~': io.env.HOME
-lang: io.env.LANG
+# io.env should be a non-empty block on any platform
+has-keys: io.env elements non-nil?
 
-RESULT: if((io.env lookup-or(:HOME, "~")) != "~", :PASS, :FAIL)
+RESULT: has-keys then(:PASS, :FAIL)

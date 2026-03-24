@@ -275,6 +275,8 @@ pub struct MachineState {
     /// Format name for a pending capture start, set by `start_capture()`.
     /// `Machine::step()` reads this to push the actual emitter.
     pending_capture_start: Option<String>,
+    /// Test mode flag — `__EXPECT` failures return false instead of panicking.
+    test_mode: bool,
 }
 
 impl Default for MachineState {
@@ -296,6 +298,7 @@ impl Default for MachineState {
             capture_end_pending: false,
             capture_results: Vec::new(),
             pending_capture_start: None,
+            test_mode: false,
         }
     }
 }
@@ -1055,9 +1058,13 @@ impl IntrinsicMachine for MachineState {
     }
 
     fn take_capture_result(&mut self) -> Result<String, ExecutionError> {
-        self.capture_results
-            .pop()
-            .ok_or_else(|| ExecutionError::Panic("no capture result available".to_string()))
+        self.capture_results.pop().ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "no capture result available".to_string())
+        })
+    }
+
+    fn test_mode(&self) -> bool {
+        self.test_mode
     }
 }
 
@@ -1112,6 +1119,7 @@ impl GcScannable for MachineState {
 pub struct MachineSettings {
     pub trace_steps: bool,
     pub dump_heap: bool,
+    pub test_mode: bool,
 }
 
 /// An STG machine variant using cactus environment
@@ -1154,15 +1162,20 @@ impl<'a> Machine<'a> {
         trace_steps: bool,
         heap_limit_mib: Option<usize>,
         dump_heap: bool,
+        test_mode: bool,
     ) -> Self {
         Machine {
             heap: heap_limit_mib.map(Heap::with_limit).unwrap_or_default(),
-            state: Default::default(),
+            state: MachineState {
+                test_mode,
+                ..Default::default()
+            },
             intrinsics: vec![],
             emitter,
             settings: MachineSettings {
                 trace_steps,
                 dump_heap,
+                test_mode,
             },
             metrics: Metrics::default(),
             clock: Clock::default(),
@@ -1355,10 +1368,9 @@ impl<'a> Machine<'a> {
         // as the machine's closure.
         if self.state.capture_end_pending {
             self.state.capture_end_pending = false;
-            let mut capture = self
-                .capture_emitters
-                .pop()
-                .ok_or_else(|| ExecutionError::Panic("no active capture emitter".to_string()))?;
+            let mut capture = self.capture_emitters.pop().ok_or_else(|| {
+                ExecutionError::Panic(Smid::default(), "no active capture emitter".to_string())
+            })?;
             capture.stream_end();
             let result_str = capture.into_string()?;
             let view = MutatorHeapView::new(&self.heap);
@@ -1702,6 +1714,7 @@ impl<'a> Machine<'a> {
 
         if sub_yielded {
             return Err(ExecutionError::Panic(
+                Smid::default(),
                 "spec block field evaluation unexpectedly yielded an IO constructor".to_string(),
             ));
         }
@@ -1863,7 +1876,7 @@ pub mod tests {
     }
 
     fn machine(syn: Rc<StgSyn>) -> Machine<'static> {
-        let mut m = Machine::new(Box::new(DebugEmitter::default()), true, None, false);
+        let mut m = Machine::new(Box::new(DebugEmitter::default()), true, None, false, false);
         let blank = m.mutate(Init, ()).unwrap();
         let closure = m
             .mutate(

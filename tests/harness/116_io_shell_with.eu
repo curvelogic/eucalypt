@@ -1,8 +1,11 @@
 "io.shell-with: parameterised spec block evaluates correctly. Uses --allow-io."
 
+` :suppress
+echo-cmd: if(eu.os = "windows", "Write-Output hello", "echo hello")
+
 ` { target: :test requires-io: true }
 test:
-  { :io r: io.shell-with({timeout: 120}, "echo hello") }.(
+  { :io r: io.shell-with({timeout: 120}, echo-cmd) }.(
     if(r.stdout str.matches?("hello.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))

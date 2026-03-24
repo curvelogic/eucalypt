@@ -1,0 +1,100 @@
+{
+  "Function declaration": {
+    "prefix": "fn",
+    "body": ["${1:name}(${2:x}): ${3:x}"],
+    "description": "Function declaration"
+  },
+  "Property declaration": {
+    "prefix": "prop",
+    "body": ["${1:name}: ${2:value}"],
+    "description": "Property declaration"
+  },
+  "Block": {
+    "prefix": "blk",
+    "body": [
+      "{",
+      "\t${1:name}: ${2:value}",
+      "}"
+    ],
+    "description": "Block literal"
+  },
+  "Documented declaration": {
+    "prefix": "doc",
+    "body": [
+      "` \"${1:Documentation.}\"",
+      "${2:name}: ${3:value}"
+    ],
+    "description": "Declaration with documentation string"
+  },
+  "Block with documentation": {
+    "prefix": "docblk",
+    "body": [
+      "` {doc: \"${1:Documentation.}\"}",
+      "${2:name}: ${3:value}"
+    ],
+    "description": "Declaration with block-valued metadata documentation"
+  },
+  "If expression": {
+    "prefix": "if",
+    "body": ["if ${1:condition} then ${2:true-value} else ${3:false-value}"],
+    "description": "Conditional if expression"
+  },
+  "Cond expression": {
+    "prefix": "cond",
+    "body": [
+      "cond([",
+      "\t[${1:condition}, ${2:value}],",
+      "\t[true, ${3:default}]",
+      "])"
+    ],
+    "description": "Multi-branch conditional"
+  },
+  "Map": {
+    "prefix": "map",
+    "body": ["${1:list} map(${2:f})"],
+    "description": "Map over a list"
+  },
+  "Filter": {
+    "prefix": "filter",
+    "body": ["${1:list} filter(${2:pred})"],
+    "description": "Filter a list"
+  },
+  "Foldl": {
+    "prefix": "foldl",
+    "body": ["${1:list} foldl(${2:f}, ${3:initial})"],
+    "description": "Left fold over a list"
+  },
+  "Lambda (expression anaphor)": {
+    "prefix": "lam",
+    "body": ["(_ ${1:+ 1})"],
+    "description": "Anonymous function using expression anaphor"
+  },
+  "Merge blocks": {
+    "prefix": "merge",
+    "body": ["${1:a} merge(${2:b})"],
+    "description": "Merge two blocks"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": ["${1:data}: import(\"${2:file.yaml}\")"],
+    "description": "Import external data file"
+  },
+  "Render target": {
+    "prefix": "target",
+    "body": [
+      "` :target",
+      "${1:name}: ${2:expression}"
+    ],
+    "description": "Declare a named render target"
+  },
+  "List comprehension (mapcat)": {
+    "prefix": "mapcat",
+    "body": ["${1:list} mapcat(${2:f})"],
+    "description": "Flat-map over a list"
+  },
+  "Pipeline": {
+    "prefix": "pipe",
+    "body": ["${1:value} ${2:f} ${3:g}"],
+    "description": "Value pipeline (catenation)"
+  }
+}

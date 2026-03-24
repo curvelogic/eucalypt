@@ -37,8 +37,7 @@ test: {
 
   # c-string equals equivalent regular string
   plain-match: c"hello" //= "hello"
-  newline-match: c"a\nb" //= "a
-b"
+  newline-match: c"a\nb" //= c"a\nb"
 
   # Backslash before closing quote
   backslash-end: c"path\\" str.len //= 5

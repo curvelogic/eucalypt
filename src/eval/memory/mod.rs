@@ -17,3 +17,4 @@ pub mod set;
 pub mod string;
 pub mod symbol;
 pub mod syntax;
+pub mod vec;

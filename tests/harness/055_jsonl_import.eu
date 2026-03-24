@@ -1,4 +1,4 @@
-{ import: "records=aux/aux_import.jsonl" }
+{ import: "records=testdata/aux_import.jsonl" }
 
 count-ok: records count //= 3
 names-ok: records map(_.name) //= ["Alice", "Bob", "Charlie"]

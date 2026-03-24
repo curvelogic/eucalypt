@@ -94,20 +94,52 @@ ref: !Ref my-resource
 This is useful for generating CloudFormation, Kubernetes, and other
 tagged YAML formats.
 
-### Assertions with `//=` and `//=>`
+### Test expectations and assertions
 
-The `//=` operator asserts equality at runtime:
+The `//=` operator tests equality and returns a boolean, emitting a
+diagnostic to stderr on failure:
 
 ```eu
-result: 2 + 2 //= 4  # panics if not equal
+result: 2 + 2 //= 4  # returns true; on failure, returns false and prints to stderr
 ```
 
-The `//=>` operator additionally stores the assertion as metadata:
+The `//=>` operator asserts equality and panics on failure, also storing the
+assertion as metadata:
 
 ```eu
 checked: 2 + 2 //=> 4
 m: meta(checked)  # contains the assertion
 ```
+
+The `//!` operator tests that a value is `true`, returning a boolean and
+emitting a diagnostic to stderr on failure:
+
+```eu
+result: (2 > 1) //!  # returns true; on failure, returns false and prints to stderr
+```
+
+## Debug Tracing
+
+Use `▶` (U+25B6) to print any value to stderr and return it transparently:
+
+```eu,notest
+x + ▶y                    # debug y inline, return y unchanged
+data map(f) ▶head         # debug head in a pipeline
+```
+
+For labelled output or pipeline use, prefer `dbg`:
+
+```eu,notest
+value dbg{}                   # prints: ▶ <repr>
+value dbg{label: "here"}      # prints: ▶ here: <repr>
+```
+
+Both `▶` and `dbg` return the value unchanged, so they can be inserted
+anywhere without affecting the result.
+
+`▶` is intentionally prominent — the Unicode triangle is hard to overlook
+in a code review.
+
 
 ## Sets
 

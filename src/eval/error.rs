@@ -567,8 +567,8 @@ pub enum ExecutionError {
     BadEnvironmentIndex(usize),
     #[error("bad index {0} into globals")]
     BadGlobalIndex(usize),
-    #[error("{}", format_bad_format_string(.0))]
-    BadFormatString(String),
+    #[error("{}", format_bad_format_string(.1))]
+    BadFormatString(Smid, String),
     #[error("found free var {1}")]
     FreeVar(Smid, String),
     #[error("code not valid for execution")]
@@ -585,38 +585,38 @@ pub enum ExecutionError {
     NotValue(Smid, String),
     #[error("bad regex: {2}\n  help: the pattern '{1}' is not a valid regular expression")]
     BadRegex(Smid, String, String),
-    #[error("{}", format_bad_datetime_components(.0, .1, .2, .3, .4, .5, .6))]
-    BadDateTimeComponents(Number, Number, Number, Number, Number, Number, String),
-    #[error("{}", format_bad_timezone(.0))]
-    BadTimeZone(String),
-    #[error("bad timestamp ({0})")]
-    BadTimestamp(Number),
+    #[error("{}", format_bad_datetime_components(.1, .2, .3, .4, .5, .6, .7))]
+    BadDateTimeComponents(Smid, Number, Number, Number, Number, Number, Number, String),
+    #[error("{}", format_bad_timezone(.1))]
+    BadTimeZone(Smid, String),
+    #[error("bad timestamp ({1})")]
+    BadTimestamp(Smid, Number),
     #[error("bad datetime format '{1}': not a recognised ISO 8601 datetime string\n  help: expected a format like '2024-01-15T09:30:00+00:00' or '2024-01-15'")]
     BadDateTimeString(Smid, String),
     #[error("failed to apply format string")]
-    FormatFailure,
+    FormatFailure(Smid),
     #[error(
         "failed to convert numeric type as required by format string\n  \
          help: integer specifiers like %d, %o, %x require an integer value; \
          use %f or %g for floating-point numbers"
     )]
-    BadNumericTypeForFormat,
-    #[error("bad number format: {0}")]
-    BadNumberFormat(String),
-    #[error("could not format {1} with {0}")]
-    FormatError(String, Number),
+    BadNumericTypeForFormat(Smid),
+    #[error("bad number format: {1}")]
+    BadNumberFormat(Smid, String),
+    #[error("could not format {2} with {1}")]
+    FormatError(Smid, String, Number),
     #[error("expected scalar value")]
     NotScalar(Smid),
     #[error("{}", format_unknown_format(.0))]
     UnknownFormat(String),
-    #[error("cannot combine numbers ({0}, {1}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
-    NumericDomainError(Number, Number),
-    #[error("result of ({0})^({1}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
-    ComplexResult(Number, Number),
-    #[error("numeric overflow: result of operating on {0} and {1} is out of range\n  help: the result exceeds the representable range for this numeric type")]
-    NumericRangeError(Number, Number),
-    #[error("{}", format_division_by_zero(.0))]
-    DivisionByZero(String),
+    #[error("cannot combine numbers ({1}, {2}) into same numeric domain\n  help: this can happen when mixing integer and floating-point arithmetic in ways that lose precision")]
+    NumericDomainError(Smid, Number, Number),
+    #[error("result of ({1})^({2}) is not a real number\n  help: raising a negative base to a fractional exponent yields a complex result; use a non-negative base or an integer exponent")]
+    ComplexResult(Smid, Number, Number),
+    #[error("numeric overflow: result of operating on {1} and {2} is out of range\n  help: the result exceeds the representable range for this numeric type")]
+    NumericRangeError(Smid, Number, Number),
+    #[error("{}", format_division_by_zero(.1))]
+    DivisionByZero(Smid, String),
     #[error("expected branch continuation")]
     ExpectedBranchContinuation,
     #[error("type mismatch: expected {}, found {}", display_expected_tags(.2), display_data_tag(*.1))]
@@ -625,8 +625,8 @@ pub enum ExecutionError {
     NoBranchForNative(Smid, String),
     #[error("{}", format_cannot_return_fun(.1))]
     CannotReturnFunToCase(Smid, Vec<u8>),
-    #[error("panic: {0}")]
-    Panic(String),
+    #[error("panic: {1}")]
+    Panic(Smid, String),
     #[error("parse-as({1}): {2}")]
     ParseError(Smid, String, String),
     #[error("version requirement not satisfied: eucalypt {1} does not satisfy '{2}'")]
@@ -724,6 +724,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::NoBranchForNative(s, _) => *s,
             ExecutionError::CannotReturnFunToCase(s, _) => *s,
             ExecutionError::BlackHole(s) => *s,
+            ExecutionError::Panic(s, _) => *s,
             ExecutionError::ParseError(s, _, _) => *s,
             ExecutionError::VersionRequirementFailed(s, _, _) => *s,
             ExecutionError::InvalidBase64(s, _) => *s,
@@ -743,6 +744,18 @@ impl HasSmid for ExecutionError {
             ExecutionError::ListIndexOutOfBounds(s, _) => *s,
             ExecutionError::BadDateTimeString(s, _) => *s,
             ExecutionError::BadRegex(s, _, _) => *s,
+            ExecutionError::BadFormatString(s, _) => *s,
+            ExecutionError::BadTimeZone(s, _) => *s,
+            ExecutionError::BadTimestamp(s, _) => *s,
+            ExecutionError::FormatFailure(s) => *s,
+            ExecutionError::BadNumericTypeForFormat(s) => *s,
+            ExecutionError::BadNumberFormat(s, _) => *s,
+            ExecutionError::FormatError(s, _, _) => *s,
+            ExecutionError::NumericDomainError(s, _, _) => *s,
+            ExecutionError::ComplexResult(s, _, _) => *s,
+            ExecutionError::NumericRangeError(s, _, _) => *s,
+            ExecutionError::DivisionByZero(s, _) => *s,
+            ExecutionError::BadDateTimeComponents(s, _, _, _, _, _, _, _) => *s,
             _ => Smid::default(),
         }
     }
@@ -786,6 +799,121 @@ impl ExecutionError {
                 }
             }
         }
+
+        // Add secondary labels from the env trace for call-chain context.
+        //
+        // We collect env trace entries that have real source locations and differ
+        // from the primary label (to avoid redundant markers).  Limited to 3
+        // secondary labels to keep output readable.
+        {
+            // Determine the primary span (from error's own Smid or fallback)
+            let primary_file_span = source_map
+                .source_info(inner)
+                .and_then(|info| info.file.zip(info.span))
+                .or_else(|| {
+                    let smid = source_map
+                        .first_source_smid(env_trace)
+                        .or_else(|| source_map.first_source_smid(stack_trace))?;
+                    let info = source_map.source_info_for_smid(smid)?;
+                    info.file.zip(info.span)
+                });
+
+            let mut secondary_labels: Vec<Label<usize>> = vec![];
+            let mut seen_spans: Vec<(usize, codespan::Span)> = vec![];
+
+            // Skip the first env_trace entry if it matches the fallback primary (already shown)
+            for &smid in env_trace.iter() {
+                if secondary_labels.len() >= 3 {
+                    break;
+                }
+                let info = match source_map.source_info_for_smid(smid) {
+                    Some(i) => i,
+                    None => continue,
+                };
+                let (file, span) = match (info.file, info.span) {
+                    (Some(f), Some(s)) => (f, s),
+                    _ => continue,
+                };
+
+                // Skip if same as primary label
+                if let Some((pf, ps)) = primary_file_span {
+                    if file == pf && span == ps {
+                        continue;
+                    }
+                }
+
+                // Skip duplicates
+                if seen_spans.iter().any(|&(f, s)| f == file && s == span) {
+                    continue;
+                }
+                seen_spans.push((file, span));
+
+                // Build the secondary label message
+                let msg = if let Some(ann) = &info.annotation {
+                    use crate::common::sourcemap::intrinsic_display_name;
+                    if let Some(display) = intrinsic_display_name(ann) {
+                        format!("in '{display}'")
+                    } else {
+                        "called from here".to_string()
+                    }
+                } else {
+                    "called from here".to_string()
+                };
+
+                secondary_labels.push(Label::secondary(file, span).with_message(msg));
+            }
+
+            if !secondary_labels.is_empty() {
+                diag = diag.with_labels(secondary_labels);
+            }
+        }
+
+        // Diagnostic trace dump: when EU_ERROR_TRACE_DUMP is set, emit all
+        // available source locations as notes so we can study what information
+        // is available at error time.
+        if std::env::var("EU_ERROR_TRACE_DUMP").is_ok() {
+            let mut dump = vec!["--- ERROR TRACE DUMP ---".to_string()];
+
+            // Error's own Smid
+            let error_smid = inner.smid();
+            dump.push(format!(
+                "error smid: {}",
+                Self::format_smid_detail(error_smid, source_map)
+            ));
+
+            // vm.annotation (same as error smid for most errors)
+            dump.push(format!("has_source_label: {has_source_label}"));
+
+            // Environment trace
+            if env_trace.is_empty() {
+                dump.push("env_trace: (empty)".to_string());
+            } else {
+                dump.push(format!("env_trace ({} entries):", env_trace.len()));
+                for (i, smid) in env_trace.iter().enumerate() {
+                    dump.push(format!(
+                        "  [{i}] {}",
+                        Self::format_smid_detail(*smid, source_map)
+                    ));
+                }
+            }
+
+            // Stack trace
+            if stack_trace.is_empty() {
+                dump.push("stack_trace: (empty)".to_string());
+            } else {
+                dump.push(format!("stack_trace ({} entries):", stack_trace.len()));
+                for (i, smid) in stack_trace.iter().enumerate() {
+                    dump.push(format!(
+                        "  [{i}] {}",
+                        Self::format_smid_detail(*smid, source_map)
+                    ));
+                }
+            }
+
+            dump.push("--- END TRACE DUMP ---".to_string());
+            diag = diag.with_notes(dump);
+        }
+
         let notes = match inner {
             ExecutionError::TypeMismatch(_, expected, actual) => {
                 type_mismatch_notes(expected, actual)
@@ -837,7 +965,7 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
-            ExecutionError::BadNumberFormat(_) => {
+            ExecutionError::BadNumberFormat(_, _) => {
                 vec![
                     "valid number formats are: integers (e.g. 42), decimals (e.g. 3.14), and \
                      scientific notation (e.g. 1.5e10)"
@@ -876,14 +1004,14 @@ impl ExecutionError {
                         .to_string(),
                 ]
             }
-            ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _) => {
+            ExecutionError::BadDateTimeComponents(_, _, _, _, _, _, _, _) => {
                 vec![
                     "valid ranges: year (any integer), month (1–12), day (1–28/29/30/31 \
                      depending on month), hour (0–23), minute (0–59), second (0–59)"
                         .to_string(),
                 ]
             }
-            ExecutionError::BadTimeZone(_) => {
+            ExecutionError::BadTimeZone(_, _) => {
                 vec![
                     "timezone must be a UTC offset string like '+0100', '-0530', or 'UTC'"
                         .to_string(),
@@ -895,6 +1023,31 @@ impl ExecutionError {
             diag
         } else {
             diag.with_notes(notes)
+        }
+    }
+
+    /// Format a Smid with all available detail for trace dump diagnostics
+    fn format_smid_detail(smid: Smid, source_map: &SourceMap) -> String {
+        if !smid.is_valid() {
+            return "invalid (no location)".to_string();
+        }
+        match source_map.source_info_for_smid(smid) {
+            Some(info) => {
+                let file_part = match info.file {
+                    Some(f) => format!("file={f}"),
+                    None => "file=none".to_string(),
+                };
+                let span_part = match info.span {
+                    Some(span) => format!("span={}..{}", span.start(), span.end()),
+                    None => "span=none".to_string(),
+                };
+                let ann_part = match &info.annotation {
+                    Some(ann) => format!("ann=\"{ann}\""),
+                    None => "ann=none".to_string(),
+                };
+                format!("smid={} {file_part} {span_part} {ann_part}", smid.get())
+            }
+            None => format!("smid={} (no source info)", smid.get()),
         }
     }
 

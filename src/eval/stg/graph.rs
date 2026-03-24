@@ -20,7 +20,7 @@ use super::{
     force::SeqNumList,
     support::{collect_num_list, machine_return_num_list},
     syntax::{
-        dsl::{annotated_lambda, app_bif, force, lref},
+        dsl::{app_bif, force, lambda, lref},
         LambdaForm,
     },
 };
@@ -35,9 +35,9 @@ impl StgIntrinsic for GraphUnionFind {
         "GRAPH_UNION_FIND"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             2, // [flat_edges, n_list]
             force(
                 SeqNumList.global(lref(0)),
@@ -48,7 +48,6 @@ impl StgIntrinsic for GraphUnionFind {
                     app_bif(bif_index, vec![lref(1), lref(0)]),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -61,10 +60,12 @@ impl StgIntrinsic for GraphUnionFind {
     ) -> Result<(), ExecutionError> {
         let edges = collect_num_list(machine, view, args[0].clone())?;
         let n_list = collect_num_list(machine, view, args[1].clone())?;
-        let n =
-            n_list.first().copied().ok_or_else(|| {
-                ExecutionError::Panic("graph.union-find: n list empty".to_string())
-            })? as usize;
+        let n = n_list.first().copied().ok_or_else(|| {
+            ExecutionError::Panic(
+                Smid::default(),
+                "graph.union-find: n list empty".to_string(),
+            )
+        })? as usize;
 
         // Union-Find with path compression and union by rank
         let mut parent: Vec<usize> = (0..n).collect();
@@ -123,9 +124,9 @@ impl StgIntrinsic for GraphTopoSort {
         "GRAPH_TOPO_SORT"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             2, // [flat_edges, n_list]
             force(
                 SeqNumList.global(lref(0)),
@@ -136,7 +137,6 @@ impl StgIntrinsic for GraphTopoSort {
                     app_bif(bif_index, vec![lref(1), lref(0)]),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -149,11 +149,9 @@ impl StgIntrinsic for GraphTopoSort {
     ) -> Result<(), ExecutionError> {
         let edges = collect_num_list(machine, view, args[0].clone())?;
         let n_list = collect_num_list(machine, view, args[1].clone())?;
-        let n = n_list
-            .first()
-            .copied()
-            .ok_or_else(|| ExecutionError::Panic("graph.topo-sort: n list empty".to_string()))?
-            as usize;
+        let n = n_list.first().copied().ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "graph.topo-sort: n list empty".to_string())
+        })? as usize;
 
         // Build adjacency list and in-degree counts
         let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
@@ -207,9 +205,9 @@ impl StgIntrinsic for GraphKruskalEdges {
         "GRAPH_KRUSKAL_EDGES"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             2, // [flat_edges, n_list]
             force(
                 SeqNumList.global(lref(0)),
@@ -220,7 +218,6 @@ impl StgIntrinsic for GraphKruskalEdges {
                     app_bif(bif_index, vec![lref(1), lref(0)]),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -233,10 +230,12 @@ impl StgIntrinsic for GraphKruskalEdges {
     ) -> Result<(), ExecutionError> {
         let edges = collect_num_list(machine, view, args[0].clone())?;
         let n_list = collect_num_list(machine, view, args[1].clone())?;
-        let n =
-            n_list.first().copied().ok_or_else(|| {
-                ExecutionError::Panic("graph.kruskal-edges: n list empty".to_string())
-            })? as usize;
+        let n = n_list.first().copied().ok_or_else(|| {
+            ExecutionError::Panic(
+                Smid::default(),
+                "graph.kruskal-edges: n list empty".to_string(),
+            )
+        })? as usize;
 
         let mut parent: Vec<usize> = (0..n).collect();
         let mut rank: Vec<usize> = vec![0; n];

@@ -87,22 +87,22 @@ x: 42 # inline comment
 | Binary operator | `(l op r): expr` | Infix operator |
 | Prefix operator | `(op x): expr` | Unary prefix |
 | Postfix operator | `(x op): expr` | Unary postfix |
-| Idiot bracket | `⟦ x ⟧: expr` | Custom Unicode bracket pair |
+| Idiot bracket | `⟦ xs ⟧: expr` | Custom Unicode bracket pair |
 
 ## Idiot Brackets
 
-Idiot brackets allow custom Unicode bracket pairs to wrap and
-transform expressions — a general bracket overloading mechanism.
+Idiot brackets allow custom Unicode bracket pairs that collect their
+content items into a list and pass it to a function.
 
 ```eu,notest
-# Declare a bracket pair function
-⟦ x ⟧: my-functor(x)
+# Declare a bracket pair function (xs receives a list)
+⟦ xs ⟧: xs map(_ * 2)
 
-# Use the bracket pair in expressions
-result: ⟦ some-expression ⟧  # calls my-functor(some-expression)
+# Items are collected as a list: ⟦ a b c ⟧ = ⟦⟧([a, b, c])
+result: ⟦ 3 4 5 ⟧  # [6, 8, 10]
 ```
 
-Built-in bracket pairs: `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
+Any matching Unicode bracket pair works, e.g. `⟦⟧`, `⟨⟩`, `⟪⟫`, `⌈⌉`, `⌊⌋`, `⦃⦄`, `⦇⦈`, `⦉⦊`, `«»`,
 `【】`, `〔〕`, `〖〗`, `〘〙`, `〚〛`.
 
 ## Monadic Blocks
@@ -226,7 +226,7 @@ From highest to lowest binding:
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
 | 10 | apply | right | `@` | Function application |
-| 5 | meta | right | `//`, `//<< `, `//=`, `//=>` | Metadata / assertions |
+| 5 | meta | right | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!` | Metadata / assertions |
 
 **User-defined operators** default to left-associative, precedence 50.
 Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
@@ -410,16 +410,21 @@ either operand is an array. Scalar broadcasting is supported.
 | `io.check(result)` | Fail with stderr if `exit-code` is non-zero; otherwise return result |
 | `io.map(f, action)` | Apply pure function to result of IO action (fmap) |
 
-## Assertion Operators
+## Test / Assertion Operators
+
+**Test expectations** (panic in normal mode, return `false` in test mode):
 
 | Operator | Description |
 |----------|-------------|
-| `e //=> v` | Assert `e` equals `v` (panic if not) |
-| `e //= v` | Assert equals (silent, returns `e`) |
-| `e //!` | Assert `e` is `true` |
-| `e //!!` | Assert `e` is `false` |
-| `e //=? f` | Assert `f(e)` is `true` |
-| `e //!? f` | Assert `f(e)` is `false` |
+| `e //= v` | Test `e` equals `v`, return `true`/`false` |
+| `e //=? f` | Test `f(e)` is `true`, return `true`/`false` |
+| `e //!` | Test `e` is `true`, return `true`/`false` |
+
+**Assertions** (always panic on failure):
+
+| Operator | Description |
+|----------|-------------|
+| `e //=> v` | Assert `e` equals `v` (panic with expected/actual on failure) |
 
 ## Command Line Quick Reference
 

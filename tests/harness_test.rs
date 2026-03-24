@@ -634,6 +634,41 @@ pub fn test_harness_124() {
 }
 
 #[test]
+pub fn test_harness_125() {
+    run_test(&opts("125_expectations.eu"));
+}
+
+#[test]
+pub fn test_harness_126() {
+    run_test(&opts("126_type_predicates.eu"));
+}
+
+#[test]
+pub fn test_harness_127() {
+    run_test(&opts("127_merge_metadata.eu"));
+}
+
+#[test]
+pub fn test_harness_128() {
+    run_test(&opts("128_parse_args.eu"));
+}
+
+#[test]
+pub fn test_harness_129() {
+    run_test(&opts("129_monadic_implicit_return.eu"));
+}
+
+#[test]
+pub fn test_harness_130() {
+    run_test(&opts("130_vec.eu"));
+}
+
+#[test]
+pub fn test_harness_131() {
+    run_test(&opts("131_debug.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -1231,4 +1266,39 @@ pub fn test_error_106() {
         .with_allow_io()
         .build();
     run_error_test(&opt);
+}
+
+#[test]
+pub fn test_error_107() {
+    run_error_test(&error_opts("107_source_location_in_error.eu"));
+}
+
+#[test]
+pub fn test_error_108() {
+    run_error_test(&error_opts("108_secondary_labels.eu"));
+}
+
+#[test]
+pub fn test_error_109() {
+    run_error_test(&error_opts("109_unknown_arg.eu"));
+}
+
+#[test]
+pub fn test_error_110() {
+    run_error_test(&error_opts("110_unknown_short_arg.eu"));
+}
+
+#[test]
+pub fn test_error_111() {
+    run_error_test(&error_opts("111_missing_option_value.eu"));
+}
+
+#[test]
+pub fn test_error_112() {
+    run_error_test(&error_opts("112_head_empty_list.eu"));
+}
+
+#[test]
+pub fn test_error_113() {
+    run_error_test(&error_opts("113_tail_empty_list.eu"));
 }

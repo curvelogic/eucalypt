@@ -196,12 +196,10 @@ Special metadata keys: `:target`, `:suppress`, `:main`, `associates`,
 
 | Operator | Description |
 |----------|-------------|
-| `e //=> v` | Assert `e` equals `v` (panic if not) |
-| `e //= v` | Assert equals (silent, returns `e`) |
-| `e //!` | Assert `e` is `true` |
-| `e //!!` | Assert `e` is `false` |
-| `e //=? f` | Assert `f(e)` is `true` |
-| `e //!? f` | Assert `f(e)` is `false` |
+| `e //= v` | Test `e` equals `v`, return `true`/`false` |
+| `e //=? f` | Test `f(e)` is `true`, return `true`/`false` |
+| `e //!` | Test `e` is `true`, return `true`/`false` |
+| `e //=> v` | Assert `e` equals `v` (always panic if not) |
 
 ### Operator Precedence (Highest to Lowest)
 
@@ -385,7 +383,7 @@ combined: sa set.union(sb) set.to-list sort-nums //=> [1, 2, 3, 4, 5, 6]
 double(x): x * 2
 test1: double(21) //=> 42
 test2: (3 > 2) //!
-test3: (1 > 2) //!!
+test3: 5 //=? (> 0)
 ```
 
 ---

@@ -43,7 +43,7 @@ fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
     // Try "Z" for UTC
     if tz_str == "Z" {
         return FixedOffset::east_opt(0)
-            .ok_or_else(|| ExecutionError::BadTimeZone(tz_str.to_string()));
+            .ok_or_else(|| ExecutionError::BadTimeZone(Smid::default(), tz_str.to_string()));
     }
 
     // Try parsing as a numeric offset by constructing a dummy datetime
@@ -76,7 +76,10 @@ fn offset_from_tz_str(tz_str: &str) -> Result<FixedOffset, ExecutionError> {
             .fix());
     }
 
-    Err(ExecutionError::BadTimeZone(tz_str.to_string()))
+    Err(ExecutionError::BadTimeZone(
+        Smid::default(),
+        tz_str.to_string(),
+    ))
 }
 
 /// ZDT(y, m, d, h, M, s, Z) - create a zoned date time
@@ -102,8 +105,10 @@ impl StgIntrinsic for Zdt {
         let sec = num_arg(machine, view, &args[5])?;
         let tz = str_arg(machine, view, &args[6])?;
 
+        let smid = machine.annotation();
         let err = || {
             ExecutionError::BadDateTimeComponents(
+                smid,
                 y.clone(),
                 m.clone(),
                 d.clone(),
@@ -293,7 +298,7 @@ impl StgIntrinsic for ZdtFromEpoch {
             );
             machine_return_zdt(machine, view, zdt)
         } else {
-            Err(ExecutionError::BadTimestamp(unix))
+            Err(ExecutionError::BadTimestamp(machine.annotation(), unix))
         }
     }
 }
@@ -309,12 +314,11 @@ impl StgIntrinsic for ZdtIFields {
     }
 
     /// The STG wrapper for calling the intrinsic
-    fn wrapper(&self, annotation: Smid) -> super::syntax::LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> super::syntax::LambdaForm {
         use super::syntax::dsl::*;
-        annotated_lambda(
+        lambda(
             1,
             force(ZdtFromEpoch.global(lref(0)), ZdtFields.global(lref(0))),
-            annotation,
         )
     }
 }

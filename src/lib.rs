@@ -3,7 +3,6 @@ extern crate codespan;
 extern crate codespan_reporting;
 extern crate indexmap;
 extern crate itertools;
-extern crate moniker;
 extern crate pretty;
 extern crate regex;
 extern crate serde_json;
@@ -19,3 +18,6 @@ pub mod eval;
 pub mod export;
 pub mod import;
 pub mod syntax;
+
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;

@@ -210,11 +210,23 @@ impl<T: Sized + Clone> Array<T> {
     /// Add an item at the end
     pub fn push<'guard, A: ScopedAllocator<'guard>>(&mut self, mem: &A, item: T) {
         if self.length == self.data.capacity {
+            let old_cap = self.data.capacity;
             self.data
                 .resize(mem, Self::default_array_growth(self.data.capacity))
                 .expect("allocation failure");
+            debug_assert!(
+                self.data.capacity > old_cap,
+                "Array::push: resize did not grow capacity (was {old_cap}, now {})",
+                self.data.capacity
+            );
         }
 
+        debug_assert!(
+            self.length < self.data.capacity,
+            "Array::push: length {} >= capacity {} before write",
+            self.length,
+            self.data.capacity
+        );
         self.length += 1;
         self.write(self.length - 1, item);
     }
@@ -340,6 +352,11 @@ impl<T: Sized + Clone> Array<T> {
     /// Return pointer for index
     fn get_offset(&self, index: usize) -> Option<*mut T> {
         if index < self.length {
+            debug_assert!(
+                index < self.data.capacity,
+                "get_offset: index {index} >= capacity {}",
+                self.data.capacity,
+            );
             self.data
                 .as_ptr()
                 // SAFETY: Pointer arithmetic is valid because:
@@ -355,13 +372,21 @@ impl<T: Sized + Clone> Array<T> {
 
     /// Determine size to grow to
     fn default_array_growth(existing_capacity: usize) -> usize {
-        if existing_capacity == 0 {
+        let new_cap = if existing_capacity == 0 {
             8
         } else {
+            // Must grow by at least 1 — integer division of small capacities
+            // (e.g. 1/2 = 0) would otherwise leave capacity unchanged, causing
+            // an infinite resize loop and out-of-bounds write in push().
             existing_capacity
-                .checked_add(existing_capacity / 2)
+                .checked_add((existing_capacity / 2).max(1))
                 .expect("cannot grow array")
-        }
+        };
+        debug_assert!(
+            new_cap > existing_capacity,
+            "default_array_growth: no growth from {existing_capacity}"
+        );
+        new_cap
     }
 
     fn write(&mut self, index: usize, item: T) -> &T {

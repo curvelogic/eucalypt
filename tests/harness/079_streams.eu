@@ -1,6 +1,6 @@
-{ import: ["jl=jsonl-stream@aux/aux_import.jsonl",
-           "csv=csv-stream@aux/aux_import.csv",
-           "txt=text-stream@aux/aux_import.txt"] }
+{ import: ["jl=jsonl-stream@testdata/aux_import.jsonl",
+           "csv=csv-stream@testdata/aux_import.csv",
+           "txt=text-stream@testdata/aux_import.txt"] }
 
 jsonl-count: jl count //= 3
 jsonl-names: jl map(_.name) //= ["Alice", "Bob", "Charlie"]

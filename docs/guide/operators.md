@@ -96,7 +96,7 @@ The prelude defines the standard precedence levels:
 | 30 | bool-sum | `\|\|`, `∨` |
 | 20 | cat | (catenation) |
 | 10 | apply | `@` |
-| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!`, `//!!` |
+| 5 | meta | `//`, `//=`, `//=>`, `//=?`, `//!` |
 
 Higher numbers bind more tightly:
 
@@ -253,20 +253,23 @@ by *idiom brackets* from applicative functor notation, but they are a
 general bracket overloading mechanism).
 
 ```eu
-⌈ x ⌉: x * 2
+⌈ xs ⌉: xs map(_ * 2)
 
-doubled: ⌈ 3 + 4 ⌉
+each-doubled: ⌈ 3 4 5 ⌉
 ```
 
 ```yaml
-doubled: 14
+each-doubled:
+  - 6
+  - 8
+  - 10
 ```
 
-The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` that
-takes one argument. Using `⌈ expr ⌉` in an expression calls that
-function with `expr`.
+The declaration `⌈ xs ⌉: body` defines a function named `⌈⌉` that
+takes one argument. Using `⌈ a b c ⌉` in an expression collects the
+items into a list and calls the function with `[a, b, c]`.
 
-Any of the built-in Unicode bracket pairs can be used:
+Any matching Unicode bracket pair can be used:
 
 | Open | Close | Name |
 |------|-------|------|

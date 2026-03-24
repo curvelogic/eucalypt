@@ -16,23 +16,22 @@ use super::{
     force::SeqNumList,
     support::{collect_num_list, machine_return_num_list},
     syntax::{
-        dsl::{annotated_lambda, app_bif, force, lref},
+        dsl::{app_bif, force, lambda, lref},
         LambdaForm,
     },
 };
 
 /// Shared wrapper for single-list intrinsics: force via SeqNumList
 /// then call the intrinsic.
-fn num_list_wrapper(intrinsic: &dyn StgIntrinsic, annotation: Smid) -> LambdaForm {
+fn num_list_wrapper(intrinsic: &dyn StgIntrinsic) -> LambdaForm {
     let bif_index: u8 = intrinsic.index().try_into().unwrap();
-    annotated_lambda(
+    lambda(
         1, // [nums]
         force(
             SeqNumList.global(lref(0)),
             // [concrete_nums] [nums]
             app_bif(bif_index, vec![lref(0)]),
         ),
-        annotation,
     )
 }
 
@@ -45,8 +44,8 @@ impl StgIntrinsic for RunningMax {
         "RUNNING_MAX"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        num_list_wrapper(self, annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        num_list_wrapper(self)
     }
 
     fn execute(
@@ -78,8 +77,8 @@ impl StgIntrinsic for RunningMin {
         "RUNNING_MIN"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        num_list_wrapper(self, annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        num_list_wrapper(self)
     }
 
     fn execute(
@@ -111,8 +110,8 @@ impl StgIntrinsic for RunningSum {
         "RUNNING_SUM"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        num_list_wrapper(self, annotation)
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        num_list_wrapper(self)
     }
 
     fn execute(

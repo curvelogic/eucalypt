@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     syntax::{
-        dsl::{annotated_lambda, data, lref},
+        dsl::{data, lambda, lref},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -29,11 +29,10 @@ impl StgIntrinsic for IoReturn {
         "IO_RETURN"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2, // [world value]
             data(DataConstructor::IoReturn.tag(), vec![lref(1), lref(0)]),
-            annotation,
         )
     }
 }
@@ -52,14 +51,13 @@ impl StgIntrinsic for IoBind {
         "IO_BIND"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             3, // [world action continuation]
             data(
                 DataConstructor::IoBind.tag(),
                 vec![lref(2), lref(1), lref(0)],
             ),
-            annotation,
         )
     }
 }
@@ -78,17 +76,16 @@ impl StgIntrinsic for IoAction {
         "IO_ACTION"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         // Parameters: [spec_block=lref(0), world=lref(1)]
         //
         // The spec_block arrives as an unevaluated thunk (LetRec closure)
         // when called from the io.shell / io.exec prelude functions.
         // ReadSpecBlock navigates the thunk structure directly on the heap
         // to extract the action spec without requiring machine evaluation.
-        annotated_lambda(
+        lambda(
             2, // [spec_block=lref(0), world=lref(1)]
             data(DataConstructor::IoAction.tag(), vec![lref(1), lref(0)]),
-            annotation,
         )
     }
 }

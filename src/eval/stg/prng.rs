@@ -2,11 +2,14 @@
 
 use serde_json::Number;
 
-use crate::eval::{
-    emit::Emitter,
-    error::ExecutionError,
-    machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-    memory::{mutator::MutatorHeapView, syntax::Ref},
+use crate::{
+    common::sourcemap::Smid,
+    eval::{
+        emit::Emitter,
+        error::ExecutionError,
+        machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
+        memory::{mutator::MutatorHeapView, syntax::Ref},
+    },
 };
 
 use super::support::{machine_return_num, num_arg};
@@ -17,7 +20,7 @@ const GOLDEN: u64 = 0x9e3779b97f4a7c15;
 /// Advance the SplitMix64 state and produce an output value.
 ///
 /// Returns `(next_state, output)` where `output` is the mixed result.
-fn splitmix64(seed: u64) -> (u64, u64) {
+pub(super) fn splitmix64(seed: u64) -> (u64, u64) {
     let state = seed.wrapping_add(GOLDEN);
     let mut z = state;
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
@@ -28,7 +31,7 @@ fn splitmix64(seed: u64) -> (u64, u64) {
 
 /// Convert a seed Number to u64, treating signed values via
 /// reinterpretation of the bit pattern.
-fn seed_to_u64(n: &Number) -> u64 {
+pub(super) fn seed_to_u64(n: &Number) -> u64 {
     if let Some(v) = n.as_u64() {
         v
     } else if let Some(v) = n.as_i64() {
@@ -87,8 +90,9 @@ impl StgIntrinsic for PrngFloat {
         let seed = seed_to_u64(&seed_num);
         let (_, z) = splitmix64(seed);
         let float_val = (z >> 11) as f64 / ((1u64 << 53) as f64);
-        let result = Number::from_f64(float_val)
-            .ok_or_else(|| ExecutionError::Panic("PRNG produced invalid float".to_string()))?;
+        let result = Number::from_f64(float_val).ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "PRNG produced invalid float".to_string())
+        })?;
         machine_return_num(machine, view, result)
     }
 }

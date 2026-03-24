@@ -407,6 +407,33 @@ shell-spec(c): {:io-shell cmd: c, timeout: 30}
 `key`.  If you need a block field to hold a value from an outer scope, the outer
 name and the field name must differ.
 
+## Sequential Bindings: Use `:let` Blocks, Not `let … in`
+
+Eucalypt has no `let … in` expression syntax (as in Haskell or Standard ML).
+Writing `result: let x: 1 in x + 2` is a runtime error — `let` is a prelude
+value (the identity monad) and `in` is unresolved.
+
+The eucalypt idiom for sequential, non-self-referential bindings is a **`:let`
+block**:
+
+```eu
+result: {
+  :let x: 1
+  y: x + 2
+}.y
+```
+
+The `:let` prefix marker desugars to a monadic bind, so `y` can safely
+reference `x` without the self-reference gotcha that affects ordinary block
+bindings (`{ x: expr  y: x + 1 }` would make `x` and `y` mutually
+self-referential).
+
+**Why this matters**: Before `let` was defined as a prelude name, attempts to
+write `let x: 1 in x + 2` gave a diagnostic error "eucalypt has no 'let'
+expression". That specific hint is no longer raised; the error now falls through
+to "unresolved variable 'in'". The `:let` block pattern is the correct
+replacement.
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

@@ -65,6 +65,12 @@ pub trait IntrinsicMachine {
     /// Take the latest capture result string (set by `Machine::step()`
     /// after a `CaptureEnd` continuation fires).
     fn take_capture_result(&mut self) -> Result<String, ExecutionError>;
+
+    /// Whether the machine is running in test mode.
+    ///
+    /// In test mode, `__EXPECT` failures return `false` instead of
+    /// panicking, allowing test harnesses to collect results.
+    fn test_mode(&self) -> bool;
 }
 
 /// All intrinsics have an STG syntax wrapper

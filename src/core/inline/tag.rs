@@ -1,7 +1,5 @@
 //! Tag selected lambdas as inlinable for inline pass
-use crate::core::error::CoreError;
-use crate::core::expr::{Expr, LetType, RcExpr};
-use moniker::*;
+use crate::core::expr::{Expr, LamScope, LetType, RcExpr};
 
 /// Walk the expression tagging combinators and destructuring lambdas.
 ///
@@ -12,7 +10,7 @@ use moniker::*;
 ///   `DestructureBlockLet` or `DestructureListLet`). This allows the inline
 ///   pass to distribute destructuring functions to their call sites so that
 ///   the subsequent fusion pass can simplify the resulting static lookups.
-pub fn tag_combinators(expr: &RcExpr) -> Result<RcExpr, CoreError> {
+pub fn tag_combinators(expr: &RcExpr) -> Result<RcExpr, crate::core::error::CoreError> {
     match &*expr.inner {
         Expr::Lam(s, false, scope) => {
             if combinator(scope) || destructuring(scope) {
@@ -28,8 +26,8 @@ pub fn tag_combinators(expr: &RcExpr) -> Result<RcExpr, CoreError> {
 
 /// A lambda is a combinator if its body is a variable or a simple
 /// intrinsic/variable application to variables and literals.
-fn combinator(lam_scope: &Scope<Vec<Binder<String>>, RcExpr>) -> bool {
-    let body = &lam_scope.unsafe_body;
+fn combinator(lam_scope: &LamScope<RcExpr>) -> bool {
+    let body = &lam_scope.body;
 
     match &*body.inner {
         Expr::Var(_, _) => true,
@@ -48,11 +46,11 @@ fn combinator(lam_scope: &Scope<Vec<Binder<String>>, RcExpr>) -> bool {
 /// its body is a `DestructureBlockLet` or `DestructureListLet`. Such lambdas
 /// are safe to inline because destructuring is deterministic and the fusion
 /// pass will subsequently simplify the resulting static lookups.
-fn destructuring(lam_scope: &Scope<Vec<Binder<String>>, RcExpr>) -> bool {
-    if lam_scope.unsafe_pattern.len() != 1 {
+fn destructuring(lam_scope: &LamScope<RcExpr>) -> bool {
+    if lam_scope.pattern.len() != 1 {
         return false;
     }
-    let body = &lam_scope.unsafe_body;
+    let body = &lam_scope.body;
     matches!(
         &*body.inner,
         Expr::Let(
@@ -98,6 +96,6 @@ pub mod tests {
             app(var(f), vec![num(22), num(23)]),
         );
 
-        assert_term_eq!(tag_combinators(&original).unwrap(), expected);
+        assert_eq!(tag_combinators(&original).unwrap(), expected);
     }
 }

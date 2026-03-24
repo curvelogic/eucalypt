@@ -14,9 +14,16 @@ eu: {
 
   ` "requires(constraint) - assert that the eucalypt version satisfies the given semver constraint (e.g. '>=0.2.0')."
   requires: __REQUIRES
+
+  ` "Operating system: linux, macos, windows, etc."
+  os: __OS
+
+  ` "CPU architecture: x86_64, aarch64, etc."
+  arch: __ARCH
 }
 
-` "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
+` { doc: "IO related declarations. The io namespace is a monad: io.bind, io.return, io.sequence, io.map-m, io.filter-m, io.then, io.join are derived automatically."
+    monad: true }
 io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ` "Read access to environent variables at time of launch"
   env: __io.ENV
@@ -121,8 +128,8 @@ random-bind(m, f, stream): {
   rest: run.rest
 }
 
-` "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block.
-Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
+` { doc: "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block. Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
+    monad: true }
 random: monad{bind: random-bind, return: random-ret} {
   ` "random.stream(seed) - create the initial PRNG stream from integer seed."
   stream(seed): random-stream(seed)
@@ -230,6 +237,9 @@ non-nil?: nil? complement
     precedence: :bool-unary }
 (x ✓): not(x = null)
 
+` "`coalesce(xs)` - return the first non-null element from list `xs`, or null if all are null."
+coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
+
 ` "`head-or(xs, d)` - return the head item of list `xs` or default `d` if empty."
 head-or(d, xs): xs nil? then(d, xs head)
 
@@ -275,6 +285,18 @@ block?: __ISBLOCK
 
 ` "`list?(v)` - true if and only if `v` is a list."
 list?: __ISLIST
+
+` "`number?(v)` - true if and only if `v` is a number."
+number?: __ISNUMBER
+
+` "`string?(v)` - true if and only if `v` is a string."
+string?: __ISSTRING
+
+` "`symbol?(v)` - true if and only if `v` is a symbol."
+symbol?: __ISSYMBOL
+
+` "`bool?(v)` - true if and only if `v` is a boolean."
+bool?: __ISBOOL
 
 ` "`elements(b)` - expose list of elements of block `b`."
 elements: __ELEMENTS
@@ -928,74 +950,65 @@ merge-meta(m, e): e // (meta(e) m)
 ` "`assert(p?, s, v)` - if `v p?` is true then return `v` otherwise error with message `s`."
 assert(p?, s, v): if(v p?, v, panic(s))
 
-expect: {
-  # In debug mode maybe the machine checks every return value against
-  # metadata, but for performance reasons we only check for explicit
-  # expectations.
-
-  ` "`validator(v)` - find the validator for a value `v` in its metadata"
-  validator(v): lookup-or(:assert, const(true), meta(v))
-
-  ` "`check(v)` - true if v is valid according to assert metadata"
-  check(v): v validator(v)
-
-  ` "`checked(v)` - panic if value doesn't satisfy its validator"
-  checked(v): if(check(v), v, panic("Assertion failed"))
-}
-
 #
-# Test expectations (return booleans, for use in test harnesses)
+# Test expectations (return booleans for use in test harnesses)
+#
+# In normal mode: panic on failure.
+# In test mode: return false on failure, allowing test harness to collect results.
 #
 
-` { doc: "`e //= v` - test that expression `e` evaluates to `v`, return boolean"
+` { doc: "`e //= v` - test that expression `e` evaluates to `v`, return boolean.
+
+    On success: return true.
+    On failure (normal mode): panic with EXPECT FAILED diagnostic.
+    On failure (test mode): emit diagnostic to stderr, return false."
     export: :suppress
     associates: :left
     precedence: :meta }
-(e //= v): e with-meta({ assert: (= v)}) expect.check
+(e //= v): __EXPECT(e, __DBG_REPR(v), e = v)
 
-` { doc: "`e //=? f` - test that expression `e` satisfies predicate `f`, return boolean"
+` { doc: "`e //=? f` - test that expression `e` satisfies predicate `f`, return boolean.
+
+    On success: return true.
+    On failure (normal mode): panic with EXPECT FAILED diagnostic.
+    On failure (test mode): emit diagnostic to stderr, return false."
     export: :suppress
     associates: :left
     precedence: :meta }
-(e //=? f): e with-meta({ assert: f}) expect.checked
+(e //=? f): __EXPECT(e, "to satisfy predicate", e f)
+
+` { doc: "`e //!` - test that expression `e` is true, return boolean.
+
+    On success: return true.
+    On failure (normal mode): panic with EXPECT FAILED diagnostic.
+    On failure (test mode): emit diagnostic to stderr, return false."
+    export: :suppress
+    precedence: :meta }
+(e //!): __EXPECT(e, "true", e = true)
 
 #
-# Assertions (panic on failure, return the value on success)
+# Assertions (always panic on failure, return the value on success)
 #
 
 ` { doc: "`e //=> v` - assert expression `e` evaluates to `v` and return `e`.
 
     On failure, reports the expected and actual values:
-    `assertion failed: expected <v>, got <e>`"
+    assertion failed: expected v, got e"
     export: :suppress
     associates: :left
     precedence: :meta }
 (e //=> v): if(e = v, e, __ASSERT_FAIL(e, v))
 
-` { doc: "`e //!` - assert expression `e` is true and return `e`.
-
-    On failure, reports the actual value:
-    `assertion failed: expected true, got <e>`"
-    export: :suppress
-    precedence: :meta }
-(e //!): if(e = true, e, __ASSERT_FAIL(e, true))
-
 #
-# Deprecated operators (use complement with the positive forms instead)
+# Debug tracing
 #
 
-` { doc: "DEPRECATED: use `e //=? complement(f)` instead."
-    export: :suppress
-    deprecated: true
-    associates: :left
-    precedence: :meta }
-(e //!? f): e with-meta({ assert: complement(f)}) expect.checked
+` { doc: "`dbg(opts, v)` - print value `v` to stderr and return `v` unchanged. opts keys: label (string)." }
+dbg(opts, v): __DBG(lookup-or(:label, "", opts), v)
 
-` { doc: "DEPRECATED: use `if(e, __ASSERT_FAIL(e, false), e)` instead."
-    export: :suppress
-    deprecated: true
-    precedence: :meta }
-(e //!!): if(e = false, e, __ASSERT_FAIL(e, false))
+` { doc: "`▶v` - debug-print value `v` to stderr and return it. Tight-binding prefix operator."
+    precedence: 85 }
+(▶ v): __DBG("", v)
 
 #
 # List library functions, maps and folds
@@ -1036,9 +1049,10 @@ drop-until(p?): drop-while(p? complement)
 
 ` "`split-after(p?, l) - split list where `p?` becomes false and return pair."
 split-after(p?, l): {
-  aux(xs, prefix): if((xs nil?) ∨ (xs head p?),
+  aux(xs, prefix): if(xs nil?, [prefix reverse, []],
+                     if(xs head p?,
                         aux(xs tail, cons(xs head, prefix)),
-                        [prefix reverse, xs])
+                        [prefix reverse, xs]))
 }.aux(l, [])
 
 ` "`split-when(p?, l) - split list where `p?` becomes true and return pair."
@@ -1046,6 +1060,16 @@ split-when(p?, l): split-after(p? complement, l)
 
 ` "`nth(n, l)` - return `n`th item of list if it exists, otherwise panic."
 nth(n, l): l drop(n) head
+
+` "`update-nth(n, f, l)` - apply `f` to element at index `n` in list `l`.
+Panics if `n` is out of range."
+update-nth(n, f, l): { rejoin([prefix, [s: suffix]]): prefix ++ (f(s) ‖ suffix) }.(l split-at(n) rejoin)
+
+` "`update-first(p?, f, l)` - apply `f` to the first element matching `p?` in list `l`.
+Returns `l` unchanged if no element matches."
+update-first(p?, f, l): {
+  go[pre, suf]: (suf nil?) then(l, pre ++ ((f(suf head)) ‖ (suf tail)))
+}.(l split-when(p?) go)
 
 ` { doc: "`l !! n` - return `n`th item of list `l` if it exists, otherwise error. For arrays, `n` must be a coordinate list (e.g. `[row, col]`) and !! delegates to `arr.get`."
     precedence: :exp }
@@ -1218,13 +1242,6 @@ split-on(pred, xs): {
       current: last(acc)
     }.(groups ++ [current ++ [x]]))
 }.(foldl(step, [[]], xs))
-
-` "`list-update(ls, i, f)` - replace element at index `i` in list `ls`
-with `f` applied to it. Returns unmodified list if `i` is out of range."
-list-update(ls, i, f):
-  ls nil? then([],
-    i = 0 then([f(head(ls))] ++ tail(ls),
-               [head(ls)] ++ list-update(tail(ls), i - 1, f)))
 
 ` "`qsort(lt, xs)` - sort `xs` using 'less-than' function `lt`"
 qsort(lt, xs): if(xs nil?,
@@ -1477,10 +1494,70 @@ set: {
 
   ` "`set.diff(a, b)` - return elements in set `a` that are not in set `b`."
   diff: '__SET.DIFF'
+
+  ` :suppress
+  sample-raw: '__SET.SAMPLE'
+
+  ` "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`.
+  Returns value/rest block. Use within a :random block."
+  sample(k, s, stream): {
+    floats: stream take(k)
+    value: s sample-raw(floats)
+    rest: stream drop(k)
+  }
 }
 
 ` "`∅` - the empty set."
 (∅): '__SET.EMPTY'
+
+
+
+##
+## Vecs (O(1) indexed access)
+##
+
+` { export: :suppress
+    doc: "Functions for working with vecs — flat primitive sequences with O(1) indexed access." }
+vec: {
+
+  ` "`vec.of(xs)` - convert list `xs` of primitive values to a vec for O(1) indexed access."
+  of: '__VEC.OF'
+
+  ` "`vec.len(v)` - return the number of elements in vec `v`."
+  len: '__VEC.LEN'
+
+  ` "`vec.nth(n, v)` - return the element at index `n` (0-based) in vec `v`."
+  nth: '__VEC.NTH'
+
+  ` "`vec.slice(from, to, v)` - return a new vec with elements in the range `[from, to)` of `v`."
+  slice: '__VEC.SLICE'
+
+  ` :suppress
+  sample-raw: '__VEC.SAMPLE'
+
+  ` "`vec.sample(n, v)` - random monad action: pick `n` random elements
+  from vec `v` without replacement. Use within a :random block."
+  sample(n, v, stream): {
+    floats: stream take(n)
+    value: v sample-raw(floats)
+    rest: stream drop(n)
+  }
+
+  ` :suppress
+  shuffle-raw: '__VEC.SHUFFLE'
+
+  ` "`vec.shuffle(v)` - random monad action: return vec `v` in random order.
+  Use within a :random block."
+  shuffle(v, stream): {
+    needed: (v vec.len) - 1
+    floats: stream take(needed)
+    value: v shuffle-raw(floats)
+    rest: stream drop(needed)
+  }
+
+  ` "`vec.to-list(v)` - convert vec `v` back to a cons-list."
+  to-list: '__VEC.TO_LIST'
+}
 
 
 
@@ -1589,3 +1666,138 @@ graph: {
   two distinct components."
   kruskal-edges(n, edges): __GRAPH_KRUSKAL_EDGES(edges concat, [n])
 }
+
+##
+## Identity monad (let blocks)
+##
+
+` { doc: "Identity monad for sequential let-bindings. Use :let blocks for sequential evaluation without the self-reference gotcha."
+    monad: true }
+let: monad({bind(m, f): f(m), return: identity})
+
+##
+## Structured argument parsing
+##
+
+` "Parse command-line argument list against a defaults block.
+
+Each key in `defaults` defines an option with its default value.
+Field metadata configures parsing: `short` (symbol for short flag),
+`doc` (description), `flag` (true for boolean toggle).
+
+Returns the `defaults` block updated with parsed values, plus an
+`args` key containing positional arguments as a list.
+
+Unknown options cause a runtime error. Use `--help` for
+auto-generated help text."
+parse-args(defaults, args): {
+
+  ` "Build lookup table mapping short-flag symbols to option key symbols"
+  build-short-lookup(defs): {
+    has-short[k, v]: v meta has(:short)
+    to-pair[k, v]: [v meta lookup(:short), k]
+    pairs: defs elements filter(has-short) map(to-pair)
+  }.( pairs block )
+
+  ` "Return true if option key has `flag: true` metadata"
+  is-flag(defs, key): {
+    entry: defs elements filter(has-key(key))
+    m: (entry nil?) then({}, entry head second meta)
+  }.( m lookup-or(:flag, false) )
+
+  ` "Predicate: does element have key `k`?"
+  has-key(k, [ek, ev]): ek = k
+
+  ` "Coerce string value to match type of default for `key`"
+  coerce-value(defs, key, str-val): {
+    default-val: defs lookup-or(key, str-val)
+  }.( (default-val number?) then(str-val parse-as(:json), str-val) )
+
+  ` "Update opts with a key-value pair"
+  set-opt(key, val, st): {
+    opts: [[key, val]] block merge(st.opts)
+    rest: st.rest
+    pending: null
+  }
+
+  ` "Resolve pending option by coercing and setting its value.
+  If `st` has a `:buf` key, uses that; otherwise uses `val`.
+  If neither `:buf` nor `val` is available, returns `st` unchanged."
+  resolve-pending(defs, val, st): {
+    pending-value: st has(:buf) then(st.buf str.join-on(""), val)
+    ret: st when(-> pending-value✓, set-opt(st.pending, pending-value coerce-value(defs, st.pending)))
+  }.ret
+
+
+  ` "Process a long option (starting with `--`) against defaults"
+  process-long(defs, state, arg): {
+    name: arg str.replace("^--", "")
+    has-eq: name str.contains?("=")
+    key-str: (has-eq) then(name str.split-on("=") first, name)
+    key: key-str sym
+    val: name str.split-on("=") second
+
+    eq-opts: has-eq then(state set-opt(key, coerce-value(defs, key, val)), null)
+    flag-opts: is-flag(defs, key) then(state set-opt(key, true), null)
+    else-opts: { opts: state.opts, rest: state.rest, pending: key }
+    unknown: not(defs has(key)) then(panic("unknown option: --{name}"), null)
+
+  }.(coalesce[unknown, eq-opts, flag-opts, else-opts])
+
+  ` "Process short options string (list of single-char strings).
+  Handles combined flags like `-vo` where `v` is a flag and `o` takes a value."
+  process-short-chars(defs, sl, state, chars): {
+
+    step(st, ch): {
+
+      accum-val: st.pending✓ then(st update-value-or(:buf, _ ++ [ch], [ch]), null)
+
+      key: sl lookup-or(ch sym, panic("unknown option: -{ch}"))
+      flag-val: is-flag(defs, key) then(st set-opt(key, true), { opts: st.opts, rest: st.rest, pending: key })
+
+    }.(coalesce[accum-val, flag-val])
+
+    result: foldl(step, state, chars) when(_.pending✓, resolve-pending(defs, null))
+
+  }.result
+
+  ` "Process a single argument in state"
+  process-one(defs, sl, state, arg):
+    cond( [ [state.pending✓,            state resolve-pending(defs, arg)]
+          , [arg = "--help",             panic(generate-help(defs))]
+          , [arg str.starts-with?("--"), arg process-long(defs, state)]
+          , [arg str.starts-with?("-"),  arg str.replace("^-", "") str.letters process-short-chars(defs, sl, state)]
+          ]
+          , { opts: state.opts, rest: state.rest ++ [arg], pending: null })
+
+
+  ` "Generate help text for `--help`"
+  generate-help(defs): {
+
+    help-line[k, v]: {
+      m: v meta
+      short: m lookup-or(:short, null)
+      doc-text: m lookup-or(:doc, "")
+      flag-str: (m lookup-or(:flag, false)) then(" (flag)", "")
+      short-name: short str.of
+      key-name: k str.of
+      short-str: (short ✓) then("-{short-name}, ", "    ")
+    }.( "{short-str}--{key-name}{flag-str}  {doc-text}" )
+
+    lines: defs elements map(help-line)
+  }.( ("Options:" ‖ lines) str.join-on(c"\n") )
+
+
+  ` "Main parse logic"
+  parse(defs, a): {
+
+    shorts: build-short-lookup(defs)
+
+    init: { opts: defs, rest: [], pending: null }
+    final-state: foldl(process-one(defs, shorts), init, a)
+
+  }.( (final-state.pending ✓) then(
+        { name: final-state.pending str.of }.( panic("option --{name} requires a value") ),
+        [[:args, final-state.rest]] block merge(final-state.opts)) )
+
+}.parse(defaults, args)

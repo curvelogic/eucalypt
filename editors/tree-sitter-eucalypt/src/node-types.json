@@ -55,6 +55,10 @@
       "required": false,
       "types": [
         {
+          "type": "block_metadata",
+          "named": true
+        },
+        {
           "type": "declaration",
           "named": true
         }
@@ -94,6 +98,37 @@
       "types": [
         {
           "type": "declaration",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "block_metadata",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "block",
+          "named": true
+        },
+        {
+          "type": "docstring",
+          "named": true
+        },
+        {
+          "type": "list",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "symbol",
           "named": true
         }
       ]
@@ -257,6 +292,41 @@
         },
         {
           "type": "quoted_identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "docstring",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "brace_escape",
+          "named": true
+        },
+        {
+          "type": "c_escape_sequence",
+          "named": true
+        },
+        {
+          "type": "c_string_content",
+          "named": true
+        },
+        {
+          "type": "interpolation",
+          "named": true
+        },
+        {
+          "type": "r_string_content",
+          "named": true
+        },
+        {
+          "type": "string_content",
           "named": true
         }
       ]
@@ -453,15 +523,7 @@
           "named": true
         },
         {
-          "type": "c_string",
-          "named": true
-        },
-        {
-          "type": "r_string",
-          "named": true
-        },
-        {
-          "type": "string",
+          "type": "docstring",
           "named": true
         },
         {
@@ -714,15 +776,7 @@
           "named": true
         },
         {
-          "type": "c_string",
-          "named": true
-        },
-        {
-          "type": "r_string",
-          "named": true
-        },
-        {
-          "type": "string",
+          "type": "docstring",
           "named": true
         }
       ]

@@ -1,10 +1,10 @@
 //! Facilities for dealing with metadata in core expressions at
 //! various phases
 use crate::common::sourcemap::*;
+use crate::core::binding::Var;
 use crate::core::error::*;
 use crate::core::expr::*;
 use crate::syntax::input::*;
-use moniker;
 
 /// Read typed metadata out of core expressions, mutating to persist
 /// any evaluations or transformations made along the way.
@@ -17,15 +17,15 @@ pub trait ReadMetadata<M> {
 /// Accepts:
 /// - String literal `"name"` → `"name"`
 /// - Symbol literal `:name` → `"name"`
-/// - Var expression (desugared identifier) → the pretty name
+/// - Var expression (desugared identifier) → the name
 fn extract_function_name(expr: &RcExpr) -> Option<String> {
     // Try string or symbol literal first
     if let Some(s) = (expr as &dyn Extract<String>).extract() {
         return Some(s);
     }
     // Then try Var (desugared identifier reference)
-    if let Expr::Var(_, moniker::Var::Free(fv)) = &*expr.inner {
-        return fv.pretty_name.clone();
+    if let Expr::Var(_, Var::Free(name)) = &*expr.inner {
+        return Some(name.clone());
     }
     None
 }

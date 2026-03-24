@@ -259,7 +259,7 @@ From highest (tightest) to lowest binding:
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
 | 10 | apply | right | `@` | Function application |
-| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!?`, `//!`, `//!!` | Metadata and assertions |
+| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!` | Metadata and assertions |
 
 **Named precedence levels** for use in operator metadata: `:lookup`,
 `:call`, `:bool-unary`, `:exp`, `:prod`, `:sum`, `:shift`, `:bitwise`,
@@ -502,6 +502,48 @@ See also: `identity(v)`, `const(k, _)`, `compose(f, g, x)`,
 `flip(f, x, y)`, `complement(p?)`, `curry(f, x, y)`,
 `uncurry(f, l)`, `cond(l, d)`.
 
+### 3.5 Type Predicates
+
+```eu,notest
+42 number?          # true
+"hi" string?        # true
+:foo symbol?        # true
+true bool?          # true
+{} block?           # true
+[] list?            # true
+42 string?          # false
+```
+
+All predicates take one argument and return a boolean.
+
+### 3.6 Command-line Argument Parsing
+
+#### `parse-args(defaults, args)` — structured CLI argument parsing
+
+Parse `args` (a list of strings, typically `io.args`) against `defaults`:
+
+```eu,notest
+` :suppress
+defaults: {
+  ` { short: :v  doc: "Verbose"  flag: true }
+  verbose: false
+  ` { short: :o  doc: "Output file" }
+  output: "out.yaml"
+  ` { doc: "Repeat count" }
+  count: 1
+}
+
+main: io.args parse-args(defaults)
+```
+
+Returns defaults block with parsed values overridden, plus `args` key for positional arguments.
+
+**Metadata keys:** `short` (symbol, short flag), `doc` (string, help text), `flag` (bool, toggle).
+
+**Supported forms:** `--key value`, `--key=value`, `--flag`, `-x`, `-xy` (combined shorts), positionals, `--help`.
+
+See `docs/reference/prelude/args.md` for full documentation.
+
 ---
 
 ## 4. Pipeline Patterns and Idioms
@@ -520,7 +562,7 @@ Read left to right: data flows through transformations.
 
 ### 4.2 Pipeline with Named Stages
 
-Use `:suppress` to hide intermediate values from output:
+Use `:suppress` to hide intermediate data values from output. Note: `:suppress` is only needed on data declarations that would otherwise appear in rendered output. Functions do not need `:suppress` — they are not rendered.
 
 ```eu,notest
 ` :suppress
@@ -859,26 +901,19 @@ All functions verified against `lib/prelude.eu`:
 
 All at precedence 5 (`:meta`).
 
-**Test expectations** (return booleans, for use in test harnesses):
+**Test expectations** (panic in normal mode, return `false` in test mode):
 
 | Operator | Description |
 |----------|-------------|
-| `e //= v` | Test `e` equals `v`, return boolean |
-| `e //=? f` | Test `f(e)` is `true`, return boolean |
+| `e //= v` | Test `e` equals `v`; returns `true`/`false`, emits diagnostic on failure |
+| `e //=? f` | Test `f(e)` is `true`; returns `true`/`false`, emits diagnostic on failure |
+| `e //!` | Test `e` is `true`; returns `true`/`false`, emits diagnostic on failure |
 
-**Assertions** (panic on failure, return `e` on success):
+**Assertions** (always panic on failure, return `e` on success):
 
 | Operator | Description |
 |----------|-------------|
 | `e //=> v` | Assert `e` equals `v`, panic with expected/actual on failure |
-| `e //!` | Assert `e` is `true`, panic on failure |
-
-**Deprecated** (use complement with positive forms instead):
-
-| Operator | Replacement |
-|----------|-------------|
-| `e //!? f` | `e //=? complement(f)` |
-| `e //!!` | Removed — negate the condition instead |
 
 **Metadata operators:**
 
@@ -886,3 +921,32 @@ All at precedence 5 (`:meta`).
 |----------|-------------|
 | `e // m` | Attach metadata block `m` to value `e` |
 | `e //<< m` | Merge `m` into existing metadata of `e` |
+
+**Debug intrinsics** (low-level BIFs for diagnostics and test infrastructure):
+
+| BIF | Signature | Description |
+|-----|-----------|-------------|
+| `__DBG_REPR(v)` | `unk → str` | Render any eucalypt value as a compact human-readable string (e.g. `42`, `"hello"`, `:foo`, `true`, `null`, `[]`, `{block}`) |
+| `__EXPECT(actual, expected_repr, pass)` | `unk × str × bool → bool` | Test infrastructure primitive: returns `pass` as a boolean; on failure prints `EXPECT FAILED: expected <expected_repr>, got <actual_repr>` to stderr |
+| `__DBG(label, v)` | `str × unk → unk` | Print debug output to stderr; return `v` transparently |
+
+`__DBG_REPR` is used internally by `//=` and `//!` to format diagnostic
+messages. It can also be used directly in test harnesses when you need
+a string representation of a value for comparison or display.
+
+---
+
+## 9. Debug Tracing
+
+**Operators and functions for inspecting values at runtime.**
+
+| Form | Description |
+|------|-------------|
+| `▶ v` | Print `v` to stderr and return it transparently. Prefix operator, precedence 85. |
+| `v dbg{}` | Print `v` to stderr and return it transparently. |
+| `v dbg{label: "x"}` | Print `x: <repr>` to stderr and return `v` transparently. |
+
+Output format: `▶ <repr>` or `▶ label: <repr>`.
+
+`▶` is intentionally prominent — the Unicode triangle is hard to overlook
+in a code review.

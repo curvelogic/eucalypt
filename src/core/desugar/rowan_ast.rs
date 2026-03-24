@@ -14,6 +14,7 @@ use crate::{
     common::sourcemap::{HasSmid, Smid},
     core::{
         anaphora::{BLOCK_ANAPHORA, EXPR_ANAPHORA},
+        binding::{BoundVar, Scope, Var},
         error::CoreError,
         expr::*,
         rt,
@@ -25,7 +26,6 @@ use crate::{
     },
 };
 use codespan::{ByteIndex, Span};
-use moniker::{Binder, Embed, Rec, Scope};
 use rowan::{ast::AstNode, TextRange};
 
 /// Convert a TextRange to a Span
@@ -37,14 +37,14 @@ fn text_range_to_span(range: TextRange) -> Span {
 
 /// Return type of `desugar_declaration_body_with_patterns`:
 /// `(body_expr, lambda_param_names, lambda_param_vars)`
-type PatternBodyResult = (RcExpr, Vec<String>, Vec<moniker::FreeVar<String>>);
+type PatternBodyResult = (RcExpr, Vec<String>, Vec<String>);
 
 /// Entry for a single field binding in a destructuring let.
 struct FieldBinding {
     /// Name of the field in the source block (for Lookup)
     field_name: String,
-    /// FreeVar for the binding name in the body
-    binding_var: moniker::FreeVar<String>,
+    /// Name of the binding in the body
+    binding_var: String,
 }
 
 /// Entry for a destructuring block let: synthetic param + field bindings.
@@ -59,16 +59,16 @@ struct DestructureEntry {
 struct ListElementBinding {
     /// Zero-based index of the element
     index: usize,
-    /// FreeVar for the binding name in the body
-    binding_var: moniker::FreeVar<String>,
+    /// Name of the binding in the body
+    binding_var: String,
 }
 
 /// Entry for the tail binding in a head/tail list pattern.
 struct ListTailBinding {
     /// Number of head elements to skip (i.e., the drop count)
     drop_count: usize,
-    /// FreeVar for the tail binding name in the body
-    binding_var: moniker::FreeVar<String>,
+    /// Name of the tail binding in the body
+    binding_var: String,
 }
 
 /// Entry for a destructuring list let: synthetic param + element bindings.
@@ -387,14 +387,14 @@ fn desugar_declaration_body_with_patterns(
         desugarer.env_mut().push_keys(all_env_names.iter().cloned());
     }
 
-    // Collect FreeVars for lambda binders (before desugaring body)
-    let lambda_param_vars: Vec<moniker::FreeVar<String>> = lambda_param_names
+    // Collect var names for lambda binders (before desugaring body)
+    let lambda_param_vars: Vec<String> = lambda_param_names
         .iter()
         .map(|name| desugarer.env().get(name).unwrap().clone())
         .collect();
 
     // Collect FreeVars for ALL env names (needed for nested destructure synthetics)
-    let all_env_vars: std::collections::HashMap<String, moniker::FreeVar<String>> = all_env_names
+    let all_env_vars: std::collections::HashMap<String, String> = all_env_names
         .iter()
         .map(|name| (name.clone(), desugarer.env().get(name).unwrap().clone()))
         .collect();
@@ -475,12 +475,12 @@ fn desugar_declaration_body_with_patterns(
             .clone();
 
         let smid = desugarer.new_smid(span);
-        let synthetic_var = RcExpr::from(Expr::Var(smid, moniker::Var::Free(synthetic_fv)));
+        let synthetic_var = RcExpr::from(Expr::Var(smid, Var::Free(synthetic_fv)));
 
         match slot {
             DestructureLet::Block(entry) => {
                 // Each binding is: binding_var = Lookup(Var(synthetic), "field_name", None)
-                let bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+                let bindings: Vec<(String, RcExpr)> = entry
                     .fields
                     .iter()
                     .map(|fb| {
@@ -490,13 +490,13 @@ fn desugar_declaration_body_with_patterns(
                             fb.field_name.clone(),
                             None,
                         ));
-                        (Binder(fb.binding_var.clone()), Embed(lookup))
+                        (fb.binding_var.clone(), lookup)
                     })
                     .collect();
 
                 body = RcExpr::from(Expr::Let(
                     smid,
-                    Scope::new(Rec::new(bindings), body),
+                    close_let_scope(bindings, body),
                     LetType::DestructureBlockLet,
                 ));
             }
@@ -512,7 +512,7 @@ fn desugar_declaration_body_with_patterns(
                 //
                 // This correctly handles lists built by the STG compiler
                 // where the nil tail is a global ref, not a local ref.
-                let mut bindings: Vec<(Binder<String>, Embed<RcExpr>)> = entry
+                let mut bindings: Vec<(String, RcExpr)> = entry
                     .elements
                     .iter()
                     .map(|eb| {
@@ -523,7 +523,7 @@ fn desugar_declaration_body_with_patterns(
                         }
                         // Apply HEAD to get the element at this position
                         let head_call = core::app(smid, core::bif(smid, "HEAD"), vec![list_expr]);
-                        (Binder(eb.binding_var.clone()), Embed(head_call))
+                        (eb.binding_var.clone(), head_call)
                     })
                     .collect();
 
@@ -533,12 +533,12 @@ fn desugar_declaration_body_with_patterns(
                     for _ in 0..tb.drop_count {
                         tail_expr = core::app(smid, core::bif(smid, "TAIL"), vec![tail_expr]);
                     }
-                    bindings.push((Binder(tb.binding_var.clone()), Embed(tail_expr)));
+                    bindings.push((tb.binding_var.clone(), tail_expr));
                 }
 
                 body = RcExpr::from(Expr::Let(
                     smid,
-                    Scope::new(Rec::new(bindings), body),
+                    close_let_scope(bindings, body),
                     LetType::DestructureListLet,
                 ));
             }
@@ -647,6 +647,55 @@ impl Desugarable for rowan_ast::Literal {
     }
 }
 
+/// Return `true` if the raw Rowan declaration has `monad: true` in its
+/// backtick metadata block.
+///
+/// This is used to detect monad namespace declarations such as:
+/// ```eucalypt
+/// ` { monad: true }
+/// io: monad{…} { … }
+/// ```
+fn has_monad_true_in_raw_meta(decl: &rowan_ast::Declaration) -> bool {
+    let meta = match decl.meta() {
+        Some(m) => m,
+        None => return false,
+    };
+    let soup = match meta.soup() {
+        Some(s) => s,
+        None => return false,
+    };
+    let elements: Vec<rowan_ast::Element> = soup.elements().collect();
+
+    // The metadata soup must contain exactly one Block element.
+    if let Some(rowan_ast::Element::Block(meta_block)) = elements.first() {
+        for inner_decl in meta_block.declarations() {
+            if let Some(head) = inner_decl.head() {
+                if let rowan_ast::DeclarationKind::Property(prop) = head.classify_declaration() {
+                    if prop.text() != "monad" {
+                        continue;
+                    }
+                    // Check that the value is the identifier `true`.
+                    if let Some(body) = inner_decl.body() {
+                        if let Some(body_soup) = body.soup() {
+                            let elems: Vec<rowan_ast::Element> = body_soup.elements().collect();
+                            if elems.len() == 1 {
+                                if let rowan_ast::Element::Name(name_elem) = &elems[0] {
+                                    if let Some(id) = name_elem.identifier() {
+                                        if id.text() == "true" {
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Extract a MonadSpec from a desugared block body used in a bracket pair definition.
 ///
 /// Expects the body to be a desugared block like:
@@ -704,14 +753,13 @@ fn find_monad_spec_in_bindings(expr: &RcExpr) -> Option<super::desugarer::MonadS
     use crate::core::metadata::extract_function_name_from_expr;
     match &*expr.inner {
         Expr::Let(_, scope, _) => {
-            let bindings = scope.unsafe_pattern.unsafe_pattern.clone();
+            let bindings = scope.pattern.clone();
             let mut bind_name = None;
             let mut return_name = None;
             let mut namespace = None;
-            for (binder, embed) in &bindings {
-                let key = binder.0.pretty_name.as_deref().unwrap_or("");
-                let val = extract_function_name_from_expr(&embed.0);
-                match key {
+            for (key, val_expr) in &bindings {
+                let val = extract_function_name_from_expr(val_expr);
+                match key.as_str() {
                     "bind" => bind_name = val,
                     "return" => return_name = val,
                     "namespace" => namespace = val,
@@ -945,8 +993,8 @@ fn desugar_monadic_block(
         desugarer.env_mut().push_keys(bind_names.iter().cloned());
     }
 
-    // Collect bind FreeVars while names are in scope
-    let bind_vars: Vec<moniker::FreeVar<String>> = bind_names
+    // Collect bind var names while names are in scope
+    let bind_vars: Vec<String> = bind_names
         .iter()
         .map(|name| desugarer.env().get(name).unwrap().clone())
         .collect();
@@ -1037,12 +1085,207 @@ fn desugar_monadic_block(
     Ok(result)
 }
 
+/// Desugar a monadic block with implicit return semantics (no `.expr`).
+///
+/// Like `desugar_monadic_block`, but synthesises the return expression as a
+/// block of all non-underscore bind names:
+///
+/// ```text
+/// { :io r: cmd }   →   io.bind(cmd, λr. io.return({ r: r }))
+/// ```
+///
+/// Bind names that are exactly `"_"` are excluded from the return block.
+/// If all names are `"_"`, an empty block `{}` is returned instead.
+fn desugar_monadic_block_implicit(
+    smid: Smid,
+    decls: Vec<rowan_ast::Declaration>,
+    spec: &super::desugarer::MonadSpec,
+    desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    if decls.is_empty() {
+        return Err(CoreError::EmptyMonadicBlock(smid));
+    }
+
+    // Push all bind names into scope first.
+    let bind_names: Vec<String> = decls
+        .iter()
+        .map(extract_declaration_name)
+        .collect::<Result<Vec<_>, CoreError>>()?;
+
+    if !bind_names.is_empty() {
+        desugarer.env_mut().push_keys(bind_names.iter().cloned());
+    }
+
+    // Collect the bind var names while names are in scope.
+    let bind_vars: Vec<String> = bind_names
+        .iter()
+        .map(|name| desugarer.env().get(name).unwrap().clone())
+        .collect();
+
+    // Desugar all declaration bodies.
+    let mut name_value_pairs: Vec<(String, RcExpr)> = Vec::with_capacity(decls.len());
+    for (i, decl) in decls.iter().enumerate() {
+        let decl_name = bind_names[i].clone();
+        let span = text_range_to_span(decl.syntax().text_range());
+        let value = if let Some(body) = decl.body() {
+            if let Some(soup) = body.soup() {
+                let expr = soup.desugar(desugarer)?;
+                desugarer.varify(expr)
+            } else {
+                if !bind_names.is_empty() {
+                    desugarer.env_mut().pop();
+                }
+                return Err(CoreError::InvalidEmbedding(
+                    "empty monadic block declaration body".to_string(),
+                    desugarer.new_smid(span),
+                ));
+            }
+        } else {
+            if !bind_names.is_empty() {
+                desugarer.env_mut().pop();
+            }
+            return Err(CoreError::InvalidEmbedding(
+                "missing monadic block declaration body".to_string(),
+                desugarer.new_smid(span),
+            ));
+        };
+        name_value_pairs.push((decl_name, value));
+    }
+
+    // Synthesise the implicit return block from all non-underscore bind names.
+    //
+    // We need: return({a: a_λ, b: b_λ}) where a_λ, b_λ are the lambda-bound
+    // variables from the bind chain.
+    //
+    // A bare Expr::Block({a: a_λ, b: b_λ}) compiles to a letrec whose bindings
+    // shadow the lambda params — {a: a} self-references.  core::let_ and
+    // core::default_let also self-reference because close_let_scope closes
+    // binding values over the let's own names.
+    //
+    // Fix: build Let + Block manually.  The Let binding values are the
+    // lambda-bound FreeVars (NOT closed over the Let's names).  The Block body
+    // references the Let bindings via BoundVar(scope=0).  This way the Let
+    // captures the lambda vars, and the Block reads from the Let.
+    let non_underscore: Vec<(String, String)> = bind_names
+        .iter()
+        .zip(bind_vars.iter())
+        .filter(|(name, _)| name.as_str() != "_")
+        .map(|(name, fv)| (name.clone(), fv.clone()))
+        .collect();
+
+    let return_expr = if non_underscore.is_empty() {
+        core::block(smid, std::iter::empty::<(String, RcExpr)>())
+    } else {
+        // Let bindings: each value is the lambda-bound FreeVar.
+        // These must NOT be closed over the Let's own names.
+        let let_bindings: Vec<(String, RcExpr)> = non_underscore
+            .iter()
+            .map(|(name, fv)| (name.clone(), core::var(smid, fv.clone())))
+            .collect();
+
+        // Body: Block where each key reads from the Let (BoundVar scope=0).
+        let body_block = core::block(
+            smid,
+            non_underscore.iter().enumerate().map(|(i, (name, _))| {
+                (
+                    name.clone(),
+                    RcExpr::from(Expr::Var(
+                        smid,
+                        Var::Bound(BoundVar {
+                            scope: 0,
+                            binder: i as u32,
+                            name: Some(name.clone()),
+                        }),
+                    )),
+                )
+            }),
+        );
+
+        // Construct the Let Scope directly — skip close_let_scope which
+        // would close the binding FreeVars over the Let's own names.
+        RcExpr::from(Expr::Let(
+            smid,
+            Scope {
+                pattern: let_bindings,
+                body: body_block,
+            },
+            LetType::OtherLet,
+        ))
+    };
+
+    // Pop bind names from scope.
+    if !bind_names.is_empty() {
+        desugarer.env_mut().pop();
+    }
+
+    // Build the bind chain using the same logic as desugar_monadic_block.
+    use super::desugarer::MonadSpec;
+    let mut result = match spec {
+        MonadSpec::Explicit { return_name, .. } => {
+            let return_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, return_name.clone())));
+            RcExpr::from(Expr::App(smid, return_fn, vec![return_expr]))
+        }
+        MonadSpec::Namespace(ns) => {
+            let ns_var = desugarer.varify(RcExpr::from(Expr::Name(smid, ns.clone())));
+            core::app(
+                smid,
+                core::lookup(smid, ns_var, "return", None),
+                vec![return_expr],
+            )
+        }
+    };
+
+    for ((_, value), bind_var) in name_value_pairs
+        .into_iter()
+        .zip(bind_vars.into_iter())
+        .rev()
+    {
+        let lambda = core::lam(smid, vec![bind_var], result);
+        result = match spec {
+            MonadSpec::Explicit { bind_name, .. } => {
+                let bind_fn = desugarer.varify(RcExpr::from(Expr::Name(smid, bind_name.clone())));
+                RcExpr::from(Expr::App(smid, bind_fn, vec![value, lambda]))
+            }
+            MonadSpec::Namespace(ns) => {
+                let ns_var = desugarer.varify(RcExpr::from(Expr::Name(smid, ns.clone())));
+                core::app(
+                    smid,
+                    core::lookup(smid, ns_var, "bind", None),
+                    vec![value, lambda],
+                )
+            }
+        };
+    }
+
+    Ok(result)
+}
+
 /// Element (equivalent to Expression) desugaring
 impl Desugarable for Element {
     fn desugar(&self, desugarer: &mut Desugarer) -> Result<RcExpr, CoreError> {
         match self {
             Element::Lit(lit) => lit.desugar(desugarer),
-            Element::Block(block) => block.desugar(desugarer),
+            Element::Block(ref block) => {
+                // Check for monadic block with implicit return (no following .expr).
+                // When a block is desugared as a single-element soup, we must apply
+                // the same implicit-return logic as desugar_rowan_soup's Block path.
+                if let Some(spec) = extract_block_monad_spec_from_raw(block) {
+                    let ns_registered = if let super::desugarer::MonadSpec::Namespace(ref ns) = spec
+                    {
+                        desugarer.monad_namespace_spec(ns).is_some()
+                    } else {
+                        true
+                    };
+                    if ns_registered {
+                        let span = text_range_to_span(block.syntax().text_range());
+                        let smid = desugarer.new_smid(span);
+                        let block_decls: Vec<rowan_ast::Declaration> =
+                            block.declarations().collect();
+                        return desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer);
+                    }
+                }
+                block.desugar(desugarer)
+            }
             Element::List(list) => {
                 let span = text_range_to_span(list.syntax().text_range());
                 let items: Result<Vec<RcExpr>, CoreError> = list
@@ -1124,14 +1367,15 @@ impl Desugarable for Element {
                     )
                 })?;
 
-                // Simple expression mode: ⟦ x ⟧ → ⟦⟧(x)
+                // Idiot brackets: desugar inner soup with bracket flag.
                 //
-                // Desugar the inner soup and apply the bracket pair function.
-                // Both the function name and the argument must be varified so
-                // that Name nodes are resolved to Var references before the
-                // STG compiler sees them.
+                // Uses desugar_rowan_soup_bracket which processes elements
+                // normally (grouping calls, resolving lookups) but produces
+                // Soup with bracket=true.  The cook phase will then split
+                // at catenation boundaries and collect items into a List.
                 let inner = if let Some(soup) = bracket.soup() {
-                    soup.desugar(desugarer)?
+                    let elements: Vec<Element> = soup.elements().collect();
+                    desugar_rowan_soup_bracket(span, elements, desugarer)?
                 } else {
                     return Err(CoreError::InvalidEmbedding(
                         "empty bracket expression".to_string(),
@@ -1141,20 +1385,29 @@ impl Desugarable for Element {
 
                 let bracket_fn_name = RcExpr::from(Expr::Name(smid, pair_name));
                 let bracket_fn = desugarer.varify(bracket_fn_name);
-                let arg = desugarer.varify(inner);
-                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![arg])))
+                Ok(RcExpr::from(Expr::App(smid, bracket_fn, vec![inner])))
             }
-            Element::BracketBlock(_) => {
-                // BracketBlock elements appearing in isolation (not preceded by soup context)
-                // should not occur — they should be consumed by desugar_rowan_soup lookahead.
-                // If we reach here, it means the BracketBlock has no following .expr.
+            Element::BracketBlock(bracket) => {
+                // BracketBlock element appearing in isolation (single-element soup, no .expr).
+                // Use implicit return: synthesise { k1: k1, k2: k2, … } from bind names,
+                // excluding any underscore-prefixed names.
                 let span = text_range_to_span(self.syntax().text_range());
                 let smid = desugarer.new_smid(span);
-                Err(CoreError::InvalidEmbedding(
-                    "monadic bracket block requires a return expression (e.g. ⟦ ... ⟧.expr)"
-                        .to_string(),
-                    smid,
-                ))
+
+                let pair_name = bracket.bracket_pair_name().ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "bracket block missing bracket pair name".to_string(),
+                        smid,
+                    )
+                })?;
+
+                let spec = desugarer
+                    .monad_spec(&pair_name)
+                    .cloned()
+                    .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
+
+                let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
+                desugar_monadic_block_implicit(smid, bracket_decls, &spec, desugarer)
             }
             Element::ApplyTuple(tuple) => {
                 let span = text_range_to_span(tuple.syntax().text_range());
@@ -1194,19 +1447,19 @@ struct RowanDeclarationComponents {
     pub name: String,
     pub args: Vec<String>,
     pub body: RcExpr,
-    pub arg_vars: Vec<moniker::FreeVar<String>>,
+    pub arg_vars: Vec<String>,
     pub is_operator: bool,
     pub fixity: Option<crate::core::expr::Fixity>,
 }
 
 /// Helper to desugar declaration body with arguments in scope
-/// Returns the desugared body and the FreeVars for the arguments
+/// Returns the desugared body and the var names for the arguments
 fn desugar_declaration_body(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
     args: &[String],
     span: Span,
-) -> Result<(RcExpr, Vec<moniker::FreeVar<String>>), CoreError> {
+) -> Result<(RcExpr, Vec<String>), CoreError> {
     // Push args to environment if any and collect the FreeVars
     let arg_vars = if !args.is_empty() {
         desugarer.env_mut().push_keys(args.iter().cloned());
@@ -1396,15 +1649,24 @@ fn extract_rowan_declaration_components(
                     fixity: Some(crate::core::expr::Fixity::Nullary),
                 })
             }
-            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param) => {
+            rowan_ast::DeclarationKind::BracketPair(_, bracket_expr, param_soup) => {
                 let pair_name = bracket_expr.bracket_pair_name().ok_or_else(|| {
                     CoreError::InvalidEmbedding(
                         "bracket pair declaration has no bracket pair name".to_string(),
                         desugarer.new_smid(span),
                     )
                 })?;
-                let args = vec![param.text().to_string()];
-                let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
+                // Parse the bracket parameter as a pattern (simple name,
+                // list destructuring, or block destructuring)
+                let pattern = parse_param_pattern(&param_soup).ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "invalid bracket parameter pattern".to_string(),
+                        desugarer.new_smid(span),
+                    )
+                })?;
+
+                let (body, args, arg_vars) =
+                    desugar_declaration_body_with_patterns(decl, desugarer, &[pattern], span)?;
 
                 Ok(RowanDeclarationComponents {
                     span,
@@ -1733,7 +1995,7 @@ impl Desugarable for rowan_ast::Soup {
 fn ensure_anaphor_in_soup(expr: RcExpr) -> RcExpr {
     if matches!(&*expr.inner, crate::core::expr::Expr::ExprAnaphor(_, _)) {
         let smid = expr.smid();
-        RcExpr::from(crate::core::expr::Expr::Soup(smid, vec![expr]))
+        RcExpr::from(crate::core::expr::Expr::Soup(smid, vec![expr], false))
     } else {
         expr
     }
@@ -1744,6 +2006,23 @@ fn desugar_rowan_soup(
     span: Span,
     elements: Vec<Element>,
     desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    desugar_rowan_soup_inner(span, elements, desugarer, false)
+}
+
+fn desugar_rowan_soup_bracket(
+    span: Span,
+    elements: Vec<Element>,
+    desugarer: &mut Desugarer,
+) -> Result<RcExpr, CoreError> {
+    desugar_rowan_soup_inner(span, elements, desugarer, true)
+}
+
+fn desugar_rowan_soup_inner(
+    span: Span,
+    elements: Vec<Element>,
+    desugarer: &mut Desugarer,
+    bracket: bool,
 ) -> Result<RcExpr, CoreError> {
     // Define PendingLookup enum locally since we removed the legacy AST module
     #[derive(Debug, Clone, PartialEq)]
@@ -1770,18 +2049,85 @@ fn desugar_rowan_soup(
                 )
             })?;
 
-            // Consume return expression: expect `.expr` where expr may be a
-            // chained dot-lookup like `result.stdout`.
+            // Look up the monad spec first.
+            let spec = desugarer
+                .monad_spec(&pair_name)
+                .cloned()
+                .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
+
+            // Check for an explicit `.expr` return expression following the block.
             // Collect all consecutive `.name` continuations so that
             // `⟦ r: cmd ⟧.r.field` desugars to
             // `bind(cmd, λ(r). return(r.field))`.
-            let return_elems_slice: &[Element] = if idx + 2 < elements.len() {
+            let has_dot_return = idx + 2 <= elements.len() && {
                 let dot_elem = &elements[idx + 1];
-                let is_dot = dot_elem
+                dot_elem
                     .as_operator_identifier()
                     .map(|op| op.text() == ".")
-                    .unwrap_or(false);
-                if is_dot {
+                    .unwrap_or(false)
+            };
+
+            let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
+
+            let monadic_expr = if has_dot_return {
+                // Explicit .expr — consume the return expression.
+                let ret_start = idx + 2;
+                let mut ret_end = ret_start + 1;
+                while ret_end + 1 < elements.len() {
+                    let is_chain_dot = elements[ret_end]
+                        .as_operator_identifier()
+                        .map(|op| op.text() == ".")
+                        .unwrap_or(false);
+                    if is_chain_dot && ret_end + 1 < elements.len() {
+                        let after_dot = &elements[ret_end + 1];
+                        if after_dot.as_normal_identifier().is_some()
+                            || matches!(after_dot, Element::ParenExpr(_))
+                        {
+                            ret_end += 2;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                idx = ret_end;
+                desugar_monadic_block(
+                    smid,
+                    bracket_decls,
+                    &elements[ret_start..ret_end],
+                    &spec,
+                    desugarer,
+                )?
+            } else {
+                // Implicit return — synthesise { k1: k1, k2: k2, … } from bind names.
+                idx += 1;
+                desugar_monadic_block_implicit(smid, bracket_decls, &spec, desugarer)?
+            };
+
+            soup.push(monadic_expr);
+            continue;
+        }
+
+        // Check for Block element with monadic metadata.
+        // If followed by `.expr`, desugar as a monadic bind chain with explicit return.
+        // If NOT followed by `.expr` but the namespace is registered (monad: true),
+        // desugar with an implicit return block `{ k1: k1, k2: k2, … }`.
+        if let Element::Block(ref block) = elements[idx] {
+            if let Some(spec) = extract_block_monad_spec_from_raw(block) {
+                let block_span = text_range_to_span(block.syntax().text_range());
+                let smid = desugarer.new_smid(block_span);
+
+                let has_dot_return = idx + 2 <= elements.len() && {
+                    let dot_elem = &elements[idx + 1];
+                    dot_elem
+                        .as_operator_identifier()
+                        .map(|op| op.text() == ".")
+                        .unwrap_or(false)
+                };
+
+                if has_dot_return {
+                    // Explicit .expr — consume the return expression.
                     let ret_start = idx + 2;
                     let mut ret_end = ret_start + 1;
                     while ret_end + 1 < elements.len() {
@@ -1803,87 +2149,37 @@ fn desugar_rowan_soup(
                         }
                     }
                     idx = ret_end;
-                    &elements[ret_start..ret_end]
-                } else {
-                    return Err(CoreError::InvalidEmbedding(
-                        "monadic bracket block requires a return expression (e.g. ⟦ ... ⟧.expr)"
-                            .to_string(),
+                    let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
+                    let monadic_expr = desugar_monadic_block(
                         smid,
-                    ));
-                }
-            } else {
-                return Err(CoreError::InvalidEmbedding(
-                    "monadic bracket block requires a return expression (e.g. ⟦ ... ⟧.expr)"
-                        .to_string(),
-                    smid,
-                ));
-            };
+                        block_decls,
+                        &elements[ret_start..ret_end],
+                        &spec,
+                        desugarer,
+                    )?;
+                    soup.push(monadic_expr);
+                    continue;
+                } else {
+                    // No .expr — use implicit return only if the namespace is registered.
+                    let ns_registered = if let super::desugarer::MonadSpec::Namespace(ref ns) = spec
+                    {
+                        desugarer.monad_namespace_spec(ns).is_some()
+                    } else {
+                        // Explicit bind/return spec (form 4) can always use implicit return.
+                        true
+                    };
 
-            // Look up the monad spec and desugar the bind chain
-            let spec = desugarer
-                .monad_spec(&pair_name)
-                .cloned()
-                .ok_or_else(|| CoreError::NoMonadSpec(pair_name.clone(), smid))?;
-
-            let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
-            let monadic_expr =
-                desugar_monadic_block(smid, bracket_decls, return_elems_slice, &spec, desugarer)?;
-            soup.push(monadic_expr);
-            continue;
-        }
-
-        // Check for Block element with monadic metadata followed by .expr
-        if let Element::Block(ref block) = elements[idx] {
-            if let Some(spec) = extract_block_monad_spec_from_raw(block) {
-                let block_span = text_range_to_span(block.syntax().text_range());
-                let smid = desugarer.new_smid(block_span);
-
-                // Check for .expr pattern following the block.
-                // Consume all consecutive `.name` continuations into the
-                // return expression so that `{ :io r: cmd }.r.field`
-                // desugars to `io.bind(cmd, λ(r). io.return(r.field))`.
-                if idx + 2 < elements.len() {
-                    let dot_elem = &elements[idx + 1];
-                    let is_dot = dot_elem
-                        .as_operator_identifier()
-                        .map(|op| op.text() == ".")
-                        .unwrap_or(false);
-                    if is_dot {
-                        let ret_start = idx + 2;
-                        let mut ret_end = ret_start + 1;
-                        while ret_end + 1 < elements.len() {
-                            let is_chain_dot = elements[ret_end]
-                                .as_operator_identifier()
-                                .map(|op| op.text() == ".")
-                                .unwrap_or(false);
-                            if is_chain_dot && ret_end + 1 < elements.len() {
-                                let after_dot = &elements[ret_end + 1];
-                                if after_dot.as_normal_identifier().is_some()
-                                    || matches!(after_dot, Element::ParenExpr(_))
-                                {
-                                    ret_end += 2;
-                                } else {
-                                    break;
-                                }
-                            } else {
-                                break;
-                            }
-                        }
-                        idx = ret_end;
+                    if ns_registered {
+                        idx += 1;
                         let block_decls: Vec<rowan_ast::Declaration> =
                             block.declarations().collect();
-                        let monadic_expr = desugar_monadic_block(
-                            smid,
-                            block_decls,
-                            &elements[ret_start..ret_end],
-                            &spec,
-                            desugarer,
-                        )?;
+                        let monadic_expr =
+                            desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
                         soup.push(monadic_expr);
                         continue;
                     }
+                    // Namespace not registered — fall through to normal block desugaring.
                 }
-                // No .expr following — fall through to normal block desugaring
             }
         }
 
@@ -1969,14 +2265,23 @@ fn desugar_rowan_soup(
     }
 
     // Optimise away the soup wrapping in cases where it is definitely
-    // not needed but leave vars for cooking phase (in case of sections)
-    if soup.len() == 1 {
+    // not needed but leave vars for cooking phase (in case of sections).
+    // For bracket content, always wrap so the cook phase produces a List.
+    if soup.len() == 1 && !bracket {
         match &*soup.first().unwrap().inner {
-            Expr::Var(_, _) => Ok(RcExpr::from(Expr::Soup(desugarer.new_smid(span), soup))),
+            Expr::Var(_, _) => Ok(RcExpr::from(Expr::Soup(
+                desugarer.new_smid(span),
+                soup,
+                bracket,
+            ))),
             _ => Ok(soup.first().unwrap().clone()),
         }
     } else {
-        Ok(RcExpr::from(Expr::Soup(desugarer.new_smid(span), soup)))
+        Ok(RcExpr::from(Expr::Soup(
+            desugarer.new_smid(span),
+            soup,
+            bracket,
+        )))
     }
 }
 
@@ -2024,9 +2329,19 @@ fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, Cor
 fn rowan_declaration_to_binding(
     decl: &rowan_ast::Declaration,
     desugarer: &mut Desugarer,
-) -> Result<(Binder<String>, Embed<RcExpr>), CoreError> {
+) -> Result<(String, RcExpr), CoreError> {
     // Extract declaration name first and push to stack before body desugaring
     let name = extract_declaration_name(decl)?;
+
+    // Register monad namespace BEFORE desugaring body so that subsequent
+    // monadic blocks in the same file can find the spec.  Only register at
+    // the top level (stack empty before push) to avoid spurious registrations
+    // from nested declarations.
+    if desugarer.is_top_level() && has_monad_true_in_raw_meta(decl) {
+        let spec = super::desugarer::MonadSpec::Namespace(name.clone());
+        desugarer.register_monad_namespace(name.clone(), spec);
+    }
+
     desugarer.push(&name);
 
     let components = extract_rowan_declaration_components(decl, desugarer)?;
@@ -2166,7 +2481,7 @@ fn rowan_declaration_to_binding(
     // Embed in imports if required
     expr = imports.iter().rfold(expr, |acc, import| import.rebody(acc));
 
-    let ret = (Binder(declared_var), Embed(expr));
+    let ret = (declared_var, expr);
 
     // Note: Don't pop the environment here - it's shared across all declarations
     // The caller (Unit or Block) will pop it after processing all declarations
@@ -2253,12 +2568,7 @@ impl Desugarable for rowan_ast::Block {
         // Create block body mapping names to variables
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
-            .map(|(binder, embed)| {
-                (
-                    binder.0.clone().pretty_name.unwrap(),
-                    core::var(embed.0.smid(), binder.0.clone()),
-                )
-            })
+            .map(|(name, expr)| (name.clone(), core::var(expr.smid(), name.clone())))
             .collect();
 
         // Create body - check for parse-embed override
@@ -2278,7 +2588,7 @@ impl Desugarable for rowan_ast::Block {
         // Create let expression with bindings
         let mut expr = RcExpr::from(Expr::Let(
             desugarer.new_smid(span),
-            Scope::new(Rec::new(bindings), body),
+            close_let_scope(bindings, body),
             LetType::DefaultBlockLet,
         ));
 
@@ -2398,12 +2708,7 @@ impl Desugarable for rowan_ast::Unit {
         // Create unit body mapping names to variables
         let body_elements: BlockMap<RcExpr> = bindings
             .iter()
-            .map(|(binder, embed)| {
-                (
-                    binder.0.clone().pretty_name.unwrap(),
-                    core::var(embed.0.smid(), binder.0.clone()),
-                )
-            })
+            .map(|(name, expr)| (name.clone(), core::var(expr.smid(), name.clone())))
             .collect();
 
         // Remember whether there are any declarations before body_elements is moved.
@@ -2426,7 +2731,7 @@ impl Desugarable for rowan_ast::Unit {
         // Create let expression with bindings
         let mut expr = RcExpr::from(Expr::Let(
             desugarer.new_smid(span),
-            Scope::new(Rec::new(bindings), body),
+            close_let_scope(bindings, body),
             LetType::DefaultBlockLet,
         ));
 
@@ -2452,7 +2757,7 @@ impl Desugarable for rowan_ast::Unit {
                 if is_bare_expression {
                     expr = RcExpr::from(Expr::Let(
                         desugarer.new_smid(span),
-                        Scope::new(Rec::new(vec![]), stripped_meta),
+                        close_let_scope(vec![], stripped_meta),
                         LetType::DefaultBlockLet,
                     ));
                 } else {

@@ -217,35 +217,34 @@ Eucalypt should handle unicode gracefully and any unicode characters
 in the symbol or punctuation classes are fine for operators.
 
 In addition to named operators, you can define **idiot brackets** —
-custom Unicode bracket pairs that wrap an expression and apply a
-function to it. The name is inspired by *idiom brackets* from
-applicative functor notation, but they are a general bracket
-overloading mechanism. A bracket pair declaration uses a Unicode
-bracket pair wrapping a single parameter directly (paren-free style):
+custom Unicode bracket pairs that collect their content items into a
+list and pass it to a function. The name is inspired by *idiom
+brackets* from applicative functor notation, but they are a general
+bracket overloading mechanism.
 
 ```eu
-# Ceiling brackets double
-⌈ x ⌉: x * 2
+# Ceiling brackets double each item
+⌈ xs ⌉: xs map(_ * 2)
 
-# Floor brackets increment
-⌊ x ⌋: x + 1
+# Floor brackets sum the items
+⌊ xs ⌋: xs sum
 ```
 
-The older paren-wrapped style is still supported for backwards compatibility:
-
-```eu
-(⌈ x ⌉): x * 2    # paren style — still valid
-```
-
-Once declared, the bracket pair can be used as an expression:
+Once declared, items inside the brackets are collected as a list:
 
 ```eu,notest
-doubled: ⌈ 3 + 4 ⌉    # => 14
-bumped:  ⌊ 5 ⌋         # => 6
+doubled: ⌈ 3 4 5 ⌉       # => [6, 8, 10]
+total:   ⌊ 10 20 30 ⌋    # => 60
+single:  ⌈ 7 ⌉            # => [14]
 ```
 
-The declaration `⌈ x ⌉: body` defines a function named `⌈⌉` (open
-then close bracket) that takes one argument `x` and returns `body`.
+The declaration `⌈ xs ⌉: body` defines a function named `⌈⌉` (open
+then close bracket) that takes one argument — the list of items.
+Parenthesise sub-expressions to group them as a single item:
+`⌈ (1 + 2) (3 * 4) ⌉` passes `[3, 12]`.
+
+The parameter supports destructuring: `⌈ [f: args] ⌉: body` binds
+`f` to the first item and `args` to the rest.
 Using `⌈ expr ⌉` in an expression calls that function with `expr`.
 
 The following Unicode bracket pairs are built-in and can be used for
@@ -287,31 +286,58 @@ and `return` function names:
 ⟦{}⟧: { :monad namespace: my-monad }
 ```
 
-A bracket expression whose inner content contains top-level colons is parsed
-as a **bracket block** — a sequence of `name: monadic-action` declarations.
-The closing bracket must be followed by a dot and a return expression:
+A bracket pair declared with an empty block `{}` as its parameter (e.g.
+`⟦{}⟧: …`) is registered as **block-mode**.  When such a bracket pair is used,
+its content is parsed as a sequence of `name: monadic-action` declarations
+(a **bracket block**).  The closing bracket may be followed by `.return_expr`
+for an explicit return:
 
 ```eu,notest
 result: ⟦ a: ma  b: mb ⟧.return_expr
 ```
 
+The parser determines the parse mode from a registry built by pre-scanning the
+source file for `⟦{}⟧:` declarations.  Only bracket pairs explicitly declared
+in this way are parsed as block-mode; other bracket pairs are always
+expression-mode regardless of their content.
+
+If no `.return_expr` follows, the block uses **implicit return**: the desugarer
+synthesises `return({ a: a, b: b })` automatically, collecting all bound names
+(except those starting with `_`) into a block.
+
 #### Block metadata forms
 
 Regular blocks can also be desugared monadically when the block carries monad
-metadata **and** is immediately followed by `.return_expr` in an expression.
-Five forms are accepted:
+metadata.  If followed by `.return_expr`, the expression is used as the return;
+otherwise, implicit return is used when the namespace is declared with
+`monad: true`.  Six forms are accepted:
 
-| Form | Syntax | Monad source |
-|------|--------|-------------|
-| 1 | `{ :name decls }.expr` | Namespace `name` in scope |
-| 2 | `{ { monad: name } decls }.expr` | Namespace `name` in scope |
-| 3 | `{ { :monad namespace: name } decls }.expr` | Namespace `name` in scope |
-| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit `f`/`r` functions |
-| 5 | `⟦{}⟧: { :monad namespace: name }` (bracket def) | Namespace `name` in scope |
+| Form | Syntax | Return |
+|------|--------|--------|
+| 1 | `{ :name decls }.expr` | Explicit |
+| 2 | `{ { monad: name } decls }.expr` | Explicit |
+| 3 | `{ { :monad namespace: name } decls }.expr` | Explicit |
+| 4 | `{ { :monad bind: f return: r } decls }.expr` | Explicit |
+| 1i | `{ :name decls }` (namespace has `monad: true`) | Implicit |
+| Bi | `⟦ decls ⟧` (bracket pair registered) | Implicit |
 
-For namespace forms (1–3 and 5), the named value must be a block in scope with
-`bind` and `return` member functions.  The desugarer emits `name.bind(…)` and
+For namespace forms, the named value must be a block in scope with `bind` and
+`return` member functions.  The desugarer emits `name.bind(…)` and
 `name.return(…)` lookup expressions.
+
+**Implicit return with `monad: true`:**  To allow `{ :name decls }` without
+`.expr`, declare `name` with `monad: true` metadata:
+
+```eu,notest
+` { monad: true }
+io: { ... }
+
+result: { :io r: io.shell("echo hello") }
+# result == { r: "hello\n" }  (all bound names collected into return block)
+```
+
+Bound names starting with `_` are excluded from the implicit return block,
+allowing intermediate computations to be suppressed.
 
 #### Desugaring
 
@@ -322,10 +348,12 @@ bind(ma, (a): bind(mb, (b): return(return_expr)))
 ```
 
 All declarations are bind steps.  Each bound name is in scope for later actions
-and for the return expression.  The return expression may be any single element:
-a name (`.r`), a parenthesised expression (`.(x + y)`), a list, or a block.
+and for the return expression.  With an explicit `.expr`, the return expression
+may be any single element: a name (`.r`), a parenthesised expression
+(`.(x + y)`), a list, or a block.  With implicit return, bound names
+(excluding `_`-prefixed ones) are collected into a return block automatically.
 
-**Example — identity monad (bracket pair, explicit functions):**
+**Example — identity monad (bracket pair, explicit return):**
 
 ```eu
 id-bind(ma, f): f(ma)
@@ -336,13 +364,33 @@ id-return(a): a
 result: ⟦ x: 10  r: x + 5 ⟧.r     # => 15
 ```
 
-**Example — maybe monad (namespace reference via block metadata):**
+**Example — identity monad (bracket pair, implicit return):**
+
+```eu
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+⟦{}⟧: { :monad bind: id-bind  return: id-return }
+
+result: ⟦ a: 10  b: 20 ⟧    # => { a: 10, b: 20 }
+```
+
+**Example — maybe monad (namespace reference, explicit return):**
 
 ```eu
 maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
 
 just:    { :maybe x: [1]  y: [2] }.(x + y)   # => [3]
 nothing: { :maybe x: []   y: [2] }.(x + y)   # => []
+```
+
+**Example — namespace implicit return (`monad: true`):**
+
+```eu
+` { monad: true }
+maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+
+result: { :maybe x: [1]  y: [2] }   # => { x: 1, y: 2 }
 ```
 
 **Example — maybe monad (bracket pair with namespace reference):**

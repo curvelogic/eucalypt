@@ -1,8 +1,13 @@
 "io.exec: direct list-based exec spec block evaluates correctly. Uses --allow-io."
 
+# On Unix, echo is a binary at /bin/echo or /usr/bin/echo.
+# On Windows, use cmd.exe /C echo to get a real process.
+` :suppress
+exec-args: if(eu.os = "windows", ["cmd.exe", "/C", "echo", "hello"], ["echo", "hello"])
+
 ` { target: :test requires-io: true }
 test:
-  { :io r: io.exec(["echo", "hello"]) }.(
+  { :io r: io.exec(exec-args) }.(
     if(r.stdout str.matches?("hello.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))

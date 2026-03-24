@@ -99,8 +99,8 @@ impl StgIntrinsic for Eq {
 
     /// Switch on data type and recur or fallback to intrinsic for
     /// natives.
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2,
             case(
                 local(0), // [x y]
@@ -197,7 +197,6 @@ impl StgIntrinsic for Eq {
                     app_bif(self.index() as u8, vec![lref(0), lref(1)]), // [y-eval] [x-eval] [x y]
                 ),
             ),
-            annotation,
         )
     }
 

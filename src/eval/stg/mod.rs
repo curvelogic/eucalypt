@@ -8,10 +8,12 @@ pub mod block;
 pub mod boolean;
 pub mod compiler;
 pub mod constant;
+pub mod debug;
 pub mod embed;
 pub mod emit;
 pub mod encoding;
 pub mod eq;
+pub mod expect;
 pub mod force;
 pub mod graph;
 pub mod io;
@@ -22,6 +24,7 @@ pub mod null;
 pub mod optimiser;
 pub mod panic;
 pub mod parse_string;
+pub mod platform;
 pub mod pretty;
 pub mod printf;
 pub mod prng;
@@ -38,6 +41,7 @@ pub mod syntax;
 pub mod tags;
 mod testing;
 pub mod time;
+pub mod vec;
 pub mod version;
 pub mod wrap;
 
@@ -167,6 +171,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(stream_intrinsic::StreamNext));
     rt.add(Box::new(block::LookupFail));
     rt.add(Box::new(force::SeqNumList));
+    rt.add(Box::new(force::SeqList));
     rt.add(Box::new(list::SortNumList));
     rt.add(Box::new(graph::GraphUnionFind));
     rt.add(Box::new(graph::GraphTopoSort));
@@ -209,6 +214,23 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(io::IoAction));
     rt.add(Box::new(render_to_string::RenderToString));
     rt.add(Box::new(parse_string::ParseString));
+    rt.add(Box::new(debug::DbgRepr));
+    rt.add(Box::new(expect::Expect));
+    rt.add(Box::new(debug::Dbg));
+    rt.add(Box::new(list::IsNumber));
+    rt.add(Box::new(list::IsString));
+    rt.add(Box::new(list::IsSymbol));
+    rt.add(Box::new(list::IsBool));
+    rt.add(Box::new(vec::VecOf));
+    rt.add(Box::new(vec::VecLen));
+    rt.add(Box::new(vec::VecNth));
+    rt.add(Box::new(vec::VecSlice));
+    rt.add(Box::new(vec::VecSample));
+    rt.add(Box::new(vec::VecShuffle));
+    rt.add(Box::new(vec::VecToList));
+    rt.add(Box::new(platform::Os));
+    rt.add(Box::new(platform::Arch));
+    rt.add(Box::new(set::SetSample));
     rt.prepare(source_map);
     Box::new(rt)
 }
@@ -267,6 +289,8 @@ pub struct StgSettings {
     pub heap_limit_mib: Option<usize>,
     /// Dump heap to stderr at GC time for debugging
     pub heap_dump_at_gc: bool,
+    /// Test mode: `__EXPECT` failures return false instead of panicking
+    pub test_mode: bool,
 }
 
 /// Compile core syntax to STG ready for execution

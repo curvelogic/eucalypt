@@ -1,0 +1,60 @@
+"130 vec type"
+
+` { target: :test }
+test: {
+
+  data: [1, 2, 3, 4, 5] vec.of
+
+  # Basic access
+  len: data vec.len //= 5
+  first: data vec.nth(0) //= 1
+  last: data vec.nth(4) //= 5
+
+  # Slicing
+  middle: data vec.slice(1, 4) vec.len //= 3
+  mid-first: data vec.slice(1, 4) vec.nth(0) //= 2
+
+  # Round-trip
+  round-trip: [10, 20, 30] vec.of vec.to-list head //= 10
+  round-trip-eq: [1, 2, 3] vec.of vec.to-list //= [1, 2, 3]
+
+  # String vecs
+  names: ["alice", "bob", "charlie"] vec.of
+  name-count: names vec.len //= 3
+  name-first: names vec.nth(0) //= "alice"
+
+  # Random sampling (random monad action)
+  ` :suppress
+  sample-result: vec.sample(2, data, random.stream(42))
+  sample-len: sample-result.value vec.len //= 2
+
+  # Random shuffle (random monad action)
+  ` :suppress
+  shuffle-result: vec.shuffle(data, random.stream(99))
+  shuffle-len: shuffle-result.value vec.len //= 5
+
+  # Set sampling (random monad action)
+  ` :suppress
+  test-set: [10, 20, 30, 40, 50] set.from-list
+  ` :suppress
+  set-sample-result: set.sample(3, test-set, random.stream(42))
+  set-sample-size: set-sample-result.value set.size //= 3
+
+  # Computed (thunk) elements — vec.of must deep-force before extraction
+  interp: ["a", "b", "c"] map("x-{}") vec.of
+  interp-len: interp vec.len //= 3
+  interp-first: interp vec.nth(0) //= "x-a"
+
+  computed-nums: [1, 2, 3] map(+ 10) vec.of
+  computed-nums-len: computed-nums vec.len //= 3
+  computed-nums-trip: computed-nums vec.to-list //= [11, 12, 13]
+
+  RESULT: [ len, first, last, middle, mid-first
+           , round-trip, round-trip-eq
+           , name-count, name-first
+           , sample-len, shuffle-len
+           , set-sample-size
+           , interp-len, interp-first
+           , computed-nums-len, computed-nums-trip
+           ] all-true? then(:PASS, :FAIL)
+}

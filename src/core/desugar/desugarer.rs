@@ -6,12 +6,12 @@ use crate::{
         sourcemap::{Smid, SourceMap},
     },
     core::{
-        doc::DeclarationDocumentation, error::CoreError, expr::*, target::*, unit::TranslationUnit,
+        binding::Var, doc::DeclarationDocumentation, error::CoreError, expr::*, target::*,
+        unit::TranslationUnit,
     },
     syntax::input::*,
 };
 use codespan::Span;
-use moniker::FreeVar;
 use std::collections::{HashMap, HashSet};
 
 /// A monad specification registered for a bracket pair or used inline in block metadata.
@@ -37,7 +37,7 @@ pub enum MonadSpec {
 pub struct Desugarer<'smap> {
     /// While in the scope of anaphoric string pattern, collect all the
     /// anaphora for processing at the boundary the pattern
-    pending_string_anaphora: HashMap<Anaphor<Smid, i32>, FreeVar<String>>,
+    pending_string_anaphora: HashMap<Anaphor<Smid, i32>, String>,
     /// Targets discovered
     targets: HashSet<Target>,
     /// Doc strings discovered (path, doc)
@@ -48,8 +48,8 @@ pub struct Desugarer<'smap> {
     contents: &'smap HashMap<Input, Content<'smap>>,
     /// SourceMap
     source_map: &'smap mut SourceMap,
-    /// Track variable names so we mint appropriate free vars
-    env: DefaultingEnvironment<String, FreeVar<String>>,
+    /// Track variable names so we mint appropriate names
+    env: DefaultingEnvironment<String, String>,
     /// Current usize
     file: Vec<usize>,
     /// Registry mapping bracket pair names (e.g. `"⟦⟧"`) to their monad spec.
@@ -57,6 +57,12 @@ pub struct Desugarer<'smap> {
     /// Populated when a bracket pair declaration with `bind` and `return` metadata
     /// is desugared.  Consulted when desugaring `⟦ { ... } ⟧` block expressions.
     monad_registry: HashMap<String, MonadSpec>,
+    /// Registry mapping namespace names (e.g. `"io"`) to their monad spec.
+    ///
+    /// Populated when a top-level declaration carries `monad: true` metadata.
+    /// Consulted when desugaring `{ :ns ... }` blocks without an explicit
+    /// `.expr` return — only registered namespaces trigger implicit return.
+    monad_namespace_registry: HashMap<String, MonadSpec>,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -73,9 +79,10 @@ impl<'smap> Desugarer<'smap> {
             stack: vec![],
             contents,
             source_map,
-            env: DefaultingEnvironment::new(|k| FreeVar::fresh_named(k)),
+            env: DefaultingEnvironment::new(|k: &String| k.clone()),
             file: vec![],
             monad_registry: HashMap::new(),
+            monad_namespace_registry: HashMap::new(),
         }
     }
 
@@ -90,6 +97,37 @@ impl<'smap> Desugarer<'smap> {
     /// Look up the monad spec for a bracket pair, if one has been registered.
     pub fn monad_spec(&self, pair_name: &str) -> Option<&MonadSpec> {
         self.monad_registry.get(pair_name)
+    }
+
+    /// Return `true` if the desugarer is currently at the top level of a unit
+    /// (i.e., the name stack is empty — no outer declaration has been pushed).
+    pub fn is_top_level(&self) -> bool {
+        self.stack.is_empty()
+    }
+
+    /// Register a monad spec for a namespace name.
+    ///
+    /// Called when a top-level declaration carrying `monad: true` metadata is
+    /// processed so that `{ :ns ... }` blocks without `.expr` can use implicit
+    /// return semantics.
+    pub fn register_monad_namespace(&mut self, name: String, spec: MonadSpec) {
+        self.monad_namespace_registry.insert(name, spec);
+    }
+
+    /// Look up the monad spec for a namespace name, if one has been registered.
+    pub fn monad_namespace_spec(&self, name: &str) -> Option<&MonadSpec> {
+        self.monad_namespace_registry.get(name)
+    }
+
+    /// Seed the monad namespace registry with entries from a previous
+    /// translation unit (e.g. the prelude).
+    pub fn seed_monad_namespace_registry(&mut self, registry: &HashMap<String, MonadSpec>) {
+        self.monad_namespace_registry.extend(registry.clone());
+    }
+
+    /// Drain the monad namespace registry for persistence across units.
+    pub fn drain_monad_namespace_registry(&mut self) -> HashMap<String, MonadSpec> {
+        std::mem::take(&mut self.monad_namespace_registry)
     }
 
     /// Desugar content at locator (and imports) to create a new
@@ -149,19 +187,28 @@ impl<'smap> Desugarer<'smap> {
         ast.desugar(self)
     }
 
-    /// Reference to the name to free_var representation environment
-    pub fn env(&self) -> &DefaultingEnvironment<String, FreeVar<String>> {
+    /// Reference to the name to variable name environment
+    pub fn env(&self) -> &DefaultingEnvironment<String, String> {
         &self.env
     }
 
-    /// Mutable reference to the name to free_var representation environment
-    pub fn env_mut(&mut self) -> &mut DefaultingEnvironment<String, FreeVar<String>> {
+    /// Mutable reference to the name to variable name environment
+    pub fn env_mut(&mut self) -> &mut DefaultingEnvironment<String, String> {
         &mut self.env
     }
 
-    /// Record source position and mint a SMID for it
+    /// Record source position and mint a SMID for it.
+    ///
+    /// If we are inside a declaration (stack is non-empty), the SMID
+    /// is automatically annotated with the current declaration name so
+    /// that stack traces show function names instead of source snippets.
     pub fn new_smid(&mut self, span: Span) -> Smid {
-        self.source_map.add(*self.file.last().unwrap(), span)
+        let file = *self.file.last().unwrap();
+        if let Some(name) = self.stack.last() {
+            self.source_map.add_annotated(file, span, name.clone())
+        } else {
+            self.source_map.add(file, span)
+        }
     }
 
     /// Record an annotated source position and mint a SMID for it
@@ -186,19 +233,19 @@ impl<'smap> Desugarer<'smap> {
     }
 
     /// Reference to the pending string anaphora for calculating binders
-    pub fn pending_string_anaphora(&self) -> &HashMap<Anaphor<Smid, i32>, FreeVar<String>> {
+    pub fn pending_string_anaphora(&self) -> &HashMap<Anaphor<Smid, i32>, String> {
         &self.pending_string_anaphora
     }
 
     /// Add a pending string anaphor
-    pub fn add_pending_string_anaphor(&mut self, anaphor: Anaphor<Smid, i32>) -> FreeVar<String> {
-        let var = free(&format!("{anaphor}"));
-        self.pending_string_anaphora.insert(anaphor, var.clone());
-        var
+    pub fn add_pending_string_anaphor(&mut self, anaphor: Anaphor<Smid, i32>) -> String {
+        let name = free(&format!("{anaphor}"));
+        self.pending_string_anaphora.insert(anaphor, name.clone());
+        name
     }
 
-    /// Return the appropriate var to use for `name` in this scope
-    pub fn var(&mut self, name: &str) -> moniker::FreeVar<String> {
+    /// Return the appropriate var name to use for `name` in this scope
+    pub fn var(&mut self, name: &str) -> String {
         self.env.encounter(name.to_string());
         self.env.get(&name.to_string()).unwrap().clone()
     }
@@ -213,8 +260,8 @@ impl<'smap> Desugarer<'smap> {
     pub fn varify(&mut self, expr: RcExpr) -> RcExpr {
         match &*expr.inner {
             Expr::Name(smid, name) => {
-                let var = self.var(name);
-                RcExpr::from(Expr::Var(*smid, moniker::Var::Free(var)))
+                let var_name = self.var(name);
+                RcExpr::from(Expr::Var(*smid, Var::Free(var_name)))
             }
             _ => expr,
         }

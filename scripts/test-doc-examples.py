@@ -187,9 +187,16 @@ def run_example(block: CodeBlock, eu_path: str, verbose: bool = False,
 
 
 def find_doc_files(doc_dir: str) -> list[str]:
-    """Find all markdown files in the doc directory."""
+    """Find all markdown files in the doc directory.
+
+    Excludes docs/superpowers/plans/ which contains implementation plans
+    with aspirational code examples for unimplemented features.
+    """
     files = []
+    plans_dir = os.path.join(doc_dir, "superpowers", "plans")
     for root, dirs, filenames in os.walk(doc_dir):
+        if os.path.commonpath([root, plans_dir]) == plans_dir:
+            continue
         for name in sorted(filenames):
             if name.endswith('.md'):
                 files.append(os.path.join(root, name))

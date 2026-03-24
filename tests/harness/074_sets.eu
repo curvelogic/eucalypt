@@ -103,6 +103,16 @@ render-checks: {
   ]
 }
 
+` "Computed (thunk) elements — set.from-list must deep-force before extraction"
+
+computed-checks: {
+  trues: [
+    (["a", "b", "c"] map("x-{}") set.from-list set.size) = 3,
+    (["a", "b", "c"] map("x-{}") set.from-list set.contains?("x-a")) = true,
+    ([1, 2, 3] map(+ 10) set.from-list set.to-list) = [11, 12, 13]
+  ]
+}
+
 pass: [
   construction-checks.trues all-true?,
   empty-checks.trues all-true?,
@@ -110,7 +120,8 @@ pass: [
   size-checks.trues all-true?,
   mutation-checks.trues all-true?,
   algebra-checks.trues all-true?,
-  render-checks.trues all-true?
+  render-checks.trues all-true?,
+  computed-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

@@ -4,10 +4,8 @@
 //! Includes block-level DCE: for `DefaultBlockLet` bindings that are
 //! only accessed via static `Lookup` patterns (`ns.member`), inner
 //! members that are never looked up are eliminated from the Block body.
+use crate::core::binding::{BoundVar, Scope, Var};
 use crate::core::expr::*;
-use moniker::Rec;
-use moniker::Scope;
-use moniker::{BoundTerm, BoundVar, Embed, OnBoundFn, OnFreeFn, ScopeState, Var};
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
@@ -45,8 +43,6 @@ pub enum SeenState {
 pub struct Tracker {
     seen: Cell<SeenState>,
 }
-
-impl_bound_term_ignore!(Tracker);
 
 impl Clone for Tracker {
     fn clone(&self) -> Self {
@@ -210,7 +206,7 @@ impl<'expr> ScopeTracker<'expr> {
     /// Mark the innermost let body as Seen so we traverse from there
     fn mark_body(expr: &'expr RcMarkExpr) {
         match &*expr.inner {
-            Expr::Let(_, scope, _) => Self::mark_body(&scope.unsafe_body),
+            Expr::Let(_, scope, _) => Self::mark_body(&scope.body),
             Expr::Meta(_, e, _) => Self::mark_body(e),
             _ => {
                 expr.mark();
@@ -225,12 +221,11 @@ impl<'expr> ScopeTracker<'expr> {
     /// seen and return true. Also disqualifies the binding from
     /// block-level DCE since a bare reference means the entire block
     /// value escapes.
-    fn encounter(&mut self, bound_var: &BoundVar<String>) {
+    fn encounter(&mut self, bound_var: &BoundVar) {
         if self.reachable {
-            let expr = self.scopes[bound_var.scope.0 as usize];
+            let expr = self.scopes[bound_var.scope as usize];
             if let Expr::Let(_, scope, _) = &*expr.inner {
-                let (_, Embed(rc)) =
-                    &scope.unsafe_pattern.unsafe_pattern[bound_var.binder.to_usize()];
+                let (_, rc) = &scope.pattern[bound_var.binder as usize];
                 // Disqualify from block-level DCE on bare access
                 let id: BindingId = Rc::as_ptr(&rc.inner);
                 self.block_tracker.disqualify(id);
@@ -245,12 +240,11 @@ impl<'expr> ScopeTracker<'expr> {
     ///
     /// Marks the binding as reachable (like `encounter`) but records
     /// the member access for block-level DCE instead of disqualifying.
-    fn encounter_lookup(&mut self, bound_var: &BoundVar<String>, member: &str) {
+    fn encounter_lookup(&mut self, bound_var: &BoundVar, member: &str) {
         if self.reachable {
-            let expr = self.scopes[bound_var.scope.0 as usize];
+            let expr = self.scopes[bound_var.scope as usize];
             if let Expr::Let(_, scope, _) = &*expr.inner {
-                let (_, Embed(rc)) =
-                    &scope.unsafe_pattern.unsafe_pattern[bound_var.binder.to_usize()];
+                let (_, rc) = &scope.pattern[bound_var.binder as usize];
                 let id: BindingId = Rc::as_ptr(&rc.inner);
                 if self.block_tracker.is_candidate(id) {
                     self.block_tracker.record_access(id, member.to_owned());
@@ -305,23 +299,23 @@ impl<'expr> ScopeTracker<'expr> {
             Expr::Let(_, scope, _) => {
                 // Register DefaultBlockLet bindings as candidates
                 // for block-level DCE
-                for (_, Embed(ref rc)) in &scope.unsafe_pattern.unsafe_pattern {
+                for (_, rc) in &scope.pattern {
                     if rc.inner.is_default_let() {
                         let id: BindingId = Rc::as_ptr(&rc.inner);
                         self.block_tracker.register(id);
                     }
                 }
                 self.enter(expr);
-                for (_, Embed(ref rc)) in &scope.unsafe_pattern.unsafe_pattern {
+                for (_, rc) in &scope.pattern {
                     self.soft_depend(rc, expr);
                     self.traverse(rc);
                 }
-                self.traverse(&scope.unsafe_body);
+                self.traverse(&scope.body);
                 self.exit();
             }
             Expr::Lam(_, _, scope) => {
                 self.enter(expr);
-                self.traverse(&scope.unsafe_body);
+                self.traverse(&scope.body);
                 self.exit();
             }
             Expr::Lookup(_, e, member, fb) => {
@@ -378,7 +372,7 @@ impl<'expr> ScopeTracker<'expr> {
                     self.traverse(x);
                 }
             }
-            Expr::Soup(_, xs) => {
+            Expr::Soup(_, xs, _) => {
                 for x in xs {
                     self.traverse(x);
                 }
@@ -400,29 +394,23 @@ impl<'expr> ScopeTracker<'expr> {
             Expr::Let(s, scope, t) => Expr::Let(
                 *s,
                 Scope {
-                    unsafe_pattern: Rec {
-                        unsafe_pattern: scope
-                            .unsafe_pattern
-                            .unsafe_pattern
-                            .iter()
-                            .map(|&(ref n, Embed(ref value))| {
-                                if value.unseen() {
-                                    (n.clone(), Embed(RcExpr::from(Expr::ErrEliminated)))
+                    pattern: scope
+                        .pattern
+                        .iter()
+                        .map(|(n, value)| {
+                            if value.unseen() {
+                                (n.clone(), RcExpr::from(Expr::ErrEliminated))
+                            } else {
+                                let id: BindingId = Rc::as_ptr(&value.inner);
+                                if let Some(members) = self.block_tracker.accessed_members(id) {
+                                    (n.clone(), self.blank_default_block_let(value, members))
                                 } else {
-                                    let id: BindingId = Rc::as_ptr(&value.inner);
-                                    if let Some(members) = self.block_tracker.accessed_members(id) {
-                                        (
-                                            n.clone(),
-                                            Embed(self.blank_default_block_let(value, members)),
-                                        )
-                                    } else {
-                                        (n.clone(), Embed(self.blank_unseen(value)))
-                                    }
+                                    (n.clone(), self.blank_unseen(value))
                                 }
-                            })
-                            .collect(),
-                    },
-                    unsafe_body: self.blank_unseen(&scope.unsafe_body),
+                            }
+                        })
+                        .collect(),
+                    body: self.blank_unseen(&scope.body),
                 },
                 *t,
             ),
@@ -430,8 +418,8 @@ impl<'expr> ScopeTracker<'expr> {
                 *s,
                 *inl,
                 Scope {
-                    unsafe_pattern: scope.unsafe_pattern.clone(),
-                    unsafe_body: self.blank_unseen(&scope.unsafe_body),
+                    pattern: scope.pattern.clone(),
+                    body: self.blank_unseen(&scope.body),
                 },
             ),
             Expr::Lookup(s, e, n, fb) => Expr::Lookup(
@@ -457,7 +445,9 @@ impl<'expr> ScopeTracker<'expr> {
                 self.blank_unseen(f),
                 xs.iter().map(|x| self.blank_unseen(x)).collect(),
             ),
-            Expr::Soup(s, xs) => Expr::Soup(*s, xs.iter().map(|x| self.blank_unseen(x)).collect()),
+            Expr::Soup(s, xs, bk) => {
+                Expr::Soup(*s, xs.iter().map(|x| self.blank_unseen(x)).collect(), *bk)
+            }
             Expr::Operator(s, fx, p, e) => Expr::Operator(*s, *fx, *p, self.blank_unseen(e)),
             _ => fmap(&*expr.inner),
         })
@@ -479,20 +469,19 @@ impl<'expr> ScopeTracker<'expr> {
             Expr::Let(s, scope, LetType::DefaultBlockLet) => {
                 // Convert inner bindings normally
                 let new_bindings: Vec<_> = scope
-                    .unsafe_pattern
-                    .unsafe_pattern
+                    .pattern
                     .iter()
-                    .map(|&(ref n, Embed(ref value))| {
+                    .map(|(n, value)| {
                         if value.unseen() {
-                            (n.clone(), Embed(RcExpr::from(Expr::ErrEliminated)))
+                            (n.clone(), RcExpr::from(Expr::ErrEliminated))
                         } else {
-                            (n.clone(), Embed(self.blank_unseen(value)))
+                            (n.clone(), self.blank_unseen(value))
                         }
                     })
                     .collect();
 
                 // Filter the Block body to retain only accessed members
-                let new_body = match &*scope.unsafe_body.inner {
+                let new_body = match &*scope.body.inner {
                     Expr::Block(bs, block_map) => {
                         let filtered: BlockMap<RcExpr> = block_map
                             .iter()
@@ -501,16 +490,14 @@ impl<'expr> ScopeTracker<'expr> {
                             .collect();
                         RcExpr::from(Expr::Block(*bs, filtered))
                     }
-                    _ => self.blank_unseen(&scope.unsafe_body),
+                    _ => self.blank_unseen(&scope.body),
                 };
 
                 RcExpr::from(Expr::Let(
                     *s,
                     Scope {
-                        unsafe_pattern: Rec {
-                            unsafe_pattern: new_bindings,
-                        },
-                        unsafe_body: new_body,
+                        pattern: new_bindings,
+                        body: new_body,
                     },
                     LetType::DefaultBlockLet,
                 ))
@@ -531,7 +518,6 @@ pub mod tests {
     use super::*;
     use crate::core::expr::acore::*;
     use crate::core::expr::RcExpr;
-    use moniker::assert_term_eq;
 
     #[test]
     pub fn test_simple() {
@@ -548,7 +534,7 @@ pub mod tests {
             var(x),
         );
 
-        assert_term_eq!(prune(&simple), expected)
+        assert_eq!(prune(&simple), expected)
     }
 
     #[test]
@@ -577,7 +563,7 @@ pub mod tests {
             ),
         );
 
-        assert_term_eq!(prune(&nested), expected)
+        assert_eq!(prune(&nested), expected)
     }
 
     #[test]
@@ -604,7 +590,7 @@ pub mod tests {
             app(bif("BLAH"), vec![var(a), var(b)]),
         );
 
-        assert_term_eq!(prune(&expr), expected)
+        assert_eq!(prune(&expr), expected)
     }
 
     #[test]
@@ -642,7 +628,7 @@ pub mod tests {
             var(a),
         );
 
-        assert_term_eq!(prune(&expr), expected)
+        assert_eq!(prune(&expr), expected)
     }
 
     // Block-level DCE tests
@@ -673,11 +659,11 @@ pub mod tests {
         // Verify the block body is filtered (only "used" member)
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, Embed(ref ns_val)) = scope.unsafe_pattern.unsafe_pattern[0];
+                let (_, ref ns_val) = scope.pattern[0];
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
                         // Block body should only contain "used"
-                        match &*inner_scope.unsafe_body.inner {
+                        match &*inner_scope.body.inner {
                             Expr::Block(_, block_map) => {
                                 assert_eq!(block_map.len(), 1);
                                 assert!(block_map.get("used").is_some());
@@ -714,7 +700,7 @@ pub mod tests {
 
         let pruned = prune(&expr);
         // All members preserved (dynamic access), result used
-        assert_term_eq!(pruned, expr);
+        assert_eq!(pruned, expr);
     }
 
     #[test]
@@ -739,7 +725,7 @@ pub mod tests {
         );
 
         let pruned = prune(&expr);
-        assert_term_eq!(pruned, expr);
+        assert_eq!(pruned, expr);
     }
 
     #[test]
@@ -774,11 +760,11 @@ pub mod tests {
         // Verify block body has only "a" and "c"
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, Embed(ref ns_val)) = scope.unsafe_pattern.unsafe_pattern[0];
+                let (_, ref ns_val) = scope.pattern[0];
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
                         // Block body should contain "a" and "c" only
-                        match &*inner_scope.unsafe_body.inner {
+                        match &*inner_scope.body.inner {
                             Expr::Block(_, block_map) => {
                                 assert_eq!(block_map.len(), 2);
                                 assert!(block_map.get("a").is_some());
@@ -826,10 +812,10 @@ pub mod tests {
         // Verify the block body is filtered (only "used" member)
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, Embed(ref ns_val)) = scope.unsafe_pattern.unsafe_pattern[0];
+                let (_, ref ns_val) = scope.pattern[0];
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
-                        match &*inner_scope.unsafe_body.inner {
+                        match &*inner_scope.body.inner {
                             Expr::Block(_, block_map) => {
                                 assert_eq!(block_map.len(), 1);
                                 assert!(block_map.get("used").is_some());
@@ -877,10 +863,10 @@ pub mod tests {
         // "used" is accessed — the fallback references "other", not "ns"
         match &*pruned.inner {
             Expr::Let(_, scope, _) => {
-                let (_, Embed(ref ns_val)) = scope.unsafe_pattern.unsafe_pattern[0];
+                let (_, ref ns_val) = scope.pattern[0];
                 match &*ns_val.inner {
                     Expr::Let(_, inner_scope, LetType::DefaultBlockLet) => {
-                        match &*inner_scope.unsafe_body.inner {
+                        match &*inner_scope.body.inner {
                             Expr::Block(_, block_map) => {
                                 assert_eq!(block_map.len(), 1);
                                 assert!(block_map.get("used").is_some());
@@ -920,6 +906,6 @@ pub mod tests {
 
         let pruned = prune(&expr);
         // ns escapes bare in body block, so all members preserved
-        assert_term_eq!(pruned, expr);
+        assert_eq!(pruned, expr);
     }
 }

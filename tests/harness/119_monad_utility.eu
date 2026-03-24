@@ -1,6 +1,18 @@
 "monad(): derive standard monad combinators from bind and return. Uses --allow-io."
 
 ##
+## Platform-specific echo command
+##
+` :suppress
+echo-cmd: if(eu.os = "windows", "Write-Output hello", "echo hello")
+
+` :suppress
+echo-first: if(eu.os = "windows", "Write-Output first", "echo first")
+
+` :suppress
+echo-second: if(eu.os = "windows", "Write-Output second", "echo second")
+
+##
 ## A simple identity monad for pure tests (no IO needed)
 ##
 # For identity monad: bind(m, f) = f(m), return(a) = a
@@ -75,8 +87,8 @@ test-filter-m-pure:
 ` { target: :test-io-map requires-io: true }
 test-io-map:
   { :io
-    r1: monad({bind: io.bind, return: io.return}).map(.stdout, io.shell("echo hello"))
-    r2: io.map(.stdout, io.shell("echo hello"))
+    r1: monad({bind: io.bind, return: io.return}).map(.stdout, io.shell(echo-cmd))
+    r2: io.map(.stdout, io.shell(echo-cmd))
   }.(if(r1 = r2, { RESULT: :PASS }, { RESULT: :FAIL }))
 
 ##
@@ -87,7 +99,7 @@ test-io-map:
 ##
 ` { target: :test-io-then requires-io: true }
 test-io-then:
-  { :io r: monad({bind: io.bind, return: io.return}).then(io.shell("echo second"), io.shell("echo first")) }.(
+  { :io r: monad({bind: io.bind, return: io.return}).then(io.shell(echo-second), io.shell(echo-first)) }.(
     if(r.stdout str.matches?("second.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))
@@ -115,8 +127,8 @@ test-and-then-pure:
 ##
 ` { target: :test-io-and-then requires-io: true }
 test-io-and-then:
-  { :io r: "echo hello" io.shell io.and-then((.stdout) ; io.return) }.(
-    if(r = c"hello\n",
+  { :io r: echo-cmd io.shell io.and-then((.stdout) ; io.return) }.(
+    if(r str.matches?("hello.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))
 
@@ -125,7 +137,7 @@ test-io-and-then:
 ##
 ` { target: :test-io-checked-success requires-io: true }
 test-io-checked-success:
-  { :io r: "echo hello" io.shell io.checked io.map(.stdout) }.(
-    if(r = c"hello\n",
+  { :io r: echo-cmd io.shell io.checked io.map(.stdout) }.(
+    if(r str.matches?("hello.*"),
       { RESULT: :PASS },
       { RESULT: :FAIL }))

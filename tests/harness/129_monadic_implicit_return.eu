@@ -1,0 +1,107 @@
+"Monadic blocks with implicit return (no .expr). A bracket block or :ns block without .expr returns a block of all non-underscore bind names."
+
+# Identity monad for testing (no IO required)
+id-bind(ma, f): f(ma)
+id-return(a): a
+
+` { doc: "Identity monad namespace for implicit return tests." monad: true }
+id: monad({bind(ma, f): f(ma), return(a): a})
+
+tests: {
+
+  ` "Bracket block with implicit return — single binding"
+  bracket-single: {
+    ⟦{}⟧: { :monad bind: id-bind  return: id-return }
+    result: ⟦ r: 42 ⟧
+    RESULT: if(result.r = 42, :PASS, :FAIL)
+  }
+
+  ` "Bracket block with implicit return — multiple bindings"
+  bracket-multi: {
+    ⌈{}⌉: { :monad bind: id-bind  return: id-return }
+    result: ⌈ a: 10  b: 20 ⌉
+    RESULT: if(result.a = 10 && result.b = 20, :PASS, :FAIL)
+  }
+
+  ` "Bracket block with implicit return — underscore bindings excluded"
+  bracket-underscore: {
+    ⟪{}⟫: { :monad bind: id-bind  return: id-return }
+    result: ⟪ _: 99  r: 7 ⟫
+    RESULT: if(result.r = 7 && !(result has(:_)), :PASS, :FAIL)
+  }
+
+  ` "Block with monad: true namespace — implicit return"
+  ns-single: {
+    result: { :id r: 42 }
+    RESULT: if(result.r = 42, :PASS, :FAIL)
+  }
+
+  ` "Block with monad: true namespace — multiple bindings"
+  ns-multi: {
+    result: { :id a: 1  b: 2 }
+    RESULT: if(result.a = 1 && result.b = 2, :PASS, :FAIL)
+  }
+
+  ` "Block with monad: true namespace — underscore excluded"
+  ns-underscore: {
+    result: { :id _: 99  r: 7 }
+    RESULT: if(result.r = 7 && !(result has(:_)), :PASS, :FAIL)
+  }
+
+  ` "Explicit .expr still works (backwards compatibility)"
+  explicit-return: {
+    result: { :id x: 10  r: x + 5 }.r
+    RESULT: if(result = 15, :PASS, :FAIL)
+  }
+
+  ` "Implicit return where bind values are closures (not plain values)"
+  closure-values: {
+    # A monad where bind wraps values in a block — tests that the
+    # implicit return block does not self-reference the lambda params
+    wrap-bind(ma, f): f(ma.value)
+    wrap-return(a): { value: a }
+    ⟨{}⟩: { :monad bind: wrap-bind  return: wrap-return }
+    result: ⟨ a: { value: 10 }  b: { value: a + 20 } ⟩
+    RESULT: if(result.value.a = 10 && result.value.b = 30, :PASS, :FAIL)
+  }
+
+  ` "Random monad implicit return — the motivating case for eu-hybj/eu-en4j"
+  random-implicit: {
+    result: { :random a: random.int(20) b: random.int(a) c: random.int(b) }(random.stream(42)).value
+    ok: (result.a = 14) && (result has(:b)) && (result has(:c))
+    RESULT: if(ok, :PASS, :FAIL)
+  }
+
+  ` ":let monad — sequential redefinition with .expr"
+  let-explicit: {
+    x: 2
+    result: { :let x: x + 2  x: x * 10 }.x
+    RESULT: if(result = 40, :PASS, :FAIL)
+  }
+
+  ` ":let block equals normal block for non-shadowing bindings"
+  let-equiv: {
+    a: { a: 1 b: 2 }
+    b: { :let a: 1 b: 2 }
+    RESULT: if(a.a = b.a && a.b = b.b, :PASS, :FAIL)
+  }
+
+  ` ":let with shadowing and implicit return"
+  let-shadow-implicit: {
+    result: { :let a: 1  a: a * 2 }
+    RESULT: if(result.a = 2, :PASS, :FAIL)
+  }
+
+  ` "Block without monad: true falls through to normal block desugaring"
+  no-monad-true: {
+    # 'maybe' is not registered with monad: true, so :maybe block without .expr
+    # is treated as a plain block (normal desugaring, no implicit return)
+    maybe: { bind(ma, f): if(ma = [], [], f(ma head))  return(a): [a] }
+    # This should be a plain block with r: cmd, not a monadic block
+    result: { r: 42 }
+    RESULT: if(result.r = 42, :PASS, :FAIL)
+  }
+
+}
+
+RESULT: tests values map(_.RESULT) map(_ = :PASS) all-true? then(:PASS, :FAIL)

@@ -1,0 +1,77 @@
+"128 parse-args"
+
+` { target: :test }
+test: {
+
+  defs: {
+    ` { short: :v doc: "Enable verbose output" flag: true }
+    verbose: false
+
+    ` { short: :o doc: "Output file path" }
+    output: "default.txt"
+
+    ` { doc: "Repeat count" }
+    count: 1
+  }
+
+  # Basic long option
+  long-opt: (["--output", "foo.txt"] parse-args(defs)).output //= "foo.txt"
+
+  # Short option
+  short-opt: (["-o", "bar.txt"] parse-args(defs)).output //= "bar.txt"
+
+  # Flag toggle (long)
+  long-flag: (["--verbose"] parse-args(defs)).verbose //= true
+
+  # Short flag
+  short-flag: (["-v"] parse-args(defs)).verbose //= true
+
+  # Equals syntax
+  equals-syntax: (["--output=baz.txt"] parse-args(defs)).output //= "baz.txt"
+
+  # Numeric coercion via long option
+  numeric-long: (["--count", "5"] parse-args(defs)).count //= 5
+
+  # Numeric coercion via equals
+  numeric-equals: (["--count=10"] parse-args(defs)).count //= 10
+
+  # Positional args collected
+  positional: (["--verbose", "a.txt", "b.txt"] parse-args(defs)).args //= ["a.txt", "b.txt"]
+
+  # Defaults preserved when no args given
+  defaults-v: ([] parse-args(defs)).verbose //= false
+  defaults-o: ([] parse-args(defs)).output //= "default.txt"
+  defaults-c: ([] parse-args(defs)).count //= 1
+  defaults-a: ([] parse-args(defs)).args //= []
+
+  # Mixed flags, options and positional
+  mixed-v: (["-v", "-o", "out.json", "--count", "3", "input.eu"] parse-args(defs)).verbose //= true
+  mixed-o: (["-v", "-o", "out.json", "--count", "3", "input.eu"] parse-args(defs)).output //= "out.json"
+  mixed-c: (["-v", "-o", "out.json", "--count", "3", "input.eu"] parse-args(defs)).count //= 3
+  mixed-a: (["-v", "-o", "out.json", "--count", "3", "input.eu"] parse-args(defs)).args //= ["input.eu"]
+
+  # Combined short flags: -vo with separate value
+  combo1-v: (["-vo", "out.txt"] parse-args(defs)).verbose //= true
+  combo1-o: (["-vo", "out.txt"] parse-args(defs)).output //= "out.txt"
+
+  # Combined short with inline value: -ofile.txt
+  combo2-o: (["-ofile.txt"] parse-args(defs)).output //= "file.txt"
+
+  # Combined flag and inline value: -vofile.txt
+  combo3-v: (["-vofile.txt"] parse-args(defs)).verbose //= true
+  combo3-o: (["-vofile.txt"] parse-args(defs)).output //= "file.txt"
+
+  # All positional, no options
+  all-pos: (["a", "b", "c"] parse-args(defs)).args //= ["a", "b", "c"]
+
+  # Empty defaults block
+  empty-defs: (["x", "y"] parse-args({})).args //= ["x", "y"]
+
+  RESULT: [ long-opt, short-opt, long-flag, short-flag, equals-syntax
+           , numeric-long, numeric-equals, positional
+           , defaults-v, defaults-o, defaults-c, defaults-a
+           , mixed-v, mixed-o, mixed-c, mixed-a
+           , combo1-v, combo1-o, combo2-o, combo3-v, combo3-o
+           , all-pos, empty-defs
+           ] all-true? then(:PASS, :FAIL)
+}

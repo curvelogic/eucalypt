@@ -135,9 +135,10 @@ fn resolve_ref_with_globals(
                 genv.get(view, i)
                     .ok_or(ExecutionError::BadEnvironmentIndex(i))
             } else {
-                Err(ExecutionError::Panic(format!(
-                    "unexpected global ref G({i}) in io spec block"
-                )))
+                Err(ExecutionError::Panic(
+                    Smid::default(),
+                    format!("unexpected global ref G({i}) in io spec block"),
+                ))
             }
         }
     }
@@ -554,12 +555,12 @@ impl Mutator for CollectListElements {
             match &*code {
                 HeapSyn::Cons { tag, .. } if *tag == DataConstructor::ListNil.tag() => break,
                 HeapSyn::Cons { tag, args } if *tag == DataConstructor::ListCons.tag() => {
-                    let head_ref = args
-                        .get(0)
-                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
-                    let tail_ref = args
-                        .get(1)
-                        .ok_or_else(|| ExecutionError::Panic("malformed list cons".to_string()))?;
+                    let head_ref = args.get(0).ok_or_else(|| {
+                        ExecutionError::Panic(Smid::default(), "malformed list cons".to_string())
+                    })?;
+                    let tail_ref = args.get(1).ok_or_else(|| {
+                        ExecutionError::Panic(Smid::default(), "malformed list cons".to_string())
+                    })?;
                     let head = resolve_ref_with_globals(view, &current, head_ref, globals_env)?;
                     result.push(deref(view, head));
                     current = deref(
@@ -648,6 +649,7 @@ fn evaluate_spec_block(
         ) -> Result<HashMap<String, SynClosure>, ExecutionError> {
             let list_closure = block_list(view, self.0.clone()).ok_or_else(|| {
                 ExecutionError::Panic(
+                    Smid::default(),
                     "IoAction spec block did not evaluate to a Block constructor".to_string(),
                 )
             })?;
@@ -780,6 +782,7 @@ fn evaluate_spec_block(
             .and_then(|opt| opt.clone())
             .ok_or_else(|| {
                 IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                    Smid::default(),
                     "io-shell spec missing 'cmd'".to_string(),
                 )))
             })?;
@@ -794,6 +797,7 @@ fn evaluate_spec_block(
             .and_then(|opt| opt.clone())
             .ok_or_else(|| {
                 IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                    Smid::default(),
                     "io-exec spec missing 'cmd'".to_string(),
                 )))
             })?;
@@ -822,6 +826,7 @@ fn evaluate_spec_block(
         Err(IoRunError::Fail(message))
     } else {
         Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
+            Smid::default(),
             format!("unrecognised IO action tag: {tag_name}"),
         ))))
     }
@@ -1032,7 +1037,10 @@ impl Mutator for BuildRenderDoc {
 
     fn run(&self, view: &MutatorHeapView, _: ()) -> Result<SynClosure, ExecutionError> {
         let render_doc_idx = intrinsics::index("RENDER_DOC").ok_or_else(|| {
-            ExecutionError::Panic("RENDER_DOC intrinsic not found in registry".to_string())
+            ExecutionError::Panic(
+                Smid::default(),
+                "RENDER_DOC intrinsic not found in registry".to_string(),
+            )
         })?;
 
         // Frame: [value=0]
@@ -1050,14 +1058,25 @@ impl Mutator for BuildRenderDoc {
 
 // ─── Shell execution ──────────────────────────────────────────────────────────
 
-/// Execute a shell command via `sh -c`.
+/// Execute a shell command via the platform shell.
+///
+/// On Unix, uses `sh -c`. On Windows, uses `pwsh -NoProfile -Command`
+/// (PowerShell Core). Shell command strings are inherently
+/// platform-specific.
 fn execute_shell(
     cmd: &str,
     stdin_data: Option<&str>,
     timeout_secs: u64,
 ) -> Result<CommandResult, IoRunError> {
-    let mut command = Command::new("sh");
-    command.args(["-c", cmd]);
+    let command = if cfg!(windows) {
+        let mut c = Command::new("pwsh");
+        c.args(["-NoProfile", "-Command", cmd]);
+        c
+    } else {
+        let mut c = Command::new("sh");
+        c.args(["-c", cmd]);
+        c
+    };
     run_command(command, stdin_data, timeout_secs)
 }
 
@@ -1174,6 +1193,7 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
     loop {
         if !machine.io_yielded() {
             return Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                Smid::default(),
                 "io_run called on non-yielded machine".to_string(),
             ))));
         }
@@ -1186,6 +1206,7 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                 // IoReturn(world=0, value=1)
                 return args.into_iter().nth(1).ok_or_else(|| {
                     IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                        Smid::default(),
                         "IoReturn missing value argument".to_string(),
                     )))
                 });
@@ -1194,6 +1215,7 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
             Ok(DataConstructor::IoFail) => {
                 let error_closure = args.into_iter().nth(1).ok_or_else(|| {
                     IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                        Smid::default(),
                         "IoFail missing error argument".to_string(),
                     )))
                 })?;
@@ -1331,6 +1353,7 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
                     machine.stash_pop();
                     machine.stash_pop();
                     return Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                        Smid::default(),
                         "IoBind action did not yield an IO constructor".to_string(),
                     ))));
                 }
@@ -1386,6 +1409,7 @@ pub fn io_run(machine: &mut Machine<'_>, allow_io: bool) -> Result<SynClosure, I
 
             _ => {
                 return Err(IoRunError::MachineError(Box::new(ExecutionError::Panic(
+                    Smid::default(),
                     format!("unexpected IO constructor tag: {tag}"),
                 ))));
             }

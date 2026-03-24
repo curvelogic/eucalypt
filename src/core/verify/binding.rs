@@ -1,7 +1,7 @@
 //! Check we haven't disturbed de bruijn indexes during processing
+use crate::core::binding::{BoundVar, Var};
 use crate::core::error::CoreError;
 use crate::core::expr::*;
-use moniker::*;
 use std::collections::VecDeque;
 
 pub fn verify(expr: &RcExpr) -> Result<RcExpr, CoreError> {
@@ -22,23 +22,34 @@ impl ScopeTracker {
         self.scopes.pop_front();
     }
 
-    fn encounter(&mut self, bound_var: &BoundVar<String>) {
-        let expr = self.scopes[bound_var.scope.0 as usize].clone();
+    fn encounter(&mut self, bound_var: &BoundVar) {
+        if bound_var.scope as usize >= self.scopes.len() {
+            panic!(
+                "VERIFIER: scope OOB: scope={} binder={} name={:?} scopes.len()={}",
+                bound_var.scope,
+                bound_var.binder,
+                bound_var.name,
+                self.scopes.len()
+            );
+        }
+        let expr = self.scopes[bound_var.scope as usize].clone();
         match &*expr.inner {
             Expr::Let(_, scope, _) => {
-                if let Some((Binder(fv), Embed(_))) = &scope
-                    .unsafe_pattern
-                    .unsafe_pattern
-                    .get(bound_var.binder.to_usize())
-                {
-                    assert_eq!(fv.pretty_name, bound_var.pretty_name);
+                if let Some((name, _)) = scope.pattern.get(bound_var.binder as usize) {
+                    assert_eq!(
+                        Some(name.as_str()),
+                        bound_var.name.as_deref(),
+                        "name mismatch for BV scope={} binder={}",
+                        bound_var.scope,
+                        bound_var.binder
+                    );
                 } else {
-                    panic!("missing binding");
+                    panic!("VERIFIER: missing Let binding: scope={} binder={} name={:?} pattern.len()={}", bound_var.scope, bound_var.binder, bound_var.name, scope.pattern.len());
                 }
             }
             Expr::Lam(_, _, scope) => {
-                if let Some(Binder(fv)) = &scope.unsafe_pattern.get(bound_var.binder.to_usize()) {
-                    assert_eq!(fv.pretty_name, bound_var.pretty_name);
+                if let Some(name) = scope.pattern.get(bound_var.binder as usize) {
+                    assert_eq!(Some(name.as_str()), bound_var.name.as_deref());
                 } else {
                     panic!("missing lambda binding")
                 }

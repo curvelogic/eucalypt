@@ -1,8 +1,10 @@
-"io.exec: nonexistent binary returns result block with exit-code 127 and error in stderr. Uses --allow-io."
+"io.exec: nonexistent binary returns result block with non-zero exit code. Uses --allow-io."
 
+# Exit code for command-not-found varies by platform:
+# Unix: 127 (POSIX convention), Windows: 1 or 9009 (cmd.exe)
 ` { target: :test requires-io: true }
 test:
   { :io r: io.exec(["nonexistent-binary-xyz"]) }.(
-    if(r.'exit-code' = 127,
+    if(r.'exit-code' > 0,
       { RESULT: :PASS },
       { RESULT: :FAIL }))

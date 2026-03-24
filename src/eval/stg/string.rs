@@ -25,8 +25,7 @@ use super::{
     },
     syntax::{
         dsl::{
-            annotated_lambda, atom, box_str, data, force, let_, local, lref, str, switch,
-            unbox_str, value,
+            atom, box_str, data, force, lambda, let_, local, lref, str, switch, unbox_str, value,
         },
         LambdaForm,
     },
@@ -86,8 +85,8 @@ impl StgIntrinsic for Str {
         "STR"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             let_(
                 vec![value(switch(
@@ -109,7 +108,6 @@ impl StgIntrinsic for Str {
                 ))],
                 data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
             ),
-            annotation,
         )
     }
 
@@ -129,6 +127,7 @@ impl StgIntrinsic for Str {
             Native::Index(idx) => format!("<index:{}>", idx.len()),
             Native::Set(_) => "<set>".to_string(),
             Native::NdArray(_) => "<array>".to_string(),
+            Native::Vec(_) => "<vec>".to_string(),
         };
         machine_return_str(machine, view, text)
     }
@@ -144,8 +143,8 @@ impl StgIntrinsic for Join {
         "JOIN"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2, // [list sep]
             force(
                 SeqStrList.global(lref(0)),
@@ -159,7 +158,6 @@ impl StgIntrinsic for Join {
                     ),
                 ),
             ),
-            annotation,
         )
     }
 
@@ -302,7 +300,10 @@ impl StgIntrinsic for NumParse {
         if let Ok(num) = str::parse::<Number>(&string) {
             machine_return_num(machine, view, num)
         } else {
-            Err(ExecutionError::BadNumberFormat(string))
+            Err(ExecutionError::BadNumberFormat(
+                machine.annotation(),
+                string,
+            ))
         }
     }
 }
@@ -318,8 +319,8 @@ impl StgIntrinsic for Fmt {
         "FMT"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2, // [x fmtstring]
             let_(
                 vec![value(switch(
@@ -392,7 +393,6 @@ impl StgIntrinsic for Fmt {
                 ))],
                 data(DataConstructor::BoxedString.tag(), vec![lref(0)]),
             ),
-            annotation,
         )
     }
 
@@ -408,9 +408,15 @@ impl StgIntrinsic for Fmt {
 
         match printf::fmt(view, machine.symbol_pool(), &fmt_string, &nat) {
             Ok(text) => machine_return_str(machine, view, text),
-            Err(PrintfError::InvalidFormatString(s)) => Err(ExecutionError::BadFormatString(s)),
-            Err(PrintfError::FmtError(_)) => Err(ExecutionError::FormatFailure),
-            Err(PrintfError::ConversionError) => Err(ExecutionError::BadNumericTypeForFormat),
+            Err(PrintfError::InvalidFormatString(s)) => {
+                Err(ExecutionError::BadFormatString(machine.annotation(), s))
+            }
+            Err(PrintfError::FmtError(_)) => {
+                Err(ExecutionError::FormatFailure(machine.annotation()))
+            }
+            Err(PrintfError::ConversionError) => Err(ExecutionError::BadNumericTypeForFormat(
+                machine.annotation(),
+            )),
         }
     }
 }

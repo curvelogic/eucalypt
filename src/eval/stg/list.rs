@@ -22,7 +22,7 @@ use super::{
         collect_num_list, data_list_arg, machine_return_bool, machine_return_num_list, num_arg,
     },
     syntax::{
-        dsl::{annotated_lambda, app_bif, case, data, force, local, lref, str, value},
+        dsl::{app_bif, box_str, case, data, force, lambda, let_, local, lref, value},
         LambdaForm,
     },
     tags::DataConstructor,
@@ -38,11 +38,10 @@ impl StgIntrinsic for Cons {
         "CONS"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             2, // [h t]
             data(DataConstructor::ListCons.tag(), vec![lref(0), lref(1)]),
-            annotation,
         )
     }
 }
@@ -72,15 +71,26 @@ impl StgIntrinsic for Tail {
         "TAIL"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             case(
                 local(0),
-                vec![(DataConstructor::ListCons.tag(), local(1))],
-                Panic.global(str("TAIL on empty list")),
+                vec![
+                    (DataConstructor::ListCons.tag(), local(1)),
+                    (
+                        DataConstructor::ListNil.tag(),
+                        let_(
+                            vec![value(box_str("tail of empty list"))],
+                            Panic.global(lref(0)),
+                        ),
+                    ),
+                ],
+                let_(
+                    vec![value(box_str("tail requires a list argument"))],
+                    Panic.global(lref(0)),
+                ),
             ),
-            annotation,
         )
     }
 }
@@ -95,15 +105,26 @@ impl StgIntrinsic for Head {
         "HEAD"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
-        annotated_lambda(
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        lambda(
             1,
             case(
                 local(0),
-                vec![(DataConstructor::ListCons.tag(), local(0))],
-                Panic.global(str("HEAD on empty list")),
+                vec![
+                    (DataConstructor::ListCons.tag(), local(0)),
+                    (
+                        DataConstructor::ListNil.tag(),
+                        let_(
+                            vec![value(box_str("head of empty list"))],
+                            Panic.global(lref(0)),
+                        ),
+                    ),
+                ],
+                let_(
+                    vec![value(box_str("head requires a list argument"))],
+                    Panic.global(lref(0)),
+                ),
             ),
-            annotation,
         )
     }
 }
@@ -142,6 +163,128 @@ impl StgIntrinsic for IsList {
 
 impl CallGlobal1 for IsList {}
 
+/// ISNUMBER(value)
+///
+/// Return true if the value is a number, false otherwise
+pub struct IsNumber;
+
+impl StgIntrinsic for IsNumber {
+    fn name(&self) -> &str {
+        "ISNUMBER"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedNumber.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsNumber {}
+
+/// ISSTRING(value)
+///
+/// Return true if the value is a string, false otherwise
+pub struct IsString;
+
+impl StgIntrinsic for IsString {
+    fn name(&self) -> &str {
+        "ISSTRING"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedString.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsString {}
+
+/// ISSYMBOL(value)
+///
+/// Return true if the value is a symbol, false otherwise
+pub struct IsSymbol;
+
+impl StgIntrinsic for IsSymbol {
+    fn name(&self) -> &str {
+        "ISSYMBOL"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let result = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. } if *tag == DataConstructor::BoxedSymbol.tag()
+        );
+        machine_return_bool(machine, view, result)
+    }
+}
+
+impl CallGlobal1 for IsSymbol {}
+
+/// ISBOOL(value)
+///
+/// Return true if the value is a boolean, false otherwise
+pub struct IsBool;
+
+impl StgIntrinsic for IsBool {
+    fn name(&self) -> &str {
+        "ISBOOL"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        use crate::eval::memory::syntax;
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let code = view.scoped(closure.code());
+        let is_bool = matches!(
+            &*code,
+            syntax::HeapSyn::Cons { tag, .. }
+                if *tag == DataConstructor::BoolTrue.tag()
+                    || *tag == DataConstructor::BoolFalse.tag()
+        );
+        machine_return_bool(machine, view, is_bool)
+    }
+}
+
+impl CallGlobal1 for IsBool {}
+
 /// SORT_NUM_LIST — sort a list of numbers in Rust
 ///
 /// The wrapper first applies SeqNumList to force and unbox all elements,
@@ -154,16 +297,15 @@ impl StgIntrinsic for SortNumList {
         "SORT_NUM_LIST"
     }
 
-    fn wrapper(&self, annotation: Smid) -> LambdaForm {
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
         let bif_index: u8 = self.index().try_into().unwrap();
-        annotated_lambda(
+        lambda(
             1, // [xs]
             force(
                 SeqNumList.global(lref(0)),
                 // [concrete_list] [xs]
                 app_bif(bif_index, vec![lref(0)]),
             ),
-            annotation,
         )
     }
 
@@ -212,10 +354,10 @@ impl StgIntrinsic for ListNth {
         }
         match current {
             Some(closure) => machine.set_closure(closure),
-            None => Err(ExecutionError::Panic(format!(
-                "LIST.NTH: index {} out of bounds",
-                n
-            ))),
+            None => Err(ExecutionError::Panic(
+                Smid::default(),
+                format!("LIST.NTH: index {} out of bounds", n),
+            )),
         }
     }
 }
@@ -260,7 +402,10 @@ impl StgIntrinsic for ListDrop {
                     match (*tag).try_into() {
                         Ok(DataConstructor::ListCons) => {
                             let tail_ref = cons_args.get(1).ok_or_else(|| {
-                                ExecutionError::Panic("malformed cons cell".to_string())
+                                ExecutionError::Panic(
+                                    Smid::default(),
+                                    "malformed cons cell".to_string(),
+                                )
                             })?;
                             closure = closure.navigate_local(&view, tail_ref);
                         }
@@ -270,6 +415,7 @@ impl StgIntrinsic for ListDrop {
                         }
                         _ => {
                             return Err(ExecutionError::Panic(
+                                Smid::default(),
                                 "LIST.DROP: expected list".to_string(),
                             ));
                         }
@@ -277,6 +423,7 @@ impl StgIntrinsic for ListDrop {
                 }
                 _ => {
                     return Err(ExecutionError::Panic(
+                        Smid::default(),
                         "LIST.DROP: expected list".to_string(),
                     ));
                 }

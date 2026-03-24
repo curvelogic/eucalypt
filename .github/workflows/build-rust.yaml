@@ -44,8 +44,9 @@ jobs:
   test:
     name: Test Suite
     strategy:
+      fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && fromJSON('["ubuntu-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +89,22 @@ jobs:
         env:
           EU_GC_STRESS: "1"
 
+  asan:
+    name: AddressSanitizer
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - name: Build with ASAN
+        run: RUSTFLAGS="-Zsanitizer=address" cargo +nightly build --release --target x86_64-unknown-linux-gnu -Zbuild-std
+      - name: Run harness with ASAN
+        run: ASAN_OPTIONS=detect_leaks=0 ./target/x86_64-unknown-linux-gnu/release/eu test --allow-io tests/harness
+        env:
+          EU_GC_STRESS: "1"
+
   wasm:
     name: WASM Compilation Check
     runs-on: ubuntu-latest
@@ -97,10 +114,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: clippy
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build library for WASM
         run: cargo build --target wasm32-unknown-unknown --lib
       - name: Clippy for WASM
         run: cargo clippy --target wasm32-unknown-unknown --lib -- -D warnings
+      - name: wasm-pack build
+        run: wasm-pack build --target web
 
   release-candidate-linux:
     needs: [lint, test, audit, wasm]
@@ -264,6 +285,48 @@ jobs:
           name: eu_aarch64
           path: target/release/eu_aarch64
 
+  release-candidate-windows:
+    needs: [lint, test, audit]
+    name: Release Windows
+    runs-on: windows-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and install temporary eu
+        run: cargo install --path . --target-dir C:\eu-install
+      - name: Prepare build files for new version
+        shell: pwsh
+        run: |
+          $env:OSTYPE = "Windows"
+          $env:HOSTTYPE = "x86_64"
+          eu build.eu -t build-meta > build-meta.yaml.new
+          Move-Item -Force build-meta.yaml.new build-meta.yaml
+          $tag = eu build.eu -t version
+          echo "TAG_NAME=$tag" >> $env:GITHUB_ENV
+      - name: Build release
+        run: cargo build --all --release
+      - name: Rename binary
+        run: |
+          copy target\release\eu.exe target\release\eu_windows_amd64.exe
+      - name: Run final test with release binary
+        run: |
+          target\release\eu_windows_amd64.exe version
+          target\release\eu_windows_amd64.exe test tests/harness
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: eu_windows_amd64.exe
+          path: target/release/eu_windows_amd64.exe
+
   prepare-release:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
@@ -271,6 +334,7 @@ jobs:
       - release-candidate-linux
       - release-candidate-linux-arm
       - release-candidate-macos
+      - release-candidate-windows
     steps:
 
       - uses: actions/download-artifact@v4
@@ -284,6 +348,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: eu_aarch64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: eu_windows_amd64.exe
 
       - uses: actions/download-artifact@v4
         with:
@@ -305,7 +373,7 @@ jobs:
 
       - name: Generate SHA256SUMS
         run: |
-          sha256sum *.tgz > SHA256SUMS
+          sha256sum *.tgz eu_windows_amd64.exe > SHA256SUMS
 
       - name: Query binary for version number
         run: |
@@ -323,6 +391,7 @@ jobs:
             eucalypt-x86_64-linux.tgz
             eucalypt-aarch64-linux.tgz
             eucalypt-aarch64-osx.tgz
+            eu_windows_amd64.exe
             SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
