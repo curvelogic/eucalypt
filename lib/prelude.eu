@@ -221,7 +221,7 @@ snoc(x, l): l ++ [x]
 (x ‖ xs): __CONS(x, xs)
 
 ` "`head(xs)` - return the head item of list `xs`, panic if empty."
-head: __HEAD
+head(xs): if(xs nil?, panic("head of empty list"), __HEAD(xs))
 
 ` { doc: "`↑xs` - return first element of list `xs`. Tight-binding prefix operator."
     precedence: 95 }
@@ -244,7 +244,7 @@ coalesce(xs): (xs nil?) then(null, (xs head)✓ then(xs head, xs tail coalesce))
 head-or(d, xs): xs nil? then(d, xs head)
 
 ` "`tail(xs)` - return list `xs` without the head item. [] causes error."
-tail: __TAIL
+tail(xs): if(xs nil?, panic("tail of empty list"), __TAIL(xs))
 
 ` "`tail-or(xs, d)` - return list `xs` without the head item or `d` for empty list."
 tail-or(d, xs): xs nil? then(d, xs tail)
