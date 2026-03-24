@@ -19,5 +19,7 @@ pub mod export;
 pub mod import;
 pub mod syntax;
 
+pub mod wasm_pipeline;
+
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
