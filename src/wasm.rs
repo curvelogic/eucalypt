@@ -98,11 +98,7 @@ mod wasm_tests {
     use super::*;
     use wasm_bindgen_test::*;
 
-    /// Full evaluation test — currently ignored due to runtime panic:
-    /// `std::time::Instant` is not available on `wasm32-unknown-unknown`.
-    /// Re-enable once the timing code is fully gated (bead eu-f8z8).
     #[wasm_bindgen_test]
-    #[ignore = "wasm32: std::time::Instant not available"]
     fn test_evaluate_json_success() {
         let result = evaluate("x: 1", "json");
         let parsed: serde_json::Value =
