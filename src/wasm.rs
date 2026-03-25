@@ -49,17 +49,32 @@ struct WasmSourceLocation {
     end_column: usize,
 }
 
-/// Evaluate eucalypt source code and return the result as a JSON string.
+/// Evaluate a eucalypt unit (declarations) and return the result as JSON.
+///
+/// Input is parsed as a unit — the same as a `.eu` file.  This is the
+/// default mode for the playground.
 ///
 /// # Arguments
-/// * `source` — eucalypt source code
+/// * `source` — eucalypt source code (declarations, like a `.eu` file)
 /// * `format` — output format: `"yaml"`, `"json"`, `"toml"`, `"text"`, `"edn"`, `"html"`
 ///
 /// # Returns
 /// A JSON string containing an `EvalResult`.
 #[wasm_bindgen]
 pub fn evaluate(source: &str, format: &str) -> String {
-    let result = match wasm_pipeline::evaluate_pipeline(source, format) {
+    wrap_result(wasm_pipeline::evaluate_unit(source, format))
+}
+
+/// Evaluate a eucalypt expression and return the result as JSON.
+///
+/// Input is parsed as a bare expression — the same as CLI `-e`.
+#[wasm_bindgen]
+pub fn evaluate_expr(source: &str, format: &str) -> String {
+    wrap_result(wasm_pipeline::evaluate_expr(source, format))
+}
+
+fn wrap_result(outcome: Result<String, wasm_pipeline::PipelineError>) -> String {
+    let result = match outcome {
         Ok(output) => EvalResult {
             success: true,
             output: Some(output),
@@ -99,10 +114,22 @@ mod wasm_tests {
     use wasm_bindgen_test::*;
 
     #[wasm_bindgen_test]
-    fn test_evaluate_json_success() {
+    fn test_evaluate_unit() {
         let result = evaluate("x: 1", "json");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("evaluate should return valid JSON");
+        assert_eq!(parsed["success"], true);
+        let output = parsed["output"].as_str().expect("should have output");
+        let output_parsed: serde_json::Value =
+            serde_json::from_str(output.trim()).expect("output should be valid JSON");
+        assert_eq!(output_parsed["x"], 1);
+    }
+
+    #[wasm_bindgen_test]
+    fn test_evaluate_expr() {
+        let result = evaluate_expr("{x: 1}", "json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("evaluate_expr should return valid JSON");
         assert_eq!(parsed["success"], true);
         let output = parsed["output"].as_str().expect("should have output");
         let output_parsed: serde_json::Value =
