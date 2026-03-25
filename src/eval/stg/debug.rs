@@ -9,7 +9,7 @@ use std::convert::TryInto;
 use crate::eval::{
     emit::Emitter,
     error::ExecutionError,
-    machine::intrinsic::{CallGlobal1, CallGlobal2, IntrinsicMachine, StgIntrinsic},
+    machine::intrinsic::{CallGlobal1, CallGlobal3, IntrinsicMachine, StgIntrinsic},
     memory::{
         mutator::MutatorHeapView,
         syntax::{HeapSyn, Native, Ref},
@@ -203,17 +203,21 @@ impl StgIntrinsic for DbgRepr {
 
 impl CallGlobal1 for DbgRepr {}
 
-/// `__DBG(label, value)` — print debug output to stderr and return `value` transparently.
+/// `__DBG(label, rendered, value)` — print debug output to stderr and return
+/// `value` transparently.
 ///
-/// - `label`: a string label prepended to the output (may be empty).
-/// - `value`: the value to inspect; returned unchanged.
+/// - `label`: a string label (may be empty).
+/// - `rendered`: a pre-rendered string representation of the value
+///   (produced by the caller via `render-as`).
+/// - `value`: the original value to return unchanged.
 ///
 /// Output format:
-/// - With empty label: `▶ <repr>`
-/// - With label: `▶ label: <repr>`
+/// - With empty label: `▶ <rendered>`
+/// - With label: `▶ label: <rendered>`
 ///
-/// This is the underlying BIF for both the `dbg` prelude function and the
-/// `▶` prefix operator.
+/// **Important**: wrap the call in a let-binding (block field) to ensure
+/// the Update continuation memoises the result — otherwise the BIF fires
+/// on every force.
 pub struct Dbg;
 
 impl StgIntrinsic for Dbg {
@@ -229,20 +233,22 @@ impl StgIntrinsic for Dbg {
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
         // args[0] = label (strict string)
-        // args[1] = value to debug (strict — we want the evaluated result)
+        // args[1] = rendered representation (strict string)
+        // args[2] = original value (strict — forced to WHNF)
         let label = str_arg(machine, view, &args[0])?;
-        let repr = render_debug_repr(machine, view, &args[1]);
+        let rendered = str_arg(machine, view, &args[1])?;
 
+        let trimmed = rendered.trim();
         if label.is_empty() {
-            eprintln!("▶ {repr}");
+            eprintln!("▶ {trimmed}");
         } else {
-            eprintln!("▶ {label}: {repr}");
+            eprintln!("▶ {label}: {trimmed}");
         }
 
-        // Return args[1] transparently
-        let closure = machine.nav(view).resolve(&args[1])?;
+        // Return args[2] (original value) transparently
+        let closure = machine.nav(view).resolve(&args[2])?;
         machine.set_closure(closure)
     }
 }
 
-impl CallGlobal2 for Dbg {}
+impl CallGlobal3 for Dbg {}
