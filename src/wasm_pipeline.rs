@@ -4,8 +4,11 @@
 //! by `#[cfg(test)]` unit tests on native targets without requiring
 //! `wasm_bindgen` or `serde`.
 //!
-//! The WASM module (`wasm.rs`) calls [`evaluate_pipeline`] and converts the
-//! result into the JSON envelope that JS callers expect.
+//! Two entry points:
+//! - [`evaluate_unit`] — parses input as a unit (declarations), like a `.eu` file
+//! - [`evaluate_expr`] — parses input as an expression, like CLI `-e`
+//!
+//! The WASM module (`wasm.rs`) exposes both as `evaluate` and `evaluate_expr`.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -18,6 +21,7 @@ use codespan_reporting::files::SimpleFiles;
 
 use crate::common::sourcemap::{Smid, SourceMap};
 use crate::core::cook;
+use crate::core::desugar::desugarable::Desugarable;
 use crate::core::desugar::{Content, Desugarer};
 use crate::core::inline::{reduce, tag};
 use crate::core::simplify::{compress, prune};
@@ -81,19 +85,27 @@ impl fmt::Display for PipelineError {
 
 // ── Pipeline ─────────────────────────────────────────────────────────────────
 
-/// Evaluate eucalypt source code and return the rendered output as a string.
+/// Evaluate a eucalypt unit (declarations) and return the rendered output.
 ///
-/// This is the core pipeline used by the WASM `evaluate()` function, extracted
-/// here so it can be tested on native targets.
+/// Input is parsed as a unit — the same as a `.eu` file.  This is the
+/// default mode for the playground.
+pub fn evaluate_unit(source: &str, format: &str) -> Result<String, PipelineError> {
+    run_pipeline(source, format, ParseMode::Unit)
+}
+
+/// Evaluate a eucalypt expression and return the rendered output.
 ///
-/// # Arguments
-/// * `source` — eucalypt source code (declaration-style, as for a `.eu` file)
-/// * `format` — output format: `"yaml"`, `"json"`, `"toml"`, `"text"`,
-///   `"edn"`, `"html"`
-///
-/// # Returns
-/// `Ok(output)` on success, `Err(PipelineError)` on failure.
-pub fn evaluate_pipeline(source: &str, format: &str) -> Result<String, PipelineError> {
+/// Input is parsed as a bare expression — the same as CLI `-e`.
+pub fn evaluate_expr(source: &str, format: &str) -> Result<String, PipelineError> {
+    run_pipeline(source, format, ParseMode::Expr)
+}
+
+enum ParseMode {
+    Unit,
+    Expr,
+}
+
+fn run_pipeline(source: &str, format: &str, mode: ParseMode) -> Result<String, PipelineError> {
     let mut files: SimpleFiles<String, String> = SimpleFiles::new();
     let mut source_map = SourceMap::new();
     let resources = Resources::default();
@@ -105,7 +117,6 @@ pub fn evaluate_pipeline(source: &str, format: &str) -> Result<String, PipelineE
         .clone();
     let prelude_file_id = files.add("prelude".to_string(), prelude_text.clone());
     let prelude_parse = rowan::parse_unit(&prelude_text);
-    // Prelude parse errors are internal — treat as hard failures without location
     if !prelude_parse.errors().is_empty() {
         return Err(PipelineError {
             message: "Internal error: prelude parse failed".to_string(),
@@ -136,25 +147,20 @@ pub fn evaluate_pipeline(source: &str, format: &str) -> Result<String, PipelineE
             },
         )?;
 
-    // 3. Parse user source
+    // 3. Parse user source — mode determines the parser entry point
     let source_file_id = files.add("<input>".to_string(), source.to_string());
-    let source_parse = rowan::parse_unit(source);
-    if !source_parse.errors().is_empty() {
-        let first_error = &source_parse.errors()[0];
-        let location = extract_parse_error_location(first_error, source_file_id, &files);
-        let message = source_parse
-            .errors()
-            .iter()
-            .map(|e| e.to_string())
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(PipelineError {
-            message: format!("Parse error: {message}"),
-            location,
-            notes: None,
-        });
-    }
-    let source_ast = source_parse.tree();
+    let source_ast: Box<dyn Desugarable> = match mode {
+        ParseMode::Unit => {
+            let parse = rowan::parse_unit(source);
+            check_parse_errors(parse.errors(), source_file_id, &files)?;
+            Box::new(parse.tree())
+        }
+        ParseMode::Expr => {
+            let parse = rowan::parse_expr(source);
+            check_parse_errors(parse.errors(), source_file_id, &files)?;
+            Box::new(parse.tree())
+        }
+    };
 
     // 4. Desugar prelude
     let prelude_input = Input::new(Locator::Resource("prelude".to_string()), None, "eu");
@@ -175,7 +181,7 @@ pub fn evaluate_pipeline(source: &str, format: &str) -> Result<String, PipelineE
         let mut contents: HashMap<Input, Content> = HashMap::new();
         contents.insert(
             source_input.clone(),
-            Content::new(source_file_id, &source_ast),
+            Content::new(source_file_id, source_ast.as_ref()),
         );
         let mut d = Desugarer::new(&contents, &mut source_map);
         d.translate_unit(&source_input)
@@ -283,6 +289,30 @@ pub fn evaluate_pipeline(source: &str, format: &str) -> Result<String, PipelineE
     })
 }
 
+// ── Parse error checking ─────────────────────────────────────────────────────
+
+fn check_parse_errors(
+    errors: &[crate::syntax::rowan::ParseError],
+    source_file_id: usize,
+    files: &SimpleFiles<String, String>,
+) -> Result<(), PipelineError> {
+    if errors.is_empty() {
+        return Ok(());
+    }
+    let first_error = &errors[0];
+    let location = extract_parse_error_location(first_error, source_file_id, files);
+    let message = errors
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(PipelineError {
+        message: format!("Parse error: {message}"),
+        location,
+        notes: None,
+    })
+}
+
 // ── Error conversion helpers ─────────────────────────────────────────────────
 
 fn core_error_to_pipeline_error(
@@ -386,69 +416,94 @@ fn parse_error_range(error: &rowan::ParseError) -> Option<::rowan::TextRange> {
 mod tests {
     use super::*;
 
+    // ── Unit mode (declaration-style, like a .eu file) ──────────────
+
     #[test]
-    fn test_json_output_block() {
-        let result = evaluate_pipeline("result: {x: 1}", "json").unwrap();
+    fn test_unit_json() {
+        let result = evaluate_unit("x: 1", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
-        assert_eq!(v["result"]["x"], 1);
+        assert_eq!(v["x"], 1);
     }
 
     #[test]
-    fn test_yaml_output() {
-        let result = evaluate_pipeline("x: 1", "yaml").unwrap();
-        assert!(result.contains("x:"));
+    fn test_unit_yaml() {
+        let result = evaluate_unit("hello: \"world\"", "yaml").unwrap();
+        assert!(result.contains("hello:"));
     }
 
     #[test]
-    fn test_text_output() {
-        let result = evaluate_pipeline("result: \"hello\"", "text").unwrap();
-        assert!(result.trim().contains("hello"));
-    }
-
-    #[test]
-    fn test_parse_error() {
-        let result = evaluate_pipeline("{{{{", "json");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_unknown_format() {
-        let result = evaluate_pipeline("x: 1", "nosuchformat");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_step_limit() {
-        let result = evaluate_pipeline("f(x): f(x)\nmain: f(0)", "json");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_nested_block() {
-        let result = evaluate_pipeline("a: {b: 2}", "json").unwrap();
+    fn test_unit_nested() {
+        let result = evaluate_unit("a: {b: 2}", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
         assert_eq!(v["a"]["b"], 2);
     }
 
     #[test]
-    fn test_list_output() {
-        let result = evaluate_pipeline("result: [1, 2, 3]", "json").unwrap();
+    fn test_unit_list() {
+        let result = evaluate_unit("items: [1, 2, 3]", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
-        assert_eq!(v["result"], serde_json::json!([1, 2, 3]));
+        assert_eq!(v["items"], serde_json::json!([1, 2, 3]));
     }
 
     #[test]
-    fn test_boolean_values() {
-        let result = evaluate_pipeline("t: true\nf: false", "json").unwrap();
+    fn test_unit_booleans() {
+        let result = evaluate_unit("t: true\nf: false", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
         assert_eq!(v["t"], true);
         assert_eq!(v["f"], false);
     }
 
     #[test]
-    fn test_expression_evaluation() {
-        let result = evaluate_pipeline("x: 2 + 3", "json").unwrap();
+    fn test_unit_expression() {
+        let result = evaluate_unit("x: 2 + 3", "json").unwrap();
         let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
         assert_eq!(v["x"], 5);
+    }
+
+    #[test]
+    fn test_unit_parse_error() {
+        let result = evaluate_unit("{{{{", "json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unit_unknown_format() {
+        let result = evaluate_unit("x: 1", "nosuchformat");
+        assert!(result.is_err());
+    }
+
+    // ── Expression mode (like CLI -e) ───────────────────────────────
+
+    #[test]
+    fn test_expr_block() {
+        let result = evaluate_expr("{x: 1}", "json").unwrap();
+        let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
+        assert_eq!(v["x"], 1);
+    }
+
+    #[test]
+    fn test_expr_bare_number() {
+        let result = evaluate_expr("42", "json").unwrap();
+        let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
+        assert_eq!(v, 42);
+    }
+
+    #[test]
+    fn test_expr_string() {
+        let result = evaluate_expr("\"hello\"", "text").unwrap();
+        assert_eq!(result.trim(), "hello");
+    }
+
+    #[test]
+    fn test_expr_list() {
+        let result = evaluate_expr("[1, 2, 3]", "json").unwrap();
+        let v: serde_json::Value = serde_json::from_str(result.trim()).unwrap();
+        assert_eq!(v, serde_json::json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn test_expr_step_limit() {
+        let result = evaluate_expr("{ f(x): f(x)  main: f(0) }.main", "json");
+        assert!(result.is_err());
     }
 }
