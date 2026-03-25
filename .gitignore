@@ -48,3 +48,4 @@ editors/vscode/*.vsix
 # mdBook build output
 /book/
 #*#
+.playwright-mcp/
