@@ -1009,7 +1009,7 @@ dbg(opts, v): {result: __DBG(lookup-or(:label, "", opts), v render-as(:json), v)
 ` { doc: "`▶v` - debug-trace value or function. On a value, prints it to stderr and returns it. On a function, returns a wrapped version that traces each output."
     precedence: 85 }
 __dbg-val(v): {result: __DBG("", v render-as(:json), v)}.result
-__dbg-after(f, x): __dbg-val(f(x))
+__dbg-after(f, x): ▶(f(x))
 (▶ v): if(__SATURATED(v), __dbg-val(v), __dbg-after(v))
 
 #
