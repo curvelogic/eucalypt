@@ -1357,3 +1357,4 @@ pub fn test_error_122() {
 pub fn test_error_123() {
     run_error_test(&error_opts("123_dbg_block.eu"));
 }
+
