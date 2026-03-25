@@ -1358,3 +1358,12 @@ pub fn test_error_123() {
     run_error_test(&error_opts("123_dbg_block.eu"));
 }
 
+#[test]
+pub fn test_error_124() {
+    run_error_test(
+        &io_error_opts("124_dbg_io_map.eu")
+            .with_target(Some("result".to_string()))
+            .build(),
+    );
+}
+
