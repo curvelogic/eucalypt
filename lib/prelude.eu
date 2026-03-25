@@ -1006,9 +1006,11 @@ assert(p?, s, v): if(v p?, v, panic(s))
 ` { doc: "`dbg(opts, v)` - print value `v` to stderr and return `v` unchanged. opts keys: label (string)." }
 dbg(opts, v): {result: __DBG(lookup-or(:label, "", opts), v render-as(:json), v)}.result
 
-` { doc: "`▶v` - debug-print value `v` to stderr and return it. Tight-binding prefix operator."
+` { doc: "`▶v` - debug-trace value or function. On a value, prints it to stderr and returns it. On a function, returns a wrapped version that traces each output."
     precedence: 85 }
-(▶ v): {result: __DBG("", v render-as(:json), v)}.result
+__dbg-val(v): {result: __DBG("", v render-as(:json), v)}.result
+__dbg-after(f, x): __dbg-val(f(x))
+(▶ v): if(__SATURATED(v), __dbg-val(v), __dbg-after(v))
 
 #
 # List library functions, maps and folds
