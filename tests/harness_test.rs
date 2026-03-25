@@ -1367,3 +1367,12 @@ pub fn test_error_124() {
     );
 }
 
+#[test]
+pub fn test_error_125() {
+    run_error_test(
+        &io_error_opts("125_dbg_io_function_wrap.eu")
+            .with_target(Some("result".to_string()))
+            .build(),
+    );
+}
+
