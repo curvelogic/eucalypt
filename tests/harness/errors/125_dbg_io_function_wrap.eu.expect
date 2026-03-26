@@ -1,2 +1,2 @@
 exit: 0
-stderr: "▶"
+stderr: "hello world"

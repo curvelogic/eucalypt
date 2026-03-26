@@ -1,2 +1,2 @@
 exit: 0
-stderr: "▶"
+stderr: "(?s)▶.*exit-code.*stdout.*hello world"

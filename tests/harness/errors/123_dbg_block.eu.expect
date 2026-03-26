@@ -1,2 +1,2 @@
 exit: 0
-stderr: "▶"
+stderr: "(?s)▶.*\"a\": 1.*\"b\": 2"
