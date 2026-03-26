@@ -1,7 +1,7 @@
 //! Use tester and harness tests
 use eucalypt::driver::{options::EucalyptOptions, tester};
 use eucalypt::syntax::input::Input;
-use std::{path::PathBuf, str::FromStr};
+use std::{path::Path, path::PathBuf, str::FromStr};
 
 /// Common options for all tests
 pub fn opts(filename: &str) -> EucalyptOptions {
@@ -56,10 +56,15 @@ fn run_test(opt: &EucalyptOptions) {
     assert_eq!(exit_code, 0);
 }
 
+/// Path to the eu binary built by cargo for this test run.
+fn eu_binary() -> &'static Path {
+    Path::new(env!("CARGO_BIN_EXE_eu"))
+}
+
 /// Run an error test — validates against `.expect` sidecar if present,
 /// otherwise passes as unvalidated.
 fn run_error_test(opt: &EucalyptOptions) {
-    let exit_code = tester::error_test(opt).unwrap();
+    let exit_code = tester::error_test_with_binary(eu_binary(), opt).unwrap();
     assert_eq!(exit_code, 0);
 }
 
@@ -1311,4 +1316,64 @@ pub fn test_error_114() {
 #[test]
 pub fn test_error_115() {
     run_error_test(&error_opts("115_render_as_invalid_format.eu"));
+}
+
+#[test]
+pub fn test_error_116() {
+    run_error_test(&error_opts("116_dbg_scalar.eu"));
+}
+
+#[test]
+pub fn test_error_117() {
+    run_error_test(&error_opts("117_dbg_list.eu"));
+}
+
+#[test]
+pub fn test_error_118() {
+    run_error_test(&error_opts("118_dbg_pipeline_tap.eu"));
+}
+
+#[test]
+pub fn test_error_119() {
+    run_error_test(&error_opts("119_dbg_function_wrap.eu"));
+}
+
+#[test]
+pub fn test_error_120() {
+    run_error_test(&error_opts("120_dbg_pipeline_function.eu"));
+}
+
+#[test]
+pub fn test_error_121() {
+    run_error_test(&error_opts("121_dbg_labelled.eu"));
+}
+
+#[test]
+pub fn test_error_122() {
+    run_error_test(&error_opts("122_dbg_multiarg_function.eu"));
+}
+
+#[test]
+pub fn test_error_123() {
+    run_error_test(&error_opts("123_dbg_block.eu"));
+}
+
+#[test]
+#[cfg(not(target_os = "windows"))]
+pub fn test_error_124() {
+    run_error_test(
+        &io_error_opts("124_dbg_io_map.eu")
+            .with_target(Some("result".to_string()))
+            .build(),
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "windows"))]
+pub fn test_error_125() {
+    run_error_test(
+        &io_error_opts("125_dbg_io_function_wrap.eu")
+            .with_target(Some("result".to_string()))
+            .build(),
+    );
 }

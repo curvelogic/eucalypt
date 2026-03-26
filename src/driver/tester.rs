@@ -40,15 +40,25 @@ pub fn test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
 /// sidecar exists, the test is treated as unvalidated and passes
 /// without running.
 pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
+    let eu_binary = std::env::current_exe().expect("cannot determine eu binary path");
+    error_test_with_binary(&eu_binary, opt)
+}
+
+/// Run an error test using the specified eu binary path.
+///
+/// Called from `eu test` (via `error_test`) and from `harness_test.rs`
+/// (which passes `CARGO_BIN_EXE_eu`).
+pub fn error_test_with_binary(
+    eu_binary: &Path,
+    opt: &EucalyptOptions,
+) -> Result<i32, EucalyptError> {
     let cwd = Input::from(Locator::Fs(PathBuf::from(".")));
     let input = opt.explicit_inputs().last().unwrap_or(&cwd);
     let path = resolve_input(opt, input)?;
-    let run_id = Uuid::new_v4().hyphenated().to_string();
 
     let expectation = match ErrorExpectation::load(&path) {
         Ok(Some(exp)) => exp,
         Ok(None) => {
-            // No sidecar — unvalidated error test, skip gracefully
             return Ok(0);
         }
         Err(e) => {
@@ -59,8 +69,40 @@ pub fn error_test(opt: &EucalyptOptions) -> Result<i32, EucalyptError> {
         }
     };
 
-    let plan = TestPlan::for_error_test(&run_id, &path, expectation, opt.target());
-    run_plans(opt, &[plan])
+    // Build command: eu run -L <lib> <file>
+    let mut cmd = std::process::Command::new(eu_binary);
+    cmd.arg("run");
+    for lib_dir in opt.lib_path() {
+        cmd.arg("-L").arg(lib_dir);
+    }
+    if opt.allow_io() {
+        cmd.arg("--allow-io");
+    }
+    cmd.arg(&path);
+    if let Some(target) = opt.target() {
+        cmd.arg("-t").arg(target);
+    }
+
+    let output = cmd.output().map_err(|e| {
+        EucalyptError::FileCouldNotBeRead(
+            format!("failed to execute {}: {e}", eu_binary.display()),
+            Some(e.to_string()),
+        )
+    })?;
+
+    let actual_exit = output.status.code().unwrap_or(1);
+    let actual_stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    match expectation.validate(actual_exit, &actual_stderr) {
+        Ok(()) => {
+            println!("{}...PASS", path.display());
+            Ok(0)
+        }
+        Err(reason) => {
+            println!("{}...FAIL: {reason}", path.display());
+            Ok(1)
+        }
+    }
 }
 
 /// Resolve the one and only input to determine if we are running a

@@ -866,8 +866,8 @@ lazy_static! {
     },
     Intrinsic { // 163
             name: "DBG",
-            ty: function(vec![str_(), unk(), unk()]).unwrap(),
-            strict: vec![0, 1],
+            ty: function(vec![str_(), str_(), unk(), unk()]).unwrap(),
+            strict: vec![0, 1, 2],
     },
     Intrinsic { // 164
             name: "ISNUMBER",
