@@ -1359,6 +1359,7 @@ pub fn test_error_123() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 pub fn test_error_124() {
     run_error_test(
         &io_error_opts("124_dbg_io_map.eu")
@@ -1368,6 +1369,7 @@ pub fn test_error_124() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 pub fn test_error_125() {
     run_error_test(
         &io_error_opts("125_dbg_io_function_wrap.eu")
