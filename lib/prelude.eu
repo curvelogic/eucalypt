@@ -408,6 +408,35 @@ deep-query-first(pattern, d, b): b deep-query(pattern) head-or(d)
 deep-query-paths(pattern, b): b deep-query-fold(pattern) map(first)
 
 ##
+## Structural matching
+##
+
+` "`any?` - predicate that matches any value. For use in match? patterns."
+any?: const(true)
+
+` "`match?(pattern, target)` - structural predicate. Returns true if `target`
+conforms to `pattern`. Pattern values are interpreted by type: blocks and
+lists recurse as sub-patterns, functions are applied as predicates, literals
+are exact equality checks. Open matching: extra keys in target are ignored."
+match?(pat, target): {
+  mv?(p, actual):
+    if(p block?, mb?(p, actual),
+    if(p list?,  ml?(p, actual),
+    if(__SATURATED(p), p = actual,
+                       p(actual))))
+
+  mb?(p, t):
+    if(t block?, p elements map(me?(t)) all-true?, false)
+
+  me?(t, [k, v]):
+    (t has(k)) ∧ mv?(v, (t lookup(k)))
+
+  ml?(p, t):
+    if(t list?, ((t count) = (p count)) ∧ (zip-with(mv?, p, t) all-true?), false)
+
+}.(mv?(pat, target))
+
+##
 ## Boolean
 ##
 

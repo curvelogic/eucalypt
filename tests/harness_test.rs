@@ -692,6 +692,11 @@ pub fn test_lib_lens() {
 }
 
 #[test]
+pub fn test_harness_134() {
+    run_test(&opts("134_match_predicate.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
