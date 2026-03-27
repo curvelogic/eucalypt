@@ -240,6 +240,7 @@ From highest (tightest) to lowest binding:
 |------|------|-------|-----------|-------------|
 | 95 | -- | prefix | `↑` | Head (tight prefix) |
 | 90 | lookup | left | `.` (built-in) | Property lookup |
+| 90 | lookup | left | `~` | Safe key lookup (null-propagating) |
 | 90 | call | left | (built-in) | Function call |
 | 88 | bool-unary | prefix | `!`, `¬` | Boolean negation |
 | 88 | bool-unary | postfix | `✓` | Not-null check (true if not null) |

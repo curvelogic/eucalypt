@@ -847,6 +847,204 @@ fn store_index_in_block(
 
 impl CallGlobal3 for LookupOr {}
 
+/// SAFE_LOOKUP(obj, k) — safe key lookup with null propagation.
+///
+/// Returns the value at key `k` if `obj` is a block containing `k`,
+/// otherwise returns `null` (Unit). Null-propagating: if `obj` is
+/// `null` or any non-block value, returns `null` rather than erroring.
+///
+/// Uses the same hybrid index/linear-search strategy as `LookupOr`.
+pub struct SafeLookup(pub NativeVariant);
+
+impl StgIntrinsic for SafeLookup {
+    fn name(&self) -> &str {
+        "SAFE_LOOKUP"
+    }
+
+    fn wrapper(&self, _annotation: Smid) -> LambdaForm {
+        use dsl::*;
+
+        let bif_index: u8 = intrinsics::index(self.name())
+            .expect("SAFE_LOOKUP must be registered")
+            .try_into()
+            .unwrap();
+
+        // find: [list k find] — linear search with no default arg; returns
+        // Unit on miss.
+        let find = lambda(
+            3, // [list k find]
+            case(
+                local(0),
+                vec![
+                    (
+                        DataConstructor::ListCons.tag(), // [h t] [list k find]
+                        switch(
+                            MatchesKey.global(lref(0), lref(3)),
+                            vec![
+                                (
+                                    DataConstructor::BoolTrue.tag(),
+                                    // [h t] [list k find]
+                                    ExtractValue.global(lref(0)),
+                                ),
+                                (
+                                    DataConstructor::BoolFalse.tag(),
+                                    app(lref(4), vec![lref(1), lref(3), lref(4)]),
+                                ),
+                            ],
+                        ),
+                    ),
+                    (
+                        DataConstructor::ListNil.tag(), // key not found — return null
+                        unit(),
+                    ),
+                ],
+                call::bif::panic(str("bad block content")),
+            ),
+        );
+
+        // Arguments are passed as (obj, k) from the prelude: __SAFE_LOOKUP(a, k)
+        // so local(0) = obj, local(1) = k
+        lambda(
+            2, // [obj k]
+            case(
+                local(0), // scrutinise obj
+                vec![(
+                    DataConstructor::Block.tag(),
+                    // Matched Block! env: [blocklist blockindex] [obj k]
+                    // L(0)=blocklist, L(1)=blockindex, L(2)=obj, L(3)=k
+                    letrec_(
+                        vec![find], // [find] [blocklist blockindex] [obj k]
+                        // L(0)=find, L(1)=blocklist, L(2)=blockindex, L(3)=obj, L(4)=k
+                        match self.0 {
+                            NativeVariant::Unboxed => {
+                                // k is already an unboxed sym (L(4))
+                                // BIF args: sym=L(4), blocklist=L(1), blockindex=L(2), block=L(3)
+                                case(
+                                    app_bif(bif_index, vec![lref(4), lref(1), lref(2), lref(3)]),
+                                    vec![
+                                        (
+                                            DataConstructor::ListCons.tag(),
+                                            // [value _] [find] [blocklist blockindex] [obj k]
+                                            local(0),
+                                        ),
+                                        (
+                                            DataConstructor::ListNil.tag(),
+                                            // [] [find] [blocklist blockindex] [obj k]
+                                            // call find(blocklist, k, find)
+                                            app(lref(0), vec![lref(1), lref(4), lref(0)]),
+                                        ),
+                                    ],
+                                    // fallback (native return — shouldn't happen)
+                                    // [native] [find] [blocklist blockindex] [obj k]
+                                    app(lref(1), vec![lref(2), lref(5), lref(1)]),
+                                )
+                            }
+                            NativeVariant::Boxed => {
+                                // k is a boxed sym at L(4); unbox it first
+                                unbox_sym(
+                                    local(4),
+                                    // [sym] [find] [blocklist blockindex] [obj k]
+                                    // L(0)=sym, L(1)=find, L(2)=blocklist, L(3)=blockindex, L(4)=obj, L(5)=k
+                                    // BIF args: sym=L(0), blocklist=L(2), blockindex=L(3), block=L(4)
+                                    case(
+                                        app_bif(
+                                            bif_index,
+                                            vec![lref(0), lref(2), lref(3), lref(4)],
+                                        ),
+                                        vec![
+                                            (
+                                                DataConstructor::ListCons.tag(),
+                                                // [value _] [sym] [find] [blocklist blockindex] [obj k]
+                                                local(0),
+                                            ),
+                                            (
+                                                DataConstructor::ListNil.tag(),
+                                                // [] [sym] [find] [blocklist blockindex] [obj k]
+                                                // call find(blocklist, sym, find)
+                                                app(lref(1), vec![lref(2), lref(0), lref(1)]),
+                                            ),
+                                        ],
+                                        // fallback (native return — shouldn't happen)
+                                        // [native] [sym] [find] [blocklist blockindex] [obj k]
+                                        app(lref(2), vec![lref(3), lref(1), lref(2)]),
+                                    ),
+                                )
+                            }
+                        },
+                    ),
+                )],
+                unit(), // non-block (including null): return null
+            ),
+        )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        // args: [sym_key, blocklist, blockindex, block]
+        // Same BIF logic as LookupOr: return ListCons on hit, ListNil on miss.
+        // The wrapper handles the null-propagation for non-block values.
+        if let Ok(Native::Index(ref map)) = machine.nav(view).resolve_native(&args[2]) {
+            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
+                if let Some(&position) = map.get(&sym_id) {
+                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
+                        let value_env =
+                            view.from_closure(value, machine.root_env(), Smid::default())?;
+                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
+                        let cons = view.data(
+                            DataConstructor::ListCons.tag(),
+                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
+                        )?;
+                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
+                    }
+                }
+            }
+            // Index exists but key not found — return ListNil
+            let nil = view.nil()?;
+            return machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()));
+        }
+
+        // No index — check if we should build one
+        let count = count_list(machine, view, &args[1]);
+
+        if count >= BLOCK_INDEX_THRESHOLD {
+            // Build index
+            let map = build_index(machine, view, &args[1]);
+
+            if let Ok(Native::Sym(sym_id)) = machine.nav(view).resolve_native(&args[0]) {
+                if let Some(&position) = map.get(&sym_id) {
+                    if let Some(value) = walk_list_to_position(machine, view, &args[1], position) {
+                        // Store the index for future lookups
+                        store_index_in_block(view, machine, &args[3], map);
+
+                        let value_env =
+                            view.from_closure(value, machine.root_env(), Smid::default())?;
+                        let nil_ref = Ref::V(Native::Num(serde_json::Number::from(0)));
+                        let cons = view.data(
+                            DataConstructor::ListCons.tag(),
+                            Array::from_slice(&view, &[Ref::L(0), nil_ref]),
+                        )?;
+                        return machine.set_closure(SynClosure::new(cons.as_ptr(), value_env));
+                    }
+                }
+                // Key not found — store index for future lookups
+                store_index_in_block(view, machine, &args[3], map);
+            }
+            // Key wasn't a native sym — delegate to find loop
+        }
+
+        // No index or below threshold — return ListNil to signal "use find loop"
+        let nil = view.nil()?;
+        machine.set_closure(SynClosure::new(nil.as_ptr(), machine.root_env()))
+    }
+}
+
+impl CallGlobal2 for SafeLookup {}
+
 /// LOOKUP(k, block)
 pub struct Lookup;
 

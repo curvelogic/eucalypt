@@ -95,6 +95,7 @@ pub fn make_standard_runtime(source_map: &mut SourceMap) -> Box<runtime::Standar
     rt.add(Box::new(block::DeepMerge));
     rt.add(Box::new(block::LookupOr(NativeVariant::Boxed)));
     rt.add(Box::new(block::LookupOr(NativeVariant::Unboxed)));
+    rt.add(Box::new(block::SafeLookup(NativeVariant::Boxed)));
     rt.add(Box::new(block::Lookup));
     rt.add(Box::new(emit::Emit0));
     rt.add(Box::new(emit::EmitT));
