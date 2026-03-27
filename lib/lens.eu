@@ -271,9 +271,27 @@ example-traversals: {
   test-eg: deep to-list-of(each ∘ ‹:meta :title›) //= ["one", "two"]
   test-eh: (deep over(each ∘ ‹:meta :title›, bang) head).meta.title //= "one!"
 
+  # lens ∘ traversal ∘ lens composition
+  ldata: {x: [{y: 1}, {y: 2}, {y: 3}]}
+  test-lt-list: ldata to-list-of(at(:x) ∘ each ∘ at(:y)) //= [1, 2, 3]
+  test-lt-over: (ldata over(at(:x) ∘ each ∘ at(:y), * 10)).x map(_.y) //= [10, 20, 30]
+
+  # filtered ∘ lens composition
+  test-fl-list: ldata.x to-list-of(filtered(_.y > 1) ∘ at(:y)) //= [2, 3]
+  test-fl-over: (ldata over(at(:x) ∘ filtered(_.y > 1) ∘ at(:y), negate)).x map(_.y) //= [1, -2, -3]
+
+  # deep lens ∘ traversal ∘ lens ∘ traversal
+  records: {items: [{name: "a", tags: [1, 2]}, {name: "b", tags: [3, 4]}]}
+  test-deep: records to-list-of(at(:items) ∘ each ∘ at(:tags) ∘ each) //= [1, 2, 3, 4]
+  test-deep-over: (records over(at(:items) ∘ each ∘ at(:tags) ∘ each, + 100))
+    .items map(_.tags) //= [[101, 102], [103, 104]]
+
   RESULT: [ test-ea, test-eb, test-ec, test-ed, test-ee, test-ef
           , test-fa, test-fb, test-fc, test-fd
           , test-fe-check, test-fe-check2, test-fe-check3
           , test-eg, test-eh
+          , test-lt-list, test-lt-over
+          , test-fl-list, test-fl-over
+          , test-deep, test-deep-over
           ] all-true? then(:PASS, :FAIL)
 }
