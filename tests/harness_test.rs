@@ -679,6 +679,11 @@ pub fn test_harness_132() {
 }
 
 #[test]
+pub fn test_harness_133() {
+    run_test(&opts("133_lens_import.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
