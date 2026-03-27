@@ -543,4 +543,73 @@ result: :pass
             vec![&"validate-something".to_string()]
         );
     }
+
+    /// Build a [`TestPlan`] from a file on the filesystem, loading
+    /// transitive imports as the real driver does.
+    fn file_to_test_plan(file_path: &std::path::Path) -> TestPlan {
+        let loc = Locator::Fs(file_path.to_path_buf());
+        let input = Input::from(loc);
+        let lib_path = vec![file_path.parent().unwrap().to_path_buf()];
+        let mut loader = SourceLoader::new(lib_path);
+        loader.load(&input).unwrap();
+        loader.translate(&input).unwrap();
+        loader.merge_units(&[input]).unwrap();
+        let run_id = format!("{}", chrono::offset::Utc::now().timestamp_millis());
+        TestPlan::analyse(&run_id, file_path, loader.core()).unwrap()
+    }
+
+    /// Imported files' targets must NOT appear in the test plan of the
+    /// importing file.  Only the top-level file's own targets are relevant
+    /// to the test runner.
+    #[test]
+    fn test_imported_targets_excluded_from_plan() {
+        use std::io::Write;
+
+        // Create a temporary directory to hold two source files.
+        let dir = std::env::temp_dir().join("eu_test_target_scoping");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+
+        // The imported library defines its own target — this must NOT appear
+        // in the importing file's test plan.
+        let lib_path = dir.join("lib.eu");
+        {
+            let mut f = std::fs::File::create(&lib_path).expect("create lib.eu");
+            writeln!(f, "` {{ target: :test-in-lib }}\nlib-result: :PASS").unwrap();
+        }
+
+        // The top-level file imports the library and declares its own target.
+        let main_path = dir.join("main.eu");
+        {
+            let mut f = std::fs::File::create(&main_path).expect("create main.eu");
+            writeln!(
+                f,
+                "{{ import: \"lib.eu\" }}\n\n` {{ target: :test-in-main }}\nown-result: :PASS"
+            )
+            .unwrap();
+        }
+
+        let plan = file_to_test_plan(&main_path);
+        let target_names: HashSet<_> = plan
+            .targets()
+            .iter()
+            .map(|(t, _)| t.name().clone())
+            .collect();
+
+        // The top-level file's own target must be present.
+        assert!(
+            target_names.contains("test-in-main"),
+            "own target should be in plan; got: {:?}",
+            target_names
+        );
+
+        // The imported file's target must NOT bleed through.
+        assert!(
+            !target_names.contains("test-in-lib"),
+            "imported target should NOT be in plan; got: {:?}",
+            target_names
+        );
+
+        // Clean up.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -162,10 +162,24 @@ impl<'smap> Desugarer<'smap> {
 
     /// Used during translation to switch context and desugar an
     /// import.
+    ///
+    /// Targets discovered within the imported file are intentionally
+    /// discarded: only the top-level input's targets should be visible
+    /// to the test runner and target-listing commands.  Preserving the
+    /// saved targets and restoring them after desugaring the import
+    /// prevents imported targets from leaking into the outer unit's
+    /// target set.
     pub fn translate_import(&mut self, smid: Smid, import: Input) -> Result<RcExpr, CoreError> {
         if let Some(source) = self.contents.get(&import) {
             self.file.push(source.file_id());
+
+            // Save the current target set so that any targets registered
+            // whilst desugaring the import do not propagate to the outer unit.
+            let saved_targets = self.targets.clone();
             let mut expr = source.content().desugar(self)?;
+            // Restore — discarding any targets from the imported file.
+            self.targets = saved_targets;
+
             if let Some(name) = import.name() {
                 expr = expr.apply_name(smid, name);
             }
