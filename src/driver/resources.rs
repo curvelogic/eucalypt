@@ -22,6 +22,11 @@ impl Default for Resources {
                 .expect("test.eu is valid UTF-8"),
         );
         content.insert(
+            "lens".to_string(),
+            String::from_utf8(include_bytes!("../../lib/lens.eu").to_vec())
+                .expect("lens.eu is valid UTF-8"),
+        );
+        content.insert(
             "package".to_string(),
             String::from_utf8(include_bytes!("../../Cargo.lock").to_vec())
                 .expect("Cargo.lock is valid UTF-8"),

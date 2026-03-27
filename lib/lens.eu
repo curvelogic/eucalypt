@@ -1,0 +1,297 @@
+" Lenses in Eucalypt - highly experimental and subject to change.
+
+A lens in eucalypt is a function (b -> fb) -> (a -> fa)
+where the (b -> fb) is decorated with fmap metadata and which propagates
+the :fmap metadata to the (a -> fa) function too.
+
+- (b -> fb) is a function which will be applied to the selected data
+- (a -> fa) is a function which can replace the selected data with a new value
+
+Without typeclasses (or indeed any static typing whatsover) we fall back to metadata
+to select the get vs set behaviour of the lens (a selection which in Haskell is
+determined by the Const or Identity functors).
+
+This is complex but the following examples show how to define such a
+lens entirely manually.
+
+The standard lens functions: `view` and `over` are also defined below,
+and the examples show how to use them with the manually defined lenses.
+
+Lenses may be chained into paths using standard composition, but see the
+bracket syntax below for a more convenient way to define paths into data
+structures using lenses.
+"
+
+` "at(k) defines a lens that focuses within a block on the value with key `k`"
+at(key, k): {
+  fmap: meta(k).fmap
+  s(obj): fmap({ nv: • }.(obj alter-value(key, nv)), k(obj lookup(key)))
+}.(s // meta(k))
+
+fmap-set: identity
+
+fmap-get: flip(const)
+
+` "`view(lens, data)` - return the value within `data` focussed on by `lens`.
+Only valid for lenses (single focus). Using view on a traversal will error."
+view(lens, data): data lens(identity // { fmap: fmap-get })
+
+` "`over(lens, fn, data)` - apply fn to each focus within `data` and return the whole modified data structure.
+Works for both lenses and traversals."
+over(lens, fn, data): data lens(fn // { fmap: fmap-set, pure: identity, ap: identity })
+
+` "`to-list-of(optic, data)` - collect all foci of an optic into a flat list.
+Works for both lenses (returns singleton list) and traversals (returns all foci, flattened)."
+to-list-of(optic, data): data optic((_ ‖ []) // { fmap: fmap-get, pure: -> [], ap: ++ })
+
+
+` { target: :test-basic
+    doc: "The following examples show how to define eucalypt lenses manually as well as with helper functions." }
+example-basic: {
+  atom: {
+    value: 42
+    point: { x: 1, y: 2 }
+  }
+
+  # manually defining lenses involves propagating fmap metadata:
+
+  value(k): { fmap: meta(k).fmap s(atom): fmap({ nv: • }.(atom {value: nv}), k(atom.value)) }.(s // meta(k))
+  point(k): { fmap: meta(k).fmap s(atom): fmap({ np: • }.(atom {point: np}), k(atom.point)) }.(s // meta(k))
+  x(k): { fmap: meta(k).fmap s(point): fmap({ nx: • }.(point {x: nx}), k(point.x)) }.(s // meta(k))
+  y(k): { fmap: meta(k).fmap s(point): fmap({ ny: • }.(point {y: ny}), k(point.y)) }.(s // meta(k))
+
+  α: atom view(value) //= 42
+  β: atom over(value, *2) over(point ∘ x, +5) //= { value: 84 point: {x: 6, y: 2}}
+  γ: atom over(value, +1) //=? (_.value = 43)
+  δ: atom view(point) //= { x: 1, y: 2 }
+  ε: atom over(point, -> {x: 0 y: 0}) //=? (_.point = { x: 0, y: 0 })
+  ζ: {x: 5 y: 7} over(x, +1)
+  η: atom view(point ∘ x)
+  θ: atom over(point ∘ x, *88)
+  ι: {a: 1 b: 2} view(at(:a)) //= 1
+  κ: atom over(at(:point) ∘ at(:x), +88) //=? (_.point.x = 89)
+
+  RESULT: [α, β, γ, δ, ε, ι, κ] all-true? then(:PASS, :FAIL)
+}
+
+
+` "`ix(n)` defines a lens which focusses on a list item at index `n`"
+ix(n, k): {
+  fmap: meta(k).fmap
+  s(data): fmap({ nv: • }.(data update-nth(n, ->nv)), k(data !! n))
+}.(s // meta(k))
+
+
+` { target: :test-index }
+example-index: {
+
+  sequence: [2, 4, 6, 8]
+
+  index-1(k): {
+    fmap: meta(k).fmap
+    s(data): fmap({ nv: • }.(data update-nth(1, ->nv)), k(data !! 1))
+  }.(s // meta(k))
+
+  test-j: sequence view(index-1) //= 4
+  test-k: sequence over(index-1, +10) //= [2, 14, 6, 8]
+
+  test-l: sequence view(ix(2)) //= 6
+  test-m: sequence over(ix(2), *10) //= [2, 4, 60, 8]
+
+  deep-list: [{ meta: { title: "one" } },
+              { meta: { title: "two" } }]
+
+  test-n: deep-list view(ix(0) ∘ at(:meta) ∘ at(:title)) //= "one"
+  test-o: deep-list over(ix(1) ∘ at(:meta) ∘ at(:title), -> "three") second (_.meta.title) //= "three"
+
+  RESULT: [test-j, test-k, test-l, test-m, test-n, test-o] all-true? then(:PASS, :FAIL)
+}
+
+` "Syntactic sugar for lenses defining paths into deep datastructures, a symbol navigates into
+the data structure by a block key, a numeric index into a list at that index. "
+‹xs›: {
+  to-lens(x): if(x symbol?, at(x), if(x number?, ix(x), x))
+}.(xs map(to-lens) foldr(∘, identity))
+
+` { target: :test-paths }
+example-paths: {
+
+  deep-list: [{ meta: { title: "one" } },
+              { meta: { title: "two" } }]
+
+  test-p: deep-list view(‹0 :meta :title›) //= "one"
+  test-q: deep-list over(‹1 :meta :title›, -> "three") second (_.meta.title) //= "three"
+
+  # Mix keys, indices and lens functions in a path
+  data: { items: [{ meta: { title: "one" } }, { meta: { title: "two" } }] }
+
+  # key + index + keys
+  test-r: data view(‹:items 0 :meta :title›) //= "one"
+  test-s: (data over(‹:items 1 :meta :title›, -> "three")).items second (_.meta.title) //= "three"
+
+  # lens function in a path
+  test-block: {a: 1, b: 2, c: 3}
+  test-t: test-block view(‹element(by-key(_ = :b)) _value›) //= 2
+  test-u: test-block over(‹element(by-key(_ = :b)) _value›, + 10) lookup(:b) //= 12
+
+  # item lens in a path with keys
+  test-data: { records: [{id: 1, value: "a"}, {id: 2, value: "b"}] }
+  test-v: test-data view(‹:records item(_.id = 1) :value›) //= "a"
+  test-w: test-data over(‹:records item(_.id = 2) :value›, -> "c") (_.records) second (_.value) //= "c"
+
+  RESULT: [test-p, test-q, test-r, test-s, test-t, test-u, test-v, test-w] all-true? then(:PASS, :FAIL)
+}
+
+# predicate lenses - first matching list element
+
+` "`item(p?)` defines a lens that focuses on the first list element matching predicate `p?`"
+item(p?, k): {
+  fmap: meta(k).fmap
+  s(data): fmap({ nv: • }.(data update-first(p?, ->nv)), k(data filter(p?) head))
+}.(s // meta(k))
+
+` { target: :test-predicate }
+example-predicate: {
+  test-data: [{id: 1, value: "a"}, {id: 2, value: "b"}]
+
+  test-r: test-data view(item(_.id = 1)) //= {id: 1, value: "a"}
+  test-s: test-data over(item(_.id = 2) ∘ at(:value), -> "c") second (_.value) //= "c"
+
+  RESULT: [test-r, test-s] all-true? then(:PASS, :FAIL)
+}
+
+# block element lenses
+
+` "`element(p?)` defines a lens that focuses on the first kv pair [key, value] in a block matching `p?`.
+Use prelude helpers like `by-key`, `by-value`, `by-key-value` to define the predicate.
+Compose with `_value` to focus on just the value."
+element(p?, k): {
+  fmap: meta(k).fmap
+  s(data): fmap({ nv: • }.(data elements update-first(p?, ->nv) block), k(data filter-items(p?) head))
+}.(s // meta(k))
+
+` "`_value` lens focuses on the value (index 1) of a kv pair [key, value]"
+_value: ix(1)
+
+` "`_key` lens focuses on the key (index 0) of a kv pair [key, value]"
+_key: ix(0)
+
+` { target: :test-element }
+example-element: {
+  test-block: {a: 1, b: 2, c: 3}
+
+  # View a kv pair by key
+  test-t: test-block view(element(by-key(_ = :b))) //= [:b, 2]
+
+  # View just the value via composition
+  test-u: test-block view(element(by-key(_ = :b)) ∘ _value) //= 2
+
+  # Update the value of a matched element
+  test-v: test-block over(element(by-key(_ = :b)) ∘ _value, + 10) lookup(:b) //= 12
+
+  # Unchanged elements are preserved
+  test-w: test-block over(element(by-key(_ = :b)) ∘ _value, + 10) lookup(:a) //= 1
+
+  # Match by value
+  test-x: test-block over(element(by-value(_ > 2)) ∘ _value, * 100) lookup(:c) //= 300
+
+  # Match by change key
+  test-y: test-block over(element(by-value(_ < 2)) ∘ _key, ->:x) lookup(:x) //= 1
+
+  RESULT: [test-t, test-u, test-v, test-w, test-x, test-y] all-true? then(:PASS, :FAIL)
+}
+
+# traversals
+
+` "`each` traverses all elements of a list"
+each(k): {
+  fmap: meta(k).fmap
+  pure: meta(k).pure
+  ap: meta(k).ap
+  s(data): if(data nil?, pure([]),
+    ap(fmap(cons, k(data head)), s(data tail)))
+}.(s // meta(k))
+
+` "`filtered(p?)` traverses list elements matching predicate `p?`"
+filtered(p?, k): {
+  fmap: meta(k).fmap
+  pure: meta(k).pure
+  ap: meta(k).ap
+  s(data): if(data nil?, pure([]),
+    if(data head p?,
+      ap(fmap(cons, k(data head)), s(data tail)),
+      ap(fmap(cons, pure(data head)), s(data tail))))
+}.(s // meta(k))
+
+` { target: :test-traversals }
+example-traversals: {
+  bang(s): "{s}!"
+
+  # each: over applies to all elements
+  test-ea: [1, 2, 3] over(each, * 10) //= [10, 20, 30]
+
+  # each: to-list-of collects all foci
+  test-eb: [1, 2, 3] to-list-of(each) //= [1, 2, 3]
+
+  # each composed with a lens: over
+  test-ec: ([{name: "a"}, {name: "b"}] over(each ∘ at(:name), bang) head).name //= "a!"
+
+  # each composed with a lens: to-list-of
+  test-ed: [{name: "a"}, {name: "b"}] to-list-of(each ∘ at(:name)) //= ["a", "b"]
+
+  # nested each: to-list-of flattens
+  test-ee: [[1, 2], [3, 4, 5]] to-list-of(each ∘ each) //= [1, 2, 3, 4, 5]
+
+  # nested each: over maps at leaves
+  test-ef: [[1, 2], [3, 4, 5]] over(each ∘ each, * 10) //= [[10, 20], [30, 40, 50]]
+
+  # filtered: over applies only to matching elements
+  test-fa: [1, 2, 3, 4, 5] over(filtered(_ > 3), negate) //= [1, 2, 3, -4, -5]
+
+  # filtered: to-list-of collects only matching foci
+  test-fb: [1, 2, 3, 4, 5] to-list-of(filtered(_ > 3)) //= [4, 5]
+
+  # filtered: non-matching elements preserved in over
+  test-fc: [1, 2, 3, 4, 5] over(filtered(_ % 2 = 0), * 100) //= [1, 200, 3, 400, 5]
+
+  # filtered composed with a lens: to-list-of
+  test-fd: [{id: 1, v: "a"}, {id: 2, v: "b"}, {id: 3, v: "c"}]
+    to-list-of(filtered(_.id > 1) ∘ at(:v)) //= ["b", "c"]
+
+  # filtered composed with a lens: over
+  test-fe: [{id: 1, v: "a"}, {id: 2, v: "b"}, {id: 3, v: "c"}]
+    over(filtered(_.id > 1) ∘ at(:v), bang)
+
+  test-fe-check: (test-fe nth(0)).v //= "a"
+  test-fe-check2: (test-fe nth(1)).v //= "b!"
+  test-fe-check3: (test-fe nth(2)).v //= "c!"
+
+  # each with path syntax
+  deep: [{meta: {title: "one"}}, {meta: {title: "two"}}]
+  test-eg: deep to-list-of(each ∘ ‹:meta :title›) //= ["one", "two"]
+  test-eh: (deep over(each ∘ ‹:meta :title›, bang) head).meta.title //= "one!"
+
+  # lens ∘ traversal ∘ lens composition
+  ldata: {x: [{y: 1}, {y: 2}, {y: 3}]}
+  test-lt-list: ldata to-list-of(at(:x) ∘ each ∘ at(:y)) //= [1, 2, 3]
+  test-lt-over: (ldata over(at(:x) ∘ each ∘ at(:y), * 10)).x map(_.y) //= [10, 20, 30]
+
+  # filtered ∘ lens composition
+  test-fl-list: ldata.x to-list-of(filtered(_.y > 1) ∘ at(:y)) //= [2, 3]
+  test-fl-over: (ldata over(at(:x) ∘ filtered(_.y > 1) ∘ at(:y), negate)).x map(_.y) //= [1, -2, -3]
+
+  # deep lens ∘ traversal ∘ lens ∘ traversal
+  records: {items: [{name: "a", tags: [1, 2]}, {name: "b", tags: [3, 4]}]}
+  test-deep: records to-list-of(at(:items) ∘ each ∘ at(:tags) ∘ each) //= [1, 2, 3, 4]
+  test-deep-over: (records over(at(:items) ∘ each ∘ at(:tags) ∘ each, + 100))
+    .items map(_.tags) //= [[101, 102], [103, 104]]
+
+  RESULT: [ test-ea, test-eb, test-ec, test-ed, test-ee, test-ef
+          , test-fa, test-fb, test-fc, test-fd
+          , test-fe-check, test-fe-check2, test-fe-check3
+          , test-eg, test-eh
+          , test-lt-list, test-lt-over
+          , test-fl-list, test-fl-over
+          , test-deep, test-deep-over
+          ] all-true? then(:PASS, :FAIL)
+}
