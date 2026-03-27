@@ -319,6 +319,11 @@ lookup-or(s, d, b): __LOOKUPOR(s, d, b)
 ` "`lookup-or-in(b, s, d)` - look up symbol `s` in block `b`, default `d` if not found."
 lookup-or-in(b, s, d): lookup-or(s, d, b)
 
+` { doc: "a ~ :k - safe key lookup. Returns value at key :k if a is a block containing :k, else null. Null-propagating for chained navigation."
+    associates: :left
+    precedence: :lookup }
+(a ~ k): __SAFE_LOOKUP(a, k)
+
 ` "`lookup-alts(syms, d, b)` - look up symbols `syms` in turn in block `b` until a value is found, default `d` if none."
 lookup-alts(syms, d, b): foldr(lookup-or-in(b), d, syms)
 
@@ -621,10 +626,6 @@ rem(a, b): __REM(a, b)
     precedence: :bitwise }
 (l ⊕ r): __BITXOR(l, r)
 
-` { doc: "`~ n` - bitwise NOT of integer `n`."
-    export: :suppress
-    precedence: :bool-unary }
-(~ n): __BITNOT(n)
 
 ` { doc: "`n ≪ k` - left shift `n` by `k` bits."
     export: :suppress

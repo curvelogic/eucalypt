@@ -27,9 +27,9 @@ tests: {
 
   bitwise-not: {
     ` "NOT of zero is -1"
-    a: (~ 0) //= (0 - 1)
+    a: bit.not(0) //= (0 - 1)
     ` "NOT of -1 is zero"
-    b: (~ (0 - 1)) //= 0
+    b: bit.not(0 - 1) //= 0
   }
 
   shifts: {

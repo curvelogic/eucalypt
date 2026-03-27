@@ -944,6 +944,11 @@ lazy_static! {
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 179
+            name: "SAFE_LOOKUP",
+            ty: function(vec![any(), any(), any()]).unwrap(),
+            strict: vec![0, 1],
+    },
     ];
 }
 

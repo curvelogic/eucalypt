@@ -16,6 +16,7 @@
 | `lookup-in(b, s)` | Look up symbol `s` in block `b`, error if not found |
 | `lookup-or(s, d, b)` | Look up symbol `s` in block `b`, default `d` if not found |
 | `lookup-or-in(b, s, d)` | Look up symbol `s` in block `b`, default `d` if not found |
+| `b ~ :k` | Safe key lookup — returns value at key `:k` if `b` is a block containing `:k`, else `null`. Null-propagating: returns `null` for non-block and null inputs. Left-associative, precedence 90. |
 | `lookup-alts(syms, d, b)` | Look up symbols `syms` in turn in block `b` until a value is found, default `d` if none |
 | `lookup-across(s, d, bs)` | Look up symbol `s` in turn in each of blocks `bs` until a value is found, default `d` if none |
 | `lookup-path(ks, b)` | Look up value at key path `ks` in block `b` |

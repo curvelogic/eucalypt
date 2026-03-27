@@ -1,0 +1,39 @@
+"132 safe navigation operator ~"
+
+` { target: :test }
+test: {
+  # Basic lookup — key present
+  basic: ({a: 1, b: 2} ~ :a) //= 1
+
+  # Missing key returns null
+  missing: ({a: 1} ~ :b) //= null
+
+  # Null propagation — null input
+  null-prop: (null ~ :a) //= null
+
+  # Non-block inputs return null
+  num-nav: (42 ~ :a) //= null
+  str-nav: ("hello" ~ :a) //= null
+  list-nav: ([1, 2, 3] ~ :a) //= null
+  bool-nav: (true ~ :a) //= null
+
+  # Chained navigation — all present
+  chain: ({x: {y: {z: 42}}} ~ :x ~ :y ~ :z) //= 42
+
+  # Chain with missing intermediate returns null
+  chain-miss: ({x: {y: 1}} ~ :x ~ :z ~ :w) //= null
+
+  # Used with anaphora to extract an optional field (right-section style)
+  section: ({a: 42, b: 99} ~ :a) //= 42
+  section-miss: ({b: 99} ~ :a) //= null
+
+  # Used with map and anaphora to extract an optional field
+  map-extract: ([{name: "alice"}, {age: 30}] map(_ ~ :name)) //= ["alice", null]
+
+  RESULT: [ basic, missing, null-prop
+          , num-nav, str-nav, list-nav, bool-nav
+          , chain, chain-miss
+          , section, section-miss
+          , map-extract
+          ] all-true? then(:PASS, :FAIL)
+}

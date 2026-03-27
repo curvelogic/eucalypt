@@ -674,6 +674,11 @@ pub fn test_harness_131() {
 }
 
 #[test]
+pub fn test_harness_132() {
+    run_test(&opts("132_safe_navigation.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
