@@ -15,8 +15,16 @@ use super::expr::acore;
 pub struct TranslationUnit {
     /// Core expression for the unit
     pub expr: RcExpr,
-    /// Targets discovered within the unit
+    /// All targets discovered within the unit, including those from
+    /// transitively imported files.  The full set is needed so that
+    /// `eu -t target-name file.eu` can invoke targets defined in
+    /// imported files.
     pub targets: HashSet<Target>,
+    /// Targets declared in the top-level file itself, excluding any
+    /// targets that originated in imported files.  The test runner uses
+    /// this set for auto-discovery so that imported `test-*` / `bench-*`
+    /// targets are not run as part of the importing file's test suite.
+    pub own_targets: HashSet<Target>,
     /// Doc strings read from the unit
     pub docs: Vec<DeclarationDocumentation>,
 }
@@ -38,6 +46,11 @@ impl TranslationUnit {
         Ok(TranslationUnit {
             expr: self.expr.merge_in(other.expr)?,
             targets: self.targets.union(&other.targets).cloned().collect(),
+            own_targets: self
+                .own_targets
+                .union(&other.own_targets)
+                .cloned()
+                .collect(),
             docs: other.docs, // don't include docs from prior inputs
         })
     }
@@ -64,12 +77,14 @@ impl TranslationUnit {
         S: AsRef<str>,
     {
         let mut targets = HashSet::new();
+        let mut own_targets = HashSet::new();
         let mut docs = vec![];
         let mut entries = vec![];
 
         for (k, u) in keys.iter().zip(units) {
             let key = k.as_ref();
             targets.extend(u.targets.iter().map(|t| t.under(key)));
+            own_targets.extend(u.own_targets.iter().map(|t| t.under(key)));
             docs.extend(u.docs.iter().map(|d| d.under(key)));
             entries.push((key.to_string(), u.expr.clone()));
         }
@@ -77,6 +92,7 @@ impl TranslationUnit {
         Ok(TranslationUnit {
             expr: acore::block(entries),
             targets,
+            own_targets,
             docs,
         })
     }
@@ -116,6 +132,7 @@ impl TranslationUnit {
         Ok(TranslationUnit {
             expr: self.expr.clone().rebody(body),
             targets: self.targets.clone(),
+            own_targets: self.own_targets.clone(),
             docs: self.docs.clone(), // don't include docs from prior inputs
         })
     }
