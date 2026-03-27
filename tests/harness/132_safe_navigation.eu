@@ -30,10 +30,40 @@ test: {
   # Used with map and anaphora to extract an optional field
   map-extract: ([{name: "alice"}, {age: 30}] map(_ ~ :name)) //= ["alice", null]
 
+  # Mixed ~ and . precedence
+  data: {a: {b: {c: {d: 42}}}}
+
+  # ~ then . — safe nav into :a, then dot the rest
+  mix-1: (data ~ :a .b .c .d) //= 42
+
+  # ~ then . then ~ — interleaved
+  data2: {a: {b: {c: {d: 99}}}}
+  mix-2: (data2 ~ :a .b .c ~ :d) //= 99
+
+  # ~ fails early then continuing with ~ propagates null
+  mix-3: (data ~ :missing ~ :b ~ :c) //= null
+
+  # Known structure via . then safe nav for optional part
+  # NB: (data ~ :missing .b) would error — . is not safe, use ~ for uncertain keys
+
+  # . first, then ~ for optional final key
+  data3: {a: {b: {c: 7}}}
+  mix-4: (data3.a.b ~ :c) //= 7
+  mix-5: (data3.a.b ~ :missing) //= null
+
+  # Realistic: dot into known structure, safe-nav into optional part
+  config: {server: {db: {host: "localhost", port: 5432}}}
+  mix-6: (config.server.db ~ :host) //= "localhost"
+  mix-7: (config.server.db ~ :ssl) //= null
+  mix-8: (config.server ~ :cache ~ :host) //= null
+
   RESULT: [ basic, missing, null-prop
           , num-nav, str-nav, list-nav, bool-nav
           , chain, chain-miss
           , section, section-miss
           , map-extract
+          , mix-1, mix-2, mix-3
+          , mix-4, mix-5
+          , mix-6, mix-7, mix-8
           ] all-true? then(:PASS, :FAIL)
 }
