@@ -378,6 +378,7 @@ impl SourceLoader {
             let unit = TranslationUnit {
                 expr,
                 targets: std::collections::HashSet::new(),
+                own_targets: std::collections::HashSet::new(),
                 docs: Vec::new(),
             };
             self.translation_units.insert(input.clone(), unit);

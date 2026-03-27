@@ -38,8 +38,12 @@ pub struct Desugarer<'smap> {
     /// While in the scope of anaphoric string pattern, collect all the
     /// anaphora for processing at the boundary the pattern
     pending_string_anaphora: HashMap<Anaphor<Smid, i32>, String>,
-    /// Targets discovered
+    /// Targets discovered (including those from imported files)
     targets: HashSet<Target>,
+    /// Targets that originated from imported files rather than the
+    /// top-level unit being desugared.  Used to compute `own_targets`
+    /// in [`Self::translate_unit`].
+    imported_targets: HashSet<Target>,
     /// Doc strings discovered (path, doc)
     docs: Vec<DeclarationDocumentation>,
     /// Stack of names
@@ -75,6 +79,7 @@ impl<'smap> Desugarer<'smap> {
         Desugarer {
             pending_string_anaphora: HashMap::new(),
             targets: HashSet::new(),
+            imported_targets: HashSet::new(),
             docs: Vec::new(),
             stack: vec![],
             contents,
@@ -148,9 +153,19 @@ impl<'smap> Desugarer<'smap> {
                 expr = expr.apply_name(Smid::default(), name);
             };
 
+            // `own_targets` contains only the targets declared in this
+            // file itself — targets from imported files are collected
+            // separately in `self.imported_targets` by `translate_import`.
+            let own_targets = self
+                .targets
+                .difference(&self.imported_targets)
+                .cloned()
+                .collect();
+
             let unit = TranslationUnit {
                 expr,
                 targets: self.targets.clone(),
+                own_targets,
                 docs: self.docs.clone(),
             };
             self.file.pop();
@@ -163,22 +178,25 @@ impl<'smap> Desugarer<'smap> {
     /// Used during translation to switch context and desugar an
     /// import.
     ///
-    /// Targets discovered within the imported file are intentionally
-    /// discarded: only the top-level input's targets should be visible
-    /// to the test runner and target-listing commands.  Preserving the
-    /// saved targets and restoring them after desugaring the import
-    /// prevents imported targets from leaking into the outer unit's
-    /// target set.
+    /// Any targets registered whilst desugaring the import are added to
+    /// both `self.targets` (so that `-t target-name` can still invoke
+    /// them) and `self.imported_targets` (so that [`Self::translate_unit`]
+    /// can exclude them from `own_targets`, preventing the test runner
+    /// from auto-discovering targets that belong to imported files).
     pub fn translate_import(&mut self, smid: Smid, import: Input) -> Result<RcExpr, CoreError> {
         if let Some(source) = self.contents.get(&import) {
             self.file.push(source.file_id());
 
-            // Save the current target set so that any targets registered
-            // whilst desugaring the import do not propagate to the outer unit.
-            let saved_targets = self.targets.clone();
+            // Snapshot targets before desugaring the import so we can
+            // identify which targets were added by the imported file.
+            let targets_before = self.targets.clone();
             let mut expr = source.content().desugar(self)?;
-            // Restore — discarding any targets from the imported file.
-            self.targets = saved_targets;
+
+            // Any targets not present before this import are "imported" —
+            // record them so `translate_unit` can exclude them from
+            // `own_targets`.
+            let newly_added = self.targets.difference(&targets_before).cloned();
+            self.imported_targets.extend(newly_added);
 
             if let Some(name) = import.name() {
                 expr = expr.apply_name(smid, name);

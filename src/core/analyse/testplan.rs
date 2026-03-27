@@ -245,14 +245,27 @@ impl TestPlan {
             formats.push("yaml".to_string());
         }
 
-        // run all targets beginning with test- or bench-, plus main and validated targets
+        // Auto-discover test and benchmark targets from the top-level file only.
+        //
+        // `test-*` and `bench-*` targets are filtered to `own_targets` — targets
+        // declared in the file under test itself.  This prevents targets from
+        // transitively imported files from being run as part of the importing
+        // file's test suite, whilst still allowing them to be invoked explicitly
+        // via `eu -t target-name file.eu` (they remain in `unit.targets`).
+        //
+        // The `:main` target and any explicitly validated targets are drawn from
+        // the full `targets` set so they work even when declared in imported files.
         let mut targets: Vec<(Target, Vec<String>)> = vec![];
         for t in &unit.targets {
-            if t.name().starts_with("test")
-                || t.is_benchmark()
-                || t.name() == "main"
-                || !t.validations().is_empty()
-            {
+            let include = if t.name().starts_with("test") || t.is_benchmark() {
+                // Only auto-run test/bench targets from the file itself.
+                unit.own_targets.contains(t)
+            } else {
+                // :main and validated targets are always included regardless of origin.
+                t.name() == "main" || !t.validations().is_empty()
+            };
+
+            if include {
                 if let Some(f) = t.format() {
                     targets.push((t.clone(), vec![f.to_string()]))
                 } else {
@@ -544,9 +557,11 @@ result: :pass
         );
     }
 
-    /// Build a [`TestPlan`] from a file on the filesystem, loading
-    /// transitive imports as the real driver does.
-    fn file_to_test_plan(file_path: &std::path::Path) -> TestPlan {
+    /// Build a [`TestPlan`] and the merged [`TranslationUnit`] from a file on
+    /// the filesystem, loading transitive imports as the real driver does.
+    fn file_to_plan_and_unit(
+        file_path: &std::path::Path,
+    ) -> (TestPlan, crate::core::unit::TranslationUnit) {
         let loc = Locator::Fs(file_path.to_path_buf());
         let input = Input::from(loc);
         let lib_path = vec![file_path.parent().unwrap().to_path_buf()];
@@ -555,12 +570,14 @@ result: :pass
         loader.translate(&input).unwrap();
         loader.merge_units(&[input]).unwrap();
         let run_id = format!("{}", chrono::offset::Utc::now().timestamp_millis());
-        TestPlan::analyse(&run_id, file_path, loader.core()).unwrap()
+        let plan = TestPlan::analyse(&run_id, file_path, loader.core()).unwrap();
+        let unit = loader.core().clone();
+        (plan, unit)
     }
 
-    /// Imported files' targets must NOT appear in the test plan of the
-    /// importing file.  Only the top-level file's own targets are relevant
-    /// to the test runner.
+    /// Targets from imported files must NOT be auto-discovered by the test
+    /// runner (`test-*` / `bench-*` prefix), but they MUST remain available
+    /// in the merged target set so `eu -t target-name file.eu` still works.
     #[test]
     fn test_imported_targets_excluded_from_plan() {
         use std::io::Write;
@@ -569,12 +586,19 @@ result: :pass
         let dir = std::env::temp_dir().join("eu_test_target_scoping");
         std::fs::create_dir_all(&dir).expect("create temp dir");
 
-        // The imported library defines its own target — this must NOT appear
-        // in the importing file's test plan.
+        // The imported library defines its own test target and a named
+        // (non-test) target.  The test target must NOT appear in the
+        // importing file's auto-discovered plan; the named target must
+        // still be reachable via `-t`.
         let lib_path = dir.join("lib.eu");
         {
             let mut f = std::fs::File::create(&lib_path).expect("create lib.eu");
-            writeln!(f, "` {{ target: :test-in-lib }}\nlib-result: :PASS").unwrap();
+            writeln!(
+                f,
+                "` {{ target: :test-in-lib }}\nlib-test-result: :PASS\n\n\
+                 ` {{ target: :lib-output }}\nlib-data: 42"
+            )
+            .unwrap();
         }
 
         // The top-level file imports the library and declares its own target.
@@ -588,25 +612,44 @@ result: :pass
             .unwrap();
         }
 
-        let plan = file_to_test_plan(&main_path);
-        let target_names: HashSet<_> = plan
+        let (plan, unit) = file_to_plan_and_unit(&main_path);
+
+        // ── Test plan auto-discovery ──────────────────────────────────────────
+        let plan_target_names: HashSet<_> = plan
             .targets()
             .iter()
             .map(|(t, _)| t.name().clone())
             .collect();
 
-        // The top-level file's own target must be present.
+        // The top-level file's own test target must be auto-discovered.
         assert!(
-            target_names.contains("test-in-main"),
-            "own target should be in plan; got: {:?}",
-            target_names
+            plan_target_names.contains("test-in-main"),
+            "own test target should be auto-discovered; plan targets: {:?}",
+            plan_target_names
         );
 
-        // The imported file's target must NOT bleed through.
+        // The imported file's test target must NOT be auto-discovered.
         assert!(
-            !target_names.contains("test-in-lib"),
-            "imported target should NOT be in plan; got: {:?}",
-            target_names
+            !plan_target_names.contains("test-in-lib"),
+            "imported test target should NOT be auto-discovered; plan targets: {:?}",
+            plan_target_names
+        );
+
+        // ── Full target set (for `-t` invocation) ────────────────────────────
+        let all_target_names: HashSet<_> = unit.targets.iter().map(|t| t.name().clone()).collect();
+
+        // The imported non-test target must still be in the merged set.
+        assert!(
+            all_target_names.contains("lib-output"),
+            "imported non-test target should remain in unit.targets; all targets: {:?}",
+            all_target_names
+        );
+
+        // The imported test target must also remain in the merged set.
+        assert!(
+            all_target_names.contains("test-in-lib"),
+            "imported test target should remain in unit.targets for -t invocation; all targets: {:?}",
+            all_target_names
         );
 
         // Clean up.
