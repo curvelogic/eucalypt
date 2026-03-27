@@ -536,6 +536,12 @@ impl SourceLoader {
 
     /// Read text from the filesystem, using lib-path to resolve the
     /// filenames.
+    ///
+    /// If the file cannot be found on the filesystem, falls back to checking
+    /// baked-in resources. The stem of the filename (without extension) is
+    /// used as the resource name, so `lens.eu` falls back to the `lens`
+    /// resource if one exists. Filesystem resolution always takes priority,
+    /// allowing users to override baked-in resources with their own files.
     fn read_fs_input(&mut self, path: &Path) -> Result<String, EucalyptError> {
         for libdir in &self.lib_path {
             let mut filename = libdir.to_path_buf();
@@ -545,14 +551,24 @@ impl SourceLoader {
             }
         }
 
-        // lastly - absolute files are ok with empty lib path
-        match fs::read_to_string(path) {
-            Ok(text) => Ok(text),
-            Err(e) => Err(EucalyptError::FileCouldNotBeRead(
-                path.to_string_lossy().to_string(),
-                Some(e.to_string()),
-            )),
+        // Try as absolute/relative from working directory
+        if let Ok(text) = fs::read_to_string(path) {
+            return Ok(text);
         }
+
+        // Fall back to baked-in resources using the filename stem.
+        // This allows libraries shipped inside the binary (e.g. `prelude.eu`,
+        // `test.eu`) to be imported by filename without being present on disk.
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            if let Some(resource_text) = self.resources.get(stem) {
+                return Ok(resource_text.clone());
+            }
+        }
+
+        Err(EucalyptError::FileCouldNotBeRead(
+            path.to_string_lossy().to_string(),
+            None,
+        ))
     }
 
     /// Read source from stdin
@@ -658,5 +674,36 @@ pub mod tests {
         let prelude = Locator::Resource("prelude".to_string());
         let _id = loader.load_tree(&Input::from(prelude.clone())).unwrap();
         let _ast = loader.ast(&prelude);
+    }
+
+    /// When `import: "test.eu"` is used and no `test.eu` file exists on disk,
+    /// the loader should fall back to the baked-in `test` resource.
+    #[test]
+    fn test_resource_fallback_for_fs_import() {
+        // Use an empty lib_path so no filesystem files will be found.
+        let mut loader = SourceLoader::new(vec![]);
+        // `test.eu` is not present on disk relative to this path, but `test`
+        // is a baked-in resource; loading via a Fs locator should succeed.
+        let locator = Locator::Fs(PathBuf::from("test.eu"));
+        let id = loader
+            .load_eucalypt(&locator)
+            .expect("should fall back to baked-in `test` resource");
+        // The AST should have been stored under the original Fs locator.
+        assert!(loader.ast(&locator).is_some(), "AST not stored for locator");
+        // Verify a file entry was created in the file store (id is always a valid usize).
+        let _ = id;
+    }
+
+    /// A filename that has no corresponding baked-in resource should still
+    /// produce a FileCouldNotBeRead error.
+    #[test]
+    fn test_no_fallback_for_unknown_file() {
+        let mut loader = SourceLoader::new(vec![]);
+        let locator = Locator::Fs(PathBuf::from("nonexistent_file_xyz.eu"));
+        let result = loader.load_eucalypt(&locator);
+        assert!(
+            result.is_err(),
+            "should error when file and resource are both missing"
+        );
     }
 }
