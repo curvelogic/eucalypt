@@ -30,6 +30,9 @@ tests: {
     a: bit.not(0) //= (0 - 1)
     ` "NOT of -1 is zero"
     b: bit.not(0 - 1) //= 0
+    ` "NOT via ⊝ operator"
+    c: (⊝ 0) //= (0 - 1)
+    d: (⊝ (0 - 1)) //= 0
   }
 
   shifts: {

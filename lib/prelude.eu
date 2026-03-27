@@ -626,6 +626,10 @@ rem(a, b): __REM(a, b)
     precedence: :bitwise }
 (l ⊕ r): __BITXOR(l, r)
 
+` { doc: "`⊝ n` - bitwise NOT (complement) of integer `n`."
+    export: :suppress
+    precedence: :bool-unary }
+(⊝ n): __BITNOT(n)
 
 ` { doc: "`n ≪ k` - left shift `n` by `k` bits."
     export: :suppress
