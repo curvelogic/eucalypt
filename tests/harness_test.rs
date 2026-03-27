@@ -684,6 +684,14 @@ pub fn test_harness_133() {
 }
 
 #[test]
+pub fn test_lib_lens() {
+    let opt = EucalyptOptions::default()
+        .with_explicit_inputs(vec![Input::from_str("lens.eu").unwrap()])
+        .with_lib_path(vec![PathBuf::from("lib")]);
+    run_test(&opt);
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
