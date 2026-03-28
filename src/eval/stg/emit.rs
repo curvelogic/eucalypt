@@ -249,7 +249,7 @@ impl StgIntrinsic for EmitNative {
             memory::syntax::Native::Zdt(dt) => {
                 emitter.scalar(&RenderMetadata::empty(), &Primitive::ZonedDateTime(dt));
             }
-            memory::syntax::Native::Index(_) => {
+            memory::syntax::Native::Index(_) | memory::syntax::Native::Stream(_) => {
                 return Err(ExecutionError::NotScalar(Smid::default()));
             }
         }
@@ -302,7 +302,7 @@ impl StgIntrinsic for EmitTagNative {
             memory::syntax::Native::Zdt(dt) => {
                 emitter.scalar(&RenderMetadata::new(tag), &Primitive::ZonedDateTime(dt));
             }
-            memory::syntax::Native::Index(_) => {
+            memory::syntax::Native::Index(_) | memory::syntax::Native::Stream(_) => {
                 return Err(ExecutionError::NotScalar(Smid::default()));
             }
         }

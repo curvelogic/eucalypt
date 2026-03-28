@@ -949,6 +949,36 @@ lazy_static! {
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![0, 1],
     },
+    Intrinsic { // 180
+            name: "STREAM_NEW",
+            ty: function(vec![num(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 181
+            name: "STREAM_VALUE",
+            ty: function(vec![unk(), num()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 182
+            name: "STREAM_ADVANCE",
+            ty: function(vec![unk(), unk()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 183
+            name: "STREAM_FLOAT",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
+    Intrinsic { // 184
+            name: "STREAM_INT",
+            ty: function(vec![num(), unk(), list()]).unwrap(),
+            strict: vec![0, 1],
+    },
+    Intrinsic { // 185
+            name: "STREAM_SPLIT",
+            ty: function(vec![unk(), list()]).unwrap(),
+            strict: vec![0],
+    },
     ];
 }
 

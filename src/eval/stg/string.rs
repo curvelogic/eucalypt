@@ -128,6 +128,7 @@ impl StgIntrinsic for Str {
             Native::Set(_) => "<set>".to_string(),
             Native::NdArray(_) => "<array>".to_string(),
             Native::Vec(_) => "<vec>".to_string(),
+            Native::Stream(_) => "<stream>".to_string(),
         };
         machine_return_str(machine, view, text)
     }
