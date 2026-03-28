@@ -68,7 +68,7 @@ tests: {
   ` "Random monad implicit return — the motivating case for eu-hybj/eu-en4j"
   random-implicit: {
     result: { :random a: random.int(20) b: random.int(a) c: random.int(b) }(random.stream(42)).value
-    ok: (result.a = 14) && (result has(:b)) && (result has(:c))
+    ok: (result.a = 13) && (result has(:b)) && (result has(:c))
     RESULT: if(ok, :PASS, :FAIL)
   }
 

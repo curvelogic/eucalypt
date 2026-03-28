@@ -36,8 +36,8 @@ io: monad{bind(a, c): __IO_BIND(a, c), return(a): __IO_RETURN(a)} {
   ` "Seed for random number generation (from --seed or system time)"
   RANDOM_SEED: __io.RANDOM_SEED
 
-  ` "Infinite lazy stream of random floats in [0,1), seeded from system entropy or --seed flag."
-  random: random-stream(io.RANDOM_SEED)
+  ` "Opaque random stream seeded from system entropy or --seed flag. Use random.* actions or random.as-list to consume."
+  random: __STREAM_NEW(io.RANDOM_SEED)
 
   ##
   ## IO monad
@@ -117,7 +117,11 @@ monad(m): {
 ## Random number generation
 ##
 
-random-stream(seed): cons(__PRNG_FLOAT(seed), random-stream(__PRNG_NEXT(seed)))
+# Compatibility alias: deprecated, use random.stream. Returns a lazy cons-list of floats.
+random-stream(seed): random.stream(seed) random.as-list
+
+# Helper: advance an opaque stream n steps.
+stream-advance(n, s): if(n = 0, s, stream-advance(n - 1, __STREAM_ADVANCE(s)))
 
 random-ret(v, stream): { value: v, rest: stream }
 
@@ -131,16 +135,32 @@ random-bind(m, f, stream): {
 ` { doc: "Monadic random: namespace. Each operation is a state-monad action: a function from stream to a value/rest block. Use random.stream(seed) to create the initial stream, then run actions by calling them with the stream."
     monad: true }
 random: monad{bind: random-bind, return: random-ret} {
-  ` "random.stream(seed) - create the initial PRNG stream from integer seed."
-  stream(seed): random-stream(seed)
+  ` "random.stream(seed) - create an opaque PRNG stream from integer seed."
+  stream(seed): __STREAM_NEW(seed)
+
+  ` "random.as-list(stream) - convert an opaque random stream to a lazy cons-list of floats."
+  as-list(s): cons(__STREAM_VALUE(s), as-list(__STREAM_ADVANCE(s)))
 
   ` "random.float - action returning a random float in [0,1)."
-  float(stream): { value: stream head, rest: stream tail }
+  float(s): {
+    pair: __STREAM_FLOAT(s)
+    value: pair head
+    rest: pair tail head
+  }
 
   ` "random.int(n) - action returning a random integer in [0,n)."
-  int(n, stream): {
-    value: floor((stream head) * n)
-    rest: stream tail
+  int(n, s): {
+    pair: __STREAM_INT(n, s)
+    value: pair head
+    rest: pair tail head
+  }
+
+  ` "random.split - action that splits the stream into two independent streams.
+  Returns a value/rest block where value and rest are each independent streams."
+  split(s): {
+    pair: __STREAM_SPLIT(s)
+    value: pair head
+    rest: pair tail head
   }
 
   ` "random.choice(list) - action returning a random element from list."
@@ -1537,9 +1557,9 @@ set: {
   ` "`set.sample(n, s)` - random monad action: pick `n` random elements from set `s`.
   Returns value/rest block. Use within a :random block."
   sample(k, s, stream): {
-    floats: stream take(k)
+    floats: (stream random.as-list) take(k)
     value: s sample-raw(floats)
-    rest: stream drop(k)
+    rest: stream-advance(k, stream)
   }
 }
 
@@ -1574,9 +1594,9 @@ vec: {
   ` "`vec.sample(n, v)` - random monad action: pick `n` random elements
   from vec `v` without replacement. Use within a :random block."
   sample(n, v, stream): {
-    floats: stream take(n)
+    floats: (stream random.as-list) take(n)
     value: v sample-raw(floats)
-    rest: stream drop(n)
+    rest: stream-advance(n, stream)
   }
 
   ` :suppress
@@ -1586,9 +1606,9 @@ vec: {
   Use within a :random block."
   shuffle(v, stream): {
     needed: (v vec.len) - 1
-    floats: stream take(needed)
+    floats: (stream random.as-list) take(needed)
     value: v shuffle-raw(floats)
-    rest: stream drop(needed)
+    rest: stream-advance(needed, stream)
   }
 
   ` "`vec.to-list(v)` - convert vec `v` back to a cons-list."
