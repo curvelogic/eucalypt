@@ -99,8 +99,9 @@ path.
 
 ## Structural Matching with `match?`
 
-`match?(pattern, target)` checks whether a value conforms to a
-structural pattern, returning `true` or `false`.
+`match?(pattern, target)` checks whether a value conforms to a structural
+pattern, returning `true` or `false`. With a single block or list
+argument, use juxtaposed call syntax: `match?{...}` or `match?[...]`.
 
 ### Pattern Language
 
@@ -117,19 +118,19 @@ Pattern values are interpreted by type:
 data: { host: "10.0.0.1", port: 8080, name: "api" }
 
 # Key existence (any? matches any value)
-has-host: data match?({host: any?})
+has-host: data match?{host: any?}
 
 # Value predicates
-high-port: data match?({port: (> 1000)})
+high-port: data match?{port: (> 1000)}
 
 # Type checking
-typed: data match?({host: string?, port: number?})
+typed: data match?{host: string?, port: number?}
 
 # Exact literal
-specific: data match?({port: 8080})
+specific: data match?{port: 8080}
 
 # Nested sub-patterns
-nested: {server: data} match?({server: {host: any?}})
+nested: {server: data} match?{server: {host: any?}}
 ```
 
 ```yaml
@@ -155,8 +156,8 @@ of what other keys it contains.
 List patterns check length and match elements positionally:
 
 ```eu
-pair: [1, "hello"] match?([number?, string?])
-wrong-len: [1, 2, 3] match?([any?, any?])
+pair: [1, "hello"] match?[number?, string?]
+wrong-len: [1, 2, 3] match?[any?, any?]
 ```
 
 ```yaml
@@ -166,7 +167,7 @@ wrong-len: false
 
 ### Composing `match?` with `when` and `filter`
 
-`match?` is pattern-first, so `match?(pattern)` is a partially
+`match?` is pattern-first, so `match?{pattern}` is a partially
 applied predicate — perfect for `filter` and `when`:
 
 ```eu
@@ -176,7 +177,7 @@ servers: [
   { host: "10.0.0.2", port: 5432 }
 ]
 
-with-host: servers filter(match?({host: any?}))
+with-host: servers filter(match?{host: any?})
 ```
 
 ```yaml
@@ -197,7 +198,7 @@ Use `when` for conditional transformation — apply a function only
 when the data matches a pattern, otherwise pass through unchanged:
 
 ```eu,notest
-data when(match?({host: any?, port: any?}), (~ :host))
+data when(match?{host: any?, port: any?}, (~ :host))
 ```
 
 ### Deep Structural Queries
@@ -208,7 +209,7 @@ depth:
 ```eu,notest
 # Find all blocks with both host and port keys
 find-endpoints(data): {
-  emit(s, v): if(v match?({host: any?, port: any?}), [v], [])
+  emit(s, v): if(v match?{host: any?, port: any?}, [v], [])
   next(s, k): null
 }.(deep-fold(emit, next, null, data))
 ```
@@ -314,9 +315,9 @@ capped: records over(filtered(_.score > 15) ∘ at(:score), -> 15)
 |------|------|---------|
 | Access an optional key | `~` | `data ~ :host` |
 | Chain through optional keys | `~` chain | `data ~ :server ~ :host` |
-| Check if data has a shape | `match?` | `data match?({host: any?})` |
-| Filter by shape | `match?` + `filter` | `items filter(match?({host: any?}))` |
-| Conditional transform | `match?` + `when` | `data when(match?(pat), f)` |
+| Check if data has a shape | `match?` | `data match?{host: any?}` |
+| Filter by shape | `match?` + `filter` | `items filter(match?{host: any?})` |
+| Conditional transform | `match?` + `when` | `data when(match?{host: any?}, f)` |
 | Find by key at any depth | `deep-find` | `data deep-find(:host)` |
 | Get a value deep in a known structure | `view` + lens | `data view(‹:server :host›)` |
 | Modify a value deep in a structure | `over` + lens | `data over(‹:server :port›, + 1)` |
