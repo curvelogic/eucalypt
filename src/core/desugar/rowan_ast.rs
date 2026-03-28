@@ -156,9 +156,7 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
                                 )
                             });
                             if has_nested {
-                                return Err(CoreError::NestedBlockDestructure(
-                                    Smid::default(),
-                                ));
+                                return Err(CoreError::NestedBlockDestructure(Smid::default()));
                             }
                             // Complex expression in body — use field name as fallback
                             field_name.clone()
@@ -189,9 +187,7 @@ type ListPattern = (Vec<ParamPattern>, Option<String>);
 ///
 /// Returns `(head_elements, tail)` where `tail` is `None` for
 /// fixed-length patterns and `Some(tail_name)` for head/tail patterns.
-fn parse_list_pattern(
-    list: &rowan_ast::List,
-) -> Result<Option<ListPattern>, CoreError> {
+fn parse_list_pattern(list: &rowan_ast::List) -> Result<Option<ListPattern>, CoreError> {
     let has_colon = list.has_colon();
     let all_items: Vec<_> = list.items().collect();
 
@@ -249,9 +245,9 @@ fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>,
                 Ok(None)
             }
         }
-        Some(rowan_ast::Element::List(list)) => Ok(
-            parse_list_pattern(&list)?.map(|(heads, tail)| ParamPattern::List(heads, tail)),
-        ),
+        Some(rowan_ast::Element::List(list)) => {
+            Ok(parse_list_pattern(&list)?.map(|(heads, tail)| ParamPattern::List(heads, tail)))
+        }
         Some(rowan_ast::Element::Block(block)) => {
             parse_block_pattern(&block).map(|fields| Some(ParamPattern::Block(fields)))
         }
@@ -1686,13 +1682,12 @@ fn extract_rowan_declaration_components(
                 })?;
                 // Parse the bracket parameter as a pattern (simple name,
                 // list destructuring, or block destructuring)
-                let pattern = parse_param_pattern(&param_soup)?
-                    .ok_or_else(|| {
-                        CoreError::InvalidEmbedding(
-                            "invalid bracket parameter pattern".to_string(),
-                            desugarer.new_smid(span),
-                        )
-                    })?;
+                let pattern = parse_param_pattern(&param_soup)?.ok_or_else(|| {
+                    CoreError::InvalidEmbedding(
+                        "invalid bracket parameter pattern".to_string(),
+                        desugarer.new_smid(span),
+                    )
+                })?;
 
                 let (body, args, arg_vars) =
                     desugar_declaration_body_with_patterns(decl, desugarer, &[pattern], span)?;

@@ -59,7 +59,9 @@ pub enum CoreError {
     NoSmidForImplicitAnaphor,
     #[error("nested list destructuring is limited to one level of nesting")]
     DeepNestedListDestructure(Smid),
-    #[error("nested block destructuring is not supported; use dot-lookup in the function body instead")]
+    #[error(
+        "nested block destructuring is not supported; use dot-lookup in the function body instead"
+    )]
     NestedBlockDestructure(Smid),
 }
 
