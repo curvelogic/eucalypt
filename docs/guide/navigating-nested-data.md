@@ -306,6 +306,23 @@ Again, the traversal is defined once and reused. The surrounding
 structure (`:name` fields, list positions, non-matching elements)
 is preserved through every transformation.
 
+### Tip: `->` for Setting Values
+
+`over` takes a function to apply to the focused value. When you
+want to *replace* rather than *transform*, use the `->` const
+operator — `-> value` ignores its argument and returns `value`:
+
+```eu,notest
+# Set db host to a fixed value (-> discards the old value)
+config over(‹:server :db :host›, -> "10.0.0.5")
+
+# Clear all scores
+records over(each ∘ at(:score), -> 0)
+
+# Also useful with when — replace matching data entirely
+data when(match?{status: "draft"}, -> {status: "published"})
+```
+
 ### Lens Consumers
 
 | Function | Description |
