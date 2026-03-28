@@ -147,6 +147,19 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
                                 field_name.clone()
                             }
                         } else {
+                            // Check for nested block/list patterns and
+                            // reject with a clear error
+                            let has_nested = body_soup.elements().any(|e| {
+                                matches!(
+                                    e,
+                                    rowan_ast::Element::Block(_) | rowan_ast::Element::List(_)
+                                )
+                            });
+                            if has_nested {
+                                return Err(CoreError::NestedBlockDestructure(
+                                    Smid::default(),
+                                ));
+                            }
                             // Complex expression in body — use field name as fallback
                             field_name.clone()
                         }
@@ -165,6 +178,9 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
     Ok(fields)
 }
 
+/// Parsed list pattern: (head elements, optional tail name).
+type ListPattern = (Vec<ParamPattern>, Option<String>);
+
 /// Parse a list parameter pattern from a Rowan `List` AST node in a
 /// function parameter position.
 ///
@@ -173,7 +189,9 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
 ///
 /// Returns `(head_elements, tail)` where `tail` is `None` for
 /// fixed-length patterns and `Some(tail_name)` for head/tail patterns.
-fn parse_list_pattern(list: &rowan_ast::List) -> Option<(Vec<ParamPattern>, Option<String>)> {
+fn parse_list_pattern(
+    list: &rowan_ast::List,
+) -> Result<Option<ListPattern>, CoreError> {
     let has_colon = list.has_colon();
     let all_items: Vec<_> = list.items().collect();
 
@@ -181,62 +199,70 @@ fn parse_list_pattern(list: &rowan_ast::List) -> Option<(Vec<ParamPattern>, Opti
         // Head/tail pattern: items before the colon are heads,
         // the last item after the colon is the tail.
         if all_items.len() < 2 {
-            return None; // Need at least one head and one tail
+            return Ok(None); // Need at least one head and one tail
         }
         let mut heads = Vec::new();
         for item in &all_items[..all_items.len() - 1] {
-            heads.push(parse_soup_as_pattern(item)?);
+            match parse_soup_as_pattern(item)? {
+                Some(pat) => heads.push(pat),
+                None => return Ok(None),
+            }
         }
         // Last item (tail) is always a simple name
         let tail_item = all_items.last().unwrap();
         if let Some(rowan_ast::Element::Name(name)) = tail_item.singleton() {
             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
                 let tail = normal.text().to_string();
-                Some((heads, Some(tail)))
+                Ok(Some((heads, Some(tail))))
             } else {
-                None
+                Ok(None)
             }
         } else {
-            None
+            Ok(None)
         }
     } else {
         // Fixed-length pattern: elements may be names or nested patterns
         let mut elements = Vec::new();
         for item in &all_items {
-            elements.push(parse_soup_as_pattern(item)?);
+            match parse_soup_as_pattern(item)? {
+                Some(pat) => elements.push(pat),
+                None => return Ok(None),
+            }
         }
         if elements.is_empty() {
-            None
+            Ok(None)
         } else {
-            Some((elements, None))
+            Ok(Some((elements, None)))
         }
     }
 }
 
 /// Parse a single soup element as a pattern (name, nested list, or nested block).
-fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
+///
+/// Returns `Err` for unsupported nesting, `Ok(None)` for non-pattern elements.
+fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>, CoreError> {
     match soup.singleton() {
         Some(rowan_ast::Element::Name(name)) => {
             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
-                Some(ParamPattern::Simple(normal.text().to_string()))
+                Ok(Some(ParamPattern::Simple(normal.text().to_string())))
             } else {
-                None
+                Ok(None)
             }
         }
-        Some(rowan_ast::Element::List(list)) => {
-            parse_list_pattern(&list).map(|(heads, tail)| ParamPattern::List(heads, tail))
-        }
+        Some(rowan_ast::Element::List(list)) => Ok(
+            parse_list_pattern(&list)?.map(|(heads, tail)| ParamPattern::List(heads, tail)),
+        ),
         Some(rowan_ast::Element::Block(block)) => {
-            parse_block_pattern(&block).ok().map(ParamPattern::Block)
+            parse_block_pattern(&block).map(|fields| Some(ParamPattern::Block(fields)))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
 /// Parse a function parameter soup into a `ParamPattern`.
 ///
-/// Returns `None` if the soup is not a valid single-element parameter.
-fn parse_param_pattern(soup: &rowan_ast::Soup) -> Option<ParamPattern> {
+/// Returns `Err` for unsupported nesting, `Ok(None)` for non-pattern elements.
+fn parse_param_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>, CoreError> {
     parse_soup_as_pattern(soup)
 }
 
@@ -1546,8 +1572,8 @@ fn extract_rowan_declaration_components(
                 // happen after Task 2 validation, but be defensive).
                 let patterns: Vec<ParamPattern> = args_tuple
                     .items()
-                    .filter_map(|soup| parse_param_pattern(&soup))
-                    .collect();
+                    .filter_map(|soup| parse_param_pattern(&soup).transpose())
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 // If all patterns are Simple (no destructuring), use the
                 // existing fast path so as not to disturb existing behaviour.
@@ -1660,12 +1686,13 @@ fn extract_rowan_declaration_components(
                 })?;
                 // Parse the bracket parameter as a pattern (simple name,
                 // list destructuring, or block destructuring)
-                let pattern = parse_param_pattern(&param_soup).ok_or_else(|| {
-                    CoreError::InvalidEmbedding(
-                        "invalid bracket parameter pattern".to_string(),
-                        desugarer.new_smid(span),
-                    )
-                })?;
+                let pattern = parse_param_pattern(&param_soup)?
+                    .ok_or_else(|| {
+                        CoreError::InvalidEmbedding(
+                            "invalid bracket parameter pattern".to_string(),
+                            desugarer.new_smid(span),
+                        )
+                    })?;
 
                 let (body, args, arg_vars) =
                     desugar_declaration_body_with_patterns(decl, desugarer, &[pattern], span)?;

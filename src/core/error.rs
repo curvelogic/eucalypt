@@ -59,6 +59,8 @@ pub enum CoreError {
     NoSmidForImplicitAnaphor,
     #[error("nested list destructuring is limited to one level of nesting")]
     DeepNestedListDestructure(Smid),
+    #[error("nested block destructuring is not supported; use dot-lookup in the function body instead")]
+    NestedBlockDestructure(Smid),
 }
 
 impl HasSmid for CoreError {
@@ -76,6 +78,7 @@ impl HasSmid for CoreError {
             EmptyMonadicBlock(s) => s,
             MonadSpecMissingMarker(_, _, s) => s,
             DeepNestedListDestructure(s) => s,
+            NestedBlockDestructure(s) => s,
             _ => Smid::default(),
         }
     }
