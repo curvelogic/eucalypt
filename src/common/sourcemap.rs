@@ -402,8 +402,6 @@ pub fn intrinsic_display_name(name: &str) -> Option<&str> {
         "LOOKUP_FAIL" => Some("lookup"),
 
         // Random / streams
-        "PRNG_NEXT" => Some("prng.next"),
-        "PRNG_FLOAT" => Some("prng.float"),
         "STREAM_NEXT" => Some("stream.next"),
 
         // Internal machinery — filter out of traces

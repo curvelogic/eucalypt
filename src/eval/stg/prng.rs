@@ -1,18 +1,6 @@
-//! Intrinsics for pseudo-random number generation using SplitMix64
+//! SplitMix64 PRNG core functions shared by stream intrinsics.
 
 use serde_json::Number;
-
-use crate::{
-    common::sourcemap::Smid,
-    eval::{
-        emit::Emitter,
-        error::ExecutionError,
-        machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-        memory::{mutator::MutatorHeapView, syntax::Ref},
-    },
-};
-
-use super::support::{machine_return_num, num_arg};
 
 /// SplitMix64 golden ratio constant
 const GOLDEN: u64 = 0x9e3779b97f4a7c15;
@@ -42,62 +30,6 @@ pub(super) fn seed_to_u64(n: &Number) -> u64 {
         0
     }
 }
-
-/// PRNG_NEXT(seed) — advance the SplitMix64 state, returning the next
-/// seed as an integer.
-pub struct PrngNext;
-
-impl StgIntrinsic for PrngNext {
-    fn name(&self) -> &str {
-        "PRNG_NEXT"
-    }
-
-    fn execute(
-        &self,
-        machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'_>,
-        _emitter: &mut dyn Emitter,
-        args: &[Ref],
-    ) -> Result<(), ExecutionError> {
-        let seed_num = num_arg(machine, view, &args[0])?;
-        let seed = seed_to_u64(&seed_num);
-        let (next_state, _) = splitmix64(seed);
-        // Return as i64 to stay within JSON number range and allow
-        // round-tripping through eucalypt's number representation.
-        machine_return_num(machine, view, Number::from(next_state as i64))
-    }
-}
-
-impl CallGlobal1 for PrngNext {}
-
-/// PRNG_FLOAT(seed) — produce a float in [0, 1) from the given seed
-/// using SplitMix64 output mixing.
-pub struct PrngFloat;
-
-impl StgIntrinsic for PrngFloat {
-    fn name(&self) -> &str {
-        "PRNG_FLOAT"
-    }
-
-    fn execute(
-        &self,
-        machine: &mut dyn IntrinsicMachine,
-        view: MutatorHeapView<'_>,
-        _emitter: &mut dyn Emitter,
-        args: &[Ref],
-    ) -> Result<(), ExecutionError> {
-        let seed_num = num_arg(machine, view, &args[0])?;
-        let seed = seed_to_u64(&seed_num);
-        let (_, z) = splitmix64(seed);
-        let float_val = (z >> 11) as f64 / ((1u64 << 53) as f64);
-        let result = Number::from_f64(float_val).ok_or_else(|| {
-            ExecutionError::Panic(Smid::default(), "PRNG produced invalid float".to_string())
-        })?;
-        machine_return_num(machine, view, result)
-    }
-}
-
-impl CallGlobal1 for PrngFloat {}
 
 #[cfg(test)]
 mod tests {
