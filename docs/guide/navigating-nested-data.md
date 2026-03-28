@@ -216,77 +216,95 @@ find-endpoints(data): {
 
 ## Lenses and Traversals
 
-For get/set operations deep inside nested structures, eucalypt
-provides a lens library. Import it with:
+With `~` and `.` you can *read* nested data easily. But what if you
+need to *update* a value deep inside a structure and get the whole
+structure back? Dot-lookup gives you the value but loses the
+surrounding context. To change the title of the second item in a
+list nested three levels deep, you'd have to manually reconstruct
+every layer of the structure around the changed value.
+
+Lenses solve this. A lens is a reusable description of a position
+within a data structure. Once defined, the same lens can *get*
+the value at that position, *set* it to a new value, or *modify*
+it with a function — always returning the complete updated structure.
 
 ```eu,notest
 { import: "lens.eu" }
 ```
 
-### Basic Lenses
-
-A lens focuses on a particular position within a data structure.
-`at(key)` focuses on a block key; `ix(n)` focuses on a list index:
+### Define Once, Use for Get and Set
 
 ```eu,notest
 { import: "lens.eu" }
 
-data: { server: { host: "localhost", port: 5432 } }
+# Define a lens once — it describes WHERE to look, not WHAT to do
+db-host: ‹:server :db :host›
 
-# Get a nested value
-host: data view(at(:server) ∘ at(:host))
+config: { server: { db: { host: "localhost", port: 5432 }, cache: { host: "redis" } } }
+
+# Read with view
+current: config view(db-host)
 # => "localhost"
 
-# Modify a nested value (returns the whole structure updated)
-updated: data over(at(:server) ∘ at(:port), + 1000)
-# => { server: { host: "localhost", port: 6432 } }
+# Update with over (returns the WHOLE config, not just the changed part)
+migrated: config over(db-host, -> "10.0.0.5")
+# => { server: { db: { host: "10.0.0.5", port: 5432 }, cache: { host: "redis" } } }
 ```
 
-Lenses compose with `∘` — read right to left: `at(:server) ∘ at(:host)`
-means "go into server, then into host".
+The key insight: `db-host` is defined once and describes the path
+`:server` → `:db` → `:host`. You can use it with `view` to read or
+`over` to modify. The surrounding structure (`:port`, `:cache`, etc.)
+is preserved automatically.
 
-### Path Bracket Syntax
+### Lens Constructors
 
-For common key/index paths, the `‹›` bracket syntax is more concise:
+`at(key)` focuses on a block key; `ix(n)` focuses on a list index.
+Compose with `∘` (read right to left) or use the `‹›` bracket
+shorthand:
 
 ```eu,notest
 { import: "lens.eu" }
 
-data: { items: [{ meta: { title: "one" } }, { meta: { title: "two" } }] }
+# These are equivalent:
+at(:server) ∘ at(:db) ∘ at(:host)
+‹:server :db :host›
 
-title: data view(‹:items 0 :meta :title›)
-# => "one"
-
-updated: data over(‹:items 1 :meta :title›, str.upper)
-# => { items: [{ meta: { title: "one" } }, { meta: { title: "TWO" } }] }
+# Mix keys and indices:
+‹:items 0 :meta :title›    # items[0].meta.title
 ```
-
-Symbols become `at` lenses, numbers become `ix` lenses, and lens
-functions are passed through.
 
 ### Traversals
 
-Traversals focus on *multiple* positions simultaneously. `each`
-traverses all elements of a list; `filtered(pred)` traverses only
-matching elements:
+Traversals extend lenses to focus on *multiple* positions. `each`
+targets all list elements; `filtered(pred)` targets only matching
+ones. Crucially, they compose with lenses — so you can target a
+specific field across every element:
 
 ```eu,notest
 { import: "lens.eu" }
 
 records: [{name: "a", score: 10}, {name: "b", score: 20}, {name: "c", score: 30}]
 
-# Get all names
-names: records to-list-of(each ∘ at(:name))
-# => ["a", "b", "c"]
+# Define a traversal: the score of every record
+all-scores: each ∘ at(:score)
 
-# Double all scores
-boosted: records over(each ∘ at(:score), * 2)
+# Collect all scores
+scores: records to-list-of(all-scores)
+# => [10, 20, 30]
+
+# Double all scores (returns the whole list with scores updated)
+boosted: records over(all-scores, * 2)
 # => [{name: "a", score: 20}, {name: "b", score: 40}, {name: "c", score: 60}]
 
-# Update only high scores
-capped: records over(filtered(_.score > 15) ∘ at(:score), -> 15)
+# Cap high scores only
+high-scores: filtered(_.score > 15) ∘ at(:score)
+capped: records over(high-scores, -> 15)
 # => [{name: "a", score: 10}, {name: "b", score: 15}, {name: "c", score: 15}]
 ```
+
+Again, the traversal is defined once and reused. The surrounding
+structure (`:name` fields, list positions, non-matching elements)
+is preserved through every transformation.
 
 ### Lens Consumers
 
