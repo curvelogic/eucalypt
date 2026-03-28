@@ -1,19 +1,18 @@
 "Random number generation."
 
-` "Test PRNG intrinsics, random.stream, and prelude random functions. All stream uses are inline to avoid infinite evaluation."
+` "Test stream intrinsics, random.stream, and prelude random functions. All stream uses are inline to avoid infinite evaluation."
 seed: 42
 
 trues: [
-  # PRNG_FLOAT produces a float in [0,1)
-  __PRNG_FLOAT(seed) >= 0,
-  __PRNG_FLOAT(seed) < 1,
-  # PRNG_NEXT produces a different number
-  __PRNG_NEXT(seed) != seed,
+  # STREAM_VALUE produces a float in [0,1)
+  __STREAM_VALUE(__STREAM_NEW(seed)) >= 0,
+  __STREAM_VALUE(__STREAM_NEW(seed)) < 1,
+  # STREAM_ADVANCE changes the observed float value
+  (__STREAM_FLOAT(__STREAM_NEW(seed)) head) != (__STREAM_FLOAT(__STREAM_ADVANCE(__STREAM_NEW(seed))) head),
   # deterministic
-  __PRNG_FLOAT(seed) = __PRNG_FLOAT(seed),
-  __PRNG_NEXT(seed) = __PRNG_NEXT(seed),
+  __STREAM_VALUE(__STREAM_NEW(seed)) = __STREAM_VALUE(__STREAM_NEW(seed)),
   # different seeds give different results
-  __PRNG_FLOAT(seed) != __PRNG_FLOAT(99),
+  __STREAM_VALUE(__STREAM_NEW(seed)) != __STREAM_VALUE(__STREAM_NEW(99)),
   # random.float from stream is in [0,1)
   (random.float(random.stream(seed)).value) >= 0,
   (random.float(random.stream(seed)).value) < 1,

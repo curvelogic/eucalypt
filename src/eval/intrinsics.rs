@@ -580,401 +580,391 @@ lazy_static! {
             strict: vec![0],
     },
     Intrinsic { // 106
-            name: "PRNG_NEXT",
-            ty: function(vec![num(), num()]).unwrap(),
-            strict: vec![0],
-    },
-    Intrinsic { // 107
-            name: "PRNG_FLOAT",
-            ty: function(vec![num(), num()]).unwrap(),
-            strict: vec![0],
-    },
-    Intrinsic { // 108
             name: "STREAM_NEXT",
             ty: function(vec![num(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 109
+    Intrinsic { // 107
             name: "LOOKUP_FAIL",
             ty: function(vec![sym(), block(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 110
+    Intrinsic { // 108
             name: "POW",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 111
+    Intrinsic { // 109
             name: "PDIV",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 112
+    Intrinsic { // 110
             name: "QUOT",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 113
+    Intrinsic { // 111
             name: "REM",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 114
+    Intrinsic { // 112
             name: "seqNumList",
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 115
+    Intrinsic { // 113
             name: "SORT_NUM_LIST",
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 116
+    Intrinsic { // 114
             name: "GRAPH_UNION_FIND",
             ty: function(vec![list(), num(), list()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 117
+    Intrinsic { // 115
             name: "GRAPH_TOPO_SORT",
             ty: function(vec![list(), num(), list()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 118
+    Intrinsic { // 116
             name: "GRAPH_KRUSKAL_EDGES",
             ty: function(vec![list(), num(), list()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 119
+    Intrinsic { // 117
             name: "RUNNING_MAX",
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 120
+    Intrinsic { // 118
             name: "RUNNING_MIN",
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 121
+    Intrinsic { // 119
             name: "RUNNING_SUM",
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 122
+    Intrinsic { // 120
             name: "BITAND",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 123
+    Intrinsic { // 121
             name: "BITOR",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 124
+    Intrinsic { // 122
             name: "BITXOR",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 125
+    Intrinsic { // 123
             name: "BITNOT",
             ty: function(vec![num(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 126
+    Intrinsic { // 124
             name: "SHL",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 127
+    Intrinsic { // 125
             name: "SHR",
             ty: function(vec![num(), num(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 128
+    Intrinsic { // 126
             name: "POPCOUNT",
             ty: function(vec![num(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 129
+    Intrinsic { // 127
             name: "CTZ",
             ty: function(vec![num(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 130
+    Intrinsic { // 128
             name: "CLZ",
             ty: function(vec![num(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 131
+    Intrinsic { // 129
             name: "LIST.NTH",
             ty: function(vec![list(), num(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 132
+    Intrinsic { // 130
             name: "LIST.DROP",
             ty: function(vec![num(), list(), list()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 133
+    Intrinsic { // 131
             name: "ASSERT_FAIL",
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 134
+    Intrinsic { // 132
             name: "ARRAY.ZEROS",
             ty: function(vec![list(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 135
+    Intrinsic { // 133
             name: "ARRAY.FILL",
             ty: function(vec![list(), num(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 136
+    Intrinsic { // 134
             name: "ARRAY.FROM_FLAT",
             ty: function(vec![list(), list(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 137
+    Intrinsic { // 135
             name: "ARRAY.GET",
             ty: function(vec![unk(), list(), num()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 138
+    Intrinsic { // 136
             name: "ARRAY.SET",
             ty: function(vec![unk(), list(), num(), unk()]).unwrap(),
             strict: vec![0, 1, 2],
     },
-    Intrinsic { // 139
+    Intrinsic { // 137
             name: "ARRAY.SHAPE",
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 140
+    Intrinsic { // 138
             name: "ARRAY.RANK",
             ty: function(vec![unk(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 141
+    Intrinsic { // 139
             name: "ARRAY.LENGTH",
             ty: function(vec![unk(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 142
+    Intrinsic { // 140
             name: "ARRAY.TO_LIST",
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 143
+    Intrinsic { // 141
             name: "ARRAY.ISARRAY",
             ty: function(vec![unk(), bool_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 144
+    Intrinsic { // 142
             name: "ARRAY.TRANSPOSE",
             ty: function(vec![unk(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 145
+    Intrinsic { // 143
             name: "ARRAY.RESHAPE",
             ty: function(vec![unk(), list(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 146
+    Intrinsic { // 144
             name: "ARRAY.SLICE",
             ty: function(vec![unk(), num(), num(), unk()]).unwrap(),
             strict: vec![0, 1, 2],
     },
-    Intrinsic { // 147
+    Intrinsic { // 145
             name: "ARRAY.ADD",
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 148
+    Intrinsic { // 146
             name: "ARRAY.SUB",
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 149
+    Intrinsic { // 147
             name: "ARRAY.MUL",
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 150
+    Intrinsic { // 148
             name: "ARRAY.DIV",
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 151
+    Intrinsic { // 149
             name: "ARRAY_INDICES",
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 152
+    Intrinsic { // 150
             name: "ARRAY_NEIGHBOURS",
             ty: function(vec![list(), list(), num(), unk(), list()]).unwrap(),
             strict: vec![0, 1, 2, 3],
     },
-    Intrinsic { // 153
+    Intrinsic { // 151
             name: "IO_RETURN",
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 154
+    Intrinsic { // 152
             name: "IO_BIND",
             ty: function(vec![unk(), unk(), unk(), unk()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 155
+    Intrinsic { // 153
             name: "IO_ACTION",
             ty: function(vec![unk(), unk(), unk()]).unwrap(),
             strict: vec![],
     },
-    Intrinsic { // 156
+    Intrinsic { // 154
             name: "RENDER_TO_STRING",
             ty: function(vec![any(), sym(), str_()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 157
+    Intrinsic { // 155
             name: "PARSE_STRING",
             ty: function(vec![sym(), str_(), any()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 158
+    Intrinsic { // 156
             name: "STR_REPLACE",
             ty: function(vec![str_(), str_(), str_(), str_()]).unwrap(),
             strict: vec![0, 1, 2],
     },
-    Intrinsic { // 159
+    Intrinsic { // 157
             name: "STR_CONTAINS",
             ty: function(vec![str_(), str_(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 160
+    Intrinsic { // 158
             name: "STR_TRIM",
             ty: function(vec![str_(), str_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 161
+    Intrinsic { // 159
             name: "DBG_REPR",
             ty: function(vec![unk(), str_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 162
+    Intrinsic { // 160
             name: "EXPECT",
             ty: function(vec![unk(), str_(), bool_(), bool_()]).unwrap(),
             strict: vec![1, 2],
     },
-    Intrinsic { // 163
+    Intrinsic { // 161
             name: "DBG",
             ty: function(vec![str_(), str_(), unk(), unk()]).unwrap(),
             strict: vec![0, 1, 2],
     },
-    Intrinsic { // 164
+    Intrinsic { // 162
             name: "ISNUMBER",
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 165
+    Intrinsic { // 163
             name: "ISSTRING",
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 166
+    Intrinsic { // 164
             name: "ISSYMBOL",
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 167
+    Intrinsic { // 165
             name: "ISBOOL",
             ty: function(vec![any(), bool_()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 168
+    Intrinsic { // 166
             name: "VEC.OF",
             ty: function(vec![list(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 169
+    Intrinsic { // 167
             name: "VEC.LEN",
             ty: function(vec![unk(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 170
+    Intrinsic { // 168
             name: "VEC.NTH",
             ty: function(vec![num(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 171
+    Intrinsic { // 169
             name: "VEC.SLICE",
             ty: function(vec![num(), num(), unk(), unk()]).unwrap(),
             strict: vec![0, 1, 2],
     },
-    Intrinsic { // 172
+    Intrinsic { // 170
             name: "VEC.SAMPLE",
             ty: function(vec![list(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 173
+    Intrinsic { // 171
             name: "VEC.SHUFFLE",
             ty: function(vec![list(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 174
+    Intrinsic { // 172
             name: "VEC.TO_LIST",
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 175
+    Intrinsic { // 173
             name: "OS",
             ty: str_(),
             strict: vec![],
     },
-    Intrinsic { // 176
+    Intrinsic { // 174
             name: "ARCH",
             ty: str_(),
             strict: vec![],
     },
-    Intrinsic { // 177
+    Intrinsic { // 175
             name: "SET.SAMPLE",
             ty: function(vec![list(), unk(), unk()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 178
+    Intrinsic { // 176
             name: "seqList",
             ty: function(vec![list(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 179
+    Intrinsic { // 177
             name: "SAFE_LOOKUP",
             ty: function(vec![any(), any(), any()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 180
+    Intrinsic { // 178
             name: "STREAM_NEW",
             ty: function(vec![num(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 181
+    Intrinsic { // 179
             name: "STREAM_VALUE",
             ty: function(vec![unk(), num()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 182
+    Intrinsic { // 180
             name: "STREAM_ADVANCE",
             ty: function(vec![unk(), unk()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 183
+    Intrinsic { // 181
             name: "STREAM_FLOAT",
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
     },
-    Intrinsic { // 184
+    Intrinsic { // 182
             name: "STREAM_INT",
             ty: function(vec![num(), unk(), list()]).unwrap(),
             strict: vec![0, 1],
     },
-    Intrinsic { // 185
+    Intrinsic { // 183
             name: "STREAM_SPLIT",
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
