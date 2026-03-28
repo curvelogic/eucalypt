@@ -3,11 +3,13 @@ stream and a set of prelude functions.
 
 ## The Random Stream
 
-The `io.random` binding is an infinite lazy list of random floats in
-`[0, 1)`, seeded from system entropy or the `--seed` command-line flag.
+The `io.random` binding is an opaque PRNG stream, seeded from system
+entropy or the `--seed` command-line flag. Use `random.*` actions to
+draw values from it, or `random.as-list` to obtain a lazy cons-list of
+floats in `[0, 1)`.
 
 ```eu
-first-random: io.random head
+first-random: random.float(io.random).value
 ```
 
 Because `io.random` is seeded from the system clock by default, it
