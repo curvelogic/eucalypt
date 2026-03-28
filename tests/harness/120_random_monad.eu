@@ -3,11 +3,11 @@
 seed: 42
 
 ##
-## random.stream produces a deterministic stream
+## random.stream produces a deterministic opaque stream
 ##
 ` { target: :test-stream }
 test-stream:
-  if((random.stream(seed) head) = (random.stream(seed) head),
+  if((random.float(random.stream(seed)).value) = (random.float(random.stream(seed)).value),
     { RESULT: :PASS },
     { RESULT: :FAIL })
 
@@ -102,4 +102,29 @@ test-bind-threads-state: {
   first: pair head
   second: pair tail head
   ok: first != second
+}.(if(ok, { RESULT: :PASS }, { RESULT: :FAIL }))
+
+##
+## random.as-list converts opaque stream to a lazy cons-list of floats
+##
+` { target: :test-as-list }
+test-as-list: {
+  s: random.stream(seed)
+  lst: s random.as-list
+  fst: lst head
+  snd: (lst tail) head
+  range-ok: (fst >= 0) && (fst < 1) && (snd >= 0) && (snd < 1)
+  diff-ok: fst != snd
+  ok: range-ok && diff-ok
+}.(if(ok, { RESULT: :PASS }, { RESULT: :FAIL }))
+
+##
+## random.split produces two independent streams both yielding floats in [0,1)
+##
+` { target: :test-split }
+test-split: {
+  result: random.split(random.stream(seed))
+  float-a: random.float(result.value).value
+  float-b: random.float(result.rest).value
+  ok: (float-a >= 0) && (float-a < 1) && (float-b >= 0) && (float-b < 1)
 }.(if(ok, { RESULT: :PASS }, { RESULT: :FAIL }))

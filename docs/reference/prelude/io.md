@@ -16,7 +16,7 @@
 | `io.epoch-time` | Unix epoch time at time of launch |
 | `io.args` | Command-line arguments passed after `--` separator |
 | `io.RANDOM_SEED` | Seed for random number generation (from `--seed` or system time) |
-| `io.random` | Infinite lazy stream of random floats in [0,1) |
+| `io.random` | Opaque PRNG stream; use `random.*` actions or `random.as-list` to consume |
 
 ## IO Monad
 
