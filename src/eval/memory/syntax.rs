@@ -51,6 +51,8 @@ pub enum Native {
     NdArray(RefPtr<HeapNdArray>),
     /// A vector of primitive values (O(1) indexed access)
     Vec(RefPtr<HeapVec>),
+    /// An opaque PRNG stream state (SplitMix64 state word)
+    Stream(u64),
 }
 
 impl PartialEq for Native {
@@ -65,6 +67,7 @@ impl PartialEq for Native {
             (Native::Set(a), Native::Set(b)) => a == b,
             (Native::NdArray(a), Native::NdArray(b)) => a == b,
             (Native::Vec(a), Native::Vec(b)) => a == b,
+            (Native::Stream(a), Native::Stream(b)) => a == b,
             _ => false,
         }
     }
@@ -84,6 +87,7 @@ impl Native {
             Native::Set(_) => "set",
             Native::NdArray(_) => "array",
             Native::Vec(_) => "vec",
+            Native::Stream(_) => "stream",
         }
     }
 }
@@ -116,6 +120,9 @@ impl fmt::Display for Native {
             }
             Native::Vec(_) => {
                 write!(f, "<vec>")
+            }
+            Native::Stream(_) => {
+                write!(f, "<stream>")
             }
         }
     }
@@ -678,6 +685,9 @@ pub mod repr {
             }
             memory::syntax::Ref::V(memory::syntax::Native::Vec(_)) => {
                 stg::syntax::Ref::V(stg::syntax::Native::Sym("<vec>".to_string()))
+            }
+            memory::syntax::Ref::V(memory::syntax::Native::Stream(_)) => {
+                stg::syntax::Ref::V(stg::syntax::Native::Sym("<stream>".to_string()))
             }
         }
     }

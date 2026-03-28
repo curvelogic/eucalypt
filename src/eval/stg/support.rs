@@ -34,7 +34,7 @@ fn native_type(native: &Native) -> IntrinsicType {
         Native::Zdt(_) => IntrinsicType::ZonedDateTime,
         Native::NdArray(_) => IntrinsicType::Array,
         Native::Vec(_) => IntrinsicType::Vec,
-        Native::Index(_) | Native::Set(_) => IntrinsicType::Unknown,
+        Native::Index(_) | Native::Set(_) | Native::Stream(_) => IntrinsicType::Unknown,
     }
 }
 

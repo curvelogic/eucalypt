@@ -459,6 +459,11 @@ pub fn fmt(
                     "cannot format vec".to_string(),
                 ))
             }
+            Native::Stream(_) => {
+                return Err(PrintfError::InvalidFormatString(
+                    "cannot format stream".to_string(),
+                ))
+            }
         }
         Ok(output)
     } else if !fmt_string.starts_with('%') {
