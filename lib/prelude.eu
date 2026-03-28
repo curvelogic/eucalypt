@@ -1058,11 +1058,14 @@ assert(p?, s, v): if(v p?, v, panic(s))
 #
 
 ` { doc: "`dbg(opts, v)` - print value `v` to stderr and return `v` unchanged. opts keys: label (string)." }
-dbg(opts, v): {result: __DBG(lookup-or(:label, "", opts), v render-as(:json), v)}.result
+# Render a value for debug output: JSON for blocks/lists, DBG_REPR for everything else
+__dbg-render(v): if(v block?, v render-as(:json), if(v list?, v render-as(:json), __DBG_REPR(v)))
+
+dbg(opts, v): {result: __DBG(lookup-or(:label, "", opts), __dbg-render(v), v)}.result
 
 ` { doc: "`▶v` - debug-trace value or function. On a value, prints it to stderr and returns it. On a function, returns a wrapped version that traces each output."
     precedence: 85 }
-__dbg-val(v): {result: __DBG("", v render-as(:json), v)}.result
+__dbg-val(v): {result: __DBG("", __dbg-render(v), v)}.result
 __dbg-after(f, x): ▶(f(x))
 (▶ v): if(__SATURATED(v), __dbg-val(v), __dbg-after(v))
 
