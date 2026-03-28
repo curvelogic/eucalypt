@@ -6,7 +6,25 @@ All notable changes to eucalypt are documented here.
 
 ### Added
 
+- **Safe navigation operator `~`** — `data ~ :key` returns null instead of erroring when key is missing, value is null, or value is not a block. Left-associative at precedence 90; chains propagate null: `data ~ :server ~ :host`. Sections `(~ :a ~ :b)` create safe navigation functions
+- **Structural matching `match?`** — `match?(pattern, target)` checks whether a value conforms to a structural pattern. Block values in patterns recurse as sub-patterns, functions are applied as predicates, literals are exact equality checks. Open matching: extra keys in target are ignored. Juxtaposed call syntax: `match?{host: any?, port: (> 1000)}`
+- **`any?` wildcard predicate** — `const(true)` for use in `match?` patterns to match any value at a key
+- **Lens library** — optional import (`{ import: "lens.eu" }`) providing van Laarhoven lenses and traversals: `at`, `ix`, `item`, `element`, `each`, `filtered`, `view`, `over`, `to-list-of`, and `‹›` path bracket syntax. Define a lens once, use for both get and set operations
+- **Opaque random stream** — `Native::Stream(u64)` type backed by SplitMix64. `random.stream(seed)` returns an opaque stream; `random.split` forks into independent sub-streams; `as-list` bridge converts to lazy cons-list for `take`/`drop` compatibility
+- **`⊝` bitwise NOT operator** — Unicode circled dash replaces `~` (repurposed for safe navigation); `bit.not` function unchanged
+- **Resource fallback for imports** — `{ import: "lens.eu" }` resolves baked-in resources when filesystem lookup fails, enabling libraries shipped inside the binary
+- **Navigating Nested Data guide** — new documentation chapter covering `~`, `match?`, lenses, `deep-find`, and when to use each approach
+
+### Changed
+
+- **Random stream API** — `random.stream(seed)` now returns an opaque `Stream` type instead of a lazy cons-list. Code using the monadic API (`random.int`, `random.float`, `{ :random ... }` blocks) is unaffected. Code accessing `io.random` as a list needs `io.random as-list`. `random-stream(seed)` retained as deprecated compatibility alias
+- **`dbg` and `▶` rendering** — use `render-as(:json)` for blocks and lists, fall back to `__DBG_REPR` for non-renderable values (IO actions, streams, vecs, sets). Previously crashed on IO actions
+- **Test target scoping** — test runner only auto-discovers `test-*` and `bench-*` targets from the top-level file, not from imported libraries. Imported targets remain invocable via `-t`
+
 ### Fixed
+
+- **`build.rs` for resource tracking** — `cargo` incremental compilation now detects changes to `lib/prelude.eu`, `lib/lens.eu`, `lib/test.eu`, and `build-meta.yaml` via `cargo:rerun-if-changed` directives. Previously, changes to baked-in resources could be missed by incremental builds
+- **Nested block destructuring error** — `f({x b: {y z}})` now gives a clear error ("nested block destructuring is not supported; use dot-lookup in the function body instead") rather than a confusing "unresolved variable" message
 
 ## [0.5.1] - 2026-03-24
 
