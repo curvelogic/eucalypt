@@ -198,7 +198,7 @@ Use `when` for conditional transformation — apply a function only
 when the data matches a pattern, otherwise pass through unchanged:
 
 ```eu,notest
-data when(match?{host: any?, port: any?}, (~ :host))
+data when(match?{host: any?, port: any?}, .("{host}:{port}"))
 ```
 
 ### Deep Structural Queries
