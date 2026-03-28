@@ -1,0 +1,572 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Syntax Gotchas - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/appendices/syntax-gotchas.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="syntax-gotchas"><a class="header" href="#syntax-gotchas">Syntax Gotchas</a></h1>
+<p>This document records unintuitive consequences of Eucalypt's syntax
+design decisions that can lead to subtle bugs or confusion.</p>
+<h2 id="operator-precedence-issues"><a class="header" href="#operator-precedence-issues">Operator Precedence Issues</a></h2>
+<p>Eucalypt's catenation (juxtaposition) operator has <strong>very low
+precedence (20)</strong> — lower than all arithmetic and comparison
+operators. This means infix operators bind more tightly than
+catenation, which can produce surprising parses.</p>
+<p>The precedence hierarchy (highest to lowest):</p>
+<div class="table-wrapper"><table><thead><tr><th>Precedence</th><th>Name</th><th>Operators</th></tr></thead><tbody>
+<tr><td>95</td><td></td><td><code>↑</code> (head prefix)</td></tr>
+<tr><td>90</td><td>lookup/call</td><td><code>.</code> (lookup), <code>f(x, y)</code></td></tr>
+<tr><td>88</td><td>bool-unary</td><td><code>!</code> (not)</td></tr>
+<tr><td>85</td><td>exp</td><td><code>^</code> (power)</td></tr>
+<tr><td>80</td><td>prod</td><td><code>*</code>, <code>/</code>, <code>÷</code>, <code>%</code></td></tr>
+<tr><td>75</td><td>sum</td><td><code>+</code>, <code>-</code></td></tr>
+<tr><td>50</td><td>cmp</td><td><code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code></td></tr>
+<tr><td>45</td><td>append</td><td><code>++</code></td></tr>
+<tr><td>40</td><td>eq</td><td><code>=</code>, <code>!=</code></td></tr>
+<tr><td>35</td><td>bool-prod</td><td><code>∧</code> (and)</td></tr>
+<tr><td>30</td><td>bool-sum</td><td><code>∨</code> (or)</td></tr>
+<tr><td>20</td><td>cat</td><td>catenation (juxtaposition)</td></tr>
+<tr><td>10</td><td>apply</td><td></td></tr>
+<tr><td>5</td><td>meta</td><td><code>`</code> (metadata)</td></tr>
+</tbody></table>
+</div>
+<h3 id="field-access-vs-catenation"><a class="header" href="#field-access-vs-catenation">Field Access vs Catenation</a></h3>
+<p><strong>Problem</strong>: The lookup operator (<code>.</code>) has higher precedence (90) than
+catenation (precedence 20), which can lead to unexpected parsing.</p>
+<p><strong>Gotcha</strong>: Writing <code>objects head.id</code> is parsed as <code>objects (head.id)</code>
+rather than <code>(objects head).id</code>.</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-eu notest"># This doesn't work as expected:
+objects: range(0, 5) map({ id: _ })
+result: objects head.id  # Parsed as: objects (head.id)
+
+# Correct syntax requires parentheses:
+result: (objects head).id  # Explicitly groups the field access
+</code></pre>
+<p><strong>Error Message</strong>: When this occurs, you may see confusing errors like:</p>
+<ul>
+<li><code>cannot return function into case table without default</code></li>
+<li><code>bad index 18446744073709551615 into environment</code> (under memory pressure)</li>
+</ul>
+<p><strong>Solution</strong>: Always use parentheses to group the expression you want to
+access fields from:</p>
+<ul>
+<li>Use <code>(expression).field</code> instead of <code>expression target.field</code></li>
+<li>Be explicit about precedence when combining catenation with field access</li>
+</ul>
+<h3 id="arithmetic-after-a-pipeline"><a class="header" href="#arithmetic-after-a-pipeline">Arithmetic After a Pipeline</a></h3>
+<p><strong>Problem</strong>: Infix operators like <code>+</code>, <code>-</code>, <code>*</code> have higher precedence
+than catenation. When an infix operator follows a pipeline (catenation
+chain), it binds to the last function in the chain, not to the result
+of the whole pipeline.</p>
+<p><strong>Gotcha</strong>: Writing <code>xs foldl(f, 0) + 1</code> is <strong>not</strong> parsed as
+<code>(xs foldl(f, 0)) + 1</code>. Instead, the shunting-yard algorithm sees:</p>
+<pre><code>[xs, cat@20, foldl, call@90, (f,0), +@75, 1]
+</code></pre>
+<p>Because <code>+</code> (75) has higher precedence than <code>cat</code> (20), the <code>+</code>
+binds first: <code>foldl(f, 0) + 1</code> is evaluated (adding 1 to a partial
+application — a type error), and then the result is applied to <code>xs</code>.</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-eu notest"># WRONG — fails at runtime:
+n: xs foldl(+, 0) + 1        # Parsed as: (foldl(+, 0) + 1)(xs)
+
+# CORRECT — use parentheses:
+n: (xs foldl(+, 0)) + 1      # Explicit grouping
+
+# CORRECT — split into two bindings:
+m: xs foldl(+, 0)
+n: m + 1
+</code></pre>
+<p><strong>Error Messages</strong>:</p>
+<ul>
+<li><code>cannot return function into case table without default</code> — the <code>+</code>
+intrinsic receives a function (the partial application) instead of a
+number.</li>
+</ul>
+<p><strong>Rule of thumb</strong>: If a pipeline result feeds into an infix operator,
+always use parentheses around the pipeline or bind it to a name first.</p>
+<h2 id="anaphora-and-function-syntax"><a class="header" href="#anaphora-and-function-syntax">Anaphora and Function Syntax</a></h2>
+<h3 id="lambda-syntax-does-not-exist"><a class="header" href="#lambda-syntax-does-not-exist">Lambda Syntax Does Not Exist</a></h3>
+<p><strong>Problem</strong>: Eucalypt does <strong>not</strong> have lambda expressions or arrow
+functions. There is no syntax for anonymous multi-parameter functions.</p>
+<p><strong>Gotcha</strong>: The <code>-&gt;</code> token is the <strong><code>const</code> operator</strong> (returns its
+left operand, ignoring the right). Writing <code>x -&gt; x + 1</code> does not
+create a function — it evaluates <code>x</code>, discards <code>x + 1</code>, and returns
+<code>x</code>.</p>
+<p><strong>Invalid Examples</strong>:</p>
+<pre><code class="language-eu notest"># NONE of these create functions in Eucalypt:
+map(\x -&gt; x + 1)     # Invalid syntax
+map(|x| x + 1)       # Invalid syntax
+map(fn(x) =&gt; x + 1)  # Invalid syntax
+filter(x -&gt; x &gt; 0)   # -&gt; is const, not lambda!
+</code></pre>
+<p><strong>Correct Approach</strong>: Use sections, anaphora (<code>_</code>, <code>_0</code>, <code>_1</code>), named
+functions, or partial application:</p>
+<pre><code class="language-eu notest"># Operator sections (preferred for simple cases):
+map(+ 1)             # Section: adds 1
+map(^ 2)             # Section: squares
+filter(&gt; 0)          # Section: positive?
+
+# Identity anaphor — passes an identity function:
+map(_)               # Same as map(identity)
+
+# Anaphora in expressions:
+map(_ + 1)           # Anonymous single-parameter function
+filter(_ &gt; 0)        # Anonymous predicate
+
+# Multiple `_` — each is a separate parameter:
+f: (_ * _)           # f is a 2-arg multiply function
+f(3, 4)              # =&gt; 12
+
+# Numbered anaphora for same-param reuse:
+sq: (_0 * _0)        # sq(5) =&gt; 25
+
+# Using named function + partial application:
+add-one(x): x + 1
+map(add-one)
+
+# For multi-parameter needs, define a named helper:
+has-y(y, h): first(h) = y
+filter(has-y(target-y))   # Partial application
+</code></pre>
+<p><strong>Important</strong>: Each <code>_</code> introduces a <strong>separate</strong> parameter. <code>_ * _</code>
+is a 2-arg function (like <code>(_0 * _1)</code>), not <code>(_0 * _0)</code>. Use numbered
+anaphora <code>_0 * _0</code> when you need to reference the same parameter twice.</p>
+<p><strong>Reference</strong>: See <a href="../guide/anaphora.html">Anaphora</a> for detailed
+explanation of anaphora usage.</p>
+<h3 id="anaphor-scoping-parens-are-opaque"><a class="header" href="#anaphor-scoping-parens-are-opaque">Anaphor Scoping: Parens Are Opaque</a></h3>
+<p><strong>Problem</strong>: Parentheses create an anaphor scope boundary. Anaphors
+inside parens form a lambda at the paren level, not at the enclosing
+expression.</p>
+<p><strong>Scoping rules</strong>:</p>
+<ol>
+<li>
+<p><strong>Parens are opaque by default</strong> — anaphors inside parens create a
+lambda scoped to that paren group. This applies to both <code>_</code> and
+<code>_0</code>/<code>_1</code>.</p>
+</li>
+<li>
+<p><strong>Subsumption</strong> — if the enclosing expression already has direct
+anaphors, inner paren groups become transparent (their anaphors
+join the outer scope).</p>
+</li>
+<li>
+<p><strong>ArgTuples follow the same rules</strong> — function call arguments are
+opaque unless subsumed by an outer anaphoric scope.</p>
+</li>
+</ol>
+<p><strong>Examples</strong>:</p>
+<pre><code class="language-eu notest"># Parens opaque — paren group forms its own lambda:
+(_ + 1)               # λ(a). a + 1
+(_ * _)               # λ(a, b). a * b
+(_ = :quux) ∘ tag     # (λ(a). a = :quux) ∘ tag  ✓ composition works
+
+# Without parens — whole expression is the lambda body:
+_ + 1                 # λ(a). a + 1   (same result here)
+_ * _                 # λ(a, b). a * b
+
+# Parens opaque breaks cross-operator average:
+(_0 + _1) / 2         # (λ(a,b). a+b) / 2  — type error!
+# Correct idiom (no parens):
+_0 + _1 / 2           # λ(a, b). a + b/2  — note: b is halved, not sum
+
+# Subsumption: outer _ makes inner (_ * _) transparent:
+_ + (_ * _)           # λ(a, b, c). a + (b * c)  ✓
+
+# ArgTuple opaque by default:
+map(_ + 1)            # map(λ(a). a + 1)   ✓
+filter(_ &gt; 0)         # filter(λ(a). a &gt; 0)  ✓
+
+# ArgTuple subsumed when outer has anaphors:
+_0 * (_1 + 2)         # λ(a, b). a * (b + 2)  ✓
+</code></pre>
+<p><strong>Common mistake</strong>: Expecting <code>(_0 + _1) / 2</code> to be a 2-argument
+averaging function. Under the opaque parens model, <code>(_0 + _1)</code> forms
+its own lambda and <code>/ 2</code> tries to divide that lambda by 2 — a type
+error. Use a named helper instead:</p>
+<pre><code class="language-eu notest">avg2(a, b): (a + b) / 2
+zip-with(avg2, xs, ys)
+</code></pre>
+<p><strong>Expanding scope with subsumption</strong>: The subsumption rule can be
+exploited to make the outer expression anaphoric, causing inner paren
+groups to become transparent.  A common idiom is to place a direct
+anaphor — such as a not-nil check <code>_0✓</code> — at the outer level:</p>
+<pre><code class="language-eu notest"># _0✓ makes the whole expression anaphoric in _0,
+# so _0 inside count(_0) is subsumed — both refer to the same parameter.
+_0✓ &amp;&amp; count(_0) &gt;= 4    # λ(a). a != null &amp;&amp; count(a) &gt;= 4
+</code></pre>
+<p>Without the outer <code>_0✓</code>, the <code>_0</code> inside <code>count(_0)</code> would form a
+separate lambda at the ArgTuple level, and the outer <code>&amp;&amp;</code> would see a
+function value rather than a boolean.  The not-nil postfix <code>✓</code> is
+often the most natural way to introduce the outer anaphor when you
+want to also guard against null.</p>
+<h2 id="metadata-vs-comments"><a class="header" href="#metadata-vs-comments">Metadata vs Comments</a></h2>
+<h3 id="backtick-is-metadata-not-a-comment"><a class="header" href="#backtick-is-metadata-not-a-comment">Backtick Is Metadata, Not a Comment</a></h3>
+<p><strong>Problem</strong>: The backtick (<code>`</code>) attaches metadata to the <strong>next</strong>
+declaration. It is not a comment syntax.</p>
+<p><strong>Gotcha</strong>: Writing <code>` "some text"</code> with no declaration following
+it causes a parse error, often reported at an unexpected location
+(e.g., line 1).</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-eu notest"># WRONG — dangling metadata with nothing to attach to:
+` "This is not a comment"
+
+# CORRECT — use # for comments:
+# This is a comment
+
+# CORRECT — metadata attached to a declaration:
+` "Documentation for my-fn"
+my-fn(x): x + 1
+</code></pre>
+<p><strong>Rule</strong>: Use <code>#</code> for comments. Only use <code>`</code> when you intend to
+attach metadata to the immediately following declaration.</p>
+<h2 id="single-quote-identifiers"><a class="header" href="#single-quote-identifiers">Single Quote Identifiers</a></h2>
+<h3 id="single-quotes-are-not-string-delimiters"><a class="header" href="#single-quotes-are-not-string-delimiters">Single Quotes Are Not String Delimiters</a></h3>
+<p><strong>Problem</strong>: Single quotes (<code>'</code>) in Eucalypt are used to create
+identifiers, not strings.</p>
+<p><strong>Gotcha</strong>: Coming from languages where single quotes delimit strings,
+developers might expect <code>'text'</code> to be a string literal.</p>
+<p><strong>Key Rules</strong>:</p>
+<ul>
+<li>Single quotes create <strong>normal identifiers</strong> that can contain any characters</li>
+<li>The identifier name is the content <em>between</em> the quotes (quotes are stripped)</li>
+<li>This is the only use of single quotes in Eucalypt</li>
+<li>String literals use double quotes (<code>"</code>) only</li>
+</ul>
+<p><strong>Examples</strong>:</p>
+<pre><code class="language-eu notest"># Single quotes create identifiers (variable names):
+'my-file.txt': "content"     # Creates identifier: my-file.txt
+home: {
+  '.bashrc': false           # Creates identifier: .bashrc
+  '.emacs.d': false          # Creates identifier: .emacs.d
+  'notes.txt': true          # Creates identifier: notes.txt
+}
+
+# Access using lookup:
+z: home.'notes.txt'          # Looks up identifier: notes.txt
+
+# NOT string literals:
+'hello' = 'hello'            # Compares two variable references (not strings)
+"hello" = "hello"            # Compares two string literals (correct)
+</code></pre>
+<h2 id="division-operators"><a class="header" href="#division-operators">Division Operators</a></h2>
+<h3 id="-is-floor-division"><a class="header" href="#-is-floor-division"><code>/</code> Is Floor Division</a></h3>
+<p><strong>Problem</strong>: The <code>/</code> operator performs <strong>floor division</strong> (integer
+division), not precise division.</p>
+<p><strong>Gotcha</strong>: <code>7 / 2</code> evaluates to <code>3</code>, not <code>3.5</code>.</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-eu notest">7 / 2    # =&gt; 3 (floor division)
+7 ÷ 2    # =&gt; 3.5 (exact division)
+</code></pre>
+<p><strong>Rule</strong>: Use <code>÷</code> for exact/precise division. Use <code>/</code> only when you
+want integer (floor) division.</p>
+<h2 id="cons-patterns-vs-normal-lists"><a class="header" href="#cons-patterns-vs-normal-lists">Cons Patterns vs Normal Lists</a></h2>
+<p>The <code>[h : t]</code> cons pattern is only valid in a <strong>function parameter position</strong>.
+A colon inside a list literal in an expression context is not valid:</p>
+<pre><code class="language-eu notest"># Valid — cons pattern in a function parameter
+list-head([h : t]): h
+
+# Invalid — colon is not a list separator in expression context
+bad: [1 : rest]   # parse error
+</code></pre>
+<p>In expression context, use the <code>‖</code> cons operator (precedence 55) or the
+<code>cons</code> prelude function:</p>
+<pre><code class="language-eu">xs: [1, 2, 3]
+first: xs head         # = 1
+rest: xs tail          # = [2, 3]
+built: 1 ‖ [2, 3]     # = [1, 2, 3]
+also: cons(1, [2, 3])  # = [1, 2, 3]
+</code></pre>
+<h2 id="block-dot-lookup-applies-to-any-block-literal"><a class="header" href="#block-dot-lookup-applies-to-any-block-literal">Block-Dot Lookup Applies to Any Block Literal</a></h2>
+<p>The generalised lookup syntax <code>{...}.field</code> and <code>{...}.(expr)</code> works on any
+block literal, not only IO monadic blocks.  The dot binds the lookup to the
+block immediately to its left:</p>
+<pre><code class="language-eu notest"># Field lookup on a plain block
+{ x: 1, y: 2 }.x          # → 1
+
+# Parenthesised expression scoped over the block's bindings
+{ x: 1, y: 2 }.(x + y)    # → 3
+
+# The same syntax is used for IO monadic block return expressions
+{ :io r: io.shell("echo hello") }.(r.stdout)
+{ :io r: io.shell("echo hello") }.r.stdout
+</code></pre>
+<p><strong>Precedence</strong>: <code>.</code> binds tightly (precedence 90), so the lookup attaches to
+the block literal, not to the result of any surrounding expression.  Use
+parentheses when you need to apply a lookup to a computed value:</p>
+<pre><code class="language-eu notest"># Parsed as: list (head.name)  — probably not what you want
+list head.name
+
+# Correct: (list head).name
+(list head).name
+</code></pre>
+<p><strong>IO monadic block desugaring</strong>: <code>{ :io r: cmd }.(expr)</code> desugars to
+<code>io.bind(cmd, lambda(r). io.return(expr))</code>.  The <code>.()</code> return expression is
+part of the general block-dot syntax, not IO-specific.</p>
+<p><strong>Bare-expression files</strong>: A <code>.eu</code> file containing only a block-dot
+expression (no outer <code>key:</code> declaration) is supported when the expression
+starts with a block literal <code>{...}</code>:</p>
+<pre><code class="language-eu notest"># This works as a standalone .eu file:
+{ :io r: io.shell("echo hello") }.(r.stdout)
+</code></pre>
+<h2 id="block-field-names-shadow-outer-bindings--x-x-is-always-self-reference"><a class="header" href="#block-field-names-shadow-outer-bindings--x-x-is-always-self-reference">Block Field Names Shadow Outer Bindings — <code>{x: x}</code> Is Always Self-Reference</a></h2>
+<p><strong>Problem</strong>: Every declaration inside a block literal introduces a new binding
+that is visible to all other expressions in that block, including its own
+right-hand side.  The name on the left of <code>:</code> immediately shadows any outer
+binding with the same name, so <code>{x: x}</code> does <strong>not</strong> copy an outer <code>x</code> into the
+block — it creates a self-referential binding that refers to itself:</p>
+<pre><code class="language-eu notest"># WRONG — infinite loop: cmd refers to itself, not the function parameter
+shell-spec(cmd): {:io-shell cmd: cmd, timeout: 30}
+</code></pre>
+<p>Running <code>eu -e '{cmd: cmd}'</code> gives <code>error: infinite loop detected: binding refers to itself</code>.</p>
+<p><strong>Why it bites functions</strong>: When a function parameter has the same name as a
+block field you want to populate, the RHS expression sees the block's own
+binding rather than the parameter:</p>
+<pre><code class="language-eu notest">fn(cmd): {cmd: cmd}   # cmd: cmd is self-reference — fn's parameter is invisible
+</code></pre>
+<p><strong>Fix</strong>: Use a different name for the function parameter so it is not shadowed:</p>
+<pre><code class="language-eu notest"># Correct: parameter c is not shadowed by the block field cmd
+shell-spec(c): {:io-shell cmd: c, timeout: 30}
+</code></pre>
+<p><strong>Rule</strong>: Never write <code>{key: key}</code> expecting it to read an outer binding named
+<code>key</code>.  If you need a block field to hold a value from an outer scope, the outer
+name and the field name must differ.</p>
+<h2 id="sequential-bindings-use-let-blocks-not-let--in"><a class="header" href="#sequential-bindings-use-let-blocks-not-let--in">Sequential Bindings: Use <code>:let</code> Blocks, Not <code>let … in</code></a></h2>
+<p>Eucalypt has no <code>let … in</code> expression syntax (as in Haskell or Standard ML).
+Writing <code>result: let x: 1 in x + 2</code> is a runtime error — <code>let</code> is a prelude
+value (the identity monad) and <code>in</code> is unresolved.</p>
+<p>The eucalypt idiom for sequential, non-self-referential bindings is a <strong><code>:let</code>
+block</strong>:</p>
+<pre><code class="language-eu">result: {
+  :let x: 1
+  y: x + 2
+}.y
+</code></pre>
+<p>The <code>:let</code> prefix marker desugars to a monadic bind, so <code>y</code> can safely
+reference <code>x</code> without the self-reference gotcha that affects ordinary block
+bindings (<code>{ x: expr  y: x + 1 }</code> would make <code>x</code> and <code>y</code> mutually
+self-referential).</p>
+<p><strong>Why this matters</strong>: Before <code>let</code> was defined as a prelude name, attempts to
+write <code>let x: 1 in x + 2</code> gave a diagnostic error "eucalypt has no 'let'
+expression". That specific hint is no longer raised; the error now falls through
+to "unresolved variable 'in'". The <code>:let</code> block pattern is the correct
+replacement.</p>
+<h2 id="future-improvements"><a class="header" href="#future-improvements">Future Improvements</a></h2>
+<p>These gotchas highlight areas where the language could benefit from:</p>
+<ol>
+<li><strong>Better Error Messages</strong>: More specific error messages when
+precedence issues occur</li>
+<li><strong>Linting Rules</strong>: Static analysis to catch common precedence
+mistakes</li>
+<li><strong>IDE Support</strong>: Syntax highlighting and warnings for ambiguous
+expressions</li>
+<li><strong>Documentation</strong>: Better examples showing correct precedence usage</li>
+</ol>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../appendices/cheat-sheet.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../appendices/migration.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../appendices/cheat-sheet.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../appendices/migration.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

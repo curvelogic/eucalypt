@@ -1,0 +1,419 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Blocks and Declarations - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/guide/blocks-and-declarations.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="blocks-and-declarations"><a class="header" href="#blocks-and-declarations">Blocks and Declarations</a></h1>
+<p>In this chapter you will learn:</p>
+<ul>
+<li>What blocks are and how they relate to structured data formats</li>
+<li>The three types of declarations: property, function, and operator</li>
+<li>How top-level files work as implicit blocks (units)</li>
+<li>How to annotate declarations with metadata</li>
+</ul>
+<h2 id="blocks"><a class="header" href="#blocks">Blocks</a></h2>
+<p>A <strong>block</strong> is eucalypt's fundamental data structure. It corresponds to
+a JSON object, a YAML mapping, or a TOML table: an ordered collection
+of named values.</p>
+<p>Blocks are written with curly braces:</p>
+<pre><code class="language-eu">person: {
+  name: "Alice"
+  age: 30
+  role: "engineer"
+}
+</code></pre>
+<p>Running this file produces:</p>
+<pre><code class="language-yaml">person:
+  name: Alice
+  age: 30
+  role: engineer
+</code></pre>
+<p>Blocks can be nested:</p>
+<pre><code class="language-eu">config: {
+  database: {
+    host: "localhost"
+    port: 5432
+  }
+  cache: {
+    host: "localhost"
+    port: 6379
+  }
+}
+</code></pre>
+<h2 id="property-declarations"><a class="header" href="#property-declarations">Property Declarations</a></h2>
+<p>The simplest declaration is a <strong>property declaration</strong>: a name followed
+by a colon and an expression.</p>
+<pre><code class="language-eu">greeting: "Hello, World!"
+count: 42
+pi: 3.14159
+active: true
+nothing: null
+</code></pre>
+<p>These declare names bound to values. The values can be any expression:
+numbers, strings, booleans, <code>null</code>, lists, blocks, or computed
+expressions.</p>
+<h3 id="commas-are-optional"><a class="header" href="#commas-are-optional">Commas are Optional</a></h3>
+<p>Declarations can be separated by commas or simply by whitespace.
+Line endings are not significant. All of these are equivalent:</p>
+<pre><code class="language-eu">a: { x: 1 y: 2 z: 3 }
+b: { x: 1, y: 2, z: 3 }
+c: { x: 1, y: 2, z: 3, }
+</code></pre>
+<pre><code class="language-sh">eu -e '{ x: 1 y: 2 z: 3 }'
+</code></pre>
+<pre><code class="language-yaml">x: 1
+y: 2
+z: 3
+</code></pre>
+<h3 id="symbols"><a class="header" href="#symbols">Symbols</a></h3>
+<p>Symbols are written with a colon prefix and behave like interned
+strings. They are used as keys and as lightweight identifiers:</p>
+<pre><code class="language-eu">status: :active
+tag: :important
+</code></pre>
+<pre><code class="language-yaml">status: active
+tag: important
+</code></pre>
+<h2 id="function-declarations"><a class="header" href="#function-declarations">Function Declarations</a></h2>
+<p>Adding a parameter list creates a <strong>function declaration</strong>:</p>
+<pre><code class="language-eu">greet(name): "Hello, {name}!"
+double(x): x * 2
+
+message: greet("World")
+result: double(21)
+</code></pre>
+<pre><code class="language-yaml">message: Hello, World!
+result: 42
+</code></pre>
+<p>Functions are not rendered in the output -- only property values
+appear. Functions can take multiple parameters:</p>
+<pre><code class="language-eu">add(x, y): x + y
+total: add(3, 4)
+</code></pre>
+<pre><code class="language-yaml">total: 7
+</code></pre>
+<h2 id="operator-declarations"><a class="header" href="#operator-declarations">Operator Declarations</a></h2>
+<p>You can define custom infix operators using symbolic names:</p>
+<pre><code class="language-eu">(x &lt;+&gt; y): [x, y]
+pair: 1 &lt;+&gt; 2
+</code></pre>
+<pre><code class="language-yaml">pair:
+- 1
+- 2
+</code></pre>
+<p>Prefix and postfix unary operators are also possible:</p>
+<pre><code class="language-eu">(!! x): x * x
+squared: !! 5
+</code></pre>
+<pre><code class="language-yaml">squared: 25
+</code></pre>
+<p>Operator precedence and associativity are controlled through metadata
+annotations (covered below). See the
+<a href="operators.html">Operators</a> chapter for full details.</p>
+<blockquote>
+<p><strong>Note:</strong> While function declarations are namespaced to their block,
+operators do not have a namespace and are available only where they
+are in scope.</p>
+</blockquote>
+<h2 id="units-top-level-blocks"><a class="header" href="#units-top-level-blocks">Units: Top-Level Blocks</a></h2>
+<p>The top-level of a <code>.eu</code> file is itself a block, called a <strong>unit</strong>.
+It does not need surrounding braces. So this file:</p>
+<pre><code class="language-eu">name: "Alice"
+age: 30
+</code></pre>
+<p>...is equivalent to a block <code>{ name: "Alice" age: 30 }</code> and produces:</p>
+<pre><code class="language-yaml">name: Alice
+age: 30
+</code></pre>
+<h2 id="comments"><a class="header" href="#comments">Comments</a></h2>
+<p>Comments start with <code>#</code> and continue to the end of the line:</p>
+<pre><code class="language-eu"># This is a comment
+name: "Alice"  # inline comment
+</code></pre>
+<h2 id="declaration-metadata"><a class="header" href="#declaration-metadata">Declaration Metadata</a></h2>
+<p>Metadata can be attached to any declaration by placing it between a
+leading backtick and the declaration:</p>
+<pre><code class="language-eu">` "A friendly greeting"
+greeting: "Hello!"
+
+` { doc: "Add two numbers" }
+add(x, y): x + y
+</code></pre>
+<p>A bare string is shorthand for documentation metadata.</p>
+<p>Some metadata keys activate special behaviour:</p>
+<ul>
+<li><code>:suppress</code> -- hides the declaration from output</li>
+<li><code>:target</code> -- marks the declaration as an export target</li>
+<li><code>:main</code> -- marks the default target</li>
+</ul>
+<pre><code class="language-eu">` :suppress
+helper(x): x + 1
+
+` { target: :my-output }
+output: {
+  result: helper(41)
+}
+</code></pre>
+<p>Running <code>eu file.eu -t my-output</code> renders only the <code>output</code> block.</p>
+<h2 id="block-and-unit-metadata"><a class="header" href="#block-and-unit-metadata">Block and Unit Metadata</a></h2>
+<p>A single expression may precede the declarations in any block and is
+treated as metadata for that block. At the top level of a file (the
+unit), this means the first item, if it is an expression rather than a
+declaration, becomes metadata for the entire unit:</p>
+<pre><code class="language-eu">{ doc: "Configuration generator" }
+
+host: "localhost"
+port: 8080
+</code></pre>
+<h2 id="scope-and-visibility"><a class="header" href="#scope-and-visibility">Scope and Visibility</a></h2>
+<p>Names declared in a block are visible within that block and in any
+nested blocks:</p>
+<pre><code class="language-eu">x: 99
+inner: {
+  y: x + 1  # x is visible here
+}
+</code></pre>
+<pre><code class="language-yaml">x: 99
+inner:
+  y: 100
+</code></pre>
+<p>Names in nested blocks can shadow outer names:</p>
+<pre><code class="language-eu">x: 1
+inner: {
+  x: 2
+  y: x  # refers to inner x
+}
+</code></pre>
+<pre><code class="language-yaml">x: 1
+inner:
+  x: 2
+  y: 2
+</code></pre>
+<blockquote>
+<p><strong>Warning:</strong> Be careful with self-reference. Writing <code>name: name</code>
+inside a block creates an infinite recursion, because the
+declaration <code>name</code> refers to itself. This is true regardless of
+whether <code>name</code> is defined in an outer scope.</p>
+</blockquote>
+<h2 id="key-concepts"><a class="header" href="#key-concepts">Key Concepts</a></h2>
+<ul>
+<li><strong>Blocks</strong> are ordered collections of named values (like JSON
+objects or YAML mappings)</li>
+<li><strong>Property declarations</strong> bind a name to a value</li>
+<li><strong>Function declarations</strong> bind a name to a function (not rendered in
+output)</li>
+<li><strong>Operator declarations</strong> define custom infix, prefix, or postfix
+operators</li>
+<li><strong>Metadata</strong> annotations control export, documentation, and other
+special behaviour</li>
+<li>The top-level file is a unit: an implicit block without braces</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../welcome/by-example.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../guide/expressions-and-pipelines.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../welcome/by-example.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../guide/expressions-and-pipelines.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>

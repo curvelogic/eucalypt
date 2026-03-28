@@ -1,0 +1,591 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Syntax Cheat Sheet - Eucalypt</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A tool and language for generating, templating, rendering and processing structured data">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../docs/custom.css">
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Eucalypt</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+                        <a href="https://github.com/curvelogic/eucalypt/edit/master/docs/appendices/cheat-sheet.md" title="Suggest an edit" aria-label="Suggest an edit">
+                            <i id="git-edit-button" class="fa fa-edit"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="syntax-cheat-sheet"><a class="header" href="#syntax-cheat-sheet">Syntax Cheat Sheet</a></h1>
+<p>A dense single-page reference covering all syntax forms, operators,
+common patterns, and key prelude functions.</p>
+<h2 id="primitives"><a class="header" href="#primitives">Primitives</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Syntax</th><th>Examples</th></tr></thead><tbody>
+<tr><td>Integer</td><td>digits</td><td><code>42</code>, <code>-7</code>, <code>0</code></td></tr>
+<tr><td>Float</td><td>digits with <code>.</code></td><td><code>3.14</code>, <code>-0.5</code></td></tr>
+<tr><td>String</td><td>double quotes</td><td><code>"hello"</code>, <code>"line\nbreak"</code></td></tr>
+<tr><td>Symbol</td><td>colon prefix</td><td><code>:key</code>, <code>:name</code></td></tr>
+<tr><td>Boolean</td><td>literals</td><td><code>true</code>, <code>false</code></td></tr>
+<tr><td>Null</td><td>literal</td><td><code>null</code></td></tr>
+<tr><td>ZDT</td><td><code>t"..."</code> prefix</td><td><code>t"2024-03-15"</code>, <code>t"2024-03-15T14:30:00Z"</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="blocks"><a class="header" href="#blocks">Blocks</a></h2>
+<pre><code class="language-eu notest"># Property declaration
+name: expression
+
+# Function declaration
+f(x, y): expression
+
+# Operator declaration (binary)
+(l ++ r): expression
+
+# Operator declaration (prefix / postfix)
+(! x): expression
+(x ******): expression
+
+# Block literal
+{ a: 1 b: 2 c: 3 }
+
+# Commas are optional
+{ a: 1, b: 2, c: 3 }
+
+# Nested blocks
+{ outer: { inner: "value" } }
+</code></pre>
+<p><strong>Top-level unit</strong>: the file itself is an implicit block (no braces needed).</p>
+<h2 id="lists"><a class="header" href="#lists">Lists</a></h2>
+<pre><code class="language-eu notest"># List literal
+[1, 2, 3]
+
+# Empty list
+[]
+
+# Mixed types
+[1, "two", :three, true]
+</code></pre>
+<h2 id="string-interpolation"><a class="header" href="#string-interpolation">String Interpolation</a></h2>
+<pre><code class="language-eu notest"># Insert expressions with {braces}
+"Hello, {name}!"
+
+# String anaphora (defines a function)
+"#{}"           # one-parameter function
+"{0} and {1}"   # two-parameter function
+</code></pre>
+<h2 id="comments"><a class="header" href="#comments">Comments</a></h2>
+<pre><code class="language-eu notest"># Line comment (to end of line)
+x: 42 # inline comment
+</code></pre>
+<h2 id="declarations"><a class="header" href="#declarations">Declarations</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Form</th><th>Syntax</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Property</td><td><code>name: expr</code></td><td>Defines a named value</td></tr>
+<tr><td>Function</td><td><code>f(x, y): expr</code></td><td>Named function with parameters</td></tr>
+<tr><td>Block pattern</td><td><code>f({x y}): expr</code></td><td>Destructures block argument fields</td></tr>
+<tr><td>Block rename</td><td><code>f({x: a  y: b}): expr</code></td><td>Destructures with renamed bindings</td></tr>
+<tr><td>List pattern</td><td><code>f([a, b, c]): expr</code></td><td>Destructures fixed-length list</td></tr>
+<tr><td>Cons pattern</td><td><code>f([h : t]): expr</code></td><td>Destructures head and tail of list</td></tr>
+<tr><td>Binary operator</td><td><code>(l op r): expr</code></td><td>Infix operator</td></tr>
+<tr><td>Prefix operator</td><td><code>(op x): expr</code></td><td>Unary prefix</td></tr>
+<tr><td>Postfix operator</td><td><code>(x op): expr</code></td><td>Unary postfix</td></tr>
+<tr><td>Idiot bracket</td><td><code>⟦ xs ⟧: expr</code></td><td>Custom Unicode bracket pair</td></tr>
+</tbody></table>
+</div>
+<h2 id="idiot-brackets"><a class="header" href="#idiot-brackets">Idiot Brackets</a></h2>
+<p>Idiot brackets allow custom Unicode bracket pairs that collect their
+content items into a list and pass it to a function.</p>
+<pre><code class="language-eu notest"># Declare a bracket pair function (xs receives a list)
+⟦ xs ⟧: xs map(_ * 2)
+
+# Items are collected as a list: ⟦ a b c ⟧ = ⟦⟧([a, b, c])
+result: ⟦ 3 4 5 ⟧  # [6, 8, 10]
+</code></pre>
+<p>Any matching Unicode bracket pair works, e.g. <code>⟦⟧</code>, <code>⟨⟩</code>, <code>⟪⟫</code>, <code>⌈⌉</code>, <code>⌊⌋</code>, <code>⦃⦄</code>, <code>⦇⦈</code>, <code>⦉⦊</code>, <code>«»</code>,
+<code>【】</code>, <code>〔〕</code>, <code>〖〗</code>, <code>〘〙</code>, <code>〚〛</code>.</p>
+<h2 id="monadic-blocks"><a class="header" href="#monadic-blocks">Monadic Blocks</a></h2>
+<p>Monadic sequencing (like <code>do</code>-notation) is supported via bracket pairs or block
+metadata.  A bracket block or annotated block followed by <code>.expr</code> desugars to a
+bind chain.</p>
+<pre><code class="language-eu notest"># Bracket pair definition — explicit functions
+⟦{}⟧: { :monad bind: my-bind  return: my-return }
+
+# Bracket pair definition — namespace reference
+⟦{}⟧: { :monad namespace: my-monad }
+
+# Block metadata forms (all followed by .return_expr):
+{ :name decls }.expr                          # Form 1: bare symbol namespace
+{ { monad: name } decls }.expr               # Form 2: monad key
+{ { :monad namespace: name } decls }.expr    # Form 3: tagged namespace
+{ { :monad bind: f return: r } decls }.expr  # Form 4: explicit inline
+
+# ⟦ a: ma  b: mb ⟧.return_expr
+# desugars to: bind(ma, (a): bind(mb, (b): return(return_expr)))
+result: ⟦ a: ma  b: mb ⟧.(a + b)
+</code></pre>
+<p>All declarations are bind steps whose names are in scope for later declarations
+and the return expression.  The return expression follows the closing bracket (or
+block) as <code>.name</code>, <code>.(expr)</code>, or <code>.[list]</code>.</p>
+<h2 id="metadata-annotations"><a class="header" href="#metadata-annotations">Metadata Annotations</a></h2>
+<pre><code class="language-eu notest"># Declaration metadata (backtick prefix)
+` "Documentation string"
+name: value
+
+# Structured metadata
+` { doc: "description" associates: :left precedence: 50 }
+(l op r): expr
+
+# Unit-level metadata (first expression in file)
+{ :doc "Unit description" }
+a: 1
+</code></pre>
+<p><strong>Special metadata keys</strong>: <code>:target</code>, <code>:suppress</code>, <code>:main</code>,
+<code>associates</code>, <code>precedence</code>, <code>import</code>.</p>
+<h2 id="function-application"><a class="header" href="#function-application">Function Application</a></h2>
+<pre><code class="language-eu notest"># Parenthesised application (no whitespace before paren)
+f(x, y)
+
+# Catenation (pipeline style, single argument)
+x f              # equivalent to f(x)
+x f g h          # equivalent to h(g(f(x)))
+
+# Partial application (curried)
+add(1)           # returns a function adding 1
+
+# Sections (operator with gaps)
+(+ 1)            # function: add 1
+(* 2)            # function: multiply by 2
+(/)              # function: floor divide (two params)
+(÷)              # function: precise divide (two params)
+</code></pre>
+<h2 id="lookup-and-generalised-lookup"><a class="header" href="#lookup-and-generalised-lookup">Lookup and Generalised Lookup</a></h2>
+<pre><code class="language-eu notest"># Simple lookup
+block.key
+
+# Generalised lookup (evaluate RHS in block's scope)
+{ a: 3 b: 4 }.(a + b)        # 7
+{ a: 3 b: 4 }.[a, b]         # [3, 4]
+{ a: 3 b: 4 }."{a} and {b}"  # "3 and 4"
+</code></pre>
+<h2 id="anaphora-implicit-parameters"><a class="header" href="#anaphora-implicit-parameters">Anaphora (Implicit Parameters)</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Type</th><th>Numbered</th><th>Unnumbered</th><th>Scope</th></tr></thead><tbody>
+<tr><td>Expression</td><td><code>_0</code>, <code>_1</code>, <code>_2</code></td><td><code>_</code> (each use = new param)</td><td>Expression</td></tr>
+<tr><td>Block</td><td><code>•0</code>, <code>•1</code>, <code>•2</code></td><td><code>•</code> (each use = new param)</td><td>Block</td></tr>
+<tr><td>String</td><td><code>{0}</code>, <code>{1}</code>, <code>{2}</code></td><td><code>{}</code> (each use = new param)</td><td>String</td></tr>
+</tbody></table>
+</div>
+<pre><code class="language-eu notest"># Expression anaphora
+map(_0 * _0)        # square each element
+map(_ + 1)          # increment (each _ is a new param)
+
+# Block anaphora (bullet = Option-8 on Mac)
+{ x: •0 y: •1 }    # two-parameter block function
+
+# String anaphora
+map("item: {}")     # format each element
+</code></pre>
+<h2 id="operator-precedence-table"><a class="header" href="#operator-precedence-table">Operator Precedence Table</a></h2>
+<p>From highest to lowest binding:</p>
+<div class="table-wrapper"><table><thead><tr><th>Prec</th><th>Name</th><th>Assoc</th><th>Operators</th><th>Description</th></tr></thead><tbody>
+<tr><td>95</td><td>--</td><td>prefix</td><td><code>↑</code></td><td>Tight prefix (head)</td></tr>
+<tr><td>90</td><td>lookup</td><td>left</td><td><code>.</code></td><td>Field access / lookup</td></tr>
+<tr><td>88</td><td>bool-unary</td><td>prefix</td><td><code>!</code>, <code>¬</code></td><td>Boolean negation</td></tr>
+<tr><td>88</td><td>bool-unary</td><td>postfix</td><td><code>✓</code></td><td>Not-null check (true if not null)</td></tr>
+<tr><td>85</td><td>exp</td><td>right</td><td><code>^</code>, <code>∘</code>, <code>;</code></td><td>Power, composition</td></tr>
+<tr><td>80</td><td>prod</td><td>left</td><td><code>*</code>, <code>/</code>, <code>÷</code>, <code>%</code></td><td>Multiplication, floor division, precise division, floor modulo</td></tr>
+<tr><td>75</td><td>sum</td><td>left</td><td><code>+</code>, <code>-</code></td><td>Addition, subtraction</td></tr>
+<tr><td>55</td><td>--</td><td>right</td><td><code>‖</code></td><td>List cons (prepend element)</td></tr>
+<tr><td>50</td><td>cmp</td><td>left</td><td><code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code></td><td>Comparison</td></tr>
+<tr><td>45</td><td>append</td><td>right</td><td><code>++</code>, <code>&lt;&lt;</code></td><td>List append, deep merge</td></tr>
+<tr><td>42</td><td>map</td><td>left</td><td><code>&lt;$&gt;</code></td><td>Functor map</td></tr>
+<tr><td>40</td><td>eq</td><td>left</td><td><code>=</code>, <code>!=</code></td><td>Equality</td></tr>
+<tr><td>35</td><td>bool-prod</td><td>left</td><td><code>&amp;&amp;</code>, <code>∧</code></td><td>Logical AND</td></tr>
+<tr><td>30</td><td>bool-sum</td><td>left</td><td><code>||</code>, <code>∨</code></td><td>Logical OR</td></tr>
+<tr><td>20</td><td>cat</td><td>left</td><td><em>(catenation)</em></td><td>Juxtaposition / pipeline</td></tr>
+<tr><td>10</td><td>apply</td><td>right</td><td><code>@</code></td><td>Function application</td></tr>
+<tr><td>5</td><td>meta</td><td>right</td><td><code>//</code>, <code>//&lt;&lt;</code>, <code>//=</code>, <code>//=&gt;</code>, <code>//=?</code>, <code>//!</code></td><td>Metadata / assertions</td></tr>
+</tbody></table>
+</div>
+<p><strong>User-defined operators</strong> default to left-associative, precedence 50.
+Set custom values via metadata: <code>` { precedence: 75 associates: :right }</code></p>
+<p><strong>Named precedence levels</strong> for use in metadata: <code>lookup</code>, <code>call</code>,
+<code>bool-unary</code>, <code>exp</code>, <code>prod</code>, <code>sum</code>, <code>shift</code>, <code>bitwise</code>, <code>cmp</code>,
+<code>append</code>, <code>map</code>, <code>eq</code>, <code>bool-prod</code>, <code>bool-sum</code>, <code>cat</code>, <code>apply</code>, <code>meta</code>.</p>
+<h2 id="block-merge"><a class="header" href="#block-merge">Block Merge</a></h2>
+<pre><code class="language-eu notest"># Catenation of blocks performs a shallow merge
+{ a: 1 } { b: 2 }       # { a: 1 b: 2 }
+{ a: 1 } { a: 2 }       # { a: 2 }
+
+# Deep merge operator
+{ a: { x: 1 } } &lt;&lt; { a: { y: 2 } }  # { a: { x: 1 y: 2 } }
+</code></pre>
+<h2 id="imports"><a class="header" href="#imports">Imports</a></h2>
+<pre><code class="language-eu notest"># Unit-level import
+{ import: "lib.eu" }
+
+# Named import
+{ import: "cfg=config.eu" }
+
+# Multiple imports
+{ import: ["dep-a.eu", "dep-b.eu"] }
+
+# Format override
+{ import: "yaml@data.txt" }
+
+# Git import
+{ import: { git: "https://..." commit: "sha..." import: "file.eu" } }
+</code></pre>
+<h2 id="key-prelude-functions"><a class="header" href="#key-prelude-functions">Key Prelude Functions</a></h2>
+<h3 id="lists-1"><a class="header" href="#lists-1">Lists</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>head</code></td><td>First element</td></tr>
+<tr><td><code>tail</code></td><td>All but first</td></tr>
+<tr><td><code>cons(x, xs)</code></td><td>Prepend element</td></tr>
+<tr><td><code>map(f)</code></td><td>Transform each element</td></tr>
+<tr><td><code>filter(p?)</code></td><td>Keep elements matching predicate</td></tr>
+<tr><td><code>foldl(f, init)</code></td><td>Left fold</td></tr>
+<tr><td><code>foldr(f, init)</code></td><td>Right fold</td></tr>
+<tr><td><code>sort-by(f)</code></td><td>Sort by key function</td></tr>
+<tr><td><code>take(n)</code></td><td>First n elements</td></tr>
+<tr><td><code>drop(n)</code></td><td>Remove first n</td></tr>
+<tr><td><code>zip</code></td><td>Pair elements from two lists</td></tr>
+<tr><td><code>zip-with(f)</code></td><td>Combine elements with function</td></tr>
+<tr><td><code>flatten</code></td><td>Flatten nested lists one level</td></tr>
+<tr><td><code>reverse</code></td><td>Reverse a list</td></tr>
+<tr><td><code>count</code></td><td>Number of elements</td></tr>
+<tr><td><code>range(a, b)</code></td><td>Integers from a to b-1</td></tr>
+<tr><td><code>nil?</code></td><td>Is the list empty?</td></tr>
+<tr><td><code>any?(p?)</code></td><td>Does any element match?</td></tr>
+<tr><td><code>all?(p?)</code></td><td>Do all elements match?</td></tr>
+<tr><td><code>unique</code></td><td>Remove duplicates</td></tr>
+</tbody></table>
+</div>
+<h3 id="blocks-1"><a class="header" href="#blocks-1">Blocks</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>lookup(key)</code></td><td>Look up a key (symbol)</td></tr>
+<tr><td><code>lookup-or(key, default)</code></td><td>Look up with default</td></tr>
+<tr><td><code>has(key)</code></td><td>Does block contain key?</td></tr>
+<tr><td><code>keys</code></td><td>List of keys (as symbols)</td></tr>
+<tr><td><code>values</code></td><td>List of values</td></tr>
+<tr><td><code>elements</code></td><td>List of <code>{key, value}</code> pairs</td></tr>
+<tr><td><code>map-keys(f)</code></td><td>Transform keys</td></tr>
+<tr><td><code>map-values(f)</code></td><td>Transform values</td></tr>
+<tr><td><code>select(keys)</code></td><td>Keep only listed keys</td></tr>
+<tr><td><code>dissoc(keys)</code></td><td>Remove listed keys</td></tr>
+<tr><td><code>merge(b)</code></td><td>Shallow merge</td></tr>
+<tr><td><code>deep-merge(b)</code></td><td>Deep recursive merge</td></tr>
+<tr><td><code>sort-keys</code></td><td>Sort by key name</td></tr>
+</tbody></table>
+</div>
+<h3 id="strings-str-namespace"><a class="header" href="#strings-str-namespace">Strings (<code>str</code> namespace)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>str.len(s)</code></td><td>String length</td></tr>
+<tr><td><code>str.upper(s)</code></td><td>Upper case</td></tr>
+<tr><td><code>str.lower(s)</code></td><td>Lower case</td></tr>
+<tr><td><code>str.starts-with?(prefix)</code></td><td>Starts with prefix?</td></tr>
+<tr><td><code>str.ends-with?(suffix)</code></td><td>Ends with suffix?</td></tr>
+<tr><td><code>str.contains?(sub)</code></td><td>Contains substring?</td></tr>
+<tr><td><code>str.matches?(regex)</code></td><td>Matches regex?</td></tr>
+<tr><td><code>str.split(sep)</code></td><td>Split by separator</td></tr>
+<tr><td><code>str.join(sep)</code></td><td>Join list with separator</td></tr>
+<tr><td><code>str.replace(from, to)</code></td><td>Replace occurrences</td></tr>
+<tr><td><code>str.trim</code></td><td>Remove surrounding whitespace</td></tr>
+</tbody></table>
+</div>
+<h3 id="serialisation-and-parsing"><a class="header" href="#serialisation-and-parsing">Serialisation and Parsing</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>render(value)</code></td><td>Serialise to YAML string</td></tr>
+<tr><td><code>render-as(fmt, value)</code></td><td>Serialise to string in named format</td></tr>
+<tr><td><code>parse-as(fmt, str)</code></td><td>Parse string as structured data (inverse of <code>render-as</code>)</td></tr>
+</tbody></table>
+</div>
+<p>Formats for <code>render-as</code>: <code>:yaml</code>, <code>:json</code>, <code>:toml</code>, <code>:text</code>, <code>:edn</code>, <code>:html</code>.
+Formats for <code>parse-as</code>: <code>:json</code>, <code>:yaml</code>, <code>:toml</code>, <code>:csv</code>, <code>:xml</code>, <code>:edn</code>, <code>:jsonl</code>.</p>
+<p><code>parse-as</code> is safe for untrusted input — YAML <code>!eu</code> tags are never evaluated.</p>
+<h3 id="combinators"><a class="header" href="#combinators">Combinators</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>identity</code></td><td>Returns its argument unchanged</td></tr>
+<tr><td><code>const(k)</code></td><td>Always returns k</td></tr>
+<tr><td><code>compose(f, g)</code> or <code>f ∘ g</code></td><td>Compose functions</td></tr>
+<tr><td><code>flip(f)</code></td><td>Swap argument order</td></tr>
+<tr><td><code>complement(p?)</code></td><td>Negate a predicate</td></tr>
+<tr><td><code>curry(f)</code></td><td>Curry a function taking a pair</td></tr>
+<tr><td><code>uncurry(f)</code></td><td>Uncurry to take a pair</td></tr>
+</tbody></table>
+</div>
+<h3 id="numbers"><a class="header" href="#numbers">Numbers</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>num</code></td><td>Parse string to number</td></tr>
+<tr><td><code>abs</code></td><td>Absolute value</td></tr>
+<tr><td><code>negate</code></td><td>Negate number</td></tr>
+<tr><td><code>inc</code> / <code>dec</code></td><td>Increment / decrement</td></tr>
+<tr><td><code>max(a, b)</code> / <code>min(a, b)</code></td><td>Maximum / minimum</td></tr>
+<tr><td><code>even?</code> / <code>odd?</code></td><td>Parity predicates</td></tr>
+<tr><td><code>zero?</code> / <code>pos?</code> / <code>neg?</code></td><td>Sign predicates</td></tr>
+<tr><td><code>floor</code> / <code>ceil</code> / <code>round</code></td><td>Rounding</td></tr>
+</tbody></table>
+</div>
+<h3 id="arrays-arr-namespace"><a class="header" href="#arrays-arr-namespace">Arrays (<code>arr</code> namespace)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>arr.zeros(shape)</code></td><td>Create array of zeros; <code>shape</code> is a list of integers</td></tr>
+<tr><td><code>arr.fill(shape, val)</code></td><td>Create array filled with <code>val</code></td></tr>
+<tr><td><code>arr.from-flat(shape, vals)</code></td><td>Create array from flat list of numbers</td></tr>
+<tr><td><code>arr.get(a, coords)</code></td><td>Element at coordinate list <code>coords</code></td></tr>
+<tr><td><code>arr.set(a, coords, val)</code></td><td>New array with element at <code>coords</code> set to <code>val</code></td></tr>
+<tr><td><code>arr.shape(a)</code></td><td>Shape as list of integers</td></tr>
+<tr><td><code>arr.rank(a)</code></td><td>Number of dimensions</td></tr>
+<tr><td><code>arr.length(a)</code></td><td>Total number of elements</td></tr>
+<tr><td><code>arr.to-list(a)</code></td><td>Flat list of elements in row-major order</td></tr>
+<tr><td><code>arr.array?(x)</code> / <code>is-array?(x)</code></td><td>Is <code>x</code> an array?</td></tr>
+<tr><td><code>arr.transpose(a)</code></td><td>Reverse all axes</td></tr>
+<tr><td><code>arr.reshape(a, shape)</code></td><td>Reshape (total elements must match)</td></tr>
+<tr><td><code>arr.slice(a, axis, idx)</code></td><td>Slice along <code>axis</code> at <code>idx</code> (reduces rank by 1)</td></tr>
+<tr><td><code>arr.add(a, b)</code> / <code>arr.sub</code> / <code>arr.mul</code> / <code>arr.div</code></td><td>Element-wise arithmetic; <code>b</code> may be scalar</td></tr>
+<tr><td><code>a !! coords</code></td><td>Index operator; for arrays, <code>coords</code> is a list e.g. <code>[row, col]</code></td></tr>
+<tr><td><code>arr.indices(a)</code></td><td>List of coordinate lists for every element (row-major)</td></tr>
+<tr><td><code>arr.map(f, a)</code></td><td>Apply <code>f</code> to each element; same shape</td></tr>
+<tr><td><code>arr.map-indexed(f, a)</code></td><td>Apply <code>f(coords, val)</code> to each element; same shape</td></tr>
+<tr><td><code>arr.fold(f, init, a)</code></td><td>Left-fold over all elements in row-major order</td></tr>
+<tr><td><code>arr.neighbours(a, coords, offsets)</code></td><td>Values at valid in-bounds neighbours given offset vectors</td></tr>
+</tbody></table>
+</div>
+<p>The standard <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code> operators are polymorphic and apply element-wise when
+either operand is an array. Scalar broadcasting is supported.</p>
+<h3 id="io"><a class="header" href="#io">IO</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Binding / Function</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>io.env</code></td><td>Block of environment variables</td></tr>
+<tr><td><code>io.epoch-time</code></td><td>Unix timestamp at launch</td></tr>
+<tr><td><code>io.args</code></td><td>Command-line arguments (after <code>--</code>)</td></tr>
+<tr><td><code>io.random</code></td><td>Infinite lazy stream of random floats</td></tr>
+<tr><td><code>io.RANDOM_SEED</code></td><td>Current random seed</td></tr>
+<tr><td><code>io.return(a)</code></td><td>Wrap a pure value in the IO monad</td></tr>
+<tr><td><code>io.bind(action, cont)</code></td><td>Sequence two IO actions</td></tr>
+<tr><td><code>io.shell(cmd)</code></td><td>Run <code>cmd</code> via <code>sh -c</code>; returns <code>{stdout, stderr, exit-code}</code></td></tr>
+<tr><td><code>io.shell-with(opts, cmd)</code></td><td>Run <code>cmd</code> with extra options (e.g. <code>{stdin: s, timeout: 60}</code>). Pipeline: <code>"cmd" shell-with(opts)</code></td></tr>
+<tr><td><code>io.exec([cmd : args])</code></td><td>Run <code>cmd</code> directly (no shell); argument is a list <code>[cmd, arg1, arg2, ...]</code></td></tr>
+<tr><td><code>io.exec-with(opts, [cmd : args])</code></td><td>Run <code>cmd</code> directly with extra options. Pipeline: <code>["git", "log"] exec-with(opts)</code></td></tr>
+<tr><td><code>io.check(result)</code></td><td>Fail with stderr if <code>exit-code</code> is non-zero; otherwise return result</td></tr>
+<tr><td><code>io.map(f, action)</code></td><td>Apply pure function to result of IO action (fmap)</td></tr>
+</tbody></table>
+</div>
+<h2 id="test--assertion-operators"><a class="header" href="#test--assertion-operators">Test / Assertion Operators</a></h2>
+<p><strong>Test expectations</strong> (panic in normal mode, return <code>false</code> in test mode):</p>
+<div class="table-wrapper"><table><thead><tr><th>Operator</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>e //= v</code></td><td>Test <code>e</code> equals <code>v</code>, return <code>true</code>/<code>false</code></td></tr>
+<tr><td><code>e //=? f</code></td><td>Test <code>f(e)</code> is <code>true</code>, return <code>true</code>/<code>false</code></td></tr>
+<tr><td><code>e //!</code></td><td>Test <code>e</code> is <code>true</code>, return <code>true</code>/<code>false</code></td></tr>
+</tbody></table>
+</div>
+<p><strong>Assertions</strong> (always panic on failure):</p>
+<div class="table-wrapper"><table><thead><tr><th>Operator</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>e //=&gt; v</code></td><td>Assert <code>e</code> equals <code>v</code> (panic with expected/actual on failure)</td></tr>
+</tbody></table>
+</div>
+<h2 id="command-line-quick-reference"><a class="header" href="#command-line-quick-reference">Command Line Quick Reference</a></h2>
+<pre><code class="language-sh">eu file.eu                  # Evaluate file, output YAML
+eu -j file.eu               # Output JSON
+eu -x text file.eu          # Output plain text
+eu -e 'expression'          # Evaluate expression
+eu a.yaml b.eu              # Merge inputs
+eu -t target file.eu        # Render specific target
+eu list-targets file.eu     # List targets
+eu --seed 42 file.eu        # Deterministic random
+eu -Q file.eu               # Suppress prelude
+eu fmt file.eu              # Format source
+eu dump stg file.eu         # Dump STG syntax
+eu -- arg1 arg2             # Pass arguments (io.args)
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../faq.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../appendices/syntax-gotchas.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../faq.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../appendices/syntax-gotchas.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="../docs/theme/eucalypt-highlight.js"></script>
+
+
+    </div>
+    </body>
+</html>
