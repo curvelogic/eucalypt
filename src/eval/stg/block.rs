@@ -1294,6 +1294,7 @@ fn resolve_pair_key_symbol(
 /// the kv closure and to the MERGEWITH intrinsic as block_pairs of k
 /// and v. The same function can deconstruct either.
 fn deconstruct(
+    machine: &dyn IntrinsicMachine,
     view: MutatorHeapView,
     pool: &crate::eval::memory::symbol::SymbolPool,
     pair_closure: &SynClosure,
@@ -1307,7 +1308,15 @@ fn deconstruct(
             let kv = args.get(1).unwrap();
 
             let sym = resolve_pair_key_symbol(view, pool, pair_closure, k)?;
-            let kv_closure = pair_closure.navigate_local(&view, kv);
+
+            // The value ref may be Ref::L (local env reference),
+            // Ref::V (inline native value), or Ref::G (global
+            // constant — e.g. empty list []). Use the navigator
+            // to resolve any ref type into a closure.
+            let kv_closure = match kv {
+                Ref::L(_) => pair_closure.navigate_local(&view, kv),
+                _ => machine.nav(view).resolve(&kv)?,
+            };
 
             Ok((sym, kv_closure))
         }
@@ -1451,13 +1460,13 @@ impl StgIntrinsic for Merge {
 
         for item in l {
             let item = item?;
-            let (k, kv) = deconstruct(view, machine.symbol_pool(), &item)?;
+            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
             merge.insert(k, kv);
         }
 
         for item in r {
             let item = item?;
-            let (k, kv) = deconstruct(view, machine.symbol_pool(), &item)?;
+            let (k, kv) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
             merge.insert(k, kv);
         }
 
@@ -1559,13 +1568,13 @@ impl StgIntrinsic for MergeWith {
 
         for item in l {
             let item = item?;
-            let (key, value) = deconstruct(view, machine.symbol_pool(), &item)?;
+            let (key, value) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
             merge.insert(key, value);
         }
 
         for item in r {
             let item = item?;
-            let (key, nv) = deconstruct(view, machine.symbol_pool(), &item)?;
+            let (key, nv) = deconstruct(machine, view, machine.symbol_pool(), &item)?;
             if let Some(ov) = merge.get_mut(&key) {
                 let args = [ov.clone(), nv];
                 let mut combined = SynClosure::new(
