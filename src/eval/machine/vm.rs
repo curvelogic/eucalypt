@@ -858,7 +858,10 @@ impl MachineState {
 
                     match excess.cmp(&0) {
                         Ordering::Equal => {
-                            self.closure = view.saturate(&self.closure, args.as_slice())?;
+                            // Pass the args array directly instead of copying via
+                            // saturate(&[SynClosure]) → saves one Array::from_slice
+                            // allocation per exact-arity function call.
+                            self.closure = view.saturate_with_array(&self.closure, args)?;
                         }
                         Ordering::Less => {
                             self.closure = view.partially_apply(&self.closure, args.as_slice())?;
