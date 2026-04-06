@@ -101,13 +101,20 @@ impl ImportGraph {
         }
     }
 
-    /// Find the node index for the specified input
+    /// Find the node index for the specified input by locator identity.
+    ///
+    /// Two inputs with the same locator (file path / URL) but different names
+    /// are treated as the same graph node — the locator is the stable identity
+    /// after resolution.
     fn find_index(&self, input: &Input) -> Option<NodeIndex> {
-        self.graph.node_indices().find(|&i| &self.graph[i] == input)
+        self.graph
+            .node_indices()
+            .find(|&i| self.graph[i].locator() == input.locator())
     }
 
-    /// Add locator to the graph if it isn't already there and return
-    /// node index of the node.
+    /// Add an input to the graph if it isn't already there and return
+    /// the node index.  Deduplication is by locator, so `lens=lens.eu`
+    /// and `optics=lens.eu` resolve to the same node.
     fn encounter_input(&mut self, input: Input) -> NodeIndex {
         match self.find_index(&input) {
             Some(i) => i,
