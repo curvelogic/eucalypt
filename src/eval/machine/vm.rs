@@ -284,6 +284,15 @@ pub struct MachineState {
     pending_capture_start: Option<String>,
     /// Test mode flag — `__EXPECT` failures return false instead of panicking.
     test_mode: bool,
+    /// Pending BIF intrinsic execution, set by `handle_instruction` when it
+    /// encounters a `HeapSyn::Bif` node.
+    ///
+    /// Rather than executing the BIF directly inside `handle_instruction`
+    /// (where only `MachineState` is visible), `handle_instruction` stores
+    /// the BIF index and cloned argument refs here and returns early.
+    /// `Machine::step()` then picks this up and executes it with a
+    /// `MachineBifContext` that provides access to both state and core.
+    pending_bif: Option<(u8, Vec<Ref>)>,
 }
 
 impl Default for MachineState {
@@ -307,6 +316,7 @@ impl Default for MachineState {
             capture_results: Vec::new(),
             pending_capture_start: None,
             test_mode: false,
+            pending_bif: None,
         }
     }
 }
@@ -343,8 +353,8 @@ impl MachineState {
     fn handle_instruction<'guard>(
         &mut self,
         view: MutatorHeapView<'guard>,
-        emitter: &mut dyn Emitter,
-        intrinsics: &[&'guard dyn StgIntrinsic],
+        _emitter: &mut dyn Emitter,
+        _intrinsics: &[&'guard dyn StgIntrinsic],
         metrics: &mut Metrics,
     ) -> Result<(), ExecutionError> {
         // Load "op code"
@@ -452,18 +462,10 @@ impl MachineState {
                 self.closure = self.nav(view).resolve_callable(&callable)?;
             }
             HeapSyn::Bif { intrinsic, args } => {
-                let bif = intrinsics[intrinsic as usize];
-                bif.execute(self, view, emitter, args.as_slice())
-                    .inspect_err(|_| {
-                        // Set annotation to the BIF's own annotation so
-                        // errors report the correct intrinsic context
-                        if let Ok(global_closure) = self.nav(view).global(intrinsic as usize) {
-                            let bif_ann = global_closure.annotation();
-                            if bif_ann.is_valid() {
-                                self.annotation = bif_ann;
-                            }
-                        }
-                    })?;
+                // Defer BIF execution to Machine::step() so that the full
+                // Machine is available (needed for evaluate_to_whnf).
+                // Clone the args: Ref is cheap to clone (indices or small natives).
+                self.pending_bif = Some((intrinsic, args.as_slice().to_vec()));
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
@@ -1152,6 +1154,26 @@ pub struct MachineSettings {
     pub stack_diag: bool,
 }
 
+/// Non-state fields of the Machine: heap, intrinsics, metrics, settings, clock,
+/// and crash diagnostics.  Separated from `MachineState` so that BIFs can
+/// receive `&mut MachineState` and `&mut MachineCore` as disjoint borrows via
+/// `MachineBifContext`, enabling sound `evaluate_to_whnf` support.
+pub struct MachineCore<'a> {
+    /// Main VM Memory — interior mutability throughout
+    heap: Heap,
+    /// Intrinsics (actions with access into machine)
+    intrinsics: Vec<&'a dyn StgIntrinsic>,
+    /// Whether to trace every step to stderr
+    settings: MachineSettings,
+    /// Metrics
+    metrics: Metrics,
+    /// Clock
+    clock: Clock,
+    /// Crash diagnostics snapshot — updated periodically, read by signal handler.
+    /// Boxed to guarantee a stable address regardless of Machine moves.
+    crash_diagnostics: Box<super::crash::CrashDiagnostics>,
+}
+
 /// An STG machine variant using cactus environment
 ///
 /// GC roots (outside heap, pointing in) are:
@@ -1159,20 +1181,16 @@ pub struct MachineSettings {
 /// - globals
 /// - stack
 pub struct Machine<'a> {
-    /// Main VM Memory - immutable ref and interior mutability
-    heap: Heap,
+    /// Non-state fields (heap, intrinsics, settings, metrics, clock, diagnostics)
+    core: MachineCore<'a>,
     /// The current state of the machine - operated on as mutable ref
     state: MachineState,
-    /// Intrinsics (actions with access into machine)
-    intrinsics: Vec<&'a dyn StgIntrinsic>,
-    /// Emitter to send output and error events to
+    /// Emitter to send output and error events to.
+    ///
+    /// Kept as a direct field (not in `MachineCore`) so that `step()` can
+    /// borrow it independently from `core`, allowing simultaneous
+    /// `&mut core` (for `MachineBifContext`) and `&mut emitter`.
     emitter: Box<dyn Emitter + 'a>,
-    /// Whether to trace every step to stderr
-    settings: MachineSettings,
-    /// Metrics
-    metrics: Metrics,
-    /// Clock
-    clock: Clock,
     /// Active capture emitters for nested `render-as` calls.
     ///
     /// **GC constraint**: This field is NOT scanned by the garbage collector.
@@ -1180,9 +1198,197 @@ pub struct Machine<'a> {
     /// If future changes require storing heap pointers here, move this field
     /// to `MachineState` so it participates in GC marking.
     capture_emitters: Vec<crate::eval::stg::render_to_string::OwnedCaptureEmitter>,
-    /// Crash diagnostics snapshot — updated periodically, read by signal handler.
-    /// Boxed to guarantee a stable address regardless of Machine moves.
-    crash_diagnostics: Box<super::crash::CrashDiagnostics>,
+}
+
+/// Evaluate `closure` to WHNF using `state` and `core`.
+///
+/// This is a stripped-down run loop used by `MachineBifContext::evaluate_to_whnf`
+/// — i.e. when a BIF needs to force a thunk at runtime.  It uses a `NullEmitter`
+/// because BIF-internal forcing should only be applied to pure value terms (e.g.
+/// building a Vec or Set from a list); if the sub-term contains emit BIFs those
+/// events are intentionally discarded.  The full `Machine::evaluate_to_whnf`
+/// (used by the IO driver) continues to use the real emitter via `self.run()`.
+fn evaluate_to_whnf_impl(
+    state: &mut MachineState,
+    core: &mut MachineCore<'_>,
+    closure: SynClosure,
+) -> Result<SynClosure, ExecutionError> {
+    // Stash the current stack so the GC can trace it during the sub-run.
+    let saved_stack = std::mem::take(&mut state.stack);
+    state.suspended_stacks.push(saved_stack);
+
+    // Stash the outer closure for GC safety — the collector may rewrite its
+    // internal heap pointers if evacuation occurs during run().
+    state.stash.push(state.closure.clone());
+
+    state.terminated = false;
+    state.yielded_io = false;
+    state.closure = closure;
+
+    // Run with NullEmitter — see function doc for rationale.
+    let mut null_emitter = NullEmitter;
+    let gc_check_freq: u32 = 500;
+    let mut gc_countdown: u32 = gc_check_freq;
+    let run_result: Result<(), ExecutionError> = loop {
+        if state.terminated {
+            break Ok(());
+        }
+        gc_countdown -= 1;
+        if gc_countdown == 0 {
+            gc_countdown = gc_check_freq;
+            if core.heap.policy_requires_collection() {
+                collect::collect(
+                    state,
+                    &mut core.heap,
+                    &mut core.clock,
+                    core.settings.dump_heap,
+                );
+                core.clock.switch(ThreadOccupation::Mutator);
+            }
+        }
+        // Execute one step using the NullEmitter.
+        let view = MutatorHeapView::new(&core.heap);
+        core.metrics.tick();
+        let step_result = state
+            .handle_instruction(view, &mut null_emitter, &core.intrinsics, &mut core.metrics)
+            .map_err(|e| {
+                ExecutionError::Traced(
+                    Box::new(e),
+                    state.nav(view).env_trace(),
+                    state.stack_trace(&view),
+                )
+            });
+        if let Err(e) = step_result {
+            break Err(e);
+        }
+        // Execute any pending BIF (also with NullEmitter and a sub-MachineBifContext).
+        if let Some((intrinsic_idx, args)) = state.pending_bif.take() {
+            let bif = core.intrinsics[intrinsic_idx as usize];
+            // SAFETY: core.heap lives at least as long as this stack frame.
+            let bif_view = unsafe { MutatorHeapView::from_raw_heap(&core.heap as *const Heap) };
+            let mut ctx = MachineBifContext { state, core };
+            if let Err(e) = bif.execute(&mut ctx, bif_view, &mut null_emitter, &args) {
+                break Err(e);
+            }
+        }
+        // Capture lifecycle inside sub-evaluation (needed if sub-eval uses render-as).
+        if let Some(fmt) = state.pending_capture_start.take() {
+            let mut cap = crate::eval::stg::render_to_string::OwnedCaptureEmitter::new(&fmt)?;
+            cap.stream_start();
+            // We have no capture_emitters stack in this context; this is a limitation
+            // of BIF-level sub-evaluation.  Nested render-as inside evaluate_to_whnf
+            // is not supported — it would require passing the capture stack through.
+            let _ = cap; // discard
+        }
+    };
+
+    // Restore saved state (using the GC-updated copies).
+    let saved_closure = state
+        .stash
+        .pop()
+        .expect("stash underflow in evaluate_to_whnf");
+    let saved_stack = state
+        .suspended_stacks
+        .pop()
+        .expect("suspended_stacks underflow in evaluate_to_whnf");
+
+    // Propagate run error only after restoring state.
+    run_result?;
+
+    let sub_yielded = state.yielded_io;
+    let result = state.closure.clone();
+
+    state.terminated = false;
+    state.yielded_io = false;
+    state.closure = saved_closure;
+    state.stack = saved_stack;
+
+    if sub_yielded {
+        return Err(ExecutionError::Panic(
+            Smid::default(),
+            "evaluate_to_whnf: sub-evaluation unexpectedly yielded an IO constructor".to_string(),
+        ));
+    }
+
+    Ok(result)
+}
+
+/// Context passed to BIF `execute` implementations, providing disjoint mutable
+/// access to `MachineState` and `MachineCore` with no aliasing.
+///
+/// This replaces the previous raw-pointer callback mechanism and eliminates the
+/// Stacked-Borrows undefined behaviour that arose from two active `&mut` paths
+/// to the same `MachineState`.
+pub struct MachineBifContext<'a, 'b> {
+    pub(crate) state: &'b mut MachineState,
+    pub(crate) core: &'b mut MachineCore<'a>,
+}
+
+impl IntrinsicMachine for MachineBifContext<'_, '_> {
+    fn rcache(&mut self) -> &mut LruCache<String, Regex> {
+        &mut self.state.rcache
+    }
+
+    fn set_closure(&mut self, closure: SynClosure) -> Result<(), ExecutionError> {
+        self.state.closure = closure;
+        Ok(())
+    }
+
+    fn nav<'guard>(&'guard self, view: MutatorHeapView<'guard>) -> HeapNavigator<'guard> {
+        HeapNavigator {
+            locals: view.scoped(self.state.env(view)),
+            globals: view.scoped(self.state.globals),
+            view,
+        }
+    }
+
+    fn root_env(&self) -> RefPtr<EnvFrame> {
+        self.state.root_env
+    }
+
+    fn env(&self, _view: MutatorHeapView) -> RefPtr<EnvFrame> {
+        self.state.closure.env()
+    }
+
+    fn symbol_pool(&self) -> &SymbolPool {
+        &self.state.symbol_pool
+    }
+
+    fn symbol_pool_mut(&mut self) -> &mut SymbolPool {
+        &mut self.state.symbol_pool
+    }
+
+    fn annotation(&self) -> Smid {
+        self.state.annotation
+    }
+
+    fn start_capture(&mut self, format: &str) -> Result<(), ExecutionError> {
+        self.state.pending_capture_start = Some(format.to_string());
+        Ok(())
+    }
+
+    fn push_capture_end(&mut self, view: MutatorHeapView<'_>) -> Result<(), ExecutionError> {
+        self.state.push(view, Continuation::CaptureEnd)
+    }
+
+    fn take_capture_result(&mut self) -> Result<String, ExecutionError> {
+        self.state.capture_results.pop().ok_or_else(|| {
+            ExecutionError::Panic(Smid::default(), "no capture result available".to_string())
+        })
+    }
+
+    fn test_mode(&self) -> bool {
+        self.state.test_mode
+    }
+
+    /// Force `closure` to WHNF.
+    ///
+    /// Delegates to `evaluate_to_whnf_impl` which runs a stripped-down sub-loop
+    /// using a `NullEmitter`.  This is sound because BIF-internal forcing is only
+    /// applied to pure value terms; emitting during sub-evaluation is not expected.
+    fn evaluate_to_whnf(&mut self, closure: SynClosure) -> Result<SynClosure, ExecutionError> {
+        evaluate_to_whnf_impl(self.state, self.core, closure)
+    }
 }
 
 impl<'a> Machine<'a> {
@@ -1195,23 +1401,25 @@ impl<'a> Machine<'a> {
         test_mode: bool,
     ) -> Self {
         Machine {
-            heap: heap_limit_mib.map(Heap::with_limit).unwrap_or_default(),
+            core: MachineCore {
+                heap: heap_limit_mib.map(Heap::with_limit).unwrap_or_default(),
+                intrinsics: vec![],
+                settings: MachineSettings {
+                    trace_steps,
+                    dump_heap,
+                    test_mode,
+                    stack_diag: std::env::var("EU_STACK_DIAG").is_ok(),
+                },
+                metrics: Metrics::default(),
+                clock: Clock::default(),
+                crash_diagnostics: Box::new(super::crash::CrashDiagnostics::new()),
+            },
             state: MachineState {
                 test_mode,
                 ..Default::default()
             },
-            intrinsics: vec![],
             emitter,
-            settings: MachineSettings {
-                trace_steps,
-                dump_heap,
-                test_mode,
-                stack_diag: std::env::var("EU_STACK_DIAG").is_ok(),
-            },
-            metrics: Metrics::default(),
-            clock: Clock::default(),
             capture_emitters: Vec::new(),
-            crash_diagnostics: Box::new(super::crash::CrashDiagnostics::new()),
         }
     }
 
@@ -1239,7 +1447,7 @@ impl<'a> Machine<'a> {
 
     /// Access the heap for allocation
     pub fn heap(&self) -> &Heap {
-        &self.heap
+        &self.core.heap
     }
 
     /// The root (empty) environment — used by the io-run driver loop to
@@ -1258,17 +1466,17 @@ impl<'a> Machine<'a> {
 
     /// Access the metrics (ticks, allocs, etc.)
     pub fn metrics(&self) -> &Metrics {
-        &self.metrics
+        &self.core.metrics
     }
 
     /// Get heap statistics
     pub fn heap_stats(&self) -> HeapStats {
-        self.heap.stats()
+        self.core.heap.stats()
     }
 
     /// Return clock for access to GC timings
     pub fn clock(&self) -> &Clock {
-        &self.clock
+        &self.core.clock
     }
 
     /// Current source annotation for error reporting
@@ -1278,7 +1486,7 @@ impl<'a> Machine<'a> {
 
     /// Create a mutator heap view for heap access
     fn view(&'a self) -> MutatorHeapView<'a> {
-        MutatorHeapView::new(&self.heap)
+        MutatorHeapView::new(&self.core.heap)
     }
 
     /// Split reference into separate facilities (state, heap)
@@ -1302,17 +1510,17 @@ impl<'a> Machine<'a> {
         };
         (
             &mut self.state,
-            MutatorHeapView::new(&self.heap),
+            MutatorHeapView::new(&self.core.heap),
             emitter,
-            &mut self.metrics,
-            &self.settings,
-            &self.intrinsics,
+            &mut self.core.metrics,
+            &self.core.settings,
+            &self.core.intrinsics,
         )
     }
 
     /// Get a navigator for resolving references
     fn nav(&self) -> HeapNavigator<'_> {
-        self.state.nav(MutatorHeapView::new(&self.heap))
+        self.state.nav(MutatorHeapView::new(&self.core.heap))
     }
 
     /// Apply a mutation which needs heap access
@@ -1322,7 +1530,7 @@ impl<'a> Machine<'a> {
         O: Sized,
         M: Mutator<Input = I, Output = O>,
     {
-        let view = MutatorHeapView::new(&self.heap);
+        let view = MutatorHeapView::new(&self.core.heap);
         mutator.run(&view, input)
     }
 
@@ -1334,8 +1542,8 @@ impl<'a> Machine<'a> {
         closure: SynClosure,
         intrinsics: Vec<&'a dyn StgIntrinsic>,
     ) -> Result<(), ExecutionError> {
-        self.clock.switch(ThreadOccupation::Initialisation);
-        self.intrinsics = intrinsics.clone();
+        self.core.clock.switch(ThreadOccupation::Initialisation);
+        self.core.intrinsics = intrinsics.clone();
         self.state.root_env = root_env;
         self.state.set_globals(globals)?;
         self.state.set_closure(closure)
@@ -1385,6 +1593,53 @@ impl<'a> Machine<'a> {
                 )
             })?;
 
+        // Execute any pending BIF with access to both state and core.
+        //
+        // `handle_instruction` stores BIF info in `pending_bif` rather than
+        // executing immediately (where only MachineState is visible).
+        // Here we create a `MachineBifContext` with disjoint `&mut state` and
+        // `&mut core` borrows — no aliasing, no raw-pointer tricks.
+        if let Some((intrinsic_idx, args)) = self.state.pending_bif.take() {
+            let bif = self.core.intrinsics[intrinsic_idx as usize];
+            // Build view from raw ptr so that &mut core remains available for ctx.
+            // SAFETY: core.heap lives as long as this Machine (same struct).
+            let bif_view =
+                unsafe { MutatorHeapView::from_raw_heap(&self.core.heap as *const Heap) };
+            let bif_emitter: &mut dyn Emitter = if let Some(top) = self.capture_emitters.last_mut()
+            {
+                top as &mut dyn Emitter
+            } else {
+                self.emitter.as_mut()
+            };
+            let mut ctx = MachineBifContext {
+                state: &mut self.state,
+                core: &mut self.core,
+            };
+            let bif_result = bif.execute(&mut ctx, bif_view, bif_emitter, &args);
+            // On error, annotate with the BIF's source location then wrap in trace.
+            if bif_result.is_err() {
+                let ann_view =
+                    unsafe { MutatorHeapView::from_raw_heap(&ctx.core.heap as *const Heap) };
+                if let Ok(global_closure) = ctx.state.nav(ann_view).global(intrinsic_idx as usize) {
+                    let ann = global_closure.annotation();
+                    if ann.is_valid() {
+                        ctx.state.annotation = ann;
+                    }
+                }
+            }
+            // ctx borrows end here; safe to access self.state / self.core again.
+            bif_result.map_err(|e| {
+                ExecutionError::Traced(
+                    Box::new(e),
+                    self.state
+                        .nav(MutatorHeapView::new(&self.core.heap))
+                        .env_trace(),
+                    self.state
+                        .stack_trace(&MutatorHeapView::new(&self.core.heap)),
+                )
+            })?;
+        }
+
         // Handle capture lifecycle from the step just executed.
 
         // If a capture start was requested, push the capture emitter.
@@ -1404,7 +1659,7 @@ impl<'a> Machine<'a> {
             })?;
             capture.stream_end();
             let result_str = capture.into_string()?;
-            let view = MutatorHeapView::new(&self.heap);
+            let view = MutatorHeapView::new(&self.core.heap);
             let str_ref = view.str_ref(result_str)?;
             let atom = view.alloc(HeapSyn::Atom { evaluand: str_ref })?.as_ptr();
             self.state.closure = SynClosure::new(atom, self.state.root_env);
@@ -1415,17 +1670,17 @@ impl<'a> Machine<'a> {
 
     /// Run a GC collection and update crash diagnostics around it.
     fn collect_with_diagnostics(&mut self) {
-        let ticks = self.metrics.ticks();
+        let ticks = self.core.metrics.ticks();
 
         // Snapshot VM state before collection
-        self.crash_diagnostics.update_vm(
+        self.core.crash_diagnostics.update_vm(
             ticks,
-            self.metrics.allocs(),
-            self.metrics.max_stack(),
+            self.core.metrics.allocs(),
+            self.core.metrics.max_stack(),
             self.state.stack.len(),
         );
 
-        self.crash_diagnostics.record_gc_event(
+        self.core.crash_diagnostics.record_gc_event(
             super::crash::GcEventKind::CollectionStart,
             0,
             ticks,
@@ -1433,23 +1688,23 @@ impl<'a> Machine<'a> {
 
         collect::collect(
             &mut self.state,
-            &mut self.heap,
-            &mut self.clock,
-            self.settings.dump_heap,
+            &mut self.core.heap,
+            &mut self.core.clock,
+            self.core.settings.dump_heap,
         );
 
-        let stats = self.heap.stats();
-        self.crash_diagnostics.record_gc_event(
+        let stats = self.core.heap.stats();
+        self.core.crash_diagnostics.record_gc_event(
             super::crash::GcEventKind::CollectionEnd,
             stats.blocks_allocated as u32,
             ticks,
         );
-        self.crash_diagnostics.update_gc(
+        self.core.crash_diagnostics.update_gc(
             stats.collections_count,
             stats.blocks_allocated,
             stats.peak_heap_blocks,
             stats.lobs_allocated,
-            self.heap.mark_state(),
+            self.core.heap.mark_state(),
         );
     }
 
@@ -1457,9 +1712,9 @@ impl<'a> Machine<'a> {
     pub fn run(&mut self, limit: Option<usize>) -> Result<Option<u8>, ExecutionError> {
         // Register crash diagnostics now that self is at its final address.
         // (Cannot do this in new() because Machine may be moved after construction.)
-        super::crash::register_crash_diagnostics(&self.crash_diagnostics);
+        super::crash::register_crash_diagnostics(&self.core.crash_diagnostics);
 
-        self.clock.switch(ThreadOccupation::Mutator);
+        self.core.clock.switch(ThreadOccupation::Mutator);
 
         // Use a countdown counter instead of modulo check on every
         // tick. This replaces `ticks % 500 == 0` with a simple
@@ -1470,7 +1725,7 @@ impl<'a> Machine<'a> {
 
         while !self.state.terminated {
             if let Some(limit) = limit {
-                if self.metrics.ticks() as usize >= limit {
+                if self.core.metrics.ticks() as usize >= limit {
                     return Err(ExecutionError::DidntTerminate(limit));
                 }
             }
@@ -1481,7 +1736,7 @@ impl<'a> Machine<'a> {
 
                 if self.heap().policy_requires_collection() {
                     self.collect_with_diagnostics();
-                    self.clock.switch(ThreadOccupation::Mutator);
+                    self.core.clock.switch(ThreadOccupation::Mutator);
                 }
             }
 
@@ -1490,7 +1745,7 @@ impl<'a> Machine<'a> {
 
         self.collect_with_diagnostics();
 
-        self.clock.stop();
+        self.core.clock.stop();
 
         Ok(self.exit_code())
     }

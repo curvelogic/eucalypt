@@ -5,6 +5,14 @@ use crate::{
     eval::machine::intrinsic::{CallGlobal1, StgIntrinsic},
 };
 
+#[cfg(test)]
+use crate::eval::{
+    emit::Emitter,
+    error::ExecutionError,
+    machine::intrinsic::IntrinsicMachine,
+    memory::{mutator::MutatorHeapView, syntax::Ref},
+};
+
 use super::{
     syntax::{
         dsl::{case, data, force, lambda, local, lref, switch, unbox_num, unbox_str},
@@ -176,3 +184,115 @@ impl StgIntrinsic for SeqList {
 }
 
 impl CallGlobal1 for SeqList {}
+
+/// `__FORCE_WHNF` — force a thunk to weak head normal form from within an intrinsic.
+///
+/// Unlike the STG-level `force` DSL combinator (which is woven into the
+/// static wrapper lambdas and only available at compile time), this BIF
+/// calls back into the machine at runtime via `IntrinsicMachine::evaluate_to_whnf`.
+///
+/// This is a test-only intrinsic; it is only registered in the runtime under
+/// `#[cfg(test)]`.  The double-underscore prefix signals internal/test-only
+/// status.  Unit tests in this module exercise it directly.
+#[cfg(test)]
+pub struct ForceWhnf;
+
+#[cfg(test)]
+impl StgIntrinsic for ForceWhnf {
+    fn name(&self) -> &str {
+        "__FORCE_WHNF"
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let closure = machine.nav(view).resolve(&args[0])?;
+        let forced = machine.evaluate_to_whnf(closure)?;
+        machine.set_closure(forced)
+    }
+}
+
+#[cfg(test)]
+impl CallGlobal1 for ForceWhnf {}
+
+#[cfg(test)]
+mod tests {
+    use crate::eval::{
+        intrinsics,
+        memory::syntax::Native,
+        stg::{
+            syntax::dsl::{
+                app, app_bif, box_num, gref, let_, letrec_, local, lref, num, unbox_num, value,
+            },
+            testing,
+        },
+    };
+
+    use super::ForceWhnf;
+
+    /// Verify that `FORCE_WHNF` can force a thunk inside an intrinsic execution.
+    ///
+    /// The test wraps a boxed number in a let-bound thunk (a lazy allocation
+    /// that is not pre-evaluated by the wrapper's strict-arg mechanism).
+    /// `FORCE_WHNF` receives that thunk, forces it via `evaluate_to_whnf`,
+    /// and the result is a `BoxedNumber`.  We then unbox it and confirm the
+    /// numeric value.
+    #[test]
+    fn test_force_whnf_forces_thunk() {
+        // Build the runtime with only FORCE_WHNF
+        let rt = testing::runtime(vec![Box::new(ForceWhnf)]);
+
+        // Syntax:
+        //   letrec [
+        //     thunk = box_num(42)           -- a closure that yields BoxedNumber(42)
+        //   ] in
+        //   let [
+        //     forced = FORCE_WHNF(lref(0))  -- force the thunk via the BIF
+        //   ] in
+        //   unbox_num(local(0), local(0))   -- unbox the result to get Num(42)
+        let syntax = letrec_(
+            vec![value(box_num(42))],
+            let_(
+                vec![value(app(
+                    gref(intrinsics::index("__FORCE_WHNF").unwrap()),
+                    vec![lref(0)],
+                ))],
+                unbox_num(local(0), local(0)),
+            ),
+        );
+
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert_eq!(m.native_return(), Some(Native::Num(42.into())));
+    }
+
+    /// Verify that `FORCE_WHNF` forces an arithmetic thunk.
+    ///
+    /// Uses ADD (via gref) wrapped in a thunk to produce a computed value.
+    /// `FORCE_WHNF` forces the thunk; we then confirm the result terminated.
+    #[test]
+    fn test_force_whnf_forces_arithmetic_thunk() {
+        use crate::eval::stg::arith::Add;
+        let rt = testing::runtime(vec![Box::new(ForceWhnf), Box::new(Add)]);
+
+        // letrec [
+        //   add_thunk = ADD(num(3), num(4))  -- unevaluated arithmetic
+        // ] in
+        //   FORCE_WHNF(lref(0))             -- force it
+        let syntax = letrec_(
+            vec![value(app_bif(
+                intrinsics::index_u8("ADD"),
+                vec![num(3), num(4)],
+            ))],
+            app_bif(intrinsics::index_u8("__FORCE_WHNF"), vec![lref(0)]),
+        );
+
+        let mut m = testing::machine(rt.as_ref(), syntax);
+        m.run(Some(200)).unwrap();
+        assert!(m.terminated());
+    }
+}

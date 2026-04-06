@@ -1,5 +1,7 @@
 //! Support mutator access to heap and machine
 
+use std::marker::PhantomData;
+
 use crate::{
     common::sourcemap::Smid,
     eval::{
@@ -41,20 +43,53 @@ impl std::fmt::Debug for PinGuard {
 ///
 /// MutatorHeapView provides a scope for dereferencing heap pointers,
 /// the means of allocation and convenience constructors for
-/// allocating in-heap syntax
+/// allocating in-heap syntax.
+///
+/// Internally stores a raw pointer rather than a reference so that a
+/// view can be constructed alongside a `&mut` borrow of the same
+/// `MachineCore` struct (which also contains the `Heap`).  The
+/// phantom lifetime `'guard` upholds the borrow-checker invariant
+/// that the heap lives at least as long as the view.  This is safe
+/// because `Heap` is entirely `UnsafeCell`/`Cell`-based and all heap
+/// mutations go through interior mutability.
 #[derive(Copy, Clone)]
 pub struct MutatorHeapView<'guard> {
-    heap: &'guard Heap,
+    heap: *const Heap,
+    _phantom: PhantomData<&'guard Heap>,
 }
 
 impl<'guard> MutatorHeapView<'guard> {
     pub fn new(heap: &'guard Heap) -> Self {
-        MutatorHeapView { heap }
+        MutatorHeapView {
+            heap: heap as *const _,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Construct a view from a raw heap pointer.
+    ///
+    /// # Safety
+    ///
+    /// `heap` must be a valid, aligned pointer to a `Heap` that remains live
+    /// for the lifetime `'guard`.  The caller must ensure no conflicting
+    /// exclusive Rust references to the `Heap` (or fields that alias it) exist
+    /// for the duration of `'guard`.
+    pub unsafe fn from_raw_heap(heap: *const Heap) -> Self {
+        MutatorHeapView {
+            heap,
+            _phantom: PhantomData,
+        }
+    }
+
+    #[inline(always)]
+    fn heap_ref(&self) -> &'guard Heap {
+        // SAFETY: the phantom lifetime 'guard guarantees the heap is alive.
+        unsafe { &*self.heap }
     }
 
     /// Obtain a scoped pointer from a RefPtr for dereferencing
     pub fn scoped<T: Sized>(self, ptr: RefPtr<T>) -> ScopedPtr<'guard, T> {
-        ScopedPtr::from_non_null(self.heap, ptr)
+        ScopedPtr::from_non_null(self.heap_ref(), ptr)
     }
 
     /// Allocate an array, copying from a slice
@@ -71,10 +106,10 @@ impl<'guard> MutatorHeapView<'guard> {
 
     /// Pin the block containing `ptr`, preventing evacuation.
     pub fn pin<T>(&self, ptr: std::ptr::NonNull<T>) -> PinGuard {
-        self.heap.pin_block(ptr);
+        self.heap_ref().pin_block(ptr);
         PinGuard {
             base_address: super::bump::block_base_of(ptr),
-            heap: self.heap as *const super::heap::Heap,
+            heap: self.heap,
         }
     }
 }
@@ -86,7 +121,7 @@ impl<'guard> ScopedAllocator<'guard> for MutatorHeapView<'guard> {
     where
         T: StgObject,
     {
-        self.heap
+        self.heap_ref()
             .alloc(object)
             .map(|p| self.scoped(p))
             .map_err(Into::into)
@@ -94,7 +129,7 @@ impl<'guard> ScopedAllocator<'guard> for MutatorHeapView<'guard> {
 
     /// Allocate and return region of bytes
     fn alloc_bytes(&self, size_bytes: usize) -> Result<std::ptr::NonNull<u8>, ExecutionError> {
-        self.heap.alloc_bytes(size_bytes).map_err(Into::into)
+        self.heap_ref().alloc_bytes(size_bytes).map_err(Into::into)
     }
 }
 

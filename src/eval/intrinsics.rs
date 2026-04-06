@@ -969,6 +969,11 @@ lazy_static! {
             ty: function(vec![unk(), list()]).unwrap(),
             strict: vec![0],
     },
+    Intrinsic { // 184 — test-only, not registered in production runtime
+            name: "__FORCE_WHNF",
+            ty: function(vec![unk(), unk()]).unwrap(),
+            strict: vec![],
+    },
     ];
 }
 
