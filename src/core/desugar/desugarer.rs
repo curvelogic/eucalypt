@@ -67,6 +67,23 @@ pub struct Desugarer<'smap> {
     /// Consulted when desugaring `{ :ns ... }` blocks without an explicit
     /// `.expr` return — only registered namespaces trigger implicit return.
     monad_namespace_registry: HashMap<String, MonadSpec>,
+    /// Import guard: tracks (file_id, import_name) pairs that have already
+    /// been desugared.  Implements include-once semantics so that a file
+    /// imported via a diamond dependency is only desugared once.
+    ///
+    /// The key is `(file_id, import_name)` where `import_name` is `None` for
+    /// unnamed imports and `Some(name)` for named imports.  The rules are:
+    ///
+    /// - unnamed + unnamed same file → skip the second (Rule 1)
+    /// - named + named same file, same name → skip the second (Rule 2)
+    /// - named + named same file, different name → allow (Rule 3)
+    /// - mixed unnamed/named same file → allow (Rule 4)
+    ///
+    /// Note: deduplication is by `file_id` (canonical file identity within a
+    /// translation unit).  Different relative paths that resolve to the same
+    /// file are only deduplicated if they receive the same `file_id` from the
+    /// source loader.
+    import_seen: HashSet<(usize, Option<String>)>,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -88,6 +105,7 @@ impl<'smap> Desugarer<'smap> {
             file: vec![],
             monad_registry: HashMap::new(),
             monad_namespace_registry: HashMap::new(),
+            import_seen: HashSet::new(),
         }
     }
 
@@ -183,9 +201,31 @@ impl<'smap> Desugarer<'smap> {
     /// them) and `self.imported_targets` (so that [`Self::translate_unit`]
     /// can exclude them from `own_targets`, preventing the test runner
     /// from auto-discovering targets that belong to imported files).
-    pub fn translate_import(&mut self, smid: Smid, import: Input) -> Result<RcExpr, CoreError> {
+    ///
+    /// Returns `Ok(None)` when the import is suppressed by the import
+    /// guard (include-once semantics, Rules 1 and 2):
+    ///
+    /// - Rule 1: unnamed + unnamed same file → skip second
+    /// - Rule 2: named + named same file, same name → skip second
+    /// - Rule 3: named + named same file, different name → allow (distinct binding)
+    /// - Rule 4: mixed unnamed/named → allow
+    pub fn translate_import(
+        &mut self,
+        smid: Smid,
+        import: Input,
+    ) -> Result<Option<RcExpr>, CoreError> {
         if let Some(source) = self.contents.get(&import) {
-            self.file.push(source.file_id());
+            let file_id = source.file_id();
+            let import_name = import.name().clone();
+            let guard_key = (file_id, import_name);
+
+            // Import guard: skip if we have already desugared this
+            // (file_id, name) combination in this translation unit.
+            if !self.import_seen.insert(guard_key) {
+                return Ok(None);
+            }
+
+            self.file.push(file_id);
 
             // Snapshot targets before desugaring the import so we can
             // identify which targets were added by the imported file.
@@ -203,7 +243,7 @@ impl<'smap> Desugarer<'smap> {
             }
 
             self.file.pop();
-            Ok(expr)
+            Ok(Some(expr))
         } else {
             Err(CoreError::NoParsedAstFor(Box::new(import.clone())))
         }
