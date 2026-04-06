@@ -67,23 +67,24 @@ pub struct Desugarer<'smap> {
     /// Consulted when desugaring `{ :ns ... }` blocks without an explicit
     /// `.expr` return — only registered namespaces trigger implicit return.
     monad_namespace_registry: HashMap<String, MonadSpec>,
-    /// Import guard: tracks (file_id, import_name) pairs that have already
-    /// been desugared.  Implements include-once semantics so that a file
-    /// imported via a diamond dependency is only desugared once.
+    /// Import guard — direct imports (depth == 1, i.e. imported directly
+    /// by the top-level unit being desugared).
     ///
-    /// The key is `(file_id, import_name)` where `import_name` is `None` for
-    /// unnamed imports and `Some(name)` for named imports.  The rules are:
+    /// Files in this set are NOT deduplicated when re-imported directly again
+    /// (because a file may intentionally be imported at multiple positions in the
+    /// same unit to bring its bindings into different scopes).  They ARE
+    /// suppressed if encountered again as a *nested* import (depth > 1), which
+    /// is the classic diamond-dependency case.
     ///
-    /// - unnamed + unnamed same file → skip the second (Rule 1)
-    /// - named + named same file, same name → skip the second (Rule 2)
-    /// - named + named same file, different name → allow (Rule 3)
-    /// - mixed unnamed/named same file → allow (Rule 4)
+    /// The key is `(file_id, import_name)`.
+    import_seen_direct: HashSet<(usize, Option<String>)>,
+    /// Import guard — nested (transitive) imports (depth > 1).
     ///
-    /// Note: deduplication is by `file_id` (canonical file identity within a
-    /// translation unit).  Different relative paths that resolve to the same
-    /// file are only deduplicated if they receive the same `file_id` from the
-    /// source loader.
-    import_seen: HashSet<(usize, Option<String>)>,
+    /// Files in this set are suppressed unconditionally on any subsequent
+    /// encounter, whether direct or nested.  This handles the case where a
+    /// transitive dependency is pulled in first and a later direct import of
+    /// the same file would create a duplicate.
+    import_seen_nested: HashSet<(usize, Option<String>)>,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -105,7 +106,8 @@ impl<'smap> Desugarer<'smap> {
             file: vec![],
             monad_registry: HashMap::new(),
             monad_namespace_registry: HashMap::new(),
-            import_seen: HashSet::new(),
+            import_seen_direct: HashSet::new(),
+            import_seen_nested: HashSet::new(),
         }
     }
 
@@ -203,12 +205,14 @@ impl<'smap> Desugarer<'smap> {
     /// from auto-discovering targets that belong to imported files).
     ///
     /// Returns `Ok(None)` when the import is suppressed by the import
-    /// guard (include-once semantics, Rules 1 and 2):
+    /// guard (diamond-deduplication semantics):
     ///
-    /// - Rule 1: unnamed + unnamed same file → skip second
-    /// - Rule 2: named + named same file, same name → skip second
-    /// - Rule 3: named + named same file, different name → allow (distinct binding)
-    /// - Rule 4: mixed unnamed/named → allow
+    /// - A file first seen **transitively** (depth > 1) is suppressed on
+    ///   any subsequent encounter (direct or nested).
+    /// - A file first seen **directly** (depth == 1) is suppressed only
+    ///   when encountered again as a nested import.  Multiple direct
+    ///   imports of the same file are allowed because each may serve a
+    ///   different scope position in the unit.
     pub fn translate_import(
         &mut self,
         smid: Smid,
@@ -219,10 +223,24 @@ impl<'smap> Desugarer<'smap> {
             let import_name = import.name().clone();
             let guard_key = (file_id, import_name);
 
-            // Import guard: skip if we have already desugared this
-            // (file_id, name) combination in this translation unit.
-            if !self.import_seen.insert(guard_key) {
+            // `file.len()` is the current nesting depth:
+            //   1 = direct import from the top-level unit
+            //   2+ = nested/transitive import
+            let is_nested = self.file.len() > 1;
+
+            // Suppress if already seen transitively, OR if already seen
+            // directly and we're now inside a nested import.
+            if self.import_seen_nested.contains(&guard_key)
+                || (is_nested && self.import_seen_direct.contains(&guard_key))
+            {
                 return Ok(None);
+            }
+
+            // Record this import in the appropriate guard set.
+            if is_nested {
+                self.import_seen_nested.insert(guard_key);
+            } else {
+                self.import_seen_direct.insert(guard_key);
             }
 
             self.file.push(file_id);
