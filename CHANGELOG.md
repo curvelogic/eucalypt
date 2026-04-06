@@ -2,7 +2,7 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.5.2] - Unreleased
+## [0.5.3] - Unreleased
 
 ### Added
 
