@@ -3,7 +3,7 @@
 //! This is in the process of morphing from something that is clearly
 //! an interpreter to something more like a VM
 
-use std::{cmp::Ordering, convert::TryInto, num::NonZeroUsize};
+use std::{cmp::Ordering, convert::TryInto, num::NonZeroUsize, ptr::NonNull};
 
 use itertools::Itertools;
 use lru::LruCache;
@@ -227,6 +227,10 @@ fn classify_args(
     }
 }
 
+/// Type-erased callback used by `MachineState::evaluate_to_whnf` to call
+/// back into `Machine::evaluate_to_whnf` via a raw pointer.
+type EvalWhnfFn = unsafe fn(NonNull<u8>, SynClosure) -> Result<SynClosure, ExecutionError>;
+
 /// The state of the machine (stack / closure etc.)
 pub struct MachineState {
     /// Root (empty) environment
@@ -284,6 +288,44 @@ pub struct MachineState {
     pending_capture_start: Option<String>,
     /// Test mode flag — `__EXPECT` failures return false instead of panicking.
     test_mode: bool,
+    /// Pending BIF intrinsic execution, set by `handle_instruction` when it
+    /// encounters a `HeapSyn::Bif` node.
+    ///
+    /// Rather than executing the BIF directly inside `handle_instruction`
+    /// (where only `MachineState` is visible), `handle_instruction` stores
+    /// the BIF index and cloned argument refs here and returns early.
+    /// `Machine::step()` then picks this up and executes it with access to
+    /// the full `Machine`, enabling `evaluate_to_whnf` support.
+    pending_bif: Option<(u8, Vec<Ref>)>,
+    /// Type-erased raw pointer to the owning `Machine` for sub-evaluation.
+    ///
+    /// Set by `Machine::execute_pending_bif()` before calling `bif.execute()`,
+    /// cleared immediately after.  Used by `evaluate_to_whnf` to call back
+    /// into `Machine::evaluate_to_whnf`.
+    ///
+    /// # Safety
+    ///
+    /// This pointer is valid only for the duration of `bif.execute()` inside
+    /// `Machine::execute_pending_bif()`.  It must not be retained or
+    /// dereferenced after that window.
+    ///
+    /// # Aliasing note
+    ///
+    /// When `evaluate_to_whnf` dereferences this pointer and calls
+    /// `Machine::evaluate_to_whnf`, the `state: &mut MachineState` borrow
+    /// held by `execute_pending_bif` is suspended at the `evaluate_to_whnf`
+    /// call site inside `bif.execute()`.  No caller-visible code touches
+    /// `state` while the sub-evaluation runs; the aliasing is therefore
+    /// operationally sound, though technically undefined behaviour under
+    /// Stacked Borrows.
+    ///
+    /// TODO: Eliminate this raw pointer by splitting `Machine` into separate
+    /// `MachineState` and `MachineCore` (heap + emitter + intrinsics) structs,
+    /// allowing `IntrinsicMachine` to carry a reference to both without
+    /// aliasing.
+    eval_machine_ptr: Option<NonNull<u8>>,
+    /// Function pointer called by `evaluate_to_whnf` via `eval_machine_ptr`.
+    eval_machine_fn: Option<EvalWhnfFn>,
 }
 
 impl Default for MachineState {
@@ -307,6 +349,9 @@ impl Default for MachineState {
             capture_results: Vec::new(),
             pending_capture_start: None,
             test_mode: false,
+            pending_bif: None,
+            eval_machine_ptr: None,
+            eval_machine_fn: None,
         }
     }
 }
@@ -343,8 +388,8 @@ impl MachineState {
     fn handle_instruction<'guard>(
         &mut self,
         view: MutatorHeapView<'guard>,
-        emitter: &mut dyn Emitter,
-        intrinsics: &[&'guard dyn StgIntrinsic],
+        _emitter: &mut dyn Emitter,
+        _intrinsics: &[&'guard dyn StgIntrinsic],
         metrics: &mut Metrics,
     ) -> Result<(), ExecutionError> {
         // Load "op code"
@@ -452,18 +497,10 @@ impl MachineState {
                 self.closure = self.nav(view).resolve_callable(&callable)?;
             }
             HeapSyn::Bif { intrinsic, args } => {
-                let bif = intrinsics[intrinsic as usize];
-                bif.execute(self, view, emitter, args.as_slice())
-                    .inspect_err(|_| {
-                        // Set annotation to the BIF's own annotation so
-                        // errors report the correct intrinsic context
-                        if let Ok(global_closure) = self.nav(view).global(intrinsic as usize) {
-                            let bif_ann = global_closure.annotation();
-                            if bif_ann.is_valid() {
-                                self.annotation = bif_ann;
-                            }
-                        }
-                    })?;
+                // Defer BIF execution to Machine::step() so that the full
+                // Machine is available (needed for evaluate_to_whnf).
+                // Clone the args: Ref is cheap to clone (indices or small natives).
+                self.pending_bif = Some((intrinsic, args.as_slice().to_vec()));
             }
             HeapSyn::Let { bindings, body } => {
                 metrics.alloc(bindings.len());
@@ -1077,6 +1114,29 @@ impl IntrinsicMachine for MachineState {
     fn test_mode(&self) -> bool {
         self.test_mode
     }
+
+    fn evaluate_to_whnf(&mut self, closure: SynClosure) -> Result<SynClosure, ExecutionError> {
+        let ptr = self
+            .eval_machine_ptr
+            .expect("evaluate_to_whnf called outside BIF execution context");
+        let f = self
+            .eval_machine_fn
+            .expect("evaluate_to_whnf: eval_machine_fn not set");
+
+        // SAFETY: ptr was set by Machine::execute_pending_bif() immediately
+        // before calling bif.execute(), and will be cleared after it returns.
+        // The Machine pointed to by ptr is alive for the entire duration of
+        // bif.execute() (it lives on the call stack of Machine::step()).
+        //
+        // ALIASING NOTE: the `self` borrow (&mut MachineState) is suspended
+        // at the call site inside bif.execute() while this function runs.
+        // The sub-evaluation accesses machine.state through a second path
+        // (via the raw pointer), creating technically aliased &mut references.
+        // In practice no caller code touches self during the sub-evaluation,
+        // so this is operationally sound.  The TODO in the field declaration
+        // above describes the proper structural fix.
+        unsafe { (f)(ptr, closure) }
+    }
 }
 
 /// MachineState contains all the garbage collection roots
@@ -1183,6 +1243,27 @@ pub struct Machine<'a> {
     /// Crash diagnostics snapshot — updated periodically, read by signal handler.
     /// Boxed to guarantee a stable address regardless of Machine moves.
     crash_diagnostics: Box<super::crash::CrashDiagnostics>,
+}
+
+/// Trampoline used by `MachineState::evaluate_to_whnf` to call back into
+/// `Machine::evaluate_to_whnf` via a type-erased raw pointer.
+///
+/// # Safety
+///
+/// `ptr` must be a valid `*mut Machine<'_>` that is alive for the duration
+/// of this call.  `Machine::execute_pending_bif` guarantees this invariant
+/// by setting the pointer immediately before `bif.execute()` and clearing
+/// it immediately after.
+unsafe fn machine_eval_to_whnf(
+    ptr: NonNull<u8>,
+    closure: SynClosure,
+) -> Result<SynClosure, ExecutionError> {
+    // Reconstruct a &mut Machine from the raw pointer.  The lifetime is
+    // erased; the caller's safety invariant guarantees the Machine is alive.
+    // We use `*mut Machine<'_>` (anonymous lifetime) to avoid requiring
+    // 'static and to express "whatever lifetime the Machine actually has".
+    let machine = ptr.as_ptr() as *mut Machine<'_>;
+    (*machine).evaluate_to_whnf(closure)
 }
 
 impl<'a> Machine<'a> {
@@ -1384,6 +1465,22 @@ impl<'a> Machine<'a> {
                     state.stack_trace(&view),
                 )
             })?;
+
+        // Execute any pending BIF with full Machine access.
+        //
+        // `handle_instruction` stores BIF info in `pending_bif` rather than
+        // executing immediately, so that `evaluate_to_whnf` is available.
+        // We execute it here where we have `&mut self` (full Machine).
+        if let Some((intrinsic_idx, args)) = self.state.pending_bif.take() {
+            self.execute_pending_bif(intrinsic_idx, &args)
+                .map_err(|e| {
+                    ExecutionError::Traced(
+                        Box::new(e),
+                        self.state.nav(MutatorHeapView::new(&self.heap)).env_trace(),
+                        self.state.stack_trace(&MutatorHeapView::new(&self.heap)),
+                    )
+                })?;
+        }
 
         // Handle capture lifecycle from the step just executed.
 
@@ -1677,6 +1774,70 @@ impl<'a> Machine<'a> {
         self.state.terminated = false;
         self.state.yielded_io = false;
         self.state.closure = new_closure;
+    }
+
+    /// Execute a pending BIF with full Machine access.
+    ///
+    /// `handle_instruction` stores the BIF index and argument refs in
+    /// `state.pending_bif` instead of executing the BIF directly (where
+    /// only `MachineState` is available).  This method is called from
+    /// `step()` with `&mut self`, giving the BIF access to
+    /// `evaluate_to_whnf` via `state.eval_machine_ptr`.
+    ///
+    /// # Safety note
+    ///
+    /// Before calling `bif.execute`, this method sets `state.eval_machine_ptr`
+    /// to a raw pointer to `self` (the Machine).  See the field documentation
+    /// on `MachineState::eval_machine_ptr` for the full aliasing discussion.
+    fn execute_pending_bif(
+        &mut self,
+        intrinsic_idx: u8,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let bif = self.intrinsics[intrinsic_idx as usize];
+
+        // Set up the raw-pointer callback so that bif.execute() can call
+        // machine.evaluate_to_whnf() through IntrinsicMachine.
+        //
+        // SAFETY: `self` is pinned behind `&mut Machine` for the duration of
+        // this function.  The pointer is valid for as long as bif.execute()
+        // runs (which is entirely within this function).  We clear it before
+        // returning so it can never be used after we exit.
+        let machine_ptr =
+            NonNull::new(self as *mut Machine<'_> as *mut u8).expect("self pointer is non-null");
+        self.state.eval_machine_ptr = Some(machine_ptr);
+        self.state.eval_machine_fn = Some(machine_eval_to_whnf);
+
+        let emitter: &mut dyn Emitter = if let Some(top) = self.capture_emitters.last_mut() {
+            top as &mut dyn Emitter
+        } else {
+            self.emitter.as_mut()
+        };
+
+        // Split borrows: state, view (from heap), and emitter are all
+        // disjoint fields of Machine so the borrow checker is satisfied.
+        let state = &mut self.state;
+        let view = MutatorHeapView::new(&self.heap);
+
+        let result = bif.execute(state, view, emitter, args).inspect_err(|_| {
+            // Set annotation to the BIF's own annotation for error context.
+            if let Ok(global_closure) = state
+                .nav(MutatorHeapView::new(&self.heap))
+                .global(intrinsic_idx as usize)
+            {
+                let bif_ann = global_closure.annotation();
+                if bif_ann.is_valid() {
+                    state.annotation = bif_ann;
+                }
+            }
+        });
+
+        // Always clear the callback pointer before returning, regardless of
+        // whether execution succeeded.
+        self.state.eval_machine_ptr = None;
+        self.state.eval_machine_fn = None;
+
+        result
     }
 
     /// Evaluate a closure to WHNF, safely handling a non-empty continuation stack.
