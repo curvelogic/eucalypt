@@ -604,8 +604,31 @@ impl<'text> Parser<'text> {
             self.add_trivia();
         }
         self.add_trivia();
-        self.expect(CLOSE_PAREN);
-        // if instead unterminated, there will be a missing close paren
+
+        if !self.expect(CLOSE_PAREN) {
+            // Error recovery: consume unexpected tokens up to and including the
+            // closing paren. Without this, stray tokens (e.g. a bare colon in
+            // `f(2, 2:)`) escape into the block parser, which misinterprets them
+            // as declaration separators and drops buffered events, causing a
+            // token-accounting assertion failure.
+            while let Some((k, _)) = self.next() {
+                if k == CLOSE_PAREN {
+                    self.sink().token(CLOSE_PAREN);
+                    break;
+                }
+                // Don't cross block or list boundaries.
+                if matches!(
+                    k,
+                    CLOSE_BRACE | CLOSE_SQUARE | RESERVED_CLOSE | BRACKET_CLOSE
+                ) {
+                    self.push_back();
+                    break;
+                }
+                self.sink().start_node(ERROR_STOWAWAYS);
+                self.sink().token(k);
+                self.sink().finish_node();
+            }
+        }
 
         self.sink().finish_node();
     }
