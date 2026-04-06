@@ -970,7 +970,7 @@ lazy_static! {
             strict: vec![0],
     },
     Intrinsic { // 184
-            name: "FORCE_WHNF",
+            name: "__FORCE_WHNF",
             ty: function(vec![unk(), unk()]).unwrap(),
             strict: vec![],
     },

@@ -182,21 +182,20 @@ impl StgIntrinsic for SeqList {
 
 impl CallGlobal1 for SeqList {}
 
-/// FORCE_WHNF — force a thunk to weak head normal form from within an intrinsic.
+/// `__FORCE_WHNF` — force a thunk to weak head normal form from within an intrinsic.
 ///
 /// Unlike the STG-level `force` DSL combinator (which is woven into the
 /// static wrapper lambdas and only available at compile time), this BIF
 /// calls back into the machine at runtime via `IntrinsicMachine::evaluate_to_whnf`.
 ///
-/// It is primarily a test vehicle that proves intrinsics can force thunks
-/// on demand.  The argument is intentionally non-strict (no strict arg
-/// index) so the wrapper does not pre-evaluate it; the BIF receives the
-/// raw (possibly unevaluated) closure and forces it itself.
+/// The double-underscore prefix signals that this is an internal intrinsic
+/// intended for testing and as a building block for other intrinsics that need
+/// runtime thunk forcing.  The harness test `139_force_whnf.eu` exercises it.
 pub struct ForceWhnf;
 
 impl StgIntrinsic for ForceWhnf {
     fn name(&self) -> &str {
-        "FORCE_WHNF"
+        "__FORCE_WHNF"
     }
 
     fn execute(
@@ -220,7 +219,9 @@ mod tests {
         intrinsics,
         memory::syntax::Native,
         stg::{
-            syntax::dsl::{app, app_bif, box_num, gref, let_, letrec_, lref, local, num, unbox_num, value},
+            syntax::dsl::{
+                app, app_bif, box_num, gref, let_, letrec_, local, lref, num, unbox_num, value,
+            },
             testing,
         },
     };
@@ -251,7 +252,7 @@ mod tests {
             vec![value(box_num(42))],
             let_(
                 vec![value(app(
-                    gref(intrinsics::index("FORCE_WHNF").unwrap()),
+                    gref(intrinsics::index("__FORCE_WHNF").unwrap()),
                     vec![lref(0)],
                 ))],
                 unbox_num(local(0), local(0)),
@@ -281,7 +282,7 @@ mod tests {
                 intrinsics::index_u8("ADD"),
                 vec![num(3), num(4)],
             ))],
-            app_bif(intrinsics::index_u8("FORCE_WHNF"), vec![lref(0)]),
+            app_bif(intrinsics::index_u8("__FORCE_WHNF"), vec![lref(0)]),
         );
 
         let mut m = testing::machine(rt.as_ref(), syntax);
