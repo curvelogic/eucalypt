@@ -2,12 +2,15 @@
 
 use crate::{
     common::sourcemap::Smid,
-    eval::{
-        emit::Emitter,
-        error::ExecutionError,
-        machine::intrinsic::{CallGlobal1, IntrinsicMachine, StgIntrinsic},
-        memory::{mutator::MutatorHeapView, syntax::Ref},
-    },
+    eval::machine::intrinsic::{CallGlobal1, StgIntrinsic},
+};
+
+#[cfg(test)]
+use crate::eval::{
+    emit::Emitter,
+    error::ExecutionError,
+    machine::intrinsic::IntrinsicMachine,
+    memory::{mutator::MutatorHeapView, syntax::Ref},
 };
 
 use super::{
@@ -188,11 +191,13 @@ impl CallGlobal1 for SeqList {}
 /// static wrapper lambdas and only available at compile time), this BIF
 /// calls back into the machine at runtime via `IntrinsicMachine::evaluate_to_whnf`.
 ///
-/// The double-underscore prefix signals that this is an internal intrinsic
-/// intended for testing and as a building block for other intrinsics that need
-/// runtime thunk forcing.  The harness test `139_force_whnf.eu` exercises it.
+/// This is a test-only intrinsic; it is only registered in the runtime under
+/// `#[cfg(test)]`.  The double-underscore prefix signals internal/test-only
+/// status.  Unit tests in this module exercise it directly.
+#[cfg(test)]
 pub struct ForceWhnf;
 
+#[cfg(test)]
 impl StgIntrinsic for ForceWhnf {
     fn name(&self) -> &str {
         "__FORCE_WHNF"
@@ -211,6 +216,7 @@ impl StgIntrinsic for ForceWhnf {
     }
 }
 
+#[cfg(test)]
 impl CallGlobal1 for ForceWhnf {}
 
 #[cfg(test)]
