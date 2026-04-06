@@ -86,12 +86,13 @@ struct ListDestructureEntry {
 enum ParamPattern {
     /// Simple identifier: `x`
     Simple(String),
-    /// Block destructuring: `{x y}` or `{x: a  y: b}`.
+    /// Block destructuring: `{x y}` or `{x: a  y: b}` or `{x: [a, b]}`.
     ///
-    /// Each entry is `(field_name, binding_name)`. For shorthand `{x}`,
-    /// field and binding are both `"x"`. For rename `{x: a}`,
-    /// field is `"x"` and binding is `"a"`.
-    Block(Vec<(String, String)>),
+    /// Each entry is `(field_name, value_pattern)`. For shorthand `{x}`,
+    /// field is `"x"` and pattern is `Simple("x")`. For rename `{x: a}`,
+    /// field is `"x"` and pattern is `Simple("a")`. For nested `{x: [a, b]}`,
+    /// field is `"x"` and pattern is `List([Simple("a"), Simple("b")], None)`.
+    Block(Vec<(String, ParamPattern)>),
     /// Fixed-length list destructuring: `[a, b, c]`, or head/tail pattern
     /// `[x : xs]` or `[a, b : rest]`.
     ///
@@ -105,11 +106,12 @@ enum ParamPattern {
 /// Rowan `Block` AST node in a function parameter position.
 ///
 /// Block patterns may contain:
-/// - Shorthand names in block metadata: `{x y}` → `[(x, x), (y, y)]`
-/// - Rename declarations: `{x: a  y: b}` → `[(x, a), (y, b)]`
-/// - Mixed: `{x  y: b}` → `[(x, x), (y, b)]`
-fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>, CoreError> {
-    let mut fields: Vec<(String, String)> = Vec::new();
+/// - Shorthand names in block metadata: `{x y}` → `[(x, Simple(x)), (y, Simple(y))]`
+/// - Rename declarations: `{x: a  y: b}` → `[(x, Simple(a)), (y, Simple(b))]`
+/// - Nested patterns: `{x: [a, b]}` → `[(x, List([Simple(a), Simple(b)], None))]`
+/// - Mixed: `{x  y: b}` → `[(x, Simple(x)), (y, Simple(b))]`
+fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, ParamPattern)>, CoreError> {
+    let mut fields: Vec<(String, ParamPattern)> = Vec::new();
 
     // Extract shorthand names from block metadata soup (e.g. `x y` in `{x y}`)
     if let Some(meta) = block.meta() {
@@ -120,55 +122,57 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
                     {
                         let field_name = normal.value().to_string();
                         // Shorthand: field name = binding name
-                        fields.push((field_name.clone(), field_name));
+                        fields.push((field_name.clone(), ParamPattern::Simple(field_name)));
                     }
                 }
             }
         }
     }
 
-    // Extract rename fields from declarations (e.g. `x: a  y: b`)
+    // Extract rename/nested fields from declarations (e.g. `x: a  y: b  z: [a, b]`)
     for decl in block.declarations() {
         if let Some(head) = decl.head() {
             let kind = head.classify_declaration();
             if let rowan_ast::DeclarationKind::Property(prop) = kind {
                 let field_name = prop.value().to_string();
-                // Check if there's a body (rename) or not
-                let binding_name = if let Some(body) = decl.body() {
+                let value_pattern = if let Some(body) = decl.body() {
                     if let Some(body_soup) = body.soup() {
-                        // Body should be a single normal identifier (the binding name)
-                        if let Some(rowan_ast::Element::Name(name)) = body_soup.singleton() {
-                            if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
-                                name.identifier()
-                            {
-                                normal.value().to_string()
-                            } else {
-                                // Not a normal identifier — use field name as fallback
-                                field_name.clone()
+                        match body_soup.singleton() {
+                            Some(rowan_ast::Element::Name(name)) => {
+                                if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
+                                    name.identifier()
+                                {
+                                    ParamPattern::Simple(normal.value().to_string())
+                                } else {
+                                    // Not a normal identifier — use field name as fallback
+                                    ParamPattern::Simple(field_name.clone())
+                                }
                             }
-                        } else {
-                            // Check for nested block/list patterns and
-                            // reject with a clear error
-                            let has_nested = body_soup.elements().any(|e| {
-                                matches!(
-                                    e,
-                                    rowan_ast::Element::Block(_) | rowan_ast::Element::List(_)
-                                )
-                            });
-                            if has_nested {
-                                return Err(CoreError::NestedBlockDestructure(Smid::default()));
+                            Some(rowan_ast::Element::List(list)) => {
+                                // Nested list pattern: `{x: [a, b]}`
+                                match parse_list_pattern(&list)? {
+                                    Some((heads, tail)) => ParamPattern::List(heads, tail),
+                                    None => ParamPattern::Simple(field_name.clone()),
+                                }
                             }
-                            // Complex expression in body — use field name as fallback
-                            field_name.clone()
+                            Some(rowan_ast::Element::Block(nested_block)) => {
+                                // Nested block pattern: `{x: {a b}}`
+                                let nested_fields = parse_block_pattern(&nested_block)?;
+                                ParamPattern::Block(nested_fields)
+                            }
+                            _ => {
+                                // Complex expression in body — use field name as fallback
+                                ParamPattern::Simple(field_name.clone())
+                            }
                         }
                     } else {
-                        field_name.clone()
+                        ParamPattern::Simple(field_name.clone())
                     }
                 } else {
                     // No body in declaration — field name = binding name (shorthand)
-                    field_name.clone()
+                    ParamPattern::Simple(field_name.clone())
                 };
-                fields.push((field_name, binding_name));
+                fields.push((field_name, value_pattern));
             }
         }
     }
@@ -299,47 +303,44 @@ fn desugar_declaration_body_with_patterns(
     // which are only binding names for let bindings.
     let mut all_env_names: Vec<String> = Vec::new();
     let mut lambda_param_names: Vec<String> = Vec::new();
-    // Raw data for block patterns: (synthetic_name, [(field_name, binding_name)])
+    // Raw data for block patterns: (synthetic_name, [(field_name, binding_var_name)])
+    // binding_var_name is either a user-visible name (Simple) or a synthetic __pN (nested).
     let mut block_raw: Vec<(String, Vec<(String, String)>)> = Vec::new();
-    // Raw data for list patterns: (synthetic_name, [head_names], tail_name?)
+    // Raw data for list patterns: (synthetic_name, [element_var_names], tail_name?)
     let mut list_raw: Vec<(String, Vec<String>, Option<String>)> = Vec::new();
     // Ordered sequence of lets to emit — preserves argument order for correct nesting.
     let mut let_order: Vec<DestructureLet> = Vec::new();
     let mut synthetic_counter = 0usize;
 
+    // Work queue: (synthetic_name, pattern_to_expand).
+    // Top-level non-Simple patterns seed the queue; nested patterns add to it.
+    // Using a VecDeque for BFS ordering, which preserves intuitive argument order.
+    let mut work_queue: std::collections::VecDeque<(String, ParamPattern)> =
+        std::collections::VecDeque::new();
+
+    // Initial pass: top-level patterns become lambda binders.
     for pattern in patterns {
         match pattern {
             ParamPattern::Simple(name) => {
                 all_env_names.push(name.clone());
                 lambda_param_names.push(name.clone());
             }
-            ParamPattern::Block(fields) => {
+            nested => {
                 let synthetic_name = format!("__p{}", synthetic_counter);
                 synthetic_counter += 1;
                 all_env_names.push(synthetic_name.clone());
                 lambda_param_names.push(synthetic_name.clone());
-                for (_, binding_name) in fields {
-                    all_env_names.push(binding_name.clone());
-                }
-                block_raw.push((synthetic_name.clone(), fields.clone()));
-                // Placeholder — resolved after env push
-                let_order.push(DestructureLet::Block(DestructureEntry {
-                    synthetic_name,
-                    fields: Vec::new(),
-                }));
+                work_queue.push_back((synthetic_name, nested.clone()));
             }
-            ParamPattern::List(element_patterns, tail_name) => {
-                let synthetic_name = format!("__p{}", synthetic_counter);
-                synthetic_counter += 1;
-                all_env_names.push(synthetic_name.clone());
-                lambda_param_names.push(synthetic_name.clone());
+        }
+    }
 
-                // Flatten element patterns: Simple → use name directly,
-                // nested List/Block → generate synthetic name and queue
-                // an additional destructure.
+    // Drain the work queue — handles arbitrary nesting depth.
+    while let Some((syn_name, pat)) = work_queue.pop_front() {
+        match pat {
+            ParamPattern::List(element_patterns, tail_name) => {
                 let mut element_names = Vec::new();
-                let mut nested_patterns: Vec<(String, ParamPattern)> = Vec::new();
-                for elem in element_patterns {
+                for elem in &element_patterns {
                     match elem {
                         ParamPattern::Simple(name) => {
                             all_env_names.push(name.clone());
@@ -350,59 +351,44 @@ fn desugar_declaration_body_with_patterns(
                             synthetic_counter += 1;
                             all_env_names.push(nested_name.clone());
                             element_names.push(nested_name.clone());
-                            nested_patterns.push((nested_name, nested.clone()));
+                            work_queue.push_back((nested_name, nested.clone()));
                         }
                     }
                 }
-                if let Some(tail) = tail_name {
+                if let Some(tail) = &tail_name {
                     all_env_names.push(tail.clone());
                 }
-                list_raw.push((synthetic_name.clone(), element_names, tail_name.clone()));
+                list_raw.push((syn_name.clone(), element_names, tail_name));
                 let_order.push(DestructureLet::List(ListDestructureEntry {
-                    synthetic_name,
+                    synthetic_name: syn_name,
                     elements: Vec::new(),
                     tail: None,
                 }));
-
-                // Queue additional destructures for nested patterns.
-                for (nested_name, nested_pat) in nested_patterns {
-                    match nested_pat {
-                        ParamPattern::List(sub_elems, sub_tail) => {
-                            let mut sub_names = Vec::new();
-                            for sub in &sub_elems {
-                                if let ParamPattern::Simple(n) = sub {
-                                    all_env_names.push(n.clone());
-                                    sub_names.push(n.clone());
-                                } else {
-                                    return Err(CoreError::DeepNestedListDestructure(
-                                        desugarer.new_smid(span),
-                                    ));
-                                }
-                            }
-                            if let Some(t) = &sub_tail {
-                                all_env_names.push(t.clone());
-                            }
-                            list_raw.push((nested_name.clone(), sub_names, sub_tail));
-                            let_order.push(DestructureLet::List(ListDestructureEntry {
-                                synthetic_name: nested_name,
-                                elements: Vec::new(),
-                                tail: None,
-                            }));
+            }
+            ParamPattern::Block(fields) => {
+                let mut field_var_names: Vec<(String, String)> = Vec::new();
+                for (field_name, value_pat) in fields {
+                    match value_pat {
+                        ParamPattern::Simple(binding_name) => {
+                            all_env_names.push(binding_name.clone());
+                            field_var_names.push((field_name, binding_name));
                         }
-                        ParamPattern::Block(fields) => {
-                            for (_, binding_name) in &fields {
-                                all_env_names.push(binding_name.clone());
-                            }
-                            block_raw.push((nested_name.clone(), fields));
-                            let_order.push(DestructureLet::Block(DestructureEntry {
-                                synthetic_name: nested_name,
-                                fields: Vec::new(),
-                            }));
+                        nested => {
+                            let nested_name = format!("__p{}", synthetic_counter);
+                            synthetic_counter += 1;
+                            all_env_names.push(nested_name.clone());
+                            field_var_names.push((field_name, nested_name.clone()));
+                            work_queue.push_back((nested_name, nested));
                         }
-                        ParamPattern::Simple(_) => unreachable!(),
                     }
                 }
+                block_raw.push((syn_name.clone(), field_var_names));
+                let_order.push(DestructureLet::Block(DestructureEntry {
+                    synthetic_name: syn_name,
+                    fields: Vec::new(),
+                }));
             }
+            ParamPattern::Simple(_) => unreachable!("Simple patterns handled in initial pass"),
         }
     }
 

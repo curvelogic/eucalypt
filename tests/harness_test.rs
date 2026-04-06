@@ -727,6 +727,11 @@ pub fn test_harness_140() {
 }
 
 #[test]
+pub fn test_harness_141() {
+    run_test(&opts("141_deep_destructuring.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
@@ -1359,11 +1364,6 @@ pub fn test_error_112() {
 #[test]
 pub fn test_error_113() {
     run_error_test(&error_opts("113_tail_empty_list.eu"));
-}
-
-#[test]
-pub fn test_error_114() {
-    run_error_test(&error_opts("114_deep_nested_destructure.eu"));
 }
 
 #[test]
