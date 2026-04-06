@@ -85,6 +85,13 @@ pub struct Desugarer<'smap> {
     /// transitive dependency is pulled in first and a later direct import of
     /// the same file would create a duplicate.
     import_seen_nested: HashSet<(usize, Option<String>)>,
+    /// Rule 3 — alias table for same-file-different-name direct imports.
+    ///
+    /// When a file is imported directly (depth == 1) under a name for the
+    /// first time, its `(file_id → name)` is recorded here.  A subsequent
+    /// direct import of the same file under a *different* name emits an
+    /// alias binding `let { new_name = old_name }` instead of re-desugaring.
+    import_first_direct: HashMap<usize, String>,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -108,6 +115,7 @@ impl<'smap> Desugarer<'smap> {
             monad_namespace_registry: HashMap::new(),
             import_seen_direct: HashSet::new(),
             import_seen_nested: HashSet::new(),
+            import_first_direct: HashMap::new(),
         }
     }
 
@@ -213,20 +221,52 @@ impl<'smap> Desugarer<'smap> {
     ///   when encountered again as a nested import.  Multiple direct
     ///   imports of the same file are allowed because each may serve a
     ///   different scope position in the unit.
+    ///
+    /// **Rule 3**: when a file is imported directly a second time under a
+    /// *different* name, an alias binding is emitted instead of re-desugaring.
+    /// For example, if `lens=lens.eu` was already imported, a subsequent
+    /// `optics=lens.eu` emits `let { optics = lens }` referencing the
+    /// already-bound name.
     pub fn translate_import(
         &mut self,
         smid: Smid,
         import: Input,
     ) -> Result<Option<RcExpr>, CoreError> {
-        if let Some(source) = self.contents.get(&import) {
+        // Look up content by exact Input key, falling back to locator match.
+        // The fallback is needed when the same file is imported under multiple
+        // names (eu-v0t6): the ImportGraph deduplicates by locator, so only the
+        // first-registered Input is in the contents map.
+        let source_lookup = self.contents.get(&import).or_else(|| {
+            self.contents
+                .iter()
+                .find(|(k, _)| k.locator() == import.locator())
+                .map(|(_, v)| v)
+        });
+        if let Some(source) = source_lookup {
             let file_id = source.file_id();
             let import_name = import.name().clone();
-            let guard_key = (file_id, import_name);
+            let guard_key = (file_id, import_name.clone());
 
             // `file.len()` is the current nesting depth:
             //   1 = direct import from the top-level unit
             //   2+ = nested/transitive import
             let is_nested = self.file.len() > 1;
+
+            // Rule 3: if this file was already imported *directly* under a
+            // different name, emit an alias binding rather than re-desugaring.
+            // This avoids duplicating content and prevents nested imports from
+            // being incorrectly suppressed on the second pass.
+            if !is_nested {
+                if let Some(first_name) = self.import_first_direct.get(&file_id).cloned() {
+                    if let Some(new_name) = &import_name {
+                        if &first_name != new_name {
+                            let alias_rhs =
+                                RcExpr::from(Expr::Var(smid, Var::Free(first_name.clone())));
+                            return Ok(Some(alias_rhs.apply_name(smid, new_name)));
+                        }
+                    }
+                }
+            }
 
             // Suppress if already seen transitively, OR if already seen
             // directly and we're now inside a nested import.
@@ -241,6 +281,12 @@ impl<'smap> Desugarer<'smap> {
                 self.import_seen_nested.insert(guard_key);
             } else {
                 self.import_seen_direct.insert(guard_key);
+                // Record the first direct named import for Rule 3 alias resolution.
+                if let Some(ref name) = import_name {
+                    self.import_first_direct
+                        .entry(file_id)
+                        .or_insert_with(|| name.clone());
+                }
             }
 
             self.file.push(file_id);

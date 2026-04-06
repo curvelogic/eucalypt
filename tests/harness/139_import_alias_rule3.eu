@@ -1,0 +1,12 @@
+"139 import alias rule 3 — same file imported under two names"
+
+# alias_common.eu is imported twice: once as 'original' and once as 'alias'.
+# Rule 3 should emit `let { alias = original }` for the second import
+# so that both names work as access paths.
+
+` { import: ["original=testdata/alias_common.eu", "alias=testdata/alias_common.eu"], target: :test }
+test: {
+  # Both names should resolve to the same value
+  original-accessible: original.common-val //= 42
+  alias-accessible: alias.common-val //= 42
+}
