@@ -118,7 +118,7 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
                 if let rowan_ast::Element::Name(name) = element {
                     if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier()
                     {
-                        let field_name = normal.text().to_string();
+                        let field_name = normal.value().to_string();
                         // Shorthand: field name = binding name
                         fields.push((field_name.clone(), field_name));
                     }
@@ -132,7 +132,7 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
         if let Some(head) = decl.head() {
             let kind = head.classify_declaration();
             if let rowan_ast::DeclarationKind::Property(prop) = kind {
-                let field_name = prop.text().to_string();
+                let field_name = prop.value().to_string();
                 // Check if there's a body (rename) or not
                 let binding_name = if let Some(body) = decl.body() {
                     if let Some(body_soup) = body.soup() {
@@ -141,7 +141,7 @@ fn parse_block_pattern(block: &rowan_ast::Block) -> Result<Vec<(String, String)>
                             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) =
                                 name.identifier()
                             {
-                                normal.text().to_string()
+                                normal.value().to_string()
                             } else {
                                 // Not a normal identifier — use field name as fallback
                                 field_name.clone()
@@ -208,7 +208,7 @@ fn parse_list_pattern(list: &rowan_ast::List) -> Result<Option<ListPattern>, Cor
         let tail_item = all_items.last().unwrap();
         if let Some(rowan_ast::Element::Name(name)) = tail_item.singleton() {
             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
-                let tail = normal.text().to_string();
+                let tail = normal.value().to_string();
                 Ok(Some((heads, Some(tail))))
             } else {
                 Ok(None)
@@ -240,7 +240,7 @@ fn parse_soup_as_pattern(soup: &rowan_ast::Soup) -> Result<Option<ParamPattern>,
     match soup.singleton() {
         Some(rowan_ast::Element::Name(name)) => {
             if let Some(rowan_ast::Identifier::NormalIdentifier(normal)) = name.identifier() {
-                Ok(Some(ParamPattern::Simple(normal.text().to_string())))
+                Ok(Some(ParamPattern::Simple(normal.value().to_string())))
             } else {
                 Ok(None)
             }
@@ -863,7 +863,7 @@ fn extract_block_monad_spec_from_raw(
         for decl in meta_block.declarations() {
             if let Some(head) = decl.head() {
                 if let rowan_ast::DeclarationKind::Property(prop) = head.classify_declaration() {
-                    let key = prop.text().to_string();
+                    let key = prop.value().to_string();
                     let val = decl.body().and_then(|body| body.soup()).and_then(|s| {
                         let elems: Vec<rowan_ast::Element> = s.elements().collect();
                         if elems.len() == 1 {
@@ -877,7 +877,7 @@ fn extract_block_monad_spec_from_raw(
                                     )
                                 }
                                 rowan_ast::Element::Name(name) => {
-                                    name.identifier().map(|id| id.text().to_string())
+                                    name.identifier().map(|id| id.value().to_string())
                                 }
                                 _ => None,
                             }
@@ -964,7 +964,7 @@ fn desugar_return_chain(
         match &elements[i + 1] {
             Element::Name(name_elem) => {
                 if let Some(id) = name_elem.identifier() {
-                    let field = id.text().to_string();
+                    let field = id.value().to_string();
                     result = core::lookup(field_smid, result, &field, None);
                 } else {
                     break;
@@ -1553,7 +1553,7 @@ fn extract_rowan_declaration_components(
                 Ok(RowanDeclarationComponents {
                     span,
                     metadata,
-                    name: prop.text().to_string(),
+                    name: prop.value().to_string(),
                     args: vec![],
                     body,
                     arg_vars,
@@ -1590,7 +1590,7 @@ fn extract_rowan_declaration_components(
                     Ok(RowanDeclarationComponents {
                         span,
                         metadata,
-                        name: func.text().to_string(),
+                        name: func.value().to_string(),
                         args: arg_names,
                         body,
                         arg_vars,
@@ -1605,7 +1605,7 @@ fn extract_rowan_declaration_components(
                     Ok(RowanDeclarationComponents {
                         span,
                         metadata,
-                        name: func.text().to_string(),
+                        name: func.value().to_string(),
                         args: lambda_param_names,
                         body,
                         arg_vars: lambda_param_vars,
@@ -1615,7 +1615,7 @@ fn extract_rowan_declaration_components(
                 }
             }
             rowan_ast::DeclarationKind::Prefix(_, op, arg) => {
-                let args = vec![arg.text().to_string()];
+                let args = vec![arg.value().to_string()];
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
 
                 Ok(RowanDeclarationComponents {
@@ -1630,7 +1630,7 @@ fn extract_rowan_declaration_components(
                 })
             }
             rowan_ast::DeclarationKind::Postfix(_, arg, op) => {
-                let args = vec![arg.text().to_string()];
+                let args = vec![arg.value().to_string()];
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
 
                 Ok(RowanDeclarationComponents {
@@ -1645,7 +1645,7 @@ fn extract_rowan_declaration_components(
                 })
             }
             rowan_ast::DeclarationKind::Binary(_, left, op, right) => {
-                let args = vec![left.text().to_string(), right.text().to_string()];
+                let args = vec![left.value().to_string(), right.value().to_string()];
                 let (body, arg_vars) = desugar_declaration_body(decl, desugarer, &args, span)?;
 
                 Ok(RowanDeclarationComponents {
@@ -1866,7 +1866,10 @@ fn desugar_rowan_string_pattern(
                     if names.len() == 1 {
                         // Single name case: just desugar the name and varify it
                         let name = &names[0];
-                        let name_text = name.syntax().text().to_string();
+                        let name_text = name
+                            .identifier()
+                            .map(|id| id.value().to_string())
+                            .unwrap_or_else(|| name.syntax().text().to_string());
                         let name_expr = core::name(smid, name_text);
                         desugarer.varify(name_expr)
                     } else {
@@ -1877,14 +1880,20 @@ fn desugar_rowan_string_pattern(
                         // Process from end to beginning, just like legacy AST
                         while items.len() > 1 {
                             let name = items.pop().unwrap();
-                            let name_text = name.syntax().text().to_string();
+                            let name_text = name
+                                .identifier()
+                                .map(|id| id.value().to_string())
+                                .unwrap_or_else(|| name.syntax().text().to_string());
                             v.push(core::name(smid, name_text));
                             v.push(acore::dot());
                         }
 
                         // Add the final name (the first one in the original order)
                         if let Some(final_name) = items.pop() {
-                            let final_name_text = final_name.syntax().text().to_string();
+                            let final_name_text = final_name
+                                .identifier()
+                                .map(|id| id.value().to_string())
+                                .unwrap_or_else(|| final_name.syntax().text().to_string());
                             let name_expr = core::name(smid, final_name_text);
                             v.push(desugarer.varify(name_expr));
                         }
@@ -2314,8 +2323,8 @@ fn extract_declaration_name(decl: &rowan_ast::Declaration) -> Result<String, Cor
     if let Some(head) = decl.head() {
         let kind = head.classify_declaration();
         match kind {
-            rowan_ast::DeclarationKind::Property(prop) => Ok(prop.text().to_string()),
-            rowan_ast::DeclarationKind::Function(func, _) => Ok(func.text().to_string()),
+            rowan_ast::DeclarationKind::Property(prop) => Ok(prop.value().to_string()),
+            rowan_ast::DeclarationKind::Function(func, _) => Ok(func.value().to_string()),
             rowan_ast::DeclarationKind::Prefix(_, op, _) => Ok(op.text().to_string()),
             rowan_ast::DeclarationKind::Postfix(_, _, op) => Ok(op.text().to_string()),
             rowan_ast::DeclarationKind::Binary(_, _, op, _) => Ok(op.text().to_string()),
@@ -2557,9 +2566,11 @@ impl Desugarable for rowan_ast::Block {
                 if let Some(head) = decl.head() {
                     let kind = head.classify_declaration();
                     match kind {
-                        rowan_ast::DeclarationKind::Property(prop) => Some(prop.text().to_string()),
+                        rowan_ast::DeclarationKind::Property(prop) => {
+                            Some(prop.value().to_string())
+                        }
                         rowan_ast::DeclarationKind::Function(func, _) => {
-                            Some(func.text().to_string())
+                            Some(func.value().to_string())
                         }
                         rowan_ast::DeclarationKind::Prefix(_, op, _) => Some(op.text().to_string()),
                         rowan_ast::DeclarationKind::Postfix(_, _, op) => {
@@ -2698,9 +2709,11 @@ impl Desugarable for rowan_ast::Unit {
                 if let Some(head) = decl.head() {
                     let kind = head.classify_declaration();
                     match kind {
-                        rowan_ast::DeclarationKind::Property(prop) => Some(prop.text().to_string()),
+                        rowan_ast::DeclarationKind::Property(prop) => {
+                            Some(prop.value().to_string())
+                        }
                         rowan_ast::DeclarationKind::Function(func, _) => {
-                            Some(func.text().to_string())
+                            Some(func.value().to_string())
                         }
                         rowan_ast::DeclarationKind::Prefix(_, op, _) => Some(op.text().to_string()),
                         rowan_ast::DeclarationKind::Postfix(_, _, op) => {

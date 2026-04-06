@@ -399,6 +399,24 @@ impl AstToken for NormalIdentifier {
     }
 }
 
+impl NormalIdentifier {
+    /// Return the semantic name of this identifier, stripping any
+    /// quoting.  For unquoted identifiers this is the same as
+    /// `text()`; for single-quoted identifiers the surrounding
+    /// quotes are removed (e.g. `'x/z'` → `x/z`).
+    pub fn value(&self) -> &str {
+        match self {
+            NormalIdentifier::UnquotedIdentifier(_) => self.text(),
+            NormalIdentifier::SingleQuoteIdentifier(_) => {
+                let t = self.text();
+                t.strip_prefix('\'')
+                    .and_then(|s| s.strip_suffix('\''))
+                    .unwrap_or(t)
+            }
+        }
+    }
+}
+
 impl ContainsName for NormalIdentifier {
     fn name_range(&self) -> Option<TextRange> {
         match self {
@@ -454,6 +472,16 @@ impl Identifier {
             Identifier::OperatorIdentifier(n) => n.name_range(),
         };
         range.map(|range| &self.syntax().text()[range])
+    }
+
+    /// Return the semantic name, stripping any quoting for
+    /// single-quoted normal identifiers.  Operators return their
+    /// raw text (they are never quoted).
+    pub fn value(&self) -> &str {
+        match self {
+            Identifier::NormalIdentifier(n) => n.value(),
+            Identifier::OperatorIdentifier(_) => self.text(),
+        }
     }
 
     pub fn as_normal(&self) -> Option<NormalIdentifier> {
