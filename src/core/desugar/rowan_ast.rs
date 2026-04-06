@@ -2406,11 +2406,12 @@ fn rowan_declaration_to_binding(
     if let Some(inputs) = metadata.imports {
         for input in inputs {
             let import_smid = desugarer.new_smid(components.span);
-            imports.push(
-                desugarer
-                    .translate_import(import_smid, input)
-                    .expect("failure translating import"),
-            );
+            if let Some(import_expr) = desugarer
+                .translate_import(import_smid, input)
+                .expect("failure translating import")
+            {
+                imports.push(import_expr);
+            }
         }
     }
 
@@ -2540,11 +2541,12 @@ impl Desugarable for rowan_ast::Block {
         if let Some(inputs) = block_meta.imports {
             let meta_smid = metadata.as_ref().unwrap().smid();
             for input in inputs {
-                imports.push(
-                    desugarer
-                        .translate_import(meta_smid, input)
-                        .expect("failure translating import"),
-                );
+                if let Some(import_expr) = desugarer
+                    .translate_import(meta_smid, input)
+                    .expect("failure translating import")
+                {
+                    imports.push(import_expr);
+                }
             }
         }
 
@@ -2680,11 +2682,12 @@ impl Desugarable for rowan_ast::Unit {
         if let Some(inputs) = unit_meta.imports {
             let meta_smid = metadata.as_ref().unwrap().smid();
             for input in inputs {
-                imports.push(
-                    desugarer
-                        .translate_import(meta_smid, input)
-                        .expect("failure translating import"),
-                );
+                if let Some(import_expr) = desugarer
+                    .translate_import(meta_smid, input)
+                    .expect("failure translating import")
+                {
+                    imports.push(import_expr);
+                }
             }
         }
 

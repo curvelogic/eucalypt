@@ -1,0 +1,2 @@
+` { import: "diamond_common.eu" }
+b-val: common-val + 1

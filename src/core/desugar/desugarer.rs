@@ -67,6 +67,24 @@ pub struct Desugarer<'smap> {
     /// Consulted when desugaring `{ :ns ... }` blocks without an explicit
     /// `.expr` return — only registered namespaces trigger implicit return.
     monad_namespace_registry: HashMap<String, MonadSpec>,
+    /// Import guard — direct imports (depth == 1, i.e. imported directly
+    /// by the top-level unit being desugared).
+    ///
+    /// Files in this set are NOT deduplicated when re-imported directly again
+    /// (because a file may intentionally be imported at multiple positions in the
+    /// same unit to bring its bindings into different scopes).  They ARE
+    /// suppressed if encountered again as a *nested* import (depth > 1), which
+    /// is the classic diamond-dependency case.
+    ///
+    /// The key is `(file_id, import_name)`.
+    import_seen_direct: HashSet<(usize, Option<String>)>,
+    /// Import guard — nested (transitive) imports (depth > 1).
+    ///
+    /// Files in this set are suppressed unconditionally on any subsequent
+    /// encounter, whether direct or nested.  This handles the case where a
+    /// transitive dependency is pulled in first and a later direct import of
+    /// the same file would create a duplicate.
+    import_seen_nested: HashSet<(usize, Option<String>)>,
 }
 
 impl<'smap> Desugarer<'smap> {
@@ -88,6 +106,8 @@ impl<'smap> Desugarer<'smap> {
             file: vec![],
             monad_registry: HashMap::new(),
             monad_namespace_registry: HashMap::new(),
+            import_seen_direct: HashSet::new(),
+            import_seen_nested: HashSet::new(),
         }
     }
 
@@ -183,9 +203,47 @@ impl<'smap> Desugarer<'smap> {
     /// them) and `self.imported_targets` (so that [`Self::translate_unit`]
     /// can exclude them from `own_targets`, preventing the test runner
     /// from auto-discovering targets that belong to imported files).
-    pub fn translate_import(&mut self, smid: Smid, import: Input) -> Result<RcExpr, CoreError> {
+    ///
+    /// Returns `Ok(None)` when the import is suppressed by the import
+    /// guard (diamond-deduplication semantics):
+    ///
+    /// - A file first seen **transitively** (depth > 1) is suppressed on
+    ///   any subsequent encounter (direct or nested).
+    /// - A file first seen **directly** (depth == 1) is suppressed only
+    ///   when encountered again as a nested import.  Multiple direct
+    ///   imports of the same file are allowed because each may serve a
+    ///   different scope position in the unit.
+    pub fn translate_import(
+        &mut self,
+        smid: Smid,
+        import: Input,
+    ) -> Result<Option<RcExpr>, CoreError> {
         if let Some(source) = self.contents.get(&import) {
-            self.file.push(source.file_id());
+            let file_id = source.file_id();
+            let import_name = import.name().clone();
+            let guard_key = (file_id, import_name);
+
+            // `file.len()` is the current nesting depth:
+            //   1 = direct import from the top-level unit
+            //   2+ = nested/transitive import
+            let is_nested = self.file.len() > 1;
+
+            // Suppress if already seen transitively, OR if already seen
+            // directly and we're now inside a nested import.
+            if self.import_seen_nested.contains(&guard_key)
+                || (is_nested && self.import_seen_direct.contains(&guard_key))
+            {
+                return Ok(None);
+            }
+
+            // Record this import in the appropriate guard set.
+            if is_nested {
+                self.import_seen_nested.insert(guard_key);
+            } else {
+                self.import_seen_direct.insert(guard_key);
+            }
+
+            self.file.push(file_id);
 
             // Snapshot targets before desugaring the import so we can
             // identify which targets were added by the imported file.
@@ -203,7 +261,7 @@ impl<'smap> Desugarer<'smap> {
             }
 
             self.file.pop();
-            Ok(expr)
+            Ok(Some(expr))
         } else {
             Err(CoreError::NoParsedAstFor(Box::new(import.clone())))
         }

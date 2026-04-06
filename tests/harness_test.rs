@@ -707,6 +707,11 @@ pub fn test_harness_136() {
 }
 
 #[test]
+pub fn test_harness_137() {
+    run_test(&opts("137_diamond_import.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
