@@ -66,7 +66,9 @@
 | `split-after(p?, l)` | Split list where `p?` becomes false and return pair |
 | `split-when(p?, l)` | Split list where `p?` becomes true and return pair |
 | `window(n, step, l)` | List of lists of sliding windows over list `l` of size `n` and offest `step` |
+| `window-all(n, step, l)` | Like `window` but includes the final short chunk even if smaller than `n` |
 | `partition(n)` | List of lists of non-overlapping segments of list `l` of size `n` |
+| `partition-all(n)` | Non-overlapping partitions of list `l` including any final short chunk |
 | `discriminate(pred, xs)` | Return pair of `xs` for which `pred(_)` is true and `xs` for which `pred(_)` is false |
 
 ## Folds and Scans
