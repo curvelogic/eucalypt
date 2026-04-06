@@ -11,6 +11,7 @@ Eucalypt can export to the following formats:
 | TOML | `-x toml` | TOML output |
 | EDN | `-x edn` | EDN output |
 | Text | `-x text` | Plain text output |
+| Eucalypt | `-x eu` | Eucalypt-syntax output; preserves symbols as `:name` |
 
 The output format can also be inferred from the output file extension
 when using `-o`:
