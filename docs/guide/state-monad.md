@@ -15,21 +15,31 @@ When several updates depend on each other, manually threading the
 modified state through each step is verbose and error-prone — the
 same problem that `{ :random ... }` solves for PRNG streams.
 
-```eu,notest
-# Manual threading — tedious and fragile
+```eu
 s0: { count: 0, name: "init" }
 s1: s0 merge({count: 1})
 s2: s1 merge({name: "updated"})
-# Every step must reference the previous one by name
+```
+
+```yaml
+s0:
+  count: 0
+  name: init
+s1:
+  count: 1
+  name: init
+s2:
+  count: 1
+  name: updated
 ```
 
 The state monad automates this threading.
 
 ## State Actions
 
-A *state action* is a function from a state block to a
-`{value, state}` block — the same pattern as the random monad's
-`{value, rest}`:
+A *state action* is a function from a state block to a block with
+`value` and `state` fields — the same pattern as the random monad's
+`value`/`rest` blocks:
 
 ```eu,notest
 # An action that reads the count and increments it
@@ -37,14 +47,14 @@ count-and-inc(s): { value: s.count, state: s merge({count: s.count + 1}) }
 ```
 
 The state monad provides primitives for building these actions
-without manually deconstructing and reconstructing pairs.
+without manually deconstructing and reconstructing blocks.
 
 ## Monadic Blocks with `{ :state ... }`
 
 Tag a block with `:state` to get automatic bind threading — each
 declaration becomes a monadic step:
 
-```eu,notest
+```eu
 { import: "state.eu" }
 
 action: { :state
@@ -53,8 +63,13 @@ action: { :state
   _: state.put(:name, "step-2")
 }
 
-result: state.run(action, {count: 0, name: "init"})
-# => [{count: 1, name: "step-2"}, {count: 1, name: "step-2"}]
+result: state.exec(action, {count: 0, name: "init"})
+```
+
+```yaml
+result:
+  count: 1
+  name: step-2
 ```
 
 Each step sees the state left by the previous step:
@@ -82,7 +97,7 @@ Run the action by passing an initial state to `state.run`,
 
 | Function | Description |
 |----------|-------------|
-| `state.run(action, s)` | Run action from state `s`, return `{value, state}` block |
+| `state.run(action, s)` | Run action from state `s`, return block with `value` and `state` fields |
 | `state.eval(action, s)` | Run action, return only the value |
 | `state.exec(action, s)` | Run action, return only the final state |
 
@@ -91,26 +106,21 @@ Run the action by passing an initial state to `state.run`,
 The `lift` and `query` primitives let you reuse existing eucalypt
 functions as state actions:
 
-```eu,notest
+```eu
 { import: "state.eu" }
 { import: "lens.eu" }
 
 action: { :state
-  # Use merge to add keys
   _: state.lift(merge({new-key: "added"}))
-
-  # Use lenses for deep updates
   _: state.lift(over(at(:count), + 1))
+  n: state.query(_.count)
+}.(n)
 
-  # Use safe navigation to read
-  host: state.query(~ :server ~ :host)
+result: state.eval(action, {count: 0})
+```
 
-  # Filter a list-valued key
-  _: state.modify(:items, filter(match?{active: true}))
-
-  # Read a derived value
-  total: state.query(.items length)
-}
+```yaml
+result: 1
 ```
 
 ## Lens Operators
@@ -119,19 +129,20 @@ The `=!` and `%!` operators provide concise syntax for lens-based
 state updates. When the left operand is a symbol, it is
 automatically wrapped in `at()`:
 
-```eu,notest
+```eu
 { import: "state.eu" }
 
 action: { :state
-  # Set a key (symbol auto-wrapped in at())
   _: :count =! 0
-
-  # Modify a key with a function
   _: :count %! (+ 1)
-
-  # Use composed lenses for deep access
-  _: at(:server) =! {host: "localhost", port: 8080}
+  _: :count %! (+ 1)
 }
+
+result: state.exec(action, {count: 99}).count
+```
+
+```yaml
+result: 2
 ```
 
 | Operator | Meaning | Equivalent to |
@@ -148,25 +159,30 @@ The state monad follows the same pattern as `{ :random ... }`:
 | State type | PRNG stream | Block |
 | Import | Built-in (prelude) | `{ import: "state.eu" }` |
 | Block tag | `{ :random ... }` | `{ :state ... }` |
-| Run | `random.run(action, io.random)` | `state.run(action, initial)` |
+| Run | `random.run(action, stream)` | `state.run(action, initial)` |
 | Read state | `random.float`, `random.int(n)` | `state.get`, `state.query(f)` |
 | Modify state | Automatic (stream advances) | `state.put`, `state.modify`, `=!`, `%!` |
 
 ## Example: Accumulating Counts
 
-```eu,notest
+```eu
 { import: "state.eu" }
 
-# Count occurrences of each item
 count-item(item): { :state
-  current: state.get ~ item
-  _: state.put(item, if(current null?, 1, current + 1))
+  current: state.query(~ item)
+  _: state.put(item, current fnil(+ 1, 0))
 }
 
-# Process a list of items
-count-all(items): items foldl(count-items, {})
+count-items(s, item): state.exec(count-item(item), s)
 
-count-items(s, item): state.exec(count-item(item sym), s)
+result: [:a, :b, :a, :c, :a, :b] foldl(count-items, {})
+```
+
+```yaml
+result:
+  a: 3
+  b: 2
+  c: 1
 ```
 
 ## How It Works

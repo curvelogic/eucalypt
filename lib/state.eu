@@ -19,8 +19,8 @@ state-bind(action, f, s): {
 ` "state-get(s) - state action: return the whole state as the value."
 state-get(s): { value: s, state: s }
 
-` "state-put(k, v, s) - state action: set key k to value v in the state block."
-state-put(k, v, s): { value: null, state: alter-value(k, v, s) }
+` "state-put(k, v, s) - state action: set key k to value v in the state block (adds or overwrites)."
+state-put(k, v, s): { value: null, state: ([[k, v]] block) merge(s) }
 
 ` "state-lift(f, s) - state action: apply f to the state (transforming it), return null."
 state-lift(f, s): { value: null, state: f(s) }
