@@ -1251,6 +1251,12 @@ window(n, step, l): { chunk: l take(n) }.(if(count(chunk) >= n, cons(chunk, l dr
 ` "`partition(n, l)` - list of lists of non-overlapping segments of list `l` of size `n`"
 partition(n): window(n, n)
 
+` "`window-all(n, step, l)` - like window but includes the final short chunk even if smaller than `n`"
+window-all(n, step, l): { chunk: l take(n) }.(if(chunk nil?, [], cons(chunk, (if(count(l) <= step, [], l drop(step))) window-all(n, step))))
+
+` "`partition-all(n, l)` - list of lists of non-overlapping segments of `l`, including any final short chunk"
+partition-all(n): window-all(n, n)
+
 ` "`over-sliding-pairs(f, l)` - apply binary fn `f` to each overlapping pair in `l` to form new list"
 over-sliding-pairs(f, l): l window(2, 1) map(f uncurry)
 

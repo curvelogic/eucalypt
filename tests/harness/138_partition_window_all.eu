@@ -1,0 +1,25 @@
+"136 partition-all and window-all"
+
+` { target: :test }
+test: {
+  # partition-all includes final short chunk
+  pa-short-tail: ([1, 2, 3, 4, 5] partition-all(2)) //= [[1, 2], [3, 4], [5]]
+
+  # partition-all with exact multiple
+  pa-exact: ([1, 2, 3, 4] partition-all(2)) //= [[1, 2], [3, 4]]
+
+  # partition-all with chunk larger than list
+  pa-larger: ([1, 2] partition-all(3)) //= [[1, 2]]
+
+  # partition-all on empty list
+  pa-empty: ([] partition-all(2)) //= []
+
+  # window-all includes final short windows
+  wa-overlapping: ([1, 2, 3, 4, 5] window-all(3, 2)) //= [[1, 2, 3], [3, 4, 5], [5]]
+
+  # window-all step of 1 (sliding)
+  wa-sliding: ([1, 2, 3, 4] window-all(2, 1)) //= [[1, 2], [2, 3], [3, 4], [4]]
+
+  # window-all on empty list
+  wa-empty: ([] window-all(2, 1)) //= []
+}
