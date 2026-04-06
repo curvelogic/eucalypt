@@ -71,6 +71,34 @@ pub trait IntrinsicMachine {
     /// In test mode, `__EXPECT` failures return `false` instead of
     /// panicking, allowing test harnesses to collect results.
     fn test_mode(&self) -> bool;
+
+    /// Evaluate a closure to WHNF, safely handling a non-empty continuation stack.
+    ///
+    /// Moves the current stack to a GC-visible location, runs the sub-evaluation,
+    /// then restores the saved stack.  The result closure is returned in WHNF.
+    ///
+    /// Intrinsics that need to force thunks (e.g. to inspect values at
+    /// runtime) should use this method.
+    ///
+    /// # Architecture note
+    ///
+    /// The default implementation panics.  A real implementation requires
+    /// access to the heap and emitter, which are not available through
+    /// `MachineState` alone.  The full `Machine` type provides a working
+    /// implementation; future work may restructure the trait so that
+    /// `Machine` itself implements `IntrinsicMachine` directly.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sub-evaluation encounters a machine error or
+    /// if it unexpectedly yields an IO constructor.
+    fn evaluate_to_whnf(&mut self, closure: SynClosure) -> Result<SynClosure, ExecutionError> {
+        let _ = closure;
+        panic!(
+            "evaluate_to_whnf is not available through IntrinsicMachine: \
+             use Machine::evaluate_to_whnf directly from contexts with full machine access"
+        )
+    }
 }
 
 /// All intrinsics have an STG syntax wrapper
