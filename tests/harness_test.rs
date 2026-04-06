@@ -1405,3 +1405,8 @@ pub fn test_error_125() {
             .build(),
     );
 }
+
+#[test]
+pub fn test_error_126() {
+    run_error_test(&error_opts("126_stray_colon_in_call_args.eu"));
+}
