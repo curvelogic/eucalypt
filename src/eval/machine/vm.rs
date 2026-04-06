@@ -1120,6 +1120,10 @@ pub struct MachineSettings {
     pub trace_steps: bool,
     pub dump_heap: bool,
     pub test_mode: bool,
+    /// Cached value of `EU_STACK_DIAG` environment variable.
+    ///
+    /// Checked once at startup to avoid an env-var lookup on every VM step.
+    pub stack_diag: bool,
 }
 
 /// An STG machine variant using cactus environment
@@ -1176,6 +1180,7 @@ impl<'a> Machine<'a> {
                 trace_steps,
                 dump_heap,
                 test_mode,
+                stack_diag: std::env::var("EU_STACK_DIAG").is_ok(),
             },
             metrics: Metrics::default(),
             clock: Clock::default(),
@@ -1325,7 +1330,7 @@ impl<'a> Machine<'a> {
         let prev_max = metrics.max_stack();
         metrics.stack(stack_len);
         // Diagnostic: dump stack composition when a new max is reached
-        if std::env::var("EU_STACK_DIAG").is_ok() && stack_len > prev_max && stack_len > 5 {
+        if settings.stack_diag && stack_len > prev_max && stack_len > 5 {
             let counts = state.stack.iter().fold(
                 (0usize, 0usize, 0usize, 0usize),
                 |(branch, update, apply, demeta), cont| match cont {

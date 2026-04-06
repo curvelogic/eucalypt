@@ -1114,6 +1114,10 @@ pub struct Heap {
     /// Mark state for this heap instance - flipped each collection to avoid clearing marks.
     /// Plain bool suffices as each Heap is used from a single thread.
     mark_state: bool,
+    /// Cached value of `EU_GC_STRESS` environment variable.
+    ///
+    /// Checked once at construction to avoid a per-collection env-var lookup.
+    gc_stress: bool,
     /// Emergency collection state tracking
     emergency_state: UnsafeCell<EmergencyState>,
     /// GC performance metrics and telemetry
@@ -1588,6 +1592,7 @@ impl Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: None,
             mark_state: false,
+            gc_stress: std::env::var("EU_GC_STRESS").as_deref() == Ok("1"),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
@@ -1601,6 +1606,7 @@ impl Heap {
             state: UnsafeCell::new(HeapState::new()),
             limit: Some(block_limit),
             mark_state: false,
+            gc_stress: std::env::var("EU_GC_STRESS").as_deref() == Ok("1"),
             emergency_state: UnsafeCell::new(EmergencyState::new()),
             gc_metrics: UnsafeCell::new(GCMetrics::default()),
             pin_counts: UnsafeCell::new(HashMap::new()),
@@ -1695,7 +1701,7 @@ impl Heap {
         // GC stress mode: force SelectiveEvacuation on every collection so
         // that evacuation pointer-update bugs surface on any platform, not
         // just the aarch64 CI runner.  Enable with EU_GC_STRESS=1.
-        if std::env::var("EU_GC_STRESS").as_deref() == Ok("1") {
+        if self.gc_stress {
             // SAFETY: Read-only borrow to enumerate block indices.
             // Single-threaded; no mutation during analysis.
             let heap_state = unsafe { &*self.state.get() };
