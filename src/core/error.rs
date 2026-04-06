@@ -57,12 +57,6 @@ pub enum CoreError {
     /// (e.g. `` ` { x.y: val } ``) which is not valid eucalypt syntax.
     #[error("invalid block key: dotted names are not allowed as block keys")]
     NoSmidForImplicitAnaphor,
-    #[error("nested list destructuring is limited to one level of nesting")]
-    DeepNestedListDestructure(Smid),
-    #[error(
-        "nested block destructuring is not supported; use dot-lookup in the function body instead"
-    )]
-    NestedBlockDestructure(Smid),
 }
 
 impl HasSmid for CoreError {
@@ -79,8 +73,6 @@ impl HasSmid for CoreError {
             NoMonadSpec(_, s) => s,
             EmptyMonadicBlock(s) => s,
             MonadSpecMissingMarker(_, _, s) => s,
-            DeepNestedListDestructure(s) => s,
-            NestedBlockDestructure(s) => s,
             _ => Smid::default(),
         }
     }

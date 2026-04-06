@@ -1,0 +1,46 @@
+"141 deep nested destructuring — lists and blocks at arbitrary depth"
+
+` { target: :test }
+test: {
+  # Two-level list: [a, [b, c]] (already worked before, regression check)
+  two-level([ a, [b, c] ]): [a, b, c]
+  two-level-ok: two-level([1, [2, 3]]) //= [1, 2, 3]
+
+  # Three-level list: [a, [b, [c, d]]]
+  three-level([a, [b, [c, d]]]): [a, b, c, d]
+  three-level-ok: three-level([1, [2, [3, 4]]]) //= [1, 2, 3, 4]
+
+  # Head/tail with nested head: [[a, b] : rest]
+  nested-head([[a, b] : rest]): [a, b, rest count]
+  nested-head-ok: nested-head([[10, 20], 30, 40]) //= [10, 20, 2]
+
+  # Block with simple field rename (regression check)
+  simple-block({x y}): [x, y]
+  simple-block-ok: simple-block({x: 1, y: 2}) //= [1, 2]
+
+  # Block with nested list value: {field: [a, b]}
+  block-list({data: [a, b]}): [a, b]
+  block-list-ok: block-list({data: [7, 8]}) //= [7, 8]
+
+  # Block nested inside block: {outer: {inner}}
+  block-block({outer: {inner}}): inner
+  block-block-ok: block-block({outer: {inner: 99}}) //= 99
+
+  # List containing a block: [{x y}, z]
+  list-block([{x y}, z]): [x, y, z]
+  list-block-ok: list-block([{x: 10, y: 20}, 30]) //= [10, 20, 30]
+
+  # Block with list nested inside renamed block: {a: {b: [p, q]}}
+  triple-nested({a: {b: [p, q]}}): [p, q]
+  triple-nested-ok: triple-nested({a: {b: [5, 6]}}) //= [5, 6]
+
+  RESULT: [ two-level-ok
+          , three-level-ok
+          , nested-head-ok
+          , simple-block-ok
+          , block-list-ok
+          , block-block-ok
+          , list-block-ok
+          , triple-nested-ok
+          ] all-true? then(:PASS, :FAIL)
+}
