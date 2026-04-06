@@ -697,6 +697,11 @@ pub fn test_harness_134() {
 }
 
 #[test]
+pub fn test_harness_135() {
+    run_test(&opts("135_dynamic_key_merge.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
