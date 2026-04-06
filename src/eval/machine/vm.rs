@@ -141,8 +141,11 @@ impl HeapNavigator<'_> {
     }
 
     /// Resolve a ref relative to a specific closure's environment, using
-    /// the navigator's globals for global refs. Returns None for value
-    /// refs (Ref::V) since forming a closure would require heap allocation.
+    /// the navigator's globals for global refs.
+    ///
+    /// Handles all ref types: `Ref::L` (closure-local), `Ref::G` (global
+    /// constant), and `Ref::V` (inline native value — wrapped in an Atom
+    /// closure). Returns `None` only when the env index is out of bounds.
     pub fn resolve_in_closure(&self, closure: &SynClosure, r: Ref) -> Option<SynClosure> {
         match r {
             Ref::L(i) => {
@@ -150,7 +153,14 @@ impl HeapNavigator<'_> {
                 (*env).get(&self.view, i)
             }
             Ref::G(i) => (*self.globals).get(&self.view, i),
-            Ref::V(_) => None,
+            Ref::V(_) => {
+                let ptr = self
+                    .view
+                    .alloc(HeapSyn::Atom { evaluand: r })
+                    .ok()?
+                    .as_ptr();
+                Some(SynClosure::new(ptr, closure.env()))
+            }
         }
     }
 }

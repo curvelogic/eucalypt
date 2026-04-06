@@ -39,28 +39,24 @@ use crate::eval::memory::{
 
 /// Resolve a ref from within a cons closure context.
 ///
-/// Compiled eucalypt lists use `Ref::G` for the nil tail and `Ref::L`
-/// for other elements. `navigate_local` only handles `Ref::L`, so this
-/// helper dispatches correctly for all ref types.
+/// Delegates to `HeapNavigator::resolve_in_closure` which handles all
+/// ref types: `Ref::L` (local), `Ref::G` (global constant like nil),
+/// and `Ref::V` (inline native value).
 fn resolve_list_ref(
     closure: &SynClosure,
     machine: &mut dyn IntrinsicMachine,
     view: MutatorHeapView<'_>,
     r: &Ref,
 ) -> Result<SynClosure, ExecutionError> {
-    use crate::eval::memory::alloc::ScopedAllocator;
-    match r {
-        Ref::L(_) => Ok(closure.navigate_local(&view, r.clone())),
-        Ref::G(i) => machine.nav(view).global(*i),
-        Ref::V(n) => {
-            let ptr = view
-                .alloc(HeapSyn::Atom {
-                    evaluand: Ref::V(n.clone()),
-                })?
-                .as_ptr();
-            Ok(SynClosure::new(ptr, machine.root_env()))
-        }
-    }
+    machine
+        .nav(view)
+        .resolve_in_closure(closure, r.clone())
+        .ok_or_else(|| {
+            ExecutionError::Panic(
+                Smid::default(),
+                "failed to resolve list ref in vec conversion".to_string(),
+            )
+        })
 }
 
 /// Extract a primitive from a closure representing a list element.

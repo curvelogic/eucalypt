@@ -1309,14 +1309,18 @@ fn deconstruct(
 
             let sym = resolve_pair_key_symbol(view, pool, pair_closure, k)?;
 
-            // The value ref may be Ref::L (local env reference),
-            // Ref::V (inline native value), or Ref::G (global
-            // constant — e.g. empty list []). Use the navigator
-            // to resolve any ref type into a closure.
-            let kv_closure = match kv {
-                Ref::L(_) => pair_closure.navigate_local(&view, kv),
-                _ => machine.nav(view).resolve(&kv)?,
-            };
+            // Data constructor args can be any ref type (Ref::L,
+            // Ref::G for global constants like [], Ref::V for inline
+            // natives).  Use resolve_in_closure which handles all.
+            let kv_closure = machine
+                .nav(view)
+                .resolve_in_closure(pair_closure, kv)
+                .ok_or_else(|| {
+                    ExecutionError::Panic(
+                        Smid::default(),
+                        "failed to resolve block pair value in merge".to_string(),
+                    )
+                })?;
 
             Ok((sym, kv_closure))
         }

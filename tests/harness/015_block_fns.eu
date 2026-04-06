@@ -59,6 +59,12 @@ deep-merge: {
     eq9: {a: 1 c: { x: :x} } << {b: 1 c: {x: :y} } = {a: 1 c: {x: :y} b: 1}
     eq10: {a: 1 c: { x: :x} } << {b: 1 c: {x: :y z: :u} } = {a: 1 c: {x: :y z: :u} b: 1}
     eq11: {a: { b: [1, 2]}} << {a: { b: [3, 4]}} = {a: { b: [3, 4]}}
+    # Regression: LHS list-valued key missing from RHS (eu-qqn8)
+    eq12: ({a: 1, b: []} << {a: 2}) = {a: 2, b: []}
+    eq13: ({a: 1, b: [1, 2]} << {a: 2}) = {a: 2, b: [1, 2]}
+    eq14: ({a: [], b: []} << {c: 1}) = {a: [], b: [], c: 1}
+    # Nested with list-valued keys
+    eq15: ({a: {x: []}} << {a: {y: 1}}) = {a: {x: [], y: 1}}
   }
   pass: tests elements map(value) all-true?
 }
