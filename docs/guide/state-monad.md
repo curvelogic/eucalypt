@@ -28,11 +28,12 @@ The state monad automates this threading.
 ## State Actions
 
 A *state action* is a function from a state block to a
-`[value, new-state]` pair:
+`{value, state}` block — the same pattern as the random monad's
+`{value, rest}`:
 
 ```eu,notest
 # An action that reads the count and increments it
-count-and-inc(s): [s.count, s merge({count: s.count + 1})]
+count-and-inc(s): { value: s.count, state: s merge({count: s.count + 1}) }
 ```
 
 The state monad provides primitives for building these actions
@@ -81,7 +82,7 @@ Run the action by passing an initial state to `state.run`,
 
 | Function | Description |
 |----------|-------------|
-| `state.run(action, s)` | Run action from state `s`, return `[value, final-state]` |
+| `state.run(action, s)` | Run action from state `s`, return `{value, state}` block |
 | `state.eval(action, s)` | Run action, return only the value |
 | `state.exec(action, s)` | Run action, return only the final state |
 
@@ -147,7 +148,7 @@ The state monad follows the same pattern as `{ :random ... }`:
 | State type | PRNG stream | Block |
 | Import | Built-in (prelude) | `{ import: "state.eu" }` |
 | Block tag | `{ :random ... }` | `{ :state ... }` |
-| Run | `action(io.random).value` | `state.run(action, initial)` |
+| Run | `random.run(action, io.random)` | `state.run(action, initial)` |
 | Read state | `random.float`, `random.int(n)` | `state.get`, `state.query(f)` |
 | Modify state | Automatic (stream advances) | `state.put`, `state.modify`, `=!`, `%!` |
 
@@ -173,14 +174,14 @@ count-items(s, item): state.exec(count-item(item sym), s)
 Under the hood, `state-bind` and `state-ret` are:
 
 ```eu,notest
-state-ret(v, s): [v, s]
+state-ret(v, s): { value: v, state: s }
 
 state-bind(action, f, s): {
-  pair: action(s)
-  val: pair head
-  new-s: pair tail head
-  run: f(val)(new-s)
-}.(run)
+  r: action(s)
+  run: f(r.value)(r.state)
+  value: run.value
+  state: run.state
+}
 ```
 
 The `state` namespace is registered with `monad: true` metadata, so

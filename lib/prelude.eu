@@ -193,6 +193,15 @@ random: monad{bind: random-bind, return: random-ret} {
     value: shuffled.value take(n)
     rest: shuffled.rest
   }
+
+  ` "random.run(action, stream) - run a random action on a stream; returns a value/rest block."
+  run(action, stream): action(stream)
+
+  ` "random.eval(action, stream) - run a random action and return only the value."
+  eval(action, stream): action(stream).value
+
+  ` "random.exec(action, stream) - run a random action and return only the remaining stream."
+  exec(action, stream): action(stream).rest
 }
 
 

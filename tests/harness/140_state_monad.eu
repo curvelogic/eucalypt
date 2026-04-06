@@ -9,36 +9,30 @@ test: {
   # state.get returns the whole state as value, unchanged state
   get-test: {
     result: state.run(state.get, initial)
-    value: result head
-    final-s: result tail head
-    value-ok: (value.count) //= 0
-    state-ok: (final-s.count) //= 0
+    value-ok: (result.value.count) //= 0
+    state-ok: (result.state.count) //= 0
   }
 
   # state.put sets a key
   put-test: {
     action: state.put(:count, 42)
     result: state.run(action, initial)
-    value: result head
-    final-s: result tail head
-    value-ok: value //= null
-    state-ok: (final-s.count) //= 42
+    value-ok: result.value //= null
+    state-ok: (result.state.count) //= 42
   }
 
   # state.query reads from state
   query-test: {
     action: state.query(_.count)
     result: state.run(action, initial)
-    value: result head
-    value-ok: value //= 0
+    value-ok: result.value //= 0
   }
 
   # state.modify updates a key
   modify-test: {
     action: state.modify(:count, + 5)
     result: state.run(action, initial)
-    final-s: result tail head
-    state-ok: (final-s.count) //= 5
+    state-ok: (result.state.count) //= 5
   }
 
   # state.then chains two actions, discarding first result
@@ -46,8 +40,7 @@ test: {
     # modify count then query — state.then runs modify, ignores result, runs query
     action: state.modify(:count, + 1) state.then(state.query(_.count))
     result: state.run(action, initial)
-    value: result head
-    value-ok: value //= 1
+    value-ok: result.value //= 1
   }
 
   # { :state ... } block syntax: get count, increment, return old count
@@ -57,10 +50,8 @@ test: {
       _ : (:count =! (c + 10))
     }.(c)
     result: state.run(computation, initial)
-    value: result head
-    final-s: result tail head
-    value-ok: value //= 0
-    state-ok: (final-s.count) //= 10
+    value-ok: result.value //= 0
+    state-ok: (result.state.count) //= 10
   }
 
   # state.eval and state.exec helpers
@@ -80,16 +71,14 @@ test: {
   op-set-test: {
     action: :count =! 7
     result: state.run(action, initial)
-    final-s: result tail head
-    state-ok: (final-s.count) //= 7
+    state-ok: (result.state.count) //= 7
   }
 
   # %! operator (symbol auto-at)
   op-mod-test: {
     action: :count %! (* 3)
     result: state.run(action, {count: 4})
-    final-s: result tail head
-    state-ok: (final-s.count) //= 12
+    state-ok: (result.state.count) //= 12
   }
 
   RESULT: [ get-test.value-ok, get-test.state-ok

@@ -315,6 +315,9 @@ partial application pattern used throughout eucalypt.
 |----------|-------------|
 | `random.bind(m, f)` | State monad bind |
 | `random.return(v)` | State monad return |
+| `random.run(action, stream)` | Run action on stream; returns value/rest block |
+| `random.eval(action, stream)` | Run action, return only the value |
+| `random.exec(action, stream)` | Run action, return only the remaining stream |
 | `random.float` | Action: random float in [0,1) |
 | `random.int(n)` | Action: random integer in [0,n) |
 | `random.choice(list)` | Action: random element from list |
