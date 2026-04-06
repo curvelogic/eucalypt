@@ -901,7 +901,7 @@ str: {
 ` "render(value) - serialise value to a YAML string."
 render(value): __RENDER_TO_STRING(value, :yaml)
 
-` "render-as(fmt, value) - serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html."
+` "render-as(fmt, value) - serialise value to a string in the named format. Pipeline-friendly: data render-as(:json). Supported formats: :yaml, :json, :toml, :text, :edn, :html, :eu."
 render-as(fmt, value): __RENDER_TO_STRING(value, fmt)
 
 ` "parse-as(fmt, str) - parse a string of structured data in the named format and return eucalypt data. The inverse of render-as. Supported formats: :json, :yaml, :toml, :csv, :xml, :edn, :jsonl. Content is parsed as inert data; embedded eucalypt expressions (e.g. YAML !eu tags) are never evaluated."
@@ -1058,8 +1058,8 @@ assert(p?, s, v): if(v p?, v, panic(s))
 #
 
 ` { doc: "`dbg(opts, v)` - print value `v` to stderr and return `v` unchanged. opts keys: label (string)." }
-# Render a value for debug output: JSON for blocks/lists, DBG_REPR for everything else
-__dbg-render(v): if(v block?, v render-as(:json), if(v list?, v render-as(:json), __DBG_REPR(v)))
+# Render a value for debug output: eu-syntax for blocks/lists, DBG_REPR for everything else
+__dbg-render(v): if(v block?, v render-as(:eu), if(v list?, v render-as(:eu), __DBG_REPR(v)))
 
 dbg(opts, v): {result: __DBG(lookup-or(:label, "", opts), __dbg-render(v), v)}.result
 
