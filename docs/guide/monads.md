@@ -380,3 +380,5 @@ ok:     maybe.bind(safe-head([42]), inc) # => 43
   stream, `bind` threads the stream automatically
 - When running random actions, always extract `.value` before
   rendering; the `.rest` field is an infinite stream
+- The `state` namespace (from `lib/state.eu`) is a state monad over
+  blocks — see [The State Monad](state-monad.md) for details

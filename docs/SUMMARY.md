@@ -27,6 +27,7 @@
 - [Date, Time, and Random Numbers](guide/date-time-random.md)
 - [IO and Shell Commands](guide/io.md)
 - [Monads and the monad() Utility](guide/monads.md)
+- [The State Monad](guide/state-monad.md)
 - [Advanced Topics](guide/advanced-topics.md)
 
 # Reference
