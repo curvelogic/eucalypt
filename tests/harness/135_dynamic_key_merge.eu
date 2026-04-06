@@ -1,0 +1,23 @@
+"135 merge with dynamically-created symbol keys"
+
+dyn-block: [[:b str.of sym, 42]] block
+multi-dyn: [[:a str.of sym, 1], [:b str.of sym, 2]] block
+
+` { target: :test }
+test: {
+  # Shallow merge (uses PackPair -> ExtractKey path)
+  merge-static-dyn: (dyn-block merge({x: 1})) //= {x: 1, b: 42}
+
+  # Deep merge << (uses BlockPair -> MergeWith path)
+  deep-rhs: ({x: 1} << dyn-block) //= {x: 1, b: 42}
+  deep-lhs: (dyn-block << {x: 1}) //= {b: 42, x: 1}
+
+  # Deep merge with nested block containing dynamic keys
+  deep-nested: ({ inputs: {} } << { inputs: dyn-block }) //= { inputs: { b: 42 } }
+
+  # Multiple dynamic keys
+  multi-merge: ({x: 0} << multi-dyn) //= {x: 0, a: 1, b: 2}
+
+  # Mixed: dynamic key overwritten by static key
+  mixed-override: (([[:c str.of sym, 3]] block) << {c: 99}) //= {c: 99}
+}

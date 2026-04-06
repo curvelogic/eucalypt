@@ -349,7 +349,23 @@ impl StgIntrinsic for ExtractKey {
                             local(0),
                             vec![(
                                 DataConstructor::ListCons.tag(), // [h t] [l] [pair]
-                                unbox_sym(local(0), local(0)),
+                                // The key (h) may be a BoxedSymbol constructor
+                                // (from compiled literal symbols like :x) or a
+                                // raw Atom { V(Sym(id)) } (from dynamically
+                                // created symbols like `str.of sym`).  Use
+                                // `case` to force h and handle both: the
+                                // BoxedSymbol branch unboxes, the fallback
+                                // passes through a raw sym atom as-is.
+                                case(
+                                    local(0),
+                                    vec![(
+                                        DataConstructor::BoxedSymbol.tag(),
+                                        // [inner] [h t] [l] [pair]
+                                        local(0),
+                                    )],
+                                    // default: h is a raw sym atom, return it
+                                    local(0),
+                                ),
                             )],
                         ),
                     ),
@@ -419,9 +435,21 @@ impl StgIntrinsic for BlockPair {
                                     local(1),
                                     vec![(
                                         DataConstructor::ListCons.tag(), // [v .] [k t] [lcons] [kv]
-                                        data(
-                                            DataConstructor::BlockPair.tag(),
-                                            vec![lref(2), lref(0)],
+                                        // Force the key to WHNF via
+                                        // ExtractKey applied to the original
+                                        // KV element, which handles both
+                                        // BoxedSymbol and raw atom keys.
+                                        // This ensures dynamically-created
+                                        // keys (e.g. `str.of sym`) are fully
+                                        // evaluated before building the
+                                        // BlockPair for the merge intrinsic.
+                                        force(
+                                            ExtractKey.global(lref(5)),
+                                            // [sym] [v .] [k t] [lcons] [kv]
+                                            data(
+                                                DataConstructor::BlockPair.tag(),
+                                                vec![lref(0), lref(1)],
+                                            ),
                                         ),
                                     )],
                                 ),
@@ -1220,37 +1248,45 @@ fn resolve_pair_key_symbol(
         return Ok(pool.resolve(*id).to_string());
     }
 
-    // Follow the key reference to its closure
-    let key_closure = pair_closure.navigate_local(&view, k);
-    let key_code = view.scoped(key_closure.code());
-
-    match &*key_code {
-        // Raw atom containing a symbol
-        syntax::HeapSyn::Atom {
-            evaluand: Ref::V(syntax::Native::Sym(id)),
-        } => Ok(pool.resolve(*id).to_string()),
-        // Boxed symbol (from dynamically-constructed blocks)
-        syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedSymbol.tag() => {
-            let inner = args.get(0).ok_or_else(|| {
-                ExecutionError::Panic(
+    // Follow the key reference to its closure, unwrapping any Ann
+    // (source-location annotation) nodes along the way.
+    let mut key_closure = pair_closure.navigate_local(&view, k);
+    loop {
+        let key_code = view.scoped(key_closure.code());
+        match &*key_code {
+            // Raw atom containing a symbol
+            syntax::HeapSyn::Atom {
+                evaluand: Ref::V(syntax::Native::Sym(id)),
+            } => return Ok(pool.resolve(*id).to_string()),
+            // Boxed symbol (from dynamically-constructed blocks)
+            syntax::HeapSyn::Cons { tag, args } if *tag == DataConstructor::BoxedSymbol.tag() => {
+                let inner = args.get(0).ok_or_else(|| {
+                    ExecutionError::Panic(
+                        Smid::default(),
+                        "empty boxed symbol in block pair key".to_string(),
+                    )
+                })?;
+                let native = key_closure.navigate_local_native(&view, inner);
+                if let syntax::Native::Sym(id) = native {
+                    return Ok(pool.resolve(id).to_string());
+                } else {
+                    return Err(ExecutionError::Panic(
+                        Smid::default(),
+                        "boxed symbol contained non-symbol native".to_string(),
+                    ));
+                }
+            }
+            // Annotation wrapper — follow through to the body
+            syntax::HeapSyn::Ann { body, .. } => {
+                key_closure = SynClosure::new(*body, key_closure.env());
+            }
+            _ => {
+                return Err(ExecutionError::Panic(
                     Smid::default(),
-                    "empty boxed symbol in block pair key".to_string(),
-                )
-            })?;
-            let native = key_closure.navigate_local_native(&view, inner);
-            if let syntax::Native::Sym(id) = native {
-                Ok(pool.resolve(id).to_string())
-            } else {
-                Err(ExecutionError::Panic(
-                    Smid::default(),
-                    "boxed symbol contained non-symbol native".to_string(),
+                    "bad block_pair passed to merge intrinsic: non-symbolic key".to_string(),
                 ))
             }
         }
-        _ => Err(ExecutionError::Panic(
-            Smid::default(),
-            "bad block_pair passed to merge intrinsic: non-symbolic key".to_string(),
-        )),
     }
 }
 
