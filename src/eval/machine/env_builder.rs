@@ -72,6 +72,16 @@ pub trait EnvBuilder {
         args: &[SynClosure],
     ) -> Result<SynClosure, ExecutionError>;
 
+    /// Create a saturated version of a closure, consuming an existing
+    /// args array without copying it.  Use this when the caller
+    /// already owns the exact `Array<SynClosure>` to avoid an
+    /// unnecessary heap allocation.
+    fn saturate_with_array(
+        &self,
+        closure: &SynClosure,
+        args: Array<SynClosure>,
+    ) -> Result<SynClosure, ExecutionError>;
+
     /// Create a new closure with extra partial arguments
     fn partially_apply(
         &self,
@@ -201,6 +211,20 @@ impl EnvBuilder for MutatorHeapView<'_> {
         Ok(SynClosure::new_annotated(
             closure.code(),
             self.from_saturation(arg_array, closure.env(), closure.annotation())?,
+            closure.annotation(),
+        ))
+    }
+
+    /// Create a new saturated closure, consuming the args array directly
+    /// to avoid an extra heap allocation when the caller already owns it.
+    fn saturate_with_array(
+        &self,
+        closure: &SynClosure,
+        args: Array<SynClosure>,
+    ) -> Result<SynClosure, ExecutionError> {
+        Ok(SynClosure::new_annotated(
+            closure.code(),
+            self.from_saturation(args, closure.env(), closure.annotation())?,
             closure.annotation(),
         ))
     }
