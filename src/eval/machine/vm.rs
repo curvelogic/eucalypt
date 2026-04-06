@@ -267,6 +267,13 @@ pub struct MachineState {
     /// into this stash ensures they are scanned as GC roots for the
     /// duration of the io-run loop.
     stash: Vec<SynClosure>,
+    /// Suspended continuation stacks saved during `evaluate_to_whnf` calls.
+    ///
+    /// When `evaluate_to_whnf` is called with a non-empty continuation stack,
+    /// the current stack is moved here (rather than dropped) so that the GC
+    /// can trace its heap pointers during the sub-evaluation `run()`.  Each
+    /// entry is popped and restored after the sub-evaluation completes.
+    suspended_stacks: Vec<Vec<Continuation>>,
     /// Set by `CaptureEnd` continuation to signal `Machine::step()` to
     /// pop the capture emitter and produce the result string.
     capture_end_pending: bool,
@@ -295,6 +302,7 @@ impl Default for MachineState {
             symbol_pool: SymbolPool::new(),
             suppress_next_update: false,
             stash: Vec::new(),
+            suspended_stacks: Vec::new(),
             capture_end_pending: false,
             capture_results: Vec::new(),
             pending_capture_start: None,
@@ -1095,6 +1103,15 @@ impl GcScannable for MachineState {
         for stashed in &self.stash {
             out.push(ScanPtr::new(scope, stashed));
         }
+
+        // Suspended continuation stacks saved during evaluate_to_whnf calls.
+        // Their heap pointers must remain live for the duration of the
+        // sub-evaluation.
+        for suspended_stack in &self.suspended_stacks {
+            for cont in suspended_stack {
+                cont.scan(scope, marker, out);
+            }
+        }
     }
 
     fn scan_and_update(&mut self, heap: &CollectorHeapView<'_>) {
@@ -1112,6 +1129,12 @@ impl GcScannable for MachineState {
         // Update forwarded pointers in stashed closures.
         for stashed in &mut self.stash {
             stashed.scan_and_update(heap);
+        }
+        // Update forwarded pointers in suspended continuation stacks.
+        for suspended_stack in &mut self.suspended_stacks {
+            for cont in suspended_stack {
+                cont.scan_and_update(heap);
+            }
         }
     }
 }
@@ -1648,16 +1671,85 @@ impl<'a> Machine<'a> {
         self.state.closure = new_closure;
     }
 
+    /// Evaluate a closure to WHNF, safely handling a non-empty continuation stack.
+    ///
+    /// The current continuation stack is moved into a GC-visible `suspended_stacks`
+    /// list so that the collector can trace its heap pointers during the
+    /// sub-evaluation.  After the sub-evaluation completes the saved stack is
+    /// restored, leaving the machine ready to continue the enclosing computation.
+    ///
+    /// The current closure is pushed onto the stash for GC safety across the
+    /// `run()` call, then restored afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the sub-evaluation encounters a machine error or
+    /// if it unexpectedly yields on an IO constructor.
+    pub fn evaluate_to_whnf(&mut self, closure: SynClosure) -> Result<SynClosure, ExecutionError> {
+        // Move the current continuation stack to a GC-visible suspended location
+        // so the collector traces its heap pointers during the sub-evaluation.
+        // If the stack is already empty this is a no-op.
+        let saved_stack = std::mem::take(&mut self.state.stack);
+        self.state.suspended_stacks.push(saved_stack);
+
+        // Push the current closure onto the GC stash so that the collector can
+        // trace and update its heap pointers if evacuation occurs during run().
+        self.stash_push(self.state.closure.clone());
+
+        // Temporarily evaluate the given closure to WHNF.
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+        self.state.closure = closure;
+
+        let run_result = self.run(None);
+
+        // Pop the (possibly-updated) saved closure and stack from their
+        // GC-visible locations.  The GC may have rewritten internal heap
+        // pointers during run(), so we must use these copies rather than
+        // any Rust-stack variables saved before run().
+        let saved_closure = self.stash_pop();
+        let saved_stack = self
+            .state
+            .suspended_stacks
+            .pop()
+            .expect("suspended_stacks underflow in evaluate_to_whnf");
+
+        // Propagate any run error only after retrieving the GC-safe copies,
+        // to leave the machine in a consistent state.
+        run_result?;
+
+        // Capture the result before restoring state.
+        let sub_yielded = self.state.yielded_io;
+        let result = self.state.closure.clone();
+
+        // Restore the outer evaluation state.
+        self.state.terminated = false;
+        self.state.yielded_io = false;
+        self.state.closure = saved_closure;
+        self.state.stack = saved_stack;
+
+        if sub_yielded {
+            return Err(ExecutionError::Panic(
+                Smid::default(),
+                "thunk evaluation unexpectedly yielded an IO constructor".to_string(),
+            ));
+        }
+
+        Ok(result)
+    }
+
     /// Evaluate a closure to WHNF while the machine is in IO yield state.
     ///
-    /// Temporarily suspends the IO yield state, evaluates `closure` to
-    /// WHNF (normal termination), and restores the yielded IO state
-    /// (including the original `state.closure`).  The continuation stack
-    /// must be empty when called (which is always the case at an IO yield).
+    /// Delegates to `evaluate_to_whnf` for the core sub-evaluation, then
+    /// restores the IO yield termination state (`terminated = true`,
+    /// `yielded_io = true`) so the io-run driver can continue.
     ///
-    /// Used by the io-run driver to force-evaluate spec block field
-    /// closures that contain unevaluated thunks (e.g. `lookup-or` calls
-    /// in `io.shell-with` / `io.exec-with` spec blocks).
+    /// The continuation stack must be empty when called (which is always
+    /// the case at an IO yield).
+    ///
+    /// Used by the io-run driver to force-evaluate spec block field closures
+    /// that contain unevaluated thunks (e.g. `lookup-or` calls in
+    /// `io.shell-with` / `io.exec-with` spec blocks).
     ///
     /// # Errors
     ///
@@ -1677,49 +1769,15 @@ impl<'a> Machine<'a> {
             "evaluate_to_whnf_for_io called with non-empty continuation stack"
         );
 
-        // Push the current IO yield closure onto the GC stash so that the
-        // collector can trace and update its heap pointers if evacuation occurs
-        // during self.run() below.  Without this, `saved_closure` is an
-        // invisible Rust-stack root: the GC does not scan it, so any objects
-        // it references that reside in a fragmented candidate block will be
-        // evacuated and their forwarding pointers set — but `saved_closure`
-        // still holds the old (now-dead) addresses, causing a SIGSEGV when
-        // we later restore it as the machine closure.
-        self.stash_push(self.state.closure.clone());
+        // Delegate to the general mechanism.
+        let result = self.evaluate_to_whnf(closure);
 
-        // Temporarily evaluate the given closure to WHNF.
-        self.state.terminated = false;
-        self.state.yielded_io = false;
-        self.state.closure = closure;
-
-        let run_result = self.run(None);
-
-        // Pop the (possibly-updated) saved closure from the stash.  The GC
-        // may have rewritten its internal heap pointers during run(), so we
-        // must use the stash copy rather than the Rust-stack copy.
-        let saved_closure = self.stash_pop();
-
-        // Propagate any run error only after restoring the GC-safe saved
-        // closure, to leave the machine in a consistent state.
-        run_result?;
-
-        // Capture the result before restoring state.
-        let sub_yielded = self.state.yielded_io;
-        let result = self.state.closure.clone();
-
-        // Restore the IO yield state unconditionally.
+        // Restore IO yield termination state unconditionally so the io-run
+        // driver sees a consistent yield state whether or not an error occurred.
         self.state.terminated = true;
         self.state.yielded_io = true;
-        self.state.closure = saved_closure;
 
-        if sub_yielded {
-            return Err(ExecutionError::Panic(
-                Smid::default(),
-                "spec block field evaluation unexpectedly yielded an IO constructor".to_string(),
-            ));
-        }
-
-        Ok(result)
+        result
     }
 
     /// Assertion helper for machine unit tests
