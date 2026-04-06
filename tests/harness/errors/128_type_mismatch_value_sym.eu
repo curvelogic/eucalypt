@@ -1,0 +1,6 @@
+#!/usr/bin/env eu
+
+# Type mismatch error should include the actual symbol value in the message.
+# When :foo is passed where a number is expected, the error
+# should say 'found symbol :foo'.
+x: :foo + 1

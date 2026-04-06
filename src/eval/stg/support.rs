@@ -25,6 +25,36 @@ use crate::{
     eval::{memory::syntax::*, types::IntrinsicType},
 };
 
+/// Format a native value for inclusion in error messages.
+///
+/// Returns a short human-readable description of the value, or `None` for
+/// types that are not easily represented as a short string (arrays, vecs, etc.).
+fn describe_native(
+    native: &Native,
+    machine: &dyn IntrinsicMachine,
+    view: MutatorHeapView<'_>,
+) -> Option<String> {
+    match native {
+        Native::Num(n) => Some(n.to_string()),
+        Native::Str(s) => {
+            let scoped = view.scoped(*s);
+            let text = (*scoped).as_str();
+            const MAX_LEN: usize = 40;
+            if text.len() > MAX_LEN {
+                Some(format!("\"{}…\"", &text[..MAX_LEN]))
+            } else {
+                Some(format!("\"{text}\""))
+            }
+        }
+        Native::Sym(id) => {
+            let name = machine.symbol_pool().resolve(*id);
+            Some(format!(":{name}"))
+        }
+        Native::Zdt(dt) => Some(dt.to_rfc3339()),
+        _ => None,
+    }
+}
+
 /// Map a resolved native value to its intrinsic type for error reporting
 fn native_type(native: &Native) -> IntrinsicType {
     match native {
@@ -72,8 +102,9 @@ pub fn num_arg(
         Ok(Native::Num(n)) => Ok(n),
         Ok(native) => Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            IntrinsicType::Number,
-            native_type(&native),
+            Box::new(IntrinsicType::Number),
+            Box::new(native_type(&native)),
+            describe_native(&native, machine, view),
         )),
         Err(_) => {
             // resolve_native failed — likely a Cons (block/list). Inspect the
@@ -100,8 +131,9 @@ pub fn str_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            IntrinsicType::String,
-            native_type(&native),
+            Box::new(IntrinsicType::String),
+            Box::new(native_type(&native)),
+            describe_native(&native, machine, view),
         ))
     }
 }
@@ -156,8 +188,9 @@ pub fn str_arg_ref(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            IntrinsicType::String,
-            native_type(&native),
+            Box::new(IntrinsicType::String),
+            Box::new(native_type(&native)),
+            describe_native(&native, machine, view),
         ))
     }
 }
@@ -174,8 +207,9 @@ pub fn sym_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            IntrinsicType::Symbol,
-            native_type(&native),
+            Box::new(IntrinsicType::Symbol),
+            Box::new(native_type(&native)),
+            describe_native(&native, machine, view),
         ))
     }
 }
@@ -192,8 +226,9 @@ pub fn zdt_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            IntrinsicType::ZonedDateTime,
-            native_type(&native),
+            Box::new(IntrinsicType::ZonedDateTime),
+            Box::new(native_type(&native)),
+            describe_native(&native, machine, view),
         ))
     }
 }
@@ -325,8 +360,9 @@ impl Iterator for StrListIterator<'_> {
         } else {
             Some(Err(ExecutionError::TypeMismatch(
                 Smid::default(),
-                IntrinsicType::String,
-                native_type(&native),
+                Box::new(IntrinsicType::String),
+                Box::new(native_type(&native)),
+                None,
             )))
         }
     }
@@ -561,8 +597,9 @@ pub fn ndarray_arg<'guard>(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            IntrinsicType::Array,
-            native_type(&native),
+            Box::new(IntrinsicType::Array),
+            Box::new(native_type(&native)),
+            None,
         ))
     }
 }
@@ -595,8 +632,9 @@ pub fn vec_arg<'guard>(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            IntrinsicType::Vec,
-            native_type(&native),
+            Box::new(IntrinsicType::Vec),
+            Box::new(native_type(&native)),
+            None,
         ))
     }
 }

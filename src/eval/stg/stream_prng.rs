@@ -46,8 +46,9 @@ fn stream_arg(
     } else {
         Err(ExecutionError::TypeMismatch(
             machine.annotation(),
-            crate::eval::types::IntrinsicType::Unknown,
-            crate::eval::types::IntrinsicType::Unknown,
+            Box::new(crate::eval::types::IntrinsicType::Unknown),
+            Box::new(crate::eval::types::IntrinsicType::Unknown),
+            None,
         ))
     }
 }
