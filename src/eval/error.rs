@@ -10,6 +10,18 @@ use thiserror::Error;
 
 use super::{memory::bump, stg::compiler::CompileError};
 
+/// Format a type mismatch error message, including the actual value when available.
+fn format_type_mismatch(
+    expected: &IntrinsicType,
+    actual: &IntrinsicType,
+    value: &Option<String>,
+) -> String {
+    match value {
+        Some(v) => format!("type mismatch: expected {expected}, found {actual} {v}"),
+        None => format!("type mismatch: expected {expected}, found {actual}"),
+    }
+}
+
 /// Generate contextual help notes for type mismatch errors
 fn type_mismatch_notes(expected: &IntrinsicType, actual: &IntrinsicType) -> Vec<String> {
     use IntrinsicType::*;
@@ -575,8 +587,8 @@ pub enum ExecutionError {
     InvalidCode(Smid),
     #[error("{}", format_lookup_failure(.1, .2, .3))]
     LookupFailure(Smid, String, Vec<String>, Vec<String>),
-    #[error("type mismatch: expected {1}, found {2}")]
-    TypeMismatch(Smid, IntrinsicType, IntrinsicType),
+    #[error("{}", format_type_mismatch(.1, .2, .3))]
+    TypeMismatch(Smid, Box<IntrinsicType>, Box<IntrinsicType>, Option<String>),
     #[error("unknown intrinsic {1}")]
     UnknownIntrinsic(Smid, String),
     #[error("{}", format_not_callable(.1))]
@@ -715,7 +727,7 @@ impl HasSmid for ExecutionError {
             ExecutionError::FreeVar(s, _) => *s,
             ExecutionError::InvalidCode(s) => *s,
             ExecutionError::LookupFailure(s, _, _, _) => *s,
-            ExecutionError::TypeMismatch(s, _, _) => *s,
+            ExecutionError::TypeMismatch(s, _, _, _) => *s,
             ExecutionError::UnknownIntrinsic(s, _) => *s,
             ExecutionError::NotCallable(s, _) => *s,
             ExecutionError::NotValue(s, _) => *s,
@@ -915,7 +927,7 @@ impl ExecutionError {
         }
 
         let notes = match inner {
-            ExecutionError::TypeMismatch(_, expected, actual) => {
+            ExecutionError::TypeMismatch(_, expected, actual, _) => {
                 type_mismatch_notes(expected, actual)
             }
             ExecutionError::NoBranchForDataTag(_, actual, expected) => {
