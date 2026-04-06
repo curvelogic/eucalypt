@@ -429,45 +429,94 @@ fn unbox_any(scrutinee: Rc<StgSyn>, then: Rc<StgSyn>) -> Rc<StgSyn> {
     )
 }
 
+/// Build a fast-path wrapper for a polymorphic two-argument BIF.
+///
+/// The outer `case` forces x to WHNF and dispatches on its tag:
+///
+/// **Boxed x** (BoxedNumber/String/Symbol/Zdt):
+/// - inner_x at L(0); full unbox+force chain for both args.
+/// - Environment path: `[inner_x][x,y]` → force → `[raw_x][inner_x][x,y]`
+///   → unbox_any(L(3)=y) → force → `[raw_y]...[raw_x]...`
+///   → BIF(lref(2)=raw_x, lref(0)=raw_y)
+///
+/// **Native x** (already unboxed, e.g. Num/Str/Sym/NdArray):
+/// - x(native) at L(0), original [x,y] at L(1..); y is at L(2).
+/// - Inner `case` forces y to WHNF:
+///   - Boxed y: inner_y at L(0) → force → raw_y at L(0), x(native) at L(2)
+///     → BIF(lref(2)=x_native, lref(0)=raw_y)
+///   - Native y: y(native) at L(0), x(native) at L(1)
+///     → BIF(lref(1)=x_native, lref(0)=y_native) — **no `force` frames**
+///
+/// For the native/native fast path this saves two env-frame allocations
+/// compared with routing through `unbox_any` + `force` for each arg.
+fn binary_wrapper(index: usize) -> LambdaForm {
+    // ── Boxed-x path: full unbox + force for both args ──────────────
+    // After boxed-x branch: [inner_x][x,y]  L(0)=inner_x, L(2)=x, L(3)=y
+    // After force inner_x:  [raw_x][inner_x][x,y]  L(0)=raw_x, L(3)=y
+    // After unbox_any(L(3)): any-y branch/fallback puts inner/native at L(0),
+    //   raw_x slides to L(1) or higher.
+    // After force y:  L(0)=raw_y, ..., L(2)=raw_x
+    let bif_full = app_bif(index as u8, vec![lref(2), lref(0)]);
+    let force_y_full = force(local(0), bif_full);
+    let unbox_y_full = unbox_any(local(3), force_y_full);
+    let force_x_full = force(local(0), unbox_y_full);
+
+    // ── Native-x + boxed-y path ──────────────────────────────────────
+    // After outer fallback:  [x(nat)][x,y]  L(0)=x(nat), L(2)=y
+    // After boxed-y branch:  [inner_y][x(nat)][x,y]  L(0)=inner_y, L(1)=x(nat)
+    // After force inner_y:   [raw_y][inner_y][x(nat)]...  L(0)=raw_y, L(2)=x(nat)
+    let bif_nx_fy = app_bif(index as u8, vec![lref(2), lref(0)]);
+    let force_inner_y = force(local(0), bif_nx_fy);
+
+    // ── Native-x + native-y fast path ────────────────────────────────
+    // After outer fallback + y fallback:
+    //   [y(nat)][x(nat)][x,y]  L(0)=y(nat), L(1)=x(nat)
+    let bif_nx_ny = app_bif(index as u8, vec![lref(1), lref(0)]);
+
+    // Inner dispatch on y when x is already native (y is at L(2))
+    let check_y = case(
+        local(2),
+        vec![
+            (DataConstructor::BoxedNumber.tag(), force_inner_y.clone()),
+            (DataConstructor::BoxedString.tag(), force_inner_y.clone()),
+            (DataConstructor::BoxedSymbol.tag(), force_inner_y.clone()),
+            (DataConstructor::BoxedZdt.tag(), force_inner_y),
+        ],
+        bif_nx_ny,
+    );
+
+    // Outer dispatch on x: boxed → full path; native → fast path
+    let body = case(
+        local(0),
+        vec![
+            (DataConstructor::BoxedNumber.tag(), force_x_full.clone()),
+            (DataConstructor::BoxedString.tag(), force_x_full.clone()),
+            (DataConstructor::BoxedSymbol.tag(), force_x_full.clone()),
+            (DataConstructor::BoxedZdt.tag(), force_x_full),
+        ],
+        check_y,
+    );
+
+    lambda(2, body)
+}
+
 /// Build a wrapper for a polymorphic two-argument comparison intrinsic.
 ///
-/// Unboxes and forces both arguments for any boxed native type, then
-/// calls the BIF with the raw native values.
+/// Delegates to `binary_wrapper` which applies a native/native fast path
+/// to avoid redundant env-frame allocations when both args are already
+/// unboxed natives.
 fn comparison_wrapper(index: usize) -> LambdaForm {
-    // Environment evolution (matching the default wrapper pattern):
-    //
-    //   lambda args:                                          [x, y]
-    //   unbox_any x:  case on local(0)
-    //     branch matches BoxedXxx → inner ref at local(0):    [inner_x] [x, y]
-    //   force inner_x:                              [raw_x]   [inner_x] [x, y]
-    //   unbox_any y:  case on local(3) (= y from lambda args)
-    //     branch matches BoxedXxx → inner ref:  [inner_y]     [raw_x] [inner_x] [x, y]
-    //   force inner_y:                  [raw_y] [inner_y]     [raw_x] [inner_x] [x, y]
-    //
-    //   BIF args: raw_x = lref(2), raw_y = lref(0)
-    let bif_call = app_bif(index as u8, vec![lref(2), lref(0)]);
-    let force_y = force(local(0), bif_call);
-    let unbox_y = unbox_any(local(3), force_y);
-    let force_x = force(local(0), unbox_y);
-    let unbox_x = unbox_any(local(0), force_x);
-    lambda(2, unbox_x)
+    binary_wrapper(index)
 }
 
 /// Build a wrapper for a polymorphic two-argument arithmetic intrinsic.
 ///
-/// Like `comparison_wrapper`, uses `unbox_any` + `force` so that both boxed
-/// numeric types and raw `NdArray` natives pass through to `execute`. The
-/// `execute` methods are responsible for returning the correct result type:
+/// Like `comparison_wrapper`, delegates to `binary_wrapper`. The `execute`
+/// methods are responsible for returning the correct result type:
 /// `machine_return_boxed_num` for scalar results, `machine_return_ndarray`
 /// for array results.
 fn arithmetic_wrapper(index: usize) -> LambdaForm {
-    // Environment layout matches comparison_wrapper — see its comment.
-    let bif_call = app_bif(index as u8, vec![lref(2), lref(0)]);
-    let force_y = force(local(0), bif_call);
-    let unbox_y = unbox_any(local(3), force_y);
-    let force_x = force(local(0), unbox_y);
-    let unbox_x = unbox_any(local(0), force_x);
-    lambda(2, unbox_x)
+    binary_wrapper(index)
 }
 
 /// Ordering comparison between two numbers, trying i64, u64, then f64
