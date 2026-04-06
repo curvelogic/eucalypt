@@ -1,0 +1,106 @@
+"140 state monad library"
+
+# Import state.eu and test basic state operations.
+
+` { import: "resource:state", target: :test }
+test: {
+  initial: { count: 0, items: [] }
+
+  # state.get returns the whole state as value, unchanged state
+  get-test: {
+    result: state.run(state.get, initial)
+    value: result head
+    final-s: result tail head
+    value-ok: (value.count) //= 0
+    state-ok: (final-s.count) //= 0
+  }
+
+  # state.put sets a key
+  put-test: {
+    action: state.put(:count, 42)
+    result: state.run(action, initial)
+    value: result head
+    final-s: result tail head
+    value-ok: value //= null
+    state-ok: (final-s.count) //= 42
+  }
+
+  # state.query reads from state
+  query-test: {
+    action: state.query(_.count)
+    result: state.run(action, initial)
+    value: result head
+    value-ok: value //= 0
+  }
+
+  # state.modify updates a key
+  modify-test: {
+    action: state.modify(:count, + 5)
+    result: state.run(action, initial)
+    final-s: result tail head
+    state-ok: (final-s.count) //= 5
+  }
+
+  # state.then chains two actions, discarding first result
+  bind-test: {
+    # modify count then query — state.then runs modify, ignores result, runs query
+    action: state.modify(:count, + 1) state.then(state.query(_.count))
+    result: state.run(action, initial)
+    value: result head
+    value-ok: value //= 1
+  }
+
+  # { :state ... } block syntax: get count, increment, return old count
+  block-test: {
+    computation: { :state
+      c: state.query(_.count)
+      _ : (:count =! (c + 10))
+    }.(c)
+    result: state.run(computation, initial)
+    value: result head
+    final-s: result tail head
+    value-ok: value //= 0
+    state-ok: (final-s.count) //= 10
+  }
+
+  # state.eval and state.exec helpers
+  eval-test: {
+    action: state.modify(:count, + 99)
+    final-val: state.eval(action, initial)
+    final-val-ok: final-val //= null
+  }
+
+  exec-test: {
+    action: state.modify(:count, + 99)
+    final-s: state.exec(action, initial)
+    state-ok: (final-s.count) //= 99
+  }
+
+  # =! operator (symbol auto-at)
+  op-set-test: {
+    action: :count =! 7
+    result: state.run(action, initial)
+    final-s: result tail head
+    state-ok: (final-s.count) //= 7
+  }
+
+  # %! operator (symbol auto-at)
+  op-mod-test: {
+    action: :count %! (* 3)
+    result: state.run(action, {count: 4})
+    final-s: result tail head
+    state-ok: (final-s.count) //= 12
+  }
+
+  RESULT: [ get-test.value-ok, get-test.state-ok
+          , put-test.value-ok, put-test.state-ok
+          , query-test.value-ok
+          , modify-test.state-ok
+          , bind-test.value-ok
+          , block-test.value-ok, block-test.state-ok
+          , eval-test.final-val-ok
+          , exec-test.state-ok
+          , op-set-test.state-ok
+          , op-mod-test.state-ok
+          ] all-true? then(:PASS, :FAIL)
+}
