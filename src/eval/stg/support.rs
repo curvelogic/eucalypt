@@ -40,8 +40,9 @@ fn describe_native(
             let scoped = view.scoped(*s);
             let text = (*scoped).as_str();
             const MAX_LEN: usize = 40;
-            if text.len() > MAX_LEN {
-                Some(format!("\"{}…\"", &text[..MAX_LEN]))
+            if text.chars().count() > MAX_LEN {
+                let truncated: String = text.chars().take(MAX_LEN).collect();
+                Some(format!("\"{}…\"", truncated))
             } else {
                 Some(format!("\"{text}\""))
             }
