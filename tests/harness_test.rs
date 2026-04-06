@@ -722,6 +722,11 @@ pub fn test_harness_139() {
 }
 
 #[test]
+pub fn test_harness_140() {
+    run_test(&opts("140_state_monad.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }

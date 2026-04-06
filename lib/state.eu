@@ -1,0 +1,79 @@
+{ import: "resource:lens"
+  doc: "State monad for Eucalypt. Each state action is a function state -> [value, new-state]. Use state.run(action, initial) to execute a computation and state.exec / state.eval to extract just the final state or final value." }
+
+# ─── Primitive bind / return ────────────────────────────────────────────────
+
+` "state-ret(v, s) - wrap value v in the state monad: returns [v, s] unchanged."
+state-ret(v, s): [v, s]
+
+` "state-bind(action, f, s) - run action on s, pass result value to f, run f's action on new state."
+state-bind(action, f, s): {
+  pair: action(s)
+  val: pair head
+  new-s: pair tail head
+  run: f(val)(new-s)
+}.(run)
+
+# ─── Primitive actions ───────────────────────────────────────────────────────
+
+` "state-get(s) - state action: return the whole state as the value."
+state-get(s): [s, s]
+
+` "state-put(k, v, s) - state action: set key k to value v in the state block."
+state-put(k, v, s): [null, alter-value(k, v, s)]
+
+` "state-lift(f, s) - state action: apply f to the state (transforming it), return null."
+state-lift(f, s): [null, f(s)]
+
+` "state-query(f, s) - state action: apply f to the state and return the result; state unchanged."
+state-query(f, s): [f(s), s]
+
+` "state-modify(k, f, s) - state action: update key k by applying f to its current value."
+state-modify(k, f, s): [null, update-value(k, f, s)]
+
+# ─── Lens operators ──────────────────────────────────────────────────────────
+
+set-at(lens, v, s): [null, over(lens, -> v, s)]
+
+mod-at(lens, f, s): [null, over(lens, f, s)]
+
+` { doc: "l =! v — state action: set the focus of lens l to v.  If l is a symbol, wraps with at."
+    fixity: "infix-left"
+    precedence: 10 }
+(l =! v): if(l symbol?, set-at(at(l), v), set-at(l, v))
+
+` { doc: "l %! f — state action: modify the focus of lens l with f.  If l is a symbol, wraps with at."
+    fixity: "infix-left"
+    precedence: 10 }
+(l %! f): if(l symbol?, mod-at(at(l), f), mod-at(l, f))
+
+# ─── Namespace (enables { :state ... } blocks) ───────────────────────────────
+
+` { doc: "State monad namespace.  Each declaration in a colon-state block is a monadic bind step."
+    monad: true }
+state: monad{bind: state-bind, return: state-ret} {
+
+  ` "state.get - action returning the whole state as the value."
+  get: state-get
+
+  ` "state.put(k, v) - action setting key k to v in the state."
+  put: state-put
+
+  ` "state.lift(f) - action applying pure function f to transform the state."
+  lift: state-lift
+
+  ` "state.query(f) - action reading from state via f, leaving state unchanged."
+  query: state-query
+
+  ` "state.modify(k, f) - action updating key k by applying f to its current value."
+  modify: state-modify
+
+  ` "state.run(action, initial) - run a state action starting from initial state; returns [value, final-state]."
+  run(action, initial): action(initial)
+
+  ` "state.eval(action, initial) - run a state action and return only the final value."
+  eval(action, initial): action(initial) head
+
+  ` "state.exec(action, initial) - run a state action and return only the final state."
+  exec(action, initial): action(initial) tail head
+}

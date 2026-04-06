@@ -6,5 +6,6 @@ fn main() {
     println!("cargo:rerun-if-changed=lib/prelude.eu");
     println!("cargo:rerun-if-changed=lib/test.eu");
     println!("cargo:rerun-if-changed=lib/lens.eu");
+    println!("cargo:rerun-if-changed=lib/state.eu");
     println!("cargo:rerun-if-changed=build-meta.yaml");
 }
