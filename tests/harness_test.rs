@@ -702,6 +702,11 @@ pub fn test_harness_135() {
 }
 
 #[test]
+pub fn test_harness_136() {
+    run_test(&opts("136_eu_format.eu"));
+}
+
+#[test]
 pub fn test_gc_001() {
     run_test(&opts("gc/gc_001_basic_collection.eu"));
 }
