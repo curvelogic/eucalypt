@@ -1450,3 +1450,8 @@ pub fn test_error_128() {
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }
+
+#[test]
+pub fn test_harness_143() {
+    run_test(&opts("143_deep_transform.eu"));
+}

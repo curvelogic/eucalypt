@@ -113,6 +113,20 @@ computed-checks: {
   ]
 }
 
+` "Membership operators ∈ and ∉"
+
+operator-checks: {
+  trues: [
+    :a ∈ (set.from-list[:a, :b, :c]),
+    not(:d ∈ (set.from-list[:a, :b])),
+    :z ∉ (set.from-list[:a, :b]),
+    not(:a ∉ (set.from-list[:a, :b])),
+    1 ∈ (set.from-list[1, 2, 3]),
+    "x" ∈ (set.from-list["x", "y"]),
+    not(99 ∈ ∅)
+  ]
+}
+
 pass: [
   construction-checks.trues all-true?,
   empty-checks.trues all-true?,
@@ -121,7 +135,8 @@ pass: [
   mutation-checks.trues all-true?,
   algebra-checks.trues all-true?,
   render-checks.trues all-true?,
-  computed-checks.trues all-true?
+  computed-checks.trues all-true?,
+  operator-checks.trues all-true?
 ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)

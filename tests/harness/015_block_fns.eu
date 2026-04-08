@@ -111,10 +111,26 @@ lookups: {
   }
 }
 
+map-elements-checks: {
+  trues: [
+    # Identity transform
+    ({a: 1, b: 2} map-elements(identity)) = {a: 1, b: 2},
+    # Transform values only (using bimap)
+    ({a: 1, b: 2} map-elements(bimap(identity, + 10))) = {a: 11, b: 12},
+    # Rename keys
+    ({x: 1} map-elements(bimap(prefix-key, identity))) = {pre-x: 1},
+    # Transform both key and value
+    ({a: 1, b: 2} map-elements(bimap(prefix-key, * 3))) = {pre-a: 3, pre-b: 6}
+  ]
+}
+
+prefix-key(k): "pre-{k}" sym
+
 pass: [ checks.trues values all-true?
       , merging.checks.trues all-true?
       , lookups.checks.trues all-true?
       , deep-merge.pass
+      , map-elements-checks.trues all-true?
       ] all-true?
 
 RESULT: if(pass, :PASS, :FAIL)
