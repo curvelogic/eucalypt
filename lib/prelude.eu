@@ -437,6 +437,18 @@ deep-query-first(pattern, d, b): b deep-query(pattern) head-or(d)
 deep-query-paths(pattern, b): b deep-query-fold(pattern) map(first)
 
 ##
+## Deep transform — recursive rewrite of nested structures
+##
+
+` "`deep-transform(rule, data)` - recursively transform a nested structure. At each node, call `rule(node)`. If it returns non-null, use that as the replacement (stop recursing into that node). If it returns null, recurse into children (block values and list elements)."
+deep-transform(rule, data): {
+  attempt: rule(data)
+  recurse: if(data block?, data map-values(deep-transform(rule)),
+             if(data list?, data map(deep-transform(rule)),
+               data))
+}.(if(attempt ✓, attempt, recurse))
+
+##
 ## Structural matching
 ##
 

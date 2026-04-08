@@ -79,6 +79,17 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 - Prefer sections over anaphora when a section suffices: `map(* 2)` not `map(_ * 2)`.
 - Use anaphora when the expression genuinely needs more than a simple section:  `map(_ * _ + 1)`.
 
+## String building
+
+- Use **string interpolation** for combining a fixed number of strings: `"{pfx}{name}"` not `[pfx, name] str.join-on("")`.
+- `str.join-on` is for joining a *list* of variable length, not for concatenating two known strings.
+- String anaphora (`•`) works inside interpolation: `names map("{•}-suffixed")`.
+
+## Call syntax
+
+- Use **juxtaposed call syntax** with list/block arguments: `f[x, y]` not `f([x, y])`, `g{a: 1}` not `g({a: 1})`.
+- More generally, avoid superfluous parentheses around arguments that are already delimited: lists `[...]`, blocks `{...}`, and strings `"..."` do not need wrapping parens.
+
 ## Blocks
 
 - Use blocks for local bindings: `{ x: ... y: ... }.(x + y)`, but limit to one block, do not stack this construct
