@@ -1445,3 +1445,8 @@ pub fn test_error_127() {
 pub fn test_error_128() {
     run_error_test(&error_opts("128_type_mismatch_value_sym.eu"));
 }
+
+#[test]
+pub fn test_error_129() {
+    run_error_test(&error_opts("129_compress_eliminated_var.eu"));
+}
