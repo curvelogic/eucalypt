@@ -434,6 +434,29 @@ expression". That specific hint is no longer raised; the error now falls through
 to "unresolved variable 'in'". The `:let` block pattern is the correct
 replacement.
 
+## Multiple Imports Go in One Metadata Block
+
+A file has one unit metadata block — the first block expression at
+the top of the file. If you need multiple imports, list them in that
+single block. Do NOT write separate blocks for each import.
+
+```eu,notest
+# WRONG — the second block is a separate expression, not more metadata
+{ import: "state.eu" }
+{ import: "lens.eu" }
+
+# RIGHT — one metadata block with a list of imports
+{ import: ["state.eu", "lens.eu"] }
+
+# RIGHT — one block with imports and other metadata
+{ import: ["state.eu", "lens.eu"]
+  doc: "My module" }
+```
+
+The wrong pattern causes a compiler error because only the first
+block is unit metadata — the second becomes an anonymous block
+declaration catenated into the metadata expression.
+
 ## Future Improvements
 
 These gotchas highlight areas where the language could benefit from:

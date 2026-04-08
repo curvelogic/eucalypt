@@ -57,6 +57,10 @@ pub enum CoreError {
     /// (e.g. `` ` { x.y: val } ``) which is not valid eucalypt syntax.
     #[error("invalid block key: dotted names are not allowed as block keys")]
     NoSmidForImplicitAnaphor,
+    /// An internal compiler error — a variable references a binding that
+    /// was eliminated during dead code elimination.
+    #[error("internal compiler error: {1}")]
+    InternalCompilerError(Smid, String),
 }
 
 impl HasSmid for CoreError {
@@ -73,6 +77,7 @@ impl HasSmid for CoreError {
             NoMonadSpec(_, s) => s,
             EmptyMonadicBlock(s) => s,
             MonadSpecMissingMarker(_, _, s) => s,
+            InternalCompilerError(s, _) => s,
             _ => Smid::default(),
         }
     }

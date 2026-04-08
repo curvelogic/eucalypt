@@ -93,8 +93,18 @@ impl ScopeCompressor {
             }
             Expr::Var(s, v) => {
                 if let Var::Bound(bound_var) = v {
-                    let bv = self.encounter(bound_var).expect("eliminating used var");
-                    Ok(RcExpr::from(Expr::Var(*s, Var::Bound(bv))))
+                    match self.encounter(bound_var) {
+                        Some(bv) => Ok(RcExpr::from(Expr::Var(*s, Var::Bound(bv)))),
+                        None => Err(CoreError::InternalCompilerError(
+                            *s,
+                            format!(
+                                "variable '{}' references an eliminated binding (scope={}, binder={})",
+                                bound_var.name.as_deref().unwrap_or("<anon>"),
+                                bound_var.scope,
+                                bound_var.binder,
+                            ),
+                        )),
+                    }
                 } else {
                     Ok(expr.clone())
                 }

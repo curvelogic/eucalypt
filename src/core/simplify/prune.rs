@@ -203,11 +203,21 @@ impl<'expr> ScopeTracker<'expr> {
         self.scopes.pop_front();
     }
 
-    /// Mark the innermost let body as Seen so we traverse from there
+    /// Mark the innermost let body as Seen so we traverse from there.
+    ///
+    /// When descending through Meta nodes, also mark the metadata
+    /// child (`m`) as Seen.  Unit-level metadata may contain anonymous
+    /// block declarations whose Let bindings reference their own
+    /// variables (e.g. `{ b: 2 }` desugars to `let b = 2 in { b: b }`).
+    /// If the metadata is not marked, these variables are unreachable
+    /// during traversal and the prune pass incorrectly eliminates them.
     fn mark_body(expr: &'expr RcMarkExpr) {
         match &*expr.inner {
             Expr::Let(_, scope, _) => Self::mark_body(&scope.body),
-            Expr::Meta(_, e, _) => Self::mark_body(e),
+            Expr::Meta(_, e, m) => {
+                m.mark();
+                Self::mark_body(e);
+            }
             _ => {
                 expr.mark();
             }
