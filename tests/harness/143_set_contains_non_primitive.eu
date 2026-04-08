@@ -1,0 +1,14 @@
+# Regression test for eu-sfil: set.contains? should return false
+# for non-primitive arguments, not panic.
+
+s: set.from-list[:a, :b, :c]
+
+` { target: :test }
+test: {
+  sym-yes: (:a ∈ s) //= true
+  sym-no: (:z ∈ s) //= false
+  list-no: ([1, 2] ∈ s) //= false
+  block-no: ({x: 1} ∈ s) //= false
+  null-no: (null ∈ s) //= false
+  not-member: (:z ∉ s) //= true
+}
