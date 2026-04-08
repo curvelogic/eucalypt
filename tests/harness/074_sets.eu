@@ -30,7 +30,11 @@ membership-checks: {
     ([1, 2, 3] set.from-list set.contains?(4)) = false,
     (["a", "b"] set.from-list set.contains?("a")) = true,
     (∅ set.contains?(1)) = false,
-    ([:a, :b, :c] set.from-list set.contains?(:b)) = true
+    ([:a, :b, :c] set.from-list set.contains?(:b)) = true,
+    # Non-primitive arguments return false, not panic (eu-sfil)
+    ([1, 2] ∈ (set.from-list[1, 2, 3])) = false,
+    ({x: 1} ∈ (set.from-list[:a])) = false,
+    (null ∈ ∅) = false
   ]
 }
 
