@@ -185,8 +185,11 @@ functions.
 { import: "cfg=config.yaml" }
 host: cfg.host
 
-# Multiple imports
+# Multiple imports — MUST be in one block, NOT separate blocks
 { import: ["helpers.eu", "cfg=config.eu"] }
+
+# WRONG: { import: "a.eu" }
+#        { import: "b.eu" }   ← this is a separate block, not a second import
 
 # Format override
 { import: "data=yaml@records.txt" }

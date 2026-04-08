@@ -92,6 +92,24 @@ The project includes a sophisticated garbage collector:
 
 The crash signal handler (SIGSEGV/SIGBUS diagnostics) is always active and has no environment variable — it installs unconditionally in `main()`.
 
+### Dump Commands for Debugging
+
+Use `eu dump <phase>` to inspect intermediate representations at each pipeline stage. These are the **primary tool** for investigating compiler and core expression issues — do NOT add temporary debug prints.
+
+| Command | Shows |
+|---------|-------|
+| `eu dump ast <file>` | Parsed syntax tree |
+| `eu dump desugared <file>` | Core expression after desugaring |
+| `eu dump cooked <file>` | Core expression after operator precedence resolution |
+| `eu dump inlined <file>` | Core expression after inlining |
+| `eu dump pruned <file>` | Core expression after dead code elimination |
+| `eu dump stg <file>` | Compiled STG syntax |
+| `eu dump runtime <file>` | Runtime globals |
+
+Add `--debug-format` for the Rust Debug representation (shows full structure including de Bruijn indices), or `--embed` for eucalypt source representation.
+
+Use `-B` (batch mode) to skip `.eucalypt.d` config files.
+
 ### Language Features
 
 - Functional programming with lazy evaluation
@@ -139,6 +157,15 @@ For specific topics, also consult:
 8. **`has` takes a symbol, not a string**: `has(:key)` not `has("key")`.
 9. **`str.split-on` uses regex**: `"a.b" str.split-on(".")` matches any char. Use `"[.]"`.
 10. **No whitespace before `(`**: `f(x)` is a call, `f (x)` is catenation.
+11. **Multiple imports go in one block**: `{ import: ["a.eu", "b.eu"] }` — do NOT write separate `{ import: "a.eu" }` and `{ import: "b.eu" }` blocks. Only the first block is unit metadata; the second becomes a separate expression.
+
+## Panics Are Critical
+
+- **Panics must NEVER be deferred.** If you encounter a panic (thread panicked, assertion failure, etc.), stop what you are doing, reproduce a minimal case, and investigate the root cause immediately.
+- **Use `eu dump` commands** (see above) to inspect the pipeline stage where the panic occurs — do NOT add temporary `eprintln!` debug statements.
+- **File a P1 bug** and fix it before moving on to other work.
+- **Convert panics to proper errors** as a first step if the root cause fix is complex — a `panic!` or `expect()` in user-reachable code should become an `ExecutionError` or `CoreError` diagnostic.
+- **Every panic fix must include a regression test.**
 
 ## Running the `eu` Binary (Process Safety)
 
