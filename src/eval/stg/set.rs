@@ -301,6 +301,9 @@ impl StgIntrinsic for SetRemove {
 impl CallGlobal2 for SetRemove {}
 
 /// SET.CONTAINS — check if an element is in a set
+///
+/// Returns false for non-primitive values (lists, blocks, etc.) since
+/// they can never be set members.
 pub struct SetContains;
 
 impl StgIntrinsic for SetContains {
@@ -319,8 +322,16 @@ impl StgIntrinsic for SetContains {
         _emitter: &mut dyn Emitter,
         args: &[Ref],
     ) -> Result<(), ExecutionError> {
-        let native = resolve_native_unboxing(machine, view, &args[0])?;
-        let prim = native_to_set_primitive(view, &native)?;
+        // Non-primitive values (lists, blocks, etc.) can never be set
+        // members, so return false rather than erroring.
+        let native = match resolve_native_unboxing(machine, view, &args[0]) {
+            Ok(n) => n,
+            Err(_) => return machine_return_bool(machine, view, false),
+        };
+        let prim = match native_to_set_primitive(view, &native) {
+            Ok(p) => p,
+            Err(_) => return machine_return_bool(machine, view, false),
+        };
         let set = set_arg(machine, view, &args[1])?;
         machine_return_bool(machine, view, set.contains(&prim))
     }
