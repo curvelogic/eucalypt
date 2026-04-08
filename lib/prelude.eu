@@ -1411,6 +1411,9 @@ map-second(f, prs): map(bimap(identity, f), prs)
 ` "`map-kv(f, b)` - apply `f(k, v)` to each key / value pair in block `b`, returning list."
 map-kv(f, b): b elements map(uncurry(f))
 
+` "`map-elements(f, b)` - apply `f([k, v])` to each element of block `b`, returning a new block. `f` receives and should return a `[key, value]` pair."
+map-elements(f, b): b elements map(f) block
+
 ` "`map-as-block(f, syms)` - map each symbol in `syms` and create block mapping `syms` to mapped values."
 map-as-block(f, syms): syms map({k: •}.[k, f(k)]) block
 
