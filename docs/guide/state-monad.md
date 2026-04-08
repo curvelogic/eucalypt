@@ -58,7 +58,7 @@ declaration becomes a monadic step:
 { import: "state.eu" }
 
 action: { :state
-  n: state.get.count
+  n: state.query(_.count)
   _: state.put(:count, n + 1)
   _: state.put(:name, "step-2")
 }
@@ -108,11 +108,9 @@ functions as state actions:
 
 ```eu
 { import: "state.eu" }
-{ import: "lens.eu" }
 
 action: { :state
-  _: state.lift(merge({new-key: "added"}))
-  _: state.lift(over(at(:count), + 1))
+  _: :count %! (+ 1)
   n: state.query(_.count)
 }.(n)
 
@@ -122,6 +120,11 @@ result: state.eval(action, {count: 0})
 ```yaml
 result: 1
 ```
+
+With the lens library imported, you can also use `state.lift` with
+lens functions like `over(at(:key), f)` for deep updates. Since
+`state.eu` imports `lens.eu` internally, the lens functions are
+available without a separate import.
 
 ## Lens Operators
 
