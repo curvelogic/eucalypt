@@ -1599,6 +1599,16 @@ set: {
 ` "`∅` - the empty set."
 (∅): '__SET.EMPTY'
 
+` { doc: "`v ∈ s` - true if element `v` is a member of set `s`."
+    fixity: "infix-left"
+    precedence: 40 }
+(v ∈ s): s set.contains?(v)
+
+` { doc: "`v ∉ s` - true if element `v` is not a member of set `s`."
+    fixity: "infix-left"
+    precedence: 40 }
+(v ∉ s): not(v ∈ s)
+
 
 
 ##
