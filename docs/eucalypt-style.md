@@ -81,8 +81,9 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 
 ## String building
 
-- Use **string interpolation** for combining a fixed number of strings: `"{pfx}{name}"` not `[pfx, name] str.join-on("")`.
-- `str.join-on` is for joining a *list* of variable length, not for concatenating two known strings.
+- Use **string interpolation** for combining a fixed number of values: `"{pfx}{name}"` not `[pfx, name] str.join-on("")`.
+- Interpolation auto-converts values — symbols, numbers, etc. No `str.of` needed: `"{:foo}"` gives `"foo"`.
+- `str.join-on` is for joining a *list* of variable length, not for concatenating two known values.
 - String anaphora (`•`) works inside interpolation: `names map("{•}-suffixed")`.
 
 ## Call syntax
