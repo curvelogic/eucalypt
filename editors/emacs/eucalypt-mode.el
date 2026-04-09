@@ -486,6 +486,10 @@ Key sequences:
   ~> → ≫  (right shift)
   0N → ℕ  (natural numbers)
   {} → ∅  (empty set)
+  in → ∈  (set member)
+  ni → ∉  (not set member)
+  -o → ⊝  (bitwise NOT / circled dash)
+  |= → ▶  (debug trace)
   << → «  >> → »  (angle brackets)
   (( → ⟨  )) → ⟩  (mathematical angle brackets)
   [[ → ⟦  ]] → ⟧  (double square brackets)"
@@ -517,6 +521,12 @@ Key sequences:
  ("!!"  ?✓)
  ;; Sets
  ("{}"  ?∅)
+ ("in"  ?∈)
+ ("ni"  ?∉)
+ ;; Bitwise
+ ("-o"  ?⊝)
+ ;; Debug
+ ("|="  ?▶)
  ;; Natural numbers
  ("0N"  ?ℕ)
  ;; Brackets
@@ -551,9 +561,14 @@ Key sequences:
    ("C" "‖ cons"       (lambda () (interactive) (insert "‖")))
    ("h" "↑ head"       (lambda () (interactive) (insert "↑")))
    ("?" "✓ non-nil?"   (lambda () (interactive) (insert "✓")))]
+  ["Sets"
+   ("e" "∅ empty-set"  (lambda () (interactive) (insert "∅")))
+   ("i" "∈ member"     (lambda () (interactive) (insert "∈")))
+   ("I" "∉ not-member" (lambda () (interactive) (insert "∉")))]
   ["Other"
    ("c" "∘ compose"    (lambda () (interactive) (insert "∘")))
-   ("e" "∅ empty-set"  (lambda () (interactive) (insert "∅")))
+   ("t" "▶ debug"      (lambda () (interactive) (insert "▶")))
+   ("~" "⊝ bitnot"     (lambda () (interactive) (insert "⊝")))
    ("N" "ℕ naturals"   (lambda () (interactive) (insert "ℕ")))])
 
 ;;; Auto-unicodify

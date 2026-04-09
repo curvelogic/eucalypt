@@ -216,7 +216,7 @@
     "unicode-operator": {
       "comment": "Unicode operators used in eucalypt",
       "name": "keyword.operator.unicode.eucalypt",
-      "match": "[∧∨¬≤≥≠∸÷∘‖↑✓⊕≪≫∅→←⊂⊃∈∉∀∃⊥⊤≈≡∩∪∼±×√∞∂∫∑∏∇△▽⊢⊣⊨⊩⊕⊗⊙⊡⊞⊟⋅⋆⋈⋉⋊⟵⟶⟷⟸⟹⟺]+"
+      "match": "[∧∨¬≤≥≠∸÷∘‖↑✓⊕⊝≪≫∅▶→←⊂⊃∈∉∀∃⊥⊤≈≡∩∪∼±×√∞∂∫∑∏∇△▽⊢⊣⊨⊩⊗⊙⊡⊞⊟⋅⋆⋈⋉⋊⟵⟶⟷⟸⟹⟺]+"
     },
 
     "operator": {
