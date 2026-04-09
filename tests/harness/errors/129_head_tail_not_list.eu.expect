@@ -1,0 +1,2 @@
+exit: 1
+stderr: "head requires a list argument, got 42"
