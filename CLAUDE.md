@@ -158,6 +158,11 @@ For specific topics, also consult:
 9. **`str.split-on` uses regex**: `"a.b" str.split-on(".")` matches any char. Use `"[.]"`.
 10. **No whitespace before `(`**: `f(x)` is a call, `f (x)` is catenation.
 11. **Multiple imports go in one block**: `{ import: ["a.eu", "b.eu"] }` — do NOT write separate `{ import: "a.eu" }` and `{ import: "b.eu" }` blocks. Only the first block is unit metadata; the second becomes a separate expression.
+12. **`keys` returns symbols**: do NOT `map(sym)` over `keys` output — they are already symbols.
+13. **`if` with `_` anaphora doesn't make a rule**: `if(_ symbol?, x, null)` doesn't create a function — `if` evaluates its condition. Use a named function.
+14. **Use interpolation, not `str.join-on`**: `"{pfx}{name}"` not `[pfx, name] str.join-on("")`. Interpolation auto-converts values.
+15. **Use `deep-transform` for recursive rewrites**: return non-null to replace, null to recurse. Avoids nested `if(block?, ..., if(list?, ...))`.
+16. **Read `docs/eucalypt-style.md`** for idiomatic patterns: `when` over `if`, `bimap` for point-free, scope capture in blocks, sets for membership.
 
 ## Panics Are Critical
 

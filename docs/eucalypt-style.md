@@ -96,3 +96,58 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 - Use blocks for local bindings: `{ x: ... y: ... }.(x + y)`, but limit to one block, do not stack this construct
 - Keep block "results"" in `.(...)` concise, preferably simple pipelines or expressions, or even just `{...}.result`
 - **Dynamic generalised lookup**: a function can return a block whose names are then used as a namespace for subsequent pipelines, e.g. `prepare(data).( edges take(k) ... )`. Use very sparingly — it can defeat static analysis. Never nest or stack dynamic lookups.
+- **Capture scope with local bindings**: when helpers share parameters, move them inside a block so they capture from scope rather than threading parameters explicitly:
+  ```eu,notest
+  # Before: f threaded through every helper
+  helper(f, x): f(x) + 1
+  go(f, xs): xs map(helper(f))
+
+  # After: f captured from enclosing block
+  go(f, xs): {
+    helper(x): f(x) + 1
+  }.(xs map(helper))
+  ```
+
+## Prefer `when` over `if` for conditional transforms
+
+- `when(pred?, f, x)` applies `f` when `pred?` matches, otherwise passes `x` through unchanged. Cleaner than `if(pred?(x), f(x), x)` which repeats `x`.
+  ```eu,notest
+  # Before: x repeated in both branches
+  if(x number?, x + 1, x)
+
+  # After
+  x when(number?, + 1)
+  ```
+
+## Prefer point-free composition
+
+- Use `bimap`, `compose` (`;`), and partial application to eliminate intermediate named functions:
+  ```eu,notest
+  # Before: named function to combine two transforms on a pair
+  transform[k, v]: [rename(k), process(v)]
+  blk map-elements(transform)
+
+  # After: bimap composes the two directly
+  blk map-elements(bimap(rename, process))
+  ```
+
+## Avoid nested `if` for type dispatch
+
+- Nested `if(block?, ..., if(list?, ..., if(symbol?, ...)))` chains are hard to read. Prefer:
+  - **`deep-transform`** for recursive structural rewriting — it handles the block/list/atom dispatch internally
+  - **`when`** for single conditional transforms
+  - **Named predicates** for readability
+
+## Sets for membership
+
+- Use sets (`set.from-list`) for repeated membership testing, not `any(= x)` over a list. Faster and reads better with `∈`:
+  ```eu,notest
+  # Before
+  allowed: [:a, :b, :c]
+  allowed any(= v)
+
+  # After
+  allowed: set.from-list[:a, :b, :c]
+  v ∈ allowed            # as expression
+  v when(∈ allowed, f)   # section as predicate
+  ```

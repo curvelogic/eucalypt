@@ -844,6 +844,52 @@ The following are commonly assumed but are **not** in the prelude:
 All `str.match`, `str.split`, `str.matches?` functions use regex
 patterns.
 
+### 5.13 `if` With Anaphora Does Not Create a Rule Function
+
+```eu,notest
+# WRONG: _ creates an anaphoric function, if evaluates it as a boolean
+data deep-transform(if(_ symbol?, :replaced, null))
+
+# RIGHT: use a named function as the rule
+replace-syms(v): if(v symbol?, :replaced, null)
+data deep-transform(replace-syms)
+```
+
+`if` evaluates its first argument as a condition. `_ symbol?` in
+that position creates a function, not a boolean. Use a named
+function or `when` instead.
+
+### 5.14 `keys` Returns Symbols
+
+Block keys are symbols. `keys` returns a list of symbols — do NOT
+`map(sym)` over them:
+
+```eu,notest
+{a: 1, b: 2} keys         # [:a, :b] — already symbols
+{a: 1, b: 2} keys map(sym)  # WRONG: sym expects a string
+```
+
+### 5.15 Use `deep-transform` for Recursive Rewrites
+
+`deep-transform(rule, data)` applies `rule` at each node. Return a
+value to replace, or `null` to recurse into children. Eliminates
+hand-rolled recursive `if(block?, ..., if(list?, ...))` dispatch:
+
+```eu,notest
+# Replace all symbols matching a set
+rename(v): if(v ∈ ks, prefix(v), null)
+data deep-transform(rename)
+```
+
+### 5.16 Use `map-elements` and `bimap` for Block Transforms
+
+`map-elements(f, blk)` applies `f` to each `[key, value]` pair and
+rebuilds the block. Combine with `bimap` for point-free transforms:
+
+```eu,notest
+blk map-elements(bimap(rename-key, transform-value))
+```
+
 ---
 
 ## 6. Quick CLI Reference
