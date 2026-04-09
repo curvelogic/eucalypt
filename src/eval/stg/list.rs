@@ -86,12 +86,24 @@ impl StgIntrinsic for Tail {
                         ),
                     ),
                 ],
-                let_(
-                    vec![value(box_str("tail requires a list argument"))],
-                    Panic.global(lref(0)),
-                ),
+                // Non-list value: call BIF to render actual value in error
+                app_bif(self.index() as u8, vec![lref(0)]),
             ),
         )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let repr = super::debug::render_debug_repr(machine, view, &args[0]);
+        Err(ExecutionError::Panic(
+            machine.annotation(),
+            format!("tail requires a list argument, got {repr}"),
+        ))
     }
 }
 
@@ -120,12 +132,24 @@ impl StgIntrinsic for Head {
                         ),
                     ),
                 ],
-                let_(
-                    vec![value(box_str("head requires a list argument"))],
-                    Panic.global(lref(0)),
-                ),
+                // Non-list value: call BIF to render actual value in error
+                app_bif(self.index() as u8, vec![lref(0)]),
             ),
         )
+    }
+
+    fn execute(
+        &self,
+        machine: &mut dyn IntrinsicMachine,
+        view: MutatorHeapView<'_>,
+        _emitter: &mut dyn Emitter,
+        args: &[Ref],
+    ) -> Result<(), ExecutionError> {
+        let repr = super::debug::render_debug_repr(machine, view, &args[0]);
+        Err(ExecutionError::Panic(
+            machine.annotation(),
+            format!("head requires a list argument, got {repr}"),
+        ))
     }
 }
 

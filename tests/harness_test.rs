@@ -1447,6 +1447,11 @@ pub fn test_error_128() {
 }
 
 #[test]
+pub fn test_error_129() {
+    run_error_test(&error_opts("129_head_tail_not_list.eu"));
+}
+
+#[test]
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }
