@@ -1221,6 +1221,9 @@ zip-with: map2
 ` "`zip(l1, l2)` - list of pairs of elements  `l1` and `l2`, until the shorter is exhausted."
 zip: zip-with(pair)
 
+` "`unzip(pairs)` - list of pairs to pair of lists. Inverse of zip."
+unzip(pairs): [pairs map(first), pairs map(second)]
+
 ` "`cross(f, xs, ys)` - apply `f` to every combination of elements from `xs` and `ys` (cartesian product)."
 cross(f, xs, ys): xs mapcat({x: •}.(ys map(f(x))))
 
