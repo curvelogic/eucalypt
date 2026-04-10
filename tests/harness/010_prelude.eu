@@ -188,6 +188,8 @@ tests: {
     t15f: interleave([1], []) = [1]
     t15g: interleave([1, 2], [3, 4]) = [1, 3, 2, 4]
     t15h: interleave([], []) = []
+    t15i: interleave([1, 2, 3, 4, 5], [:a]) = [1, :a, 2, 3, 4, 5]
+    t15j: interleave([:x], [1, 2, 3, 4, 5]) = [:x, 1, 2, 3, 4, 5]
     t16: ([true, false] all-true?) = false
     t17: ([true, false] any-true?) = true
     t18: ([0, 0, 0, 0] all(zero?)) = true
