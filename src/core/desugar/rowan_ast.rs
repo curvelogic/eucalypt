@@ -2129,13 +2129,55 @@ fn desugar_rowan_soup_inner(
         }
 
         // Check for Block element with monadic metadata.
-        // If followed by `.expr`, desugar as a monadic bind chain with explicit return.
-        // If NOT followed by `.expr` but the namespace is registered (monad: true),
-        // desugar with an implicit return block `{ k1: k1, k2: k2, … }`.
+        //
+        // When the monadic block is in generalised lookup position
+        // (preceded by `.`), it is desugared with implicit return and
+        // fed into the lookup handler — the LHS block's bindings are
+        // visible inside the monadic block.
+        //
+        // When standalone (not preceded by `.`):
+        // - If followed by `.expr`, desugar with explicit return
+        // - Otherwise use implicit return if the namespace is registered
         if let Element::Block(ref block) = elements[idx] {
             if let Some(spec) = extract_block_monad_spec_from_raw(block) {
                 let block_span = text_range_to_span(block.syntax().text_range());
                 let smid = desugarer.new_smid(block_span);
+
+                let ns_registered = if let super::desugarer::MonadSpec::Namespace(ref ns) = spec {
+                    desugarer.monad_namespace_spec(ns).is_some()
+                } else {
+                    true
+                };
+
+                // In lookup position: desugar with implicit return
+                // and fall through to the generalised lookup handler.
+                if lookup != PendingLookup::None && ns_registered {
+                    idx += 1;
+                    let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
+                    let monadic_expr =
+                        desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
+
+                    // Feed into the generalised lookup handler
+                    if lookup == PendingLookup::Dynamic {
+                        soup.push(dynamise::dynamise(&monadic_expr)?);
+                    } else if lookup == PendingLookup::Static {
+                        soup.pop(); // remove dot
+                        if let Some(dlet) = soup.pop() {
+                            let rebodied = dlet.rebody(monadic_expr);
+                            let fixed = match &*rebodied.inner {
+                                Expr::Let(s, scope, LetType::DefaultBlockLet) => {
+                                    RcExpr::from(Expr::Let(*s, scope.clone(), LetType::OtherLet))
+                                }
+                                _ => rebodied,
+                            };
+                            soup.push(fixed);
+                        } else {
+                            panic!("Expected default let for static monadic lookup");
+                        }
+                    }
+                    lookup = PendingLookup::None;
+                    continue;
+                }
 
                 let has_dot_return = idx + 2 <= elements.len() && {
                     let dot_elem = &elements[idx + 1];
@@ -2178,27 +2220,16 @@ fn desugar_rowan_soup_inner(
                     )?;
                     soup.push(monadic_expr);
                     continue;
-                } else {
-                    // No .expr — use implicit return only if the namespace is registered.
-                    let ns_registered = if let super::desugarer::MonadSpec::Namespace(ref ns) = spec
-                    {
-                        desugarer.monad_namespace_spec(ns).is_some()
-                    } else {
-                        // Explicit bind/return spec (form 4) can always use implicit return.
-                        true
-                    };
-
-                    if ns_registered {
-                        idx += 1;
-                        let block_decls: Vec<rowan_ast::Declaration> =
-                            block.declarations().collect();
-                        let monadic_expr =
-                            desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
-                        soup.push(monadic_expr);
-                        continue;
-                    }
-                    // Namespace not registered — fall through to normal block desugaring.
+                } else if ns_registered {
+                    // No .expr, standalone — use implicit return.
+                    idx += 1;
+                    let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
+                    let monadic_expr =
+                        desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
+                    soup.push(monadic_expr);
+                    continue;
                 }
+                // Namespace not registered — fall through to normal block desugaring.
             }
         }
 
