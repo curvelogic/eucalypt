@@ -1460,3 +1460,8 @@ pub fn test_harness_142() {
 pub fn test_harness_143() {
     run_test(&opts("143_deep_transform.eu"));
 }
+
+#[test]
+pub fn test_harness_144() {
+    run_test(&opts("144_lookup_monad_semantics.eu"));
+}

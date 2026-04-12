@@ -1,0 +1,54 @@
+"144 lookup and monadic block semantics"
+
+outer: 999
+dyn-a: { x: 10, y: 20 }
+make(n): { x: n, y: n * 2 }
+
+` { target: :test }
+test: {
+  # ── Simple lookup (.name) ──────────────────────────────
+  s-key-found: ({ x: 1, y: 2 }.x) //= 1
+  s-dyn-key: (dyn-a.x) //= 10
+  s-call-key: (make(5).x) //= 5
+  s-monad-key: ({ :let x: 42 }.x) //= 42
+  s-chain: ({ x: { y: 42 } }.x.y) //= 42
+
+  # ── Generalised lookup .(expr) ─────────────────────────
+  g-paren: ({ x: 1, y: 2 }.(x + y)) //= 3
+  g-paren-outer: ({ x: 1 }.(x + outer)) //= 1000
+  g-dyn-paren: (dyn-a.(x + y)) //= 30
+  g-call-paren: (make(5).(x + y)) //= 15
+
+  # ── Generalised lookup .{ block } ──────────────────────
+  g-block: ({ x: 1, y: 2 }.{ sum: x + y }.(sum)) //= 3
+  g-block-outer: ({ x: 1 }.{ sum: x + outer }.(sum)) //= 1000
+  g-dyn-block: (dyn-a.{ sum: x + y }.(sum)) //= 30
+  g-call-block: (make(5).{ sum: x + y }.(sum)) //= 15
+
+  # ── Generalised lookup ."string" and .[list] ───────────
+  g-string: ({ x: 1 }."{x} is the value") //= "1 is the value"
+  g-list: ({ x: 1, y: 2 }.[x, y]) //= [1, 2]
+
+  # ── Monadic in lookup position (fix 3.2) ───────────────
+  m-static-let: ({ x: 1 }.{ :let y: x + 10 }.y) //= 11
+  m-dyn-let: (dyn-a.{ :let z: x + y }.z) //= 30
+  m-call-let: (make(5).{ :let z: x + y }.z) //= 15
+  m-static-let-gen: ({ x: 1 }.{ :let y: x + 10 }.(y)) //= 11
+
+  # ── Monadic return forms ───────────────────────────────
+  r-paren: ({ :let x: 42 }.(x + 1)) //= 43
+  r-block: ({ :let x: 42 }.{ a: x }) //= { a: 42 }
+  r-name: ({ :let x: 42 }.x) //= 42
+  r-implicit: ({ :let x: 42, y: 10 }) //= { x: 42, y: 10 }
+  r-string: ({ :let x: 42 }."{x} things") //= "42 things"
+  r-list: ({ :let x: 42, y: 10 }.[x, y]) //= [42, 10]
+
+  # ── Left-associative chaining (fix 3.3) ────────────────
+  c-block-paren: ({ :let x: 1 }.{ a: x }.(a)) //= 1
+  c-block-name: ({ :let x: 1 }.{ a: x, b: 99 }.b) //= 99
+  c-chain-expr: ({ :let x: 1, y: 2 }.{ sum: x + y, product: x * y }.(sum + product)) //= 5
+  c-monad-monad: ({ :let x: 1 }.{ :let y: x + 10 }.(y)) //= 11
+
+  # ── Scopes don't accumulate ────────────────────────────
+  c-scope-chain: ({ x: 1 }.{ a: x + 10 }.{ r: a + 1 }.(r)) //= 12
+}
