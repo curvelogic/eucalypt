@@ -2215,20 +2215,17 @@ fn desugar_rowan_soup_inner(
             // Initial name in lookup chains must become a var
             Expr::Name(s, ref n) => {
                 if lookup == PendingLookup::Static {
-                    // simple static lookup
-                    soup.pop();
+                    // Simple lookup (.name) on a static block literal.
+                    //
+                    // Emit a Lookup node restricted to the block's
+                    // own bindings.  Outer scope must NOT be
+                    // consulted — `.name` is key lookup, not scope
+                    // resolution.
+                    soup.pop(); // remove dot
                     if let Some(dlet) = soup.pop() {
-                        let rebodied = dlet.rebody(core::var(*s, desugarer.var(n)));
-                        // Convert to OtherLet to prevent subsequent static lookups
-                        let fixed_rebodied = match &*rebodied.inner {
-                            Expr::Let(smid, scope, LetType::DefaultBlockLet) => {
-                                RcExpr::from(Expr::Let(*smid, scope.clone(), LetType::OtherLet))
-                            }
-                            _ => rebodied,
-                        };
-                        soup.push(fixed_rebodied);
+                        soup.push(core::lookup(*s, dlet, n, None));
                     } else {
-                        panic!("Expected default let");
+                        panic!("Expected default let for static lookup");
                     }
                     lookup = PendingLookup::None;
                 } else if lookup == PendingLookup::Dynamic {
