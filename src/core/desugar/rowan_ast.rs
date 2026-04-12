@@ -2089,27 +2089,11 @@ fn desugar_rowan_soup_inner(
             let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
 
             let monadic_expr = if has_dot_return {
-                // Explicit .expr — consume the return expression.
+                // Explicit .expr — consume ONE return expression.
+                // Further `.` operations are separate lookups
+                // (left-associative).
                 let ret_start = idx + 2;
-                let mut ret_end = ret_start + 1;
-                while ret_end + 1 < elements.len() {
-                    let is_chain_dot = elements[ret_end]
-                        .as_operator_identifier()
-                        .map(|op| op.text() == ".")
-                        .unwrap_or(false);
-                    if is_chain_dot && ret_end + 1 < elements.len() {
-                        let after_dot = &elements[ret_end + 1];
-                        if after_dot.as_normal_identifier().is_some()
-                            || matches!(after_dot, Element::ParenExpr(_))
-                        {
-                            ret_end += 2;
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
+                let ret_end = ret_start + 1;
                 idx = ret_end;
                 desugar_monadic_block(
                     smid,
@@ -2188,27 +2172,14 @@ fn desugar_rowan_soup_inner(
                 };
 
                 if has_dot_return {
-                    // Explicit .expr — consume the return expression.
+                    // Explicit .expr — consume ONE return expression.
+                    //
+                    // The return expression is the single element
+                    // after the first dot.  Any further `.` operations
+                    // are separate lookups on the monadic result
+                    // (left-associative).
                     let ret_start = idx + 2;
-                    let mut ret_end = ret_start + 1;
-                    while ret_end + 1 < elements.len() {
-                        let is_chain_dot = elements[ret_end]
-                            .as_operator_identifier()
-                            .map(|op| op.text() == ".")
-                            .unwrap_or(false);
-                        if is_chain_dot && ret_end + 1 < elements.len() {
-                            let after_dot = &elements[ret_end + 1];
-                            if after_dot.as_normal_identifier().is_some()
-                                || matches!(after_dot, Element::ParenExpr(_))
-                            {
-                                ret_end += 2;
-                            } else {
-                                break;
-                            }
-                        } else {
-                            break;
-                        }
-                    }
+                    let ret_end = ret_start + 1;
                     idx = ret_end;
                     let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
                     let monadic_expr = desugar_monadic_block(
