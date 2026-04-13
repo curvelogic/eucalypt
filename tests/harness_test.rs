@@ -1452,6 +1452,11 @@ pub fn test_error_129() {
 }
 
 #[test]
+pub fn test_error_130() {
+    run_error_test(&error_opts("130_simple_lookup_key_not_found.eu"));
+}
+
+#[test]
 pub fn test_harness_142() {
     run_test(&opts("142_consecutive_metadata_blocks.eu"));
 }

@@ -763,15 +763,37 @@ f (x)   # catenation: applies f to (x) as pipeline
 ["ab","cd"] mapcat(str.letters)  # ["a", "b", "c", "d"]
 ```
 
-### 5.5 lookup vs Dot Lookup
+### 5.5 Simple Lookup vs Generalised Lookup
 
-- `block.key` — compile-time property access (key must be a literal
-  name known at compile time)
-- `lookup(:key, block)` / `block lookup(:key)` — runtime dynamic
-  lookup using a symbol value
+**Simple lookup** (`.name`): Key lookup restricted to the block's
+own bindings. Outer scope is never consulted.
 
-Use `lookup` / `lookup-or` when the key is computed or stored in a
-variable.
+```eu,notest
+{ x: 1 }.x              # => 1 (key found)
+{ x: 1 }.y              # => key error (even if y exists in outer scope)
+```
+
+**Generalised lookup** (`.{ block }`, `.(expr)`, `."string"`,
+`.[list]`): RHS evaluated in the block's scope. Block bindings
+shadow outer scope; names not in the block fall through to outer
+scope.
+
+```eu,notest
+y: 5
+{ x: 1 }.(x + y)        # => 6 (x from block, y from outer)
+{ x: 1 }.{ sum: x + y } # => { sum: 6 }
+```
+
+**Runtime lookup**: `lookup(:key, block)` / `block lookup(:key)` —
+dynamic key lookup using a symbol value. Use when the key is
+computed or stored in a variable.
+
+**Monadic blocks in lookup position** use implicit return and see
+the LHS bindings:
+
+```eu,notest
+{ x: 1 }.{ :let y: x + 10 }.y   # => 11
+```
 
 ### 5.6 merge vs deep-merge (<<)
 

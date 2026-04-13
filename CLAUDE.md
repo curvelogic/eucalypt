@@ -148,7 +148,7 @@ For specific topics, also consult:
 ### Critical Rules (Most Common Agent Mistakes)
 
 1. **Catenation precedence is LOW (20)**: ALL infix operators bind tighter. `xs f(a) + 1` parses as `xs(f(a) + 1)` NOT `(xs f(a)) + 1`. Fix: use parentheses or split into named bindings.
-2. **Dot `.` binds tighter (90) than catenation (20)**: `list head.name` parses as `list (head.name)`. Fix: `(list head).name`.
+2. **Dot `.` binds tighter (90) than catenation (20)**: `list head.name` parses as `list (head.name)`. Fix: `(list head).name`. **Simple lookup** (`.name`) is key lookup restricted to block bindings. **Generalised lookup** (`.{ block }`, `.(expr)`, etc.) evaluates the RHS in the block's scope with access to outer scope.
 3. **NO lambda/arrow syntax**: `->` is the `const` operator, NOT lambda. Use sections `(+ 1)`, expression anaphora `(_ + 1)`, or named functions.
 4. **Each `_` creates a new param**: `_ + _` means `_0 + _1` (two params). Use `_0 * _0` to reference the same param twice.
 5. **Backtick is metadata, not comment**: `` ` "text" `` attaches to the NEXT declaration. Use `#` for comments.
