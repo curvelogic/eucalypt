@@ -1781,6 +1781,14 @@ graph: {
 let: monad({bind(m, f): f(m), return: identity})
 
 ##
+## List monad (for blocks / list comprehensions)
+##
+
+` { doc: "List monad for list comprehensions. Each binding draws from a list; subsequent bindings can depend on earlier ones. Use [x] filter(pred?) for guards."
+    monad: true }
+for: monad({bind(m, f): m mapcat(f), return(v): [v]})
+
+##
 ## Structured argument parsing
 ##
 
