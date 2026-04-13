@@ -6,25 +6,45 @@ All notable changes to eucalypt are documented here.
 
 ### Added
 
-- **Safe navigation operator `~`** — `data ~ :key` returns null instead of erroring when key is missing, value is null, or value is not a block. Left-associative at precedence 90; chains propagate null: `data ~ :server ~ :host`. Sections `(~ :a ~ :b)` create safe navigation functions
-- **Structural matching `match?`** — `match?(pattern, target)` checks whether a value conforms to a structural pattern. Block values in patterns recurse as sub-patterns, functions are applied as predicates, literals are exact equality checks. Open matching: extra keys in target are ignored. Juxtaposed call syntax: `match?{host: any?, port: (> 1000)}`
-- **`any?` wildcard predicate** — `const(true)` for use in `match?` patterns to match any value at a key
-- **Lens library** — optional import (`{ import: "lens.eu" }`) providing van Laarhoven lenses and traversals: `at`, `ix`, `item`, `element`, `each`, `filtered`, `view`, `over`, `to-list-of`, and `‹›` path bracket syntax. Define a lens once, use for both get and set operations
-- **Opaque random stream** — `Native::Stream(u64)` type backed by SplitMix64. `random.stream(seed)` returns an opaque stream; `random.split` forks into independent sub-streams; `as-list` bridge converts to lazy cons-list for `take`/`drop` compatibility
-- **`⊝` bitwise NOT operator** — Unicode circled dash replaces `~` (repurposed for safe navigation); `bit.not` function unchanged
-- **Resource fallback for imports** — `{ import: "lens.eu" }` resolves baked-in resources when filesystem lookup fails, enabling libraries shipped inside the binary
-- **Navigating Nested Data guide** — new documentation chapter covering `~`, `match?`, lenses, `deep-find`, and when to use each approach
+- **State monad library** — optional import (`{ import: "state.eu" }`) providing `{ :state ... }` monadic blocks for threading block-valued state. Includes `state.get`, `state.put`, `state.lift`, `state.query`, `state.modify`, `state.run`/`eval`/`exec`, and lens-based operators `=!` and `%!`
+- **Eucalypt export format** — `eu -x eu` and `render-as(:eu)` preserving type distinctions: symbols as `:name`, strings quoted, numbers bare. Uses `pretty` crate for layout
+- **Import guards** — include-once deduplication for diamond imports. Same file imported multiple times is desugared once; different-name imports of the same file emit alias bindings
+- **Deep nested destructuring** — list and block destructuring now supports arbitrary depth: `f([[a, b], [c, d]])`, `g({x: {y: inner}})`
+- **IntrinsicMachine thunk-forcing** — `Machine::evaluate_to_whnf` enables Rust intrinsics to force lazy thunks. `MachineCore`/`MachineBifContext` split eliminates aliased `&mut` UB. `evaluate_to_whnf_for_io` refactored to delegate
+- **`deep-transform(rule, data)`** — recursive structural rewrite: apply `rule` at each node, return non-null to replace or null to recurse into children
+- **`map-elements(f, block)`** — apply `f([key, value])` to each element of a block, returning a new block
+- **`unzip(pairs)`** — list of pairs to pair of lists, inverse of `zip`
+- **`interleave(a, b)`** — alternate elements from two lists, appending remainder when one is exhausted
+- **`window-all` / `partition-all`** — like `window`/`partition` but include trailing incomplete chunks
+- **`random.run` / `random.eval` / `random.exec`** — convenience methods matching the state monad API
+- **Set membership operators** — `v ∈ s` and `v ∉ s` at precedence 40; sections work as predicates: `when(∈ ks, f)`
+- **Editor Unicode support** — `∈`, `∉`, `⊝`, `▶` added to Emacs quail/transient and VS Code quick-pick
 
 ### Changed
 
-- **Random stream API** — `random.stream(seed)` now returns an opaque `Stream` type instead of a lazy cons-list. Code using the monadic API (`random.int`, `random.float`, `{ :random ... }` blocks) is unaffected. Code accessing `io.random` as a list needs `io.random as-list`. `random-stream(seed)` retained as deprecated compatibility alias
-- **`dbg` and `▶` rendering** — use `render-as(:json)` for blocks and lists, fall back to `__DBG_REPR` for non-renderable values (IO actions, streams, vecs, sets). Previously crashed on IO actions
-- **Test target scoping** — test runner only auto-discovers `test-*` and `bench-*` targets from the top-level file, not from imported libraries. Imported targets remain invocable via `-t`
+- **`dbg` and `▶` rendering** — switched from `render-as(:json)` to `render-as(:eu)`, preserving symbol syntax in debug output
+- **Simple lookup semantics** — `.name` is now consistently key lookup restricted to block bindings, never extending to outer scope. Previously, `.name` on a static block literal resolved through the block scope and fell through to outer scope
+- **Monadic blocks in generalised lookup** — `A.{ :monad ... }` now evaluates the monadic block in `A`'s scope with implicit return. Previously the monadic block was desugared independently, losing the lookup scope
+- **Monadic return left-associativity** — `{ :monad ... }.{ block }.(expr)` now parses as `(({ :monad }).{ block }).(expr)`. The return expression is a single element; subsequent `.` operations are separate lookups on the result
+- **State monad representation** — state actions return `{ value: v, state: s }` blocks (matching random monad's `{ value: v, rest: stream }` pattern) instead of `[v, s]` lists
+- **Quoted identifier handling** — `NormalIdentifier::value()` strips single quotes from quoted names like `'x/z'` in all desugarer paths
 
 ### Fixed
 
-- **`build.rs` for resource tracking** — `cargo` incremental compilation now detects changes to `lib/prelude.eu`, `lib/lens.eu`, `lib/test.eu`, and `build-meta.yaml` via `cargo:rerun-if-changed` directives. Previously, changes to baked-in resources could be missed by incremental builds
-- **Nested block destructuring error** — `f({x b: {y z}})` now gives a clear error ("nested block destructuring is not supported; use dot-lookup in the function body instead") rather than a confusing "unresolved variable" message
+- **Compiler panic on consecutive metadata blocks** — `{ a: 1 } { b: 2 } c: 3` no longer panics. Root cause: `mark_body` in prune pass now marks metadata as reachable. Belt-and-braces `InternalCompilerError` diagnostic replaces the `expect()` panic
+- **Deep merge panic with list-valued keys** — `{a: 1, b: []} << {a: 2}` no longer panics. `deconstruct` uses `HeapNavigator::resolve_in_closure` which handles `Ref::G` (global constants like `[]`) and `Ref::V` (inline natives)
+- **Merge with dynamically-created symbol keys** — `[[:b str.of sym, 0]] block` now merges correctly. `ExtractKey` handles raw symbol atoms; `BlockPair` normalises keys via `ExtractKey`
+- **`set.contains?` with non-primitives** — returns `false` instead of panicking when given lists, blocks, or other non-primitive arguments
+- **`head`/`tail` error messages** — now show the actual argument: `"head requires a list argument, got 42"` instead of a generic message
+- **TypeMismatch error values** — error messages include the actual runtime value with char-safe truncation
+- **Parser stray colon recovery** — `f(2, 2:)` produces a parse error instead of an assertion panic
+- **`str.of` on quoted symbols** — symbols with special characters (e.g. `'x/z'`) no longer include quotes in string conversion
+
+### Performance
+
+- **Env-var lookup caching** — `EU_STACK_DIAG` and `EU_GC_STRESS` checked once at startup instead of every VM step / GC cycle
+- **Exact-arity fast path** — `saturate_with_array` avoids an `Array` copy for exact-arity function application
+- **Native arithmetic fast path** — binary operators skip unbox/force chains when both arguments are already unboxed natives
 
 ## [0.5.1] - 2026-03-24
 
