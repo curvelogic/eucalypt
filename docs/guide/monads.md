@@ -106,6 +106,35 @@ result: ⟦ x: some-action  y: other-action(x) ⟧.(x + y)
 See the [syntax reference](../reference/syntax.md) for full details on
 bracket pair definitions.
 
+### Monadic blocks and generalised lookup
+
+A monadic block can appear as the RHS of a generalised lookup,
+inheriting bindings from the LHS:
+
+```eu,notest
+{ x: 1, y: 2 }.{ :let z: x + y }
+# z sees x and y from the LHS block
+# implicit return: { z: 3 }
+```
+
+In lookup position, the monadic block **always uses implicit return**.
+Any `.` after it is a separate lookup on the result — not a return
+expression:
+
+```eu,notest
+{ x: 1 }.{ :let y: x + 10 }.y      # => 11 (simple lookup on result)
+{ x: 1 }.{ :let y: x + 10 }.(y)    # => 11 (gen lookup on result)
+```
+
+This follows from left-associativity: `A.B.C` is always `(A.B).C`.
+
+To use an explicit return with a monadic block in lookup position,
+wrap in parentheses:
+
+```eu,notest
+{ x: 1 }.(({ :let y: x + 10 }.(y + 100)))   # => 111
+```
+
 ---
 
 ## The monad() utility

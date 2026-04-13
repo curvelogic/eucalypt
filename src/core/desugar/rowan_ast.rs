@@ -2089,27 +2089,11 @@ fn desugar_rowan_soup_inner(
             let bracket_decls: Vec<rowan_ast::Declaration> = bracket.declarations().collect();
 
             let monadic_expr = if has_dot_return {
-                // Explicit .expr — consume the return expression.
+                // Explicit .expr — consume ONE return expression.
+                // Further `.` operations are separate lookups
+                // (left-associative).
                 let ret_start = idx + 2;
-                let mut ret_end = ret_start + 1;
-                while ret_end + 1 < elements.len() {
-                    let is_chain_dot = elements[ret_end]
-                        .as_operator_identifier()
-                        .map(|op| op.text() == ".")
-                        .unwrap_or(false);
-                    if is_chain_dot && ret_end + 1 < elements.len() {
-                        let after_dot = &elements[ret_end + 1];
-                        if after_dot.as_normal_identifier().is_some()
-                            || matches!(after_dot, Element::ParenExpr(_))
-                        {
-                            ret_end += 2;
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
+                let ret_end = ret_start + 1;
                 idx = ret_end;
                 desugar_monadic_block(
                     smid,
@@ -2129,13 +2113,55 @@ fn desugar_rowan_soup_inner(
         }
 
         // Check for Block element with monadic metadata.
-        // If followed by `.expr`, desugar as a monadic bind chain with explicit return.
-        // If NOT followed by `.expr` but the namespace is registered (monad: true),
-        // desugar with an implicit return block `{ k1: k1, k2: k2, … }`.
+        //
+        // When the monadic block is in generalised lookup position
+        // (preceded by `.`), it is desugared with implicit return and
+        // fed into the lookup handler — the LHS block's bindings are
+        // visible inside the monadic block.
+        //
+        // When standalone (not preceded by `.`):
+        // - If followed by `.expr`, desugar with explicit return
+        // - Otherwise use implicit return if the namespace is registered
         if let Element::Block(ref block) = elements[idx] {
             if let Some(spec) = extract_block_monad_spec_from_raw(block) {
                 let block_span = text_range_to_span(block.syntax().text_range());
                 let smid = desugarer.new_smid(block_span);
+
+                let ns_registered = if let super::desugarer::MonadSpec::Namespace(ref ns) = spec {
+                    desugarer.monad_namespace_spec(ns).is_some()
+                } else {
+                    true
+                };
+
+                // In lookup position: desugar with implicit return
+                // and fall through to the generalised lookup handler.
+                if lookup != PendingLookup::None && ns_registered {
+                    idx += 1;
+                    let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
+                    let monadic_expr =
+                        desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
+
+                    // Feed into the generalised lookup handler
+                    if lookup == PendingLookup::Dynamic {
+                        soup.push(dynamise::dynamise(&monadic_expr)?);
+                    } else if lookup == PendingLookup::Static {
+                        soup.pop(); // remove dot
+                        if let Some(dlet) = soup.pop() {
+                            let rebodied = dlet.rebody(monadic_expr);
+                            let fixed = match &*rebodied.inner {
+                                Expr::Let(s, scope, LetType::DefaultBlockLet) => {
+                                    RcExpr::from(Expr::Let(*s, scope.clone(), LetType::OtherLet))
+                                }
+                                _ => rebodied,
+                            };
+                            soup.push(fixed);
+                        } else {
+                            panic!("Expected default let for static monadic lookup");
+                        }
+                    }
+                    lookup = PendingLookup::None;
+                    continue;
+                }
 
                 let has_dot_return = idx + 2 <= elements.len() && {
                     let dot_elem = &elements[idx + 1];
@@ -2146,27 +2172,14 @@ fn desugar_rowan_soup_inner(
                 };
 
                 if has_dot_return {
-                    // Explicit .expr — consume the return expression.
+                    // Explicit .expr — consume ONE return expression.
+                    //
+                    // The return expression is the single element
+                    // after the first dot.  Any further `.` operations
+                    // are separate lookups on the monadic result
+                    // (left-associative).
                     let ret_start = idx + 2;
-                    let mut ret_end = ret_start + 1;
-                    while ret_end + 1 < elements.len() {
-                        let is_chain_dot = elements[ret_end]
-                            .as_operator_identifier()
-                            .map(|op| op.text() == ".")
-                            .unwrap_or(false);
-                        if is_chain_dot && ret_end + 1 < elements.len() {
-                            let after_dot = &elements[ret_end + 1];
-                            if after_dot.as_normal_identifier().is_some()
-                                || matches!(after_dot, Element::ParenExpr(_))
-                            {
-                                ret_end += 2;
-                            } else {
-                                break;
-                            }
-                        } else {
-                            break;
-                        }
-                    }
+                    let ret_end = ret_start + 1;
                     idx = ret_end;
                     let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
                     let monadic_expr = desugar_monadic_block(
@@ -2178,27 +2191,16 @@ fn desugar_rowan_soup_inner(
                     )?;
                     soup.push(monadic_expr);
                     continue;
-                } else {
-                    // No .expr — use implicit return only if the namespace is registered.
-                    let ns_registered = if let super::desugarer::MonadSpec::Namespace(ref ns) = spec
-                    {
-                        desugarer.monad_namespace_spec(ns).is_some()
-                    } else {
-                        // Explicit bind/return spec (form 4) can always use implicit return.
-                        true
-                    };
-
-                    if ns_registered {
-                        idx += 1;
-                        let block_decls: Vec<rowan_ast::Declaration> =
-                            block.declarations().collect();
-                        let monadic_expr =
-                            desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
-                        soup.push(monadic_expr);
-                        continue;
-                    }
-                    // Namespace not registered — fall through to normal block desugaring.
+                } else if ns_registered {
+                    // No .expr, standalone — use implicit return.
+                    idx += 1;
+                    let block_decls: Vec<rowan_ast::Declaration> = block.declarations().collect();
+                    let monadic_expr =
+                        desugar_monadic_block_implicit(smid, block_decls, &spec, desugarer)?;
+                    soup.push(monadic_expr);
+                    continue;
                 }
+                // Namespace not registered — fall through to normal block desugaring.
             }
         }
 
@@ -2215,20 +2217,17 @@ fn desugar_rowan_soup_inner(
             // Initial name in lookup chains must become a var
             Expr::Name(s, ref n) => {
                 if lookup == PendingLookup::Static {
-                    // simple static lookup
-                    soup.pop();
+                    // Simple lookup (.name) on a static block literal.
+                    //
+                    // Emit a Lookup node restricted to the block's
+                    // own bindings.  Outer scope must NOT be
+                    // consulted — `.name` is key lookup, not scope
+                    // resolution.
+                    soup.pop(); // remove dot
                     if let Some(dlet) = soup.pop() {
-                        let rebodied = dlet.rebody(core::var(*s, desugarer.var(n)));
-                        // Convert to OtherLet to prevent subsequent static lookups
-                        let fixed_rebodied = match &*rebodied.inner {
-                            Expr::Let(smid, scope, LetType::DefaultBlockLet) => {
-                                RcExpr::from(Expr::Let(*smid, scope.clone(), LetType::OtherLet))
-                            }
-                            _ => rebodied,
-                        };
-                        soup.push(fixed_rebodied);
+                        soup.push(core::lookup(*s, dlet, n, None));
                     } else {
-                        panic!("Expected default let");
+                        panic!("Expected default let for static lookup");
                     }
                     lookup = PendingLookup::None;
                 } else if lookup == PendingLookup::Dynamic {

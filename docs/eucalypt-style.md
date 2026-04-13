@@ -96,6 +96,7 @@ When in doubt, ask: "how will this function most commonly be called?" and put th
 - Use blocks for local bindings: `{ x: ... y: ... }.(x + y)`, but limit to one block, do not stack this construct
 - Keep block "results"" in `.(...)` concise, preferably simple pipelines or expressions, or even just `{...}.result`
 - **Dynamic generalised lookup**: a function can return a block whose names are then used as a namespace for subsequent pipelines, e.g. `prepare(data).( edges take(k) ... )`. Use very sparingly — it can defeat static analysis. Never nest or stack dynamic lookups.
+- **Monadic blocks in lookup chains**: a monadic block after `.` gets implicit return and sees the LHS bindings. Use parens if you need an explicit return expression in lookup position: `ctx.(({ :let ... }.(expr)))`.
 - **Capture scope with local bindings**: when helpers share parameters, move them inside a block so they capture from scope rather than threading parameters explicitly:
   ```eu,notest
   # Before: f threaded through every helper
