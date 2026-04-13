@@ -57,6 +57,15 @@ exactly like `{ :let ... }` or `{ :random ... }`.
 # => [4, 5]
 ```
 
+### Filtering with when
+
+```eu,notest
+{ :for x: [1, "two", 3, "four", 5], n: for.when(number?, x) }.(n * 10)
+# when(number?, 1) => [1], when(number?, "two") => []
+# filters and binds the passing value in one step
+# => [10, 30, 50]
+```
+
 ### Implicit return
 
 ```eu,notest
