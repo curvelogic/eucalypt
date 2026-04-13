@@ -48,23 +48,23 @@ exactly like `{ :let ... }` or `{ :random ... }`.
 # => [1, 10, 2, 20, 3, 30]
 ```
 
-### Filtering with guard
+### Filtering
+
+Filtering uses standard list operations. Binding to `[]` eliminates
+that branch; binding to `[v]` continues:
 
 ```eu,notest
-{ :for x: [1, 2, 3, 4, 5], _: for.guard(x > 3) }.(x)
-# guard(true) => [null], guard(false) => []
-# [] causes mapcat to eliminate that branch
+# Boolean guard: [x] filter(pred?) returns [] or [x]
+{ :for x: [1, 2, 3, 4, 5], _: [x] filter(> 3) }.(x)
 # => [4, 5]
-```
 
-### Filtering with when
-
-```eu,notest
-{ :for x: [1, "two", 3, "four", 5], n: for.when(number?, x) }.(n * 10)
-# when(number?, 1) => [1], when(number?, "two") => []
-# filters and binds the passing value in one step
+# Filter and rebind in one step
+{ :for x: [1, "two", 3, "four", 5], n: [x] filter(number?) }.(n * 10)
 # => [10, 30, 50]
 ```
+
+No special guard helpers needed — `[x] filter(pred?)` is the
+idiomatic pattern.
 
 ### Implicit return
 
@@ -96,14 +96,7 @@ for-ret(v): [v]
 
 # Register as monad namespace
 ` { monad: true }
-for: monad{bind: for-bind, return: for-ret} {
-
-  ` "for.guard(cond) - filter: continues when cond is true, eliminates when false."
-  guard(cond): if(cond, [null], [])
-
-  ` "for.when(pred?, v) - filter: continues when v satisfies pred?, eliminates otherwise."
-  when(pred?, v): if(v pred?, [v], [])
-}
+for: monad{bind: for-bind, return: for-ret}
 ```
 
 ### Why `for` not `list`
@@ -113,15 +106,11 @@ for: monad{bind: for-bind, return: for-ret} {
 from Python/Haskell/Scala. The `:for` block tag reads naturally:
 "for x drawn from xs, for y drawn from ys, yield expr."
 
-### Guard helpers
+### Filtering pattern
 
-| Function | Description |
-|----------|-------------|
-| `for.guard(cond)` | `[null]` when true, `[]` when false — boolean filter |
-| `for.when(pred?, v)` | `[v]` when `v` satisfies `pred?`, `[]` otherwise — predicate filter preserving value |
-
-`for.guard` is assigned to `_` (discarded). `for.when` returns the
-filtered value for subsequent bindings.
+No special guard helpers. Use `[x] filter(pred?)` which returns
+`[x]` (continue) or `[]` (eliminate) — standard list operations
+that naturally control the monadic flow.
 
 ## Files
 
@@ -138,12 +127,10 @@ Harness test covering:
 - Simple mapping
 - Cartesian product
 - Dependent binding
-- Guard filtering
-- `for.when` predicate filtering
+- Filtering via `[x] filter(pred?)`
 - Implicit return (single and multi-binding)
 - In generalised lookup position
 - Empty list input
-- Nested `:for` within `:for` (if meaningful)
 
 ## Interaction with other monads
 
