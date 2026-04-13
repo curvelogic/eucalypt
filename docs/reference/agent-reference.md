@@ -263,7 +263,7 @@ From highest (tightest) to lowest binding:
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
 | 10 | apply | right | `@` | Function application |
-| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!` | Metadata and assertions |
+| 5 | meta | left | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata and assertions |
 
 **Named precedence levels** for use in operator metadata: `:lookup`,
 `:call`, `:bool-unary`, `:exp`, `:prod`, `:sum`, `:shift`, `:bitwise`,
@@ -973,19 +973,31 @@ All functions verified against `lib/prelude.eu`:
 
 All at precedence 5 (`:meta`).
 
-**Test expectations** (panic in normal mode, return `false` in test mode):
+**Expectations** (return boolean; panic in normal mode, return `false` in test mode):
 
 | Operator | Description |
 |----------|-------------|
-| `e //= v` | Test `e` equals `v`; returns `true`/`false`, emits diagnostic on failure |
-| `e //=? f` | Test `f(e)` is `true`; returns `true`/`false`, emits diagnostic on failure |
-| `e //!` | Test `e` is `true`; returns `true`/`false`, emits diagnostic on failure |
+| `e //= v` | Expect `e` equals `v`; returns `true` on success |
+| `e //=? f` | Expect `f(e)` is `true`; returns `true` on success |
+| `e //!` | Expect `e` is `true`; returns `true` on success |
 
-**Assertions** (always panic on failure, return `e` on success):
+**Assertions** (return `e`; panic in normal mode, return `false` in test mode):
 
 | Operator | Description |
 |----------|-------------|
-| `e //=> v` | Assert `e` equals `v`, panic with expected/actual on failure |
+| `e //=> v` | Assert `e` equals `v`; returns `e` on success |
+| `e //=?> f` | Assert `f(e)` is `true`; returns `e` on success |
+
+Assertions are useful in pipelines — they validate a value and pass
+it through:
+
+```eu,notest
+data //=?> non-nil? map(process) //=?> (count > 0)
+```
+
+All expectation and assertion operators use the same unified
+`__EXPECT` BIF. On failure, they emit a diagnostic showing the
+expected and actual values.
 
 **Metadata operators:**
 
@@ -999,12 +1011,8 @@ All at precedence 5 (`:meta`).
 | BIF | Signature | Description |
 |-----|-----------|-------------|
 | `__DBG_REPR(v)` | `unk → str` | Render any eucalypt value as a compact human-readable string (e.g. `42`, `"hello"`, `:foo`, `true`, `null`, `[]`, `{block}`) |
-| `__EXPECT(actual, expected_repr, pass)` | `unk × str × bool → bool` | Test infrastructure primitive: returns `pass` as a boolean; on failure prints `EXPECT FAILED: expected <expected_repr>, got <actual_repr>` to stderr |
+| `__EXPECT(actual, repr, pass, ret)` | `unk × str × bool × unk → unk` | Unified expectation/assertion: returns `ret` on success; on failure emits diagnostic and panics (normal) or returns `false` (test mode) |
 | `__DBG(label, v)` | `str × unk → unk` | Print debug output to stderr; return `v` transparently |
-
-`__DBG_REPR` is used internally by `//=` and `//!` to format diagnostic
-messages. It can also be used directly in test harnesses when you need
-a string representation of a value for comparison or display.
 
 ---
 
