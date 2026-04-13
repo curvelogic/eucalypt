@@ -133,6 +133,22 @@ All declarations are bind steps whose names are in scope for later declarations
 and the return expression.  The return expression follows the closing bracket (or
 block) as `.name`, `.(expr)`, or `.[list]`.
 
+**Built-in monadic namespaces:**
+
+| Tag | Monad | Result type |
+|-----|-------|-------------|
+| `:io` | IO effects | IO action |
+| `:random` | Random state | Random action |
+| `:state` | Block state (import `state.eu`) | State action |
+| `:let` | Identity (sequential bindings) | Value |
+| `:for` | List (comprehensions) | List |
+
+```eu,notest
+# List comprehension: cartesian product with filter
+{ :for x: [1, 2, 3], _: [x] filter(> 1) }.(x * 10)
+# => [20, 30]
+```
+
 ## Metadata Annotations
 
 ```eu,notest

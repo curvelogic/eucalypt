@@ -1470,3 +1470,8 @@ pub fn test_harness_143() {
 pub fn test_harness_144() {
     run_test(&opts("144_lookup_monad_semantics.eu"));
 }
+
+#[test]
+pub fn test_harness_145() {
+    run_test(&opts("145_list_monad.eu"));
+}
