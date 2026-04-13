@@ -226,7 +226,7 @@ From highest to lowest binding:
 | 30 | bool-sum | left | `\|\|`, `∨` | Logical OR |
 | 20 | cat | left | *(catenation)* | Juxtaposition / pipeline |
 | 10 | apply | right | `@` | Function application |
-| 5 | meta | right | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//!` | Metadata / assertions |
+| 5 | meta | right | `//`, `//<<`, `//=`, `//=>`, `//=?`, `//=?>`, `//!` | Metadata / assertions |
 
 **User-defined operators** default to left-associative, precedence 50.
 Set custom values via metadata: `` ` { precedence: 75 associates: :right } ``
@@ -416,15 +416,16 @@ either operand is an array. Scalar broadcasting is supported.
 
 | Operator | Description |
 |----------|-------------|
-| `e //= v` | Test `e` equals `v`, return `true`/`false` |
-| `e //=? f` | Test `f(e)` is `true`, return `true`/`false` |
-| `e //!` | Test `e` is `true`, return `true`/`false` |
+| `e //= v` | Expect `e` equals `v`, return `true`/`false` |
+| `e //=? f` | Expect `f(e)` is `true`, return `true`/`false` |
+| `e //!` | Expect `e` is `true`, return `true`/`false` |
 
-**Assertions** (always panic on failure):
+**Assertions** (return `e`, panic on failure in normal mode):
 
 | Operator | Description |
 |----------|-------------|
-| `e //=> v` | Assert `e` equals `v` (panic with expected/actual on failure) |
+| `e //=> v` | Assert `e` equals `v`, return `e` |
+| `e //=?> f` | Assert `f(e)` is `true`, return `e` |
 
 ## Command Line Quick Reference
 

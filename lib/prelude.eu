@@ -1032,47 +1032,54 @@ assert(p?, s, v): if(v p?, v, panic(s))
 # In test mode: return false on failure, allowing test harness to collect results.
 #
 
-` { doc: "`e //= v` - test that expression `e` evaluates to `v`, return boolean.
+` { doc: "`e //= v` - expect `e` evaluates to `v`, return boolean.
 
     On success: return true.
-    On failure (normal mode): panic with EXPECT FAILED diagnostic.
+    On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
     export: :suppress
     associates: :left
     precedence: :meta }
-(e //= v): __EXPECT(e, __DBG_REPR(v), e = v)
+(e //= v): __EXPECT(e, __DBG_REPR(v), e = v, true)
 
-` { doc: "`e //=? f` - test that expression `e` satisfies predicate `f`, return boolean.
+` { doc: "`e //=? f` - expect `e` satisfies predicate `f`, return boolean.
 
     On success: return true.
-    On failure (normal mode): panic with EXPECT FAILED diagnostic.
+    On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
     export: :suppress
     associates: :left
     precedence: :meta }
-(e //=? f): __EXPECT(e, "to satisfy predicate", e f)
+(e //=? f): __EXPECT(e, "to satisfy predicate", e f, true)
 
-` { doc: "`e //!` - test that expression `e` is true, return boolean.
+` { doc: "`e //!` - expect `e` is true, return boolean.
 
     On success: return true.
-    On failure (normal mode): panic with EXPECT FAILED diagnostic.
+    On failure (normal mode): panic with diagnostic.
     On failure (test mode): emit diagnostic to stderr, return false."
     export: :suppress
     precedence: :meta }
-(e //!): __EXPECT(e, "true", e = true)
+(e //!): __EXPECT(e, "true", e = true, true)
 
-#
-# Assertions (always panic on failure, return the value on success)
-#
+` { doc: "`e //=> v` - assert `e` evaluates to `v`, return `e`.
 
-` { doc: "`e //=> v` - assert expression `e` evaluates to `v` and return `e`.
-
-    On failure, reports the expected and actual values:
-    assertion failed: expected v, got e"
+    On success: return e (pass-through).
+    On failure (normal mode): panic with diagnostic.
+    On failure (test mode): emit diagnostic to stderr, return false."
     export: :suppress
     associates: :left
     precedence: :meta }
-(e //=> v): if(e = v, e, __ASSERT_FAIL(e, v))
+(e //=> v): __EXPECT(e, __DBG_REPR(v), e = v, e)
+
+` { doc: "`e //=?> f` - assert `e` satisfies predicate `f`, return `e`.
+
+    On success: return e (pass-through).
+    On failure (normal mode): panic with diagnostic.
+    On failure (test mode): emit diagnostic to stderr, return false."
+    export: :suppress
+    associates: :left
+    precedence: :meta }
+(e //=?> f): __EXPECT(e, "to satisfy predicate", e f, e)
 
 #
 # Debug tracing
