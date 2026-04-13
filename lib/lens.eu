@@ -223,6 +223,33 @@ filtered(p?, k): {
       ap(fmap(cons, pure(data head)), s(data tail))))
 }.(s // meta(k))
 
+# parts-of — turn a traversal into a lens on the list of foci
+
+` "`parts-of(traversal)` turns a traversal into a lens focusing on the list of all foci.
+view collects foci into a list. over applies a list transformation and distributes results back."
+parts-of(traversal, k): {
+  fmap: meta(k).fmap
+
+  # State applicative for distribution pass — uses {value, state}
+  # blocks to hold intermediate results (which may be partial fns)
+  s-fmap(f, action, st): { r: action(st) }.({value: f(r.value), state: r.state})
+  s-pure(v, st): {value: v, state: st}
+  s-ap(fa, xa, st): { r1: fa(st)  r2: xa(r1.state) }.({value: r1.value(r2.value), state: r2.state})
+
+  # Pop next value from state, ignore old focus
+  pop(old, st): {value: st head, state: st tail}
+
+  # Collect all foci via to-list-of
+  collected(data): data to-list-of(traversal)
+
+  # Distribute: run traversal with stateful pop, seeded with new values
+  distribute(data, new-vals):
+    (data traversal(pop // { fmap: s-fmap, pure: s-pure, ap: s-ap }))(new-vals).value
+
+  # Lens: fmap over collected list, distribute back
+  s(data): fmap(distribute(data), k(data collected))
+}.(s // meta(k))
+
 ` { target: :test-traversals }
 example-traversals: {
   bang(s): "{s}!"
@@ -293,5 +320,31 @@ example-traversals: {
           , test-lt-list, test-lt-over
           , test-fl-list, test-fl-over
           , test-deep, test-deep-over
+          ] all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test-parts-of }
+example-parts-of: {
+
+  # view collects foci into a list
+  test-view: [1, 2, 3] view(parts-of(each)) //= [1, 2, 3]
+
+  # over applies list transform and distributes back
+  test-reverse: [1, 2, 3] over(parts-of(each), reverse) //= [3, 2, 1]
+  test-sort: [3, 1, 2] over(parts-of(each), sort-nums) //= [1, 2, 3]
+
+  # filtered: only targeted positions affected
+  test-filtered: [1, 4, 2, 5, 3] over(parts-of(filtered(> 2)), reverse) //= [1, 3, 2, 5, 4]
+
+  # deep composition: lens ∘ traversal ∘ lens
+  ldata: {x: [{y: 1}, {y: 2}, {y: 3}]}
+  test-deep-view: ldata view(parts-of(at(:x) ∘ each ∘ at(:y))) //= [1, 2, 3]
+  test-deep-over: (ldata over(parts-of(at(:x) ∘ each ∘ at(:y)), reverse)).x map(_.y) //= [3, 2, 1]
+
+  # assign a specific list
+  test-assign: [1, 2, 3] over(parts-of(each), -> [10, 20, 30]) //= [10, 20, 30]
+
+  RESULT: [test-view, test-reverse, test-sort, test-filtered,
+           test-deep-view, test-deep-over, test-assign
           ] all-true? then(:PASS, :FAIL)
 }
