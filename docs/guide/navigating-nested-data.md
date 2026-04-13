@@ -323,6 +323,32 @@ records over(each ∘ at(:score), -> 0)
 data when(match?{status: "draft"}, -> {status: "published"})
 ```
 
+### Working with All Foci as a List
+
+Sometimes you want to operate on all the traversed values *as a
+group* rather than individually — sorting them, reversing them, or
+replacing them with a specific list. `parts-of(traversal)` turns a
+traversal into a lens that focuses on the list of all foci:
+
+```eu,notest
+# Sort all scores (the list [10, 20, 5] is sorted, then distributed back)
+records over(parts-of(each ∘ at(:score)), sort-nums)
+
+# Reverse the y values in a deep structure
+data: {x: [{y: 1}, {y: 2}, {y: 3}]}
+data over(parts-of(at(:x) ∘ each ∘ at(:y)), reverse)
+# => {x: [{y: 3}, {y: 2}, {y: 1}]}
+
+# Only reverse filtered positions — non-matching elements stay put
+[1, 4, 2, 5, 3] over(parts-of(filtered(> 2)), reverse)
+# => [1, 3, 2, 5, 4]
+```
+
+`view(parts-of(traversal), data)` gives the same result as
+`to-list-of(traversal, data)`. The difference is that `parts-of`
+also supports `over` — the transformed list is distributed back into
+the original positions.
+
 ### Lens Consumers
 
 | Function | Description |
@@ -330,6 +356,7 @@ data when(match?{status: "draft"}, -> {status: "published"})
 | `view(lens, data)` | Extract the focused value (single-focus lenses only) |
 | `over(lens, fn, data)` | Apply `fn` at each focus, return whole structure |
 | `to-list-of(traversal, data)` | Collect all foci into a list |
+| `parts-of(traversal)` | Turn a traversal into a lens on the list of foci |
 
 ### Lens and Traversal Constructors
 
@@ -358,6 +385,7 @@ data when(match?{status: "draft"}, -> {status: "published"})
 | Modify a value deep in a structure | `over` + lens | `data over(‹:server :port›, + 1)` |
 | Transform all elements | `over` + `each` | `items over(each ∘ at(:name), str.upper)` |
 | Collect values from all elements | `to-list-of` + `each` | `items to-list-of(each ∘ at(:name))` |
+| Sort/reverse/replace all foci | `parts-of` + traversal | `items over(parts-of(each ∘ at(:score)), sort-nums)` |
 
 **Rules of thumb:**
 
