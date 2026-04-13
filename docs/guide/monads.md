@@ -359,6 +359,89 @@ Derived combinators (`map`, `then`, `join`, `sequence`, `map-m`,
 
 ---
 
+## The list monad (list comprehensions)
+
+The `for` namespace is a list monad — it turns `{ :for ... }` blocks
+into list comprehensions. Each binding draws elements from a list,
+and subsequent bindings can depend on earlier ones. The result is a
+flat list of all the combinations.
+
+### Mapping
+
+The simplest use — apply an expression to each element of a list:
+
+```eu,notest
+{ :for x: [1, 2, 3] }.(x * 2)    # => [2, 4, 6]
+```
+
+This is equivalent to `[1, 2, 3] map(* 2)` but the monadic block
+form scales better when the transformation involves multiple steps.
+
+### Cartesian products
+
+Multiple bindings produce all combinations:
+
+```eu,notest
+{ :for x: [1, 2], y: [10, 20] }.(x + y)
+# => [11, 21, 12, 22]
+```
+
+### Dependent bindings
+
+Later bindings can depend on earlier ones:
+
+```eu,notest
+{ :for x: [1, 2, 3], y: [x, x * 10] }.(y)
+# => [1, 10, 2, 20, 3, 30]
+```
+
+### Filtering
+
+Bind to a filtered singleton list — `[x] filter(pred?)` returns
+`[x]` when the predicate holds (continue) or `[]` when it doesn't
+(eliminate that branch):
+
+```eu,notest
+{ :for x: [1, 2, 3, 4, 5], _: [x] filter(> 3) }.(x)
+# => [4, 5]
+```
+
+Filter and rebind in one step:
+
+```eu,notest
+{ :for x: [1, "two", 3], n: [x] filter(number?) }.(n * 10)
+# => [10, 30]
+```
+
+### Implicit return
+
+Without an explicit return expression, the block synthesises a list
+of blocks from the non-underscore bindings:
+
+```eu,notest
+{ :for x: [:a, :b], y: [1, 2] }
+# => [{x: :a, y: 1}, {x: :a, y: 2}, {x: :b, y: 1}, {x: :b, y: 2}]
+```
+
+### How it works
+
+The list monad's `bind` is `mapcat` (flatMap) and `return` wraps a
+value in a singleton list:
+
+```eu,notest
+for.bind(m, f): m mapcat(f)
+for.return(v): [v]
+```
+
+`for.sequence` produces cartesian products of lists:
+
+```eu,notest
+for.sequence[[1, 2], [3, 4]]
+# => [[1, 3], [1, 4], [2, 3], [2, 4]]
+```
+
+---
+
 ## Writing your own monad
 
 Any pair of functions satisfying the monad laws can be wrapped with
@@ -408,9 +491,13 @@ ok:     maybe.bind(safe-head([42]), inc) # => 43
   operations — NOT `<<`
 - Monadic blocks (`{ :io ... }`, `{ :name ... }`) desugar into nested
   `bind` calls — names are bound **sequentially**, not declaratively
-- The `random:` namespace is a state monad — actions are functions of a
+- The `random` namespace is a state monad — actions are functions of a
   stream, `bind` threads the stream automatically
 - When running random actions, always extract `.value` before
   rendering; the `.rest` field is an infinite stream
 - The `state` namespace (from `lib/state.eu`) is a state monad over
   blocks — see [The State Monad](state-monad.md) for details
+- The `for` namespace is a list monad — `{ :for ... }` blocks are
+  list comprehensions with filtering via `[x] filter(pred?)`
+- The `let` namespace is the identity monad — `{ :let ... }` blocks
+  give sequential bindings without block self-reference
