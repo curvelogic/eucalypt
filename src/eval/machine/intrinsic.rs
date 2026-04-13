@@ -196,6 +196,18 @@ pub trait CallGlobal3: StgIntrinsic {
     }
 }
 
+pub trait CallGlobal4: StgIntrinsic {
+    fn global(
+        &self,
+        x: crate::eval::stg::syntax::Ref,
+        y: crate::eval::stg::syntax::Ref,
+        z: crate::eval::stg::syntax::Ref,
+        w: crate::eval::stg::syntax::Ref,
+    ) -> Rc<StgSyn> {
+        dsl::app(self.gref(), vec![x, y, z, w])
+    }
+}
+
 pub trait CallGlobal7: StgIntrinsic {
     #[allow(clippy::too_many_arguments)]
     fn global(
