@@ -89,6 +89,7 @@ The project includes a sophisticated garbage collector:
 | `EU_GC_VERIFY=1` | After each GC mark phase, re-traverse from roots and verify no reachable objects were missed. Panics if any unmarked-but-reachable objects are found. |
 | `EU_STACK_DIAG=1` | Log continuation stack composition to stderr whenever a new max stack depth is reached. |
 | `EU_ERROR_TRACE_DUMP=1` | Dump full env trace and stack trace Smid details as diagnostic notes on every execution error. Useful for debugging which source locations are available at error time. |
+| `EU_IO_TRACE=1` | Trace all `io.shell` and `io.exec` commands to stderr before execution. Shows the command string and whether stdin is piped. |
 
 The crash signal handler (SIGSEGV/SIGBUS diagnostics) is always active and has no environment variable — it installs unconditionally in `main()`.
 
