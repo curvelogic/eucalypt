@@ -1180,7 +1180,7 @@ fn run_spec(spec: &ActionSpec) -> Result<CommandResult, IoRunError> {
             }
         }
     }
-    match spec {
+    let result = match spec {
         ActionSpec::Shell {
             cmd,
             stdin,
@@ -1192,7 +1192,14 @@ fn run_spec(spec: &ActionSpec) -> Result<CommandResult, IoRunError> {
             stdin,
             timeout_secs,
         } => execute_exec(cmd, args, stdin.as_deref(), *timeout_secs),
+    };
+    if *IO_TRACE {
+        match &result {
+            Ok(r) => eprintln!("IO TRACE: → exit {}", r.exit_code),
+            Err(e) => eprintln!("IO TRACE: → error: {e}"),
+        }
     }
+    result
 }
 
 // ─── Error message extraction ─────────────────────────────────────────────────
