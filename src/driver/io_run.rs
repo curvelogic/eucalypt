@@ -1156,9 +1156,31 @@ fn run_command(
     }
 }
 
+/// Whether IO tracing is enabled (cached from `EU_IO_TRACE` env var).
+static IO_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("EU_IO_TRACE").is_ok());
+
 /// Dispatch an `ActionSpec` to the appropriate executor.
 fn run_spec(spec: &ActionSpec) -> Result<CommandResult, IoRunError> {
-    match spec {
+    if *IO_TRACE {
+        match spec {
+            ActionSpec::Shell { cmd, stdin, .. } => {
+                eprintln!(
+                    "IO TRACE: shell {cmd:?}{}",
+                    if stdin.is_some() { " (with stdin)" } else { "" }
+                );
+            }
+            ActionSpec::Exec {
+                cmd, args, stdin, ..
+            } => {
+                eprintln!(
+                    "IO TRACE: exec {cmd:?} {args:?}{}",
+                    if stdin.is_some() { " (with stdin)" } else { "" }
+                );
+            }
+        }
+    }
+    let result = match spec {
         ActionSpec::Shell {
             cmd,
             stdin,
@@ -1170,7 +1192,14 @@ fn run_spec(spec: &ActionSpec) -> Result<CommandResult, IoRunError> {
             stdin,
             timeout_secs,
         } => execute_exec(cmd, args, stdin.as_deref(), *timeout_secs),
+    };
+    if *IO_TRACE {
+        match &result {
+            Ok(r) => eprintln!("IO TRACE: → exit {}", r.exit_code),
+            Err(e) => eprintln!("IO TRACE: → error: {e}"),
+        }
     }
+    result
 }
 
 // ─── Error message extraction ─────────────────────────────────────────────────
