@@ -407,8 +407,17 @@ eu --type-check file.eu       # check then evaluate (warnings)
 
 ### Output
 
-Type errors are reported as warnings (not errors) using the existing
-diagnostic infrastructure:
+Type errors are reported as warnings (not errors). This requires new
+infrastructure — the existing diagnostic pipeline uses
+`Diagnostic::error()` exclusively (both `codespan-reporting` in CLI
+and `DiagnosticSeverity::ERROR` in LSP). Warning support must be added:
+
+- **CLI**: use `Diagnostic::warning()` from `codespan-reporting` (already
+  supported by the crate, just never used)
+- **LSP**: emit `DiagnosticSeverity::WARNING` in
+  `src/driver/lsp/diagnostics.rs`
+- **Exit code**: type warnings should not cause non-zero exit from
+  normal evaluation; `eu check --strict` would promote them to errors
 
 ```
 warning[T001]: type mismatch
