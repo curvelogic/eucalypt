@@ -573,8 +573,9 @@ likely via option 1 or 2.
 ## 11. Resolved Design Decisions
 
 1. **Recursive types** — low urgency but the design must accommodate
-   them. Likely via named type aliases: `type Tree = {left: Tree | null,
-   right: Tree | null, value: number}`. Deferred to Phase 6+. The type
+   them. The type alias mechanisms (section 12) support recursive
+   references — e.g. `{ types: { Tree: "{value: number, left: Tree |
+   null, right: Tree | null}" } }`. Deferred to Phase 6+. The type
    representation (`Type` enum) should use indirection (`Box`/`Rc`)
    throughout so recursive types can be added without restructuring.
 
@@ -604,14 +605,89 @@ likely via option 1 or 2.
    `value` has type `U`, warn if `T` and `U` are inconsistent. Low-
    hanging fruit for Phase 2.
 
-## 12. Remaining Open Questions
+## 12. Type Aliases
 
-1. **Type alias syntax** — will we need `type Name = ...` declarations?
-   Useful for recursive types and for naming complex record shapes.
-   Not needed initially but the annotation parser should reserve `type`
-   as a potential keyword.
+Type aliases name complex types for reuse in annotations. Two
+complementary mechanisms:
 
-2. **Interaction with `deep-transform` and structural recursion** —
+### Unit Metadata `types:` Block
+
+For types without a natural default value, or for recursive types,
+declare aliases in the unit metadata block at the top of the file:
+
+```eu
+{ import: "data.eu"
+  types: { Person: "{name: string, age: number, email: string | null, ..}"
+           Response: "{status: number, body: string | null}"
+           Tree: "{value: number, left: Tree | null, right: Tree | null}" } }
+```
+
+The `types` key maps alias names to type strings. These are available
+throughout the file (and to importers — see section 11.2).
+
+### Declaration-Derived Aliases via `type-def:`
+
+When a declaration provides a canonical instance of a type, `type-def`
+names an alias inferred from its value:
+
+```eu
+` { type-def: "Point" }
+origin: { x: 0, y: 0 }
+# Defines: Point = {x: number, y: number, ..}
+# And: origin : Point
+```
+
+The alias shape is inferred from the declaration's value. Member
+annotations refine the inferred type:
+
+```eu
+` { type-def: "Person" }
+nobody: {
+  ` { type: "string" }
+  name: ""
+  ` { type: "number" }
+  age: 0
+  ` { type: "string | null" }
+  email: null
+}
+# Defines: Person = {name: string, age: number, email: string | null, ..}
+```
+
+Without annotations, `email: null` would infer as `null` not
+`string | null` — member annotations earn their keep here.
+
+`type-def` and `type` can be combined — `type` provides an explicit
+shape (overriding inference), `type-def` names it:
+
+```eu
+` { type-def: "Point"
+    type: "{x: number, y: number}" }
+origin: { x: 0, y: 0 }
+```
+
+### Usage in Annotations
+
+Once defined (by either mechanism), aliases are used by name in type
+annotations:
+
+```eu
+` { type: "Point -> Point -> number" }
+distance(a, b): ...
+
+` { type: "[Person] -> [string]" }
+names: map(_.name)
+```
+
+### Summary
+
+| Mechanism      | Syntax                          | Use case                         |
+|----------------|---------------------------------|----------------------------------|
+| Unit metadata  | `{ types: { Name: "..." } }`   | Abstract types, recursive types  |
+| `type-def:`    | `` ` { type-def: "Name" } ``   | Types with a canonical instance  |
+
+## 13. Remaining Open Questions
+
+1. **Interaction with `deep-transform` and structural recursion** —
    these are inherently `any -> any`. Can we do better with recursive
    type aliases? Probably not worth the complexity initially.
 
