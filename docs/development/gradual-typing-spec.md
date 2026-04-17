@@ -685,16 +685,17 @@ names: map(_.name)
 | Unit metadata  | `{ types: { Name: "..." } }`   | Abstract types, recursive types  |
 | `type-def:`    | `` ` { type-def: "Name" } ``   | Types with a canonical instance  |
 
-## 13. Remaining Open Questions
+## 13. Additional Resolved Decisions
 
-1. **Interaction with `deep-transform` and structural recursion** —
-   these are inherently `any -> any`. Can we do better with recursive
-   type aliases? Probably not worth the complexity initially.
+6. **`deep-transform` and structural recursion** — these are inherently
+   `any -> any`. Recursive type aliases don't help — a `Json`-like
+   recursive union is effectively `any` with extra steps. The rule
+   function passed to `deep-transform` gets typed at the point of use
+   via inference from its body.
 
-3. **Prelude namespace typing** — resolved. `str`, `arr`, `set`, etc.
-   are block literals in the prelude. Each function inside the block
-   gets a `type` annotation in its metadata, just like top-level
-   functions:
+7. **Prelude namespace typing** — `str`, `arr`, `set`, etc. are block
+   literals in the prelude. Each function inside the block gets a `type`
+   annotation in its metadata, just like top-level functions:
 
    ```eu
    str: {
