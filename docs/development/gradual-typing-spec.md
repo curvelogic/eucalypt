@@ -615,8 +615,30 @@ likely via option 1 or 2.
    these are inherently `any -> any`. Can we do better with recursive
    type aliases? Probably not worth the complexity initially.
 
-3. **Prelude namespace typing** — `str.*`, `set.*`, `arr.*`, `random.*`
-   are accessed via block lookup. How does the checker know that
-   `str.length` has type `string -> number`? The namespace block needs
-   a record type with function-typed fields, or the checker hardcodes
-   knowledge of namespaces.
+3. **Prelude namespace typing** — resolved. `str`, `arr`, `set`, etc.
+   are block literals in the prelude. Each function inside the block
+   gets a `type` annotation in its metadata, just like top-level
+   functions:
+
+   ```eu
+   str: {
+     ` { doc: "of(e) - convert e to string."
+         type: "any -> string" }
+     of: __STR
+
+     ` { doc: "length(s) - return length of string s."
+         type: "string -> number" }
+     length: __STR_LEN
+     ...
+   }
+   ```
+
+   The checker synthesises the block's record type from its members:
+   `str : {of: any -> string, length: string -> number, ..}`. Then
+   `str.length` resolves via record field lookup to `string -> number`.
+   This is the same mechanism as any other block — no special-casing
+   needed for namespaces.
+
+   Note: function declarations (with parameters) are not rendered in
+   output but are part of the record type for checking purposes. The
+   checker treats all block members equally.
