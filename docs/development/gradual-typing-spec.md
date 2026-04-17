@@ -535,35 +535,40 @@ struct TypeScheme {
 
 ## 10. Inline Type Assertions
 
-The existing metadata merge operator `//` provides inline type
-annotations on any expression — no new syntax required:
+### Declaration Annotations (primary mechanism)
+
+The main annotation mechanism is declaration-level metadata:
 
 ```eu
-# Assert the type of a sub-expression
-xs: f() // { type: "[number]" }
-
-# Annotate intermediate pipeline steps
-result: data transform // { type: "{name: string, ..}" } lookup(:name)
-
-# Useful in tests to verify inferred types
-total: [1, 2, 3] map(+ 10) // { type: "[number]" } sum
+` { type: "[number] -> number" }
+sum: fold(+, 0)
 ```
 
-The checker treats `expr // { type: "T" }` as a **type assertion**:
+This covers the vast majority of cases — annotate function signatures
+and property types.
 
-1. Synthesise the type of `expr` → `S`
-2. Parse the annotation → `T`
-3. Verify `S` is consistent with `T` (warn if not)
-4. Use `T` as the type going forward in the pipeline
+### Inline Assertions (deferred)
 
-This complements declaration-level annotations:
+Inline type assertions on arbitrary expressions would be useful but
+present an implementation challenge. The obvious syntax `expr // { type:
+"T" }` uses the metadata merge operator, but `//` is a prelude-defined
+function, not syntax. By the time the type checker sees core
+expressions, it's an opaque function call — special-casing "merge where
+the second arg is a block with a `type` key" would be fragile.
 
-| Style             | Syntax                             | Scope            |
-|-------------------|------------------------------------|------------------|
-| Declaration       | `` ` { type: "..." } f: expr ``    | Names the function/property type |
-| Inline assertion  | `expr // { type: "..." }`          | Asserts and narrows at a point   |
+Options for future inline assertions:
 
-Both use the same `type` metadata key and the same type parser.
+1. **Dedicated syntax** — e.g. `expr :: "T"` as a type assertion
+   operator. Requires a parser change but is unambiguous.
+2. **Desugar-time recognition** — the desugarer could recognise
+   `// { type: "..." }` patterns and emit a core annotation node
+   before it becomes a merge call.
+3. **Pragma on merge** — the type checker recognises
+   `merge(expr, {type: "..."})` as a type assertion. Fragile.
+
+**Decision**: defer inline assertions. Declaration annotations plus
+inference cover the primary use cases. Revisit if there is demand,
+likely via option 1 or 2.
 
 ## 11. Resolved Design Decisions
 
