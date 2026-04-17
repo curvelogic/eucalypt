@@ -48,9 +48,9 @@
 | `(A, B, C)`       | 3-tuple, etc.                                    |
 | `{k: T, ..}`      | open record — has at least `k: T`, may have more |
 | `{k: T}`          | closed record — has exactly `k: T`               |
-| `set(T)`          | set of `T` (ordered, unique elements)            |
-| `vec(T)`          | vec of `T` (O(1) indexed access)                 |
-| `array(T)`        | n-dimensional array of `T`                       |
+| `set`             | ordered set of primitives                        |
+| `vec`             | flat vector of primitives (O(1) indexed access)  |
+| `array`           | n-dimensional array of numbers (floats)          |
 | `A -> B`          | function from `A` to `B`                         |
 | `A \| B`          | union type                                       |
 
@@ -124,17 +124,15 @@ null is NOT a subtype of number, string, etc.
 
 Nullable values use explicit unions: `number | null`.
 
-**Lists, sets, vecs, arrays** — covariant:
+**Lists** — covariant:
 ```
 [A] <: [B]                  if A <: B
-set(A) <: set(B)            if A <: B
-vec(A) <: vec(B)            if A <: B
-array(A) <: array(B)        if A <: B
 ```
 
-No subtyping between collection kinds — `set(number)` is not a subtype
-of `[number]`. Explicit conversion (`set.to-list`, `vec.to-list`) is
-required.
+**`set`, `vec`, `array`** — opaque primitive types with no subtyping
+between them or with lists. Element types are fixed (`set` and `vec`
+hold primitives; `array` holds numbers). Conversion requires explicit
+functions (`set.to-list`, `vec.to-list`, `arr.to-list`).
 
 **Tuples** — widen to lists:
 ```
@@ -205,9 +203,9 @@ primary    ::= 'number' | 'string' | 'symbol' | 'bool' | 'null'
              | 'datetime' | 'any' | 'top' | 'never'
              | LOWER_IDENT                        # type variable
              | '[' type ']'                       # homogeneous list
-             | 'set' '(' type ')'                 # set
-             | 'vec' '(' type ')'                 # vec
-             | 'array' '(' type ')'               # n-dimensional array
+             | 'set'                               # set of primitives
+             | 'vec'                               # vec of primitives
+             | 'array'                             # ndarray of numbers
              | '{' row '}'                        # record
              | '(' paren_body ')'                 # grouping or tuple
 paren_body ::= type                               # grouping: (A -> B)
@@ -459,9 +457,9 @@ enum Type {
     // Composite
     List(Box<Type>),                                 // [T]
     Tuple(Vec<Type>),                                // (A, B) or (A,)
-    Set(Box<Type>),                                  // set(T)
-    Vec(Box<Type>),                                  // vec(T)
-    Array(Box<Type>),                                // array(T)
+    Set,                                             // set (primitives)
+    Vec,                                             // vec (primitives)
+    Array,                                           // array (numbers)
     Record { fields: BTreeMap<SmolStr, Type>, open: bool },
     Function(Box<Type>, Box<Type>),
     Union(Vec<Type>),
