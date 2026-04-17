@@ -533,26 +533,85 @@ struct TypeScheme {
 - Literal symbol types (`:active | :inactive`)
 - Tuple destructuring in type annotations
 
-## 10. Open Questions
+## 10. Inline Type Assertions
 
-1. **Recursive types** — are they needed? Self-referential blocks and
-   tree structures would need `type T = {left: T | null, right: T | null, value: number}` or similar. Could defer.
+The existing metadata merge operator `//` provides inline type
+annotations on any expression — no new syntax required:
 
-2. **Module-level type exports** — when importing a `.eu` file, does
-   the importer see the type annotations? Probably yes — the type
-   environment should be exportable.
+```eu
+# Assert the type of a sub-expression
+xs: f() // { type: "[number]" }
 
-3. **Type annotation for operators** — `(l + r)` is defined in the
-   prelude. How to annotate operator declarations? Same metadata approach
-   should work.
+# Annotate intermediate pipeline steps
+result: data transform // { type: "{name: string, ..}" } lookup(:name)
 
-4. **Overloaded operators** — `+` works on numbers and lists. The type
-   would be a union: `(number -> number -> number) | ([a] -> [a] -> [a])`.
-   Or separate overload signatures.
+# Useful in tests to verify inferred types
+total: [1, 2, 3] map(+ 10) // { type: "[number]" } sum
+```
 
-5. **Interaction with `//=` assertions** — could the checker verify
-   that `expr //= value` is type-consistent? Low-hanging fruit.
+The checker treats `expr // { type: "T" }` as a **type assertion**:
 
-6. **Metadata type for type annotations** — currently `type` in
-   metadata is just a string key. Could conflict with user-defined
-   metadata. Consider a reserved prefix or dedicated syntax.
+1. Synthesise the type of `expr` → `S`
+2. Parse the annotation → `T`
+3. Verify `S` is consistent with `T` (warn if not)
+4. Use `T` as the type going forward in the pipeline
+
+This complements declaration-level annotations:
+
+| Style             | Syntax                             | Scope            |
+|-------------------|------------------------------------|------------------|
+| Declaration       | `` ` { type: "..." } f: expr ``    | Names the function/property type |
+| Inline assertion  | `expr // { type: "..." }`          | Asserts and narrows at a point   |
+
+Both use the same `type` metadata key and the same type parser.
+
+## 11. Resolved Design Decisions
+
+1. **Recursive types** — low urgency but the design must accommodate
+   them. Likely via named type aliases: `type Tree = {left: Tree | null,
+   right: Tree | null, value: number}`. Deferred to Phase 6+. The type
+   representation (`Type` enum) should use indirection (`Box`/`Rc`)
+   throughout so recursive types can be added without restructuring.
+
+2. **Module-level type exports** — yes. When importing a `.eu` file,
+   the importer sees its type annotations. The type environment is
+   exported alongside the compiled module. This means imported functions
+   get full type checking at call sites.
+
+3. **Type annotation for operators** — same metadata approach works.
+   Operator declarations in the prelude use backtick metadata:
+   ```eu
+   ` { doc: "`l + r` - adds l and r."
+       type: "number -> number -> number" }
+   (l + r): __ADD(l, r)
+   ```
+
+4. **Overloaded operators** — `+` works on numbers, lists, and arrays.
+   Union of function types:
+   ```
+   type: "number -> number -> number | [a] -> [a] -> [a] | array -> array -> array"
+   ```
+   The checker tries each alternative and succeeds if any match. This
+   is equivalent to TypeScript's function overloads.
+
+5. **Interaction with `//=` assertions** — yes, the checker can verify
+   `expr //= value` for type consistency. If `expr` has type `T` and
+   `value` has type `U`, warn if `T` and `U` are inconsistent. Low-
+   hanging fruit for Phase 2.
+
+## 12. Remaining Open Questions
+
+1. **Type alias syntax** — will we need `type Name = ...` declarations?
+   Useful for recursive types and for naming complex record shapes.
+   Not needed initially but the annotation parser should reserve `type`
+   as a potential keyword.
+
+2. **Interaction with `deep-transform` and structural recursion** —
+   these are inherently `any -> any`. Can we do better with recursive
+   type aliases? Probably not worth the complexity initially.
+
+3. **Prelude namespace typing** — `str.*`, `set.*`, `arr.*`, `random.*`
+   are accessed via block lookup. How does the checker know that
+   `str.length` has type `string -> number`? The namespace block needs
+   a record type with function-typed fields, or the checker hardcodes
+   knowledge of namespaces.
