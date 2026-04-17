@@ -2,7 +2,7 @@
 
 All notable changes to eucalypt are documented here.
 
-## [0.5.3] - Unreleased
+## [0.5.3] - 2026-04-17
 
 ### Added
 
@@ -19,9 +19,14 @@ All notable changes to eucalypt are documented here.
 - **`random.run` / `random.eval` / `random.exec`** — convenience methods matching the state monad API
 - **Set membership operators** — `v ∈ s` and `v ∉ s` at precedence 40; sections work as predicates: `when(∈ ks, f)`
 - **Editor Unicode support** — `∈`, `∉`, `⊝`, `▶` added to Emacs quail/transient and VS Code quick-pick
+- **List monad (`:for` blocks)** — `{ :for x: xs y: ys [x, y] }` for list comprehensions with monadic bind over lists
+- **`parts-of(traversal)`** — lens combinator turning a traversal into a lens on the list of all foci. `view` collects; `over` applies list transforms and distributes back
+- **`each-element` / `filtered-elements(p?)`** — block traversals for the lens library, analogous to `each`/`filtered` for lists. Traverse all or matching kv pairs with `to-list-of`, `over`, and composition with `_key`/`_value`
+- **`EU_IO_TRACE=1`** — debug environment variable tracing all `io.shell` and `io.exec` commands to stderr, showing command strings, stdin piping, and exit codes
 
 ### Changed
 
+- **Unified assertion/expectation operators** — `//=` and `//!` now use a single `__EXPECT` BIF with stderr diagnostics on failure, replacing separate `__ASSERT` and `__CHECK` implementations
 - **`dbg` and `▶` rendering** — switched from `render-as(:json)` to `render-as(:eu)`, preserving symbol syntax in debug output
 - **Simple lookup semantics** — `.name` is now consistently key lookup restricted to block bindings, never extending to outer scope. Previously, `.name` on a static block literal resolved through the block scope and fell through to outer scope
 - **Monadic blocks in generalised lookup** — `A.{ :monad ... }` now evaluates the monadic block in `A`'s scope with implicit return. Previously the monadic block was desugared independently, losing the lookup scope
