@@ -1069,11 +1069,7 @@ fn desugar_monadic_block(
     };
 
     // Build bind chain from right-to-left using all pairs
-    for ((_, value), bind_var) in name_value_pairs
-        .into_iter()
-        .zip(bind_vars.into_iter())
-        .rev()
-    {
+    for ((_, value), bind_var) in name_value_pairs.into_iter().zip(bind_vars).rev() {
         let lambda = core::lam(smid, vec![bind_var], result);
         result = match spec {
             MonadSpec::Explicit { bind_name, .. } => {
@@ -1245,11 +1241,7 @@ fn desugar_monadic_block_implicit(
         }
     };
 
-    for ((_, value), bind_var) in name_value_pairs
-        .into_iter()
-        .zip(bind_vars.into_iter())
-        .rev()
-    {
+    for ((_, value), bind_var) in name_value_pairs.into_iter().zip(bind_vars).rev() {
         let lambda = core::lam(smid, vec![bind_var], result);
         result = match spec {
             MonadSpec::Explicit { bind_name, .. } => {

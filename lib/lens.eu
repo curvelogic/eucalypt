@@ -250,6 +250,28 @@ parts-of(traversal, k): {
   s(data): fmap(distribute(data), k(data collected))
 }.(s // meta(k))
 
+` "`each-element` traverses all kv pairs of a block"
+each-element(k): {
+  fmap: meta(k).fmap
+  pure: meta(k).pure
+  ap: meta(k).ap
+  walk(els): if(els nil?, pure([]),
+    ap(fmap(cons, k(els head)), walk(els tail)))
+  s(data): fmap(block, walk(data elements))
+}.(s // meta(k))
+
+` "`filtered-elements(p?)` traverses block kv pairs matching predicate `p?`"
+filtered-elements(p?, k): {
+  fmap: meta(k).fmap
+  pure: meta(k).pure
+  ap: meta(k).ap
+  walk(els): if(els nil?, pure([]),
+    if(els head p?,
+      ap(fmap(cons, k(els head)), walk(els tail)),
+      ap(fmap(cons, pure(els head)), walk(els tail))))
+  s(data): fmap(block, walk(data elements))
+}.(s // meta(k))
+
 ` { target: :test-traversals }
 example-traversals: {
   bang(s): "{s}!"
@@ -346,5 +368,44 @@ example-parts-of: {
 
   RESULT: [test-view, test-reverse, test-sort, test-filtered,
            test-deep-view, test-deep-over, test-assign
+          ] all-true? then(:PASS, :FAIL)
+}
+
+` { target: :test-element-traversals }
+example-element-traversals: {
+  data: {a: 1, b: 2, c: 3}
+
+  # each-element: to-list-of collects all kv pairs
+  test-all: data to-list-of(each-element) //= [[:a, 1], [:b, 2], [:c, 3]]
+
+  # each-element: over applies to all entries
+  test-all-over: data over(each-element ∘ _value, * 10) //= {a: 10, b: 20, c: 30}
+
+  # filtered-elements: to-list-of collects matching pairs
+  test-filt: data to-list-of(filtered-elements(by-value(_ > 1))) //= [[:b, 2], [:c, 3]]
+
+  # filtered-elements: over applies only to matching entries
+  test-filt-over: data over(filtered-elements(by-value(_ > 1)) ∘ _value, negate) //= {a: 1, b: -2, c: -3}
+
+  # filtered-elements: non-matching entries preserved
+  test-filt-preserve: data over(filtered-elements(by-key(_ = :b)) ∘ _value, + 100) lookup(:a) //= 1
+
+  # filtered-elements with key rename
+  test-key-rename: data over(filtered-elements(by-key(_ = :a)) ∘ _key, ->:x) lookup(:x) //= 1
+
+  # compose with at for nested blocks
+  nested: {items: {x: 10, y: 20, z: 30}}
+  test-nested: nested to-list-of(at(:items) ∘ filtered-elements(by-value(_ >= 20)) ∘ _value) //= [20, 30]
+  test-nested-over: (nested over(at(:items) ∘ filtered-elements(by-value(_ >= 20)) ∘ _value, + 100)).items //= {x: 10, y: 120, z: 130}
+
+  # parts-of with each-element
+  test-parts: data view(parts-of(each-element ∘ _value)) //= [1, 2, 3]
+  test-parts-rev: data over(parts-of(each-element ∘ _value), reverse) //= {a: 3, b: 2, c: 1}
+
+  RESULT: [ test-all, test-all-over
+          , test-filt, test-filt-over, test-filt-preserve
+          , test-key-rename
+          , test-nested, test-nested-over
+          , test-parts, test-parts-rev
           ] all-true? then(:PASS, :FAIL)
 }

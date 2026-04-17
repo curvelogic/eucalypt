@@ -323,11 +323,9 @@ fn mark_ref_heap_pointers<'a>(
     out: &mut Vec<ScanPtr<'a>>,
 ) {
     match r {
-        Ref::V(Native::Str(ptr)) => {
-            if marker.mark(*ptr) {
-                // Push for scanning so HeapString::scan marks the backing bytes
-                out.push(ScanPtr::from_non_null(scope, *ptr));
-            }
+        Ref::V(Native::Str(ptr)) if marker.mark(*ptr) => {
+            // Push for scanning so HeapString::scan marks the backing bytes
+            out.push(ScanPtr::from_non_null(scope, *ptr));
         }
         Ref::V(Native::Set(ptr)) => {
             marker.mark(*ptr);
