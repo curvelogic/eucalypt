@@ -861,6 +861,88 @@ impl HeapState {
             self.peak_heap_blocks = current_blocks;
         }
     }
+
+    // ── Verifier accessors (pub(crate)) ──────────────────────────
+
+    /// Iterate all bump blocks across every HeapState list.
+    ///
+    /// Returns `(list_name, &BumpBlock)` for each block.
+    pub(crate) fn all_blocks(&self) -> Vec<(&'static str, &BumpBlock)> {
+        let mut out = Vec::new();
+        if let Some(b) = &self.head {
+            out.push(("head", b));
+        }
+        if let Some(b) = &self.overflow {
+            out.push(("overflow", b));
+        }
+        for b in &self.rest {
+            out.push(("rest", b));
+        }
+        for b in &self.unswept {
+            out.push(("unswept", b));
+        }
+        for b in &self.recycled {
+            out.push(("recycled", b));
+        }
+        if let Some(b) = &self.evacuation_target {
+            out.push(("evacuation_target", b));
+        }
+        for b in &self.filled_evacuation_blocks {
+            out.push(("filled_evacuation_blocks", b));
+        }
+        out
+    }
+
+    /// Iterate all large object blocks.
+    pub(crate) fn all_lobs(&self) -> &[LargeObjectBlock] {
+        &self.lobs
+    }
+
+    /// Return the evacuation target block ranges, if any.
+    pub(crate) fn evacuation_target_ranges(&self) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        if let Some(b) = &self.evacuation_target {
+            ranges.push((b.base_address(), b.base_address() + BLOCK_SIZE_BYTES));
+        }
+        for b in &self.filled_evacuation_blocks {
+            ranges.push((b.base_address(), b.base_address() + BLOCK_SIZE_BYTES));
+        }
+        ranges
+    }
+
+    /// Return block base addresses for each list, for disjointness checking.
+    pub(crate) fn block_lists_for_disjointness(&self) -> Vec<(&'static str, Vec<usize>)> {
+        vec![
+            ("head", self.head.iter().map(|b| b.base_address()).collect()),
+            (
+                "overflow",
+                self.overflow.iter().map(|b| b.base_address()).collect(),
+            ),
+            ("rest", self.rest.iter().map(|b| b.base_address()).collect()),
+            (
+                "unswept",
+                self.unswept.iter().map(|b| b.base_address()).collect(),
+            ),
+            (
+                "recycled",
+                self.recycled.iter().map(|b| b.base_address()).collect(),
+            ),
+            (
+                "evacuation_target",
+                self.evacuation_target
+                    .iter()
+                    .map(|b| b.base_address())
+                    .collect(),
+            ),
+            (
+                "filled_evacuation_blocks",
+                self.filled_evacuation_blocks
+                    .iter()
+                    .map(|b| b.base_address())
+                    .collect(),
+            ),
+        ]
+    }
 }
 
 /// Detailed heap context for error diagnostics
@@ -2781,6 +2863,17 @@ impl Heap {
             }
         }
         None
+    }
+
+    /// Provide read-only access to the underlying HeapState for
+    /// verification purposes.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure single-threaded access (e.g. during
+    /// stop-the-world collection or testing).
+    pub(crate) unsafe fn heap_state(&self) -> &HeapState {
+        &*self.state.get()
     }
 }
 
