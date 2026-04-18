@@ -52,6 +52,8 @@
 | `vec`             | flat vector of primitives (O(1) indexed access)  |
 | `array`           | n-dimensional array of numbers (floats)          |
 | `IO(T)`           | IO action producing a value of type `T`          |
+| `Lens(A, B)`      | lens focusing on a `B` within an `A`             |
+| `Traversal(A, B)` | traversal over zero or more `B`s within an `A`   |
 | `A -> B`          | function from `A` to `B`                         |
 | `A \| B`          | union type                                       |
 
@@ -208,6 +210,8 @@ primary    ::= 'number' | 'string' | 'symbol' | 'bool' | 'null'
              | 'vec'                               # vec of primitives
              | 'array'                             # ndarray of numbers
              | 'IO' '(' type ')'                   # IO action
+             | 'Lens' '(' type ',' type ')'       # lens
+             | 'Traversal' '(' type ',' type ')'  # traversal
              | '{' row '}'                        # record
              | '(' paren_body ')'                 # grouping or tuple
 paren_body ::= type                               # grouping: (A -> B)
@@ -370,6 +374,107 @@ name: io.shell("echo hello") io.map(_.stdout)  # IO(string) ✓
 `IO(T)` is opaque — the only way to "unwrap" it is through `io.bind`,
 `io.map`, or the IO runner. This mirrors Haskell's approach and prevents
 accidental use of IO values as plain data.
+
+### Lens and Traversal Types
+
+The lens library uses a van Laarhoven encoding with metadata-carried
+functor operations. Typing the internals would require rank-2
+polymorphism and metadata-constrained types — both beyond the initial
+system. However, the **interface** can be typed with opaque type
+constructors:
+
+```
+Lens(a, b)       — focuses on a single b within an a
+Traversal(a, b)  — focuses on zero or more b's within an a
+```
+
+These are opaque — the checker doesn't need to know they're implemented
+as `(b -> f b) -> (a -> f a)` under the hood.
+
+```eu
+# Lens constructors
+` { type: "symbol -> Lens({..}, any)" }
+at(key, k): ...
+
+` { type: "number -> Lens([a], a)" }
+ix(n, k): ...
+
+` { type: "(a -> bool) -> Lens([a], a)" }
+item(p?, k): ...
+
+# Traversal constructors
+` { type: "Traversal([a], a)" }
+each(k): ...
+
+` { type: "(a -> bool) -> Traversal([a], a)" }
+filtered(p?, k): ...
+
+` { type: "Traversal({..}, (symbol, any))" }
+each-element(k): ...
+
+# Operations
+` { type: "Lens(a, b) -> a -> b" }
+view(lens, data): ...
+
+` { type: "Lens(a, b) -> (b -> b) -> a -> a" }
+over(lens, fn, data): ...
+
+` { type: "Traversal(a, b) -> a -> [b]" }
+to-list-of(optic, data): ...
+
+# Composition — lens with lens, traversal with lens, etc.
+# ∘ composes optics: Lens(a,b) ∘ Lens(b,c) → Lens(a,c)
+# Lens ∘ Traversal → Traversal, Traversal ∘ Lens → Traversal
+```
+
+The checker treats `Lens(a, b)` as a subtype of `Traversal(a, b)` (a
+lens is a traversal that focuses on exactly one element). This means
+`view` could accept either, and `to-list-of` on a lens returns a
+singleton list.
+
+**Note**: `over` and `to-list-of` work on both lenses and traversals.
+The type annotations use `Lens` for `view` (which requires a single
+focus) and could use a `Lens(a, b) | Traversal(a, b)` union or a
+common supertype `Optic(a, b)` for `over` and `to-list-of`.
+
+### Bracket Type Hints
+
+Bracket expressions `‹ ... ›` and `⟦ ... ⟧` desugar to function calls
+in core: `App(bracket_fn, [list_of_items])`. The bracket identity is
+lost after desugaring. However, the desugarer can inject type hints
+before this happens:
+
+**Lens brackets** `‹ :items 0 :meta ›`:
+
+The desugarer knows each segment is either:
+- A symbol → `at(sym)` → `Lens({..}, any)`
+- A number → `ix(n)` → `Lens([a], a)`
+- A lens/traversal expression → its own type
+
+It can compose these to produce a lens type hint for the whole path.
+For `‹ :items 0 :meta ›`:
+- `at(:items)` : `Lens({..}, any)`
+- `ix(0)` : `Lens([a], a)`
+- `at(:meta)` : `Lens({..}, any)`
+- Composed: `Lens({..}, any)` (the intermediate types narrow through
+  composition)
+
+The desugarer emits this as a type annotation on the core node, giving
+the checker a head start without having to infer through the
+`foldr(∘, identity)` implementation.
+
+**Idiot brackets** `⟦ a b c ⟧`:
+
+Items are collected into a list and passed to the bracket function. The
+type hint is the bracket function's return type applied to
+`[type_of_a | type_of_b | type_of_c]`. For the default idiot brackets
+(which collect as list), the result type is simply the list itself.
+
+**Monadic bracket blocks** `⟦ x: xs  y: ys  [x, y] ⟧`:
+
+The desugarer already knows the monad spec (`:for`, `:random`, `:state`,
+etc.) and can inject the appropriate monadic result type — e.g.
+`[a]` for list monad, `IO(a)` for IO monad.
 
 ### Functions That Need `any`
 
@@ -574,6 +679,8 @@ enum Type {
     Vec,                                             // vec (primitives)
     Array,                                           // array (numbers)
     IO(Box<Type>),                                   // IO(T)
+    Lens(Box<Type>, Box<Type>),                      // Lens(A, B)
+    Traversal(Box<Type>, Box<Type>),                 // Traversal(A, B)
     Record { fields: BTreeMap<SmolStr, Type>, open: bool },
     Function(Box<Type>, Box<Type>),
     Union(Vec<Type>),
@@ -847,7 +954,10 @@ complexity. Deferred — lenses use opaque type aliases or `any`
 initially.
 
 **IO actions are NOT in this category** — see section 2 for `IO(T)` as
-a proper type constructor.
+a proper type constructor. **Lenses are a borderline case** — see
+section 6 for `Lens(a, b)` and `Traversal(a, b)` as opaque type
+constructors that type the interface without encoding van Laarhoven
+internals.
 
 ### Structural Operator Constraints
 
