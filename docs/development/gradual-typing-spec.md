@@ -800,11 +800,74 @@ runtime via `with-meta`/`//` and flows through operations unpredictably.
 Tracking it statically would add significant complexity. Deferred —
 lenses and IO actions use opaque type aliases or `any` initially.
 
-### Typeclass-Like Constraints
+### Structural Operator Constraints
 
 The prelude survey (section 6) shows that eucalypt's explicit-comparator
 pattern means very few functions need implicit constraints. The main
 cases are `max`/`min` (implicit `<`) and comparison operators (overloaded
-across types). These are handled via union types or typed to their
-dominant use case. Full typeclass support is not needed and is deferred
-indefinitely.
+across types). These are handled via union types initially.
+
+However, the design should leave a clean path to structural operator
+constraints. The proposed future syntax:
+
+```
+# min requires < to work on a
+type: "<(a, a) => a -> a -> a"
+
+# general form: fn(arg-types) => body-type
+type: "str.of(a) => [a] -> [string]"
+```
+
+This reads as: "this type is valid in contexts where the named function
+accepts the given argument types." No named typeclasses needed — the
+constraint references the operator directly, consistent with eucalypt's
+structural philosophy.
+
+**Research context**: this approach aligns with several established
+designs:
+
+- **Structural operator constraints with gradual typing** — Xie et al.
+  (2018, "Consistent Subtyping for All") shows constrained polymorphism
+  works in a gradual setting: constraints are checked when static,
+  deferred to `any` when the gradual type is involved
+- **Row polymorphism** (Rémy, PureScript) — if operators are viewed as
+  record fields on a type's "operations" record, operator constraints
+  become row constraints. Eucalypt's namespace blocks already work this
+  way
+- **Go type constraints** — Go 1.18 enumerates concrete types in
+  constraints (`~int | ~float64 | ~string`). Our union overloads are
+  the same approach. Structural constraints generalise this
+- **MLsub** (Dolan & Mycroft, 2017) — algebraic subtyping infers
+  structural constraints without explicit annotations. A possible
+  inspiration for inference-driven constraints
+
+**Forwards compatibility**: union overloads are concrete specialisations
+of structural constraints. `min: number -> number -> number | string ->
+string -> string` is a valid (less general) annotation that would be
+subsumed by `min: <(a, a) => a -> a -> a` if constraints are added
+later. Existing annotations need not change.
+
+**Implementation path**:
+
+1. **Now**: union overloads for operators (`+`, `<`, etc.)
+2. **Later**: add `Constraint` to the `Type` enum, parse
+   `fn(args) =>` prefix in type strings, resolve constraints at
+   call sites by checking against known operator overloads
+3. **Future**: infer constraints from function bodies (MLsub-style),
+   potentially eliminating the need for explicit constraint annotations
+
+The type representation should reserve space for constraints from the
+start:
+
+```rust
+struct TypeScheme {
+    vars: Vec<TypeVarId>,
+    constraints: Vec<Constraint>,  // empty initially
+    body: Type,
+}
+
+struct Constraint {
+    function: String,       // "<", "str.of", etc.
+    args: Vec<Type>,        // types the function must accept
+}
+```
