@@ -51,6 +51,7 @@
 | `set`             | ordered set of primitives                        |
 | `vec`             | flat vector of primitives (O(1) indexed access)  |
 | `array`           | n-dimensional array of numbers (floats)          |
+| `IO(T)`           | IO action producing a value of type `T`          |
 | `A -> B`          | function from `A` to `B`                         |
 | `A \| B`          | union type                                       |
 
@@ -206,6 +207,7 @@ primary    ::= 'number' | 'string' | 'symbol' | 'bool' | 'null'
              | 'set'                               # set of primitives
              | 'vec'                               # vec of primitives
              | 'array'                             # ndarray of numbers
+             | 'IO' '(' type ')'                   # IO action
              | '{' row '}'                        # record
              | '(' paren_body ')'                 # grouping or tuple
 paren_body ::= type                               # grouping: (A -> B)
@@ -325,6 +327,49 @@ elements: __ELEMENTS
     type: "symbol -> {..} -> any" }
 lookup: __LOOKUP
 ```
+
+### IO Action Types
+
+IO actions have dedicated runtime data constructors (`IoReturn`,
+`IoBind`, `IoAction`, `IoFail`) — they are a genuine type, not blocks
+with metadata. `IO(T)` is a parameterised type constructor:
+
+```eu
+io: {
+  ` { type: "string -> IO({stdout: string, stderr: string, exit-code: number})" }
+  shell(c): __IO_ACTION({:io-shell cmd: c, timeout: 30})
+
+  ` { type: "a -> IO(a)" }
+  return(a): __IO_RETURN(a)
+
+  ` { type: "IO(a) -> (a -> IO(b)) -> IO(b)" }
+  bind(a, c): __IO_BIND(a, c)
+
+  ` { type: "(a -> b) -> IO(a) -> IO(b)" }
+  map(f, action): io.bind(action, io.return ∘ f)
+
+  ` { type: "IO(b) -> IO(a) -> IO(b)" }
+  then(b, a): io.bind(a, -> b)
+
+  ` { type: "[IO(a)] -> IO([a])" }
+  sequence(ms): ...
+}
+```
+
+This lets the checker catch common IO mistakes:
+
+```eu
+# Error: io.shell returns IO({..}), not {..}
+result: io.shell("echo hello")
+name: result.stdout              # warning: IO({..}) has no field .stdout
+
+# Correct: use io.map to access the result
+name: io.shell("echo hello") io.map(_.stdout)  # IO(string) ✓
+```
+
+`IO(T)` is opaque — the only way to "unwrap" it is through `io.bind`,
+`io.map`, or the IO runner. This mirrors Haskell's approach and prevents
+accidental use of IO values as plain data.
 
 ### Functions That Need `any`
 
@@ -528,6 +573,7 @@ enum Type {
     Set,                                             // set (primitives)
     Vec,                                             // vec (primitives)
     Array,                                           // array (numbers)
+    IO(Box<Type>),                                   // IO(T)
     Record { fields: BTreeMap<SmolStr, Type>, open: bool },
     Function(Box<Type>, Box<Type>),
     Union(Vec<Type>),
@@ -793,12 +839,15 @@ separate language. Deferred.
 
 ### Metadata-Typed Values
 
-Lenses require `fmap` metadata, IO actions carry `io-action` metadata.
-Expressing "T with metadata M" (e.g. `number @ {fmap: ...}`) could
-constrain lens pipelines and IO chains. However, metadata is attached at
-runtime via `with-meta`/`//` and flows through operations unpredictably.
-Tracking it statically would add significant complexity. Deferred —
-lenses and IO actions use opaque type aliases or `any` initially.
+Lenses require `fmap` metadata. Expressing "T with metadata M" (e.g.
+`number @ {fmap: ...}`) could constrain lens pipelines. However,
+metadata is attached at runtime via `with-meta`/`//` and flows through
+operations unpredictably. Tracking it statically would add significant
+complexity. Deferred — lenses use opaque type aliases or `any`
+initially.
+
+**IO actions are NOT in this category** — see section 2 for `IO(T)` as
+a proper type constructor.
 
 ### Structural Operator Constraints
 
