@@ -1,21 +1,86 @@
 # Gradual Typing for Eucalypt
 
-**Status**: Draft spec — brainstorming  
+**Status**: Draft spec  
 **Bead**: eu-oh3p  
-**Date**: 2026-04-17
+**Date**: 2026-04-17  
+**Updated**: 2026-04-18
 
-## 1. Goals and Non-Goals
+## 1. Requirements, Direction, and Priorities
 
-### Goals
+### Core Requirements
 
-- **Better error messages** — catch type misuse at check time with clear
-  diagnostics
-- **Documentation** — type annotations as machine-checked documentation
-  of intent
-- **Tooling** — types inform LSP autocomplete, hover info, and
-  refactoring
-- **Incremental adoption** — untyped code continues to work; types are
-  never required
+These requirements are non-negotiable and must be honoured regardless
+of implementation choices:
+
+1. **Types are never required.** All existing code continues to work
+   unchanged. Adding type annotations is always optional. The system
+   must never reject previously valid programs.
+
+2. **Catch real user errors.** The primary value is catching mistakes
+   that users actually make: passing IO actions where plain values are
+   expected, accessing fields on wrong block shapes, composing lenses
+   incorrectly, type mismatches in pipelines. Theoretical completeness
+   is secondary to practical error catching.
+
+3. **Structural, not nominal.** Eucalypt is structural through and
+   through — blocks have no named types, functions are anonymous,
+   composition is by shape. The type system must follow this philosophy.
+   No nominal typeclasses, no interface declarations, no implements
+   clauses.
+
+4. **Respect the runtime.** Types must reflect actual runtime data
+   structures. IO actions have dedicated data constructors — they are a
+   genuine type, not "blocks with metadata". Lists are cons cells. Sets,
+   vecs, and arrays are opaque primitives with fixed element kinds.
+   Don't invent types that don't correspond to runtime realities.
+
+5. **Inference-first, annotations drive precision.** The checker infers
+   what it can. Annotations (via metadata) improve precision and serve
+   as documentation but are never mandatory. Unannotated code gets `any`.
+
+6. **Warnings, not errors.** Type issues are reported as warnings. They
+   do not prevent evaluation. A `--strict` mode may promote warnings to
+   errors, but the default is advisory.
+
+7. **Prelude annotations are the primary lever.** Annotating prelude
+   functions provides type checking for all user code that calls them,
+   without users writing any annotations themselves. This is the
+   highest-value work.
+
+### High-Value Type Constructs
+
+These constructs represent the most common sources of user confusion
+and are priorities for typing:
+
+- **IO actions** — `IO(T)` as a proper type constructor. Confusing IO
+  actions with their result values is a common and confusing mistake.
+- **Lenses and traversals** — `Lens(a, b)` and `Traversal(a, b)` as
+  opaque type constructors. Van Laarhoven lenses are powerful but
+  complex; typing the interface catches composition errors.
+- **Block field access** — typing `.name` lookups on known block shapes
+  catches misspelled or missing field names.
+- **Pipeline type flow** — `data f g` should propagate types
+  left-to-right, catching mismatches at each step.
+
+### Design Principles
+
+- **Exploit desugaring knowledge.** The desugarer knows things the
+  checker doesn't — which brackets are lens paths, which blocks are
+  monadic, which imports are YAML. It should inject type hints into
+  core expressions so the checker doesn't have to reverse-engineer
+  complex desugared output.
+- **Opaque types for complex abstractions.** IO, Lens, Traversal are
+  typed at their interface, not their implementation. The van Laarhoven
+  encoding, monadic bind chains, and functor metadata are internal
+  details the type system does not expose.
+- **Future-proof the design.** Even when features are deferred (named
+  row variables, structural constraints, recursive types), the type
+  representation and annotation format must accommodate them without
+  breaking changes.
+- **Check the runtime before claiming a type.** Don't assume — verify
+  what data constructors exist, what operators are syntax vs prelude
+  functions, whether warning infrastructure exists. Type system
+  proposals that don't match the actual implementation are worthless.
 
 ### Non-Goals (for now)
 
@@ -24,6 +89,8 @@
 - Full Hindley-Milner inference
 - Dependent types
 - Effect types
+- Typeclass-like constraints (but the design must leave a clean path —
+  see section 14)
 
 ## 2. Type Language
 
