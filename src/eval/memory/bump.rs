@@ -448,6 +448,11 @@ impl BumpBlock {
         self.line_map.stats()
     }
 
+    /// Returns true if the given line index is marked in the line map.
+    pub(crate) fn is_line_marked(&self, line: usize) -> bool {
+        self.line_map.marked(line)
+    }
+
     /// Analyze block density for fragmentation detection
     pub fn analyze_density(&self) -> BlockDensity {
         let (_holes, _free, marked) = self.line_map.stats();
