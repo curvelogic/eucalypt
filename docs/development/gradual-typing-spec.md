@@ -376,6 +376,65 @@ Not all prelude functions need annotations from day one. Priority:
 
 Unannotated functions default to `any` for all positions.
 
+### Prelude Typing Survey
+
+A survey of the full prelude identifies the following categories of
+typing difficulty:
+
+**Straightforward** (majority of prelude):
+Most functions type cleanly with type variables. Eucalypt's pattern of
+pushing constraints into explicit function parameters means very few
+functions need typeclass-like constraints:
+
+```
+map: (a -> b) -> [a] -> [b]
+filter: (a -> bool) -> [a] -> [a]
+fold: (b -> a -> b) -> b -> [a] -> b
+qsort: (a -> a -> bool) -> [a] -> [a]
+sort-by: (a -> b) -> (b -> b -> bool) -> [a] -> [a]
+group-by: (a -> any) -> [a] -> {..}
+nub-by: (a -> any) -> [a] -> [a]
+max-of-by: (a -> number) -> [a] -> a
+```
+
+**Overloaded operators** — typed as union of function types:
+
+| Operator | Type |
+|----------|------|
+| `+` `-` `*` `/` | `number -> number -> number \| [a] -> [a] -> [a] \| array -> array -> array` |
+| `<` `>` `<=` `>=` | `number -> number -> bool \| string -> string -> bool \| symbol -> symbol -> bool \| datetime -> datetime -> bool` |
+| `=` `!=` | `a -> a -> bool` (polymorphic equality) |
+| `++` | `[a] -> [a] -> [a]` (list-only) |
+| `!!` | `[a] -> number -> a \| array -> [number] -> number` |
+
+**Implicit comparison** — `max`/`min` use `<` implicitly. Without
+constraints, type as the dominant use case or union:
+
+```
+max: number -> number -> number
+min: number -> number -> number
+# Or with unions: number -> number -> number | string -> string -> string
+```
+
+**Dependent on runtime values** — need `any`, unavoidable:
+
+| Function | Type | Why |
+|----------|------|-----|
+| `lookup` | `symbol -> {..} -> any` | Return type depends on key value |
+| `lookup-or` | `symbol -> a -> {..} -> any \| a` | Same |
+| `lookup-path` | `[symbol] -> {..} -> any` | Chained dynamic lookup |
+| `apply` | `any -> [any] -> any` | Arity depends on list length |
+| `cond` | `[(bool, a)] -> a -> a` | Heterogeneous pair list |
+| `parse-args` | `{..} -> [string] -> {..}` | Return shape mirrors input |
+| `deep-transform` | `(any -> any \| null) -> any -> any` | Recursive structure walk |
+| `deep-fold` | `any` throughout | Callback-driven recursion |
+| `match?` | `any -> any -> bool` | Structurally overloaded pattern |
+
+**Key insight**: eucalypt's explicit-comparator pattern means we need
+almost no typeclass-like constraints. The hard cases are about dependent
+types (return type depending on a runtime value), not about Ord/Eq.
+These correctly fall to `any` in a gradual system.
+
 ## 7. Pipeline Integration
 
 ### Position in the Compilation Pipeline
@@ -719,3 +778,33 @@ names: map(_.name)
    Note: function declarations (with parameters) are not rendered in
    output but are part of the record type for checking purposes. The
    checker treats all block members equally.
+
+## 14. Future Considerations (Out of Scope)
+
+### Embedded Type Syntax
+
+Type annotations currently live in strings (`type: "number -> number"`).
+A future enhancement could embed types in eucalypt syntax directly.
+However, eucalypt syntax clashes heavily with type notation: `->` is the
+`const` operator, `(a, b)` is function application, `..` has other
+meanings. Symbols could represent type variables (`:a`), but arrow types
+and tuple types would need new syntax. Strings are honest about being a
+separate language. Deferred.
+
+### Metadata-Typed Values
+
+Lenses require `fmap` metadata, IO actions carry `io-action` metadata.
+Expressing "T with metadata M" (e.g. `number @ {fmap: ...}`) could
+constrain lens pipelines and IO chains. However, metadata is attached at
+runtime via `with-meta`/`//` and flows through operations unpredictably.
+Tracking it statically would add significant complexity. Deferred —
+lenses and IO actions use opaque type aliases or `any` initially.
+
+### Typeclass-Like Constraints
+
+The prelude survey (section 6) shows that eucalypt's explicit-comparator
+pattern means very few functions need implicit constraints. The main
+cases are `max`/`min` (implicit `<`) and comparison operators (overloaded
+across types). These are handled via union types or typed to their
+dominant use case. Full typeclass support is not needed and is deferred
+indefinitely.
